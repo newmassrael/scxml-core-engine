@@ -17,10 +17,12 @@ import {
   conflictRevisions,
   ContractError,
   isOpenRequest,
+  movedInRefusal,
   parseAdapterListing,
   parseAdapterReport,
   parseBundleRead,
   parseAuthPolicy,
+  parseClaudeStatus,
   parseCompletedRequest,
   parseConnectionListing,
   parseDefaultConnection,
@@ -106,6 +108,7 @@ const parsers: Record<string, (value: unknown) => unknown> = {
   list_connections: parseConnectionListing,
   read_connection: parseReadConnection,
   read_auth_policy: parseAuthPolicy,
+  read_claude_status: parseClaudeStatus,
   save_connection: parseSaved,
   delete_connection: parseDeletedConnection,
   set_default_connection: parseDefaultConnection,
@@ -547,6 +550,16 @@ describe("the replies the core gives", () => {
     expect(current).not.toBe(base);
   });
 
+  it("name what moved when a request is refused as moved: the text, the answers, the connection", () => {
+    expect(movedInRefusal(asCommandError(replies.refusals["request-connection-moved"])?.detail)).toEqual(["connection"]);
+    expect(movedInRefusal({ moved: ["source", "answers"] })).toEqual(["source", "answers"]);
+    // A refusal that names nothing, or names it in a shape that is not a list, names no part.
+    expect(movedInRefusal(undefined)).toEqual([]);
+    expect(movedInRefusal({})).toEqual([]);
+    expect(movedInRefusal({ moved: "connection" })).toEqual([]);
+    expect(movedInRefusal({ moved: ["source", 3] })).toEqual(["source"]);
+  });
+
   it("say which entrance asked, and whether it may change the settings", () => {
     expect(parseDescribed(replies.answers["describe"])).toMatchObject({
       entrance: "tool",
@@ -609,6 +622,46 @@ describe("the replies the core gives", () => {
     });
     expect(decisionOf("unlisted")).toMatchObject({ decision: "refuse", reason: "unconfirmed" });
     expect(policy.switched_off).toEqual([]);
+  });
+
+  it("carry what the screen says of Claude Code: installed or not, who is signed in, how it is billed", () => {
+    const status = (name: string) => parseClaudeStatus(replies.answers[name]);
+    expect(status("read_claude_status_missing").client).toEqual({ state: "missing" });
+    expect(status("read_claude_status_missing").account).toMatchObject({ state: "unknown" });
+    // A program that could not be asked is not nobody: no sign-in is offered for it as such.
+    expect(status("read_claude_status_unknown").account).toMatchObject({ state: "unknown" });
+    expect(status("read_claude_status_signed_out").account).toEqual({ state: "signed-out" });
+    expect(status("read_claude_status_subscription")).toMatchObject({
+      client: { state: "installed", version: "2.1.291" },
+      account: { state: "signed-in", billing: "subscription", environment: null, usable: true },
+    });
+    // A key from the environment is shown with the name of the variable, and billed by use.
+    expect(status("read_claude_status_key_from_environment").account).toMatchObject({
+      billing: "usage",
+      environment: "ANTHROPIC_API_KEY",
+      usable: true,
+    });
+    // A way of signing in the build does not use is still a login that is there.
+    expect(status("read_claude_status_not_used").account).toMatchObject({
+      state: "signed-in",
+      billing: null,
+      usable: false,
+      decision: { decision: "refuse", reason: "unconfirmed" },
+    });
+  });
+
+  it("carry the two commands that sign in, one for each way it is billed, and no path", () => {
+    const signIn = parseClaudeStatus(replies.answers["read_claude_status_signed_out"]).sign_in;
+    expect(signIn).toEqual([
+      { billing: "subscription", command: "claude auth login" },
+      { billing: "usage", command: "claude auth login --console" },
+    ]);
+  });
+
+  it("carry whether an entrance may start a program, and refuse the one that may not", () => {
+    expect(parseDescribed(replies.answers["describe_desktop"]).starts_programs).toBe(true);
+    expect(parseDescribed(replies.answers["describe"]).starts_programs).toBe(false);
+    expect(asCommandError(replies.refusals["not-allowed-to-start-a-program"])?.kind).toBe("not-allowed-here");
   });
 });
 
@@ -723,6 +776,23 @@ describe("a reply that is not the promised shape", () => {
       /status/,
     );
     expect(() => parseDescribed({ command_set_version: 14, commands: [], root: "r" })).toThrow(/entrance/);
+  });
+
+  it("is refused when what is said of Claude Code is a state or a billing the screen does not know", () => {
+    const said = replies.answers["read_claude_status_subscription"] as {
+      claude: { client: Record<string, unknown>; account: Record<string, unknown>; sign_in: unknown[] };
+    };
+    const withAccount = (patch: Record<string, unknown>) => ({
+      claude: { ...said.claude, account: { ...said.claude.account, ...patch } },
+    });
+    expect(() => parseClaudeStatus(withAccount({ state: "asleep" }))).toThrow(/state/);
+    expect(() => parseClaudeStatus(withAccount({ billing: "free" }))).toThrow(/billing/);
+    expect(() => parseClaudeStatus(withAccount({ usable: "yes" }))).toThrow(/usable/);
+    expect(() => parseClaudeStatus({ claude: { ...said.claude, client: { state: "broken" } } })).toThrow(/client/);
+    expect(() => parseClaudeStatus({ claude: { ...said.claude, sign_in: [{ billing: "free", command: "x" }] } })).toThrow(
+      /billing/,
+    );
+    expect(() => parseClaudeStatus({})).toThrow(/read_claude_status/);
   });
 
   it("is accepted when the core has added a field the screen does not read", () => {

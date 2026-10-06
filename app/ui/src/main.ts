@@ -55,6 +55,8 @@ const app = new App(root, {
   storage,
   browserLanguage: navigator.language,
   ticker: browserTicker,
+  // Where the clipboard is there (a secure page, or the desktop window), a command can be copied.
+  copy: navigator.clipboard === undefined ? undefined : (text) => navigator.clipboard.writeText(text),
 });
 void app.start();
 

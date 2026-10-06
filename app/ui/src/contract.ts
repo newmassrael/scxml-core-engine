@@ -262,6 +262,8 @@ export interface Described {
   readonly settings: boolean;
   /** Whether it may change what is in it: only the desktop window does. */
   readonly writes_settings: boolean;
+  /** Whether it may start a program of the person's to ask it something: only the desktop window does. */
+  readonly starts_programs: boolean;
 }
 
 /** Which kind of client or server a connection reaches. */
@@ -316,6 +318,47 @@ export interface AuthPolicy {
     readonly decision: RouteDecision;
   }[];
   readonly switched_off: readonly string[];
+}
+
+/** How a way of signing in is billed: against a plan, by use, or by a cloud provider. */
+export type Billing = "subscription" | "usage" | "provider";
+
+/** Whether Claude Code is there. `unverified` is a file that did not answer `--version`. */
+export type ClaudeClient =
+  | { readonly state: "installed"; readonly version: string }
+  | { readonly state: "unverified" }
+  | { readonly state: "missing" };
+
+/**
+ * Who is signed in to it. `unknown` is a client that could not be asked, which is not nobody:
+ * a screen that offered a sign-in for a question that failed would send a person to log in for nothing.
+ */
+export type ClaudeAccount =
+  | {
+      readonly state: "signed-in";
+      readonly route: string;
+      /** `null` for a way that is none of the three. */
+      readonly billing: Billing | null;
+      /** The variable that decided it, when the client said one did: a name, never a value. */
+      readonly environment: string | null;
+      /** Whether a generation would use it. */
+      readonly usable: boolean;
+      readonly decision: RouteDecision;
+    }
+  | { readonly state: "signed-out" }
+  | { readonly state: "unknown"; readonly reason: string };
+
+/** A command that signs in, as a person runs it in a terminal, and how it bills. */
+export interface SignInCommand {
+  readonly billing: Billing;
+  readonly command: string;
+}
+
+/** `read_claude_status`. */
+export interface ClaudeStatus {
+  readonly client: ClaudeClient;
+  readonly account: ClaudeAccount;
+  readonly sign_in: readonly SignInCommand[];
 }
 
 export interface WorkAndHead {
@@ -1393,6 +1436,7 @@ export function parseDescribed(value: unknown): Described {
     entrance: oneOf(r, "entrance", "describe", ["desktop", "browser", "tool"] as const),
     settings: flag(r, "settings", "describe"),
     writes_settings: flag(r, "writes_settings", "describe"),
+    starts_programs: flag(r, "starts_programs", "describe"),
   };
 }
 
@@ -1513,6 +1557,47 @@ export function parseAuthPolicy(value: unknown): AuthPolicy {
   };
 }
 
+const BILLINGS = ["subscription", "usage", "provider"] as const;
+
+/** `read_claude_status`. */
+export function parseClaudeStatus(value: unknown): ClaudeStatus {
+  const where = "read_claude_status";
+  const claude = record(record(value, where)["claude"], `${where}.claude`);
+  const clientAt = `${where}.client`;
+  const client = record(claude["client"], clientAt);
+  const accountAt = `${where}.account`;
+  const account = record(claude["account"], accountAt);
+  return {
+    client: parseClaudeClient(client, clientAt),
+    account: parseClaudeAccount(account, accountAt),
+    sign_in: list(claude, "sign_in", where).map((entry, i) => {
+      const at = `${where}.sign_in[${i}]`;
+      const command = record(entry, at);
+      return { billing: oneOf(command, "billing", at, BILLINGS), command: text(command, "command", at) };
+    }),
+  };
+}
+
+function parseClaudeClient(client: Obj, where: string): ClaudeClient {
+  const state = oneOf(client, "state", where, ["installed", "unverified", "missing"] as const);
+  return state === "installed" ? { state, version: text(client, "version", where) } : { state };
+}
+
+function parseClaudeAccount(account: Obj, where: string): ClaudeAccount {
+  const state = oneOf(account, "state", where, ["signed-in", "signed-out", "unknown"] as const);
+  if (state === "signed-out") return { state };
+  if (state === "unknown") return { state, reason: text(account, "reason", where) };
+  const billing = account["billing"];
+  return {
+    state,
+    route: text(account, "route", where),
+    billing: billing === null || billing === undefined ? null : oneOf(account, "billing", where, BILLINGS),
+    environment: nullableText(account, "environment", where),
+    usable: flag(account, "usable", where),
+    decision: parseRouteDecision(account["decision"], `${where}.decision`),
+  };
+}
+
 /** Whether `value` is a refusal in the core's shape (what a rejected call carries). */
 export function asCommandError(value: unknown): CommandErrorBody | null {
   if (typeof value !== "object" || value === null) return null;
@@ -1521,6 +1606,17 @@ export function asCommandError(value: unknown): CommandErrorBody | null {
   return r["detail"] === undefined
     ? { kind: r["kind"], message: r["message"] }
     : { kind: r["kind"], message: r["message"], detail: r["detail"] };
+}
+
+/**
+ * What a `moved` refusal says moved (`source`, `answers`, `connection`), as the core names it.
+ * A refusal that names nothing, or names it in another shape, names no part: it is not a guess
+ * at which one it was.
+ */
+export function movedInRefusal(detail: unknown): string[] {
+  if (typeof detail !== "object" || detail === null) return [];
+  const moved = (detail as Obj)["moved"];
+  return Array.isArray(moved) ? moved.filter((part): part is string => typeof part === "string") : [];
 }
 
 /** The two revisions a `conflict` carries: the one the caller wrote from, and the current one. */

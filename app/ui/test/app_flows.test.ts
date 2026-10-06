@@ -134,6 +134,30 @@ class FakeCore implements Transport {
     }));
   }
 
+  private connectionList: Array<{ id: string; model: string | null; revision: string }> = [];
+  private defaultConnection: string | null = null;
+  private claudeStatus: unknown = {
+    claude: {
+      client: { state: "installed", version: "2.1.291" },
+      account: { state: "signed-out" },
+      sign_in: [
+        { billing: "subscription", command: "claude auth login" },
+        { billing: "usage", command: "claude auth login --console" },
+      ],
+    },
+  };
+
+  /** The connections the person keeps, and which is the default. */
+  setConnections(list: Array<{ id: string; model: string | null; revision: string }>, defaultId: string | null): void {
+    this.connectionList = list;
+    this.defaultConnection = defaultId;
+  }
+
+  /** What Claude Code is, and who is signed in to it, as the core says it. */
+  setClaudeStatus(status: unknown): void {
+    this.claudeStatus = status;
+  }
+
   /** The latest request of a work, as the core keeps it. */
   latestRequest(id: string): FakeRequest | undefined {
     return this.requestsOf.get(id)?.at(-1);
@@ -391,6 +415,7 @@ class FakeCore implements Transport {
           entrance: "desktop",
           settings: true,
           writes_settings: true,
+          starts_programs: true,
         };
       case "read_work_heads": {
         if (work === undefined) throw new CommandFailure("not-found", "work `absent`");
@@ -421,6 +446,15 @@ class FakeCore implements Transport {
         ];
         if (moved.length > 0) {
           throw new CommandFailure("moved", `${moved.join(", ")} moved since you read them`, { moved });
+        }
+        const named = args["connection"] as { id: string; revision: string } | undefined;
+        if (named !== undefined) {
+          const kept = this.connectionList.find((c) => c.id === named.id);
+          if (kept === undefined || kept.revision !== named.revision) {
+            throw new CommandFailure("moved", "the connection was changed after it was read", {
+              moved: ["connection"],
+            });
+          }
         }
         const open = this.latestRequest(id);
         if (open !== undefined && ["queued", "running", "interrupted"].includes(open.state)) {
@@ -460,6 +494,26 @@ class FakeCore implements Transport {
         found.state = "cancelled";
         return { request: this.requestJson(id, found) };
       }
+      case "list_connections":
+        return {
+          connections: this.connectionList.map((c) => ({
+            connection: {
+              id: c.id,
+              adapter: "claude-code",
+              display_name: null,
+              executable: null,
+              model: c.model,
+              auth: "official-login",
+              server_url: null,
+              limits: { turns: null, seconds: null },
+            },
+            revision: c.revision,
+          })),
+          unreadable: [],
+          default: this.defaultConnection,
+        };
+      case "read_claude_status":
+        return this.claudeStatus;
       case "read_host_status":
         return {
           hosts: this.hostList.map((h) => ({
@@ -3105,6 +3159,71 @@ describe("asking for a model", () => {
     await click("Empty");
 
     expect(button("generate")?.disabled).toBe(true);
+  });
+
+  it("makes the request for the connection that is the default, at the revision it read", async () => {
+    core.setConnections([{ id: "claude", model: "opus", revision: hex(7) }], "claude");
+    await app.start();
+    await settle();
+    await click("Alpha");
+
+    await press("generate");
+
+    expect(core.callsOf("request_generation")[0]).toMatchObject({
+      connection: { id: "claude", revision: hex(7) },
+    });
+    expect(root.textContent).toContain("Will ask: Claude Code (opus)");
+  });
+
+  it("makes a request for no connection when none is chosen, and says none is", async () => {
+    await click("Alpha");
+
+    await press("generate");
+
+    expect(core.callsOf("request_generation")[0]).not.toHaveProperty("connection");
+    expect(root.textContent).toContain("No AI connection is chosen yet");
+  });
+
+  it("says the connection moved, reads it again, and asks nothing, when it changed after it was read", async () => {
+    core.setConnections([{ id: "claude", model: "opus", revision: hex(7) }], "claude");
+    await app.start();
+    await settle();
+    await click("Alpha");
+    core.setConnections([{ id: "claude", model: "sonnet", revision: hex(8) }], "claude");
+
+    await press("generate");
+
+    expect(root.textContent).toContain("The AI connection was changed after this screen read it");
+    expect(root.textContent).toContain("Will ask: Claude Code (sonnet)");
+    expect(core.callsOf("list_connections").length).toBeGreaterThanOrEqual(2);
+    // The press that was refused made no request; the next press asks for the revision now kept.
+    await press("generate");
+    expect(core.callsOf("request_generation").at(-1)).toMatchObject({
+      connection: { id: "claude", revision: hex(8) },
+    });
+  });
+
+  it("shows the AI connection, with the commands that sign in when nobody is", async () => {
+    const panel = root.querySelector("#ai-settings");
+    expect(panel).not.toBeNull();
+    expect(core.callsOf("read_claude_status")).toHaveLength(1);
+    (panel as HTMLDetailsElement).open = true;
+    (panel as HTMLDetailsElement).dispatchEvent(new Event("toggle"));
+    expect([...(panel?.querySelectorAll("code") ?? [])].map((c) => c.textContent)).toEqual([
+      "claude auth login",
+      "claude auth login --console",
+    ]);
+  });
+
+  it("keeps the panel open through a redraw that is not the person's", async () => {
+    core.setAdapters([{ name: "desktop" }]);
+    const panel = root.querySelector<HTMLDetailsElement>("#ai-settings")!;
+    panel.open = true;
+    panel.dispatchEvent(new Event("toggle"));
+
+    await click("Alpha");
+
+    expect(root.querySelector<HTMLDetailsElement>("#ai-settings")?.open).toBe(true);
   });
 
   it("asks about the text the screen shows, and says the request waits for the AI", async () => {

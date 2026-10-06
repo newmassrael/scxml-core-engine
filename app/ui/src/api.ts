@@ -7,13 +7,19 @@
 import {
   ContractError,
   parseAdapterListing,
+  parseAuthPolicy,
   parseBundleRead,
+  parseClaudeStatus,
+  parseConnectionListing,
+  parseDefaultConnection,
+  parseDeletedConnection,
   parseDescribed,
   parseFigures,
   parseHistory,
   parseHostListing,
   parseJudgment,
   parseListing,
+  parseReadConnection,
   parseRegisteredRequest,
   parseRequestList,
   parseRequestReply,
@@ -29,8 +35,12 @@ import {
   sameBasis,
   type AdapterListing,
   type Answers,
+  type AuthPolicy,
   type Basis,
   type BundleRead,
+  type ClaudeStatus,
+  type Connection,
+  type ConnectionListing,
   type Described,
   type Figures,
   type GenerationRequest,
@@ -43,6 +53,7 @@ import {
   type Revision,
   type Saved,
   type SourceText,
+  type StoredConnection,
   type Work,
   type WorkAndHead,
   type WorkHeads,
@@ -134,6 +145,7 @@ export interface Api {
     key: string,
     expect: { readonly source: Revision; readonly answers: Revision | null },
     supersede?: boolean,
+    connection?: ConnectionRef,
   ): Promise<RegisteredRequest>;
   /** One request of the work, as the clock reads it now. */
   readRequest(id: string, request: string): Promise<GenerationRequest>;
@@ -153,6 +165,37 @@ export interface Api {
    * undone by hand; every later read or save of it is refused as `not-found`.
    */
   removeWork(id: string): Promise<Work>;
+  /** The connections the person keeps, each with the revision it is kept under, and the default. */
+  listConnections(): Promise<ConnectionListing>;
+  /** One connection as it is now, or as it was at `revision`; `null` when there is none. */
+  readConnection(id: string, revision?: Revision): Promise<StoredConnection | null>;
+  /** Which ways of signing in the build uses, and the decision for each. */
+  readAuthPolicy(): Promise<AuthPolicy>;
+  /**
+   * Save `connection` on top of `base` (`null` for a connection's first save). Refused with
+   * `conflict` when `base` is no longer current, and with `not-allowed-here` by any entrance
+   * but the desktop window.
+   */
+  saveConnection(connection: Connection, base: Revision | null): Promise<Saved>;
+  /** Forget a connection. Requests made for it keep the revision they were made with. */
+  deleteConnection(id: string, base: Revision): Promise<string>;
+  /**
+   * Make `id` the connection a new request uses (`null` for none). `expect` is the default the
+   * screen read, so that two windows do not overwrite each other's choice unseen.
+   */
+  setDefaultConnection(id: string | null, expect: string | null): Promise<string | null>;
+  /**
+   * Whether Claude Code is installed, who is signed in to it, and how that is billed. Starts the
+   * program to ask it, so only the desktop window may; any other entrance is refused with
+   * `not-allowed-here`.
+   */
+  readClaudeStatus(): Promise<ClaudeStatus>;
+}
+
+/** A connection and the revision of it the person read: what a request is made for. */
+export interface ConnectionRef {
+  readonly id: string;
+  readonly revision: Revision;
 }
 
 export function apiOver(transport: Transport): Api {
@@ -226,8 +269,15 @@ export function apiOver(transport: Transport): Api {
     async readWorkHeads(id) {
       return parseWorkHeads(await transport.call("read_work_heads", { id }));
     },
-    async requestGeneration(id, key, expect, supersede = false) {
-      const args = { id, key, origin: "gui", expect, supersede };
+    async requestGeneration(id, key, expect, supersede = false, connection) {
+      const args = {
+        id,
+        key,
+        origin: "gui",
+        expect,
+        supersede,
+        ...(connection === undefined ? {} : { connection }),
+      };
       return parseRegisteredRequest(await transport.call("request_generation", args));
     },
     async readRequest(id, request) {
@@ -247,6 +297,28 @@ export function apiOver(transport: Transport): Api {
     },
     async removeWork(id) {
       return parseRemoved(await transport.call("remove_work", { id }));
+    },
+    async listConnections() {
+      return parseConnectionListing(await transport.call("list_connections"));
+    },
+    async readConnection(id, revision) {
+      const args = revision === undefined ? { id } : { id, revision };
+      return parseReadConnection(await transport.call("read_connection", args));
+    },
+    async readAuthPolicy() {
+      return parseAuthPolicy(await transport.call("read_auth_policy"));
+    },
+    async saveConnection(connection, base) {
+      return parseSaved(await transport.call("save_connection", { connection, base }));
+    },
+    async deleteConnection(id, base) {
+      return parseDeletedConnection(await transport.call("delete_connection", { id, base }));
+    },
+    async setDefaultConnection(id, expect) {
+      return parseDefaultConnection(await transport.call("set_default_connection", { id, expect }));
+    },
+    async readClaudeStatus() {
+      return parseClaudeStatus(await transport.call("read_claude_status"));
     },
   };
 }

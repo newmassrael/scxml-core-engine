@@ -24,6 +24,7 @@ import {
   type Shown,
   type Withheld,
 } from "./acceptance_model";
+import { AiSettings } from "./ai_settings";
 import { apiOver, type Api } from "./api";
 import { answerState, type AnswerState } from "./answer_states";
 import { comparePages, previousOf, type ChangePanel } from "./change_model";
@@ -44,6 +45,7 @@ import {
   ContractError,
   SUPPORTED_COMMAND_SET_VERSION,
   isOpenRequest,
+  movedInRefusal,
   type AdapterListing,
   type Basis,
   type BundleRead,
@@ -166,6 +168,8 @@ export interface Environment {
    * person does something.
    */
   readonly ticker?: Ticker | undefined;
+  /** Put text on the clipboard, where there is one: what lets the settings offer to copy a command. */
+  readonly copy?: ((text: string) => Promise<void>) | undefined;
 }
 
 export class App {
@@ -177,6 +181,8 @@ export class App {
   /** Set when nothing can work: the screen shows it and stops. */
   private fatal: string | null = null;
   private described: Described | null = null;
+  /** The AI connection settings; made when the core has said what this window may do. */
+  private ai: AiSettings | null = null;
   private listing: Listing | null = null;
   private selected: Work | null = null;
   private editor: EditorModel | null = null;
@@ -282,11 +288,22 @@ export class App {
         return;
       }
       this.listing = await this.api.listWorks();
+      this.ai = new AiSettings({
+        api: this.api,
+        described: this.described,
+        t: (key, values) => this.t(key, values),
+        redraw: () => this.render(),
+        handled: (error) => this.askForToken(error),
+        explain: (error) => this.explain(error),
+        copy: this.env.copy,
+      });
       this.needsToken = false;
       this.triedToken = false;
     });
     this.loading = false;
     this.render();
+    // After the first drawing: asking Claude Code can take seconds, and the works are not waiting for it.
+    void this.ai?.load().then(() => this.render());
   }
 
   private async signIn(pasted: string): Promise<void> {
@@ -507,6 +524,7 @@ export class App {
         pressKey(),
         { source: editor.base, answers: this.answers?.base ?? null },
         replace,
+        this.ai?.connectionForRequest() ?? undefined,
       );
       if (session !== this.session) return;
       this.requestHead = {
@@ -519,8 +537,15 @@ export class App {
       if (session !== this.session) return;
       if (this.askForToken(error)) return;
       if (error instanceof CommandFailure && error.kind === "moved") {
-        this.requestNotice = this.t("generationMoved");
-        void this.lookAgain(work, session).catch(() => undefined);
+        const parts = movedInRefusal(error.detail);
+        const connectionMoved = parts.includes("connection");
+        this.requestNotice = this.t(connectionMoved ? "generationConnectionMoved" : "generationMoved");
+        // What the person has now is shown, so that the next press asks for that and not for what was read.
+        if (connectionMoved) await this.ai?.reload();
+        // A refusal that names no part is read as the text having moved, as it always was.
+        if (!connectionMoved || parts.some((part) => part !== "connection")) {
+          void this.lookAgain(work, session).catch(() => undefined);
+        }
       } else if (error instanceof CommandFailure && error.kind === "active-request") {
         this.requestNotice = this.t("generationActive");
         this.offerReplace = true;
@@ -1740,6 +1765,7 @@ export class App {
         : null,
       h("h3", {}, this.t("newWork")),
       form,
+      this.ai?.view() ?? null,
     );
   }
 
@@ -1913,6 +1939,7 @@ export class App {
         { id: "generation-status", class: "status", role: "status", "aria-live": "polite" },
         busyWords ?? this.generationWords(status, modelHere),
       ),
+      this.ai === null ? null : h("p", { id: "generation-target", class: "muted" }, this.ai.targetLine()),
       this.requestNotice === null
         ? null
         : h(
