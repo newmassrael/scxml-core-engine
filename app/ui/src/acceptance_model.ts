@@ -126,14 +126,21 @@ export function basisOf(snapshot: WorkSnapshot): Basis | null {
 /**
  * The panel for the work `snapshot` holds, from what SCE said of those revisions. Every part is
  * of the snapshot: the list is its list, the measure and the standing were asked of its revisions
- * by name, so nothing has to be compared and no part can be of another state of the work. SCE not
- * measuring is a state of the panel (`measureFailure`); SCE not judging the acceptance is a
+ * by name, so nothing has to be compared and no part can be of another state of the work. Where
+ * the design and the list stand to the text is the snapshot's own word, read in the same state as
+ * the revisions: SCE's measure is of their content and does not say it, since the same bytes kept
+ * again for a later text would otherwise change what was said of the state that was read. SCE
+ * not measuring is a state of the panel (`measureFailure`); SCE not judging the acceptance is a
  * failure of it, since whether the owner's acceptance holds is not something to guess at.
  */
 export function panelOf(snapshot: WorkSnapshot, judgment: Judgment): AcceptancePanel {
   const list = snapshot.requirements;
   const source = snapshot.source;
+  const { model_standing, requirements_standing } = snapshot;
   if (list === null || source === null) return { phase: "no-list" };
+  if (model_standing === null || requirements_standing === null) {
+    throw new ContractError("snapshot", "a standing for every part it holds");
+  }
   const held = snapshot.acceptance;
   // A verdict is asked for exactly when an acceptance was made, so an answer that disagrees is a
   // caller that did not ask what it should have, which is not shown as if nothing was accepted.
@@ -153,9 +160,17 @@ export function panelOf(snapshot: WorkSnapshot, judgment: Judgment): AcceptanceP
     phase: "read",
     state: {
       basis: judgment.basis,
-      list: { requirements: list, source_head: source.revision, standing: snapshot.requirements_standing },
+      list: { requirements: list, source_head: source.revision, standing: requirements_standing },
       acceptance,
-      report: judgment.report.said ? judgment.report.value : null,
+      report: judgment.report.said
+        ? {
+            ...judgment.report.value,
+            basis: judgment.basis,
+            source_head: source.revision,
+            model_standing,
+            requirements_standing,
+          }
+        : null,
       measureFailure: judgment.report.said ? null : judgment.report.refusal.message,
       accepting: false,
       refusal: null,

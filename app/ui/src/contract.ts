@@ -198,12 +198,12 @@ export interface RequirementOutcome {
   readonly node_paths: readonly string[];
 }
 
-/** `requirements_report`: SCE's measure of the design against the list, and the page the owner reads before accepting. */
-export interface RequirementsReport {
-  readonly basis: Basis;
-  readonly source_head: Revision | null;
-  readonly model_standing: Standing;
-  readonly requirements_standing: Standing;
+/**
+ * SCE's measure of a design against a list, in its words, and the page the owner reads before
+ * accepting. It is a function of the design and the list and says nothing of which text they
+ * were written for: that is a claim made about them, which can change with the design the same.
+ */
+export interface Measure {
   readonly generator: string | null;
   /** What the list is a denominator OF, as SCE states it. */
   readonly denominator: string | null;
@@ -211,6 +211,18 @@ export interface RequirementsReport {
   /** SCE's acceptance page; `null` when SCE did not write it (see `page_refusal`). */
   readonly page: string | null;
   readonly page_refusal: PageRefusal | null;
+}
+
+/**
+ * `requirements_report`: the measure of the work as it stands, with the revisions it was made
+ * against and where the design and the list stand to the text. The screen puts one together from
+ * the snapshot it read and the measure SCE gave of that snapshot's revisions (`panelOf`).
+ */
+export interface RequirementsReport extends Measure {
+  readonly basis: Basis;
+  readonly source_head: Revision | null;
+  readonly model_standing: Standing;
+  readonly requirements_standing: Standing;
 }
 
 /** Whether the owner's acceptance still holds for the work as it is now: SCE's answer. */
@@ -296,13 +308,16 @@ export interface AcceptanceVerdict {
  * `read_judgment`: what SCE says of the revisions it was asked about, and of no other. A
  * revision is never rewritten, so the answer is of the design that was read, whatever has been
  * saved since; a screen that shows a work and then asks about the revisions it shows has a verdict
- * that is of what it shows, and nothing to compare. `basis` is what was asked, echoed.
+ * that is of what it shows, and nothing to compare. `basis` is what was asked, echoed. It is a
+ * function of the revisions' content alone: where the design stands to the text is a claim made
+ * about it, which a later save can change without changing the design, and it is said by the
+ * snapshot the revisions were read in.
  */
 export interface Judgment {
   readonly basis: Basis;
   /** `null` exactly when no acceptance was named. */
   readonly acceptance: Judged<AcceptanceVerdict> | null;
-  readonly report: Judged<RequirementsReport>;
+  readonly report: Judged<Measure>;
 }
 
 /**
@@ -847,18 +862,14 @@ export function parseReadRequirements(value: unknown): ReadRequirements {
   };
 }
 
-/** `requirements_report`. */
-export function parseRequirementsReport(value: unknown, where = "requirements_report"): RequirementsReport {
+/** What `requirements_report` and `read_judgment` both say of a measure, in the same words. */
+export function parseMeasure(value: unknown, where: string): Measure {
   const r = record(value, where);
   const generator = r["generator"];
   if (generator !== null && typeof generator !== "string") {
     throw new ContractError(`${where}.generator`, "a string or null");
   }
   return {
-    basis: parseBasis(r["basis"], `${where}.basis`),
-    source_head: nullableRevision(r["source_head"], `${where}.source_head`),
-    model_standing: standing(r["model_standing"], `${where}.model_standing`),
-    requirements_standing: standing(r["requirements_standing"], `${where}.requirements_standing`),
     generator,
     denominator: nullableText(r, "denominator", where),
     outcomes: list(r, "outcomes", where).map((o, i) => {
@@ -873,6 +884,19 @@ export function parseRequirementsReport(value: unknown, where = "requirements_re
     }),
     page: nullableText(r, "page", where),
     page_refusal: parsePageRefusal(r["page_refusal"], `${where}.page_refusal`),
+  };
+}
+
+/** `requirements_report`. */
+export function parseRequirementsReport(value: unknown): RequirementsReport {
+  const where = "requirements_report";
+  const r = record(value, where);
+  return {
+    basis: parseBasis(r["basis"], `${where}.basis`),
+    source_head: nullableRevision(r["source_head"], `${where}.source_head`),
+    model_standing: standing(r["model_standing"], `${where}.model_standing`),
+    requirements_standing: standing(r["requirements_standing"], `${where}.requirements_standing`),
+    ...parseMeasure(value, where),
   };
 }
 
@@ -1247,26 +1271,17 @@ export function sameBasis(a: Basis, b: Basis): boolean {
 }
 
 /**
- * `read_judgment`. The guard holds the core to what makes a screen's comparisons unnecessary:
- * the measure is of the same revisions the judgment names. That the judgment names the revisions
- * that were asked about is the caller's to hold it to (`Api.readJudgment`), since only the caller
- * knows what it asked.
+ * `read_judgment`. That the judgment names the revisions that were asked about is the caller's
+ * to hold it to (`Api.readJudgment`), since only the caller knows what it asked.
  */
 export function parseJudgment(value: unknown): Judgment {
   const where = "read_judgment";
   const r = record(value, where);
-  const basis = parseBasis(r["basis"], `${where}.basis`);
   const accepted = r["acceptance"];
   return {
-    basis,
+    basis: parseBasis(r["basis"], `${where}.basis`),
     acceptance: accepted === null ? null : parseJudged(accepted, `${where}.acceptance`, parseAcceptanceVerdict),
-    report: parseJudged(r["report"], `${where}.report`, (v, w) => {
-      const measured = parseRequirementsReport(v, w);
-      if (!sameBasis(measured.basis, basis)) {
-        throw new ContractError(`${w}.basis`, "the revisions the judgment names");
-      }
-      return measured;
-    }),
+    report: parseJudged(r["report"], `${where}.report`, parseMeasure),
   };
 }
 

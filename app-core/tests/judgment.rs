@@ -120,7 +120,15 @@ fn a_judgment_says_what_the_commands_that_judge_the_work_as_it_stands_say() {
     let acceptance = run(&store, "read_acceptance", json!({"id": work.id}));
 
     assert_eq!(judged["basis"], now);
-    assert_eq!(judged["report"]["said"], report);
+    for key in [
+        "generator",
+        "denominator",
+        "outcomes",
+        "page",
+        "page_refusal",
+    ] {
+        assert_eq!(judged["report"]["said"][key], report[key], "{key}");
+    }
     assert_eq!(
         judged["acceptance"]["said"]["standing"],
         acceptance["standing"]
@@ -145,16 +153,15 @@ fn a_judgment_is_of_the_revisions_it_was_asked_about_whatever_was_saved_since() 
     );
     assert_eq!(before["acceptance"]["said"]["standing"], "holds");
     assert_eq!(before["basis"], work.basis);
-    assert_eq!(before["report"]["said"]["basis"], work.basis);
 
-    // Asked of the design as it stands, it has lapsed, and the measure names that design.
+    // Asked of the design as it stands, it has lapsed.
     let after = run(
         &store,
         "read_judgment",
         json!({"id": work.id, "basis": moved, "acceptance": work.acceptance}),
     );
     assert_eq!(after["acceptance"]["said"]["standing"], "lapsed");
-    assert_eq!(after["report"]["said"]["basis"], moved);
+    assert_eq!(after["basis"], moved);
 
     // The work is put back as it was accepted: asked of the design as it stands, it holds.
     run(
@@ -171,6 +178,121 @@ fn a_judgment_is_of_the_revisions_it_was_asked_about_whatever_was_saved_since() 
     assert_eq!(restored["acceptance"]["said"]["standing"], "holds");
 }
 
+/// The same bytes kept again for a text that came after them: the revision is the same, and
+/// what changed is the claim of which text they were written for. A judgment is of the bytes.
+fn a_judgment_does_not_follow_a_later_claim(part: &str) {
+    let store = store(&format!("judgment-claim-{part}"));
+    let id = run(&store, "create_work", json!({"title": "Completion signal"}))["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let source = run(
+        &store,
+        "save_source",
+        json!({"id": id, "text": "Wait for completion."}),
+    )["revision"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let text = "<scxml><!-- OPEN --></scxml>";
+    let manifest = "{\"doc_id\":\"completion\",\"rev\":\"1\",\"requirements\":[{\"id\":\"R1\"}]}\n";
+    let model = run(
+        &store,
+        "save_model",
+        json!({"id": id, "text": text, "written_for": source}),
+    )["revision"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let list = run(
+        &store,
+        "save_requirements",
+        json!({"id": id, "manifest": manifest, "written_for": source}),
+    )["revision"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let basis = json!({"source": source, "model": model, "requirements": list});
+    let snapshot = run(&store, "read_work_snapshot", json!({"id": id}));
+    let field = format!("{part}_standing");
+    assert_eq!(snapshot[&field], "current");
+    let before = run(&store, "read_judgment", json!({"id": id, "basis": basis}));
+
+    // The text moves on, and the same bytes are kept again for it.
+    let later = run(
+        &store,
+        "save_source",
+        json!({"id": id, "base": source, "text": "Wait for completion. Revised."}),
+    )["revision"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let kept = if part == "model" {
+        run(
+            &store,
+            "save_model",
+            json!({"id": id, "text": text, "base": model, "written_for": later}),
+        )
+    } else {
+        run(
+            &store,
+            "save_requirements",
+            json!({"id": id, "manifest": manifest, "base": list, "written_for": later}),
+        )
+    };
+    assert_eq!(kept["revision"], basis[part], "the bytes did not change");
+    let moved = run(&store, "read_work_snapshot", json!({"id": id}));
+    assert_eq!(
+        moved[&field], "current",
+        "the claim did move, to the later text"
+    );
+
+    // What SCE says of the named revisions is of their bytes: it does not change with a claim
+    // made after they were read, and it carries no claim to change (where a screen's design
+    // stands to the text is the snapshot's to say, read in the same state as the revisions).
+    let after = run(&store, "read_judgment", json!({"id": id, "basis": basis}));
+    assert_eq!(after, before);
+    for key in ["source_head", "model_standing", "requirements_standing"] {
+        assert!(before["report"]["said"].get(key).is_none(), "{key}");
+    }
+}
+
+#[test]
+fn a_judgment_of_a_model_does_not_follow_a_later_claim_of_which_text_it_was_written_for() {
+    a_judgment_does_not_follow_a_later_claim("model");
+}
+
+#[test]
+fn a_judgment_of_a_list_does_not_follow_a_later_claim_of_which_text_it_was_written_for() {
+    a_judgment_does_not_follow_a_later_claim("requirements");
+}
+
+#[test]
+fn the_measure_is_of_the_revisions_it_was_asked_about_too() {
+    // A design that misses a requirement is measured as missing it, and the design before it is
+    // still measured as it was, when the work has moved on.
+    let store = store("judgment-measure-of-the-named-revisions");
+    let work = an_accepted_work(&store);
+    run(
+        &store,
+        "save_model",
+        json!({"id": work.id, "text": "<scxml><!-- MISSING --></scxml>",
+               "base": work.model, "written_for": work.head}),
+    );
+    let now = run(&store, "read_acceptance", json!({"id": work.id}))["now"].clone();
+
+    let outcome = |basis: &Value| {
+        run(
+            &store,
+            "read_judgment",
+            json!({"id": work.id, "basis": basis}),
+        )["report"]["said"]["outcomes"][0]["outcome"]
+            .clone()
+    };
+    assert_eq!(outcome(&now), "missing");
+    assert_eq!(outcome(&work.basis), "implemented");
+}
+
 #[test]
 fn nothing_is_said_of_an_acceptance_that_was_not_named() {
     let store = store("judgment-no-acceptance");
@@ -183,7 +305,8 @@ fn nothing_is_said_of_an_acceptance_that_was_not_named() {
     );
 
     assert_eq!(judged["acceptance"], Value::Null);
-    assert_eq!(judged["report"]["said"]["basis"], work.basis);
+    assert_eq!(judged["basis"], work.basis);
+    assert!(judged["report"]["said"]["outcomes"].is_array());
 }
 
 #[test]

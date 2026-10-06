@@ -542,14 +542,8 @@
       },
       "report": {
         "said": {
-          "basis": {
-            "model": "d04a9a83aac49bced5e6628fcf2579eb56ff8ba6016cb3d53f04e2212285bcc2",
-            "requirements": "4d86ca1649ee720dca5c51bc7817f96f64c1b8dc23e0b528b7b82715b0fd2a6d",
-            "source": "00277e3a4c223a2ec90dd8eebf4d691b8d266dac58f270f25f5201e314803d44"
-          },
           "denominator": "synthesized",
           "generator": "fake-sce 0",
-          "model_standing": "current",
           "outcomes": [
             {
               "id": "R1",
@@ -569,9 +563,7 @@
             }
           ],
           "page": "ACCEPTANCE REPORT of 2 requirement(s)\n",
-          "page_refusal": null,
-          "requirements_standing": "current",
-          "source_head": "00277e3a4c223a2ec90dd8eebf4d691b8d266dac58f270f25f5201e314803d44"
+          "page_refusal": null
         }
       }
     },
@@ -589,14 +581,8 @@
       },
       "report": {
         "said": {
-          "basis": {
-            "model": "0c2ab3203427b9e511dd0e7e6036bebbb82f82ca844dd999705fb2d51cfd3bca",
-            "requirements": "4d86ca1649ee720dca5c51bc7817f96f64c1b8dc23e0b528b7b82715b0fd2a6d",
-            "source": "00277e3a4c223a2ec90dd8eebf4d691b8d266dac58f270f25f5201e314803d44"
-          },
           "denominator": "synthesized",
           "generator": "fake-sce 0",
-          "model_standing": "current",
           "outcomes": [
             {
               "id": "R1",
@@ -616,9 +602,7 @@
             }
           ],
           "page": "ACCEPTANCE REPORT of 2 requirement(s)\n",
-          "page_refusal": null,
-          "requirements_standing": "current",
-          "source_head": "00277e3a4c223a2ec90dd8eebf4d691b8d266dac58f270f25f5201e314803d44"
+          "page_refusal": null
         }
       }
     },
@@ -636,14 +620,8 @@
       },
       "report": {
         "said": {
-          "basis": {
-            "model": "d04a9a83aac49bced5e6628fcf2579eb56ff8ba6016cb3d53f04e2212285bcc2",
-            "requirements": "4d86ca1649ee720dca5c51bc7817f96f64c1b8dc23e0b528b7b82715b0fd2a6d",
-            "source": "00277e3a4c223a2ec90dd8eebf4d691b8d266dac58f270f25f5201e314803d44"
-          },
           "denominator": "synthesized",
           "generator": "fake-sce 0",
-          "model_standing": "current",
           "outcomes": [
             {
               "id": "R1",
@@ -663,9 +641,7 @@
             }
           ],
           "page": "ACCEPTANCE REPORT of 2 requirement(s)\n",
-          "page_refusal": null,
-          "requirements_standing": "current",
-          "source_head": "00277e3a4c223a2ec90dd8eebf4d691b8d266dac58f270f25f5201e314803d44"
+          "page_refusal": null
         }
       }
     },
@@ -678,14 +654,8 @@
       },
       "report": {
         "said": {
-          "basis": {
-            "model": "d04a9a83aac49bced5e6628fcf2579eb56ff8ba6016cb3d53f04e2212285bcc2",
-            "requirements": "4d86ca1649ee720dca5c51bc7817f96f64c1b8dc23e0b528b7b82715b0fd2a6d",
-            "source": "00277e3a4c223a2ec90dd8eebf4d691b8d266dac58f270f25f5201e314803d44"
-          },
           "denominator": "synthesized",
           "generator": "fake-sce 0",
-          "model_standing": "current",
           "outcomes": [
             {
               "id": "R1",
@@ -705,9 +675,7 @@
             }
           ],
           "page": "ACCEPTANCE REPORT of 2 requirement(s)\n",
-          "page_refusal": null,
-          "requirements_standing": "current",
-          "source_head": "00277e3a4c223a2ec90dd8eebf4d691b8d266dac58f270f25f5201e314803d44"
+          "page_refusal": null
         }
       }
     },

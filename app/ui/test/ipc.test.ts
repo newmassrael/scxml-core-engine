@@ -115,19 +115,7 @@ describe("the typed commands", () => {
     const answered = (over: Record<string, unknown> = {}): unknown => ({
       basis: named,
       acceptance: null,
-      report: {
-        said: {
-          basis: named,
-          source_head: A,
-          model_standing: "current",
-          requirements_standing: "current",
-          generator: null,
-          denominator: null,
-          outcomes: [],
-          page: null,
-          page_refusal: null,
-        },
-      },
+      report: { said: { generator: null, denominator: null, outcomes: [], page: null, page_refusal: null } },
       ...over,
     });
 
@@ -151,13 +139,7 @@ describe("the typed commands", () => {
       // The caller is the only one who knows what it asked: a core that answered about another design
       // would have the screen show that verdict beside the design it read.
       const other = { ...named, model: "e".repeat(64) };
-      const api = apiOver({
-        call: async () =>
-          answered({
-            basis: other,
-            report: { said: { ...(answered() as { report: { said: object } }).report.said, basis: other } },
-          }),
-      });
+      const api = apiOver({ call: async () => answered({ basis: other }) });
       await expect(api.readJudgment("w", basis, null)).rejects.toThrow(/read_judgment\.basis/);
     });
   });

@@ -243,6 +243,13 @@ class FakeCore implements Transport {
     this.acceptancesByRevision.set(record.revision, record);
   }
 
+  /** The same list kept again for another text: the revision is the same, and so is what SCE says of it. */
+  keepRequirementsFor(id: string, writtenFor: string | null): void {
+    const list = this.lists.get(id);
+    if (list === undefined) throw new Error(`${id} has no requirement list`);
+    list.writtenFor = writtenFor;
+  }
+
   /** SCE does not answer the next judgment's `part` (`report`: the measure; `acceptance`: whether it holds). */
   sceRefuses(part: "report" | "acceptance", kind: string, message: string): void {
     this.refusals.push({ part, kind, message });
@@ -548,11 +555,8 @@ class FakeCore implements Transport {
             refusedReport !== null
               ? { refused: refusedReport }
               : {
+                  // SCE's words about the bytes: where the design stands to the text is the snapshot's to say.
                   said: {
-                    basis,
-                    source_head: source.revision,
-                    model_standing: standingOf(model.writtenFor, source.revision),
-                    requirements_standing: standingOf(list.writtenFor, source.revision),
                     generator: "fake-sce 0",
                     denominator: "synthesized",
                     outcomes: list.ids.map((requirement, i) => ({
@@ -2427,6 +2431,35 @@ describe("a work that moves under the screen", () => {
     expect(verdict()).toContain("no longer holds");
     expect(verdict()).not.toContain("It holds");
   });
+
+  it.each(["model", "list"])(
+    "says where the %s stands to the text as the snapshot did, not as a claim made after it was read",
+    async (part) => {
+      // The same bytes can be kept again for a text that came later: the revision is the same, and
+      // so is what SCE says of it, but where the design stands to the text is a claim that moves.
+      // That is the snapshot's to say, read in the same state as the revisions SCE is asked about.
+      const earlier = core.revision("alpha one");
+      core.setModel("alpha", "<scxml/>", part === "model" ? earlier : headOf("alpha"));
+      core.setRequirements("alpha", part === "model" ? headOf("alpha") : earlier);
+      const asked = core.hold("read_judgment");
+      await click("Alpha");
+
+      // After the screen read it, the same bytes are kept again for the text as it is now.
+      if (part === "model") core.setModel("alpha", "<scxml/>", headOf("alpha"));
+      else core.keepRequirementsFor("alpha", headOf("alpha"));
+      asked.release();
+      await settle();
+
+      // What the screen read was behind the text, and it is still said so: SCE's word does not move it.
+      expect(acceptButton().disabled).toBe(true);
+      expect(acceptNote()).toContain("written for an earlier text");
+
+      // The next question reads where it stands now, and the design may be accepted.
+      await ticker.fire();
+      expect(acceptButton().disabled).toBe(false);
+      expect(acceptNote()).toBe("");
+    },
+  );
 
   it("keeps the design and the verdict it shows together while the next read of the work is slow", async () => {
     const accepted = "<scxml><!-- accepted --></scxml>";

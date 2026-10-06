@@ -650,14 +650,27 @@ fn work_now<C: Clock>(store: &WorkStore<C>, id: &WorkId) -> Result<WorkNow, Comm
     now_of(source, model, requirements, state.answers)
 }
 
-/// The work as the revisions `basis` name it, wherever the work is now. A revision's file is
+/// What the product is asked about and nothing more: the content of the revisions a basis names.
+///
+/// It carries no claim of which text the model and the list were written for. The same bytes can
+/// be kept again for a text that came later, and that is a claim made after the revisions were
+/// read: the store answers a revision with the latest claim made of it, so a judgment that
+/// reported where the design stands to the text would change with a save that did not change
+/// the design. Where it stands is a fact of one read of the work (`read_work_snapshot`, which
+/// says it beside the revisions), and a judgment is a function of the revisions alone.
+struct Revisions {
+    snapshot: Snapshot,
+    basis: Basis,
+}
+
+/// The content of the revisions `basis` names, wherever the work is now. A revision's file is
 /// never rewritten, so what is read is what was read when the basis was taken, whatever has
 /// been saved since; one the work does not keep is `not-found`.
 fn work_at<C: Clock>(
     store: &WorkStore<C>,
     id: &WorkId,
     basis: &Basis,
-) -> Result<WorkNow, CommandError> {
+) -> Result<Revisions, CommandError> {
     let source = store.read_source(id, Some(&basis.source))?;
     let model = store.read_model(id, Some(&basis.model))?;
     let requirements = store.read_requirements(id, Some(&basis.requirements))?;
@@ -665,12 +678,16 @@ fn work_at<C: Clock>(
         None => None,
         Some(revision) => store.read_answers(id, Some(revision))?,
     };
-    now_of(
+    let now = now_of(
         source.ok_or_else(|| none_saved("a text", id))?,
         model.ok_or_else(|| none_saved("a model", id))?,
         requirements.ok_or_else(|| none_saved("a requirement list", id))?,
         answers,
-    )
+    )?;
+    Ok(Revisions {
+        snapshot: now.snapshot,
+        basis: now.basis,
+    })
 }
 
 /// What the product is asked about, from the four parts of a work and the revisions they are.
@@ -747,22 +764,32 @@ fn acceptance_json(revision: &Revision, acceptance: &Acceptance) -> Value {
     })
 }
 
-/// What the product measured of the work as `now` puts it: against which revisions, where the
-/// model and the list stand to the text they were measured beside, and its outcomes. The source
-/// head is the text `now` holds, and not a later read of it.
-fn report_json(now: &WorkNow, report: &RequirementsReport) -> Value {
-    let source_head = &now.basis.source;
+/// What the product measured of a design against a list, in its words: who measured, what the
+/// list is a denominator of, each requirement's outcome, and the page the owner reads.
+fn measured_json(report: &RequirementsReport) -> Value {
     json!({
-        "basis": now.basis,
-        "source_head": source_head,
-        "model_standing": standing(now.model_written_for.as_ref(), Some(source_head)),
-        "requirements_standing": standing(now.requirements_written_for.as_ref(), Some(source_head)),
         "generator": report.generator,
         "denominator": report.denominator,
         "outcomes": report.outcomes,
         "page": report.page,
         "page_refusal": report.page_refusal,
     })
+}
+
+/// What the product measured of the work as `now` puts it, with the revisions it was measured
+/// against and where the model and the list stand to the text they were measured beside. The
+/// source head is the text `now` holds, and not a later read of it.
+fn report_json(now: &WorkNow, report: &RequirementsReport) -> Value {
+    let source_head = &now.basis.source;
+    let mut json = measured_json(report);
+    json["basis"] = json!(now.basis);
+    json["source_head"] = json!(source_head);
+    json["model_standing"] = json!(standing(now.model_written_for.as_ref(), Some(source_head)));
+    json["requirements_standing"] = json!(standing(
+        now.requirements_written_for.as_ref(),
+        Some(source_head)
+    ));
+    json
 }
 
 /// The product's word on whether an acceptance holds, and its one sentence of what moved.
@@ -784,15 +811,16 @@ fn refusal_json(error: RenderError) -> Value {
     })
 }
 
-/// What the product says of the work as `now` puts it: whether the owner's acceptance (`record`,
-/// when there is one; `null` when there is none) still holds, and its measure of the design
+/// What the product says of the revisions `of` names: whether the owner's acceptance (`record`,
+/// when there is one; `null` when there is none) holds for them, and its measure of the design
 /// against the list. Each is either `{"said": ...}` or `{"refused": ...}` for the product not
 /// answering, because the caller still has the work it read when the product does not answer: a
-/// model SCE cannot draw is still a model.
-fn judgment_json(renderer: &dyn Product, now: &WorkNow, record: Option<&Acceptance>) -> Value {
+/// model SCE cannot draw is still a model. The measure is the product's words and nothing of
+/// where the design stands to the text (`Revisions` says why).
+fn judgment_json(renderer: &dyn Product, of: &Revisions, record: Option<&Acceptance>) -> Value {
     let acceptance = match record {
         None => Value::Null,
-        Some(accepted) => match renderer.check_acceptance(&now.snapshot, &accepted.record) {
+        Some(accepted) => match renderer.check_acceptance(&of.snapshot, &accepted.record) {
             Ok(outcome) => {
                 let (standing, lapse) = standing_of(outcome);
                 json!({ "said": { "standing": standing, "lapse": lapse } })
@@ -800,11 +828,11 @@ fn judgment_json(renderer: &dyn Product, now: &WorkNow, record: Option<&Acceptan
             Err(error) => json!({ "refused": refusal_json(error) }),
         },
     };
-    let report = match renderer.report_requirements(&now.snapshot) {
-        Ok(report) => json!({ "said": report_json(now, &report) }),
+    let report = match renderer.report_requirements(&of.snapshot) {
+        Ok(report) => json!({ "said": measured_json(&report) }),
         Err(error) => json!({ "refused": refusal_json(error) }),
     };
-    json!({ "basis": now.basis, "acceptance": acceptance, "report": report })
+    json!({ "basis": of.basis, "acceptance": acceptance, "report": report })
 }
 
 /// A model as its caller gave it: `text` (one document), or `documents` (several that name
@@ -1163,7 +1191,7 @@ pub fn call<C: Clock>(
             // answer is of the state the caller read and of no other: a save landing now moves
             // the work, and the caller learns that from the heads, not from a verdict that is
             // of a design it was not shown.
-            let now = work_at(store, &id, &basis)?;
+            let named = work_at(store, &id, &basis)?;
             let record = match &acceptance {
                 None => None,
                 Some(revision) => {
@@ -1173,7 +1201,7 @@ pub fn call<C: Clock>(
                     Some(Acceptance::parse(&saved.text)?)
                 }
             };
-            Ok(judgment_json(renderer, &now, record.as_ref()))
+            Ok(judgment_json(renderer, &named, record.as_ref()))
         }
         "accept" => {
             let Accept { id, expect } = arguments(args)?;

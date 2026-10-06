@@ -140,9 +140,18 @@ folder.
 revisions of the text, the model, the list and the answers, as the snapshot gave them) and
 the revision of the acceptance when there is one, and answers whether that acceptance holds
 for exactly those revisions (`acceptance`, `null` when none was named) and SCE's measure of
-that design against that list (`report`, in the words of `requirements_report`). A revision's
-file is never rewritten, so the answer is of the revisions named and of no other, whatever has
-been saved since; one the work does not keep is `not-found`. Each of the two is
+that design against that list (`report`: the outcomes and the page of `requirements_report`, in
+its words). A revision's file is never rewritten, so the answer is of the revisions named and of
+no other, whatever has been saved since; one the work does not keep is `not-found`.
+
+The answer is a function of the revisions' content and carries nothing of which text the model
+and the list were written for. The same bytes can be kept again for a text that came later: the
+revision is the same and so is what SCE says of it, while that claim moves, and the store answers
+a revision with the latest claim made of it. So where the design stands to the text (`current`,
+`behind`, `unstated`) is said by the snapshot, in the state the revisions were read in, and the
+screen puts it beside SCE's measure; asked again of the same revisions after the design was kept
+for another text, the answer is the same. (`requirements_report`, which judges the work as it
+stands, still says it.) Each of the two is
 `{"said": ...}`, or `{"refused": ...}` when SCE did not answer: a design SCE cannot draw is
 still the design, and the screen has it from the snapshot. The core answers `basis` as it
 read it, and the screen refuses an answer that names other revisions than it asked about

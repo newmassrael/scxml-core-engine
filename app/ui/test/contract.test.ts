@@ -273,13 +273,21 @@ describe("the replies the core gives", () => {
   });
 
   it("give what SCE says of the revisions it was asked about, in the words of the commands that judge", () => {
-    // A design measured and nothing accepted: no standing, and the report of `requirements_report`.
+    // A design measured and nothing accepted: no standing, and the measure of `requirements_report`
+    // in the same words, without where the design stands to the text (a claim, which is the
+    // snapshot's to say and which a later save can change without changing the design).
     const unaccepted = parseJudgment(replies.answers["read_judgment_unaccepted"]);
     expect(unaccepted.acceptance).toBeNull();
-    expect(unaccepted.report).toEqual({
-      said: true,
-      value: parseRequirementsReport(replies.answers["requirements_report"]),
-    });
+    const { basis, source_head, model_standing, requirements_standing, ...measure } = parseRequirementsReport(
+      replies.answers["requirements_report"],
+    );
+    expect(unaccepted.report).toEqual({ said: true, value: measure });
+    expect(unaccepted.basis).toEqual(basis);
+    expect([source_head, model_standing, requirements_standing].every((v) => v !== undefined)).toBe(true);
+    const said = replies.answers["read_judgment_unaccepted"] as { report: { said: Record<string, unknown> } };
+    for (const claim of ["basis", "source_head", "model_standing", "requirements_standing"]) {
+      expect(said.report.said[claim], claim).toBeUndefined();
+    }
     // Accepted and unmoved: the standing of `read_acceptance`, the revisions the owner was shown.
     const accepted = parseJudgment(replies.answers["read_judgment_accepted"]);
     expect(accepted.acceptance).toEqual({ said: true, value: { standing: "holds", lapse: null } });
@@ -310,11 +318,10 @@ describe("the replies the core gives", () => {
     const at = (value: unknown, ...path: string[]): Record<string, unknown> =>
       path.reduce((over, key) => over[key] as Record<string, unknown>, value as Record<string, unknown>);
 
-    // A report measured of other revisions than the judgment names: a screen would show an outcome
-    // beside a design it was not measured of.
+    // A measure whose outcomes are not a list.
     const report = answer("read_judgment_accepted");
-    at(report, "report", "said", "basis")["requirements"] = "0".repeat(64);
-    expect(() => parseJudgment(report)).toThrow(/read_judgment\.report\.said\.basis/);
+    at(report, "report", "said")["outcomes"] = "none";
+    expect(() => parseJudgment(report)).toThrow(/read_judgment\.report\.said\.outcomes/);
     // An answer that is both, or neither, said and refused.
     const both = answer("read_judgment_accepted");
     at(both, "report")["refused"] = { kind: "sce-timeout", message: "m", code: null };

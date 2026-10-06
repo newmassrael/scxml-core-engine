@@ -25,6 +25,7 @@ import type {
   AcceptanceRecord,
   Basis,
   Judgment,
+  Measure,
   RequirementOutcome,
   RequirementsReport,
   WorkSnapshot,
@@ -79,11 +80,20 @@ const snapshot = (over: Partial<WorkSnapshot> = {}): WorkSnapshot => ({
   ...over,
 });
 
+/** What SCE says of a design against a list: its words, and nothing of which text they were written for. */
+const measure: Measure = {
+  generator: null,
+  denominator: null,
+  outcomes: [outcome("R1", "implemented")],
+  page: null,
+  page_refusal: null,
+};
+
 /** What SCE said of the revisions `snapshot()` holds. */
 const judgment = (over: Partial<Judgment> = {}): Judgment => ({
   basis,
   acceptance: null,
-  report: { said: true, value: report() },
+  report: { said: true, value: measure },
   ...over,
 });
 
@@ -122,6 +132,22 @@ describe("the panel beside a snapshot", () => {
         accepting: false,
         refusal: null,
       },
+    });
+  });
+
+  it("says where the design and the list stand to the text as the snapshot did, which SCE's measure does not say", () => {
+    // The same bytes kept again for a later text make the same measure and another claim: the
+    // claim is the snapshot's, read in the state the revisions were read in.
+    const behind = snapshot({ model_standing: "behind", requirements_standing: "unstated" });
+    expect(panelOf(behind, judgment())).toMatchObject({
+      state: {
+        report: { model_standing: "behind", requirements_standing: "unstated", source_head: basis.source, basis },
+        list: { standing: "unstated" },
+      },
+    });
+    const kept = snapshot();
+    expect(panelOf(kept, judgment())).toMatchObject({
+      state: { report: { model_standing: "current", requirements_standing: "current" } },
     });
   });
 
