@@ -140,6 +140,19 @@ const EXEMPT_PREFIXES: &[(&str, &str)] = &[
          shared with settings and instruction files that could later \
          hold a genuine claim about who reads a surface.",
     ),
+    (
+        "app-core/data/codex_support.json",
+        "lists the features of another product by the names that product \
+         gives them, so that the application can switch them off and \
+         refuse to run beside the ones nobody has looked at. One of those \
+         names is `multi_agent`, and the file cannot spell it otherwise: \
+         a feature is switched off by its own name, and a list that \
+         called it something else would not switch it off. It names a \
+         capability of the client, not the audience of anything SCE \
+         emits, and says nothing of who reads a wire surface. Named as \
+         one file because the directory may later hold data that could \
+         make such a claim.",
+    ),
 ];
 
 /// Lower bound on files the scan must read. Measured, not guessed:
