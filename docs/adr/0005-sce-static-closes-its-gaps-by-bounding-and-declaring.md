@@ -92,10 +92,14 @@ A `bytes` variable declares `sce:capacity` (required, in bytes), a record's or a
 payload's `bytes` field declares `sce:max-size` (required), exactly as a string does.
 On the wire, in a `<param>`, in a saved state and in a snapshot it is its byte-exact
 Latin-1 text — the contract the typed payload already states (`SCE_ACCEPTED_SUBSET.md`,
-"`bytes` on the wire"). A literal is a text of characters up to U+00FF no longer than the
-bound, as a typed request's already is. Assignment, comparison with `===` / `!==`, and
-the string operations that have a byte meaning (length, join under the bound) are
-lowered; an operation that has none is refused by name.
+"`bytes` on the wire"). A value a request or a payload carries is a text of characters up
+to U+00FF no longer than the bound, as a typed request's already is. A literal in the
+document is narrower, and stays so: printable ASCII with no backslash, the one literal
+whose bytes every engine spells alike (`decode_bytes_literal`, RFC bytesguard-3), of at
+most the bound — widened when that helper is, for every engine at once. Assignment,
+comparison with `===` / `!==`, and the string operations that have a byte meaning
+(length, join under the bound) are lowered; an operation that has none is refused by
+name.
 
 A transition on an event whose payload carries a `bytes` field is lowered like any typed
 payload: the field is read into the variable or record field that holds it under the

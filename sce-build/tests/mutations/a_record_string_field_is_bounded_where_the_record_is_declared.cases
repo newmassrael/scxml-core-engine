@@ -29,8 +29,8 @@ mutation_oracles sce-build/tests/a_static_datamodel_holds_every_variable_to_a_ty
 
 mutation_case "a string field with no bound is let through" <<'PY'
 edit("sce-build/src/forge/static_datamodel.rs",
-     "matches!(f.sce_type, crate::forge::model::SceType::String) && f.max_size.is_none()",
-     "matches!(f.sce_type, crate::forge::model::SceType::String) && f.max_size.is_none() && false")
+     "matches!(f.sce_type, SceType::String | SceType::Bytes) && f.max_size.is_none()",
+     "matches!(f.sce_type, SceType::String | SceType::Bytes) && f.max_size.is_none() && false")
 PY
 
 mutation_case "a list of records is not asked for the bound" <<'PY'

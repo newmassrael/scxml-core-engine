@@ -929,16 +929,27 @@ fn enforce_static_datamodel(
             // holds the same value wherever it runs and an engine with no
             // heap holds it at all. An assignment past the bound is an
             // execution error (§scxml-4.9), not growth.
-            let is_string =
-                crate::sce_attr::read(&node, "type").is_some_and(|t| t.trim() == "string");
-            if is_string {
+            //
+            // A byte string is bounded the same way, in bytes (docs/adr/0005,
+            // decision 2): no default stands in for a bound the author left out.
+            let bounded = match crate::sce_attr::read(&node, "type")
+                .as_deref()
+                .map(str::trim)
+            {
+                Some("string") => Some(("string", "UTF-8 bytes")),
+                Some("bytes") => Some(("bytes", "bytes")),
+                _ => None,
+            };
+            if let Some((kind, unit)) = bounded {
                 match capacity {
                     None => {
                         return Err(refused(
                             element_row(&node),
                             format!("<data id=\"{id}\">"),
-                            "a string variable declares the most UTF-8 bytes it holds with \
-                             sce:capacity",
+                            &format!(
+                                "a {kind} variable declares the most {unit} it holds with \
+                                 sce:capacity"
+                            ),
                             &node,
                             Some(name.to_string()),
                         ))
@@ -954,8 +965,10 @@ fn enforce_static_datamodel(
                         return Err(refused(
                             pos,
                             format!("sce:capacity=\"{written}\""),
-                            "sce:capacity is a whole number of UTF-8 bytes, at least one, that \
-                             fits 32 bits",
+                            &format!(
+                                "sce:capacity is a whole number of {unit}, at least one, that \
+                                 fits 32 bits"
+                            ),
                             &node,
                             Some(written.to_string()),
                         ))
@@ -966,7 +979,7 @@ fn enforce_static_datamodel(
                 return Err(refused(
                     pos,
                     format!("sce:capacity=\"{written}\""),
-                    "only a list or a string variable has a capacity",
+                    "only a list, a string or a bytes variable has a capacity",
                     &node,
                     Some(written.to_string()),
                 ));

@@ -1,0 +1,53 @@
+# Mutation cases for "a byte string is bounded where it is declared, which is
+# required, and starts at printable ASCII that fits" (docs/SCE_ACCEPTED_SUBSET.md
+# §2.15, "A byte string"; docs/adr/0005, decision 2).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_byte_string_is_bounded_where_it_is_declared.cases`.
+#
+# Measured 2026-10-06, before any backend held one: Rust and Kotlin accepted a
+# `bytes` variable with no capacity, and Rust, Kotlin, Go, C++ and Python a record
+# with a `bytes` field, while Rust wrote `#[derive(Clone, Copy)]` over a `Vec<u8>`.
+# The bound is now required by the data model for every language, a byte string
+# starts at a literal of printable ASCII that fits it, and one no backend lowers
+# yet is refused by name in `lower`. The judges are
+# `a_byte_string_with_no_bound_is_refused_by_every_language`,
+# `a_byte_string_starts_at_printable_ascii_that_fits_its_bound` and
+# `a_language_holds_a_byte_string_or_refuses_it_by_name`. The mutants take one
+# decision away each:
+#
+#   a bytes variable that declares no capacity is let through;
+#   a record's bytes field that has no max-size is let through;
+#   a literal past printable ASCII is let through;
+#   a backend is not asked whether it holds a byte string.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test a_static_datamodel_holds_every_variable_to_a_type
+mutation_targets sce-build/src/parser.rs sce-build/src/forge/static_datamodel.rs sce-build/src/forge/static_lowering.rs
+mutation_oracles sce-build/tests/a_static_datamodel_holds_every_variable_to_a_type.rs
+
+mutation_case "a bytes variable that declares no capacity is let through" <<'PY'
+edit("sce-build/src/parser.rs",
+     "                Some(\"bytes\") => Some((\"bytes\", \"bytes\")),",
+     "                Some(\"bytes\") => None,")
+PY
+
+mutation_case "a record's bytes field that has no max-size is let through" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     "            matches!(f.sce_type, SceType::String | SceType::Bytes) && f.max_size.is_none()",
+     "            matches!(f.sce_type, SceType::String) && f.max_size.is_none()")
+PY
+
+mutation_case "a literal past printable ASCII is let through" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     "        if holder.printable_ascii && crate::forge::expr::decode_bytes_literal(&literal).is_none() {",
+     "        if false && holder.printable_ascii && crate::forge::expr::decode_bytes_literal(&literal).is_none() {")
+PY
+
+mutation_case "a backend is not asked whether it holds a byte string" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "        .or_else(|| bytes_held(model, &scope, target))",
+     "        .or_else(|| None::<String>)")
+PY

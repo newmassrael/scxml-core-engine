@@ -398,13 +398,53 @@ pub(crate) fn enum_fields(
         .collect()
 }
 
-/// How a refusal of a string's initial value names what holds the string: a
-/// variable by its `sce:capacity`, a record's field by the `sce:max-size` its
-/// schema declares.
+/// How a refusal of a string's (or a byte string's) initial value names what
+/// holds it: a variable by its `sce:capacity`, a record's field by the
+/// `sce:max-size` its schema declares.
 struct StringHolder<'a> {
     holder: &'a str,
     bound: &'a str,
     declarer: &'a str,
+    /// What the bound counts: `UTF-8 bytes` of a string, `bytes` of a byte string.
+    unit: &'a str,
+    /// A byte string starts at printable ASCII, the one literal every engine
+    /// spells the same bytes for ([`crate::forge::expr::decode_bytes_literal`]).
+    printable_ascii: bool,
+}
+
+impl<'a> StringHolder<'a> {
+    /// A string variable, bounded by its `sce:capacity`.
+    const STRING_VARIABLE: Self = Self {
+        holder: "a string variable",
+        bound: "sce:capacity",
+        declarer: "the variable",
+        unit: "UTF-8 bytes",
+        printable_ascii: false,
+    };
+    /// A byte string variable, bounded by its `sce:capacity`.
+    const BYTES_VARIABLE: Self = Self {
+        holder: "a bytes variable",
+        bound: "sce:capacity",
+        declarer: "the variable",
+        unit: "bytes",
+        printable_ascii: true,
+    };
+    /// A record's string field, bounded by the `sce:max-size` its schema declares.
+    const STRING_FIELD: Self = Self {
+        holder: "a record's string field",
+        bound: "sce:max-size",
+        declarer: "its schema",
+        unit: "UTF-8 bytes",
+        printable_ascii: false,
+    };
+    /// A record's byte-string field, bounded likewise.
+    const BYTES_FIELD: Self = Self {
+        holder: "a record's bytes field",
+        bound: "sce:max-size",
+        declarer: "its schema",
+        unit: "bytes",
+        printable_ascii: true,
+    };
 }
 
 struct Judge<'a> {
@@ -615,46 +655,44 @@ impl<'a> Judge<'a> {
     /// to end yet), so a value that could fail to fit is refused where it is
     /// written, not carried over from another variable at run time.
     fn string_start(&self, var: &Variable) -> Result<(), Located<ForgeError>> {
-        let (Some(capacity), Some(crate::forge::model::SceType::String)) = (
-            var.capacity,
-            var.value_type
-                .as_ref()
-                .and_then(crate::forge::model::AlgorithmValueType::scalar),
-        ) else {
+        let Some(capacity) = var.capacity else {
             return Ok(());
+        };
+        let holder = match var
+            .value_type
+            .as_ref()
+            .and_then(crate::forge::model::AlgorithmValueType::scalar)
+        {
+            Some(crate::forge::model::SceType::String) => StringHolder::STRING_VARIABLE,
+            // A byte string starts the same way, at a literal that fits.
+            Some(crate::forge::model::SceType::Bytes) => StringHolder::BYTES_VARIABLE,
+            _ => return Ok(()),
         };
         self.string_literal_fits(
             format!("<data id=\"{}\" expr=\"{}\">", var.id, var.expr),
             &var.expr,
             var.expr_spelling.as_ref(),
             capacity,
-            StringHolder {
-                holder: "a string variable",
-                bound: "sce:capacity",
-                declarer: "the variable",
-            },
+            holder,
         )
     }
 
-    /// A record's string field starts at a string literal that fits the
-    /// `sce:max-size` its schema declares, for the reason a string variable's
-    /// does ([`Self::string_start`]).
+    /// A record's string (or byte-string) field starts at a literal that fits the
+    /// `sce:max-size` its schema declares, for the reason a variable's does
+    /// ([`Self::string_start`]).
     fn string_field_start(
         &self,
         construct: String,
         init: &crate::forge::model::RecordFieldInit,
         max_size: u32,
+        holder: StringHolder<'_>,
     ) -> Result<(), Located<ForgeError>> {
         self.string_literal_fits(
             construct,
             &init.expr,
             init.expr_spelling.as_ref(),
             max_size,
-            StringHolder {
-                holder: "a record's string field",
-                bound: "sce:max-size",
-                declarer: "its schema",
-            },
+            holder,
         )
     }
 
@@ -686,12 +724,29 @@ impl<'a> Judge<'a> {
                 ));
             }
         };
+        // A byte string starts at printable ASCII, so that its bytes are the
+        // literal's bytes on every engine.
+        if holder.printable_ascii && crate::forge::expr::decode_bytes_literal(&literal).is_none() {
+            return Err(self.rule_at(
+                construct,
+                &format!(
+                    "{} starts at a literal of printable ASCII with no backslash, the one \
+                     literal whose bytes every engine spells alike",
+                    holder.holder
+                ),
+                spelling.map(|s| s.row()),
+                spelling.map(|s| s.col()),
+                "",
+                expr,
+            ));
+        }
         if literal.len() > bound as usize {
             return Err(self.rule_at(
                 construct,
                 &format!(
-                    "the initial value is {} UTF-8 bytes, past the {} of {bound} {} declares",
+                    "the initial value is {} {}, past the {} of {bound} {} declares",
                     literal.len(),
+                    holder.unit,
                     holder.bound,
                     holder.declarer
                 ),
@@ -704,28 +759,33 @@ impl<'a> Judge<'a> {
         Ok(())
     }
 
-    /// A record whose schema has a `string` field holds it within the
-    /// `sce:max-size` the schema writes, as a string variable is held within its
-    /// `sce:capacity` (docs/adr/0005, decision 1); a field that declares none has
-    /// no bound for the machine to keep, and no default stands in for one.
-    /// Judged where the record is declared, in a variable or in the elements of
-    /// a list.
+    /// A record whose schema has a `string` or a `bytes` field holds it within the
+    /// `sce:max-size` the schema writes, as a variable is held within its
+    /// `sce:capacity` (docs/adr/0005, decisions 1 and 2); a field that declares
+    /// none has no bound for the machine to keep, and no default stands in for
+    /// one. Judged where the record is declared, in a variable or in the elements
+    /// of a list.
     fn schema_strings_bounded(
         &self,
         var: &Variable,
         alias: &str,
         schema: &crate::forge::model::EventSchemaModel,
     ) -> Result<(), Located<ForgeError>> {
+        use crate::forge::model::SceType;
         let Some(field) = schema.fields.iter().find(|f| {
-            matches!(f.sce_type, crate::forge::model::SceType::String) && f.max_size.is_none()
+            matches!(f.sce_type, SceType::String | SceType::Bytes) && f.max_size.is_none()
         }) else {
             return Ok(());
+        };
+        let kind = match field.sce_type {
+            SceType::Bytes => "a byte string",
+            _ => "a string",
         };
         let spelling = var.value_type_spelling.as_ref();
         Err(self.rule_at(
             format!("<data id=\"{}\"> of record:{alias}", var.id),
             &format!(
-                "the field `{}` of record:{alias} is a string its schema does not bound: a \
+                "the field `{}` of record:{alias} is {kind} its schema does not bound: a \
                  record holds it within a bound, written as sce:max-size=\"N\" on the field",
                 field.id
             ),
@@ -835,13 +895,17 @@ impl<'a> Judge<'a> {
             )?;
             // A string field starts at a literal that fits its bound; one
             // that declares none was refused above.
-            if let (crate::forge::model::SceType::String, Some(max_size)) =
-                (&field.sce_type, field.max_size)
-            {
+            let holder = match &field.sce_type {
+                crate::forge::model::SceType::String => Some(StringHolder::STRING_FIELD),
+                crate::forge::model::SceType::Bytes => Some(StringHolder::BYTES_FIELD),
+                _ => None,
+            };
+            if let (Some(holder), Some(max_size)) = (holder, field.max_size) {
                 self.string_field_start(
                     format!("<sce:set name=\"{}\" expr=\"{}\">", field.id, init.expr),
                     init,
                     max_size,
+                    holder,
                 )?;
             }
         }

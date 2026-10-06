@@ -346,6 +346,15 @@ pub trait StaticTarget {
     fn lowers_hybrid_invoke(&self) -> bool {
         false
     }
+    /// Whether a `bytes` variable, or a record's `bytes` field, is held: a byte
+    /// string bounded by the `sce:capacity` or the `sce:max-size` its declaration
+    /// writes (docs/adr/0005, decision 2). A target that does not is refused where
+    /// the value is declared, by name, rather than left to write a value that does
+    /// not build — Rust's record is a `Copy` struct, which a `Vec<u8>` field cannot
+    /// be a member of.
+    fn lowers_bytes(&self) -> bool {
+        false
+    }
     /// What the `srcexpr` attribute of a hybrid `<invoke>` is rewritten to, for
     /// a target that runs the document's own attribute and so has no field of
     /// the machine to read the value from: `native_src`, the string the
@@ -1633,8 +1642,9 @@ pub fn lower(
             Some(_) => {}
         }
     }
-    if let Some(construct) =
-        invoke_of_a_child_that_needs_a_host(model).or_else(|| target.unsupported(model, &scope))
+    if let Some(construct) = invoke_of_a_child_that_needs_a_host(model)
+        .or_else(|| bytes_held(model, &scope, target))
+        .or_else(|| target.unsupported(model, &scope))
     {
         return Err(GenerateError::unsupported(format!(
             "{construct} has no {lang} lowering yet"
@@ -3270,6 +3280,39 @@ fn invoke_of_a_child_that_needs_a_host(model: &SCXMLModel) -> Option<String> {
             }
             _ => None,
         })
+}
+
+/// The first `bytes` variable of `scope`, or the first record variable (or list of
+/// records) whose schema has a `bytes` field, described for a refusal, when
+/// `target` does not hold one ([`StaticTarget::lowers_bytes`]). Asked once for
+/// every target, as a bound is the document's and not a language's.
+fn bytes_held(
+    model: &SCXMLModel,
+    scope: &StaticScope,
+    target: &dyn StaticTarget,
+) -> Option<String> {
+    if target.lowers_bytes() {
+        return None;
+    }
+    scope.variables.iter().find_map(|var| {
+        let ty = var.value_type.as_ref()?;
+        if matches!(ty.scalar(), Some(SceType::Bytes)) {
+            return Some(format!("<data id=\"{}\" sce:type=\"bytes\">", var.id));
+        }
+        let alias = ty
+            .record_alias()
+            .or_else(|| ty.list_elem().and_then(|e| e.record_alias()))?;
+        let field = model
+            .imported_records
+            .get(alias)?
+            .fields
+            .iter()
+            .find(|f| matches!(f.sce_type, SceType::Bytes))?;
+        Some(format!(
+            "record:{alias} with the field `{}` of type bytes",
+            field.id
+        ))
+    })
 }
 
 /// Whether a record of `schema` owns text — has a `string` field — which a target

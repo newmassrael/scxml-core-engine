@@ -3639,7 +3639,25 @@ made whole from a payload fills the buffer from the text the bound already admit
 and a C machine is not saved. Measured 2026-10-06, before any backend held the field,
 `check` had answered ok for Rust, Kotlin, Go, C++ and Python while Rust wrote
 `#[derive(Clone, Copy)]` over a `String`, which does not compile (E0204); only C11
-refused.
+refused. The Interpreter runs the same scenario lowered
+(`AStaticDatamodelRunsLoweredUnderTheInterpreterTest`, which finds scenarios by
+scanning their directory), under the same bound.
+
+**A byte string.** A `bytes` variable declares the most bytes it holds with
+`sce:capacity`, and a record's `bytes` field is bounded by the `sce:max-size` its
+schema writes (`docs/adr/0005`, decision 2). No default stands in for either: a byte
+string with no bound is refused where it is declared, as
+`scxml/static-datamodel-rule`, by every backend. It starts at a literal of printable
+ASCII with no backslash — the one literal whose bytes every engine spells alike
+(`decode_bytes_literal`) — of at most that many bytes. Measured 2026-10-06, before
+any backend held one, `check` had answered ok for a `bytes` variable with no capacity
+on Rust and Kotlin and for a record with a `bytes` field on Rust, Kotlin, Go, C++ and
+Python, while Rust wrote `#[derive(Clone, Copy)]` over a `Vec<u8>`, which does not
+compile (E0204). Until a backend lowers it, a byte string is refused where it is
+declared, by name, as `generate/unsupported-feature` (`<data id="frame"
+sce:type="bytes">`, `record:Frame with the field `frame` of type bytes`), and the
+backend lifts the refusal (`StaticTarget::lowers_bytes`) in the commit that lowers it
+and replays `static_bytes`.
 
 A saved state holds the variant by its declared name, `"agenda_list"`, which is
 the same on every backend and is not the constant a backend spells for it; one
