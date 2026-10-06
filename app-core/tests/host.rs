@@ -145,9 +145,42 @@ fn a_shell_that_is_told_not_to_host_hosts_nothing_and_says_why() {
 
     let host = start(Arc::clone(&store), Arc::new(FakeRenderer), settings);
 
-    assert_eq!(host.not_hosted(), Some(&NotHosted::Off));
+    assert_eq!(host.not_hosted(), Some(NotHosted::Off));
     assert!(NotHosted::Off.to_string().contains("SCE_EXECUTOR"));
     assert_eq!(host.client_version(), None);
+}
+
+#[test]
+fn a_shell_the_owner_turned_off_does_not_go_looking_again() {
+    let (_, store) = store("host-off-stays");
+    let mut settings = HostSettings::from_lookup("desktop", lookup(&[]));
+    settings.enabled = false;
+    settings.retry = Duration::from_millis(20);
+
+    let host = start(Arc::clone(&store), Arc::new(FakeRenderer), settings);
+    std::thread::sleep(Duration::from_millis(300));
+
+    // It is the owner's word and not something that can come right while the window is open.
+    assert_eq!(host.not_hosted(), Some(NotHosted::Off));
+    assert!(!store.host_status().unwrap().hosts[0].host.hosting);
+}
+
+#[test]
+fn a_shell_that_is_dropped_while_it_waits_to_look_again_stops_at_once() {
+    let (_, store) = store("host-drop-waiting");
+    let mut settings = HostSettings::from_lookup("desktop", lookup(&[]));
+    settings.claude = Some(PathBuf::from("/nowhere/claude"));
+    settings.author = Some(PathBuf::from("/bin/sh"));
+    settings.retry = Duration::from_secs(60);
+    let host = start(store, Arc::new(FakeRenderer), settings);
+
+    let started = Instant::now();
+    drop(host);
+
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "dropping the host waited for its next look"
+    );
 }
 
 #[test]
@@ -182,7 +215,7 @@ fn a_shell_with_no_claude_hosts_nothing_and_says_what_to_install() {
 
     let host = start(store, Arc::new(FakeRenderer), settings);
 
-    let Some(NotHosted::NoClaude(tried)) = host.not_hosted().cloned() else {
+    let Some(NotHosted::NoClaude(tried)) = host.not_hosted() else {
         panic!("expected NoClaude, got {:?}", host.not_hosted());
     };
     assert!(tried.contains("/nowhere/claude"), "{tried}");
@@ -277,7 +310,7 @@ mod hosting {
 
         let host = start(store, Arc::new(FakeRenderer), settings);
 
-        let Some(NotHosted::NoAuthorServer(tried)) = host.not_hosted().cloned() else {
+        let Some(NotHosted::NoAuthorServer(tried)) = host.not_hosted() else {
             panic!("expected NoAuthorServer, got {:?}", host.not_hosted());
         };
         assert!(tried.contains("/nowhere/sce-author-mcp"), "{tried}");
@@ -305,7 +338,7 @@ mod hosting {
 
         let host = start(Arc::clone(&store), Arc::new(FakeRenderer), settings);
 
-        let Some(NotHosted::AuthorServerNotReady(said)) = host.not_hosted().cloned() else {
+        let Some(NotHosted::AuthorServerNotReady(said)) = host.not_hosted() else {
             panic!("expected AuthorServerNotReady, got {:?}", host.not_hosted());
         };
         assert!(said.contains("pip install pyyaml"), "{said}");
@@ -587,6 +620,95 @@ mod hosting {
             .host
             .waiting
             .is_empty());
+    }
+
+    #[test]
+    fn a_host_started_before_claude_was_installed_hosts_once_it_is() {
+        let (_, store) = store("host-late");
+        let id = store.create_work("Door lock").unwrap().id;
+        store.save_source(&id, "The lock opens.", None).unwrap();
+        let (claude, author) = installed_signed_in("host-late-bin");
+        // Not there yet: it is put where the host looks after the window is open.
+        let later = claude.with_extension("later");
+        fs::rename(&claude, &later).unwrap();
+        let (settings_store, pin) = pinned("host-late-settings");
+        let request = ask_for(&store, &id, Some(pin));
+        let mut settings = HostSettings::from_lookup("desktop", lookup(&[]));
+        settings.claude = Some(claude.clone());
+        settings.author = Some(author);
+        settings.retry = Duration::from_millis(50);
+
+        let host = start_with(
+            Arc::clone(&store),
+            Arc::new(FakeRenderer),
+            settings,
+            Some((settings_store, Policy::shipped())),
+        );
+        assert!(matches!(host.not_hosted(), Some(NotHosted::NoClaude(_))));
+        assert!(!store.host_status().unwrap().hosts[0].host.hosting);
+        fs::rename(&later, &claude).unwrap();
+
+        within_ten_seconds("the host did not start once Claude was installed", || {
+            host.not_hosted().is_none()
+        });
+        within_ten_seconds("the request was not run once it did", || {
+            store.read_request(&id, &request).unwrap().state == State::Completed
+        });
+        // And where the screen reads, it hosts now, and says which client.
+        within_ten_seconds("the host did not say it hosts", || {
+            store.host_status().unwrap().hosts[0].host.hosting
+        });
+        assert_eq!(host.client_version().as_deref(), Some("2.1.289"));
+        drop(host);
+    }
+
+    /// A `claude` signed in by a subscription that writes the arguments of the run that asked it
+    /// for a draft, one to a line, to `run-argv` beside it.
+    fn installed_recording(label: &str) -> (PathBuf, PathBuf, PathBuf) {
+        let (claude, author) = installed(label);
+        let dir = claude.parent().unwrap().to_path_buf();
+        let record = dir.join("run-argv");
+        common::write_program(
+            &claude,
+            &format!(
+                "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo \"2.1.289 (Claude Code)\"; exit 0; fi\n\
+                 if [ \"$3\" = \"auth\" ]; then echo '{{\"loggedIn\":true,\"authMethod\":\"claude.ai\",\"apiProvider\":\"firstParty\"}}'; exit 0; fi\n\
+                 for a in \"$@\"; do printf '%s\\n' \"$a\"; done > '{}'\ncat > /dev/null\ncat '{}'\n",
+                record.display(),
+                dir.join("answer.json").display()
+            ),
+        );
+        (claude, author, record)
+    }
+
+    #[test]
+    fn what_the_environment_may_spend_bounds_the_run_made_for_a_connection() {
+        let (_, store) = store("host-budget");
+        let id = store.create_work("Door lock").unwrap().id;
+        store.save_source(&id, "The lock opens.", None).unwrap();
+        let (claude, author, record) = installed_recording("host-budget-bin");
+        let (settings_store, pin) = pinned("host-budget-settings");
+        let request = ask_for(&store, &id, Some(pin));
+        let mut settings =
+            HostSettings::from_lookup("desktop", lookup(&[("SCE_CLAUDE_BUDGET_USD", "2.5")]));
+        settings.claude = Some(claude);
+        settings.author = Some(author);
+
+        let host = start_with(
+            Arc::clone(&store),
+            Arc::new(FakeRenderer),
+            settings,
+            Some((settings_store, Policy::shipped())),
+        );
+        within_ten_seconds("the pinned request was not run", || {
+            store.read_request(&id, &request).unwrap().state == State::Completed
+        });
+        drop(host);
+
+        let argv = fs::read_to_string(&record).unwrap();
+        let args: Vec<&str> = argv.lines().collect();
+        let at = args.iter().position(|a| *a == "--max-budget-usd");
+        assert_eq!(at.map(|i| args[i + 1]), Some("2.5"), "{args:?}");
     }
 
     fn ask(store: &WorkStore<Arc<ManualClock>>, id: &WorkId) -> String {

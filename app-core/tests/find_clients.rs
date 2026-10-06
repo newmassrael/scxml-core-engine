@@ -276,6 +276,7 @@ fn directory(rig: &Rig, launch: &Path) -> Connections {
                 args: vec![],
                 env: vec![],
             },
+            max_budget_usd: None,
         }),
     )
 }

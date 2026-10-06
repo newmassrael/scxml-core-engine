@@ -25,7 +25,7 @@
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -59,7 +59,16 @@ pub struct HostSettings {
     pub work: Option<PathBuf>,
     pub codegen: Option<PathBuf>,
     pub config: ClaudeCodeConfig,
+    /// How long a shell that found something missing waits before it looks again. A person can
+    /// install the client, or what the authoring server needs, while the window is open, and the
+    /// executor must not wait for the window to be opened again to notice.
+    pub retry: Duration,
 }
+
+/// How often a shell that could not host looks again: seldom enough that a missing program is
+/// not a process started every moment, often enough that a person who has just installed it
+/// is not left waiting.
+const RETRY_EVERY: Duration = Duration::from_secs(10);
 
 impl HostSettings {
     /// The settings the environment of this process gives.
@@ -98,6 +107,7 @@ impl HostSettings {
             work: path(WORK_ENV),
             codegen: path(GENERATOR_ENV),
             config,
+            retry: RETRY_EVERY,
         }
     }
 }
@@ -167,19 +177,75 @@ const REPORT_EVERY: Duration = Duration::from_secs(30);
 pub struct ExecutorHost {
     shutdown: Cancel,
     threads: Vec<thread::JoinHandle<()>>,
+    shared: Arc<Shared>,
+}
+
+/// What a host is doing now: which client runs, or why none does. Said by the thread that looks
+/// for what the executor needs, and read by the shell that started it and by the thread that
+/// reports it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Standing {
     version: Option<String>,
     not_hosted: Option<NotHosted>,
+}
+
+impl Standing {
+    fn of(found: &Result<ClaudeCode, NotHosted>) -> Standing {
+        match found {
+            Ok(client) => Standing {
+                version: client.version(),
+                not_hosted: None,
+            },
+            Err(why) => Standing {
+                version: None,
+                not_hosted: Some(why.clone()),
+            },
+        }
+    }
+}
+
+/// What the threads of a host share.
+struct Shared {
+    standing: Mutex<Standing>,
+    /// What the runner left queued and could not run, asked of it as often as the report looks:
+    /// nothing until there is a runner.
+    left: Mutex<Box<dyn Fn() -> Vec<HostWaiting> + Send>>,
+}
+
+impl Shared {
+    fn new(standing: Standing) -> Shared {
+        Shared {
+            standing: Mutex::new(standing),
+            left: Mutex::new(Box::new(Vec::new)),
+        }
+    }
+
+    fn standing(&self) -> Standing {
+        self.standing
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
+
+    fn set(&self, standing: Standing) {
+        *self.standing.lock().unwrap_or_else(|e| e.into_inner()) = standing;
+    }
+
+    fn waiting(&self) -> Vec<HostWaiting> {
+        (self.left.lock().unwrap_or_else(|e| e.into_inner()))()
+    }
 }
 
 impl ExecutorHost {
     /// What the client says its version is; none when no client is running.
     pub fn client_version(&self) -> Option<String> {
-        self.version.clone()
+        self.shared.standing().version
     }
 
-    /// Why nothing is hosted, when nothing is.
-    pub fn not_hosted(&self) -> Option<&NotHosted> {
-        self.not_hosted.as_ref()
+    /// Why nothing is hosted, when nothing is. It can change while the window is open: a host
+    /// that could not start goes on looking, and hosts once what it needed is there.
+    pub fn not_hosted(&self) -> Option<NotHosted> {
+        self.shared.standing().not_hosted
     }
 
     /// Stop now; the same as dropping.
@@ -227,67 +293,45 @@ where
     C: Clock + Send + Sync + 'static,
 {
     let name = settings.name.clone();
-    // One word stops everything the host runs: the runner's own, when there is a runner.
-    let mut shutdown = Cancel::new();
+    // One word stops everything the host runs, the runner included.
+    let shutdown = Cancel::new();
     let mut threads = Vec::new();
-    // What the runner left queued and could not run: asked of it as often as the report looks, and
-    // nothing when there is no runner.
-    let mut left: Box<dyn Fn() -> Vec<HostWaiting> + Send> = Box::new(Vec::new);
-    let (version, not_hosted) = match find_client(&store, &settings) {
-        Ok(client) => {
-            let version = client.version();
-            let directory = connections.map(|(settings, policy)| {
-                let launch = ClaudeLaunch {
-                    binary: client.binary().to_path_buf(),
-                    author: client.author().clone(),
-                };
-                Arc::new(Connections::new(settings, policy, Some(launch))) as Arc<dyn Directory>
-            });
-            let mut runner = Runner::new(
-                Arc::clone(&store),
-                product,
-                Arc::new(client),
-                RunnerConfig::named(&name),
-            );
-            if let Some(directory) = directory {
-                runner = runner.with_connections(directory);
+    // The first look is made now, so that what it found is in the works folder when this returns.
+    let first = find_client(&store, &settings);
+    let shared = Arc::new(Shared::new(Standing::of(&first)));
+    say(&store, &name, &shared.standing(), &[]);
+    let supervising = thread::Builder::new()
+        .name("sce-executor".to_string())
+        .spawn({
+            let (store, shutdown, shared) =
+                (Arc::clone(&store), shutdown.clone(), Arc::clone(&shared));
+            move || {
+                supervise(
+                    store,
+                    product,
+                    settings,
+                    connections,
+                    shutdown,
+                    shared,
+                    first,
+                )
             }
-            shutdown = runner.shutdown();
-            let runner = Arc::new(runner);
-            left = Box::new({
-                let runner = Arc::clone(&runner);
-                move || waiting_words(&runner.waiting())
-            });
-            let spawned = thread::Builder::new()
-                .name("sce-executor".to_string())
-                .spawn(move || runner.run());
-            match spawned {
-                Ok(thread) => {
-                    threads.push(thread);
-                    (version, None)
-                }
-                Err(e) => (
-                    None,
-                    Some(NotHosted::NoClaude(format!(
-                        "a thread for the executor: {e}"
-                    ))),
-                ),
-            }
-        }
-        Err(why) => (None, Some(why)),
-    };
-    // What is said of it, said now (so that it is in the works folder when this returns) and kept
-    // said.
-    let reason = not_hosted.as_ref().map(ToString::to_string);
-    let said = (version.clone(), reason);
-    say(&store, &name, &said.0, said.1.as_deref(), &left());
+        });
+    match supervising {
+        Ok(thread) => threads.push(thread),
+        Err(e) => shared.set(Standing {
+            version: None,
+            not_hosted: Some(NotHosted::NoClaude(format!(
+                "a thread for the executor: {e}"
+            ))),
+        }),
+    }
     if let Ok(thread) = thread::Builder::new()
         .name("sce-host-report".to_string())
         .spawn({
-            let (store, shutdown, name) = (Arc::clone(&store), shutdown.clone(), name.clone());
-            move || {
-                report_until_stopped(&store, &shutdown, &name, &said.0, said.1.as_deref(), &*left)
-            }
+            let (store, shutdown, shared) =
+                (Arc::clone(&store), shutdown.clone(), Arc::clone(&shared));
+            move || report_until_stopped(&store, &shutdown, &name, &shared)
         })
     {
         threads.push(thread);
@@ -295,9 +339,92 @@ where
     ExecutorHost {
         shutdown,
         threads,
-        version,
-        not_hosted,
+        shared,
     }
+}
+
+/// Host the executor once what it needs is there, and until told to stop.
+///
+/// `found` is the first look. What was missing then (a client not yet installed, an authoring
+/// server that was not ready) is looked for again every `settings.retry`, because a person can
+/// put it right while the window is open and the executor has to notice without the window being
+/// opened again. The owner's word that there is to be no executor is the one thing that does not
+/// come right: that is not looked for again.
+fn supervise<C>(
+    store: Arc<WorkStore<C>>,
+    product: Arc<dyn Product>,
+    settings: HostSettings,
+    connections: Option<(ConnectionStore, Policy)>,
+    shutdown: Cancel,
+    shared: Arc<Shared>,
+    found: Result<ClaudeCode, NotHosted>,
+) where
+    C: Clock + Send + Sync + 'static,
+{
+    let mut found = found;
+    loop {
+        let client = match found {
+            Ok(client) => client,
+            Err(why) => {
+                let owners_word = why == NotHosted::Off;
+                shared.set(Standing {
+                    version: None,
+                    not_hosted: Some(why),
+                });
+                let wait = if owners_word {
+                    Duration::MAX
+                } else {
+                    settings.retry
+                };
+                if !wait_or_stop(&shutdown, wait) {
+                    return;
+                }
+                found = find_client(&store, &settings);
+                continue;
+            }
+        };
+        shared.set(Standing {
+            version: client.version(),
+            not_hosted: None,
+        });
+        let directory = connections.map(|(settings_store, policy)| {
+            let launch = ClaudeLaunch {
+                binary: client.binary().to_path_buf(),
+                author: client.author().clone(),
+                max_budget_usd: settings.config.max_budget_usd,
+            };
+            Arc::new(Connections::new(settings_store, policy, Some(launch))) as Arc<dyn Directory>
+        });
+        let mut runner = Runner::new(
+            Arc::clone(&store),
+            product,
+            Arc::new(client),
+            RunnerConfig::named(&settings.name),
+        )
+        .with_shutdown(shutdown);
+        if let Some(directory) = directory {
+            runner = runner.with_connections(directory);
+        }
+        let runner = Arc::new(runner);
+        *shared.left.lock().unwrap_or_else(|e| e.into_inner()) = Box::new({
+            let runner = Arc::clone(&runner);
+            move || waiting_words(&runner.waiting())
+        });
+        runner.run();
+        return;
+    }
+}
+
+/// Wait for `span`, or until told to stop; whether it was the span that ended.
+fn wait_or_stop(stop: &Cancel, span: Duration) -> bool {
+    let until = Instant::now().checked_add(span);
+    while !stop.is_cancelled() {
+        if until.is_some_and(|until| Instant::now() >= until) {
+            return true;
+        }
+        thread::sleep(Duration::from_millis(25));
+    }
+    false
 }
 
 /// What a shell needs to host an executor, found; or why it is not.
@@ -337,17 +464,15 @@ fn report_until_stopped<C: Clock>(
     store: &WorkStore<C>,
     stop: &Cancel,
     name: &str,
-    version: &Option<String>,
-    reason: Option<&str>,
-    left: &dyn Fn() -> Vec<HostWaiting>,
+    shared: &Shared,
 ) {
     // Said once already, by `start`: the next is due a period from then.
     let mut last = Instant::now();
-    let mut said = left();
+    let mut said = (shared.standing(), shared.waiting());
     while !stop.is_cancelled() {
-        let now = left();
+        let now = (shared.standing(), shared.waiting());
         if now != said || last.elapsed() >= REPORT_EVERY {
-            say(store, name, version, reason, &now);
+            say(store, name, &now.0, &now.1);
             said = now;
             last = Instant::now();
         }
@@ -356,18 +481,13 @@ fn report_until_stopped<C: Clock>(
 }
 
 /// One report. A folder that could not be written to this time is written to at the next.
-fn say<C: Clock>(
-    store: &WorkStore<C>,
-    name: &str,
-    version: &Option<String>,
-    reason: Option<&str>,
-    waiting: &[HostWaiting],
-) {
+fn say<C: Clock>(store: &WorkStore<C>, name: &str, standing: &Standing, waiting: &[HostWaiting]) {
+    let reason = standing.not_hosted.as_ref().map(ToString::to_string);
     let _ = store.report_host(HostReport {
         name,
         hosting: reason.is_none(),
-        reason,
-        client_version: version.as_deref(),
+        reason: reason.as_deref(),
+        client_version: standing.version.as_deref(),
         waiting,
     });
 }

@@ -47,6 +47,10 @@ const OBSERVED_FOR: Duration = Duration::from_secs(5);
 pub struct ClaudeLaunch {
     pub binary: PathBuf,
     pub author: AuthorServer,
+    /// What the environment lets a run spend (`SCE_CLAUDE_BUDGET_USD`). A connection has no word
+    /// for money, so this bounds a run made for one as it bounds any other: it is the person's
+    /// limit on the application, and it changes nothing a request asked for.
+    pub max_budget_usd: Option<f64>,
 }
 
 /// Where a runner finds the generator for the connection of a request.
@@ -148,7 +152,7 @@ impl Connections {
         let config = ClaudeCodeConfig {
             model: pin.model.clone(),
             max_turns: pin.limits.turns.unwrap_or(defaults.max_turns),
-            max_budget_usd: None,
+            max_budget_usd: launch.max_budget_usd,
             timeout: pin
                 .limits
                 .seconds

@@ -314,6 +314,13 @@ where
         self.shutdown.clone()
     }
 
+    /// The same runner, stopped by `shutdown` and not by a word of its own: for a host that has
+    /// one word for everything it runs, including a runner it only makes later.
+    pub fn with_shutdown(mut self, shutdown: Cancel) -> Self {
+        self.shutdown = shutdown;
+        self
+    }
+
     /// Say the adapter is there, and what it can do. Said again by every renewal, so that it
     /// is there for as long as the runner is and for a short while after.
     pub fn report(&self) -> Result<(), StoreError> {

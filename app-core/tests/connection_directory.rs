@@ -167,12 +167,18 @@ impl Rig {
     }
 
     fn directory(&self, policy: Policy) -> Connections {
+        self.directory_with(policy, None)
+    }
+
+    /// The same, for a host whose environment set `max_budget_usd` (`SCE_CLAUDE_BUDGET_USD`).
+    fn directory_with(&self, policy: Policy, max_budget_usd: Option<f64>) -> Connections {
         Connections::new(
             self.settings.clone(),
             policy,
             Some(ClaudeLaunch {
                 binary: self.fake.binary.clone(),
                 author: author(),
+                max_budget_usd,
             }),
         )
     }
@@ -230,6 +236,27 @@ fn a_connection_that_is_signed_in_is_run_with_the_model_and_the_limits_it_pinned
     assert_eq!(config.timeout, Duration::from_secs(600));
     // And it is a generator the runner can take it with.
     assert!(rig.directory(Policy::shipped()).generator_for(&pin).is_ok());
+}
+
+#[test]
+fn what_the_environment_may_spend_bounds_a_run_made_for_a_connection_too() {
+    // `SCE_CLAUDE_BUDGET_USD` is the person's limit on what the application spends, and a
+    // connection has no word for money: a run made for one is as bounded as one that is not.
+    let rig = Rig::new("dir-budget", SUBSCRIPTION);
+    let pin = rig.pin(&claude());
+
+    let bounded = rig
+        .directory_with(Policy::shipped(), Some(2.5))
+        .claude_for(&pin)
+        .unwrap();
+    let unbounded = rig.directory(Policy::shipped()).claude_for(&pin).unwrap();
+
+    assert_eq!(bounded.config().max_budget_usd, Some(2.5));
+    assert_eq!(unbounded.config().max_budget_usd, None);
+    // The limit changes what a run may spend and nothing it asked for: the model and the turns
+    // are the connection's.
+    assert_eq!(bounded.config().model.as_deref(), Some("opus"));
+    assert_eq!(bounded.config().max_turns, 40);
 }
 
 #[test]
