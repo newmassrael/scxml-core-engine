@@ -34,12 +34,13 @@ use std::time::Duration;
 
 use serde_json::Value;
 
+use crate::auth_policy::Observed;
 use crate::claude_code::AuthorServer;
 use crate::client_run::{
     blank_job, capture, draft_from, prompt, schema, supervise, tail, Ended, Scratch, SERVER,
     SYSTEM_PROMPT,
 };
-use crate::codex_environment::{environment_for, Environment};
+use crate::codex_environment::environment_for;
 use crate::codex_support::{enabled_features, Support};
 use crate::connection::AuthSource;
 use crate::revision::Revision;
@@ -125,6 +126,13 @@ impl Codex {
         self
     }
 
+    /// The same, bounded as `config` says: what a request pinned of the model and the time, put on
+    /// a client that was already asked what it is.
+    pub fn with_config(mut self, config: CodexConfig) -> Self {
+        self.config = config;
+        self
+    }
+
     /// The program this runs.
     pub fn binary(&self) -> &Path {
         &self.binary
@@ -200,34 +208,116 @@ impl Codex {
     }
 
     /// The features the installed Codex has switched on, asked now.
-    fn enabled(&self) -> Result<Vec<String>, GenerateError> {
+    fn enabled(&self) -> Result<Vec<String>, String> {
         let mut command = Command::new(&self.binary);
         command.args(["features", "list"]);
-        let said = capture(command, SAY).map_err(|e| {
-            GenerateError::Failed(format!("Codex could not list its features: {e}"))
-        })?;
+        let said =
+            capture(command, SAY).map_err(|e| format!("Codex could not list its features: {e}"))?;
         if !said.status.success() {
-            return Err(GenerateError::Failed(format!(
+            return Err(format!(
                 "Codex could not list its features: {}",
                 tail(said.stderr.trim(), 500)
-            )));
+            ));
         }
         Ok(enabled_features(&said.stdout))
     }
 
     /// The environment the client is started in: the process's own, less the credentials that
     /// are not the one chosen, with the home set when the connection has one of its own.
-    fn run_environment(&self) -> Result<(Vec<(String, String)>, Environment), GenerateError> {
+    fn run_environment(&self) -> Result<Run, String> {
         let environment = environment_for(self.auth, &self.app_home, &self.environment)
-            .map_err(|e| GenerateError::Failed(e.to_string()))?;
+            .map_err(|e| e.to_string())?;
         let kept = self
             .environment
             .iter()
             .filter(|(name, _)| !environment.remove.contains(name))
             .cloned()
             .collect();
-        Ok((kept, environment))
+        Ok(Run {
+            kept,
+            home: environment.home,
+        })
     }
+
+    /// Everything that must be true before the client is started, asked in one place so that a run
+    /// and the reason a request waits are the same judgement: it is Codex, a version a person
+    /// verified, with nothing switched on that nobody looked at, and a credential to give it.
+    /// A refusal is a sentence that names no path: it is said where the works folder is.
+    fn preflight(&self) -> Result<Run, String> {
+        let version = self
+            .version
+            .as_deref()
+            .ok_or("the program did not say it is Codex, so it is not run")?;
+        let instructions = self.instructions().unwrap_or_default();
+        let enabled = self.enabled()?;
+        self.support
+            .check(std::env::consts::OS, version, &instructions, &enabled)
+            .map_err(|e| e.to_string())?;
+        self.run_environment()
+    }
+
+    /// Why this Codex cannot be run now, or `None` when it can: for the request that waits.
+    pub fn why_not(&self) -> Option<String> {
+        self.preflight().err()
+    }
+
+    /// Who is signed in to Codex for this connection, asked of the client the way a run
+    /// is started (the same credentials, the same home), or why it could not be asked. `None` is
+    /// nobody.
+    pub fn observe_login(&self) -> Result<Option<Observed>, String> {
+        let run = self.run_environment()?;
+        let mut command = Command::new(&self.binary);
+        command.args(["login", "status"]).env_clear().envs(run.kept);
+        if let Some(home) = &run.home {
+            command.env("CODEX_HOME", home);
+        }
+        let said = capture(command, SAY)
+            .map_err(|_| "Codex could not be asked who is signed in".to_string())?;
+        // It says so on either stream, and fails when nobody is: what it printed is read, not how
+        // it ended.
+        Ok(observed_from_login_status(&format!(
+            "{}\n{}",
+            said.stdout, said.stderr
+        )))
+    }
+}
+
+/// What a run is started with.
+struct Run {
+    /// The process's own environment less the credentials that are not the one chosen.
+    kept: Vec<(String, String)>,
+    /// The home to give the client, when it is not the one it would use itself.
+    home: Option<PathBuf>,
+}
+
+/// What `codex login status` said, as the kind of credential in use, or `None` for nobody. A way it
+/// does not name is [`Observed::Other`] and is not guessed at.
+pub fn observed_from_login_status(text: &str) -> Option<Observed> {
+    let said = text.to_ascii_lowercase();
+    if said.contains("not logged in") {
+        None
+    } else if said.contains("chatgpt") {
+        Some(Observed::Subscription)
+    } else if said.contains("api key") {
+        Some(Observed::ApiKey)
+    } else {
+        Some(Observed::Other)
+    }
+}
+
+/// The Codex a host found, and how a run of it is given what it needs: what a directory needs to
+/// make a generator for a request that names a connection to Codex.
+#[derive(Debug, Clone)]
+pub struct CodexLaunch {
+    pub binary: PathBuf,
+    pub author: AuthorServer,
+    /// The application's own home for the client, which a connection that chose the application's
+    /// stored login uses.
+    pub app_home: PathBuf,
+    /// Which versions were verified, and what is switched off.
+    pub support: Support,
+    /// The environment a run is worked out from: the process's own.
+    pub environment: Vec<(String, String)>,
 }
 
 /// A string as a TOML value: a basic string, whose escapes are JSON's.
@@ -278,18 +368,7 @@ impl Generator for Codex {
     fn generate(&self, job: &Job, cancel: &Cancel) -> Result<Draft, GenerateError> {
         // Nothing is started before it is known to be a Codex this build has verified, with
         // nothing on that nobody looked at, and a credential to give it.
-        let version = self.version.as_deref().ok_or_else(|| {
-            GenerateError::Failed(format!(
-                "{} did not say it is Codex, so it is not run",
-                self.binary.display()
-            ))
-        })?;
-        let instructions = self.instructions().unwrap_or_default();
-        let enabled = self.enabled()?;
-        self.support
-            .check(std::env::consts::OS, version, &instructions, &enabled)
-            .map_err(|e| GenerateError::Failed(e.to_string()))?;
-        let (kept, environment) = self.run_environment()?;
+        let Run { kept, home } = self.preflight().map_err(GenerateError::Failed)?;
 
         let scratch = Scratch::new("sce-codex")
             .map_err(|e| GenerateError::Failed(format!("a folder for the client: {e}")))?;
@@ -308,7 +387,7 @@ impl Generator for Codex {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         // The home the connection gave the client, when it gave one.
-        if let Some(home) = &environment.home {
+        if let Some(home) = &home {
             command.env("CODEX_HOME", home);
         }
         let child = command.spawn().map_err(|e| {

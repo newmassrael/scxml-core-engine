@@ -351,10 +351,6 @@ fn a_route_a_release_switched_off_is_not_run_and_says_so() {
 #[test]
 fn a_kind_of_connection_the_build_has_no_adapter_for_is_not_run() {
     let rig = Rig::new("dir-adapters", SUBSCRIPTION);
-    let mut codex = claude();
-    codex.id = ConnectionId::parse("gpt").unwrap();
-    codex.adapter = AdapterKind::Codex;
-    codex.auth = AuthSource::EnvApiKey;
     let mut local = claude();
     local.id = ConnectionId::parse("pc2").unwrap();
     local.adapter = AdapterKind::Local;
@@ -362,14 +358,13 @@ fn a_kind_of_connection_the_build_has_no_adapter_for_is_not_run() {
     local.display_name = Some("pc2 (tunnel)".to_string());
     local.server_url = Some("http://127.0.0.1:11434/v1".to_string());
 
-    for connection in [codex, local] {
-        let pin = rig.pin(&connection);
-        let said = refused(rig.directory(Policy::shipped()).generator_for(&pin));
-        assert!(
-            said.contains(&format!("no adapter for `{}`", connection.adapter.word())),
-            "{said}"
-        );
-    }
+    let pin = rig.pin(&local);
+    let said = refused(rig.directory(Policy::shipped()).generator_for(&pin));
+
+    assert!(
+        said.contains(&format!("no adapter for `{}`", local.adapter.word())),
+        "{said}"
+    );
 }
 
 #[test]
