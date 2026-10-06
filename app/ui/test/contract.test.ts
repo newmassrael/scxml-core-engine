@@ -724,8 +724,15 @@ describe("the replies the core gives", () => {
   it("carry the commands that sign in to Codex, and the folder the application's own login is made in", () => {
     const signIn = parseCodexStatus(replies.answers["read_codex_status_verified"]).sign_in;
     const find = (source: string, billing: string) => signIn.find((s) => s.source === source && s.billing === billing);
-    expect(find("official-login", "subscription")).toMatchObject({ command: "codex login", home: null });
-    expect(find("official-login", "usage")).toMatchObject({ command: "codex login --with-api-key", home: null });
+    // Each says where the login is kept, so that one the person makes is one a generation finds.
+    expect(find("official-login", "subscription")).toMatchObject({
+      command: "codex login -c cli_auth_credentials_store=file",
+      home: null,
+    });
+    expect(find("official-login", "usage")).toMatchObject({
+      command: "codex login --with-api-key -c cli_auth_credentials_store=file",
+      home: null,
+    });
     // A login made anywhere else is not the one a generation uses, so the folder is named.
     expect(find("app-store", "subscription")?.home).toMatch(/codex-home$/);
   });

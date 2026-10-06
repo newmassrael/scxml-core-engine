@@ -956,25 +956,25 @@
         "sign_in": [
           {
             "billing": "subscription",
-            "command": "codex login",
+            "command": "codex login -c cli_auth_credentials_store=file",
             "home": null,
             "source": "official-login"
           },
           {
             "billing": "usage",
-            "command": "codex login --with-api-key",
+            "command": "codex login --with-api-key -c cli_auth_credentials_store=file",
             "home": null,
             "source": "official-login"
           },
           {
             "billing": "subscription",
-            "command": "codex login",
+            "command": "codex login -c cli_auth_credentials_store=file",
             "home": "/home/person/.local/share/sce/settings/codex-home",
             "source": "app-store"
           },
           {
             "billing": "usage",
-            "command": "codex login --with-api-key",
+            "command": "codex login --with-api-key -c cli_auth_credentials_store=file",
             "home": "/home/person/.local/share/sce/settings/codex-home",
             "source": "app-store"
           }
@@ -1009,25 +1009,25 @@
         "sign_in": [
           {
             "billing": "subscription",
-            "command": "codex login",
+            "command": "codex login -c cli_auth_credentials_store=file",
             "home": null,
             "source": "official-login"
           },
           {
             "billing": "usage",
-            "command": "codex login --with-api-key",
+            "command": "codex login --with-api-key -c cli_auth_credentials_store=file",
             "home": null,
             "source": "official-login"
           },
           {
             "billing": "subscription",
-            "command": "codex login",
+            "command": "codex login -c cli_auth_credentials_store=file",
             "home": "/home/person/.local/share/sce/settings/codex-home",
             "source": "app-store"
           },
           {
             "billing": "usage",
-            "command": "codex login --with-api-key",
+            "command": "codex login --with-api-key -c cli_auth_credentials_store=file",
             "home": "/home/person/.local/share/sce/settings/codex-home",
             "source": "app-store"
           }
@@ -1072,25 +1072,25 @@
         "sign_in": [
           {
             "billing": "subscription",
-            "command": "codex login",
+            "command": "codex login -c cli_auth_credentials_store=file",
             "home": null,
             "source": "official-login"
           },
           {
             "billing": "usage",
-            "command": "codex login --with-api-key",
+            "command": "codex login --with-api-key -c cli_auth_credentials_store=file",
             "home": null,
             "source": "official-login"
           },
           {
             "billing": "subscription",
-            "command": "codex login",
+            "command": "codex login -c cli_auth_credentials_store=file",
             "home": "/home/person/.local/share/sce/settings/codex-home",
             "source": "app-store"
           },
           {
             "billing": "usage",
-            "command": "codex login --with-api-key",
+            "command": "codex login --with-api-key -c cli_auth_credentials_store=file",
             "home": "/home/person/.local/share/sce/settings/codex-home",
             "source": "app-store"
           }
@@ -1125,25 +1125,25 @@
         "sign_in": [
           {
             "billing": "subscription",
-            "command": "codex login",
+            "command": "codex login -c cli_auth_credentials_store=file",
             "home": null,
             "source": "official-login"
           },
           {
             "billing": "usage",
-            "command": "codex login --with-api-key",
+            "command": "codex login --with-api-key -c cli_auth_credentials_store=file",
             "home": null,
             "source": "official-login"
           },
           {
             "billing": "subscription",
-            "command": "codex login",
+            "command": "codex login -c cli_auth_credentials_store=file",
             "home": "/home/person/.local/share/sce/settings/codex-home",
             "source": "app-store"
           },
           {
             "billing": "usage",
-            "command": "codex login --with-api-key",
+            "command": "codex login --with-api-key -c cli_auth_credentials_store=file",
             "home": "/home/person/.local/share/sce/settings/codex-home",
             "source": "app-store"
           }
@@ -1187,25 +1187,25 @@
         "sign_in": [
           {
             "billing": "subscription",
-            "command": "codex login",
+            "command": "codex login -c cli_auth_credentials_store=file",
             "home": null,
             "source": "official-login"
           },
           {
             "billing": "usage",
-            "command": "codex login --with-api-key",
+            "command": "codex login --with-api-key -c cli_auth_credentials_store=file",
             "home": null,
             "source": "official-login"
           },
           {
             "billing": "subscription",
-            "command": "codex login",
+            "command": "codex login -c cli_auth_credentials_store=file",
             "home": "/home/person/.local/share/sce/settings/codex-home",
             "source": "app-store"
           },
           {
             "billing": "usage",
-            "command": "codex login --with-api-key",
+            "command": "codex login --with-api-key -c cli_auth_credentials_store=file",
             "home": "/home/person/.local/share/sce/settings/codex-home",
             "source": "app-store"
           }
@@ -1249,25 +1249,25 @@
         "sign_in": [
           {
             "billing": "subscription",
-            "command": "codex login",
+            "command": "codex login -c cli_auth_credentials_store=file",
             "home": null,
             "source": "official-login"
           },
           {
             "billing": "usage",
-            "command": "codex login --with-api-key",
+            "command": "codex login --with-api-key -c cli_auth_credentials_store=file",
             "home": null,
             "source": "official-login"
           },
           {
             "billing": "subscription",
-            "command": "codex login",
+            "command": "codex login -c cli_auth_credentials_store=file",
             "home": "/home/person/.local/share/sce/settings/codex-home",
             "source": "app-store"
           },
           {
             "billing": "usage",
-            "command": "codex login --with-api-key",
+            "command": "codex login --with-api-key -c cli_auth_credentials_store=file",
             "home": "/home/person/.local/share/sce/settings/codex-home",
             "source": "app-store"
           }

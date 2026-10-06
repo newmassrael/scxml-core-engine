@@ -308,6 +308,13 @@ fn it_is_started_with_the_arguments_that_were_verified() {
             .any(|w| w[0] == "-c" && w[1] == "web_search=\"disabled\""),
         "{args:?}"
     );
+    // Where a login is kept is said, and said the way the sign-in check says it: the file the
+    // person's settings are in is ignored by a run and read by the check, so both are told.
+    assert!(
+        args.windows(2)
+            .any(|w| w[0] == "-c" && w[1] == sce_app_core::codex::auth_store_override()),
+        "{args:?}"
+    );
     assert_eq!(after(&args, "-m"), Some("gpt-test"));
     // The prompt is the last thing, and it is standard input.
     assert_eq!(args.last().map(String::as_str), Some("-"));

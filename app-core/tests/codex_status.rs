@@ -24,7 +24,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use sce_app_core::claude_code::Search;
-use sce_app_core::codex::instructions_of;
+use sce_app_core::codex::{auth_store_override, instructions_of};
 use sce_app_core::codex_status;
 use sce_app_core::codex_support::Support;
 use sce_app_core::{call_in, ConnectionStore, Context, Entrance, Policy, Route, WorkStore};
@@ -68,6 +68,7 @@ impl Fake {
              if [ \"$1\" = \"features\" ]; then cat \"$R/features.txt\"; exit 0; fi\n\
              if [ \"$1\" = \"login\" ]; then\n\
                printf 'home=%s openai=%s codex=%s\\n' \"$CODEX_HOME\" \"$OPENAI_API_KEY\" \"$CODEX_API_KEY\" >> \"$R/logins\"\n\
+               for a in \"$@\"; do printf '%s\\0' \"$a\"; done >> \"$R/login-argv\"; printf '\\n' >> \"$R/login-argv\"\n\
                if [ -n \"$CODEX_HOME\" ]; then text=$(cat \"$R/store.txt\"); else text=$(cat \"$R/official.txt\"); fi\n\
                echo \"$text\"\n\
                case \"$text\" in *'Not logged in'*) exit 1;; esac\n\
@@ -89,6 +90,20 @@ impl Fake {
 
     fn will_list(&self, features: &str) {
         fs::write(self.record.join("features.txt"), features).unwrap();
+    }
+
+    /// The arguments of each time it was asked who is signed in, one argument at a time.
+    fn login_arguments(&self) -> Vec<Vec<String>> {
+        fs::read_to_string(self.record.join("login-argv"))
+            .unwrap_or_default()
+            .lines()
+            .map(|line| {
+                line.split('\0')
+                    .filter(|a| !a.is_empty())
+                    .map(str::to_string)
+                    .collect()
+            })
+            .collect()
     }
 }
 
@@ -251,6 +266,32 @@ fn a_variable_that_is_empty_is_not_a_key() {
 
     // A generation would find no key to run on, so the screen does not say there is one.
     assert_eq!(account(&status, "env-api-key")["state"], "signed-out");
+}
+
+#[test]
+fn the_check_and_a_run_look_for_a_login_in_the_same_place() {
+    // A run ignores the person's settings file and the check cannot (the client's `login status`
+    // takes no such flag), so what the file says of where a login is kept decided the check and not
+    // the run: signed in by the one, nobody by the other. Both are given the same word for it.
+    let fake = Fake::new("cst-same-store", CHATGPT, CHATGPT);
+
+    read(
+        Some(&fake.binary),
+        &Policy::shipped(),
+        &verified(),
+        &environment(&[]),
+    );
+
+    let asked = fake.login_arguments();
+    assert_eq!(asked.len(), 2, "{asked:?}");
+    for arguments in &asked {
+        assert_eq!(&arguments[..2], ["login", "status"], "{arguments:?}");
+        let at = arguments
+            .iter()
+            .position(|a| a == "-c")
+            .expect("a setting was given");
+        assert_eq!(arguments[at + 1], auth_store_override(), "{arguments:?}");
+    }
 }
 
 #[test]
@@ -456,17 +497,22 @@ fn the_commands_that_sign_in_are_fixed_words_and_the_stored_login_names_its_home
             .find(|g| g["source"] == source && g["billing"] == billing)
             .unwrap_or_else(|| panic!("no guidance for {source}/{billing}: {status}"))
     };
+    // The setting for where a login is kept is in the words the person types: a login made without
+    // it is kept where the person's settings file says, and a run does not look there.
     assert_eq!(
         find("official-login", "subscription")["command"],
-        "codex login"
+        "codex login -c cli_auth_credentials_store=file"
     );
     assert_eq!(
         find("official-login", "usage")["command"],
-        "codex login --with-api-key"
+        "codex login --with-api-key -c cli_auth_credentials_store=file"
     );
     assert_eq!(find("official-login", "subscription")["home"], Value::Null);
     // A login made anywhere else is not the one a generation uses, so the folder is named.
-    assert_eq!(find("app-store", "subscription")["command"], "codex login");
+    assert_eq!(
+        find("app-store", "subscription")["command"],
+        "codex login -c cli_auth_credentials_store=file"
+    );
     assert_eq!(find("app-store", "subscription")["home"], APP_HOME);
 }
 

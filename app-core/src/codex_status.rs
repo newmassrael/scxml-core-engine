@@ -25,7 +25,9 @@ use serde::Serialize;
 use crate::auth_policy::{Decision, Observed, Policy, Route};
 use crate::claude_status::{AccountState, Billing, Client};
 use crate::client_find::Search;
-use crate::codex::{locate, login_of, support_verdict, version_of, NotRunnable};
+use crate::codex::{
+    auth_store_setting, locate, login_of, support_verdict, version_of, NotRunnable,
+};
 use crate::codex_environment::API_KEY_VARIABLE;
 use crate::codex_support::Support;
 use crate::connection::{AdapterKind, AuthSource};
@@ -65,7 +67,7 @@ pub struct SourceAccount {
 pub struct Guidance {
     pub source: AuthSource,
     pub billing: Billing,
-    pub command: &'static str,
+    pub command: String,
     /// The folder to start the client with as `CODEX_HOME`, so that the login it makes is the one
     /// a generation uses. None for the official client's own login, which is where the client
     /// keeps it. Said as a folder and not as a shell's words: which shell it is is not known.
@@ -205,9 +207,11 @@ fn signed_in(
 }
 
 /// The commands that sign in to Codex. Fixed words: a plain `codex login` signs in with a ChatGPT
-/// plan, so the key one is named. The application's stored login is made in the application's own
-/// folder, which is named and not put into a command, because the words that set a variable
-/// differ by shell.
+/// plan, so the key one is named. Each says where the login is kept (`-c`), because a login made
+/// without it is kept where the person's settings file says, and a run does not read that file
+/// ([`crate::codex::auth_store_override`]). The application's stored login is made in the
+/// application's own folder, which is named and not put into a command, because the words that
+/// set a variable differ by shell.
 pub fn sign_in(app_home: &Path) -> Vec<Guidance> {
     let home = |path: &Path| Some(path.display().to_string());
     let mut guidance = Vec::new();
@@ -218,13 +222,13 @@ pub fn sign_in(app_home: &Path) -> Vec<Guidance> {
         guidance.push(Guidance {
             source,
             billing: Billing::Subscription,
-            command: "codex login",
+            command: format!("codex login -c {}", auth_store_setting()),
             home: home.clone(),
         });
         guidance.push(Guidance {
             source,
             billing: Billing::Usage,
-            command: "codex login --with-api-key",
+            command: format!("codex login --with-api-key -c {}", auth_store_setting()),
             home,
         });
     }

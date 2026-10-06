@@ -148,70 +148,14 @@ impl Codex {
     /// The arguments of a run, which are what a person verifies. `scratch` is the folder the run
     /// works in, and `last` the file it writes its last message to.
     fn arguments(&self, scratch: &Path, schema_file: &Path, last: &Path) -> Vec<String> {
-        let mut args: Vec<String> = vec!["exec".into(), "--json".into()];
-        args.extend(["--output-schema".into(), schema_file.display().to_string()]);
-        args.extend(["-o".into(), last.display().to_string()]);
-        args.extend([
-            "--ephemeral".into(),
-            "--ignore-user-config".into(),
-            "-s".into(),
-            "read-only".into(),
-            "--skip-git-repo-check".into(),
-            "-C".into(),
-            scratch.display().to_string(),
-        ]);
-        if let Some(model) = &self.config.model {
-            args.extend(["-m".into(), model.clone()]);
-        }
-        for feature in self.support.disabled_features() {
-            args.extend(["--disable".into(), feature.clone()]);
-        }
-        for setting in self.settings() {
-            args.extend(["-c".into(), setting]);
-        }
-        // The prompt is standard input.
-        args.push("-".into());
-        args
-    }
-
-    /// The configuration a run is given on the command line, as `key=value` with a TOML value.
-    fn settings(&self) -> Vec<String> {
-        let key = |name: &str| format!("mcp_servers.{SERVER}.{name}");
-        let env: Vec<String> = self
-            .author
-            .env
-            .iter()
-            .map(|(name, value)| format!("{}={}", toml_string(name), toml_string(value)))
-            .collect();
-        vec![
-            "approval_policy=\"never\"".to_string(),
-            "web_search=\"disabled\"".to_string(),
-            format!(
-                "{}={}",
-                key("command"),
-                toml_string(&self.author.command.display().to_string())
-            ),
-            format!(
-                "{}=[{}]",
-                key("args"),
-                self.author
-                    .args
-                    .iter()
-                    .map(|a| toml_string(a))
-                    .collect::<Vec<_>>()
-                    .join(",")
-            ),
-            format!("{}={{{}}}", key("env"), env.join(",")),
-            format!(
-                "{}=[{}]",
-                key("enabled_tools"),
-                AUTHOR_TOOLS
-                    .iter()
-                    .map(|t| toml_string(t))
-                    .collect::<Vec<_>>()
-                    .join(",")
-            ),
-        ]
+        exec_arguments(
+            &self.author,
+            self.support.disabled_features(),
+            self.config.model.as_deref(),
+            scratch,
+            schema_file,
+            last,
+        )
     }
 
     /// Everything that must be true before the client is started, asked in one place so that a run
@@ -238,6 +182,108 @@ impl Codex {
     pub fn observe_login(&self) -> Result<Option<Observed>, String> {
         login_of(&self.binary, self.auth, &self.app_home, &self.environment)
     }
+}
+
+/// The arguments of `codex exec` for a run. A free function and not a method so that what a person
+/// verifies can be named from the arguments themselves ([`instructions_of`]): `author` says how the
+/// client reaches the authoring server, `disabled` which of its features are switched off, `scratch`
+/// is the folder the run works in, `schema_file` the form its answer must take and `last` the file
+/// it writes its last message to.
+fn exec_arguments(
+    author: &AuthorServer,
+    disabled: &[String],
+    model: Option<&str>,
+    scratch: &Path,
+    schema_file: &Path,
+    last: &Path,
+) -> Vec<String> {
+    let mut args: Vec<String> = vec!["exec".into(), "--json".into()];
+    args.extend(["--output-schema".into(), schema_file.display().to_string()]);
+    args.extend(["-o".into(), last.display().to_string()]);
+    args.extend([
+        "--ephemeral".into(),
+        "--ignore-user-config".into(),
+        "-s".into(),
+        "read-only".into(),
+        "--skip-git-repo-check".into(),
+        "-C".into(),
+        scratch.display().to_string(),
+    ]);
+    if let Some(model) = model {
+        args.extend(["-m".into(), model.to_string()]);
+    }
+    for feature in disabled {
+        args.extend(["--disable".into(), feature.clone()]);
+    }
+    for setting in run_settings(author) {
+        args.extend(["-c".into(), setting]);
+    }
+    // The prompt is standard input.
+    args.push("-".into());
+    args
+}
+
+/// The configuration a run is given on the command line, as `key=value` with a TOML value.
+fn run_settings(author: &AuthorServer) -> Vec<String> {
+    let key = |name: &str| format!("mcp_servers.{SERVER}.{name}");
+    let env: Vec<String> = author
+        .env
+        .iter()
+        .map(|(name, value)| format!("{}={}", toml_string(name), toml_string(value)))
+        .collect();
+    vec![
+        "approval_policy=\"never\"".to_string(),
+        "web_search=\"disabled\"".to_string(),
+        auth_store_override(),
+        format!(
+            "{}={}",
+            key("command"),
+            toml_string(&author.command.display().to_string())
+        ),
+        format!(
+            "{}=[{}]",
+            key("args"),
+            author
+                .args
+                .iter()
+                .map(|a| toml_string(a))
+                .collect::<Vec<_>>()
+                .join(",")
+        ),
+        format!("{}={{{}}}", key("env"), env.join(",")),
+        format!(
+            "{}=[{}]",
+            key("enabled_tools"),
+            AUTHOR_TOOLS
+                .iter()
+                .map(|t| toml_string(t))
+                .collect::<Vec<_>>()
+                .join(",")
+        ),
+    ]
+}
+
+/// What decides where the client keeps a login, and the one place a login is kept for this build.
+/// A run ignores the person's settings file (`--ignore-user-config`), and the client's
+/// `login status` has no such flag and reads it, so a file that says the login is in the system's
+/// keychain made the check say somebody is signed in that a run could not see. Both are told the
+/// same, and the sign-in commands the person is given say it too, so that a login made by the
+/// person is made where a run looks. What else a settings file can say about a login
+/// (`forced_login_method`, `forced_chatgpt_workspace_id`, a provider) cannot be unsaid on the
+/// command line: it is part of what a person verifies a version against.
+const AUTH_STORE_KEY: &str = "cli_auth_credentials_store";
+const AUTH_STORE_VALUE: &str = "file";
+
+/// The setting that says where a login is kept, as the client is told it on the command line
+/// (`-c`): a TOML value, which is how a run and the sign-in check are given it.
+pub fn auth_store_override() -> String {
+    format!("{AUTH_STORE_KEY}=\"{AUTH_STORE_VALUE}\"")
+}
+
+/// The same setting as a person types it after `codex login -c`. No quotes: a value that is not
+/// TOML is taken as the word it is, and the quotes of one shell are not those of another.
+pub fn auth_store_setting() -> String {
+    format!("{AUTH_STORE_KEY}={AUTH_STORE_VALUE}")
 }
 
 /// What a run is started with.
@@ -279,7 +325,11 @@ pub fn login_of(
 ) -> Result<Option<Observed>, String> {
     let run = run_environment(auth, app_home, environment)?;
     let mut command = Command::new(binary);
-    command.args(["login", "status"]).env_clear().envs(run.kept);
+    command
+        .args(["login", "status", "-c"])
+        .arg(auth_store_override())
+        .env_clear()
+        .envs(run.kept);
     if let Some(home) = &run.home {
         command.env("CODEX_HOME", home);
     }
@@ -369,20 +419,79 @@ pub fn locate(named: Option<&Path>, search: &Search) -> Option<PathBuf> {
 }
 
 /// The version of the working instructions this build gives Codex (`codex/<digest>`): named by
-/// what the client is told, what it must answer in, which tools it may use, and what is switched
-/// off and reviewed. A change to any of them is another version, and another entry on the list of
-/// what a person verified, with no one to remember to say so.
+/// what the client is told, what it must answer in, which tools it may use, what is switched off
+/// and reviewed, and the arguments it is started with. A change to any of them is another version,
+/// and another entry on the list of what a person verified, with no one to remember to say so.
 pub fn instructions_of(support: &Support) -> String {
-    let material = format!(
-        "{SYSTEM_PROMPT}\n{}\n{}\n{}\n{}\n{}",
+    let digest = Revision::of(instruction_material(support).as_bytes()).to_string();
+    format!("codex/{}", &digest[..12])
+}
+
+/// What [`instructions_of`] names. The arguments are in it as they are made, with the parts that
+/// belong to one run (the folders, the authoring server's launcher) as names: what a person
+/// verified is the sandbox, the settings and the flags, and those are the same for every run.
+fn instruction_material(support: &Support) -> String {
+    let author = AuthorServer {
+        command: PathBuf::from("<launcher>"),
+        args: vec!["<argument>".to_string()],
+        env: vec![("<name>".to_string(), "<value>".to_string())],
+    };
+    let arguments = exec_arguments(
+        &author,
+        support.disabled_features(),
+        None,
+        Path::new("<scratch>"),
+        Path::new("<schema>"),
+        Path::new("<last>"),
+    );
+    format!(
+        "{SYSTEM_PROMPT}\n{}\n{}\n{}\n{}\n{}\n{}",
         prompt(&blank_job()),
         schema(),
         AUTHOR_TOOLS.join(","),
         support.disabled_features().join(","),
         support.reviewed_features().join(","),
-    );
-    let digest = Revision::of(material.as_bytes()).to_string();
-    format!("codex/{}", &digest[..12])
+        arguments.join("\n"),
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn support() -> Support {
+        Support::from_json(
+            r#"{"verified":[],"disabled_features":["shell_tool"],"reviewed_features":["fast_mode"]}"#,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn what_a_person_verified_is_named_by_the_arguments_of_a_run() {
+        let material = instruction_material(&support());
+
+        // The sandbox, the settings, the flags and the one place a login is kept.
+        for part in [
+            "--ignore-user-config",
+            "read-only",
+            "approval_policy=\"never\"",
+            "web_search=\"disabled\"",
+            "--disable\nshell_tool",
+            &auth_store_override(),
+            "mcp_servers.sce-author.enabled_tools=",
+        ] {
+            assert!(material.contains(part), "{part} is not named: {material}");
+        }
+    }
+
+    #[test]
+    fn the_name_does_not_depend_on_what_belongs_to_one_run() {
+        // The folders and the launcher change from run to run and from computer to computer.
+        let material = instruction_material(&support());
+
+        assert!(!material.contains("/home"), "{material}");
+        assert_eq!(instructions_of(&support()), instructions_of(&support()));
+    }
 }
 
 /// What `codex login status` said, as the kind of credential in use, or `None` for nobody. A way it
