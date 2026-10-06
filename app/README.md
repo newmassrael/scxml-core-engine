@@ -493,17 +493,29 @@ of a work's text does.
 settings**: the browser shell is a development tool a token reaches over a network, and
 `sce-work` is what an AI reaches the works through, and an AI must not be able to change which AI
 it runs on. They answer `not-allowed-here`, and an entrance with no settings folder answers
-`no-settings`. `describe` says which entrance asked and whether it may change them. A command
-does not take the path of a program (`save_connection` refuses it as `bad-connection`): a
-connection names a program the application runs, so a command that took a path would be a way
-to make it run anything, and a program is chosen in a window the person sees.
+`no-settings`. `describe` says which entrance asked and whether it may change them, and whether
+it may start a program (`starts_programs`).
+
+**A connection names a program only among the ones the application found.** A connection names
+a program the application runs, so a command that took any path would be a way to make it run
+anything. `find_clients` (the desktop window only, because asking starts the programs) lists the
+Claude Code programs the application finds, each with the version it says: those on the search
+path, then the folders the official installer uses under the person's home (a window started from
+a menu may not have them on its path), then the system's own. Only a program that says it is
+Claude Code is listed, and one reached by two names once. `save_connection` keeps an `executable`
+only when it is one of those found again at the time of the save (`bad-connection` otherwise,
+whatever the file says of itself), and a kind of connection with no program to find takes none.
+What the connection names is then what runs for it and what the settings screen asks who is
+signed in to; if it is gone or no longer says it is Claude Code when a request is to run, the
+request waits and says so.
 
 `read_auth_policy` is the table of ways of signing in that this build uses, each allowed,
 conditional, forbidden or unconfirmed, with the decision each gets. What a provider's terms
 allow is a fact about a way of reaching its model (a subscription, a key, a cloud provider's
 credential), so the table is of routes, and it is a constant of the build: a person cannot widen
-it, a release can switch a route off, and a route that is not in it is not used. The design that
-explains each row is in `claudedocs/spec-to-pseudocode-flow/gui-ai-model-login-design.md`.
+it, a release can switch a route off, and a route that is not in it is not used. What each row
+rests on (the provider's terms as they read, and the decision the owner took where they are
+silent) is said at the row, in `app-core/src/auth_policy.rs`.
 
 **A request is made for a connection.** `request_generation` may name one (`connection`: its id
 and the revision the screen read). The core, not the screen, copies from the person's settings

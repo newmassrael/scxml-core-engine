@@ -19,8 +19,8 @@
 //! conditional routes are used.
 //!
 //! The table is written a second time in `tests/auth_policy.rs`, so that a change to one cannot
-//! go unnoticed in the other, and the design that explains each row is
-//! `claudedocs/spec-to-pseudocode-flow/gui-ai-model-login-design.md` (not part of the crate).
+//! go unnoticed in the other. What each row rests on is said at the row: the provider's terms as
+//! they read, and, where they are silent, the decision the product's owner took.
 
 use std::collections::BTreeSet;
 
