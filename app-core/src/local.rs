@@ -29,13 +29,14 @@
 //! gave it. Whether the model can call tools at all is the model's; one that cannot is said to have
 //! given no draft, in so many turns.
 
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 
 use crate::claude_code::AuthorServer;
 use crate::client_run::{
-    blank_job, draft_from, prompt, schema, span_words, tail, Scratch, AUTHOR_TOOLS, SYSTEM_PROMPT,
+    blank_job, draft_from, prompt, span_words, tail, Scratch, AUTHOR_TOOLS, SYSTEM_PROMPT,
 };
 use crate::http_client::{self, Endpoint, HttpError, Request};
 use crate::mcp_client::{McpClient, McpError, Tool};
@@ -55,9 +56,43 @@ const SAID_MAX: usize = 400;
 /// How long a server is given to list its models: a person is waiting at a screen for it.
 const LIST_WITHIN: Duration = Duration::from_secs(10);
 
-/// Said to the model beside what the authoring server says of how to use it.
-const ANSWER_FORM: &str = "Your last message is the draft: one JSON object of exactly this form, \
-and nothing else (no code fence, no words before or after it):";
+/// Said to the model of what its last message is: the draft, written out as an example to be filled
+/// in. A description of the form (a JSON Schema) is what the other clients are given, through a
+/// channel of their own; a model that is given one in its conversation says it back (measured on a
+/// real server: its last message was the schema), and an example is what it copies the shape of.
+const ANSWER_FORM: &str = "Your last message is the draft: one JSON object and nothing else (no \
+code fence, no words before or after it), written like this, with the real document in place of \
+what is in angle brackets:\n\
+{\"model\": {\"documents\": [{\"name\": \"<file name, such as door.scxml>\", \"text\": \"<the \
+whole SCXML document, exactly as validate_scxml accepted it>\"}]}}\n\
+When the model is several documents that import each other, list each of them in `documents` \
+and add `\"entry\": \"<the name of the one to start from>\"` inside `model`. The requirement list \
+is not part of what you write: the application takes it from your last scxml_requirement_set \
+call, so call that tool and leave `requirements` out of the draft.";
+
+/// What a model is told of its tools: the authoring instructions it is also given describe tools
+/// that save and that take a request, which are for the clients that do those things themselves,
+/// and a model that reads of a tool tries it (one was seen calling `works_begin_generation`).
+fn tools_words(names: &[&str]) -> String {
+    format!(
+        "You have exactly these tools and no others: {}. The authoring instructions below also \
+         describe tools that save, take a request or accept a design. You have none of them, and \
+         the application does those parts.",
+        names.join(", ")
+    )
+}
+
+/// Everything a run says to the model that does not depend on the work: what [`Local::instructions`]
+/// is the name of.
+fn told() -> String {
+    format!(
+        "{SYSTEM_PROMPT}\n{}\n{ANSWER_FORM}\n{}\n{}\n{REPAIRS}\n{}\n{SCHEMA_ECHO}",
+        tools_words(&AUTHOR_TOOLS),
+        prompt(&blank_job()),
+        AUTHOR_TOOLS.join(","),
+        repair_words("<what was wrong>"),
+    )
+}
 
 /// What a model that answered with something that is not the draft is told.
 fn repair_words(wrong: &str) -> String {
@@ -89,6 +124,88 @@ impl LocalConfig {
     }
 }
 
+/// One step of a run, for whoever watches it (a test, a log, a progress line): what was asked of
+/// the model, what it said, what its tools did, and why a message was not the draft.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Step {
+    /// The model is asked, for the `turn`th time, with `messages` in the conversation so far.
+    Asked { turn: u32, messages: usize },
+    /// What the model said, and the tools it called (each as its name and its arguments as the
+    /// model wrote them).
+    Said {
+        turn: u32,
+        words: String,
+        calls: Vec<(String, String)>,
+    },
+    /// A tool was run for the model: which, whether it said it failed, and what it gave back (the
+    /// words the model was handed).
+    Tool {
+        name: String,
+        failed: bool,
+        words: String,
+    },
+    /// The model's message was not the draft, and why.
+    NotTheDraft { why: String },
+}
+
+/// Somebody who is told each step of a run.
+type Sink = Arc<dyn Fn(&Step) + Send + Sync>;
+
+/// Where the steps of a run go, when anybody wants them.
+#[derive(Clone, Default)]
+struct Trace(Option<Sink>);
+
+impl std::fmt::Debug for Trace {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(if self.0.is_some() {
+            "Trace(on)"
+        } else {
+            "Trace(off)"
+        })
+    }
+}
+
+impl Trace {
+    /// Say a step, which is only worked out when somebody is listening.
+    fn say(&self, step: impl FnOnce() -> Step) {
+        if let Some(sink) = &self.0 {
+            sink(&step());
+        }
+    }
+}
+
+/// What a tool call came to: what the tool said, and whether it said it failed. Whether it failed
+/// is known where the call is made and is carried along, not read back out of the words.
+struct ToolWords {
+    words: String,
+    failed: bool,
+}
+
+impl ToolWords {
+    fn gave(words: String) -> Self {
+        Self {
+            words,
+            failed: false,
+        }
+    }
+
+    fn failed(words: String) -> Self {
+        Self {
+            words,
+            failed: true,
+        }
+    }
+
+    /// The words the model is handed: a failure is said to be one.
+    fn handed_back(&self) -> String {
+        if self.failed {
+            format!("Error: {}", self.words)
+        } else {
+            self.words.clone()
+        }
+    }
+}
+
 /// A model server, as a generator.
 #[derive(Debug, Clone)]
 pub struct Local {
@@ -97,6 +214,7 @@ pub struct Local {
     config: LocalConfig,
     /// The key the server wants, when it wants one.
     bearer: Option<String>,
+    trace: Trace,
 }
 
 impl Local {
@@ -108,12 +226,19 @@ impl Local {
             author,
             config,
             bearer: None,
+            trace: Trace::default(),
         }
     }
 
     /// The same, giving `key` to the server as the credential it asked for.
     pub fn with_bearer(mut self, key: String) -> Self {
         self.bearer = Some(key);
+        self
+    }
+
+    /// The same, telling `sink` each [`Step`] of a run as it happens.
+    pub fn with_trace(mut self, sink: impl Fn(&Step) + Send + Sync + 'static) -> Self {
+        self.trace = Trace(Some(Arc::new(sink)));
         self
     }
 
@@ -222,8 +347,9 @@ impl Local {
         }
     }
 
-    /// What a tool call of the model comes to, as the words handed back to it. A call that is not
-    /// one that can be made is an answer to the model and not the end of the run.
+    /// What a tool call of the model comes to, as the words handed back to it and whether they say
+    /// it failed. A call that is not one that can be made is an answer to the model and not the
+    /// end of the run.
     fn run_tool(
         &self,
         mcp: &mut McpClient,
@@ -231,31 +357,37 @@ impl Local {
         call: &Call,
         deadline: Instant,
         cancel: &Cancel,
-    ) -> Result<String, GenerateError> {
+    ) -> Result<ToolWords, GenerateError> {
         let Some(tool) = tools.iter().find(|tool| tool.name == call.name) else {
             let names: Vec<&str> = tools.iter().map(|tool| tool.name.as_str()).collect();
-            return Ok(format!(
-                "Error: there is no tool named `{}`. The tools are: {}.",
+            return Ok(ToolWords::failed(format!(
+                "there is no tool named `{}`. The tools are: {}.",
                 call.name,
                 names.join(", ")
-            ));
+            )));
         };
         let arguments = match &call.arguments {
             Ok(Value::Object(object)) => Value::Object(object.clone()),
             // A tool that takes nothing is called with nothing.
             Ok(Value::Null) => json!({}),
-            Ok(_) => return Ok("Error: the arguments of a tool are one JSON object.".to_string()),
+            Ok(_) => {
+                return Ok(ToolWords::failed(
+                    "the arguments of a tool are one JSON object.".to_string(),
+                ))
+            }
             Err(why) => {
-                return Ok(format!("Error: the arguments are not valid JSON: {why}"));
+                return Ok(ToolWords::failed(format!(
+                    "the arguments are not valid JSON: {why}"
+                )));
             }
         };
         let called = mcp
             .call(&tool.name, &arguments, deadline, cancel)
             .map_err(|e| self.mcp_failure(e))?;
         Ok(match (called.is_error, called.text.is_empty()) {
-            (true, _) => format!("Error: {}", called.text),
-            (false, true) => "(the tool gave no output)".to_string(),
-            (false, false) => called.text,
+            (true, _) => ToolWords::failed(called.text),
+            (false, true) => ToolWords::gave("(the tool gave no output)".to_string()),
+            (false, false) => ToolWords::gave(called.text),
         })
     }
 }
@@ -269,14 +401,7 @@ impl Generator for Local {
     /// many times a wrong answer is put right. A change to any of them is another version of the
     /// instructions, and a bundle records which.
     fn instructions(&self) -> Option<String> {
-        let material = format!(
-            "{SYSTEM_PROMPT}\n{ANSWER_FORM}\n{}\n{}\n{}\n{REPAIRS}\n{}",
-            schema(),
-            prompt(&blank_job()),
-            AUTHOR_TOOLS.join(","),
-            repair_words("<what was wrong>"),
-        );
-        let digest = Revision::of(material.as_bytes()).to_string();
+        let digest = Revision::of(told().as_bytes()).to_string();
         Some(format!("local/{}", &digest[..12]))
     }
 
@@ -288,38 +413,69 @@ impl Generator for Local {
             .map_err(|e| self.mcp_failure(e))?;
         let tools = self.offered(&mut mcp, deadline, cancel)?;
         let offered = Value::Array(tools.iter().map(as_openai_tool).collect());
-        let mut system = SYSTEM_PROMPT.to_string();
+        let names: Vec<&str> = tools.iter().map(|tool| tool.name.as_str()).collect();
+        let mut system = format!("{SYSTEM_PROMPT}\n\n{}", tools_words(&names));
         if let Some(instructions) = mcp.instructions() {
             system.push_str("\n\n");
             system.push_str(instructions);
         }
-        system.push_str(&format!("\n\n{ANSWER_FORM}\n{}", schema()));
+        system.push_str(&format!("\n\n{ANSWER_FORM}"));
+        // What the tool that builds the requirement list gave last: it is the list, and the model
+        // is not asked to write it out again.
+        let mut listed: Option<Listed> = None;
         let mut messages = vec![
             json!({"role": "system", "content": system}),
             json!({"role": "user", "content": prompt(job)}),
         ];
         let mut repairs = 0;
         for turn in 0..self.config.max_turns {
+            self.trace.say(|| Step::Asked {
+                turn,
+                messages: messages.len(),
+            });
             let message = self.ask(&messages, &offered, deadline, cancel)?;
             let calls = calls_of(&message, turn);
+            self.trace.say(|| Step::Said {
+                turn,
+                words: content_of(&message),
+                calls: calls
+                    .iter()
+                    .map(|call| (call.name.clone(), call.raw.clone()))
+                    .collect(),
+            });
             if !calls.is_empty() {
                 messages.push(echo_of(&message, &calls));
                 for call in &calls {
-                    let words = self.run_tool(&mut mcp, &tools, call, deadline, cancel)?;
-                    messages
-                        .push(json!({"role": "tool", "tool_call_id": call.id, "content": words}));
+                    let done = self.run_tool(&mut mcp, &tools, call, deadline, cancel)?;
+                    self.trace.say(|| Step::Tool {
+                        name: call.name.clone(),
+                        failed: done.failed,
+                        words: done.handed_back(),
+                    });
+                    if call.name == REQUIREMENT_SET && !done.failed {
+                        listed = Listed::in_words(&done.words).or(listed);
+                    }
+                    messages.push(json!({
+                        "role": "tool",
+                        "tool_call_id": call.id,
+                        "content": done.handed_back(),
+                    }));
                 }
                 continue;
             }
             let said = content_of(&message);
-            match draft_in(&said) {
+            match draft_in(&said, listed.as_ref()) {
                 Ok(draft) => return Ok(draft),
                 Err(wrong) if repairs < REPAIRS => {
+                    self.trace.say(|| Step::NotTheDraft { why: wrong.clone() });
                     repairs += 1;
                     messages.push(json!({"role": "assistant", "content": said}));
                     messages.push(json!({"role": "user", "content": repair_words(&wrong)}));
                 }
-                Err(wrong) => return Err(GenerateError::Unusable(wrong)),
+                Err(wrong) => {
+                    self.trace.say(|| Step::NotTheDraft { why: wrong.clone() });
+                    return Err(GenerateError::Unusable(wrong));
+                }
             }
         }
         Err(GenerateError::Failed(format!(
@@ -411,40 +567,112 @@ fn content_of(message: &Value) -> String {
     }
 }
 
-/// The draft in the model's last message, or what is wrong with it.
-fn draft_in(said: &str) -> Result<Draft, String> {
-    draft_from(&answer_in(said)?)
+/// The requirement list that the tool which builds it gave: what the application uses as the
+/// draft's `requirements`, so that a list of some thousands of characters is not copied out by a
+/// model whose copy can be wrong. Taken from what the tool's own answer says it returns
+/// (`manifest_text` and `sidecar_text`, in the tool's description).
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Listed {
+    manifest: String,
+    sidecar: Option<String>,
 }
 
-/// The JSON object of the answer in `said`, out of what surrounds it.
+/// The authoring server's tool that builds the requirement list.
+const REQUIREMENT_SET: &str = "scxml_requirement_set";
+
+impl Listed {
+    /// The list in the words of a call of the tool, when they are its answer.
+    fn in_words(words: &str) -> Option<Listed> {
+        let answer: Value = serde_json::from_str(words).ok()?;
+        let manifest = answer["manifest_text"].as_str().filter(|m| !m.is_empty())?;
+        Some(Listed {
+            manifest: manifest.to_string(),
+            sidecar: answer["sidecar_text"].as_str().map(str::to_string),
+        })
+    }
+
+    /// `answer` with this list as its `requirements`, whatever it said of them.
+    fn put_in(&self, answer: &mut Value) {
+        let mut requirements = json!({"manifest_text": self.manifest});
+        if let Some(sidecar) = &self.sidecar {
+            requirements["sidecar_text"] = json!(sidecar);
+        }
+        answer["requirements"] = requirements;
+    }
+}
+
+/// What a model that said the description of the form back is told.
+const SCHEMA_ECHO: &str = "that is the description of the form (a JSON Schema), not a draft \
+written in it: write the draft itself, an object with `model` in it";
+
+/// The draft in the model's last message, or what is wrong with it. `listed` is the requirement
+/// list the tool gave, which is the draft's whatever the model wrote of it.
+fn draft_in(said: &str, listed: Option<&Listed>) -> Result<Draft, String> {
+    let mut first_wrong = None;
+    for mut answer in answers_in(said)? {
+        if let Some(listed) = listed {
+            listed.put_in(&mut answer);
+        }
+        match draft_from(&answer) {
+            Ok(draft) => return Ok(draft),
+            Err(wrong) => {
+                first_wrong.get_or_insert(wrong);
+            }
+        }
+    }
+    Err(first_wrong.unwrap_or_else(|| {
+        "there is a JSON object in it, but it has no `model`: the draft has `model` in it"
+            .to_string()
+    }))
+}
+
+/// The JSON objects in `said` that may be the draft, out of what surrounds them: those that have
+/// a `model` in them, in the order they begin.
 ///
-/// The first `{` that begins a JSON object with a `model` in it is where the answer starts, and
-/// what follows the object is not read: a code fence, a sentence, or the marker of a tool call that
-/// a model left at its end. An object that is not the answer (a sentence with braces in it, an
-/// object of the model's own) is passed over, and the next `{` is tried. What is not there is said.
-fn answer_in(said: &str) -> Result<Value, String> {
+/// Each `{` begins a try: what is read from it is the first JSON value, and what follows is not
+/// read (a code fence, a sentence, or the marker of a tool call that a model left at its end).
+/// An object that is not the draft (a sentence with braces in it, a check's result the model
+/// quoted) is not one, and a draft is not told from the things inside it by having a `model`
+/// key, so the caller reads each as a draft and takes the first that is one. A message that is the
+/// description of the form is said to be that, and what is not there is said.
+fn answers_in(said: &str) -> Result<Vec<Value>, String> {
     if said.trim().is_empty() {
         return Err("the message is empty".to_string());
     }
-    let mut seen_object = false;
+    let mut objects = Vec::new();
     for (at, _) in said.match_indices('{') {
         let mut values = serde_json::Deserializer::from_str(&said[at..]).into_iter::<Value>();
         if let Some(Ok(value)) = values.next() {
             if value.is_object() {
-                seen_object = true;
-                if value.get("model").is_some() {
-                    return Ok(value);
-                }
+                objects.push((at, value));
             }
         }
     }
-    Err(if seen_object {
-        "there is a JSON object in it, but it has no `model`: the draft has `model` and \
-         `requirements`"
-            .to_string()
+    // A schema's own top level is `properties` and `type`; no draft has them there.
+    if let Some((_, first)) = objects.first() {
+        if first.get("properties").is_some() && first.get("type").is_some() {
+            return Err(SCHEMA_ECHO.to_string());
+        }
+    }
+    if objects.is_empty() {
+        return Err(format!(
+            "there is no JSON object in it: {}",
+            short(said, 200)
+        ));
+    }
+    let candidates: Vec<Value> = objects
+        .into_iter()
+        .map(|(_, value)| value)
+        .filter(|value| value.get("model").is_some())
+        .collect();
+    if candidates.is_empty() {
+        Err(
+            "there is a JSON object in it, but it has no `model`: the draft has `model` in it"
+                .to_string(),
+        )
     } else {
-        format!("there is no JSON object in it: {}", short(said, 200))
-    })
+        Ok(candidates)
+    }
 }
 
 /// The start of `text`, on one line, for a sentence that quotes it.
@@ -567,9 +795,9 @@ mod tests {
 
     #[test]
     fn a_message_that_is_the_draft_is_the_answer() {
-        let answer = answer_in(&form("<scxml/>")).unwrap();
+        let made = draft_in(&form("<scxml/>"), None).unwrap();
 
-        assert_eq!(answer["model"]["documents"][0]["text"], "<scxml/>");
+        assert_eq!(made.model.entry_text(), "<scxml/>");
     }
 
     #[test]
@@ -592,7 +820,7 @@ mod tests {
                 format!("Done.\n```json\n{draft}\n```\n<tool_call>"),
             ),
         ] {
-            assert!(answer_in(&said).is_ok(), "{label}: {said}");
+            assert!(draft_in(&said, None).is_ok(), "{label}: {said}");
         }
     }
 
@@ -603,9 +831,22 @@ mod tests {
             form("<scxml/>")
         );
 
-        let answer = answer_in(&said).unwrap();
+        let made = draft_in(&said, None).unwrap();
 
-        assert_eq!(answer["model"]["documents"][0]["text"], "<scxml/>");
+        assert_eq!(made.model.entry_text(), "<scxml/>");
+    }
+
+    #[test]
+    fn an_object_that_has_a_model_and_is_not_a_draft_is_not_taken_for_one() {
+        // A `model` key is not what makes a draft: a check's result the model quoted can have one.
+        let said = format!(
+            "{{\"model\": \"a state machine\"}}\nand here is the draft:\n{}",
+            form("<scxml/>")
+        );
+
+        let made = draft_in(&said, None).unwrap();
+
+        assert_eq!(made.model.entry_text(), "<scxml/>");
     }
 
     #[test]
@@ -615,15 +856,19 @@ mod tests {
             form("<scxml/>")
         );
 
-        assert!(answer_in(&said).is_ok());
+        assert!(draft_in(&said, None).is_ok());
     }
 
     #[test]
     fn what_is_not_a_draft_is_said_and_not_guessed_at() {
-        let empty = answer_in("   ").unwrap_err();
-        let prose = answer_in("I could not write a model for this.").unwrap_err();
-        let other = answer_in("{\"ok\": true}").unwrap_err();
-        let cut = answer_in("{\"model\": {\"documents\": [").unwrap_err();
+        let empty = draft_in("   ", None).err().unwrap();
+        let prose = draft_in("I could not write a model for this.", None)
+            .err()
+            .unwrap();
+        let other = draft_in("{\"ok\": true}", None).err().unwrap();
+        let cut = draft_in("{\"model\": {\"documents\": [", None)
+            .err()
+            .unwrap();
 
         assert!(empty.contains("empty"), "{empty}");
         assert!(prose.contains("no JSON object"), "{prose}");
@@ -637,9 +882,115 @@ mod tests {
     fn a_draft_with_a_model_and_no_documents_is_what_the_draft_says_is_wrong_with_it() {
         let said = json!({"model": {"documents": []}, "requirements": {"manifest_text": "{}"}});
 
-        let wrong = draft_in(&said.to_string()).unwrap_err();
+        let wrong = draft_in(&said.to_string(), None).unwrap_err();
 
         assert!(wrong.contains("empty"), "{wrong}");
+    }
+
+    #[test]
+    fn a_message_that_is_the_description_of_the_form_is_said_to_be_that() {
+        // What a model said on a real server: the schema it was given, back as its last message.
+        let schema = json!({
+            "properties": {
+                "model": {"properties": {"documents": {"type": "array"}}, "type": "object"},
+                "requirements": {"type": "object"},
+            },
+            "required": ["model", "requirements"],
+            "type": "object",
+        });
+
+        let wrong = draft_in(&schema.to_string(), None).unwrap_err();
+
+        assert!(wrong.contains("JSON Schema"), "{wrong}");
+        assert!(wrong.contains("write the draft itself"), "{wrong}");
+    }
+
+    #[test]
+    fn the_requirement_list_is_the_one_the_tool_gave_whatever_the_model_wrote_of_it() {
+        let listed = Listed {
+            manifest: "{\"doc_id\":\"from-tool\"}\n".to_string(),
+            sidecar: Some("{\"R1\":\"the door closes\"}".to_string()),
+        };
+        let without = json!({"model": {"documents": [{"name": "m.scxml", "text": "<scxml/>"}]}});
+        let retyped = json!({
+            "model": {"documents": [{"name": "m.scxml", "text": "<scxml/>"}]},
+            "requirements": {"manifest_text": "a copy with a mistake in it"},
+        });
+
+        for said in [without, retyped] {
+            let made = draft_in(&said.to_string(), Some(&listed)).unwrap();
+
+            assert_eq!(made.requirements.manifest, "{\"doc_id\":\"from-tool\"}\n");
+            assert_eq!(
+                made.requirements.sidecar.as_deref(),
+                Some("{\"R1\":\"the door closes\"}")
+            );
+        }
+    }
+
+    #[test]
+    fn with_no_list_from_the_tool_the_requirements_are_the_models_and_their_absence_is_said() {
+        let without = json!({"model": {"documents": [{"name": "m.scxml", "text": "<scxml/>"}]}});
+
+        let wrong = draft_in(&without.to_string(), None).unwrap_err();
+
+        assert!(wrong.contains("requirement list is missing"), "{wrong}");
+    }
+
+    #[test]
+    fn the_list_is_read_out_of_the_words_of_the_tool_and_not_out_of_other_words() {
+        let gave = json!({
+            "manifest_text": "{\"doc_id\":\"d\"}\n",
+            "sidecar_text": "s",
+            "unclaimed_sentences": [],
+        })
+        .to_string();
+
+        assert_eq!(
+            Listed::in_words(&gave),
+            Some(Listed {
+                manifest: "{\"doc_id\":\"d\"}\n".to_string(),
+                sidecar: Some("s".to_string()),
+            })
+        );
+        assert_eq!(Listed::in_words("ok:scxml_requirement_set"), None);
+        assert_eq!(Listed::in_words("{\"manifest_text\": \"\"}"), None);
+        assert_eq!(Listed::in_words("{\"other\": 1}"), None);
+    }
+
+    #[test]
+    fn the_model_is_told_the_tools_it_has_and_that_the_instructions_name_more() {
+        let words = tools_words(&["works_read", "validate_scxml"]);
+
+        assert!(words.contains("works_read, validate_scxml"), "{words}");
+        assert!(words.contains("You have none of them"), "{words}");
+    }
+
+    #[test]
+    fn what_the_instructions_are_named_by_is_everything_the_model_is_told() {
+        let told = told();
+
+        for (what, words) in [
+            ("the system prompt", SYSTEM_PROMPT.to_string()),
+            ("the form of the answer", ANSWER_FORM.to_string()),
+            ("the tools it has", tools_words(&AUTHOR_TOOLS)),
+            ("the first message", prompt(&blank_job())),
+            ("the repair", repair_words("<what was wrong>")),
+            ("what is said of the schema", SCHEMA_ECHO.to_string()),
+            ("the number of repairs", format!("\n{REPAIRS}\n")),
+        ] {
+            assert!(told.contains(&words), "{what} is not in what is named");
+        }
+    }
+
+    #[test]
+    fn the_form_is_given_as_an_example_to_fill_in_and_not_as_a_schema() {
+        assert!(
+            ANSWER_FORM.contains("<the whole SCXML document"),
+            "{ANSWER_FORM}"
+        );
+        assert!(!ANSWER_FORM.contains("\"properties\""), "{ANSWER_FORM}");
+        assert!(!ANSWER_FORM.contains("\"required\""), "{ANSWER_FORM}");
     }
 
     #[test]

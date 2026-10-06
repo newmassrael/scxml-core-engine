@@ -47,6 +47,13 @@ name = "claude_code_live"
 path = "tests/claude_code_live.rs"
 required-features = ["cli"]
 
+# The same, with a model on a model server the person runs (Ollama, llama.cpp, vLLM, LM Studio):
+# ignored unless asked for, and needs the server named in the environment.
+[[test]]
+name = "local_live"
+path = "tests/local_live.rs"
+required-features = ["cli"]
+
 [features]
 default = []
 # The `sce-work` command: the same operations as JSON in and out, so a process

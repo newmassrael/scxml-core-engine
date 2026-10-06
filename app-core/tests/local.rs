@@ -28,7 +28,7 @@ use std::time::{Duration, Instant};
 use sce_app_core::claude_code::AuthorServer;
 use sce_app_core::codex::AUTHOR_TOOLS;
 use sce_app_core::http_client::Endpoint;
-use sce_app_core::local::{list_models, Local, LocalConfig, ModelsError};
+use sce_app_core::local::{list_models, Local, LocalConfig, ModelsError, Step};
 use sce_app_core::runner::{Cancel, GenerateError, Generator, Job};
 use sce_app_core::{Revision, WorkId};
 use serde_json::{json, Value};
@@ -215,6 +215,18 @@ fn authoring_server(folder: &Path, tools: &[&str]) -> AuthorServer {
     let script = format!(
         "#!/bin/sh\n\
          [ \"$1\" = \"--version\" ] && exit 0\n\
+         tool_text() {{\n\
+           if [ -f '{folder}'/answer.$1.json ]; then cat '{folder}'/answer.$1.json; else printf '\"ok:%s\"' \"$1\"; fi\n\
+         }}\n\
+         requirement_set() {{\n\
+           n=$(grep -c 'scxml_requirement_set' '{calls}')\n\
+           file='{folder}'/requirement_set.$n.json\n\
+           [ -f \"$file\" ] || file='{set}'\n\
+           if [ -f \"$file\" ]; then text=$(cat \"$file\"); else text='\"ok:scxml_requirement_set\"'; fi\n\
+           failing=false\n\
+           [ -f '{folder}'/requirement_set.$n.fails ] && failing=true\n\
+           printf '{{\"jsonrpc\":\"2.0\",\"id\":%s,\"result\":{{\"content\":[{{\"type\":\"text\",\"text\":%s}}],\"isError\":%s}}}}\\n' \"$id\" \"$text\" \"$failing\"\n\
+         }}\n\
          while IFS= read -r line; do\n\
            id=$(printf '%s' \"$line\" | sed -n 's/.*\"id\":\\([0-9][0-9]*\\).*/\\1/p')\n\
            case \"$line\" in\n\
@@ -228,11 +240,14 @@ fn authoring_server(folder: &Path, tools: &[&str]) -> AuthorServer {
                case \"$name\" in\n\
                  validate_scxml) printf '{{\"jsonrpc\":\"2.0\",\"id\":%s,\"result\":{{\"content\":[{{\"type\":\"text\",\"text\":\"line 3: bad\"}}],\"isError\":true}}}}\\n' \"$id\" ;;\n\
                  scxml_unresolved) printf '{{\"jsonrpc\":\"2.0\",\"id\":%s,\"result\":{{\"content\":[]}}}}\\n' \"$id\" ;;\n\
-                 *) printf '{{\"jsonrpc\":\"2.0\",\"id\":%s,\"result\":{{\"content\":[{{\"type\":\"text\",\"text\":\"ok:%s\"}}]}}}}\\n' \"$id\" \"$name\" ;;\n\
+                 scxml_requirement_set) requirement_set ;;\n\
+                 *) printf '{{\"jsonrpc\":\"2.0\",\"id\":%s,\"result\":{{\"content\":[{{\"type\":\"text\",\"text\":%s}}]}}}}\\n' \"$id\" \"$(tool_text \"$name\")\" ;;\n\
                esac ;;\n\
            esac\n\
          done\n",
         calls = folder.join("calls").display(),
+        folder = folder.display(),
+        set = folder.join("requirement_set.json").display(),
     );
     write_program(&program, &script);
     AuthorServer {
@@ -240,6 +255,34 @@ fn authoring_server(folder: &Path, tools: &[&str]) -> AuthorServer {
         args: vec![],
         env: vec![],
     }
+}
+
+/// From now on the stand-in's `scxml_requirement_set` answers with `answer`, as the tool does:
+/// the JSON that holds the list the application keeps (`manifest_text` and `sidecar_text`).
+fn requirement_set_gives(folder: &Path, answer: &Value) {
+    put_answer(folder, "requirement_set.json", answer);
+}
+
+/// The same for the `n`th call (counting from 1) alone, which says it failed when `fails`: a tool
+/// that failed can still have written JSON in its text.
+fn requirement_set_gives_at(folder: &Path, n: u32, answer: &Value, fails: bool) {
+    put_answer(folder, &format!("requirement_set.{n}.json"), answer);
+    if fails {
+        std::fs::write(folder.join(format!("requirement_set.{n}.fails")), "").unwrap();
+    }
+}
+
+/// From now on the stand-in's tool `name` (one that has no answer of its own) answers with
+/// `answer`, in place of `ok:` and its name.
+fn tool_gives(folder: &Path, name: &str, answer: &Value) {
+    put_answer(folder, &format!("answer.{name}.json"), answer);
+}
+
+/// The file holds the answer as a JSON string literal, which is how a tool's text is put in the
+/// reply.
+fn put_answer(folder: &Path, file: &str, answer: &Value) {
+    let literal = serde_json::to_string(&answer.to_string()).unwrap();
+    std::fs::write(folder.join(file), literal).unwrap();
 }
 
 /// What the authoring server was called with, one request to a line.
@@ -348,10 +391,16 @@ fn a_model_that_reads_the_work_and_then_answers_is_asked_twice_and_its_draft_is_
         "the authoring server's own words: {system}"
     );
     assert!(system.contains("one JSON object"), "{system}");
+    // The form of the answer is an example to fill in, and not a schema to say back.
     assert!(
-        system.contains("manifest_text"),
+        system.contains("<the whole SCXML document"),
         "the form of the answer: {system}"
     );
+    assert!(!system.contains("\"properties\""), "{system}");
+    // The tools it has, said, because the instructions describe tools it has not.
+    assert!(system.contains("You have exactly these tools"), "{system}");
+    assert!(system.contains(&AUTHOR_TOOLS.join(", ")), "{system}");
+    assert!(system.contains("You have none of them"), "{system}");
     assert_eq!(first[1]["role"], "user");
     assert!(first[1]["content"]
         .as_str()
@@ -581,6 +630,198 @@ fn a_model_that_never_gives_the_draft_is_unusable_after_the_repairs_and_the_requ
     assert_eq!(rig.server.requests().len(), 3);
 }
 
+/// The draft with a model and no requirements: what the model is asked to write.
+fn model_only(model: &str) -> String {
+    json!({"model": {"documents": [{"name": "m.scxml", "text": model}]}}).to_string()
+}
+
+#[test]
+fn the_requirement_list_is_the_one_the_tool_gave_and_the_model_does_not_write_it_out() {
+    let rig = Rig::new(
+        "local-list",
+        vec![
+            calls(&[(Some("c1"), "scxml_requirement_set", "{}")]),
+            says(&model_only("<scxml><!-- no list in the draft --></scxml>")),
+        ],
+    );
+    requirement_set_gives(
+        &rig.folder,
+        &json!({
+            "manifest_text": "{\"doc_id\":\"from-tool\",\"rev\":\"9\"}\n",
+            "sidecar_text": "{\"R1\":\"the door closes\"}",
+            "unclaimed_sentences": [],
+        }),
+    );
+
+    let made = rig.run().unwrap();
+
+    assert_eq!(
+        made.model.entry_text(),
+        "<scxml><!-- no list in the draft --></scxml>"
+    );
+    assert_eq!(
+        made.requirements.manifest,
+        "{\"doc_id\":\"from-tool\",\"rev\":\"9\"}\n"
+    );
+    assert_eq!(
+        made.requirements.sidecar.as_deref(),
+        Some("{\"R1\":\"the door closes\"}")
+    );
+}
+
+#[test]
+fn a_list_the_model_retyped_wrongly_is_not_the_list() {
+    let wrong = json!({
+        "model": {"documents": [{"name": "m.scxml", "text": "<scxml/>"}]},
+        "requirements": {"manifest_text": "a copy with a mistake in it"},
+    })
+    .to_string();
+    let rig = Rig::new(
+        "local-list-retyped",
+        vec![
+            calls(&[(Some("c1"), "scxml_requirement_set", "{}")]),
+            says(&wrong),
+        ],
+    );
+    requirement_set_gives(
+        &rig.folder,
+        &json!({"manifest_text": "{\"doc_id\":\"from-tool\"}\n"}),
+    );
+
+    let made = rig.run().unwrap();
+
+    assert_eq!(made.requirements.manifest, "{\"doc_id\":\"from-tool\"}\n");
+}
+
+#[test]
+fn the_last_list_the_tool_gave_is_the_one_kept() {
+    let rig = Rig::new(
+        "local-list-last",
+        vec![
+            calls(&[(Some("c1"), "scxml_requirement_set", "{}")]),
+            calls(&[(Some("c2"), "scxml_requirement_set", "{}")]),
+            calls(&[(Some("c3"), "validate_scxml", "{}")]),
+            says(&model_only("<scxml/>")),
+        ],
+    );
+    requirement_set_gives_at(
+        &rig.folder,
+        1,
+        &json!({"manifest_text": "{\"rev\":\"1\"}\n"}),
+        false,
+    );
+    requirement_set_gives_at(
+        &rig.folder,
+        2,
+        &json!({"manifest_text": "{\"rev\":\"2\"}\n"}),
+        false,
+    );
+
+    let made = rig.run().unwrap();
+
+    // The model built the list again after changing its mind; the call of another tool after that
+    // does not replace it.
+    assert_eq!(made.requirements.manifest, "{\"rev\":\"2\"}\n");
+}
+
+#[test]
+fn what_another_tool_gives_is_not_the_list_even_when_it_is_shaped_like_one() {
+    let rig = Rig::new(
+        "local-list-other-tool",
+        vec![
+            calls(&[(Some("c1"), "scxml_requirement_set", "{}")]),
+            // `works_read` gives back the list that was saved before, in the same two fields.
+            calls(&[(Some("c2"), "works_read", "{}")]),
+            says(&model_only("<scxml/>")),
+        ],
+    );
+    requirement_set_gives(
+        &rig.folder,
+        &json!({"manifest_text": "{\"rev\":\"built\"}\n"}),
+    );
+    tool_gives(
+        &rig.folder,
+        "works_read",
+        &json!({"manifest_text": "{\"rev\":\"saved-before\"}\n"}),
+    );
+
+    let made = rig.run().unwrap();
+
+    assert_eq!(made.requirements.manifest, "{\"rev\":\"built\"}\n");
+}
+
+#[test]
+fn a_call_of_the_tool_that_failed_does_not_replace_the_list() {
+    let rig = Rig::new(
+        "local-list-failed",
+        vec![
+            calls(&[(Some("c1"), "scxml_requirement_set", "{}")]),
+            calls(&[(Some("c2"), "scxml_requirement_set", "{}")]),
+            says(&model_only("<scxml/>")),
+        ],
+    );
+    requirement_set_gives_at(
+        &rig.folder,
+        1,
+        &json!({"manifest_text": "{\"rev\":\"1\"}\n"}),
+        false,
+    );
+    // A failure whose text happens to be JSON with a list in it is still a failure.
+    requirement_set_gives_at(
+        &rig.folder,
+        2,
+        &json!({"manifest_text": "{\"rev\":\"from-the-failure\"}\n"}),
+        true,
+    );
+
+    let made = rig.run().unwrap();
+
+    assert_eq!(made.requirements.manifest, "{\"rev\":\"1\"}\n");
+}
+
+#[test]
+fn a_model_that_never_built_the_list_and_gave_none_is_told_the_list_is_missing() {
+    let rig = Rig::new(
+        "local-list-missing",
+        vec![says(&model_only("<scxml/>")), says(&draft("<scxml/>"))],
+    );
+
+    let made = rig.run().unwrap();
+
+    // Told what was wrong, and then it wrote the draft with a list of its own.
+    let told = rig.server.messages(1);
+    assert!(
+        told.last().unwrap()["content"]
+            .as_str()
+            .unwrap()
+            .contains("requirement list is missing"),
+        "{told:?}"
+    );
+    assert!(made.requirements.manifest.contains("door"));
+}
+
+#[test]
+fn a_model_that_says_the_schema_back_is_told_that_it_did() {
+    let echo = json!({
+        "properties": {"model": {"type": "object"}, "requirements": {"type": "object"}},
+        "required": ["model", "requirements"],
+        "type": "object",
+    })
+    .to_string();
+    let rig = Rig::new("local-echo", vec![says(&echo), says(&draft("<scxml/>"))]);
+
+    rig.run().unwrap();
+
+    let told = rig.server.messages(1);
+    assert!(
+        told.last().unwrap()["content"]
+            .as_str()
+            .unwrap()
+            .contains("JSON Schema"),
+        "{told:?}"
+    );
+}
+
 #[test]
 fn a_model_that_only_calls_tools_runs_out_of_turns() {
     let script = (0..10)
@@ -804,6 +1045,117 @@ fn a_run_leaves_no_authoring_server_behind() {
         thread::sleep(Duration::from_millis(50));
     }
     assert!(!running(), "the authoring server is still running");
+}
+
+#[test]
+fn a_run_tells_whoever_watches_each_step_of_it_in_order() {
+    let rig = Rig::new(
+        "local-trace",
+        vec![
+            calls(&[
+                (Some("a"), "works_read", "{\"work\":\"w\"}"),
+                (Some("b"), "validate_scxml", "{}"),
+            ]),
+            says("not the draft"),
+            says(&draft("<scxml/>")),
+        ],
+    );
+    let steps: Arc<Mutex<Vec<Step>>> = Arc::default();
+    let sink = Arc::clone(&steps);
+
+    rig.local(LocalConfig::for_model("m"))
+        .with_trace(move |step| sink.lock().unwrap().push(step.clone()))
+        .generate(&job(), &Cancel::new())
+        .unwrap();
+
+    let steps = steps.lock().unwrap().clone();
+    let said = |turn: u32, words: &str, calls: &[(&str, &str)]| Step::Said {
+        turn,
+        words: words.to_string(),
+        calls: calls
+            .iter()
+            .map(|(n, a)| (n.to_string(), a.to_string()))
+            .collect(),
+    };
+    assert_eq!(
+        steps,
+        vec![
+            Step::Asked {
+                turn: 0,
+                messages: 2
+            },
+            said(
+                0,
+                "",
+                &[("works_read", "{\"work\":\"w\"}"), ("validate_scxml", "{}")]
+            ),
+            Step::Tool {
+                name: "works_read".to_string(),
+                failed: false,
+                words: "ok:works_read".to_string()
+            },
+            // A tool that said it failed is a step that says so, with its words.
+            Step::Tool {
+                name: "validate_scxml".to_string(),
+                failed: true,
+                words: "Error: line 3: bad".to_string()
+            },
+            // The question and the model's call, and the two results.
+            Step::Asked {
+                turn: 1,
+                messages: 5
+            },
+            said(1, "not the draft", &[]),
+            Step::NotTheDraft {
+                why: "there is no JSON object in it: not the draft".to_string()
+            },
+            Step::Asked {
+                turn: 2,
+                messages: 7
+            },
+            said(2, &draft("<scxml/>"), &[]),
+        ]
+    );
+}
+
+#[test]
+fn the_message_that_ends_a_run_unusable_is_a_step_too_and_says_what_the_request_is_told() {
+    let rig = Rig::new(
+        "local-trace-unusable",
+        vec![says("nope"), says("still nope"), says("no, really")],
+    );
+    let steps: Arc<Mutex<Vec<Step>>> = Arc::default();
+    let sink = Arc::clone(&steps);
+
+    let refused = rig
+        .local(LocalConfig::for_model("m"))
+        .with_trace(move |step| sink.lock().unwrap().push(step.clone()))
+        .generate(&job(), &Cancel::new())
+        .unwrap_err();
+
+    let GenerateError::Unusable(told) = refused else {
+        panic!("expected Unusable, got {refused:?}");
+    };
+    let whys: Vec<String> = steps
+        .lock()
+        .unwrap()
+        .iter()
+        .filter_map(|step| match step {
+            Step::NotTheDraft { why } => Some(why.clone()),
+            _ => None,
+        })
+        .collect();
+    // One for each message that was not the draft, the last of them among them: three, and the last
+    // is the words the request is told.
+    assert_eq!(whys.len(), 3, "{whys:?}");
+    assert_eq!(whys.last(), Some(&told));
+}
+
+#[test]
+fn a_run_with_nobody_watching_is_the_same_run() {
+    let rig = Rig::new("local-untraced", vec![says(&draft("<scxml/>"))]);
+
+    assert!(rig.run().is_ok());
 }
 
 #[test]
