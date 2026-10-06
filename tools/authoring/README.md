@@ -993,6 +993,11 @@ application opens (`SCE_WORKS_DIR`, else the per-user data directory).
   has taken it). `works_begin_generation` takes that request, or makes one for a
   work nobody asked for, and answers with the work as `works_read` gives it and
   `generation` (`request`, `attempt`, and the `source` revision the request is about).
+  A request the owner made in the application **for a connection** (which AI, which model)
+  is that connection's executor's and not this client's: the core refuses it as
+  `wrong-connection`, and this server says what is to be done, which is the owner's (call
+  that request off in the application, and begin again). It runs for no connection and
+  does not offer one it has not got.
   `works_save_model` and `works_save_requirements` then take that `request`: what
   they save is written for the request and is not the work's model until
   `works_finish_generation`, which has SCE check the model itself and publishes the

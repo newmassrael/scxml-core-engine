@@ -347,8 +347,22 @@ class Generations:
                 "expect": {"source": source["revision"],
                            "answers": answers["revision"] if answers is not None else None}})
             request = made["request"]["id"]
-        claimed = self._call("claim_request", {
-            "id": work, "request": request, "holder": self.holder, "resume": resume})["request"]
+        try:
+            claimed = self._call("claim_request", {
+                "id": work, "request": request, "holder": self.holder,
+                "resume": resume})["request"]
+        except WorksError as exc:
+            if exc.kind != "wrong-connection":
+                raise
+            # The request was made in the application for a connection the owner chose, and only
+            # that connection's executor takes it. This server runs for none, and does not offer
+            # one it has not got: what is to be done is the owner's, in the application.
+            raise WorksError(
+                "wrong-connection",
+                f"{exc} This server runs for no connection, so it does not take a request that "
+                f"was made for one: if the owner wants this client to write instead, they call "
+                f"that request off in the application, and this client begins again.",
+                exc.detail) from exc
         generation = Generation(work, request, claimed["attempt"], claimed["inputs"]["source"])
         with self._lock:
             self._held[request] = generation
