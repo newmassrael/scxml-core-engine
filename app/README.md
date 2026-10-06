@@ -574,8 +574,13 @@ asks again when the person says they have signed in: the application starts no s
 is chosen among the names the client documents, the client's own default, or an id typed beside the
 list; saving writes the connection `claude` on top of the revision read, keeps the limits a person
 set elsewhere, and makes it the default, expecting the default that was read, so that two windows
-do not overwrite each other unseen. The browser shell only shows what the desktop saved: it may
-not start a program or change a setting.
+do not overwrite each other unseen. Which Claude Code the connection runs is chosen among the
+programs `find_clients` listed (the application's own choice is the first): the one that answered
+is shown with where it is, a program the connection names that is not found now stays in the list
+and is said to be gone, a save of the model keeps the program the connection already names, and
+where nobody is signed in to the program that answered a button keeps another one at once. The
+status is asked again after a save, of the program that is named now. The browser shell only
+shows what the desktop saved: it may not start a program or change a setting.
 
 ### The model, and where it stands
 
