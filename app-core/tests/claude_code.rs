@@ -553,7 +553,8 @@ fn a_client_that_takes_longer_than_its_time_is_stopped_and_the_run_failed() {
     let Err(GenerateError::Failed(reason)) = failed else {
         panic!("expected a failure, got {failed:?}");
     };
-    assert!(reason.contains("longer than"), "{reason}");
+    // The limit is said as it was given, not rounded up to a minute.
+    assert!(reason.contains("longer than 300 milliseconds"), "{reason}");
     assert!(started.elapsed() < Duration::from_secs(20));
 }
 

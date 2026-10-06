@@ -329,6 +329,29 @@ pub(crate) fn tail(text: &str, limit: usize) -> String {
     format!("...{kept}")
 }
 
+/// A time limit as a person reads it: `30 minutes`, `90 seconds`, `1 second`. Whole minutes are
+/// said in minutes and the rest as it is, so that a limit of ninety seconds is not reported as
+/// two minutes, and one of a single second is not reported as one minute.
+pub(crate) fn span_words(span: Duration) -> String {
+    let count = |n: u128, unit: &str| {
+        if n == 1 {
+            format!("{n} {unit}")
+        } else {
+            format!("{n} {unit}s")
+        }
+    };
+    if span.subsec_nanos() != 0 {
+        return count(span.as_millis(), "millisecond");
+    }
+    let seconds = span.as_secs();
+    let minutes = seconds / 60;
+    if minutes >= 1 && Duration::from_secs(minutes * 60) == span {
+        count(u128::from(minutes), "minute")
+    } else {
+        count(u128::from(seconds), "second")
+    }
+}
+
 /// What a program said when it was run to completion.
 pub(crate) struct Captured {
     pub status: ExitStatus,
@@ -360,5 +383,28 @@ pub(crate) fn capture(mut command: Command, timeout: Duration) -> Result<Capture
             timeout.as_secs()
         )),
         Ended::Cancelled => Err("it was stopped".to_string()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_limit_is_said_in_the_unit_it_was_given_in() {
+        for (span, said) in [
+            (Duration::from_secs(30 * 60), "30 minutes"),
+            (Duration::from_secs(60), "1 minute"),
+            (Duration::from_secs(120), "2 minutes"),
+            // Not a whole number of minutes: not rounded up to one.
+            (Duration::from_secs(90), "90 seconds"),
+            (Duration::from_secs(45), "45 seconds"),
+            (Duration::from_secs(1), "1 second"),
+            (Duration::from_millis(1500), "1500 milliseconds"),
+            (Duration::from_millis(400), "400 milliseconds"),
+            (Duration::from_millis(1), "1 millisecond"),
+        ] {
+            assert_eq!(span_words(span), said, "{span:?}");
+        }
     }
 }

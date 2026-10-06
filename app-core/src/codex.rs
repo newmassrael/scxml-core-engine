@@ -37,8 +37,8 @@ use serde_json::Value;
 use crate::auth_policy::Observed;
 use crate::claude_code::AuthorServer;
 use crate::client_run::{
-    blank_job, capture, draft_from, prompt, schema, supervise, tail, Ended, Scratch, SERVER,
-    SYSTEM_PROMPT,
+    blank_job, capture, draft_from, prompt, schema, span_words, supervise, tail, Ended, Scratch,
+    SERVER, SYSTEM_PROMPT,
 };
 use crate::codex_environment::environment_for;
 use crate::codex_support::{enabled_features, Support};
@@ -407,8 +407,8 @@ impl Generator for Codex {
         match ended {
             Ended::Cancelled => Err(GenerateError::Cancelled),
             Ended::TimedOut => Err(GenerateError::Failed(format!(
-                "the client took longer than {} minute(s) and was stopped",
-                self.config.timeout.as_secs().div_ceil(60).max(1)
+                "the client took longer than {} and was stopped",
+                span_words(self.config.timeout)
             ))),
             Ended::Exited {
                 status,

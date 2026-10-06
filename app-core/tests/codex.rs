@@ -668,7 +668,11 @@ fn a_client_that_takes_longer_than_its_time_is_stopped_and_the_run_failed() {
     let begun = Instant::now();
     let refused = generate(&client).unwrap_err();
 
-    assert!(matches!(refused, GenerateError::Failed(_)), "{refused:?}");
+    let GenerateError::Failed(said) = refused else {
+        panic!("expected a failure, got {refused:?}");
+    };
+    // The limit is said as it was given, not rounded up to a minute.
+    assert!(said.contains("longer than 400 milliseconds"), "{said}");
     assert!(begun.elapsed() < Duration::from_secs(15));
 }
 
