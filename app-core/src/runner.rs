@@ -38,9 +38,10 @@ use std::time::{Duration, Instant};
 use crate::answers::Answers;
 use crate::clock::Clock;
 use crate::commands::{complete_generation, CommandError};
+use crate::connection::ConnectionId;
 use crate::error::StoreError;
 use crate::model_set::ModelFiles;
-use crate::requests::State;
+use crate::requests::{ConnectionRef, Pin, State};
 use crate::requirements::Requirements;
 use crate::review::Product;
 use crate::revision::Revision;
@@ -145,6 +146,46 @@ pub trait Generator: Send + Sync {
     fn generate(&self, job: &Job, cancel: &Cancel) -> Result<Draft, GenerateError>;
 }
 
+/// Why a request pinned to a connection is not one a runner can run, in a sentence a person
+/// reads: there is no adapter for that kind of connection in this build, the way it signs in is
+/// not one the build uses, nobody has signed in, the settings it was made with are not on this
+/// computer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Unrunnable {
+    pub reason: String,
+}
+
+impl Unrunnable {
+    pub fn new(reason: impl Into<String>) -> Self {
+        Unrunnable {
+            reason: reason.into(),
+        }
+    }
+}
+
+/// Where a runner finds the generator for the connection a request was made for.
+///
+/// A request pinned to a connection is taken by the executor of that connection and by no other,
+/// so a runner does not take it with whatever generator it holds. The directory knows how to run
+/// each kind of connection (it reads the settings at the revision the request was made with,
+/// asks the client who is signed in, and judges the way of signing in by the build's table), and
+/// says why when it cannot.
+pub trait Directory: Send + Sync {
+    fn generator_for(&self, pin: &Pin) -> Result<Arc<dyn Generator>, Unrunnable>;
+}
+
+/// A request the runner took, with the generator that writes for it.
+type Taken = (WorkId, RequestView, Arc<dyn Generator>);
+
+/// A request the runner left queued at its last look, and why.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Waiting {
+    pub work: WorkId,
+    pub request: String,
+    pub connection: ConnectionId,
+    pub reason: String,
+}
+
 /// How a runner holds its requests.
 #[derive(Debug, Clone)]
 pub struct RunnerConfig {
@@ -209,7 +250,13 @@ pub enum Outcome {
 pub struct Runner<C: Clock, G> {
     store: Arc<WorkStore<C>>,
     product: Arc<dyn Product>,
+    /// What writes for a request nobody chose a connection for.
     generator: Arc<G>,
+    /// Where the generator for a pinned request is found; a runner without one leaves every
+    /// pinned request alone.
+    directory: Option<Arc<dyn Directory>>,
+    /// What the last look left queued, and why.
+    waiting: Mutex<Vec<Waiting>>,
     config: RunnerConfig,
     shutdown: Cancel,
 }
@@ -217,7 +264,7 @@ pub struct Runner<C: Clock, G> {
 impl<C, G> Runner<C, G>
 where
     C: Clock + Send + Sync,
-    G: Generator,
+    G: Generator + 'static,
 {
     pub fn new(
         store: Arc<WorkStore<C>>,
@@ -229,9 +276,27 @@ where
             store,
             product,
             generator,
+            directory: None,
+            waiting: Mutex::new(Vec::new()),
             config,
             shutdown: Cancel::new(),
         }
+    }
+
+    /// The same, running for the connections `directory` can run: a request pinned to one is
+    /// written by the generator the directory gives for it.
+    pub fn with_connections(mut self, directory: Arc<dyn Directory>) -> Self {
+        self.directory = Some(directory);
+        self
+    }
+
+    /// What the runner left queued at its last look, and why: the requests it could not run, for
+    /// the screen to say, so that a person is not left waiting for an AI that will not come.
+    pub fn waiting(&self) -> Vec<Waiting> {
+        self.waiting
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     /// A word that stops this runner: [`Self::run`] returns and a generator at work is
@@ -250,26 +315,65 @@ where
     /// it came out; or [`Outcome::NothingToDo`].
     pub fn run_once(&self) -> Result<Outcome, StoreError> {
         self.report()?;
+        let mut waiting = Vec::new();
+        let taken = self.take_one(&mut waiting);
+        *self.waiting.lock().unwrap_or_else(|e| e.into_inner()) = waiting;
+        match taken? {
+            Some((work, claimed, generator)) => self.work_on(&work, claimed, generator.as_ref()),
+            None => Ok(Outcome::NothingToDo),
+        }
+    }
+
+    /// Take the oldest request that is waiting and that this runner can run, with the generator
+    /// that writes for it. A request pinned to a connection is taken by offering that connection,
+    /// and only when the directory has a generator for it; the rest are left, and said in
+    /// `waiting`.
+    fn take_one(&self, waiting: &mut Vec<Waiting>) -> Result<Option<Taken>, StoreError> {
         for (work, view) in self.store.open_requests()? {
             if view.state != State::Queued {
                 continue;
             }
-            let claimed = match self.store.claim_request(
+            let (offered, generator): (Option<ConnectionRef>, Arc<dyn Generator>) =
+                match &view.request.pin {
+                    None => (None, Arc::clone(&self.generator) as Arc<dyn Generator>),
+                    Some(pin) => {
+                        let found = match &self.directory {
+                            Some(directory) => directory.generator_for(pin),
+                            None => Err(Unrunnable::new(
+                                "this executor runs for no connection, and the request was made \
+                                 for one",
+                            )),
+                        };
+                        match found {
+                            Ok(generator) => (Some(pin.reference()), generator),
+                            Err(why) => {
+                                waiting.push(Waiting {
+                                    work: work.clone(),
+                                    request: view.request.id.clone(),
+                                    connection: pin.connection.clone(),
+                                    reason: why.reason,
+                                });
+                                continue;
+                            }
+                        }
+                    }
+                };
+            match self.store.claim_request_for(
                 &work,
                 &view.request.id,
                 &self.config.name,
                 Some(self.config.lease_seconds),
                 false,
+                offered.as_ref(),
             ) {
-                Ok(claimed) => claimed,
+                Ok(claimed) => return Ok(Some((work, claimed, generator))),
                 // Somebody else took it, or the owner called it off, between looking and
                 // taking: it is not this runner's, and the next one may be.
                 Err(StoreError::Refused { .. }) => continue,
                 Err(other) => return Err(other),
-            };
-            return self.work_on(&work, claimed);
+            }
         }
-        Ok(Outcome::NothingToDo)
+        Ok(None)
     }
 
     /// Run until told to stop ([`Self::shutdown`]): take requests as they are made. A store
@@ -300,7 +404,12 @@ where
 
     /// The request is this runner's: renew it from a thread of its own while the generator
     /// writes, and see it to its end.
-    fn work_on(&self, work: &WorkId, claimed: RequestView) -> Result<Outcome, StoreError> {
+    fn work_on(
+        &self,
+        work: &WorkId,
+        claimed: RequestView,
+        generator: &dyn Generator,
+    ) -> Result<Outcome, StoreError> {
         let request = claimed.request.id.clone();
         let attempt = claimed.request.attempt;
         let cancel = Cancel::new();
@@ -313,7 +422,8 @@ where
             scope.spawn(move || {
                 self.beat_until_told(&beating, work, request_ref, attempt, cancel_ref, lost_ref);
             });
-            let outcome = self.write_for(work, request_ref, attempt, cancel_ref, lost_ref);
+            let outcome =
+                self.write_for(work, request_ref, attempt, cancel_ref, lost_ref, generator);
             // The renewing stops with the work, before the scope waits for it.
             let _ = stop_beating.send(());
             outcome
@@ -375,6 +485,7 @@ where
         attempt: u32,
         cancel: &Cancel,
         lost: &Mutex<Option<String>>,
+        generator: &dyn Generator,
     ) -> Result<Outcome, StoreError> {
         let holder = self.config.name.as_str();
         let mut job = match self.job_for(work, request, attempt) {
@@ -383,7 +494,7 @@ where
         };
         let mut last_refusal = String::new();
         for _ in 0..=self.config.repairs {
-            let draft = match self.generator.generate(&job, cancel) {
+            let draft = match generator.generate(&job, cancel) {
                 Ok(draft) => draft,
                 Err(GenerateError::Failed(reason)) => {
                     return self.fail(work, request, attempt, reason)
@@ -406,7 +517,7 @@ where
                 CandidateWrite {
                     model: Some(draft.model.stored_text()),
                     requirements: Some(draft.requirements.stored_text()),
-                    instructions: self.generator.instructions(),
+                    instructions: generator.instructions(),
                 },
             );
             match written {

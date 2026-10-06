@@ -29,13 +29,15 @@ use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
+use crate::auth_policy::Policy;
 use crate::claude_code::{capture, AuthorServer, ClaudeCode, ClaudeCodeConfig};
 use crate::clock::Clock;
+use crate::directory::{ClaudeLaunch, Connections};
 use crate::figures::{SceCodegen, GENERATOR_ENV};
 use crate::installed::Installed;
 use crate::review::Product;
-use crate::runner::{Cancel, Generator, Runner, RunnerConfig};
-use crate::store::{HostReport, WorkStore};
+use crate::runner::{Cancel, Directory, Generator, Runner, RunnerConfig};
+use crate::store::{ConnectionStore, HostReport, WorkStore};
 
 /// Names `SCE_EXECUTOR`, `SCE_CLAUDE`, `SCE_AUTHOR_MCP`, `SCE_WORK`, `SCE_CLAUDE_MODEL`,
 /// `SCE_CLAUDE_BUDGET_USD` in the environment.
@@ -207,6 +209,23 @@ pub fn start<C>(
 where
     C: Clock + Send + Sync + 'static,
 {
+    start_with(store, product, settings, None)
+}
+
+/// The same, for a shell that has the person's settings: the executor then also runs the requests
+/// that were made for a connection, for the connections it can run (the settings folder, and
+/// the build's table of ways of signing in), and leaves them to the executor of their own
+/// connection when it cannot. Without them it runs only the requests nobody chose a connection
+/// for, and leaves the rest alone.
+pub fn start_with<C>(
+    store: Arc<WorkStore<C>>,
+    product: Arc<dyn Product>,
+    settings: HostSettings,
+    connections: Option<(ConnectionStore, Policy)>,
+) -> ExecutorHost
+where
+    C: Clock + Send + Sync + 'static,
+{
     let name = settings.name.clone();
     // One word stops everything the host runs: the runner's own, when there is a runner.
     let mut shutdown = Cancel::new();
@@ -214,12 +233,22 @@ where
     let (version, not_hosted) = match find_client(&store, &settings) {
         Ok(client) => {
             let version = client.version();
-            let runner = Runner::new(
+            let directory = connections.map(|(settings, policy)| {
+                let launch = ClaudeLaunch {
+                    binary: client.binary().to_path_buf(),
+                    author: client.author().clone(),
+                };
+                Arc::new(Connections::new(settings, policy, Some(launch))) as Arc<dyn Directory>
+            });
+            let mut runner = Runner::new(
                 Arc::clone(&store),
                 product,
                 Arc::new(client),
                 RunnerConfig::named(&name),
             );
+            if let Some(directory) = directory {
+                runner = runner.with_connections(directory);
+            }
             shutdown = runner.shutdown();
             let spawned = thread::Builder::new()
                 .name("sce-executor".to_string())

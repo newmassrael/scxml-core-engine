@@ -15,7 +15,8 @@ use std::sync::Arc;
 
 use sce_app_core::host::{self, HostSettings};
 use sce_app_core::{
-    default_renderer, default_root, default_settings_root, ConnectionStore, SceCodegen, WorkStore,
+    default_renderer, default_root, default_settings_root, ConnectionStore, Policy, SceCodegen,
+    WorkStore,
 };
 use sce_web_shell::address::check_bind;
 use sce_web_shell::assets::Assets;
@@ -123,10 +124,15 @@ fn run() -> Result<(), String> {
     // The same executor the desktop application hosts, so that the screen being developed here
     // can be pressed "generate" on and be answered. Held to the end of the program: it stops
     // a client at work when the server stops, and `SCE_EXECUTOR=off` hosts nothing.
-    let _executor = host::start(
+    let _executor = host::start_with(
         Arc::new(WorkStore::at(root.clone())),
         Arc::from(default_renderer()),
         HostSettings::from_environment("web-shell"),
+        // It runs the requests made for a connection too, when there is a settings folder to
+        // read them from.
+        settings
+            .clone()
+            .map(|dir| (ConnectionStore::at(dir), Policy::shipped())),
     );
     match _executor.not_hosted() {
         None => eprintln!(

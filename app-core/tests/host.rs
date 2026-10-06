@@ -17,10 +17,13 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use sce_app_core::host::{start, HostSettings, NotHosted};
+use sce_app_core::host::{start, start_with, HostSettings, NotHosted};
 use sce_app_core::installed::Installed;
-use sce_app_core::requests::{Inputs, State};
-use sce_app_core::{ManualClock, Registration, WorkId, WorkStore};
+use sce_app_core::requests::{Inputs, Pin, State};
+use sce_app_core::{
+    AdapterKind, AuthSource, Connection, ConnectionId, ConnectionStore, Limits, ManualClock,
+    Policy, Registration, Saved, WorkId, WorkStore,
+};
 use serde_json::json;
 
 use common::FakeRenderer;
@@ -339,6 +342,123 @@ mod hosting {
         let host = start(Arc::clone(&store), Arc::new(FakeRenderer), settings);
 
         assert_eq!(host.not_hosted(), None);
+    }
+
+    /// The same `claude`, and signed in by a subscription: it answers `auth status` as well. What it
+    /// is asked there is how the host knows who is signed in.
+    fn installed_signed_in(label: &str) -> (PathBuf, PathBuf) {
+        let (claude, author) = installed(label);
+        let dir = claude.parent().unwrap().to_path_buf();
+        fs::write(
+            &claude,
+            format!(
+                "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo \"2.1.289 (Claude Code)\"; exit 0; fi\n\
+                 if [ \"$3\" = \"auth\" ]; then echo '{{\"loggedIn\":true,\"authMethod\":\"claude.ai\",\"apiProvider\":\"firstParty\"}}'; exit 0; fi\n\
+                 cat > /dev/null\ncat '{}'\n",
+                dir.join("answer.json").display()
+            ),
+        )
+        .unwrap();
+        (claude, author)
+    }
+
+    /// A connection that is saved, and the pin a request made for it carries.
+    fn pinned(label: &str) -> (ConnectionStore, Pin) {
+        let settings = ConnectionStore::at(common::scratch(label));
+        let connection = Connection {
+            id: ConnectionId::parse("main").unwrap(),
+            adapter: AdapterKind::ClaudeCode,
+            display_name: None,
+            executable: None,
+            model: Some("opus".to_string()),
+            auth: AuthSource::OfficialLogin,
+            server_url: None,
+            limits: Limits::default(),
+        };
+        let revision = match settings.save(&connection, None).unwrap() {
+            Saved::Saved { revision, .. } | Saved::Unchanged { revision } => revision,
+        };
+        let pin = Pin {
+            connection: connection.id,
+            revision,
+            adapter: connection.adapter,
+            model: connection.model,
+            limits: connection.limits,
+        };
+        (settings, pin)
+    }
+
+    fn ask_for(store: &WorkStore<Arc<ManualClock>>, id: &WorkId, pin: Option<Pin>) -> String {
+        store
+            .register_request_for(
+                id,
+                Registration {
+                    key: "press-1",
+                    origin: "gui",
+                    expect: Inputs {
+                        source: store.head(id).unwrap().unwrap(),
+                        answers: None,
+                    },
+                    supersede: false,
+                },
+                pin,
+            )
+            .unwrap()
+            .request
+            .id
+    }
+
+    #[test]
+    fn a_host_that_has_the_settings_runs_a_request_made_for_a_connection() {
+        let (_, store) = store("host-pinned");
+        let id = store.create_work("Door lock").unwrap().id;
+        store.save_source(&id, "The lock opens.", None).unwrap();
+        let (claude, author) = installed_signed_in("host-pinned-bin");
+        let (settings_store, pin) = pinned("host-pinned-settings");
+        let request = ask_for(&store, &id, Some(pin));
+        let mut settings = HostSettings::from_lookup("desktop", lookup(&[]));
+        settings.claude = Some(claude);
+        settings.author = Some(author);
+
+        let host = start_with(
+            Arc::clone(&store),
+            Arc::new(FakeRenderer),
+            settings,
+            Some((settings_store, Policy::shipped())),
+        );
+
+        assert_eq!(host.not_hosted(), None);
+        within_ten_seconds("the pinned request was not run", || {
+            store.read_request(&id, &request).unwrap().state == State::Completed
+        });
+        assert!(store
+            .read_model(&id, None)
+            .unwrap()
+            .unwrap()
+            .text
+            .contains("hosted"));
+    }
+
+    #[test]
+    fn a_host_that_has_no_settings_leaves_a_request_made_for_a_connection_alone() {
+        let (_, store) = store("host-pinned-alone");
+        let id = store.create_work("Door lock").unwrap().id;
+        store.save_source(&id, "The lock opens.", None).unwrap();
+        let (claude, author) = installed_signed_in("host-pinned-alone-bin");
+        let (_, pin) = pinned("host-pinned-alone-settings");
+        let request = ask_for(&store, &id, Some(pin));
+        let mut settings = HostSettings::from_lookup("desktop", lookup(&[]));
+        settings.claude = Some(claude);
+        settings.author = Some(author);
+
+        let host = start(Arc::clone(&store), Arc::new(FakeRenderer), settings);
+        std::thread::sleep(Duration::from_millis(700));
+
+        // The executor is there, and the request is not its to take: it was made for a
+        // connection, and an executor that runs for none does not answer it.
+        assert_eq!(host.not_hosted(), None);
+        let view = store.read_request(&id, &request).unwrap();
+        assert_eq!((view.state, view.request.attempt), (State::Queued, 0));
     }
 
     fn ask(store: &WorkStore<Arc<ManualClock>>, id: &WorkId) -> String {

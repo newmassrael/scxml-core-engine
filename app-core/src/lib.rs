@@ -42,6 +42,7 @@ pub mod claude_code;
 pub mod clock;
 pub mod commands;
 pub mod connection;
+pub mod directory;
 pub mod error;
 pub mod figures;
 pub mod host;

@@ -58,11 +58,22 @@ struct Executor(Mutex<Option<ExecutorHost>>);
 /// Host the application's own executor, or say why it does not. Not having Claude Code is not
 /// an error: the application shows that no AI is connected, and why, and works as it always did.
 /// What it could not do is said to the works folder, where the screen reads it, and also here.
-fn host_the_executor(root: std::path::PathBuf, bundle: &Installed) -> Executor {
+fn host_the_executor(
+    root: std::path::PathBuf,
+    connections: ConnectionStore,
+    bundle: &Installed,
+) -> Executor {
     let store = Arc::new(WorkStore::at(root));
     let product: Arc<dyn Product> = Arc::from(renderer_with_bundle(bundle.codegen.as_deref()));
     let settings = HostSettings::from_environment("desktop").with_bundle(bundle);
-    let running = host::start(store, product, settings);
+    // The executor runs the requests made for a connection, for the connections it can run: it
+    // reads the person's settings, and the build's table of ways of signing in judges them.
+    let running = host::start_with(
+        store,
+        product,
+        settings,
+        Some((connections, Policy::shipped())),
+    );
     if let Some(why) = running.not_hosted() {
         eprintln!("sce-workbench: {why}");
     }
@@ -148,7 +159,11 @@ pub fn run() {
                     .expect("the platform has no per-user configuration directory")
                     .join("settings")
             });
-            app.manage(host_the_executor(root.clone(), &bundle));
+            app.manage(host_the_executor(
+                root.clone(),
+                ConnectionStore::at(settings.clone()),
+                &bundle,
+            ));
             app.manage(Works {
                 store: WorkStore::at(root),
                 figures: renderer_with_bundle(bundle.codegen.as_deref()),

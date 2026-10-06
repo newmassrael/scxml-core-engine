@@ -32,6 +32,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 
+use crate::auth_policy::Observed;
 use crate::model_set::{Document, ModelFiles};
 use crate::requirements::Requirements;
 use crate::revision::Revision;
@@ -129,6 +130,21 @@ impl ClaudeCode {
             .find(|candidate| candidate.is_file())
             .map(|binary| ClaudeCode::new(binary, author, config))
             .filter(|found| found.version.is_some())
+    }
+
+    /// How a run of this client is bounded.
+    pub fn config(&self) -> &ClaudeCodeConfig {
+        &self.config
+    }
+
+    /// The program this runs.
+    pub fn binary(&self) -> &Path {
+        &self.binary
+    }
+
+    /// How the client reaches the authoring server.
+    pub fn author(&self) -> &AuthorServer {
+        &self.author
     }
 
     fn command(&self, scratch: &Path) -> Command {
@@ -620,6 +636,58 @@ pub(crate) fn capture(mut command: Command, timeout: Duration) -> Result<Capture
         )),
         Ended::Cancelled => Err("it was stopped".to_string()),
     }
+}
+
+/// Who is signed in to the client, asked the way a generation is run: without the machine's
+/// settings (`--setting-sources ""`). A login that a settings file supplies (a key it names) is
+/// one a generation cannot see, so it is not one the screen may show: asked with the machine's
+/// settings, the client says it is signed in by a key a generation would never use.
+///
+/// `Ok(None)` is nobody signed in. The client fails when nobody is, and still says so in JSON,
+/// so what it printed is read before how it ended is looked at.
+pub fn observe_auth(binary: &Path) -> Result<Option<Observed>, String> {
+    let mut command = Command::new(binary);
+    command
+        .args(["--setting-sources", ""])
+        .args(["auth", "status", "--json"]);
+    let said = capture(command, Duration::from_secs(20))
+        .map_err(|e| format!("{}: {e}", binary.display()))?;
+    observed_from_status(said.stdout.trim()).map_err(|e| {
+        let stderr = said.stderr.trim();
+        if stderr.is_empty() {
+            e
+        } else {
+            format!("{e} ({})", tail(stderr, 300))
+        }
+    })
+}
+
+/// What `claude auth status --json` said, as the kind of credential the client is using, or
+/// `None` for nobody. A cloud provider is known by the provider and not by the login the client
+/// tracks (which is the claude.ai one only); a method the table does not name is [`Observed::Other`]
+/// and is not guessed at.
+pub fn observed_from_status(text: &str) -> Result<Option<Observed>, String> {
+    let status: Value = serde_json::from_str(text).map_err(|_| {
+        format!(
+            "`claude auth status` did not answer JSON: {}",
+            tail(text, 200)
+        )
+    })?;
+    let logged_in = status["loggedIn"]
+        .as_bool()
+        .ok_or("`claude auth status` did not say whether anybody is signed in")?;
+    let provider = status["apiProvider"].as_str().unwrap_or("firstParty");
+    if provider != "firstParty" {
+        return Ok(Some(Observed::CloudProvider));
+    }
+    if !logged_in {
+        return Ok(None);
+    }
+    Ok(Some(match status["authMethod"].as_str() {
+        Some("claude.ai") => Observed::Subscription,
+        Some("api_key" | "api_key_helper") => Observed::ApiKey,
+        _ => Observed::Other,
+    }))
 }
 
 /// What `binary --version` says, as the version: `2.1.289 (Claude Code)` is `2.1.289`.

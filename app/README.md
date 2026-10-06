@@ -524,6 +524,19 @@ offers none. This is a check against an executor that is honest and mistaken (an
 second adapter), not against a process that lies about what it runs for: the holder's name is a
 string the caller chooses.
 
+**The application's own executor runs for connections.** Where the shell has the person's
+settings, the executor also takes the requests made for a connection. For each it reads the
+connection at the revision the request pinned (settings made on another computer are said to be
+missing, not guessed at), asks Claude Code who is signed in with the options a generation runs
+with (`--setting-sources ""`, so that what the screen shows is the login a generation uses and
+not one a settings file supplies), judges that way of signing in by the build's table, and runs
+with the pinned model and limits. It offers that connection when it takes the request. A request
+it cannot run stays queued, and the runner says what it left and why (`Runner::waiting`): this
+build has no adapter for Codex or local connections yet, nobody is signed in, the way of signing
+in is not one the build uses, the settings are not on this computer. It still takes the requests
+nobody chose a connection for. A shell with no settings folder takes only those and leaves the
+others to an executor that has one.
+
 ### The model, and where it stands
 
 A model is saved for a text revision (`written_for`), so "is this model about the
