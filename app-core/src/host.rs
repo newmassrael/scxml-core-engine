@@ -16,9 +16,16 @@
 //! | what | the environment | beside the program |
 //! |---|---|---|
 //! | Claude Code | `SCE_CLAUDE` | on the search path as `claude` |
+//! | Codex | `SCE_CODEX` | `codex`, beside the program or on the search path |
 //! | the authoring server's launcher | `SCE_AUTHOR_MCP` | `sce-author-mcp` |
 //! | `sce-work`, for the authoring server | `SCE_WORK` | `sce-work` |
 //! | the product, for the authoring server | `SCE_CODEGEN` | `sce-codegen` |
+//!
+//! Either client is enough for a shell that has the person's settings: a request is then run for
+//! the connection it was made for, and a connection says which client and which credential. A
+//! shell without them runs the requests nobody chose a connection for, and for those Codex has no
+//! credential to run on, so it still needs Claude Code. The executor reports itself as Claude
+//! Code when that is there and as Codex when it is the only one.
 //!
 //! `SCE_EXECUTOR=off` hosts nothing, `SCE_CLAUDE_MODEL` names the model a run uses and
 //! `SCE_CLAUDE_BUDGET_USD` bounds what one run may cost.
@@ -33,17 +40,27 @@ use crate::auth_policy::Policy;
 use crate::claude_code::{AuthorServer, ClaudeCode, ClaudeCodeConfig};
 use crate::client_run::capture;
 use crate::clock::Clock;
+use crate::codex::{Codex, CodexConfig, CodexLaunch};
+use crate::codex_support::Support;
+use crate::connection::AuthSource;
 use crate::directory::{ClaudeLaunch, Connections};
 use crate::figures::{SceCodegen, GENERATOR_ENV};
 use crate::installed::Installed;
 use crate::review::Product;
-use crate::runner::{Cancel, Directory, Generator, Runner, RunnerConfig, Waiting};
+use crate::runner::{
+    Cancel, Directory, Draft, GenerateError, Generator, Job, Runner, RunnerConfig, Waiting,
+};
 use crate::store::{ConnectionStore, HostReport, HostWaiting, WorkStore, WAITING_MAX};
 
-/// Names `SCE_EXECUTOR`, `SCE_CLAUDE`, `SCE_AUTHOR_MCP`, `SCE_WORK`, `SCE_CLAUDE_MODEL`,
-/// `SCE_CLAUDE_BUDGET_USD` in the environment.
+/// Names `SCE_EXECUTOR`, `SCE_CLAUDE`, `SCE_CODEX`, `SCE_AUTHOR_MCP`, `SCE_WORK`,
+/// `SCE_CLAUDE_MODEL`, `SCE_CLAUDE_BUDGET_USD` in the environment.
 const EXECUTOR_ENV: &str = "SCE_EXECUTOR";
 pub(crate) const CLAUDE_ENV: &str = "SCE_CLAUDE";
+pub(crate) const CODEX_ENV: &str = "SCE_CODEX";
+
+/// The folder, in the settings folder, that is the application's own home for Codex: where a
+/// connection that chose the application's stored login keeps it, apart from the person's.
+const CODEX_HOME_DIR: &str = "codex-home";
 const AUTHOR_ENV: &str = "SCE_AUTHOR_MCP";
 const WORK_ENV: &str = "SCE_WORK";
 const MODEL_ENV: &str = "SCE_CLAUDE_MODEL";
@@ -56,6 +73,7 @@ pub struct HostSettings {
     pub name: String,
     pub enabled: bool,
     pub claude: Option<PathBuf>,
+    pub codex: Option<PathBuf>,
     pub author: Option<PathBuf>,
     pub work: Option<PathBuf>,
     pub codegen: Option<PathBuf>,
@@ -104,6 +122,7 @@ impl HostSettings {
             name: name.to_string(),
             enabled,
             claude: path(CLAUDE_ENV),
+            codex: path(CODEX_ENV),
             author: path(AUTHOR_ENV),
             work: path(WORK_ENV),
             codegen: path(GENERATOR_ENV),
@@ -129,8 +148,9 @@ impl HostSettings {
 pub enum NotHosted {
     /// The owner turned it off.
     Off,
-    /// No Claude Code was found; says where it looked.
-    NoClaude(String),
+    /// No client was found to write with: no Claude Code, and for a shell that has the person's
+    /// settings no Codex either. Says where it looked for each.
+    NoClient(String),
     /// No launcher for the authoring server was found; says where it looked.
     NoAuthorServer(String),
     /// The launcher is there and the server would not start (no Python, a Python module it needs,
@@ -146,10 +166,11 @@ impl std::fmt::Display for NotHosted {
                 "the application's own executor is off ({EXECUTOR_ENV} says so): requests wait \
                  for an authoring client of your own"
             ),
-            NotHosted::NoClaude(tried) => write!(
+            NotHosted::NoClient(tried) => write!(
                 f,
-                "no Claude Code to write models with ({tried}): install it, or set {CLAUDE_ENV} \
-                 to its path; until then requests wait for an authoring client of your own"
+                "no AI client to write models with ({tried}): install Claude Code, or set \
+                 {CLAUDE_ENV} to its path (Codex too, with {CODEX_ENV}, where connections are \
+                 kept); until then requests wait for an authoring client of your own"
             ),
             NotHosted::NoAuthorServer(tried) => write!(
                 f,
@@ -191,10 +212,10 @@ struct Standing {
 }
 
 impl Standing {
-    fn of(found: &Result<ClaudeCode, NotHosted>) -> Standing {
+    fn of(found: &Result<Clients, NotHosted>) -> Standing {
         match found {
-            Ok(client) => Standing {
-                version: client.version(),
+            Ok(clients) => Standing {
+                version: clients.version(),
                 not_hosted: None,
             },
             Err(why) => Standing {
@@ -297,8 +318,10 @@ where
     // One word stops everything the host runs, the runner included.
     let shutdown = Cancel::new();
     let mut threads = Vec::new();
+    // Codex counts where requests are run for a connection, which is where it has a credential.
+    let for_connections = connections.is_some();
     // The first look is made now, so that what it found is in the works folder when this returns.
-    let first = find_client(&store, &settings);
+    let first = find_clients(&store, &settings, for_connections);
     let shared = Arc::new(Shared::new(Standing::of(&first)));
     say(&store, &name, &shared.standing(), &[]);
     let supervising = thread::Builder::new()
@@ -322,7 +345,7 @@ where
         Ok(thread) => threads.push(thread),
         Err(e) => shared.set(Standing {
             version: None,
-            not_hosted: Some(NotHosted::NoClaude(format!(
+            not_hosted: Some(NotHosted::NoClient(format!(
                 "a thread for the executor: {e}"
             ))),
         }),
@@ -358,14 +381,15 @@ fn supervise<C>(
     connections: Option<(ConnectionStore, Policy)>,
     shutdown: Cancel,
     shared: Arc<Shared>,
-    found: Result<ClaudeCode, NotHosted>,
+    found: Result<Clients, NotHosted>,
 ) where
     C: Clock + Send + Sync + 'static,
 {
+    let for_connections = connections.is_some();
     let mut found = found;
     loop {
-        let client = match found {
-            Ok(client) => client,
+        let clients = match found {
+            Ok(clients) => clients,
             Err(why) => {
                 let owners_word = why == NotHosted::Off;
                 shared.set(Standing {
@@ -380,26 +404,21 @@ fn supervise<C>(
                 if !wait_or_stop(&shutdown, wait) {
                     return;
                 }
-                found = find_client(&store, &settings);
+                found = find_clients(&store, &settings, for_connections);
                 continue;
             }
         };
         shared.set(Standing {
-            version: client.version(),
+            version: clients.version(),
             not_hosted: None,
         });
         let directory = connections.map(|(settings_store, policy)| {
-            let launch = ClaudeLaunch {
-                binary: client.binary().to_path_buf(),
-                author: client.author().clone(),
-                max_budget_usd: settings.config.max_budget_usd,
-            };
-            Arc::new(Connections::new(settings_store, policy, Some(launch))) as Arc<dyn Directory>
+            Arc::new(clients.directory(settings_store, policy, &settings)) as Arc<dyn Directory>
         });
         let mut runner = Runner::new(
             Arc::clone(&store),
             product,
-            Arc::new(client),
+            Arc::new(clients.reporting()),
             RunnerConfig::named(&settings.name),
         )
         .with_shutdown(shutdown);
@@ -428,33 +447,205 @@ fn wait_or_stop(stop: &Cancel, span: Duration) -> bool {
     false
 }
 
-/// What a shell needs to host an executor, found; or why it is not.
-fn find_client<C: Clock>(
+/// The clients a shell found for its executor: at least one, which is what the type says.
+enum Clients {
+    /// Claude Code, and Codex besides when it is here.
+    Claude {
+        claude: ClaudeCode,
+        codex: Option<Codex>,
+        author: AuthorServer,
+    },
+    /// Codex and no Claude Code.
+    CodexOnly { codex: Codex, author: AuthorServer },
+}
+
+impl Clients {
+    /// What was found, or nothing when neither client is here.
+    fn of(
+        author: AuthorServer,
+        claude: Option<ClaudeCode>,
+        codex: Option<Codex>,
+    ) -> Option<Clients> {
+        match (claude, codex) {
+            (Some(claude), codex) => Some(Clients::Claude {
+                claude,
+                codex,
+                author,
+            }),
+            (None, Some(codex)) => Some(Clients::CodexOnly { codex, author }),
+            (None, None) => None,
+        }
+    }
+
+    /// How the clients reach the authoring server.
+    fn author(&self) -> &AuthorServer {
+        match self {
+            Clients::Claude { author, .. } | Clients::CodexOnly { author, .. } => author,
+        }
+    }
+
+    /// The version of the client the executor reports itself as.
+    fn version(&self) -> Option<String> {
+        match self {
+            Clients::Claude { claude, .. } => claude.version(),
+            Clients::CodexOnly { codex, .. } => codex.version(),
+        }
+    }
+
+    /// What finds the generator for a request made for a connection: it can run each client that
+    /// is here, and says why for each that is not.
+    fn directory(
+        &self,
+        settings_store: ConnectionStore,
+        policy: Policy,
+        settings: &HostSettings,
+    ) -> Connections {
+        let (claude, codex, author) = match self {
+            Clients::Claude {
+                claude,
+                codex,
+                author,
+            } => (Some(claude), codex.as_ref(), author),
+            Clients::CodexOnly { codex, author } => (None, Some(codex), author),
+        };
+        let claude = claude.map(|client| ClaudeLaunch {
+            binary: client.binary().to_path_buf(),
+            author: client.author().clone(),
+            max_budget_usd: settings.config.max_budget_usd,
+        });
+        let codex = codex.map(|client| CodexLaunch {
+            binary: client.binary().to_path_buf(),
+            author: author.clone(),
+            app_home: settings_store.root().join(CODEX_HOME_DIR),
+            support: Support::shipped(),
+            environment: std::env::vars().collect(),
+        });
+        let directory = Connections::new(settings_store, policy, claude);
+        match codex {
+            Some(launch) => directory.with_codex(launch),
+            None => directory,
+        }
+    }
+
+    /// The generator the executor reports itself as: Claude Code when it is here, else Codex. A
+    /// request made for a connection is not written by it but by the one the directory finds.
+    fn reporting(self) -> Reporting {
+        match self {
+            Clients::Claude { claude, .. } => Reporting::Claude(claude),
+            Clients::CodexOnly { codex, .. } => Reporting::Codex(codex),
+        }
+    }
+}
+
+/// The client an executor reports itself as, and writes with when it has no connection to go by.
+enum Reporting {
+    Claude(ClaudeCode),
+    Codex(Codex),
+}
+
+impl Reporting {
+    fn client(&self) -> &dyn Generator {
+        match self {
+            Reporting::Claude(client) => client,
+            Reporting::Codex(client) => client,
+        }
+    }
+}
+
+impl Generator for Reporting {
+    fn kind(&self) -> &str {
+        self.client().kind()
+    }
+
+    fn version(&self) -> Option<String> {
+        self.client().version()
+    }
+
+    fn instructions(&self) -> Option<String> {
+        self.client().instructions()
+    }
+
+    fn capabilities(&self) -> Vec<String> {
+        self.client().capabilities()
+    }
+
+    fn generate(&self, job: &Job, cancel: &Cancel) -> Result<Draft, GenerateError> {
+        self.client().generate(job, cancel)
+    }
+}
+
+/// What a shell needs to host an executor, found; or why it is not. `with_codex` is whether Codex
+/// counts: it does for a shell that has the person's settings, where a connection gives it the
+/// credential to run on.
+fn find_clients<C: Clock>(
     store: &WorkStore<C>,
     settings: &HostSettings,
-) -> Result<ClaudeCode, NotHosted> {
+    with_codex: bool,
+) -> Result<Clients, NotHosted> {
     if !settings.enabled {
         return Err(NotHosted::Off);
     }
     let author = author_server(settings, store.root())?;
+    let claude = find_claude(settings, &author);
+    let codex = if with_codex {
+        Some(find_codex(settings, &author, store.root()))
+    } else {
+        None
+    };
+    // What to say when neither is here: where it looked for each client that counts.
+    let tried = match (&claude, &codex) {
+        (Err(claude), None) => claude.clone(),
+        (Err(claude), Some(Err(codex))) => format!("Claude Code: {claude}; Codex: {codex}"),
+        _ => String::new(),
+    };
+    let clients = Clients::of(author, claude.ok(), codex.and_then(Result::ok))
+        .ok_or(NotHosted::NoClient(tried))?;
+    // Last: a missing client is the plainer thing to say, and the server is asked only when there
+    // is a client to give it to.
+    ready(clients.author())?;
+    Ok(clients)
+}
+
+/// The Claude Code this shell can run, or where it looked.
+fn find_claude(settings: &HostSettings, author: &AuthorServer) -> Result<ClaudeCode, String> {
     let config = settings.config.clone();
-    let client = match &settings.claude {
+    match &settings.claude {
         Some(binary) => {
             let client = ClaudeCode::new(binary.clone(), author.clone(), config);
             if client.version().is_none() {
-                return Err(NotHosted::NoClaude(format!(
-                    "{} did not answer --version",
-                    binary.display()
-                )));
+                return Err(format!("{} did not answer --version", binary.display()));
             }
-            client
+            Ok(client)
         }
         None => ClaudeCode::find(author.clone(), config)
-            .ok_or_else(|| NotHosted::NoClaude("`claude` is not on the search path".to_string()))?,
+            .ok_or_else(|| "`claude` is not on the search path".to_string()),
+    }
+}
+
+/// The Codex this shell can run, or where it looked. Only a program that says it is Codex is one:
+/// a file of the right name that says anything else is not run in its place.
+fn find_codex(
+    settings: &HostSettings,
+    author: &AuthorServer,
+    works: &Path,
+) -> Result<Codex, String> {
+    let binary = match &settings.codex {
+        Some(path) => path.clone(),
+        None => found_beside_or_on_path("codex")
+            .ok_or("`codex` is not beside the program or on the search path")?,
     };
-    // Last: a missing client is the plainer thing to say, and the server is asked only when there
-    // is a client to give it to.
-    ready(&author)?;
+    // Which credential a run uses is the connection's to say: this one only has to say what it is.
+    let client = Codex::new(
+        binary.clone(),
+        author.clone(),
+        CodexConfig::default(),
+        AuthSource::OfficialLogin,
+        works.join(CODEX_HOME_DIR),
+        Support::shipped(),
+    );
+    if client.version().is_none() {
+        return Err(format!("{} did not say it is Codex", binary.display()));
+    }
     Ok(client)
 }
 

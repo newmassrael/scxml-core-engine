@@ -215,11 +215,11 @@ fn a_shell_with_no_claude_hosts_nothing_and_says_what_to_install() {
 
     let host = start(store, Arc::new(FakeRenderer), settings);
 
-    let Some(NotHosted::NoClaude(tried)) = host.not_hosted() else {
-        panic!("expected NoClaude, got {:?}", host.not_hosted());
+    let Some(NotHosted::NoClient(tried)) = host.not_hosted() else {
+        panic!("expected NoClient, got {:?}", host.not_hosted());
     };
     assert!(tried.contains("/nowhere/claude"), "{tried}");
-    assert!(NotHosted::NoClaude(tried)
+    assert!(NotHosted::NoClient(tried)
         .to_string()
         .contains("SCE_CLAUDE"));
 }
@@ -644,7 +644,7 @@ mod hosting {
             settings,
             Some((settings_store, Policy::shipped())),
         );
-        assert!(matches!(host.not_hosted(), Some(NotHosted::NoClaude(_))));
+        assert!(matches!(host.not_hosted(), Some(NotHosted::NoClient(_))));
         assert!(!store.host_status().unwrap().hosts[0].host.hosting);
         fs::rename(&later, &claude).unwrap();
 

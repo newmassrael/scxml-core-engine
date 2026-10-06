@@ -441,11 +441,21 @@ measure.
 **A shell says what it is doing where the owner looks.** `host::start` never fails: that nothing
 could be hosted is a state, and the shell reports it the way an adapter does (`.sce-hosts/<name>.json`,
 every thirty seconds, counted while recent): that an executor runs and which client, or why none
-does, in words the owner can act on (`no Claude Code to write models with (...): install it, or
-set SCE_CLAUDE to its path`). The screen reads it (`read_host_status`) and, when no AI is
+does, in words the owner can act on (`no AI client to write models with (...): install Claude
+Code, or set SCE_CLAUDE to its path`). The screen reads it (`read_host_status`) and, when no AI is
 connected, says why under the generate button. A message on the standard error of a program
 started from a menu is one nobody reads, and an installed application has no terminal. A shell
 that stopped reporting is not counted: what it last said would be about nothing.
+
+**Either client is enough where connections are kept.** A shell that has the person's settings
+runs a request for the connection it was made for, and a connection says which client and which
+credential, so a computer with Codex and no Claude Code hosts too (`SCE_CODEX` names the program,
+or `codex` is beside the program or on the search path). A shell without the settings runs the
+requests nobody chose a connection for, and Codex has no credential to run those on, so it still
+needs Claude Code. The executor reports itself as Claude Code when that is there and as Codex when
+it is the only one. This build has verified no version of Codex (`app-core/data/codex_support.json`
+lists none), so a request made for a Codex connection waits, and says so, until a version has
+been verified against a real client.
 
 `SCE_EXECUTOR=off` hosts nothing, `SCE_CLAUDE_MODEL` names the model a run uses, and
 `SCE_CLAUDE_BUDGET_USD` bounds what one run may cost (anything that is not a positive number is
