@@ -202,6 +202,12 @@ const SETTINGS_WRITE: &[&str] = &[
 /// with `unknown-command` for the one and would not find the other in the answer; a screen
 /// written for 14 reads a core of 15's `find_clients` all the same, and ignores what it does not
 /// know.
+///
+/// 15 is also where what was pushed under 14 is told apart. 14 was first pushed without
+/// `find_clients` and without the program's `path` in what `read_claude_status` says of an
+/// installed client, and both were added under the same number, so a screen that requires the
+/// `path` met a core of 14 that did not give it, and failed in the middle of a view instead of
+/// being told the versions differ. A screen of 15 is refused by a core of 14 at once, by name.
 pub const COMMAND_SET_VERSION: u32 = 15;
 
 /// A command that did not do what was asked, in a shape every shell can pass on.
