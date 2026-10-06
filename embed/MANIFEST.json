@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.7 (++20250804090312+cd708029e0b2-1~exp1~20250804210325.79)",
-  "embed_version": "d32a609e984",
+  "embed_version": "5bc3c85d8a4",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 305,
+  "symbol_count": 306,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -331,6 +331,12 @@
       "kind": "function",
       "name": "SCE::JsonText::detail::scientificByToChars",
       "signature": "std::size_t SCE::JsonText::detail::scientificByToChars(char *, std::size_t, double)"
+    },
+    {
+      "header": "common/JsonText.h",
+      "kind": "function",
+      "name": "SCE::JsonText::detail::stepScientific",
+      "signature": "std::size_t SCE::JsonText::detail::stepScientific(char *, std::size_t, std::size_t, bool)"
     },
     {
       "header": "common/JsonText.h",
