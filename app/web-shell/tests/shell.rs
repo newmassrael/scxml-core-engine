@@ -352,8 +352,24 @@ fn describe_says_it_is_the_browser_that_asked() {
     assert_eq!(described["entrance"], "browser");
     assert_eq!(described["settings"], true);
     assert_eq!(described["writes_settings"], false);
+    assert_eq!(described["starts_programs"], false);
     assert_eq!(bare["entrance"], "browser");
     assert_eq!(bare["settings"], false);
+}
+
+#[test]
+fn the_browser_is_refused_a_command_that_would_start_the_persons_program() {
+    let scratch = Scratch::new("starts-program");
+    let with = shell_with_settings(&scratch);
+
+    let reply = post(
+        &with,
+        Some(&bearer()),
+        &json!({"name": "read_claude_status"}),
+    );
+
+    assert_eq!(reply.status, 403);
+    assert_eq!(json_of(&reply)["kind"], "not-allowed-here");
 }
 
 #[test]

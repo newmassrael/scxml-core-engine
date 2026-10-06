@@ -204,13 +204,13 @@ impl Shell {
                 return Reply::error(400, "bad-request", format!("the body is not a call: {e}"))
             }
         };
-        let context = Context {
-            works: &self.store,
-            product: self.figures.as_ref(),
-            connections: self.connections.as_ref(),
-            policy: &self.policy,
-            entrance: Entrance::Browser,
-        };
+        let context = Context::new(
+            &self.store,
+            self.figures.as_ref(),
+            &self.policy,
+            Entrance::Browser,
+        )
+        .with_connections(self.connections.as_ref());
         match call_in(&context, &envelope.name, envelope.args) {
             Ok(answer) => Reply {
                 status: 200,

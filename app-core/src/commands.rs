@@ -17,12 +17,14 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use std::collections::BTreeMap;
+use std::path::Path;
 
 use crate::acceptance::{Acceptance, AcceptanceCorrupt, Basis, Snapshot};
 use crate::acceptance_run::{CheckOutcome, RequirementsReport};
 use crate::answers::{Answers, AnswersError};
 use crate::auth_policy::{Policy, Route};
 use crate::bundle::{BundleCheck, CheckedBy};
+use crate::claude_status;
 use crate::clock::{utc_timestamp, Clock};
 use crate::connection::{Connection, ConnectionId};
 use crate::error::StoreError;
@@ -82,6 +84,7 @@ pub const COMMANDS: &[&str] = &[
     "list_connections",
     "read_connection",
     "read_auth_policy",
+    "read_claude_status",
     "save_connection",
     "delete_connection",
     "set_default_connection",
@@ -89,6 +92,11 @@ pub const COMMANDS: &[&str] = &[
 
 /// The commands that read the settings a person keeps apart from the works.
 const SETTINGS_READ: &[&str] = &["list_connections", "read_connection", "read_auth_policy"];
+
+/// The commands that start a program of the person's to ask it something. A command that does
+/// is a way to make the application run it, for whoever can send the command, so only the
+/// entrance that is the person at the keyboard may: the same reason the settings are theirs.
+const STARTS_PROGRAMS: &[&str] = &["read_claude_status"];
 
 /// The commands that change them. A connection names a program the application runs, so a
 /// command that writes one is a way to make the application run something: only the entrance
@@ -1045,9 +1053,17 @@ impl Entrance {
     pub fn writes_settings(self) -> bool {
         self == Entrance::Desktop
     }
+
+    /// Whether this entrance may start a program of the person's (to ask it who is signed in).
+    pub fn starts_programs(self) -> bool {
+        self == Entrance::Desktop
+    }
 }
 
 /// Everything a command may need, and who is asking.
+///
+/// Made with [`Context::new`] and what the entrance has added to it, so that a new thing a
+/// command needs is one more `with_` and not an edit to every place a context is made.
 pub struct Context<'a, C: Clock> {
     pub works: &'a WorkStore<C>,
     /// The product: it draws a model for `figures` and reads one for `review`.
@@ -1057,6 +1073,40 @@ pub struct Context<'a, C: Clock> {
     /// Which ways of signing in this build uses.
     pub policy: &'a Policy,
     pub entrance: Entrance,
+    /// The program the shell was told is Claude Code (`SCE_CLAUDE`), when it was told one; none
+    /// is the first one on the search path.
+    pub claude: Option<&'a Path>,
+}
+
+impl<'a, C: Clock> Context<'a, C> {
+    /// A context with a works folder and nothing the person keeps of their own.
+    pub fn new(
+        works: &'a WorkStore<C>,
+        product: &'a dyn Product,
+        policy: &'a Policy,
+        entrance: Entrance,
+    ) -> Self {
+        Context {
+            works,
+            product,
+            connections: None,
+            policy,
+            entrance,
+            claude: None,
+        }
+    }
+
+    /// With the person's settings folder.
+    pub fn with_connections(mut self, connections: Option<&'a ConnectionStore>) -> Self {
+        self.connections = connections;
+        self
+    }
+
+    /// With the program the shell was told is Claude Code.
+    pub fn with_claude(mut self, claude: Option<&'a Path>) -> Self {
+        self.claude = claude;
+        self
+    }
 }
 
 /// Run the command `name` with `args` against `store`; `renderer` is the
@@ -1073,13 +1123,7 @@ pub fn call<C: Clock>(
 ) -> Result<Value, CommandError> {
     let policy = Policy::shipped();
     call_in(
-        &Context {
-            works: store,
-            product: renderer,
-            connections: None,
-            policy: &policy,
-            entrance: Entrance::Tool,
-        },
+        &Context::new(store, renderer, &policy, Entrance::Tool),
         name,
         args,
     )
@@ -1100,8 +1144,15 @@ pub fn call_in<C: Clock>(
                 "writes_settings".to_string(),
                 json!(context.connections.is_some() && context.entrance.writes_settings()),
             );
+            fields.insert(
+                "starts_programs".to_string(),
+                json!(context.entrance.starts_programs()),
+            );
         }
         return Ok(described);
+    }
+    if STARTS_PROGRAMS.contains(&name) {
+        return call_program(context, name, args);
     }
     if SETTINGS_READ.contains(&name) || SETTINGS_WRITE.contains(&name) {
         return call_settings(context, name, args);
@@ -1236,6 +1287,35 @@ struct SetDefaultConnection {
 
 fn connection_id(text: &str) -> Result<ConnectionId, CommandError> {
     ConnectionId::parse(text).map_err(CommandError::from)
+}
+
+/// The commands that start a program of the person's to ask it something.
+fn call_program<C: Clock>(
+    context: &Context<'_, C>,
+    name: &str,
+    args: Value,
+) -> Result<Value, CommandError> {
+    if !context.entrance.starts_programs() {
+        return Err(CommandError {
+            kind: "not-allowed-here".to_string(),
+            message: format!(
+                "`{name}` starts a program of the person's, and only the desktop application \
+                 does that"
+            ),
+            detail: json!({ "entrance": context.entrance }),
+        });
+    }
+    match name {
+        "read_claude_status" => {
+            arguments::<Empty>(args)?;
+            Ok(json!({ "claude": claude_status::read(context.claude, context.policy) }))
+        }
+        other => Err(CommandError {
+            kind: "unknown-command".to_string(),
+            message: format!("`{other}` does not start a program"),
+            detail: Value::Null,
+        }),
+    }
 }
 
 fn call_settings<C: Clock>(

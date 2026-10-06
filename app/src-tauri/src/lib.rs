@@ -48,6 +48,10 @@ struct Works {
     figures: Box<dyn Product>,
     settings: ConnectionStore,
     policy: Policy,
+    /// The program the environment named as Claude Code (`SCE_CLAUDE`); none is the first one on
+    /// the search path, which is looked for each time it is asked about, so that installing it
+    /// while the window is open is seen by the next check.
+    claude: Option<std::path::PathBuf>,
 }
 
 /// The executor this application hosts, when it found what it needs: a runner on a thread of
@@ -92,13 +96,14 @@ fn sce_call(
     args: Option<Value>,
 ) -> Result<Value, CommandError> {
     // This is the person at the keyboard: the one entrance that may change their settings.
-    let context = Context {
-        works: &works.store,
-        product: works.figures.as_ref(),
-        connections: Some(&works.settings),
-        policy: &works.policy,
-        entrance: Entrance::Desktop,
-    };
+    let context = Context::new(
+        &works.store,
+        works.figures.as_ref(),
+        &works.policy,
+        Entrance::Desktop,
+    )
+    .with_connections(Some(&works.settings))
+    .with_claude(works.claude.as_deref());
     call_in(&context, &name, args.unwrap_or(Value::Null))
 }
 
@@ -169,6 +174,7 @@ pub fn run() {
                 figures: renderer_with_bundle(bundle.codegen.as_deref()),
                 settings: ConnectionStore::at(settings),
                 policy: Policy::shipped(),
+                claude: HostSettings::from_environment("desktop").claude,
             });
             Ok(())
         })

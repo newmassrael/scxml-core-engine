@@ -36,13 +36,8 @@ impl Rig {
     }
 
     fn context(&self, entrance: Entrance) -> Context<'_, sce_app_core::SystemClock> {
-        Context {
-            works: &self.works,
-            product: &FakeRenderer,
-            connections: Some(&self.connections),
-            policy: &self.policy,
-            entrance,
-        }
+        Context::new(&self.works, &FakeRenderer, &self.policy, entrance)
+            .with_connections(Some(&self.connections))
     }
 
     fn ask(&self, entrance: Entrance, name: &str, args: Value) -> Result<Value, CommandError> {
@@ -93,13 +88,7 @@ fn describe_says_which_entrance_it_is_and_what_it_may_do() {
     );
     // The window of an application that found no settings folder cannot change any.
     let bare = call_in(
-        &Context {
-            works: &rig.works,
-            product: &FakeRenderer,
-            connections: None,
-            policy: &rig.policy,
-            entrance: Entrance::Desktop,
-        },
+        &Context::new(&rig.works, &FakeRenderer, &rig.policy, Entrance::Desktop),
         "describe",
         json!({}),
     )

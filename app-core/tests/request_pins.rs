@@ -38,13 +38,8 @@ impl Rig {
     }
 
     fn context(&self) -> Context<'_, SystemClock> {
-        Context {
-            works: &self.works,
-            product: &FakeRenderer,
-            connections: Some(&self.connections),
-            policy: &self.policy,
-            entrance: Entrance::Desktop,
-        }
+        Context::new(&self.works, &FakeRenderer, &self.policy, Entrance::Desktop)
+            .with_connections(Some(&self.connections))
     }
 
     fn ask(&self, name: &str, args: Value) -> Result<Value, CommandError> {

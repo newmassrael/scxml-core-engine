@@ -154,6 +154,7 @@
         "list_connections",
         "read_connection",
         "read_auth_policy",
+        "read_claude_status",
         "save_connection",
         "delete_connection",
         "set_default_connection"
@@ -161,6 +162,7 @@
       "entrance": "tool",
       "root": "<root>",
       "settings": false,
+      "starts_programs": false,
       "writes_settings": false
     },
     "describe_desktop": {
@@ -208,6 +210,7 @@
         "list_connections",
         "read_connection",
         "read_auth_policy",
+        "read_claude_status",
         "save_connection",
         "delete_connection",
         "set_default_connection"
@@ -215,6 +218,7 @@
       "entrance": "desktop",
       "root": "<root>",
       "settings": true,
+      "starts_programs": true,
       "writes_settings": true
     },
     "fail_request": {
@@ -731,6 +735,158 @@
           "v": 1
         },
         "revision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    },
+    "read_claude_status_key_from_environment": {
+      "claude": {
+        "account": {
+          "billing": "usage",
+          "decision": {
+            "decision": "use",
+            "status": "allowed"
+          },
+          "environment": "ANTHROPIC_API_KEY",
+          "route": "claude-api-key",
+          "state": "signed-in",
+          "usable": true
+        },
+        "client": {
+          "state": "installed",
+          "version": "2.1.291"
+        },
+        "sign_in": [
+          {
+            "billing": "subscription",
+            "command": "claude auth login"
+          },
+          {
+            "billing": "usage",
+            "command": "claude auth login --console"
+          }
+        ]
+      }
+    },
+    "read_claude_status_missing": {
+      "claude": {
+        "account": {
+          "reason": "Claude Code was not found: install it, or set SCE_CLAUDE to its path",
+          "state": "unknown"
+        },
+        "client": {
+          "state": "missing"
+        },
+        "sign_in": [
+          {
+            "billing": "subscription",
+            "command": "claude auth login"
+          },
+          {
+            "billing": "usage",
+            "command": "claude auth login --console"
+          }
+        ]
+      }
+    },
+    "read_claude_status_not_used": {
+      "claude": {
+        "account": {
+          "billing": null,
+          "decision": {
+            "decision": "refuse",
+            "reason": "unconfirmed",
+            "status": "unconfirmed"
+          },
+          "environment": null,
+          "route": "unlisted",
+          "state": "signed-in",
+          "usable": false
+        },
+        "client": {
+          "state": "installed",
+          "version": "2.1.291"
+        },
+        "sign_in": [
+          {
+            "billing": "subscription",
+            "command": "claude auth login"
+          },
+          {
+            "billing": "usage",
+            "command": "claude auth login --console"
+          }
+        ]
+      }
+    },
+    "read_claude_status_signed_out": {
+      "claude": {
+        "account": {
+          "state": "signed-out"
+        },
+        "client": {
+          "state": "installed",
+          "version": "2.1.291"
+        },
+        "sign_in": [
+          {
+            "billing": "subscription",
+            "command": "claude auth login"
+          },
+          {
+            "billing": "usage",
+            "command": "claude auth login --console"
+          }
+        ]
+      }
+    },
+    "read_claude_status_subscription": {
+      "claude": {
+        "account": {
+          "billing": "subscription",
+          "decision": {
+            "decision": "use",
+            "status": "conditional"
+          },
+          "environment": null,
+          "route": "claude-official-login",
+          "state": "signed-in",
+          "usable": true
+        },
+        "client": {
+          "state": "installed",
+          "version": "2.1.291"
+        },
+        "sign_in": [
+          {
+            "billing": "subscription",
+            "command": "claude auth login"
+          },
+          {
+            "billing": "usage",
+            "command": "claude auth login --console"
+          }
+        ]
+      }
+    },
+    "read_claude_status_unknown": {
+      "claude": {
+        "account": {
+          "reason": "`claude auth status` did not answer JSON",
+          "state": "unknown"
+        },
+        "client": {
+          "state": "installed",
+          "version": "2.1.291"
+        },
+        "sign_in": [
+          {
+            "billing": "subscription",
+            "command": "claude auth login"
+          },
+          {
+            "billing": "usage",
+            "command": "claude auth login --console"
+          }
+        ]
       }
     },
     "read_connection": {
@@ -1753,6 +1909,13 @@
       "kind": "not-allowed-here",
       "message": "`save_connection` changes the person's settings, and only the desktop application does that"
     },
+    "not-allowed-to-start-a-program": {
+      "detail": {
+        "entrance": "browser"
+      },
+      "kind": "not-allowed-here",
+      "message": "`read_claude_status` starts a program of the person's, and only the desktop application does that"
+    },
     "not-current": {
       "detail": {
         "behind": [
@@ -1833,7 +1996,7 @@
     },
     "unknown-command": {
       "kind": "unknown-command",
-      "message": "`nope` is not a command; the commands are describe, list_works, create_work, read_work, read_source, save_source, history, save_model, read_model, model_history, figures, remove_work, review, read_answers, save_answers, save_requirements, read_requirements, requirements_report, accept, read_acceptance, read_judgment, read_work_snapshot, read_work_heads, request_generation, read_request, list_requests, list_open_requests, claim_request, heartbeat_request, save_request_candidate, read_request_candidate, complete_request, fail_request, cancel_request, report_adapter, read_adapter_status, read_host_status, read_bundle, bundle_history, list_connections, read_connection, read_auth_policy, save_connection, delete_connection, set_default_connection"
+      "message": "`nope` is not a command; the commands are describe, list_works, create_work, read_work, read_source, save_source, history, save_model, read_model, model_history, figures, remove_work, review, read_answers, save_answers, save_requirements, read_requirements, requirements_report, accept, read_acceptance, read_judgment, read_work_snapshot, read_work_heads, request_generation, read_request, list_requests, list_open_requests, claim_request, heartbeat_request, save_request_candidate, read_request_candidate, complete_request, fail_request, cancel_request, report_adapter, read_adapter_status, read_host_status, read_bundle, bundle_history, list_connections, read_connection, read_auth_policy, read_claude_status, save_connection, delete_connection, set_default_connection"
     },
     "wrong-connection": {
       "detail": {

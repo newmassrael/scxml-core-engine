@@ -42,7 +42,7 @@ use crate::store::{ConnectionStore, HostReport, WorkStore};
 /// Names `SCE_EXECUTOR`, `SCE_CLAUDE`, `SCE_AUTHOR_MCP`, `SCE_WORK`, `SCE_CLAUDE_MODEL`,
 /// `SCE_CLAUDE_BUDGET_USD` in the environment.
 const EXECUTOR_ENV: &str = "SCE_EXECUTOR";
-const CLAUDE_ENV: &str = "SCE_CLAUDE";
+pub(crate) const CLAUDE_ENV: &str = "SCE_CLAUDE";
 const AUTHOR_ENV: &str = "SCE_AUTHOR_MCP";
 const WORK_ENV: &str = "SCE_WORK";
 const MODEL_ENV: &str = "SCE_CLAUDE_MODEL";

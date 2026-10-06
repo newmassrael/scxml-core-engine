@@ -25,6 +25,8 @@
 //!   with the works, which are shared and moved.
 //! - [`auth_policy`] is which ways of signing in the workbench uses: a table of routes, each
 //!   allowed, conditional, forbidden or unconfirmed, as a constant of the build.
+//! - [`directory`] finds the generator for the connection a request was made for, and
+//!   [`claude_status`] is what a screen says of the Claude Code a person has.
 //! - [`requirements`], [`acceptance`] and [`acceptance_run`] are the requirement list
 //!   a text is read into and what the owner accepted of a design against it: the
 //!   product measures, records and re-checks, and the workbench keeps the files and
@@ -39,6 +41,7 @@ pub mod answers;
 pub mod auth_policy;
 pub mod bundle;
 pub mod claude_code;
+pub mod claude_status;
 pub mod clock;
 pub mod commands;
 pub mod connection;

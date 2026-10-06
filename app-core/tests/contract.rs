@@ -20,9 +20,10 @@
 
 mod common;
 
+use sce_app_core::claude_status::{AccountState, Billing, ClaudeStatus, Client, SIGN_IN};
 use sce_app_core::{
     call, call_in, CommandError, ConnectionStore, Context, Entrance, FixedClock, NoRenderer,
-    Policy, Product, WorkStore, COMMANDS, COMMAND_SET_VERSION,
+    Policy, Product, Route, WorkStore, COMMANDS, COMMAND_SET_VERSION,
 };
 use serde_json::{json, Map, Value};
 
@@ -802,12 +803,9 @@ fn replies() -> Value {
     // them; the others are shown only by what they are refused.
     let settings = ConnectionStore::at(common::scratch("contract-settings"));
     let policy = Policy::shipped();
-    let entrance = |entrance: Entrance, with_settings: bool| Context {
-        works: &store,
-        product: &FakeRenderer,
-        connections: with_settings.then_some(&settings),
-        policy: &policy,
-        entrance,
+    let entrance = |entrance: Entrance, with_settings: bool| {
+        Context::new(&store, &FakeRenderer, &policy, entrance)
+            .with_connections(with_settings.then_some(&settings))
     };
     let desktop = entrance(Entrance::Desktop, true);
     let ask = |name: &str, args: Value| {
@@ -879,6 +877,63 @@ fn replies() -> Value {
     answers.insert(
         "read_auth_policy".into(),
         ask("read_auth_policy", json!({})),
+    );
+    // What a screen is told of Claude Code. A program that is not there is asked for real; the
+    // shapes a client that is there gives are the core's own types, so that the file does not
+    // depend on a script that only a Unix shell can run.
+    let missing = Context::new(&store, &FakeRenderer, &policy, Entrance::Desktop)
+        .with_connections(Some(&settings))
+        .with_claude(Some(std::path::Path::new("/nowhere/claude")));
+    answers.insert(
+        "read_claude_status_missing".into(),
+        call_in(&missing, "read_claude_status", json!({})).expect("an answer"),
+    );
+    let installed = |account: AccountState| {
+        json!({ "claude": ClaudeStatus {
+            client: Client::Installed { version: "2.1.291".to_string() },
+            account,
+            sign_in: SIGN_IN.to_vec(),
+        } })
+    };
+    let signed_in = |route: Route, environment: Option<&str>| {
+        let decision = policy.decide(route);
+        installed(AccountState::SignedIn {
+            route,
+            billing: Billing::of(route),
+            environment: environment.map(str::to_string),
+            usable: matches!(decision, sce_app_core::Decision::Use { .. }),
+            decision,
+        })
+    };
+    answers.insert(
+        "read_claude_status_subscription".into(),
+        signed_in(Route::ClaudeOfficialLogin, None),
+    );
+    answers.insert(
+        "read_claude_status_key_from_environment".into(),
+        signed_in(Route::ClaudeApiKey, Some("ANTHROPIC_API_KEY")),
+    );
+    answers.insert(
+        "read_claude_status_not_used".into(),
+        signed_in(Route::Unlisted, None),
+    );
+    answers.insert(
+        "read_claude_status_signed_out".into(),
+        installed(AccountState::SignedOut),
+    );
+    answers.insert(
+        "read_claude_status_unknown".into(),
+        installed(AccountState::Unknown {
+            reason: "`claude auth status` did not answer JSON".to_string(),
+        }),
+    );
+    refusals.insert(
+        "not-allowed-to-start-a-program".into(),
+        refuse(
+            &entrance(Entrance::Browser, true),
+            "read_claude_status",
+            json!({}),
+        ),
     );
     refusals.insert(
         "connection-conflict".into(),

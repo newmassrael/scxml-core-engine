@@ -119,15 +119,7 @@ impl ClaudeCode {
 
     /// The `claude` on the search path, when there is one that answers `--version`.
     pub fn find(author: AuthorServer, config: ClaudeCodeConfig) -> Option<Self> {
-        let name = if cfg!(windows) {
-            "claude.exe"
-        } else {
-            "claude"
-        };
-        let path = std::env::var_os("PATH")?;
-        std::env::split_paths(&path)
-            .map(|dir| dir.join(name))
-            .find(|candidate| candidate.is_file())
+        search_path()
             .map(|binary| ClaudeCode::new(binary, author, config))
             .filter(|found| found.version.is_some())
     }
@@ -638,6 +630,29 @@ pub(crate) fn capture(mut command: Command, timeout: Duration) -> Result<Capture
     }
 }
 
+/// The first `claude` on the search path.
+fn search_path() -> Option<PathBuf> {
+    let name = if cfg!(windows) {
+        "claude.exe"
+    } else {
+        "claude"
+    };
+    let path = std::env::var_os("PATH")?;
+    std::env::split_paths(&path)
+        .map(|dir| dir.join(name))
+        .find(|candidate| candidate.is_file())
+}
+
+/// The program that is Claude Code on this computer: the one the environment named (`SCE_CLAUDE`),
+/// whatever it is, so that a wrong one is said to be wrong and not quietly replaced; or else the
+/// first `claude` on the search path. `None` is no program to ask.
+pub fn locate(named: Option<&Path>) -> Option<PathBuf> {
+    match named {
+        Some(path) => Some(path.to_path_buf()),
+        None => search_path(),
+    }
+}
+
 /// Who is signed in to the client, asked the way a generation is run: without the machine's
 /// settings (`--setting-sources ""`). A login that a settings file supplies (a key it names) is
 /// one a generation cannot see, so it is not one the screen may show: asked with the machine's
@@ -646,13 +661,17 @@ pub(crate) fn capture(mut command: Command, timeout: Duration) -> Result<Capture
 /// `Ok(None)` is nobody signed in. The client fails when nobody is, and still says so in JSON,
 /// so what it printed is read before how it ended is looked at.
 pub fn observe_auth(binary: &Path) -> Result<Option<Observed>, String> {
+    observe_account(binary).map(|account| account.observed)
+}
+
+/// The same, with the name of the variable that decided it when the client said one did.
+pub fn observe_account(binary: &Path) -> Result<Account, String> {
     let mut command = Command::new(binary);
     command
         .args(["--setting-sources", ""])
         .args(["auth", "status", "--json"]);
-    let said = capture(command, Duration::from_secs(20))
-        .map_err(|e| format!("{}: {e}", binary.display()))?;
-    observed_from_status(said.stdout.trim()).map_err(|e| {
+    let said = capture(command, Duration::from_secs(20))?;
+    account_from_status(said.stdout.trim()).map_err(|e| {
         let stderr = said.stderr.trim();
         if stderr.is_empty() {
             e
@@ -662,11 +681,36 @@ pub fn observe_auth(binary: &Path) -> Result<Option<Observed>, String> {
     })
 }
 
+/// What `claude auth status --json` said of the credential the client is using.
+///
+/// Only what a screen may show is kept: the client's answer carries the person's email and
+/// organization, and neither is read into this.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Account {
+    /// The kind of credential, or `None` for nobody.
+    pub observed: Option<Observed>,
+    /// The variable that decided it, when the client said one did (a key from the environment, a
+    /// cloud provider chosen by one): a name, never a value.
+    pub environment: Option<String>,
+}
+
+/// The variables a client is told which credential to use by, as far as a screen names them: a
+/// source the client reports that is anything else (a helper program, a stored key, a path) is
+/// not a variable's name and is not shown.
+fn credential_variable(source: &str) -> Option<&str> {
+    let named = source.starts_with("ANTHROPIC_")
+        && source.len() > "ANTHROPIC_".len()
+        && source
+            .bytes()
+            .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'_');
+    named.then_some(source)
+}
+
 /// What `claude auth status --json` said, as the kind of credential the client is using, or
 /// `None` for nobody. A cloud provider is known by the provider and not by the login the client
 /// tracks (which is the claude.ai one only); a method the table does not name is [`Observed::Other`]
 /// and is not guessed at.
-pub fn observed_from_status(text: &str) -> Result<Option<Observed>, String> {
+pub fn account_from_status(text: &str) -> Result<Account, String> {
     let status: Value = serde_json::from_str(text).map_err(|_| {
         format!(
             "`claude auth status` did not answer JSON: {}",
@@ -677,21 +721,45 @@ pub fn observed_from_status(text: &str) -> Result<Option<Observed>, String> {
         .as_bool()
         .ok_or("`claude auth status` did not say whether anybody is signed in")?;
     let provider = status["apiProvider"].as_str().unwrap_or("firstParty");
+    let selected_by = match provider {
+        "bedrock" => Some("CLAUDE_CODE_USE_BEDROCK"),
+        "vertex" => Some("CLAUDE_CODE_USE_VERTEX"),
+        "foundry" => Some("CLAUDE_CODE_USE_FOUNDRY"),
+        _ => None,
+    };
     if provider != "firstParty" {
-        return Ok(Some(Observed::CloudProvider));
+        return Ok(Account {
+            observed: Some(Observed::CloudProvider),
+            environment: selected_by.map(str::to_string),
+        });
     }
     if !logged_in {
-        return Ok(None);
+        return Ok(Account {
+            observed: None,
+            environment: None,
+        });
     }
-    Ok(Some(match status["authMethod"].as_str() {
+    let observed = match status["authMethod"].as_str() {
         Some("claude.ai") => Observed::Subscription,
         Some("api_key" | "api_key_helper") => Observed::ApiKey,
         _ => Observed::Other,
-    }))
+    };
+    Ok(Account {
+        observed: Some(observed),
+        environment: status["apiKeySource"]
+            .as_str()
+            .and_then(credential_variable)
+            .map(str::to_string),
+    })
+}
+
+/// What `claude auth status --json` said, as the kind of credential only.
+pub fn observed_from_status(text: &str) -> Result<Option<Observed>, String> {
+    account_from_status(text).map(|account| account.observed)
 }
 
 /// What `binary --version` says, as the version: `2.1.289 (Claude Code)` is `2.1.289`.
-fn version_of(binary: &Path) -> Option<String> {
+pub fn version_of(binary: &Path) -> Option<String> {
     let child = Command::new(binary)
         .arg("--version")
         .stdin(Stdio::null())
