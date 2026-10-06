@@ -58,6 +58,8 @@ export type Readiness =
   | {
       readonly kind: "ready";
       readonly version: string;
+      /** The program that answered, as this computer names it. */
+      readonly path: string;
       readonly billing: Billing;
       /** The variable that decided the login, when the client said one did. */
       readonly environment: string | null;
@@ -100,6 +102,7 @@ function readinessOfStatus(status: ClaudeStatus): Readiness {
       return {
         kind: "ready",
         version: status.client.version,
+        path: status.client.path,
         billing: account.billing,
         environment: account.environment,
       };

@@ -325,7 +325,7 @@ export type Billing = "subscription" | "usage" | "provider";
 
 /** Whether Claude Code is there. `unverified` is a file that did not answer `--version`. */
 export type ClaudeClient =
-  | { readonly state: "installed"; readonly version: string }
+  | { readonly state: "installed"; readonly version: string; readonly path: string }
   | { readonly state: "unverified" }
   | { readonly state: "missing" };
 
@@ -1603,7 +1603,32 @@ export function parseClaudeStatus(value: unknown): ClaudeStatus {
 
 function parseClaudeClient(client: Obj, where: string): ClaudeClient {
   const state = oneOf(client, "state", where, ["installed", "unverified", "missing"] as const);
-  return state === "installed" ? { state, version: text(client, "version", where) } : { state };
+  return state === "installed"
+    ? { state, version: text(client, "version", where), path: text(client, "path", where) }
+    : { state };
+}
+
+/** A program the application found that says it is Claude Code: what a connection may name. */
+export interface Candidate {
+  readonly path: string;
+  readonly version: string;
+  /** On the search path, or in a folder the official installer uses. */
+  readonly found: "search-path" | "known-location";
+}
+
+/** `find_clients`: the Claude Code programs the application found, in the order it found them. */
+export function parseFindClients(value: unknown): Candidate[] {
+  const where = "find_clients";
+  const found = list(record(value, where), "claude", where);
+  return found.map((entry, i) => {
+    const at = `${where}.claude[${i}]`;
+    const candidate = record(entry, at);
+    return {
+      path: text(candidate, "path", at),
+      version: text(candidate, "version", at),
+      found: oneOf(candidate, "found", at, ["search-path", "known-location"] as const),
+    };
+  });
 }
 
 function parseClaudeAccount(account: Obj, where: string): ClaudeAccount {

@@ -32,7 +32,10 @@ const described = (over: Partial<Described> = {}): Described => ({
   ...over,
 });
 
-const status = (account: ClaudeAccount, client: ClaudeClient = { state: "installed", version: "2.1.291" }): ClaudeStatus => ({
+const status = (
+  account: ClaudeAccount,
+  client: ClaudeClient = { state: "installed", version: "2.1.291", path: "/home/me/.local/bin/claude" },
+): ClaudeStatus => ({
   client,
   account,
   sign_in: SIGN_IN,
@@ -129,6 +132,7 @@ describe("what the AI settings can say, by where the screen is", () => {
     expect(readinessOf(described(), answered(signedIn()))).toEqual({
       kind: "ready",
       version: "2.1.291",
+      path: "/home/me/.local/bin/claude",
       billing: "subscription",
       environment: null,
     });
@@ -138,7 +142,13 @@ describe("what the AI settings can say, by where the screen is", () => {
         described(),
         answered(signedIn({ route: "claude-api-key", billing: "usage", environment: "ANTHROPIC_API_KEY" })),
       ),
-    ).toEqual({ kind: "ready", version: "2.1.291", billing: "usage", environment: "ANTHROPIC_API_KEY" });
+    ).toEqual({
+      kind: "ready",
+      version: "2.1.291",
+      path: "/home/me/.local/bin/claude",
+      billing: "usage",
+      environment: "ANTHROPIC_API_KEY",
+    });
     // A key the client holds itself is billed by use too, and nothing in the environment decided it.
     expect(
       readinessOf(described(), answered(signedIn({ route: "claude-api-key", billing: "usage", environment: null }))),

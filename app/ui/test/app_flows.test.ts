@@ -158,7 +158,7 @@ class FakeCore implements Transport {
   private defaultConnection: string | null = null;
   private claudeStatus: unknown = {
     claude: {
-      client: { state: "installed", version: "2.1.291" },
+      client: { state: "installed", version: "2.1.291", path: "/home/me/.local/bin/claude" },
       account: { state: "signed-out" },
       sign_in: [
         { billing: "subscription", command: "claude auth login" },
@@ -551,6 +551,8 @@ class FakeCore implements Transport {
         };
       case "read_claude_status":
         return this.claudeStatus;
+      case "find_clients":
+        return { claude: [{ path: "/home/me/.local/bin/claude", version: "2.1.291", found: "search-path" }] };
       case "read_host_status":
         return {
           hosts: this.hostList.map((h) => ({

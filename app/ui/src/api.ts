@@ -15,6 +15,7 @@ import {
   parseDeletedConnection,
   parseDescribed,
   parseFigures,
+  parseFindClients,
   parseHistory,
   parseHostListing,
   parseJudgment,
@@ -38,6 +39,7 @@ import {
   type AuthPolicy,
   type Basis,
   type BundleRead,
+  type Candidate,
   type ClaudeStatus,
   type Connection,
   type ConnectionListing,
@@ -190,6 +192,13 @@ export interface Api {
    * `not-allowed-here`.
    */
   readClaudeStatus(): Promise<ClaudeStatus>;
+  /**
+   * The Claude Code programs the application finds (on the search path, then in the folders the
+   * official installer uses), each saying it is Claude Code. A connection names a program only
+   * among these. Starts the programs to ask them, so only the desktop window may; any other
+   * entrance is refused with `not-allowed-here`.
+   */
+  findClients(): Promise<Candidate[]>;
 }
 
 /** A connection and the revision of it the person read: what a request is made for. */
@@ -319,6 +328,9 @@ export function apiOver(transport: Transport): Api {
     },
     async readClaudeStatus() {
       return parseClaudeStatus(await transport.call("read_claude_status"));
+    },
+    async findClients() {
+      return parseFindClients(await transport.call("find_clients"));
     },
   };
 }

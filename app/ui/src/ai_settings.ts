@@ -24,7 +24,14 @@ import {
   type Readiness,
 } from "./ai_settings_model";
 import type { Api, ConnectionRef } from "./api";
-import type { Billing, Connection, ConnectionListing, Described, SignInCommand } from "./contract";
+import type {
+  Billing,
+  Candidate,
+  Connection,
+  ConnectionListing,
+  Described,
+  SignInCommand,
+} from "./contract";
 import { h } from "./dom";
 import type { Child } from "./dom";
 import type { Key } from "./i18n";
@@ -32,7 +39,10 @@ import { CommandFailure } from "./ipc";
 
 /** What the settings need of the screen they are drawn in. */
 export interface AiSettingsHost {
-  readonly api: Pick<Api, "listConnections" | "saveConnection" | "setDefaultConnection" | "readClaudeStatus">;
+  readonly api: Pick<
+    Api,
+    "listConnections" | "saveConnection" | "setDefaultConnection" | "readClaudeStatus" | "findClients"
+  >;
   readonly described: Described;
   readonly t: (key: Key, values?: Record<string, string>) => string;
   /** Draw again: the settings changed what they show. */
@@ -60,6 +70,10 @@ export class AiSettings {
   private draftModel: string | null | undefined = undefined;
   /** What was typed in the field for another model id. */
   private typedModel = "";
+  /** The programs the application found, as of the last time it looked. */
+  private candidates: readonly Candidate[] = [];
+  /** The program chosen in the list and not yet saved; `undefined` is the one that is kept. */
+  private draftProgram: string | null | undefined = undefined;
   /** The command the person last pressed copy on, and whether the clipboard took it. */
   private copied: { readonly command: string; readonly ok: boolean } | null = null;
 
@@ -100,7 +114,22 @@ export class AiSettings {
           ? { phase: "refused", kind: error.kind, message: error.message }
           : { phase: "refused", kind: "failed", message: this.host.explain(error) };
     }
+    await this.find();
     this.host.redraw();
+  }
+
+  /**
+   * Ask which programs the application finds, for the person to choose among. Asked with the
+   * login, because the two questions are the same one to a person who has just installed one:
+   * is it there. A refusal leaves the choice to the application, which is what none found is.
+   */
+  private async find(): Promise<void> {
+    try {
+      this.candidates = await this.host.api.findClients();
+    } catch (error) {
+      if (this.host.handled(error)) return;
+      this.candidates = [];
+    }
   }
 
   openPanel(): void {
@@ -144,13 +173,16 @@ export class AiSettings {
     this.busy = true;
     this.notice = null;
     this.host.redraw();
+    let saved = false;
     try {
       const kept = claudeConnection(this.listing);
       const connection: Connection = {
         id: CLAUDE_CONNECTION_ID,
         adapter: "claude-code",
         display_name: null,
-        executable: null,
+        // What is kept stays unless the person chose another: a save of the model is not a
+        // word about the program.
+        executable: this.chosenProgram(),
         model: this.chosenModel(),
         auth: "official-login",
         server_url: null,
@@ -161,7 +193,9 @@ export class AiSettings {
       await this.host.api.setDefaultConnection(CLAUDE_CONNECTION_ID, this.listing?.default ?? null);
       this.draftModel = undefined;
       this.typedModel = "";
+      this.draftProgram = undefined;
       this.notice = { tone: "ok", text: this.host.t("aiSaved") };
+      saved = true;
     } catch (error) {
       if (this.host.handled(error)) return;
       if (error instanceof CommandFailure && (error.kind === "conflict" || error.kind === "moved")) {
@@ -175,6 +209,8 @@ export class AiSettings {
       this.busy = false;
       this.host.redraw();
     }
+    // What is shown is of the program that is named now, which may be another one.
+    if (saved) await this.ask();
   }
 
   private async copy(command: string): Promise<void> {
@@ -187,6 +223,12 @@ export class AiSettings {
       this.copied = { command, ok: false };
     }
     this.host.redraw();
+  }
+
+  /** The program that would be saved: the one chosen in the list, else the one kept, else none. */
+  private chosenProgram(): string | null {
+    if (this.draftProgram !== undefined) return this.draftProgram;
+    return claudeConnection(this.listing)?.connection.executable ?? null;
   }
 
   /** The model that would be saved: a typed id wins over the list, and `null` is the client's own. */
@@ -239,20 +281,85 @@ export class AiSettings {
       case "no-client":
         return [h("p", {}, t("aiNoClient")), this.recheck("aiRecheck")];
       case "client-unverified":
-        return [h("p", {}, t("aiClientUnverified")), this.recheck("aiRecheck")];
+        return [h("p", {}, t("aiClientUnverified")), this.program(), this.recheck("aiRecheck")];
       case "unknown":
-        return [h("p", {}, t("aiUnknown", { reason: readiness.reason })), this.recheck("aiRecheck")];
+        return [
+          h("p", {}, t("aiUnknown", { reason: readiness.reason })),
+          this.program(),
+          this.recheck("aiRecheck"),
+        ];
       case "signed-out":
-        return [h("p", {}, t("aiSignedOut")), this.commands(readiness.commands), this.recheck("aiRecheck")];
+        return [
+          h("p", {}, t("aiSignedOut")),
+          this.commands(readiness.commands),
+          this.program(),
+          this.recheck("aiRecheck"),
+        ];
       case "not-used":
         return [
           h("p", {}, t("aiNotUsed", { reason: t(NOT_USED_WORDS[readiness.reason]) })),
           this.commands(this.signInCommands()),
+          this.program(),
           this.recheck("aiRecheck"),
         ];
       case "ready":
         return this.ready(readiness);
     }
+  }
+
+  /**
+   * Which Claude Code this connection runs: the application's own choice, or one of the programs
+   * it found. A program the connection names that is not found now stays in the list, said to be
+   * gone, so that a save does not drop it unseen and the person can see why a run waits.
+   */
+  private programChoice(): HTMLElement {
+    const t = this.host.t;
+    const current = this.chosenProgram();
+    const known = new Set(this.candidates.map((c) => c.path));
+    const select = h(
+      "select",
+      {
+        id: "ai-program",
+        "aria-label": t("aiProgram"),
+        onchange: (event) => {
+          const value = (event.target as HTMLSelectElement).value;
+          this.draftProgram = value === "" ? null : value;
+        },
+      },
+      h("option", { value: "", selected: current === null }, t("aiProgramAutomatic")),
+      ...this.candidates.map((c) =>
+        h(
+          "option",
+          { value: c.path, selected: current === c.path },
+          t("aiProgramCandidate", { path: c.path, version: c.version }),
+        ),
+      ),
+      current !== null && !known.has(current)
+        ? h("option", { value: current, selected: true }, `${current} (${t("aiProgramGone")})`)
+        : null,
+    );
+    return h("label", { class: "ai-program" }, h("span", {}, `${t("aiProgram")} `), select);
+  }
+
+  /**
+   * The program choice with a button that keeps it, for the states where nobody is signed in to
+   * the program that answered, which is when another one is what the person wants. Where a model
+   * can be chosen the choice is in that state's own save.
+   */
+  private program(): HTMLElement {
+    const t = this.host.t;
+    return h(
+      "div",
+      { class: "ai-program-block" },
+      this.programChoice(),
+      this.host.described.writes_settings
+        ? h(
+            "button",
+            { id: "ai-save-program", type: "button", disabled: this.busy, onclick: () => void this.save() },
+            t("aiUseProgram"),
+          )
+        : null,
+    );
   }
 
   /** The commands the core gave the last time it was asked; none before it has been. */
@@ -343,7 +450,7 @@ export class AiSettings {
         "dl",
         { class: "ai-facts" },
         h("dt", {}, t("aiClient")),
-        h("dd", {}, t("aiClientInstalled", { version: readiness.version })),
+        h("dd", {}, t("aiClientInstalled", { version: readiness.version, path: readiness.path })),
         h("dt", {}, t("aiAccount")),
         h("dd", {}, t("aiAccountSignedIn")),
         h("dt", {}, t("aiAuth")),
@@ -364,7 +471,14 @@ export class AiSettings {
         h("dt", {}, t("aiModel")),
         h("dd", {}, select),
       ),
-      h("details", { class: "advanced" }, h("summary", {}, t("aiAdvanced")), h("p", { class: "muted" }, t("aiModelNote")), typed),
+      h(
+        "details",
+        { class: "advanced" },
+        h("summary", {}, t("aiAdvanced")),
+        this.programChoice(),
+        h("p", { class: "muted" }, t("aiModelNote")),
+        typed,
+      ),
       this.host.described.writes_settings
         ? h(
             "div",

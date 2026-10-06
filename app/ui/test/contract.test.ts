@@ -35,6 +35,7 @@ import {
   parseRequestList,
   parseRequestReply,
   parseFigures,
+  parseFindClients,
   parseHistory,
   parseJudgment,
   parseListing,
@@ -109,6 +110,7 @@ const parsers: Record<string, (value: unknown) => unknown> = {
   read_connection: parseReadConnection,
   read_auth_policy: parseAuthPolicy,
   read_claude_status: parseClaudeStatus,
+  find_clients: parseFindClients,
   save_connection: parseSaved,
   delete_connection: parseDeletedConnection,
   set_default_connection: parseDefaultConnection,
@@ -664,6 +666,23 @@ describe("the replies the core gives", () => {
     );
   });
 
+  it("carry the programs the application found for a connection to name, and where each was found", () => {
+    expect(parseFindClients(replies.answers["find_clients_none"])).toEqual([]);
+    const found = parseFindClients(replies.answers["find_clients_found"]);
+    expect(found.map((c) => [c.version, c.found])).toEqual([
+      ["2.1.291", "search-path"],
+      ["2.1.280", "known-location"],
+    ]);
+    expect(found[0]?.path.endsWith("claude")).toBe(true);
+    expect(asCommandError(replies.refusals["not-allowed-to-find-clients"])?.kind).toBe("not-allowed-here");
+  });
+
+  it("say which program answered when Claude Code is installed", () => {
+    const installed = parseClaudeStatus(replies.answers["read_claude_status_subscription"]).client;
+    expect(installed).toMatchObject({ state: "installed", version: "2.1.291" });
+    expect(installed.state === "installed" ? installed.path : "").toMatch(/claude$/);
+  });
+
   it("carry the two commands that sign in, one for each way it is billed, and no path", () => {
     const signIn = parseClaudeStatus(replies.answers["read_claude_status_signed_out"]).sign_in;
     expect(signIn).toEqual([
@@ -807,6 +826,13 @@ describe("a reply that is not the promised shape", () => {
       /billing/,
     );
     expect(() => parseClaudeStatus({})).toThrow(/read_claude_status/);
+    // An installed client that does not say which program answered is not the shape promised.
+    expect(() =>
+      parseClaudeStatus({ claude: { ...said.claude, client: { state: "installed", version: "2.1.291" } } }),
+    ).toThrow(/path/);
+    expect(() => parseFindClients({ claude: [{ path: "/x/claude", version: "1", found: "elsewhere" }] })).toThrow(
+      /found/,
+    );
   });
 
   it("is accepted when the core has added a field the screen does not read", () => {

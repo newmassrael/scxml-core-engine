@@ -14,6 +14,7 @@ import { AiSettings, type AiSettingsHost } from "../src/ai_settings";
 import { CLAUDE_CONNECTION_ID } from "../src/ai_settings_model";
 import type { Api } from "../src/api";
 import type {
+  Candidate,
   ClaudeAccount,
   ClaudeStatus,
   Connection,
@@ -27,6 +28,11 @@ import { translate } from "../src/i18n";
 
 const REVISION_1 = "1".repeat(64);
 const REVISION_2 = "2".repeat(64);
+
+/** The program the client answered from. */
+const PROGRAM = "/home/me/.local/bin/claude";
+/** Another one the application found. */
+const OTHER_PROGRAM = "/usr/local/bin/claude";
 
 const DESKTOP: Described = {
   command_set_version: 14,
@@ -55,7 +61,7 @@ const signedIn = (over: Partial<Extract<ClaudeAccount, { state: "signed-in" }>> 
 });
 
 const statusOf = (account: ClaudeAccount): ClaudeStatus => ({
-  client: { state: "installed", version: "2.1.291" },
+  client: { state: "installed", version: "2.1.291", path: PROGRAM },
   account,
   sign_in: SIGN_IN,
 });
@@ -78,9 +84,24 @@ class FakeSettings {
   status: ClaudeStatus | CommandFailure = statusOf(signedIn());
   /** Refuse the next save with this, once. */
   refuseSave: CommandFailure | null = null;
+  /** The programs the application says it found. */
+  found: Candidate[] = [
+    { path: PROGRAM, version: "2.1.291", found: "search-path" },
+    { path: OTHER_PROGRAM, version: "2.1.280", found: "known-location" },
+  ];
+  /** Refuse to find programs with this, as the core does an entrance that may not start one. */
+  refuseFinding: CommandFailure | null = null;
 
-  api(): Pick<Api, "listConnections" | "saveConnection" | "setDefaultConnection" | "readClaudeStatus"> {
+  api(): Pick<
+    Api,
+    "listConnections" | "saveConnection" | "setDefaultConnection" | "readClaudeStatus" | "findClients"
+  > {
     return {
+      findClients: async () => {
+        this.calls.push({ name: "find_clients", args: null });
+        if (this.refuseFinding !== null) throw this.refuseFinding;
+        return this.found;
+      },
       listConnections: async () => {
         this.calls.push({ name: "list_connections", args: null });
         return this.listing;
@@ -184,7 +205,7 @@ describe("what is asked when the screen opens", () => {
 
     await r.settings.load();
 
-    expect(r.core.calls.map((c) => c.name)).toEqual(["list_connections", "read_claude_status"]);
+    expect(r.core.calls.map((c) => c.name)).toEqual(["list_connections", "read_claude_status", "find_clients"]);
   });
 
   it("is only the connections in a window that may not start a program, and Claude Code is not asked", async () => {
@@ -236,7 +257,7 @@ describe("what is shown for each state Claude Code can be in", () => {
   });
 
   it("gives the two commands that sign in when nobody is, each with its billing", async () => {
-    const r = await shown({ client: { state: "installed", version: "2.1.291" }, account: { state: "signed-out" }, sign_in: SIGN_IN });
+    const r = await shown({ client: { state: "installed", version: "2.1.291", path: PROGRAM }, account: { state: "signed-out" }, sign_in: SIGN_IN });
 
     const commands = [...r.root.querySelectorAll("code")].map((c) => c.textContent);
     expect(commands).toEqual(["claude auth login", "claude auth login --console"]);
@@ -267,7 +288,7 @@ describe("what is shown for each state Claude Code can be in", () => {
 
     expect(r.root.textContent).toContain("does not use");
     expect(r.root.querySelector("#ai-save")).toBeNull();
-    expect(r.root.querySelector("select")).toBeNull();
+    expect(r.root.querySelector("#ai-model")).toBeNull();
   });
 
   it("says how a subscription is billed, and offers the models and the save", async () => {
@@ -275,7 +296,7 @@ describe("what is shown for each state Claude Code can be in", () => {
 
     expect(r.root.textContent).toContain("subscription login");
     expect(r.root.querySelector("#ai-save")).not.toBeNull();
-    const models = [...r.root.querySelectorAll<HTMLOptionElement>("select option")].map((o) => o.value);
+    const models = [...r.root.querySelectorAll<HTMLOptionElement>("#ai-model option")].map((o) => o.value);
     expect(models).toEqual(["", "opus", "sonnet", "haiku"]);
   });
 
@@ -293,7 +314,7 @@ describe("what is shown for each state Claude Code can be in", () => {
 describe("copying a command", () => {
   it("puts the command on the clipboard and says so", async () => {
     const r = rig();
-    r.core.status = { client: { state: "installed", version: "2.1.291" }, account: { state: "signed-out" }, sign_in: SIGN_IN };
+    r.core.status = { client: { state: "installed", version: "2.1.291", path: PROGRAM }, account: { state: "signed-out" }, sign_in: SIGN_IN };
     await r.settings.load();
     r.settings.openPanel();
     r.draw();
@@ -311,7 +332,7 @@ describe("copying a command", () => {
         throw new Error("denied");
       },
     });
-    r.core.status = { client: { state: "installed", version: "2.1.291" }, account: { state: "signed-out" }, sign_in: SIGN_IN };
+    r.core.status = { client: { state: "installed", version: "2.1.291", path: PROGRAM }, account: { state: "signed-out" }, sign_in: SIGN_IN };
     await r.settings.load();
     r.settings.openPanel();
     r.draw();
@@ -326,7 +347,7 @@ describe("copying a command", () => {
 describe("asking again", () => {
   it("asks Claude Code again and not the connections, and shows what it says now", async () => {
     const r = rig();
-    r.core.status = { client: { state: "installed", version: "2.1.291" }, account: { state: "signed-out" }, sign_in: SIGN_IN };
+    r.core.status = { client: { state: "installed", version: "2.1.291", path: PROGRAM }, account: { state: "signed-out" }, sign_in: SIGN_IN };
     await r.settings.load();
     r.settings.openPanel();
     r.draw();
@@ -420,7 +441,7 @@ describe("saving the connection", () => {
     await settle();
 
     expect((r.core.asked("save_connection")[0] as { connection: Connection }).connection.model).toBe("claude-opus-4-1");
-    const models = [...r.root.querySelectorAll<HTMLOptionElement>("select option")].map((o) => o.value);
+    const models = [...r.root.querySelectorAll<HTMLOptionElement>("#ai-model option")].map((o) => o.value);
     expect(models).toContain("claude-opus-4-1");
   });
 
@@ -455,6 +476,151 @@ describe("saving the connection", () => {
     r.draw();
 
     expect(r.root.querySelector("#ai-save")).toBeNull();
+  });
+});
+
+describe("which Claude Code a connection runs", () => {
+  const withProgram = (executable: string | null): ConnectionListing => ({
+    connections: [{ connection: { ...connection("opus"), executable }, revision: REVISION_1 }],
+    unreadable: [],
+    default: CLAUDE_CONNECTION_ID,
+  });
+
+  const opened = async (listing?: ConnectionListing): Promise<Rig> => {
+    const r = rig();
+    if (listing !== undefined) r.core.listing = listing;
+    await r.settings.load();
+    r.settings.openPanel();
+    r.draw();
+    return r;
+  };
+
+  const programs = (r: Rig): string[] =>
+    [...r.root.querySelectorAll<HTMLOptionElement>("#ai-program option")].map((o) => o.value);
+
+  it("is chosen among the programs the application found, and the first choice is to leave it to it", async () => {
+    const r = await opened();
+
+    expect(programs(r)).toEqual(["", PROGRAM, OTHER_PROGRAM]);
+    expect(r.root.querySelector<HTMLSelectElement>("#ai-program")?.value).toBe("");
+    // Each says its version, so that the person can tell one from another.
+    expect(r.root.textContent).toContain("2.1.280");
+  });
+
+  it("is shown for the connection that names one, even when the application does not find it now", async () => {
+    const r = await opened(withProgram("/opt/elsewhere/claude"));
+
+    expect(programs(r)).toEqual(["", PROGRAM, OTHER_PROGRAM, "/opt/elsewhere/claude"]);
+    expect(r.root.querySelector<HTMLSelectElement>("#ai-program")?.value).toBe("/opt/elsewhere/claude");
+    expect(r.root.textContent).toContain("not found now");
+  });
+
+  it("is saved with the connection, as the path of the one chosen", async () => {
+    const r = await opened();
+    const select = r.root.querySelector<HTMLSelectElement>("#ai-program")!;
+    select.value = OTHER_PROGRAM;
+    select.dispatchEvent(new Event("change"));
+
+    click(r.root, "#ai-save");
+    await settle();
+
+    expect((r.core.asked("save_connection")[0] as { connection: Connection }).connection.executable).toBe(
+      OTHER_PROGRAM,
+    );
+  });
+
+  it("is left to the application again by choosing that, which saves none", async () => {
+    const r = await opened(withProgram(PROGRAM));
+    const select = r.root.querySelector<HTMLSelectElement>("#ai-program")!;
+    select.value = "";
+    select.dispatchEvent(new Event("change"));
+
+    click(r.root, "#ai-save");
+    await settle();
+
+    expect((r.core.asked("save_connection")[0] as { connection: Connection }).connection.executable).toBeNull();
+  });
+
+  it("is kept when only the model is changed: a save does not drop what it was not asked to change", async () => {
+    const r = await opened(withProgram(PROGRAM));
+    const model = r.root.querySelector<HTMLSelectElement>("#ai-model")!;
+    model.value = "sonnet";
+    model.dispatchEvent(new Event("change"));
+
+    click(r.root, "#ai-save");
+    await settle();
+
+    const saved = (r.core.asked("save_connection")[0] as { connection: Connection }).connection;
+    expect(saved.model).toBe("sonnet");
+    expect(saved.executable).toBe(PROGRAM);
+  });
+
+  it("is asked of again with the person's next check, so that one installed since appears", async () => {
+    const r = await opened();
+    r.core.found = [...r.core.found, { path: "/new/bin/claude", version: "2.2.0", found: "known-location" }];
+
+    click(r.root, "#ai-recheck");
+    await settle();
+
+    expect(programs(r)).toContain("/new/bin/claude");
+  });
+
+  it("is not offered when the core would not look: the choice is the automatic one and nothing else", async () => {
+    const r = rig();
+    r.core.refuseFinding = new CommandFailure("not-allowed-here", "only the desktop application does that");
+    await r.settings.load();
+    r.settings.openPanel();
+    r.draw();
+
+    expect(programs(r)).toEqual([""]);
+  });
+
+  it("is said where the client is, with the program the status was asked of", async () => {
+    const r = await opened();
+
+    expect(r.root.textContent).toContain(PROGRAM);
+  });
+
+  it("can be changed when nobody is signed in to the one that answered, which is when it matters", async () => {
+    const r = rig();
+    r.core.status = { ...statusOf({ state: "signed-out" }) };
+    await r.settings.load();
+    r.settings.openPanel();
+    r.draw();
+    const select = r.root.querySelector<HTMLSelectElement>("#ai-program")!;
+    select.value = OTHER_PROGRAM;
+    select.dispatchEvent(new Event("change"));
+
+    click(r.root, "#ai-save-program");
+    await settle();
+
+    // The same save as the one in the ready state, with the model it already has.
+    const saved = (r.core.asked("save_connection")[0] as { connection: Connection }).connection;
+    expect(saved.executable).toBe(OTHER_PROGRAM);
+    expect(saved.model).toBeNull();
+  });
+
+  it("is asked of again after a save, so that what is shown is the program that is now named", async () => {
+    const r = await opened();
+    const select = r.root.querySelector<HTMLSelectElement>("#ai-program")!;
+    select.value = OTHER_PROGRAM;
+    select.dispatchEvent(new Event("change"));
+    const before = r.core.asked("read_claude_status").length;
+
+    click(r.root, "#ai-save");
+    await settle();
+
+    expect(r.core.asked("read_claude_status").length).toBe(before + 1);
+  });
+
+  it("is not offered a choice in a window that may not change the settings", async () => {
+    const r = rig({ ...DESKTOP, writes_settings: false });
+    await r.settings.load();
+    r.settings.openPanel();
+    r.draw();
+
+    expect(r.root.querySelector("#ai-save")).toBeNull();
+    expect(r.root.querySelector("#ai-save-program")).toBeNull();
   });
 });
 
