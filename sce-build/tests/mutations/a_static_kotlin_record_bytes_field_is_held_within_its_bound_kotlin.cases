@@ -1,0 +1,60 @@
+# Mutation cases for "a record's bytes field is held within the `sce:max-size` its
+# schema declares" under the Kotlin backend
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A byte string"; docs/adr/0005, decision 2).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_kotlin_record_bytes_field_is_held_within_its_bound_kotlin.cases`.
+#
+# `static_record_bytes` writes the field from a literal and from a bytes variable and
+# expects a value past eight bytes to leave the record as it was and `errors` to count
+# it; `aRecordBytesFieldLongerThanItsBound...` restores a saved state that claims one,
+# or a character that is no byte, and expects the refusal to name the field;
+# `aHostThatWritesIntoARecordsBytes...` writes into the record and into each record of
+# the list it was handed and expects the machine not to have moved, and two records of
+# the same bytes to be equal. The mutants take one decision away each:
+#
+#   a record's bytes field is not among the byte strings an `<assign>` is held to;
+#   a saved record's bytes are read back unbounded;
+#   a record is handed to a host with the machine's own array and not a copy of it;
+#   the records of a list are handed to a host with the machine's own arrays;
+#   two records of the same bytes are told apart by the identity of their arrays.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_gradle . :sce-kotlin-tests:test --tests 'com.sce.integration.StaticScenarioTest' --tests 'com.sce.integration.StaticDatamodelTest'
+mutation_targets sce-build/src/forge/static_lowering.rs
+mutation_targets tools/codegen/templates/kotlin/state_machine.kt.jinja2
+mutation_targets backends/kotlin/tests/src/main/kotlin/com/sce/integration/static_record_bytes/static_record_bytesSm.kt
+mutation_regen scripts/regen_static_datamodel_kotlin.sh
+mutation_oracles backends/kotlin/tests/src/test/kotlin/com/sce/integration/StaticScenarioTest.kt backends/kotlin/tests/src/test/kotlin/com/sce/integration/StaticDatamodelTest.kt sce-build/tests/fixtures/static_datamodel/scenarios/static_record_bytes.json
+
+mutation_case "a record's bytes field is not held to its bound by an assignment" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "        .chain(record_field_bounds(variables, &records, |ty| {\n            matches!(ty, SceType::Bytes)\n        }))",
+     "        .chain(record_field_bounds(variables, &records, |_| false))")
+PY
+
+mutation_case "a saved record's bytes are read back unbounded" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "                    (SceType::Bytes, Some(bound)) => {\n                        format!(\"{name} = SavedValues.bytes(",
+     "                    (SceType::Bytes, Some(bound)) if false => {\n                        format!(\"{name} = SavedValues.bytes(")
+PY
+
+mutation_case "a record is handed to a host with the machine's own array" <<'PY'
+edit("tools/codegen/templates/kotlin/state_machine.kt.jinja2",
+     "        get() = field.detached()",
+     "        get() = field")
+PY
+
+mutation_case "the records of a list are handed to a host with the machine's own arrays" <<'PY'
+edit("tools/codegen/templates/kotlin/state_machine.kt.jinja2",
+     "        get() = field.map { it.detached() }",
+     "        get() = field")
+PY
+
+mutation_case "two records of the same bytes are told apart by the identity of their arrays" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "                    format!(\"{member}.contentEquals(other.{member})\")",
+     "                    format!(\"{member} == other.{member}\")")
+PY

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 85844d8c658d9da3a800ada75457cf71d520941390a53fd4b039646bdb5bf6c1
+// source-hash: 5e8b22de65a3a9bbf613e2730826278bbf07ffa507f405c99eeb9a79d326eb16
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_event_arrival.scxml

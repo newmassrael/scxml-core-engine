@@ -1,0 +1,71 @@
+{
+  "machine": "static_record_bytes",
+  "about": "A record with a bytes field bounded by the sce:max-size its schema declares, eight bytes: built whole from its <sce:set>s, written a field at a time from a literal and from a bytes variable, compared with === and !==, measured by len, copied into a list of records and read back by a loop. A bytes value is its byte-exact Latin-1 text wherever it is written, so the printable ASCII of these steps reads as itself. A value past the bound fails as any assignment does: nothing is written, error.execution is raised (`errors` counts it) and the block ends, so the record is left as it was. Expected values are derived from the byte counts, not observed from a backend.",
+  "steps": [
+    { "note": "built whole from its <sce:set>s",
+      "expect": { "state": "idle", "variables": { "last": { "sensor": 1, "frame": "ab" }, "spare": "hello", "frames": [], "size": 0, "matches": 0, "misses": 0, "errors": 0 } } },
+
+    { "note": "the bytes of the field are the literal's: a match",
+      "event": "check", "expect": { "variables": { "matches": 1, "misses": 0 } } },
+
+    { "note": "the length of two bytes",
+      "event": "measure", "expect": { "variables": { "size": 2 } } },
+
+    { "note": "eight bytes fit a bound of eight",
+      "event": "fill", "expect": { "variables": { "last": { "sensor": 1, "frame": "abcdefgh" }, "errors": 0 } } },
+
+    { "note": "eight bytes are not `ab`: a miss, and !== is true",
+      "event": "check", "expect": { "variables": { "matches": 1, "misses": 1 } } },
+
+    { "note": "the length of eight bytes",
+      "event": "measure", "expect": { "variables": { "size": 8 } } },
+
+    { "note": "nine bytes do not fit: the record is left as it was and error.execution is raised",
+      "event": "toowide", "expect": { "variables": { "last": { "sensor": 1, "frame": "abcdefgh" }, "errors": 1 } } },
+
+    { "note": "back to two bytes",
+      "event": "reset", "expect": { "variables": { "last": { "sensor": 1, "frame": "ab" }, "errors": 1 } } },
+
+    { "note": "two bytes of the same length as `ab`, and not its bytes",
+      "event": "other", "expect": { "variables": { "last": { "sensor": 1, "frame": "ba" }, "errors": 1 } } },
+
+    { "note": "the same length is not the same bytes: a miss, and === is false",
+      "event": "check", "expect": { "variables": { "matches": 1, "misses": 2 } } },
+
+    { "note": "back to `ab`",
+      "event": "reset", "expect": { "variables": { "last": { "sensor": 1, "frame": "ab" }, "errors": 1 } } },
+
+    { "note": "a bytes variable of five bytes fits the field",
+      "event": "from_spare", "expect": { "variables": { "last": { "sensor": 1, "frame": "hello" }, "spare": "hello", "errors": 1 } } },
+
+    { "note": "the variable holds sixteen bytes, which its own bound admits",
+      "event": "long_spare", "expect": { "variables": { "last": { "sensor": 1, "frame": "hello" }, "spare": "abcdefghijklmnop", "errors": 1 } } },
+
+    { "note": "sixteen bytes do not fit a field of eight: the field is left as it was",
+      "event": "from_spare", "expect": { "variables": { "last": { "sensor": 1, "frame": "hello" }, "spare": "abcdefghijklmnop", "errors": 2 } } },
+
+    { "note": "a field of five bytes into a variable of sixteen",
+      "event": "to_spare", "expect": { "variables": { "last": { "sensor": 1, "frame": "hello" }, "spare": "hello", "errors": 2 } } },
+
+    { "note": "a list of records holds a copy of the record as it stands, with its bytes",
+      "event": "keep", "expect": { "variables": { "frames": [ { "sensor": 1, "frame": "hello" } ] } } },
+
+    { "note": "the record changes and the copy in the list does not",
+      "event": "reset", "expect": { "variables": { "last": { "sensor": 1, "frame": "ab" }, "frames": [ { "sensor": 1, "frame": "hello" } ] } } },
+
+    { "note": "a second copy",
+      "event": "keep", "expect": { "variables": { "frames": [ { "sensor": 1, "frame": "hello" }, { "sensor": 1, "frame": "ab" } ] } } },
+
+    { "note": "the loop reads the byte field of each record it walks: the variable is the last one's",
+      "event": "tally", "expect": { "variables": { "spare": "ab", "errors": 2 } } },
+
+    { "note": "the third copy fills the list",
+      "event": "keep", "expect": { "variables": { "frames": [ { "sensor": 1, "frame": "hello" }, { "sensor": 1, "frame": "ab" }, { "sensor": 1, "frame": "ab" } ] } } },
+
+    { "note": "a full list takes no more: the list is left as it was and error.execution is raised",
+      "event": "keep", "expect": { "variables": { "frames": [ { "sensor": 1, "frame": "hello" }, { "sensor": 1, "frame": "ab" }, { "sensor": 1, "frame": "ab" } ], "errors": 3 } } },
+
+    { "note": "emptied",
+      "event": "forget", "expect": { "variables": { "frames": [], "errors": 3 } } }
+  ]
+}

@@ -68,6 +68,11 @@ pub struct StaticField {
     /// not it ([`StaticTarget::reader_name`]) — `None` for a name the backend
     /// cannot give a reader.
     pub reader: Option<String>,
+    /// A record, or a list of records, whose schema has a byte-string field: what
+    /// a host reads holds the machine's own bytes unless it is a copy, which a
+    /// target whose byte buffer can be written into hands out
+    /// (docs/adr/0005, decision 2).
+    pub holds_bytes: bool,
 }
 
 /// What lowering a `sce-static` machine produced beyond the rewritten model.
@@ -821,6 +826,62 @@ pub trait StaticTarget {
 pub struct KotlinTarget;
 
 impl KotlinTarget {
+    /// The members a record with a byte-string field has beyond a data class's own,
+    /// as the text between its `toSaved` and its companion — empty for one with none.
+    ///
+    /// A `ByteArray` is compared by identity, and a data class built over one
+    /// inherits that, so two records of the same bytes would be two values: `equals`
+    /// and `hashCode` read the bytes. And it can be written into, so `detached` is
+    /// the record with a copy of each, which is what a host is handed: the machine
+    /// never writes into an array, and a host that did would change the value
+    /// behind the bound the machine keeps (docs/adr/0005, decision 2).
+    fn record_bytes_members(&self, ty: &str, schema: &EventSchemaModel) -> String {
+        if !holds_bytes(schema) {
+            return String::new();
+        }
+        let is_bytes =
+            |field: &crate::forge::model::ForgeField| matches!(field.sce_type, SceType::Bytes);
+        let equal: Vec<String> = schema
+            .fields
+            .iter()
+            .map(|field| {
+                let member = self.record_field(&field.id);
+                if is_bytes(field) {
+                    format!("{member}.contentEquals(other.{member})")
+                } else {
+                    format!("{member} == other.{member}")
+                }
+            })
+            .collect();
+        let hash = schema.fields.iter().fold("0".to_string(), |acc, field| {
+            let member = self.record_field(&field.id);
+            let each = if is_bytes(field) {
+                format!("{member}.contentHashCode()")
+            } else {
+                format!("{member}.hashCode()")
+            };
+            format!("31 * ({acc}) + {each}")
+        });
+        let copies: Vec<String> = schema
+            .fields
+            .iter()
+            .filter(|field| is_bytes(field))
+            .map(|field| {
+                let member = self.record_field(&field.id);
+                format!("{member} = {member}.copyOf()")
+            })
+            .collect();
+        format!(
+            "\n\x20   override fun equals(other: Any?): Boolean =\n\
+             \x20       other is {ty} && {equal}\n\n\
+             \x20   override fun hashCode(): Int = {hash}\n\n\
+             \x20   /** This value with a copy of each byte string, which a host may write into. */\n\
+             \x20   fun detached(): {ty} = copy({copies})\n",
+            equal = equal.join(" && "),
+            copies = copies.join(", ")
+        )
+    }
+
     /// The arm of a failing expression: `after` run, when there is anything
     /// to run, and then `true` — the failure the expression answers.
     fn then_true(after: &str) -> String {
@@ -915,6 +976,10 @@ impl StaticTarget for KotlinTarget {
                     (SceType::String, Some(bound)) => {
                         format!("{name} = SavedValues.string({saved}, \"$what.{id}\", {bound})")
                     }
+                    // ... and so is a byte string, in bytes.
+                    (SceType::Bytes, Some(bound)) => {
+                        format!("{name} = SavedValues.bytes({saved}, \"$what.{id}\", {bound})")
+                    }
                     (other, _) => format!(
                         "{name} = SavedValues.{}({saved}, \"$what.{id}\")",
                         other.as_attr()
@@ -926,7 +991,8 @@ impl StaticTarget for KotlinTarget {
             "/** SCE Accepted Subset §2.15: a `record:{alias}` datamodel value. */\n\
              data class {ty}({params}) {{\n\
              \x20   /** This value as a saved state writes it. */\n\
-             \x20   fun toSaved(): Any = linkedMapOf({writes})\n\n\
+             \x20   fun toSaved(): Any = linkedMapOf({writes})\n\
+             {bytes_members}\n\
              \x20   companion object {{\n\
              \x20       /** The value a saved state holds, refused unless it is one. */\n\
              \x20       fun fromSaved(value: Any?, what: String): {ty} = {ty}({reads})\n\
@@ -934,7 +1000,8 @@ impl StaticTarget for KotlinTarget {
              }}",
             params = params.join(", "),
             writes = writes.join(", "),
-            reads = reads.join(", ")
+            reads = reads.join(", "),
+            bytes_members = self.record_bytes_members(ty, schema)
         )
     }
     fn record_field(&self, id: &str) -> String {
@@ -1013,6 +1080,11 @@ impl StaticTarget for KotlinTarget {
     }
     // A `ByteArray` the machine never writes into, saved as its Latin-1 text.
     fn lowers_bytes(&self) -> bool {
+        true
+    }
+    // A record's `ByteArray` field is the same, in a data class that compares and
+    // hands out its bytes ([`Self::record_bytes_members`]).
+    fn lowers_record_bytes(&self) -> bool {
         true
     }
     fn assign(&self, target: &str, value: &str) -> String {
@@ -1596,6 +1668,47 @@ impl StaticTarget for RustTarget {
     }
 }
 
+/// The scalar variables whose type `kind` holds, each with the `sce:capacity` its
+/// declaration writes: what an `<assign>` to one is held to. A variable that
+/// declares none was refused where it was read.
+fn variable_bounds(
+    variables: &[crate::model::Variable],
+    kind: fn(&SceType) -> bool,
+) -> impl Iterator<Item = (String, u32)> + '_ {
+    variables
+        .iter()
+        .filter(move |v| {
+            v.value_type
+                .as_ref()
+                .and_then(crate::forge::model::AlgorithmValueType::scalar)
+                .is_some_and(kind)
+        })
+        .filter_map(|v| Some((v.id.clone(), v.capacity?)))
+}
+
+/// The fields of the record variables whose type `kind` holds, each under the
+/// place an `<assign>` names it (`last.label`) with the `sce:max-size` its schema
+/// declares: what a write to one is held to. A field the schema leaves unbounded
+/// has none, and was refused where the record was declared.
+fn record_field_bounds<'a>(
+    variables: &'a [crate::model::Variable],
+    records: &'a std::collections::BTreeMap<String, EventSchemaModel>,
+    kind: fn(&SceType) -> bool,
+) -> impl Iterator<Item = (String, u32)> + 'a {
+    variables.iter().flat_map(move |v| {
+        let schema = v
+            .value_type
+            .as_ref()
+            .and_then(crate::forge::model::AlgorithmValueType::record_alias)
+            .and_then(|alias| records.get(alias));
+        schema.into_iter().flat_map(move |schema| {
+            schema.fields.iter().filter_map(move |field| {
+                kind(&field.sce_type).then_some((format!("{}.{}", v.id, field.id), field.max_size?))
+            })
+        })
+    })
+}
+
 /// Every name a lowered `sce-static` expression spells differently on
 /// `target`: each variable to the way the backend reaches its field, each
 /// imported algorithm to the function its generation emits — the name a
@@ -1739,42 +1852,17 @@ pub fn lower(
     // held to — and the string fields of the record variables, each under the
     // place an `<assign>` names it (`last.label`) with the `sce:max-size` its
     // schema declares (docs/adr/0005, decision 1).
-    let string_vars: StringVars = variables
-        .iter()
-        .filter(|v| {
-            matches!(
-                v.value_type
-                    .as_ref()
-                    .and_then(crate::forge::model::AlgorithmValueType::scalar),
-                Some(SceType::String)
-            )
-        })
-        .filter_map(|v| Some((v.id.clone(), v.capacity?)))
-        .chain(variables.iter().flat_map(|v| {
-            let schema = v
-                .value_type
-                .as_ref()
-                .and_then(crate::forge::model::AlgorithmValueType::record_alias)
-                .and_then(|alias| records.get(alias));
-            schema.into_iter().flat_map(move |schema| {
-                schema.fields.iter().filter_map(move |field| {
-                    matches!(field.sce_type, SceType::String)
-                        .then_some((format!("{}.{}", v.id, field.id), field.max_size?))
-                })
-            })
+    let string_vars: StringVars = variable_bounds(variables, |ty| matches!(ty, SceType::String))
+        .chain(record_field_bounds(variables, &records, |ty| {
+            matches!(ty, SceType::String)
         }))
         .collect();
-    let bytes_vars: BytesVars = variables
-        .iter()
-        .filter(|v| {
-            matches!(
-                v.value_type
-                    .as_ref()
-                    .and_then(crate::forge::model::AlgorithmValueType::scalar),
-                Some(SceType::Bytes)
-            )
-        })
-        .filter_map(|v| Some((v.id.clone(), v.capacity?)))
+    // ... and the byte strings, in bytes, the same way (docs/adr/0005,
+    // decision 2).
+    let bytes_vars: BytesVars = variable_bounds(variables, |ty| matches!(ty, SceType::Bytes))
+        .chain(record_field_bounds(variables, &records, |ty| {
+            matches!(ty, SceType::Bytes)
+        }))
         .collect();
     let rewrites = Rewrites {
         records: record_vars,
@@ -1884,6 +1972,7 @@ pub fn lower(
                     bound: None,
                     saved_kind: "record",
                     reader: None,
+                    holds_bytes: holds_bytes(schema),
                 });
                 continue;
             }
@@ -1891,7 +1980,7 @@ pub fn lower(
             // records, which are declared as a record variable's are.
             if let Some(elem) = var.value_type.as_ref().and_then(|t| t.list_elem()) {
                 use crate::forge::model::ListElemType;
-                let (ty, view, saved_kind, saved_type, empty) = match elem {
+                let (ty, view, saved_kind, saved_type, empty, holds) = match elem {
                     ListElemType::Scalar(elem) => {
                         let list = declarations.scalar_list(elem, var.capacity);
                         (
@@ -1900,6 +1989,7 @@ pub fn lower(
                             "list",
                             elem.as_attr(),
                             list.empty,
+                            false,
                         )
                     }
                     ListElemType::Record { alias } => {
@@ -1918,6 +2008,7 @@ pub fn lower(
                             "record_list",
                             record_ty,
                             list.empty,
+                            holds_bytes(schema),
                         )
                     }
                 };
@@ -1936,6 +2027,7 @@ pub fn lower(
                     saved_kind,
                     saved_type,
                     reader: None,
+                    holds_bytes: holds,
                 });
                 continue;
             }
@@ -1976,6 +2068,7 @@ pub fn lower(
                     bound: None,
                     saved_kind: "enum",
                     reader: None,
+                    holds_bytes: false,
                 });
                 continue;
             }
@@ -2017,6 +2110,7 @@ pub fn lower(
                 saved_kind: "scalar",
                 saved_type: ty.as_attr(),
                 reader: None,
+                holds_bytes: false,
             });
         }
     }
@@ -3416,6 +3510,14 @@ fn bytes_held(
                 field.sce_type.as_attr()
             ))
         })
+}
+
+/// Whether a record of `schema` has a byte-string field ([`StaticField::holds_bytes`]).
+fn holds_bytes(schema: &EventSchemaModel) -> bool {
+    schema
+        .fields
+        .iter()
+        .any(|f| matches!(f.sce_type, SceType::Bytes))
 }
 
 /// Whether a record of `schema` owns text — has a `string` field — which a target

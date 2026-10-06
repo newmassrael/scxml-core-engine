@@ -51,6 +51,7 @@ import com.sce.integration.static_send_event.StaticSendEventStateMachine
 import com.sce.integration.static_send_idlocation.StaticSendIdlocationStateMachine
 import com.sce.integration.static_send_namelist.StaticSendNamelistStateMachine
 import com.sce.integration.static_send_params.StaticSendParamsStateMachine
+import com.sce.integration.static_record_bytes.StaticRecordBytesStateMachine
 import com.sce.integration.static_record_string.StaticRecordStringStateMachine
 import com.sce.integration.static_string_capacity.StaticStringCapacityStateMachine
 import com.sce.integration.static_whole_payload.StaticWholePayloadStateMachine
@@ -812,6 +813,27 @@ class StaticScenarioTest {
         try {
             replay(
                 scenario("static_bytes"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // A record's bytes field is held to the bytes its schema declares: an assignment
+    // past the bound — from a literal or a bytes variable — writes nothing, raises
+    // error.execution and ends its block, and a list of such records holds copies
+    // with their bytes. It is saved as its byte-exact Latin-1 text.
+    @Test
+    fun staticRecordBytesHoldsABytesFieldWithinTheBoundItsSchemaDeclares() {
+        val sm = StaticRecordBytesStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_record_bytes"),
                 send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
                 tick = { sm.tick() },
                 save = { sm.save() },

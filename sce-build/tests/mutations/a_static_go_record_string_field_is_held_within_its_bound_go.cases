@@ -24,6 +24,6 @@ mutation_oracles backends/go/tests/integration/static_datamodel/static_scenarios
 
 mutation_case "a record's string field is not held to its bound by an assignment" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
-     "        .chain(variables.iter().flat_map(|v| {",
-     "        .chain(variables.iter().take(0).flat_map(|v| {")
+     "        .chain(record_field_bounds(variables, &records, |ty| {\n            matches!(ty, SceType::String)\n        }))",
+     "        .chain(record_field_bounds(variables, &records, |_| false))")
 PY

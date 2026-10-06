@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The record of `static_record_bytes.scxml`: a small integer and a byte string of at
+  most eight bytes. `sce:max-size` is the bound a record holds the byte string within
+  (docs/adr/0005, decision 2); a schema that left it off would be refused where a
+  record of it is declared, since no default stands in for it.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="schema_framed"
+       sce:event-name="framed.taken">
+  <datamodel>
+    <data id="sensor" sce:type="uint8" sce:direction="in"/>
+    <data id="frame" sce:type="bytes" sce:max-size="8" sce:direction="in"/>
+  </datamodel>
+</scxml>

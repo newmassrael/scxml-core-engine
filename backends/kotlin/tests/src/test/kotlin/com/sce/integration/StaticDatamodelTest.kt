@@ -36,6 +36,8 @@ import com.sce.integration.static_overflow.StaticOverflowStateMachine
 import com.sce.integration.static_record.StaticRecordDayRecord
 import com.sce.integration.static_record.StaticRecordEvent
 import com.sce.integration.static_record.StaticRecordStateMachine
+import com.sce.integration.static_record_bytes.StaticRecordBytesEvent
+import com.sce.integration.static_record_bytes.StaticRecordBytesStateMachine
 import com.sce.integration.static_record_string.StaticRecordStringStateMachine
 import com.sce.integration.static_string_capacity.StaticStringCapacityStateMachine
 import com.sce.integration.static_timers.StaticTimersEvent
@@ -865,6 +867,60 @@ class StaticDatamodelTest {
             } finally {
                 sm.cleanup()
             }
+        }
+    }
+
+    @Test
+    fun aRecordBytesFieldLongerThanItsBoundOrHoldingNoByteIsRefusedAndTheMachineIsLeftAsItWas() {
+        // A machine never holds more than the sce:max-size="8" bytes its schema
+        // declares in `last.frame`, so a saved state that claims it did is not one this
+        // machine wrote, and a character past U+00FF is no byte at all.
+        val source = StaticRecordBytesStateMachine()
+        source.initialize()
+        val json = try {
+            source.save().toJson()
+        } finally {
+            source.cleanup()
+        }
+        for ((claimed, fits) in listOf("abcdefgh" to true, "éÿ\u0080ÿ" to true, "abcdefghi" to false, "é€" to false)) {
+            val text = json.replace("\"frame\":\"ab\"", "\"frame\":\"$claimed\"")
+            val sm = StaticRecordBytesStateMachine()
+            try {
+                if (fits) {
+                    sm.restore(SavedState.fromJson(text))
+                    assertArrayEquals(claimed.map { it.code.toByte() }.toByteArray(), sm.last.frame)
+                } else {
+                    val refusal = assertThrows(StateRefusal::class.java) { sm.restore(SavedState.fromJson(text)) }
+                    assertTrue(refusal.message!!.contains("last.frame"), refusal.message)
+                    assertArrayEquals("ab".toByteArray(), sm.last.frame)
+                }
+            } finally {
+                sm.cleanup()
+            }
+        }
+    }
+
+    @Test
+    fun aHostThatWritesIntoARecordsBytesItWasHandedChangesNothingOfTheMachine() {
+        // The array is the machine's own, and a write into it would change the record
+        // behind the bound the machine keeps: a record, and each record of a list, is
+        // handed out with a copy of its bytes. Two records of the same bytes are equal.
+        val sm = StaticRecordBytesStateMachine()
+        sm.initialize()
+        try {
+            sm.send(StaticRecordBytesEvent.Keep)
+            sm.tick()
+            sm.last.frame[0] = 'z'.code.toByte()
+            sm.frames[0].frame[0] = 'z'.code.toByte()
+            assertArrayEquals("ab".toByteArray(), sm.last.frame)
+            assertArrayEquals("ab".toByteArray(), sm.frames[0].frame)
+            assertEquals(sm.last, sm.frames[0])
+            assertEquals(sm.last.hashCode(), sm.frames[0].hashCode())
+            sm.send(StaticRecordBytesEvent.Fill)
+            sm.tick()
+            assertTrue(sm.last != sm.frames[0])
+        } finally {
+            sm.cleanup()
         }
     }
 

@@ -99,6 +99,13 @@ class {{ machine_name }}StateMachine(
         // A byte string is handed out as a copy: the array is the machine's own,
         // and a host that wrote into it would change the variable behind its bound.
         get() = field.copyOf()
+{% elif field.holds_bytes and field.saved_kind == "record" %}
+        // A record is handed out with a copy of each byte string it holds, for the
+        // same reason.
+        get() = field.detached()
+{% elif field.holds_bytes and field.saved_kind == "record_list" %}
+        // ... and so is each record of a list.
+        get() = field.map { it.detached() }
 {% endif %}
         private set
 {% else %}

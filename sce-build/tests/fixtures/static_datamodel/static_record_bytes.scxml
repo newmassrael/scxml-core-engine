@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A byte string";
+  docs/adr/0005, decision 2): a record's `bytes` field holds at most the
+  `sce:max-size` its schema declares, counted in bytes, and holds it on every backend.
+  An assignment past it is skipped and raises error.execution, and ends the block it
+  stands in (§scxml-4.9), as an assignment to a `bytes` variable past its
+  `sce:capacity` does — so the record is left as it was wherever the machine runs.
+
+  `last` holds eight bytes at most; `spare` is a `bytes` variable of sixteen, which is
+  what a value that comes from another place is held to:
+
+      fill        'abcdefgh'  eight bytes: fits
+      toowide     'abcdefghi' nine bytes: does not fit
+      other       'ba'        the length of `ab` and not its bytes
+      from_spare  a variable of sixteen bytes into a field of eight: fits only while
+                  the variable holds eight or fewer
+
+  `check` counts a match when `last.frame` is the bytes `ab`, and a miss when it is not
+  (`ba`, of the same length, included, so a comparison of lengths alone is told from
+  one of bytes); `measure` reads the length of the field.
+
+  The payload is not read here: a transition on the schema's event is refused until a
+  backend lowers a payload's `bytes` field, which comes after the record's.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static" name="static_record_bytes">
+  <sce:import kind="event-schema" src="schema_framed.scxml" as="Framed"/>
+  <datamodel>
+    <data id="last" sce:type="record:Framed" sce:direction="out">
+      <sce:set name="sensor" expr="1"/>
+      <sce:set name="frame" expr="'ab'"/>
+    </data>
+    <data id="spare" sce:type="bytes" sce:capacity="16" expr="'hello'" sce:direction="out"/>
+    <data id="frames" sce:type="list&lt;record:Framed&gt;" sce:capacity="3" sce:direction="out"/>
+    <data id="size" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="matches" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="misses" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="errors" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="idle">
+    <transition event="fill" type="internal">
+      <assign location="last.frame" expr="'abcdefgh'"/>
+    </transition>
+    <transition event="toowide" type="internal">
+      <assign location="last.frame" expr="'abcdefghi'"/>
+    </transition>
+    <transition event="reset" type="internal">
+      <assign location="last.frame" expr="'ab'"/>
+    </transition>
+    <transition event="other" type="internal">
+      <assign location="last.frame" expr="'ba'"/>
+    </transition>
+    <transition event="long_spare" type="internal">
+      <assign location="spare" expr="'abcdefghijklmnop'"/>
+    </transition>
+    <transition event="from_spare" type="internal">
+      <assign location="last.frame" expr="spare"/>
+    </transition>
+    <transition event="to_spare" type="internal">
+      <assign location="spare" expr="last.frame"/>
+    </transition>
+    <transition event="check" cond="last.frame === 'ab'" type="internal">
+      <assign location="matches" expr="matches + 1"/>
+    </transition>
+    <transition event="check" cond="last.frame !== 'ab'" type="internal">
+      <assign location="misses" expr="misses + 1"/>
+    </transition>
+    <transition event="measure" type="internal">
+      <assign location="size" expr="len(last.frame)"/>
+    </transition>
+    <!-- A list of these records holds a copy of the record as it stands, with its
+         bytes: `keep` appends, `tally` reads the byte field of each record the loop
+         walks, and the list is full at three. -->
+    <transition event="keep" type="internal">
+      <sce:append target="frames" expr="last"/>
+    </transition>
+    <transition event="tally" type="internal">
+      <foreach array="frames" item="f">
+        <assign location="spare" expr="f.frame"/>
+      </foreach>
+    </transition>
+    <transition event="forget" type="internal">
+      <sce:clear target="frames"/>
+    </transition>
+    <transition event="error.execution" type="internal">
+      <assign location="errors" expr="errors + 1"/>
+    </transition>
+  </state>
+</scxml>

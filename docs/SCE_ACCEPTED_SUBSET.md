@@ -3673,10 +3673,20 @@ not cut. **Rust** holds a `bytes` variable as a `Vec<u8>`, **Kotlin** as a `Byte
 **C11** as a buffer of the bound and the length it holds
 (`scenarios/static_bytes.json`), and the **Interpreter**'s data model, which holds no
 types, as the text of its bytes, one character to a byte, held to its bound by
-`SceStatic.boundedBytes`; a record's `bytes` field, and a transition on an event whose
-payload carries one, are refused on all six and by the Interpreter's lowering
-(`StaticTarget::lowers_record_bytes`, `StaticTarget::lowers_payload_bytes`). A Kotlin or
-Go machine never writes into its array
+`SceStatic.boundedBytes`.
+
+A record's `bytes` field, bounded by the `sce:max-size` its schema declares and written
+a field at a time from a literal or from a `bytes` variable, is held by **Kotlin** so far
+(`scenarios/static_record_bytes.json`, `StaticTarget::lowers_record_bytes`); the other
+backends refuse a record with one by name until each holds it, in a variable and in a
+list of records alike. A transition on an event whose payload carries a `bytes` field is
+refused on all six and by the Interpreter's lowering
+(`StaticTarget::lowers_payload_bytes`). A Kotlin record that holds a byte string compares
+and hashes by the bytes and not by the identity of the array, as a data class would
+otherwise, and is handed to a host as `detached()`, a copy of each array, as is each
+record of a published list.
+
+A Kotlin or Go machine never writes into its array
 and hands a host a copy of a published one, so the bound the machine keeps cannot be
 changed from outside; a Kotlin snapshot's byte string is such a copy, and two snapshots
 are equal by the arrays' identity, as any `ByteArray` in a data class is. A Python
