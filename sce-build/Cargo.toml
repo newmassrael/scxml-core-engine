@@ -879,6 +879,11 @@ path = "tests/a_payload_is_a_record_of_its_schema.rs"
 required-features = ["cli"]
 
 [[test]]
+name = "a_payload_event_keeps_its_capitals_in_cpp"
+path = "tests/a_payload_event_keeps_its_capitals_in_cpp.rs"
+required-features = ["cli"]
+
+[[test]]
 name = "an_enum_variable_holds_a_variant_of_its_enum"
 path = "tests/an_enum_variable_holds_a_variant_of_its_enum.rs"
 required-features = ["cli"]
