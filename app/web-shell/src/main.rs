@@ -1,12 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
-//! `sce-web-shell [--listen ADDR:PORT] [--root DIR] [--settings DIR] [--ui DIR]`
+//! `sce-web-shell [--listen ADDR:PORT] [--root DIR] [--settings DIR] [--ui DIR] [--claude-connection]`
 //!
 //! The token comes from `SCE_WEB_TOKEN` (at least 16 characters) or is generated
 //! and printed in the URL to open. The settings folder (`--settings`, else
-//! `SCE_SETTINGS_DIR`, else the per-user configuration directory) is read here and never
-//! changed: changing a person's settings is the desktop application's.
+//! `SCE_SETTINGS_DIR`, else the per-user configuration directory) is read by what a browser
+//! asks and never changed by it: changing a person's settings is the desktop application's.
+//!
+//! `--claude-connection` is the one exception, and it is the operator's: the person who starts
+//! this program, with no window to choose in. When nobody has a default connection it saves one to
+//! Claude Code (the model `SCE_CLAUDE_MODEL` names, when set) and makes it the default, so that
+//! the screen in the browser can ask for a model. A default somebody chose is not replaced.
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -15,8 +20,8 @@ use std::sync::Arc;
 
 use sce_app_core::host::{self, HostSettings};
 use sce_app_core::{
-    default_renderer, default_root, default_settings_root, ConnectionStore, Policy, SceCodegen,
-    WorkStore,
+    default_renderer, default_root, default_settings_root, AdapterKind, AuthSource, Connection,
+    ConnectionId, ConnectionStore, Limits as RunLimits, Policy, SceCodegen, WorkStore,
 };
 use sce_web_shell::address::check_bind;
 use sce_web_shell::assets::Assets;
@@ -25,14 +30,15 @@ use sce_web_shell::{token, Shell};
 
 const DEFAULT_LISTEN: &str = "127.0.0.1:5174";
 
-const USAGE: &str =
-    "usage: sce-web-shell [--listen ADDR:PORT] [--root DIR] [--settings DIR] [--ui DIR]";
+const USAGE: &str = "usage: sce-web-shell [--listen ADDR:PORT] [--root DIR] [--settings DIR] \
+                     [--ui DIR] [--claude-connection]";
 
 struct Options {
     listen: SocketAddr,
     root: Option<PathBuf>,
     settings: Option<PathBuf>,
     ui: Option<PathBuf>,
+    claude_connection: bool,
 }
 
 fn parse(args: impl Iterator<Item = String>) -> Result<Options, String> {
@@ -43,6 +49,7 @@ fn parse(args: impl Iterator<Item = String>) -> Result<Options, String> {
         root: None,
         settings: None,
         ui: None,
+        claude_connection: false,
     };
     let mut args = args;
     while let Some(flag) = args.next() {
@@ -57,6 +64,7 @@ fn parse(args: impl Iterator<Item = String>) -> Result<Options, String> {
             "--root" => options.root = Some(value("--root")?.into()),
             "--settings" => options.settings = Some(value("--settings")?.into()),
             "--ui" => options.ui = Some(value("--ui")?.into()),
+            "--claude-connection" => options.claude_connection = true,
             "-h" | "--help" => return Err(USAGE.to_string()),
             other => return Err(format!("{other} is not an option\n{USAGE}")),
         }
@@ -72,8 +80,37 @@ fn run() -> Result<(), String> {
         .root
         .or_else(default_root)
         .ok_or("no works folder: pass --root or set SCE_WORKS_DIR")?;
-    // Read here, never changed. A shell with no settings folder says so to a screen that asks.
+    // Read for a browser, never changed by one. A shell with no settings folder says so to a screen
+    // that asks.
     let settings = options.settings.or_else(default_settings_root);
+    if options.claude_connection {
+        let dir = settings.as_ref().ok_or(
+            "--claude-connection needs a settings folder: pass --settings, or set SCE_SETTINGS_DIR",
+        )?;
+        let first = Connection {
+            id: ConnectionId::parse("claude").expect("`claude` is a connection id"),
+            adapter: AdapterKind::ClaudeCode,
+            display_name: None,
+            executable: None,
+            model: std::env::var("SCE_CLAUDE_MODEL")
+                .ok()
+                .filter(|model| !model.trim().is_empty()),
+            auth: AuthSource::OfficialLogin,
+            server_url: None,
+            limits: RunLimits::default(),
+        };
+        let given = ConnectionStore::at(dir.clone())
+            .ensure_default(&first)
+            .map_err(|e| format!("--claude-connection: {e}"))?;
+        eprintln!(
+            "connection:   claude, {}",
+            if given {
+                "saved as the default"
+            } else {
+                "left as it was: a default is already chosen"
+            }
+        );
+    }
     let assets = options
         .ui
         .map(|dir| Assets::new(&dir).map_err(|e| format!("--ui {}: {e}", dir.display())))

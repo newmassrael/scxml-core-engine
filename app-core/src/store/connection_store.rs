@@ -311,6 +311,28 @@ impl ConnectionStore {
         }
     }
 
+    /// Give a person who has no default connection one: `first`, saved when none of that id is
+    /// kept, and made the default. For a program started by its operator (a development shell,
+    /// which has no window to choose in), not for a caller: the person's own choice is never
+    /// replaced, and what they saved under that id is not overwritten. Answers whether anything
+    /// was changed; another window choosing in the meantime is a choice, and leaves it unchanged.
+    pub fn ensure_default(&self, first: &Connection) -> Result<bool, StoreError> {
+        if self.default_connection()?.is_some() {
+            return Ok(false);
+        }
+        if self.head(&first.id)?.is_none() {
+            match self.save(first, None) {
+                Ok(_) | Err(StoreError::Conflict { .. }) => {}
+                Err(other) => return Err(other),
+            }
+        }
+        match self.set_default(Some(&first.id), None) {
+            Ok(()) => Ok(true),
+            Err(e) if e.kind() == "moved" => Ok(false),
+            Err(other) => Err(other),
+        }
+    }
+
     fn remove_default(&self) -> Result<(), StoreError> {
         let path = self.root.join(DEFAULT_FILE);
         match fs::remove_file(&path) {

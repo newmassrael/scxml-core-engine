@@ -52,6 +52,61 @@ fn local(name: &str) -> Connection {
     }
 }
 
+#[test]
+fn a_shell_started_by_its_operator_can_give_a_person_with_no_default_a_first_one() {
+    let store = ConnectionStore::at(common::scratch("conn-seed-empty"));
+
+    let changed = store.ensure_default(&claude("claude")).unwrap();
+
+    assert!(changed);
+    assert_eq!(store.default_connection().unwrap(), Some(id("claude")));
+    assert_eq!(
+        store.read(&id("claude"), None).unwrap().unwrap().connection,
+        claude("claude")
+    );
+}
+
+#[test]
+fn a_default_the_person_chose_is_not_replaced_by_the_one_a_shell_would_give() {
+    let store = ConnectionStore::at(common::scratch("conn-seed-default"));
+    store.save(&local("pc2"), None).unwrap();
+    store.set_default(Some(&id("pc2")), None).unwrap();
+
+    let changed = store.ensure_default(&claude("claude")).unwrap();
+
+    assert!(!changed);
+    assert_eq!(store.default_connection().unwrap(), Some(id("pc2")));
+    assert!(store.read(&id("claude"), None).unwrap().is_none());
+}
+
+#[test]
+fn a_connection_the_person_saved_is_made_the_default_and_not_overwritten() {
+    let store = ConnectionStore::at(common::scratch("conn-seed-kept"));
+    let mut theirs = claude("claude");
+    theirs.model = Some("sonnet".to_string());
+    let saved = store.save(&theirs, None).unwrap();
+    let Saved::Saved { revision, .. } = saved else {
+        panic!("expected a save, got {saved:?}");
+    };
+
+    let changed = store.ensure_default(&claude("claude")).unwrap();
+
+    assert!(changed);
+    assert_eq!(store.default_connection().unwrap(), Some(id("claude")));
+    // What the person kept is what is kept: a shell offers a first connection, not a new one.
+    let kept = store.read(&id("claude"), None).unwrap().unwrap();
+    assert_eq!(kept.revision, revision);
+    assert_eq!(kept.connection.model.as_deref(), Some("sonnet"));
+}
+
+#[test]
+fn giving_a_first_connection_twice_changes_nothing_the_second_time() {
+    let store = ConnectionStore::at(common::scratch("conn-seed-twice"));
+
+    assert!(store.ensure_default(&claude("claude")).unwrap());
+    assert!(!store.ensure_default(&claude("claude")).unwrap());
+}
+
 /// A connection of `adapter` with everything that adapter needs, and `auth` as asked.
 fn shaped(adapter: AdapterKind, auth: AuthSource) -> Connection {
     let mut connection = match adapter {

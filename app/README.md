@@ -533,9 +533,37 @@ not one a settings file supplies), judges that way of signing in by the build's 
 with the pinned model and limits. It offers that connection when it takes the request. A request
 it cannot run stays queued, and the runner says what it left and why (`Runner::waiting`): this
 build has no adapter for Codex or local connections yet, nobody is signed in, the way of signing
-in is not one the build uses, the settings are not on this computer. It still takes the requests
-nobody chose a connection for. A shell with no settings folder takes only those and leaves the
-others to an executor that has one.
+in is not one the build uses, the settings are not on this computer.
+
+**What the runner left, and why, is said where the screen reads it.** The shell's report
+(`.sce-hosts/<name>.json`, read by `read_host_status`) carries `waiting`: for each request the
+executor could not run, the ids of the work, the request and the connection, and one sentence. The
+works folder is shared and moved, so the sentence is the application's and holds no path and
+nothing a client printed (the settings screen shows that to the person who is looking; it is not
+kept). The screen says it beside the request, and offers to ask again for the connection chosen
+now, which replaces the one that waits.
+
+**A request nobody chose a connection for is not run by the application.** An executor that runs
+for connections (`Runner::with_connections`) leaves such a request alone, and no default is
+assigned to it: which AI it was meant for is the person's to say. It waits for an authoring client
+of the person's own, as it always could. A request the application made (`origin` `gui`) for no
+connection is one from before the person chose, so the screen says that the application does not
+run it and offers the same "generate again with the chosen connection", or opens the AI connection
+to choose one. An executor that knows no connections (one generator: a command line tool, a test)
+still takes what nobody chose a connection for.
+
+**The settings screen.** The AI connection panel (sidebar) shows whether Claude Code is installed
+and who is signed in, asked the way a generation runs the client (`read_claude_status`: only the
+desktop window may ask, because the command starts the person's program). A way of signing in the
+build does not use is shown as the login it is, with the reason, and offers no model. When nobody is
+signed in the panel gives the two commands to run in a terminal (`claude auth login` for a
+subscription, `claude auth login --console` for billing by use) with a button to copy each, and
+asks again when the person says they have signed in: the application starts no sign-in. The model
+is chosen among the names the client documents, the client's own default, or an id typed beside the
+list; saving writes the connection `claude` on top of the revision read, keeps the limits a person
+set elsewhere, and makes it the default, expecting the default that was read, so that two windows
+do not overwrite each other unseen. The browser shell only shows what the desktop saved: it may
+not start a program or change a setting.
 
 ### The model, and where it stands
 
@@ -748,6 +776,14 @@ cd .. && cargo run -p sce-web-shell -- --ui ui/dist --listen 127.0.0.1:5174
 It prints an address ending in `#token=…`; open that. The token is generated
 per run (or set `SCE_WEB_TOKEN`, 16 characters or more), is sent as a bearer
 header, and is removed from the address bar once read.
+
+A browser may read the person's settings and may not change them or start a program, so it
+cannot choose an AI connection, and the application's executor does not run a request that
+nobody chose one for. To ask for a model from the browser, either save a connection in the
+desktop application first (the same settings folder), or start the shell with
+`--claude-connection`: that is the operator's word and not a browser's, and it saves a
+connection to Claude Code (the model `SCE_CLAUDE_MODEL` names, when set) as the default only
+when nobody has a default. A default somebody chose is never replaced.
 
 To open it from a phone: either listen on the machine's Tailscale address
 (`--listen 100.x.y.z:5174`) and open the printed address with the Tailscale app
