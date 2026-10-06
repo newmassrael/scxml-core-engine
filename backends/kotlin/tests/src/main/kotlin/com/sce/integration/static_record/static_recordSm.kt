@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 5e8b22de65a3a9bbf613e2730826278bbf07ffa507f405c99eeb9a79d326eb16
+// source-hash: dfdabf7a65fef0f1867c84d20330eb5ef5358227fc76a2ebaf8ec09099db52e5
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_record.scxml

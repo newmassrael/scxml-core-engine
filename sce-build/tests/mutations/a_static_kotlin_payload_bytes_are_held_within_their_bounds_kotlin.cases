@@ -1,0 +1,46 @@
+# Mutation cases for "the bytes a typed payload carries are held within the bound of the
+# place they are written to" under the Kotlin backend
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A byte string"; docs/adr/0005, decision 2).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_kotlin_payload_bytes_are_held_within_their_bounds_kotlin.cases`.
+#
+# `static_payload_bytes` reads the bytes of a `framed.taken` payload into a bytes
+# variable of four, into a record's field of eight and into a whole record, and compares
+# them in a guard; it expects a value past the bound to leave what it was written to as
+# it was and `errors` to count it. `aHostThatWritesIntoTheBytesItRaisedAnEventWith...`
+# raises the event with an array of its own, writes into that array afterwards, and
+# expects the variable, the field and the record to hold what the machine read. The
+# mutants take one decision away each:
+#
+#   a record taken whole from a payload is not held to the bound of its bytes field;
+#   the machine holds the array the host raised the event with and not a copy of it;
+#   a payload's bytes are told equal by the identity of their array.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_gradle . :sce-kotlin-tests:test --tests 'com.sce.integration.StaticScenarioTest' --tests 'com.sce.integration.StaticDatamodelTest'
+mutation_targets sce-build/src/forge/static_lowering.rs sce-build/src/forge/expr.rs
+mutation_targets backends/kotlin/forge-runtime/src/commonMain/kotlin/com/sce/forge/runtime/Checked.kt
+mutation_targets backends/kotlin/tests/src/main/kotlin/com/sce/integration/static_payload_bytes/static_payload_bytesSm.kt
+mutation_regen scripts/regen_static_datamodel_kotlin.sh
+mutation_oracles backends/kotlin/tests/src/test/kotlin/com/sce/integration/StaticScenarioTest.kt backends/kotlin/tests/src/test/kotlin/com/sce/integration/StaticDatamodelTest.kt sce-build/tests/fixtures/static_datamodel/scenarios/static_payload_bytes.json
+
+mutation_case "a record taken whole from a payload is not held to its bytes field's bound" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "            (SceType::Bytes, Some(bound)) => {\n                bounded = true;\n                let held = target.bounded_bytes(&read.text, bound);",
+     "            (SceType::Bytes, Some(bound)) if false => {\n                bounded = true;\n                let held = target.bounded_bytes(&read.text, bound);")
+PY
+
+mutation_case "the machine holds the array the host raised the event with" <<'PY'
+edit("backends/kotlin/forge-runtime/src/commonMain/kotlin/com/sce/forge/runtime/Checked.kt",
+     "        return value.copyOf()",
+     "        return value")
+PY
+
+mutation_case "a payload's bytes are told equal by the identity of their array" <<'PY'
+edit("sce-build/src/forge/expr.rs",
+     "                let call = format!(\"{}.contentEquals({r})\", wrap_postfix(left, l));",
+     "                let call = format!(\"({} == {r})\", wrap_postfix(left, l));")
+PY

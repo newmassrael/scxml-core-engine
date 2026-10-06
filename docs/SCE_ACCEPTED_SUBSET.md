@@ -3679,9 +3679,17 @@ A record's `bytes` field, bounded by the `sce:max-size` its schema declares and 
 a field at a time from a literal or from a `bytes` variable, is held by **Kotlin**,
 **Rust**, **Go**, **Python**, **C++**, **C11** and, as the text of its bytes in the
 object that holds it, the **Interpreter** (`scenarios/static_record_bytes.json`,
-`StaticTarget::lowers_record_bytes`), in a variable and in a list of records alike. A transition on an event whose payload carries a `bytes`
-field is refused on all six and by the Interpreter's lowering
-(`StaticTarget::lowers_payload_bytes`). A Kotlin record that holds a byte string compares
+`StaticTarget::lowers_record_bytes`), in a variable and in a list of records alike.
+
+A transition on an event whose payload carries a `bytes` field reads it into a `bytes`
+variable, into a record's field or into a whole record, held to the bound of the place
+it is written to (`scenarios/static_payload_bytes.json`,
+`StaticTarget::lowers_payload_bytes`), and compares it in a guard. The wire spells it as
+its byte-exact Latin-1 text. **Kotlin** holds it so far; the other backends and the
+Interpreter's lowering refuse such a transition by name until each holds it. A Kotlin
+machine holds a copy of the array a host raised the event with
+(`SceChecked.bounded`), so a host that kept the array and wrote into it changes nothing
+of what the machine read. A Kotlin record that holds a byte string compares
 and hashes by the bytes and not by the identity of the array, as a data class would
 otherwise, and is handed to a host as `detached()`, a copy of each array, as is each
 record of a published list. A Rust record that holds one is `Clone` and no longer `Copy`

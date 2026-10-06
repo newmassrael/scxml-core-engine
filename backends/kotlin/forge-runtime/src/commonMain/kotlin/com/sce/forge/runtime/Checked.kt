@@ -106,12 +106,16 @@ public object SceChecked {
     }
 
     /**
-     * [bounded] for a byte string: [value] when it holds no more than [capacity]
-     * bytes, and a capacity failure otherwise (docs/adr/0005, decision 2).
+     * [bounded] for a byte string: a copy of [value] when it holds no more than
+     * [capacity] bytes, and a capacity failure otherwise (docs/adr/0005, decision 2).
+     *
+     * A copy, because the array a machine holds must be its own: a payload's array is
+     * the one the host raised the event with, and a host that kept it and wrote into it
+     * would otherwise change what the machine holds, past any bound judged here.
      */
     public fun bounded(value: ByteArray, capacity: Int): ByteArray {
         if (value.size > capacity) fail(AlgorithmError.CapacityExceeded)
-        return value
+        return value.copyOf()
     }
 
     /** `v` when it lies in `[lo, hi]`; an overflow otherwise. */

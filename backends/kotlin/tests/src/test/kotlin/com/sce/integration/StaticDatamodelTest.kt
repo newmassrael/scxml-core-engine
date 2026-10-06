@@ -33,6 +33,7 @@ import com.sce.integration.static_list.StaticListStateMachine
 import com.sce.integration.static_overflow.StaticOverflowEvent
 import com.sce.integration.static_overflow.StaticOverflowState
 import com.sce.integration.static_overflow.StaticOverflowStateMachine
+import com.sce.integration.static_payload_bytes.StaticPayloadBytesStateMachine
 import com.sce.integration.static_record.StaticRecordDayRecord
 import com.sce.integration.static_record.StaticRecordEvent
 import com.sce.integration.static_record.StaticRecordStateMachine
@@ -919,6 +920,38 @@ class StaticDatamodelTest {
             sm.send(StaticRecordBytesEvent.Fill)
             sm.tick()
             assertTrue(sm.last != sm.frames[0])
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    @Test
+    fun aHostThatWritesIntoTheBytesItRaisedAnEventWithChangesNothingOfTheMachine() {
+        // The array a payload carries is the host's own, and the machine reads it into a
+        // variable, a record's field and a whole record: each holds a copy, so a host
+        // that kept the array and wrote into it changes none of them, and the bound the
+        // machine judged when it read the bytes still describes what it holds.
+        val sm = StaticPayloadBytesStateMachine()
+        sm.initialize()
+        try {
+            val toVariable = "wxyz".toByteArray()
+            sm.raiseFramedTaken(100.toUByte(), toVariable)
+            sm.tick()
+            toVariable[0] = 'X'.code.toByte()
+            assertArrayEquals("wxyz".toByteArray(), sm.held)
+
+            val toField = "abcd".toByteArray()
+            sm.raiseFramedTaken(7.toUByte(), toField)
+            sm.tick()
+            toField[0] = 'X'.code.toByte()
+            assertArrayEquals("abcd".toByteArray(), sm.last.frame)
+
+            val whole = "whole".toByteArray()
+            sm.raiseFramedTaken(200.toUByte(), whole)
+            sm.tick()
+            whole[0] = 'X'.code.toByte()
+            assertArrayEquals("whole".toByteArray(), sm.last.frame)
+            assertArrayEquals("whole".toByteArray(), sm.frames[0].frame)
         } finally {
             sm.cleanup()
         }

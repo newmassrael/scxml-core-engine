@@ -35,6 +35,7 @@ import com.sce.integration.static_foreach.StaticForeachStateMachine
 import com.sce.integration.static_list.StaticListStateMachine
 import com.sce.integration.static_overflow.StaticOverflowStateMachine
 import com.sce.integration.static_payload.StaticPayloadStateMachine
+import com.sce.integration.static_payload_bytes.StaticPayloadBytesStateMachine
 import com.sce.integration.static_payload_enum.StaticPayloadEnumStateMachine
 import com.sce.integration.static_payload_relay.StaticPayloadRelayStateMachine
 import com.sce.integration.static_real.StaticRealStateMachine
@@ -834,6 +835,27 @@ class StaticScenarioTest {
         try {
             replay(
                 scenario("static_record_bytes"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // The bytes an event's payload carries are read into a bytes variable, into a
+    // record's field and into a whole record, each held to its own bound: a value
+    // past it writes nothing, raises error.execution and ends its block. The wire
+    // spells a byte string as its byte-exact Latin-1 text.
+    @Test
+    fun staticPayloadBytesReadsTheBytesAnEventCarriesWithinTheirBounds() {
+        val sm = StaticPayloadBytesStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_payload_bytes"),
                 send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
                 tick = { sm.tick() },
                 save = { sm.save() },

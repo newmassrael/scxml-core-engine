@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A byte string";
+  docs/adr/0005, decision 2): the bytes a typed event payload carries are read into a
+  `bytes` variable, into a record's field and into a whole record, each held to the
+  bound it declares, on every backend. The wire spells a byte string as its byte-exact
+  Latin-1 text, each byte the character of that code point.
+
+  The event is the schema's (`framed.taken`: a small integer and a byte string); the
+  sensor says what the machine does with the bytes, so every route is a different
+  statement of the one machine:
+
+      0            the guard reads the bytes: `matches` when they are `ab`, `misses`
+                   when they are anything else (`ba`, of the same length, included)
+      200 or more  the payload whole, into the record and the list at once
+      100 or more  into `held`, a variable of four bytes, and measured
+      otherwise    the record field by field
+
+  A value past its bound is skipped and raises error.execution, and ends the block it
+  stands in (§scxml-4.9), so what the block would have written after it is not: the
+  size of a frame that did not fit `held` is not taken.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static" name="static_payload_bytes">
+  <sce:import kind="event-schema" src="schema_framed.scxml" as="Framed"/>
+  <datamodel>
+    <data id="last" sce:type="record:Framed" sce:direction="out">
+      <sce:set name="sensor" expr="1"/>
+      <sce:set name="frame" expr="'ab'"/>
+    </data>
+    <data id="held" sce:type="bytes" sce:capacity="4" expr="'z'" sce:direction="out"/>
+    <data id="frames" sce:type="list&lt;record:Framed&gt;" sce:capacity="3" sce:direction="out"/>
+    <data id="size" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="matches" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="misses" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="errors" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="idle">
+    <transition event="framed.taken" cond="_event.data.sensor === 0 &amp;&amp; _event.data.frame === 'ab'" type="internal">
+      <assign location="matches" expr="matches + 1"/>
+    </transition>
+    <transition event="framed.taken" cond="_event.data.sensor === 0" type="internal">
+      <assign location="misses" expr="misses + 1"/>
+    </transition>
+    <transition event="framed.taken" cond="_event.data.sensor &gt;= 200" type="internal">
+      <assign location="last" expr="_event.data"/>
+      <sce:append target="frames" expr="_event.data"/>
+    </transition>
+    <transition event="framed.taken" cond="_event.data.sensor &gt;= 100" type="internal">
+      <assign location="held" expr="_event.data.frame"/>
+      <assign location="size" expr="len(_event.data.frame)"/>
+    </transition>
+    <transition event="framed.taken" type="internal">
+      <assign location="last.frame" expr="_event.data.frame"/>
+      <assign location="last.sensor" expr="_event.data.sensor"/>
+    </transition>
+    <transition event="error.execution" type="internal">
+      <assign location="errors" expr="errors + 1"/>
+    </transition>
+  </state>
+</scxml>

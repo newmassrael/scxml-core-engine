@@ -567,7 +567,7 @@ const BYTES_HELD: &[BytesHeld] = &[
         name: "Kotlin",
         variable: true,
         record: true,
-        payload: false,
+        payload: true,
     },
     BytesHeld {
         lang: "go",

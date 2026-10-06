@@ -543,6 +543,13 @@ pub trait StaticTarget {
     fn record_bytes_literal(&self, _bound: u32, value: &str) -> String {
         value.to_string()
     }
+    /// A record's byte-string field made of `bytes`, bytes computed when the
+    /// machine runs and already held to `bound` — a payload's field taken whole
+    /// into a record: the bytes themselves, unless the target holds the field in
+    /// a buffer.
+    fn record_bytes_runtime(&self, _bound: u32, bytes: &str) -> String {
+        bytes.to_string()
+    }
     /// The statement that writes `value` — already held to its bound — into the
     /// byte-string field `field` of the record `target`: the field's own
     /// assignment, unless the target holds it in a buffer it copies into.
@@ -1097,6 +1104,11 @@ impl StaticTarget for KotlinTarget {
     // A record's `ByteArray` field is the same, in a data class that compares and
     // hands out its bytes ([`Self::record_bytes_members`]).
     fn lowers_record_bytes(&self) -> bool {
+        true
+    }
+    // A payload's `ByteArray` field is read where the machine's own is, and held to
+    // the bound of the variable or the record's field it is written into.
+    fn lowers_payload_bytes(&self) -> bool {
         true
     }
     fn assign(&self, target: &str, value: &str) -> String {
@@ -5694,6 +5706,11 @@ fn payload_record_value(
                 bounded = true;
                 let held = target.bounded_string(&read.text, bound);
                 target.record_string_runtime(bound, &held)
+            }
+            (SceType::Bytes, Some(bound)) => {
+                bounded = true;
+                let held = target.bounded_bytes(&read.text, bound);
+                target.record_bytes_runtime(bound, &held)
             }
             _ => read.text,
         };

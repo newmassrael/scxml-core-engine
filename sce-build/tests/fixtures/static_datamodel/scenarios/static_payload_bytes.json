@@ -1,0 +1,60 @@
+{
+  "machine": "static_payload_bytes",
+  "about": "The bytes a typed event payload carries, read into a bytes variable of four bytes, into a record's field and into a whole record whose field is bounded at eight, and read by a guard. The wire spells a byte string as its byte-exact Latin-1 text, each byte the character of that code point, so a byte above 0x7F is written as that character. A value past its bound fails as any assignment does: nothing is written, error.execution is raised (`errors` counts it) and the block ends, so what the block would have written after it is not written either. Expected values are derived from the byte counts, not observed from a backend.",
+  "steps": [
+    { "note": "starting values",
+      "expect": { "state": "idle", "variables": { "last": { "sensor": 1, "frame": "ab" }, "held": "z", "frames": [], "size": 0, "matches": 0, "misses": 0, "errors": 0 } } },
+
+    { "note": "a guard reads the payload's bytes: `ab` is a match",
+      "event": "framed.taken", "data": { "sensor": 0, "frame": "ab" },
+      "expect": { "variables": { "matches": 1, "misses": 0 } } },
+
+    { "note": "the same length and other bytes is a miss, and === is false",
+      "event": "framed.taken", "data": { "sensor": 0, "frame": "ba" },
+      "expect": { "variables": { "matches": 1, "misses": 1 } } },
+
+    { "note": "another length is a miss",
+      "event": "framed.taken", "data": { "sensor": 0, "frame": "abc" },
+      "expect": { "variables": { "matches": 1, "misses": 2 } } },
+
+    { "note": "the payload replaces the record field by field",
+      "event": "framed.taken", "data": { "sensor": 7, "frame": "xyz" },
+      "expect": { "variables": { "last": { "sensor": 7, "frame": "xyz" }, "errors": 0 } } },
+
+    { "note": "nine bytes do not fit a field of eight: the frame is read first, so the sensor stays 7 as well",
+      "event": "framed.taken", "data": { "sensor": 9, "frame": "123456789" },
+      "expect": { "variables": { "last": { "sensor": 7, "frame": "xyz" }, "errors": 1 } } },
+
+    { "note": "eight bytes fit",
+      "event": "framed.taken", "data": { "sensor": 9, "frame": "12345678" },
+      "expect": { "variables": { "last": { "sensor": 9, "frame": "12345678" }, "errors": 1 } } },
+
+    { "note": "four bytes fit a variable of four, and are measured",
+      "event": "framed.taken", "data": { "sensor": 100, "frame": "wxyz" },
+      "expect": { "variables": { "held": "wxyz", "size": 4, "errors": 1 } } },
+
+    { "note": "five bytes do not: the variable is left as it was and the block ends before the size is taken",
+      "event": "framed.taken", "data": { "sensor": 100, "frame": "vwxyz" },
+      "expect": { "variables": { "held": "wxyz", "size": 4, "errors": 2 } } },
+
+    { "note": "no bytes at all is a byte string of length zero",
+      "event": "framed.taken", "data": { "sensor": 101, "frame": "" },
+      "expect": { "variables": { "held": "", "size": 0, "errors": 2 } } },
+
+    { "note": "a sensor of 200 or more takes the payload whole: the record and the list both hold it",
+      "event": "framed.taken", "data": { "sensor": 200, "frame": "whole" },
+      "expect": { "variables": { "last": { "sensor": 200, "frame": "whole" }, "frames": [ { "sensor": 200, "frame": "whole" } ] } } },
+
+    { "note": "nine bytes do not fit a record taken whole: both are left as they were and error.execution is raised",
+      "event": "framed.taken", "data": { "sensor": 201, "frame": "123456789" },
+      "expect": { "variables": { "last": { "sensor": 200, "frame": "whole" }, "frames": [ { "sensor": 200, "frame": "whole" } ], "errors": 3 } } },
+
+    { "note": "bytes above 0x7F are read as the bytes their characters spell, in the record and in the list",
+      "event": "framed.taken", "data": { "sensor": 202, "frame": "ÿ\u0080" },
+      "expect": { "variables": { "last": { "sensor": 202, "frame": "ÿ\u0080" }, "frames": [ { "sensor": 200, "frame": "whole" }, { "sensor": 202, "frame": "ÿ\u0080" } ] } } },
+
+    { "note": "two bytes above 0x7F are two bytes, not the four of their UTF-8 spelling",
+      "event": "framed.taken", "data": { "sensor": 100, "frame": "éÿ" },
+      "expect": { "variables": { "held": "éÿ", "size": 2, "errors": 3 } } }
+  ]
+}
