@@ -457,6 +457,23 @@ it is the only one. This build has verified no version of Codex (`app-core/data/
 lists none), so a request made for a Codex connection waits, and says so, until a version has
 been verified against a real client.
 
+**The clients are looked for again while the application runs.** A person installs a client with
+the window open, and one that was there goes away. The executor asks for each client again (at most
+once in ten seconds) whenever a request needs it, so Claude Code installed after Codex, or Codex
+after Claude Code, is run for within that time without closing the application, and a program that
+has gone is said to be not found and not to be a client that could not be asked something. What
+the executor reports itself as follows what it finds.
+
+**Where a Codex login is kept is one place for a run, the check and the commands.** A run ignores
+the person's Codex settings file (`--ignore-user-config`), and the client's `login status` has no
+such flag and reads it, so a file that says the login is in the system's keychain made the screen
+say somebody was signed in whom a run could not see. A run, the check and the sign-in commands the
+screen offers (`codex login -c cli_auth_credentials_store=file`) are all told the same store. What
+else a settings file can say about a login (`forced_login_method`, `forced_chatgpt_workspace_id`, a
+model provider) cannot be unsaid on the command line, and is part of what a version is verified
+against: the name of a verified version covers the arguments a run is started with, so a change to
+them is another version.
+
 `SCE_EXECUTOR=off` hosts nothing, `SCE_CLAUDE_MODEL` names the model a run uses, and
 `SCE_CLAUDE_BUDGET_USD` bounds what one run may cost (anything that is not a positive number is
 no bound). Dropping the host, which the desktop application does when it exits, stops the
