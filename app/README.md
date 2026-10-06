@@ -95,7 +95,10 @@ The works folder is plain files:
 ```
 
 `<root>` is `SCE_WORKS_DIR` if set, else the per-user data directory
-(`~/.local/share/sce-workbench/works` on Linux). A revision is the SHA-256 of
+(`~/.local/share/sce-workbench/works` on Linux). The person's own settings are not in it: they
+are in `SCE_SETTINGS_DIR` if set, else the per-user configuration directory
+(`~/.config/sce-workbench/settings` on Linux), and the browser shell reads them with
+`--settings DIR` and never changes them. A revision is the SHA-256 of
 its exact bytes; a save names the revision it was written from and is refused
 with `conflict` if that is no longer current. The text, the model, the answers,
 the requirement list and the acceptances are five chains kept by one

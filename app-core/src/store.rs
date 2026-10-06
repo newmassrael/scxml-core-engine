@@ -91,7 +91,9 @@ pub use adapter_store::{
     Adapter, AdapterListing, AdapterReport, AdapterStatus, ADAPTER_LIVE_SECONDS,
 };
 pub use bundle_store::{BundleRead, CandidateTexts, CandidateWrite, Published};
-pub use connection_store::{ConnectionListing, ConnectionStore, StoredConnection};
+pub use connection_store::{
+    default_settings_root, ConnectionListing, ConnectionStore, StoredConnection,
+};
 pub use host_store::{Host, HostListing, HostReport, HostStatus};
 pub use request_store::{Registered, Registration, RequestHead, RequestView, Transition};
 

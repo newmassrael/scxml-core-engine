@@ -26,7 +26,10 @@ use std::time::Instant;
 use close_gate::{CloseGate, Decision};
 use sce_app_core::host::{self, ExecutorHost, HostSettings};
 use sce_app_core::installed::{self, Installed};
-use sce_app_core::{call, default_root, renderer_with_bundle, CommandError, Product, WorkStore};
+use sce_app_core::{
+    call_in, default_root, default_settings_root, renderer_with_bundle, CommandError,
+    ConnectionStore, Context, Entrance, Policy, Product, WorkStore,
+};
 use serde_json::Value;
 use tauri::{Manager, RunEvent, WindowEvent};
 
@@ -38,11 +41,13 @@ const ASK_THE_SCREEN: &str = "window.sceCloseRequested && window.sceCloseRequest
 /// names it, and `scripts/package_app.sh` fills it).
 const BUNDLE_FOLDER: &str = "sce-author";
 
-/// The works folder this window works on, and the product that draws a model
-/// and reads one for it.
+/// The works folder this window works on, the product that draws a model and reads one for it,
+/// and the person's own settings, which only this window changes.
 struct Works {
     store: WorkStore,
     figures: Box<dyn Product>,
+    settings: ConnectionStore,
+    policy: Policy,
 }
 
 /// The executor this application hosts, when it found what it needs: a runner on a thread of
@@ -75,12 +80,15 @@ fn sce_call(
     name: String,
     args: Option<Value>,
 ) -> Result<Value, CommandError> {
-    call(
-        &works.store,
-        works.figures.as_ref(),
-        &name,
-        args.unwrap_or(Value::Null),
-    )
+    // This is the person at the keyboard: the one entrance that may change their settings.
+    let context = Context {
+        works: &works.store,
+        product: works.figures.as_ref(),
+        connections: Some(&works.settings),
+        policy: &works.policy,
+        entrance: Entrance::Desktop,
+    };
+    call_in(&context, &name, args.unwrap_or(Value::Null))
 }
 
 /// The screen's report of whether it holds changes the core has not been given.
@@ -132,10 +140,20 @@ pub fn run() {
                 .resource_dir()
                 .map(|dir| installed::in_bundle(&dir.join(BUNDLE_FOLDER)))
                 .unwrap_or_default();
+            // The person's settings are kept apart from the works: a works folder is shared and
+            // moved, and whose account a person reaches a model with is no part of a work.
+            let settings = default_settings_root().unwrap_or_else(|| {
+                app.path()
+                    .app_config_dir()
+                    .expect("the platform has no per-user configuration directory")
+                    .join("settings")
+            });
             app.manage(host_the_executor(root.clone(), &bundle));
             app.manage(Works {
                 store: WorkStore::at(root),
                 figures: renderer_with_bundle(bundle.codegen.as_deref()),
+                settings: ConnectionStore::at(settings),
+                policy: Policy::shipped(),
             });
             Ok(())
         })

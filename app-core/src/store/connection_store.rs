@@ -40,6 +40,31 @@ const HEAD_FILE: &str = "head";
 const DEFAULT_FILE: &str = "default";
 const LOCK_FILE: &str = ".lock";
 
+/// Where the settings of the person who runs this program are kept: `SCE_SETTINGS_DIR`, else the
+/// per-user configuration directory of the platform. The works are kept in the data directory
+/// (`default_root`) and these in the configuration directory, so that a person who copies,
+/// shares or backs up their works does not carry their accounts with them.
+pub fn default_settings_root() -> Option<PathBuf> {
+    settings_root_from(|name| std::env::var_os(name))
+}
+
+fn settings_root_from(var: impl Fn(&str) -> Option<std::ffi::OsString>) -> Option<PathBuf> {
+    let set = |name: &str| var(name).filter(|v| !v.is_empty());
+    if let Some(dir) = set("SCE_SETTINGS_DIR") {
+        return Some(PathBuf::from(dir));
+    }
+    let config = if cfg!(windows) {
+        set("APPDATA").map(PathBuf::from)
+    } else if cfg!(target_os = "macos") {
+        set("HOME").map(|h| PathBuf::from(h).join("Library/Application Support"))
+    } else {
+        set("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .or_else(|| set("HOME").map(|h| PathBuf::from(h).join(".config")))
+    };
+    config.map(|dir| dir.join("sce-workbench").join("settings"))
+}
+
 /// A connection as it is kept, with the revision it is kept under.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct StoredConnection {
@@ -305,5 +330,67 @@ impl ConnectionStore {
             Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
             Err(e) => Err(StoreError::io(&path, e)),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::ffi::OsString;
+
+    use super::*;
+
+    fn environment(pairs: &[(&str, &str)]) -> impl Fn(&str) -> Option<OsString> {
+        let pairs: Vec<(String, String)> = pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
+        move |name| {
+            pairs
+                .iter()
+                .find(|(k, _)| k == name)
+                .map(|(_, v)| OsString::from(v))
+        }
+    }
+
+    #[test]
+    fn the_settings_folder_is_named_by_the_environment_before_the_platform() {
+        let root = settings_root_from(environment(&[
+            ("SCE_SETTINGS_DIR", "/somewhere/settings"),
+            ("XDG_CONFIG_HOME", "/ignored"),
+            ("HOME", "/ignored"),
+        ]));
+
+        assert_eq!(root, Some(PathBuf::from("/somewhere/settings")));
+    }
+
+    #[test]
+    fn an_empty_variable_names_nothing() {
+        let root = settings_root_from(environment(&[("SCE_SETTINGS_DIR", ""), ("HOME", "")]));
+
+        assert_eq!(root, None);
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    #[test]
+    fn the_settings_are_in_the_configuration_directory_and_not_beside_the_works() {
+        let from_xdg = settings_root_from(environment(&[
+            ("XDG_CONFIG_HOME", "/xdg/config"),
+            ("HOME", "/home/coin"),
+        ]));
+        let from_home = settings_root_from(environment(&[("HOME", "/home/coin")]));
+
+        assert_eq!(
+            from_xdg,
+            Some(PathBuf::from("/xdg/config/sce-workbench/settings"))
+        );
+        assert_eq!(
+            from_home,
+            Some(PathBuf::from("/home/coin/.config/sce-workbench/settings"))
+        );
+        // The works live under the data directory: a copy of them carries no settings.
+        assert_ne!(
+            from_home.unwrap().parent(),
+            Some(Path::new("/home/coin/.local/share/sce-workbench"))
+        );
     }
 }

@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
-//! `sce-web-shell [--listen ADDR:PORT] [--root DIR] [--ui DIR]`
+//! `sce-web-shell [--listen ADDR:PORT] [--root DIR] [--settings DIR] [--ui DIR]`
 //!
 //! The token comes from `SCE_WEB_TOKEN` (at least 16 characters) or is generated
-//! and printed in the URL to open.
+//! and printed in the URL to open. The settings folder (`--settings`, else
+//! `SCE_SETTINGS_DIR`, else the per-user configuration directory) is read here and never
+//! changed: changing a person's settings is the desktop application's.
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -12,7 +14,9 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use sce_app_core::host::{self, HostSettings};
-use sce_app_core::{default_renderer, default_root, SceCodegen, WorkStore};
+use sce_app_core::{
+    default_renderer, default_root, default_settings_root, ConnectionStore, SceCodegen, WorkStore,
+};
 use sce_web_shell::address::check_bind;
 use sce_web_shell::assets::Assets;
 use sce_web_shell::server::{serve, Limits};
@@ -20,11 +24,13 @@ use sce_web_shell::{token, Shell};
 
 const DEFAULT_LISTEN: &str = "127.0.0.1:5174";
 
-const USAGE: &str = "usage: sce-web-shell [--listen ADDR:PORT] [--root DIR] [--ui DIR]";
+const USAGE: &str =
+    "usage: sce-web-shell [--listen ADDR:PORT] [--root DIR] [--settings DIR] [--ui DIR]";
 
 struct Options {
     listen: SocketAddr,
     root: Option<PathBuf>,
+    settings: Option<PathBuf>,
     ui: Option<PathBuf>,
 }
 
@@ -34,6 +40,7 @@ fn parse(args: impl Iterator<Item = String>) -> Result<Options, String> {
             .parse()
             .expect("the default address is valid"),
         root: None,
+        settings: None,
         ui: None,
     };
     let mut args = args;
@@ -47,6 +54,7 @@ fn parse(args: impl Iterator<Item = String>) -> Result<Options, String> {
                     .map_err(|e| format!("--listen {text}: {e} (expected ADDR:PORT)"))?;
             }
             "--root" => options.root = Some(value("--root")?.into()),
+            "--settings" => options.settings = Some(value("--settings")?.into()),
             "--ui" => options.ui = Some(value("--ui")?.into()),
             "-h" | "--help" => return Err(USAGE.to_string()),
             other => return Err(format!("{other} is not an option\n{USAGE}")),
@@ -63,6 +71,8 @@ fn run() -> Result<(), String> {
         .root
         .or_else(default_root)
         .ok_or("no works folder: pass --root or set SCE_WORKS_DIR")?;
+    // Read here, never changed. A shell with no settings folder says so to a screen that asks.
+    let settings = options.settings.or_else(default_settings_root);
     let assets = options
         .ui
         .map(|dir| Assets::new(&dir).map_err(|e| format!("--ui {}: {e}", dir.display())))
@@ -93,6 +103,10 @@ fn run() -> Result<(), String> {
 
     let figures = default_renderer();
     eprintln!("works folder: {}", root.display());
+    match &settings {
+        Some(dir) => eprintln!("settings:     {} (read only here)", dir.display()),
+        None => eprintln!("settings:     none (pass --settings, or set SCE_SETTINGS_DIR)"),
+    }
     eprintln!(
         "SCE generator: {}",
         SceCodegen::discover().map_or_else(
@@ -122,7 +136,11 @@ fn run() -> Result<(), String> {
         Some(why) => eprintln!("executor:     none ({why})"),
     }
 
-    let shell = Arc::new(Shell::new(WorkStore::at(root), figures, token, assets));
+    let mut shell = Shell::new(WorkStore::at(root), figures, token, assets);
+    if let Some(dir) = settings {
+        shell = shell.with_settings(ConnectionStore::at(dir));
+    }
+    let shell = Arc::new(shell);
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()

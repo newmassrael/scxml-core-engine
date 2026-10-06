@@ -6,7 +6,7 @@
 use std::net::IpAddr;
 use std::path::PathBuf;
 
-use sce_app_core::{NoRenderer, WorkStore};
+use sce_app_core::{ConnectionStore, NoRenderer, WorkStore};
 use sce_web_shell::address::check_bind;
 use sce_web_shell::assets::Assets;
 use sce_web_shell::{token, Reply, Shell};
@@ -270,6 +270,90 @@ fn only_loopback_and_tailnet_addresses_may_be_listened_on() {
         let reason = check_bind(refused.parse::<IpAddr>().unwrap()).expect_err(refused);
         assert!(reason.contains("ssh -L"), "{refused}: {reason}");
     }
+}
+
+fn shell_with_settings(scratch: &Scratch) -> Shell {
+    shell(scratch, None).with_settings(ConnectionStore::at(scratch.0.join("settings")))
+}
+
+#[test]
+fn a_browser_reads_the_settings_and_is_refused_every_change_of_them() {
+    let scratch = Scratch::new("settings");
+    let shell = shell_with_settings(&scratch);
+
+    let listed = post(
+        &shell,
+        Some(&bearer()),
+        &json!({"name": "list_connections"}),
+    );
+    assert_eq!(listed.status, 200);
+    assert_eq!(json_of(&listed)["connections"], json!([]));
+
+    let connection = json!({"id": "main", "adapter": "claude-code", "auth": "official-login"});
+    for (name, args) in [
+        ("save_connection", json!({ "connection": connection })),
+        (
+            "delete_connection",
+            json!({ "id": "main", "base": "0".repeat(64) }),
+        ),
+        (
+            "set_default_connection",
+            json!({ "id": "main", "expect": null }),
+        ),
+    ] {
+        let refused = post(
+            &shell,
+            Some(&bearer()),
+            &json!({ "name": name, "args": args }),
+        );
+        assert_eq!(refused.status, 403, "{name}");
+        assert_eq!(json_of(&refused)["kind"], "not-allowed-here", "{name}");
+    }
+    // A shell a token reaches over a network changed nothing: the folder was not even made.
+    assert!(!scratch.0.join("settings").exists());
+
+    let bad = post(
+        &shell,
+        Some(&bearer()),
+        &json!({"name": "read_connection", "args": {"id": "Not An Id"}}),
+    );
+    assert_eq!(bad.status, 400);
+    assert_eq!(json_of(&bad)["kind"], "bad-connection");
+}
+
+#[test]
+fn a_browser_shell_with_no_settings_folder_is_told_so() {
+    let scratch = Scratch::new("no-settings");
+    let shell = shell(&scratch, None);
+
+    let reply = post(
+        &shell,
+        Some(&bearer()),
+        &json!({"name": "list_connections"}),
+    );
+
+    assert_eq!(reply.status, 404);
+    assert_eq!(json_of(&reply)["kind"], "no-settings");
+}
+
+#[test]
+fn describe_says_it_is_the_browser_that_asked() {
+    let scratch = Scratch::new("describe");
+    let with = shell_with_settings(&scratch);
+    let without = shell(&scratch, None);
+
+    let described = json_of(&post(&with, Some(&bearer()), &json!({"name": "describe"})));
+    let bare = json_of(&post(
+        &without,
+        Some(&bearer()),
+        &json!({"name": "describe"}),
+    ));
+
+    assert_eq!(described["entrance"], "browser");
+    assert_eq!(described["settings"], true);
+    assert_eq!(described["writes_settings"], false);
+    assert_eq!(bare["entrance"], "browser");
+    assert_eq!(bare["settings"], false);
 }
 
 #[test]

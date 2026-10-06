@@ -20,7 +20,7 @@
 //! ```text
 //! POST /api/call   Authorization: Bearer <token>
 //!   {"name": "<command>", "args": {...}}
-//! 200  the command's answer, as `sce_app_core::call` returns it
+//! 200  the command's answer, as `sce_app_core::call_in` returns it (as the browser entrance)
 //! 4xx  a `CommandError` (`kind`, `message`, `detail`); 409 is `conflict`
 //! ```
 
@@ -29,7 +29,10 @@ pub mod assets;
 pub mod server;
 pub mod token;
 
-use sce_app_core::{call, CommandError, Product, WorkStore, MAX_SOURCE_BYTES};
+use sce_app_core::{
+    call_in, CommandError, ConnectionStore, Context, Entrance, Policy, Product, WorkStore,
+    MAX_SOURCE_BYTES,
+};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -71,8 +74,10 @@ impl Reply {
 /// The HTTP status a command's refusal travels under.
 fn status_of(kind: &str) -> u16 {
     match kind {
-        "not-found" | "unknown-command" => 404,
-        "invalid-id" | "invalid-title" | "bad-request" => 400,
+        "not-found" | "unknown-command" | "no-settings" => 404,
+        "invalid-id" | "invalid-title" | "bad-request" | "bad-connection" => 400,
+        // This shell is not where that is done: the desktop application is.
+        "not-allowed-here" => 403,
         "conflict" => 409,
         "too-large" => 413,
         "busy" | "sce-unavailable" => 503,
@@ -94,11 +99,16 @@ struct Envelope {
 
 /// The handler: the works folder it serves, the product that draws a model and
 /// reads one for it, the token it requires, the screen it shows.
+///
+/// It may be given the person's settings folder to read ([`Shell::with_settings`]) and never to
+/// change: what a token can reach over a network is not the person at the keyboard.
 pub struct Shell {
     store: WorkStore,
     figures: Box<dyn Product>,
     token: String,
     assets: Option<Assets>,
+    connections: Option<ConnectionStore>,
+    policy: Policy,
 }
 
 impl Shell {
@@ -113,7 +123,16 @@ impl Shell {
             figures,
             token,
             assets,
+            connections: None,
+            policy: Policy::shipped(),
         }
+    }
+
+    /// The same, with the person's settings folder to read. Changing it stays the desktop
+    /// application's: the commands that do are refused here (`not-allowed-here`).
+    pub fn with_settings(mut self, connections: ConnectionStore) -> Self {
+        self.connections = Some(connections);
+        self
     }
 
     /// Whether this request is one [`Shell::handle`] will refuse for its headers
@@ -185,12 +204,14 @@ impl Shell {
                 return Reply::error(400, "bad-request", format!("the body is not a call: {e}"))
             }
         };
-        match call(
-            &self.store,
-            self.figures.as_ref(),
-            &envelope.name,
-            envelope.args,
-        ) {
+        let context = Context {
+            works: &self.store,
+            product: self.figures.as_ref(),
+            connections: self.connections.as_ref(),
+            policy: &self.policy,
+            entrance: Entrance::Browser,
+        };
+        match call_in(&context, &envelope.name, envelope.args) {
             Ok(answer) => Reply {
                 status: 200,
                 content_type: JSON,
