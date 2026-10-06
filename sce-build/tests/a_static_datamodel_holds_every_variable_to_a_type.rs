@@ -631,6 +631,15 @@ fn holding_frame(data: &str) -> String {
     )
 }
 
+/// A document that holds a byte string in one place, with the words a refusal of
+/// that place names, and which of the table's columns says a language holds it.
+struct ByteDocument {
+    what: &'static str,
+    holds: fn(&BytesHeld) -> bool,
+    document: String,
+    names: &'static str,
+}
+
 #[test]
 fn a_language_holds_a_byte_string_or_refuses_it_by_name() {
     // Measured 2026-10-06, before any language held one: a bytes variable with
@@ -649,32 +658,40 @@ fn a_language_holds_a_byte_string_or_refuses_it_by_name() {
   <final id="done"/>
 </scxml>
 "##;
-    let documents: [(&str, fn(&BytesHeld) -> bool, String, &str); 3] = [
-        (
-            "a bytes variable",
-            |held| held.variable,
-            holding_frame(r#"<data id="frame" sce:type="bytes" sce:capacity="8" expr="'ab'"/>"#),
-            r#"<data id=\"frame\" sce:type=\"bytes\">"#,
-        ),
-        (
-            "a record with a bytes field",
-            |held| held.record,
-            holding_frame(
+    let documents = [
+        ByteDocument {
+            what: "a bytes variable",
+            holds: |held| held.variable,
+            document: holding_frame(
+                r#"<data id="frame" sce:type="bytes" sce:capacity="8" expr="'ab'"/>"#,
+            ),
+            names: r#"<data id=\"frame\" sce:type=\"bytes\">"#,
+        },
+        ByteDocument {
+            what: "a record with a bytes field",
+            holds: |held| held.record,
+            document: holding_frame(
                 r#"<data id="last" sce:type="record:Frame" sce:direction="out">
       <sce:set name="sensor" expr="1"/>
       <sce:set name="frame" expr="'ab'"/>
     </data>"#,
             ),
-            "record:Frame with the field `frame` of type bytes",
-        ),
-        (
-            "a transition on an event whose payload carries bytes",
-            |held| held.payload,
-            payload.to_string(),
-            "a transition on `frame.taken`, an event whose payload carries `frame` of type bytes",
-        ),
+            names: "record:Frame with the field `frame` of type bytes",
+        },
+        ByteDocument {
+            what: "a transition on an event whose payload carries bytes",
+            holds: |held| held.payload,
+            document: payload.to_string(),
+            names: "a transition on `frame.taken`, an event whose payload carries `frame` of type bytes",
+        },
     ];
-    for (what, holds, document, names) in &documents {
+    for ByteDocument {
+        what,
+        holds,
+        document,
+        names,
+    } in &documents
+    {
         for held in BYTES_HELD {
             let (lang, name) = (held.lang, held.name);
             let (ok, out) = check_in(lang, document, &siblings);
