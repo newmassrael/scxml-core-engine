@@ -241,14 +241,11 @@ fn a_command_cannot_carry_a_program_to_run() {
         )
         .unwrap_err();
 
-    // A program is chosen in a window the person sees and is asked what it is before it is
-    // kept: a command that takes a path would be a way to make the application run it.
+    // A program is chosen among the ones the application found and asked: a command that took
+    // any path would be a way to make the application run it. (What is accepted is held in
+    // `find_clients.rs`.)
     assert_eq!(refused.kind, "bad-connection");
-    assert!(
-        refused.message.contains("executable"),
-        "{}",
-        refused.message
-    );
+    assert!(refused.message.contains("found"), "{}", refused.message);
     assert!(rig.connections.list().unwrap().connections.is_empty());
 }
 

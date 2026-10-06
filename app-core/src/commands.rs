@@ -17,16 +17,17 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::acceptance::{Acceptance, AcceptanceCorrupt, Basis, Snapshot};
 use crate::acceptance_run::{CheckOutcome, RequirementsReport};
 use crate::answers::{Answers, AnswersError};
 use crate::auth_policy::{Policy, Route};
 use crate::bundle::{BundleCheck, CheckedBy};
+use crate::claude_code::{candidates, Search};
 use crate::claude_status;
 use crate::clock::{utc_timestamp, Clock};
-use crate::connection::{Connection, ConnectionId};
+use crate::connection::{AdapterKind, Connection, ConnectionId};
 use crate::error::StoreError;
 use crate::figures::{FigureRequest, RenderError};
 use crate::model_set::{Document, ModelError, ModelFiles};
@@ -85,6 +86,7 @@ pub const COMMANDS: &[&str] = &[
     "read_connection",
     "read_auth_policy",
     "read_claude_status",
+    "find_clients",
     "save_connection",
     "delete_connection",
     "set_default_connection",
@@ -96,7 +98,7 @@ const SETTINGS_READ: &[&str] = &["list_connections", "read_connection", "read_au
 /// The commands that start a program of the person's to ask it something. A command that does
 /// is a way to make the application run it, for whoever can send the command, so only the
 /// entrance that is the person at the keyboard may: the same reason the settings are theirs.
-const STARTS_PROGRAMS: &[&str] = &["read_claude_status"];
+const STARTS_PROGRAMS: &[&str] = &["read_claude_status", "find_clients"];
 
 /// The commands that change them. A connection names a program the application runs, so a
 /// command that writes one is a way to make the application run something: only the entrance
@@ -1075,8 +1077,11 @@ pub struct Context<'a, C: Clock> {
     pub policy: &'a Policy,
     pub entrance: Entrance,
     /// The program the shell was told is Claude Code (`SCE_CLAUDE`), when it was told one; none
-    /// is the first one on the search path.
+    /// is the first one the application finds.
     pub claude: Option<&'a Path>,
+    /// Where to look for the programs a connection may name; this process's own places when
+    /// absent.
+    pub search: Option<&'a Search>,
 }
 
 impl<'a, C: Clock> Context<'a, C> {
@@ -1094,6 +1099,7 @@ impl<'a, C: Clock> Context<'a, C> {
             policy,
             entrance,
             claude: None,
+            search: None,
         }
     }
 
@@ -1107,6 +1113,19 @@ impl<'a, C: Clock> Context<'a, C> {
     pub fn with_claude(mut self, claude: Option<&'a Path>) -> Self {
         self.claude = claude;
         self
+    }
+
+    /// With the places to look for the programs a connection may name.
+    pub fn with_search(mut self, search: Option<&'a Search>) -> Self {
+        self.search = search;
+        self
+    }
+
+    /// Where to look for the programs a connection may name.
+    fn places(&self) -> Search {
+        self.search
+            .cloned()
+            .unwrap_or_else(Search::from_environment)
     }
 }
 
@@ -1290,6 +1309,47 @@ fn connection_id(text: &str) -> Result<ConnectionId, CommandError> {
     ConnectionId::parse(text).map_err(CommandError::from)
 }
 
+/// Whether `executable` is a program the application finds now for the kind of connection that
+/// names it. Found again here and not remembered from when the screen asked: a file that was
+/// replaced in between, or one that never was a candidate, is not one to run.
+fn check_executable<C: Clock>(
+    context: &Context<'_, C>,
+    connection: &Connection,
+    executable: &str,
+) -> Result<(), CommandError> {
+    let refuse = |why: &str| {
+        CommandError::from(StoreError::refused(
+            "bad-connection",
+            why.to_string(),
+            Value::Null,
+        ))
+    };
+    if connection.adapter != AdapterKind::ClaudeCode {
+        return Err(refuse(
+            "the application finds no program for this kind of connection, so none can be named",
+        ));
+    }
+    let found = candidates(&context.places());
+    if found.iter().any(|c| c.path == Path::new(executable)) {
+        return Ok(());
+    }
+    Err(refuse(
+        "that is not one of the programs the application found and asked: ask for them \
+         (`find_clients`) and choose among those",
+    ))
+}
+
+/// The program the default connection to Claude Code names, when there is one and it names one.
+fn connection_program<C: Clock>(context: &Context<'_, C>) -> Option<PathBuf> {
+    let settings = context.connections?;
+    let id = settings.default_connection().ok()??;
+    let stored = settings.read(&id, None).ok()??;
+    if stored.connection.adapter != AdapterKind::ClaudeCode {
+        return None;
+    }
+    stored.connection.executable.map(PathBuf::from)
+}
+
 /// The commands that start a program of the person's to ask it something.
 fn call_program<C: Clock>(
     context: &Context<'_, C>,
@@ -1309,7 +1369,19 @@ fn call_program<C: Clock>(
     match name {
         "read_claude_status" => {
             arguments::<Empty>(args)?;
-            Ok(json!({ "claude": claude_status::read(context.claude, context.policy) }))
+            // The program a generation would run: the one the default connection names, or else
+            // the one the environment named, or else the first the application finds.
+            let named = connection_program(context);
+            let status = claude_status::read(
+                named.as_deref().or(context.claude),
+                context.policy,
+                &context.places(),
+            );
+            Ok(json!({ "claude": status }))
+        }
+        "find_clients" => {
+            arguments::<Empty>(args)?;
+            Ok(json!({ "claude": candidates(&context.places()) }))
         }
         other => Err(CommandError {
             kind: "unknown-command".to_string(),
@@ -1371,16 +1443,11 @@ fn call_settings<C: Clock>(
         }
         "save_connection" => {
             let SaveConnection { connection, base } = arguments(args)?;
-            // A program is chosen in a window the person sees and is asked what it is before it
-            // is kept. A command that took a path would be a way to make the application run
-            // it, for anyone who can send the command.
-            if connection.executable.is_some() {
-                return Err(CommandError::from(StoreError::refused(
-                    "bad-connection",
-                    "an executable is chosen in a window the person sees and is checked before \
-                     it is kept: a command does not take one",
-                    Value::Null,
-                )));
+            // A command that took any path would be a way to make the application run a file, for
+            // anyone who can send the command. A program is chosen among the ones the application
+            // found and asked, and only those are kept.
+            if let Some(executable) = connection.executable.as_deref() {
+                check_executable(context, &connection, executable)?;
             }
             answer(&connections.save(&connection, base.as_ref())?)
         }

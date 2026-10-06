@@ -20,7 +20,7 @@ use std::path::Path;
 use serde::Serialize;
 
 use crate::auth_policy::{Decision, Policy, Route};
-use crate::claude_code::{locate, observe_account, version_of};
+use crate::claude_code::{locate, observe_account, version_of, Search};
 use crate::host::CLAUDE_ENV;
 
 /// How a way of signing in is billed.
@@ -51,8 +51,9 @@ impl Billing {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "state", rename_all = "kebab-case")]
 pub enum Client {
-    /// It answered `--version`.
-    Installed { version: String },
+    /// It answered `--version`. `path` is the program that did: the screen of this computer says
+    /// which one it asked, and it is not kept anywhere a work is.
+    Installed { version: String, path: String },
     /// A file is there and did not answer `--version`: not something to run until it does.
     Unverified,
     /// There is no such program.
@@ -109,12 +110,19 @@ pub struct ClaudeStatus {
     pub sign_in: Vec<Guidance>,
 }
 
-/// Ask: where Claude Code is (`named` is where the environment said it is, when it did), and who is
-/// signed in to it. Starts the client, so only an entrance that may start a program asks.
-pub fn read(named: Option<&Path>, policy: &Policy) -> ClaudeStatus {
-    let (client, account) = match locate(named) {
+/// Ask: where Claude Code is (`named` is where a connection or the environment said it is, when
+/// one did; else the first program `search` finds), and who is signed in to it. Starts the client,
+/// so only an entrance that may start a program asks.
+pub fn read(named: Option<&Path>, policy: &Policy, search: &Search) -> ClaudeStatus {
+    let (client, account) = match locate(named, search) {
         Some(binary) if binary.is_file() => match version_of(&binary) {
-            Some(version) => (Client::Installed { version }, account_of(&binary, policy)),
+            Some(version) => (
+                Client::Installed {
+                    version,
+                    path: binary.display().to_string(),
+                },
+                account_of(&binary, policy),
+            ),
             None => (
                 Client::Unverified,
                 AccountState::Unknown {

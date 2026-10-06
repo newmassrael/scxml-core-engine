@@ -146,7 +146,7 @@ fn a_subscription_is_said_with_how_it_is_billed_and_what_the_build_does_with_it(
 
     assert_eq!(
         said["client"],
-        json!({"state": "installed", "version": "2.1.291"})
+        json!({"state": "installed", "version": "2.1.291", "path": fake.binary.display().to_string()})
     );
     assert_eq!(said["account"]["state"], "signed-in");
     assert_eq!(said["account"]["route"], "claude-official-login");

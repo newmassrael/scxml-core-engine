@@ -20,6 +20,7 @@
 
 mod common;
 
+use sce_app_core::claude_code::{Candidate, Found, Search};
 use sce_app_core::claude_status::{AccountState, Billing, ClaudeStatus, Client, SIGN_IN};
 use sce_app_core::{
     call, call_in, CommandError, ConnectionStore, Context, Entrance, FixedClock, NoRenderer,
@@ -898,6 +899,39 @@ fn replies() -> Value {
         "read_auth_policy".into(),
         ask("read_auth_policy", json!({})),
     );
+    // The programs the application finds for a connection to name: none, asked for real in a
+    // place where there are none, and what it says when there are, as the core's own types.
+    let nowhere = Search {
+        path: vec![std::path::PathBuf::from("/nowhere/at/all")],
+        known: vec![],
+        timeout: std::time::Duration::from_secs(1),
+    };
+    let looking = Context::new(&store, &FakeRenderer, &policy, Entrance::Desktop)
+        .with_connections(Some(&settings))
+        .with_search(Some(&nowhere));
+    answers.insert(
+        "find_clients_none".into(),
+        call_in(&looking, "find_clients", json!({})).expect("an answer"),
+    );
+    answers.insert(
+        "find_clients_found".into(),
+        json!({ "claude": [
+            Candidate {
+                path: "/home/person/.local/bin/claude".into(),
+                version: "2.1.291".to_string(),
+                found: Found::SearchPath,
+            },
+            Candidate {
+                path: "/usr/local/bin/claude".into(),
+                version: "2.1.280".to_string(),
+                found: Found::KnownLocation,
+            },
+        ] }),
+    );
+    refusals.insert(
+        "not-allowed-to-find-clients".into(),
+        refuse(&entrance(Entrance::Tool, true), "find_clients", json!({})),
+    );
     // What a screen is told of Claude Code. A program that is not there is asked for real; the
     // shapes a client that is there gives are the core's own types, so that the file does not
     // depend on a script that only a Unix shell can run.
@@ -910,7 +944,10 @@ fn replies() -> Value {
     );
     let installed = |account: AccountState| {
         json!({ "claude": ClaudeStatus {
-            client: Client::Installed { version: "2.1.291".to_string() },
+            client: Client::Installed {
+                version: "2.1.291".to_string(),
+                path: "/home/person/.local/bin/claude".to_string(),
+            },
             account,
             sign_in: SIGN_IN.to_vec(),
         } })

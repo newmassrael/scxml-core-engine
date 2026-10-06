@@ -155,6 +155,7 @@
         "read_connection",
         "read_auth_policy",
         "read_claude_status",
+        "find_clients",
         "save_connection",
         "delete_connection",
         "set_default_connection"
@@ -211,6 +212,7 @@
         "read_connection",
         "read_auth_policy",
         "read_claude_status",
+        "find_clients",
         "save_connection",
         "delete_connection",
         "set_default_connection"
@@ -271,6 +273,23 @@
       ],
       "source_head": "7dc2f2d866dfb913b74841a0abff1709551fc1f7bc0f302d43251d0f60ce9e97",
       "standing": "behind"
+    },
+    "find_clients_found": {
+      "claude": [
+        {
+          "found": "search-path",
+          "path": "/home/person/.local/bin/claude",
+          "version": "2.1.291"
+        },
+        {
+          "found": "known-location",
+          "path": "/usr/local/bin/claude",
+          "version": "2.1.280"
+        }
+      ]
+    },
+    "find_clients_none": {
+      "claude": []
     },
     "heartbeat_request": {
       "request": {
@@ -751,6 +770,7 @@
           "usable": true
         },
         "client": {
+          "path": "/home/person/.local/bin/claude",
           "state": "installed",
           "version": "2.1.291"
         },
@@ -802,6 +822,7 @@
           "usable": false
         },
         "client": {
+          "path": "/home/person/.local/bin/claude",
           "state": "installed",
           "version": "2.1.291"
         },
@@ -823,6 +844,7 @@
           "state": "signed-out"
         },
         "client": {
+          "path": "/home/person/.local/bin/claude",
           "state": "installed",
           "version": "2.1.291"
         },
@@ -852,6 +874,7 @@
           "usable": true
         },
         "client": {
+          "path": "/home/person/.local/bin/claude",
           "state": "installed",
           "version": "2.1.291"
         },
@@ -874,6 +897,7 @@
           "state": "unknown"
         },
         "client": {
+          "path": "/home/person/.local/bin/claude",
           "state": "installed",
           "version": "2.1.291"
         },
@@ -1801,7 +1825,7 @@
     },
     "bad-connection": {
       "kind": "bad-connection",
-      "message": "an executable is chosen in a window the person sees and is checked before it is kept: a command does not take one"
+      "message": "that is not one of the programs the application found and asked: ask for them (`find_clients`) and choose among those"
     },
     "bad-lease": {
       "detail": {
@@ -1940,6 +1964,13 @@
       "kind": "not-allowed-here",
       "message": "`save_connection` changes the person's settings, and only the desktop application does that"
     },
+    "not-allowed-to-find-clients": {
+      "detail": {
+        "entrance": "tool"
+      },
+      "kind": "not-allowed-here",
+      "message": "`find_clients` starts a program of the person's, and only the desktop application does that"
+    },
     "not-allowed-to-start-a-program": {
       "detail": {
         "entrance": "browser"
@@ -2027,7 +2058,7 @@
     },
     "unknown-command": {
       "kind": "unknown-command",
-      "message": "`nope` is not a command; the commands are describe, list_works, create_work, read_work, read_source, save_source, history, save_model, read_model, model_history, figures, remove_work, review, read_answers, save_answers, save_requirements, read_requirements, requirements_report, accept, read_acceptance, read_judgment, read_work_snapshot, read_work_heads, request_generation, read_request, list_requests, list_open_requests, claim_request, heartbeat_request, save_request_candidate, read_request_candidate, complete_request, fail_request, cancel_request, report_adapter, read_adapter_status, read_host_status, read_bundle, bundle_history, list_connections, read_connection, read_auth_policy, read_claude_status, save_connection, delete_connection, set_default_connection"
+      "message": "`nope` is not a command; the commands are describe, list_works, create_work, read_work, read_source, save_source, history, save_model, read_model, model_history, figures, remove_work, review, read_answers, save_answers, save_requirements, read_requirements, requirements_report, accept, read_acceptance, read_judgment, read_work_snapshot, read_work_heads, request_generation, read_request, list_requests, list_open_requests, claim_request, heartbeat_request, save_request_candidate, read_request_candidate, complete_request, fail_request, cancel_request, report_adapter, read_adapter_status, read_host_status, read_bundle, bundle_history, list_connections, read_connection, read_auth_policy, read_claude_status, find_clients, save_connection, delete_connection, set_default_connection"
     },
     "wrong-connection": {
       "detail": {

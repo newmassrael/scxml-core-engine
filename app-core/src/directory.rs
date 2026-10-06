@@ -23,12 +23,14 @@
 //! request that waits for an AI that will not come, with nothing said, is the worst of the ways
 //! this can fail.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use crate::auth_policy::{Decision, Observed, Policy, Reason, Route};
-use crate::claude_code::{observe_auth, AuthorServer, ClaudeCode, ClaudeCodeConfig};
+use crate::claude_code::{
+    claude_version_of, observe_auth, AuthorServer, ClaudeCode, ClaudeCodeConfig, SAY_WHAT_IT_IS,
+};
 use crate::connection::AdapterKind;
 use crate::error::StoreError;
 use crate::requests::Pin;
@@ -52,7 +54,8 @@ pub struct Connections {
     settings: ConnectionStore,
     policy: Policy,
     claude: Option<ClaudeLaunch>,
-    observed: Mutex<Option<(Instant, Observation)>>,
+    /// What was last said, of which program, and when.
+    observed: Mutex<Option<(PathBuf, Instant, Observation)>>,
 }
 
 /// What the client said of who is signed in: the kind of credential, nobody, or why it could not
@@ -106,9 +109,26 @@ impl Connections {
                  path",
             ));
         };
+        // The program the connection names, when it names one, is what runs: the person chose it
+        // among the ones the application found. It is asked again, because a file can be gone or
+        // replaced since, and a run is not made with another program in its place.
+        let binary = match stored.connection.executable.as_deref() {
+            Some(chosen) => {
+                let chosen = PathBuf::from(chosen);
+                if claude_version_of(&chosen, SAY_WHAT_IT_IS).is_none() {
+                    return Err(Unrunnable::new(format!(
+                        "the Claude Code that `{}` names is gone or no longer says it is Claude \
+                         Code: choose it again under AI connection",
+                        pin.connection
+                    )));
+                }
+                chosen
+            }
+            None => launch.binary.clone(),
+        };
         // What the client printed is for the settings screen, which shows it to the person who
         // is looking: a reason is said where the works folder is, and is a sentence of ours.
-        let observed = self.observe(launch).map_err(|_| {
+        let observed = self.observe(&binary).map_err(|_| {
             Unrunnable::new(
                 "Claude Code could not be asked who is signed in: check it under AI connection, \
                  then ask again",
@@ -134,23 +154,20 @@ impl Connections {
                 .seconds
                 .map_or(defaults.timeout, |s| Duration::from_secs(u64::from(s))),
         };
-        Ok(ClaudeCode::new(
-            launch.binary.clone(),
-            launch.author.clone(),
-            config,
-        ))
+        Ok(ClaudeCode::new(binary, launch.author.clone(), config))
     }
 
-    /// Who is signed in, as the client said it a moment ago or says it now.
-    fn observe(&self, launch: &ClaudeLaunch) -> Result<Option<Observed>, String> {
+    /// Who is signed in to `binary`, as it said a moment ago or says now. What was said of
+    /// another program is not what this one would say.
+    fn observe(&self, binary: &Path) -> Observation {
         let mut kept = self.observed.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some((at, said)) = kept.as_ref() {
-            if at.elapsed() < OBSERVED_FOR {
+        if let Some((of, at, said)) = kept.as_ref() {
+            if of == binary && at.elapsed() < OBSERVED_FOR {
                 return said.clone();
             }
         }
-        let said = observe_auth(&launch.binary);
-        *kept = Some((Instant::now(), said.clone()));
+        let said = observe_auth(binary);
+        *kept = Some((binary.to_path_buf(), Instant::now(), said.clone()));
         said
     }
 }

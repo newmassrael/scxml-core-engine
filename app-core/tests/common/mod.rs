@@ -344,9 +344,10 @@ pub fn as_an_older_build_wrote_it(work_dir: &std::path::Path) {
 /// process holds it open for writing, and another test's thread that forks at the wrong moment
 /// does: the child inherits the descriptor until it executes. The refusal is the system's and
 /// says nothing of the program, and a client that is refused it is read as one that is not
-/// there, so the test fails once in a while for nothing. Asked once here, with a flag every
-/// stand-in answers without side effects (`--version`), the program is known to run before a
-/// test depends on it.
+/// there, so the test fails once in a while for nothing. Started once here and stopped at once,
+/// the program is known to run before a test depends on it: a start that succeeds has been
+/// executed, and one that is refused as busy is tried again. What it does is not waited for, so a
+/// stand-in that never answers does not hold the writer.
 #[cfg(unix)]
 pub fn write_program(path: &std::path::Path, text: &str) {
     use std::os::unix::fs::PermissionsExt;
@@ -359,17 +360,22 @@ pub fn write_program(path: &std::path::Path, text: &str) {
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755))
         .expect("make the program runnable");
     for _ in 0..500 {
-        let ran = Command::new(path)
+        let started = Command::new(path)
             .arg("--version")
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
-            .status();
-        match ran {
+            .spawn();
+        match started {
             Err(e) if e.raw_os_error() == Some(TEXT_FILE_BUSY) => {
                 std::thread::sleep(std::time::Duration::from_millis(10));
             }
-            _ => return,
+            Ok(mut child) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return;
+            }
+            Err(_) => return,
         }
     }
     panic!("{} stayed busy for five seconds", path.display());
