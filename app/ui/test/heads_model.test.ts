@@ -33,7 +33,7 @@ const heads: WorkHeads = {
   request: null,
 };
 
-/** The work those heads say, as a basis names it: what the acceptance panel's reads are of when they are current. */
+/** The work those heads say, as a basis names it: what the acceptance panel is of when it is current. */
 const basisNow: Basis = { source: T2, model: M1, requirements: R1, answers: A1 };
 
 /** The screen showing exactly that. */
@@ -43,7 +43,7 @@ const shown: WorkOnScreen = {
   answers: A1,
   requirements: { head: { revision: R1, written_for: T2 }, sourceHead: T2 },
   acceptance: C1,
-  judged: [basisNow, basisNow],
+  judged: basisNow,
 };
 
 describe("a work that moved under the screen", () => {
@@ -74,27 +74,27 @@ describe("a work that moved under the screen", () => {
   it("includes a model whose text moved on beside it", () => {
     // Another window saved the text: the model on screen was read beside T2 and is now
     // behind, though neither the model nor what it was written for changed.
-    // The acceptance panel's reads name the work as it was (T2), so they are read again too.
+    // The acceptance panel is of the work as it was (T2), so it is read again too.
     const moved: WorkHeads = { ...heads, source: T1 };
     expect(movedParts({ ...shown, source: T1 }, moved)).toEqual(["model", "requirements", "acceptance"]);
   });
 
-  it("includes the acceptance when what its reads name is not the work as the core says it is", () => {
-    // The acceptance record keeps its revision while the model changes, and the panel's reads
-    // agree with each other: both are of the model before. Only the core's heads can say so.
+  it("includes the acceptance when what the panel is of is not the work as the core says it is", () => {
+    // The acceptance record keeps its revision while the model changes: only what the panel is of
+    // can say that its verdict is of a design the work has left.
     const newer: WorkHeads = { ...heads, model: { revision: M2, written_for: T2 } };
     const modelRead: WorkOnScreen = {
       ...shown,
       model: { head: { revision: M2, written_for: T2 }, sourceHead: T2 },
     };
     expect(movedParts(modelRead, newer)).toEqual(["acceptance"]);
-    // Either read naming another work is enough; the other agreeing with the heads is not.
-    expect(movedParts({ ...shown, judged: [basisNow, { ...basisNow, answers: null }] }, heads)).toEqual(["acceptance"]);
-    expect(movedParts({ ...shown, judged: [{ ...basisNow, requirements: R2 }] }, heads)).toEqual(["acceptance"]);
+    // Any revision it names that the work has left is enough, the answers among them.
+    expect(movedParts({ ...shown, judged: { ...basisNow, answers: null } }, heads)).toEqual(["acceptance"]);
+    expect(movedParts({ ...shown, judged: { ...basisNow, requirements: R2 } }, heads)).toEqual(["acceptance"]);
   });
 
-  it("is nothing for acceptance reads of the work as it is, or when the panel has none that name one", () => {
-    expect(movedParts({ ...shown, judged: [] }, heads)).toEqual([]);
+  it("is nothing for a panel of the work as it is, or when the panel has nothing read", () => {
+    expect(movedParts(shown, heads)).toEqual([]);
     expect(movedParts({ ...shown, judged: undefined }, { ...heads, model: { revision: M2, written_for: T2 } })).toEqual(
       ["model"],
     );

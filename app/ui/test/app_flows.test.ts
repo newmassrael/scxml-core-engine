@@ -64,10 +64,18 @@ class FakeCore implements Transport {
   >();
   private answerSaves = 0;
   private readonly lists = new Map<string, { revision: string; writtenFor: string | null; ids: string[] }>();
+  /** Every list a work had, by its revision: a revision is never rewritten, so SCE can be asked about an earlier one. */
+  private readonly listsByRevision = new Map<string, { revision: string; writtenFor: string | null; ids: string[] }>();
   private readonly acceptances = new Map<
     string,
     { revision: string; basis: Record<string, string>; channel: string; open: string[] }
   >();
+  private readonly acceptancesByRevision = new Map<
+    string,
+    { revision: string; basis: Record<string, string>; channel: string; open: string[] }
+  >();
+  /** What SCE does not answer the next time it is asked, by the part of the judgment it is about. */
+  private readonly refusals: Array<{ part: "report" | "acceptance"; kind: string; message: string }> = [];
   private listSaves = 0;
   private acceptSaves = 0;
   private readonly requestsOf = new Map<string, FakeRequest[]>();
@@ -209,7 +217,9 @@ class FakeCore implements Transport {
    */
   setRequirements(id: string, writtenFor: string | null, ids: string[] = ["R1", "R2"]): void {
     this.listSaves += 1;
-    this.lists.set(id, { revision: this.revision(`list:${this.listSaves}`), writtenFor, ids });
+    const list = { revision: this.revision(`list:${this.listSaves}`), writtenFor, ids };
+    this.lists.set(id, list);
+    this.listsByRevision.set(list.revision, list);
   }
 
   /** What the owner accepted, as the core keeps it: the work as it stands now, stated on `channel`. */
@@ -217,12 +227,25 @@ class FakeCore implements Transport {
     const basis = this.basisOf(id);
     if (basis === null) throw new Error(`${id} has no text, model and list to accept`);
     this.acceptSaves += 1;
-    this.acceptances.set(id, {
+    this.keepAcceptance(id, {
       revision: this.revision(`acceptance:${this.acceptSaves}`),
       basis,
       channel,
       open: ["1 question(s) the specification leaves open (open-guard)"],
     });
+  }
+
+  private keepAcceptance(
+    id: string,
+    record: { revision: string; basis: Record<string, string>; channel: string; open: string[] },
+  ): void {
+    this.acceptances.set(id, record);
+    this.acceptancesByRevision.set(record.revision, record);
+  }
+
+  /** SCE does not answer the next judgment's `part` (`report`: the measure; `acceptance`: whether it holds). */
+  sceRefuses(part: "report" | "acceptance", kind: string, message: string): void {
+    this.refusals.push({ part, kind, message });
   }
 
   /** The revisions of everything an acceptance is about, or `null` while one of them is missing. */
@@ -345,7 +368,7 @@ class FakeCore implements Transport {
     const work = typeof args["id"] === "string" ? this.works.get(args["id"]) : undefined;
     switch (name) {
       case "describe":
-        return { command_set_version: 11, commands: [], root: "/fake/works" };
+        return { command_set_version: 12, commands: [], root: "/fake/works" };
       case "read_work_heads": {
         if (work === undefined) throw new CommandFailure("not-found", "work `absent`");
         const id = String(args["id"]);
@@ -438,10 +461,20 @@ class FakeCore implements Transport {
           })),
           unreadable: [],
         };
-      case "read_requirements": {
-        const list = typeof args["id"] === "string" ? this.lists.get(args["id"]) : undefined;
-        const head = work?.revisions.at(-1)?.revision ?? null;
+      case "read_work_snapshot": {
+        // One synchronous step over the core's state: what a snapshot is.
+        if (work === undefined) throw new CommandFailure("not-found", `work \`${String(args["id"])}\``);
+        const id = String(args["id"]);
+        const model = this.answer("read_model", { id }) as { model: unknown; standing: string | null };
+        const head = work.revisions.at(-1);
+        const list = this.lists.get(id);
+        const held = this.acceptances.get(id);
         return {
+          work: { id, title: work.title, created_at: "2026-10-03T09:00:00Z" },
+          source: head === undefined ? null : { revision: head.revision, text: head.text },
+          model: model.model,
+          model_standing: model.standing,
+          answers: this.answersOf.get(id) ?? null,
           requirements:
             list === undefined
               ? null
@@ -450,68 +483,99 @@ class FakeCore implements Transport {
                   written_for: list.writtenFor,
                   manifest: "{}",
                   sidecar:
-                    this.quotesOf.get(String(args["id"])) === undefined
+                    this.quotesOf.get(id) === undefined
                       ? null
-                      : JSON.stringify({ doc_id: "door", rev: "1", text: this.quotesOf.get(String(args["id"])) }),
+                      : JSON.stringify({ doc_id: "door", rev: "1", text: this.quotesOf.get(id) }),
                 },
-          source_head: head,
-          standing: list === undefined ? null : standingOf(list.writtenFor, head),
+          requirements_standing: list === undefined ? null : standingOf(list.writtenFor, head?.revision ?? null),
+          acceptance:
+            held === undefined
+              ? null
+              : {
+                  revision: held.revision,
+                  accepted_at: "2026-10-03T09:00:10Z",
+                  channel: held.channel,
+                  basis: held.basis,
+                  open: held.open,
+                },
+          bundle: this.bundleOf.get(id)?.revision ?? null,
         };
       }
-      case "requirements_report": {
+      case "read_judgment": {
+        // What SCE says of the revisions NAMED, wherever the work is now: a revision is never rewritten.
+        if (work === undefined) throw new CommandFailure("not-found", `work \`${String(args["id"])}\``);
         const id = String(args["id"]);
-        const basis = this.basisOf(id);
-        const model = this.models.get(id);
-        const list = this.lists.get(id);
-        if (basis === null || model === undefined || list === undefined) {
-          throw new CommandFailure("not-found", "a model or a requirement list of this work (none was saved)");
+        const asked = args["basis"] as Record<string, string | null | undefined>;
+        const answersRevision = asked["answers"] ?? null;
+        const source = work.revisions.find((r) => r.revision === asked["source"]);
+        const model = this.modelsByRevision.get(String(asked["model"]));
+        const list = this.listsByRevision.get(String(asked["requirements"]));
+        if (
+          source === undefined ||
+          model === undefined ||
+          list === undefined ||
+          (answersRevision !== null && !this.answersByRevision.has(answersRevision))
+        ) {
+          throw new CommandFailure("not-found", "a revision of this work that was not kept");
         }
-        const head = work?.revisions.at(-1)?.revision ?? null;
+        const held = typeof args["acceptance"] === "string" ? this.acceptancesByRevision.get(args["acceptance"]) : undefined;
+        if (typeof args["acceptance"] === "string" && held === undefined) {
+          throw new CommandFailure("not-found", "an acceptance of this work that was not kept");
+        }
+        const basis: Record<string, string> = {
+          source: source.revision,
+          model: String(asked["model"]),
+          requirements: list.revision,
+          ...(answersRevision === null ? {} : { answers: answersRevision }),
+        };
+        const refusal = (part: "report" | "acceptance"): { kind: string; message: string; code: null } | null => {
+          const at = this.refusals.findIndex((r) => r.part === part);
+          const found = at < 0 ? undefined : this.refusals.splice(at, 1)[0];
+          return found === undefined ? null : { kind: found.kind, message: found.message, code: null };
+        };
+        const lapse = held === undefined ? null : this.lapseOf(held.basis, basis);
+        const refusedAcceptance = held === undefined ? null : refusal("acceptance");
+        const refusedReport = refusal("report");
         return {
           basis,
-          source_head: head,
-          model_standing: standingOf(model.writtenFor, head),
-          requirements_standing: standingOf(list.writtenFor, head),
-          generator: "fake-sce 0",
-          denominator: "synthesized",
-          outcomes: list.ids.map((requirement, i) => ({
-            id: requirement,
-            outcome:
-              model.text.includes("MISSING") && i === 0
-                ? "missing"
-                : model.text.includes("SCENARIO") && i === 1
-                  ? "needs-scenario"
-                  : model.text.includes("DANGLING") && i === 1
-                    ? "dangling"
-                    : model.text.includes("WAIVED") && i === 1
-                      ? "waived"
-                      : "implemented",
-            section: `S${i + 1}`,
-            node_paths:
-              this.carriedOf.get(id)?.[requirement] ??
-              (model.text.includes("MISSING") && i === 0 ? [] : [`states.s${i}`]),
-          })),
-          page: `ACCEPTANCE REPORT\n  ${list.ids.length} requirements\n`,
-          page_refusal: null,
-        };
-      }
-      case "read_acceptance": {
-        const id = String(args["id"]);
-        const held = this.acceptances.get(id);
-        const now = this.basisOf(id);
-        if (held === undefined || now === null) return { acceptance: null, standing: "none", lapse: null };
-        const lapse = this.lapseOf(held.basis, now);
-        return {
-          acceptance: {
-            revision: held.revision,
-            accepted_at: "2026-10-03T09:00:10Z",
-            channel: held.channel,
-            basis: held.basis,
-            open: held.open,
-          },
-          standing: lapse === null ? "holds" : "lapsed",
-          lapse,
-          now,
+          acceptance:
+            held === undefined
+              ? null
+              : refusedAcceptance !== null
+                ? { refused: refusedAcceptance }
+                : { said: { standing: lapse === null ? "holds" : "lapsed", lapse } },
+          report:
+            refusedReport !== null
+              ? { refused: refusedReport }
+              : {
+                  said: {
+                    basis,
+                    source_head: source.revision,
+                    model_standing: standingOf(model.writtenFor, source.revision),
+                    requirements_standing: standingOf(list.writtenFor, source.revision),
+                    generator: "fake-sce 0",
+                    denominator: "synthesized",
+                    outcomes: list.ids.map((requirement, i) => ({
+                      id: requirement,
+                      outcome:
+                        model.text.includes("MISSING") && i === 0
+                          ? "missing"
+                          : model.text.includes("SCENARIO") && i === 1
+                            ? "needs-scenario"
+                            : model.text.includes("DANGLING") && i === 1
+                              ? "dangling"
+                              : model.text.includes("WAIVED") && i === 1
+                                ? "waived"
+                                : "implemented",
+                      section: `S${i + 1}`,
+                      node_paths:
+                        this.carriedOf.get(id)?.[requirement] ??
+                        (model.text.includes("MISSING") && i === 0 ? [] : [`states.s${i}`]),
+                    })),
+                    page: `ACCEPTANCE REPORT\n  ${list.ids.length} requirements\n`,
+                    page_refusal: null,
+                  },
+                },
         };
       }
       case "accept": {
@@ -538,7 +602,7 @@ class FakeCore implements Transport {
         }
         this.acceptSaves += 1;
         const revision = this.revision(`acceptance:${this.acceptSaves}`);
-        this.acceptances.set(id, { revision, basis: now, channel: "direct", open: [] });
+        this.keepAcceptance(id, { revision, basis: now, channel: "direct", open: [] });
         return { outcome: "saved", revision, parent: null };
       }
       case "read_answers": {
@@ -1238,7 +1302,7 @@ describe("the model panel", () => {
 
   it("reports a model that cannot be read as the panel's own message, not as an empty one", async () => {
     core.setModel("alpha", "<scxml/>", core.revision("alpha two"));
-    core.failNext("read_model", new CommandFailure("corrupt", "the model file is damaged"));
+    core.failNext("read_work_snapshot", new CommandFailure("corrupt", "the model file is damaged"));
     await click("Alpha");
 
     expect(modelText()).toContain("the model file is damaged");
@@ -1840,15 +1904,15 @@ describe("accepting the design", () => {
 
     expect(acceptanceText()).toContain("No requirement list yet");
     expect(root.querySelector("#accept")).toBeNull();
-    expect(core.callsOf("requirements_report")).toHaveLength(0);
-    expect(core.callsOf("read_acceptance")).toHaveLength(0);
+    // There is no design to measure against anything, so SCE is not asked.
+    expect(core.callsOf("read_judgment")).toHaveLength(0);
   });
 
   it("is not asked for a work that has no model", async () => {
     await click("Beta");
 
     expect(root.querySelector(".acceptance")).toBeNull();
-    expect(core.callsOf("read_requirements")).toHaveLength(0);
+    expect(core.callsOf("read_judgment")).toHaveLength(0);
   });
 
   it("shows SCE's count, each requirement in SCE's word, and the page exactly as SCE wrote it", async () => {
@@ -1925,8 +1989,10 @@ describe("accepting the design", () => {
     expect(core.callsOf("accept")).toHaveLength(1);
     expect(acceptanceText()).toContain("Nothing was accepted: model changed after you were shown it");
     expect(acceptanceText()).toContain("Nothing has been accepted yet.");
-    // What is there now was read, so the next press is made knowing it.
-    expect(core.callsOf("requirements_report")).toHaveLength(2);
+    // What is there now was read, so the next press is made knowing it: SCE was asked about the
+    // design the page showed, and then about the one that is there now.
+    const asked = core.callsOf("read_judgment").map((a) => (a["basis"] as Record<string, string>)["model"]);
+    expect(asked).toEqual([core.revision("model:<scxml/>"), core.revision("model:<scxml><!-- another --></scxml>")]);
     await click("Accept this design");
 
     const second = core.callsOf("accept")[1]?.["expect"] as Record<string, string>;
@@ -2090,7 +2156,7 @@ describe("accepting the design", () => {
 
   it("says SCE did not measure the design, keeps what was accepted, and offers nothing to accept", async () => {
     core.setAcceptance("alpha");
-    core.failNext("requirements_report", new CommandFailure("sce-timeout", "SCE did not answer within 30 s"));
+    core.sceRefuses("report", "sce-timeout", "SCE did not answer within 30 s");
     await click("Alpha");
 
     expect(acceptanceText()).toContain("SCE did not measure the design against the list: SCE did not answer within 30 s");
@@ -2101,7 +2167,8 @@ describe("accepting the design", () => {
   });
 
   it("says in words when the acceptance cannot be read, and the review still shows", async () => {
-    core.failNext("read_acceptance", new CommandFailure("sce-failed", "the product crashed"));
+    core.setAcceptance("alpha");
+    core.sceRefuses("acceptance", "sce-failed", "the product crashed");
     await click("Alpha");
 
     expect(acceptanceText()).toContain("could not be read: the product crashed");
@@ -2112,12 +2179,12 @@ describe("accepting the design", () => {
     await click("Alpha");
     await click("Accept this design");
     expect(acceptanceText()).toContain("It holds");
-    const before = core.callsOf("read_acceptance").length;
+    const before = core.callsOf("read_judgment").length;
 
     await answer("open-guard", "Any card on the list.");
     await click("Save answers");
 
-    expect(core.callsOf("read_acceptance")).toHaveLength(before + 1);
+    expect(core.callsOf("read_judgment")).toHaveLength(before + 1);
     expect(acceptanceText()).toContain("no longer holds. SCE says: spec/answers.json moved");
     expect(acceptButton().textContent).toBe("Accept the design as it is now");
   });
@@ -2126,7 +2193,7 @@ describe("accepting the design", () => {
     core.setRequirements("alpha", headOf("alpha"), ["A1", "A2"]);
     core.setModel("beta", "<scxml/>", headOf("beta"));
     core.setRequirements("beta", headOf("beta"), ["B1"]);
-    const slow = core.hold("read_requirements", (a) => a["id"] === "alpha");
+    const slow = core.hold("read_judgment", (a) => a["id"] === "alpha");
     await click("Alpha");
     await click("Beta");
     slow.release();
@@ -2204,7 +2271,7 @@ describe("a token the server asks for in the middle of a read", () => {
   // Each of these reads is started beside the others when a work opens, and each is
   // one the server can refuse first. Whichever it is, the person is shown the form that
   // asks for the token: a refusal that only sets a flag leaves the screen as it was.
-  for (const name of ["read_answers", "review", "read_requirements", "read_model", "figures"]) {
+  for (const name of ["read_answers", "review", "read_work_snapshot", "read_judgment", "figures"]) {
     it(`draws the sign-in form when \`${name}\` is the read that is refused`, async () => {
       core.failNext(name, new CommandFailure(UNAUTHORIZED, "no token"));
 
@@ -2246,152 +2313,165 @@ describe("a work that moves under the screen", () => {
   /** What the panel says of whether the owner's acceptance holds: the banner, not the note under the button. */
   const verdict = (): string => root.querySelector(".accepted .banner")?.textContent ?? "";
 
-  it("review a404 regression: does not retain a matching old holds report beside a newer displayed model", async () => {
+  /** The design on screen. */
+  const design = (): string => root.querySelector(".scxml")?.textContent ?? "";
+  /** The acceptance panel is waiting for SCE, and says nothing of whether anything holds. */
+  const waitingForSce = (): boolean =>
+    acceptanceText().includes("Reading the requirements and what was accepted") && verdict() === "";
+
+  // What SCE says of the work is asked of the revisions the screen read the design in, so a verdict
+  // is of the design beside it and of no other. The work can move while SCE answers, and the screen
+  // can be behind the core for a moment; it is never made to say of one design what is true of
+  // another. The screens before this one read the design, the list, the standing and the report with
+  // a command each and compared them, and were handed, in turn, a "holds" beside a changed design and
+  // a "lapsed" beside a restored one.
+
+  it("shows no verdict beside a design SCE has not judged yet, and the verdict of that design once it has", async () => {
     core.setModel("alpha", "<scxml><!-- initial --></scxml>", headOf("alpha"));
     core.setRequirements("alpha", headOf("alpha"));
     await click("Alpha");
 
+    // An authoring client saves a design and the owner accepts it from another window.
     core.setModel("alpha", "<scxml><!-- accepted --></scxml>", headOf("alpha"));
     core.setAcceptance("alpha");
-    // Only the model read is slow. The report and acceptance finish together
-    // against the accepted model, so their bases agree with each other.
-    const slowModel = core.hold("read_model");
+    const asked = core.hold("read_judgment");
     await ticker.fire();
-    expect(core.callsOf("requirements_report")).toHaveLength(2);
-    // The screen still shows the model before: a "holds" judged of the accepted one is not said of it.
-    expect(root.querySelector(".scxml")?.textContent).toBe("<scxml><!-- initial --></scxml>");
-    expect(verdict()).toContain("not known yet");
 
-    const changed = "<scxml><!-- changed after both panel reads --></scxml>";
-    core.setModel("alpha", changed, headOf("alpha"));
-    slowModel.release();
-    for (let i = 0; i < 3; i += 1) await settle();
-    expect(root.querySelector(".scxml")?.textContent).toBe(changed);
-    // Agreement inside the panel is not agreement with the design shown: both reads are of the
-    // accepted model, and the model shown is a third.
-    expect(verdict()).toContain("not known yet");
-    expect(verdict()).not.toContain("It holds");
-    await ticker.fire();
+    expect(design()).toBe("<scxml><!-- accepted --></scxml>");
+    expect(waitingForSce()).toBe(true);
+    asked.release();
     await settle();
-    expect((await core.call("read_acceptance", { id: "alpha" }) as { standing: string }).standing).toBe("lapsed");
+    expect(verdict()).toContain("It holds");
+  });
+
+  it("shows the verdict of the design it shows when the work moved on while SCE was asked, and none beside the next", async () => {
+    core.setModel("alpha", "<scxml><!-- initial --></scxml>", headOf("alpha"));
+    core.setRequirements("alpha", headOf("alpha"));
+    await click("Alpha");
+    core.setModel("alpha", "<scxml><!-- accepted --></scxml>", headOf("alpha"));
+    core.setAcceptance("alpha");
+    const asked = core.hold("read_judgment");
+    await ticker.fire();
+
+    // The work moves again while SCE is asked about the design the screen read.
+    const changed = "<scxml><!-- changed after SCE was asked --></scxml>";
+    core.setModel("alpha", changed, headOf("alpha"));
+    asked.release();
+    await settle();
+    // SCE's word is of that design, which is the one shown: it holds of it.
+    expect(design()).toBe("<scxml><!-- accepted --></scxml>");
+    expect(verdict()).toContain("It holds");
+
+    // The next question sees the work moved. The changed design is not shown beside a verdict of the
+    // accepted one, and SCE's word for it is read.
+    const again = core.hold("read_judgment");
+    await ticker.fire();
+    expect(design()).toBe(changed);
+    expect(verdict()).not.toContain("It holds");
+    expect(waitingForSce()).toBe(true);
+    again.release();
+    await settle();
     expect(verdict()).toContain("no longer holds");
     expect(verdict()).not.toContain("It holds");
   });
 
-  it("review a404 regression: does not retain a matching old lapse report beside the restored displayed model", async () => {
+  it("shows no lapse beside an accepted design that was restored, and says it holds once SCE has been asked", async () => {
     const accepted = "<scxml><!-- accepted and later restored --></scxml>";
     core.setModel("alpha", accepted, headOf("alpha"));
     core.setRequirements("alpha", headOf("alpha"));
     core.setAcceptance("alpha");
     await click("Alpha");
+    expect(verdict()).toContain("It holds");
 
-    core.setModel("alpha", "<scxml><!-- temporary change --></scxml>", headOf("alpha"));
-    const slowModel = core.hold("read_model");
+    // Changed for a moment, and SCE is slow to say what it thinks of that.
+    const temporary = "<scxml><!-- temporary change --></scxml>";
+    core.setModel("alpha", temporary, headOf("alpha"));
+    const asked = core.hold("read_judgment");
     await ticker.fire();
-    expect(core.callsOf("requirements_report")).toHaveLength(2);
-    // The screen still shows the accepted model, which holds; "lapsed" is of the model that replaced it.
-    expect(root.querySelector(".scxml")?.textContent).toBe(accepted);
-    expect(verdict()).toContain("not known yet");
-
-    core.setModel("alpha", accepted, headOf("alpha"));
-    slowModel.release();
-    for (let i = 0; i < 3; i += 1) await settle();
-    expect(root.querySelector(".scxml")?.textContent).toBe(accepted);
-    // The model on screen is the accepted one again, and both reads are of the temporary change.
-    expect(verdict()).toContain("not known yet");
-    expect(verdict()).not.toContain("no longer holds");
-    await ticker.fire();
+    expect(design()).toBe(temporary);
+    expect(waitingForSce()).toBe(true);
+    asked.release();
     await settle();
-    expect((await core.call("read_acceptance", { id: "alpha" }) as { standing: string }).standing).toBe("holds");
+    expect(verdict()).toContain("no longer holds");
+
+    // Put back as it was accepted: the lapse of the design before is not left beside it.
+    core.setModel("alpha", accepted, headOf("alpha"));
+    const restored = core.hold("read_judgment");
+    await ticker.fire();
+    expect(design()).toBe(accepted);
+    expect(verdict()).not.toContain("no longer holds");
+    expect(waitingForSce()).toBe(true);
+    restored.release();
+    await settle();
     expect(verdict()).toContain("It holds");
     expect(verdict()).not.toContain("no longer holds");
   });
 
-  it("review db regression: does not keep an old holds verdict after the displayed model changes during refresh", async () => {
-    core.setModel("alpha", "<scxml><!-- initial --></scxml>", headOf("alpha"));
+  it("does not put what SCE said of an earlier read over what it said of a later one", async () => {
+    // SCE is slow about the work as it was read when it opened. Meanwhile the owner saves answers,
+    // which are part of what was accepted: the work is read again and SCE answers about it at once.
+    core.setModel("alpha", "<scxml/>", headOf("alpha"));
     core.setRequirements("alpha", headOf("alpha"));
-    await click("Alpha");
-
-    // An external client writes and accepts one model. The refresh reads that
-    // acceptance, while model/report reads remain in flight.
-    core.setModel("alpha", "<scxml><!-- accepted --></scxml>", headOf("alpha"));
     core.setAcceptance("alpha");
-    const slowModel = core.hold("read_model");
-    const slowReport = core.hold("requirements_report");
-    await ticker.fire();
-    expect(core.callsOf("read_acceptance")).toHaveLength(2);
+    const late = core.hold("read_judgment");
+    await click("Alpha");
+    expect(waitingForSce()).toBe(true);
 
-    const changed = "<scxml><!-- changed after acceptance --></scxml>";
-    core.setModel("alpha", changed, headOf("alpha"));
-    slowModel.release();
-    slowReport.release();
-    for (let i = 0; i < 3; i += 1) await settle();
-    expect(root.querySelector(".scxml")?.textContent).toBe(changed);
-    // Even after another poll, this model must not be shown with the prior
-    // model's claim that the acceptance still holds: SCE's word for this model is "lapsed".
-    await ticker.fire();
+    await answer("open-guard", "Any card on the list.");
+    await click("Save answers");
+    expect(verdict()).toContain("no longer holds");
+
+    late.release();
+    await settle();
+    // The word about the work without the answers, arriving late, is not put over the word about it with them.
     expect(verdict()).toContain("no longer holds");
     expect(verdict()).not.toContain("It holds");
   });
 
-  it("review db regression: does not keep an old lapse after the accepted model is restored during refresh", async () => {
-    const accepted = "<scxml><!-- accepted and later restored --></scxml>";
+  it("keeps the design and the verdict it shows together while the next read of the work is slow", async () => {
+    const accepted = "<scxml><!-- accepted --></scxml>";
     core.setModel("alpha", accepted, headOf("alpha"));
     core.setRequirements("alpha", headOf("alpha"));
     core.setAcceptance("alpha");
     await click("Alpha");
-    expect(acceptanceText()).toContain("It holds");
-
-    core.setModel("alpha", "<scxml><!-- temporary change --></scxml>", headOf("alpha"));
-    const slowModel = core.hold("read_model");
-    const slowReport = core.hold("requirements_report");
-    await ticker.fire();
-    expect(core.callsOf("read_acceptance")).toHaveLength(2);
-
-    core.setModel("alpha", accepted, headOf("alpha"));
-    slowModel.release();
-    slowReport.release();
-    for (let i = 0; i < 3; i += 1) await settle();
-    expect(root.querySelector(".scxml")?.textContent).toBe(accepted);
-    await ticker.fire();
-    expect(verdict()).toContain("It holds");
-    expect(verdict()).not.toContain("no longer holds");
-  });
-
-  it("does not say whether an acceptance holds while the model keeps moving, and says it once it stops", async () => {
-    // The standing is asked for beside SCE's measure, and each time the model is saved between the
-    // two, the standing was judged of another model than the one measured. Three times in a row, and
-    // the screen has read nothing it can say the acceptance holds or lapsed of. The model on screen
-    // is read last (held until the model stopped moving), so it is the core's: nothing but the
-    // unsettled acceptance is left to ask about, and the next question has to ask.
-    core.setModel("alpha", "<scxml><!-- accepted --></scxml>", headOf("alpha"));
-    core.setRequirements("alpha", headOf("alpha"));
-    core.setAcceptance("alpha");
-    await click("Alpha");
-    expect(verdict()).toContain("It holds");
 
     core.setModel("alpha", "<scxml><!-- changed --></scxml>", headOf("alpha"));
-    const slowModel = core.hold("read_model");
-    const held = [0, 1, 2].map(() => core.hold("requirements_report"));
+    const slow = core.hold("read_work_snapshot");
     await ticker.fire();
-    for (const [i, gate] of held.entries()) {
-      core.setModel("alpha", `<scxml><!-- moving ${i} --></scxml>`, headOf("alpha"));
-      gate.release();
-      await settle();
-    }
-    slowModel.release();
-    for (let i = 0; i < 3; i += 1) await settle();
 
-    expect(root.querySelector(".scxml")?.textContent).toBe("<scxml><!-- moving 2 --></scxml>");
-    expect(verdict()).toContain("not known yet");
-    expect(verdict()).not.toContain("It holds");
-    expect(acceptButton().disabled).toBe(true);
-
-    // The model has stopped moving: the next question reads the pair again, and SCE's word is shown.
-    await ticker.fire();
+    // Nothing of the new design has been read: the old design, and the verdict of it, stay as they are.
+    expect(design()).toBe(accepted);
+    expect(verdict()).toContain("It holds");
+    slow.release();
     await settle();
-
+    expect(design()).toBe("<scxml><!-- changed --></scxml>");
     expect(verdict()).toContain("no longer holds");
+  });
+
+  it("shows each design with its own verdict while the work keeps moving, and settles when it stops", async () => {
+    core.setModel("alpha", "<scxml><!-- accepted --></scxml>", headOf("alpha"));
+    core.setRequirements("alpha", headOf("alpha"));
+    core.setAcceptance("alpha");
+    await click("Alpha");
+    expect(verdict()).toContain("It holds");
+
+    for (const i of [0, 1, 2]) {
+      core.setModel("alpha", `<scxml><!-- moving ${i} --></scxml>`, headOf("alpha"));
+      const asked = core.hold("read_judgment");
+      await ticker.fire();
+      // SCE has not been heard on this design: the design before is not spoken for.
+      expect(design()).toBe(`<scxml><!-- moving ${i} --></scxml>`);
+      expect(waitingForSce()).toBe(true);
+      expect(root.querySelector("#accept")).toBeNull();
+      asked.release();
+      await settle();
+      expect(verdict()).toContain("no longer holds");
+    }
+
+    // The work stops moving, and the screen has nothing more to read.
+    const reads = core.callsOf("read_judgment").length;
+    await ticker.fire();
+    expect(core.callsOf("read_judgment")).toHaveLength(reads);
   });
 
   it("shows a model an authoring client saved after the work was opened, without being asked", async () => {
@@ -2521,12 +2601,12 @@ describe("a work that moves under the screen", () => {
   it("asks again only when the read it started is done, and then reads nothing more", async () => {
     core.setModel("alpha", "<scxml/>", headOf("alpha"));
     await click("Alpha");
-    const slow = core.hold("read_model");
+    const slow = core.hold("read_work_snapshot");
     core.setModel("alpha", "<scxml>next</scxml>", headOf("alpha"));
     await ticker.fire();
 
     // The read is on its way: the next question is not scheduled, so it cannot start the read over.
-    expect(core.callsOf("read_model")).toHaveLength(2);
+    expect(core.callsOf("read_work_snapshot")).toHaveLength(2);
     expect(ticker.pending).toEqual([]);
     slow.release();
     await settle();
@@ -2535,7 +2615,7 @@ describe("a work that moves under the screen", () => {
     await ticker.fire();
 
     // The read answered and the screen shows it: nothing more is read.
-    expect(core.callsOf("read_model")).toHaveLength(2);
+    expect(core.callsOf("read_work_snapshot")).toHaveLength(2);
     expect(root.querySelector(".scxml")?.textContent).toBe("<scxml>next</scxml>");
   });
 
@@ -2611,7 +2691,7 @@ describe("a work that moves under the screen", () => {
   it("review regression: recovers model refresh after one temporary failure", async () => {
     await click("Alpha");
     core.setModel("alpha", "<scxml>new result</scxml>", headOf("alpha"));
-    core.failNext("read_model", new CommandFailure("transport", "temporary disconnect"));
+    core.failNext("read_work_snapshot", new CommandFailure("transport", "temporary disconnect"));
     await ticker.fire();
     expect(modelText()).toContain("temporary disconnect");
 
@@ -2636,12 +2716,59 @@ describe("a work that moves under the screen", () => {
     core.setModel("alpha", "<scxml/>", headOf("alpha"));
     await click("Alpha");
     core.setRequirements("alpha", headOf("alpha"));
-    core.failNext("read_requirements", new CommandFailure("transport", "temporary disconnect"));
+    core.failNext("read_work_snapshot", new CommandFailure("transport", "temporary disconnect"));
     await ticker.fire();
-    expect(acceptanceText()).toContain("temporary disconnect");
+    // The work is one read, so the design and the list beside it fail together and say so.
+    expect(modelText()).toContain("temporary disconnect");
 
     await ticker.fire();
     expect(acceptanceText()).toContain("SCE measured the design against 2 requirements");
+  });
+
+  it("recovers what SCE said when it could not be read once, at the next question", async () => {
+    core.setModel("alpha", "<scxml/>", headOf("alpha"));
+    core.setRequirements("alpha", headOf("alpha"));
+    await click("Alpha");
+    core.setAcceptance("alpha");
+    core.failNext("read_judgment", new CommandFailure("transport", "temporary disconnect"));
+    await ticker.fire();
+    // The design was read and is shown; what SCE says of it was not, and the panel says so.
+    expect(acceptanceText()).toContain("temporary disconnect");
+    expect(design()).toBe("<scxml/>");
+
+    await ticker.fire();
+    expect(verdict()).toContain("It holds");
+    expect(acceptanceText()).toContain("SCE measured the design against 2 requirements");
+  });
+
+  it("asks SCE again when answers saved elsewhere moved while the person was typing over them, and says nothing until they are shown", async () => {
+    // The answers are part of what the owner accepts. Another window saves some while this one
+    // holds answers being typed: the screen cannot read them over the person's head. What SCE says
+    // is asked of the revisions the core holds now, and it is not said of the answers on screen,
+    // which are not those; it is said once the answers on screen are the ones judged.
+    core.setModel("alpha", "<scxml/>", headOf("alpha"));
+    core.setRequirements("alpha", headOf("alpha"));
+    core.setAcceptance("alpha");
+    await click("Alpha");
+    expect(verdict()).toContain("It holds");
+    await answer("open-guard", "Typed here.");
+
+    core.setAnswers("alpha", { "open-guard": "Saved there." });
+    const before = core.callsOf("read_judgment").length;
+    await ticker.fire();
+
+    expect(fieldOf("open-guard").value).toBe("Typed here.");
+    const asked = core.callsOf("read_judgment").slice(before);
+    expect(asked).toHaveLength(1);
+    expect((asked[0]?.["basis"] as Record<string, string>)["answers"]).toBe(core.revision("answers:1"));
+    expect(verdict()).toContain("not known yet");
+    expect(verdict()).not.toContain("It holds");
+
+    // The typing is undone: the answers saved elsewhere are shown, and SCE's word for them is said.
+    await answer("open-guard", "");
+    await ticker.fire();
+    expect(fieldOf("open-guard").value).toBe("Saved there.");
+    expect(verdict()).toContain("no longer holds");
   });
 
   it("recovers answers that could not be read when the work opened, at the next question", async () => {
@@ -3193,79 +3320,77 @@ describe("the sentence a question or a requirement is about", () => {
   const rowButton = (requirement: string, cls: string): HTMLButtonElement =>
     root.querySelector(`tr[data-requirement="${requirement}"] button.${cls}`) as HTMLButtonElement;
 
-  /** The revision of the requirement list the screen would accept against: the one the core holds now. */
+  /** The revision of the requirement list the core holds now: the one an accept would be matched against. */
   const listRevisionNow = async (): Promise<string> =>
-    ((await core.call("read_requirements", { id: "alpha" })) as { requirements: { revision: string } }).requirements
+    ((await core.call("read_work_snapshot", { id: "alpha" })) as { requirements: { revision: string } }).requirements
       .revision;
 
-  it("review previous regression: does not accept a new requirement list beside an old source quotation", async () => {
-    const slow = core.hold("requirements_report");
-    await click("Alpha");
-    expect(core.callsOf("read_requirements")).toHaveLength(1);
+  // The sentences are the list's and the outcomes are SCE's measure of that same list, which SCE
+  // is asked about by its revision: what the owner reads each requirement by is what SCE measured.
+  // The screens before this one read the list and the measure with a command each, and could show
+  // the sentences of one list beside the outcomes of another.
 
+  it("accepts nothing of a list that moved while SCE measured the one the owner is reading", async () => {
+    const slow = core.hold("read_judgment");
+    await click("Alpha");
+
+    // An authoring client saves another list, with other sentences, while SCE is asked.
     core.setRequirements("alpha", headOf("alpha"));
     core.setQuotes("alpha", { R1: SECOND, R2: FIRST });
     slow.release();
     await settle();
-    await settle();
 
-    const shownQuote = groundOfQuestion("open-guard")?.querySelector("blockquote")?.textContent;
-    if (shownQuote === FIRST) {
-      await click("Accept this design");
-      expect(core.callsOf("accept")).toHaveLength(0);
-    } else {
-      expect(shownQuote).toBe(SECOND);
-    }
+    // The sentence and the outcomes are of the list the screen read, which is the list SCE measured.
+    expect(groundOfQuestion("open-guard")?.querySelector("blockquote")?.textContent).toBe(FIRST);
+    await click("Accept this design");
+
+    // The core holds another list and accepts nothing of it: the owner never accepts a list beside
+    // the sentence of another. What is there now is read, with its own sentences.
+    expect(core.callsOf("accept")).toHaveLength(1);
+    expect(acceptanceText()).toContain("Nothing was accepted: requirements changed after you were shown it");
+    expect(acceptanceText()).toContain("Nothing has been accepted yet.");
+    expect(groundOfQuestion("open-guard")?.querySelector("blockquote")?.textContent).toBe(SECOND);
   });
 
-  it("reads the list again when it was saved while SCE measured it, so a sentence is of the list measured", async () => {
+  it("reads the list that moved at the next question, so a sentence is of the list measured and an accept is of it", async () => {
     // The text, the model and the answers stay the same; only the requirement list and the
-    // sentences it quotes change, after the old list was read and before SCE measures it.
-    const slow = core.hold("requirements_report");
+    // sentences it quotes change, after the old list was read.
     await click("Alpha");
-    expect(core.callsOf("read_requirements")).toHaveLength(1);
-
     core.setRequirements("alpha", headOf("alpha"));
     core.setQuotes("alpha", { R1: SECOND, R2: FIRST });
-    slow.release();
-    await settle();
-    await settle();
+    await ticker.fire();
 
     // The owner reads R1 by the sentence of the list SCE measured, and accepts that list.
-    expect(core.callsOf("read_requirements").length).toBeGreaterThan(1);
     expect(groundOfQuestion("open-guard")?.querySelector("blockquote")?.textContent).toBe(SECOND);
+    const asked = core.callsOf("read_judgment").at(-1)?.["basis"] as { requirements: string };
+    expect(asked.requirements).toBe(await listRevisionNow());
     await click("Accept this design");
     const accepted = core.callsOf("accept");
     expect(accepted).toHaveLength(1);
     expect((accepted[0]?.["expect"] as { requirements: string }).requirements).toBe(await listRevisionNow());
+    expect(acceptanceText()).toContain("It holds");
   });
 
-  it("shows no sentence and offers no accept while a list keeps moving, and settles when it stops", async () => {
-    // The list is saved again each time it is read, three times: the screen never holds a list that
-    // SCE measured. It does not show an old sentence beside the outcomes of another list, and it
-    // does not offer the accept; the next question reads the pair again and it settles.
-    const held = [0, 1, 2].map(() => core.hold("requirements_report"));
+  it("shows the sentence of each list SCE measured while the list keeps moving, and none while SCE has not", async () => {
     await click("Alpha");
-    for (const [i, gate] of held.entries()) {
+
+    for (const i of [0, 1, 2]) {
       core.setRequirements("alpha", headOf("alpha"));
       core.setQuotes("alpha", { R1: i % 2 === 0 ? SECOND : FIRST, R2: i % 2 === 0 ? FIRST : SECOND });
-      gate.release();
+      const asked = core.hold("read_judgment");
+      await ticker.fire();
+
+      // The list moved and SCE has not measured it: the sentence of the list before is not shown
+      // beside it, and nothing is offered to accept.
+      expect(groundOfQuestion("open-guard")).toBeNull();
+      expect(root.querySelector("#accept")).toBeNull();
+      asked.release();
       await settle();
+      expect(groundOfQuestion("open-guard")?.querySelector("blockquote")?.textContent).toBe(
+        i % 2 === 0 ? SECOND : FIRST,
+      );
+      expect(acceptButton().disabled).toBe(false);
     }
-    await settle();
-
-    expect(groundOfQuestion("open-guard")?.querySelector("blockquote")).toBeNull();
-    expect(acceptButton().disabled).toBe(true);
-    expect(acceptNote()).toContain("not the one the design was measured against");
-    acceptButton().click();
-    await settle();
-    expect(core.callsOf("accept")).toHaveLength(0);
-
-    await ticker.fire();
-    await settle();
-
-    expect(groundOfQuestion("open-guard")?.querySelector("blockquote")?.textContent).toBeTruthy();
-    expect(acceptButton().disabled).toBe(false);
   });
 
   it("is shown with each question the model asks inside a part a requirement is carried by", async () => {

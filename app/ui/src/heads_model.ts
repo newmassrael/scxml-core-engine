@@ -47,13 +47,12 @@ export interface WorkOnScreen {
   readonly requirements: OnScreen<ClaimedOnScreen>;
   readonly acceptance: OnScreen<Revision>;
   /**
-   * The states of the work the acceptance panel's reads name: the one SCE measured (the report's
-   * basis) and the one the acceptance's standing was judged of (`now`). Two reads that agree with
-   * each other can still both be of a state the work has left, and the acceptance record, which is
-   * all `acceptance` above compares, does not change when the model does. `undefined` when the
-   * panel has nothing read that names one.
+   * The revisions the acceptance panel's verdict and report are of, which SCE was asked about by
+   * name. The acceptance record, which is all `acceptance` above compares, does not change when the
+   * work does, and what the panel names includes the answers, which the screen may not hold to
+   * compare (they are being typed over). `undefined` when the panel has nothing read.
    */
-  readonly judged: readonly Basis[] | undefined;
+  readonly judged: Basis | undefined;
 }
 
 function sameHead(a: ClaimedHead | null, b: ClaimedHead | null): boolean {
@@ -97,9 +96,9 @@ export function movedParts(shown: WorkOnScreen, heads: WorkHeads): Part[] {
   if (claimedMoved(shown.model, heads.model, heads.source)) moved.push("model");
   if (claimedMoved(shown.requirements, heads.requirements, heads.source)) moved.push("requirements");
   // The acceptance record keeps its revision while the work it is judged against moves, so what
-  // the panel's reads name is compared with the heads too: against the core, and not against what
-  // is on screen, which can be the part that is behind (a text being typed over cannot be read).
-  const judgedOfAnother = shown.judged !== undefined && shown.judged.some((basis) => !basisIsOfTheHeads(basis, heads));
+  // the panel is of is compared with the heads too: against the core, and not against what is on
+  // screen, which can be the part that is behind (a text being typed over cannot be read).
+  const judgedOfAnother = shown.judged !== undefined && !basisIsOfTheHeads(shown.judged, heads);
   if (revisionMoved(shown.acceptance, heads.acceptance) || judgedOfAnother) moved.push("acceptance");
   return moved;
 }

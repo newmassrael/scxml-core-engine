@@ -10,7 +10,7 @@
 // later core may add some); missing or mistyped ones are not.
 
 /** The command set this screen was written for (`COMMAND_SET_VERSION` in the core). */
-export const SUPPORTED_COMMAND_SET_VERSION = 11;
+export const SUPPORTED_COMMAND_SET_VERSION = 12;
 
 /** A revision: the SHA-256 of a saved text, as 64 lowercase hex digits. */
 export type Revision = string;
@@ -271,6 +271,38 @@ export interface WorkSnapshot {
    * one generation is never shown beside a list of another.
    */
   readonly bundle: Revision | null;
+}
+
+/** SCE did not answer: the word a program branches on, its own words, and the code it refused with. */
+export interface Refusal {
+  readonly kind: string;
+  readonly message: string;
+  readonly code: string | null;
+}
+
+/** What SCE said, or that it did not answer. What was read is still what was read either way. */
+export type Judged<T> =
+  | { readonly said: true; readonly value: T }
+  | { readonly said: false; readonly refusal: Refusal };
+
+/** SCE's word on an acceptance that was made: whether it holds, and what moved when it does not. */
+export interface AcceptanceVerdict {
+  readonly standing: "holds" | "lapsed";
+  /** SCE's one sentence of what moved; `null` exactly when it holds. */
+  readonly lapse: string | null;
+}
+
+/**
+ * `read_judgment`: what SCE says of the revisions it was asked about, and of no other. A
+ * revision is never rewritten, so the answer is of the design that was read, whatever has been
+ * saved since; a screen that shows a work and then asks about the revisions it shows has a verdict
+ * that is of what it shows, and nothing to compare. `basis` is what was asked, echoed.
+ */
+export interface Judgment {
+  readonly basis: Basis;
+  /** `null` exactly when no acceptance was named. */
+  readonly acceptance: Judged<AcceptanceVerdict> | null;
+  readonly report: Judged<RequirementsReport>;
 }
 
 /**
@@ -816,8 +848,7 @@ export function parseReadRequirements(value: unknown): ReadRequirements {
 }
 
 /** `requirements_report`. */
-export function parseRequirementsReport(value: unknown): RequirementsReport {
-  const where = "requirements_report";
+export function parseRequirementsReport(value: unknown, where = "requirements_report"): RequirementsReport {
   const r = record(value, where);
   const generator = r["generator"];
   if (generator !== null && typeof generator !== "string") {
@@ -1181,6 +1212,61 @@ export function parseWorkSnapshot(value: unknown): WorkSnapshot {
     ),
     acceptance: acceptance === null ? null : parseAcceptanceRecord(acceptance, `${where}.acceptance`),
     bundle: nullableRevision(r["bundle"], `${where}.bundle`),
+  };
+}
+
+function parseRefusal(value: unknown, where: string): Refusal {
+  const r = record(value, where);
+  return { kind: text(r, "kind", where), message: text(r, "message", where), code: nullableText(r, "code", where) };
+}
+
+/** SCE's word, or that it did not answer: `{"said": ...}` or `{"refused": ...}`, never both and never neither. */
+function parseJudged<T>(value: unknown, where: string, said: (value: unknown, where: string) => T): Judged<T> {
+  const r = record(value, where);
+  const hasSaid = "said" in r;
+  const hasRefused = "refused" in r;
+  if (hasSaid === hasRefused) throw new ContractError(where, 'exactly one of "said" and "refused"');
+  if (hasRefused) return { said: false, refusal: parseRefusal(r["refused"], `${where}.refused`) };
+  return { said: true, value: said(r["said"], `${where}.said`) };
+}
+
+function parseAcceptanceVerdict(value: unknown, where: string): AcceptanceVerdict {
+  const r = record(value, where);
+  const state = r["standing"];
+  if (state !== "holds" && state !== "lapsed") throw new ContractError(`${where}.standing`, '"holds" or "lapsed"');
+  const lapse = nullableText(r, "lapse", where);
+  if ((state === "lapsed") !== (lapse !== null)) {
+    throw new ContractError(`${where}.lapse`, "SCE's sentence exactly when the acceptance lapsed");
+  }
+  return { standing: state, lapse };
+}
+
+/** Whether two bases name the same revision of the text, the model, the list and the answers. */
+export function sameBasis(a: Basis, b: Basis): boolean {
+  return a.source === b.source && a.model === b.model && a.requirements === b.requirements && a.answers === b.answers;
+}
+
+/**
+ * `read_judgment`. The guard holds the core to what makes a screen's comparisons unnecessary:
+ * the measure is of the same revisions the judgment names. That the judgment names the revisions
+ * that were asked about is the caller's to hold it to (`Api.readJudgment`), since only the caller
+ * knows what it asked.
+ */
+export function parseJudgment(value: unknown): Judgment {
+  const where = "read_judgment";
+  const r = record(value, where);
+  const basis = parseBasis(r["basis"], `${where}.basis`);
+  const accepted = r["acceptance"];
+  return {
+    basis,
+    acceptance: accepted === null ? null : parseJudged(accepted, `${where}.acceptance`, parseAcceptanceVerdict),
+    report: parseJudged(r["report"], `${where}.report`, (v, w) => {
+      const measured = parseRequirementsReport(v, w);
+      if (!sameBasis(measured.basis, basis)) {
+        throw new ContractError(`${w}.basis`, "the revisions the judgment names");
+      }
+      return measured;
+    }),
   };
 }
 

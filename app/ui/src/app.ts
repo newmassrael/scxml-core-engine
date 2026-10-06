@@ -9,12 +9,12 @@
 import {
   acceptRefused,
   accepting,
+  basisOf,
   gate,
   isUnsettled,
-  listIsTheOneMeasured,
-  readsAgree,
+  panelIsOf,
+  panelOf,
   standingIsOfWhatIsShown,
-  standingIsOfWhatWasMeasured,
   tally,
   type AcceptancePanel,
   type AcceptanceState,
@@ -42,6 +42,7 @@ import {
   SUPPORTED_COMMAND_SET_VERSION,
   isOpenRequest,
   type AdapterListing,
+  type Basis,
   type BundleRead,
   type Described,
   type GenerationRequest,
@@ -55,6 +56,7 @@ import {
   type Unresolved,
   type Work,
   type WorkHeads,
+  type WorkSnapshot,
 } from "./contract";
 import type { Desktop } from "./desktop";
 import { h, type Child } from "./dom";
@@ -100,9 +102,6 @@ import { nextDelay, WATCH_MS, type Ticker } from "./watch";
 
 const LOCALE_KEY = "sce.locale";
 const ZOOM_KEY = "sce.zoom";
-
-/** How many times the requirement list and SCE's measure of it are read again for a list that moved between the two. */
-const LIST_AND_MEASURE_ROUNDS = 3;
 
 /**
  * What came of reading a part of the work again because the core said it moved: it was read
@@ -374,7 +373,7 @@ export class App {
     }
     this.render();
     if (opened) {
-      void this.loadModel(work.id, true);
+      void this.loadWork(work.id, true);
       void this.loadAnswers(work.id);
       void this.loadRequest(work.id, this.session);
       this.watch();
@@ -662,18 +661,13 @@ export class App {
     const answers = moved.includes("answers") ? await this.refreshAnswers(work.id, session) : "held";
     if (answers === "failed") failed = true;
     if (session !== this.session) return;
-    // A model that moved, or whose text moved under it (`movedParts` says so), is read
-    // again, and the acceptance with it. Otherwise a list, an acceptance or answers that
-    // moved are the acceptance's to read again.
-    if (moved.includes("model")) {
-      const [model, acceptance] = await Promise.all([
-        this.loadModel(work.id, false, false),
-        this.loadAcceptance(work.id),
-      ]);
-      if (!model || !acceptance) failed = true;
-    } else if (moved.includes("requirements") || moved.includes("acceptance") || answers === "read") {
-      if (!(await this.loadAcceptance(work.id))) failed = true;
-    }
+    // A model, a list or an acceptance that moved, or whose text moved under it (`movedParts` says
+    // so), and answers that were read again, are the work's to read again: its model and the list
+    // and acceptance beside it come from one snapshot, and SCE is asked about that snapshot's
+    // revisions. A model that did not change is not drawn again.
+    const rereadWork =
+      moved.includes("model") || moved.includes("requirements") || moved.includes("acceptance") || answers === "read";
+    if (rereadWork && !(await this.loadWork(work.id, false))) failed = true;
     if (failed) throw new ReadAgainFailed();
   }
 
@@ -689,11 +683,6 @@ export class App {
     const model = this.model;
     const panel = this.acceptance;
     const list = panel !== null && panel.phase === "read" && !panel.state.accepting ? panel.state : null;
-    // Reads that were not of one state of the work (it kept moving while they were asked for) are
-    // compared as unread. As what they show they would equal what the core says, since the model
-    // on screen is the core's and the acceptance record has not changed, and nothing would ask
-    // again; but the standing they carry was judged of another model.
-    const unmatched = list !== null && !readsAgree(list);
     return {
       source: editor === null || editor.phase !== "idle" || isDirty(editor) ? undefined : editor.base,
       model:
@@ -720,7 +709,7 @@ export class App {
           ? undefined
           : panel.phase === "no-list"
             ? null
-            : panel.phase === "failed" || unmatched
+            : panel.phase === "failed"
               ? UNREAD
               : list === null
                 ? undefined
@@ -738,20 +727,14 @@ export class App {
           ? undefined
           : panel.phase === "no-list"
             ? null
-            : panel.phase === "failed" || unmatched
+            : panel.phase === "failed"
               ? UNREAD
               : list === null
                 ? undefined
                 : (list.acceptance.acceptance?.revision ?? null),
-      // What the panel's reads name, to be compared with the core's heads: two reads that agree
-      // can both be of a work that has moved on since, which the record's revision cannot tell.
-      judged:
-        list === null
-          ? undefined
-          : [
-              ...(list.report === null ? [] : [list.report.basis]),
-              ...(list.acceptance.now === null ? [] : [list.acceptance.now]),
-            ],
+      // What the panel is of, to be compared with the core's heads: the acceptance record keeps its
+      // revision while the work moves, which the answers it was judged with are part of.
+      judged: list === null ? undefined : list.basis,
     };
   }
 
@@ -889,7 +872,7 @@ export class App {
     this.render();
     // The owner's answers are part of what an acceptance is of, so what they now say
     // moves whether it holds.
-    if (session === this.session) void this.loadAcceptance(work.id);
+    if (session === this.session) void this.loadWork(work.id, false);
   }
 
   /** The save button and its words follow every keystroke, without redrawing the field being typed in. */
@@ -914,74 +897,141 @@ export class App {
   }
 
   /**
-   * Read the work's model, and have SCE draw it.
+   * Read the work as one state, show its model, and ask SCE about the revisions that state is
+   * made of, and have SCE draw the model.
    *
-   * Only the newest request, for the work and the editor that asked, is applied.
-   * `redraw` is false after a save of the text, which moves where the model
-   * stands but not the model: its sheets are kept, and SCE is not run again for
-   * an answer it has already given.
+   * The model, the requirement list and the acceptance record come from one snapshot, and what
+   * SCE says (whether the acceptance holds, how the design measures against the list) is asked
+   * of that snapshot's revisions by name. A verdict is therefore of the design beside it and of no
+   * other, and nothing here compares one read with another to find that out. SCE is asked after
+   * the work is read, so the model is shown without waiting for it.
+   *
+   * Only the newest request, for the work and the editor that asked, is applied. `redraw` is
+   * false after a save of the text, which moves where the model stands but not the model: its
+   * sheets are kept, and SCE is not run again for an answer it has already given. Answers
+   * whether everything asked was read, which is the watch's to ask about again when it was not.
    */
-  private async loadModel(id: string, redraw: boolean, alsoAcceptance = true): Promise<boolean> {
+  private async loadWork(id: string, redraw: boolean): Promise<boolean> {
     const session = this.session;
     const ticket = ++this.modelTicket;
     const current = (): boolean => session === this.session && ticket === this.modelTicket;
     const prior = this.model;
+    let snapshot: WorkSnapshot;
     try {
-      const read = await this.api.readModel(id);
-      if (!current()) return true;
-      if (read.model === null || read.standing === null) {
-        this.model = { phase: "none" };
-        this.reviewTicket += 1;
-        this.review = null;
-        this.acceptanceTicket += 1;
-        this.acceptance = null;
-        this.render();
-        return true;
-      }
-      // The text and the model are read apart, and the work may have been saved between the two
-      // reads: the model is then of a text the editor does not hold. When the person holds
-      // nothing in the editor it is read again before the two are shown together; when it cannot
-      // be, `standingBanner` says the model was read beside another text, and never "current".
-      if (read.source_head !== null && this.editor !== null && this.editor.base !== read.source_head) {
-        await this.refreshSource(id, session);
-        if (!current()) return true;
-      }
-      const known: ModelRead = { model: read.model, standing: read.standing, sourceHead: read.source_head };
-      // What was accepted is of the model as it is now, and the text may have moved
-      // under it: asked again whenever the model is read, drawn again or not.
-      if (alsoAcceptance) void this.loadAcceptance(id);
-      if (!redraw && prior?.phase === "drawn" && prior.read.model.revision === known.model.revision) {
-        this.model = { phase: "drawn", read: known, figures: prior.figures };
-        this.render();
-        return true;
-      }
-      this.model = { phase: "drawing", read: known };
-      // SCE's check and page are asked for beside the drawing and answer in their
-      // own time: a model that is slow to draw does not hold the page back.
-      void this.loadReview(id, known.model.revision);
-      this.render();
-      try {
-        // SCE draws in the language the screen is in: its page vocabularies are
-        // named as the screen's languages are (`en`, `ko`).
-        const figures = await this.api.figures(id, known.model.revision, this.locale);
-        if (!current()) return true;
-        this.model = { phase: "drawn", read: known, figures };
-      } catch (error) {
-        if (!current()) return true;
-        const failure = drawFailureOf(error);
-        if (failure === null) throw error;
-        this.model = { phase: "not-drawn", read: known, failure };
-      }
+      snapshot = await this.api.readWorkSnapshot(id);
     } catch (error) {
       if (!current()) return true;
-      // A token wanted is the sign-in form's to answer; anything else is the
-      // panel's own message, so it does not look like the work has no model.
-      if (!this.askForToken(error)) this.model = { phase: "failed", message: this.explain(error) };
+      // A token wanted is the sign-in form's to answer; anything else is the panels' own message,
+      // so it does not look like the work has no model.
+      if (!this.askForToken(error)) {
+        const message = this.explain(error);
+        this.model = { phase: "failed", message };
+        this.acceptance = { phase: "failed", message };
+      }
+      this.render();
+      return false;
+    }
+    if (!current()) return true;
+    const { model } = snapshot;
+    if (model === null || snapshot.model_standing === null) {
+      this.model = { phase: "none" };
+      this.reviewTicket += 1;
+      this.review = null;
+      this.acceptanceTicket += 1;
+      this.acceptance = null;
+      this.render();
+      return true;
+    }
+    // The text and the model are read in one state, but the editor holds the text it read when the
+    // work opened, and the work may have been saved since: the model is then of a text the editor
+    // does not hold. When the person holds nothing in the editor it is read again before the two
+    // are shown together; when it cannot be, `standingBanner` says the model was read beside
+    // another text, and never "current".
+    const sourceHead = snapshot.source?.revision ?? null;
+    if (sourceHead !== null && this.editor !== null && this.editor.base !== sourceHead) {
+      await this.refreshSource(id, session);
+      if (!current()) return true;
+    }
+    const known: ModelRead = { model, standing: snapshot.model_standing, sourceHead };
+    // The panel beside this model is set before the model is shown, and the two are drawn once.
+    const judging = this.askAbout(id, snapshot);
+    if (!redraw && prior?.phase === "drawn" && prior.read.model.revision === known.model.revision) {
+      this.model = { phase: "drawn", read: known, figures: prior.figures };
+      this.render();
+      return judging;
+    }
+    this.model = { phase: "drawing", read: known };
+    // SCE's check and page are asked for beside the drawing and answer in their
+    // own time: a model that is slow to draw does not hold the page back.
+    void this.loadReview(id, known.model.revision);
+    this.render();
+    let drawn = true;
+    try {
+      // SCE draws in the language the screen is in: its page vocabularies are
+      // named as the screen's languages are (`en`, `ko`).
+      const figures = await this.api.figures(id, known.model.revision, this.locale);
+      if (!current()) return true;
+      this.model = { phase: "drawn", read: known, figures };
+    } catch (error) {
+      if (!current()) return true;
+      const failure = drawFailureOf(error);
+      if (failure !== null) {
+        this.model = { phase: "not-drawn", read: known, failure };
+      } else {
+        if (!this.askForToken(error)) this.model = { phase: "failed", message: this.explain(error) };
+        drawn = false;
+      }
+    }
+    this.render();
+    return (await judging) && drawn;
+  }
+
+  /**
+   * Ask SCE about the revisions of the work `snapshot` holds, and set the panel beside its model.
+   * A panel already on screen stays while the answer is on its way when it is of this snapshot
+   * (a reread after a save does not flash a "reading" over what the person is looking at); one
+   * that is of other revisions is not shown beside this model, since a verdict of one design beside
+   * another is a false statement about what the owner is looking at. A work with no requirement
+   * list has nothing to accept a design against, and says so instead of showing an empty table.
+   */
+  private askAbout(id: string, snapshot: WorkSnapshot): Promise<boolean> {
+    const ticket = ++this.acceptanceTicket;
+    const basis = basisOf(snapshot);
+    if (basis === null) {
+      this.acceptance = { phase: "no-list" };
+      return Promise.resolve(true);
+    }
+    const panel = this.acceptance;
+    if (panel === null || panel.phase !== "read" || !panelIsOf(panel.state, snapshot)) {
+      this.acceptance = { phase: "reading" };
+    }
+    return this.loadJudgment(id, snapshot, basis, ticket);
+  }
+
+  /**
+   * SCE's word on the revisions `basis` names, beside `snapshot`. SCE not measuring does not hide
+   * an acceptance the owner made: it is a state of the panel, and so is the owner's acceptance
+   * whose standing SCE did not give, which is not guessed at. Anything else (the server
+   * unreachable, a wrong token, an answer in a shape this screen does not know) is the panel's own
+   * message. Only the newest request, for the editor that asked, is applied.
+   */
+  private async loadJudgment(id: string, snapshot: WorkSnapshot, basis: Basis, ticket: number): Promise<boolean> {
+    const session = this.session;
+    const current = (): boolean => session === this.session && ticket === this.acceptanceTicket;
+    try {
+      const judgment = await this.api.readJudgment(id, basis, snapshot.acceptance?.revision ?? null);
+      if (!current()) return true;
+      this.acceptance = panelOf(snapshot, judgment);
+    } catch (error) {
+      if (!current()) return true;
+      // A token wanted is the sign-in form's to answer; anything else is the panel's own message.
+      if (this.askForToken(error)) return false;
+      this.acceptance = { phase: "failed", message: this.explain(error) };
       this.render();
       return false;
     }
     this.render();
-    return true;
+    return this.acceptance.phase === "read";
   }
 
   /**
@@ -1085,83 +1135,6 @@ export class App {
   }
 
   /**
-   * Read the requirement list, SCE's measure of the design against it, and whether the
-   * owner's acceptance still holds. SCE not measuring does not hide an acceptance the
-   * owner made, and a work with no list says so instead of showing an empty table.
-   * Only the newest request, for the editor that asked, is applied.
-   */
-  private async loadAcceptance(id: string): Promise<boolean> {
-    const session = this.session;
-    const ticket = ++this.acceptanceTicket;
-    const current = (): boolean => session === this.session && ticket === this.acceptanceTicket;
-    // A panel already on screen stays until the new answer replaces it: a reread after
-    // an accept or a save does not flash a "reading" over what the person is looking at.
-    if (this.acceptance === null) this.acceptance = { phase: "reading" };
-    try {
-      // The list, SCE's measure and the acceptance's standing are asked for apart, and the work can
-      // be saved between them: a list saved after it was read is not the one SCE measured (its
-      // sentences would sit beside the outcomes of another list), and a model saved while the
-      // standing was read leaves a "holds" or a "lapsed" that was judged of another model. They
-      // are read again, up to a few times, until the measure is of the list that was read and the
-      // standing is of the work that was measured. What keeps moving leaves the last reads on
-      // screen as they are, said not to agree (`gate` withholds the accept, `grounding` shows no
-      // sentence and `acceptedBanner` does not say whether the acceptance holds), and the failure
-      // is the watch's to ask about again.
-      let state: AcceptanceState | null = null;
-      for (let round = 1; round <= LIST_AND_MEASURE_ROUNDS; round += 1) {
-        const list = await this.api.readRequirements(id);
-        if (!current()) return true;
-        if (list.requirements === null) {
-          this.acceptance = { phase: "no-list" };
-          this.render();
-          return true;
-        }
-        const [acceptance, measured] = await Promise.all([this.api.readAcceptance(id), this.measure(id)]);
-        if (!current()) return true;
-        state = {
-          list,
-          acceptance,
-          report: measured.report,
-          measureFailure: measured.failure,
-          accepting: false,
-          refusal: null,
-        };
-        if (readsAgree(state)) break;
-      }
-      if (state === null) return true;
-      this.acceptance = { phase: "read", state };
-      if (!readsAgree(state)) {
-        this.render();
-        return false;
-      }
-    } catch (error) {
-      if (!current()) return true;
-      // A token wanted is the sign-in form's to answer; anything else is the panel's own message.
-      if (this.askForToken(error)) return false;
-      this.acceptance = { phase: "failed", message: this.explain(error) };
-      this.render();
-      return false;
-    }
-    this.render();
-    return true;
-  }
-
-  /**
-   * SCE's measure of the design against the list. SCE saying no, or nothing, is a state
-   * of the panel (`failure`); anything else (the server unreachable, a wrong token, an
-   * answer in a shape this screen does not know) is thrown for the caller to report.
-   */
-  private async measure(id: string): Promise<{ report: RequirementsReport | null; failure: string | null }> {
-    try {
-      return { report: await this.api.requirementsReport(id), failure: null };
-    } catch (error) {
-      const failure = drawFailureOf(error);
-      if (failure === null) throw error;
-      return { report: null, failure: failure.message };
-    }
-  }
-
-  /**
    * The owner pressed accept on the page they were shown. What they were shown (the
    * revisions in its `basis`) is what is sent, and the core accepts it only if all of
    * it is still what is saved. Whatever the answer, what is there NOW is read and
@@ -1185,18 +1158,15 @@ export class App {
       if (this.askForToken(error)) return;
       refusal = this.explain(error);
     }
-    await this.loadAcceptance(work.id);
+    // What is there NOW is read, the design with the page beside it, so that what the owner is
+    // looking at is what the next press would accept: `gate` holds the button until it is.
+    await this.loadWork(work.id, false);
     if (session !== this.session || refusal === null) return;
     const now = this.acceptance;
     if (now !== null && now.phase === "read") {
       this.acceptance = { phase: "read", state: acceptRefused(now.state, refusal) };
       this.render();
     }
-    // The core named what it holds now. The page was read again above; the design the
-    // screen draws is read again here (the page is not measured a second time), so that
-    // what the owner is looking at is what the next press would accept: `gate` holds the
-    // button until it is.
-    void this.loadModel(work.id, false, false);
   }
 
   private async create(title: string): Promise<void> {
@@ -1345,7 +1315,7 @@ export class App {
     this.render();
     // The text moved, so where the model stands may have: asked again, and not
     // drawn again unless the model itself changed.
-    if (session === this.session) void this.loadModel(request.id, false);
+    if (session === this.session) void this.loadWork(request.id, false);
   }
 
   private async takeTheirs(): Promise<void> {
@@ -1430,7 +1400,7 @@ export class App {
     // What SCE drew was drawn in the other language: it draws again in this one.
     const model = this.model;
     if (this.selected !== null && model !== null && (model.phase === "drawn" || model.phase === "not-drawn")) {
-      void this.loadModel(this.selected.id, true);
+      void this.loadWork(this.selected.id, true);
     }
   }
 
@@ -2042,7 +2012,7 @@ export class App {
         h("h3", {}, this.t("modelTitle")),
         h(
           "button",
-          { type: "button", disabled: busy, onclick: () => void this.loadModel(work.id, true) },
+          { type: "button", disabled: busy, onclick: () => void this.loadWork(work.id, true) },
           this.t("modelRead"),
         ),
         model !== null && model.phase === "drawn" ? this.zoomControl() : null,
@@ -2206,18 +2176,17 @@ export class App {
 
   /**
    * Whether the owner has accepted, whether it still holds, and what SCE listed as open when they
-   * did. Whether it holds is SCE's word about the work as it was when it was asked, and is said
-   * only of the work SCE measured beside it and of the work on screen: when the reads were of
-   * different states of the work, or both of a state that is not the one shown (the design on
-   * screen is read last when its read was the slow one), the acceptance is shown as not yet
-   * checked, and is neither held nor lapsed.
+   * did. Whether it holds is SCE's word about the revisions it was asked about, which are those of
+   * the snapshot the model beside it was read in. It is said of the work on screen: when the text or
+   * the answers on screen (which the person edits, and are read apart) are not the ones it was asked
+   * about, the acceptance is shown as not yet checked, and is neither held nor lapsed.
    */
   private acceptedBanner(state: AcceptanceState): HTMLElement {
     const read = state.acceptance;
     const held = read.acceptance;
     if (held === null) return h("p", { class: "muted" }, this.t("acceptedNone"));
     const time = formatTime(held.accepted_at, this.locale);
-    const checked = standingIsOfWhatWasMeasured(state) && standingIsOfWhatIsShown(state, this.shown());
+    const checked = standingIsOfWhatIsShown(state, this.shown());
     return h(
       "div",
       { class: "accepted" },
@@ -2560,10 +2529,9 @@ export class App {
     if (panel === null || panel.phase !== "read") return null;
     const report = panel.state.report;
     if (report === null) return null;
-    // A sentence is the list's and the outcomes are the measure's: only a measure of this very list
-    // says what a sentence is about. Of two lists, no sentence is shown rather than an old one.
-    const quotes = listIsTheOneMeasured(panel.state) ? quotesOf(panel.state.list.requirements?.sidecar ?? null) : {};
-    return { outcomes: report.outcomes, quotes };
+    // A sentence is the list's and the outcomes are the measure's: the measure was asked of this
+    // very list's revision, so what a sentence is about is what the measure says it is.
+    return { outcomes: report.outcomes, quotes: quotesOf(panel.state.list.requirements?.sidecar ?? null) };
   }
 
   /** The sentence of the text a question is about, with the way to it. Nothing when none can be told. */

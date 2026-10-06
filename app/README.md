@@ -134,7 +134,26 @@ Each part of the answer is what the command that reads that chain answers, in th
 words: `source`, `model` with `model_standing`, `answers`, `requirements` with
 `requirements_standing`, and `acceptance` as it was saved. It does not say whether the
 acceptance still holds. That is the product's to say and asking it is not a read of the
-folder, so the screen still asks `read_acceptance` for it.
+folder.
+
+`read_judgment` is what SCE says of revisions that were read: it takes the `basis` (the
+revisions of the text, the model, the list and the answers, as the snapshot gave them) and
+the revision of the acceptance when there is one, and answers whether that acceptance holds
+for exactly those revisions (`acceptance`, `null` when none was named) and SCE's measure of
+that design against that list (`report`, in the words of `requirements_report`). A revision's
+file is never rewritten, so the answer is of the revisions named and of no other, whatever has
+been saved since; one the work does not keep is `not-found`. Each of the two is
+`{"said": ...}`, or `{"refused": ...}` when SCE did not answer: a design SCE cannot draw is
+still the design, and the screen has it from the snapshot. The core answers `basis` as it
+read it, and the screen refuses an answer that names other revisions than it asked about
+(`Api.readJudgment`), as a broken contract and not as a verdict to show.
+
+That is what keeps a verdict beside the design it is of. The screen reads the work as one
+snapshot and then asks SCE about that snapshot's revisions by name, so it does not need the
+core to judge the work "as it stands" (`read_acceptance`, `requirements_report`, which still
+do) and then compare what came back with what it shows: those are asked a moment apart, and a
+save lands between them. The snapshot needs no SCE, so the model is shown without waiting for
+it.
 
 `read_work_heads` is the same read without the texts: the revision at the head of each
 chain and, for the model and the requirement list, the source each was written for. The
@@ -149,7 +168,10 @@ the answer with what is ON SCREEN, not with the previous answer: its own save mo
 head and the screen shows the saved text a moment later, and that is not a change from
 elsewhere. What differs is read again, and only that: a model or a list an authoring
 client saved, a text or answers saved from another window, an acceptance made elsewhere.
-A model that is the same revision is not drawn again.
+A model that is the same revision is not drawn again. A model, a list or an acceptance that
+moved is read again as the work: the snapshot is read and SCE is asked about its revisions,
+so the design, the list and the verdict beside them are of one state. Answers that were read
+again are asked about too, since they are part of what an acceptance is of.
 
 What the person typed is never replaced. A text or answers they are typing are left as
 they are, and the conflict a save would meet stays theirs to resolve; when they hold
@@ -594,30 +616,31 @@ What this does not claim, stated so nothing on the screen is read as more:
   being read: the screen is read again before it can be accepted). An answer sheet the
   screen has not read yet is not "no answers": the button waits for it and says so
   (`unread`), because a page measured with answers cannot be shown against none.
-- **The list is the one that was measured.** The requirement list and SCE's measure of it
-  are asked for apart, and a list saved between the two is not the one SCE measured: the
-  sentences the screen quotes would be of one list, and the outcomes and the basis an accept
-  names of another, so the owner would read a requirement by a sentence of the old list and
-  accept the new one. The list read is therefore held to the measure's basis (`requirements`
-  is part of what the button compares). When they differ the pair is read again, three
-  times at most, and a list that keeps moving shows no sentence and offers no accept until a
-  later question reads a pair that agrees.
-- **Whether the acceptance holds is said of the work that was measured.** `read_acceptance`
-  says whether an acceptance still holds and names, as `now`, the work it judged; the report
-  names the work it measured as its `basis`. Both come from the same reading of the work, and
-  they are asked for apart, so a model saved between the two leaves a "holds" beside a design it
-  was not judged of, or a "lapsed" of the model before it was put back, and nothing about the
-  acceptance record changes for a later question to notice. The screen does not work the
-  standing out itself; it holds `now` to the basis and reads the pair again, three times at
-  most. What still differs is shown as not known yet (neither held nor lapsed), the accept
-  waits (`unread`), and the next question reads it again because the part is compared as unread.
-  Two reads that agree with each other can still both be of a work that has moved on, and the
-  design on screen is read last when its read was the slow one: a "holds" judged of the model
-  before, beside the model after. So the reads' bases are also held to the core's heads on every
-  question (the record's revision does not change when the model does), and to the work on
-  screen: the standing is said only when every part the screen has is the one it was judged of.
-  The heads are the core's, not the screen's, so a text being typed over, which cannot be read
-  again, does not make the panel read the pair again every two seconds.
+- **The measure, the standing and the sentences are of the design beside them.** The screen
+  reads the work as one snapshot (`read_work_snapshot`): the design, the requirement list and
+  the acceptance record are of one state. It then asks SCE (`read_judgment`) about that
+  snapshot's revisions by name, so the outcomes, whether the acceptance holds and the basis an
+  accept names are of the design and the list on screen, and the sentences the screen quotes
+  are the list's own. Nothing is compared to find that out. What the screens before this one
+  did was read the list, the measure and the standing with a command each, each of the work as
+  it stood when it was asked, and compare them: a save landing between two of the reads
+  handed them a sentence of one list beside the outcomes of another, then a "holds" beside a
+  design that had changed, then a "lapsed" beside one that was put back, and each comparison
+  closed the case before it.
+- **A panel is shown only beside the snapshot it is of.** When the work is read again the panel
+  stays while SCE is asked if it is of that snapshot (the same revisions and the same
+  acceptance), so a reread after a save does not flash. When it is not, it is replaced by
+  "reading" at once: the old verdict is not left beside the new design for as long as SCE takes
+  to answer, and a verdict that arrives for a read that has since been replaced is dropped.
+  SCE is asked after the work is read, so the design is shown without waiting for it.
+- **What the screen cannot read for the person is still compared.** The text and the answers
+  are the person's: they are typed over and are read apart from the design, so what the panel
+  is of can differ from what is on screen. The accept button waits for them (`differs`,
+  `unread`), and whether the acceptance holds is not said of a text or answers that are not the
+  ones it was judged of: it is shown as not known yet, neither held nor lapsed. What the panel
+  is of is also compared with the core's heads on every question, because the acceptance
+  record keeps its revision while the work moves and the answers it is of may be the part the
+  screen cannot read; a panel of a work the core has left is asked for again.
 
 ## Seeing the screen
 

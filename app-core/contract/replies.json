@@ -104,7 +104,7 @@
       "title": "Door lock"
     },
     "describe": {
-      "command_set_version": 11,
+      "command_set_version": 12,
       "commands": [
         "describe",
         "list_works",
@@ -126,6 +126,7 @@
         "requirements_report",
         "accept",
         "read_acceptance",
+        "read_judgment",
         "read_work_snapshot",
         "read_work_heads",
         "request_generation",
@@ -526,6 +527,210 @@
     "read_host_status_none": {
       "hosts": [],
       "unreadable": []
+    },
+    "read_judgment_accepted": {
+      "acceptance": {
+        "said": {
+          "lapse": null,
+          "standing": "holds"
+        }
+      },
+      "basis": {
+        "model": "d04a9a83aac49bced5e6628fcf2579eb56ff8ba6016cb3d53f04e2212285bcc2",
+        "requirements": "4d86ca1649ee720dca5c51bc7817f96f64c1b8dc23e0b528b7b82715b0fd2a6d",
+        "source": "00277e3a4c223a2ec90dd8eebf4d691b8d266dac58f270f25f5201e314803d44"
+      },
+      "report": {
+        "said": {
+          "basis": {
+            "model": "d04a9a83aac49bced5e6628fcf2579eb56ff8ba6016cb3d53f04e2212285bcc2",
+            "requirements": "4d86ca1649ee720dca5c51bc7817f96f64c1b8dc23e0b528b7b82715b0fd2a6d",
+            "source": "00277e3a4c223a2ec90dd8eebf4d691b8d266dac58f270f25f5201e314803d44"
+          },
+          "denominator": "synthesized",
+          "generator": "fake-sce 0",
+          "model_standing": "current",
+          "outcomes": [
+            {
+              "id": "R1",
+              "node_paths": [
+                "states.s0"
+              ],
+              "outcome": "implemented",
+              "section": "S1"
+            },
+            {
+              "id": "R2",
+              "node_paths": [
+                "states.s1"
+              ],
+              "outcome": "implemented",
+              "section": "S2"
+            }
+          ],
+          "page": "ACCEPTANCE REPORT of 2 requirement(s)\n",
+          "page_refusal": null,
+          "requirements_standing": "current",
+          "source_head": "00277e3a4c223a2ec90dd8eebf4d691b8d266dac58f270f25f5201e314803d44"
+        }
+      }
+    },
+    "read_judgment_lapsed": {
+      "acceptance": {
+        "said": {
+          "lapse": "design/model.scxml moved",
+          "standing": "lapsed"
+        }
+      },
+      "basis": {
+        "model": "0c2ab3203427b9e511dd0e7e6036bebbb82f82ca844dd999705fb2d51cfd3bca",
+        "requirements": "4d86ca1649ee720dca5c51bc7817f96f64c1b8dc23e0b528b7b82715b0fd2a6d",
+        "source": "00277e3a4c223a2ec90dd8eebf4d691b8d266dac58f270f25f5201e314803d44"
+      },
+      "report": {
+        "said": {
+          "basis": {
+            "model": "0c2ab3203427b9e511dd0e7e6036bebbb82f82ca844dd999705fb2d51cfd3bca",
+            "requirements": "4d86ca1649ee720dca5c51bc7817f96f64c1b8dc23e0b528b7b82715b0fd2a6d",
+            "source": "00277e3a4c223a2ec90dd8eebf4d691b8d266dac58f270f25f5201e314803d44"
+          },
+          "denominator": "synthesized",
+          "generator": "fake-sce 0",
+          "model_standing": "current",
+          "outcomes": [
+            {
+              "id": "R1",
+              "node_paths": [
+                "states.s0"
+              ],
+              "outcome": "implemented",
+              "section": "S1"
+            },
+            {
+              "id": "R2",
+              "node_paths": [
+                "states.s1"
+              ],
+              "outcome": "implemented",
+              "section": "S2"
+            }
+          ],
+          "page": "ACCEPTANCE REPORT of 2 requirement(s)\n",
+          "page_refusal": null,
+          "requirements_standing": "current",
+          "source_head": "00277e3a4c223a2ec90dd8eebf4d691b8d266dac58f270f25f5201e314803d44"
+        }
+      }
+    },
+    "read_judgment_of_an_earlier_state": {
+      "acceptance": {
+        "said": {
+          "lapse": null,
+          "standing": "holds"
+        }
+      },
+      "basis": {
+        "model": "d04a9a83aac49bced5e6628fcf2579eb56ff8ba6016cb3d53f04e2212285bcc2",
+        "requirements": "4d86ca1649ee720dca5c51bc7817f96f64c1b8dc23e0b528b7b82715b0fd2a6d",
+        "source": "00277e3a4c223a2ec90dd8eebf4d691b8d266dac58f270f25f5201e314803d44"
+      },
+      "report": {
+        "said": {
+          "basis": {
+            "model": "d04a9a83aac49bced5e6628fcf2579eb56ff8ba6016cb3d53f04e2212285bcc2",
+            "requirements": "4d86ca1649ee720dca5c51bc7817f96f64c1b8dc23e0b528b7b82715b0fd2a6d",
+            "source": "00277e3a4c223a2ec90dd8eebf4d691b8d266dac58f270f25f5201e314803d44"
+          },
+          "denominator": "synthesized",
+          "generator": "fake-sce 0",
+          "model_standing": "current",
+          "outcomes": [
+            {
+              "id": "R1",
+              "node_paths": [
+                "states.s0"
+              ],
+              "outcome": "implemented",
+              "section": "S1"
+            },
+            {
+              "id": "R2",
+              "node_paths": [
+                "states.s1"
+              ],
+              "outcome": "implemented",
+              "section": "S2"
+            }
+          ],
+          "page": "ACCEPTANCE REPORT of 2 requirement(s)\n",
+          "page_refusal": null,
+          "requirements_standing": "current",
+          "source_head": "00277e3a4c223a2ec90dd8eebf4d691b8d266dac58f270f25f5201e314803d44"
+        }
+      }
+    },
+    "read_judgment_unaccepted": {
+      "acceptance": null,
+      "basis": {
+        "model": "d04a9a83aac49bced5e6628fcf2579eb56ff8ba6016cb3d53f04e2212285bcc2",
+        "requirements": "4d86ca1649ee720dca5c51bc7817f96f64c1b8dc23e0b528b7b82715b0fd2a6d",
+        "source": "00277e3a4c223a2ec90dd8eebf4d691b8d266dac58f270f25f5201e314803d44"
+      },
+      "report": {
+        "said": {
+          "basis": {
+            "model": "d04a9a83aac49bced5e6628fcf2579eb56ff8ba6016cb3d53f04e2212285bcc2",
+            "requirements": "4d86ca1649ee720dca5c51bc7817f96f64c1b8dc23e0b528b7b82715b0fd2a6d",
+            "source": "00277e3a4c223a2ec90dd8eebf4d691b8d266dac58f270f25f5201e314803d44"
+          },
+          "denominator": "synthesized",
+          "generator": "fake-sce 0",
+          "model_standing": "current",
+          "outcomes": [
+            {
+              "id": "R1",
+              "node_paths": [
+                "states.s0"
+              ],
+              "outcome": "implemented",
+              "section": "S1"
+            },
+            {
+              "id": "R2",
+              "node_paths": [
+                "states.s1"
+              ],
+              "outcome": "implemented",
+              "section": "S2"
+            }
+          ],
+          "page": "ACCEPTANCE REPORT of 2 requirement(s)\n",
+          "page_refusal": null,
+          "requirements_standing": "current",
+          "source_head": "00277e3a4c223a2ec90dd8eebf4d691b8d266dac58f270f25f5201e314803d44"
+        }
+      }
+    },
+    "read_judgment_unanswered": {
+      "acceptance": {
+        "refused": {
+          "code": null,
+          "kind": "sce-timeout",
+          "message": "the SCE generator did not finish in 30 s and was stopped"
+        }
+      },
+      "basis": {
+        "model": "d04a9a83aac49bced5e6628fcf2579eb56ff8ba6016cb3d53f04e2212285bcc2",
+        "requirements": "4d86ca1649ee720dca5c51bc7817f96f64c1b8dc23e0b528b7b82715b0fd2a6d",
+        "source": "00277e3a4c223a2ec90dd8eebf4d691b8d266dac58f270f25f5201e314803d44"
+      },
+      "report": {
+        "refused": {
+          "code": null,
+          "kind": "sce-timeout",
+          "message": "the SCE generator did not finish in 30 s and was stopped"
+        }
+      }
     },
     "read_model": {
       "model": {
@@ -1128,7 +1333,7 @@
       "revision": "06e8bce08f5a905f2b94bdf2c9aef34ac42a4f59885f7f040872c7f73a98c0dc"
     }
   },
-  "command_set_version": 11,
+  "command_set_version": 12,
   "refusals": {
     "active-request": {
       "detail": {
@@ -1317,7 +1522,7 @@
     },
     "unknown-command": {
       "kind": "unknown-command",
-      "message": "`nope` is not a command; the commands are describe, list_works, create_work, read_work, read_source, save_source, history, save_model, read_model, model_history, figures, remove_work, review, read_answers, save_answers, save_requirements, read_requirements, requirements_report, accept, read_acceptance, read_work_snapshot, read_work_heads, request_generation, read_request, list_requests, list_open_requests, claim_request, heartbeat_request, save_request_candidate, read_request_candidate, complete_request, fail_request, cancel_request, report_adapter, read_adapter_status, read_host_status, read_bundle, bundle_history"
+      "message": "`nope` is not a command; the commands are describe, list_works, create_work, read_work, read_source, save_source, history, save_model, read_model, model_history, figures, remove_work, review, read_answers, save_answers, save_requirements, read_requirements, requirements_report, accept, read_acceptance, read_judgment, read_work_snapshot, read_work_heads, request_generation, read_request, list_requests, list_open_requests, claim_request, heartbeat_request, save_request_candidate, read_request_candidate, complete_request, fail_request, cancel_request, report_adapter, read_adapter_status, read_host_status, read_bundle, bundle_history"
     }
   }
 }

@@ -11,7 +11,17 @@
 // accept, and is not refused for it. Pure, like the answers' model, so each way the
 // button is withheld is a test.
 
-import type { Basis, ReadAcceptance, ReadRequirements, RequirementOutcome, RequirementsReport } from "./contract";
+import {
+  ContractError,
+  sameBasis,
+  type Basis,
+  type Judgment,
+  type ReadAcceptance,
+  type ReadRequirements,
+  type RequirementOutcome,
+  type RequirementsReport,
+  type WorkSnapshot,
+} from "./contract";
 
 /** Where the panel is. */
 export type AcceptancePanel =
@@ -24,6 +34,11 @@ export type AcceptancePanel =
 
 /** A work that has a list, and what is known of it. */
 export interface AcceptanceState {
+  /**
+   * The revisions of the work this is of: the snapshot it was read beside, which SCE was asked
+   * about by name. The list, the report and the standing are all of these and of no others.
+   */
+  readonly basis: Basis;
   readonly list: ReadRequirements;
   readonly acceptance: ReadAcceptance;
   /** SCE's measure; `null` when SCE did not answer (`measureFailure` says why). */
@@ -66,11 +81,11 @@ export interface Shown {
 }
 
 /**
- * Whether what is shown is what the report measured, and if not, why. The report is asked
- * for beside the text, the model and the answers and answers in its own time, and a text
- * saved from another entrance moves under the screen: the report can be of a newer text
- * than the one the owner is reading. The core accepts what the report names because that is
- * the newest, so the screen is where the owner is kept from accepting what they did not read.
+ * Whether what is shown is what the report measured, and if not, why. The report is of the
+ * revisions the screen read the model in, but the text and the answers are the person's and
+ * are read apart from it, and a text saved from another entrance moves under the screen: the
+ * report can be of a newer text than the one the owner is reading. The core accepts what the
+ * report names, so the screen is where the owner is kept from accepting what they did not read.
  *
  * ⚠ A part that is not on the screen is NOT a part that matches. It used to be taken for
  * one, and the saved answers could then be accepted before the owner had been shown them.
@@ -94,55 +109,91 @@ function whatIsNotShown(shown: Shown, basis: Basis): "unread" | "differs" | null
 }
 
 /**
- * Whether the requirement list the screen read is the one SCE measured. The list and the measure
- * are asked for apart, so a list an authoring client saves between the two leaves the screen
- * with the sentences of one list beside the outcomes and the acceptance's basis of another: the
- * owner would read a requirement by the sentence of the old list and accept the new one. Nothing
- * is claimed of a design SCE did not measure, or of a work with no list.
+ * The revisions of the work a snapshot holds, which is what SCE is asked about; `null` when it
+ * holds no text, no model or no list, since there is no design to measure against anything.
  */
-export function listIsTheOneMeasured(state: AcceptanceState): boolean {
-  const list = state.list.requirements;
-  const report = state.report;
-  return list === null || report === null || report.basis.requirements === list.revision;
+export function basisOf(snapshot: WorkSnapshot): Basis | null {
+  const { source, model, requirements } = snapshot;
+  if (source === null || model === null || requirements === null) return null;
+  return {
+    source: source.revision,
+    model: model.revision,
+    requirements: requirements.revision,
+    answers: snapshot.answers?.revision ?? null,
+  };
 }
 
 /**
- * Whether the acceptance's standing was judged of the work SCE measured. `read_acceptance` says
- * whether the acceptance still holds, and `now` is the work it was judged against; the report's
- * basis is the work it measured. They are asked for apart, so a model saved between the two leaves
- * the screen with the design and the outcomes of one work beside a "holds" of another (or a
- * "lapsed" of the one before the model was put back). The standing is SCE's and is not worked
- * out here: when the two bases differ it is only not said, and read again. Nothing is claimed
- * where there is no acceptance (`now` is null) or no measure.
+ * The panel for the work `snapshot` holds, from what SCE said of those revisions. Every part is
+ * of the snapshot: the list is its list, the measure and the standing were asked of its revisions
+ * by name, so nothing has to be compared and no part can be of another state of the work. SCE not
+ * measuring is a state of the panel (`measureFailure`); SCE not judging the acceptance is a
+ * failure of it, since whether the owner's acceptance holds is not something to guess at.
  */
-export function standingIsOfWhatWasMeasured(state: AcceptanceState): boolean {
-  const now = state.acceptance.now;
-  const report = state.report;
-  return now === null || report === null || sameBasis(now, report.basis);
-}
-
-/** Whether the parts of the panel that were read apart are of one state of the work: the list and the standing. */
-export function readsAgree(state: AcceptanceState): boolean {
-  return listIsTheOneMeasured(state) && standingIsOfWhatWasMeasured(state);
+export function panelOf(snapshot: WorkSnapshot, judgment: Judgment): AcceptancePanel {
+  const list = snapshot.requirements;
+  const source = snapshot.source;
+  if (list === null || source === null) return { phase: "no-list" };
+  const held = snapshot.acceptance;
+  // A verdict is asked for exactly when an acceptance was made, so an answer that disagrees is a
+  // caller that did not ask what it should have, which is not shown as if nothing was accepted.
+  if ((held === null) !== (judgment.acceptance === null)) {
+    throw new ContractError("judgment.acceptance", "a verdict exactly when the snapshot holds an acceptance");
+  }
+  let acceptance: ReadAcceptance;
+  if (held === null || judgment.acceptance === null) {
+    acceptance = { acceptance: null, standing: "none", lapse: null, now: null };
+  } else if (!judgment.acceptance.said) {
+    return { phase: "failed", message: judgment.acceptance.refusal.message };
+  } else {
+    const { standing, lapse } = judgment.acceptance.value;
+    acceptance = { acceptance: held, standing, lapse, now: judgment.basis };
+  }
+  return {
+    phase: "read",
+    state: {
+      basis: judgment.basis,
+      list: { requirements: list, source_head: source.revision, standing: snapshot.requirements_standing },
+      acceptance,
+      report: judgment.report.said ? judgment.report.value : null,
+      measureFailure: judgment.report.said ? null : judgment.report.refusal.message,
+      accepting: false,
+      refusal: null,
+    },
+  };
 }
 
 /**
- * Whether the acceptance's standing was judged of the work the screen is showing. Reads that agree
- * with each other (`readsAgree`) can both be of a state the work has since left: the design on
- * screen is read last when its read was the slow one, and a "holds" judged of the model before
- * it beside the model after it says nothing of the one shown. `now` is compared with every part
- * the screen has on it; a part still being read is not held against the standing, and where there
- * is no acceptance there is no standing to be of another work.
+ * Whether a panel read is of the work `snapshot` holds: the same revisions, and the same acceptance
+ * (an acceptance made elsewhere moves nothing a basis names). A panel that is not is not shown
+ * beside that snapshot's model, since a verdict of one design beside another is a false statement
+ * about what the owner is looking at; it is asked for again.
+ */
+export function panelIsOf(state: AcceptanceState, snapshot: WorkSnapshot): boolean {
+  const basis = basisOf(snapshot);
+  return (
+    basis !== null &&
+    sameBasis(state.basis, basis) &&
+    (state.acceptance.acceptance?.revision ?? null) === (snapshot.acceptance?.revision ?? null)
+  );
+}
+
+/**
+ * Whether the acceptance's standing was judged of the work the screen is showing. The panel is of
+ * the snapshot the model was read in, so the design shown is the one judged; what can differ is
+ * the text and the answers, which the person edits apart from it and which are read again
+ * apart. A part still being read is not held against the standing, and where there is no
+ * acceptance there is no standing to be of another work.
  */
 export function standingIsOfWhatIsShown(state: AcceptanceState, shown: Shown): boolean {
-  const now = state.acceptance.now;
-  if (now === null) return true;
+  if (state.acceptance.acceptance === null) return true;
+  const basis = state.basis;
   const same = (on: string | null | undefined, named: string | null): boolean => on === undefined || on === named;
   return (
-    same(shown.source, now.source) &&
-    same(shown.model, now.model) &&
-    same(shown.answers, now.answers) &&
-    same(shown.requirements, now.requirements)
+    same(shown.source, basis.source) &&
+    same(shown.model, basis.model) &&
+    same(shown.answers, basis.answers) &&
+    same(shown.requirements, basis.requirements)
   );
 }
 
@@ -160,18 +211,11 @@ export function gate(state: AcceptanceState, unsaved: boolean, shown: Shown): Wi
   if (report.model_standing !== "current" || report.requirements_standing !== "current") return "behind";
   const notShown = whatIsNotShown(shown, report.basis);
   if (notShown !== null) return notShown;
-  // Whether this very design is accepted already is the standing's to say, and a standing judged of
-  // another state of the work is not said of this one.
-  if (!standingIsOfWhatWasMeasured(state)) return "unread";
   const accepted = state.acceptance;
   if (accepted.standing === "holds" && accepted.acceptance !== null && sameBasis(accepted.acceptance.basis, report.basis)) {
     return "already";
   }
   return null;
-}
-
-function sameBasis(a: Basis, b: Basis): boolean {
-  return a.source === b.source && a.model === b.model && a.requirements === b.requirements && a.answers === b.answers;
 }
 
 /**

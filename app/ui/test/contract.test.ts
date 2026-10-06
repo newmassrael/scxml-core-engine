@@ -30,6 +30,7 @@ import {
   parseRequestReply,
   parseFigures,
   parseHistory,
+  parseJudgment,
   parseListing,
   parseReadAcceptance,
   parseReadAnswers,
@@ -79,6 +80,7 @@ const parsers: Record<string, (value: unknown) => unknown> = {
   accept: parseSaved,
   read_acceptance: parseReadAcceptance,
   read_work_snapshot: parseWorkSnapshot,
+  read_judgment: parseJudgment,
   read_work_heads: parseWorkHeads,
   request_generation: parseRegisteredRequest,
   read_request: parseRequestReply,
@@ -268,6 +270,69 @@ describe("the replies the core gives", () => {
     expect(garage.requirements_standing).toBe("current");
     expect(garage.requirements).toEqual(parseReadRequirements(replies.answers["read_requirements"]).requirements);
     expect(garage.acceptance).toEqual(parseReadAcceptance(replies.answers["read_acceptance"]).acceptance);
+  });
+
+  it("give what SCE says of the revisions it was asked about, in the words of the commands that judge", () => {
+    // A design measured and nothing accepted: no standing, and the report of `requirements_report`.
+    const unaccepted = parseJudgment(replies.answers["read_judgment_unaccepted"]);
+    expect(unaccepted.acceptance).toBeNull();
+    expect(unaccepted.report).toEqual({
+      said: true,
+      value: parseRequirementsReport(replies.answers["requirements_report"]),
+    });
+    // Accepted and unmoved: the standing of `read_acceptance`, the revisions the owner was shown.
+    const accepted = parseJudgment(replies.answers["read_judgment_accepted"]);
+    expect(accepted.acceptance).toEqual({ said: true, value: { standing: "holds", lapse: null } });
+    expect(accepted.report).toEqual(unaccepted.report);
+    expect(accepted.basis).toEqual(parseReadAcceptance(replies.answers["read_acceptance"]).acceptance?.basis);
+    // The design moved under the acceptance. Asked of the design as it stands it lapsed, in SCE's
+    // sentence, and the measure names that design; asked of the one the owner was shown it holds.
+    const lapsed = parseJudgment(replies.answers["read_judgment_lapsed"]);
+    expect(lapsed.acceptance).toEqual({
+      said: true,
+      value: { standing: "lapsed", lapse: "design/model.scxml moved" },
+    });
+    expect(lapsed.basis).toEqual(parseReadAcceptance(replies.answers["read_acceptance_lapsed"]).now);
+    expect(lapsed.basis.model).not.toBe(accepted.basis.model);
+    const earlier = parseJudgment(replies.answers["read_judgment_of_an_earlier_state"]);
+    expect(earlier).toEqual(accepted);
+    // SCE not answering is an answer, and says which it did not answer.
+    const unanswered = parseJudgment(replies.answers["read_judgment_unanswered"]);
+    expect(unanswered.basis).toEqual(accepted.basis);
+    for (const part of [unanswered.acceptance, unanswered.report]) {
+      expect(part).toMatchObject({ said: false, refusal: { kind: "sce-timeout", code: null } });
+    }
+  });
+
+  it("refuse a judgment that contradicts itself", () => {
+    const answer = (name: string): Record<string, unknown> =>
+      structuredClone(replies.answers[name]) as Record<string, unknown>;
+    const at = (value: unknown, ...path: string[]): Record<string, unknown> =>
+      path.reduce((over, key) => over[key] as Record<string, unknown>, value as Record<string, unknown>);
+
+    // A report measured of other revisions than the judgment names: a screen would show an outcome
+    // beside a design it was not measured of.
+    const report = answer("read_judgment_accepted");
+    at(report, "report", "said", "basis")["requirements"] = "0".repeat(64);
+    expect(() => parseJudgment(report)).toThrow(/read_judgment\.report\.said\.basis/);
+    // An answer that is both, or neither, said and refused.
+    const both = answer("read_judgment_accepted");
+    at(both, "report")["refused"] = { kind: "sce-timeout", message: "m", code: null };
+    expect(() => parseJudgment(both)).toThrow(/exactly one of "said" and "refused"/);
+    const neither = answer("read_judgment_accepted");
+    neither["report"] = {};
+    expect(() => parseJudgment(neither)).toThrow(/exactly one of "said" and "refused"/);
+    // A standing that lapsed without a sentence for what moved, and one that holds with a sentence.
+    const mute = answer("read_judgment_lapsed");
+    at(mute, "acceptance", "said")["lapse"] = null;
+    expect(() => parseJudgment(mute)).toThrow(/lapse/);
+    const stray = answer("read_judgment_accepted");
+    at(stray, "acceptance", "said")["lapse"] = "something moved";
+    expect(() => parseJudgment(stray)).toThrow(/lapse/);
+    // A standing that is neither holds nor lapsed.
+    const unknown = answer("read_judgment_accepted");
+    at(unknown, "acceptance", "said")["standing"] = "none";
+    expect(() => parseJudgment(unknown)).toThrow(/standing/);
   });
 
   it("give where each chain of a work stands, with what the model and the list were written for", () => {

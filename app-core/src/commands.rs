@@ -19,7 +19,7 @@ use serde_json::{json, Value};
 use std::collections::BTreeMap;
 
 use crate::acceptance::{Acceptance, AcceptanceCorrupt, Basis, Snapshot};
-use crate::acceptance_run::CheckOutcome;
+use crate::acceptance_run::{CheckOutcome, RequirementsReport};
 use crate::answers::{Answers, AnswersError};
 use crate::bundle::{BundleCheck, CheckedBy};
 use crate::clock::{utc_timestamp, Clock};
@@ -32,7 +32,7 @@ use crate::review::{Product, Review, ReviewRequest, Verdict};
 use crate::revision::Revision;
 use crate::store::{
     AdapterReport, AdapterStatus, AnswersText, CandidateWrite, HostStatus, ModelText, Published,
-    Registration, RequestView, RequirementsText, WorkId, WorkStore,
+    Registration, RequestView, RequirementsText, SourceText, WorkId, WorkStore,
 };
 
 /// Every command, in the order a person would meet them.
@@ -57,6 +57,7 @@ pub const COMMANDS: &[&str] = &[
     "requirements_report",
     "accept",
     "read_acceptance",
+    "read_judgment",
     "read_work_snapshot",
     "read_work_heads",
     "request_generation",
@@ -133,7 +134,14 @@ pub const COMMANDS: &[&str] = &[
 /// `outcome`; the heads and the snapshot of a work say their `bundle`. A work that keeps
 /// bundles refuses `save_model` and `save_requirements` with `bundled-work`. A screen
 /// written for 11 reads a work's model by the bundle and would be refused by a core of 10.
-pub const COMMAND_SET_VERSION: u32 = 11;
+///
+/// 12: what SCE says of a work can be asked of the revisions that were read
+/// (`read_judgment`): whether the owner's acceptance holds for them, and SCE's measure of
+/// the design against the list. The answer is of exactly the revisions named, whatever has
+/// been saved since, so a screen shows no verdict beside a design it was not given of. A
+/// screen written for 12 asks it after reading the work, and would be refused by a core of
+/// 11 with `unknown-command`.
+pub const COMMAND_SET_VERSION: u32 = 12;
 
 /// A command that did not do what was asked, in a shape every shell can pass on.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -357,6 +365,18 @@ struct Expect {
 struct Accept {
     id: String,
     expect: Expect,
+}
+
+/// What SCE is asked about: the revisions that were read, and the acceptance whose standing
+/// is wanted when there is one.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ReadJudgment {
+    id: String,
+    basis: Basis,
+    /// The acceptance whose standing is wanted; absent or `null` when nothing is accepted.
+    #[serde(default)]
+    acceptance: Option<Revision>,
 }
 
 /// The revisions a request is asked about: the text, and the owner's answers when they
@@ -627,7 +647,39 @@ fn work_now<C: Clock>(store: &WorkStore<C>, id: &WorkId) -> Result<WorkNow, Comm
     let requirements = state
         .requirements
         .ok_or_else(|| none_saved("a requirement list", id))?;
-    let answers = state.answers;
+    now_of(source, model, requirements, state.answers)
+}
+
+/// The work as the revisions `basis` name it, wherever the work is now. A revision's file is
+/// never rewritten, so what is read is what was read when the basis was taken, whatever has
+/// been saved since; one the work does not keep is `not-found`.
+fn work_at<C: Clock>(
+    store: &WorkStore<C>,
+    id: &WorkId,
+    basis: &Basis,
+) -> Result<WorkNow, CommandError> {
+    let source = store.read_source(id, Some(&basis.source))?;
+    let model = store.read_model(id, Some(&basis.model))?;
+    let requirements = store.read_requirements(id, Some(&basis.requirements))?;
+    let answers = match &basis.answers {
+        None => None,
+        Some(revision) => store.read_answers(id, Some(revision))?,
+    };
+    now_of(
+        source.ok_or_else(|| none_saved("a text", id))?,
+        model.ok_or_else(|| none_saved("a model", id))?,
+        requirements.ok_or_else(|| none_saved("a requirement list", id))?,
+        answers,
+    )
+}
+
+/// What the product is asked about, from the four parts of a work and the revisions they are.
+fn now_of(
+    source: SourceText,
+    model: ModelText,
+    requirements: RequirementsText,
+    answers: Option<AnswersText>,
+) -> Result<WorkNow, CommandError> {
     let basis = Basis {
         source: source.revision.clone(),
         model: model.revision.clone(),
@@ -693,6 +745,66 @@ fn acceptance_json(revision: &Revision, acceptance: &Acceptance) -> Value {
         "basis": acceptance.basis,
         "open": acceptance.open,
     })
+}
+
+/// What the product measured of the work as `now` puts it: against which revisions, where the
+/// model and the list stand to the text they were measured beside, and its outcomes. The source
+/// head is the text `now` holds, and not a later read of it.
+fn report_json(now: &WorkNow, report: &RequirementsReport) -> Value {
+    let source_head = &now.basis.source;
+    json!({
+        "basis": now.basis,
+        "source_head": source_head,
+        "model_standing": standing(now.model_written_for.as_ref(), Some(source_head)),
+        "requirements_standing": standing(now.requirements_written_for.as_ref(), Some(source_head)),
+        "generator": report.generator,
+        "denominator": report.denominator,
+        "outcomes": report.outcomes,
+        "page": report.page,
+        "page_refusal": report.page_refusal,
+    })
+}
+
+/// The product's word on whether an acceptance holds, and its one sentence of what moved.
+fn standing_of(outcome: CheckOutcome) -> (&'static str, Value) {
+    match outcome {
+        CheckOutcome::Holds => ("holds", Value::Null),
+        CheckOutcome::Lapsed { says } => ("lapsed", Value::String(says)),
+    }
+}
+
+/// The product not answering, as data: the kind a program branches on, its words, and the
+/// code it refused with. It is what a caller shows beside what it did read.
+fn refusal_json(error: RenderError) -> Value {
+    let error = CommandError::from(error);
+    json!({
+        "kind": error.kind,
+        "message": error.message,
+        "code": error.detail.get("code").cloned().unwrap_or(Value::Null),
+    })
+}
+
+/// What the product says of the work as `now` puts it: whether the owner's acceptance (`record`,
+/// when there is one; `null` when there is none) still holds, and its measure of the design
+/// against the list. Each is either `{"said": ...}` or `{"refused": ...}` for the product not
+/// answering, because the caller still has the work it read when the product does not answer: a
+/// model SCE cannot draw is still a model.
+fn judgment_json(renderer: &dyn Product, now: &WorkNow, record: Option<&Acceptance>) -> Value {
+    let acceptance = match record {
+        None => Value::Null,
+        Some(accepted) => match renderer.check_acceptance(&now.snapshot, &accepted.record) {
+            Ok(outcome) => {
+                let (standing, lapse) = standing_of(outcome);
+                json!({ "said": { "standing": standing, "lapse": lapse } })
+            }
+            Err(error) => json!({ "refused": refusal_json(error) }),
+        },
+    };
+    let report = match renderer.report_requirements(&now.snapshot) {
+        Ok(report) => json!({ "said": report_json(now, &report) }),
+        Err(error) => json!({ "refused": refusal_json(error) }),
+    };
+    json!({ "basis": now.basis, "acceptance": acceptance, "report": report })
 }
 
 /// A model as its caller gave it: `text` (one document), or `documents` (several that name
@@ -1037,20 +1149,31 @@ pub fn call<C: Clock>(
             let OneWork { id } = arguments(args)?;
             let id = work_id(&id)?;
             let now = work_now(store, &id)?;
-            let source_head = store.head(&id)?;
             let report = renderer.report_requirements(&now.snapshot)?;
-            Ok(json!({
-                "basis": now.basis,
-                "source_head": source_head,
-                "model_standing": standing(now.model_written_for.as_ref(), source_head.as_ref()),
-                "requirements_standing":
-                    standing(now.requirements_written_for.as_ref(), source_head.as_ref()),
-                "generator": report.generator,
-                "denominator": report.denominator,
-                "outcomes": report.outcomes,
-                "page": report.page,
-                "page_refusal": report.page_refusal,
-            }))
+            Ok(report_json(&now, &report))
+        }
+        "read_judgment" => {
+            let ReadJudgment {
+                id,
+                basis,
+                acceptance,
+            } = arguments(args)?;
+            let id = work_id(&id)?;
+            // SCE is asked about the revisions named and about nothing read after them, so the
+            // answer is of the state the caller read and of no other: a save landing now moves
+            // the work, and the caller learns that from the heads, not from a verdict that is
+            // of a design it was not shown.
+            let now = work_at(store, &id, &basis)?;
+            let record = match &acceptance {
+                None => None,
+                Some(revision) => {
+                    let saved = store
+                        .read_acceptance(&id, Some(revision))?
+                        .ok_or_else(|| none_saved("an acceptance", &id))?;
+                    Some(Acceptance::parse(&saved.text)?)
+                }
+            };
+            Ok(judgment_json(renderer, &now, record.as_ref()))
         }
         "accept" => {
             let Accept { id, expect } = arguments(args)?;
@@ -1130,10 +1253,7 @@ pub fn call<C: Clock>(
             // now laid out the way it was when the record was taken.
             let now = work_now(store, &id)?;
             let (standing, lapse) =
-                match renderer.check_acceptance(&now.snapshot, &acceptance.record)? {
-                    CheckOutcome::Holds => ("holds", Value::Null),
-                    CheckOutcome::Lapsed { says } => ("lapsed", Value::String(says)),
-                };
+                standing_of(renderer.check_acceptance(&now.snapshot, &acceptance.record)?);
             Ok(json!({
                 "acceptance": acceptance_json(&saved.revision, &acceptance),
                 "standing": standing,

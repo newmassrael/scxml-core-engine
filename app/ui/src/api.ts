@@ -5,29 +5,28 @@
 // so a view receives a `Listing`, not `unknown`.
 
 import {
+  ContractError,
   parseAdapterListing,
   parseBundleRead,
   parseDescribed,
   parseFigures,
   parseHistory,
   parseHostListing,
+  parseJudgment,
   parseListing,
   parseRegisteredRequest,
   parseRequestList,
   parseRequestReply,
-  parseReadAcceptance,
   parseReadAnswers,
-  parseReadModel,
-  parseReadRequirements,
   parseReadSource,
   parseRemoved,
-  parseRequirementsReport,
   parseReview,
   parseSaved,
   parseWork,
   parseWorkAndHead,
   parseWorkHeads,
   parseWorkSnapshot,
+  sameBasis,
   type AdapterListing,
   type Answers,
   type Basis,
@@ -37,12 +36,9 @@ import {
   type GenerationRequest,
   type HistoryEntry,
   type HostListing,
+  type Judgment,
   type Listing,
   type RegisteredRequest,
-  type ReadAcceptance,
-  type ReadModel,
-  type ReadRequirements,
-  type RequirementsReport,
   type Review,
   type Revision,
   type Saved,
@@ -64,8 +60,6 @@ export interface Api {
   /** Save `text` on top of `base` (`null` for a work's first text). Refused with `conflict` if `base` is no longer current. */
   saveSource(id: string, text: string, base: Revision | null): Promise<Saved>;
   history(id: string): Promise<HistoryEntry[]>;
-  /** The current model, or the model of `revision`; `model` is `null` for a work with none yet. */
-  readModel(id: string, revision?: Revision): Promise<ReadModel>;
   /**
    * What SCE draws of the work's model (the current one, or `revision`'s): its own
    * pictures, then the table of every value it states. Refused with `sce-refused`
@@ -98,18 +92,16 @@ export interface Api {
    */
   saveAnswers(id: string, answers: Readonly<Record<string, string>>, base: Revision | null): Promise<Saved>;
   /**
-   * The requirement list the work's text was read into, and where it stands to the
-   * text. The list is written by an authoring client; this screen only reads it.
+   * What SCE says of the revisions `basis` names: SCE's measure of the design against the
+   * list and the page the owner reads before accepting, and whether the acceptance
+   * `acceptance` names (none when `null`) holds for them. It is of those revisions and of no
+   * other, whatever has been saved since, so a screen that shows a work and asks about the
+   * revisions it shows has a verdict that is of what it shows. SCE not answering is an answer
+   * (`refusal` on the part it did not answer); a revision the work does not keep is refused
+   * with `not-found`, and an answer that names other revisions than were asked is refused as
+   * a broken contract rather than shown.
    */
-  readRequirements(id: string): Promise<ReadRequirements>;
-  /**
-   * SCE's measure of the work's design against its requirement list, and the page
-   * the owner reads before accepting. Refused with `not-found` when the work has no
-   * model or no list yet, and with a `sce-*` kind when SCE does not answer.
-   */
-  requirementsReport(id: string): Promise<RequirementsReport>;
-  /** Whether the owner's acceptance still holds, and what SCE says moved when it does not. */
-  readAcceptance(id: string): Promise<ReadAcceptance>;
+  readJudgment(id: string, basis: Basis, acceptance: Revision | null): Promise<Judgment>;
   /**
    * Accept the design as the owner was shown it: `expect` is the `basis` of the report
    * they read. Refused with `moved` when any of it has changed since, and with
@@ -122,7 +114,7 @@ export interface Api {
    * stood together. A screen that is told something changed reads this, not one
    * command for each chain: a save landing between those reads would show a text of
    * one moment beside a model of another. It does not say whether the acceptance
-   * still holds; that is SCE's answer (`readAcceptance`).
+   * still holds; that is SCE's answer, asked of the revisions this names (`readJudgment`).
    */
   readWorkSnapshot(id: string): Promise<WorkSnapshot>;
   /**
@@ -187,10 +179,6 @@ export function apiOver(transport: Transport): Api {
     async history(id) {
       return parseHistory(await transport.call("history", { id }));
     },
-    async readModel(id, revision) {
-      const args = revision === undefined ? { id } : { id, revision };
-      return parseReadModel(await transport.call("read_model", args));
-    },
     async figures(id, revision, lexicon) {
       const args = {
         id,
@@ -220,14 +208,14 @@ export function apiOver(transport: Transport): Api {
     async saveAnswers(id, answers, base) {
       return parseSaved(await transport.call("save_answers", { id, answers, base }));
     },
-    async readRequirements(id) {
-      return parseReadRequirements(await transport.call("read_requirements", { id }));
-    },
-    async requirementsReport(id) {
-      return parseRequirementsReport(await transport.call("requirements_report", { id }));
-    },
-    async readAcceptance(id) {
-      return parseReadAcceptance(await transport.call("read_acceptance", { id }));
+    async readJudgment(id, basis, acceptance) {
+      const args = { id, basis, ...(acceptance === null ? {} : { acceptance }) };
+      const judgment = parseJudgment(await transport.call("read_judgment", args));
+      // Only this caller knows what it asked, so only here can the answer be held to it.
+      if (!sameBasis(judgment.basis, basis)) {
+        throw new ContractError("read_judgment.basis", "the revisions that were asked about");
+      }
+      return judgment;
     },
     async accept(id, expect) {
       return parseSaved(await transport.call("accept", { id, expect }));

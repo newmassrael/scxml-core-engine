@@ -106,6 +106,62 @@ describe("the typed commands", () => {
     ]);
   });
 
+  describe("asking what SCE says of the revisions that were read", () => {
+    const B = "b".repeat(64);
+    const C = "c".repeat(64);
+    const basis = { source: A, model: B, requirements: C, answers: null };
+    // The core leaves `answers` out of a basis when the owner had answered nothing.
+    const named = { source: A, model: B, requirements: C };
+    const answered = (over: Record<string, unknown> = {}): unknown => ({
+      basis: named,
+      acceptance: null,
+      report: {
+        said: {
+          basis: named,
+          source_head: A,
+          model_standing: "current",
+          requirements_standing: "current",
+          generator: null,
+          denominator: null,
+          outcomes: [],
+          page: null,
+          page_refusal: null,
+        },
+      },
+      ...over,
+    });
+
+    it("names the revisions, and the acceptance only when there is one", async () => {
+      const calls: Array<[string, unknown]> = [];
+      const api = apiOver({
+        call: async (name, args) => {
+          calls.push([name, args]);
+          return answered();
+        },
+      });
+      await api.readJudgment("w", basis, null);
+      await api.readJudgment("w", basis, "d".repeat(64));
+      expect(calls).toEqual([
+        ["read_judgment", { id: "w", basis }],
+        ["read_judgment", { id: "w", basis, acceptance: "d".repeat(64) }],
+      ]);
+    });
+
+    it("refuses an answer that is of other revisions than the ones that were asked about", async () => {
+      // The caller is the only one who knows what it asked: a core that answered about another design
+      // would have the screen show that verdict beside the design it read.
+      const other = { ...named, model: "e".repeat(64) };
+      const api = apiOver({
+        call: async () =>
+          answered({
+            basis: other,
+            report: { said: { ...(answered() as { report: { said: object } }).report.said, basis: other } },
+          }),
+      });
+      await expect(api.readJudgment("w", basis, null)).rejects.toThrow(/read_judgment\.basis/);
+    });
+  });
+
   it("send a first save with a null base", async () => {
     const calls: Array<[string, unknown]> = [];
     const api = apiOver({

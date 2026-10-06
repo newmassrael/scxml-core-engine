@@ -52,6 +52,15 @@ fn answer(store: &WorkStore<FixedClock>, name: &str, args: Value) -> Value {
     call(store, &FakeRenderer, name, args).unwrap_or_else(|e| panic!("{name} was refused: {e:?}"))
 }
 
+fn answer_by(
+    store: &WorkStore<FixedClock>,
+    renderer: &dyn Product,
+    name: &str,
+    args: Value,
+) -> Value {
+    call(store, renderer, name, args).unwrap_or_else(|e| panic!("{name} was refused: {e:?}"))
+}
+
 fn refusal(store: &WorkStore<FixedClock>, name: &str, args: Value) -> Value {
     refusal_by(store, &FakeRenderer, name, args)
 }
@@ -413,6 +422,15 @@ fn replies() -> Value {
     let report = answer(&store, "requirements_report", json!({"id": accepted_id}));
     let shown = report["basis"].clone();
     answers.insert("requirements_report".into(), report);
+    // What SCE says of the revisions that were read: measured, and nothing accepted yet.
+    answers.insert(
+        "read_judgment_unaccepted".into(),
+        answer(
+            &store,
+            "read_judgment",
+            json!({"id": accepted_id, "basis": shown}),
+        ),
+    );
     answers.insert(
         "accept".into(),
         answer(
@@ -421,9 +439,28 @@ fn replies() -> Value {
             json!({"id": accepted_id, "expect": shown}),
         ),
     );
+    let held = answer(&store, "read_acceptance", json!({"id": accepted_id}));
+    let acceptance_revision = held["acceptance"]["revision"].clone();
+    answers.insert("read_acceptance".into(), held);
+    // The acceptance holds for the revisions it was taken of.
     answers.insert(
-        "read_acceptance".into(),
-        answer(&store, "read_acceptance", json!({"id": accepted_id})),
+        "read_judgment_accepted".into(),
+        answer(
+            &store,
+            "read_judgment",
+            json!({"id": accepted_id, "basis": shown, "acceptance": acceptance_revision}),
+        ),
+    );
+    // SCE does not answer: the revisions are the caller's, and the acceptance and the
+    // measure each say they were not answered.
+    answers.insert(
+        "read_judgment_unanswered".into(),
+        answer_by(
+            &store,
+            &RefusingRenderer,
+            "read_judgment",
+            json!({"id": accepted_id, "basis": shown, "acceptance": acceptance_revision}),
+        ),
     );
     // This one has a text, a model, a requirement list and an acceptance, and no answers.
     answers.insert(
@@ -450,9 +487,27 @@ fn replies() -> Value {
         json!({"id": accepted_id, "text": "<scxml><!-- OPEN, edited --></scxml>",
                "base": accepted_model["revision"], "written_for": accepted_head}),
     );
+    let lapsed = answer(&store, "read_acceptance", json!({"id": accepted_id}));
+    let lapsed_now = lapsed["now"].clone();
+    answers.insert("read_acceptance_lapsed".into(), lapsed);
+    // Asked of the design as it is now, the acceptance has lapsed; asked of the design it was
+    // read as, it still holds, because the verdict is of the revisions named and not of the
+    // work as it stands.
     answers.insert(
-        "read_acceptance_lapsed".into(),
-        answer(&store, "read_acceptance", json!({"id": accepted_id})),
+        "read_judgment_lapsed".into(),
+        answer(
+            &store,
+            "read_judgment",
+            json!({"id": accepted_id, "basis": lapsed_now, "acceptance": acceptance_revision}),
+        ),
+    );
+    answers.insert(
+        "read_judgment_of_an_earlier_state".into(),
+        answer(
+            &store,
+            "read_judgment",
+            json!({"id": accepted_id, "basis": shown, "acceptance": acceptance_revision}),
+        ),
     );
     refusals.insert(
         "moved".into(),
