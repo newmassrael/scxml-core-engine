@@ -75,7 +75,7 @@ fn host_operation(field_suffix: &str, candidate_stem: Option<&str>) -> String {
 /// this) in the commit that gives its interface the operation and replays the
 /// shared fixture, and until then it refuses such an `<invoke>`.
 pub fn declares_child_hosts(lang: Language) -> bool {
-    matches!(lang, Language::Kotlin)
+    matches!(lang, Language::Kotlin | Language::Python)
 }
 
 /// The first `<invoke type="scxml">` of `model` whose child declares
@@ -1540,6 +1540,16 @@ fn build_interface(
                     method_name(lang, name)
                 ));
             }
+            // The child's interface is declared by the child's own module, which the
+            // machine imports where it starts the child, so the annotation names it
+            // as text and nothing here has to import a sibling at load.
+            for child in children {
+                methods.push_str(&format!(
+                    "    def {}(self) -> \"{}\":\n        \"\"\"The host the child is built with, asked each time it starts.\"\"\"\n        ...\n\n",
+                    method_name(lang, &child.operation),
+                    child.child_interface
+                ));
+            }
             format!(
                 "class {interface_name}(Protocol):\n    \"\"\"\n{}    \"\"\"\n\n{methods}",
                 doc("    ")
@@ -2135,6 +2145,30 @@ mod tests {
         // A parent with no child to answer for is as it was.
         let plain = build_interface(Language::Kotlin, "MActions", &sigs, &[]);
         assert!(!plain.contains("Source"), "{plain}");
+    }
+
+    /// The Python interface answers a child's host as the Kotlin one does, after
+    /// the acts, and names the child's interface as text: the child's module
+    /// declares it, and the machine imports that module where it starts the child.
+    #[test]
+    fn the_python_interface_of_a_parent_answers_the_host_of_each_child() {
+        let children = [ChildHost {
+            operation: "actions_for_worker".to_string(),
+            child_interface: "WorkerActions".to_string(),
+        }];
+        let mut sigs: BTreeMap<String, Signature> = BTreeMap::new();
+        sigs.insert("reset_slot".to_string(), Vec::new());
+        let out = build_interface(Language::Python, "MActions", &sigs, &children);
+        let act = out.find("def reset_slot(self) -> None:").expect(&out);
+        let factory = out
+            .find("def actions_for_worker(self) -> \"WorkerActions\":")
+            .expect(&out);
+        assert!(
+            act < factory,
+            "the acts, then the operation that answers a child's host:\n{out}"
+        );
+        let plain = build_interface(Language::Python, "MActions", &sigs, &[]);
+        assert!(!plain.contains("actions_for"), "{plain}");
     }
 
     /// A document in which an act and a child's host would be one method is

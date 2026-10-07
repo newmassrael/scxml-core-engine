@@ -210,7 +210,27 @@
                     continue
 {% endif %}
 {% if inv.candidates %}
+{% if inv.candidates | selectattr("child_host_call") | list %}
+{# docs/adr/0005, decision 6: a candidate that declares acts is built with the
+   host its parent's own host answers for IT — each candidate is a document with
+   acts of its own — asked here, where the invocation starts, and not for a
+   candidate the value did not name. A candidate that declares none is built as
+   it was. #}
+                _child_host_{{ inv.invoke_id | to_python_const }} = {
+{% for candidate in inv.candidates if candidate.child_host_call %}
+                    {{ candidate.stem | py_string_literal }}: lambda: {{ candidate.child_host_call }},
+{% endfor %}
+                }.get(__sce_selected_{{ inv.invoke_id | to_python_const }})
+                _child_policy = (
+                    _child_module_{{ inv.invoke_id | to_python_const }}.Policy(
+                        _child_host_{{ inv.invoke_id | to_python_const }}()
+                    )
+                    if _child_host_{{ inv.invoke_id | to_python_const }} is not None
+                    else _child_module_{{ inv.invoke_id | to_python_const }}.Policy()
+                )
+{% else %}
                 _child_policy = _child_module_{{ inv.invoke_id | to_python_const }}.Policy()
+{% endif %}
 {% else %}
 {# A child is a sibling of its parent: a module of the parent's own package when
    it has one (a machine that calls an algorithm is one of a package, and its
@@ -220,7 +240,10 @@
                     ("." if __package__ else "") + {{ (inv.child_name ~ "_sm") | py_string_literal }},
                     __package__ or None,
                 )
-                _child_policy = _child_module_{{ inv.invoke_id | to_python_const }}.Policy()
+{# The host the child performs its acts through leads its policy's parameters, as
+   the machine's own does, and is asked of the parent's host each time the
+   invocation starts (docs/adr/0005, decision 6). #}
+                _child_policy = _child_module_{{ inv.invoke_id | to_python_const }}.Policy({{ inv.child_host_call }})
 {% endif %}
                 # Engine DI Parity RFC (Path B+): forward the parent's
                 # script engine so the child shares the same Lua VM /

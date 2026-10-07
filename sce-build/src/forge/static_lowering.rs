@@ -4280,6 +4280,11 @@ impl StaticTarget for PythonTarget {
     fn bounded_bytes(&self, value: &str, capacity: u32) -> String {
         self.bounded_string(value, capacity)
     }
+    // The child's policy is built with what the parent's host answers for it
+    // (`self._actions.actions_for_<invoke>()`), each time the invocation starts.
+    fn lowers_child_host(&self) -> bool {
+        crate::forge::native_action::declares_child_hosts(Language::Python)
+    }
     fn assign(&self, target: &str, value: &str) -> String {
         format!("{target} = {value}")
     }

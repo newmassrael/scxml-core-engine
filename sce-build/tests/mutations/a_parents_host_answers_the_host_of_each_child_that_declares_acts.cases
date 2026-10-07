@@ -17,7 +17,8 @@
 # the casefile for the template (`a_static_kotlin_child_is_built_with_the_host_its_parent_answers`)
 # holds. The mutants take one decision away each:
 #
-#   the operations are not declared in the interface;
+#   the operations are not declared in the Kotlin interface;
+#   the operations are not declared in the Python interface;
 #   the recording host does not record the question;
 #   the recording host does not take what to answer from its test;
 #   an act named as an operation is accepted;
@@ -31,10 +32,16 @@ mutation_tests -p sce-build --features cli --lib forge::native_action
 mutation_targets sce-build/src/forge/native_action.rs
 mutation_oracles sce-build/src/forge/native_action.rs
 
-mutation_case "the operations that answer a child's host are not declared" <<'PY'
+mutation_case "the operations that answer a child's host are not declared in the Kotlin interface" <<'PY'
 edit("sce-build/src/forge/native_action.rs",
      "            for child in children {\n                methods.push_str(&format!(\n                    \"    fun {}(): {}\\n\",",
      "            for child in children.iter().take(0) {\n                methods.push_str(&format!(\n                    \"    fun {}(): {}\\n\",")
+PY
+
+mutation_case "the operations that answer a child's host are not declared in the Python interface" <<'PY'
+edit("sce-build/src/forge/native_action.rs",
+     "            for child in children {\n                methods.push_str(&format!(\n                    \"    def {}(self) -> \\\"{}\\\":",
+     "            for child in children.iter().take(0) {\n                methods.push_str(&format!(\n                    \"    def {}(self) -> \\\"{}\\\":")
 PY
 
 mutation_case "the recording host does not record the question" <<'PY'

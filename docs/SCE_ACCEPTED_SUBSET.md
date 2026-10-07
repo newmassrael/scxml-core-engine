@@ -3410,22 +3410,24 @@ installed afterwards would arrive one act too late. So the host has to exist whe
 the invocation starts, and the parent is the one that obtains it: its own host
 interface gains, for each `<invoke type="scxml">` whose child declares acts, one
 operation that answers the child's host (`fun actionsForWorker(): WorkerActions` in
-Kotlin), and for each candidate of a hybrid `<invoke>` that declares acts one of its
-own (`actionsForWorkStaticHostedFirst`), since each candidate is a document with acts
-of its own. The machine calls it each time the invocation starts — on entry of the
+Kotlin, `def actions_for_worker(self)` in Python), and for each candidate of a hybrid
+`<invoke>` that declares acts one of its own (`actionsForWorkStaticHostedFirst`),
+since each candidate is a document with acts of its own. The machine calls it each time the invocation starts — on entry of the
 invoking state, and on a restore, which starts the child again from its beginning —
 and builds the child with what it returns, so a state invoked again is given a host of
 its own and nothing a host kept for one child is carried into the next
 (docs/adr/0005, decision 6; `static_child_host` and `static_child_host_hybrid`, driven
 by `AChildIsGivenItsHostByItsParentTest` and
-`AHybridCandidateIsGivenItsHostByItsParentTest`). A parent that declares no act of its
+`AHybridCandidateIsGivenItsHostByItsParentTest` in Kotlin and by
+`test_a_child_is_given_its_host_by_its_parent.py` in Python, whose machine asks a
+Python host object and keeps what it answered). A parent that declares no act of its
 own still takes that host, and the recording host it generates takes one source per
 child, the function a test hands it, and records each question beside the acts. An act
 whose name is spelled as one of those operations, in any language's convention, and
 two invokes whose ids differ only in spelling, are refused where the second is
 written (`<sce:action name="…">` names one host method, not two).
 
-This is Kotlin's alone yet. A language that does not answer a child's host from its
+This is Kotlin's and Python's yet. A language that does not answer a child's host from its
 parent's own refuses the `<invoke>` at its entry, whatever data model the parent is
 under, as `generate/unsupported-feature` (`an <invoke id="child"> of a child that
 declares <sce:action>s has no Rust lowering yet`; a candidate is named by `an <invoke

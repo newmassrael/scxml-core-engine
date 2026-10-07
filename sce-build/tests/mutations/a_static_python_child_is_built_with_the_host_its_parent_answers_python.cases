@@ -1,0 +1,44 @@
+# Mutation cases for "a child that declares acts is built with the host its parent's
+# host answers, each time the invocation starts" under the Python backend
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Child sessions"; docs/adr/0005, decision 6).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_python_child_is_built_with_the_host_its_parent_answers_python.cases`.
+#
+# `static_child_host` invokes `worker`, which performs `started` as it is entered and
+# `finished` as it ends; `static_child_host_hybrid` invokes whichever of two candidates
+# its `srcexpr` names, each with an act of its own. The test hands each machine a host
+# that answers a child host of its own for every question and keeps what it was asked:
+# the first act is already performed (the host was there when the child was built), a
+# state invoked again is given a host of its own, and a candidate is given the host
+# answered for IT and for no other. The mutants take one decision away each:
+#
+#   a child is built without the host its parent answers;
+#   a candidate is built without it, whatever the value names;
+#   the host answered is the first candidate's, whichever candidate the value names.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_pytest backends/python/tests integration/static_datamodel/test_a_child_is_given_its_host_by_its_parent.py
+mutation_regen scripts/regen_static_datamodel_python.sh
+mutation_runtime_targets tools/codegen/templates/python/invoke_methods.py.jinja2
+mutation_oracles backends/python/tests/integration/static_datamodel/test_a_child_is_given_its_host_by_its_parent.py sce-build/tests/fixtures/static_datamodel/static_child_host.scxml sce-build/tests/fixtures/static_datamodel/static_child_host_hybrid.scxml sce-build/tests/fixtures/static_datamodel/static_hosted_first.scxml sce-build/tests/fixtures/static_datamodel/static_hosted_second.scxml
+
+mutation_case "a child is built without the host its parent answers" <<'PY'
+edit("tools/codegen/templates/python/invoke_methods.py.jinja2",
+     "                _child_policy = _child_module_{{ inv.invoke_id | to_python_const }}.Policy({{ inv.child_host_call }})\n",
+     "                _child_policy = _child_module_{{ inv.invoke_id | to_python_const }}.Policy()\n")
+PY
+
+mutation_case "a candidate is built without the host its parent answers" <<'PY'
+edit("tools/codegen/templates/python/invoke_methods.py.jinja2",
+     "                    if _child_host_{{ inv.invoke_id | to_python_const }} is not None\n",
+     "                    if False\n")
+PY
+
+mutation_case "the host answered is the first candidate's, whichever the value names" <<'PY'
+edit("tools/codegen/templates/python/invoke_methods.py.jinja2",
+     "                }.get(__sce_selected_{{ inv.invoke_id | to_python_const }})\n                _child_policy = (",
+     "                }.get({{ inv.candidates[0].stem | py_string_literal }})\n                _child_policy = (")
+PY
