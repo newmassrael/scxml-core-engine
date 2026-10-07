@@ -75,7 +75,7 @@ fn host_operation(field_suffix: &str, candidate_stem: Option<&str>) -> String {
 /// this) in the commit that gives its interface the operation and replays the
 /// shared fixture, and until then it refuses such an `<invoke>`.
 pub fn declares_child_hosts(lang: Language) -> bool {
-    matches!(lang, Language::Kotlin | Language::Python)
+    matches!(lang, Language::Kotlin | Language::Python | Language::Go)
 }
 
 /// The first `<invoke type="scxml">` of `model` whose child declares
@@ -1503,6 +1503,15 @@ fn build_interface(
                     "\t{}({})\n",
                     method_name(lang, name),
                     plist(sig).join(", ")
+                ));
+            }
+            // The child's interface is declared beside its machine, in the one package
+            // the parent and the children it invokes are generated into.
+            for child in children {
+                methods.push_str(&format!(
+                    "\t{}() {}\n",
+                    method_name(lang, &child.operation),
+                    child.child_interface
                 ));
             }
             format!(

@@ -176,7 +176,7 @@
 			// W3C SCXML 6.5: Generate child session ID
 			childSessionID := fmt.Sprintf("%s.%s", p.SessionID, pending.InvokeID)
 
-			childPolicy := New{{ child_stem | to_machine_name }}Policy()
+			childPolicy := New{{ child_stem | to_machine_name }}Policy({{ child.child_host_call }})
 {% if child.child_needs_script_engine %}
 			childPolicy.ScriptEngine = p.ScriptEngine
 {% endif %}
@@ -261,7 +261,10 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 			childSessionID := fmt.Sprintf("%s.%s", p.SessionID, pending.InvokeID)
 
 			// W3C SCXML 6.4: Create child state machine
-			childPolicy := New{{ invoke_info.child_name | to_machine_name }}Policy()
+{# The host the child performs its acts through is asked of the parent's own
+   host here, where the invocation starts, so a state invoked again is given a
+   fresh one (docs/adr/0005, decision 6). It leads the policy's parameters. #}
+			childPolicy := New{{ invoke_info.child_name | to_machine_name }}Policy({{ invoke_info.child_host_call }})
 {% if invoke_info.child_needs_script_engine %}
 			childPolicy.ScriptEngine = p.ScriptEngine
 {% endif %}

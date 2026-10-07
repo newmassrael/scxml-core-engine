@@ -9,52 +9,32 @@
 # `finished` as it ends; `static_child_host_hybrid` invokes whichever of two
 # candidates its `srcexpr` names, each with an act of its own. The Kotlin tests keep
 # every host the parent's recording host answered, and read what each was asked: the
-# first act is already performed (the host was there when the child was built), a
-# state invoked again and a restore are each given a host of their own, and a
-# candidate is given the host answered for IT and for no other. The mutants take one
-# decision away each:
+# parent's host is asked once per start, the first act is already performed (the
+# host was there when the child was built), a state invoked again and a restore are
+# each given a host of their own, and a candidate is given the host answered for IT
+# and for no other. The mutant takes one decision away:
 #
-#   a child is built without the host its parent answers;
-#   a candidate is built without it;
-#   the entry the template reads is emptied, so no call is written;
-#   a candidate is asked for under the invoke's name and not its own.
+#   the parent's host is asked twice for one start.
 #
-# Each is refused by Kotlin's compiler when the machine is built — a constructor
-# called without its host, or with the host of another candidate's interface — which
-# is how the language holds the guarantee this lowering rests on; what the tests add
-# is that the machine, built, asks the right host at the right time (the cases above
-# the mutants, read from what each recording host was asked).
+# ⚠ Only a mutation that still compiles can be a case here. The cases this casefile
+# first held took the host out of the constructor call, or put another candidate's
+# in it, and Kotlin refuses both when the machine is built: a mutated tree that does
+# not compile is INCONCLUSIVE, which fails the round, so they proved nothing the
+# compiler had not already. What the compiler cannot say is how often the host is
+# asked, and that is what the tests read.
 #
 # Anchors are literal slices of the source; an edit that moves one is reported
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_gradle . :sce-kotlin-tests:test --tests 'com.sce.integration.AChildIsGivenItsHostByItsParentTest' --tests 'com.sce.integration.AHybridCandidateIsGivenItsHostByItsParentTest'
-mutation_targets tools/codegen/templates/kotlin/entry_exit_actions.kt.jinja2 sce-build/src/kotlin.rs sce-build/src/forge/native_action.rs
+mutation_targets sce-build/src/forge/native_action.rs
 mutation_targets backends/kotlin/tests/src/main/kotlin/com/sce/integration/static_child_host/static_child_hostSm.kt backends/kotlin/tests/src/main/kotlin/com/sce/integration/static_child_host/static_child_host__sce_synth_invoke__workerSm.kt
 mutation_targets backends/kotlin/tests/src/main/kotlin/com/sce/integration/static_child_host_hybrid/static_child_host_hybridSm.kt backends/kotlin/tests/src/main/kotlin/com/sce/integration/static_child_host_hybrid/static_hosted_firstSm.kt backends/kotlin/tests/src/main/kotlin/com/sce/integration/static_child_host_hybrid/static_hosted_secondSm.kt
 mutation_regen scripts/regen_static_datamodel_kotlin.sh
 mutation_oracles backends/kotlin/tests/src/test/kotlin/com/sce/integration/AChildIsGivenItsHostByItsParentTest.kt backends/kotlin/tests/src/test/kotlin/com/sce/integration/AHybridCandidateIsGivenItsHostByItsParentTest.kt sce-build/tests/fixtures/static_datamodel/static_child_host.scxml sce-build/tests/fixtures/static_datamodel/static_child_host_hybrid.scxml
 
-mutation_case "a child is built without the host its parent answers" <<'PY'
-edit("tools/codegen/templates/kotlin/entry_exit_actions.kt.jinja2",
-     "                    val childSM = {{ inv.child_class }}StateMachine({{ inv.child_host_call }})\n",
-     "                    val childSM = {{ inv.child_class }}StateMachine()\n")
-PY
-
-mutation_case "a candidate is built without the host its parent answers" <<'PY'
-edit("tools/codegen/templates/kotlin/entry_exit_actions.kt.jinja2",
-     "StateMachine({% if candidate.child_host_call %}{{ candidate.child_host_call }}{% if candidate.child_needs_script_engine %}, {% endif %}{% endif %}{% if candidate.child_needs_script_engine %}",
-     "StateMachine({% if candidate.child_needs_script_engine %}")
-PY
-
-mutation_case "the entry the template reads carries no call" <<'PY'
-edit("sce-build/src/kotlin.rs",
-     "                    \"child_host_call\": si.child_host_call,\n",
-     "                    \"child_host_call\": \"\",\n")
-PY
-
-mutation_case "a candidate is asked for under the invoke's name and not its own" <<'PY'
+mutation_case "the parent's host is asked twice for one start" <<'PY'
 edit("sce-build/src/forge/native_action.rs",
-     "                        let operation = host_operation(&suffix, Some(&candidate.stem));",
-     "                        let operation = host_operation(&suffix, None);")
+     "        let call = call_expression(lang, &operation, &[]);\n        hosts.entry(operation.clone())",
+     "        let call = { let c = call_expression(lang, &operation, &[]); format!(\"{c}.let {{ {c} }}\") };\n        hosts.entry(operation.clone())")
 PY

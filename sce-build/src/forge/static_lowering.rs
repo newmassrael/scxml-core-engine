@@ -3792,6 +3792,11 @@ impl StaticTarget for GoTarget<'_> {
     fn bounded_bytes(&self, value: &str, capacity: u32) -> String {
         format!("scealgorithm.BoundedBytes(&sceFailure, {value}, {capacity})")
     }
+    // The child's policy is built with what the parent's host answers for it
+    // (`p.actions.ActionsFor<Invoke>()`), each time the invocation starts.
+    fn lowers_child_host(&self) -> bool {
+        crate::forge::native_action::declares_child_hosts(Language::Go)
+    }
     fn assign(&self, target: &str, value: &str) -> String {
         format!("{target} = {value}")
     }

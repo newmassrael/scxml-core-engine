@@ -1508,7 +1508,7 @@ fn every_backend_hands_a_string_to_a_child_that_declares_its_bound() {
 const CHILD_HOST_LOWERED: &[(&str, &str, bool)] = &[
     ("rust", "Rust", false),
     ("kotlin", "Kotlin", true),
-    ("go", "Go", false),
+    ("go", "Go", true),
     ("cpp", "C++", false),
     ("python", "Python", true),
     ("c11", "C11", false),
