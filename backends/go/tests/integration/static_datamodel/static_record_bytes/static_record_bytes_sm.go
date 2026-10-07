@@ -775,7 +775,7 @@ func (p *StaticRecordBytesPolicy) ExecuteTransitionContent(source StaticRecordBy
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, []byte{0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68}, 8); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordBytesEventErrorExecution, "<assign location='last.frame'>: an integer operation overflowed or failed")); return true }; p.vLast.frame = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.BoundedBytes(&sceFailure, []byte{0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68}, 8); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordBytesEventErrorExecution, "<assign location='last.frame'>: an integer operation overflowed or failed")); return true }; p.vLast.frame = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -786,7 +786,7 @@ func (p *StaticRecordBytesPolicy) ExecuteTransitionContent(source StaticRecordBy
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, []byte{0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69}, 8); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordBytesEventErrorExecution, "<assign location='last.frame'>: an integer operation overflowed or failed")); return true }; p.vLast.frame = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.BoundedBytes(&sceFailure, []byte{0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69}, 8); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordBytesEventErrorExecution, "<assign location='last.frame'>: an integer operation overflowed or failed")); return true }; p.vLast.frame = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -797,7 +797,7 @@ func (p *StaticRecordBytesPolicy) ExecuteTransitionContent(source StaticRecordBy
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, []byte{0x61, 0x62}, 8); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordBytesEventErrorExecution, "<assign location='last.frame'>: an integer operation overflowed or failed")); return true }; p.vLast.frame = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.BoundedBytes(&sceFailure, []byte{0x61, 0x62}, 8); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordBytesEventErrorExecution, "<assign location='last.frame'>: an integer operation overflowed or failed")); return true }; p.vLast.frame = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -808,7 +808,7 @@ func (p *StaticRecordBytesPolicy) ExecuteTransitionContent(source StaticRecordBy
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, []byte{0x62, 0x61}, 8); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordBytesEventErrorExecution, "<assign location='last.frame'>: an integer operation overflowed or failed")); return true }; p.vLast.frame = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.BoundedBytes(&sceFailure, []byte{0x62, 0x61}, 8); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordBytesEventErrorExecution, "<assign location='last.frame'>: an integer operation overflowed or failed")); return true }; p.vLast.frame = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -819,7 +819,7 @@ func (p *StaticRecordBytesPolicy) ExecuteTransitionContent(source StaticRecordBy
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, []byte{0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6a, 0x6b, 0x6c, 0x6d, 0x6e, 0x6f, 0x70}, 16); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordBytesEventErrorExecution, "<assign location='spare'>: an integer operation overflowed or failed")); return true }; p.vSpare = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.BoundedBytes(&sceFailure, []byte{0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6a, 0x6b, 0x6c, 0x6d, 0x6e, 0x6f, 0x70}, 16); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordBytesEventErrorExecution, "<assign location='spare'>: an integer operation overflowed or failed")); return true }; p.vSpare = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -830,7 +830,7 @@ func (p *StaticRecordBytesPolicy) ExecuteTransitionContent(source StaticRecordBy
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, p.vSpare, 8); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordBytesEventErrorExecution, "<assign location='last.frame'>: an integer operation overflowed or failed")); return true }; p.vLast.frame = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.BoundedBytes(&sceFailure, p.vSpare, 8); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordBytesEventErrorExecution, "<assign location='last.frame'>: an integer operation overflowed or failed")); return true }; p.vLast.frame = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -841,7 +841,7 @@ func (p *StaticRecordBytesPolicy) ExecuteTransitionContent(source StaticRecordBy
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, p.vLast.frame, 16); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordBytesEventErrorExecution, "<assign location='spare'>: an integer operation overflowed or failed")); return true }; p.vSpare = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.BoundedBytes(&sceFailure, p.vLast.frame, 16); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordBytesEventErrorExecution, "<assign location='spare'>: an integer operation overflowed or failed")); return true }; p.vSpare = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -899,7 +899,7 @@ func (p *StaticRecordBytesPolicy) ExecuteTransitionContent(source StaticRecordBy
 		_ = f
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, f.frame, 16); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordBytesEventErrorExecution, "<assign location='spare'>: an integer operation overflowed or failed")); return true }; p.vSpare = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.BoundedBytes(&sceFailure, f.frame, 16); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordBytesEventErrorExecution, "<assign location='spare'>: an integer operation overflowed or failed")); return true }; p.vSpare = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

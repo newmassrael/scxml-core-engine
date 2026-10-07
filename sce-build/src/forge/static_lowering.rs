@@ -3846,9 +3846,10 @@ impl StaticTarget for GoTarget<'_> {
     fn bounded_string(&self, value: &str, capacity: u32) -> String {
         format!("scealgorithm.Bounded(&sceFailure, {value}, {capacity})")
     }
-    // The one generic helper counts the length of a `string` and of a `[]byte`.
+    // The slice a machine holds is its own copy, so a host that kept the one it
+    // raised an event with changes nothing of what the machine read.
     fn bounded_bytes(&self, value: &str, capacity: u32) -> String {
-        self.bounded_string(value, capacity)
+        format!("scealgorithm.BoundedBytes(&sceFailure, {value}, {capacity})")
     }
     // A `[]byte` the machine never writes into, handed to a host as a copy.
     fn lowers_bytes(&self) -> bool {
@@ -3858,6 +3859,11 @@ impl StaticTarget for GoTarget<'_> {
     // never writes into it, so a copy of the record shares it safely, and the
     // reader the record gives the field answers a copy.
     fn lowers_record_bytes(&self) -> bool {
+        true
+    }
+    // A payload's `[]byte` field is read where the machine's own is, and held to the
+    // bound of the variable or the record's field it is written to.
+    fn lowers_payload_bytes(&self) -> bool {
         true
     }
     fn assign(&self, target: &str, value: &str) -> String {

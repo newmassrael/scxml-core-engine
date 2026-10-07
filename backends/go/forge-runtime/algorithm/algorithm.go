@@ -120,6 +120,21 @@ func Bounded[S ~string | ~[]byte](f *Failure, value S, capacity uint32) S {
 	return value
 }
 
+// BoundedBytes is Bounded for a byte string: a copy of `value` when it holds no
+// more than capacity bytes, and the empty value with a capacity failure recorded
+// in f otherwise (docs/adr/0005, decision 2).
+//
+// A copy, because the slice a machine holds must be its own: a payload's slice is
+// the one the host raised the event with, and a host that kept it and wrote into
+// it would otherwise change what the machine holds, past any bound judged here.
+func BoundedBytes(f *Failure, value []byte, capacity uint32) []byte {
+	if uint64(len(value)) > uint64(capacity) {
+		f.Fail(CapacityExceeded)
+		return nil
+	}
+	return append([]byte{}, value...)
+}
+
 // Take passes a call to another may-fail algorithm through the calling
 // body's f: `Take[uint32](&sceFailure)(tick(n))` is the call's value, or 0
 // with its failure recorded in f, which the statement around it returns.

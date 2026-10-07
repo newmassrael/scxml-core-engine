@@ -48,6 +48,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_list"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_overflow"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_payload"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_payload_bytes"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_payload_enum"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_payload_relay"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_real"
@@ -632,6 +633,63 @@ func TestAHostThatWritesIntoARecordsBytesItWasHandedChangesNothingOfTheMachine(t
 	handed[0] = 'z'
 	if got := sce.BytesAsPayloadText(policy.Last().Frame()); got != "ab" {
 		t.Fatalf("the record holds %q after a host wrote into its copy, want %q", got, "ab")
+	}
+}
+
+// The bytes an event's payload carries are read into a bytes variable, into a
+// record's field and into a whole record, each held to its own bound: a value past it
+// writes nothing, raises error.execution and ends its block. The wire spells a byte
+// string as its byte-exact Latin-1 text, which a scenario states it as.
+func TestThePayloadOfAnEventCarriesBytesHeldWithinTheirBounds(t *testing.T) {
+	policy := static_payload_bytes.NewStaticPayloadBytesPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_payload_bytes", drive[static_payload_bytes.StaticPayloadBytesState, static_payload_bytes.StaticPayloadBytesEvent](&policy, map[string]func() any{
+		"last":    func() any { return framedJSON(policy.Last()) },
+		"held":    func() any { return sce.BytesAsPayloadText(policy.Held()) },
+		"frames":  func() any { return framedsJSON(policy.Frames()) },
+		"size":    func() any { return policy.Size() },
+		"matches": func() any { return policy.Matches() },
+		"misses":  func() any { return policy.Misses() },
+		"errors":  func() any { return policy.Errors() },
+	}))
+}
+
+// A host that raised an event with a slice of its own and then wrote into it changes
+// nothing of the machine: the variable, the record's field and the whole record each
+// hold a copy of the bytes the machine read, so the bound it judged still describes
+// what it holds.
+func TestAHostThatWritesIntoTheBytesItRaisedAnEventWithChangesNothingOfTheMachine(t *testing.T) {
+	policy := static_payload_bytes.NewStaticPayloadBytesPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	engine := sce.NewEngine[static_payload_bytes.StaticPayloadBytesState, static_payload_bytes.StaticPayloadBytesEvent](&policy)
+	engine.SetClock(sce.NewManualClock(0))
+	engine.Initialize()
+
+	toVariable := []byte("wxyz")
+	static_payload_bytes.RaiseFramedTaken(engine, 100, toVariable)
+	engine.Step()
+	toVariable[0] = 'X'
+	if got := sce.BytesAsPayloadText(policy.Held()); got != "wxyz" {
+		t.Fatalf("the variable holds %q after a host wrote into the slice it raised the event with, want %q", got, "wxyz")
+	}
+
+	toField := []byte("abcd")
+	static_payload_bytes.RaiseFramedTaken(engine, 7, toField)
+	engine.Step()
+	toField[0] = 'X'
+	if got := sce.BytesAsPayloadText(policy.Last().Frame()); got != "abcd" {
+		t.Fatalf("the record's field holds %q after the same write, want %q", got, "abcd")
+	}
+
+	whole := []byte("whole")
+	static_payload_bytes.RaiseFramedTaken(engine, 200, whole)
+	engine.Step()
+	whole[0] = 'X'
+	if got := sce.BytesAsPayloadText(policy.Last().Frame()); got != "whole" {
+		t.Fatalf("the record taken whole holds %q after the same write, want %q", got, "whole")
+	}
+	if got := sce.BytesAsPayloadText(policy.Frames()[0].Frame()); got != "whole" {
+		t.Fatalf("the list holds %q after the same write, want %q", got, "whole")
 	}
 }
 

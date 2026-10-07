@@ -574,7 +574,7 @@ const BYTES_HELD: &[BytesHeld] = &[
         name: "Go",
         variable: true,
         record: true,
-        payload: false,
+        payload: true,
     },
     BytesHeld {
         lang: "cpp",

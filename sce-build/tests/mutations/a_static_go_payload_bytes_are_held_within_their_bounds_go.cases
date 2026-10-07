@@ -1,0 +1,48 @@
+# Mutation cases for "the bytes a typed payload carries are held within the bound of the
+# place they are written to" under the Go backend
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A byte string"; docs/adr/0005, decision 2).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_go_payload_bytes_are_held_within_their_bounds_go.cases`.
+#
+# `static_payload_bytes` reads the bytes of a `framed.taken` payload into a bytes
+# variable of four, into a record's field of eight and into a whole record, and compares
+# them in a guard; it expects a value past the bound to leave what it was written to as
+# it was and `errors` to count it, and a payload that carries a character past U+00FF,
+# which is no byte, to be refused with nothing written.
+# `TestAHostThatWritesIntoTheBytesItRaisedAnEventWith...` raises the event with a slice
+# of its own, writes into that slice afterwards, and expects the variable, the field and
+# the record to hold what the machine read. The mutants take one decision away each:
+#
+#   a record taken whole from a payload is not held to the bound of its bytes field;
+#   the machine holds the slice the host raised the event with and not a copy of it;
+#   a character past U+00FF is read as the byte its low eight bits make.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_go backends/go/tests ./integration/static_datamodel/
+mutation_targets sce-build/src/forge/static_lowering.rs
+mutation_targets backends/go/forge-runtime/algorithm/algorithm.go
+mutation_targets backends/go/runtime/event_payload.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_payload_bytes/static_payload_bytes_sm.go
+mutation_regen scripts/regen_static_datamodel_go.sh
+mutation_oracles backends/go/tests/integration/static_datamodel/static_scenarios_test.go sce-build/tests/fixtures/static_datamodel/scenarios/static_payload_bytes.json
+
+mutation_case "a record taken whole from a payload is not held to its bytes field's bound" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "            (SceType::Bytes, Some(bound)) => {\n                bounded = true;\n                let held = target.bounded_bytes(&read.text, bound);",
+     "            (SceType::Bytes, Some(bound)) if false => {\n                bounded = true;\n                let held = target.bounded_bytes(&read.text, bound);")
+PY
+
+mutation_case "the machine holds the slice the host raised the event with" <<'PY'
+edit("backends/go/forge-runtime/algorithm/algorithm.go",
+     "	return append([]byte{}, value...)\n}",
+     "	return value\n}")
+PY
+
+mutation_case "a character past U+00FF is read as the byte its low eight bits make" <<'PY'
+edit("backends/go/runtime/event_payload.go",
+     "		if r > 0xFF {\n			return nil, fmt.Errorf(\n				\"%q carries a character above U+00FF, which no single byte spells\", name)",
+     "		if r > 0x10FFFF {\n			return nil, fmt.Errorf(\n				\"%q carries a character above U+00FF, which no single byte spells\", name)")
+PY
