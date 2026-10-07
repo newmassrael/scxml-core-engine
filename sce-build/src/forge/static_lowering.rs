@@ -5619,6 +5619,12 @@ impl StaticTarget for CTarget {
             crate::forge::enum_naming::c11_function_prefix(&self.enum_document_name(alias));
         Some(format!("{prefix}_declared_name({value})"))
     }
+    // A byte string is the view of its buffer and length, which the runtime's wire
+    // value holds with the length: a string is NUL-terminated and a byte string may
+    // hold a 0x00 (`sce/forge/wire.h`).
+    fn wire_bytes(&self, value: &str) -> Option<String> {
+        Some(format!("sce_forge_wire_bytes({value})"))
+    }
 }
 
 /// Rewrite `model` — a clone the C11 backend renders — so every expression of

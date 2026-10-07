@@ -95,6 +95,7 @@
 #include "static_block_ends_list_sm.h"
 #include "static_block_ends_sm.h"
 #include "static_bytes_sm.h"
+#include "static_bytes_wire_sm.h"
 #include "static_cancel_expr_sm.h"
 #include "static_counter_sm.h"
 #include "static_donedata_content_sm.h"
@@ -762,6 +763,40 @@ static const record_variable_t payload_bytes_records[] = {
     RECORD_ROW(static_payload_bytes, last), RECORD_LIST_ROW(static_payload_bytes, frames), {NULL, NULL, NULL, NULL}};
 STATIC_SCENARIO(static_payload_bytes, payload_bytes_states, payload_bytes_variables, static_payload_bytes_text,
                 no_lists, payload_bytes_records)
+
+// static_bytes_wire: a byte string held by the machine crosses a `<param>` and a
+// `<donedata>` as its byte-exact Latin-1 text, sent to itself and read back through
+// the typed payload. The runtime's wire value holds it with its length, since a C
+// string cannot hold a 0x00 byte.
+VARIABLE_READER(static_bytes_wire, relays)
+VARIABLE_READER(static_bytes_wire, errors)
+
+static const char *static_bytes_wire_text(void *sm, const char *name) {
+    static char text[2 * 8 + 1];
+    const static_bytes_wire_t *machine = (const static_bytes_wire_t *)sm;
+    if (strcmp(name, "held") == 0) {
+        return bytes_latin1_text(text, sizeof(text), static_bytes_wire_get_held(machine));
+    }
+    if (strcmp(name, "echo") == 0) {
+        return bytes_latin1_text(text, sizeof(text), static_bytes_wire_get_echo(machine));
+    }
+    return NULL;
+}
+
+static const char *static_bytes_wire_done(void *sm) {
+    return static_bytes_wire_done_data((const static_bytes_wire_t *)sm);
+}
+
+static const name_value_t bytes_wire_states[] = {
+    {"idle", STATIC_BYTES_WIRE_STATE_IDLE},
+    {"done", STATIC_BYTES_WIRE_STATE_DONE},
+};
+static const variable_t bytes_wire_variables[] = {
+    {"relays", static_bytes_wire_read_relays},
+    {"errors", static_bytes_wire_read_errors},
+};
+STATIC_SCENARIO_DONE(static_bytes_wire, bytes_wire_states, bytes_wire_variables, static_bytes_wire_text, no_lists,
+                     no_records, static_bytes_wire_done)
 
 // static_donedata: a top-level final hands its done event the pairs of its
 // `<donedata>`, each read from the machine's own fields when the final is entered
@@ -1551,6 +1586,7 @@ int main(void) {
     bad |= static_bytes_scenario("static_bytes", 12);
     bad |= static_record_bytes_scenario("static_record_bytes", 22);
     bad |= static_payload_bytes_scenario("static_payload_bytes", 15);
+    bad |= static_bytes_wire_scenario("static_bytes_wire", 8);
     bad |= static_donedata_scenario("static_donedata", 6);
     bad |= static_donedata_content_scenario("static_donedata_content", 3);
     bad |= static_donedata_content_scenario("static_donedata_content_value", 4);

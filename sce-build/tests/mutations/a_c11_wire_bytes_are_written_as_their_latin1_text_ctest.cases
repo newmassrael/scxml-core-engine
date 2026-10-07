@@ -1,0 +1,40 @@
+# Mutation cases for "a C11 wire value of a byte string is its byte-exact Latin-1 text"
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A byte string"; docs/adr/0005, decision 2).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_c11_wire_bytes_are_written_as_their_latin1_text_ctest.cases`.
+#
+# The wire value holds a byte string with its length, since a C string cannot hold a 0x00.
+# `c11_unit_forge_wire_bytes` writes all 256 values as the JSON of an event's data and
+# reads them back with the payload reader, holds the escapes and the text a request carries
+# to what they are written as, and expects what does not fit, and a byte string holding a
+# 0x00 as text, to be refused whole. The mutants take one decision away each:
+#
+#   a byte string holding a 0x00 is written as text and cut short where the first ends it;
+#   the text a request carries is let past the buffer it was given;
+#   a byte above 0x7F is the two bytes of its character with the wrong lead.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^c11_unit_forge_wire_bytes$'
+mutation_targets backends/c/forge-runtime/include/sce/forge/wire.h
+mutation_oracles backends/c/tests/unit/forge_wire_bytes_test.c
+
+mutation_case "a byte string holding a 0x00 is written as text" <<'PY'
+edit("backends/c/forge-runtime/include/sce/forge/wire.h",
+     "            if (c == 0u || needed >= cap - at) {",
+     "            if (needed >= cap - at) {")
+PY
+
+mutation_case "the text a request carries is let past the buffer it was given" <<'PY'
+edit("backends/c/forge-runtime/include/sce/forge/wire.h",
+     "            if (c == 0u || needed >= cap - at) {",
+     "            if (c == 0u || needed > cap - at) {")
+PY
+
+mutation_case "a byte above 0x7F is the two bytes of its character with the wrong lead" <<'PY'
+edit("backends/c/forge-runtime/include/sce/forge/wire.h",
+     "    out[0] = (char)(0xC0u | (byte >> 6));",
+     "    out[0] = (char)(0xC0u | (byte >> 5));")
+PY

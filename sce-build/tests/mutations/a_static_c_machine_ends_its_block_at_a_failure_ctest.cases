@@ -229,8 +229,8 @@ PY
 
 mutation_case "a quote inside a string is written unescaped" <<'PY'
 edit("backends/c/forge-runtime/include/sce/forge/wire.h",
-     "            sce_forge_wire_put(w, \"\\\\\\\"\", 2u);",
-     "            sce_forge_wire_put(w, \"\\\"\", 1u);")
+     "        sce_forge_wire_put(w, \"\\\\\\\"\", 2u);",
+     "        sce_forge_wire_put(w, \"\\\"\", 1u);")
 PY
 
 mutation_case "an object past its buffer is left truncated" <<'PY'

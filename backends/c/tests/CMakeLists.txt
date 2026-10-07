@@ -2517,6 +2517,14 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_payload_bytes.scxml"
         STAGE_ALSO schema_framed.scxml
     )
+    # A byte string held by the machine, sent to itself as a `<param>` and carried by
+    # a `<donedata>` as its Latin-1 text, read back through the typed payload: both
+    # schemas of the pair travel beside it.
+    sce_generate_static_integration_c_test(static_bytes_wire
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_bytes_wire.scxml"
+        STAGE_ALSO schema_framed.scxml schema_framed_relayed.scxml
+    )
     # A guard over two fields of the record calls an algorithm of the fixtures'
     # own, whose header is generated once beside the machines that include it.
     set(_DAYS_IN_MONTH_HEADER "${SCE_C_INTEGRATION_GENERATED_DIR}/days_in_month.h")
@@ -2618,6 +2626,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_record_string_SOURCES}
         ${INTEGRATION_C_TEST_static_record_bytes_SOURCES}
         ${INTEGRATION_C_TEST_static_payload_bytes_SOURCES}
+        ${INTEGRATION_C_TEST_static_bytes_wire_SOURCES}
         ${INTEGRATION_C_TEST_static_record_list_SOURCES}
         ${INTEGRATION_C_TEST_static_record_enum_SOURCES}
         ${INTEGRATION_C_TEST_static_whole_payload_SOURCES}
@@ -3840,6 +3849,27 @@ set_target_properties(sce_c_forge_wire_repeat_unit_test PROPERTIES
 )
 add_test(NAME c11_unit_forge_wire_repeat COMMAND sce_c_forge_wire_repeat_unit_test)
 set_tests_properties(c11_unit_forge_wire_repeat PROPERTIES
+    TIMEOUT 10
+    LABELS "unit;c11"
+)
+
+# ─── Forge wire bytes unit test ─────────────────────────────────────
+#
+# A byte string crosses a `<param>` and a `<donedata>` as its byte-exact Latin-1 text
+# (docs/adr/0005, decision 2): the wire writer holds it with its length, since a C
+# string cannot hold a 0x00, and what it wrote is read back with the payload reader.
+# Header-only code.
+add_executable(sce_c_forge_wire_bytes_unit_test unit/forge_wire_bytes_test.c)
+target_link_libraries(sce_c_forge_wire_bytes_unit_test PRIVATE sce_c_runtime)
+target_include_directories(sce_c_forge_wire_bytes_unit_test PRIVATE
+    "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include")
+set_target_properties(sce_c_forge_wire_bytes_unit_test PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+add_test(NAME c11_unit_forge_wire_bytes COMMAND sce_c_forge_wire_bytes_unit_test)
+set_tests_properties(c11_unit_forge_wire_bytes PROPERTIES
     TIMEOUT 10
     LABELS "unit;c11"
 )

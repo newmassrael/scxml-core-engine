@@ -28,12 +28,15 @@
  * `sce-static` datamodel writes it too. */
 #include <sce/number_text.h>
 
+#include "sce/forge/bytes.h"
+
 typedef enum {
     SCE_FORGE_WIRE_BOOL,
     SCE_FORGE_WIRE_INT,
     SCE_FORGE_WIRE_UINT,
     SCE_FORGE_WIRE_REAL,
-    SCE_FORGE_WIRE_STRING
+    SCE_FORGE_WIRE_STRING,
+    SCE_FORGE_WIRE_BYTES
 } sce_forge_wire_kind_t;
 
 /* One value of the data model, as it crosses. */
@@ -46,6 +49,7 @@ typedef struct {
         uint64_t u;
         double r;
         const char *s;
+        sce_forge_bytes_view_t bytes;
     } as;
 } sce_forge_wire_value_t;
 
@@ -93,6 +97,17 @@ static inline sce_forge_wire_value_t sce_forge_wire_string(const char *v) {
     return value;
 }
 
+/* A byte string, which crosses as its byte-exact Latin-1 text: each byte is the
+ * character of that code point (docs/adr/0005, decision 2). It is held with its
+ * length because a string is NUL-terminated and a byte string may hold a 0x00. */
+static inline sce_forge_wire_value_t sce_forge_wire_bytes(sce_forge_bytes_view_t v) {
+    sce_forge_wire_value_t value;
+    memset(&value, 0, sizeof(value));
+    value.kind = SCE_FORGE_WIRE_BYTES;
+    value.as.bytes = v;
+    return value;
+}
+
 /* The object being written: `buf` holds `len` bytes of it, `cap` is its size.
  *
  * The pairs of a name that repeats are written one after another (the generator
@@ -132,36 +147,63 @@ static inline void sce_forge_wire_begin(sce_forge_wire_t *w, char *buf, size_t c
     sce_forge_wire_put(w, "{", 1u);
 }
 
-/* The text of a string as a JSON string's body: `"`, `\` and the control
- * characters escaped, every other byte — UTF-8 included — as it is. */
+/* One byte of a JSON string's body: `"`, `\` and the control characters
+ * escaped, every other byte — a byte of UTF-8 included — as it is. */
+static inline void sce_forge_wire_put_char(sce_forge_wire_t *w, unsigned char c) {
+    char escaped[7];
+    switch (c) {
+    case '"':
+        sce_forge_wire_put(w, "\\\"", 2u);
+        break;
+    case '\\':
+        sce_forge_wire_put(w, "\\\\", 2u);
+        break;
+    case '\n':
+        sce_forge_wire_put(w, "\\n", 2u);
+        break;
+    case '\r':
+        sce_forge_wire_put(w, "\\r", 2u);
+        break;
+    case '\t':
+        sce_forge_wire_put(w, "\\t", 2u);
+        break;
+    default:
+        if (c < 0x20u) {
+            (void)snprintf(escaped, sizeof(escaped), "\\u%04x", (unsigned)c);
+            sce_forge_wire_put(w, escaped, 6u);
+        } else {
+            sce_forge_wire_put(w, (const char *)&c, 1u);
+        }
+        break;
+    }
+}
+
+/* The text of a string as a JSON string's body. */
 static inline void sce_forge_wire_put_text(sce_forge_wire_t *w, const char *text) {
     for (const char *p = text; *p != '\0'; ++p) {
-        const unsigned char c = (unsigned char)*p;
-        char escaped[7];
-        switch (c) {
-        case '"':
-            sce_forge_wire_put(w, "\\\"", 2u);
-            break;
-        case '\\':
-            sce_forge_wire_put(w, "\\\\", 2u);
-            break;
-        case '\n':
-            sce_forge_wire_put(w, "\\n", 2u);
-            break;
-        case '\r':
-            sce_forge_wire_put(w, "\\r", 2u);
-            break;
-        case '\t':
-            sce_forge_wire_put(w, "\\t", 2u);
-            break;
-        default:
-            if (c < 0x20u) {
-                (void)snprintf(escaped, sizeof(escaped), "\\u%04x", (unsigned)c);
-                sce_forge_wire_put(w, escaped, 6u);
-            } else {
-                sce_forge_wire_put(w, (const char *)&c, 1u);
-            }
-            break;
+        sce_forge_wire_put_char(w, (unsigned char)*p);
+    }
+}
+
+/* The two bytes of UTF-8 a byte above 0x7F is, as the character of its code
+ * point, written to `out`. */
+static inline void sce_forge_wire_latin1_utf8(unsigned char byte, char out[2]) {
+    out[0] = (char)(0xC0u | (byte >> 6));
+    out[1] = (char)(0x80u | (byte & 0x3Fu));
+}
+
+/* A byte string as a JSON string's body: each byte is the character of its code
+ * point, which above 0x7F is two bytes of UTF-8 and below it is written as any
+ * text is. */
+static inline void sce_forge_wire_put_bytes(sce_forge_wire_t *w, sce_forge_bytes_view_t bytes) {
+    for (size_t i = 0u; i < bytes.len; ++i) {
+        const unsigned char c = bytes.data[i];
+        if (c < 0x80u) {
+            sce_forge_wire_put_char(w, c);
+        } else {
+            char utf8[2];
+            sce_forge_wire_latin1_utf8(c, utf8);
+            sce_forge_wire_put(w, utf8, 2u);
         }
     }
 }
@@ -197,6 +239,11 @@ static inline void sce_forge_wire_put_value(sce_forge_wire_t *w, sce_forge_wire_
     case SCE_FORGE_WIRE_STRING:
         sce_forge_wire_put(w, "\"", 1u);
         sce_forge_wire_put_text(w, value.as.s);
+        sce_forge_wire_put(w, "\"", 1u);
+        break;
+    case SCE_FORGE_WIRE_BYTES:
+        sce_forge_wire_put(w, "\"", 1u);
+        sce_forge_wire_put_bytes(w, value.as.bytes);
         sce_forge_wire_put(w, "\"", 1u);
         break;
     }
@@ -304,6 +351,29 @@ static inline bool sce_forge_wire_text(sce_forge_wire_value_t value, char *buf, 
     case SCE_FORGE_WIRE_STRING:
         written = snprintf(buf, cap, "%s", value.as.s);
         break;
+    case SCE_FORGE_WIRE_BYTES: {
+        /* The Latin-1 text of the bytes: a byte above 0x7F is the two bytes of its
+         * character. A request carries text as a C string, which cannot hold a
+         * 0x00, so a byte string that holds one is refused and not cut short
+         * where the first would end it. */
+        size_t at = 0u;
+        for (size_t i = 0u; i < value.as.bytes.len; ++i) {
+            const unsigned char c = value.as.bytes.data[i];
+            const size_t needed = c < 0x80u ? 1u : 2u;
+            if (c == 0u || needed >= cap - at) {
+                buf[0] = '\0';
+                return false;
+            }
+            if (c < 0x80u) {
+                buf[at] = (char)c;
+            } else {
+                sce_forge_wire_latin1_utf8(c, buf + at);
+            }
+            at += needed;
+        }
+        buf[at] = '\0';
+        return true;
+    }
     }
     if (written < 0 || (size_t)written >= cap) {
         buf[0] = '\0';

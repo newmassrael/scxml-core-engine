@@ -603,7 +603,7 @@ const BYTES_HELD: &[BytesHeld] = &[
         variable: true,
         record: true,
         payload: true,
-        wire: false,
+        wire: true,
     },
 ];
 

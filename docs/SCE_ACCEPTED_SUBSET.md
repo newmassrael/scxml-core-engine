@@ -3746,12 +3746,13 @@ character of that code point, as the text a request carries and as the JSON stri
 the event's data (a quote, a backslash and a control byte escaped as any string's are).
 The machine that reads that event back through a typed payload holds the bytes it sent
 (`scenarios/static_bytes_wire.json`, which sends a variable to itself and finishes with
-it in a `<donedata>`). **Kotlin**, **Rust**, **Go**, **Python**, **C++** and the
-**Interpreter** carry it so far, each spelling the text in the type it carries a string in
-(`StaticTarget::wire_bytes`): the Interpreter's data model already holds it. **C11**
-refuses such a `<param>` by name (`has no C11 lowering: a byte string has no wire spelling
-here yet`) until its wire value (`sce/forge/wire.h`), which is a NUL-terminated string,
-carries a length.
+it in a `<donedata>`). Every backend and the Interpreter carry it, each spelling the text in
+the type it carries a string in (`StaticTarget::wire_bytes`): the Interpreter's data model
+already holds it, and the C11 wire value (`sce/forge/wire.h`) holds it with its length,
+since a C string is NUL-terminated and a byte string may hold a 0x00. That is also the one
+place C11 differs: where a request carries a `<param>` as text, which is a C string,
+a byte string that holds a 0x00 is refused and not cut short; it crosses whole as the JSON
+of the event's data (`forge_wire_bytes_test.c`).
 
 A saved state holds the variant by its declared name, `"agenda_list"`, which is
 the same on every backend and is not the constant a backend spells for it; one

@@ -1,0 +1,45 @@
+# Mutation cases for "a byte string crosses a `<param>` and a `<donedata>` as its
+# byte-exact Latin-1 text" under the C11 backend
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A byte string"; docs/adr/0005, decision 2).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_c11_bytes_cross_a_param_as_their_latin1_text_ctest.cases`.
+#
+# `static_bytes_wire` keeps the bytes the host raised, sends them to itself as the
+# `<param>` of `framed.relayed`, reads that event's payload back into `echo`, and finishes
+# with `echo` in a `<donedata>`. The bytes include some above 0x7F, a quote, a backslash
+# and a control byte, so the wire value has to carry the buffer with its length and spell
+# each byte as the character of its code point and a JSON string's escapes. The mutants
+# take one decision away each:
+#
+#   a byte string crosses as an empty one, whatever it holds;
+#   a byte above 0x7F is written as the one byte it is, which no JSON string holds;
+#   a backslash is written as it is and not escaped.
+#
+# The writer, byte for byte and in the text form a request carries, is held by
+# `c11_unit_forge_wire_bytes` (`a_c11_wire_bytes_are_written_as_their_latin1_text_ctest.cases`).
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^c11_integration_static_scalars$'
+mutation_targets sce-build/src/forge/static_lowering.rs backends/c/forge-runtime/include/sce/forge/wire.h
+mutation_oracles backends/c/tests/integration/test_static_scalars.c sce-build/tests/fixtures/static_datamodel/scenarios/static_bytes_wire.json
+
+mutation_case "a byte string crosses as an empty one" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "        Some(format!(\"sce_forge_wire_bytes({value})\"))",
+     "        Some(format!(\"sce_forge_wire_bytes((sce_forge_bytes_view_t){{ ({value}).data, 0u }})\"))")
+PY
+
+mutation_case "a byte above 0x7F is written as the one byte it is" <<'PY'
+edit("backends/c/forge-runtime/include/sce/forge/wire.h",
+     "        if (c < 0x80u) {\n            sce_forge_wire_put_char(w, c);",
+     "        if (true) {\n            sce_forge_wire_put_char(w, c);")
+PY
+
+mutation_case "a backslash is written as it is and not escaped" <<'PY'
+edit("backends/c/forge-runtime/include/sce/forge/wire.h",
+     "    case '\\\\':\n        sce_forge_wire_put(w, \"\\\\\\\\\", 2u);\n        break;\n    case '\\n':",
+     "    case '\\x7f':\n        sce_forge_wire_put(w, \"\\\\\\\\\", 2u);\n        break;\n    case '\\n':")
+PY
