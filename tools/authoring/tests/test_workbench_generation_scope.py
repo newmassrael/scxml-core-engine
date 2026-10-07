@@ -10,6 +10,12 @@ import unittest
 from unittest.mock import patch
 
 from sce_author import mcp, process
+from sce_author.verify import _default_codegen
+
+# A test that sends a document to the product's generator says nothing where there is none: the
+# two answers it compares are the same refusal to start.
+BUILT = unittest.skipUnless(_default_codegen().exists(),
+                            "the product's code generator is not built")
 
 # The cases the application's reader of the answer an AI ends with is held to as well
 # (app-core/src/document_files.rs): one rule in two languages.
@@ -205,6 +211,7 @@ class WorkbenchScope(unittest.TestCase):
                 os.environ.pop("SCE_FILE_ROOT", None)
                 self.assertEqual(process.run(report, cwd=folder).stdout.strip(), "None")
 
+    @BUILT
     def test_a_template_named_by_a_path_is_answered_as_a_file_that_is_not_there(self):
         # The guard that reads a document's attributes is a list of the places somebody thought
         # of, so it is switched off here: it is the product that opens the file, and it holds
@@ -230,6 +237,7 @@ class WorkbenchScope(unittest.TestCase):
         self.assertNotIn(marker, there)
         self.assertEqual(there, gone, "the file's being there is said")
 
+    @BUILT
     def test_a_template_handed_over_beside_the_document_is_expanded_as_it_was(self):
         # The boundary is not a refusal of every file: a template that is staged with the document
         # is inside it.
