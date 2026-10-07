@@ -2777,10 +2777,25 @@ fn render_cpp(
     // §scxml-G-7: lower `<sce:action>` Custom Action Elements to native host
     // dispatch (engine-free) — same call every backend makes.
     let native_machine_name = filters::to_pascal_case(model.name.clone());
-    let native = crate::forge::native_action::render(
+    // Suite namespace: when set, this is the ready-to-prepend `<prefix>::`
+    // segment (empty when unset) that nests the emitted machine namespace
+    // under `SCE::Generated::<prefix>::<name>` so identically-named
+    // machines from different catalogs coexist in one binary. Computed
+    // once here and prepended at every `::SCE::Generated::` site (the `.h`
+    // declarations and the `.inl` invoke/child-send refs, and the interface of
+    // a child's host that a parent's host names) — the same
+    // Rust-computed-prepend shape as the C11 backend's `csym_prefix`,
+    // rather than a conditional repeated at each template site. Empty =
+    // the historical un-nested shape (byte-identical).
+    let cpp_ns_prefix = match cpp_namespace_prefix {
+        Some(p) if !p.is_empty() => format!("{p}::"),
+        _ => String::new(),
+    };
+    let native = crate::forge::native_action::render_in_namespace(
         &mut model_lowered,
         &native_machine_name,
         Language::Cpp,
+        &cpp_ns_prefix,
     );
     // SCE Accepted Subset §2.15: a `sce-static` document's every expression
     // lowered to C++ — its variables as members of the policy — before the
@@ -2829,20 +2844,6 @@ fn render_cpp(
     model_lowered.into_artifact_coordinates();
     let model_val = minijinja::Value::from_serialize(&model_lowered);
     let license_val = minijinja::Value::from_serialize(license_config());
-
-    // Suite namespace: when set, this is the ready-to-prepend `<prefix>::`
-    // segment (empty when unset) that nests the emitted machine namespace
-    // under `SCE::Generated::<prefix>::<name>` so identically-named
-    // machines from different catalogs coexist in one binary. Computed
-    // once here and prepended at every `::SCE::Generated::` site (the `.h`
-    // declarations and the `.inl` invoke/child-send refs) — the same
-    // Rust-computed-prepend shape as the C11 backend's `csym_prefix`,
-    // rather than a conditional repeated at each template site. Empty =
-    // the historical un-nested shape (byte-identical).
-    let cpp_ns_prefix = match cpp_namespace_prefix {
-        Some(p) if !p.is_empty() => format!("{p}::"),
-        _ => String::new(),
-    };
 
     let header_ctx = minijinja::context! {
         model => &model_val,

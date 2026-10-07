@@ -51,18 +51,17 @@ edit("sce-build/src/forge/native_action.rs",
      "                .find(|_| false)\n")
 PY
 
-# The anchor is the head of the one expression, so that a language that joins the
-# list does not move it.
+# The anchor is the one expression, which the list a language joins does not move.
 mutation_case "every language is said to answer a child's host" <<'PY'
 edit("sce-build/src/forge/native_action.rs",
-     "    matches!(lang, Language::Kotlin",
-     "    true || matches!(lang, Language::Kotlin")
+     "    CHILD_HOST_LANGUAGES.contains(&lang)\n",
+     "    true || CHILD_HOST_LANGUAGES.contains(&lang)\n")
 PY
 
 mutation_case "no language is said to answer a child's host" <<'PY'
 edit("sce-build/src/forge/native_action.rs",
-     "    matches!(lang, Language::Kotlin",
-     "    false && matches!(lang, Language::Kotlin")
+     "    CHILD_HOST_LANGUAGES.contains(&lang)\n",
+     "    false && CHILD_HOST_LANGUAGES.contains(&lang)\n")
 PY
 
 mutation_case "a language does not ask at its entry" <<'PY'

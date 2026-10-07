@@ -3207,6 +3207,11 @@ impl StaticTarget for CppTarget {
     fn bounded_bytes(&self, value: &str, capacity: u32) -> String {
         format!("SCE::Forge::Checked::bounded(sce_failure_, {value}, {capacity}u)")
     }
+    // The child is built with the host its parent's host answers for it
+    // (`actions_->actionsFor<Invoke>()`), passed first, as its constructors take it.
+    fn lowers_child_host(&self) -> bool {
+        crate::forge::native_action::declares_child_hosts(Language::Cpp)
+    }
     fn assign(&self, target: &str, value: &str) -> String {
         format!("{target} = {value};")
     }

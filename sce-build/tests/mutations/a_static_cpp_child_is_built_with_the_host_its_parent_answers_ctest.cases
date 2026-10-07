@@ -1,0 +1,35 @@
+# Mutation cases for "a child that declares acts is built with the host its parent's
+# host answers, each time the invocation starts" under the C++ backend
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Child sessions"; docs/adr/0005, decision 6).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_cpp_child_is_built_with_the_host_its_parent_answers_ctest.cases`.
+#
+# `static_child_host` invokes `worker`, which performs `started` as it is entered and
+# `finished` as it ends; `static_child_host_hybrid` invokes whichever of two
+# candidates its `srcexpr` names, each with an act of its own. The test keeps every
+# host the parent's host answered and reads what each was asked: the parent's host
+# is asked once per start, the first act is already performed (the host was there
+# when the child was built), a state invoked again is given a host of its own, and a
+# candidate is given the host answered for IT and for no other. The mutant takes one
+# decision away, and it still compiles — a mutated tree that does not is
+# INCONCLUSIVE, which fails the round, and C++ refuses a constructor called without
+# its host:
+#
+#   the parent's host is asked twice for one start.
+#
+# The generator is a Rust source the mutation reaches, so the runner rebuilds
+# `sce-codegen` itself before the tree is built.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^static_datamodel_generated_cpp$'
+mutation_targets sce-build/src/forge/native_action.rs
+mutation_oracles tests/integration/AChildIsGivenItsHostByItsParentTest.cpp sce-build/tests/fixtures/static_datamodel/static_child_host.scxml sce-build/tests/fixtures/static_datamodel/static_child_host_hybrid.scxml sce-build/tests/fixtures/static_datamodel/static_hosted_first.scxml sce-build/tests/fixtures/static_datamodel/static_hosted_second.scxml
+
+mutation_case "the parent's host is asked twice for one start" <<'PY'
+edit("sce-build/src/forge/native_action.rs",
+     "        let call = call_expression(lang, &operation, &[]);\n        hosts.entry(operation.clone())",
+     "        let call = { let c = call_expression(lang, &operation, &[]); format!(\"({c}, {c})\") };\n        hosts.entry(operation.clone())")
+PY

@@ -3410,7 +3410,9 @@ installed afterwards would arrive one act too late. So the host has to exist whe
 the invocation starts, and the parent is the one that obtains it: its own host
 interface gains, for each `<invoke type="scxml">` whose child declares acts, one
 operation that answers the child's host (`fun actionsForWorker(): WorkerActions` in
-Kotlin, `def actions_for_worker(self)` in Python, `ActionsForWorker()` in Go), and for
+Kotlin, `def actions_for_worker(self)` in Python, `ActionsForWorker()` in Go,
+`virtual WorkerActions& actionsForWorker()` in C++, a reference to a host the answering
+host owns and keeps alive past the child's end), and for
 each candidate of a hybrid `<invoke>` that declares acts one of its own
 (`actionsForWorkStaticHostedFirst`), since each candidate is a document with acts of
 its own. The machine calls it each time the invocation starts — on entry of the
@@ -3422,15 +3424,16 @@ by `AChildIsGivenItsHostByItsParentTest` and
 `AHybridCandidateIsGivenItsHostByItsParentTest` in Kotlin and by
 `test_a_child_is_given_its_host_by_its_parent.py` in Python, whose machine asks a
 Python host object and keeps what it answered, and by
-`a_child_is_given_its_host_by_its_parent_test.go` in Go, which has no saved state and
-so no restore). A parent that declares no act of its
+`a_child_is_given_its_host_by_its_parent_test.go` in Go and
+`AChildIsGivenItsHostByItsParentTest.cpp` in C++, neither of which has a saved state and
+so a restore). A parent that declares no act of its
 own still takes that host, and the recording host it generates takes one source per
 child, the function a test hands it, and records each question beside the acts. An act
 whose name is spelled as one of those operations, in any language's convention, and
 two invokes whose ids differ only in spelling, are refused where the second is
 written (`<sce:action name="…">` names one host method, not two).
 
-This is Kotlin's, Python's and Go's yet. A language that does not answer a child's host from its
+This is Kotlin's, Python's, Go's and C++'s yet. A language that does not answer a child's host from its
 parent's own refuses the `<invoke>` at its entry, whatever data model the parent is
 under, as `generate/unsupported-feature` (`an <invoke id="child"> of a child that
 declares <sce:action>s has no Rust lowering yet`; a candidate is named by `an <invoke

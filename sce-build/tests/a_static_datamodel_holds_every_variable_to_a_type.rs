@@ -1509,7 +1509,7 @@ const CHILD_HOST_LOWERED: &[(&str, &str, bool)] = &[
     ("rust", "Rust", false),
     ("kotlin", "Kotlin", true),
     ("go", "Go", true),
-    ("cpp", "C++", false),
+    ("cpp", "C++", true),
     ("python", "Python", true),
     ("c11", "C11", false),
 ];

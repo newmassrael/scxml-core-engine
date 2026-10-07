@@ -75,8 +75,17 @@ fn host_operation(field_suffix: &str, candidate_stem: Option<&str>) -> String {
 /// this) in the commit that gives its interface the operation and replays the
 /// shared fixture, and until then it refuses such an `<invoke>`.
 pub fn declares_child_hosts(lang: Language) -> bool {
-    matches!(lang, Language::Kotlin | Language::Python | Language::Go)
+    CHILD_HOST_LANGUAGES.contains(&lang)
 }
+
+/// The languages whose host interface answers a child's host: one element each,
+/// added by the commit that lowers it.
+const CHILD_HOST_LANGUAGES: &[Language] = &[
+    Language::Kotlin,
+    Language::Python,
+    Language::Go,
+    Language::Cpp,
+];
 
 /// The first `<invoke type="scxml">` of `model` whose child declares
 /// `<sce:action>`s — or, of a hybrid one, a candidate that does — described for
@@ -925,6 +934,30 @@ pub fn render_with_symbol_prefix(
     lang: Language,
     symbol_prefix: &str,
 ) -> NativeActions {
+    render_with_options(model, machine_name, lang, symbol_prefix, "")
+}
+
+/// [`render`] for a backend that nests each machine's namespace under a suite
+/// prefix — C++'s `SCE::Generated::<prefix>::<name>`. A parent's host interface
+/// names the interface of a child's host, which lives in the child's namespace,
+/// so the prefix is what spells that name (`namespace_prefix` is the
+/// ready-to-prepend `<prefix>::` segment, `""` when unset).
+pub fn render_in_namespace(
+    model: &mut SCXMLModel,
+    machine_name: &str,
+    lang: Language,
+    namespace_prefix: &str,
+) -> NativeActions {
+    render_with_options(model, machine_name, lang, "", namespace_prefix)
+}
+
+fn render_with_options(
+    model: &mut SCXMLModel,
+    machine_name: &str,
+    lang: Language,
+    symbol_prefix: &str,
+    namespace_prefix: &str,
+) -> NativeActions {
     let schemas = model.imported_event_schemas.clone();
     // Under `datamodel="sce-static"` an argument is a typed expression over the
     // document's scope, lowered by the static lowering (SCE Accepted
@@ -942,7 +975,7 @@ pub fn render_with_symbol_prefix(
     // from even when it declares no act itself. Read before the walk below
     // borrows `model` for the actions, and written on each invoke so the
     // template that starts the child reads the call and not a name.
-    let child_hosts = lower_child_hosts(model, lang);
+    let child_hosts = lower_child_hosts(model, lang, namespace_prefix);
     let mut calls = CallRendering {
         lang,
         machine_name,
@@ -1041,13 +1074,29 @@ fn machine_token(lang: Language, child_name: &str) -> String {
     }
 }
 
+/// The name of the interface of the host a child is built with, as the parent's
+/// interface spells it: the child's own interface name, and — where a machine
+/// lives in a namespace of its own, as C++'s does — qualified by that namespace,
+/// which a parent in another one cannot reach by the bare name.
+fn child_interface_type(lang: Language, child_name: &str, namespace_prefix: &str) -> String {
+    let bare = interface_name(lang, &machine_token(lang, child_name));
+    match lang {
+        Language::Cpp => format!("::SCE::Generated::{namespace_prefix}{child_name}::{bare}"),
+        _ => bare,
+    }
+}
+
 /// Write on every invoke of `model` whose child declares acts the call that
 /// answers the child's host ([`InvokeSessionCommon::child_host_call`]), and
 /// return the operations the parent's interface declares for them, sorted and
 /// one per name (a name collision is refused earlier, by [`validate`]).
 ///
 /// [`InvokeSessionCommon::child_host_call`]: crate::model::InvokeSessionCommon::child_host_call
-fn lower_child_hosts(model: &mut SCXMLModel, lang: Language) -> Vec<ChildHost> {
+fn lower_child_hosts(
+    model: &mut SCXMLModel,
+    lang: Language,
+    namespace_prefix: &str,
+) -> Vec<ChildHost> {
     if !declares_child_hosts(lang) {
         return Vec::new();
     }
@@ -1056,7 +1105,7 @@ fn lower_child_hosts(model: &mut SCXMLModel, lang: Language) -> Vec<ChildHost> {
         let call = call_expression(lang, &operation, &[]);
         hosts.entry(operation.clone()).or_insert_with(|| ChildHost {
             operation,
-            child_interface: interface_name(lang, &machine_token(lang, child_name)),
+            child_interface: child_interface_type(lang, child_name, namespace_prefix),
         });
         call
     };
@@ -1570,6 +1619,16 @@ fn build_interface(
                     "    virtual void {}({}) = 0;\n",
                     method_name(lang, name),
                     plist(sig).join(", ")
+                ));
+            }
+            // A reference to a host the answering host owns, as the machine's own host
+            // is: the machine does not own it and its owner outlives the child, which
+            // is built with it and never keeps it past its own end.
+            for child in children {
+                methods.push_str(&format!(
+                    "    virtual {}& {}() = 0;\n",
+                    child.child_interface,
+                    method_name(lang, &child.operation)
                 ));
             }
             format!(
@@ -2178,6 +2237,39 @@ mod tests {
         );
         let plain = build_interface(Language::Python, "MActions", &sigs, &[]);
         assert!(!plain.contains("actions_for"), "{plain}");
+    }
+
+    /// The C++ interface answers a child's host as a reference to the interface
+    /// the child's own namespace declares, qualified by the suite prefix where
+    /// there is one: a parent in another namespace cannot reach it by its bare
+    /// name.
+    #[test]
+    fn the_cpp_interface_of_a_parent_answers_the_host_of_each_child() {
+        assert_eq!(
+            child_interface_type(Language::Cpp, "worker", ""),
+            "::SCE::Generated::worker::WorkerActions"
+        );
+        assert_eq!(
+            child_interface_type(Language::Cpp, "worker", "suite::"),
+            "::SCE::Generated::suite::worker::WorkerActions"
+        );
+        let children = [ChildHost {
+            operation: "actions_for_worker".to_string(),
+            child_interface: child_interface_type(Language::Cpp, "worker", ""),
+        }];
+        let mut sigs: BTreeMap<String, Signature> = BTreeMap::new();
+        sigs.insert("reset_slot".to_string(), Vec::new());
+        let out = build_interface(Language::Cpp, "MActions", &sigs, &children);
+        let act = out.find("virtual void resetSlot() = 0;").expect(&out);
+        let factory = out
+            .find("virtual ::SCE::Generated::worker::WorkerActions& actionsForWorker() = 0;")
+            .expect(&out);
+        assert!(
+            act < factory,
+            "the acts, then the operation that answers a child's host:\n{out}"
+        );
+        let plain = build_interface(Language::Cpp, "MActions", &sigs, &[]);
+        assert!(!plain.contains("actionsFor"), "{plain}");
     }
 
     /// A document in which an act and a child's host would be one method is
