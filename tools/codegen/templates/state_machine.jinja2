@@ -40,6 +40,11 @@
 #include <sce/forge/algorithm.h>
 #include <utility>
 #include <vector>
+{% if (static_fields | selectattr('saved_type', 'equalto', 'bytes') | list) or (static_fields | selectattr('holds_bytes') | list) %}
+{# SCE Accepted Subset §2.15: a byte string crosses a `<param>` as its Latin-1
+   text, which this header-only helper spells. #}
+#include "common/Latin1Bytes.h"
+{% endif %}
 {% for line in static_imports %}
 {{ line }}
 {% endfor %}

@@ -26,6 +26,9 @@ use sce_rust_tests::integration::static_datamodel::static_block_ends_sm::{
 use sce_rust_tests::integration::static_datamodel::static_bytes_sm::{
     StaticBytesPersist, StaticBytesPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_bytes_wire_sm::{
+    StaticBytesWirePersist, StaticBytesWirePolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_cancel_expr_sm::{
     StaticCancelExprPersist, StaticCancelExprPolicy,
 };
@@ -287,6 +290,20 @@ fn static_donedata_hands_the_done_event_its_params() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_donedata.json"
+        ),
+    );
+}
+
+// A byte string crosses a <param> and a <donedata> as its byte-exact Latin-1 text:
+// sent to itself and read back through the typed payload, and carried by the done
+// event's data.
+#[test]
+fn static_bytes_wire_carries_a_byte_string_as_its_latin1_text() {
+    replay(
+        Engine::new(StaticBytesWirePolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_bytes_wire.json"
         ),
     );
 }

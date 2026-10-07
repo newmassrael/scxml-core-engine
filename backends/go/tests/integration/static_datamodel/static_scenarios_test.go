@@ -34,6 +34,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_block_ends"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_block_ends_list"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_bytes"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_bytes_wire"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_cancel_expr"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_counter"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_donedata"
@@ -770,6 +771,20 @@ func TestAnEnumValueCrossesAsTheNameItsEnumDeclares(t *testing.T) {
 		},
 		"received":   func() any { return policy.Received().String() },
 		"deliveries": func() any { return policy.Deliveries() },
+	}))
+}
+
+// A byte string crosses a <param> and a <donedata> as its byte-exact Latin-1 text:
+// sent to itself and read back through the typed payload, and carried by the done
+// event's data.
+func TestAByteStringCrossesAParamAsItsLatin1Text(t *testing.T) {
+	policy := static_bytes_wire.NewStaticBytesWirePolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_bytes_wire", drive[static_bytes_wire.StaticBytesWireState, static_bytes_wire.StaticBytesWireEvent](&policy, map[string]func() any{
+		"held":   func() any { return sce.BytesAsPayloadText(policy.Held()) },
+		"echo":   func() any { return sce.BytesAsPayloadText(policy.Echo()) },
+		"relays": func() any { return policy.Relays() },
+		"errors": func() any { return policy.Errors() },
 	}))
 }
 

@@ -563,7 +563,7 @@ const BYTES_HELD: &[BytesHeld] = &[
         variable: true,
         record: true,
         payload: true,
-        wire: false,
+        wire: true,
     },
     BytesHeld {
         lang: "kotlin",
@@ -579,7 +579,7 @@ const BYTES_HELD: &[BytesHeld] = &[
         variable: true,
         record: true,
         payload: true,
-        wire: false,
+        wire: true,
     },
     BytesHeld {
         lang: "cpp",
@@ -587,7 +587,7 @@ const BYTES_HELD: &[BytesHeld] = &[
         variable: true,
         record: true,
         payload: true,
-        wire: false,
+        wire: true,
     },
     BytesHeld {
         lang: "python",
@@ -595,7 +595,7 @@ const BYTES_HELD: &[BytesHeld] = &[
         variable: true,
         record: true,
         payload: true,
-        wire: false,
+        wire: true,
     },
     BytesHeld {
         lang: "c11",

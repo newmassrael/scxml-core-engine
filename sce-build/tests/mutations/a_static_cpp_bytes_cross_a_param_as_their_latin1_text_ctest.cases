@@ -1,0 +1,30 @@
+# Mutation cases for "a byte string crosses a `<param>` and a `<donedata>` as its
+# byte-exact Latin-1 text" under the C++ backend
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A byte string"; docs/adr/0005, decision 2).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_cpp_bytes_cross_a_param_as_their_latin1_text_ctest.cases`.
+#
+# `static_bytes_wire` keeps the bytes the host raised, sends them to itself as the
+# `<param>` of `framed.relayed`, reads that event's payload back into `echo`, and finishes
+# with `echo` in a `<donedata>`. The bytes include some above 0x7F, a quote, a backslash
+# and a control byte, so the text has to be the character of each byte and not the bytes
+# as they are, which a JSON string cannot hold. The mutant takes that decision away:
+#
+#   a byte vector crosses as the string of its own bytes.
+#
+# The text itself, each way it can be spelled, is held by `EventPayloadBytes`
+# (`a_cpp_payload_bytes_are_read_as_latin1_text_ctest.cases`).
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^static_datamodel_generated_cpp$'
+mutation_targets sce-build/src/forge/static_lowering.rs
+mutation_oracles tests/integration/AStaticDatamodelRunsGeneratedCppTest.cpp sce-build/tests/fixtures/static_datamodel/scenarios/static_bytes_wire.json
+
+mutation_case "a byte vector crosses as the string of its own bytes" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "            &format!(\"SCE::Latin1Bytes::textOf({value})\"),",
+     "            &format!(\"std::string(({value}).begin(), ({value}).end())\"),")
+PY

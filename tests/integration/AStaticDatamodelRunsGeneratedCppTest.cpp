@@ -29,6 +29,7 @@
 #include "static_block_ends_list_sm.h"
 #include "static_block_ends_sm.h"
 #include "static_bytes_sm.h"
+#include "static_bytes_wire_sm.h"
 #include "static_cancel_expr_sm.h"
 #include "static_counter_sm.h"
 #include "static_donedata_content_sm.h"
@@ -561,6 +562,20 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, ARecordHoldsAStringFieldWithinTheBoun
         {"errors", [](const Machine &m) { return json(m.errors()); }},
     });
     replay("static_record_string", driver);
+}
+
+// A byte string crosses a `<param>` and a `<donedata>` as its byte-exact Latin-1 text:
+// sent to itself and read back through the typed payload, and carried by the done
+// event's data.
+TEST(AStaticDatamodelRunsGeneratedCppTest, AByteStringCrossesAParamAsItsLatin1Text) {
+    using Machine = G::static_bytes_wire::static_bytes_wire;
+    Driver<Machine> driver({
+        {"held", [](const Machine &m) { return latin1Text(m.held()); }},
+        {"echo", [](const Machine &m) { return latin1Text(m.echo()); }},
+        {"relays", [](const Machine &m) { return json(m.relays()); }},
+        {"errors", [](const Machine &m) { return json(m.errors()); }},
+    });
+    replay("static_bytes_wire", driver);
 }
 
 // A top-level final's `<donedata>` params are computed from the machine's own

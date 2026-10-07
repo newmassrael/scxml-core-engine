@@ -1,0 +1,31 @@
+# Mutation cases for "a byte string crosses a `<param>` and a `<donedata>` as its
+# byte-exact Latin-1 text" under the Python backend
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A byte string"; docs/adr/0005, decision 2).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_python_bytes_cross_a_param_as_their_latin1_text_python.cases`.
+#
+# `static_bytes_wire` keeps the bytes the host raised, sends them to itself as the
+# `<param>` of `framed.relayed`, reads that event's payload back into `echo`, and finishes
+# with `echo` in a `<donedata>`. The bytes include some above 0x7F, a quote, a backslash
+# and a control byte, so the text has to be the character of each byte and not the bytes
+# decoded as UTF-8. The mutant takes that decision away:
+#
+#   a `bytes` crosses as its UTF-8 decoding, which replaces what is not UTF-8.
+#
+# A mutant that refused the `<param>` is no case here: the regeneration skips a document a
+# language refuses, and would leave the machine it generated before standing.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_pytest backends/python/tests integration/static_datamodel/
+mutation_regen scripts/regen_static_datamodel_python.sh
+mutation_runtime_targets sce-build/src/forge/static_lowering.rs
+mutation_oracles backends/python/tests/integration/static_datamodel/test_static_scenarios.py sce-build/tests/fixtures/static_datamodel/scenarios/static_bytes_wire.json
+
+mutation_case "a bytes crosses as its UTF-8 decoding" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "&format!(\"({value}).decode(\\\"latin-1\\\")\")",
+     "&format!(\"({value}).decode(\\\"utf-8\\\", \\\"replace\\\")\")")
+PY

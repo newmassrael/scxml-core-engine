@@ -1,0 +1,32 @@
+# Mutation cases for "a byte string crosses a `<param>` and a `<donedata>` as its
+# byte-exact Latin-1 text" under the Go backend
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A byte string"; docs/adr/0005, decision 2).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_go_bytes_cross_a_param_as_their_latin1_text_go.cases`.
+#
+# `static_bytes_wire` keeps the bytes the host raised, sends them to itself as the
+# `<param>` of `framed.relayed`, reads that event's payload back into `echo`, and finishes
+# with `echo` in a `<donedata>`. The bytes include some above 0x7F, a quote, a backslash
+# and a control byte, so the text has to be the character of each byte and not the bytes
+# taken as the UTF-8 a Go string holds. The mutant takes that decision away:
+#
+#   a byte slice crosses as the string of its own bytes.
+#
+# A mutant that refused the `<param>` is no case here: the regeneration skips a document a
+# language refuses, and would leave the machine it generated before standing.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_go backends/go/tests ./integration/static_datamodel/
+mutation_targets sce-build/src/forge/static_lowering.rs
+mutation_targets backends/go/tests/integration/static_datamodel/static_bytes_wire/static_bytes_wire_sm.go
+mutation_regen scripts/regen_static_datamodel_go.sh
+mutation_oracles backends/go/tests/integration/static_datamodel/static_scenarios_test.go sce-build/tests/fixtures/static_datamodel/scenarios/static_bytes_wire.json
+
+mutation_case "a byte slice crosses as the string of its own bytes" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "            &format!(\"sce.BytesAsPayloadText({value})\"),",
+     "            &format!(\"string({value})\"),")
+PY

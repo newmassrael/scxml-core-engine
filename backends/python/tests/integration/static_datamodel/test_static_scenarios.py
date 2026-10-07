@@ -411,6 +411,13 @@ def test_a_byte_string_is_held_to_its_bound() -> None:
     replay("static_bytes")
 
 
+# A byte string crosses a `<param>` and a `<donedata>` as its byte-exact Latin-1 text:
+# sent to itself and read back through the typed payload, and carried by the done
+# event's data.
+def test_a_byte_string_crosses_a_param_as_its_latin1_text() -> None:
+    replay("static_bytes_wire")
+
+
 # A top-level final hands its done event the pairs of its `<donedata>`, each read
 # from the machine's fields when the state is entered; a pair whose value failed
 # is left out and the others cross.

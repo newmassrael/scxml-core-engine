@@ -1727,6 +1727,14 @@ impl StaticTarget for RustTarget {
     fn enum_wire_name(&self, _alias: &str, value: &str) -> Option<String> {
         Some(format!("({value}).sce_name().to_string()"))
     }
+    // The text the payload's own writer spells a byte slice as, which the wire
+    // value of a string holds as the `String` it is.
+    fn wire_bytes(&self, value: &str) -> Option<String> {
+        Some(self.wire_value(
+            InferredType::Str,
+            &format!("::sce_rust_runtime::event_payload::bytes_as_payload_text(&{value})"),
+        ))
+    }
 }
 
 /// The scalar variables whose type `kind` holds, each with the `sce:capacity` its
@@ -3457,6 +3465,14 @@ impl StaticTarget for CppTarget {
     fn enum_wire_name(&self, _alias: &str, value: &str) -> Option<String> {
         Some(format!("std::string(sceLogName({value}))"))
     }
+    // The text `SCE::Latin1Bytes` spells a byte vector as, which the string value
+    // holds as the `std::string` it is.
+    fn wire_bytes(&self, value: &str) -> Option<String> {
+        Some(self.wire_value(
+            InferredType::Str,
+            &format!("SCE::Latin1Bytes::textOf({value})"),
+        ))
+    }
 }
 
 /// The first name of `namelist` that a `<param>` of `params` or an earlier name of
@@ -4107,6 +4123,13 @@ impl StaticTarget for GoTarget<'_> {
     fn enum_wire_name(&self, _alias: &str, value: &str) -> Option<String> {
         Some(format!("({value}).String()"))
     }
+    // The text the runtime's own writer spells a byte slice as, a Go `string`.
+    fn wire_bytes(&self, value: &str) -> Option<String> {
+        Some(self.wire_value(
+            InferredType::Str,
+            &format!("sce.BytesAsPayloadText({value})"),
+        ))
+    }
 }
 
 /// Rewrite `model` — a clone the Go backend renders — so every expression of a
@@ -4570,6 +4593,10 @@ impl StaticTarget for PythonTarget {
     // The enum's `sce_name` answers the name the enum document declares.
     fn enum_wire_name(&self, _alias: &str, value: &str) -> Option<String> {
         Some(format!("({value}).sce_name"))
+    }
+    // A Python `bytes` read as the Latin-1 text the other engines spell.
+    fn wire_bytes(&self, value: &str) -> Option<String> {
+        Some(self.wire_value(InferredType::Str, &format!("({value}).decode(\"latin-1\")")))
     }
 }
 
