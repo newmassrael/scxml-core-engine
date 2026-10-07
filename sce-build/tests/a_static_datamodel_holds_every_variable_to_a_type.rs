@@ -1148,16 +1148,12 @@ fn routing(send: &str) -> String {
     )
 }
 
-/// The generated languages that lower a `<send targetexpr>`, as `check` names
-/// them: each compares the value with the declared routes and sends by the one
-/// that matches (docs/adr/0005, decision 3). The Interpreter is read through
-/// `lower`.
-const COMPUTED_TARGET_LOWERING_LANGUAGES: &[&str] = &["rust", "kotlin", "go", "python", "cpp"];
-
-/// The generated languages that have no lowering of a `<send targetexpr>` yet.
-/// Each is refused by name until it writes one, and moves to the list above in
-/// the commit that does.
-const COMPUTED_TARGET_REFUSING_LANGUAGES: &[&str] = &["c11"];
+/// The generated languages, as `check` names them. Every one lowers a `<send
+/// targetexpr>`: it compares the value with the declared routes and sends by the one
+/// that matches (docs/adr/0005, decision 3). Each was refused by name until it did,
+/// and the refusal was removed from the shared walk when the last of them did. The
+/// Interpreter is read through `lower`.
+const COMPUTED_TARGET_LANGUAGES: &[&str] = &["rust", "kotlin", "go", "python", "cpp", "c11"];
 
 #[test]
 fn a_computed_target_that_declares_its_routes_is_accepted_by_the_document() {
@@ -1308,10 +1304,10 @@ fn sce_targets_under_a_script_data_model_is_read_and_not_held_to() {
 }
 
 #[test]
-fn every_language_that_lowers_a_computed_target_accepts_a_declared_one() {
+fn every_generated_language_accepts_a_computed_target_that_declares_its_routes() {
     let document =
         routing(r##"<send event="go" targetexpr="route" sce:targets="#_internal #_parent"/>"##);
-    for &lang in COMPUTED_TARGET_LOWERING_LANGUAGES {
+    for &lang in COMPUTED_TARGET_LANGUAGES {
         let (ok, out) = run(&check_args(lang), &document);
         assert!(
             ok,
@@ -1332,23 +1328,6 @@ fn a_computed_target_has_no_no_std_lowering_yet() {
         out.contains("a <send> with a targetexpr has no Rust no_std lowering yet"),
         "the refusal names the construct:\n{out}"
     );
-}
-
-#[test]
-fn every_generated_language_refuses_a_computed_target_by_name_until_it_lowers_one() {
-    let document =
-        routing(r##"<send event="go" targetexpr="route" sce:targets="#_internal #_parent"/>"##);
-    for &lang in COMPUTED_TARGET_REFUSING_LANGUAGES {
-        let (ok, out) = run(&check_args(lang), &document);
-        assert!(
-            !ok,
-            "{lang} has no lowering of a computed target yet:\n{out}"
-        );
-        assert!(
-            out.contains("a <send> with a targetexpr has no"),
-            "{lang}: the refusal names the construct:\n{out}"
-        );
-    }
 }
 
 // ── A host action's arguments are typed expressions ─────────────────────

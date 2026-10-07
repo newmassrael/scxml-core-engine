@@ -324,16 +324,6 @@ pub trait StaticTarget {
     fn lowers_event_expr(&self) -> bool {
         false
     }
-    /// Whether a `<send>`'s `targetexpr` is lowered to the string it computes
-    /// ([`Action::native_target`]) that the backend compares with the routes the
-    /// document declares as `sce:targets` ([`Action::targets`]) when the send
-    /// runs and sends by (docs/adr/0005, decision 3): a value in none of them is
-    /// `error.communication` and nothing is sent. A target that does not is
-    /// refused where the `<send>` is walked, by name, rather than left to send to
-    /// no one.
-    fn lowers_target_expr(&self) -> bool {
-        false
-    }
     /// What the `targetexpr` attribute of a `<send>` is rewritten to, for a
     /// target that runs the document's own attribute and so has no field of the
     /// machine to read the value from: `native_target`, the string the attribute
@@ -1239,12 +1229,6 @@ impl StaticTarget for KotlinTarget {
     fn lowers_event_expr(&self) -> bool {
         true
     }
-    // The send template holds the string it computes to the routes the document
-    // declares as `sce:targets` and sends by `sendToTarget` (docs/adr/0005,
-    // decision 3).
-    fn lowers_target_expr(&self) -> bool {
-        true
-    }
     // The cancel template hands the scheduler the id it computes (`cancelSend`).
     fn lowers_cancel_expr(&self) -> bool {
         true
@@ -1431,12 +1415,6 @@ impl StaticTarget for RustTarget {
     // The send template names the event it delivers by the string it computes
     // (`send_named_external`, `Self::resolve_event_by_name`).
     fn lowers_event_expr(&self) -> bool {
-        true
-    }
-    // The send template holds the string it computes to the routes the document
-    // declares as `sce:targets` and sends by `Engine::send_to_target`
-    // (docs/adr/0005, decision 3).
-    fn lowers_target_expr(&self) -> bool {
         true
     }
     // The cancel template hands the scheduler the id it computes
@@ -3377,12 +3355,6 @@ impl StaticTarget for CppTarget {
     fn lowers_event_expr(&self) -> bool {
         true
     }
-    // The send template holds the string it computes to the routes the document
-    // declares as `sce:targets` and sends by `engine.sendToTarget`
-    // (docs/adr/0005, decision 3).
-    fn lowers_target_expr(&self) -> bool {
-        true
-    }
     // The cancel template hands the scheduler the id it computes
     // (`engine.cancelEvent`).
     fn lowers_cancel_expr(&self) -> bool {
@@ -3955,12 +3927,6 @@ impl StaticTarget for GoTarget<'_> {
     fn lowers_event_expr(&self) -> bool {
         true
     }
-    // The send template holds the string it computes to the routes the document
-    // declares as `sce:targets` and sends by `engine.SendToTarget`
-    // (docs/adr/0005, decision 3).
-    fn lowers_target_expr(&self) -> bool {
-        true
-    }
     // The cancel template hands the scheduler the id it computes
     // (`engine.CancelEvent`).
     fn lowers_cancel_expr(&self) -> bool {
@@ -4419,12 +4385,6 @@ impl StaticTarget for PythonTarget {
     // The send template names the event it delivers by the string it computes
     // (`resolve_event_by_name`).
     fn lowers_event_expr(&self) -> bool {
-        true
-    }
-    // The send template holds the string it computes to the routes the document
-    // declares as `sce:targets` and sends by `routed_to_target`
-    // (docs/adr/0005, decision 3).
-    fn lowers_target_expr(&self) -> bool {
         true
     }
     // The cancel template hands the scheduler the id it computes
@@ -6258,11 +6218,6 @@ fn lower_action(
             // it is what says the target is computed, and the declaration is what
             // makes the computation finite.
             if !action.targetexpr.trim().is_empty() {
-                if !target.lowers_target_expr() {
-                    return Err(GenerateError::unsupported(format!(
-                        "a <send> with a targetexpr has no {lang} lowering yet"
-                    )));
-                }
                 reads_payload |= reads(&action.targetexpr);
                 let value = lower(&action.targetexpr, InferredType::Str)?;
                 match target.target_expr_site(&value.text, &action.targets) {

@@ -1314,7 +1314,32 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                 return;
             }
 {% endif %}
-{% if action.targetexpr %}
+{% if action.native_target %}
+            /* docs/adr/0005, decision 3: the target is a string the machine
+               computed from its own fields (`Action::native_target`), no script
+               engine asked, and the send goes only by a route the document
+               declared as `sce:targets`. A value in none of them names no route
+               this send may take — the buffer stays empty, which the table
+               `sce_classify_send_target` reads as an address nobody answers at,
+               error.communication (W3C SCXML C.1) — and an operation that
+               failed cannot be evaluated, the argument error. */
+            char _send_target_buf[SCE_MAX_URI_LEN];
+            _send_target_buf[0] = '\0';
+            {
+                sce_forge_algorithm_failure_t sce_failure_ = {0};
+                const char *_send_route = {{ action.native_target }};
+                if (sce_failure_.failed) {
+                    {{ P }}_raise_platform_error_with_send_id(
+                        sm, {{ PU }}_EVENT_ERROR_EXECUTION,
+                        "<send> targetexpr could not be evaluated",
+                        {{ send_id_c }});
+                    return;
+                }
+                if ({% for entry in action.targets %}strcmp(_send_route, "{{ entry | escape_c }}") == 0{% if not loop.last %} || {% endif %}{% endfor %}) {
+                    (void)snprintf(_send_target_buf, sizeof(_send_target_buf), "%s", _send_route);
+                }
+            }
+{% elif action.targetexpr %}
             /* W3C SCXML 6.2 (test173): the target is computed now. A resolved
                target can be an `_ioprocessors` location, so the buffer is
                sized as a URI — at 64 bytes a session address was truncated

@@ -537,9 +537,6 @@ impl StaticTarget for JsTarget {
     // of them is the empty target, which the engine answers as it answers any
     // address nobody is at — `error.communication`, nothing sent
     // (docs/adr/0005, decision 3).
-    fn lowers_target_expr(&self) -> bool {
-        true
-    }
     fn target_expr_site(&self, native_target: &str, entries: &[String]) -> Option<String> {
         let names: Vec<String> = entries
             .iter()

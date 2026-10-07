@@ -3281,9 +3281,10 @@ The Interpreter runs the document's own `<send>`, so its lowering rewrites the
 attribute to `SceStatic.route(<expression>, [<entries>])`: a value that is none of
 the entries is the empty target, which its engine answers as it answers any address
 nobody is at (`scenarios/static_send_target.json`, `fire` declaring `#_internal` and
-`#_parent` and `narrow` declaring `#_parent` alone; the lowering is refused by name,
-`a <send> with a targetexpr has no <language> lowering yet`, on a language that has
-not written it). **Rust** lowers it: the value is computed from the machine's fields,
+`#_parent` and `narrow` declaring `#_parent` alone; every generated language lowers it
+too, each refused by name — `a <send> with a targetexpr has no <language> lowering yet`
+— until it did, and the refusal was removed from the shared walk when the last of them
+did). **Rust** lowers it: the value is computed from the machine's fields,
 held to the declared routes by a `matches!` over them, and routed by the one
 `Engine::send_to_target` that routes a value read at run time for a script-engine
 machine (`a_static_rust_send_target_is_held_to_its_declared_routes_rust.cases`); a
@@ -3300,7 +3301,11 @@ compares the string with a tuple of them and routes it through `routed_to_target
 compares the string with the declared routes and routes it through
 `engine.sendToTarget`, as a machine with a script engine does; a machine that holds no
 session passes the empty own-session id
-(`a_static_cpp_send_target_is_held_to_its_declared_routes_ctest.cases`). `typeexpr` is still
+(`a_static_cpp_send_target_is_held_to_its_declared_routes_ctest.cases`), and **C11**
+holds the route in a buffer it fills only with an entry the value equals — a value no
+entry names leaves it empty, which the one table `sce_classify_send_target` reads as an
+address nobody answers at
+(`a_static_c11_send_target_is_held_to_its_declared_routes_ctest.cases`). `typeexpr` is still
 refused as above. A `<cancel>`'s
 `sendidexpr` is the same for the id of the delayed send it removes: a string
 computed from the machine's fields when the cancel runs, so the one `<cancel>`

@@ -2437,6 +2437,13 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_send_event.scxml"
     )
+    # The `targetexpr` of a `<send>`: the route it sends by is a string the
+    # machine holds, held to the routes the document declares as `sce:targets`
+    # (docs/adr/0005, decision 3), so the machine stands alone.
+    sce_generate_static_integration_c_test(static_send_target
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_send_target.scxml"
+    )
     # The `sendidexpr` of a `<cancel>`: the id of the send it removes is a
     # string the machine holds, so the machine stands alone; its delayed sends
     # wait on a clock the scenario owns.
@@ -2617,6 +2624,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_send_content_SOURCES}
         ${INTEGRATION_C_TEST_static_send_delay_SOURCES}
         ${INTEGRATION_C_TEST_static_send_event_SOURCES}
+        ${INTEGRATION_C_TEST_static_send_target_SOURCES}
         ${INTEGRATION_C_TEST_static_cancel_expr_SOURCES}
         ${INTEGRATION_C_TEST_static_send_idlocation_SOURCES}
         ${INTEGRATION_C_TEST_static_list_SOURCES}

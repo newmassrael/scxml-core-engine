@@ -1,0 +1,40 @@
+# Mutation cases for "a computed target is chosen among the routes the document
+# declares" under the C11 backend (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A computed
+# target"; docs/adr/0005, decision 3).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_c11_send_target_is_held_to_its_declared_routes_ctest.cases`.
+#
+# `static_send_target` sends `landed` to the route its `route` variable holds, among
+# the routes the send declares: `fire` declares `#_internal` and `#_parent`, `narrow`
+# declares `#_parent` alone. The scenario holds what each leaves: a declared route
+# that a session answers at delivers (`landed`), and every other value — one the
+# machine could send by but this send did not declare, a declared parent that does
+# not exist, and a session nothing declares — is `error.communication` with nothing
+# sent (`refused`). The C machine holds the route in a buffer that stays empty for a
+# value no entry names, which its table reads as an address nobody answers at. The
+# mutants each take one decision away, and each still compiles:
+#
+#   a value that is none of the declared routes is let through;
+#   a value that is none of the declared routes is taken for this session's queue.
+#
+# The template is read by the generator binary CMake already holds, so the build the
+# ctest names carries a mutated template into the generated machine. Anchors are
+# literal slices of the template; an edit that moves one is reported INCONCLUSIVE
+# with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^c11_integration_static_scalars$'
+mutation_targets tools/codegen/templates/c/state_machine.c.jinja2
+mutation_oracles backends/c/tests/integration/test_static_scalars.c sce-build/tests/fixtures/static_datamodel/static_send_target.scxml sce-build/tests/fixtures/static_datamodel/scenarios/static_send_target.json
+
+mutation_case "a value that is none of the declared routes is let through" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "                if ({% for entry in action.targets %}strcmp(_send_route, \"",
+     "                if (1 || {% for entry in action.targets %}strcmp(_send_route, \"")
+PY
+
+mutation_case "a value that is none of the declared routes is taken for this session's queue" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "            _send_target_buf[0] = '\\0';\n            {\n                sce_forge_algorithm_failure_t sce_failure_ = {0};\n                const char *_send_route = {{ action.native_target }};",
+     "            (void)snprintf(_send_target_buf, sizeof(_send_target_buf), \"%s\", \"#_internal\");\n            {\n                sce_forge_algorithm_failure_t sce_failure_ = {0};\n                const char *_send_route = {{ action.native_target }};")
+PY

@@ -127,6 +127,7 @@
 #include "static_send_idlocation_sm.h"
 #include "static_send_namelist_sm.h"
 #include "static_send_params_sm.h"
+#include "static_send_target_sm.h"
 #include "static_string_capacity_sm.h"
 #include "static_whole_payload_sm.h"
 #include "static_wire_enum_sm.h"
@@ -1373,6 +1374,22 @@ static const variable_t send_event_variables[] = {
 };
 STATIC_SCENARIO(static_send_event, send_event_states, send_event_variables, NULL, no_lists, no_records)
 
+// static_send_target: the `targetexpr` of a `<send>` is a string the machine holds,
+// the route the send goes by, read when the send runs and held to the routes the
+// document declares as `sce:targets`; a value in none of them is an
+// `error.communication` and nothing sent, whether or not the machine could send by it.
+VARIABLE_READER(static_send_target, landed)
+VARIABLE_READER(static_send_target, refused)
+
+static const name_value_t send_target_states[] = {
+    {"idle", STATIC_SEND_TARGET_STATE_IDLE},
+};
+static const variable_t send_target_variables[] = {
+    {"landed", static_send_target_read_landed},
+    {"refused", static_send_target_read_refused},
+};
+STATIC_SCENARIO(static_send_target, send_target_states, send_target_variables, NULL, no_lists, no_records)
+
 // static_send_delay: the `delayexpr` of a `<send>` is the string `wait + 'ms'`, a
 // number joined to its unit, computed when the send runs and read as the CSS2 time
 // it must be; a value that is no time, and an operation that fails, send nothing.
@@ -1597,6 +1614,7 @@ int main(void) {
     bad |= static_send_namelist_scenario("static_send_namelist", 5);
     bad |= static_send_content_scenario("static_send_content", 5);
     bad |= static_send_event_scenario("static_send_event", 11);
+    bad |= static_send_target_scenario("static_send_target", 10);
     bad |= static_send_delay_scenario("static_send_delay", 12);
     bad |= static_cancel_expr_scenario("static_cancel_expr", 16);
     bad |= static_send_idlocation_scenario("static_send_idlocation", 13);
