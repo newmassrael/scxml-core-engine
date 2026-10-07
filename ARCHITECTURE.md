@@ -1324,6 +1324,7 @@ Cargo.toml            Workspace (Rust 1.75+, edition 2021)
 - **Scripting**: Lua 5.4 via `mlua` crate (vendored, same as C++ default engine)
 - **JSON Builtins**: `include_str!("../../../../sce/include/scripting/json_builtins.lua")` — shared with C++/Kotlin
 - **Test Registration**: `linkme` crate for compile-time test registration (equivalent to C++ `AotTestRegistrar`)
+- **Targets with no operating-system clock** (`wasm32-unknown-unknown`): a browser module is handed no clock by its target, only by its host, so the engine does not read one it does not have. An engine starts on `SceClock::Manual(0)` there instead of `SceClock::Hal`; the host moves time with `advance_time_ms`, or installs its own reading with `SceClock::Source` before `initialize`. What would have read the system clock is absent from the build rather than left in to stop the module: `run_until_completion` (it blocks the thread), `saved_state::wall_clock_ms` and the generated `save()` / `restore()` that call it (the host passes the wall time to `save_at` / `restore_with`). Generated ids carry no timestamp there, as under `no_std`. `StdHal` still exists and says what is wrong if a host asks for `SceClock::Hal` anyway.
 
 ### Kotlin/JVM & Android
 

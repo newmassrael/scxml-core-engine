@@ -138,6 +138,7 @@ pub struct StdHal {
 /// loud-panicking fallback when no real HAL is wired.
 #[cfg(not(feature = "no_std"))]
 impl Hal for StdHal {
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     fn now_ticks_ms() -> u64 {
         // SAFETY: the EPOCH OnceLock is process-monotonic; Instant is
         // guaranteed monotonic-non-decreasing on every supported platform.
@@ -151,6 +152,22 @@ impl Hal for StdHal {
         static EPOCH: OnceLock<Instant> = OnceLock::new();
         let epoch = *EPOCH.get_or_init(Instant::now);
         Instant::now().saturating_duration_since(epoch).as_millis() as u64
+    }
+
+    // `wasm32-unknown-unknown` hands a module no clock: `Instant::now()` compiles
+    // there and stops the module the first time it runs, with a message that names
+    // the platform and not the way out. The way out is the engine's own clock, and
+    // the engine starts on it there (see `SceClock`'s default), so this is reached
+    // only by a host that asked for `SceClock::Hal` — and is told what it asked
+    // for does not exist on this target.
+    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+    fn now_ticks_ms() -> u64 {
+        panic!(
+            "StdHal has no clock to read on wasm32-unknown-unknown: the target provides none. \
+             Give the engine host-owned time instead, before initialize(): \
+             Engine::set_clock(SceClock::Manual(ms)) and Engine::advance_time_ms, or \
+             SceClock::Source(read) with the host's own reading (in a browser, performance.now())."
+        )
     }
 
     fn wake() {

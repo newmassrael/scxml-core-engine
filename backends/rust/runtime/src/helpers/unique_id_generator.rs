@@ -32,7 +32,10 @@
 use crate::SceString;
 use core::sync::atomic::Ordering;
 use portable_atomic::AtomicU64;
-#[cfg(not(feature = "no_std"))]
+#[cfg(all(
+    not(feature = "no_std"),
+    not(all(target_arch = "wasm32", target_os = "unknown"))
+))]
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Global counter for ensuring uniqueness within the same millisecond.
@@ -188,8 +191,14 @@ pub fn reset_for_testing() {
 ///
 /// SCE Protocol-Synthesis RFC §synth-5-J-2: under `--features=no_std` the Unix-epoch source is
 /// unavailable; the timestamp segment is reduced to zero and per-instance
-/// uniqueness is provided by `GLOBAL_COUNTER`.
-#[cfg(not(feature = "no_std"))]
+/// uniqueness is provided by `GLOBAL_COUNTER`. The same holds on
+/// `wasm32-unknown-unknown`, which provides no wall clock either: an id's
+/// uniqueness never rested on its timestamp, so the id is built without one
+/// rather than from a clock that would stop the module.
+#[cfg(all(
+    not(feature = "no_std"),
+    not(all(target_arch = "wasm32", target_os = "unknown"))
+))]
 fn current_timestamp_millis() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -197,7 +206,7 @@ fn current_timestamp_millis() -> u64 {
         .as_millis() as u64
 }
 
-#[cfg(feature = "no_std")]
+#[cfg(any(feature = "no_std", all(target_arch = "wasm32", target_os = "unknown")))]
 fn current_timestamp_millis() -> u64 {
     0
 }

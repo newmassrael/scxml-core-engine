@@ -59,7 +59,10 @@ use std::sync::{Arc, Mutex};
 // timeout budget — that is a CI-level deadline, not scheduler time, and must
 // stay on the real host clock so a Hal-mock cannot suppress test timeouts.
 use core::time::Duration;
-#[cfg(not(feature = "no_std"))]
+#[cfg(all(
+    not(feature = "no_std"),
+    not(all(target_arch = "wasm32", target_os = "unknown"))
+))]
 use std::time::Instant;
 
 use crate::clock::SceClock;
@@ -1173,7 +1176,7 @@ impl<P: StatePolicy> Engine<P> {
             #[cfg(not(feature = "no_std"))]
             on_http_send: None,
             scheduler: PullScheduler::new(),
-            clock: SceClock::Hal,
+            clock: SceClock::default(),
             turn_now: None,
             tick_has_run: false,
             unattended_scheduler_steps: 0,
@@ -4093,7 +4096,17 @@ impl<P: StatePolicy> Engine<P> {
     /// (e.g. embassy `Timer::after` on the same
     /// [`time_until_next_scheduled_ms`](Self::time_until_next_scheduled_ms)
     /// this uses).
-    #[cfg(not(feature = "no_std"))]
+    ///
+    /// Absent on `wasm32-unknown-unknown` for the same reason and one more: that
+    /// target has neither a clock for the timeout nor a way to block the thread,
+    /// and a browser must not be blocked. A host there is already the caller of
+    /// [`tick`](Self::tick) — from its own timer, or a worker's message loop —
+    /// so it calls that. The function is left out of the build rather than left
+    /// in to stop the module the first time it is called.
+    #[cfg(all(
+        not(feature = "no_std"),
+        not(all(target_arch = "wasm32", target_os = "unknown"))
+    ))]
     pub fn run_until_completion(&mut self, timeout: Duration, poll_interval: Duration) -> bool {
         // W3C SCXML: if already stopped but reached final state during initialize(), return true
         if !self.is_running {

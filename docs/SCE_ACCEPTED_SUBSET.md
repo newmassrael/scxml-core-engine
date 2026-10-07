@@ -4466,7 +4466,8 @@ would be late by exactly as long as it was dead. The engine's own clock is
 monotonic and has no epoch, so the host says what time it is on the wall: Rust
 `save_at(wall_now_ms)` and `restore_with(policy, &saved, clock, wall_now_ms)`,
 Kotlin `save(wallNowMs)` and `restore(saved, wallNowMs)`; the forms without it
-read the system's wall clock. A restore arms each entry to come due
+read the system's wall clock, and a Rust build for a target that has none
+(`wasm32-unknown-unknown`) does not have them. A restore arms each entry to come due
 `due - wall_now_ms` after now on the machine's own clock — which is installed
 before it, as before `initialize`, so that a delay armed against one clock is
 not judged against another — and an entry already due when the machine comes

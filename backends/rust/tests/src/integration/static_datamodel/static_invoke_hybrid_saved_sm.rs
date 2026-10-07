@@ -207,6 +207,10 @@ pub trait StaticInvokeHybridSavedPersist: Sized {
     >;
 
     /// [`save_at`](Self::save_at) at the host's wall clock now.
+    ///
+    /// Absent on `wasm32-unknown-unknown`, which provides no wall clock to read:
+    /// a host there says what time it is, through [`save_at`](Self::save_at).
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     fn save(
         &self,
     ) -> Result<
@@ -231,6 +235,11 @@ pub trait StaticInvokeHybridSavedPersist: Sized {
 
     /// [`restore_with`](Self::restore_with) on the engine's own clock, at the
     /// host's wall clock now.
+    ///
+    /// Absent on `wasm32-unknown-unknown`, for the reason [`save`](Self::save)
+    /// is: a host there gives the clock and the wall time to
+    /// [`restore_with`](Self::restore_with).
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     fn restore(
         policy: Self::Policy,
         saved: &::sce_rust_runtime::saved_state::SavedState,
