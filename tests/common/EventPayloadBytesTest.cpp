@@ -95,30 +95,34 @@ TEST(EventPayloadBytes, TheWireAnInjectSeamWritesReadsBackByteForByte) {
 TEST(EventPayloadBytes, AnEscapedAndAWrittenCharacterSpellTheSameByte) {
     std::vector<uint8_t> escaped;
     std::vector<uint8_t> written;
-    EXPECT_EQ(readFrame(R"({"frame":"ÿ\u0080a"})", escaped), "");
+    std::vector<uint8_t> mixed;
+    EXPECT_EQ(readFrame("{\"frame\":\"\\u00ff\\u0080a\"}", escaped), "");
     EXPECT_EQ(readFrame("{\"frame\":\"\xC3\xBF\xC2\x80"
                         "a\"}",
                         written),
               "");
+    EXPECT_EQ(readFrame("{\"frame\":\"\xC3\xBF\\u0080a\"}", mixed), "");
     EXPECT_EQ(escaped, (std::vector<uint8_t>{0xFFu, 0x80u, 'a'}));
     EXPECT_EQ(written, escaped);
+    EXPECT_EQ(mixed, escaped);
 }
 
 TEST(EventPayloadBytes, ACharacterPastU00FFInAPayloadNamesTheField) {
+    const std::string why = "'frame' carries a character above U+00FF, which no single byte spells";
     std::vector<uint8_t> out;
-    EXPECT_EQ(readFrame(R"({"frame":"Ā"})", out),
-              "'frame' carries a character above U+00FF, which no single byte spells");
-    EXPECT_EQ(readFrame(R"({"frame":"😀"})", out),
-              "'frame' carries a character above U+00FF, which no single byte spells");
-    EXPECT_EQ(readFrame("{\"frame\":\"\xE2\x82\xAC\"}", out),
-              "'frame' carries a character above U+00FF, which no single byte spells");
+    // Escaped, as a pair of halves, and written as it is.
+    EXPECT_EQ(readFrame("{\"frame\":\"\\u0100\"}", out), why);
+    EXPECT_EQ(readFrame("{\"frame\":\"\\ud83d\\ude00\"}", out), why);
+    EXPECT_EQ(readFrame("{\"frame\":\"\xC4\x80\"}", out), why);
+    EXPECT_EQ(readFrame("{\"frame\":\"\xE2\x82\xAC\"}", out), why);
+    EXPECT_EQ(readFrame("{\"frame\":\"\xF0\x9F\x98\x80\"}", out), why);
 }
 
 // A text field is UTF-8 whichever way it is spelled, as the script engine reads it: an
 // escape is the character it names and not a byte of it.
 TEST(EventPayloadBytes, AnEscapeInATextFieldIsTheCharacterItNames) {
     EventPayloadFields fields;
-    const std::string wire = R"({"label":"é€😀A"})";
+    const std::string wire = "{\"label\":\"\\u00e9\\u20ac\\ud83d\\ude00\\u0041\"}";
     ASSERT_EQ(EventPayloadFields::decode(wire, fields), "");
     std::string label;
     EXPECT_EQ(fields.readString("label", label), "");
@@ -129,8 +133,8 @@ TEST(EventPayloadBytes, AnEscapeInATextFieldIsTheCharacterItNames) {
 TEST(EventPayloadBytes, HalfACharacterOrABadEscapeIsNoText) {
     EventPayloadFields fields;
     std::string label;
-    for (const char *wire : {R"({"label":"\ud83d"})", R"({"label":"\ude00"})", R"({"label":"\ud83dx"})",
-                             R"({"label":"\ud83dA"})", R"({"label":"\u12g4"})", R"({"label":"\u12"})"}) {
+    for (const char *wire : {"{\"label\":\"\\ud83d\"}", "{\"label\":\"\\ude00\"}", "{\"label\":\"\\ud83dx\"}",
+                             "{\"label\":\"\\ud83d\\u0041\"}", "{\"label\":\"\\u12g4\"}", "{\"label\":\"\\u12\"}"}) {
         const std::string data = wire;
         ASSERT_EQ(EventPayloadFields::decode(data, fields), "");
         EXPECT_NE(fields.readString("label", label), "") << wire;
