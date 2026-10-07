@@ -1,0 +1,38 @@
+# Mutation cases for "a computed target is chosen among the routes the document
+# declares" under the C++ backend (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A computed
+# target"; docs/adr/0005, decision 3).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_cpp_send_target_is_held_to_its_declared_routes_ctest.cases`.
+#
+# `static_send_target` sends `landed` to the route its `route` variable holds, among
+# the routes the send declares: `fire` declares `#_internal` and `#_parent`, `narrow`
+# declares `#_parent` alone. The scenario holds what each leaves: a declared route
+# that a session answers at delivers (`landed`), and every other value — one the
+# machine could send by but this send did not declare, a declared parent that does
+# not exist, and a session nothing declares — is `error.communication` with nothing
+# sent (`refused`). The mutants each take one decision away, and each still compiles:
+#
+#   a value that is none of the declared routes is let through;
+#   a value that names no route raises nothing.
+#
+# The template is read by the generator binary CMake already holds, so the build the
+# ctest names carries a mutated template into the generated machine. Anchors are
+# literal slices of the template; an edit that moves one is reported INCONCLUSIVE
+# with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^static_datamodel_generated_cpp$'
+mutation_targets tools/codegen/templates/actions/send.jinja2
+mutation_oracles tests/integration/AStaticDatamodelRunsGeneratedCppTest.cpp sce-build/tests/fixtures/static_datamodel/static_send_target.scxml sce-build/tests/fixtures/static_datamodel/scenarios/static_send_target.json
+
+mutation_case "a value that is none of the declared routes is let through" <<'PY'
+edit("tools/codegen/templates/actions/send.jinja2",
+     "    if ({% for entry in action.targets %}sceRoute == \"",
+     "    if (true || {% for entry in action.targets %}sceRoute == \"")
+PY
+
+mutation_case "a value that names no route raises nothing" <<'PY'
+edit("tools/codegen/templates/actions/send.jinja2",
+     "if (::SCE::SendHelper::isUnreachableTarget(dynamicTarget)) {",
+     "if (false && ::SCE::SendHelper::isUnreachableTarget(dynamicTarget)) {")
+PY

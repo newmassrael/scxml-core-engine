@@ -67,6 +67,7 @@
 #include "static_send_idlocation_sm.h"
 #include "static_send_namelist_sm.h"
 #include "static_send_params_sm.h"
+#include "static_send_target_sm.h"
 #include "static_string_capacity_sm.h"
 #include "static_whole_payload_sm.h"
 #include "static_wire_enum_sm.h"
@@ -647,6 +648,19 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, ASendsEventIsNamedWhenItRuns) {
         {"refusals", [](const Machine &m) { return json(m.refusals()); }},
     });
     replay("static_send_event", driver);
+}
+
+// The `targetexpr` of a `<send>` is a string computed from the machine's fields when
+// the send runs, held to the routes the document declares as `sce:targets`
+// (docs/adr/0005, decision 3): the send goes by the entry that matches, and a value
+// in none of them is error.communication with nothing sent.
+TEST(AStaticDatamodelRunsGeneratedCppTest, ASendsTargetIsChosenAmongTheDeclaredRoutes) {
+    using Machine = G::static_send_target::static_send_target;
+    Driver<Machine> driver({
+        {"landed", [](const Machine &m) { return json(m.landed()); }},
+        {"refused", [](const Machine &m) { return json(m.refused()); }},
+    });
+    replay("static_send_target", driver);
 }
 
 // The `delayexpr` of a `<send>` is a string computed from the machine's fields when

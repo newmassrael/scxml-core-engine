@@ -437,7 +437,28 @@ std::optional<Event> sendEvent = engine.resolveEventByName(eventName);
 {% if action.targetexpr %}
 // W3C SCXML 6.2: Dynamic target evaluation (test173)
 std::string dynamicTarget;
-{% if has_script %}
+{% if action.native_target %}
+{# docs/adr/0005, decision 3: the target is a string computed from the machine's
+   fields now (`Action::native_target`), and the send goes only by a route the
+   document declared as `sce:targets`. A value in none of them names no route this
+   send may take — an address nobody answers at, which is reported below as
+   error.communication (W3C SCXML C.1) — and an operation that fails cannot be
+   evaluated, the argument error. #}
+{
+{% if action.native_target_fails %}
+    SCE::Forge::AlgorithmFailure sce_failure_;
+{% endif %}
+    std::string sceRoute = {{ action.native_target }};
+{% if action.native_target_fails %}
+    if (sce_failure_.failed()) SCE_UNLIKELY {
+{{ send_arg_error("<send> targetexpr could not be evaluated", block_end, '        ') }}
+    }
+{% endif %}
+    if ({% for entry in action.targets %}sceRoute == "{{ entry | escape_cpp }}"{% if not loop.last %} || {% endif %}{% endfor %}) {
+        dynamicTarget = std::move(sceRoute);
+    }
+}
+{% elif has_script %}
 {
     this->ensureScriptEngine();
     auto& scriptEngine = getScriptEngine();
@@ -469,7 +490,7 @@ if (::SCE::SendHelper::isInvalidTarget(dynamicTarget)) {
 if (::SCE::SendHelper::isUnreachableTarget(dynamicTarget)) {
     SCE_LOG_ERROR("Send target evaluation resulted in invalid target: '{}'", dynamicTarget);
     engine.raise(typename Engine::EventWithMetadata(
-        Event::Error_communication, "<send> targetexpr resolved to a target that cannot be reached", "", sendId));
+        Event::Error_communication, "<send> targetexpr resolved to a target that cannot be reached{% if action.native_target %}, or to a route the send does not declare{% endif %}", "", sendId));
     {{ block_end or 'return;' }}
 }
 {% endif %}
@@ -757,7 +778,7 @@ if (sendEvent) {
     // the same value written in `target` is, at once or after the delay, by
     // the table SendHelper::classifyTarget holds for every C++ path.
     const auto routed = engine.sendToTarget({{ event_enum_cpp }}, {{ event_name_cpp }}, dynamicTarget,
-                                            sessionId_.value_or(""),
+                                            {% if has_script %}sessionId_.value_or(""){% else %}""{% endif %},
                                             {% if has_delay %}delayMs{% else %}std::chrono::milliseconds{0}{% endif %},
                                             sendId, eventData, {% if has_script %}sessionId_.value_or(""){% else %}""{% endif %});
     if (routed == Engine::TargetSendOutcome::Unsupported) {

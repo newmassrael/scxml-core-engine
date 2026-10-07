@@ -3296,7 +3296,11 @@ run time answers it as it answers any address nobody is at
 does too, through `engine.SendToTarget` and a `switch` over the declared routes
 (`a_static_go_send_target_is_held_to_its_declared_routes_go.cases`), and **Python**
 compares the string with a tuple of them and routes it through `routed_to_target`
-(`a_static_python_send_target_is_held_to_its_declared_routes_python.cases`). `typeexpr` is still
+(`a_static_python_send_target_is_held_to_its_declared_routes_python.cases`). **C++**
+compares the string with the declared routes and routes it through
+`engine.sendToTarget`, as a machine with a script engine does; a machine that holds no
+session passes the empty own-session id
+(`a_static_cpp_send_target_is_held_to_its_declared_routes_ctest.cases`). `typeexpr` is still
 refused as above. A `<cancel>`'s
 `sendidexpr` is the same for the id of the delayed send it removes: a string
 computed from the machine's fields when the cancel runs, so the one `<cancel>`
