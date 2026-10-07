@@ -11,7 +11,7 @@
 
 from dataclasses import dataclass
 {% for imp in python_enum_imports %}
-from {{ imp }}
+{{ imp }}
 {% endfor %}
 
 

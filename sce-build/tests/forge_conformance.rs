@@ -17646,6 +17646,664 @@ fn run_cobs_vectors_kotlin(dir: &std::path::Path, test_id: &str) -> Result<(), S
     Ok(())
 }
 
+// ── An enum field in a record an algorithm takes and returns ──────────
+//
+// SCE_FORGE.md §4.12 lets an event-schema document carry an `enum:` field and an
+// algorithm take and return that schema as a `record:`. Nothing ran it. Measured
+// 2026-10-07, three of the six backends emitted a set that did not build:
+//
+//   * the event-schema file imported the enum by a module (Python), a package
+//     (Kotlin) or an import line (Go) it did not have, because it re-derived the
+//     statement from names instead of taking the one `forge_import_identity`
+//     writes;
+//   * a Go algorithm whose body used an enum-valued conditional named
+//     `scealgorithm.Choose` without importing it, because the import followed
+//     the `may-fail` flag and not the text.
+//
+// The shared conformance harness cannot hold an enum field in a record
+// (`read_record_fields` has no canonical type for one), so these gates run each
+// backend's emit directly, all six against ONE table: a gate that reads its own
+// copy of the answer cannot disagree with it.
+//
+// The three documents are written out when a gate runs and are not kept under
+// `tests/forge/resources`: the `source-hash` of every committed generated tree
+// is a hash of every `.scxml` under its input root, so a document added there
+// would move the headers of trees this test has nothing to do with.
+
+const LAYER_MODE_DOC: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="enum"
+       name="layer_mode"
+       sce:underlying-type="uint8">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="relaxed" value="0"/>
+      <sce:variant name="strict" value="1"/>
+    </data>
+  </datamodel>
+</scxml>
+"#;
+
+const LAYER_SETTINGS_DOC: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="layer_settings"
+       sce:event-name="layer.settings">
+  <sce:import src="layer_mode.scxml" kind="enum" as="LayerMode"/>
+  <datamodel>
+    <data id="mode" sce:type="enum:LayerMode" sce:direction="in"/>
+    <data id="limitDays" sce:type="uint16" sce:direction="in"/>
+    <data id="burst" sce:type="uint32" sce:direction="in"/>
+    <data id="locked" sce:type="bool" sce:direction="in"/>
+  </datamodel>
+</scxml>
+"#;
+
+/// The stricter mode wins whatever the mask says; every other field comes from
+/// `over` when its mask bit is set and from `base` otherwise. The enum is read in
+/// a comparison AND produced by a conditional — the two places a backend can
+/// spell an enum differently from a number.
+const LAYER_MERGE_DOC: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="layer_merge" version="1.0">
+  <sce:import kind="event-schema" src="layer_settings.scxml" as="Settings"/>
+  <sce:import kind="enum" src="layer_mode.scxml" as="LayerMode"/>
+  <sce:signature>
+    <sce:param name="base" type="record:Settings"/>
+    <sce:param name="over" type="record:Settings"/>
+    <sce:param name="mask" type="uint64"/>
+    <sce:return type="record:Settings"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="out" type="record:Settings">
+      <sce:set name="mode" expr="over.mode === LayerMode.strict ? over.mode : base.mode"/>
+      <sce:set name="limitDays" expr="(mask &amp; 1) !== 0 ? over.limitDays : base.limitDays"/>
+      <sce:set name="burst" expr="(mask &amp; 2) !== 0 ? over.burst : base.burst"/>
+      <sce:set name="locked" expr="(mask &amp; 4) !== 0 ? over.locked : base.locked"/>
+    </sce:var>
+    <sce:return expr="out"/>
+  </sce:body>
+</scxml>
+"#;
+
+const LAYER_DOC_FILES: &[&str] = &[
+    "layer_mode.scxml",
+    "layer_settings.scxml",
+    "layer_merge.scxml",
+];
+
+/// One settings value: `(mode, limit_days, burst, locked)`, mode 0 = relaxed and
+/// 1 = strict.
+type LayerSettings = (u8, u16, u32, bool);
+
+struct LayerCase {
+    base: LayerSettings,
+    over: LayerSettings,
+    mask: u64,
+    want: LayerSettings,
+}
+
+/// The shared answer. Each row is worked from the rule in `LAYER_MERGE_DOC`:
+/// the mode is `over`'s when `over` is strict and `base`'s otherwise, and a
+/// field follows its mask bit (1 = limit_days, 2 = burst, 4 = locked).
+const LAYER_CASES: &[LayerCase] = &[
+    // over is strict: its mode wins; bits 0 and 1 take over's limit and burst,
+    // bit 2 is clear so `locked` stays base's.
+    LayerCase {
+        base: (0, 7, 50, false),
+        over: (1, 30, 10, true),
+        mask: 0b011,
+        want: (1, 30, 10, false),
+    },
+    // over is relaxed and the mask is empty: nothing of over's is taken.
+    LayerCase {
+        base: (0, 7, 50, false),
+        over: (0, 30, 10, true),
+        mask: 0,
+        want: (0, 7, 50, false),
+    },
+    // base is already strict and over is relaxed: base's mode stays; bit 2 takes
+    // over's `locked`.
+    LayerCase {
+        base: (1, 7, 50, false),
+        over: (0, 30, 10, true),
+        mask: 0b100,
+        want: (1, 7, 50, true),
+    },
+    // The widest values of each field, and a strict over that zeroes them.
+    LayerCase {
+        base: (0, 65535, 4_294_967_295, true),
+        over: (1, 0, 0, false),
+        mask: 0b111,
+        want: (1, 0, 0, false),
+    },
+    // Every mask bit set: all three fields come from over, and the mode keeps
+    // base's because over is relaxed. This row is here to spell the largest
+    // `uint64` in each language (`u64::MAX`, `18446744073709551615uL`, ...); the
+    // rule reads only bits 0 to 2, so it does not tell a narrowed mask apart.
+    LayerCase {
+        base: (0, 1, 1, false),
+        over: (0, 2, 2, true),
+        mask: u64::MAX,
+        want: (0, 2, 2, true),
+    },
+];
+
+/// Write the three documents into a fresh temp directory and return it. The
+/// caller removes it once its generation pass is done.
+fn layer_docs_dir(test_id: &str) -> Result<std::path::PathBuf, String> {
+    let dir = cobs_proj_dir("layer_docs", test_id)?;
+    for (name, text) in
+        LAYER_DOC_FILES
+            .iter()
+            .zip([LAYER_MODE_DOC, LAYER_SETTINGS_DOC, LAYER_MERGE_DOC])
+    {
+        std::fs::write(dir.join(name), text).map_err(|e| format!("write {name}: {e}"))?;
+    }
+    Ok(dir)
+}
+
+/// The emit of the three documents for `lang`, with the temp documents removed.
+fn layer_generate(
+    lang: sce_build::generator::Language,
+    test_id: &str,
+) -> Result<Vec<(String, String)>, String> {
+    let docs = layer_docs_dir(test_id)?;
+    let files = generate_files_for_codec_set(&docs, LAYER_DOC_FILES, lang);
+    let _ = std::fs::remove_dir_all(&docs);
+    files
+}
+
+/// The table, one line per row, with each language's own spelling of a row.
+fn layer_rows(row: impl Fn(&LayerCase) -> String) -> String {
+    LAYER_CASES.iter().map(row).collect::<Vec<_>>().join("\n")
+}
+
+fn layer_mode_variant(mode: u8) -> &'static str {
+    ["relaxed", "strict"][mode as usize]
+}
+
+/// `mode` spelled as a variant of the enum on a backend that writes it
+/// `<Enum><sep><Variant>` in PascalCase (`LayerMode::Strict`).
+fn layer_mode_pascal(mode: u8) -> &'static str {
+    ["Relaxed", "Strict"][mode as usize]
+}
+
+#[test]
+fn forge_rust_enum_record_layer_runtime() {
+    let test_id = "enum_record_layer_rust";
+    let settings = |s: LayerSettings| {
+        format!(
+            "S {{ mode: LayerMode::{}, limit_days: {}, burst: {}, locked: {} }}",
+            layer_mode_pascal(s.0),
+            s.1,
+            s.2,
+            s.3
+        )
+    };
+    let rows = layer_rows(|c| {
+        format!(
+            "        ck({}, {}, {}u64, {});",
+            settings(c.base),
+            settings(c.over),
+            c.mask,
+            settings(c.want)
+        )
+    });
+    let harness = "#[cfg(test)]\n\
+         mod tests {\n\
+         \x20   use crate::layer_merge::layer_merge;\n\
+         \x20   use crate::layer_mode::LayerMode;\n\
+         \x20   use crate::layer_settings::LayerSettingsPayload as S;\n\
+         \n\
+         \x20   fn ck(base: S, over: S, mask: u64, want: S) {\n\
+         \x20       let got = layer_merge(base, over, mask);\n\
+         \x20       assert_eq!(got.mode, want.mode, \"mode\");\n\
+         \x20       assert_eq!(got.limit_days, want.limit_days, \"limit_days\");\n\
+         \x20       assert_eq!(got.burst, want.burst, \"burst\");\n\
+         \x20       assert_eq!(got.locked, want.locked, \"locked\");\n\
+         \x20   }\n\
+         \n\
+         \x20   #[test]\n\
+         \x20   fn layering_table() {\n\
+         @ROWS@\n\
+         \x20   }\n\
+         }\n"
+    .replace("@ROWS@", &rows);
+    let docs = layer_docs_dir(test_id).expect("write the layer documents");
+    let result = rustc_test_codec_set_with_extra(
+        &docs,
+        LAYER_DOC_FILES,
+        &[("layer_vectors.rs", &harness)],
+        test_id,
+    );
+    let _ = std::fs::remove_dir_all(&docs);
+    result.expect("an algorithm over an enum-field record must compile and match the table");
+}
+
+#[test]
+fn forge_cpp_enum_record_layer_runtime() {
+    let test_id = "enum_record_layer_cpp";
+    if !toolchain_present("g++") {
+        require_all_or_warn(test_id, "g++").expect("g++");
+        return;
+    }
+    let proj_dir = cobs_proj_dir("cpp", test_id).expect("project dir");
+    let all_files = layer_generate(sce_build::generator::Language::Cpp, test_id)
+        .expect("generate the layer documents");
+    write_flat_emit(&proj_dir, &all_files, "h").expect("write the emit");
+
+    let settings = |s: LayerSettings| {
+        format!(
+            "{{M::{}, {}, {}u, {}}}",
+            layer_mode_pascal(s.0),
+            s.1,
+            s.2,
+            s.3
+        )
+    };
+    let rows = layer_rows(|c| {
+        format!(
+            "    {{{}, {}, {}ull, {}}},",
+            settings(c.base),
+            settings(c.over),
+            c.mask,
+            settings(c.want)
+        )
+    });
+    let driver = "#include \"layer_merge.h\"\n\
+         #include <cstdint>\n\
+         #include <cstdio>\n\
+         \n\
+         using S = SCE::Generated::LayerSettings::LayerSettingsPayload;\n\
+         using M = SCE::Generated::LayerMode::LayerMode;\n\
+         \n\
+         struct Row { S base; S over; std::uint64_t mask; S want; };\n\
+         \n\
+         int main() {\n\
+         \x20   const Row rows[] = {\n\
+         @ROWS@\n\
+         \x20   };\n\
+         \x20   int i = 0;\n\
+         \x20   for (const Row& r : rows) {\n\
+         \x20       const S got = SCE::Generated::LayerMerge::layer_merge(r.base, r.over, r.mask);\n\
+         \x20       if (got.mode != r.want.mode || got.limitDays != r.want.limitDays ||\n\
+         \x20           got.burst != r.want.burst || got.locked != r.want.locked) {\n\
+         \x20           std::printf(\"row %d: layering mismatch\\n\", i);\n\
+         \x20           return 1;\n\
+         \x20       }\n\
+         \x20       ++i;\n\
+         \x20   }\n\
+         \x20   return 0;\n\
+         }\n"
+    .replace("@ROWS@", &rows);
+    std::fs::write(proj_dir.join("driver.cpp"), driver).expect("write driver.cpp");
+
+    let exe = proj_dir.join("driver");
+    let mut build = std::process::Command::new("g++");
+    build
+        .arg("-std=c++20")
+        .arg("-Wall")
+        .arg("-Wextra")
+        .arg("-Werror")
+        .arg(format!("-I{}", proj_dir.display()))
+        .arg("-o")
+        .arg(&exe)
+        .arg("driver.cpp");
+    run_cobs_driver(build, &proj_dir, test_id, "g++-build").expect("the emit must compile");
+    run_cobs_driver(
+        std::process::Command::new(&exe),
+        &proj_dir,
+        test_id,
+        "cpp-run",
+    )
+    .expect("the emit must match the table");
+    let _ = std::fs::remove_dir_all(&proj_dir);
+}
+
+#[test]
+fn forge_c11_enum_record_layer_runtime() {
+    let test_id = "enum_record_layer_c11";
+    if !toolchain_present("gcc") {
+        require_all_or_warn(test_id, "gcc").expect("gcc");
+        return;
+    }
+    let proj_dir = cobs_proj_dir("c11", test_id).expect("project dir");
+    let all_files = layer_generate(sce_build::generator::Language::C11, test_id)
+        .expect("generate the layer documents");
+    write_flat_emit(&proj_dir, &all_files, "h").expect("write the emit");
+
+    let settings = |s: LayerSettings| {
+        format!(
+            "{{ .mode = LAYER_MODE_{}, .limitDays = {}, .burst = {}u, .locked = {} }}",
+            layer_mode_variant(s.0).to_uppercase(),
+            s.1,
+            s.2,
+            s.3
+        )
+    };
+    let rows = layer_rows(|c| {
+        format!(
+            "    {{ {}, {}, {}ull, {} }},",
+            settings(c.base),
+            settings(c.over),
+            c.mask,
+            settings(c.want)
+        )
+    });
+    let driver = "#include \"layer_merge.h\"\n\
+         #include <stdio.h>\n\
+         \n\
+         typedef struct {\n\
+         \x20   LayerSettingsPayload_t base;\n\
+         \x20   LayerSettingsPayload_t over;\n\
+         \x20   uint64_t mask;\n\
+         \x20   LayerSettingsPayload_t want;\n\
+         } row_t;\n\
+         \n\
+         int main(void) {\n\
+         \x20   static const row_t rows[] = {\n\
+         @ROWS@\n\
+         \x20   };\n\
+         \x20   for (size_t i = 0; i < sizeof(rows) / sizeof(rows[0]); ++i) {\n\
+         \x20       LayerSettingsPayload_t got = layer_merge(rows[i].base, rows[i].over, rows[i].mask);\n\
+         \x20       if (got.mode != rows[i].want.mode || got.limitDays != rows[i].want.limitDays ||\n\
+         \x20           got.burst != rows[i].want.burst || got.locked != rows[i].want.locked) {\n\
+         \x20           printf(\"row %zu: layering mismatch\\n\", i);\n\
+         \x20           return 1;\n\
+         \x20       }\n\
+         \x20   }\n\
+         \x20   return 0;\n\
+         }\n"
+    .replace("@ROWS@", &rows);
+    std::fs::write(proj_dir.join("driver.c"), driver).expect("write driver.c");
+
+    let exe = proj_dir.join("driver");
+    let mut build = std::process::Command::new("gcc");
+    build
+        .arg("-std=c11")
+        .arg("-Wall")
+        .arg("-Wextra")
+        .arg("-pedantic")
+        .arg("-Werror")
+        .arg(format!("-I{}", proj_dir.display()))
+        .arg("-o")
+        .arg(&exe)
+        .arg("driver.c");
+    run_cobs_driver(build, &proj_dir, test_id, "gcc-build").expect("the emit must compile");
+    run_cobs_driver(
+        std::process::Command::new(&exe),
+        &proj_dir,
+        test_id,
+        "c11-run",
+    )
+    .expect("the emit must match the table");
+    let _ = std::fs::remove_dir_all(&proj_dir);
+}
+
+#[test]
+fn forge_go_enum_record_layer_runtime() {
+    let test_id = "enum_record_layer_go";
+    if !toolchain_present("go") {
+        require_all_or_warn(test_id, "go").expect("go");
+        return;
+    }
+    let proj_dir = cobs_proj_dir("go", test_id).expect("project dir");
+    let all_files = layer_generate(sce_build::generator::Language::Go, test_id)
+        .expect("generate the layer documents");
+
+    // One package per directory, named by the file's stem (the layout
+    // `compile_codec_set_go` and the cobs gate use).
+    let mut seen = std::collections::HashSet::new();
+    for (filename, content) in &all_files {
+        let path = std::path::Path::new(filename);
+        if path.extension().and_then(|e| e.to_str()) != Some("go") {
+            continue;
+        }
+        let stem = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .expect("a file stem");
+        if !seen.insert(stem.to_string()) {
+            continue;
+        }
+        let pkg_dir = proj_dir.join(stem);
+        std::fs::create_dir_all(&pkg_dir).expect("mkdir package");
+        std::fs::write(
+            pkg_dir.join(path.file_name().expect("a file name")),
+            content,
+        )
+        .expect("write package file");
+    }
+    assert_eq!(
+        seen.len(),
+        3,
+        "mode, settings and merge each emit a package"
+    );
+
+    let runtime_path =
+        backend_runtime_dir("backends/go/forge-runtime").expect("the Go forge runtime");
+    let go_mod = format!(
+        "module {GOLDEN_GO_MODULE_PREFIX}\n\
+         \n\
+         go 1.22\n\
+         \n\
+         require github.com/newmassrael/sce-forge-runtime v0.0.0\n\
+         \n\
+         replace github.com/newmassrael/sce-forge-runtime => {}\n",
+        runtime_path.display(),
+    );
+    std::fs::write(proj_dir.join("go.mod"), go_mod).expect("write go.mod");
+
+    let settings = |s: LayerSettings| {
+        format!(
+            "lset.LayerSettingsPayload{{Mode: lmode.LayerMode{}, LimitDays: {}, Burst: {}, Locked: {}}}",
+            layer_mode_pascal(s.0),
+            s.1,
+            s.2,
+            s.3
+        )
+    };
+    let rows = layer_rows(|c| {
+        format!(
+            "\t\t{{{}, {}, {}, {}}},",
+            settings(c.base),
+            settings(c.over),
+            c.mask,
+            settings(c.want)
+        )
+    });
+    let driver = "package main\n\
+         \n\
+         import (\n\
+         \t\"fmt\"\n\
+         \t\"os\"\n\
+         \n\
+         \tlmerge \"@PREFIX@/layer_merge\"\n\
+         \tlmode \"@PREFIX@/layer_mode\"\n\
+         \tlset \"@PREFIX@/layer_settings\"\n\
+         )\n\
+         \n\
+         type row struct {\n\
+         \tbase, over lset.LayerSettingsPayload\n\
+         \tmask       uint64\n\
+         \twant       lset.LayerSettingsPayload\n\
+         }\n\
+         \n\
+         func main() {\n\
+         \trows := []row{\n\
+         @ROWS@\n\
+         \t}\n\
+         \tfor i, r := range rows {\n\
+         \t\tif got := lmerge.LayerMerge(r.base, r.over, r.mask); got != r.want {\n\
+         \t\t\tfmt.Printf(\"row %d: got %+v want %+v\\n\", i, got, r.want)\n\
+         \t\t\tos.Exit(1)\n\
+         \t\t}\n\
+         \t}\n\
+         }\n"
+    .replace("@PREFIX@", GOLDEN_GO_MODULE_PREFIX)
+    .replace("@ROWS@", &rows);
+    std::fs::write(proj_dir.join("main.go"), driver).expect("write main.go");
+
+    let mut run = std::process::Command::new("go");
+    run.arg("run").arg(".");
+    run_cobs_driver(run, &proj_dir, test_id, "go-run")
+        .expect("the emit must compile and match the table");
+    let _ = std::fs::remove_dir_all(&proj_dir);
+}
+
+#[test]
+fn forge_python_enum_record_layer_runtime() {
+    let test_id = "enum_record_layer_python";
+    if !toolchain_present("python3") {
+        require_all_or_warn(test_id, "python3").expect("python3");
+        return;
+    }
+    let proj_dir = cobs_proj_dir("py", test_id).expect("project dir");
+    let all_files = layer_generate(sce_build::generator::Language::Python, test_id)
+        .expect("generate the layer documents");
+
+    // The emit imports its siblings with `from . import ...`, so it is a
+    // package. `py_compile` would pass a file that names a module it does not
+    // have; only importing it says whether it does.
+    let pkg_dir = proj_dir.join("pkg");
+    std::fs::create_dir_all(&pkg_dir).expect("mkdir pkg");
+    std::fs::write(pkg_dir.join("__init__.py"), "").expect("write __init__.py");
+    write_flat_emit(&pkg_dir, &all_files, "py").expect("write the emit");
+
+    let settings = |s: LayerSettings| {
+        format!(
+            "S(LayerMode.{}, {}, {}, {})",
+            layer_mode_variant(s.0).to_uppercase(),
+            s.1,
+            s.2,
+            if s.3 { "True" } else { "False" }
+        )
+    };
+    let rows = layer_rows(|c| {
+        format!(
+            "    ({}, {}, {}, {}),",
+            settings(c.base),
+            settings(c.over),
+            c.mask,
+            settings(c.want)
+        )
+    });
+    let driver = "import sys\n\
+         \n\
+         from pkg.layer_merge import layer_merge\n\
+         from pkg.layer_mode import LayerMode\n\
+         from pkg.layer_settings import LayerSettingsPayload as S\n\
+         \n\
+         ROWS = [\n\
+         @ROWS@\n\
+         ]\n\
+         \n\
+         for i, (base, over, mask, want) in enumerate(ROWS):\n\
+         \x20   got = layer_merge(base, over, mask)\n\
+         \x20   if got != want:\n\
+         \x20       print(f\"row {i}: got {got} want {want}\")\n\
+         \x20       sys.exit(1)\n"
+        .replace("@ROWS@", &rows);
+    std::fs::write(proj_dir.join("driver.py"), driver).expect("write driver.py");
+
+    let mut run = std::process::Command::new("python3");
+    run.arg("-W").arg("error").arg("driver.py");
+    run_cobs_driver(run, &proj_dir, test_id, "python-run")
+        .expect("the emit must import and match the table");
+    let _ = std::fs::remove_dir_all(&proj_dir);
+}
+
+#[test]
+fn forge_kotlin_enum_record_layer_runtime() {
+    let test_id = "enum_record_layer_kotlin";
+    if !toolchain_present("kotlinc") {
+        require_all_or_warn(test_id, "kotlinc").expect("kotlinc");
+        return;
+    }
+    if !toolchain_present("java") {
+        require_all_or_warn(test_id, "java").expect("java");
+        return;
+    }
+    let proj_dir = cobs_proj_dir("kt", test_id).expect("project dir");
+    let all_files = layer_generate(sce_build::generator::Language::Kotlin, test_id)
+        .expect("generate the layer documents");
+    let written = write_flat_emit(&proj_dir, &all_files, "kt").expect("write the emit");
+
+    let settings = |s: LayerSettings| {
+        format!(
+            "settings(LayerMode.{}, {}, {}L, {})",
+            layer_mode_variant(s.0).to_uppercase(),
+            s.1,
+            s.2,
+            s.3
+        )
+    };
+    let rows = layer_rows(|c| {
+        format!(
+            "        Row({}, {}, {}uL, {}),",
+            settings(c.base),
+            settings(c.over),
+            c.mask,
+            settings(c.want)
+        )
+    });
+    let driver = "import com.sce.generated.layer_merge.layerMerge\n\
+         import com.sce.generated.layer_mode.LayerMode\n\
+         import com.sce.generated.layer_settings.LayerSettingsPayload\n\
+         \n\
+         class Row(\n\
+         \x20   val base: LayerSettingsPayload,\n\
+         \x20   val over: LayerSettingsPayload,\n\
+         \x20   val mask: ULong,\n\
+         \x20   val want: LayerSettingsPayload,\n\
+         )\n\
+         \n\
+         fun settings(mode: LayerMode, limitDays: Int, burst: Long, locked: Boolean) =\n\
+         \x20   LayerSettingsPayload(mode, limitDays.toUShort(), burst.toUInt(), locked)\n\
+         \n\
+         fun main() {\n\
+         \x20   val rows = listOf(\n\
+         @ROWS@\n\
+         \x20   )\n\
+         \x20   for ((i, r) in rows.withIndex()) {\n\
+         \x20       val got = layerMerge(r.base, r.over, r.mask)\n\
+         \x20       if (got != r.want) {\n\
+         \x20           println(\"row $i: got $got want ${r.want}\")\n\
+         \x20           kotlin.system.exitProcess(1)\n\
+         \x20       }\n\
+         \x20   }\n\
+         }\n"
+    .replace("@ROWS@", &rows);
+    std::fs::write(proj_dir.join("Driver.kt"), driver).expect("write Driver.kt");
+
+    // `-include-runtime` bundles the Kotlin stdlib so the jar runs on its own;
+    // see `run_cobs_vectors_kotlin`. This emit imports nothing of the forge
+    // runtime, so no runtime jar is needed.
+    let app_jar = proj_dir.join("driver.jar");
+    let mut build = std::process::Command::new("kotlinc");
+    build
+        .arg("-Werror")
+        .arg("-include-runtime")
+        .arg("-d")
+        .arg(&app_jar);
+    for name in &written {
+        build.arg(name);
+    }
+    build.arg("Driver.kt");
+    run_cobs_driver(build, &proj_dir, test_id, "kotlinc-build").expect("the emit must compile");
+
+    let mut run = std::process::Command::new("java");
+    run.arg("-cp").arg(&app_jar).arg("DriverKt");
+    run_cobs_driver(run, &proj_dir, test_id, "kotlin-run").expect("the emit must match the table");
+    let _ = std::fs::remove_dir_all(&proj_dir);
+}
+
 // Dispatch-inversion β shape: `<sce:default>` catch-all on the leaf's
 // caller-tag `<sce:variant>` is ALLOWED (a parent
 // without `<sce:variant-dispatch>` uses the default arm's value as

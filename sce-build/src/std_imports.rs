@@ -29,6 +29,17 @@
 /// a Go import block lists them.
 pub(crate) const GO_PACKAGES: &[&str] = &["math", "strconv"];
 
+/// The name a Go forge file binds the forge runtime's `algorithm` package to:
+/// `scealgorithm.Failure` for a checked operation, `scealgorithm.Choose` for a
+/// conditional whose value is not a plain number or `bool` (an enum). It is not
+/// a standard package, so it is not in [`GO_PACKAGES`] — it is imported under
+/// this alias, from [`GO_FORGE_RUNTIME_PATH`].
+pub(crate) const GO_FORGE_RUNTIME_ALIAS: &str = "scealgorithm";
+
+/// The import path of the package [`GO_FORGE_RUNTIME_ALIAS`] names. A file that
+/// already holds it needs nothing more said.
+pub(crate) const GO_FORGE_RUNTIME_PATH: &str = "github.com/newmassrael/sce-forge-runtime/algorithm";
+
 /// The C++ standard names generated expression code reaches for that are not
 /// already decided from the model, each with the header that declares it, in
 /// the order an include block lists them. `std::vector`, `std::span` and
@@ -58,6 +69,28 @@ pub fn go_used_in(source: &str) -> Vec<&'static str> {
         .zip(found)
         .filter_map(|(package, used)| used.then_some(*package))
         .collect()
+}
+
+/// Whether `source` calls into the forge runtime package, by the alias
+/// [`GO_FORGE_RUNTIME_ALIAS`]. Read from the program text the way
+/// [`go_used_in`] reads a standard package, so a body that needs the runtime
+/// for a reason only its expression emitters know (an enum-valued conditional
+/// lowers to `Choose`, a checked operation to `Failure`) is not left without the
+/// import by a flag that said otherwise.
+pub fn go_uses_forge_runtime(source: &str) -> bool {
+    let mut used = false;
+    scan(source, |names| {
+        if let Name::Qualified {
+            head,
+            after_dot: false,
+        } = names
+        {
+            if head == GO_FORGE_RUNTIME_ALIAS {
+                used = true;
+            }
+        }
+    });
+    used
 }
 
 /// The Go packages in [`GO_PACKAGES`] that `source` uses and does not import:
@@ -217,7 +250,24 @@ fn skip_raw(bytes: &[u8], open: usize) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use super::{cpp_used_in, go_unimported_in, go_used_in};
+    use super::{cpp_used_in, go_unimported_in, go_used_in, go_uses_forge_runtime};
+
+    #[test]
+    fn a_go_call_into_the_forge_runtime_is_a_use() {
+        assert!(go_uses_forge_runtime(
+            "out := p{A: scealgorithm.Choose(c, a, b)}"
+        ));
+        assert!(go_uses_forge_runtime("var sceFailure scealgorithm.Failure"));
+    }
+
+    #[test]
+    fn the_forge_runtime_named_in_a_literal_or_as_a_member_is_not_a_use() {
+        assert!(!go_uses_forge_runtime(r#"return "scealgorithm.Choose""#));
+        assert!(!go_uses_forge_runtime("// scealgorithm.Failure\nreturn 1"));
+        assert!(!go_uses_forge_runtime("return cfg.scealgorithm.Choose(1)"));
+        assert!(!go_uses_forge_runtime("return scealgorithm_.Choose(1)"));
+        assert!(!go_uses_forge_runtime(""));
+    }
 
     #[test]
     fn a_go_package_a_file_already_imports_is_not_missing() {

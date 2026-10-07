@@ -2135,7 +2135,7 @@ fn render_enum(
 // python `<e>.<E>`, c11 `<E>_t`). The corresponding include / use /
 // import directive surfaces via the per-backend list contexts
 // (`enum_includes` for cpp/c, `enum_use_paths` for rust,
-// `enum_kotlin_packages` for kotlin, `go_enum_imports` for go,
+// `kotlin_enum_imports` for kotlin, `go_enum_imports` for go,
 // `python_enum_imports` for python).
 /// The identifier an event-schema field `id` has on `lang`'s payload struct:
 /// PascalCase on Go (the field must be exported), snake_case on Rust (the
@@ -2251,30 +2251,30 @@ fn render_event_schema(
     // (Rust's resolve_imports arm sets namespace = snake).
     let enum_use_paths: Vec<String> = enum_imports.iter().map(|i| i.namespace.clone()).collect();
 
-    // Kotlin: per-imported-enum bare snake package; the template
-    // emits `import com.sce.generated.<snake>.*` wildcard so the bare
-    // class name reaches unqualified scope.
-    let enum_kotlin_packages: Vec<String> =
-        enum_imports.iter().map(|i| i.namespace.clone()).collect();
-
-    // Go: per-imported-enum full module-prefixed path. The Go arm of
-    // `resolve_imports` populates `include_stmt` as
-    // `"\t\"<prefix>/<snake>\""`; strip the surrounding tab + quotes
-    // so the template can wrap them with its own `import (...)`
-    // syntax.
+    // Kotlin, Go and Python: the import statement `forge_import_identity`
+    // already wrote for the enum, taken whole. It is the ONE place that
+    // knows how a language brings another document into scope, and the
+    // field types above (`l.type_name`) are spelled to match it — Go and
+    // Python qualify the enum by the alias that statement binds
+    // (`sce_<snake>`), Kotlin leaves it bare under the wildcard it
+    // imports. Re-deriving the statement here from `namespace` /
+    // `type_name` is what once left all three pointing at a module,
+    // package or alias the enum's own file does not have: `namespace` is
+    // a bare snake name on Rust, the PascalCase name on Kotlin, and the
+    // alias on Python.
+    //
+    // A Go statement keeps its leading tab; the template writes its own.
+    let kotlin_enum_imports: Vec<String> = enum_imports
+        .iter()
+        .map(|i| i.include_stmt.clone())
+        .collect();
     let go_enum_imports: Vec<String> = enum_imports
         .iter()
-        .map(|i| i.include_stmt.trim().trim_matches('"').to_string())
+        .map(|i| i.include_stmt.trim().to_string())
         .collect();
-
-    // Python: per-imported-enum `<snake> import <Pascal>` (the
-    // template prepends `from `). Reuses the snake form already in
-    // `namespace` plus the Pascal name in `type_name`, which keeps
-    // the directive shape orthogonal to whether the imported kind is
-    // stateful or stateless.
     let python_enum_imports: Vec<String> = enum_imports
         .iter()
-        .map(|i| format!(".{} import {}", i.namespace, i.type_name))
+        .map(|i| i.include_stmt.clone())
         .collect();
 
     let mut ctx = l.base_context(&m.name);
@@ -2284,8 +2284,8 @@ fn render_event_schema(
     ctx.insert("enum_includes".into(), serde_json::json!(enum_includes));
     ctx.insert("enum_use_paths".into(), serde_json::json!(enum_use_paths));
     ctx.insert(
-        "enum_kotlin_packages".into(),
-        serde_json::json!(enum_kotlin_packages),
+        "kotlin_enum_imports".into(),
+        serde_json::json!(kotlin_enum_imports),
     );
     ctx.insert("go_enum_imports".into(), serde_json::json!(go_enum_imports));
     ctx.insert(
@@ -23095,7 +23095,20 @@ impl LangCtx {
         // Reading the text rather than a flag computed upstream is the same
         // reason `transform` always gave: a flag can disagree with what the
         // emitter wrote, and here that is a broken build in both directions.
+        //
+        // Go has one more import of this kind that is not a standard package:
+        // the forge runtime, bound as `scealgorithm`. A body reaches for it
+        // for the checked operations of a `may-fail` algorithm AND for a
+        // conditional whose value is not a plain number or `bool` (an enum
+        // lowers to `scealgorithm.Choose`), and the second reason has nothing
+        // to do with `may-fail` — so the template's own flag said "no import"
+        // beside a body that named it. It is read off the text the same way,
+        // and a template lists `uses_scealgorithm` in its import block.
+        let go = matches!(self.lang, crate::generator::Language::Go);
         ctx.insert(key.into(), serde_json::Value::Array(Vec::new()));
+        if go {
+            ctx.insert("uses_scealgorithm".into(), false.into());
+        }
         let first = tmpl
             .render(minijinja::Value::from_serialize(&ctx))
             .map_err(generator::render_error)?;
@@ -23105,13 +23118,19 @@ impl LangCtx {
             .into_iter()
             .filter(|unit| !first.contains(&spelled(unit)))
             .collect();
-        if used.is_empty() {
+        let runtime = go
+            && crate::std_imports::go_uses_forge_runtime(&first)
+            && !first.contains(crate::std_imports::GO_FORGE_RUNTIME_PATH);
+        if used.is_empty() && !runtime {
             return Ok(first);
         }
         ctx.insert(
             key.into(),
             serde_json::Value::Array(used.iter().map(|p| (*p).into()).collect()),
         );
+        if runtime {
+            ctx.insert("uses_scealgorithm".into(), true.into());
+        }
         let second = tmpl
             .render(minijinja::Value::from_serialize(&ctx))
             .map_err(generator::render_error)?;
@@ -23122,6 +23141,15 @@ impl LangCtx {
                 "the {:?} `{kind}` template emits code that uses the {unit} `{missing}` but \
                  does not list `{key}` in its imports",
                 self.lang
+            ))
+            .into());
+        }
+        if runtime && !second.contains(crate::std_imports::GO_FORGE_RUNTIME_PATH) {
+            return Err(GenerateError::TemplateLoad(format!(
+                "the {:?} `{kind}` template emits code that uses `{}` but does not list \
+                 `uses_scealgorithm` in its imports",
+                self.lang,
+                crate::std_imports::GO_FORGE_RUNTIME_ALIAS
             ))
             .into());
         }

@@ -18,14 +18,16 @@ package {{ package }}
    packages the emitted text uses, read off it by the render door
    (`LangCtx::render`) with literals and comments skipped — so the import block
    cannot fall behind the vocabulary, and a name inside a string cannot add an
-   import. #}
-{% if all_imports or may_fail or std_imports %}
+   import. `uses_scealgorithm` is the same fact for the forge runtime: the body
+   names it for a `may-fail` algorithm's checked operations and for an
+   enum-valued conditional alike, so the text decides and `may_fail` does not. #}
+{% if all_imports or uses_scealgorithm or std_imports %}
 
 import (
 {% for pkg in std_imports %}
 	"{{ pkg }}"
 {% endfor %}
-{% if may_fail %}
+{% if uses_scealgorithm %}
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
 {% endif %}
 {% for imp in all_imports %}

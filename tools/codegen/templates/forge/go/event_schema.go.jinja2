@@ -13,7 +13,7 @@ package {{ package }}
 {% if go_enum_imports %}
 import (
 {% for imp in go_enum_imports %}
-	"{{ imp }}"
+	{{ imp }}
 {% endfor %}
 )
 {% endif %}

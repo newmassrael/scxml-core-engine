@@ -10,8 +10,8 @@
 // Do not edit — regenerate from the source SCXML file.
 
 package com.sce.generated.{{ package }}
-{% for imp_pkg in enum_kotlin_packages %}
-import com.sce.generated.{{ imp_pkg }}.*
+{% for imp in kotlin_enum_imports %}
+{{ imp }}
 {% endfor %}
 
 {% if fields %}
