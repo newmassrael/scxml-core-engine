@@ -310,7 +310,7 @@ class Verification:
         ⚠ A case is refused only when NOTHING was compared; one whose other position agreed
         passes, and the position no rule of the binding writes is a `----` line. Over a document
         that leaves a whole output out (an actuator it was given no address for) this made
-        "every case passed" true and the component wrong: tens of cases over three components,
+        "every case passed" true and the component wrong: forty cases over four components,
         measured 2026-10-06, all of which the host's own tests then failed. The count stands
         beside the passes and never inside either side of them."""
         return sum(1 for r in self.results if r.passed and r.unchecked)
@@ -1531,17 +1531,22 @@ class Latches:
         delivered = getattr(case, "delivered", None)
         return drove if delivered is None else drove & set(delivered)
 
-    def _ladder_changes(self, rungs, case) -> list:
+    def _ladder_changes(self, rungs, case, outside=()) -> list:
         """Which rungs of a shared ladder moved this round.
 
         Watched once per case rather than per input: every input drawing on
         the ladder asks about the same readings, and each keeping its own idea
         of what changed would let one input's evaluation consume the change
         another input needed.
+
+        `outside` are the exclusive states that are not rungs: the supply
+        moving to one of them leaves the ladder, and the reading that
+        persists below must not outlive it.
         """
         if self._ladder_case is not case:
             self._ladder_case = case
             moved = []
+            left = []
             for rung in rungs:
                 if case.drove:
                     if rung in self._moved(case):
@@ -1552,14 +1557,74 @@ class Latches:
                 if seen is not _UNSEEN and now != seen:
                     moved.append(rung)
                 self.previous[f"\x00ladder\x00{rung}"] = now
+            for state in outside:
+                if case.drove:
+                    if state in self._moved(case):
+                        left.append(state)
+                    continue
+                now = case.given.get(state)
+                seen = self.previous.get(f"\x00ladder\x00{state}", _UNSEEN)
+                if seen is not _UNSEEN and now != seen:
+                    left.append(state)
+                self.previous[f"\x00ladder\x00{state}"] = now
             # ⚠ A rung the record does not mention this round leaves the
             # ladder where it was; the reading persists until another rung is
             # asserted. So an empty list means "unchanged", never "off".
             if moved:
                 self._ladder_reached = max(moved, key=rungs.index)
+            # ⚠ ... or until the supply moves to a state that is not on the
+            # ladder at all. Of a rung and such a state moved in one round the
+            # one the record listed last is where the supply is; with no order
+            # recorded the rung stands, as it always did. Without this the
+            # persisted rung outlived `ElapsedOff700ms` and read the supply as
+            # on again on the next round that moved neither (2026-10-07).
+            if left:
+                order = list(case.drove or ())
+                last_rung = max((order.index(r) for r in moved if r in order), default=-1)
+                last_left = max((order.index(s) for s in left if s in order), default=-1)
+                if not moved or last_left > last_rung:
+                    self._ladder_reached = None
             self._ladder_moved = ([self._ladder_reached]
                                   if self._ladder_reached else [])
         return self._ladder_moved
+
+    def _taken_by(self, key: str, latch: dict, parameters: dict, rungs, case) -> list:
+        """The other states of one exclusive reading that moved this round.
+
+        ⚠ A pack's `exclusive` lists EVERY state of a reading that is in exactly one state at a
+        time: the one that moved last is the state, and moving another takes the state away
+        from whatever held it. A latch over two parameters cannot say that. Measured
+        2026-10-07 on a supply whose counters are `ElapsedOn0ms` .. `ElapsedOn10s`,
+        `ElapsedOff0ms` and `ElapsedOff700ms`: the input "IGN1 on" cleared only on `ElapsedOff0ms`
+        and the input "IGN1 off after 700 ms" only on `ElapsedOn0ms`, so a round that moved only
+        `ElapsedOff700ms` left the first true and one that moved only `ElapsedOff0ms` left the
+        second true, where the platform holds one state and both are false. Five cases of one
+        component, each judged right by the host.
+
+        ⚠ An input on the cumulative ladder is taken only by a state OUTSIDE the ladder: how the
+        rungs include one another is the ladder's own order (`lowered`), and counting them here
+        too would make a round that moved two rungs clear the higher one. An input whose own
+        counter is not on the ladder is taken by every other state."""
+        states = self.receives(latch.get("exclusive") or [])
+        if not states:
+            return []
+        mine = parameters.get(latch["set_when_changed"])
+        if mine in rungs:
+            taking = [s for s in states if s not in (latch.get("cumulative") or [])]
+        else:
+            taking = [s for s in states if s != mine]
+        moved = []
+        for address in taking:
+            if case.drove:
+                if address in self._moved(case):
+                    moved.append(address)
+                continue
+            now = case.given.get(address)
+            seen = self.previous.get(f"{key}\x00exclusive\x00{address}", _UNSEEN)
+            if seen is not _UNSEEN and now != seen:
+                moved.append(address)
+            self.previous[f"{key}\x00exclusive\x00{address}"] = now
+        return moved
 
     def value(self, key: str, protocol: str, parameters: dict, case) -> bool:
         latch = self.protocols[protocol]["latch"]
@@ -1602,7 +1667,9 @@ class Latches:
         # every round that moved it up had also set the latch and so never
         # looked. The guard below used to wrap this call, which is what made
         # the reading depend on the asker.
-        reached = self._ladder_changes(rungs, case) if rungs else []
+        outside = [s for s in self.receives(latch.get("exclusive") or [])
+                   if s not in (latch.get("cumulative") or [])]
+        reached = self._ladder_changes(rungs, case, outside) if rungs else []
         # ⚠ A rung BELOW this input's own is the ladder being asserted again
         # from lower down, and that is not silence -- it is a statement that
         # the longer reading has stopped holding. Without this the latch only
@@ -1625,11 +1692,17 @@ class Latches:
                         sets, set_by = True, rung
                         break
                     lowered = True
-        clears = latch["clear_when_changed"] in changed or lowered
+        taken = self._taken_by(key, latch, parameters, rungs, case)
+        clears = latch["clear_when_changed"] in changed or lowered or bool(taken)
         if sets and clears:
             both = latch.get("both", "clear")
             order = list(case.drove)
             cleared_by = parameters.get(latch["clear_when_changed"])
+            # Of everything that cleared it this round, the one the record listed last.
+            clearers = ([cleared_by] if latch["clear_when_changed"] in changed else []) + taken
+            listed = [a for a in clearers if a in order]
+            if listed:
+                cleared_by = max(listed, key=order.index)
             if both == "last" and set_by in order and cleared_by in order:
                 # Whichever the record listed later is the more recent, which
                 # is what this idiom is named for. No arbitrary winner.

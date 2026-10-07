@@ -1186,7 +1186,7 @@ def unread_driven_inputs(pack: Pack, prose, declared_inputs: dict) -> list[Findi
     # begins a longer one the specification does use is not named by that use, and asking for
     # its input refused a correct document (found by a review, 2026-10-05).
     missing = [entry for entry in pack.model.entries
-               if entry.role == "input"
+               if entry.role in ("input", "stored")
                and entry.address in driven
                and entry.address not in read
                and not any(entry.address.startswith(p) for p in plumbing)

@@ -993,11 +993,6 @@ application opens (`SCE_WORKS_DIR`, else the per-user data directory).
   has taken it). `works_begin_generation` takes that request, or makes one for a
   work nobody asked for, and answers with the work as `works_read` gives it and
   `generation` (`request`, `attempt`, and the `source` revision the request is about).
-  A request the owner made in the application **for a connection** (which AI, which model)
-  is that connection's executor's and not this client's: the core refuses it as
-  `wrong-connection`, and this server says what is to be done, which is the owner's (call
-  that request off in the application, and begin again). It runs for no connection and
-  does not offer one it has not got.
   `works_save_model` and `works_save_requirements` then take that `request`: what
   they save is written for the request and is not the work's model until
   `works_finish_generation`, which has SCE check the model itself and publishes the
@@ -1640,6 +1635,28 @@ refuses a file that does not validate, naming the path that failed.
         names: [WhatTheProseCallsIt]
         type: number
 
+      - address: Some.Stored.Value
+        role: stored                              # read at start AND written back
+        names: [WhatTheProseCallsIt]
+        type: integer
+
+      - address: Some.Event.Slot
+        role: output
+        announces_old_off: true                   # moves to a new event by publishing the old one off
+        names: [WhatTheProseCallsIt]
+        fields:
+          ID:   {type: text}
+          Stat: {values: {NONE: 0, OFF: 1, ON: 2}}
+
+**`role: stored` and `announces_old_off` are facts of the platform's address, not of
+a document.** A value the platform keeps and the component both reads and writes back
+was one role too few: declared `input`, its write was an expected position no rule could
+be asked to write; declared `output`, the planted value was an address the component was
+not said to receive. `stored` is received like an input and written like an output.
+`announces_old_off` is a fact of the COMPONENT -- of 244 sources 79 read the cached event
+ID back and publish the old event off first -- that neither the specification nor a
+document can say; the host reads it from the model.
+
 `names` is what makes question 1 answerable: prose writes names, platforms have
 addresses, and no document anywhere states the correspondence. It is a list
 because prose is inconsistent.
@@ -1774,6 +1791,7 @@ A convention may also DEFINE a reading idiom rather than only naming one:
           both: last           # set | clear | last  — who wins when both move
           initial: clear
           cumulative: [Ladder.Rung0, Ladder.Rung500, Ladder.Rung3500]
+          exclusive: [Ladder.Rung0, Ladder.Rung500, Ladder.Rung3500, Ladder.Off700]
 
 Naming a protocol without defining it is still allowed and still means "the
 core does not know what this is" — `verify` then declines rather than guessing.
@@ -1782,7 +1800,12 @@ wrong: `cumulative` because reaching a later rung includes the earlier ones and
 without it an input asking "has it been on at all" goes false the moment a
 longer reading passes; `both` because the round where both move is ordinary and
 all three answers occur; `last` because the record's own order says which was
-more recent, which is what the idiom is named for.
+more recent, which is what the idiom is named for; `exclusive` because a reading
+that is in exactly one state at a time is taken away from by every other state,
+and a latch over two parameters hears only one of them -- on a supply with an on
+ladder and two off counters, the input for the on side stayed true when only the
+second off counter moved, and the input for that counter stayed true when the
+first one moved, five cases of one component.
 
 `host` states what the platform's HOST — the code connecting a generated
 document to it — does with a document, once for the platform rather than in

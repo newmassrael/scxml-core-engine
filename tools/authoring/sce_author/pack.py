@@ -142,6 +142,11 @@ class Field:
         return self.values is None or symbol in self.values
 
 
+#: The roles a document writes. `stored` is also READ (every role but `output` is), which is the
+#: point of it: the platform keeps a value the component reads at start and writes back.
+WRITTEN_ROLES = ("output", "stored")
+
+
 @dataclass(frozen=True)
 class Entry:
     address: str
@@ -149,6 +154,14 @@ class Entry:
     names: tuple[str, ...]
     fields: tuple[Field, ...]
     note: str = ""
+    #: The component moves this event slot to another event by first publishing the old one off.
+    announces_old_off: bool = False
+
+    @property
+    def written(self) -> bool:
+        """Whether a document writes this address: an `output`, or a `stored` value that is
+        read AND written back."""
+        return self.role in WRITTEN_ROLES
 
     def field(self, name: str) -> Field | None:
         for f in self.fields:
@@ -187,7 +200,9 @@ class Model:
     by_name: dict[str, list[Entry]] = field(default_factory=dict)
 
     def outputs(self) -> list[Entry]:
-        return [e for e in self.entries if e.role == "output"]
+        """The entries a document writes: an `output`, and a `stored` value that is read and
+        written back."""
+        return [e for e in self.entries if e.written]
 
     def owning(self, address: str) -> Entry | None:
         """The entry an address belongs to, following it up to its record.
@@ -325,12 +340,20 @@ def _entry(raw: dict, where: str = "", problems: Problems = FIRST_PROBLEM) -> En
     else:
         fields.append(Field("", raw.get("values"), raw.get("type"),
                             _range(raw, here, problems)))
+    announces = bool(raw.get("announces_old_off"))
+    if announces and (raw["role"] not in WRITTEN_ROLES or "Stat" not in raw.get("fields", {})):
+        problems.refuse(PackError(
+            f"{here + ': ' if here else ''}announces_old_off is said of an address that is "
+            f"{'not written by a document' if raw['role'] not in WRITTEN_ROLES else 'without a Stat field'}"
+            f": only an `output` or `stored` event record with a `Stat` has an old event to "
+            f"publish off"))
     return Entry(
         address=raw["address"],
         role=raw["role"],
         names=tuple(raw.get("names") or ()),
         fields=tuple(fields),
         note=raw.get("note", ""),
+        announces_old_off=announces,
     )
 
 

@@ -320,6 +320,11 @@
                 "type": "array",
                 "items": {"type": "string"},
                 "description": "Addresses the `set_when_changed` parameter is drawn from, in ascending order, where reaching a later one INCLUDES every earlier one. A change at any address at or after the one a binding names then sets that binding's latch. ⚠ Without this a rung only ever sets itself, and an input asking \"has it been on at all\" reads false once a later rung has passed -- which is the state that input exists to describe. Measured: a component with one rung was unaffected and a component with three had every event stay dark. The list is the pack's, because which readings include which is a fact about the platform and about nothing else."
+              },
+              "exclusive": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Addresses of EVERY state of one reading that is in exactly one state at a time, where the one that moved last is the state and moving any other takes it away from whatever held it. A change at one of these addresses, other than this binding's own `set_when_changed` address, then clears that binding's latch; a binding on the `cumulative` ladder is cleared only by addresses OUTSIDE the ladder, because the ladder's own order already decides among its rungs. When several change in one round and the case records `drove`, `both` decides against the one listed last. ⚠ Without this a latch over two parameters clears on one other state only: measured on a supply with an on ladder and two off counters, an input for the on side stayed true when only the second off counter moved and an input for that second off counter stayed true when the first one moved, where the platform holds one state and both are false. Five cases of one component. Addresses this component does not receive are ignored, as for `cumulative`."
               }
             }
           },
