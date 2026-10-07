@@ -17794,29 +17794,48 @@ const LAYER_CASES: &[LayerCase] = &[
     },
 ];
 
-/// Write the three documents into a fresh temp directory and return it. The
+/// Write `docs` (file name, text) into a fresh temp directory and return it. The
 /// caller removes it once its generation pass is done.
-fn layer_docs_dir(test_id: &str) -> Result<std::path::PathBuf, String> {
-    let dir = cobs_proj_dir("layer_docs", test_id)?;
-    for (name, text) in
-        LAYER_DOC_FILES
-            .iter()
-            .zip([LAYER_MODE_DOC, LAYER_SETTINGS_DOC, LAYER_MERGE_DOC])
-    {
+fn temp_docs_dir(test_id: &str, docs: &[(&str, &str)]) -> Result<std::path::PathBuf, String> {
+    let dir = cobs_proj_dir("temp_docs", test_id)?;
+    for (name, text) in docs {
         std::fs::write(dir.join(name), text).map_err(|e| format!("write {name}: {e}"))?;
     }
     Ok(dir)
 }
 
-/// The emit of the three documents for `lang`, with the temp documents removed.
+/// The emit of `docs` for `lang`, with the temp documents removed.
+fn generate_temp_docs(
+    lang: sce_build::generator::Language,
+    test_id: &str,
+    docs: &[(&str, &str)],
+) -> Result<Vec<(String, String)>, String> {
+    let dir = temp_docs_dir(test_id, docs)?;
+    let names: Vec<&str> = docs.iter().map(|(name, _)| *name).collect();
+    let files = generate_files_for_codec_set(&dir, &names, lang);
+    let _ = std::fs::remove_dir_all(&dir);
+    files
+}
+
+/// The three layering documents, in the order they import each other.
+fn layer_docs() -> [(&'static str, &'static str); 3] {
+    [
+        (LAYER_DOC_FILES[0], LAYER_MODE_DOC),
+        (LAYER_DOC_FILES[1], LAYER_SETTINGS_DOC),
+        (LAYER_DOC_FILES[2], LAYER_MERGE_DOC),
+    ]
+}
+
+fn layer_docs_dir(test_id: &str) -> Result<std::path::PathBuf, String> {
+    temp_docs_dir(test_id, &layer_docs())
+}
+
+/// The emit of the three layering documents for `lang`.
 fn layer_generate(
     lang: sce_build::generator::Language,
     test_id: &str,
 ) -> Result<Vec<(String, String)>, String> {
-    let docs = layer_docs_dir(test_id)?;
-    let files = generate_files_for_codec_set(&docs, LAYER_DOC_FILES, lang);
-    let _ = std::fs::remove_dir_all(&docs);
-    files
+    generate_temp_docs(lang, test_id, &layer_docs())
 }
 
 /// The table, one line per row, with each language's own spelling of a row.
@@ -18285,6 +18304,475 @@ fn forge_kotlin_enum_record_layer_runtime() {
     // `-include-runtime` bundles the Kotlin stdlib so the jar runs on its own;
     // see `run_cobs_vectors_kotlin`. This emit imports nothing of the forge
     // runtime, so no runtime jar is needed.
+    let app_jar = proj_dir.join("driver.jar");
+    let mut build = std::process::Command::new("kotlinc");
+    build
+        .arg("-Werror")
+        .arg("-include-runtime")
+        .arg("-d")
+        .arg(&app_jar);
+    for name in &written {
+        build.arg(name);
+    }
+    build.arg("Driver.kt");
+    run_cobs_driver(build, &proj_dir, test_id, "kotlinc-build").expect("the emit must compile");
+
+    let mut run = std::process::Command::new("java");
+    run.arg("-cp").arg(&app_jar).arg("DriverKt");
+    run_cobs_driver(run, &proj_dir, test_id, "kotlin-run").expect("the emit must match the table");
+    let _ = std::fs::remove_dir_all(&proj_dir);
+}
+
+// ── A validator that takes an enum and reads it in a cross-field rule ──
+//
+// The same enum path as the layering gates above, through the other kind that
+// reads an enum: SCE_FORGE.md §4.7's `sce:plausibility` names an `enum:` input
+// and compares it to a variant. Measured 2026-10-08 it builds and agrees on all
+// six backends, so this is a guard and not a repair: the enum import of a
+// validator is written by a different emitter than an event-schema's, and the
+// shared harness cannot hold an enum input either.
+
+const MODE_NEEDS_LIMIT_DOC: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="validator"
+       name="mode_needs_limit">
+  <sce:import kind="enum" src="layer_mode.scxml" as="LayerMode"/>
+  <datamodel>
+    <data id="mode" sce:type="enum:LayerMode" sce:direction="in"/>
+    <data id="limitDays" sce:type="uint16" sce:direction="in" sce:range-min="0" sce:range-max="365"/>
+    <data id="valid" sce:type="bool" sce:direction="out"
+          sce:plausibility="mode !== LayerMode.strict || limitDays &gt; 0"/>
+  </datamodel>
+</scxml>
+"#;
+
+fn limit_docs() -> [(&'static str, &'static str); 2] {
+    [
+        ("layer_mode.scxml", LAYER_MODE_DOC),
+        ("mode_needs_limit.scxml", MODE_NEEDS_LIMIT_DOC),
+    ]
+}
+
+struct LimitCase {
+    mode: u8,
+    limit_days: u16,
+    valid: bool,
+    reason: &'static str,
+}
+
+/// The shared answer. The range is checked before the cross-field rule, so a
+/// strict mode with an out-of-range limit reports the range.
+const LIMIT_CASES: &[LimitCase] = &[
+    LimitCase {
+        mode: 1,
+        limit_days: 0,
+        valid: false,
+        reason: "plausibility_failed",
+    },
+    LimitCase {
+        mode: 1,
+        limit_days: 5,
+        valid: true,
+        reason: "",
+    },
+    LimitCase {
+        mode: 0,
+        limit_days: 0,
+        valid: true,
+        reason: "",
+    },
+    LimitCase {
+        mode: 0,
+        limit_days: 400,
+        valid: false,
+        reason: "limit_days_out_of_range",
+    },
+    LimitCase {
+        mode: 1,
+        limit_days: 400,
+        valid: false,
+        reason: "limit_days_out_of_range",
+    },
+    LimitCase {
+        mode: 1,
+        limit_days: 365,
+        valid: true,
+        reason: "",
+    },
+    LimitCase {
+        mode: 0,
+        limit_days: 365,
+        valid: true,
+        reason: "",
+    },
+];
+
+fn limit_rows(row: impl Fn(&LimitCase) -> String) -> String {
+    LIMIT_CASES.iter().map(row).collect::<Vec<_>>().join("\n")
+}
+
+#[test]
+fn forge_rust_enum_validator_runtime() {
+    let test_id = "enum_validator_rust";
+    let rows = limit_rows(|c| {
+        format!(
+            "        ck(LayerMode::{}, {}, {}, \"{}\");",
+            layer_mode_pascal(c.mode),
+            c.limit_days,
+            c.valid,
+            c.reason
+        )
+    });
+    let harness = "#[cfg(test)]\n\
+         mod tests {\n\
+         \x20   use crate::layer_mode::LayerMode;\n\
+         \x20   use crate::mode_needs_limit::ModeNeedsLimit;\n\
+         \n\
+         \x20   fn ck(mode: LayerMode, limit_days: u16, valid: bool, reason: &str) {\n\
+         \x20       let got = ModeNeedsLimit::new().validate(mode, limit_days);\n\
+         \x20       assert_eq!(got.valid, valid, \"valid for ({mode:?}, {limit_days})\");\n\
+         \x20       assert_eq!(got.reason, reason, \"reason for ({mode:?}, {limit_days})\");\n\
+         \x20   }\n\
+         \n\
+         \x20   #[test]\n\
+         \x20   fn limit_table() {\n\
+         @ROWS@\n\
+         \x20   }\n\
+         }\n"
+    .replace("@ROWS@", &rows);
+    let docs = temp_docs_dir(test_id, &limit_docs()).expect("write the validator documents");
+    let names: Vec<&str> = limit_docs().iter().map(|(name, _)| *name).collect();
+    let result =
+        rustc_test_codec_set_with_extra(&docs, &names, &[("limit_vectors.rs", &harness)], test_id);
+    let _ = std::fs::remove_dir_all(&docs);
+    result.expect("a validator over an enum input must compile and match the table");
+}
+
+#[test]
+fn forge_cpp_enum_validator_runtime() {
+    let test_id = "enum_validator_cpp";
+    if !toolchain_present("g++") {
+        require_all_or_warn(test_id, "g++").expect("g++");
+        return;
+    }
+    let proj_dir = cobs_proj_dir("cpp", test_id).expect("project dir");
+    let all_files = generate_temp_docs(sce_build::generator::Language::Cpp, test_id, &limit_docs())
+        .expect("generate the validator documents");
+    write_flat_emit(&proj_dir, &all_files, "h").expect("write the emit");
+
+    let rows = limit_rows(|c| {
+        format!(
+            "    ck(M::{}, {}, {}, \"{}\");",
+            layer_mode_pascal(c.mode),
+            c.limit_days,
+            c.valid,
+            c.reason
+        )
+    });
+    let driver = "#include \"mode_needs_limit.h\"\n\
+         #include <cstdint>\n\
+         #include <cstdio>\n\
+         #include <string>\n\
+         \n\
+         using M = SCE::Generated::LayerMode::LayerMode;\n\
+         \n\
+         static int failures = 0;\n\
+         \n\
+         static void ck(M mode, std::uint16_t limit_days, bool valid, const std::string& reason) {\n\
+         \x20   SCE::Generated::ModeNeedsLimit::ModeNeedsLimit v;\n\
+         \x20   const auto got = v.validate(mode, limit_days);\n\
+         \x20   if (got.valid != valid || std::string(got.reason) != reason) {\n\
+         \x20       std::printf(\"FAIL (%d, %u)\\n\", static_cast<int>(mode), static_cast<unsigned>(limit_days));\n\
+         \x20       ++failures;\n\
+         \x20   }\n\
+         }\n\
+         \n\
+         int main() {\n\
+         @ROWS@\n\
+         \x20   return failures ? 1 : 0;\n\
+         }\n"
+    .replace("@ROWS@", &rows);
+    std::fs::write(proj_dir.join("driver.cpp"), driver).expect("write driver.cpp");
+
+    let exe = proj_dir.join("driver");
+    let mut build = std::process::Command::new("g++");
+    build
+        .arg("-std=c++20")
+        .arg("-Wall")
+        .arg("-Wextra")
+        .arg("-Werror")
+        .arg(format!("-I{}", proj_dir.display()))
+        .arg("-o")
+        .arg(&exe)
+        .arg("driver.cpp");
+    run_cobs_driver(build, &proj_dir, test_id, "g++-build").expect("the emit must compile");
+    run_cobs_driver(
+        std::process::Command::new(&exe),
+        &proj_dir,
+        test_id,
+        "cpp-run",
+    )
+    .expect("the emit must match the table");
+    let _ = std::fs::remove_dir_all(&proj_dir);
+}
+
+#[test]
+fn forge_c11_enum_validator_runtime() {
+    let test_id = "enum_validator_c11";
+    if !toolchain_present("gcc") {
+        require_all_or_warn(test_id, "gcc").expect("gcc");
+        return;
+    }
+    let proj_dir = cobs_proj_dir("c11", test_id).expect("project dir");
+    let all_files = generate_temp_docs(sce_build::generator::Language::C11, test_id, &limit_docs())
+        .expect("generate the validator documents");
+    write_flat_emit(&proj_dir, &all_files, "h").expect("write the emit");
+
+    let rows = limit_rows(|c| {
+        format!(
+            "    ck(LAYER_MODE_{}, {}, {}, \"{}\");",
+            layer_mode_variant(c.mode).to_uppercase(),
+            c.limit_days,
+            c.valid,
+            c.reason
+        )
+    });
+    let driver = "#include \"mode_needs_limit.h\"\n\
+         #include <stdio.h>\n\
+         #include <string.h>\n\
+         \n\
+         static int failures = 0;\n\
+         \n\
+         static void ck(LayerMode_t mode, uint16_t limit_days, bool valid, const char *reason) {\n\
+         \x20   mode_needs_limit_result_t got = mode_needs_limit_validate(mode, limit_days);\n\
+         \x20   if (got.valid != valid || strcmp(got.reason, reason) != 0) {\n\
+         \x20       printf(\"FAIL (%d, %u)\\n\", (int)mode, (unsigned)limit_days);\n\
+         \x20       ++failures;\n\
+         \x20   }\n\
+         }\n\
+         \n\
+         int main(void) {\n\
+         @ROWS@\n\
+         \x20   return failures ? 1 : 0;\n\
+         }\n"
+    .replace("@ROWS@", &rows);
+    std::fs::write(proj_dir.join("driver.c"), driver).expect("write driver.c");
+
+    let exe = proj_dir.join("driver");
+    let mut build = std::process::Command::new("gcc");
+    build
+        .arg("-std=c11")
+        .arg("-Wall")
+        .arg("-Wextra")
+        .arg("-pedantic")
+        .arg("-Werror")
+        .arg(format!("-I{}", proj_dir.display()))
+        .arg("-o")
+        .arg(&exe)
+        .arg("driver.c");
+    run_cobs_driver(build, &proj_dir, test_id, "gcc-build").expect("the emit must compile");
+    run_cobs_driver(
+        std::process::Command::new(&exe),
+        &proj_dir,
+        test_id,
+        "c11-run",
+    )
+    .expect("the emit must match the table");
+    let _ = std::fs::remove_dir_all(&proj_dir);
+}
+
+#[test]
+fn forge_go_enum_validator_runtime() {
+    let test_id = "enum_validator_go";
+    if !toolchain_present("go") {
+        require_all_or_warn(test_id, "go").expect("go");
+        return;
+    }
+    let proj_dir = cobs_proj_dir("go", test_id).expect("project dir");
+    let all_files = generate_temp_docs(sce_build::generator::Language::Go, test_id, &limit_docs())
+        .expect("generate the validator documents");
+
+    let mut seen = std::collections::HashSet::new();
+    for (filename, content) in &all_files {
+        let path = std::path::Path::new(filename);
+        if path.extension().and_then(|e| e.to_str()) != Some("go") {
+            continue;
+        }
+        let stem = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .expect("a file stem");
+        if !seen.insert(stem.to_string()) {
+            continue;
+        }
+        let pkg_dir = proj_dir.join(stem);
+        std::fs::create_dir_all(&pkg_dir).expect("mkdir package");
+        std::fs::write(
+            pkg_dir.join(path.file_name().expect("a file name")),
+            content,
+        )
+        .expect("write package file");
+    }
+    assert_eq!(seen.len(), 2, "mode and validator each emit a package");
+
+    std::fs::write(
+        proj_dir.join("go.mod"),
+        format!("module {GOLDEN_GO_MODULE_PREFIX}\n\ngo 1.22\n"),
+    )
+    .expect("write go.mod");
+
+    let rows = limit_rows(|c| {
+        format!(
+            "\tck(lmode.LayerMode{}, {}, {}, \"{}\")",
+            layer_mode_pascal(c.mode),
+            c.limit_days,
+            c.valid,
+            c.reason
+        )
+    });
+    let driver = "package main\n\
+         \n\
+         import (\n\
+         \t\"fmt\"\n\
+         \t\"os\"\n\
+         \n\
+         \tlmode \"@PREFIX@/layer_mode\"\n\
+         \tvmod \"@PREFIX@/mode_needs_limit\"\n\
+         )\n\
+         \n\
+         func main() {\n\
+         \tfailures := 0\n\
+         \tck := func(m lmode.LayerMode, l uint16, valid bool, reason string) {\n\
+         \t\tgot := vmod.NewModeNeedsLimit().Validate(m, l)\n\
+         \t\tif got.Valid != valid || got.Reason != reason {\n\
+         \t\t\tfmt.Printf(\"FAIL (%v, %d): got %v/%q\\n\", m, l, got.Valid, got.Reason)\n\
+         \t\t\tfailures++\n\
+         \t\t}\n\
+         \t}\n\
+         @ROWS@\n\
+         \tif failures != 0 {\n\
+         \t\tos.Exit(1)\n\
+         \t}\n\
+         }\n"
+    .replace("@PREFIX@", GOLDEN_GO_MODULE_PREFIX)
+    .replace("@ROWS@", &rows);
+    std::fs::write(proj_dir.join("main.go"), driver).expect("write main.go");
+
+    let mut run = std::process::Command::new("go");
+    run.arg("run").arg(".");
+    run_cobs_driver(run, &proj_dir, test_id, "go-run")
+        .expect("the emit must compile and match the table");
+    let _ = std::fs::remove_dir_all(&proj_dir);
+}
+
+#[test]
+fn forge_python_enum_validator_runtime() {
+    let test_id = "enum_validator_python";
+    if !toolchain_present("python3") {
+        require_all_or_warn(test_id, "python3").expect("python3");
+        return;
+    }
+    let proj_dir = cobs_proj_dir("py", test_id).expect("project dir");
+    let all_files = generate_temp_docs(
+        sce_build::generator::Language::Python,
+        test_id,
+        &limit_docs(),
+    )
+    .expect("generate the validator documents");
+
+    let pkg_dir = proj_dir.join("pkg");
+    std::fs::create_dir_all(&pkg_dir).expect("mkdir pkg");
+    std::fs::write(pkg_dir.join("__init__.py"), "").expect("write __init__.py");
+    write_flat_emit(&pkg_dir, &all_files, "py").expect("write the emit");
+
+    let rows = limit_rows(|c| {
+        format!(
+            "ck(LayerMode.{}, {}, {}, \"{}\")",
+            layer_mode_variant(c.mode).to_uppercase(),
+            c.limit_days,
+            if c.valid { "True" } else { "False" },
+            c.reason
+        )
+    });
+    let driver = "import sys\n\
+         \n\
+         from pkg.layer_mode import LayerMode\n\
+         from pkg.mode_needs_limit import ModeNeedsLimit\n\
+         \n\
+         failures = 0\n\
+         \n\
+         \n\
+         def ck(mode, limit_days, valid, reason):\n\
+         \x20   global failures\n\
+         \x20   got = ModeNeedsLimit().validate(mode, limit_days)\n\
+         \x20   if got.valid != valid or got.reason != reason:\n\
+         \x20       print(f\"FAIL ({mode}, {limit_days}): got {got}\")\n\
+         \x20       failures += 1\n\
+         \n\
+         \n\
+         @ROWS@\n\
+         sys.exit(1 if failures else 0)\n"
+        .replace("@ROWS@", &rows);
+    std::fs::write(proj_dir.join("driver.py"), driver).expect("write driver.py");
+
+    let mut run = std::process::Command::new("python3");
+    run.arg("-W").arg("error").arg("driver.py");
+    run_cobs_driver(run, &proj_dir, test_id, "python-run")
+        .expect("the emit must import and match the table");
+    let _ = std::fs::remove_dir_all(&proj_dir);
+}
+
+#[test]
+fn forge_kotlin_enum_validator_runtime() {
+    let test_id = "enum_validator_kotlin";
+    if !toolchain_present("kotlinc") {
+        require_all_or_warn(test_id, "kotlinc").expect("kotlinc");
+        return;
+    }
+    if !toolchain_present("java") {
+        require_all_or_warn(test_id, "java").expect("java");
+        return;
+    }
+    let proj_dir = cobs_proj_dir("kt", test_id).expect("project dir");
+    let all_files = generate_temp_docs(
+        sce_build::generator::Language::Kotlin,
+        test_id,
+        &limit_docs(),
+    )
+    .expect("generate the validator documents");
+    let written = write_flat_emit(&proj_dir, &all_files, "kt").expect("write the emit");
+
+    let rows = limit_rows(|c| {
+        format!(
+            "    ck(LayerMode.{}, {}, {}, \"{}\")",
+            layer_mode_variant(c.mode).to_uppercase(),
+            c.limit_days,
+            c.valid,
+            c.reason
+        )
+    });
+    let driver = "import com.sce.generated.layer_mode.LayerMode\n\
+         import com.sce.generated.mode_needs_limit.ModeNeedsLimit\n\
+         \n\
+         var failures = 0\n\
+         \n\
+         fun ck(mode: LayerMode, limitDays: Int, valid: Boolean, reason: String) {\n\
+         \x20   val got = ModeNeedsLimit().validate(mode, limitDays.toUShort())\n\
+         \x20   if (got.valid != valid || got.reason != reason) {\n\
+         \x20       println(\"FAIL ($mode, $limitDays): got ${got.valid}/${got.reason}\")\n\
+         \x20       failures++\n\
+         \x20   }\n\
+         }\n\
+         \n\
+         fun main() {\n\
+         @ROWS@\n\
+         \x20   if (failures != 0) kotlin.system.exitProcess(1)\n\
+         }\n"
+    .replace("@ROWS@", &rows);
+    std::fs::write(proj_dir.join("Driver.kt"), driver).expect("write Driver.kt");
+
     let app_jar = proj_dir.join("driver.jar");
     let mut build = std::process::Command::new("kotlinc");
     build
