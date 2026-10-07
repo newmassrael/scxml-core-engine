@@ -81,10 +81,19 @@ def run(argv: list, *, cwd=None, timeout: float | None = None,
     UTF-8, named rather than left to the locale: every program started here is
     this repository's Rust, which writes and reads UTF-8, and a console code
     page (a Korean Windows one is not UTF-8) would otherwise turn a specification
-    into other characters on the way in."""
+    into other characters on the way in.
+
+    ⚠ For a Workbench generation (`SCE_AUTHOR_WORK`) the folder the program runs in is the one
+    folder it may open files in (`SCE_FILE_ROOT`, read by the generator): what it is handed was
+    written by a model, and a document that names a file elsewhere (an import, a template, an
+    include) is a way to ask the machine about its files. The generator holds that where it opens
+    a file, so it holds for a place nobody listed; the staged folder is the one this is run in."""
+    env = None
+    if os.environ.get("SCE_AUTHOR_WORK") and cwd is not None:
+        env = {**os.environ, "SCE_FILE_ROOT": str(cwd)}
     try:
         return subprocess.run(argv, capture_output=True, text=True, encoding="utf-8",
-                              cwd=cwd, timeout=timeout, input=stdin_text)
+                              cwd=cwd, timeout=timeout, input=stdin_text, env=env)
     except subprocess.TimeoutExpired as exc:
         raise ProcessTimeout(
             f"{os.path.basename(str(argv[0]))} had not finished after {timeout:.0f} s") from exc

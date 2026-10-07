@@ -57,6 +57,7 @@ case "$model" in
   *REFUSE*) echo '{"v":1,"id":"x","code":"cli/diagram-does-not-fit","message":"the figure needs 925 pt"}' >&2; exit 20;;
   *HANG*) sleep 30; exit 0;;
   *ESCAPE*) echo /etc/hostname; exit 0;;
+  *REPORTROOT*) mkdir -p "$out"; printf '<svg>root=%s cwd=%s</svg>\n' "$SCE_FILE_ROOT" "$(pwd)" > "$out/picture.svg"; echo "$out/picture.svg"; exit 0;;
   *EMPTY*) exit 0;;
   *CRASH*) echo "segmentation fault" >&2; exit 139;;
   *SPAM*) i=0; while [ $i -lt 20000 ]; do echo "noise noise noise noise noise noise noise noise" >&2; i=$((i+1)); done; exit 20;;
@@ -88,6 +89,33 @@ fn request(model: &str) -> FigureRequest<'_> {
         model,
         ..FigureRequest::default()
     }
+}
+
+/// The generator is told the one folder it may open files in: the folder the model is staged in
+/// and it runs in. A model that names a file elsewhere (an import, a template, an include) is a
+/// way to ask the machine about its files, so the generator is confined to its folder
+/// (`SCE_FILE_ROOT`, `sce-build/src/confine.rs`).
+#[test]
+fn the_generator_is_confined_to_the_folder_it_is_run_in() {
+    let drawn = generator().render(&request("REPORTROOT")).unwrap();
+
+    let said = &drawn.sheets[0].svg;
+    let value = |key: &str| {
+        said.split(key)
+            .nth(1)
+            .and_then(|rest| rest.split(|c: char| c.is_whitespace() || c == '<').next())
+            .unwrap_or_default()
+            .to_string()
+    };
+    let (root, cwd) = (value("root="), value("cwd="));
+    assert!(!root.is_empty(), "no folder was named: {said}");
+    assert!(!cwd.is_empty(), "{said}");
+    // The same folder, whichever way each spells it.
+    assert_eq!(
+        PathBuf::from(&root).file_name(),
+        PathBuf::from(&cwd).file_name(),
+        "{said}"
+    );
 }
 
 /// The sheets come back in the order the generator wrote them, named by its

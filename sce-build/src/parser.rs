@@ -1907,7 +1907,10 @@ impl SCXMLParser {
         scxml_path: &str,
     ) -> Result<SCXMLModel, crate::forge::error::Located<crate::forge::error::ForgeError>> {
         use crate::forge::error::{ForgeError, Located, XmlError};
-        let content = std::fs::read_to_string(scxml_path).map_err(|e| {
+        // Every document is read here: the one named on the command line, a child an `invoke`
+        // names, a candidate. One outside the folder a caller confined the generator to is
+        // answered as one that is not there (`crate::confine`).
+        let content = crate::confine::read_to_string(Path::new(scxml_path)).map_err(|e| {
             // §wire-W4 D2: distinguish "file not found" from generic
             // I/O failure so the wire surface can route the
             // parser-entry retry strategy. Other I/O failures
@@ -2976,7 +2979,10 @@ impl SCXMLParser {
                         .or_else(|| src.strip_prefix("file:"))
                         .unwrap_or(&src);
                     let script_path = dir.join(normalized);
-                    match std::fs::read_to_string(&script_path) {
+                    // A script outside the folder a caller confined the generator to is one
+                    // that cannot be read (`crate::confine`): the document is rejected, as it is
+                    // for a script that is not there.
+                    match crate::confine::read_to_string(&script_path) {
                         Ok(c) => content = c,
                         Err(_) => {
                             model.document_rejected = true;
@@ -4321,7 +4327,7 @@ impl SCXMLParser {
                         .chain(base_dir)
                         .map(|dir| dir.join(&candidate.path))
                         .collect();
-                    match search.iter().find(|p| p.exists()) {
+                    match search.iter().find(|p| crate::confine::exists(p)) {
                         Some(found) => {
                             populate_candidate_metadata(found, candidate);
                             self.preprocessor_deps
@@ -5291,7 +5297,7 @@ impl SCXMLParser {
             } else {
                 let Some(scxml_dir) = base_dir else { continue };
                 let child_scxml_path = scxml_dir.join(format!("{}.scxml", si.child_name));
-                if !child_scxml_path.exists() {
+                if !crate::confine::exists(&child_scxml_path) {
                     continue;
                 }
                 match SCXMLParser::new().parse_file(&child_scxml_path.to_string_lossy()) {
@@ -7340,7 +7346,7 @@ fn populate_child_metadata_from_model(child_model: &SCXMLModel, common: &mut Inv
 }
 
 fn parse_child_metadata(child_path: &Path, common: &mut InvokeSessionCommon) {
-    if !child_path.exists() {
+    if !crate::confine::exists(child_path) {
         common.child_needs_script_engine = true;
         common.child_datamodel_vars = Some(Vec::new());
         return;
@@ -7384,6 +7390,75 @@ fn populate_candidate_metadata(
 mod tests {
     use super::*;
     use std::collections::BTreeSet;
+
+    /// A document outside the folder a caller confined the generator to is answered as one that is
+    /// not there: `parse_file` reads the one named on the command line, a child an `invoke` names
+    /// and a candidate, and the same refusal for a file that is there as for one that is not means
+    /// that its being there is not said.
+    #[test]
+    fn a_document_outside_the_confined_folder_is_answered_as_one_that_is_not_there() {
+        use crate::confine::{within_for_test, Root};
+        let inside = tempfile::TempDir::new().unwrap();
+        let outside = tempfile::TempDir::new().unwrap();
+        let there = outside.path().join("child.scxml");
+        let gone = outside.path().join("gone.scxml");
+        std::fs::write(
+            &there,
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="c"><final id="c"/></scxml>"#,
+        )
+        .unwrap();
+        let read = |root: Root, path: &Path| {
+            within_for_test(root, || {
+                SCXMLParser::new().parse_file(&path.to_string_lossy())
+            })
+        };
+        let confined = || Root::named(Some(inside.path().as_os_str()));
+        let said = |path: &Path, result: Result<_, crate::forge::error::Located<_>>| -> String {
+            format!("{:?}", result.map(|_: SCXMLModel| ()).unwrap_err())
+                .replace(&path.display().to_string(), "<document>")
+        };
+
+        // The control: without a folder it is read, so this does reach the place.
+        assert!(read(Root::Anywhere, &there).is_ok());
+        let refused = said(&there, read(confined(), &there));
+        let missing = said(&gone, read(confined(), &gone));
+
+        assert_eq!(refused, missing, "the document's being there is said");
+        assert!(refused.contains("FileNotFound"), "{refused}");
+    }
+
+    /// A child outside the folder is read as one that is not there, which is what an `invoke` of
+    /// a child that is missing is told: nothing of the child's own is carried back.
+    #[test]
+    fn a_child_outside_the_confined_folder_is_read_as_one_that_is_not_there() {
+        use crate::confine::{within_for_test, Root};
+        let inside = tempfile::TempDir::new().unwrap();
+        let outside = tempfile::TempDir::new().unwrap();
+        let there = outside.path().join("child.scxml");
+        let gone = outside.path().join("gone.scxml");
+        std::fs::write(
+            &there,
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="c"><final id="c"/></scxml>"#,
+        )
+        .unwrap();
+        let read = |root: Root, path: &Path| {
+            let mut common = InvokeSessionCommon::default();
+            within_for_test(root, || parse_child_metadata(path, &mut common));
+            (
+                common.child_needs_script_engine,
+                common.child_datamodel_vars,
+            )
+        };
+        let confined = || Root::named(Some(inside.path().as_os_str()));
+
+        let free = read(Root::Anywhere, &there);
+        let refused = read(confined(), &there);
+        let missing = read(confined(), &gone);
+
+        // The control: a child that is read says what it is, and a missing one does not.
+        assert_ne!(free, missing, "the child is read without a folder");
+        assert_eq!(refused, missing, "the child's being there is said");
+    }
 
     /// Every state the accept-side naming rule catches is reported, once:
     /// the record names the first in document order on its row, and the

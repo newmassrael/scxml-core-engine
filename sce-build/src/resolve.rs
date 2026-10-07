@@ -36,11 +36,13 @@ pub(crate) fn resolve_fragment(
     base_dir: Option<&Path>,
     extra_dirs: &[PathBuf],
 ) -> Result<PathBuf, Vec<String>> {
+    // A file is there here when it may be opened ([`crate::confine`]): a fragment a document names
+    // outside the folder a caller confined the generator to is answered as one that is missing.
     let path = Path::new(name);
     let mut tried: Vec<String> = Vec::new();
 
     if path.is_absolute() {
-        if path.exists() {
+        if crate::confine::exists(path) {
             return Ok(path.to_path_buf());
         }
         tried.push(path.display().to_string());
@@ -49,19 +51,19 @@ pub(crate) fn resolve_fragment(
 
     if let Some(base) = base_dir {
         let candidate = base.join(path);
-        if candidate.exists() {
+        if crate::confine::exists(&candidate) {
             return Ok(candidate);
         }
         tried.push(candidate.display().to_string());
     }
     for dir in extra_dirs {
         let candidate = dir.join(path);
-        if candidate.exists() {
+        if crate::confine::exists(&candidate) {
             return Ok(candidate);
         }
         tried.push(candidate.display().to_string());
     }
-    if path.exists() {
+    if crate::confine::exists(path) {
         return Ok(path.to_path_buf());
     }
     tried.push(path.display().to_string());

@@ -341,7 +341,7 @@ fn expand_impl(
             ));
         }
 
-        let template_raw = std::fs::read_to_string(&resolved).map_err(|e| {
+        let template_raw = crate::confine::read_to_string(&resolved).map_err(|e| {
             (
                 TemplateError::ReadError {
                     template: template_attr.to_string(),

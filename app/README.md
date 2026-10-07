@@ -738,6 +738,18 @@ such names resolve against (`xml:base`), declares a document type, or cannot be 
 `scxml_requirements`. The tools it advertises are the ones the application approves
 (`AUTHOR_TOOLS`), and a test holds the two lists equal.
 
+That check refuses early, in words the model can act on, but a list of attributes is only what
+somebody thought of: `template` was missing from it when `<sce:use template="...">` made the
+generator read a file. What holds is the generator itself. Where `SCE_FILE_ROOT` names a folder,
+`sce-build` opens a file a document names (an import, an include, a script, a
+template, a driver header, a child document) only inside that folder, and answers a path outside
+it, or a link that leads out of it, as a file that is not there, so the answer does not tell
+whether the file exists. The application sets it to the folder it runs the generator in, and the
+authoring server sets it to its working folder when `SCE_AUTHOR_WORK` is set. Left unset, nothing
+is confined; set to a folder that cannot be used, nothing may be opened. A test lists every place
+`sce-build` opens a file a document names and fails on one that does not go through
+`confine`.
+
 After building `sce-codegen`, reproduce the shipped configuration with a signed-in Codex:
 
 ```sh

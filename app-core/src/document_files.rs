@@ -22,10 +22,15 @@ use crate::model_set::check_name;
 const XML_NAMESPACE: &str = "http://www.w3.org/XML/1998/namespace";
 
 /// An attribute that makes the checker open a file, on whatever element it is: `sce:import src`,
-/// `sce:driver href`, `script src`, `data src`, `invoke src`, an XInclude's `href`. Taken by the
-/// attribute's name and not by a list of elements, so that an element nobody listed is not a way
-/// round it.
-const FILE_ATTRIBUTES: [&str; 2] = ["src", "href"];
+/// `sce:driver href`, `script src`, `data src`, `invoke src`, an XInclude's `href`, `sce:use
+/// template`. Taken by the attribute's name and not by a list of elements, so that an element
+/// nobody listed is not a way round it.
+///
+/// An early refusal in words the model can act on, and a list of the places somebody thought of:
+/// `template` was not on it when a document made the checker read a file by it. What holds is the
+/// checker, which opens a file only inside the folder the application runs it in
+/// (`figures::run_bounded`, `SCE_FILE_ROOT`), whatever names the file.
+const FILE_ATTRIBUTES: [&str; 3] = ["src", "href", "template"];
 
 /// Refuse `text`, the document `name` of a draft, when it would send the checker to a file that is
 /// not one of the documents of the draft: a name that is not one plain name, a base to resolve

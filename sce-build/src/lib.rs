@@ -64,6 +64,9 @@ pub mod comment_text;
 #[cfg(test)]
 mod commit_stamp;
 pub mod computed_route_analyzer;
+/// Which files a document may make the generator open: the one folder a caller names
+/// (`SCE_FILE_ROOT`), and a file outside it answered as a file that is not there.
+pub mod confine;
 pub mod conformance;
 /// What a statechart presents to the outside (events it takes, events it sends
 /// out, states, data) and whether that is the interface its owner accepted. The
@@ -789,7 +792,9 @@ pub fn resolve_driver_refs_with_root(
         } else {
             root.join(candidate)
         };
-        if !resolved.exists() {
+        // A header outside the folder a caller confined the generator to is missing, as far as
+        // anything this says can tell (`confine`).
+        if !confine::exists(&resolved) {
             let (line, col) = driver
                 .source_location
                 .as_ref()
@@ -1644,7 +1649,9 @@ pub fn load_forge_source(
             deps,
         });
     }
-    let content = std::fs::read_to_string(path).map_err(|e| {
+    // A document outside the folder a caller confined the generator to is answered as one that is
+    // not there (`confine`), which is what the arm below says of a missing file.
+    let content = confine::read_to_string(path).map_err(|e| {
         let error = if e.kind() == std::io::ErrorKind::NotFound {
             XmlError::FileNotFound {
                 path: label.clone(),
@@ -8174,6 +8181,43 @@ pub fn find_template_dir() -> std::path::PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A driver header outside the folder a caller confined the generator to is answered as one
+    /// that is not there: the same refusal, so its being there is not said.
+    ///
+    /// The place that resolves a driver is the library's compile entry, which `sce-codegen
+    /// check` and `generate` do not reach with a header named by a path, so it is held here and
+    /// not through the command line (`tests/a_document_cannot_make_the_generator_open_a_file_...`).
+    #[test]
+    fn a_driver_header_outside_the_confined_folder_is_answered_as_one_that_is_not_there() {
+        use crate::confine::{within_for_test, Root};
+        let inside = tempfile::TempDir::new().unwrap();
+        let outside = tempfile::TempDir::new().unwrap();
+        let header = outside.path().join("hal.h");
+        let document = format!(
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" initial="s" name="m"><sce:driver href="{}"/><state id="s"/></scxml>"#,
+            header.display()
+        );
+        let resolve = |root: Root| {
+            let mut model = parser::SCXMLParser::new()
+                .parse_string(&document, "m")
+                .expect("a document that names a driver parses");
+            within_for_test(root, || {
+                resolve_driver_refs_with_root(&mut model, "m.scxml", inside.path())
+            })
+        };
+        let confined = || Root::named(Some(inside.path().as_os_str()));
+
+        std::fs::write(&header, "/* CANARY-DRIVER-KAPPA */").unwrap();
+        // The control: without a folder the header is found, so this does reach the place.
+        assert!(resolve(Root::Anywhere).is_ok());
+        let there = format!("{:?}", resolve(confined()).unwrap_err());
+        std::fs::remove_file(&header).unwrap();
+        let gone = format!("{:?}", resolve(confined()).unwrap_err());
+
+        assert_eq!(there, gone, "the header's being there is said");
+        assert!(!there.contains("CANARY"), "{there}");
+    }
 
     /// The typed entry point surfaces `ValidationError::DynamicFeatures`
     /// as a structured `Located<ForgeError>` so Rust consumers can

@@ -1,5 +1,20 @@
 [
   {
+    "name": "a template of a companion by its plain name is accepted",
+    "refused": false,
+    "text": "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" xmlns:sce=\"http://sce.dev/ext\" initial=\"a\"><sce:use template=\"shared.sce-template.xml\"/></scxml>"
+  },
+  {
+    "name": "a template named by an absolute path is refused",
+    "refused": true,
+    "text": "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" xmlns:sce=\"http://sce.dev/ext\" initial=\"a\"><sce:use template=\"/private/secret.sce-template.xml\"/></scxml>"
+  },
+  {
+    "name": "a template named by a parent directory is refused",
+    "refused": true,
+    "text": "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" xmlns:sce=\"http://sce.dev/ext\" initial=\"a\"><sce:use template=\"../secret.sce-template.xml\"/></scxml>"
+  },
+  {
     "name": "an import of a companion by its plain name is accepted",
     "refused": false,
     "text": "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" xmlns:sce=\"http://sce.dev/ext\" initial=\"a\"><sce:import as=\"Level\" src=\"level.scxml\" kind=\"enum\"/></scxml>"

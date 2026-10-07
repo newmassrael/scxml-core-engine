@@ -50,6 +50,10 @@ pub const MAX_FIGURE_BYTES: usize = 64 * 1024 * 1024;
 /// The environment variable that names the generator.
 pub const GENERATOR_ENV: &str = "SCE_CODEGEN";
 
+/// The environment variable that names the one folder the generator may open files in, which the
+/// generator reads (`sce-build/src/confine.rs`, `SCE_FILE_ROOT`).
+const FILE_ROOT_ENV: &str = "SCE_FILE_ROOT";
+
 /// How often a running generator is looked at.
 const POLL: Duration = Duration::from_millis(20);
 
@@ -516,8 +520,14 @@ pub(crate) fn run_bounded(
             reason: format!("no place to collect the generator's output: {e}"),
         })
     };
+    // The folder it runs in is the one folder it may open files in: a model names files (an
+    // import, a template, an include), and one that names a file elsewhere is a way to ask the
+    // machine about its files, from a model somebody else wrote. It is given here, where it runs,
+    // and not by the caller: every run of the generator comes through this function, and the
+    // value is the folder it was just told to run in, so the two cannot differ.
     command
         .current_dir(dir)
+        .env(FILE_ROOT_ENV, dir)
         .stdin(Stdio::null())
         .stdout(open(&stdout_path)?)
         .stderr(open(&stderr_path)?);

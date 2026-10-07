@@ -56,16 +56,19 @@ impl ImportSource {
                 }),
             };
         }
-        if !path.exists() {
+        // A document outside the folder a caller confined the generator to is answered as a file
+        // that is not there (`crate::confine`), whichever of the two reads it.
+        if !crate::confine::exists(&path) {
             return Err(ImportError::FileNotFound {
                 src: import.src.clone(),
                 searched: path.display().to_string(),
             });
         }
-        let content = std::fs::read_to_string(&path).map_err(|source| ImportError::ReadError {
-            src: import.src.clone(),
-            source,
-        })?;
+        let content =
+            crate::confine::read_to_string(&path).map_err(|source| ImportError::ReadError {
+                src: import.src.clone(),
+                source,
+            })?;
         Ok(Self { path, content })
     }
 

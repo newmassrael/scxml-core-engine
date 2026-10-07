@@ -4,10 +4,12 @@ import json
 import os
 import pathlib
 import re
+import sys
+import tempfile
 import unittest
 from unittest.mock import patch
 
-from sce_author import mcp
+from sce_author import mcp, process
 
 # The cases the application's reader of the answer an AI ends with is held to as well
 # (app-core/src/document_files.rs): one rule in two languages.
@@ -189,6 +191,56 @@ class WorkbenchScope(unittest.TestCase):
         # Both sides of the line are in them: a reader that refuses everything, or nothing, fails.
         self.assertTrue(any(case["refused"] for case in cases))
         self.assertTrue(any(not case["refused"] for case in cases))
+
+    def test_the_product_is_run_in_the_one_folder_it_may_open_files_in(self):
+        # A document that names a file elsewhere is a way to ask the machine about its files, so
+        # the product is told that the folder it runs in is the only one.
+        report = [sys.executable, "-c", "import os; print(os.environ.get('SCE_FILE_ROOT'))"]
+        with tempfile.TemporaryDirectory() as folder:
+            said = process.run(report, cwd=folder).stdout.strip()
+            self.assertEqual(os.path.realpath(said), os.path.realpath(folder))
+            # Not a generation: nothing is confined, as for a person who runs it on their own files.
+            with patch.dict(os.environ):
+                os.environ.pop("SCE_AUTHOR_WORK")
+                os.environ.pop("SCE_FILE_ROOT", None)
+                self.assertEqual(process.run(report, cwd=folder).stdout.strip(), "None")
+
+    def test_a_template_named_by_a_path_is_answered_as_a_file_that_is_not_there(self):
+        # The guard that reads a document's attributes is a list of the places somebody thought
+        # of, so it is switched off here: it is the product that opens the file, and it holds
+        # without the guard.
+        marker = "CANARY-TEMPLATE-MARKER-7741"
+        with tempfile.TemporaryDirectory() as outside, \
+                patch.object(mcp, "_refuse_file_access_in"):
+            template = os.path.join(outside, "secret.sce-template.xml")
+            document = (f'<scxml {NS} initial="a"><sce:use template="{template}"/>'
+                        f'<state id="a"/></scxml>')
+
+            def ask():
+                answer = mcp.call_tool("validate_scxml", {
+                    "document_text": document, "document_name": "main.scxml"})
+                return answer["content"][0]["text"]
+
+            with open(template, "w", encoding="utf-8") as handle:
+                handle.write(f'<sce:template {NS} name="outside"><state id="a">'
+                             f'<transition event="{marker}" target="a"/></state></sce:template>')
+            there = ask()
+            os.remove(template)
+            gone = ask()
+        self.assertNotIn(marker, there)
+        self.assertEqual(there, gone, "the file's being there is said")
+
+    def test_a_template_handed_over_beside_the_document_is_expanded_as_it_was(self):
+        # The boundary is not a refusal of every file: a template that is staged with the document
+        # is inside it.
+        template = (f'<sce:template {NS} name="shared"><state id="a">'
+                    f'<transition event="tick" target="b"/></state><final id="b"/></sce:template>')
+        answer = mcp.call_tool("validate_scxml", {
+            "document_text": f'<scxml {NS} initial="a"><sce:use template="shared.xml"/></scxml>',
+            "document_name": "main.scxml",
+            "companions_text": [{"name": "shared.xml", "text": template}],
+        })
+        self.assertFalse(answer.get("isError", False), answer["content"][0]["text"][:400])
 
     def test_the_tools_a_generation_may_use_are_the_ones_the_application_approves(self):
         # The application names these in Rust, to approve them unattended and to enable them in

@@ -1897,10 +1897,15 @@ _FILE_NAME = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]*")
 _SCXML_KEYS = frozenset({"document", "documents", "companions", "model", "design"})
 
 # An attribute that makes the product open a file, on whatever element it is: `sce:import src`,
-# `sce:driver href`, `script src`, `data src`, `invoke src`, an XInclude's `href`. Taken by the
-# attribute's name and not by a list of elements, so that an element the list did not know is
-# not a way round it.
-_FILE_ATTRIBUTES = frozenset({"src", "href"})
+# `sce:driver href`, `script src`, `data src`, `invoke src`, an XInclude's `href`, `sce:use
+# template`. Taken by the attribute's name and not by a list of elements, so that an element the
+# list did not know is not a way round it.
+#
+# ⚠ This is an early refusal, with a sentence the model can act on, and it is a list of the
+# places somebody thought of: `template` was not on it when a document made the product read
+# a file by it. What holds is the product, which opens a file only inside the folder this server
+# runs it in (`process.run`, `SCE_FILE_ROOT`), whatever names it.
+_FILE_ATTRIBUTES = frozenset({"src", "href", "template"})
 _XML_BASE = "{http://www.w3.org/XML/1998/namespace}base"
 
 # The longest a document's file name is in the application (`MAX_NAME_CHARS`,
