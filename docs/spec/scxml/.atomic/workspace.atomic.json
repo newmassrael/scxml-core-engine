@@ -12116,6 +12116,10 @@
           "file": "backends/python/runtime/sce_runtime/engine.py",
           "symbol": "perform_host_invoke",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/native_action.rs",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",

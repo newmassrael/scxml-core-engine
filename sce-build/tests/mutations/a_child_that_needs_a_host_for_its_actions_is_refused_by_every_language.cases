@@ -1,45 +1,82 @@
 # Mutation cases for "an `<invoke type=\"scxml\">` of a child that declares
-# `<sce:action>`s is refused by every generated language"
-# (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Child sessions").
+# `<sce:action>`s is refused by a language that does not give the child its host"
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Child sessions"; docs/adr/0005, decision 6).
 #
 # Run with
 # `scripts/mutate sce-build/tests/mutations/a_child_that_needs_a_host_for_its_actions_is_refused_by_every_language.cases`.
 #
-# A child's machine takes the host that performs its acts when it is built, and the
-# parent that starts it has none to give it, so what a parent would write is that
-# constructor called with the host left out: Rust, Kotlin, Go and C++ do not compile
-# it and Python fails when the invoke starts. Only C11 used to refuse, from inside
-# its own target, so the other five generated a parent that did not build. The
-# refusal is now asked once in `lower`, before the target's own `unsupported`, and
-# the judge (`every_language_refuses_a_child_that_needs_a_host_to_perform_its_actions`)
-# reads it in all six languages; its neighbours in the same file read that a child
-# with no act is still lowered. The mutants take one decision away each:
+# A child's machine takes the host that performs its acts when it is built, so a
+# parent that does not obtain one for it writes that constructor called with the
+# host left out: Rust, Kotlin, Go and C++ do not compile it and Python fails when
+# the invoke starts. A language answers the child's host from its parent's own
+# (`declares_child_hosts`) or refuses the invoke, a candidate of a hybrid one
+# included, and it does so at its entry for a parent of ANY data model, since a
+# parent under the ECMAScript data model never reaches the static lowering. The
+# static lowering asks the same of the targets that are not a generated language
+# (the Interpreter). The judges read each of the six languages and the Interpreter:
+# `CHILD_HOST_LOWERED` is the table that says which build the child, and the
+# neighbours in the same file read that a child with no act is still lowered.
+# The mutants take one decision away each:
 #
 #   a child that declares an act is let through;
-#   the shared check is not asked, leaving it to each target;
-#   a child that declares no act is refused too.
+#   a child that declares no act is refused too;
+#   a candidate that declares an act is let through;
+#   every language is said to answer a child's host, or none;
+#   a language does not ask at its entry (a parent that is not static);
+#   the static lowering does not ask (the Interpreter);
+#   a target that answers is refused all the same.
 #
 # Anchors are literal slices of the source; an edit that moves one is reported
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_tests -p sce-build --features cli --test a_static_datamodel_holds_every_variable_to_a_type
-mutation_targets sce-build/src/forge/static_lowering.rs
+mutation_targets sce-build/src/forge/native_action.rs sce-build/src/generator.rs sce-build/src/forge/static_lowering.rs
 mutation_oracles sce-build/tests/a_static_datamodel_holds_every_variable_to_a_type.rs
 
 mutation_case "a child that declares an act is let through" <<'PY'
-edit("sce-build/src/forge/static_lowering.rs",
-     "            crate::model::Invoke::Scxml(info) if info.common.child_declares_host_acts => {",
-     "            crate::model::Invoke::Scxml(info) if info.common.child_declares_host_acts && false => {")
-PY
-
-mutation_case "the shared check is not asked" <<'PY'
-edit("sce-build/src/forge/static_lowering.rs",
-     "    if let Some(construct) = invoke_of_a_child_that_needs_a_host(model)\n",
-     "    if let Some(construct) = None::<String>\n")
+edit("sce-build/src/forge/native_action.rs",
+     "            crate::model::Invoke::Scxml(info) if info.common.child_declares_host_acts => Some((",
+     "            crate::model::Invoke::Scxml(info) if info.common.child_declares_host_acts && false => Some((")
 PY
 
 mutation_case "a child that declares no act is refused too" <<'PY'
+edit("sce-build/src/forge/native_action.rs",
+     "            crate::model::Invoke::Scxml(info) if info.common.child_declares_host_acts => Some((",
+     "            crate::model::Invoke::Scxml(info) if info.common.child_declares_host_acts || true => Some((")
+PY
+
+mutation_case "a candidate that declares an act is let through" <<'PY'
+edit("sce-build/src/forge/native_action.rs",
+     "                .find(|candidate| candidate.child_declares_host_acts)\n",
+     "                .find(|_| false)\n")
+PY
+
+mutation_case "every language is said to answer a child's host" <<'PY'
+edit("sce-build/src/forge/native_action.rs",
+     "    matches!(lang, Language::Kotlin)\n}",
+     "    matches!(lang, Language::Kotlin) || true\n}")
+PY
+
+mutation_case "no language is said to answer a child's host" <<'PY'
+edit("sce-build/src/forge/native_action.rs",
+     "    matches!(lang, Language::Kotlin)\n}",
+     "    matches!(lang, Language::Kotlin) && false\n}")
+PY
+
+mutation_case "a language does not ask at its entry" <<'PY'
+edit("sce-build/src/generator.rs",
+     "    match crate::forge::native_action::child_that_needs_a_host(model) {\n        None => Ok(()),",
+     "    match None::<(String, Option<crate::forge::error::SourceLocation>)> {\n        None => Ok(()),")
+PY
+
+mutation_case "the static lowering does not ask" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
-     "            crate::model::Invoke::Scxml(info) if info.common.child_declares_host_acts => {",
-     "            crate::model::Invoke::Scxml(info) if info.common.child_declares_host_acts || true => {")
+     "    if let Some(construct) = invoke_of_a_child_that_needs_a_host(model, target)\n",
+     "    if let Some(construct) = None::<String>\n")
+PY
+
+mutation_case "a target that answers is refused all the same" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "    if target.lowers_child_host() {\n        return None;\n    }\n    crate::forge::native_action::child_that_needs_a_host(model)",
+     "    crate::forge::native_action::child_that_needs_a_host(model)")
 PY

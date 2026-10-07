@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Child sessions"):
+  a child that declares `<sce:action>`s is built with a host, because its first
+  `<onentry>` can already perform an act, so the parent obtains one when the
+  invocation starts. The parent declares no act of its own: its host is there
+  for the child alone, and answers one host for `worker` each time the child is
+  started.
+
+  `working` invokes `worker`, a child that announces itself on entry (`started`),
+  takes two events in order, `a` then `b`, and reports the work it did when it
+  ends (`finished`, with the steps it counted). The parent forwards what it is
+  sent (autoforward), so the host drives the child through the parent and a run
+  is read from the parent alone, as `static_invoke` reads one: `done.invoke.worker`
+  counts the run in `completed` and leaves the parent in `working`.
+
+  The host is asked for the child's host once per start, and a machine that
+  starts the child again is asked again: a restore starts `worker` from its
+  beginning (W3C SCXML 6.4: the invocation lives as long as its state is active,
+  and the process that ran it is gone), and `again` leaves `working` for `idle`
+  and `back` returns, which invokes `worker` anew. Each start is a child of its
+  own, so what the host answers for one is not carried into the next.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="working" datamodel="sce-static" name="static_child_host">
+  <datamodel>
+    <data id="completed" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="working">
+    <invoke type="scxml" id="worker" autoforward="true">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+               version="1.0" initial="first" datamodel="sce-static">
+          <datamodel>
+            <data id="steps" sce:type="uint32" expr="0"/>
+          </datamodel>
+          <state id="first">
+            <onentry>
+              <sce:action name="started"/>
+            </onentry>
+            <transition event="a" target="second">
+              <assign location="steps" expr="steps + 1"/>
+            </transition>
+          </state>
+          <state id="second">
+            <transition event="b" target="leaf">
+              <assign location="steps" expr="steps + 1"/>
+              <sce:action name="finished">
+                <sce:arg name="steps" expr="steps"/>
+              </sce:action>
+            </transition>
+          </state>
+          <final id="leaf"/>
+        </scxml>
+      </content>
+    </invoke>
+    <!-- `a` and `b` are the child's events: the parent names them because an
+         event its document does not name cannot be sent to it, and what it is
+         sent it forwards (autoforward). -->
+    <transition event="a"/>
+    <transition event="b"/>
+    <transition event="done.invoke.worker">
+      <assign location="completed" expr="completed + 1"/>
+    </transition>
+    <transition event="again" target="idle"/>
+    <transition event="finish" target="finished"/>
+  </state>
+  <state id="idle">
+    <transition event="back" target="working"/>
+  </state>
+  <final id="finished"/>
+</scxml>

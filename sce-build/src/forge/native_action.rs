@@ -54,6 +54,118 @@ use std::collections::{BTreeMap, BTreeSet};
 const ACTION_TYPE: &str = "native_action";
 const EVENT_DATA_PREFIX: &str = "_event.data.";
 
+/// The symbolic name of the host operation that answers the host a child is
+/// built with (docs/adr/0005, decision 6): `actions_for_<invoke>` for an
+/// `<invoke type="scxml">`, and `actions_for_<invoke>_<stem>` for one candidate
+/// of a hybrid `<invoke>`, each candidate being a different document with its
+/// own acts. `field_suffix` is [`crate::model::InvokeBase::field_suffix`], the
+/// identifier-safe spelling of the invoke's id. Spelled per language by
+/// [`method_name`], as an act's name is, so one interface holds both.
+fn host_operation(field_suffix: &str, candidate_stem: Option<&str>) -> String {
+    match candidate_stem {
+        None => format!("actions_for_{field_suffix}"),
+        Some(stem) => format!("actions_for_{field_suffix}_{stem}"),
+    }
+}
+
+/// Whether `lang`'s host interface declares the operations that answer a
+/// child's host ([`ChildHost`]). The one place that says so: a language's
+/// static lowering builds a child with the host its parent's host answers
+/// ([`crate::forge::static_lowering::StaticTarget::lowers_child_host`] reads
+/// this) in the commit that gives its interface the operation and replays the
+/// shared fixture, and until then it refuses such an `<invoke>`.
+pub fn declares_child_hosts(lang: Language) -> bool {
+    matches!(lang, Language::Kotlin)
+}
+
+/// The first `<invoke type="scxml">` of `model` whose child declares
+/// `<sce:action>`s — or, of a hybrid one, a candidate that does — described for
+/// a refusal, with where the `<invoke>` is.
+///
+/// A child's machine takes the host that performs its acts when it is built
+/// (§scxml-6.4.1), so a parent that does not obtain one for it writes a call of
+/// that constructor with the host left out, which does not compile in Rust,
+/// Kotlin, Go or C++ and fails when the invoke starts in Python. A language that
+/// does not [`declare_child_hosts`](declares_child_hosts) refuses the document
+/// that has one, whatever data model the parent is under, and a `sce-static`
+/// target that is not a generated language answers the same question for itself.
+pub fn child_that_needs_a_host(model: &SCXMLModel) -> Option<(String, Option<SourceLocation>)> {
+    model
+        .states
+        .values()
+        .flat_map(|state| &state.invokes)
+        .find_map(|invoke| match invoke {
+            crate::model::Invoke::Scxml(info) if info.common.child_declares_host_acts => Some((
+                format!(
+                    "an <invoke id=\"{}\"> of a child that declares <sce:action>s",
+                    info.common.base.invoke_id
+                ),
+                info.common.base.source_location.clone(),
+            )),
+            crate::model::Invoke::Hybrid(info) => info
+                .candidates
+                .iter()
+                .find(|candidate| candidate.child_declares_host_acts)
+                .map(|candidate| {
+                    (
+                        format!(
+                            "an <invoke id=\"{}\"> that may start `{}`, a child that declares \
+                             <sce:action>s",
+                            info.common.base.invoke_id, candidate.stem
+                        ),
+                        info.common.base.source_location.clone(),
+                    )
+                }),
+            _ => None,
+        })
+}
+
+/// One child the parent obtains a host for: what [`host_operation`] names and
+/// the `<invoke>` it belongs to.
+struct ChildHostSite {
+    operation: String,
+    invoke_id: String,
+    at: Option<SourceLocation>,
+}
+
+/// Every child of `model` that declares `<sce:action>`s: each
+/// `<invoke type="scxml">` whose child does, and each candidate of a hybrid
+/// `<invoke>` that does, in the order of the sorted states.
+fn child_host_sites(model: &SCXMLModel) -> Vec<ChildHostSite> {
+    let mut sites = Vec::new();
+    for state in model.states.values() {
+        for invoke in &state.invokes {
+            match invoke {
+                crate::model::Invoke::Scxml(info) if info.common.child_declares_host_acts => {
+                    sites.push(ChildHostSite {
+                        operation: host_operation(&info.common.base.field_suffix, None),
+                        invoke_id: info.common.base.invoke_id.clone(),
+                        at: info.common.base.source_location.clone(),
+                    });
+                }
+                crate::model::Invoke::Hybrid(info) => {
+                    for candidate in info
+                        .candidates
+                        .iter()
+                        .filter(|c| c.child_declares_host_acts)
+                    {
+                        sites.push(ChildHostSite {
+                            operation: host_operation(
+                                &info.common.base.field_suffix,
+                                Some(&candidate.stem),
+                            ),
+                            invoke_id: info.common.base.invoke_id.clone(),
+                            at: info.common.base.source_location.clone(),
+                        });
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    sites
+}
+
 /// If `expr` is exactly a `_event.data.<field>` reference, return `<field>`.
 /// Any other shape (literal, arithmetic, datamodel id, nested path) returns
 /// `None` — those are rejected by [`validate`].
@@ -267,6 +379,55 @@ pub fn validate(
                     diag_label,
                 )?;
             }
+        }
+    }
+    check_host_operations(scxml, &signatures, diag_label)
+}
+
+/// The host interface carries two kinds of operation in one namespace: the acts
+/// the document names and, for each child that declares acts of its own, the
+/// operation that answers the child's host ([`host_operation`]). A name both
+/// kinds spell the same would be one method serving two meanings, so it is
+/// refused at the construct that came second, as a conflict of signatures is.
+fn check_host_operations(
+    scxml: &SCXMLModel,
+    signatures: &SignatureTable,
+    diag_label: &str,
+) -> Result<(), Located<ForgeError>> {
+    let acts: BTreeMap<String, (&String, &Option<SourceLocation>)> = signatures
+        .iter()
+        .map(|(name, (_, at))| (filters::to_snake_case(name.clone()), (name, at)))
+        .collect();
+    let mut seen: BTreeMap<String, String> = BTreeMap::new();
+    for site in child_host_sites(scxml) {
+        let operation = filters::to_snake_case(site.operation.clone());
+        if let Some((name, at)) = acts.get(&operation) {
+            return Err(located_at(
+                at.as_ref(),
+                diag_label,
+                ValidationError::NativeActionSignatureConflict {
+                    name: (*name).clone(),
+                    detail: format!(
+                        "is also the host operation that answers the host of the child \
+                         <invoke id=\"{}\"> starts; rename the act or the invoke",
+                        site.invoke_id
+                    ),
+                },
+            ));
+        }
+        if let Some(first) = seen.insert(operation.clone(), site.invoke_id.clone()) {
+            return Err(located_at(
+                site.at.as_ref(),
+                diag_label,
+                ValidationError::NativeActionSignatureConflict {
+                    name: operation,
+                    detail: format!(
+                        "is the host operation of the children of both <invoke id=\"{first}\"> \
+                         and <invoke id=\"{}\">; their ids differ only in spelling",
+                        site.invoke_id
+                    ),
+                },
+            ));
         }
     }
     Ok(())
@@ -568,7 +729,8 @@ pub struct NativeActions {
     /// other hosted backends take, the C11 `_init_with_actions` entry.
     pub any: bool,
     /// Every operation the interface declares, in the target language's
-    /// spelling and sorted.
+    /// spelling: the acts, then the operations that answer a child's host, each
+    /// group in the order of its symbolic names.
     ///
     /// The five hosted backends get their "the host supplied it" guarantee
     /// from the type system — an unimplemented interface method does not
@@ -662,6 +824,16 @@ fn receiver(lang: Language) -> &'static str {
 /// vtable hands the host its own state back on every call — C's answer to the
 /// `&mut self` the other five bind for free.
 fn call(lang: Language, name: &str, args: &[String]) -> String {
+    let expression = call_expression(lang, name, args);
+    match lang {
+        Language::Rust | Language::Cpp | Language::C11 => format!("{expression};"),
+        Language::Go | Language::Kotlin | Language::Python => expression,
+    }
+}
+
+/// [`call`] without its terminator: the value a call answers, where a call
+/// that answers one (a child's host) is an operand and not a statement.
+fn call_expression(lang: Language, name: &str, args: &[String]) -> String {
     let method = method_name(lang, name);
     let recv = receiver(lang);
     let mut all: Vec<String> = Vec::new();
@@ -669,11 +841,7 @@ fn call(lang: Language, name: &str, args: &[String]) -> String {
         all.push("sm->actions.user_data".to_string());
     }
     all.extend(args.iter().cloned());
-    let joined = all.join(", ");
-    match lang {
-        Language::Rust | Language::Cpp | Language::C11 => format!("{recv}{method}({joined});"),
-        Language::Go | Language::Kotlin | Language::Python => format!("{recv}{method}({joined})"),
-    }
+    format!("{recv}{method}({})", all.join(", "))
 }
 
 /// The parameter declarations one schema field contributes to a generated
@@ -769,6 +937,12 @@ pub fn render_with_symbol_prefix(
     // event nothing can match would be discarded on arrival anyway.
     let raises_error = model.events.contains("error.execution");
 
+    // A child that declares acts is built with a host its parent's own host
+    // answers (docs/adr/0005, decision 6), so the parent has a host to take one
+    // from even when it declares no act itself. Read before the walk below
+    // borrows `model` for the actions, and written on each invoke so the
+    // template that starts the child reads the call and not a name.
+    let child_hosts = lower_child_hosts(model, lang);
     let mut calls = CallRendering {
         lang,
         machine_name,
@@ -778,7 +952,7 @@ pub fn render_with_symbol_prefix(
         sigs: BTreeMap::new(),
         payload_events: BTreeSet::new(),
     };
-    let mut any = false;
+    let mut any = !child_hosts.is_empty();
 
     for state in model.states.values_mut() {
         // Eventless positions: every native action here is no-argument
@@ -820,9 +994,13 @@ pub fn render_with_symbol_prefix(
         ..
     } = calls;
     let name = interface_name(lang, machine_name);
-    let operation_names: Vec<String> = sigs.keys().map(|n| method_name(lang, n)).collect();
+    let operation_names: Vec<String> = sigs
+        .keys()
+        .map(|n| method_name(lang, n))
+        .chain(child_hosts.iter().map(|h| method_name(lang, &h.operation)))
+        .collect();
     let (interface_def, interface_name) = if any {
-        (build_interface(lang, &name, &sigs), name)
+        (build_interface(lang, &name, &sigs, &child_hosts), name)
     } else {
         (String::new(), String::new())
     };
@@ -843,6 +1021,68 @@ pub fn render_with_symbol_prefix(
         operation_names,
         recording_def,
     }
+}
+
+/// One operation of a parent's host interface that answers the host of a child:
+/// its symbolic name ([`host_operation`]) and the interface of the child it
+/// answers one for.
+struct ChildHost {
+    operation: String,
+    child_interface: String,
+}
+
+/// The machine token a generated child's symbols carry in `lang` — the one
+/// [`interface_name`] is built from, as [`render`] is handed it for the child's
+/// own document: PascalCase for the five hosted backends, the raw name for C11.
+fn machine_token(lang: Language, child_name: &str) -> String {
+    match lang {
+        Language::C11 => child_name.to_string(),
+        _ => filters::to_pascal_case(child_name.to_string()),
+    }
+}
+
+/// Write on every invoke of `model` whose child declares acts the call that
+/// answers the child's host ([`InvokeSessionCommon::child_host_call`]), and
+/// return the operations the parent's interface declares for them, sorted and
+/// one per name (a name collision is refused earlier, by [`validate`]).
+///
+/// [`InvokeSessionCommon::child_host_call`]: crate::model::InvokeSessionCommon::child_host_call
+fn lower_child_hosts(model: &mut SCXMLModel, lang: Language) -> Vec<ChildHost> {
+    if !declares_child_hosts(lang) {
+        return Vec::new();
+    }
+    let mut hosts: BTreeMap<String, ChildHost> = BTreeMap::new();
+    let mut declare = |operation: String, child_name: &str| -> String {
+        let call = call_expression(lang, &operation, &[]);
+        hosts.entry(operation.clone()).or_insert_with(|| ChildHost {
+            operation,
+            child_interface: interface_name(lang, &machine_token(lang, child_name)),
+        });
+        call
+    };
+    for state in model.states.values_mut() {
+        for invoke in &mut state.invokes {
+            match invoke {
+                crate::model::Invoke::Scxml(info) if info.common.child_declares_host_acts => {
+                    let operation = host_operation(&info.common.base.field_suffix, None);
+                    info.common.child_host_call = declare(operation, &info.common.child_name);
+                }
+                crate::model::Invoke::Hybrid(info) => {
+                    let suffix = info.common.base.field_suffix.clone();
+                    for candidate in info
+                        .candidates
+                        .iter_mut()
+                        .filter(|c| c.child_declares_host_acts)
+                    {
+                        let operation = host_operation(&suffix, Some(&candidate.stem));
+                        candidate.child_host_call = declare(operation, &candidate.stem);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    hosts.into_values().collect()
 }
 
 /// One [`render`] pass over a document's native actions: what every call site
@@ -1213,10 +1453,16 @@ fn guard_payload(
 /// host supplied it" a compile-time fact for free; the other five take the
 /// interface where the machine is constructed, which puts the same guarantee
 /// at the one call every host has to make anyway.
+///
+/// After the acts come the operations that answer a child's host
+/// ([`ChildHost`]), each returning the interface of the child it answers for.
+/// They are declared beside the acts because the host a parent already has is
+/// where it obtains the host of a child (docs/adr/0005, decision 6).
 fn build_interface(
     lang: Language,
     interface_name: &str,
     sigs: &BTreeMap<String, Signature>,
+    children: &[ChildHost],
 ) -> String {
     const DOC: [&str; 3] = [
         "W3C SCXML G.7: host operations dispatched by `<sce:action>`.",
@@ -1272,10 +1518,17 @@ fn build_interface(
                     plist(sig).join(", ")
                 ));
             }
+            for child in children {
+                methods.push_str(&format!(
+                    "    fun {}(): {}\n",
+                    method_name(lang, &child.operation),
+                    child.child_interface
+                ));
+            }
             format!(
                 "/**\n{} */\ninterface {interface_name} {{\n{methods}}}\n\n{}",
                 doc(" * "),
-                kotlin_recording_host(interface_name, sigs)
+                kotlin_recording_host(interface_name, sigs, children)
             )
         }
         Language::Python => {
@@ -1344,10 +1597,41 @@ fn build_interface(
 /// of step with it: a new `<sce:action>` is a new recorded call, and a changed
 /// argument a changed field. Each call is a `data class` (a `data object` for
 /// a call with no argument), so a test compares whole calls by value.
-fn kotlin_recording_host(interface_name: &str, sigs: &BTreeMap<String, Signature>) -> String {
+///
+/// A host that answers a child's host cannot invent one, so the recording host
+/// of such a parent takes one source per child, a function the test gives, and
+/// records each question beside the acts. The test keeps what the source
+/// answers, which is where it reads what the child was asked to do.
+fn kotlin_recording_host(
+    interface_name: &str,
+    sigs: &BTreeMap<String, Signature>,
+    children: &[ChildHost],
+) -> String {
     let lang = Language::Kotlin;
     let mut variants = String::new();
     let mut overrides = String::new();
+    let mut sources = String::new();
+    for child in children {
+        let method = method_name(lang, &child.operation);
+        let variant = filters::to_pascal_case(method.clone());
+        let source = format!("{method}Source");
+        sources.push_str(&format!(
+            "    /** Answers the host [{}] is asked for; the test keeps what it answers. */\n    \
+             private val {source}: () -> {},\n",
+            child.child_interface, child.child_interface
+        ));
+        variants.push_str(&format!("        data object {variant} : Call\n"));
+        overrides.push_str(&format!(
+            "    override fun {method}(): {} {{\n        recorded += Call.{variant}\n        \
+             return {source}()\n    }}\n",
+            child.child_interface
+        ));
+    }
+    let constructor = if sources.is_empty() {
+        String::new()
+    } else {
+        format!("(\n{sources})")
+    };
     for (name, sig) in sigs {
         let method = method_name(lang, name);
         let variant = filters::to_pascal_case(method.clone());
@@ -1393,7 +1677,7 @@ fn kotlin_recording_host(interface_name: &str, sigs: &BTreeMap<String, Signature
         "/**\n * [{interface_name}] that performs nothing and records every call in order —\n \
          * the host a test drives the machine with. Read [calls] after the machine\n \
          * has run; each call is compared by value.\n */\n\
-         class Recording{interface_name} : {interface_name} {{\n    \
+         class Recording{interface_name}{constructor} : {interface_name} {{\n    \
          /** One recorded host call. */\n    sealed interface Call {{\n{variants}    }}\n\n    \
          private val recorded = mutableListOf<Call>()\n\n    \
          /** Every call so far, oldest first. */\n    \
@@ -1796,7 +2080,7 @@ mod tests {
             ],
         );
         sigs.insert("reset_slot".to_string(), Vec::new());
-        let out = build_interface(Language::Kotlin, "MActions", &sigs);
+        let out = build_interface(Language::Kotlin, "MActions", &sigs, &[]);
         assert!(
             out.contains("class RecordingMActions : MActions {"),
             "the recorder implements the interface it is generated from:\n{out}"
@@ -1815,6 +2099,98 @@ mod tests {
         );
         assert!(out.contains("data object ResetSlot : Call"), "{out}");
         assert!(out.contains("override fun resetSlot() {"), "{out}");
+    }
+
+    /// A parent's host answers the host of each child that declares acts, so the
+    /// interface declares one operation per child, returning the child's own
+    /// interface, and the recording host asks its test for what to answer.
+    #[test]
+    fn the_kotlin_interface_of_a_parent_answers_the_host_of_each_child() {
+        let children = [ChildHost {
+            operation: "actions_for_worker".to_string(),
+            child_interface: "WorkerActions".to_string(),
+        }];
+        let mut sigs: BTreeMap<String, Signature> = BTreeMap::new();
+        sigs.insert("reset_slot".to_string(), Vec::new());
+        let out = build_interface(Language::Kotlin, "MActions", &sigs, &children);
+        assert!(
+            out.contains("    fun resetSlot()\n    fun actionsForWorker(): WorkerActions\n}"),
+            "the acts, then the operation that answers a child's host:\n{out}"
+        );
+        assert!(
+            out.contains(
+                "class RecordingMActions(\n    /** Answers the host [WorkerActions] is asked for; \
+                 the test keeps what it answers. */\n    \
+                 private val actionsForWorkerSource: () -> WorkerActions,\n) : MActions {"
+            ),
+            "the recorder takes what to answer from its test:\n{out}"
+        );
+        assert!(
+            out.contains(
+                "override fun actionsForWorker(): WorkerActions {\n        \
+                 recorded += Call.ActionsForWorker\n        return actionsForWorkerSource()\n    }"
+            ),
+            "the question is recorded, then answered:\n{out}"
+        );
+        // A parent with no child to answer for is as it was.
+        let plain = build_interface(Language::Kotlin, "MActions", &sigs, &[]);
+        assert!(!plain.contains("Source"), "{plain}");
+    }
+
+    /// A document in which an act and a child's host would be one method is
+    /// refused where the second is written, and so is one in which two
+    /// children's hosts would be.
+    #[test]
+    fn an_act_named_for_the_host_of_a_child_is_refused() {
+        let child = |id: &str| {
+            format!(
+                r#"<invoke type="scxml" id="{id}"><content>
+                     <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+                            version="1.0" initial="b" datamodel="sce-static">
+                       <state id="b"><onentry><sce:action name="hello"/></onentry></state>
+                     </scxml>
+                   </content></invoke>"#
+            )
+        };
+        let document = |body: String| {
+            parse(&format!(
+                r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+                          version="1.0" initial="s" datamodel="sce-static">
+                     <state id="s">{body}</state>
+                   </scxml>"#
+            ))
+        };
+        let clash = document(format!(
+            r#"{} <onentry><sce:action name="actions_for_worker"/></onentry>"#,
+            child("worker")
+        ));
+        let refusal =
+            validate(&clash, &fragment_schema(), "t").expect_err("one method, two meanings");
+        assert!(
+            format!("{refusal:?}").contains("actions_for_worker")
+                && format!("{refusal:?}").contains("host operation that answers the host"),
+            "{refusal:?}"
+        );
+        // Spelled as another language spells it, it is the same method.
+        let camel = document(format!(
+            r#"{} <onentry><sce:action name="actionsForWorker"/></onentry>"#,
+            child("worker")
+        ));
+        let refusal =
+            validate(&camel, &fragment_schema(), "t").expect_err("one method, spelled two ways");
+        assert!(
+            format!("{refusal:?}").contains("actionsForWorker"),
+            "{refusal:?}"
+        );
+        let twins = document(format!("{}{}", child("a_b"), child("aB")));
+        let refusal =
+            validate(&twins, &fragment_schema(), "t").expect_err("one method, two children");
+        assert!(
+            format!("{refusal:?}").contains("their ids differ only in spelling"),
+            "{refusal:?}"
+        );
+        let apart = document(format!("{}{}", child("one"), child("two")));
+        assert!(validate(&apart, &fragment_schema(), "t").is_ok());
     }
 
     #[test]

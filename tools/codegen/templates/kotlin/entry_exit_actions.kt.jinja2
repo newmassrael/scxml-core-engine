@@ -175,11 +175,11 @@
                             val childSM = when (__sceSelected) {
 {% for candidate in inv.candidates %}
 {% if candidate.seeds or candidate.unkept %}
-                                "{{ candidate.stem | escape_kotlin }}" -> {{ candidate.stem | to_pascal_case }}StateMachine().also { child ->
+                                "{{ candidate.stem | escape_kotlin }}" -> {{ candidate.stem | to_pascal_case }}StateMachine({{ candidate.child_host_call }}).also { child ->
 {{ param_macros.seed_static_child(candidate.stem | to_pascal_case, candidate.seeds, candidate.unkept, 'child', model, machine_name, '                                    ') }}
                                 }
 {% else %}
-                                "{{ candidate.stem | escape_kotlin }}" -> {{ candidate.stem | to_pascal_case }}StateMachine({% if candidate.child_needs_script_engine %}scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"){% endif %})
+                                "{{ candidate.stem | escape_kotlin }}" -> {{ candidate.stem | to_pascal_case }}StateMachine({% if candidate.child_host_call %}{{ candidate.child_host_call }}{% if candidate.child_needs_script_engine %}, {% endif %}{% endif %}{% if candidate.child_needs_script_engine %}scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"){% endif %})
 {% endif %}
 {% endfor %}
                                 else -> {
@@ -655,10 +655,14 @@
 {% endif %}
                 deferInvoke(state, generatedInvokeId) {
 {{ collect_invoke_args(inv, model, machine_name) }}
+{# The host the child performs its acts through is asked of the parent's own
+    host here, where the invocation starts, so a state invoked again — on entry
+    again, or after a restore — is given a fresh one (docs/adr/0005, decision 6).
+    It leads the child's parameters, as it does the machine's own. #}
 {% if inv.child_needs_script_engine %}
-                    val childSM = {{ inv.child_class }}StateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
+                    val childSM = {{ inv.child_class }}StateMachine({% if inv.child_host_call %}{{ inv.child_host_call }}, {% endif %}scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
 {% else %}
-                    val childSM = {{ inv.child_class }}StateMachine()
+                    val childSM = {{ inv.child_class }}StateMachine({{ inv.child_host_call }})
 {% endif %}
 {% if (inv.params or inv.namelist) and model.needs_script_engine %}
                     setInvokeParams(childSM, invokeParams)

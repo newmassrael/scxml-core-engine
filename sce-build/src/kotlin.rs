@@ -255,6 +255,9 @@ pub fn compute_invoke_entries(model: &SCXMLModel) -> BTreeMap<String, Vec<serde_
                     "finalize_content": si.finalize_content,
                     "state_id": state_id,
                     "child_needs_script_engine": si.child_needs_script_engine,
+                    // The call that answers the host the child is built with,
+                    // empty for a child that declares no act.
+                    "child_host_call": si.child_host_call,
                 }));
             }
 

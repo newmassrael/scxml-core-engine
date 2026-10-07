@@ -1826,11 +1826,21 @@ pub struct InvokeSessionCommon {
     #[cfg_attr(test, schemars(skip))]
     pub child_is_static: bool,
     /// Codegen-internal: the child declares `<sce:action>`s, which only a host
-    /// that supplies them can start. Not serialized: only the lowering that
-    /// refuses such a child reads it.
-    #[serde(skip)]
+    /// that supplies them can start. The parent obtains that host from its own
+    /// ([`Self::child_host_call`]); a target that does not yet do so refuses the
+    /// invoke instead. Derived beside [`Self::child_is_static`], and outside the
+    /// IR contract for the reason [`Param::native_seed`] gives.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[cfg_attr(test, schemars(skip))]
     pub child_declares_host_acts: bool,
+    /// Codegen-internal: the call, in the target language, that answers the
+    /// host the child is built with — the factory operation the parent's own host
+    /// declares for this invoke. Empty for a child that declares no act. Set by
+    /// [`crate::forge::native_action::render`] and read by the invoke templates
+    /// through the serialized model, as [`Action::native_action_rendered`] is.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[cfg_attr(test, schemars(skip))]
+    pub child_host_call: String,
 }
 
 impl std::ops::Deref for InvokeSessionCommon {
@@ -2282,6 +2292,19 @@ pub struct InvokeCandidate {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[cfg_attr(test, schemars(skip))]
     pub child_needs_event_scheduler: bool,
+    /// Codegen-internal: the candidate declares `<sce:action>`s —
+    /// [`InvokeSessionCommon::child_declares_host_acts`], per candidate. Each
+    /// candidate is a different document with its own acts, so the host the
+    /// invoke builds it with is its own too. Outside the IR contract.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(test, schemars(skip))]
+    pub child_declares_host_acts: bool,
+    /// Codegen-internal: the call that answers the host THIS candidate is built
+    /// with — [`InvokeSessionCommon::child_host_call`], per candidate. Empty for a
+    /// candidate that declares no act. Outside the IR contract.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[cfg_attr(test, schemars(skip))]
+    pub child_host_call: String,
     /// Codegen-internal: the arguments the invoke hands THIS candidate, each
     /// lowered to a value of the type of the candidate's variable of the same
     /// name ([`Param::native_seed`]) — those the candidate declares, which is

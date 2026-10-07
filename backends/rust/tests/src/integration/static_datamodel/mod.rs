@@ -16,6 +16,8 @@ pub mod static_event_wildcard_sm;
 pub mod static_foreach_sm;
 pub mod static_history_sm;
 pub mod static_host_call_sm;
+pub mod static_hosted_first_sm;
+pub mod static_hosted_second_sm;
 pub mod static_hybrid_first_sm;
 pub mod static_hybrid_holder_sm;
 pub mod static_hybrid_second_sm;

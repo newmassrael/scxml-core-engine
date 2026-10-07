@@ -1,0 +1,68 @@
+# Mutation cases for "a parent's host answers the host of each child that
+# declares acts, one operation per child, and no act is named like one"
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Child sessions"; docs/adr/0005, decision 6).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_parents_host_answers_the_host_of_each_child_that_declares_acts.cases`.
+#
+# The interface a parent's host implements carries, after the acts the document
+# names, one operation per child that declares acts: it is written from the same
+# list the call a template places is, so the two cannot name different methods,
+# and its recording host asks the test for what to answer and records the
+# question. The acts and those operations share one namespace, so an act spelled
+# as an operation is spelled (in any language's convention), or two invokes whose
+# ids differ only in spelling, are refused where the second is written. The unit
+# tests read the generated Kotlin interface and the refusals; the machine that
+# really asks is the Kotlin test `AChildIsGivenItsHostByItsParentTest`, which
+# the casefile for the template (`a_static_kotlin_child_is_built_with_the_host_its_parent_answers`)
+# holds. The mutants take one decision away each:
+#
+#   the operations are not declared in the interface;
+#   the recording host does not record the question;
+#   the recording host does not take what to answer from its test;
+#   an act named as an operation is accepted;
+#   the comparison ignores another language's spelling;
+#   two invokes' operations may be one.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --lib forge::native_action
+mutation_targets sce-build/src/forge/native_action.rs
+mutation_oracles sce-build/src/forge/native_action.rs
+
+mutation_case "the operations that answer a child's host are not declared" <<'PY'
+edit("sce-build/src/forge/native_action.rs",
+     "            for child in children {\n                methods.push_str(&format!(\n                    \"    fun {}(): {}\\n\",",
+     "            for child in children.iter().take(0) {\n                methods.push_str(&format!(\n                    \"    fun {}(): {}\\n\",")
+PY
+
+mutation_case "the recording host does not record the question" <<'PY'
+edit("sce-build/src/forge/native_action.rs",
+     "            \"    override fun {method}(): {} {{\\n        recorded += Call.{variant}\\n        \\\n             return {source}()\\n    }}\\n\",",
+     "            \"    override fun {method}(): {} {{\\n        \\\n             return {source}()\\n    }}\\n\",")
+PY
+
+mutation_case "the recording host does not take what to answer from its test" <<'PY'
+edit("sce-build/src/forge/native_action.rs",
+     "    let constructor = if sources.is_empty() {",
+     "    let constructor = if sources.is_empty() || true {")
+PY
+
+mutation_case "an act named as an operation is accepted" <<'PY'
+edit("sce-build/src/forge/native_action.rs",
+     "        if let Some((name, at)) = acts.get(&operation) {",
+     "        if let Some((name, at)) = acts.get(&operation).filter(|_| false) {")
+PY
+
+mutation_case "the comparison ignores another language's spelling" <<'PY'
+edit("sce-build/src/forge/native_action.rs",
+     "        .map(|(name, (_, at))| (filters::to_snake_case(name.clone()), (name, at)))",
+     "        .map(|(name, (_, at))| (name.clone(), (name, at)))")
+PY
+
+mutation_case "two invokes' operations may be one" <<'PY'
+edit("sce-build/src/forge/native_action.rs",
+     "        if let Some(first) = seen.insert(operation.clone(), site.invoke_id.clone()) {",
+     "        if let Some(first) = seen.insert(operation.clone(), site.invoke_id.clone()).filter(|_| false) {")
+PY

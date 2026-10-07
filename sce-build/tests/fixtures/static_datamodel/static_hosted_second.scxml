@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.13, §2.15): the second
+  of the two documents `static_child_host_hybrid.scxml` may start. It performs
+  `second_ran` as it is entered, an act the first one does not declare, which
+  only the host its parent obtained for it can answer, and ends at once.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="busy" datamodel="sce-static" name="static_hosted_second">
+  <state id="busy">
+    <onentry>
+      <sce:action name="second_ran"/>
+    </onentry>
+    <transition target="leaf"/>
+  </state>
+  <final id="leaf"/>
+</scxml>

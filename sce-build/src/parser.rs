@@ -7371,6 +7371,7 @@ fn populate_candidate_metadata(
     candidate.child_datamodel_vars = common.child_datamodel_vars;
     candidate.child_static_variables = common.child_static_variables;
     candidate.child_is_static = common.child_is_static;
+    candidate.child_declares_host_acts = common.child_declares_host_acts;
     candidate.child_has_send_to_parent = common.child_has_send_to_parent;
     candidate.child_needs_event_scheduler = common.child_needs_event_scheduler;
 }

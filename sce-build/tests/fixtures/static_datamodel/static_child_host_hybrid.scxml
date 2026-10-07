@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.13, §2.15): a hybrid
+  <invoke type="scxml" srcexpr> whose candidates declare `<sce:action>`s, each
+  its own, so the parent's host answers a host for the candidate the value
+  names, and for that one alone (docs/adr/0005, decision 6).
+
+  `working` invokes `work`, whose `srcexpr` is `pick`: `static_hosted_first`
+  while the machine starts, and `static_hosted_second` once `again` has changed
+  it and `back` has entered `working` anew. Each candidate performs one act on
+  entry (`first_ran`, `second_ran`) and ends at once, and `done.invoke.work`
+  counts the run in `completed`.
+
+  So the first start asks the parent's host for the first candidate's host and
+  the second asks for the second's, and neither is asked about the other: a
+  parent that built the candidate it did not choose, or gave one candidate the
+  host of the other, would be seen in what each host was asked to do.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="working" datamodel="sce-static" name="static_child_host_hybrid">
+  <datamodel>
+    <data id="pick" sce:type="string" sce:capacity="48" expr="'static_hosted_first.scxml'"/>
+    <data id="completed" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="working">
+    <invoke type="scxml" id="work" srcexpr="pick"
+            sce:candidates="static_hosted_first.scxml static_hosted_second.scxml"/>
+    <transition event="done.invoke.work">
+      <assign location="completed" expr="completed + 1"/>
+    </transition>
+    <transition event="again" target="idle">
+      <assign location="pick" expr="'static_hosted_second.scxml'"/>
+    </transition>
+  </state>
+  <state id="idle">
+    <transition event="back" target="working"/>
+  </state>
+</scxml>

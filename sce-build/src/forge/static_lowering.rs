@@ -373,6 +373,16 @@ pub trait StaticTarget {
     fn lowers_payload_bytes(&self) -> bool {
         false
     }
+    /// Whether an `<invoke type="scxml">` of a child that declares
+    /// `<sce:action>`s is lowered, and so a candidate of a hybrid one: the child
+    /// is built with the host its parent's own host answers, one operation per
+    /// child (docs/adr/0005, decision 6;
+    /// [`crate::forge::native_action::declares_child_hosts`]). A target that does
+    /// not is refused at the `<invoke>`, by name, as a parent that builds the
+    /// child without its host does not build.
+    fn lowers_child_host(&self) -> bool {
+        false
+    }
     /// What the `srcexpr` attribute of a hybrid `<invoke>` is rewritten to, for
     /// a target that runs the document's own attribute and so has no field of
     /// the machine to read the value from: `native_src`, the string the
@@ -1128,6 +1138,11 @@ impl StaticTarget for KotlinTarget {
     fn lowers_payload_bytes(&self) -> bool {
         true
     }
+    // The child is built with what the parent's host answers for it
+    // (`actions.actionsFor<Invoke>()`), each time the invocation starts.
+    fn lowers_child_host(&self) -> bool {
+        crate::forge::native_action::declares_child_hosts(Language::Kotlin)
+    }
     fn assign(&self, target: &str, value: &str) -> String {
         format!("{target} = {value}")
     }
@@ -1876,7 +1891,7 @@ pub fn lower(
             Some(_) => {}
         }
     }
-    if let Some(construct) = invoke_of_a_child_that_needs_a_host(model)
+    if let Some(construct) = invoke_of_a_child_that_needs_a_host(model, target)
         .or_else(|| bytes_held(model, &scope, target))
         .or_else(|| target.unsupported(model, &scope))
     {
@@ -3524,26 +3539,19 @@ fn unlowered_invoke(
 }
 
 /// The first `<invoke type="scxml">` of `model` whose child declares
-/// `<sce:action>`s, described for a refusal. Every target refuses it, so it is
-/// asked once for all of them rather than by each: a child's machine takes the
-/// host that performs its acts when it is built, and the parent that starts it
-/// has none to give it (§scxml-6.4.1) — what a parent would write is a call of
-/// that constructor with the host left out, which does not compile in Rust,
-/// Kotlin, Go or C++ and fails when the invoke starts in Python.
-fn invoke_of_a_child_that_needs_a_host(model: &SCXMLModel) -> Option<String> {
-    model
-        .states
-        .values()
-        .flat_map(|state| &state.invokes)
-        .find_map(|invoke| match invoke {
-            crate::model::Invoke::Scxml(info) if info.common.child_declares_host_acts => {
-                Some(format!(
-                    "an <invoke id=\"{}\"> of a child that declares <sce:action>s",
-                    info.common.base.invoke_id
-                ))
-            }
-            _ => None,
-        })
+/// `<sce:action>`s — or, of a hybrid one, a candidate that does — described for
+/// a refusal, when `target` does not build such a child with a host
+/// ([`StaticTarget::lowers_child_host`]). Asked once for all targets rather than
+/// by each; a generated language refuses it earlier, at its entry, for a parent
+/// of any data model ([`crate::forge::native_action::child_that_needs_a_host`]).
+fn invoke_of_a_child_that_needs_a_host(
+    model: &SCXMLModel,
+    target: &dyn StaticTarget,
+) -> Option<String> {
+    if target.lowers_child_host() {
+        return None;
+    }
+    crate::forge::native_action::child_that_needs_a_host(model).map(|(construct, _)| construct)
 }
 
 /// The first `bytes` variable of `scope` that `target` does not hold
