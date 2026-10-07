@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A computed target"):
+  the `targetexpr` of a <send>. A generated machine has no script engine to learn
+  where it can send when the send runs, so the routes the expression can take are
+  declared as `sce:targets` (docs/adr/0005, decision 3), and the value it computes is
+  compared with them when the send runs. The send goes by the entry that matches; a
+  value in none of them is `error.communication` and nothing is sent — whether or
+  not the route is one the machine could send by.
+
+  `route` holds `#_internal` to begin with. `fire` sends `landed` to the route it
+  holds, among `#_internal` and `#_parent`; `narrow` sends the same event among
+  `#_parent` alone, so a route the machine can send by is refused because this
+  send did not declare it. A machine that has no parent cannot send to one: the
+  declared `#_parent` is `error.communication` as the written target is. The value
+  is read when the send runs, not when the document was read.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static" name="static_send_target">
+  <datamodel>
+    <data id="route" sce:type="string" sce:capacity="24" expr="'#_internal'"/>
+    <data id="landed" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="refused" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="idle">
+    <transition event="fire" type="internal">
+      <send event="landed" targetexpr="route" sce:targets="#_internal #_parent"/>
+    </transition>
+    <transition event="narrow" type="internal">
+      <send event="landed" targetexpr="route" sce:targets="#_parent"/>
+    </transition>
+    <transition event="aim.internal" type="internal">
+      <assign location="route" expr="'#_internal'"/>
+    </transition>
+    <transition event="aim.parent" type="internal">
+      <assign location="route" expr="'#_parent'"/>
+    </transition>
+    <transition event="aim.stranger" type="internal">
+      <assign location="route" expr="'#_scxml_stranger'"/>
+    </transition>
+    <transition event="landed" type="internal">
+      <assign location="landed" expr="landed + 1"/>
+    </transition>
+    <transition event="error.communication" type="internal">
+      <assign location="refused" expr="refused + 1"/>
+    </transition>
+  </state>
+</scxml>

@@ -332,6 +332,12 @@
       }
     },
     algorithms: {},
+    route: function (value, entries) {
+      if (typeof value !== 'string') {
+        fail('expected the string a computed target is, read ' + String(value));
+      }
+      return entries.indexOf(value) < 0 ? '' : value;
+    },
     candidate: function (value, stems) {
       if (typeof value !== 'string') {
         fail('expected the string a hybrid invoke names its document by, read ' + String(value));

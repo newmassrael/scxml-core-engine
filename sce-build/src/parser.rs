@@ -1343,6 +1343,108 @@ fn collect_invoke_candidates(
     Ok(out)
 }
 
+/// Read `sce:targets` of a `<send targetexpr>` (docs/adr/0005, decision 3): the
+/// routes the expression can take, which a `sce-static` machine has no script
+/// engine to learn when the send runs. Read under every data model, as
+/// `sce:candidates` is: only a `sce-static` machine holds the value to the set
+/// (`static_datamodel` refuses an expression that declares none), and under a
+/// script data model the engine routes whatever the expression computes — the
+/// declaration is read so that the document an Interpreter lowering writes, which
+/// keeps it, is the document it was.
+///
+/// Four things are refused where the attribute is written, as `sce:candidates`
+/// is:
+///
+/// * **No `targetexpr`.** The attribute names the values an expression may
+///   take; with no expression there is nothing it could choose among.
+/// * **A `type` other than the SCXML Event I/O Processor.** The entries are
+///   targets of that processor. A computed target of another one is a separate
+///   lowering.
+/// * **An entry that names no route this machine can send by.** `#_internal`,
+///   `#_parent`, `#_scxml_<session>`, `#_<invokeid>` and a published
+///   `sce://scxml/<session>` location; a Mesh peer is a service a backend gains
+///   with its own runtime (decision 5), and anything else is a target the
+///   processor cannot address (§scxml-6.2.4).
+/// * **Two entries naming one route, or none at all.** The value is matched
+///   against the set, so a repeat is two entries claiming one answer, and an
+///   attribute written and left blank reads as a declaration that declares
+///   nothing.
+fn collect_send_targets(
+    node: &roxmltree::Node,
+    action: &Action,
+    source_name: &str,
+) -> Result<Vec<String>, crate::forge::error::Located<crate::forge::error::ForgeError>> {
+    use crate::forge::error::{Located, ValidationError};
+    use std::collections::HashSet;
+
+    let raw = match crate::sce_attr::read(node, "targets") {
+        Some(s) => s,
+        None => return Ok(Vec::new()),
+    };
+
+    let pos = node.document().text_pos_at(node.range().start);
+    let at = |err: ValidationError| -> Located<crate::forge::error::ForgeError> {
+        Located::new(err.into(), source_name, Some(pos.row), Some(pos.col))
+    };
+    let incompatible = |detail: String| {
+        at(ValidationError::IncompatibleAttributes {
+            element: "<send>".to_string(),
+            detail,
+        })
+    };
+
+    if action.targetexpr.is_empty() {
+        return Err(incompatible(
+            "sce:targets names the values a `targetexpr` may take, so it belongs only \
+             on a send that has one"
+                .to_string(),
+        ));
+    }
+    if !action.send_type.is_empty()
+        && action.send_type != crate::host_processor_analyzer::SCXML_EVENT_PROCESSOR_TYPE
+    {
+        return Err(incompatible(format!(
+            "sce:targets lists targets of the SCXML Event I/O Processor, and this send's \
+             type is `{}`",
+            action.send_type
+        )));
+    }
+
+    let mut seen: HashSet<&str> = HashSet::new();
+    let mut out: Vec<String> = Vec::new();
+    for entry in raw.split_whitespace() {
+        let mesh_peer = entry.starts_with('#') && !entry.starts_with("#_");
+        if crate::host_processor_analyzer::is_unsupported_scxml_target(entry) || mesh_peer {
+            return Err(incompatible(format!(
+                "sce:targets entry '{entry}' is not a route this machine sends by: the \
+                 SCXML Event I/O Processor addresses `#_internal`, `#_parent`, \
+                 `#_scxml_<session>`, `#_<invokeid>` and `sce://scxml/<session>`{}",
+                if mesh_peer {
+                    ", and a Mesh peer is not lowered for a computed target yet"
+                } else {
+                    ""
+                }
+            )));
+        }
+        if !seen.insert(entry) {
+            return Err(incompatible(format!(
+                "sce:targets names '{entry}' twice; the value the expression computes is \
+                 matched against the set, so two entries sharing one is two routes \
+                 claiming the same answer"
+            )));
+        }
+        out.push(entry.to_string());
+    }
+
+    if out.is_empty() {
+        return Err(at(ValidationError::EmptyValue {
+            element: "<send>".to_string(),
+            attr: "sce:targets".to_string(),
+        }));
+    }
+    Ok(out)
+}
+
 /// Read the optional `sce:req="ID1 ID2 ..."` attribute and return
 /// the whitespace-separated requirement IDs. Returns `Ok(vec![])`
 /// when the attribute is absent. Rejects the first duplicate token
@@ -3550,6 +3652,7 @@ impl SCXMLParser {
         action.targetexpr = elem.attribute("targetexpr").unwrap_or("").to_string();
         action.send_type = elem.attribute("type").unwrap_or("").to_string();
         action.typeexpr = elem.attribute("typeexpr").unwrap_or("").to_string();
+        action.targets = collect_send_targets(elem, action, source_name)?;
         // Decided where the attribute arrives, so every backend's send
         // template reads one answer instead of re-deriving it from its
         // own copy of the accepted set.

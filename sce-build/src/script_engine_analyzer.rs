@@ -671,11 +671,12 @@ fn collect_action_causes(
 /// ([`crate::forge::static_datamodel`]), so it costs no engine. Nor is a
 /// `delayexpr`, which is lowered to the string it computes, read as a CSS2 time
 /// when the send runs, nor an `eventexpr`, lowered to the string that names the
-/// event it delivers. Nor is an `idlocation`, which names a string variable the
-/// machine writes the id it generates to.
+/// event it delivers, nor a `targetexpr`, lowered to the string that names the
+/// route among the `sce:targets` the document declares. Nor is an `idlocation`,
+/// which names a string variable the machine writes the id it generates to.
 fn send_has_dynamic_attr(action: &Action, static_model: bool) -> bool {
     (!static_model && !action.eventexpr.is_empty())
-        || !action.targetexpr.is_empty()
+        || (!static_model && !action.targetexpr.is_empty())
         || (!static_model && !action.delayexpr.is_empty())
         || !action.typeexpr.is_empty()
         || (!static_model && !action.contentexpr.is_empty())
@@ -907,6 +908,35 @@ mod tests {
         let model = parse(scxml);
         assert!(analyze(&model).is_empty());
         assert!(!requires_script_engine(&model));
+    }
+
+    /// A `<send targetexpr>` of a `sce-static` document is lowered to the string
+    /// it computes and held to the routes the document declares as `sce:targets`,
+    /// so it costs no engine; under a script data model the same attribute is
+    /// evaluated at run time and does (docs/adr/0005, decision 3).
+    #[test]
+    fn a_declared_computed_target_costs_a_static_document_no_engine() {
+        let send = r##"<send event="go" targetexpr="route" sce:targets="#_internal"/>"##;
+        let static_model = parse(&format!(
+            r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" initial="s" datamodel="sce-static">
+                <datamodel><data id="route" sce:type="string" sce:capacity="16" expr="'#_internal'"/></datamodel>
+                <state id="s"><onentry>{send}</onentry></state>
+            </scxml>"##
+        ));
+        assert!(
+            analyze(&static_model)
+                .iter()
+                .all(|cause| !matches!(cause.kind, ScriptEngineCauseKind::SendDynamicAttr { .. })),
+            "a declared route set makes the target finite: {:?}",
+            analyze(&static_model)
+        );
+        contains_cause(
+            r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s" datamodel="ecmascript">
+                <datamodel><data id="route" expr="'#_internal'"/></datamodel>
+                <state id="s"><onentry><send event="go" targetexpr="route"/></onentry></state>
+            </scxml>"##,
+            |kind| matches!(kind, ScriptEngineCauseKind::SendDynamicAttr { .. }),
+        );
     }
 
     #[test]

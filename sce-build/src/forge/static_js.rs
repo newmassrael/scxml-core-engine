@@ -531,6 +531,25 @@ impl StaticTarget for JsTarget {
     fn lowers_hybrid_invoke(&self) -> bool {
         true
     }
+    // Its own `<send>` evaluates the `targetexpr` and routes the value as it
+    // routes a written target. The attribute becomes the call that holds the value
+    // to the routes the document declares as `sce:targets`: a value that is none
+    // of them is the empty target, which the engine answers as it answers any
+    // address nobody is at — `error.communication`, nothing sent
+    // (docs/adr/0005, decision 3).
+    fn lowers_target_expr(&self) -> bool {
+        true
+    }
+    fn target_expr_site(&self, native_target: &str, entries: &[String]) -> Option<String> {
+        let names: Vec<String> = entries
+            .iter()
+            .map(|entry| serde_json::to_string(entry).expect("a string is JSON"))
+            .collect();
+        Some(format!(
+            "{RUNTIME_GLOBAL}.route({native_target}, [{}])",
+            names.join(", ")
+        ))
+    }
     fn hybrid_src_site(&self, native_src: &str, stems: &[&str]) -> Option<String> {
         let names: Vec<String> = stems
             .iter()

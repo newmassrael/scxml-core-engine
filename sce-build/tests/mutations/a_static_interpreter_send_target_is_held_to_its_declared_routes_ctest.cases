@@ -1,0 +1,46 @@
+# Mutation cases for "a computed target is chosen among the routes the document
+# declares" under the Interpreter (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A computed
+# target"; docs/adr/0005, decision 3).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_interpreter_send_target_is_held_to_its_declared_routes_ctest.cases`.
+#
+# The Interpreter runs the document's own `<send>`, so the lowering rewrites the
+# `targetexpr` to a call of the library that holds the value to the routes the
+# document declares as `sce:targets`: a value that is none of them is the empty
+# target, which the engine answers as it answers any address nobody is at —
+# `error.communication`, nothing sent. `static_send_target` is replayed by
+# `static_datamodel_lowered`: `fire` declares `#_internal` and `#_parent`, `narrow`
+# declares `#_parent` alone, so a route the machine can send by (`#_internal`) is
+# refused by the send that did not declare it, and the mutants each take one decision
+# away:
+#
+#   a value that is none of the declared routes is let through;
+#   the declared routes are not given to the library;
+#   the attribute is not rewritten at all.
+#
+# The library is embedded in the generator, so the regeneration is the build the
+# ctest names. Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^static_datamodel_lowered$'
+mutation_targets sce-build/src/forge/static_js/sce_static.js sce-build/src/forge/static_js.rs sce-build/src/forge/static_lowering.rs
+mutation_oracles tests/integration/AStaticDatamodelRunsLoweredUnderTheInterpreterTest.cpp sce-build/tests/fixtures/static_datamodel/static_send_target.scxml sce-build/tests/fixtures/static_datamodel/scenarios/static_send_target.json
+
+mutation_case "a value that is none of the declared routes is let through" <<'PY'
+edit("sce-build/src/forge/static_js/sce_static.js",
+     "      return entries.indexOf(value) < 0 ? '' : value;\n",
+     "      return value;\n")
+PY
+
+mutation_case "the declared routes are not given to the library" <<'PY'
+edit("sce-build/src/forge/static_js.rs",
+     "            .map(|entry| serde_json::to_string(entry).expect(\"a string is JSON\"))\n",
+     "            .filter(|_| false)\n            .map(|entry| serde_json::to_string(entry).expect(\"a string is JSON\"))\n")
+PY
+
+mutation_case "the attribute is not rewritten at all" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "match target.target_expr_site(&value.text, &action.targets) {",
+     "match target.target_expr_site(&value.text, &action.targets).filter(|_| false) {")
+PY

@@ -1120,17 +1120,204 @@ fn an_assignment_of_another_kind_is_refused() {
 
 #[test]
 fn an_expression_the_model_has_no_typed_form_for_is_refused() {
-    // `targetexpr` is evaluated as script text by every backend's templates,
+    // `typeexpr` is evaluated as script text by every backend's templates,
     // so admitting it would run part of the document in a language it never
     // declared.
     let (ok, out) = run(
         &["check"],
         &machine(
-            r#"<state id="s"><onentry><send event="go" targetexpr="'#_internal'"/></onentry></state>"#,
+            r#"<state id="s"><onentry><send event="go" typeexpr="'http://www.w3.org/TR/scxml/#SCXMLEventProcessor'"/></onentry></state>"#,
         ),
     );
-    assert!(!ok, "targetexpr has no typed form here:\n{out}");
+    assert!(!ok, "typeexpr has no typed form here:\n{out}");
     assert_refused_at(&out, "scxml/static-datamodel-rule", 8);
+}
+
+// ── A computed target is chosen among the routes the document declares ──
+
+/// `machine`, with a string variable `route` for a `targetexpr` to read, and
+/// `send` made as the state's entry. The extra variable puts the state on line 9.
+fn routing(send: &str) -> String {
+    machine(&format!(
+        r#"<state id="s"><onentry>{send}</onentry></state>"#
+    ))
+    .replace(
+        r#"<data id="ready" sce:type="bool" expr="false"/>"#,
+        r#"<data id="ready" sce:type="bool" expr="false"/>
+    <data id="route" sce:type="string" sce:capacity="24" expr="'#_internal'"/>"#,
+    )
+}
+
+/// The generated languages that have no lowering of a `<send targetexpr>` yet,
+/// as `check` names them. Each is refused by name until it compares the value
+/// with the declared routes and sends by the one that matches (docs/adr/0005,
+/// decision 3); the Interpreter is read through `lower`.
+const COMPUTED_TARGET_REFUSING_LANGUAGES: &[&str] =
+    &["rust", "kotlin", "go", "cpp", "python", "c11"];
+
+#[test]
+fn a_computed_target_that_declares_its_routes_is_accepted_by_the_document() {
+    // The routes the expression can take are written down, so the machine has
+    // no engine to ask: the document stands, and the Interpreter's lowering
+    // holds the value to them.
+    let document =
+        routing(r##"<send event="go" targetexpr="route" sce:targets="#_internal #_parent"/>"##);
+    let (ok, out) = run(&["check"], &document);
+    assert!(
+        ok,
+        "a declared set of routes makes the target finite:\n{out}"
+    );
+    let (ok, out) = run(&["lower"], &document);
+    assert!(ok, "the Interpreter lowers a computed target:\n{out}");
+    // The attribute is an XML one, so the entries' quotes are written as entities.
+    assert!(
+        out.contains("SceStatic.route(route, [&quot;#_internal&quot;, &quot;#_parent&quot;])"),
+        "the lowered attribute holds the value to the declared routes:\n{out}"
+    );
+}
+
+#[test]
+fn a_computed_target_that_declares_nothing_is_refused_naming_the_attribute() {
+    let (ok, out) = run(
+        &["check"],
+        &routing(r##"<send event="go" targetexpr="route"/>"##),
+    );
+    assert!(!ok, "no engine learns the routes at run time:\n{out}");
+    assert_refused_at(&out, "scxml/static-datamodel-rule", 9);
+    assert!(
+        out.contains("add `sce:targets`"),
+        "the refusal names the attribute to add:\n{out}"
+    );
+}
+
+#[test]
+fn a_target_written_beside_a_computed_one_is_refused() {
+    let (ok, out) = run(
+        &["check"],
+        &routing(
+            r##"<send event="go" target="#_parent" targetexpr="route" sce:targets="#_parent"/>"##,
+        ),
+    );
+    assert!(!ok, "a send takes one target:\n{out}");
+    assert!(
+        out.contains("never as both"),
+        "the refusal says why:\n{out}"
+    );
+}
+
+#[test]
+fn the_routes_a_computed_target_declares_are_held_to_what_a_machine_sends_by() {
+    // Each is refused where the attribute is written, as `sce:candidates` is.
+    for (declared, fragment) in [
+        ("bogus", "is not a route this machine sends by"),
+        ("!invalid", "is not a route this machine sends by"),
+        (
+            "http://example.org/x",
+            "is not a route this machine sends by",
+        ),
+        (
+            "#peer",
+            "a Mesh peer is not lowered for a computed target yet",
+        ),
+        ("#_parent #_parent", "names '#_parent' twice"),
+        ("#_internal #_parent #_internal", "names '#_internal' twice"),
+    ] {
+        let (ok, out) = run(
+            &["check"],
+            &routing(&format!(
+                r##"<send event="go" targetexpr="route" sce:targets="{declared}"/>"##
+            )),
+        );
+        assert!(!ok, "sce:targets=\"{declared}\" is refused:\n{out}");
+        assert!(
+            out.contains(fragment),
+            "sce:targets=\"{declared}\": expected `{fragment}`:\n{out}"
+        );
+    }
+    let (ok, out) = run(
+        &["check"],
+        &routing(r##"<send event="go" targetexpr="route" sce:targets="  "/>"##),
+    );
+    assert!(
+        !ok,
+        "an attribute written and left blank declares nothing:\n{out}"
+    );
+    assert!(
+        out.contains("sce:targets"),
+        "the refusal names the attribute:\n{out}"
+    );
+}
+
+#[test]
+fn sce_targets_belongs_to_a_send_that_computes_its_target_of_the_scxml_processor() {
+    for (send, fragment) in [
+        (
+            r##"<send event="go" target="#_parent" sce:targets="#_parent"/>"##,
+            "belongs only on a send that has one",
+        ),
+        (
+            r##"<send event="go" type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor" targetexpr="route" sce:targets="#_parent"/>"##,
+            "lists targets of the SCXML Event I/O Processor",
+        ),
+    ] {
+        let (ok, out) = run(&["check"], &routing(send));
+        assert!(!ok, "{send} is refused:\n{out}");
+        assert!(
+            out.contains(fragment),
+            "{send}: expected `{fragment}`:\n{out}"
+        );
+    }
+}
+
+#[test]
+fn sce_targets_under_a_script_data_model_is_read_and_not_held_to() {
+    // Under a script data model the engine evaluates the expression and routes
+    // whatever it computes, as it does a hybrid `<invoke>`'s `sce:candidates`. The
+    // declaration is read all the same, so the document an Interpreter lowering
+    // writes, which keeps it, is the document it was: lowering it again is
+    // refused by nothing, and an entry that is no route is refused here as there.
+    let document = r##"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s" datamodel="ecmascript">
+  <state id="s">
+    <onentry><send event="go" targetexpr="'#_internal'" sce:targets="#_internal"/></onentry>
+  </state>
+</scxml>
+"##;
+    let (ok, out) = run(&["check"], document);
+    assert!(
+        ok,
+        "a declaration under a script data model is read:\n{out}"
+    );
+    let (ok, out) = run(
+        &["check"],
+        &document.replace("sce:targets=\"#_internal\"", "sce:targets=\"bogus\""),
+    );
+    assert!(
+        !ok,
+        "an entry that is no route is refused there too:\n{out}"
+    );
+    assert!(
+        out.contains("is not a route this machine sends by"),
+        "the refusal says why:\n{out}"
+    );
+}
+
+#[test]
+fn every_generated_language_refuses_a_computed_target_by_name_until_it_lowers_one() {
+    let document =
+        routing(r##"<send event="go" targetexpr="route" sce:targets="#_internal #_parent"/>"##);
+    for &lang in COMPUTED_TARGET_REFUSING_LANGUAGES {
+        let (ok, out) = run(&check_args(lang), &document);
+        assert!(
+            !ok,
+            "{lang} has no lowering of a computed target yet:\n{out}"
+        );
+        assert!(
+            out.contains("a <send> with a targetexpr has no"),
+            "{lang}: the refusal names the construct:\n{out}"
+        );
+    }
 }
 
 // ── A host action's arguments are typed expressions ─────────────────────
@@ -5302,8 +5489,14 @@ fn every_scenario_is_replayed_on_every_backend_that_lowers_its_machine() {
             .into_iter()
             .filter(|lang| run_beside(&["check", "-l", lang], &document, &siblings).0)
             .collect();
+        // The Interpreter is no language `check` names, and it finds the scenarios
+        // by scanning this directory (`AStaticDatamodelRunsLoweredUnderTheInterpreter
+        // Test`), so a machine only it lowers is replayed all the same: a construct
+        // lands in one engine first, and the others are refused by name until their
+        // turn (docs/adr/0005).
+        let interpreter_lowers = run_beside(&["lower"], &document, &siblings).0;
         assert!(
-            !lowering.is_empty(),
+            !lowering.is_empty() || interpreter_lowers,
             "{machine}: no backend lowers it, so no scenario runs it"
         );
         // A backend that lowers the machine commits it where its driver builds

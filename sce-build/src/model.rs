@@ -270,6 +270,18 @@ pub struct Action {
 
     pub targetexpr: String,
 
+    /// `sce:targets` (docs/adr/0005, decision 3): the values a `<send
+    /// targetexpr>` of a `datamodel="sce-static"` document can take, each a
+    /// target as a written `target` is — the same set the machine sends by,
+    /// compared with the value the expression computes when the send runs. A
+    /// value in none of them is `error.communication` and nothing is sent.
+    /// Empty for a send that declares none. Read under every data model, but held
+    /// to only under `sce-static`: under another one the script engine evaluates
+    /// the expression and routes whatever it computes, as it does a hybrid
+    /// `<invoke>`'s `sce:candidates`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub targets: Vec<String>,
+
     pub send_type: String,
 
     pub delay: String,
@@ -573,6 +585,23 @@ pub struct Action {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[cfg_attr(test, schemars(skip))]
     pub native_event_fails: bool,
+    /// Codegen-internal: the `targetexpr` of a `<send>` in a `sce-static`
+    /// document, as an owned string expression in the backend's own language,
+    /// read from the machine's fields when the send runs — the target the send
+    /// is routed to, once [`Self::targets`] has accepted it. Empty for a `<send>`
+    /// with no `targetexpr`, for one of a document under another data model,
+    /// which a script engine evaluates, and for a backend that runs the
+    /// document's own attribute. Transient and outside the AST contract, as
+    /// [`Self::native_code`] is.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[cfg_attr(test, schemars(skip))]
+    pub native_target: String,
+    /// Codegen-internal: whether [`Self::native_target`] can fail — a checked
+    /// integer operation in the expression. A failure is an argument that cannot
+    /// be evaluated: the message is not sent and the block ends.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(test, schemars(skip))]
+    pub native_target_fails: bool,
     /// Codegen-internal: an id of a `sce-static` document that is computed, as an
     /// owned string expression in the backend's own language, read from the
     /// machine's fields when the action runs — the id of the send a `<cancel>`
@@ -895,6 +924,7 @@ impl Action {
                 "eventexpr",
                 "target",
                 "targetexpr",
+                "targets",
                 "send_type",
                 "typeexpr",
                 "delay",

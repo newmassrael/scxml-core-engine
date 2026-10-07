@@ -324,6 +324,26 @@ pub trait StaticTarget {
     fn lowers_event_expr(&self) -> bool {
         false
     }
+    /// Whether a `<send>`'s `targetexpr` is lowered to the string it computes
+    /// ([`Action::native_target`]) that the backend compares with the routes the
+    /// document declares as `sce:targets` ([`Action::targets`]) when the send
+    /// runs and sends by (docs/adr/0005, decision 3): a value in none of them is
+    /// `error.communication` and nothing is sent. A target that does not is
+    /// refused where the `<send>` is walked, by name, rather than left to send to
+    /// no one.
+    fn lowers_target_expr(&self) -> bool {
+        false
+    }
+    /// What the `targetexpr` attribute of a `<send>` is rewritten to, for a
+    /// target that runs the document's own attribute and so has no field of the
+    /// machine to read the value from: `native_target`, the string the attribute
+    /// computes, held to the `entries` the document declares — one that is none
+    /// of them is the empty target, which the engine answers as it answers any
+    /// address nobody is at. `None` for a target whose machine reads
+    /// [`Action::native_target`] itself.
+    fn target_expr_site(&self, _native_target: &str, _entries: &[String]) -> Option<String> {
+        None
+    }
     /// Whether a `<cancel>`'s `sendidexpr` is lowered to the string it computes
     /// ([`Action::native_sendid`]) that the backend hands the scheduler when the
     /// cancel runs. A target that does not is refused where the `<cancel>` is
@@ -2733,17 +2753,18 @@ fn write_variants(text: &mut String, model: &SCXMLModel, alias: &str, holder: &s
 /// told apart from a machine that delays, and the saved state would drop the
 /// send it holds.
 ///
-/// The target is read as written because this data model refuses the attribute
-/// that would leave it to run time (`targetexpr`: `UNTYPED_ACTION_ATTRIBUTES`
-/// in `static_datamodel`), so a send's target is never a value this document
-/// computes. `a_delayed_sends_target_is_a_literal_under_sce_static` holds that:
-/// a data model that typed `targetexpr` would have to decide here which
-/// sessions it could name.
+/// A `targetexpr` is a value this document computes, and which sessions it could
+/// name is what it declares as `sce:targets` (docs/adr/0005, decision 3): a
+/// delayed send whose declared routes include one that is not this session's own
+/// queue is a send waiting on another session, as a written target would be.
+/// `a_delayed_sends_target_is_a_literal_under_sce_static` holds the written
+/// form, and `a_delayed_send_to_a_computed_target_waits_on_another_session` the
+/// declared one.
 fn delays_a_send_to_another_session(model: &SCXMLModel) -> bool {
     model.sends().into_iter().any(|(_, send)| {
+        let another_session = |route: &str| route.starts_with("#_") && route != "#_internal";
         (!send.delay.is_empty() || !send.delayexpr.is_empty())
-            && send.target.starts_with("#_")
-            && send.target != "#_internal"
+            && (another_session(&send.target) || send.targets.iter().any(|t| another_session(t)))
     })
 }
 
@@ -6200,6 +6221,32 @@ fn lower_action(
                 action.native_event = value.text;
                 action.native_event_fails = value.can_fail;
             }
+            // A target named by an expression is the string it computes, which
+            // the machine holds to the routes the document declares before it
+            // sends by the one that matches; a value none of them names is an
+            // address nobody is at. The attribute stays, as an `eventexpr` does:
+            // it is what says the target is computed, and the declaration is what
+            // makes the computation finite.
+            if !action.targetexpr.trim().is_empty() {
+                if !target.lowers_target_expr() {
+                    return Err(GenerateError::unsupported(format!(
+                        "a <send> with a targetexpr has no {lang} lowering yet"
+                    )));
+                }
+                reads_payload |= reads(&action.targetexpr);
+                let value = lower(&action.targetexpr, InferredType::Str)?;
+                match target.target_expr_site(&value.text, &action.targets) {
+                    Some(site) => rewrites.note(
+                        &action.targetexpr,
+                        action.spellings.get("targetexpr"),
+                        &site,
+                    ),
+                    None => {
+                        action.native_target = value.text;
+                        action.native_target_fails = value.can_fail;
+                    }
+                }
+            }
             // The id the machine generates for the send is written to the
             // variable `idlocation` names before any other argument is read, and
             // is then the id the send is known by, read back from that variable
@@ -6904,18 +6951,57 @@ mod tests {
 
     #[test]
     fn a_delayed_sends_target_is_a_literal_under_sce_static() {
-        // `delays_a_send_to_another_session` reads the target as written. A
-        // target that is only known at run time may be any session, so the day
-        // this data model types `targetexpr` this fails, and the predicate has
-        // to say what it does.
+        // `delays_a_send_to_another_session` reads the target as written, or the
+        // routes the document declares for a computed one. A target that is only
+        // known at run time and declares nothing may be any session, so it is
+        // refused where it is written, naming the attribute that would say which.
         let send = r#"<send event="later" targetexpr="where" delay="5s"/>"#;
         let refusal = SCXMLParser::new()
             .parse_string(&counter_sending(send), "m")
             .expect_err(send);
         assert!(
-            format!("{refusal:?}").contains("this attribute has no typed form"),
+            format!("{refusal:?}").contains("add `sce:targets`"),
             "{send}: {refusal:?}"
         );
+    }
+
+    /// `COUNTER` with a string variable `route` for a `targetexpr` to read,
+    /// whose `go` transition makes `send`.
+    fn counter_routing(send: &str) -> String {
+        counter_sending(send).replace(
+            r#"<data id="count" sce:type="uint32" expr="0"/>"#,
+            r#"<data id="count" sce:type="uint32" expr="0"/>
+    <data id="route" sce:type="string" sce:capacity="16" expr="'#_internal'"/>"#,
+        )
+    }
+
+    #[test]
+    fn a_delayed_send_to_a_computed_target_waits_on_another_session() {
+        // The declared routes are the sessions the expression could name: one
+        // that is not this session's own queue makes a delayed send a send
+        // waiting on another session, as a written target of it would.
+        for routes in ["#_parent", "#_internal #_parent", "#_scxml_peer #_internal"] {
+            let send = format!(
+                r#"<send event="later" targetexpr="route" sce:targets="{routes}" delay="5s"/>"#
+            );
+            let model = SCXMLParser::new()
+                .parse_string(&counter_routing(&send), "m")
+                .expect("parses");
+            assert!(
+                super::delays_a_send_to_another_session(&model),
+                "{routes}: a delayed send that may go to another session"
+            );
+        }
+    }
+
+    #[test]
+    fn a_delayed_send_to_computed_targets_of_this_session_waits_on_no_other() {
+        let send =
+            r##"<send event="later" targetexpr="route" sce:targets="#_internal" delay="5s"/>"##;
+        let model = SCXMLParser::new()
+            .parse_string(&counter_routing(send), "m")
+            .expect("parses");
+        assert!(!super::delays_a_send_to_another_session(&model));
     }
 
     #[test]

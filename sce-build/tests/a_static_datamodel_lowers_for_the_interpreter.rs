@@ -128,14 +128,21 @@ fn every_fixture_is_lowered_or_refused_by_name() {
     // `<donedata>`'s, or computes its delay in a `delayexpr` or the name of its
     // event in an `eventexpr`, or the id of the send a `<cancel>` removes in a
     // `sendidexpr`, or the variable a `<send>`'s generated id is written to in
-    // an `idlocation`, which the Interpreter reads itself.
+    // an `idlocation`, which the Interpreter reads itself, or the route a
+    // `targetexpr` computes among the `sce:targets` the document declares, which
+    // the lowering holds the value to; and a child that declares `<sce:action>`s,
+    // inline or as a candidate of a hybrid `<invoke>`, which the engine gives the
+    // host its parent's host answers.
     for name in [
         "static_send_params",
         "static_send_namelist",
         "static_send_content",
         "static_send_delay",
         "static_send_event",
+        "static_send_target",
         "static_send_idlocation",
+        "static_child_host",
+        "static_child_host_hybrid",
         "static_cancel_expr",
         "static_wire_enum",
         "static_payload_relay",

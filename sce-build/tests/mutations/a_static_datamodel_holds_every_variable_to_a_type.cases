@@ -48,12 +48,61 @@ edit("sce-build/src/forge/type_ctx.rs",
     ctx.insert_record("_event", RecordShape::Open);""")
 PY
 
-# `targetexpr` stops being refused, so script text reaches a document that
+# `typeexpr` stops being refused, so script text reaches a document that
 # declared it has none.
 mutation_case "an attribute with no typed form is admitted" <<'PY'
 edit("sce-build/src/forge/static_datamodel.rs",
-     """&[("send", "targetexpr"), ("send", "typeexpr")];""",
-     """&[("send", "typeexpr")];""")
+     """&[("send", "typeexpr")];""",
+     """&[];""")
+PY
+
+# A computed target is chosen among the routes the document declares
+# (docs/adr/0005, decision 3). One that declares none is let through, and the
+# machine would have no finite set to compare the value with.
+mutation_case "a computed target that declares no route is let through" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     "        if action.targets.is_empty() {\n",
+     "        if action.targets.is_empty() && false {\n")
+PY
+
+# A send takes one target. The case lets a written one stand beside the expression,
+# so the document names two and the machine reads one of them.
+mutation_case "a target is let stand beside a computed one" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     "        let spelling = action.spellings.get(\"targetexpr\");\n        if !action.target.trim().is_empty() {\n",
+     "        let spelling = action.spellings.get(\"targetexpr\");\n        if !action.target.trim().is_empty() && false {\n")
+PY
+
+# A route is declared once: the value is matched against the set, and a repeat is
+# two entries claiming one answer.
+mutation_case "a route is declared twice and let through" <<'PY'
+edit("sce-build/src/parser.rs",
+     "        if !seen.insert(entry) {\n",
+     "        if false && !seen.insert(entry) {\n")
+PY
+
+# An entry that names no route the machine sends by is a target the processor cannot
+# address (§scxml-6.2.4), and a Mesh peer is not lowered for a computed target.
+mutation_case "a route the machine cannot send by is declared and let through" <<'PY'
+edit("sce-build/src/parser.rs",
+     "        if crate::host_processor_analyzer::is_unsupported_scxml_target(entry) || mesh_peer {\n",
+     "        if false {\n")
+PY
+
+# The declaration names the values an expression may take, so a send with none has
+# nothing it could choose among.
+mutation_case "a declaration is let stand on a send with no computed target" <<'PY'
+edit("sce-build/src/parser.rs",
+     "    if action.targetexpr.is_empty() {\n        return Err(incompatible(",
+     "    if action.targetexpr.is_empty() && false {\n        return Err(incompatible(")
+PY
+
+# The entries are targets of the SCXML Event I/O Processor, so a send of another one
+# does not take them.
+mutation_case "a declaration is let stand on a send of another processor" <<'PY'
+edit("sce-build/src/parser.rs",
+     "    if !action.send_type.is_empty()\n        && action.send_type != crate::host_processor_analyzer::SCXML_EVENT_PROCESSOR_TYPE\n",
+     "    if false\n        && action.send_type != crate::host_processor_analyzer::SCXML_EVENT_PROCESSOR_TYPE\n")
 PY
 
 # A variable with no initial value is admitted, and a backend would pick

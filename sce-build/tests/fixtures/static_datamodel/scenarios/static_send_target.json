@@ -1,0 +1,44 @@
+{
+  "machine": "static_send_target",
+  "about": "The `targetexpr` of a <send> is a string computed from the machine's fields when the send runs, held to the routes the document declares as `sce:targets`: the send goes by the entry that matches, and a value in none of them is error.communication with nothing sent. `route` holds `#_internal` to begin with, so `fire` (declaring `#_internal` and `#_parent`) delivers `landed` to this session; `narrow` declares `#_parent` alone, so the same value is refused although the machine could send by it. A machine with no parent cannot send to one, so the declared `#_parent` is error.communication too, and so is a value no send declares. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "note": "nothing has been sent yet",
+      "expect": { "state": "idle", "variables": { "landed": 0, "refused": 0 } } },
+
+    { "note": "the route the machine holds is a declared one: the event is delivered to this session",
+      "event": "fire",
+      "expect": { "variables": { "landed": 1, "refused": 0 } } },
+
+    { "note": "and again: the send reads the route each time it runs",
+      "event": "fire",
+      "expect": { "variables": { "landed": 2, "refused": 0 } } },
+
+    { "note": "this send declares `#_parent` alone: `#_internal` is a route the machine can send by, and a value this send does not declare is refused",
+      "event": "narrow",
+      "expect": { "variables": { "landed": 2, "refused": 1 } } },
+
+    { "note": "the route changes to the parent; nothing is sent",
+      "event": "aim.parent",
+      "expect": { "variables": { "landed": 2, "refused": 1 } } },
+
+    { "note": "a declared route that no session answers at: this machine has no parent",
+      "event": "fire",
+      "expect": { "variables": { "landed": 2, "refused": 2 } } },
+
+    { "note": "the route changes to a session nothing declares",
+      "event": "aim.stranger",
+      "expect": { "variables": { "landed": 2, "refused": 2 } } },
+
+    { "note": "a value in none of the declared routes is an address nobody is at: reported, and nothing delivered",
+      "event": "fire",
+      "expect": { "variables": { "landed": 2, "refused": 3 } } },
+
+    { "note": "the route is a declared one again, and the machine goes on",
+      "event": "aim.internal",
+      "expect": { "variables": { "landed": 2, "refused": 3 } } },
+
+    { "note": "fire delivers it",
+      "event": "fire",
+      "expect": { "variables": { "landed": 3, "refused": 3 } } }
+  ]
+}

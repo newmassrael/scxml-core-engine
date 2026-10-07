@@ -216,6 +216,13 @@
         "targetexpr": {
           "type": "string"
         },
+        "targets": {
+          "description": "`sce:targets` (docs/adr/0005, decision 3): the values a `<send targetexpr>` of a `datamodel=\"sce-static\"` document can take, each a target as a written `target` is — the same set the machine sends by, compared with the value the expression computes when the send runs. A value in none of them is `error.communication` and nothing is sent. Empty for a send that declares none. Read under every data model, but held to only under `sce-static`: under another one the script engine evaluates the expression and routes whatever it computes, as it does a hybrid `<invoke>`'s `sce:candidates`.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "then_actions": {
           "items": {
             "$ref": "#/definitions/Action"

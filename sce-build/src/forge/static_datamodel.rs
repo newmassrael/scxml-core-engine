@@ -132,7 +132,7 @@ struct ContentExpr<'a> {
 
 /// The attributes of executable content that carry an expression this model
 /// does not type, with the element each belongs to. Refused where written.
-const UNTYPED_ACTION_ATTRIBUTES: &[(&str, &str)] = &[("send", "targetexpr"), ("send", "typeexpr")];
+const UNTYPED_ACTION_ATTRIBUTES: &[(&str, &str)] = &[("send", "typeexpr")];
 
 /// The most bytes of the id a machine generates for a `<send idlocation>`:
 /// `_auto_send_` and the twenty digits of the largest `u64` count. The number
@@ -1077,6 +1077,52 @@ impl<'a> Judge<'a> {
         Ok(())
     }
 
+    /// A `<send>`'s `targetexpr`: a string, the target the send is routed to,
+    /// computed from the machine's fields when the send runs and chosen among
+    /// the values the document declares as `sce:targets`
+    /// (docs/adr/0005, decision 3) — a generated machine has no script engine to
+    /// learn where it can send, so the routes it can ever use are written down. An
+    /// expression with no declared set is refused where it is written, naming the
+    /// attribute to add. The element takes one target, a written one or an
+    /// expression, so a `target` beside it is refused.
+    fn target_expr(
+        &self,
+        ctx: &TypeCtx<'_>,
+        action: &Action,
+        state: &str,
+    ) -> Result<(), Located<ForgeError>> {
+        let spelling = action.spellings.get("targetexpr");
+        if !action.target.trim().is_empty() {
+            return Err(self.rule_at(
+                format!("targetexpr=\"{}\"", action.targetexpr),
+                "a <send> names its target as `target` or as `targetexpr`, and never as both",
+                spelling.map(|s| s.row()),
+                spelling.map(|s| s.col()),
+                state,
+                &action.targetexpr,
+            ));
+        }
+        if action.targets.is_empty() {
+            return Err(self.rule_at(
+                format!("targetexpr=\"{}\"", action.targetexpr),
+                "a computed target is chosen among the routes the document declares, since \
+                 this data model has no engine to learn them when the send runs: add \
+                 `sce:targets` naming each value the expression can take",
+                spelling.map(|s| s.row()),
+                spelling.map(|s| s.col()),
+                state,
+                &action.targetexpr,
+            ));
+        }
+        self.expr(
+            ctx,
+            &action.targetexpr,
+            spelling,
+            Expected::Slot(InferredType::Str),
+        )?;
+        Ok(())
+    }
+
     /// A `<cancel>`'s `sendidexpr`: a string, the id of the send to cancel,
     /// computed from the machine's fields when the cancel runs. An id no send
     /// holds cancels nothing, as it does under every data model. The element
@@ -1519,6 +1565,9 @@ impl<'a> Judge<'a> {
                 }
                 if !action.eventexpr.is_empty() {
                     self.event_expr(ctx, action, state)?;
+                }
+                if !action.targetexpr.is_empty() {
+                    self.target_expr(ctx, action, state)?;
                 }
                 if !action.delayexpr.is_empty() {
                     self.delay_expr(ctx, action, state)?;

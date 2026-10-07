@@ -3099,7 +3099,8 @@ line of the element or attribute that breaks it:
 | `<data>` with in-line content | The initial value is `expr` — in-line content has no type |
 | `<data>` without `expr` | Every variable declares its initial value; no zero, empty string or first variant stands in. A record variable's is its `<sce:set>`s, and it takes no `expr`; a list starts empty and takes `sce:capacity` instead |
 | `<script>` with script text | No scripting language; a native `<script><cpp>` / `<kt>` block is admitted, as under `null` |
-| `<send targetexpr/typeexpr>`, a `<send idlocation>` that names no string variable the id fits (see **Generated send ids** below) | No typed form: each is evaluated as script-engine text by every backend's templates |
+| `<send typeexpr>`, a `<send idlocation>` that names no string variable the id fits (see **Generated send ids** below) | No typed form: each is evaluated as script-engine text by every backend's templates |
+| a `<send targetexpr>` that declares no `sce:targets`, one written beside a `target`, or a `sce:targets` that names a route the SCXML Event I/O Processor cannot address, a Mesh peer, two entries of one route, no entry, a send with no `targetexpr`, or a `type` other than the SCXML processor | See **A computed target** below. A `targetexpr` is a string expression; the routes it can take are declared, since a machine with no script engine has nothing to learn them from when the send runs. Refused at the attribute as `scxml/static-datamodel-rule` (the missing declaration and the two targets) or where `sce:targets` is written (`validation/incompatible-attributes`, `validation/empty-value`) |
 | a hybrid `<invoke>` that declares no `sce:candidates`, one whose `<content expr>` produces the child's document, a candidate that is not a `sce-static` document this build read, a `srcexpr` that is not a string, or an argument no candidate declares a variable for or of another type than the candidate's variable | See **A hybrid `<invoke>`** under §2.13. Refused at the `<invoke>` (or its `<param>`) as `scxml/static-datamodel-rule`: with no declared set there is no finite list of children to lower, and an argument every candidate would drop is refused as a static invoke's is |
 | `<invoke idlocation>` | Refused for want of a reader, not of a form: the id it would store is the one the build already wrote (the `id`, or `<state>.platform_N`), and this model reads no `_event.invokeid` — only `_event.data` — so a stored id has nothing to be compared with. A document that must name its invocation writes `id`, which `done.invoke.<id>` and `error.invoke.<id>` already match |
 | a `<param>` or a `namelist` name of an `<invoke type="scxml">` whose child is not a `sce-static` document this build read, does not declare the name as a top-level `<data>`, declares it as a list, a record, an enum or bytes, is handed it twice, or is handed a value not of the variable's type | See **Child sessions** below. Refused at the `<param>` as `scxml/static-datamodel-rule` (a value of the wrong type as the expression's own refusal) rather than accepted and never delivered |
@@ -3251,7 +3252,38 @@ empty, or that an operation fails to compute, names no event, which is the
 argument error (`error.execution`, nothing sent). It takes no `event` beside it,
 and needs no script engine
 (`scenarios/static_send_event.json`, on the six generated backends and the
-Interpreter, where C11 holds the name in a string variable). A `<cancel>`'s
+Interpreter, where C11 holds the name in a string variable). A `<send>`'s
+`targetexpr` is **a computed target**: a string computed from the machine's
+fields when the send runs, chosen among the routes the document declares as
+`sce:targets="#_internal #_parent"` (docs/adr/0005, decision 3), because a machine
+with no script engine has nothing to learn from when the send runs where it can
+send. The value is compared with the entries when the send runs, and the send goes
+by the entry that matches; a value in none of them is `error.communication` and
+nothing is sent — whether or not the route is one the machine could send by, since
+the declaration is what the send was held to. An entry is a target of the SCXML Event
+I/O Processor as a written `target` is — `#_internal`, `#_parent`, `#_scxml_<session>`,
+`#_<invokeid>` or `sce://scxml/<session>`; a Mesh peer (`#name`) is a service a
+backend gains with its own runtime (decision 5) and is refused in the set, and so is
+anything the processor cannot address (§scxml-6.2.4). Four things are refused where
+the attribute is written, as `sce:candidates` is: an entry that names no route, one
+named twice (`validation/incompatible-attributes`), none at all
+(`validation/empty-value`), and `sce:targets` on a send with no `targetexpr` or whose
+`type` is another processor's. A `targetexpr` that declares no set is refused at the
+attribute (`scxml/static-datamodel-rule`: there is no finite list to lower), and so
+is one beside a `target`, since the element takes one. The attribute is read under
+every data model, as `sce:candidates` is, and held to only under `sce-static`: under any
+other the engine routes whatever the expression computes, so the declaration is an
+audit of the routes and the document an Interpreter lowering writes, which keeps it, is
+the document it was. The expression costs no script engine,
+and a delayed send whose declared routes include a `#_` location other than
+`#_internal` is a send waiting on another session for the saved state's purposes.
+The Interpreter runs the document's own `<send>`, so its lowering rewrites the
+attribute to `SceStatic.route(<expression>, [<entries>])`: a value that is none of
+the entries is the empty target, which its engine answers as it answers any address
+nobody is at (`scenarios/static_send_target.json`, `fire` declaring `#_internal` and
+`#_parent` and `narrow` declaring `#_parent` alone; the lowering is refused by name,
+`a <send> with a targetexpr has no <language> lowering yet`, on a language that has
+not written it). `typeexpr` is still refused as above. A `<cancel>`'s
 `sendidexpr` is the same for the id of the delayed send it removes: a string
 computed from the machine's fields when the cancel runs, so the one `<cancel>`
 removes another send once the id it reads has changed. An id no send holds, the
@@ -4671,7 +4703,9 @@ generated WITHOUT `save` /
 `restore`, so a host finds out when it compiles rather than when a restore
 drops part of the state. A `delayexpr` counts as a delay, since the time it
 computes is known only when the send runs and may be one that waits; the target
-is read as written, since `sce-static` refuses `targetexpr`. A send to another
+is read as written, or, for a `targetexpr`, as the routes the document declares
+as `sce:targets` — one of them a `#_` location other than `#_internal` is a send
+that may wait on another session. A send to another
 session that is not delayed leaves nothing waiting, and does not take the API
 away.
 `sce-build/tests/a_machine_waiting_on_another_session_has_no_save_api.rs`

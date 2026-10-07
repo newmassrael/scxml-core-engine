@@ -1,0 +1,29 @@
+# Mutation cases for "a computed target a `sce-static` document declares the routes
+# of costs it no script engine" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A computed
+# target"; docs/adr/0005, decision 3).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_declared_computed_target_costs_a_static_document_no_engine.cases`.
+#
+# A `<send targetexpr>` is evaluated at run time under a script data model, and costs
+# the machine its engine. Under `datamodel="sce-static"` it is lowered to the string
+# it computes and held to the routes the document declares as `sce:targets`, so the
+# same attribute costs nothing. The analyzer's own unit test holds both halves: the
+# static document has no `SendDynamicAttr` cause, and the ECMAScript one has. The
+# mutant takes the first away and the machine is then one that needs an engine it was
+# declared to have none of:
+#
+#   a computed target of a static document is counted as evaluated at run time.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --lib script_engine_analyzer::tests::a_declared_computed_target_costs_a_static_document_no_engine
+mutation_targets sce-build/src/script_engine_analyzer.rs
+mutation_oracles sce-build/src/script_engine_analyzer.rs
+
+mutation_case "a computed target of a static document costs a script engine" <<'PY'
+edit("sce-build/src/script_engine_analyzer.rs",
+     "        || (!static_model && !action.targetexpr.is_empty())\n",
+     "        || !action.targetexpr.is_empty()\n")
+PY

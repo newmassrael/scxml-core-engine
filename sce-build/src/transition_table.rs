@@ -344,7 +344,8 @@ pub(crate) fn what_the_state_is(state: &crate::model::State) -> String {
 /// and its `node_path` says which branch or body it sits in.
 pub(crate) fn what_the_action_does(action: &crate::model::Action) -> String {
     let mut parts = vec![action.action_type.clone()];
-    let fields: [(&str, &str); 19] = [
+    let targets = action.targets.join(" ");
+    let fields: [(&str, &str); 20] = [
         ("name", action.native_action_name.as_str()),
         ("event", action.event.as_str()),
         ("eventexpr", action.eventexpr.as_str()),
@@ -353,6 +354,7 @@ pub(crate) fn what_the_action_does(action: &crate::model::Action) -> String {
         ("sendid", action.sendid.as_str()),
         ("sendidexpr", action.sendidexpr.as_str()),
         ("targetexpr", action.targetexpr.as_str()),
+        ("targets", targets.as_str()),
         ("type", action.send_type.as_str()),
         ("typeexpr", action.typeexpr.as_str()),
         ("namelist", action.namelist.as_str()),
