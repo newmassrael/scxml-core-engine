@@ -728,11 +728,13 @@ a profile that reads the whole disk (`:root`), so a command that a specification
 into could read whatever the person's account can. Codex refuses a sandbox mode beside a default
 profile, so a run is given no `-s`.
 
-What is checked, and what is not. `codex_live` asks Codex which file system it derived from the
-settings (`codex debug prompt-input`, no login and no model) and holds that to the profile: Codex
-accepts a key it does not know without a word, and a misspelt `filesystem` leaves a policy that
-nobody chose (tried: the test fails). Codex does not show the network setting, so that one is not
-read back. Codex's sandbox (bubblewrap) starts only where the operating system lets the user create
+What is checked, and what is not. `codex_live` asks Codex what it derived from the settings, with
+no login and no model, and holds that to the profile: the file system from `codex debug
+prompt-input`, and the network setting from the sandbox policy in the answer to a session's start
+(`codex app-server`, `networkAccess`). Codex accepts a key it does not know without a word, and a
+misspelt `filesystem` leaves a policy that nobody chose (tried: the test fails); the network key
+does change the value it reports (tried with `enabled=true`). That a connection is refused was not
+tried. Codex's sandbox (bubblewrap) starts only where the operating system lets the user create
 namespaces; on the Ubuntu computers this was verified on it does not (`bwrap: loopback: Failed
 RTM_NEWADDR`), so a command the model asks for does not run at all (tried with `-s read-only`: the
 model reports that error), and no run has shown the profile stopping a command's read. Where the
@@ -742,7 +744,10 @@ a new version, is verified again.
 The reviewed metadata/UI features introduce no additional authoring server or executable tool.
 Only the listed read/check tools receive unattended approval overrides, using Codex's
 [per-tool MCP configuration](https://learn.chatgpt.com/docs/config-file/config-reference).
-The authoring server additionally enforces `SCE_AUTHOR_WORK`: it advertises only those tools,
+The authoring server additionally enforces `SCE_AUTHOR_WORK`, which every client that writes a draft
+(Claude Code, Codex and a model server of the person's own) starts it with, the work the run is for
+(`client_run::scoped_to`); a server not told it answers for every work of the folder, and a
+specification could make a client read a file through it. It advertises only those tools,
 refuses mutations and reads of other works, and accepts draft documents and their imports only
 as inline text under plain file names. Every document is read before it reaches the product,
 whatever its file is called, and is refused when an attribute that names a file (`src`, `href`,

@@ -36,7 +36,8 @@ use serde_json::{json, Value};
 
 use crate::claude_code::AuthorServer;
 use crate::client_run::{
-    blank_job, draft_from, prompt, span_words, tail, Scratch, AUTHOR_TOOLS, SYSTEM_PROMPT,
+    blank_job, draft_from, prompt, scoped_to, span_words, tail, Scratch, AUTHOR_TOOLS,
+    SYSTEM_PROMPT, WORK_SCOPE,
 };
 use crate::http_client::{self, Endpoint, HttpError, Request};
 use crate::mcp_client::{McpClient, McpError, Tool};
@@ -86,7 +87,7 @@ fn tools_words(names: &[&str]) -> String {
 /// is the name of.
 fn told() -> String {
     format!(
-        "{SYSTEM_PROMPT}\n{}\n{ANSWER_FORM}\n{}\n{}\n{REPAIRS}\n{}\n{SCHEMA_ECHO}\n{}",
+        "{SYSTEM_PROMPT}\n{}\n{ANSWER_FORM}\n{}\n{}\n{REPAIRS}\n{}\n{SCHEMA_ECHO}\n{}\n{WORK_SCOPE}",
         tools_words(&AUTHOR_TOOLS),
         prompt(&blank_job()),
         AUTHOR_TOOLS.join(","),
@@ -446,7 +447,8 @@ impl Generator for Local {
         let deadline = Instant::now() + self.config.timeout;
         let scratch = Scratch::new("sce-local")
             .map_err(|e| GenerateError::Failed(format!("a folder for the run: {e}")))?;
-        let mut mcp = McpClient::start(&self.author, scratch.path(), deadline, cancel)
+        let author = scoped_to(&self.author, job.work.as_str());
+        let mut mcp = McpClient::start(&author, scratch.path(), deadline, cancel)
             .map_err(|e| self.mcp_failure(e))?;
         let tools = self.offered(&mut mcp, deadline, cancel)?;
         let offered = Value::Array(tools.iter().map(as_openai_tool).collect());

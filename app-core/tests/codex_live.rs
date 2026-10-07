@@ -15,10 +15,11 @@
 mod common;
 
 use std::fs;
+use std::io::{BufRead, BufReader, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::sync::Arc;
+use std::process::{Command, Stdio};
+use std::sync::{mpsc, Arc};
 use std::time::Duration;
 
 use sce_app_core::claude_code::AuthorServer;
@@ -55,13 +56,19 @@ fn an_imported_specification_cannot_grant_extra_tools() {
 /// What a command the client runs may reach is read back from Codex and not from our arguments:
 /// a key it does not know is accepted without a word (`--strict-config` says nothing of a profile's
 /// keys), so a misspelt one would leave a policy that nobody chose. It needs the program and no
-/// login, no model and no money. The network setting is not among what Codex shows.
+/// login, no model and no money. The file system is what `debug prompt-input` shows of the
+/// session, and the network setting is what the session's own answer says (`app-server`). That the
+/// network is closed is what Codex says it is, and not a connection that was tried.
 #[test]
 #[ignore = "runs real Codex, without a login: it is only asked what it derived"]
 fn the_policy_codex_derives_from_a_run_reads_only_the_minimum_and_its_folder() {
-    let binary = std::env::var_os("SCE_CODEX")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("codex"));
+    // Found the way the application finds it: the program `SCE_CODEX` names, or else the first on
+    // the search path. A name that is not a path cannot be resolved by the file system.
+    let binary = sce_app_core::codex::locate(
+        std::env::var_os("SCE_CODEX").map(PathBuf::from).as_deref(),
+        &sce_app_core::claude_code::Search::from_environment(),
+    )
+    .expect("a Codex to ask: put it on the search path or name it in SCE_CODEX");
     let root = common::scratch("codex-policy");
     let work = fs::canonicalize({
         let work = root.join("work");
@@ -147,6 +154,68 @@ fn the_policy_codex_derives_from_a_run_reads_only_the_minimum_and_its_folder() {
             path.display()
         );
     }
+    assert!(
+        !network_access_of(&binary, &work, &home),
+        "Codex says a command may use the network"
+    );
+}
+
+/// What Codex says of the network for a session it starts with the run's settings: the legacy
+/// sandbox policy in its answer to `thread/start`, which is how its own clients read it.
+fn network_access_of(binary: &Path, work: &Path, home: &Path) -> bool {
+    let mut command = Command::new(binary);
+    command
+        .arg("app-server")
+        .args(["-c", "project_doc_max_bytes=0"]);
+    for setting in sce_app_core::codex::permission_settings() {
+        command.args(["-c", &setting]);
+    }
+    let mut child = command
+        .current_dir(work)
+        .env("CODEX_HOME", home)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("Codex's app-server must start");
+    let mut input = child.stdin.take().unwrap();
+    let output = child.stdout.take().unwrap();
+    let (lines_in, lines) = mpsc::channel();
+    std::thread::spawn(move || {
+        for line in BufReader::new(output).lines().map_while(Result::ok) {
+            if lines_in.send(line).is_err() {
+                break;
+            }
+        }
+    });
+    let mut send = |message: Value| {
+        writeln!(input, "{message}").unwrap();
+        input.flush().unwrap();
+    };
+    // The answer to `id`; a request Codex makes of us carries a method and is not an answer.
+    let answer_to = |id: u64| -> Value {
+        loop {
+            let line = lines
+                .recv_timeout(Duration::from_secs(60))
+                .expect("Codex's app-server answers");
+            let message: Value = serde_json::from_str(&line).expect("a JSON message");
+            if message["id"] == id && message.get("method").is_none() {
+                return message;
+            }
+        }
+    };
+    send(json!({"id": 1, "method": "initialize",
+                "params": {"clientInfo": {"name": "sce-policy-test", "version": "0"}}}));
+    answer_to(1);
+    send(json!({"method": "initialized"}));
+    send(json!({"id": 2, "method": "thread/start",
+                "params": {"cwd": work, "ephemeral": true}}));
+    let started = answer_to(2);
+    let _ = child.kill();
+    let _ = child.wait();
+    started["result"]["sandbox"]["networkAccess"]
+        .as_bool()
+        .unwrap_or_else(|| panic!("Codex did not say the network setting: {started}"))
 }
 
 fn run(attack: bool) {

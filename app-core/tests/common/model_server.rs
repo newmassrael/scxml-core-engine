@@ -205,6 +205,7 @@ pub fn authoring_server(folder: &Path, tools: &[&str]) -> AuthorServer {
         "#!/bin/sh\n\
          [ \"$1\" = \"--version\" ] && exit 0\n\
          [ \"$1\" = \"--check\" ] && exit 0\n\
+         printf '%s\\n' \"${{SCE_AUTHOR_WORK-unset}}\" > '{folder}'/scope\n\
          tool_text() {{\n\
            if [ -f '{folder}'/answer.$1.json ]; then cat '{folder}'/answer.$1.json; else printf '\"ok:%s\"' \"$1\"; fi\n\
          }}\n\
@@ -273,6 +274,15 @@ pub fn tool_gives(folder: &Path, name: &str, answer: &Value) {
 fn put_answer(folder: &Path, file: &str, answer: &Value) {
     let literal = serde_json::to_string(&answer.to_string()).unwrap();
     std::fs::write(folder.join(file), literal).unwrap();
+}
+
+/// The work the stand-in was told it is for (`SCE_AUTHOR_WORK`), or `unset` when it was told none.
+/// Written when it started, so it is there after a run.
+pub fn scope_of(folder: &Path) -> String {
+    std::fs::read_to_string(folder.join("scope"))
+        .expect("the stand-in was started")
+        .trim()
+        .to_string()
 }
 
 /// What the authoring server was called with, one request to a line.

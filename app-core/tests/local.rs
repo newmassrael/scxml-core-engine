@@ -32,7 +32,7 @@ use serde_json::{json, Value};
 
 use common::model_server::{
     authoring_server, called, calls, chat_server, draft, requirement_set_gives,
-    requirement_set_gives_at, says, tool_gives, ChatServer, Script,
+    requirement_set_gives_at, says, scope_of, tool_gives, ChatServer, Script,
 };
 use common::scratch;
 
@@ -625,6 +625,35 @@ fn an_answer_that_is_not_a_chat_completion_is_said_not_to_be() {
         panic!("expected a failure, got {refused:?}");
     };
     assert!(said.contains("not JSON"), "{said}");
+}
+
+#[test]
+fn the_authoring_server_is_told_which_work_the_run_is_for() {
+    let rig = Rig::new("local-scope", vec![says(&draft("<scxml/>"))]);
+
+    rig.run().unwrap();
+
+    // Without it the server answers for every work of the folder, and a specification that names
+    // another work in a call is read by the model.
+    assert_eq!(scope_of(&rig.folder), "door-lock");
+}
+
+#[test]
+fn a_work_the_host_named_for_the_server_is_not_the_work_the_run_is_for() {
+    let rig = Rig::new("local-scope-replaced", vec![says(&draft("<scxml/>"))]);
+    let mut author = authoring_server(&rig.folder, &AUTHOR_TOOLS);
+    author
+        .env
+        .push(("SCE_AUTHOR_WORK".to_string(), "another-work".to_string()));
+    let local = Local::new(
+        Endpoint::parse(&rig.server.address).unwrap(),
+        author,
+        LocalConfig::for_model("qwen-test"),
+    );
+
+    local.generate(&job(), &Cancel::new()).unwrap();
+
+    assert_eq!(scope_of(&rig.folder), "door-lock");
 }
 
 #[test]

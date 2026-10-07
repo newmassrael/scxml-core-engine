@@ -133,6 +133,41 @@ fn generate(client: &ClaudeCode, job: &Job) -> Result<sce_app_core::runner::Draf
     client.generate(job, &Cancel::new())
 }
 
+/// The environment the client is told to start the authoring server with.
+fn server_env(fake: &Fake) -> Value {
+    let config: Value = serde_json::from_str(&fake.read("mcp.json")).unwrap();
+    config["mcpServers"]["sce-author"]["env"].clone()
+}
+
+#[test]
+fn the_authoring_server_is_told_which_work_the_run_is_for() {
+    let fake = Fake::answering("claude-scope", &answered(single("<scxml/>")));
+
+    generate(&client(&fake), &job()).unwrap();
+
+    // Without it the server answers for every work of the folder: a specification that names
+    // another work in a call is read by the client, and the file-name check on what it writes and
+    // the folder the generator is held to are off.
+    let env = server_env(&fake);
+    assert_eq!(env["SCE_AUTHOR_WORK"], "door-lock-3f2a1b9c");
+    // What the host gave the server is still there.
+    assert_eq!(env["SCE_WORKS_DIR"], "/home/owner/works");
+}
+
+#[test]
+fn a_work_the_host_named_for_the_server_is_not_the_work_the_run_is_for() {
+    let fake = Fake::answering("claude-scope-replaced", &answered(single("<scxml/>")));
+    let mut named = author();
+    named
+        .env
+        .push(("SCE_AUTHOR_WORK".to_string(), "another-work".to_string()));
+    let client = ClaudeCode::new(fake.binary.clone(), named, ClaudeCodeConfig::default());
+
+    generate(&client, &job()).unwrap();
+
+    assert_eq!(server_env(&fake)["SCE_AUTHOR_WORK"], "door-lock-3f2a1b9c");
+}
+
 #[test]
 fn the_client_is_started_with_only_the_tools_the_task_needs() {
     let fake = Fake::answering("claude-args", &answered(single("<scxml/>")));
@@ -234,7 +269,11 @@ fn the_author_server_is_the_one_the_host_names_and_the_only_one() {
         json!({"mcpServers": {"sce-author": {
             "command": "/opt/sce/bin/sce-author-mcp",
             "args": ["--stdio"],
-            "env": {"SCE_WORK": "/opt/sce/bin/sce-work", "SCE_WORKS_DIR": "/home/owner/works"},
+            "env": {
+                "SCE_WORK": "/opt/sce/bin/sce-work",
+                "SCE_WORKS_DIR": "/home/owner/works",
+                "SCE_AUTHOR_WORK": "door-lock-3f2a1b9c",
+            },
         }}})
     );
     let given = fake.value_of("--mcp-config").unwrap();

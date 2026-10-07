@@ -11,7 +11,9 @@
 //!   the work it was started for and check what it writes, and it cannot save to any work, take
 //!   or finish a request, or record an acceptance. The application saves what it answers. A
 //!   specification is text the owner may have pasted from anywhere, and a client that has read
-//!   it should not be one that can be talked into writing to the owner's other work;
+//!   it should not be one that can be talked into writing to the owner's other work. The server
+//!   is also told which work the run is for ([`scoped_to`]), so that what it is allowed to read
+//!   it reads of that work alone, and no document it is handed names a file;
 //! - **nothing from the machine's settings** (`--setting-sources ""`, `--strict-mcp-config`,
 //!   `--disable-slash-commands`): no hook, no `CLAUDE.md`, no other server;
 //! - **an answer it must give in one form** (`--json-schema`): the documents of the model and the
@@ -32,8 +34,8 @@ use serde_json::{json, Value};
 use crate::auth_policy::Observed;
 use crate::client_find::find_programs;
 use crate::client_run::{
-    blank_job, capture, draft_from, prompt, schema, span_words, supervise, tail, Ended, Scratch,
-    SERVER, SYSTEM_PROMPT,
+    blank_job, capture, draft_from, prompt, schema, scoped_to, span_words, supervise, tail, Ended,
+    Scratch, SERVER, SYSTEM_PROMPT, WORK_SCOPE,
 };
 use crate::revision::Revision;
 use crate::runner::{Cancel, Draft, GenerateError, Generator, Job};
@@ -182,12 +184,12 @@ impl Generator for ClaudeCode {
     }
 
     /// Named by what the client is told and allowed: the system prompt, the wording of the
-    /// task (as it reads for a work with nothing in it), the form it must answer in, and the
-    /// tools it may use. A change to any of them is another version, with no one to remember
-    /// to say so.
+    /// task (as it reads for a work with nothing in it), the form it must answer in, the
+    /// tools it may use, and that the server it reaches is held to the work it is for. A change
+    /// to any of them is another version, with no one to remember to say so.
     fn instructions(&self) -> Option<String> {
         let material = format!(
-            "{SYSTEM_PROMPT}\n{}\n{}\n{}",
+            "{SYSTEM_PROMPT}\n{}\n{}\n{}\n{WORK_SCOPE}",
             prompt(&blank_job()),
             schema(),
             ALLOWED_TOOLS.join(",")
@@ -201,7 +203,7 @@ impl Generator for ClaudeCode {
             .map_err(|e| GenerateError::Failed(format!("a folder for the client: {e}")))?;
         fs::write(
             scratch.path().join(MCP_FILE),
-            mcp_config(&self.author).to_string(),
+            mcp_config(&scoped_to(&self.author, job.work.as_str())).to_string(),
         )
         .map_err(|e| GenerateError::Failed(format!("the client's server list: {e}")))?;
 

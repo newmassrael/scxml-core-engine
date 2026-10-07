@@ -21,6 +21,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 
+use crate::claude_code::AuthorServer;
 use crate::document_files::refuse_file_access;
 use crate::model_set::{Document, ModelFiles};
 use crate::requirements::Requirements;
@@ -49,6 +50,22 @@ pub const AUTHOR_TOOLS: [&str; 9] = [
     "scxml_requirements",
     "render_scxml_pseudocode",
 ];
+
+/// The variable that tells the authoring server which work a run is for.
+pub(crate) const WORK_SCOPE: &str = "SCE_AUTHOR_WORK";
+
+/// The authoring server a run reaches: the one the host knows, told which work the run is for.
+/// Told, the server advertises only [`AUTHOR_TOOLS`], refuses a read of another work, reads a
+/// document only as text under a plain name, and holds the generator to its working folder. Not
+/// told, it answers for every work of the folder, so a specification that names another work in a
+/// call is read by the client. A work the host named for the server is replaced: the work is the
+/// run's to say, and not a setting that was there before it.
+pub(crate) fn scoped_to(author: &AuthorServer, work: &str) -> AuthorServer {
+    let mut scoped = author.clone();
+    scoped.env.retain(|(name, _)| name != WORK_SCOPE);
+    scoped.env.push((WORK_SCOPE.to_string(), work.to_string()));
+    scoped
+}
 
 /// The documents of the model and the requirement list, as the application keeps them.
 pub(crate) fn draft_from(answer: &Value) -> Result<Draft, String> {

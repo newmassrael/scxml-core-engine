@@ -39,8 +39,8 @@ use crate::auth_policy::Observed;
 use crate::claude_code::AuthorServer;
 use crate::client_find::{find_programs, Candidate, Search};
 use crate::client_run::{
-    blank_job, capture, draft_from, prompt, schema, span_words, supervise, tail, Ended, Scratch,
-    SERVER, SYSTEM_PROMPT,
+    blank_job, capture, draft_from, prompt, schema, scoped_to, span_words, supervise, tail, Ended,
+    Scratch, SERVER, SYSTEM_PROMPT,
 };
 use crate::codex_environment::environment_for;
 use crate::codex_support::{enabled_features, Support};
@@ -144,11 +144,8 @@ impl Codex {
         last: &Path,
         work: &str,
     ) -> Vec<String> {
-        let mut author = self.author.clone();
-        author.env.retain(|(name, _)| name != "SCE_AUTHOR_WORK");
-        author.env.push(("SCE_AUTHOR_WORK".into(), work.into()));
         exec_arguments(
-            &author,
+            &scoped_to(&self.author, work),
             self.support.disabled_features(),
             self.config.model.as_deref(),
             scratch,
@@ -235,10 +232,11 @@ const PERMISSIONS: &str = "sce_run";
 /// sandbox is told instead. Codex refuses a sandbox mode beside a default profile, so the run is
 /// given no `-s`.
 ///
-/// What a person can read back is the file system Codex derived from these
-/// (`codex debug prompt-input`, held by `app-core/tests/codex_live.rs`). The network setting is
-/// not shown there, and the sandbox starts only where the operating system lets the user create
-/// namespaces (`bwrap`): where it cannot, no command runs at all.
+/// What a person can read back is what Codex derived from these, held by
+/// `app-core/tests/codex_live.rs`: the file system from `codex debug prompt-input`, and the
+/// network setting from the answer to a session's start (`app-server`). That a connection is
+/// refused is not among what has been tried. The sandbox starts only where the operating system
+/// lets the user create namespaces (`bwrap`): where it cannot, no command runs at all.
 pub fn permission_settings() -> Vec<String> {
     vec![
         format!("default_permissions={}", toml_string(PERMISSIONS)),
@@ -507,13 +505,10 @@ fn instruction_material(support: &Support) -> String {
     let author = AuthorServer {
         command: PathBuf::from("<launcher>"),
         args: vec!["<argument>".to_string()],
-        env: vec![
-            ("<name>".to_string(), "<value>".to_string()),
-            ("SCE_AUTHOR_WORK".into(), "<work>".into()),
-        ],
+        env: vec![("<name>".to_string(), "<value>".to_string())],
     };
     let arguments = exec_arguments(
-        &author,
+        &scoped_to(&author, "<work>"),
         support.disabled_features(),
         None,
         Path::new("<scratch>"),
