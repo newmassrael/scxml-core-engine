@@ -76,8 +76,8 @@ PY
 
 mutation_case "a child begins with none of its variables at their declared values" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     "    (void){{ csym_prefix }}{{ model.name }}_init_construct(sm{% if model.needs_event_scheduler %}, clock{% endif %}{% if model.needs_script_engine %}, NULL{% endif %}{% if model.host_processor_types %}, NULL{% endif %}{% if model.host_invoker_types %}, NULL{% endif %});\n{% if model.may_address_parent %}\n    /* W3C SCXML 6.4: the parent-routing fields are stamped before the entry",
-     "    memset(sm, 0, sizeof(*sm));\n    sm->is_running = true;\n{% if model.needs_event_scheduler %}\n    sm->clock = clock;\n{% endif %}\n{% if model.may_address_parent %}\n    /* W3C SCXML 6.4: the parent-routing fields are stamped before the entry")
+     "    (void){{ csym_prefix }}{{ model.name }}_init_construct(sm{% if model.needs_event_scheduler %}, clock{% endif %}{% if model.needs_script_engine %}, NULL{% endif %}{% if model.host_processor_types %}, NULL{% endif %}{% if model.host_invoker_types %}, NULL{% endif %});\n{% endif %}\n{% if model.may_address_parent %}\n    /* W3C SCXML 6.4: the parent-routing fields are stamped before the entry",
+     "    memset(sm, 0, sizeof(*sm));\n    sm->is_running = true;\n{% if model.needs_event_scheduler %}\n    sm->clock = clock;\n{% endif %}\n{% endif %}\n{% if model.may_address_parent %}\n    /* W3C SCXML 6.4: the parent-routing fields are stamped before the entry")
 PY
 
 mutation_case "a child that addresses its parent is not given the way to it" <<'PY'
