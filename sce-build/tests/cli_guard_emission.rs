@@ -549,8 +549,17 @@ fn every_guard_the_backends_emit_natively_has_a_value() {
                 });
             // The machine name only names the record classes it declares,
             // which no guard reads.
-            sce_build::forge::static_lowering::lower_kotlin(&mut model, "Sweep")
-                .unwrap_or_else(|e| panic!("{document}: Kotlin does not lower it: {e:?}"));
+            match sce_build::forge::static_lowering::lower_kotlin(&mut model, "Sweep") {
+                Ok(_) => {}
+                // A construct a backend has no spelling of yet is refused by name,
+                // and lands in one engine before the others (docs/adr/0005). The
+                // document is then never rendered, so it emits no guard to judge
+                // and the sweep goes on; any other failure is a defect.
+                Err(sce_build::forge::error::GenerateError::UnsupportedFeature {
+                    detail, ..
+                }) if detail.contains("no Kotlin lowering yet") => continue,
+                Err(e) => panic!("{document}: Kotlin does not lower it: {e:?}"),
+            }
             lowered.push(document.clone());
             model
         } else {
