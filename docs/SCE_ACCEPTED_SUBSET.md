@@ -3685,9 +3685,14 @@ A transition on an event whose payload carries a `bytes` field reads it into a `
 variable, into a record's field or into a whole record, held to the bound of the place
 it is written to (`scenarios/static_payload_bytes.json`,
 `StaticTarget::lowers_payload_bytes`), and compares it in a guard. The wire spells it as
-its byte-exact Latin-1 text. **Kotlin**, **Rust**, **Go** and **Python** hold it so far;
-**C++**, **C11** and the Interpreter's lowering refuse such a transition by name until each
-holds it. The
+its byte-exact Latin-1 text. **Kotlin**, **Rust**, **Go**, **Python** and **C++** hold it
+so far; **C11** and the Interpreter's lowering refuse such a transition by name until each
+holds it. A byte above 0x7F is one byte and the two bytes of its character in the text, and
+a character past U+00FF is refused whichever way the text spells it, an escape included.
+Measured 2026-10-07 by this scenario, the C++ payload lift had read the bytes of the UTF-8
+text as the bytes of the field and written them into a JSON string as they were; it now
+reads and writes the Latin-1 text through `SCE::Latin1Bytes`, which a typed host request
+shares, and reads a `\u` escape in a text field as the character it names. The
 bound is held where the bytes are written, as a string's is, and not where they are
 read: a payload longer than its field's `sce:max-size` that takes a route writing none of
 it is only compared (a Rust `no_std` machine, whose payload buffer is a fixed array of

@@ -3212,6 +3212,13 @@ impl StaticTarget for CppTarget {
     fn lowers_record_bytes(&self) -> bool {
         true
     }
+    // A payload's `std::vector<uint8_t>` field is read where the machine's own is, and
+    // held to the bound of the variable or the record's field it is written to. The
+    // inject seam takes the vector by value and the payload holds it by value, so what
+    // the machine keeps is never the host's own.
+    fn lowers_payload_bytes(&self) -> bool {
+        true
+    }
     fn assign(&self, target: &str, value: &str) -> String {
         format!("{target} = {value};")
     }

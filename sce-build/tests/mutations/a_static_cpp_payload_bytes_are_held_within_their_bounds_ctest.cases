@@ -1,0 +1,45 @@
+# Mutation cases for "the bytes a typed payload carries are held within the bound of the
+# place they are written to" under the C++ backend
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A byte string"; docs/adr/0005, decision 2).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_cpp_payload_bytes_are_held_within_their_bounds_ctest.cases`.
+#
+# `static_payload_bytes` reads the bytes of a `framed.taken` payload into a bytes
+# variable of four, into a record's field of eight and into a whole record, and compares
+# them in a guard; it expects a value past the bound to leave what it was written to as
+# it was and `errors` to count it, a byte above 0x7F to be one byte and not the two of
+# its character, and a payload that carries a character past U+00FF, which is no byte, to
+# be refused with nothing written. The mutants take one decision away each:
+#
+#   a record taken whole from a payload is not held to the bound of its bytes field;
+#   an assignment to a bytes variable is not held to its bound, whatever it is read from;
+#   the bytes of a payload are the bytes of its UTF-8 text.
+#
+# The text itself, each way it can be spelled, is held by `EventPayloadBytes`
+# (`a_cpp_payload_bytes_are_read_as_latin1_text_ctest.cases`).
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^static_datamodel_generated_cpp$'
+mutation_targets sce-build/src/forge/static_lowering.rs sce/include/common/EventPayloadLift.h
+mutation_oracles tests/integration/AStaticDatamodelRunsGeneratedCppTest.cpp sce-build/tests/fixtures/static_datamodel/scenarios/static_payload_bytes.json
+
+mutation_case "a record taken whole from a payload is not held to its bytes field's bound" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "            (SceType::Bytes, Some(bound)) => {\n                bounded = true;\n                let held = target.bounded_bytes(&read.text, bound);",
+     "            (SceType::Bytes, Some(bound)) if false => {\n                bounded = true;\n                let held = target.bounded_bytes(&read.text, bound);")
+PY
+
+mutation_case "an assignment to a bytes variable is not held to its bound" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "            } else if let Some(capacity) = rewrites.bytes.get(location) {",
+     "            } else if let Some(capacity) = rewrites.bytes.get(location).filter(|_| false) {")
+PY
+
+mutation_case "the bytes of a payload are the bytes of its UTF-8 text" <<'PY'
+edit("sce/include/common/EventPayloadLift.h",
+     "        refusal = Latin1Bytes::bytesOf(text, out);",
+     "        out.assign(text.begin(), text.end());\n        refusal.clear();")
+PY

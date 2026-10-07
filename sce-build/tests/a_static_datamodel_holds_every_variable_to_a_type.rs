@@ -581,7 +581,7 @@ const BYTES_HELD: &[BytesHeld] = &[
         name: "C++",
         variable: true,
         record: true,
-        payload: false,
+        payload: true,
     },
     BytesHeld {
         lang: "python",

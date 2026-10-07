@@ -46,6 +46,7 @@
 #include "static_invoke_string_sm.h"
 #include "static_list_sm.h"
 #include "static_overflow_sm.h"
+#include "static_payload_bytes_sm.h"
 #include "static_payload_enum_sm.h"
 #include "static_payload_relay_sm.h"
 #include "static_payload_sm.h"
@@ -528,6 +529,24 @@ static_assert(std::is_same_v<decltype(std::declval<const G::static_record_bytes:
 static_assert(std::is_same_v<decltype(std::declval<const G::static_record_bytes::static_record_bytes &>().frames()),
                              const std::vector<G::static_record_bytes::StaticRecordBytesFramedRecord> &>,
               "a published list of records is lent as a constant reference");
+
+// The bytes an event's payload carries are read into a bytes variable, into a record's
+// field and into a whole record, each held to its own bound: a value past it writes
+// nothing, raises `error.execution` and ends its block. The wire spells a byte string
+// as its byte-exact Latin-1 text, which a scenario states it as.
+TEST(AStaticDatamodelRunsGeneratedCppTest, ThePayloadOfAnEventCarriesBytesHeldWithinTheirBounds) {
+    using Machine = G::static_payload_bytes::static_payload_bytes;
+    Driver<Machine> driver({
+        {"last", [](const Machine &m) { return framedJson(m.last()); }},
+        {"held", [](const Machine &m) { return latin1Text(m.held()); }},
+        {"frames", [](const Machine &m) { return framedsJson(m.frames()); }},
+        {"size", [](const Machine &m) { return json(m.size()); }},
+        {"matches", [](const Machine &m) { return json(m.matches()); }},
+        {"misses", [](const Machine &m) { return json(m.misses()); }},
+        {"errors", [](const Machine &m) { return json(m.errors()); }},
+    });
+    replay("static_payload_bytes", driver);
+}
 
 // A record's string field is held to the UTF-8 bytes its schema declares: an
 // assignment past the bound — from a literal, a string variable or a payload —
