@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/merge/undo_field_plan.scxml — what undoing one batch of writes does to
+  each last-writer-wins field it wrote, in the way `git revert` does it: not by
+  deleting the batch, which a device that already holds it would never learn of,
+  but by planning NEW writes that put back what the batch overwrote.
+
+  `versions` is the host's history of the fields in question: every write inside
+  the window the host keeps, and the state the window opened on, each with the
+  stamp it was written under (field_version). `batch` names the batch to undo (not
+  0), and `floor` the arrival number at which the window opens: a batch whose
+  first write to a field arrived at or before it cannot be planned, because the
+  value it overwrote may have been folded away.
+
+  One step (undo_step) comes back for each field the batch wrote, in the order the
+  batch's earliest writes to the fields appear in `versions`. The field's WINNER is
+  its latest write by stamp. A clock issues no stamp twice (hlc_send), so no two
+  writes of one field tie; if two do, the first of them in `versions` wins.
+  The verdict is
+    3, outside the window: the first write arrived at or before `floor`;
+    2, already undone: the winner is an undo of this batch;
+    0, undo it: the winner is this batch's own write, so nothing has been written
+       since. `restoreRef` is the value the field held just before the batch's
+       FIRST write to it (0 if the batch created the field); the host writes it
+       back under a clock reading of its own;
+    1, conflict: someone else wrote the field after the batch. The step carries
+       the winner's stamp so the host can say who, and the field is left alone —
+       an undo that wrote through would erase what a person typed since.
+
+  Several writes of one field inside the batch make one step, planned from the
+  earliest: the batch is one unit, and what an in-between write of someone else
+  held was already overwritten by the batch's later writes.
+
+  A batch of more than 256 writes fails `precondition`, so no plan outgrows the
+  buffer it is returned in; a host splits it by entity.
+
+  versions {title@100 person v1, title@200 batch 5 v2}, batch 5, floor 0 →
+  [title: 0, restore v1] · a person writes title@250 → [title: 1, winner 250] ·
+  the host writes the undo title@300 (origin 2, reverts 5) → [title: 2] · the
+  batch's write arrived at or before `floor` → [title: 3] · the batch created the
+  field (nothing before it) → [title: 0, restore 0].
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="undo_field_plan" version="1.0">
+  <sce:import kind="event-schema" src="field_version.scxml" as="Version"/>
+  <sce:import kind="event-schema" src="undo_step.scxml" as="Step"/>
+  <sce:import kind="algorithm" src="field_version_compare.scxml" as="order"/>
+  <sce:signature>
+    <sce:param name="versions" type="list&lt;record:Version&gt;"/>
+    <sce:param name="batch" type="uint64"/>
+    <sce:param name="floor" type="uint64"/>
+    <sce:return type="list&lt;record:Step&gt;" returns-max-size="256" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:require cond="batch !== 0"/>
+    <sce:var name="members" type="uint32" init="0"/>
+    <sce:foreach item="m" in="versions">
+      <sce:if cond="m.batchId === batch">
+        <sce:assign target="members" expr="members + 1"/>
+      </sce:if>
+    </sce:foreach>
+    <sce:require cond="members &lt;= 256"/>
+    <sce:var name="out" type="list&lt;record:Step&gt;" capacity="256"/>
+    <sce:foreach item="v" in="versions">
+      <sce:if cond="v.batchId === batch">
+        <sce:var name="first" type="bool" init="true"/>
+        <sce:foreach item="u" in="versions">
+          <sce:if cond="u.batchId === batch &amp;&amp; u.entityId === v.entityId &amp;&amp; u.fieldId === v.fieldId">
+            <sce:var name="before" type="int32" init="order(u, v)"/>
+            <sce:if cond="before &lt; 0">
+              <sce:assign target="first" expr="false"/>
+            </sce:if>
+          </sce:if>
+        </sce:foreach>
+        <sce:if cond="first">
+          <sce:var name="hasWinner" type="bool" init="false"/>
+          <sce:var name="winner" type="record:Version">
+            <sce:set name="entityId" expr="0"/>
+            <sce:set name="fieldId" expr="0"/>
+            <sce:set name="wallTime" expr="0"/>
+            <sce:set name="counter" expr="0"/>
+            <sce:set name="nodeId" expr="0"/>
+            <sce:set name="arrival" expr="0"/>
+            <sce:set name="batchId" expr="0"/>
+            <sce:set name="origin" expr="0"/>
+            <sce:set name="revertsBatch" expr="0"/>
+            <sce:set name="valueRef" expr="0"/>
+          </sce:var>
+          <sce:var name="hasBase" type="bool" init="false"/>
+          <sce:var name="base" type="record:Version">
+            <sce:set name="entityId" expr="0"/>
+            <sce:set name="fieldId" expr="0"/>
+            <sce:set name="wallTime" expr="0"/>
+            <sce:set name="counter" expr="0"/>
+            <sce:set name="nodeId" expr="0"/>
+            <sce:set name="arrival" expr="0"/>
+            <sce:set name="batchId" expr="0"/>
+            <sce:set name="origin" expr="0"/>
+            <sce:set name="revertsBatch" expr="0"/>
+            <sce:set name="valueRef" expr="0"/>
+          </sce:var>
+          <sce:foreach item="w" in="versions">
+            <sce:if cond="w.entityId === v.entityId &amp;&amp; w.fieldId === v.fieldId">
+              <sce:var name="againstWinner" type="int32" init="0"/>
+              <sce:if cond="hasWinner">
+                <sce:assign target="againstWinner" expr="order(w, winner)"/>
+              </sce:if>
+              <sce:if cond="!hasWinner || againstWinner &gt; 0">
+                <sce:assign target="winner.wallTime" expr="w.wallTime"/>
+                <sce:assign target="winner.counter" expr="w.counter"/>
+                <sce:assign target="winner.nodeId" expr="w.nodeId"/>
+                <sce:assign target="winner.batchId" expr="w.batchId"/>
+                <sce:assign target="winner.origin" expr="w.origin"/>
+                <sce:assign target="winner.revertsBatch" expr="w.revertsBatch"/>
+                <sce:assign target="hasWinner" expr="true"/>
+              </sce:if>
+              <sce:var name="againstFirst" type="int32" init="order(w, v)"/>
+              <sce:if cond="againstFirst &lt; 0">
+                <sce:var name="againstBase" type="int32" init="0"/>
+                <sce:if cond="hasBase">
+                  <sce:assign target="againstBase" expr="order(w, base)"/>
+                </sce:if>
+                <sce:if cond="!hasBase || againstBase &gt; 0">
+                  <sce:assign target="base.wallTime" expr="w.wallTime"/>
+                  <sce:assign target="base.counter" expr="w.counter"/>
+                  <sce:assign target="base.nodeId" expr="w.nodeId"/>
+                  <sce:assign target="base.valueRef" expr="w.valueRef"/>
+                  <sce:assign target="hasBase" expr="true"/>
+                </sce:if>
+              </sce:if>
+            </sce:if>
+          </sce:foreach>
+          <sce:var name="code" type="uint8" init="1"/>
+          <sce:var name="restore" type="uint64" init="0"/>
+          <sce:if cond="v.arrival &lt;= floor">
+            <sce:assign target="code" expr="3"/>
+          <sce:else>
+            <sce:if cond="winner.origin === 2 &amp;&amp; winner.revertsBatch === batch">
+              <sce:assign target="code" expr="2"/>
+            <sce:else>
+              <sce:if cond="winner.batchId === batch">
+                <sce:assign target="code" expr="0"/>
+                <sce:if cond="hasBase">
+                  <sce:assign target="restore" expr="base.valueRef"/>
+                </sce:if>
+              </sce:if>
+            </sce:else>
+            </sce:if>
+          </sce:else>
+          </sce:if>
+          <sce:var name="step" type="record:Step">
+            <sce:set name="entityId" expr="v.entityId"/>
+            <sce:set name="fieldId" expr="v.fieldId"/>
+            <sce:set name="verdict" expr="code"/>
+            <sce:set name="restoreRef" expr="restore"/>
+            <sce:set name="winnerWallTime" expr="code === 1 ? winner.wallTime : 0"/>
+            <sce:set name="winnerCounter" expr="code === 1 ? winner.counter : 0"/>
+            <sce:set name="winnerNodeId" expr="code === 1 ? winner.nodeId : 0"/>
+          </sce:var>
+          <sce:append target="out" expr="step"/>
+        </sce:if>
+      </sce:if>
+    </sce:foreach>
+    <sce:return expr="out"/>
+  </sce:body>
+</scxml>

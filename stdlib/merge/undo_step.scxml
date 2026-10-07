@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/merge/undo_step.scxml — what undoing a batch does to one field, as
+  undo_field_plan answers it.
+
+  `verdict` is 0 to undo the write (restore `restoreRef`, the handle of the
+  value the field held before the batch, 0 for none), 1 a conflict (a later
+  write by someone else holds the field; `winnerWallTime`, `winnerCounter` and
+  `winnerNodeId` stamp it), 2 already undone, 3 outside the window the host
+  keeps history for. `restoreRef` and the winner's stamp are 0 where the
+  verdict does not use them.
+
+  The host stamps the undo with a new clock reading of its own; the plan holds
+  no time.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="undo_step"
+       sce:event-name="merge.undo_step">
+  <datamodel>
+    <data id="entityId" sce:type="uint64" sce:direction="in"/>
+    <data id="fieldId" sce:type="uint32" sce:direction="in"/>
+    <data id="verdict" sce:type="uint8" sce:direction="in"/>
+    <data id="restoreRef" sce:type="uint64" sce:direction="in"/>
+    <data id="winnerWallTime" sce:type="int64" sce:direction="in"/>
+    <data id="winnerCounter" sce:type="uint32" sce:direction="in"/>
+    <data id="winnerNodeId" sce:type="uint64" sce:direction="in"/>
+  </datamodel>
+</scxml>

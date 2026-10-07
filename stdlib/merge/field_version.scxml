@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/merge/field_version.scxml — one write to one field of one entity, as
+  undo_field_plan reads the history of a last-writer-wins field.
+
+  `wallTime`, `counter` and `nodeId` are the write's hybrid logical clock stamp
+  (hlc_timestamp), spelled out because a record's fields are fixed-width
+  scalars (SCE_FORGE.md §4.12), so a record does not hold a record. `arrival` is
+  the number the server gave the write when it took it in.
+
+  `batchId` groups the writes one agent run made, as a commit groups changes;
+  0 is no batch. `origin` says who wrote it: 0 a person, 1 an agent, 2 an
+  undo. An undo is an ordinary write that restores an earlier value, and
+  `revertsBatch` names the batch it undoes (0 otherwise).
+
+  `valueRef` is a handle to the value written, 0 for a field with no value. The
+  value itself stays with the host: a record cannot hold a string, and an undo
+  only has to say WHICH earlier write to restore, never what it said.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="field_version"
+       sce:event-name="merge.field_version">
+  <datamodel>
+    <data id="entityId" sce:type="uint64" sce:direction="in"/>
+    <data id="fieldId" sce:type="uint32" sce:direction="in"/>
+    <data id="wallTime" sce:type="int64" sce:direction="in"/>
+    <data id="counter" sce:type="uint32" sce:direction="in"/>
+    <data id="nodeId" sce:type="uint64" sce:direction="in"/>
+    <data id="arrival" sce:type="uint64" sce:direction="in"/>
+    <data id="batchId" sce:type="uint64" sce:direction="in"/>
+    <data id="origin" sce:type="uint8" sce:direction="in"/>
+    <data id="revertsBatch" sce:type="uint64" sce:direction="in"/>
+    <data id="valueRef" sce:type="uint64" sce:direction="in"/>
+  </datamodel>
+</scxml>

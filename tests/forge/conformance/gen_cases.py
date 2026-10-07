@@ -841,6 +841,83 @@ def orset_observed(live: list, element: int):
     return ("ok", [entry_ for entry_ in live if entry_["element"] == element])
 
 
+UNDO_PLAN_MAX = 256
+
+
+def field_version_compare(a: dict, b: dict):
+    """sce:std/merge/field_version_compare — the order of the two writes' clock
+    stamps and nothing else of them."""
+    ka, kb = hlc_key(a), hlc_key(b)
+    return ("ok", (ka > kb) - (ka < kb))
+
+
+def undo_field_plan(versions: list, batch: int, floor: int):
+    """sce:std/merge/undo_field_plan — one step for each field the batch wrote.
+
+    A step is planned from the batch's EARLIEST write to its field (by stamp). The
+    field's winner is its latest write by stamp, the first of them in list order if
+    two tie. 3: that earliest write arrived at or before `floor`. 2: the winner is
+    an undo of this batch. 0: the winner is a write of this batch, and the value to
+    restore is the one the latest write earlier than the earliest batch write held
+    (0 if there is none). 1: anyone else's write is the winner, and its stamp is
+    reported. Steps come in the order the earliest writes appear in `versions`."""
+    if batch == 0:
+        return ("fails", "precondition")
+    if sum(1 for write in versions if write["batchId"] == batch) > UNDO_PLAN_MAX:
+        return ("fails", "precondition")
+    steps = []
+    for first in versions:
+        if first["batchId"] != batch:
+            continue
+        field = [
+            write
+            for write in versions
+            if write["entityId"] == first["entityId"] and write["fieldId"] == first["fieldId"]
+        ]
+        if any(write["batchId"] == batch and hlc_key(write) < hlc_key(first) for write in field):
+            continue
+        winner = base = None
+        for write in field:
+            if winner is None or hlc_key(write) > hlc_key(winner):
+                winner = write
+            if hlc_key(write) < hlc_key(first) and (base is None or hlc_key(write) > hlc_key(base)):
+                base = write
+        if first["arrival"] <= floor:
+            verdict = 3
+        elif winner["origin"] == 2 and winner["revertsBatch"] == batch:
+            verdict = 2
+        elif winner["batchId"] == batch:
+            verdict = 0
+        else:
+            verdict = 1
+        steps.append(
+            {
+                "entityId": first["entityId"],
+                "fieldId": first["fieldId"],
+                "verdict": verdict,
+                "restoreRef": base["valueRef"] if verdict == 0 and base is not None else 0,
+                "winnerWallTime": winner["wallTime"] if verdict == 1 else 0,
+                "winnerCounter": winner["counter"] if verdict == 1 else 0,
+                "winnerNodeId": winner["nodeId"] if verdict == 1 else 0,
+            }
+        )
+    return ("ok", steps)
+
+
+def undo_set_readds(batch_tombstones: list, live: list):
+    """sce:std/merge/undo_set_readds — the elements the batch removed that the set
+    does not hold, each once, in the order the batch removed them."""
+    if len(batch_tombstones) > UNDO_PLAN_MAX:
+        return ("fails", "precondition")
+    held = {entry_["element"] for entry_ in live}
+    out = []
+    for tombstone in batch_tombstones:
+        element = tombstone["element"]
+        if element not in held and element not in out:
+            out.append(element)
+    return ("ok", out)
+
+
 def dedup_admit(window: list, ident: dict, capacity: int):
     """sce:std/mesh/dedup_admit — the window with the id appended, keeping the last
     `capacity`; an id already held leaves it unchanged."""
@@ -1767,6 +1844,148 @@ def element_args(rng: SplitMix64):
     return [live, element]
 
 
+UNDO_BATCHES = [1, 2, 5, 2**32, 2**63, U64_MAX - 1, U64_MAX]
+UNDO_ENTITIES = [0, 1, 2, 7, 2**32, U64_MAX]
+UNDO_FIELDS = [0, 1, 2, 3, U32_MAX]
+REF_EDGES = [0, 1, 2, 2**32, 2**63, U64_MAX]
+
+
+def field_write(entity, field, stamp, arrival, batch, origin, reverts, ref) -> dict:
+    return {
+        "entityId": entity,
+        "fieldId": field,
+        "wallTime": stamp["wallTime"],
+        "counter": stamp["counter"],
+        "nodeId": stamp["nodeId"],
+        "arrival": arrival,
+        "batchId": batch,
+        "origin": origin,
+        "revertsBatch": reverts,
+        "valueRef": ref,
+    }
+
+
+def history_for(rng: SplitMix64, batch: int):
+    """The writes of a few fields: stamps unique within a field (a clock issues
+    none twice), some of them the batch's, a person's or another batch's, some an
+    undo of the batch or of another, in an order that is sometimes shuffled."""
+    other = rng.pick([candidate for candidate in UNDO_BATCHES if candidate != batch])
+    fields = []
+    for _ in range(rng.between(1, 3)):
+        pair = (rng.pick(UNDO_ENTITIES), rng.pick(UNDO_FIELDS))
+        if pair not in fields:
+            fields.append(pair)
+    arrival = rng.between(1, 4) if rng.below(4) else rng.pick([0, 1, 2**32, 2**63, U64_MAX - 40])
+    versions = []
+    for entity, field in fields:
+        first = stamp_value(rng)
+        seen = {hlc_key(first)}
+        stamps = [first]
+        for _ in range(rng.pick([0, 1, 2, 2, 3, 4, 6])):
+            stamp = near_stamp(rng, first) if rng.below(3) else stamp_value(rng)
+            if hlc_key(stamp) not in seen:
+                seen.add(hlc_key(stamp))
+                stamps.append(stamp)
+        for stamp in stamps:
+            roll = rng.below(10)
+            owner = batch if roll < 4 else (0 if roll < 7 else other)
+            if rng.below(8) == 0:
+                origin, reverts = 2, (batch if rng.below(2) else other)
+            else:
+                origin, reverts = (1 if owner else rng.pick([0, 0, 1])), 0
+            ref = rng.pick(REF_EDGES) if rng.below(3) == 0 else rng.between(0, 9)
+            versions.append(field_write(entity, field, stamp, min(arrival, U64_MAX), owner, origin, reverts, ref))
+            arrival += 1
+    if rng.below(2):
+        versions = shuffled(rng, versions)
+    return versions
+
+
+def plan_args(rng: SplitMix64):
+    """A batch, a history of a few fields and a floor. Mostly an ordinary batch;
+    sometimes batch 0, one of exactly 256 writes, one of 257."""
+    if rng.below(120) == 0:
+        count = rng.pick([256, 257])
+        batch = rng.pick(UNDO_BATCHES)
+        versions = [
+            field_write(1, index, hlc(REALISTIC_WALL + index, 0, 1), index + 1, batch, 1, 0, index)
+            for index in range(count)
+        ]
+        return [versions, batch, rng.pick([0, 1, count + 1])]
+    batch = rng.pick(UNDO_BATCHES) if rng.below(40) else 0
+    versions = history_for(rng, batch if batch else UNDO_BATCHES[0])
+    if batch and rng.below(5):
+        # An undo of the batch already written to one of its fields, later than
+        # everything the field holds — the state an undo leaves behind.
+        written = [w for w in versions if w["batchId"] == batch]
+        if written:
+            pick = rng.pick(written)
+            field = [
+                w for w in versions
+                if w["entityId"] == pick["entityId"] and w["fieldId"] == pick["fieldId"]
+            ]
+            latest = max(field, key=hlc_key)
+            stamp = after_stamp(hlc(latest["wallTime"], latest["counter"], latest["nodeId"]))
+            if stamp is not None:
+                versions.append(
+                    field_write(
+                        pick["entityId"], pick["fieldId"], stamp,
+                        min(max(w["arrival"] for w in versions) + 1, U64_MAX),
+                        rng.pick([candidate for candidate in UNDO_BATCHES if candidate != batch]),
+                        2, batch, rng.between(0, 9),
+                    )
+                )
+                if rng.below(2):
+                    versions = shuffled(rng, versions)
+    arrivals = [write["arrival"] for write in versions]
+    kind = rng.below(10)
+    if kind < 4:
+        floor = 0
+    elif kind == 4:
+        floor = U64_MAX
+    elif kind < 8:
+        floor = rng.pick(arrivals)
+    else:
+        floor = clamp(rng.pick(arrivals) + rng.pick([-1, 1]), 0, U64_MAX)
+    return [versions, batch, floor]
+
+
+def readds_args(rng: SplitMix64):
+    """What a batch removed and what the set holds now — the same element often
+    both, an element removed twice, and sometimes 256 or 257 removals."""
+    if rng.below(100) == 0:
+        count = rng.pick([256, 257])
+        removed = [entry(index, REALISTIC_WALL + index, 0, 1) for index in range(count)]
+        return [removed, entry_sample(rng, entry_pool(rng))]
+    pool = entry_pool(rng)
+    removed = entry_sample(rng, pool)
+    if removed and rng.below(4) == 0:
+        removed = removed + [entry_near(rng, rng.pick(removed))]
+    return [removed, entry_sample(rng, pool)]
+
+
+def version_compare_args(rng: SplitMix64):
+    """Two writes whose stamps are the same, differ in a field or two, or are
+    unrelated; nothing else about them is related."""
+    first = stamp_value(rng)
+    kind = rng.below(10)
+    second = first if kind == 0 else (near_stamp(rng, first) if kind < 8 else stamp_value(rng))
+
+    def write(stamp):
+        return field_write(
+            rng.pick(UNDO_ENTITIES),
+            rng.pick(UNDO_FIELDS),
+            stamp,
+            rng.pick(REF_EDGES),
+            rng.pick(UNDO_BATCHES + [0]),
+            rng.pick([0, 1, 2]),
+            rng.pick(UNDO_BATCHES + [0]),
+            rng.pick(REF_EDGES),
+        )
+
+    return [write(first), write(second)]
+
+
 ID_EDGES = [0, 1, 2, 2**32, 2**63, U64_MAX - 1, U64_MAX]
 
 
@@ -2344,6 +2563,14 @@ FIXTURES = {
     "merkle_insert": (lambda args: merkle_insert(*args), merkle_insert_args, 400, 0xE110_003B),
     "merkle_prune": (lambda args: merkle_prune(*args), merkle_prune_args, 300, 0xE110_003C),
     "merkle_diff": (lambda args: answering(merkle_diff)(*args), merkle_diff_args, 500, 0xE110_003D),
+    "field_version_compare": (
+        lambda args: field_version_compare(*args),
+        version_compare_args,
+        250,
+        0xE110_003E,
+    ),
+    "undo_field_plan": (lambda args: undo_field_plan(*args), plan_args, 400, 0xE110_003F),
+    "undo_set_readds": (lambda args: undo_set_readds(*args), readds_args, 300, 0xE110_0040),
 }
 
 
@@ -2606,6 +2833,99 @@ def validate_laws() -> None:
         law.was_asked()
 
 
+def after_stamp(stamp: dict):
+    """A stamp later than `stamp`, or None where nothing is above it."""
+    if stamp["nodeId"] < U64_MAX:
+        return hlc(stamp["wallTime"], stamp["counter"], stamp["nodeId"] + 1)
+    if stamp["counter"] < U32_MAX:
+        return hlc(stamp["wallTime"], stamp["counter"] + 1, 0)
+    if stamp["wallTime"] < I64_MAX:
+        return hlc(stamp["wallTime"] + 1, 0, 0)
+    return None
+
+
+def validate_undo_laws() -> None:
+    """The claims `undo_field_plan` and `undo_set_readds` make about themselves
+    (see [`Law`]); the history comes from the same generator the cases do."""
+    rng = SplitMix64(0xE110_20D0)
+    again_law = Law("undo_field_plan: once its undoing writes are in, the batch reads as already undone")
+    order_law = Law("undo_field_plan does not depend on the order of the history")
+    fields_law = Law("undo_field_plan plans each field the batch wrote once and no other")
+    value_law = Law("undo_field_plan restores the value the field held before the batch's earliest write")
+    safe_law = Law("undo_field_plan never undoes a field someone else wrote after the batch")
+    readds_law = Law("undo_set_readds brings each removed element back once and none the set holds")
+
+    def by_field(steps):
+        return sorted(steps, key=lambda step: (step["entityId"], step["fieldId"]))
+
+    for _ in range(LAW_RUNS * 2):
+        batch = rng.pick(UNDO_BATCHES)
+        versions = history_for(rng, batch)
+        floor = rng.pick([0, 0, 0, U64_MAX])
+        plan = answer_of(undo_field_plan(versions, batch, floor))
+        if plan is None:
+            continue
+        inputs = [versions, batch, floor]
+
+        written = {(w["entityId"], w["fieldId"]) for w in versions if w["batchId"] == batch}
+        planned = [(step["entityId"], step["fieldId"]) for step in plan]
+        fields_law.holds(len(planned) == len(set(planned)) and set(planned) == written, inputs)
+
+        reordered = answer_of(undo_field_plan(shuffled(rng, versions), batch, floor))
+        order_law.holds(by_field(reordered) == by_field(plan), inputs)
+
+        applied = list(versions)
+        room = True
+        for step in plan:
+            field = [
+                w for w in versions
+                if w["entityId"] == step["entityId"] and w["fieldId"] == step["fieldId"]
+            ]
+            latest = max(field, key=hlc_key)
+            batch_writes = [w for w in field if w["batchId"] == batch]
+            earliest = min(batch_writes, key=hlc_key)
+            earlier = [w for w in field if hlc_key(w) < hlc_key(earliest)]
+            before = max(earlier, key=hlc_key)["valueRef"] if earlier else 0
+
+            if step["verdict"] == 0:
+                value_law.holds(step["restoreRef"] == before, [inputs, step])
+                safe_law.holds(latest["batchId"] == batch, [inputs, step])
+                stamp = after_stamp(hlc(latest["wallTime"], latest["counter"], latest["nodeId"]))
+                if stamp is None:
+                    room = False
+                else:
+                    applied.append(
+                        field_write(
+                            step["entityId"], step["fieldId"], stamp,
+                            min(max(w["arrival"] for w in versions) + 1, U64_MAX),
+                            batch + 1 if batch < U64_MAX else batch - 1,
+                            2, batch, step["restoreRef"],
+                        )
+                    )
+            elif step["verdict"] == 1:
+                safe_law.holds(latest["batchId"] != batch, [inputs, step])
+            else:
+                safe_law.holds(step["verdict"] in (2, 3), [inputs, step])
+        if room and any(step["verdict"] == 0 for step in plan):
+            again = answer_of(undo_field_plan(applied, batch, floor))
+            expected = [dict(step, verdict=2 if step["verdict"] == 0 else step["verdict"],
+                             restoreRef=0 if step["verdict"] == 0 else step["restoreRef"])
+                        for step in plan]
+            again_law.holds(by_field(again) == by_field(expected), [inputs, applied])
+
+    for _ in range(LAW_RUNS):
+        removed, live = readds_args(rng)
+        if len(removed) > UNDO_PLAN_MAX:
+            continue
+        back = answer_of(undo_set_readds(removed, live))
+        held = {entry_["element"] for entry_ in live}
+        wanted = {entry_["element"] for entry_ in removed} - held
+        readds_law.holds(len(back) == len(set(back)) and set(back) == wanted, [removed, live])
+
+    for law in (again_law, order_law, fields_law, value_law, safe_law, readds_law):
+        law.was_asked()
+
+
 def render(value) -> str:
     """A value the way the hand-written cases write it: a record as
     `{ "year": 1970, ... }`, a list as `[1, 2]`, a boolean as `true`, a number
@@ -2732,6 +3052,7 @@ def main(argv) -> int:
     check = "--check" in argv
     validate_calendar()
     validate_laws()
+    validate_undo_laws()
     original = REFERENCE.read_text(encoding="utf-8")
     json.loads(original)
     text, report = regenerate(original)

@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/merge/undo_set_readds.scxml — the elements an undo must add back to an
+  observed-remove set: those a batch removed (`batchTombstones`, the tombstones
+  the batch wrote) that the set does not hold now (`live`, orset_live of its adds
+  and tombstones).
+
+  Each element comes back once, in the order the batch removed it. The host adds
+  it under a NEW tag, so the add survives a remove another replica made of the
+  tag it had seen (add wins). An element the set holds again — someone added it
+  after the batch removed it — is left alone.
+
+  Undoing a batch's ADDS needs no document: orset_live(batchAdds, tombstones) is
+  the batch's adds that are still live, and the host tombstones those.
+
+  A batch of more than 256 removals fails `precondition`; a host splits it.
+
+  batchTombstones {7@(100,0,1), 7@(101,0,1), 9@(102,0,1)}, live {} → [7, 9] ·
+  live {7@(200,0,2)} → [9] · batchTombstones {} → [].
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="undo_set_readds" version="1.0">
+  <sce:import kind="event-schema" src="orset_entry.scxml" as="Entry"/>
+  <sce:signature>
+    <sce:param name="batchTombstones" type="list&lt;record:Entry&gt;"/>
+    <sce:param name="live" type="list&lt;record:Entry&gt;"/>
+    <sce:return type="list&lt;uint64&gt;" returns-max-size="256" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:require cond="len(batchTombstones) &lt;= 256"/>
+    <sce:var name="out" type="list&lt;uint64&gt;" capacity="256"/>
+    <sce:foreach item="t" in="batchTombstones">
+      <sce:var name="held" type="bool" init="false"/>
+      <sce:foreach item="l" in="live">
+        <sce:if cond="l.element === t.element">
+          <sce:assign target="held" expr="true"/>
+        </sce:if>
+      </sce:foreach>
+      <sce:var name="listed" type="bool" init="false"/>
+      <sce:var name="i" type="uint32" init="0"/>
+      <sce:while cond="i &lt; len(out)">
+        <sce:if cond="out[i] === t.element">
+          <sce:assign target="listed" expr="true"/>
+        </sce:if>
+        <sce:assign target="i" expr="i + 1"/>
+      </sce:while>
+      <sce:if cond="!held &amp;&amp; !listed">
+        <sce:append target="out" expr="t.element"/>
+      </sce:if>
+    </sce:foreach>
+    <sce:return expr="out"/>
+  </sce:body>
+</scxml>

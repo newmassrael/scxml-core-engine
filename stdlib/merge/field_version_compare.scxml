@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/merge/field_version_compare.scxml — which of two writes is later: the
+  order of their clock stamps (hlc_compare), -1 when `a` is earlier, 1 when it is
+  later, 0 for the same stamp.
+
+  A write carries its stamp as three fields beside others, so hlc_compare cannot
+  take it. The stamp is built here and compared by hlc_compare itself, once, for
+  every algorithm that has to order writes.
+
+  a 100/0/7, b 200/0/7 → -1 · a 100/1/7, b 100/0/9 → 1 · the same stamp → 0.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="field_version_compare" version="1.0">
+  <sce:import kind="event-schema" src="field_version.scxml" as="Version"/>
+  <sce:import kind="event-schema" src="hlc_timestamp.scxml" as="Hlc"/>
+  <sce:import kind="algorithm" src="hlc_compare.scxml" as="order"/>
+  <sce:signature>
+    <sce:param name="a" type="record:Version"/>
+    <sce:param name="b" type="record:Version"/>
+    <sce:return type="int32"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="stampA" type="record:Hlc">
+      <sce:set name="wallTime" expr="a.wallTime"/>
+      <sce:set name="counter" expr="a.counter"/>
+      <sce:set name="nodeId" expr="a.nodeId"/>
+    </sce:var>
+    <sce:var name="stampB" type="record:Hlc">
+      <sce:set name="wallTime" expr="b.wallTime"/>
+      <sce:set name="counter" expr="b.counter"/>
+      <sce:set name="nodeId" expr="b.nodeId"/>
+    </sce:var>
+    <sce:return expr="order(stampA, stampB)"/>
+  </sce:body>
+</scxml>
