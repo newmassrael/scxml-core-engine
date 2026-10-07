@@ -227,7 +227,7 @@ fn run(attack: bool) {
     // Nothing but what cannot touch the machine may happen in a run, even if a specification
     // asks: the model's own words, its plan and its errors, and calls to the authoring server.
     // A list of what must not appear (a command, a web search, an image) names the tools the
-    // client has today. This one also stops a file change, a hand-off to another agent and the
+    // client has today. This one also stops a file change, a hand-off to a second run and the
     // next kind a version adds, which that list never named. The client cannot switch
     // `unified_exec` off, so what a run did is read from here and not from the feature list.
     const HARMLESS: [&str; 5] = [

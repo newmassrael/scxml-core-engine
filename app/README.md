@@ -709,7 +709,7 @@ canary, write an unrelated file and use forbidden tools completed generation. Th
 actual MCP calls for source reading, kind selection, validation and requirement checking, core
 publication and pseudocode rendering. They also check the Workbench status response and assert
 that nothing happened in a run but the model's words, its plan, its errors and calls to the
-authoring server (so no command, web search, image, file change or hand-off to another agent),
+authoring server (so no command, web search, image, file change or hand-off to a second run),
 that the canary was not disclosed, the unrelated file was not written and the source was not
 changed. This checks integration and these attacks; the owner still reviews whether the
 generated behavior matches the specification.

@@ -84,6 +84,23 @@ fn repo_root() -> PathBuf {
 /// and for W3C's own `a user agent that can parse`.
 const NON_READER_PREFIXES: &[&str] = &["user-", "user_", "user ", "on-target "];
 
+/// Names another product gives its own things, which contain the term and cannot be spelled
+/// otherwise: each is blanked out of a line before the line is read, and the test fails when
+/// one is nowhere in the tree.
+///
+/// A name is not a sentence. A setting of another product's client is switched by its own name
+/// and an event of its output is told by its own, so a list that called one something else would
+/// not switch it or tell it. A path exemption would be wrong for these as it is for
+/// `NON_READER_PREFIXES`: `app-core/src/codex.rs` holds the one setting and the sentences about
+/// it, and this gate should keep reading the sentences. The token is exact (a longer one that
+/// merely begins with it is a different name) and lower-cased, because the line is read lower-cased.
+///
+/// - `agents.enabled`: the Codex setting that switches off its sub-agents, given to every run
+///   (`app-core/src/codex.rs`, `app-core/tests/codex.rs`).
+/// - `agent_message`: the kind of item Codex's JSON output tells a run's own words by
+///   (`app-core/tests/codex_live.rs`).
+const NON_READER_TOKENS: &[&str] = &["agents.enabled", "agent_message"];
+
 /// Path prefixes where the term is not SCE describing itself, each with
 /// the reason.
 ///
@@ -171,6 +188,30 @@ fn tracked_sources() -> Vec<PathBuf> {
         .collect()
 }
 
+/// A lower-cased line with the names another product gave its own things
+/// ([`NON_READER_TOKENS`]) blanked to as many spaces, so that what is left of the line is read
+/// where it was. A name is blanked as a whole word: one that is part of a longer name
+/// (`agent_messages`) is that name, and is read.
+fn blank_names(lower: &str) -> String {
+    let mut line = lower.to_string();
+    for token in NON_READER_TOKENS {
+        let mut from = 0usize;
+        while let Some(rel) = line[from..].find(token) {
+            let start = from + rel;
+            let end = start + token.len();
+            let bytes = line.as_bytes();
+            let joined = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+            let before_ok = start == 0 || !joined(bytes[start - 1]);
+            let after_ok = end >= bytes.len() || !joined(bytes[end]);
+            if before_ok && after_ok {
+                line.replace_range(start..end, &" ".repeat(token.len()));
+            }
+            from = end;
+        }
+    }
+    line
+}
+
 /// Case-insensitive whole-word search for the term, returning 1-based
 /// line numbers.
 ///
@@ -180,7 +221,7 @@ fn tracked_sources() -> Vec<PathBuf> {
 fn term_lines(body: &str) -> Vec<usize> {
     let mut hits = Vec::new();
     for (i, line) in body.lines().enumerate() {
-        let lower = line.to_ascii_lowercase();
+        let lower = blank_names(&line.to_ascii_lowercase());
         let bytes = lower.as_bytes();
         let mut from = 0usize;
         while let Some(rel) = lower[from..].find("agent") {
@@ -265,12 +306,40 @@ fn a_file_exemption_does_not_reach_its_siblings() {
     assert!(!exemption_covers("a/b/", "a/bc/fifth.rs"));
 }
 
+/// A name another product gave its own thing is not the term, and a sentence beside it is.
+///
+/// The case the exemption exists for is `"agents.enabled=false"` in a list of the settings a run
+/// is given, and the one it must not become is permission for the file around it.
+#[test]
+fn a_name_another_product_gave_its_own_thing_is_let_through_and_a_sentence_beside_it_is_not() {
+    // The names are not read, quoted as code or as they stand.
+    assert!(term_lines("\"agents.enabled=false\".to_string(),").is_empty());
+    assert!(term_lines("        \"agent_message\",").is_empty());
+    assert!(term_lines("the setting `agents.enabled` is off").is_empty());
+    // Case is not a way round: the line is read lower-cased, and so is the name.
+    assert!(term_lines("Agent_Message").is_empty());
+
+    // What is beside a name is read where it was.
+    assert_eq!(term_lines("agents.enabled turns the agent off"), vec![1]);
+    assert_eq!(
+        term_lines("\"agent_message\", // an agent said so"),
+        vec![1]
+    );
+    assert_eq!(term_lines("no name here\nbut an agent here"), vec![2]);
+
+    // A name that is part of a longer one is that longer name, which nobody registered.
+    assert_eq!(term_lines("\"agent_messages\""), vec![1]);
+    assert_eq!(term_lines("\"my_agent_message\""), vec![1]);
+    assert_eq!(term_lines("\"agents.enabled_by_default\""), vec![1]);
+}
+
 #[test]
 fn sce_does_not_name_its_readers() {
     let root = repo_root();
     let mut scanned = 0usize;
     let mut violations: Vec<String> = Vec::new();
     let mut exempt_prefixes_seen: BTreeSet<&str> = BTreeSet::new();
+    let mut tokens_seen: BTreeSet<&str> = BTreeSet::new();
 
     for path in tracked_sources() {
         let rel = path
@@ -288,6 +357,12 @@ fn sce_does_not_name_its_readers() {
             continue; // non-UTF8 tracked blob: nothing to read prose in
         };
         scanned += 1;
+        let lowered = body.to_ascii_lowercase();
+        for token in NON_READER_TOKENS {
+            if lowered.contains(token) {
+                tokens_seen.insert(*token);
+            }
+        }
         let hits = term_lines(&body);
         if hits.is_empty() {
             continue;
@@ -335,6 +410,18 @@ fn sce_does_not_name_its_readers() {
         "EXEMPT_PREFIXES names prefix(es) whose files no longer use the \
          term: {stale:?}\nDrop the entry — an exemption that covers \
          nothing would quietly cover the next reintroduction there.",
+    );
+
+    // And for the names: one that is nowhere in the tree is permission for a spelling nobody
+    // writes, and it would cover the next place that does.
+    let unused: Vec<&&str> = NON_READER_TOKENS
+        .iter()
+        .filter(|token| !tokens_seen.contains(*token))
+        .collect();
+    assert!(
+        unused.is_empty(),
+        "NON_READER_TOKENS names a name that is nowhere in the tree: {unused:?}\nDrop the \
+         entry — a name that covers nothing would quietly cover the next place that writes it.",
     );
 }
 
