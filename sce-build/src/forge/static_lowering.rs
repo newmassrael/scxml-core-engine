@@ -351,17 +351,6 @@ pub trait StaticTarget {
     fn lowers_hybrid_invoke(&self) -> bool {
         false
     }
-    /// Whether an `<invoke type="scxml">` of a child that declares
-    /// `<sce:action>`s is lowered, and so a candidate of a hybrid one: the child
-    /// is built with the host its parent's own host answers, one operation per
-    /// child (docs/adr/0005, decision 6). Every generated language does, so the
-    /// default says so; a target that does not — the Interpreter's lowering, whose
-    /// child sessions are not built with a host their parent answers yet — is
-    /// refused at the `<invoke>`, by name, rather than left to run a child with no
-    /// host to perform its acts.
-    fn lowers_child_host(&self) -> bool {
-        true
-    }
     /// What the `srcexpr` attribute of a hybrid `<invoke>` is rewritten to, for
     /// a target that runs the document's own attribute and so has no field of
     /// the machine to read the value from: `native_src`, the string the
@@ -1838,9 +1827,7 @@ pub fn lower(
             Some(_) => {}
         }
     }
-    if let Some(construct) = invoke_of_a_child_that_needs_a_host(model, target)
-        .or_else(|| target.unsupported(model, &scope))
-    {
+    if let Some(construct) = target.unsupported(model, &scope) {
         return Err(GenerateError::unsupported(format!(
             "{construct} has no {lang} lowering yet"
         )));
@@ -3472,22 +3459,6 @@ fn unlowered_invoke(
             }
             .to_string()
         })
-}
-
-/// The first `<invoke type="scxml">` of `model` whose child declares
-/// `<sce:action>`s — or, of a hybrid one, a candidate that does — described for
-/// a refusal, when `target` does not build such a child with a host
-/// ([`StaticTarget::lowers_child_host`]). Asked once for all targets rather than
-/// by each; a generated language refuses it earlier, at its entry, for a parent
-/// of any data model ([`crate::forge::native_action::child_that_needs_a_host`]).
-fn invoke_of_a_child_that_needs_a_host(
-    model: &SCXMLModel,
-    target: &dyn StaticTarget,
-) -> Option<String> {
-    if target.lowers_child_host() {
-        return None;
-    }
-    crate::forge::native_action::child_that_needs_a_host(model).map(|(construct, _)| construct)
 }
 
 /// Whether a record of `schema` has a byte-string field ([`StaticField::holds_bytes`]).

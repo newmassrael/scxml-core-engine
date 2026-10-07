@@ -68,47 +68,6 @@ fn host_operation(field_suffix: &str, candidate_stem: Option<&str>) -> String {
     }
 }
 
-/// The first `<invoke type="scxml">` of `model` whose child declares
-/// `<sce:action>`s — or, of a hybrid one, a candidate that does — described for
-/// a refusal, with where the `<invoke>` is.
-///
-/// A child's machine takes the host that performs its acts when it is built
-/// (§scxml-6.4.1), so a parent that does not obtain one for it writes a call of
-/// that constructor with the host left out, which does not compile in Rust,
-/// Kotlin, Go or C++ and fails when the invoke starts in Python. Every generated
-/// language obtains it from its parent's own host now; a `sce-static` target that
-/// is not one — the Interpreter's lowering — asks this for itself, and refuses.
-pub fn child_that_needs_a_host(model: &SCXMLModel) -> Option<(String, Option<SourceLocation>)> {
-    model
-        .states
-        .values()
-        .flat_map(|state| &state.invokes)
-        .find_map(|invoke| match invoke {
-            crate::model::Invoke::Scxml(info) if info.common.child_declares_host_acts => Some((
-                format!(
-                    "an <invoke id=\"{}\"> of a child that declares <sce:action>s",
-                    info.common.base.invoke_id
-                ),
-                info.common.base.source_location.clone(),
-            )),
-            crate::model::Invoke::Hybrid(info) => info
-                .candidates
-                .iter()
-                .find(|candidate| candidate.child_declares_host_acts)
-                .map(|candidate| {
-                    (
-                        format!(
-                            "an <invoke id=\"{}\"> that may start `{}`, a child that declares \
-                             <sce:action>s",
-                            info.common.base.invoke_id, candidate.stem
-                        ),
-                        info.common.base.source_location.clone(),
-                    )
-                }),
-            _ => None,
-        })
-}
-
 /// One child the parent obtains a host for: what [`host_operation`] names and
 /// the `<invoke>` it belongs to.
 struct ChildHostSite {

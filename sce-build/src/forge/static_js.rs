@@ -531,13 +531,6 @@ impl StaticTarget for JsTarget {
     fn lowers_hybrid_invoke(&self) -> bool {
         true
     }
-    // Not yet: a child session of the Interpreter is built by the engine that runs
-    // the parent, with no host its parent's host answers for it, so a child that
-    // declares `<sce:action>`s is refused where it is invoked (docs/adr/0005,
-    // decision 6). The generated languages all build it.
-    fn lowers_child_host(&self) -> bool {
-        false
-    }
     fn hybrid_src_site(&self, native_src: &str, stems: &[&str]) -> Option<String> {
         let names: Vec<String> = stems
             .iter()

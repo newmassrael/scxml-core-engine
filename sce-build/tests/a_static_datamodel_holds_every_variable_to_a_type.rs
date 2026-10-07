@@ -1503,8 +1503,9 @@ fn every_backend_hands_a_string_to_a_child_that_declares_its_bound() {
 /// `<invoke>` of a child that declares `<sce:action>`s with the host its parent's
 /// own host answers (docs/adr/0005, decision 6). Each was refused by name until it
 /// did, and the refusal was removed from the shared check when the last of them
-/// did; what still refuses is the Interpreter's lowering, which is no generated
-/// language and is read separately.
+/// did. The Interpreter is no generated language: its lowering is read through
+/// `lower`, and its engine gives the child the host
+/// (`INativeActionHost::hostForChild`).
 const CHILD_HOST_LANGUAGES: &[&str] = &["rust", "kotlin", "go", "cpp", "python", "c11"];
 
 /// The arguments `check` takes to generate for `lang`: Go also names the module
@@ -1551,16 +1552,19 @@ fn every_language_builds_a_child_with_the_host_its_parent_answers() {
         );
     }
     // The Interpreter lowers the document as ECMAScript and is no generated
-    // language, so the lowering itself answers for it: a child session of its is
-    // not given a host by its parent yet, and it is refused by name.
+    // language, so the lowering itself answers for it: the engine that runs the
+    // parent gives each child the host its parent's host answers, and the child's
+    // `<sce:action>` is carried as it is written.
     let (ok, out) = run(&["lower"], &document);
-    assert!(!ok, "the Interpreter has no lowering for it yet:\n{out}");
     assert!(
-        out.contains("no ecmascript lowering yet")
-            && out.contains(r#"an <invoke id=\"child\"> of a child that declares <sce:action>s"#),
-        "the Interpreter: expected the refusal naming it and the invoke:\n{out}"
+        ok,
+        "the Interpreter lowers a child that declares acts:\n{out}"
     );
-    // A child that declares no act is still lowered: it needs no host.
+    assert!(
+        out.contains(r#"<sce:action name="announce">"#),
+        "the child's act is carried to the Interpreter as written:\n{out}"
+    );
+    // A child that declares no act is lowered as well.
     let (ok, out) = run(&["lower"], &invoking(""));
     assert!(ok, "the Interpreter lowers a child with no act:\n{out}");
 }
@@ -1635,15 +1639,29 @@ fn a_candidate_that_declares_acts_is_given_its_host_as_a_child_is() {
             "{lang} gives the candidate the host its parent answers:\n{out}"
         );
     }
-    // And the Interpreter, which does not yet, names the candidate.
-    let (ok, out) = run_beside(&["lower"], &document, &siblings);
-    assert!(!ok, "the Interpreter has no lowering for it yet:\n{out}");
+    // And the Interpreter lowers the invoking document with it: the candidate is a
+    // document of its own, beside this one, so the lowering is the set of documents
+    // (`--out-dir`), and its engine gives the candidate the host the parent's host
+    // answers for its stem.
+    let written = tempdir().expect("tempdir");
+    let (ok, out) = run_beside(
+        &[
+            "lower",
+            "--out-dir",
+            written.path().to_str().expect("a path of text"),
+        ],
+        &document,
+        &siblings,
+    );
     assert!(
-        out.contains("no ecmascript lowering yet")
-            && out.contains(
-                r#"an <invoke id=\"child\"> that may start `second`, a child that declares <sce:action>s"#
-            ),
-        "the Interpreter: expected the refusal naming it, the invoke and the candidate:\n{out}"
+        ok,
+        "the Interpreter lowers a candidate that declares acts:\n{out}"
+    );
+    let candidate = std::fs::read_to_string(written.path().join("second.scxml"))
+        .expect("the lowered candidate is written beside the invoking document");
+    assert!(
+        candidate.contains(r#"<sce:action name="announce"/>"#),
+        "the candidate's act is carried to the Interpreter as written:\n{candidate}"
     );
 }
 

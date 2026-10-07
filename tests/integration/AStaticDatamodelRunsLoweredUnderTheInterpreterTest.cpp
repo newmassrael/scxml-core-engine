@@ -43,6 +43,7 @@
 #include <functional>
 #include <gtest/gtest.h>
 #include <memory>
+#include <mutex>
 #include <nlohmann/json.hpp>
 #include <sstream>
 #include <string>
@@ -358,7 +359,9 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheInterpreterDoesWha
 namespace {
 
 /// A host that performs every operation and records each call as the JSON of
-/// its arguments.
+/// its arguments. A child session performs its actions on a thread of its own
+/// once it has been started, so the calls are read under the lock they are
+/// written under.
 class RecordingHost : public INativeActionHost {
 public:
     bool performNativeAction(const std::string &name, const std::vector<ScriptValue> &args) override {
@@ -376,11 +379,52 @@ public:
                 values.push_back(nullptr);
             }
         }
-        calls.push_back({name, values});
+        std::lock_guard<std::mutex> lock(mutex_);
+        calls_.push_back({name, values});
         return true;
     }
 
-    std::vector<std::pair<std::string, nlohmann::json>> calls;
+    std::vector<std::pair<std::string, nlohmann::json>> calls() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return calls_;
+    }
+
+private:
+    mutable std::mutex mutex_;
+    std::vector<std::pair<std::string, nlohmann::json>> calls_;
+};
+
+/// A host that performs no operation of its own and answers each child its own
+/// `RecordingHost`, keeping what it was asked and what it answered.
+class ParentHost : public INativeActionHost {
+public:
+    bool performNativeAction(const std::string &, const std::vector<ScriptValue> &) override {
+        return false;
+    }
+
+    std::shared_ptr<INativeActionHost> hostForChild(const std::string &invokeId, const std::string &document) override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        asked_.emplace_back(invokeId, document);
+        answered_.push_back(std::make_shared<RecordingHost>());
+        return answered_.back();
+    }
+
+    /// Each question, as the invoke id and the document stem it named.
+    std::vector<std::pair<std::string, std::string>> asked() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return asked_;
+    }
+
+    /// Each host answered, in the order the questions came.
+    std::vector<std::shared_ptr<RecordingHost>> answered() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return answered_;
+    }
+
+private:
+    mutable std::mutex mutex_;
+    std::vector<std::pair<std::string, std::string>> asked_;
+    std::vector<std::shared_ptr<RecordingHost>> answered_;
 };
 
 }  // namespace
@@ -404,12 +448,13 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, AHostActionIsPerforme
         machine->processEvent("retry", "");
     }
 
-    ASSERT_EQ(host->calls.size(), 4u) << "one call per entry of `idle`; the fourth retry finds `attempts < 3` false";
+    const auto calls = host->calls();
+    ASSERT_EQ(calls.size(), 4u) << "one call per entry of `idle`; the fourth retry finds `attempts < 3` false";
     const std::vector<std::pair<int, bool>> expected = {{0, false}, {1, false}, {2, false}, {3, true}};
     for (std::size_t n = 0; n < expected.size(); ++n) {
         SCOPED_TRACE("call " + std::to_string(n));
-        EXPECT_EQ(host->calls[n].first, "showAttempts");
-        EXPECT_EQ(host->calls[n].second, nlohmann::json::array({expected[n].first, expected[n].second}))
+        EXPECT_EQ(calls[n].first, "showAttempts");
+        EXPECT_EQ(calls[n].second, nlohmann::json::array({expected[n].first, expected[n].second}))
             << "each with the datamodel as it stood";
     }
 }
@@ -547,6 +592,108 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, AHybridInvokeStartsTh
         << "completed is " << variable(*machine, "completed").dump() << " and errors "
         << variable(*machine, "errors").dump();
     EXPECT_TRUE(machine->isInFinalState()) << "the run ended in `over`";
+    std::filesystem::remove_all(dir, ec);
+}
+
+// A child that declares `<sce:action>`s is given the host its parent's host answers
+// for it, each time the invocation starts (`static_child_host.scxml`; the generated
+// backends' halves are `a_child_is_given_its_host_by_its_parent`, docs/adr/0005,
+// decision 6). The parent declares no act of its own: its host is there for the child
+// alone. The first act is `started`, performed as the child is entered, so the host was
+// there before the child ran; a state invoked again is a child of its own and is given a
+// host of its own, and what the first one did is not carried into the second.
+TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, AChildIsGivenTheHostItsParentsHostAnswers) {
+    const Lowered lowered = lower(kFixtures / "static_child_host.scxml");
+    ASSERT_TRUE(lowered.ok) << "a child that declares `<sce:action>`s is lowered for the Interpreter now: "
+                            << lowered.refusal.dump();
+
+    const auto parentHost = std::make_shared<ParentHost>();
+    const auto machine = std::make_shared<StateMachine>(*engine_);
+    machine->setNativeActionHost(parentHost);
+    const auto raiser = wire(*machine);
+    ASSERT_TRUE(machine->loadSCXMLFromString(lowered.document)) << "the Interpreter does not load the document";
+    ASSERT_TRUE(machine->start());
+    ASSERT_TRUE(settles(raiser, [&] { return !parentHost->answered().empty(); }))
+        << "the parent's host was not asked for the child's";
+
+    // Asked once, for `worker`, whose content came inline and so names no document.
+    const std::vector<std::pair<std::string, std::string>> firstAsk = {{"worker", ""}};
+    ASSERT_EQ(firstAsk, parentHost->asked()) << "the parent's host is asked once for each start";
+    const auto first = parentHost->answered().at(0);
+    ASSERT_TRUE(settles(raiser, [&] { return first->calls().size() == 1u; }))
+        << "the child's first act was not performed by the host it was built with";
+    EXPECT_EQ("started", first->calls()[0].first);
+
+    // `a` and `b` are the child's events, which the parent forwards; the second ends it, and
+    // it reports the steps it counted to the host it was given.
+    machine->processEvent("a", "");
+    machine->processEvent("b", "");
+    ASSERT_TRUE(settles(raiser, [&] { return variable(*machine, "completed") == 1; }))
+        << "the child did not end on `b`";
+    const auto ended = first->calls();
+    ASSERT_EQ(2u, ended.size());
+    EXPECT_EQ("finished", ended[1].first);
+    EXPECT_EQ(nlohmann::json::array({2}), ended[1].second);
+
+    // Leaving `working` and coming back invokes `worker` anew: asked again, answered with a
+    // host that has done nothing yet, while the first one keeps what it did.
+    machine->processEvent("again", "");
+    raiser->processQueuedEvents();
+    EXPECT_EQ("idle", machine->getCurrentState());
+    machine->processEvent("back", "");
+    ASSERT_TRUE(settles(raiser, [&] { return parentHost->asked().size() == 2u; }))
+        << "the parent's host was not asked again for a child started again";
+    const auto answers = parentHost->answered();
+    ASSERT_EQ(2u, answers.size());
+    EXPECT_NE(answers[0], answers[1]) << "each start is a child of its own and takes a host of its own";
+    ASSERT_TRUE(settles(raiser, [&] { return answers[1]->calls().size() == 1u; }));
+    EXPECT_EQ("started", answers[1]->calls()[0].first);
+    EXPECT_EQ(2u, answers[0]->calls().size()) << "what the first child did is not carried into the second";
+}
+
+// A hybrid `<invoke>` gives the candidate it starts the host the parent's host answers
+// for THAT document, named by its stem, and for no other (`static_child_host_hybrid.scxml`;
+// the generated backends' halves are `a_hybrid_candidate_is_given_its_host_by_its_parent`).
+// The first start names `static_hosted_first`, which performs `first_ran`; once `again` has
+// changed the value and `back` has entered `working` anew, the second names
+// `static_hosted_second`, which performs `second_ran` — an act the first does not declare.
+TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, ACandidateIsGivenTheHostItsParentsHostAnswersForIt) {
+    const auto dir = std::filesystem::temp_directory_path() / ("sce-child-host-hybrid-" + std::to_string(::getpid()));
+    std::error_code ec;
+    std::filesystem::remove_all(dir, ec);
+    const LoweredSet set = lowerSet(kFixtures / "static_child_host_hybrid.scxml", dir);
+    ASSERT_TRUE(set.ok) << "a candidate that declares `<sce:action>`s is lowered for the Interpreter now: "
+                        << set.refusal.dump();
+    ASSERT_EQ(3u, set.documents.size()) << "the invoking document and its two candidates";
+
+    const auto parentHost = std::make_shared<ParentHost>();
+    const auto machine = std::make_shared<StateMachine>(*engine_);
+    machine->setNativeActionHost(parentHost);
+    const auto raiser = wire(*machine);
+    ASSERT_TRUE(machine->loadSCXML(set.documents[0].string())) << "the Interpreter does not load the document";
+    ASSERT_TRUE(machine->start());
+
+    ASSERT_TRUE(settles(raiser, [&] { return variable(*machine, "completed") == 1; }))
+        << "the first candidate did not end";
+    const std::vector<std::pair<std::string, std::string>> firstAsk = {{"work", "static_hosted_first"}};
+    ASSERT_EQ(firstAsk, parentHost->asked());
+    const auto first = parentHost->answered().at(0);
+    ASSERT_EQ(1u, first->calls().size());
+    EXPECT_EQ("first_ran", first->calls()[0].first);
+
+    machine->processEvent("again", "");
+    raiser->processQueuedEvents();
+    ASSERT_EQ("idle", machine->getCurrentState());
+    machine->processEvent("back", "");
+    ASSERT_TRUE(settles(raiser, [&] { return variable(*machine, "completed") == 2; }))
+        << "the second candidate did not end";
+    const std::vector<std::pair<std::string, std::string>> bothAsks = {{"work", "static_hosted_first"},
+                                                                       {"work", "static_hosted_second"}};
+    ASSERT_EQ(bothAsks, parentHost->asked()) << "the second start asks for the document `pick` names now";
+    const auto second = parentHost->answered().at(1);
+    ASSERT_EQ(1u, second->calls().size());
+    EXPECT_EQ("second_ran", second->calls()[0].first);
+    EXPECT_EQ(1u, first->calls().size()) << "the first candidate's host was not asked to do the second's act";
     std::filesystem::remove_all(dir, ec);
 }
 

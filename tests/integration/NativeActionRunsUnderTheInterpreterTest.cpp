@@ -23,17 +23,32 @@
 //     `start()` performs, and inside an `<if>`;
 //   * an action no one performs is `error.execution`: no host installed, a host
 //     that provides no such operation, and an argument no host operation takes
-//     — and in the last case the host is not called at all.
+//     — and in the last case the host is not called at all;
+//   * a child session of an `<invoke>` is given the host its parent's host answers
+//     for it, named by the invoke's id and the stem of the document it came from
+//     (docs/adr/0005, decision 6) — and a parent with no host, or a host that
+//     answers none, leaves the child without one, so that its first action raises
+//     `error.execution` in the child.
 
 #include "actions/NativeAction.h"
+#include "events/EventDispatcherImpl.h"
+#include "events/EventSchedulerImpl.h"
+#include "events/EventTargetFactoryImpl.h"
 #include "runtime/EventRaiserImpl.h"
 #include "runtime/INativeActionHost.h"
 #include "runtime/StateMachine.h"
 #include "scripting/ScriptEngineProvider.h"
 
+#include <chrono>
+#include <filesystem>
+#include <fstream>
+#include <functional>
 #include <gtest/gtest.h>
+#include <mutex>
 #include <set>
 #include <string>
+#include <thread>
+#include <unistd.h>
 #include <utility>
 #include <vector>
 
@@ -97,6 +112,80 @@ public:
     std::set<std::string> provided = {"entered", "start"};
 };
 
+/// The host a child session is given: it provides `entered`, and a child performs
+/// its actions on a thread of its own, so what it was asked is read under the lock
+/// it is written under.
+class ChildHost : public INativeActionHost {
+public:
+    bool performNativeAction(const std::string &name, const std::vector<ScriptValue> &) override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        calls_.push_back(name);
+        return name == "entered";
+    }
+
+    std::vector<std::string> calls() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return calls_;
+    }
+
+private:
+    mutable std::mutex mutex_;
+    std::vector<std::string> calls_;
+};
+
+/// A parent's host that performs nothing itself and answers `child` — which may be
+/// none — for every child, recording what it was asked.
+class ParentHost : public INativeActionHost {
+public:
+    explicit ParentHost(std::shared_ptr<INativeActionHost> child) : child_(std::move(child)) {}
+
+    bool performNativeAction(const std::string &, const std::vector<ScriptValue> &) override {
+        return false;
+    }
+
+    std::shared_ptr<INativeActionHost> hostForChild(const std::string &invokeId, const std::string &document) override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        asked_.emplace_back(invokeId, document);
+        return child_;
+    }
+
+    std::vector<std::pair<std::string, std::string>> asked() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return asked_;
+    }
+
+private:
+    std::shared_ptr<INativeActionHost> child_;
+    mutable std::mutex mutex_;
+    std::vector<std::pair<std::string, std::string>> asked_;
+};
+
+/// A parent whose child comes from a document, as its `src` names it.
+constexpr const char *PARENT_OF_A_DOCUMENT_CHILD = R"(<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="ecmascript" initial="working">
+  <state id="working">
+    <invoke type="scxml" id="job" src="hosted.scxml"/>
+    <transition event="done.invoke.job" target="reported"/>
+  </state>
+  <state id="reported"/>
+</scxml>
+)";
+
+/// The child: it performs `entered` as it is entered, and if no one performs it the
+/// `error.execution` that follows ends it, which its parent is told.
+constexpr const char *HOSTED_CHILD = R"(<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" datamodel="ecmascript" initial="busy">
+  <state id="busy">
+    <onentry>
+      <sce:action name="entered"/>
+    </onentry>
+    <transition event="error.execution" target="failed"/>
+  </state>
+  <final id="failed"/>
+</scxml>
+)";
+
 }  // namespace
 
 class NativeActionRunsUnderTheInterpreterTest : public ::testing::Test {
@@ -114,7 +203,57 @@ protected:
         if (engine_) {
             engine_->shutdown();
         }
+        if (!dir_.empty()) {
+            std::error_code ec;
+            std::filesystem::remove_all(dir_, ec);
+        }
     }
+
+    /// The parent of a document child, loaded from its file — a `src` is resolved
+    /// against the document that names it — with `host` installed, and wired to a
+    /// dispatcher so that its child can answer it.
+    void loadParentOfADocumentChild(std::shared_ptr<INativeActionHost> host) {
+        dir_ = std::filesystem::temp_directory_path() / ("sce-child-host-interpreter-" + std::to_string(::getpid()));
+        std::error_code ec;
+        std::filesystem::remove_all(dir_, ec);
+        std::filesystem::create_directories(dir_);
+        {
+            std::ofstream(dir_ / "parent.scxml") << PARENT_OF_A_DOCUMENT_CHILD;
+            std::ofstream(dir_ / "hosted.scxml") << HOSTED_CHILD;
+        }
+        auto scheduler = std::make_shared<EventSchedulerImpl>(
+            [](const EventDescriptor &event, std::shared_ptr<IEventTarget> target, const std::string &) -> bool {
+                try {
+                    return target->send(event).get().isSuccess;
+                } catch (...) {
+                    return false;
+                }
+            });
+        raiser_->setScheduler(scheduler);
+        raiser_->setImmediateMode(false);
+        sm_->setEventDispatcher(
+            std::make_shared<EventDispatcherImpl>(scheduler, std::make_shared<EventTargetFactoryImpl>(raiser_)));
+        if (host) {
+            sm_->setNativeActionHost(host);
+        }
+        ASSERT_TRUE(sm_->loadSCXML((dir_ / "parent.scxml").string()));
+    }
+
+    /// Whether `done` comes true within `within`, with the parent's queue run on
+    /// every look: a child answers its parent on a thread of its own.
+    bool waitFor(const std::function<bool()> &done, std::chrono::milliseconds within = std::chrono::seconds(5)) {
+        const auto deadline = std::chrono::steady_clock::now() + within;
+        while (std::chrono::steady_clock::now() < deadline) {
+            raiser_->processQueuedEvents();
+            if (done()) {
+                return true;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        return false;
+    }
+
+    std::filesystem::path dir_;
 
     /// The machine loaded with `host` installed first: an `<onentry>` of the
     /// initial state performs its actions during `start()`.
@@ -204,6 +343,49 @@ TEST_F(NativeActionRunsUnderTheInterpreterTest, AnArgumentNoHostOperationTakesSt
         EXPECT_EQ(sm_->getCurrentState(), "failed") << event;
         TearDown();
     }
+}
+
+TEST_F(NativeActionRunsUnderTheInterpreterTest, AChildIsGivenTheHostItsParentsHostAnswersForItsDocument) {
+    auto child = std::make_shared<ChildHost>();
+    auto parentHost = std::make_shared<ParentHost>(child);
+    loadParentOfADocumentChild(parentHost);
+    ASSERT_TRUE(sm_->start());
+
+    ASSERT_TRUE(waitFor([&] { return !child->calls().empty(); }))
+        << "the child's first action never reached a host: it was not built with the one its parent answered";
+    EXPECT_EQ(child->calls(), std::vector<std::string>{"entered"});
+    const std::vector<std::pair<std::string, std::string>> expected = {{"job", "hosted"}};
+    EXPECT_EQ(parentHost->asked(), expected)
+        << "the parent's host is asked once, with the invoke's id and the stem of the document it names";
+
+    // The action was performed, so nothing failed and the child is still running: it
+    // would otherwise have ended, and its parent been told.
+    EXPECT_FALSE(waitFor([&] { return sm_->getCurrentState() == "reported"; }, std::chrono::milliseconds(300)))
+        << "the child's action was refused although its host performs it";
+}
+
+TEST_F(NativeActionRunsUnderTheInterpreterTest, AHostThatAnswersNoHostLeavesTheChildWithoutOne) {
+    auto parentHost = std::make_shared<ParentHost>(nullptr);
+    loadParentOfADocumentChild(parentHost);
+    ASSERT_TRUE(sm_->start());
+
+    ASSERT_TRUE(waitFor([&] { return sm_->getCurrentState() == "reported"; }))
+        << "a child with no host performs its action as a machine with none does: error.execution, which "
+           "ended it, and its parent was told";
+    EXPECT_EQ(parentHost->asked().size(), 1u) << "it was asked, and answered none";
+}
+
+TEST_F(NativeActionRunsUnderTheInterpreterTest, AParentWithNoHostLeavesItsChildWithoutOne) {
+    loadParentOfADocumentChild(nullptr);
+    ASSERT_TRUE(sm_->start());
+
+    ASSERT_TRUE(waitFor([&] { return sm_->getCurrentState() == "reported"; }))
+        << "no host anywhere: the child's action is error.execution, which ended it";
+}
+
+TEST_F(NativeActionRunsUnderTheInterpreterTest, AHostThatSaysNothingOfChildrenAnswersNone) {
+    ChildHost host;
+    EXPECT_EQ(host.hostForChild("job", "hosted"), nullptr);
 }
 
 }  // namespace Tests

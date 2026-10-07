@@ -5,6 +5,7 @@
 #include "SCXMLTypes.h"
 #include "common/AssignmentExecutionHelper.h"
 #include "common/DatamodelValidationHelper.h"
+#include "common/DocumentStem.h"
 #include "common/SCXMLConstants.h"
 #include "common/UniqueIdGenerator.h"
 #include "core/InvokeHelper.h"
@@ -16,6 +17,7 @@
 #include "events/EventTargetFactoryImpl.h"
 #include "model/InvokeNode.h"
 #include "runtime/EventRaiserImpl.h"
+#include "runtime/INativeActionHost.h"
 #include "runtime/InvokeExecutor.h"
 #include "runtime/StateMachine.h"
 #include "runtime/StateMachineBuilder.h"
@@ -149,6 +151,11 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
 
     // Get invoke content (SCXML document)
     std::string scxmlContent = invoke->getContent();
+
+    // The stem of the document the child is loaded from, which is what tells the
+    // candidates of one `<invoke>` apart to the host that answers for the child
+    // (INativeActionHost::hostForChild). Inline content has no document.
+    std::string childDocument;
     SCE_LOG_DEBUG("SCXMLInvokeHandler: Invoke content length: {}, has src: {}, has srcexpr: {}, has contentexpr: {}",
                   scxmlContent.length(), !invoke->getSrc().empty(), !invoke->getSrcExpr().empty(),
                   !invoke->getContentExpr().empty());
@@ -184,6 +191,8 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
                 evaluatedSrc = evaluatedSrc.substr(1, evaluatedSrc.length() - 2);
             }
 
+            childDocument = documentStem(evaluatedSrc);
+
             // Load SCXML content from file
             scxmlContent = loadSCXMLFromFile(evaluatedSrc, parentSessionId);
             if (scxmlContent.empty()) {
@@ -210,6 +219,7 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
     // Handle static src attribute
     else if (scxmlContent.empty() && !invoke->getSrc().empty()) {
         SCE_LOG_INFO("SCXMLInvokeHandler: Loading SCXML from src file: {}", invoke->getSrc());
+        childDocument = documentStem(invoke->getSrc());
         scxmlContent = loadSCXMLFromFile(invoke->getSrc(), parentSessionId);
         if (scxmlContent.empty()) {
             // §scxml-6.4, literal `src` rather than an evaluated one. One
@@ -300,6 +310,18 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
                             .withEventDispatcher(eventDispatcher)
                             .withEventRaiser(childEventRaiser)
                             .build();
+
+    // §scxml-6.4.1: a child that declares `<sce:action>`s takes its host before
+    // it runs — its first `<onentry>` may already perform one — so the host its
+    // parent's host answers for it is installed here, every time the invocation
+    // starts (entry and restoration alike), before anything of the child's runs.
+    // A parent with no host, or one that answers none, leaves the child without
+    // one, and an action it performs raises `error.execution`.
+    if (auto parentSM = parentStateMachine_.lock()) {
+        if (auto parentHost = parentSM->getNativeActionHost()) {
+            stateMachine->setNativeActionHost(parentHost->hostForChild(invokeid, childDocument));
+        }
+    }
 
     // Wrap in StateMachineContext for RAII cleanup (shared ownership)
     auto smContext = std::make_unique<StateMachineContext>(stateMachine);

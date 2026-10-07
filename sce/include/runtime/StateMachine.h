@@ -611,11 +611,19 @@ public:
      * Install it before `start()`: an `<onentry>` of the initial state performs
      * its actions during `start()`, so a host installed afterwards arrives one
      * action too late. A native action nobody performs raises `error.execution`.
-     * A child session started by an `<invoke>` has no host of its own.
+     * A child session started by an `<invoke>` is given the host this one answers
+     * for it (`INativeActionHost::hostForChild`), and has none when there is no
+     * host here or it answers none.
      *
      * @param host The host (see `INativeActionHost`)
      */
     void setNativeActionHost(std::shared_ptr<INativeActionHost> host);
+
+    /**
+     * @brief §scxml-G-7: the host installed with `setNativeActionHost`
+     * @return The host, or nullptr when none was installed
+     */
+    std::shared_ptr<INativeActionHost> getNativeActionHost() const;
 
     /**
      * @brief §scxml-6.4.3: Set completion callback for top-level final state notification

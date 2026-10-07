@@ -1958,6 +1958,10 @@ void StateMachine::setNativeActionHost(std::shared_ptr<INativeActionHost> host) 
     }
 }
 
+std::shared_ptr<INativeActionHost> StateMachine::getNativeActionHost() const {
+    return nativeActionHost_;
+}
+
 // EventDispatcher management
 void StateMachine::setEventDispatcher(std::shared_ptr<IEventDispatcher> eventDispatcher) {
     eventDispatcher_ = eventDispatcher;

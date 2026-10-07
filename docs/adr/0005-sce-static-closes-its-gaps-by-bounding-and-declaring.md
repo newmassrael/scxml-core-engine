@@ -183,6 +183,12 @@ on a restore that starts the child again from its beginning (§2.15, "Running
 invocations"), and for each candidate of a hybrid `<invoke>` that declares acts — and
 builds the child with what it returns. In C11, whose child is a value the parent holds,
 the parent's act table carries the function and the child's table is what it returns.
+The Interpreter has no interface to generate, so the operation is one virtual on the
+host it already takes, `INativeActionHost::hostForChild(invokeId, document)`, which the
+engine asks as the invocation starts and whose answer it installs on the child before the
+child runs; `document` is the stem of the document the child came from, which names the
+candidate of a hybrid `<invoke>` as the suffix of `actions_for_<invoke>_<stem>` does, and
+the default answers none.
 
 Rejected:
 

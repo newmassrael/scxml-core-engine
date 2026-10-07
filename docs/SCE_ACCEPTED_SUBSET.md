@@ -2207,7 +2207,8 @@ an object, `undefined`) each raise `error.execution` — the rule §scxml-6.4.1
 gives an `<invoke>` of a type the processor does not implement — and an
 argument that fails stops the action before the host is called. It runs wherever
 executable content does (inside an `<if>` too: the Interpreter has no v1
-placement rule). A child session an `<invoke>` starts has no host of its own.
+placement rule). A child session an `<invoke>` starts is given the host its parent's
+host answers for it (`hostForChild`, "Child sessions" under §2.15).
 Until this existed the Interpreter's action parser skipped the element like any
 foreign one (§scxml-4.10), and the document's request vanished with no event.
 `tests/integration/NativeActionRunsUnderTheInterpreterTest.cpp` holds it, and
@@ -3441,20 +3442,29 @@ whose name is spelled as one of those operations, in any language's convention, 
 two invokes whose ids differ only in spelling, are refused where the second is
 written (`<sce:action name="…">` names one host method, not two).
 
-Every generated language does this, for a parent of either data model. What does not
-yet is the Interpreter: its child sessions are built by the engine that runs the parent,
-with no host their parent's host answers, so `sce-codegen lower` refuses an `<invoke>` of
-a child that declares acts as `generate/unsupported-feature` (`an <invoke id="child"> of a
-child that declares <sce:action>s has no ecmascript lowering yet`; a candidate is named by
-`an <invoke id="child"> that may start `second`, a child that declares <sce:action>s`),
-and lowers a child that declares none. The code a generated parent would write otherwise
+Every generated language does this, for a parent of either data model, and so does the
+Interpreter, which has no interface to generate: its child sessions are built by the engine
+that runs the parent, and the host a child takes is the one its parent's host answers to
+`INativeActionHost::hostForChild(invokeId, document)`, asked each time the invocation
+starts (entry and a restoration of a snapshot alike) and installed on the child before
+anything of it runs. `document` is the stem of the document the child was loaded from —
+the last path segment of its `src`, or of its evaluated `srcexpr`, without extension, which
+tells the candidates of one hybrid `<invoke>` apart as `actionsForWork<Stem>` does on a
+generated parent — and is empty for a child written inline as `<content>`. A parent with
+no host, or a host that answers none (the default), leaves the child without one, and an
+act it performs is `error.execution` in the child, as in any machine nobody installed a
+host on. `sce-codegen lower` lowers an `<invoke>` of a child that declares acts, with the
+`<sce:action>` carried as written (docs/adr/0005, decision 6;
+`NativeActionRunsUnderTheInterpreterTest`, which starts a child from a document, and
+`AStaticDatamodelRunsLoweredUnderTheInterpreterTest`, which runs `static_child_host` and
+`static_child_host_hybrid` lowered). The code a generated parent would write otherwise
 is the child's constructor called with the host left out: measured 2026-10-06, it does
 not compile in Rust, Kotlin, Go or C++ and Python fails when the invoke starts, and C11
 held the child as a value with no act table to give it; and measured 2026-10-07, a
 parent that is not `sce-static` was not refused anywhere, since only the static lowering
 asked. Each language was refused by name until it gave its host interface the operation
 and replayed the fixtures, and the refusals were removed when the last of them did
-(2026-10-07).
+(2026-10-07, the Interpreter included).
 
 Each generated `sce-static` machine with such a variable carries the way in:
 Kotlin a nested `InvokeParams` and `acceptParams`, Rust `<Machine>InvokeParams` and

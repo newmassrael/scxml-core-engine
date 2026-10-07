@@ -1,0 +1,74 @@
+# Mutation cases for "a child that declares acts is given the host its parent's host
+# answers for it, each time the invocation starts", C++ Interpreter
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Child sessions"; docs/adr/0005, decision 6).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/cpp_interpreter_child_host_ctest.cases`.
+#
+# A child session the Interpreter starts takes the host its parent's own host answers
+# for it, `INativeActionHost::hostForChild(invokeId, document)`, before anything of the
+# child runs: the first `<onentry>` may already perform an act. The oracles read it
+# from the two places the engine meets a child. `NativeActionRunsUnderTheInterpreterTest`
+# starts one from a document its `src` names, and holds what the parent's host was asked
+# (the invoke's id and the stem of the document), what the child performed, and what a
+# parent with no host or a host that answers none leaves it. The lowered fixtures
+# `static_child_host` and `static_child_host_hybrid` (`static_datamodel_lowered`) start
+# an inline child, which is asked for with no document, and each candidate of a hybrid
+# `<invoke>` by the stem its `srcexpr` value names — a state invoked again is asked
+# again and answered a host of its own. The mutants take one decision away each, and each
+# still compiles — a mutated tree that does not is INCONCLUSIVE, which fails the round:
+#
+#   the parent's host is asked and its answer is not installed;
+#   the parent's host is asked with the document where the id goes;
+#   the parent's host is asked twice for one start;
+#   the document of a `src` is not named;
+#   the document of an evaluated `srcexpr` is not named;
+#   the machine does not hand its own host over.
+#
+# ⚠ Not here: the restoration of a snapshot starts the child through the same function,
+# so it is asked in the same place; no Interpreter test restores a machine that has a
+# child, so the claim that a restore asks again is the generated languages' (their tests
+# restore) and not this engine's.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^(IntegrationTests|static_datamodel_lowered)$'
+mutation_targets sce/src/runtime/InvokeExecutor.cpp sce/src/runtime/StateMachine.cpp
+mutation_oracles tests/integration/NativeActionRunsUnderTheInterpreterTest.cpp tests/integration/AStaticDatamodelRunsLoweredUnderTheInterpreterTest.cpp sce-build/tests/fixtures/static_datamodel/static_child_host.scxml sce-build/tests/fixtures/static_datamodel/static_child_host_hybrid.scxml sce-build/tests/fixtures/static_datamodel/static_hosted_first.scxml sce-build/tests/fixtures/static_datamodel/static_hosted_second.scxml
+
+mutation_case "the parent's host is asked and its answer is not installed" <<'PY'
+edit("sce/src/runtime/InvokeExecutor.cpp",
+     "stateMachine->setNativeActionHost(parentHost->hostForChild(invokeid, childDocument));",
+     "(void)parentHost->hostForChild(invokeid, childDocument);")
+PY
+
+mutation_case "the parent's host is asked with the document where the id goes" <<'PY'
+edit("sce/src/runtime/InvokeExecutor.cpp",
+     "parentHost->hostForChild(invokeid, childDocument));",
+     "parentHost->hostForChild(childDocument, invokeid));")
+PY
+
+mutation_case "the parent's host is asked twice for one start" <<'PY'
+edit("sce/src/runtime/InvokeExecutor.cpp",
+     "stateMachine->setNativeActionHost(parentHost->hostForChild(invokeid, childDocument));",
+     "stateMachine->setNativeActionHost((parentHost->hostForChild(invokeid, childDocument), parentHost->hostForChild(invokeid, childDocument)));")
+PY
+
+mutation_case "the document of a src is not named" <<'PY'
+edit("sce/src/runtime/InvokeExecutor.cpp",
+     "childDocument = documentStem(invoke->getSrc());",
+     "childDocument.clear();")
+PY
+
+mutation_case "the document of an evaluated srcexpr is not named" <<'PY'
+edit("sce/src/runtime/InvokeExecutor.cpp",
+     "childDocument = documentStem(evaluatedSrc);",
+     "childDocument.clear();")
+PY
+
+mutation_case "the machine does not hand its own host over" <<'PY'
+edit("sce/src/runtime/StateMachine.cpp",
+     "std::shared_ptr<INativeActionHost> StateMachine::getNativeActionHost() const {\n    return nativeActionHost_;\n}",
+     "std::shared_ptr<INativeActionHost> StateMachine::getNativeActionHost() const {\n    return nullptr;\n}")
+PY
