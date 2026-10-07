@@ -101,7 +101,9 @@
 # template, whose output is a committed tree — is a `mutation_targets` file
 # like any other, and the step between it and the binaries is declared with
 # `mutation_regen`. The ctest runner needs no declaration, because its
-# `cmake --build` already runs that step; the cargo runner compiles the
+# `cmake --build` already runs that step — and, for a mutated Rust source of the
+# generator itself, it rebuilds `sce-codegen` first
+# (`mutation_ctest_targets_the_generator`); the cargo runner compiles the
 # committed tree and needs one, or the mutation reaches nothing.
 #
 # A suite that talks to a service outside this tree declares that service with
@@ -1245,9 +1247,39 @@ for test in json.load(sys.stdin).get("tests", []):
 # anywhere: measured 2026-08-22, one round of two cases took 3625s on a box
 # already carrying thirteen concurrent sessions.
 
+# Whether a file this casefile mutates is compiled into `sce-codegen`: the
+# generator's own Rust sources, the library and the binary and the build script.
+#
+# A template is read by the binary CMake already holds, so `cmake --build`
+# carries a template mutation to the generated tree; a Rust source is not, and
+# the generator CMake holds was built from the sources the tree had BEFORE the
+# mutation. `sce_codegen_source_witness` refuses that binary ("built from
+# different sources"), which a round reads as a mutated tree that does not
+# compile — INCONCLUSIVE, for every case, and for a reason that is the harness's
+# and not the case's. Measured 2026-10-07 on `a_static_c11_byte_string_is_held_
+# within_its_bound_ctest.cases`, whose four mutants live in `static_lowering.rs`
+# and `expr.rs`: 0/2 caught, 2 inconclusive, on each of its two shards. Eighteen
+# ctest casefiles declare a generator source and none declared the rebuild, so
+# the rule is the runner's and not one more thing each author must remember.
+mutation_ctest_targets_the_generator() {
+    local f
+    for f in ${MUTATION_TARGET_FILES[@]+"${MUTATION_TARGET_FILES[@]}"}; do
+        [[ "$f" == sce-build/src/*.rs || "$f" == sce-build/build.rs ]] && return 0
+    done
+    return 1
+}
+
 mutation_ctest_build_and_hash() {
+    : >"$MUTATION_BUILD_LOG"
+    # Before the tree is built, because every generation rule lists the binary in
+    # its DEPENDS: a rebuilt generator regenerates what it produced, and a mutant
+    # that does not compile stops here, where the compiler's own words are.
+    if mutation_ctest_targets_the_generator; then
+        (cd "$SCE_REPO_ROOT" && cargo build --bin sce-codegen --features cli -p sce-build) \
+            >>"$MUTATION_BUILD_LOG" 2>&1 || return 1
+    fi
     cmake --build "$MUTATION_BUILD_DIR" --parallel "$(sce_build_jobs_value)" \
-        >"$MUTATION_BUILD_LOG" 2>&1 || return 1
+        >>"$MUTATION_BUILD_LOG" 2>&1 || return 1
     mutation_hash_artifacts
 }
 

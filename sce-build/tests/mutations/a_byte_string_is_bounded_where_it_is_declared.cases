@@ -8,26 +8,27 @@
 # Measured 2026-10-06, before any backend held one: Rust and Kotlin accepted a
 # `bytes` variable with no capacity, and Rust, Kotlin, Go, C++ and Python a record
 # with a `bytes` field, while Rust wrote `#[derive(Clone, Copy)]` over a `Vec<u8>`.
-# The bound is now required by the data model for every language, a byte string
-# starts at a literal of printable ASCII that fits it, and one no backend lowers
-# yet is refused by name in `lower`. The judges are
+# The bound is now required by the data model for every language, and a byte string
+# starts at a literal of printable ASCII that fits it. The judges are
 # `a_byte_string_with_no_bound_is_refused_by_every_language`,
 # `a_byte_string_starts_at_printable_ascii_that_fits_its_bound` and
-# `a_language_holds_a_byte_string_or_refuses_it_by_name`. The mutants take one
+# `every_language_holds_a_byte_string_in_every_place`. The mutants take one
 # decision away each:
 #
 #   a bytes variable that declares no capacity is let through;
 #   a record's bytes field that has no max-size is let through;
-#   a literal past printable ASCII is let through;
-#   a backend is not asked whether it holds a byte string;
-#   a record's bytes field is let through where only a variable is held;
-#   a bytes variable is refused where it is held.
+#   a literal past printable ASCII is let through.
+#
+# Three cases that defended the refusal by name of a language that did not yet hold a
+# byte string (`bytes_held` and the `lowers_*bytes` methods it asked) were retired
+# with it, when the last language lowered the last place: a SURVIVED verdict on
+# 2026-10-07 said the clause had no instance left to defend.
 #
 # Anchors are literal slices of the source; an edit that moves one is reported
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_tests -p sce-build --features cli --test a_static_datamodel_holds_every_variable_to_a_type
-mutation_targets sce-build/src/parser.rs sce-build/src/forge/static_datamodel.rs sce-build/src/forge/static_lowering.rs
+mutation_targets sce-build/src/parser.rs sce-build/src/forge/static_datamodel.rs
 mutation_oracles sce-build/tests/a_static_datamodel_holds_every_variable_to_a_type.rs
 
 mutation_case "a bytes variable that declares no capacity is let through" <<'PY'
@@ -46,22 +47,4 @@ mutation_case "a literal past printable ASCII is let through" <<'PY'
 edit("sce-build/src/forge/static_datamodel.rs",
      "        if holder.printable_ascii && crate::forge::expr::decode_bytes_literal(&literal).is_none() {",
      "        if false && holder.printable_ascii && crate::forge::expr::decode_bytes_literal(&literal).is_none() {")
-PY
-
-mutation_case "a backend is not asked whether it holds a byte string" <<'PY'
-edit("sce-build/src/forge/static_lowering.rs",
-     "        .or_else(|| bytes_held(model, &scope, target))",
-     "        .or_else(|| None::<String>)")
-PY
-
-mutation_case "a record's bytes field is let through where only a variable is held" <<'PY'
-edit("sce-build/src/forge/static_lowering.rs",
-     "        if target.lowers_record_bytes() {\n            return None;\n        }",
-     "        if true {\n            return None;\n        }")
-PY
-
-mutation_case "a bytes variable is refused where it is held" <<'PY'
-edit("sce-build/src/forge/static_lowering.rs",
-     "            return (!target.lowers_bytes())\n                .then(|| format!(\"<data id=\\\"{}\\\" sce:type=\\\"bytes\\\">\", var.id));",
-     "            return Some(format!(\"<data id=\\\"{}\\\" sce:type=\\\"bytes\\\">\", var.id));")
 PY

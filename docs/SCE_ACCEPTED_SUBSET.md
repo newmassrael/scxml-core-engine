@@ -3679,12 +3679,11 @@ ASCII with no backslash — the one literal whose bytes every engine spells alik
 any backend held one, `check` had answered ok for a `bytes` variable with no capacity
 on Rust and Kotlin and for a record with a `bytes` field on Rust, Kotlin, Go, C++ and
 Python, while Rust wrote `#[derive(Clone, Copy)]` over a `Vec<u8>`, which does not
-compile (E0204). Until a backend lowers it, a byte string is refused where it is
-declared, by name, as `generate/unsupported-feature` (`<data id="frame"
-sce:type="bytes">`, `record:Frame with the field `frame` of type bytes`), and the
-backend lifts the refusal (`StaticTarget::lowers_bytes` for a variable,
-`StaticTarget::lowers_record_bytes` for a record's field) in the commit that lowers it
-and replays `static_bytes`.
+compile (E0204). Each backend was refused where it had not yet lowered a place, by
+name, as `generate/unsupported-feature`, and lifted the refusal in the commit that
+lowered it and replayed the shared scenario; the refusal was removed from the shared
+check when the last backend did (2026-10-07), so every backend holds a byte string
+in every place below.
 
 A byte string is assigned from a printable-ASCII literal or from another byte string,
 held to its bound where it is written (past it the assignment fails as any other does:
@@ -3704,13 +3703,12 @@ types, as the text of its bytes, one character to a byte, held to its bound by
 A record's `bytes` field, bounded by the `sce:max-size` its schema declares and written
 a field at a time from a literal or from a `bytes` variable, is held by **Kotlin**,
 **Rust**, **Go**, **Python**, **C++**, **C11** and, as the text of its bytes in the
-object that holds it, the **Interpreter** (`scenarios/static_record_bytes.json`,
-`StaticTarget::lowers_record_bytes`), in a variable and in a list of records alike.
+object that holds it, the **Interpreter** (`scenarios/static_record_bytes.json`), in a
+variable and in a list of records alike.
 
 A transition on an event whose payload carries a `bytes` field reads it into a `bytes`
 variable, into a record's field or into a whole record, held to the bound of the place
-it is written to (`scenarios/static_payload_bytes.json`,
-`StaticTarget::lowers_payload_bytes`), and compares it in a guard. The wire spells it as
+it is written to (`scenarios/static_payload_bytes.json`), and compares it in a guard. The wire spells it as
 its byte-exact Latin-1 text: a byte above 0x7F is one byte, and the two bytes of its
 character in the UTF-8 text; a character past U+00FF is no byte, so the payload that
 carries one does not read as its schema and is refused (`error.execution`, nothing

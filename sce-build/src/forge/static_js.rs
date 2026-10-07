@@ -393,24 +393,15 @@ impl StaticTarget for JsTarget {
     }
     // A byte string is the text of its bytes, one character to a byte, so the
     // library counts its length; it throws past the bound as it does for a string.
-    fn bounded_bytes(&self, value: &str, capacity: u32) -> String {
-        format!("{RUNTIME_GLOBAL}.boundedBytes({value}, {capacity})")
-    }
-    fn lowers_bytes(&self) -> bool {
-        true
-    }
     // A record's byte-string field is the same text in the object that holds it,
     // which `field_assignment` writes again with the field changed, held to the
-    // bound its schema declares as a variable's is.
-    fn lowers_record_bytes(&self) -> bool {
-        true
-    }
-    // A payload is the engine's `_event.data`, read as the JSON it arrived as, and a
-    // byte-string field of it is the text of its bytes: one character to a byte, as the
-    // wire spells it. It is held to the bound of the place it is written to by the
-    // library call every byte string takes, which refuses a character past U+00FF.
-    fn lowers_payload_bytes(&self) -> bool {
-        true
+    // bound its schema declares as a variable's is. A payload is the engine's
+    // `_event.data`, read as the JSON it arrived as, and a byte-string field of it
+    // is the text of its bytes: one character to a byte, as the wire spells it. It is
+    // held to the bound of the place it is written to by the library call every byte
+    // string takes, which refuses a character past U+00FF.
+    fn bounded_bytes(&self, value: &str, capacity: u32) -> String {
+        format!("{RUNTIME_GLOBAL}.boundedBytes({value}, {capacity})")
     }
     fn assign(&self, _target: &str, _value: &str) -> String {
         String::new()

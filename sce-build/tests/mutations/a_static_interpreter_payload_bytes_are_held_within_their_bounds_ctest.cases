@@ -13,16 +13,20 @@
 #
 #   a payload's byte string is read by the library as a value of no type;
 #   a character past U+00FF is let through by the library's reader of a byte string;
-#   a record taken whole from a payload is not held to the bound of its bytes field;
-#   the Interpreter is not said to hold a payload's byte string, so the document is
-#     refused by name and not replayed.
+#   a record taken whole from a payload is not held to the bound of its bytes field.
+#
+# A fourth case, that the Interpreter was not said to hold a payload's byte string and
+# so refused the document by name, was retired with the staging it flipped
+# (`StaticTarget::lowers_payload_bytes`), when the last language lowered the last
+# place.
 #
 # The library is embedded in the generator, so the regeneration is the build the
-# ctest names. Anchors are literal slices of the source; an edit that moves one is
-# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+# ctest names; the runner rebuilds `sce-codegen` itself for a mutated Rust source of
+# it. Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_ctest --test-dir build -R '^static_datamodel_lowered$'
-mutation_targets sce-build/src/forge/static_js/sce_static.js sce-build/src/forge/static_js.rs sce-build/src/forge/static_lowering.rs
+mutation_targets sce-build/src/forge/static_js/sce_static.js sce-build/src/forge/static_lowering.rs
 mutation_oracles tests/integration/AStaticDatamodelRunsLoweredUnderTheInterpreterTest.cpp sce-build/tests/fixtures/static_datamodel/static_payload_bytes.scxml sce-build/tests/fixtures/static_datamodel/scenarios/static_payload_bytes.json
 
 mutation_case "a payload's byte string is read by the library as a value of no type" <<'PY'
@@ -41,10 +45,4 @@ mutation_case "a record taken whole from a payload is not held to its bytes fiel
 edit("sce-build/src/forge/static_lowering.rs",
      "            (SceType::Bytes, Some(bound)) => {\n                bounded = true;\n                let held = target.bounded_bytes(&read.text, bound);",
      "            (SceType::Bytes, Some(bound)) if false => {\n                bounded = true;\n                let held = target.bounded_bytes(&read.text, bound);")
-PY
-
-mutation_case "the Interpreter is not said to hold a payload's byte string" <<'PY'
-edit("sce-build/src/forge/static_js.rs",
-     "    fn lowers_payload_bytes(&self) -> bool {\n        true\n    }",
-     "    fn lowers_payload_bytes(&self) -> bool {\n        false\n    }")
 PY

@@ -351,28 +351,6 @@ pub trait StaticTarget {
     fn lowers_hybrid_invoke(&self) -> bool {
         false
     }
-    /// Whether a `bytes` variable is held: a byte string bounded by the
-    /// `sce:capacity` its declaration writes (docs/adr/0005, decision 2). A target
-    /// that does not is refused where the value is declared, by name, rather than
-    /// left to write a value that does not build.
-    fn lowers_bytes(&self) -> bool {
-        false
-    }
-    /// Whether a record's `bytes` field is held, bounded by the `sce:max-size` its
-    /// schema writes — a step of its own after the variable, since a record is
-    /// copied, saved, taken whole from a payload and handed to a host, each of
-    /// which a byte string changes: Rust's record is a `Copy` struct, which a
-    /// `Vec<u8>` field cannot be a member of.
-    fn lowers_record_bytes(&self) -> bool {
-        false
-    }
-    /// Whether a transition on an event whose typed payload carries a `bytes`
-    /// field is lowered: the field is read into the variable or the record field
-    /// that holds it, under the same bound (docs/adr/0005, decision 2). A target
-    /// that does not is refused at the transition, by name.
-    fn lowers_payload_bytes(&self) -> bool {
-        false
-    }
     /// Whether an `<invoke type="scxml">` of a child that declares
     /// `<sce:action>`s is lowered, and so a candidate of a hybrid one: the child
     /// is built with the host its parent's own host answers, one operation per
@@ -624,14 +602,8 @@ pub trait StaticTarget {
     fn bounded_string(&self, value: &str, capacity: u32) -> String;
     /// [`Self::bounded_string`] for `value`, an owned byte string, held to
     /// `capacity` bytes: the bound a `bytes` variable keeps on every backend
-    /// (docs/adr/0005, decision 2). Asked only of a target that lowers a byte
-    /// string ([`Self::lowers_bytes`]), which is refused before any is written.
-    fn bounded_bytes(&self, _value: &str, _capacity: u32) -> String {
-        unreachable!(
-            "{} holds no byte string: `lowers_bytes` is false, so the document was refused",
-            self.name()
-        )
-    }
+    /// (docs/adr/0005, decision 2).
+    fn bounded_bytes(&self, value: &str, capacity: u32) -> String;
     /// How a string variable bounded by `capacity` UTF-8 bytes is held, starting
     /// at the literal `init` — for a target whose own string type holds no such
     /// bound, as a C buffer does not. `None` for a target whose strings own
@@ -1120,23 +1092,13 @@ impl StaticTarget for KotlinTarget {
     fn bounded_string(&self, value: &str, capacity: u32) -> String {
         format!("com.sce.forge.runtime.SceChecked.bounded({value}, {capacity})")
     }
-    // The overload that takes a `ByteArray` counts its size.
+    // The overload that takes a `ByteArray` counts its size. A `ByteArray` the
+    // machine never writes into, saved as its Latin-1 text; a record's field is
+    // the same, in a data class that compares and hands out its bytes
+    // ([`Self::record_bytes_members`]); a payload's is read where the machine's own
+    // is, and held to the bound of the place it is written into.
     fn bounded_bytes(&self, value: &str, capacity: u32) -> String {
         self.bounded_string(value, capacity)
-    }
-    // A `ByteArray` the machine never writes into, saved as its Latin-1 text.
-    fn lowers_bytes(&self) -> bool {
-        true
-    }
-    // A record's `ByteArray` field is the same, in a data class that compares and
-    // hands out its bytes ([`Self::record_bytes_members`]).
-    fn lowers_record_bytes(&self) -> bool {
-        true
-    }
-    // A payload's `ByteArray` field is read where the machine's own is, and held to
-    // the bound of the variable or the record's field it is written into.
-    fn lowers_payload_bytes(&self) -> bool {
-        true
     }
     // The child is built with what the parent's host answers for it
     // (`actions.actionsFor<Invoke>()`), each time the invocation starts.
@@ -1538,24 +1500,13 @@ impl StaticTarget for RustTarget {
         format!("sce_forge_runtime::algorithm::bounded({value}, {capacity})?")
     }
     // The one helper counts the bytes of whatever it is handed, a `String`'s
-    // UTF-8 and a `Vec<u8>`'s alike.
+    // UTF-8 and a `Vec<u8>`'s alike. A `Vec<u8>` is bounded where it is written and
+    // saved as its Latin-1 text; a record's field is the same, in a record that is
+    // `Clone` and not `Copy` ([`owns_a_buffer`]); a payload's is the `&[u8]` the
+    // payload channel borrows, copied into the `Vec<u8>` of the variable or the
+    // record's field it is written to, under that place's bound.
     fn bounded_bytes(&self, value: &str, capacity: u32) -> String {
         self.bounded_string(value, capacity)
-    }
-    // A `Vec<u8>`, bounded where it is written and saved as its Latin-1 text.
-    fn lowers_bytes(&self) -> bool {
-        true
-    }
-    // A record's `Vec<u8>` field is the same, in a record that is `Clone` and not
-    // `Copy` ([`owns_a_buffer`]).
-    fn lowers_record_bytes(&self) -> bool {
-        true
-    }
-    // A payload's byte field is the `&[u8]` the payload channel borrows, which is
-    // copied into the `Vec<u8>` of the variable or the record's field it is written
-    // to, under that place's bound.
-    fn lowers_payload_bytes(&self) -> bool {
-        true
     }
     fn assign(&self, target: &str, value: &str) -> String {
         format!("{target} = {value};")
@@ -1892,7 +1843,6 @@ pub fn lower(
         }
     }
     if let Some(construct) = invoke_of_a_child_that_needs_a_host(model, target)
-        .or_else(|| bytes_held(model, &scope, target))
         .or_else(|| target.unsupported(model, &scope))
     {
         return Err(GenerateError::unsupported(format!(
@@ -3247,25 +3197,15 @@ impl StaticTarget for CppTarget {
         format!("SCE::Forge::Checked::bounded(sce_failure_, std::string({value}), {capacity}u)")
     }
     // A byte string is already the `std::vector<uint8_t>` a variable holds (a
-    // literal is the one the emitter writes), whose `size()` counts bytes.
+    // literal is the one the emitter writes), whose `size()` counts bytes. A record's
+    // `std::vector<uint8_t>` field is the same, in a struct that is handed to a host
+    // by value and held in a list the host is lent as a constant reference; a
+    // payload's is read where the machine's own is, and held to the bound of the
+    // variable or the record's field it is written to. The inject seam takes the
+    // vector by value and the payload holds it by value, so what the machine keeps
+    // is never the host's own.
     fn bounded_bytes(&self, value: &str, capacity: u32) -> String {
         format!("SCE::Forge::Checked::bounded(sce_failure_, {value}, {capacity}u)")
-    }
-    fn lowers_bytes(&self) -> bool {
-        true
-    }
-    // A record's `std::vector<uint8_t>` field is the same, in a struct that is
-    // handed to a host by value and held in a list the host is lent as a constant
-    // reference.
-    fn lowers_record_bytes(&self) -> bool {
-        true
-    }
-    // A payload's `std::vector<uint8_t>` field is read where the machine's own is, and
-    // held to the bound of the variable or the record's field it is written to. The
-    // inject seam takes the vector by value and the payload holds it by value, so what
-    // the machine keeps is never the host's own.
-    fn lowers_payload_bytes(&self) -> bool {
-        true
     }
     fn assign(&self, target: &str, value: &str) -> String {
         format!("{target} = {value};")
@@ -3552,66 +3492,6 @@ fn invoke_of_a_child_that_needs_a_host(
         return None;
     }
     crate::forge::native_action::child_that_needs_a_host(model).map(|(construct, _)| construct)
-}
-
-/// The first `bytes` variable of `scope` that `target` does not hold
-/// ([`StaticTarget::lowers_bytes`]), the first record variable (or list of
-/// records) whose schema has a `bytes` field it does not hold
-/// ([`StaticTarget::lowers_record_bytes`]), or the first transition on an event
-/// whose payload carries one it does not hold
-/// ([`StaticTarget::lowers_payload_bytes`]), described for a refusal. Asked once
-/// for every target, as a bound is the document's and not a language's.
-fn bytes_held(
-    model: &SCXMLModel,
-    scope: &StaticScope,
-    target: &dyn StaticTarget,
-) -> Option<String> {
-    let in_a_variable = scope.variables.iter().find_map(|var| {
-        let ty = var.value_type.as_ref()?;
-        if matches!(ty.scalar(), Some(SceType::Bytes)) {
-            return (!target.lowers_bytes())
-                .then(|| format!("<data id=\"{}\" sce:type=\"bytes\">", var.id));
-        }
-        if target.lowers_record_bytes() {
-            return None;
-        }
-        let alias = ty
-            .record_alias()
-            .or_else(|| ty.list_elem().and_then(|e| e.record_alias()))?;
-        let field = model
-            .imported_records
-            .get(alias)?
-            .fields
-            .iter()
-            .find(|f| matches!(f.sce_type, SceType::Bytes))?;
-        Some(format!(
-            "record:{alias} with the field `{}` of type bytes",
-            field.id
-        ))
-    });
-    if in_a_variable.is_some() || target.lowers_payload_bytes() {
-        return in_a_variable;
-    }
-    // A typed payload is read field by field through the channel the machine's
-    // own file declares for it, and bytes are a buffer with a length.
-    model
-        .states
-        .values()
-        .flat_map(|state| &state.transitions)
-        .find_map(|t| {
-            let field = model
-                .imported_event_schemas
-                .get(&t.event)?
-                .fields
-                .iter()
-                .find(|f| matches!(f.sce_type, SceType::Bytes))?;
-            Some(format!(
-                "a transition on `{}`, an event whose payload carries `{}` of type {}",
-                t.event,
-                field.id,
-                field.sce_type.as_attr()
-            ))
-        })
 }
 
 /// Whether a record of `schema` has a byte-string field ([`StaticField::holds_bytes`]).
@@ -3903,24 +3783,14 @@ impl StaticTarget for GoTarget<'_> {
         format!("scealgorithm.Bounded(&sceFailure, {value}, {capacity})")
     }
     // The slice a machine holds is its own copy, so a host that kept the one it
-    // raised an event with changes nothing of what the machine read.
+    // raised an event with changes nothing of what the machine read. A `[]byte` the
+    // machine never writes into, handed to a host as a copy; a record's field is the
+    // same — the machine replaces the slice and never writes into it, so a copy of
+    // the record shares it safely, and the reader the record gives the field answers
+    // a copy; a payload's is read where the machine's own is, and held to the bound
+    // of the variable or the record's field it is written to.
     fn bounded_bytes(&self, value: &str, capacity: u32) -> String {
         format!("scealgorithm.BoundedBytes(&sceFailure, {value}, {capacity})")
-    }
-    // A `[]byte` the machine never writes into, handed to a host as a copy.
-    fn lowers_bytes(&self) -> bool {
-        true
-    }
-    // A record's `[]byte` field is the same: the machine replaces the slice and
-    // never writes into it, so a copy of the record shares it safely, and the
-    // reader the record gives the field answers a copy.
-    fn lowers_record_bytes(&self) -> bool {
-        true
-    }
-    // A payload's `[]byte` field is read where the machine's own is, and held to the
-    // bound of the variable or the record's field it is written to.
-    fn lowers_payload_bytes(&self) -> bool {
-        true
     }
     fn assign(&self, target: &str, value: &str) -> String {
         format!("{target} = {value}")
@@ -4400,25 +4270,15 @@ impl StaticTarget for PythonTarget {
     fn bounded_string(&self, value: &str, capacity: u32) -> String {
         format!("sce_algorithm.bounded({value}, {capacity})")
     }
-    // The one helper counts a `str` in UTF-8 bytes and a `bytes` as it is.
+    // The one helper counts a `str` in UTF-8 bytes and a `bytes` as it is. A Python
+    // `bytes` cannot be written into, so a host is handed the value itself and the
+    // bound the machine keeps cannot be changed from outside; a record's field is the
+    // same, in a frozen dataclass that compares by the bytes it holds and is
+    // replaced, not written into, to change a field; a payload's is read where the
+    // machine's own is, and held to the bound of the variable or the record's field
+    // it is written to, the host's value being the machine's to keep.
     fn bounded_bytes(&self, value: &str, capacity: u32) -> String {
         self.bounded_string(value, capacity)
-    }
-    // A Python `bytes` cannot be written into, so a host is handed the value
-    // itself and the bound the machine keeps cannot be changed from outside.
-    fn lowers_bytes(&self) -> bool {
-        true
-    }
-    // A record's `bytes` field is the same, in a frozen dataclass that compares
-    // by the bytes it holds and is replaced, not written into, to change a field.
-    fn lowers_record_bytes(&self) -> bool {
-        true
-    }
-    // A payload's `bytes` field is read where the machine's own is, and held to the
-    // bound of the variable or the record's field it is written to. A Python `bytes`
-    // cannot be written into, so the host's value is the machine's to keep.
-    fn lowers_payload_bytes(&self) -> bool {
-        true
     }
     fn assign(&self, target: &str, value: &str) -> String {
         format!("{target} = {value}")
@@ -4940,8 +4800,8 @@ impl StaticTarget for CTarget {
             // fields it holds as values, and a string is a borrowed pointer into
             // a buffer the machine owns, which an assignment then holds to its
             // own variable's bound. An enum is the machine's own type, lifted
-            // from the variant's declared name. A byte field is refused for
-            // every target alike ([`bytes_held`]) until each holds it.
+            // from the variant's declared name. A byte field is a buffer with a
+            // length, held to the bound of the place it is written to.
             if let Some(other) = Self::unlowered_invoke(&state.invokes, self.lowers_hybrid_invoke())
             {
                 return Some(other);
@@ -5209,9 +5069,6 @@ impl StaticTarget for CTarget {
     fn bounded_bytes(&self, value: &str, capacity: u32) -> String {
         format!("sce_forge_bounded_bytes(&sce_failure_, {value}, {capacity}u)")
     }
-    fn lowers_bytes(&self) -> bool {
-        true
-    }
     // A buffer of the bound and the length it holds, named by the bound so that
     // two variables of one bound share a type, and declared under a guard so that
     // two machines in one program do. It has the shape of a list's view
@@ -5253,9 +5110,6 @@ impl StaticTarget for CTarget {
     fn assign_bytes_field(&self, target: &str, field: &str, value: &str) -> String {
         self.assign_bytes(&format!("{target}.{field}"), value)
     }
-    fn lowers_record_bytes(&self) -> bool {
-        true
-    }
     // The buffer a bytes field of a record is made of, filled from the view of the
     // bytes a payload carried, which were held to the bound.
     fn record_bytes_runtime(&self, bound: u32, bytes: &str) -> String {
@@ -5268,11 +5122,6 @@ impl StaticTarget for CTarget {
         Some(format!(
             "(sce_forge_bytes_view_t){{ {accessor}.{field}, {accessor}.{field}_len }}"
         ))
-    }
-    // A payload's byte field is read where the machine's own is, and held to the
-    // bound of the variable or the record's field it is written to.
-    fn lowers_payload_bytes(&self) -> bool {
-        true
     }
     // A buffer of the bound and its terminator, named by the bound so that two
     // variables of one bound share a type, and declared under a guard so that
