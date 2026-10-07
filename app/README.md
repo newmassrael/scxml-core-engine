@@ -686,6 +686,14 @@ request would find. A source nobody is signed in by gives the commands that sign
 folder to start the client in, for the application's own login) or, for a key, the variable to set
 where the application starts; a login the build does not use is shown as the login it is.
 
+Somebody is signed in when the client says so and ends well. Anything else it prints (a folder it
+was started in that is not there, a settings file it cannot read) is the client not saying who is
+signed in: the source is `unknown`, with what the client said, and a request waits for it to be
+asked again. It is never read as a login, which is what showed the application's own login as
+signed in when its folder was not there. That folder is made, with only its owner able to enter it,
+by whichever asks first, the check of who is signed in or a run, because the client does not start
+in a `CODEX_HOME` that is not there and the commands that sign in start it in this one.
+
 One line says whether a request made for the connection would run and, if not, the first thing it
 waits for, in the order the things are true in: a program that is not there or is not Codex, a
 version this build did not verify (whoever is signed in), then the login. The save is offered only

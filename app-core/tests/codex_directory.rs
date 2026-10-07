@@ -175,6 +175,8 @@ fn verified(fake: &Fake) -> Support {
 struct Rig {
     settings: ConnectionStore,
     fake: Fake,
+    /// The application's own home for the client, not there yet: the application makes it.
+    home: PathBuf,
 }
 
 impl Rig {
@@ -182,6 +184,7 @@ impl Rig {
         Rig {
             settings: ConnectionStore::at(common::scratch(&format!("{label}-settings"))),
             fake: Fake::new(label, login),
+            home: common::scratch(&format!("{label}-home")).join("codex-home"),
         }
     }
 
@@ -204,7 +207,7 @@ impl Rig {
         CodexLaunch {
             binary: self.fake.binary.clone(),
             author: author(),
-            app_home: PathBuf::from(APP_HOME),
+            app_home: self.home.clone(),
             support,
             environment: environment
                 .iter()
@@ -233,20 +236,88 @@ const PATH: (&str, &str) = ("PATH", "/usr/bin:/bin");
 
 #[test]
 fn what_codex_says_of_who_is_signed_in_is_read_as_a_kind_of_credential() {
-    for (said, observed) in [
-        ("Logged in using ChatGPT", Some(Observed::Subscription)),
+    for (said, succeeded, observed) in [
+        (
+            "Logged in using ChatGPT",
+            true,
+            Some(Observed::Subscription),
+        ),
         (
             "Logged in using an API key - sk-...abcd",
+            true,
             Some(Observed::ApiKey),
         ),
-        ("Not logged in", None),
-        ("Not logged in\n", None),
-        // Anything the table does not name is not guessed at.
-        ("Logged in using an access token", Some(Observed::Other)),
-        ("something else entirely", Some(Observed::Other)),
+        // It fails when nobody is signed in, and says so.
+        ("Not logged in", false, None),
+        ("Not logged in\n", false, None),
+        // A way of being signed in that the table does not name is one, and is not guessed at.
+        (
+            "Logged in using an access token",
+            true,
+            Some(Observed::Other),
+        ),
+        // What is printed before it is not what it says: a path has the words of a login's name.
+        (
+            "WARNING: no aliases under \"/home/chatgpt/api key\"\nLogged in using an access token",
+            true,
+            Some(Observed::Other),
+        ),
     ] {
-        assert_eq!(observed_from_login_status(said), observed, "{said}");
+        assert_eq!(
+            observed_from_login_status(said, succeeded),
+            Ok(observed),
+            "{said}"
+        );
     }
+}
+
+#[test]
+fn what_codex_says_that_is_not_a_login_is_not_read_as_one() {
+    for (said, succeeded) in [
+        ("something else entirely", true),
+        (
+            "Error loading configuration: CODEX_HOME points to \"/x\", but that path does not exist",
+            false,
+        ),
+        // The words of a login's name are in a path as well.
+        (
+            "Error loading configuration: CODEX_HOME points to \"/home/chatgpt/api key\", but that path does not exist",
+            false,
+        ),
+        ("", false),
+        // It said somebody is signed in and failed: nothing is known.
+        ("Logged in using ChatGPT", false),
+    ] {
+        assert!(
+            observed_from_login_status(said, succeeded).is_err(),
+            "{said:?} was read as a login"
+        );
+    }
+}
+
+#[test]
+fn a_codex_that_could_not_say_who_is_signed_in_waits_and_says_to_ask_again() {
+    let rig = Rig::new("cdir-login-error", "unused");
+    // The client fails the way it does for a home that is not there.
+    common::write_program(
+        &rig.fake.binary,
+        &format!(
+            "#!/bin/sh\n\
+             if [ \"$1\" = \"--version\" ]; then echo 'codex-cli {VERSION}'; exit 0; fi\n\
+             if [ \"$1\" = \"features\" ]; then printf 'shell_tool  stable  true\\n'; exit 0; fi\n\
+             echo 'Error loading configuration: CODEX_HOME points to \"/x\", but that path does not exist' >&2\n\
+             exit 1\n"
+        ),
+    );
+    let pin = rig.pin(&codex_connection(AuthSource::OfficialLogin));
+    let launch = rig.launch(verified(&rig.fake), &[PATH]);
+
+    let said = refused(rig.directory(Some(launch)).generator_for(&pin));
+
+    assert!(
+        said.contains("could not be asked who is signed in"),
+        "{said}"
+    );
 }
 
 #[test]
@@ -364,7 +435,12 @@ fn the_stored_login_of_the_application_is_asked_of_in_the_home_it_is_kept_in() {
 
     rig.directory(Some(launch)).generator_for(&pin).unwrap();
 
-    assert_eq!(rig.fake.login_env("CODEX_HOME").as_deref(), Some(APP_HOME));
+    assert_eq!(
+        rig.fake.login_env("CODEX_HOME").as_deref(),
+        rig.home.to_str()
+    );
+    // The home was made for it: the client does not start in one that is not there.
+    assert!(rig.home.is_dir());
     // And a key that was only in the shell did not decide who is signed in.
     assert_eq!(rig.fake.login_env("OPENAI_API_KEY"), None);
 }

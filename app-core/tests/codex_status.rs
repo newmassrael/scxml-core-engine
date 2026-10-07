@@ -33,11 +33,12 @@ use serde_json::{json, Value};
 use common::{scratch, FakeRenderer};
 
 const VERSION: &str = "0.159.0";
-const APP_HOME: &str = "/app/data/codex-home";
 
 const CHATGPT: &str = "Logged in using ChatGPT";
 const API_KEY: &str = "Logged in using an API key - sk-...abcd";
 const SIGNED_OUT: &str = "Not logged in";
+/// What the client says, and fails with, when it is started with a home that is not there.
+const NO_SUCH_HOME: &str = "Error loading configuration: CODEX_HOME points to \"/not/there\", but that path does not exist";
 
 /// A stand-in for `codex` that answers `--version`, `features list` and `login status`, and
 /// records the home and the credentials it was started with whenever it is asked who is signed in.
@@ -69,9 +70,14 @@ impl Fake {
              if [ \"$1\" = \"login\" ]; then\n\
                printf 'home=%s openai=%s codex=%s\\n' \"$CODEX_HOME\" \"$OPENAI_API_KEY\" \"$CODEX_API_KEY\" >> \"$R/logins\"\n\
                for a in \"$@\"; do printf '%s\\0' \"$a\"; done >> \"$R/login-argv\"; printf '\\n' >> \"$R/login-argv\"\n\
+               if [ -n \"$CODEX_HOME\" ] && [ ! -d \"$CODEX_HOME\" ]; then\n\
+                 echo '{NO_SUCH_HOME}' >&2\n\
+                 exit 1\n\
+               fi\n\
                if [ -n \"$CODEX_HOME\" ]; then text=$(cat \"$R/store.txt\"); else text=$(cat \"$R/official.txt\"); fi\n\
+               case \"$text\" in FAIL:*) echo \"${{text#FAIL:}}\"; exit 1;; esac\n\
                echo \"$text\"\n\
-               case \"$text\" in *'Not logged in'*) exit 1;; esac\n\
+               case \"$text\" in *'Not logged in'*|*'Error'*) exit 1;; esac\n\
                exit 0\n\
              fi\n\
              exit 1\n",
@@ -141,17 +147,27 @@ fn nowhere() -> Search {
     }
 }
 
+/// The application's own home for the stand-in, as a test gives it: beside the stand-in, and not
+/// there yet. The client refuses a home that is not there, so a status that is read of it is read
+/// of one the application made.
+fn home_of(binary: &Path) -> PathBuf {
+    binary.parent().unwrap().join("codex-home")
+}
+
 fn read(
     named: Option<&Path>,
     policy: &Policy,
     support: &Support,
     environment: &[(String, String)],
 ) -> Value {
+    let home = named
+        .map(home_of)
+        .unwrap_or_else(|| PathBuf::from("/nowhere/codex-home"));
     serde_json::to_value(codex_status::read(
         named,
         policy,
         support,
-        Path::new(APP_HOME),
+        &home,
         environment,
         &nowhere(),
     ))
@@ -314,7 +330,10 @@ fn each_source_is_asked_the_way_a_generation_runs_it() {
         "{asked:?}"
     );
     assert!(
-        asked.contains(&format!("home={APP_HOME} openai= codex=")),
+        asked.contains(&format!(
+            "home={} openai= codex=",
+            home_of(&fake.binary).display()
+        )),
         "{asked:?}"
     );
     let official = account(&status, "official-login");
@@ -341,6 +360,94 @@ fn nobody_signed_in_is_a_state_and_is_not_read_as_not_knowing() {
 
     assert_eq!(account(&status, "official-login")["state"], "signed-out");
     assert_eq!(account(&status, "app-store")["state"], "signed-out");
+}
+
+#[test]
+fn the_applications_own_home_is_made_before_the_client_is_asked_in_it() {
+    // The client refuses a home that is not there, and nothing else makes this one: the commands
+    // that sign in say to start the client in it, which fails the same way.
+    let fake = Fake::new("cst-makes-home", CHATGPT, SIGNED_OUT);
+    let home = home_of(&fake.binary);
+    assert!(!home.exists());
+
+    let status = read(
+        Some(&fake.binary),
+        &Policy::shipped(),
+        &verified(),
+        &environment(&[]),
+    );
+
+    assert_eq!(account(&status, "app-store")["state"], "signed-out");
+    assert!(home.is_dir(), "{} was not made", home.display());
+    // A login is kept in it, which nobody else needs to read.
+    use std::os::unix::fs::PermissionsExt;
+    assert_eq!(
+        fs::metadata(&home).unwrap().permissions().mode() & 0o777,
+        0o700
+    );
+}
+
+#[test]
+fn an_answer_that_is_an_error_is_not_somebody_signed_in() {
+    // What the client said is neither who is signed in nor that nobody is, and it failed. Read as
+    // a login it showed the stored login as signed in when the folder for it was not there.
+    let fake = Fake::new("cst-error-answer", NO_SUCH_HOME, NO_SUCH_HOME);
+
+    let status = read(
+        Some(&fake.binary),
+        &Policy::shipped(),
+        &verified(),
+        &environment(&[]),
+    );
+
+    for source in ["official-login", "app-store"] {
+        let said = account(&status, source);
+        assert_eq!(said["state"], "unknown", "{source}: {said}");
+        let reason = said["reason"].as_str().unwrap();
+        assert!(reason.contains("does not exist"), "{source}: {reason}");
+    }
+}
+
+#[test]
+fn a_login_said_by_a_client_that_failed_is_not_somebody_signed_in() {
+    // It said somebody is, and ended in failure: what it said is not an answer to trust.
+    let fake = Fake::new(
+        "cst-said-and-failed",
+        "FAIL:Logged in using ChatGPT",
+        "FAIL:Logged in using ChatGPT",
+    );
+
+    let status = read(
+        Some(&fake.binary),
+        &Policy::shipped(),
+        &verified(),
+        &environment(&[]),
+    );
+
+    for source in ["official-login", "app-store"] {
+        assert_eq!(account(&status, source)["state"], "unknown", "{source}");
+    }
+}
+
+#[test]
+fn an_answer_that_names_no_login_is_not_somebody_signed_in_though_the_client_did_not_fail() {
+    // A login is read when the client says there is one. Anything else it prints is not one.
+    let fake = Fake::new(
+        "cst-unreadable",
+        "something else entirely",
+        "something else entirely",
+    );
+
+    let status = read(
+        Some(&fake.binary),
+        &Policy::shipped(),
+        &verified(),
+        &environment(&[]),
+    );
+
+    for source in ["official-login", "app-store"] {
+        assert_eq!(account(&status, source)["state"], "unknown", "{source}");
+    }
 }
 
 #[test]
@@ -466,7 +573,7 @@ fn the_first_codex_the_search_finds_is_the_one_asked_when_none_was_named() {
         None,
         &Policy::shipped(),
         &verified(),
-        Path::new(APP_HOME),
+        &home_of(&fake.binary),
         &environment(&[]),
         &search,
     ))
@@ -513,7 +620,10 @@ fn the_commands_that_sign_in_are_fixed_words_and_the_stored_login_names_its_home
         find("app-store", "subscription")["command"],
         "codex login -c cli_auth_credentials_store=file"
     );
-    assert_eq!(find("app-store", "subscription")["home"], APP_HOME);
+    assert_eq!(
+        find("app-store", "subscription")["home"],
+        home_of(&fake.binary).display().to_string().as_str()
+    );
 }
 
 #[test]

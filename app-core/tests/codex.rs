@@ -64,6 +64,10 @@ impl Fake {
              if [ \"$1\" = \"--version\" ]; then echo 'codex-cli {VERSION}'; exit 0; fi\n\
              if [ \"$1\" = \"features\" ]; then cat \"$R/features.txt\"; exit 0; fi\n\
              for a in \"$@\"; do printf '%s\\0' \"$a\"; done > \"$R/argv\"\n\
+             if [ -n \"$CODEX_HOME\" ] && [ ! -d \"$CODEX_HOME\" ]; then\n\
+               echo \"Error loading configuration: CODEX_HOME points to \\\"$CODEX_HOME\\\", but that path does not exist\" >&2\n\
+               exit 1\n\
+             fi\n\
              pwd > \"$R/cwd\"\n\
              env > \"$R/env\"\n\
              cat > \"$R/stdin\"\n\
@@ -95,6 +99,12 @@ impl Fake {
 
     fn started(&self) -> bool {
         self.record.join("argv").exists()
+    }
+
+    /// The application's own home for this stand-in: beside it, and not there until the
+    /// application makes it. The real client refuses a home that is not there.
+    fn home(&self) -> PathBuf {
+        self.binary.parent().unwrap().join("codex-home")
     }
 
     fn env(&self) -> Vec<(String, String)> {
@@ -180,7 +190,7 @@ fn codex(fake: &Fake, auth: AuthSource, support: Support) -> Codex {
             timeout: Duration::from_secs(20),
         },
         auth,
-        PathBuf::from(APP_HOME),
+        fake.home(),
         support,
     )
     .with_environment(vec![
@@ -347,7 +357,7 @@ fn no_model_is_asked_for_when_the_connection_names_none() {
             timeout: Duration::from_secs(20),
         },
         AuthSource::AppStore,
-        PathBuf::from(APP_HOME),
+        fake.home(),
         verified_for(&fake, AuthSource::AppStore, &["shell_tool", "unified_exec"]),
     )
     .with_environment(vec![(
@@ -492,7 +502,7 @@ fn a_run_with_the_applications_stored_login_has_that_login_and_none_of_the_other
 
     generate(&client).unwrap();
 
-    assert_eq!(fake.env_of("CODEX_HOME").as_deref(), Some(APP_HOME));
+    assert_eq!(fake.env_of("CODEX_HOME").as_deref(), fake.home().to_str());
     for name in ["OPENAI_API_KEY", "CODEX_API_KEY", "OPENAI_IDENTITY_TOKEN"] {
         assert_eq!(fake.env_of(name), None, "{name} reached the client");
     }
@@ -521,7 +531,40 @@ fn a_run_with_a_key_from_the_environment_has_that_key_and_no_other_credential() 
     );
     assert_eq!(fake.env_of("OPENAI_API_KEY"), None);
     assert_eq!(fake.env_of("OPENAI_IDENTITY_TOKEN"), None);
-    assert_eq!(fake.env_of("CODEX_HOME").as_deref(), Some(APP_HOME));
+    assert_eq!(fake.env_of("CODEX_HOME").as_deref(), fake.home().to_str());
+}
+
+#[test]
+fn the_home_a_run_is_given_is_made_first_because_the_client_does_not_start_in_one_that_is_not_there(
+) {
+    // The stand-in refuses a home that is not there, as the client does.
+    let fake = Fake::answering("codex-home-made", &answer("<scxml/>"));
+    let client = verified(&fake);
+    assert!(!fake.home().exists());
+
+    generate(&client).unwrap();
+
+    assert!(fake.home().is_dir());
+    // It is not a folder of the person's: nobody else needs to read a login kept in it.
+    use std::os::unix::fs::PermissionsExt;
+    assert_eq!(
+        fs::metadata(fake.home()).unwrap().permissions().mode() & 0o777,
+        0o700
+    );
+}
+
+#[test]
+fn a_run_whose_home_cannot_be_made_is_not_started_and_says_why() {
+    let fake = Fake::answering("codex-home-blocked", &answer("<scxml/>"));
+    // Something that is not a folder is where the home would be.
+    fs::write(fake.home(), "a file").unwrap();
+    let client = verified(&fake);
+
+    let failed = generate(&client).unwrap_err();
+
+    let said = format!("{failed:?}");
+    assert!(said.contains("folder for Codex"), "{said}");
+    assert!(!fake.started(), "the client was started without a home");
 }
 
 #[test]
@@ -532,7 +575,7 @@ fn a_connection_that_chose_a_key_the_environment_does_not_have_is_not_run_on_any
         author(),
         CodexConfig::default(),
         AuthSource::EnvApiKey,
-        PathBuf::from(APP_HOME),
+        fake.home(),
         verified_for(
             &fake,
             AuthSource::EnvApiKey,
@@ -664,7 +707,7 @@ fn a_client_that_takes_longer_than_its_time_is_stopped_and_the_run_failed() {
             timeout: Duration::from_millis(400),
         },
         AuthSource::AppStore,
-        PathBuf::from(APP_HOME),
+        fake.home(),
         verified_for(&fake, AuthSource::AppStore, &["shell_tool", "unified_exec"]),
     )
     .with_environment(vec![(

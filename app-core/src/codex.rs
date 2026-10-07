@@ -319,17 +319,44 @@ pub fn login_of(
         .arg(auth_store_override())
         .env_clear()
         .envs(run.kept);
-    if let Some(home) = &run.home {
-        command.env("CODEX_HOME", home);
-    }
+    give_home(&mut command, run.home.as_deref())?;
     let said = capture(command, SAY)
         .map_err(|_| "Codex could not be asked who is signed in".to_string())?;
-    // It says so on either stream, and fails when nobody is: what it printed is read, not how it
-    // ended.
-    Ok(observed_from_login_status(&format!(
-        "{}\n{}",
-        said.stdout, said.stderr
-    )))
+    // It says so on either stream, and fails when nobody is: what it printed is read, and how it
+    // ended says whether what it printed is an answer.
+    observed_from_login_status(
+        &format!("{}\n{}", said.stdout, said.stderr),
+        said.status.success(),
+    )
+}
+
+/// Give the client the home a connection chose, when it chose one.
+///
+/// The home is the application's own folder, and the client does not start in a `CODEX_HOME` that
+/// is not there, so it is made before the client is given it: by whichever asks first, the check of
+/// who is signed in (which the commands that sign in are shown after) or a run. Only the person
+/// who runs the application needs to read what is kept in it, and a login is.
+fn give_home(command: &mut Command, home: Option<&Path>) -> Result<(), String> {
+    let Some(home) = home else {
+        return Ok(());
+    };
+    make_private_folder(home)
+        .map_err(|e| format!("the application's folder for Codex could not be made: {e}"))?;
+    command.env("CODEX_HOME", home);
+    Ok(())
+}
+
+/// A folder, and the ones above it that are not there, that only its owner may enter. One that is
+/// there is left as it is.
+fn make_private_folder(path: &Path) -> std::io::Result<()> {
+    let mut folder = fs::DirBuilder::new();
+    folder.recursive(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        folder.mode(0o700);
+    }
+    folder.create(path)
 }
 
 /// The features `binary` has switched on, asked now.
@@ -483,19 +510,36 @@ mod tests {
     }
 }
 
-/// What `codex login status` said, as the kind of credential in use, or `None` for nobody. A way it
-/// does not name is [`Observed::Other`] and is not guessed at.
-pub fn observed_from_login_status(text: &str) -> Option<Observed> {
+/// What `codex login status` said, as the kind of credential in use, `None` for nobody, or that it
+/// said neither. `succeeded` is whether the client ended well.
+///
+/// Somebody is signed in when the client says so and does not fail in saying it. Anything else it
+/// prints is not a login: an error (a home that is not there, a settings file it cannot read) is
+/// the client not saying who is signed in, and read as one it showed a login that did not exist.
+/// The kind is read from the line that says it, because the words of a login's name are in a path
+/// as well. A way it does not name is [`Observed::Other`] and is not guessed at.
+pub fn observed_from_login_status(text: &str, succeeded: bool) -> Result<Option<Observed>, String> {
     let said = text.to_ascii_lowercase();
     if said.contains("not logged in") {
-        None
-    } else if said.contains("chatgpt") {
-        Some(Observed::Subscription)
-    } else if said.contains("api key") {
-        Some(Observed::ApiKey)
-    } else {
-        Some(Observed::Other)
+        return Ok(None);
     }
+    if succeeded {
+        if let Some(line) = said.lines().find(|line| line.contains("logged in")) {
+            return Ok(Some(if line.contains("chatgpt") {
+                Observed::Subscription
+            } else if line.contains("api key") {
+                Observed::ApiKey
+            } else {
+                Observed::Other
+            }));
+        }
+    }
+    let printed = text.trim();
+    Err(if printed.is_empty() {
+        "Codex did not say who is signed in".to_string()
+    } else {
+        format!("Codex did not say who is signed in: {}", tail(printed, 300))
+    })
 }
 
 /// The Codex a host found, and how a run of it is given what it needs: what a directory needs to
@@ -573,9 +617,7 @@ impl Generator for Codex {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         // The home the connection gave the client, when it gave one.
-        if let Some(home) = &home {
-            command.env("CODEX_HOME", home);
-        }
+        give_home(&mut command, home.as_deref()).map_err(GenerateError::Failed)?;
         let child = command.spawn().map_err(|e| {
             GenerateError::Failed(format!(
                 "{} could not be started: {e}",
