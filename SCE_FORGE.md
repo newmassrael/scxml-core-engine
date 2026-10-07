@@ -1694,7 +1694,7 @@ A list's element may be a record: `type="list&lt;record:Entry&gt;"`. It is the p
 - **Read** an element through a name: the item of `<sce:foreach item="e" in="xs">`, typed as the record, whose fields read as `e.<field>`. `xs[i]` on a list of records is refused (`expression/unsupported-construct`) — a record is read through a name, as a record return is written as one, and `xs[i].field` would otherwise reach every backend as an operand of no type.
 - **Append** a record parameter, local or foreach item of the element's schema, by name: `<sce:append target="out" expr="e"/>`. Anything else is refused (`expression/unsupported-construct`).
 - A **foreach item** — over any list, scalar or record — is read-only, as the parameter it is an element of is (`algorithm/lvalue-unsupported`).
-- A `sce-static` **statechart variable** may not be a list of records (the machine lowers neither the whole-record append nor its snapshot).
+- A `sce-static` **statechart variable** may itself be a list of records (`sce:type="list&lt;record:Day&gt;"`, bounded by `sce:capacity`): the machine takes a record into it by name and a host reads it through the snapshot. That is the machine's rule and not this kind's; [SCE_ACCEPTED_SUBSET.md §2.15](docs/SCE_ACCEPTED_SUBSET.md) states it.
 
 | Backend | Parameter | Buffer / return |
 |---------|-----------|-----------------|
