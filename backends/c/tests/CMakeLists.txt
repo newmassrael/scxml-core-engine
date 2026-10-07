@@ -3878,6 +3878,25 @@ set_tests_properties(c11_unit_document_stem PROPERTIES
     LABELS "unit;c11"
 )
 
+# ─── Payload bytes unit test ────────────────────────────────────────
+#
+# How a byte string rides in a typed payload (docs/adr/0005, decision 2): its
+# byte-exact Latin-1 text, read the same whether a producer escapes what is not
+# ASCII or writes the characters as they are, with a character past U+00FF refused.
+# Header-only code, so the test needs nothing a configuration can leave out.
+add_executable(sce_c_payload_bytes_unit_test unit/payload_bytes_test.c)
+target_link_libraries(sce_c_payload_bytes_unit_test PRIVATE sce_c_runtime)
+set_target_properties(sce_c_payload_bytes_unit_test PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+add_test(NAME c11_unit_payload_bytes COMMAND sce_c_payload_bytes_unit_test)
+set_tests_properties(c11_unit_payload_bytes PROPERTIES
+    TIMEOUT 10
+    LABELS "unit;c11"
+)
+
 # ─── C++ consumption gate ───────────────────────────────────────────
 #
 # Every header the C11 backend publishes (`backends/c/runtime/include/sce`,

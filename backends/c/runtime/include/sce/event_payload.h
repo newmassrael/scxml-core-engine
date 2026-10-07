@@ -563,6 +563,21 @@ SCE_C_UNUSED static inline const char *sce_payload_walk_text(const char *p, sce_
         } else {
             code = (unsigned char)*p;
             p++;
+            if (sink->bytes != NULL && code >= 0x80u) {
+                /* A character the text wrote as itself is its UTF-8, and is the
+                   one byte of the byte string it spells when it lies within
+                   U+00FF: `C3 BF` is the byte 0xFF, as its escape is. One past
+                   U+00FF is no byte; what is not UTF-8 is no text. */
+                if ((code == 0xC2u || code == 0xC3u) && ((unsigned char)*p & 0xC0u) == 0x80u) {
+                    code = ((code & 0x03u) << 6) | ((unsigned char)*p & 0x3Fu);
+                    p++;
+                } else if (code >= 0xC4u && code <= 0xF4u) {
+                    sink->above_one_byte = true;
+                    return SCE_PAYLOAD_REFUSE_NOT_ONE_BYTE;
+                } else {
+                    return SCE_PAYLOAD_REFUSE_NOT_TEXT;
+                }
+            }
         }
         if (!(named ? sce_payload_emit_code_point(sink, code) : sce_payload_emit(sink, code))) {
             return sink->above_one_byte ? SCE_PAYLOAD_REFUSE_NOT_ONE_BYTE : SCE_PAYLOAD_REFUSE_TOO_LONG;

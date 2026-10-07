@@ -1,0 +1,49 @@
+# Mutation cases for "a byte string rides in a C11 payload as its byte-exact Latin-1
+# text" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A byte string"; docs/adr/0005, decision 2).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_c11_payload_bytes_are_read_as_latin1_text_ctest.cases`.
+#
+# The payload reader read a character a text wrote as itself one byte of its UTF-8 at a
+# time, so `C3 BF` was the two bytes `C3` and `BF` and not the byte 0xFF that its escape
+# spells, and a character past U+00FF written as itself was no refusal. Measured
+# 2026-10-07 by `static_payload_bytes` against the generated C11 machine, the scenario's
+# own text being written with its characters as they are. `c11_unit_payload_bytes` holds
+# the reader to the one byte each spelling names, with a character past U+00FF refused
+# and what is not UTF-8 no text. The mutants take one decision away each:
+#
+#   a character written as itself is a byte of its UTF-8 and not the byte it spells;
+#   a two-byte character is read without the bits of its lead;
+#   a character past U+00FF is not told from a text that is not UTF-8;
+#   a lead with no continuation is taken for a character.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^c11_unit_payload_bytes$'
+mutation_targets backends/c/runtime/include/sce/event_payload.h
+mutation_oracles backends/c/tests/unit/payload_bytes_test.c
+
+mutation_case "a character written as itself is a byte of its UTF-8" <<'PY'
+edit("backends/c/runtime/include/sce/event_payload.h",
+     "            if (sink->bytes != NULL && code >= 0x80u) {",
+     "            if (false && sink->bytes != NULL && code >= 0x80u) {")
+PY
+
+mutation_case "a two-byte character is read without the bits of its lead" <<'PY'
+edit("backends/c/runtime/include/sce/event_payload.h",
+     "code = ((code & 0x03u) << 6) | ((unsigned char)*p & 0x3Fu);",
+     "code = (code & 0x03u) | ((unsigned char)*p & 0x3Fu);")
+PY
+
+mutation_case "a character past U+00FF is not told from a text that is not UTF-8" <<'PY'
+edit("backends/c/runtime/include/sce/event_payload.h",
+     "                } else if (code >= 0xC4u && code <= 0xF4u) {",
+     "                } else if (false && code >= 0xC4u && code <= 0xF4u) {")
+PY
+
+mutation_case "a lead with no continuation is taken for a character" <<'PY'
+edit("backends/c/runtime/include/sce/event_payload.h",
+     "(code == 0xC2u || code == 0xC3u) && ((unsigned char)*p & 0xC0u) == 0x80u) {",
+     "(code == 0xC2u || code == 0xC3u)) {")
+PY
