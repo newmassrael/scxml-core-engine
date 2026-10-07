@@ -86,11 +86,12 @@ fn tools_words(names: &[&str]) -> String {
 /// is the name of.
 fn told() -> String {
     format!(
-        "{SYSTEM_PROMPT}\n{}\n{ANSWER_FORM}\n{}\n{}\n{REPAIRS}\n{}\n{SCHEMA_ECHO}",
+        "{SYSTEM_PROMPT}\n{}\n{ANSWER_FORM}\n{}\n{}\n{REPAIRS}\n{}\n{SCHEMA_ECHO}\n{}",
         tools_words(&AUTHOR_TOOLS),
         prompt(&blank_job()),
         AUTHOR_TOOLS.join(","),
         repair_words("<what was wrong>"),
+        unreadable_words("<why>"),
     )
 }
 
@@ -99,6 +100,15 @@ fn repair_words(wrong: &str) -> String {
     format!(
         "Your last message is not the draft: {wrong}\n\nAnswer again with only the JSON object in \
          the form asked for."
+    )
+}
+
+/// What a model is told when the server could not read a tool call it made.
+fn unreadable_words(why: &str) -> String {
+    format!(
+        "The server could not read your last tool call, so it was not made: {why}. Make it again, \
+         with arguments that are one JSON object: a string holds a quote as \\\" and a line break \
+         as \\n, and every string and bracket is closed."
     )
 }
 
@@ -146,6 +156,18 @@ pub enum Step {
     },
     /// The model's message was not the draft, and why.
     NotTheDraft { why: String },
+    /// The server could not read a tool call the model made, and why (the model is told, and asked
+    /// again).
+    NotReadable { why: String },
+}
+
+/// What asking the model once came to.
+enum Turn {
+    /// The model's message.
+    Message(Value),
+    /// The server could not read a tool call of the model: why, and the server's own words for
+    /// when it is not put right.
+    Unreadable { why: String, said: String },
 }
 
 /// Somebody who is told each step of a run.
@@ -306,14 +328,15 @@ impl Local {
         }
     }
 
-    /// One turn: the messages so far to the server, and the model's message back.
+    /// One turn: the messages so far to the server, and the model's message back, or that the
+    /// server could not read a call the model made.
     fn ask(
         &self,
         messages: &[Value],
         tools: &Value,
         deadline: Instant,
         cancel: &Cancel,
-    ) -> Result<Value, GenerateError> {
+    ) -> Result<Turn, GenerateError> {
         let body = json!({
             "model": self.config.model,
             "messages": messages,
@@ -335,11 +358,15 @@ impl Local {
         )
         .map_err(|e| self.http_failure(e))?;
         if !(200..300).contains(&response.status) {
-            return Err(GenerateError::Failed(server_said(
-                response.status,
-                &response.body,
-                self.bearer.is_some(),
-            )));
+            let said = server_said(response.status, &response.body, self.bearer.is_some());
+            // A call the model wrote badly is the model's to write again, and is not a server that
+            // is down: only this one error is told apart, so that another is not taken for it.
+            if response.status == 500 {
+                if let Some(why) = unreadable_call(&error_message(&response.body)) {
+                    return Ok(Turn::Unreadable { why, said });
+                }
+            }
+            return Err(GenerateError::Failed(said));
         }
         let reply: Value = serde_json::from_slice(&response.body).map_err(|_| {
             GenerateError::Failed(format!(
@@ -349,7 +376,7 @@ impl Local {
         })?;
         let message = reply["choices"][0]["message"].clone();
         if message.is_object() {
-            Ok(message)
+            Ok(Turn::Message(message))
         } else {
             Err(GenerateError::Failed(
                 "the server's answer has no message: it is not a chat completion".to_string(),
@@ -438,12 +465,27 @@ impl Generator for Local {
             json!({"role": "user", "content": prompt(job)}),
         ];
         let mut repairs = 0;
+        // Tool calls the server could not read, which are put right as a draft that is not one is,
+        // and counted apart from those: a model that is wrong about one is not wrong about both.
+        let mut unread = 0;
         for turn in 0..self.config.max_turns {
             self.trace.say(|| Step::Asked {
                 turn,
                 messages: messages.len(),
             });
-            let message = self.ask(&messages, &offered, deadline, cancel)?;
+            let message = match self.ask(&messages, &offered, deadline, cancel)? {
+                Turn::Message(message) => message,
+                Turn::Unreadable { why, .. } if unread < REPAIRS => {
+                    self.trace.say(|| Step::NotReadable { why: why.clone() });
+                    unread += 1;
+                    messages.push(json!({"role": "user", "content": unreadable_words(&why)}));
+                    continue;
+                }
+                Turn::Unreadable { why, said } => {
+                    self.trace.say(|| Step::NotReadable { why });
+                    return Err(GenerateError::Failed(said));
+                }
+            };
             let calls = calls_of(&message, turn);
             self.trace.say(|| Step::Said {
                 turn,
@@ -696,12 +738,11 @@ fn short(text: &str, limit: usize) -> String {
     }
 }
 
-/// What a server answered that is not a success, in a sentence: its status, its own words when it
-/// gave any (the form of an error differs by server, and an error that is plain text is read too),
-/// and what the person can do about the two statuses that are usually the address or a key.
-fn server_said(status: u16, body: &[u8], has_key: bool) -> String {
+/// What a server said of an error: the message it gave, in whichever form it gave it (the form
+/// differs by server, and an error that is plain text is read too).
+fn error_message(body: &[u8]) -> String {
     let text = String::from_utf8_lossy(body);
-    let why = serde_json::from_str::<Value>(&text)
+    serde_json::from_str::<Value>(&text)
         .ok()
         .and_then(|value| {
             value["error"]["message"]
@@ -710,9 +751,38 @@ fn server_said(status: u16, body: &[u8], has_key: bool) -> String {
                 .or_else(|| value["message"].as_str())
                 .map(str::to_string)
         })
-        .unwrap_or_else(|| text.to_string());
+        .unwrap_or_else(|| text.to_string())
+}
+
+/// What a server says when the arguments a model wrote for a tool call are not JSON. The call
+/// cannot be made, and the server has no message to give back, so it answers an error (Ollama
+/// answers 500; measured with `gpt-oss:120b`, which wrote a whole document into a call and left
+/// its string open). Another server's words for it are added when one is measured.
+const UNREADABLE_CALL: &str = "error parsing tool call";
+
+/// Why the server could not read a tool call of the model, when what it said of an error is that.
+///
+/// The server quotes what the model wrote, which can be as long as a document, and then says why it
+/// is not JSON. Only the why is kept: the model has what it wrote, and the rest is not worth a
+/// second copy in the conversation.
+fn unreadable_call(message: &str) -> Option<String> {
+    if !message.contains(UNREADABLE_CALL) {
+        return None;
+    }
+    let why = message
+        .rsplit_once("err=")
+        .map(|(_, why)| why.trim())
+        .filter(|why| !why.is_empty())
+        .unwrap_or("its arguments are not valid JSON");
+    Some(short(why, 200))
+}
+
+/// What a server answered that is not a success, in a sentence: its status, its own words when it
+/// gave any (the form of an error differs by server, and an error that is plain text is read too),
+/// and what the person can do about the two statuses that are usually the address or a key.
+fn server_said(status: u16, body: &[u8], has_key: bool) -> String {
     let mut said = format!("the server answered {status}");
-    let why = short(&why, SAID_MAX);
+    let why = short(&error_message(body), SAID_MAX);
     if !why.is_empty() {
         said.push_str(&format!(": {why}"));
     }
@@ -988,6 +1058,40 @@ mod tests {
     }
 
     #[test]
+    fn what_a_server_says_of_a_call_it_could_not_read_is_cut_to_why_and_nothing_else_is_taken_for_it(
+    ) {
+        // The server quotes what the model wrote, which holds the words `err=` and a long
+        // document, and says why last.
+        let said = "error parsing tool call: raw='{ \"text\": \"err=a\", \"more\": ', \
+                    err=unexpected end of JSON input";
+        assert_eq!(
+            unreadable_call(said).as_deref(),
+            Some("unexpected end of JSON input")
+        );
+        // Without a why, a sentence that is true of any call that is not JSON.
+        assert_eq!(
+            unreadable_call("error parsing tool call").as_deref(),
+            Some("its arguments are not valid JSON")
+        );
+        assert_eq!(
+            unreadable_call("error parsing tool call: err=").as_deref(),
+            Some("its arguments are not valid JSON")
+        );
+        // What is long is cut.
+        let long = format!("error parsing tool call: raw='x', err={}", "y".repeat(500));
+        assert!(unreadable_call(&long).unwrap().chars().count() <= 203);
+        // And anything else is not one.
+        for other in [
+            "the model runner has crashed",
+            "model 'm' not found",
+            "context length exceeded",
+            "",
+        ] {
+            assert_eq!(unreadable_call(other), None, "{other}");
+        }
+    }
+
+    #[test]
     fn what_the_instructions_are_named_by_is_everything_the_model_is_told() {
         let told = told();
 
@@ -997,6 +1101,7 @@ mod tests {
             ("the tools it has", tools_words(&AUTHOR_TOOLS)),
             ("the first message", prompt(&blank_job())),
             ("the repair", repair_words("<what was wrong>")),
+            ("the repair of a call", unreadable_words("<why>")),
             ("what is said of the schema", SCHEMA_ECHO.to_string()),
             ("the number of repairs", format!("\n{REPAIRS}\n")),
         ] {

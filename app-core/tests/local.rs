@@ -644,6 +644,130 @@ fn a_model_server_that_is_not_there_is_said_so() {
     assert!(said.contains("could not be reached"), "{said}");
 }
 
+/// What a server answers when the arguments a model wrote for a tool call are not JSON, so that
+/// the call cannot be made and there is no message to give back: Ollama answers 500, and quotes
+/// what the model wrote (measured with `gpt-oss:120b`, which wrote a document into a call).
+fn unreadable_call(raw: &str, why: &str) -> Script {
+    Script::Reply(
+        500,
+        json!({"error": {"message": format!("error parsing tool call: raw='{raw}', err={why}")}})
+            .to_string(),
+    )
+}
+
+#[test]
+fn a_tool_call_the_server_could_not_read_is_told_to_the_model_which_makes_it_again() {
+    let rig = Rig::new(
+        "local-unreadable",
+        vec![
+            calls(&[(Some("c1"), "works_read", "{\"work\":\"door-lock\"}")]),
+            unreadable_call(
+                "{ \"documents\": [ { \"name\": \"door",
+                "unexpected end of JSON input",
+            ),
+            says(&draft("<scxml/>")),
+        ],
+    );
+
+    let made = rig.run().unwrap();
+
+    assert_eq!(made.model.entry_text(), "<scxml/>");
+    assert_eq!(rig.server.requests().len(), 3);
+    // The model was asked again, and told that its call was not read and why.
+    let last = rig.server.messages(2).pop().unwrap();
+    assert_eq!(last["role"], "user");
+    let words = last["content"].as_str().unwrap();
+    assert!(
+        words.contains("could not read your last tool call"),
+        "{words}"
+    );
+    assert!(words.contains("unexpected end of JSON input"), "{words}");
+    // What it wrote is not said back to it: it can be as long as a document, and it has it.
+    assert!(!words.contains("\"documents\""), "{words}");
+}
+
+#[test]
+fn a_call_the_server_could_not_read_is_a_step_that_says_why_it_could_not() {
+    let rig = Rig::new(
+        "local-unreadable-trace",
+        vec![
+            unreadable_call("{ \"a\": ", "unexpected end of JSON input"),
+            says(&draft("<scxml/>")),
+        ],
+    );
+    let steps: Arc<Mutex<Vec<Step>>> = Arc::default();
+    let sink = Arc::clone(&steps);
+
+    rig.local(LocalConfig::for_model("m"))
+        .with_trace(move |step| sink.lock().unwrap().push(step.clone()))
+        .generate(&job(), &Cancel::new())
+        .unwrap();
+
+    let steps = steps.lock().unwrap().clone();
+    assert_eq!(
+        steps[..3],
+        [
+            Step::Asked {
+                turn: 0,
+                messages: 2
+            },
+            Step::NotReadable {
+                why: "unexpected end of JSON input".to_string()
+            },
+            // The model is asked again with what it was told added to the conversation.
+            Step::Asked {
+                turn: 1,
+                messages: 3
+            },
+        ]
+    );
+}
+
+#[test]
+fn a_model_whose_tool_calls_are_never_read_is_given_a_few_tries_and_then_the_server_is_quoted() {
+    let rig = Rig::new(
+        "local-unreadable-always",
+        vec![
+            unreadable_call("{ \"a\": ", "unexpected end of JSON input"),
+            unreadable_call("{ \"b\": ", "unexpected end of JSON input"),
+            unreadable_call("{ \"c\": ", "unexpected end of JSON input"),
+            says(&draft("<scxml/>")),
+        ],
+    );
+
+    let refused = rig.run().unwrap_err();
+
+    let GenerateError::Failed(said) = refused else {
+        panic!("expected a failure, got {refused:?}");
+    };
+    assert!(said.contains("the server answered 500"), "{said}");
+    assert!(said.contains("error parsing tool call"), "{said}");
+    // The first, and a try after each of the two repairs: not an endless asking.
+    assert_eq!(rig.server.requests().len(), 3);
+}
+
+#[test]
+fn a_server_error_that_is_not_a_tool_call_it_could_not_read_is_not_put_to_the_model() {
+    let rig = Rig::new(
+        "local-500-other",
+        vec![
+            Script::Reply(
+                500,
+                r#"{"error":"the model runner has crashed"}"#.to_string(),
+            ),
+            says(&draft("<scxml/>")),
+        ],
+    );
+
+    let refused = rig.run().unwrap_err();
+
+    let GenerateError::Failed(said) = refused else {
+        panic!("expected a failure, got {refused:?}");
+    };
+    assert!(said.contains("the model runner has crashed"), "{said}");
+    assert_eq!(rig.server.requests().len(), 1);
+}
+
 #[test]
 fn a_model_server_that_does_not_answer_ends_the_run_at_its_time() {
     let rig = Rig::new("local-slow", vec![Script::Hang]);

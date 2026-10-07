@@ -62,6 +62,18 @@ fn clipped(text: &str, limit: usize) -> String {
     }
 }
 
+/// How long a run is given: twenty-five minutes, or `SCE_LOCAL_MINUTES`. A model that is large for
+/// the computer it runs on takes a minute and a half for a turn (measured with `gpt-oss:120b` on a
+/// machine that holds a part of it on the GPU), and sixteen turns are not twenty-five minutes.
+fn allowed() -> Duration {
+    let minutes = std::env::var("SCE_LOCAL_MINUTES")
+        .ok()
+        .and_then(|text| text.trim().parse::<u64>().ok())
+        .filter(|minutes| *minutes > 0)
+        .unwrap_or(25);
+    Duration::from_secs(minutes * 60)
+}
+
 fn required(name: &str) -> String {
     std::env::var(name).unwrap_or_else(|_| panic!("{name} names the server and is required"))
 }
@@ -136,7 +148,7 @@ fn a_model_on_a_real_server_writes_a_model_the_core_accepts_and_publishes() {
         ],
     };
     let config = LocalConfig {
-        timeout: Duration::from_secs(25 * 60),
+        timeout: allowed(),
         ..LocalConfig::for_model(model)
     };
     let began = Instant::now();
@@ -174,6 +186,9 @@ fn a_model_on_a_real_server_writes_a_model_the_core_accepts_and_publishes() {
                 }
             }
             Step::NotTheDraft { why } => println!("[{at:>4}s]   not the draft: {why}"),
+            Step::NotReadable { why } => {
+                println!("[{at:>4}s]   the server could not read its tool call: {why}")
+            }
         }
     });
     if let Some(key) = key {
@@ -307,7 +322,7 @@ fn a_server_registered_through_the_commands_is_written_for_by_a_host_with_no_cli
     assert_eq!(host.not_hosted(), None, "the host did not start");
 
     let began = Instant::now();
-    let limit = began + Duration::from_secs(25 * 60);
+    let limit = began + allowed();
     let mut last = None;
     let state = loop {
         let seen = store.read_request(&work, &request).unwrap();

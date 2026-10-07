@@ -471,9 +471,25 @@ result between the two, and takes the model's last message as its draft. The req
 the one the tool that builds it returned, not a copy the model types out (measured against a real
 server: a copy of four thousand characters can be wrong), and the form of the answer is given as an
 example to fill in, because a model that is given a JSON Schema in its conversation says it back. A
-draft the core does not accept is told back to the model, which writes again. Measured once, on
-2026-10-06, against Ollama with `qwen3-coder:30b`: fourteen questions and about five minutes to a
-model the core accepted; one model, one run, and not a claim about the others.
+draft the core does not accept is told back to the model, which writes again. So is a tool call the
+server could not read: when the arguments a model wrote for a call are not JSON, Ollama answers
+500 (`error parsing tool call`) and there is no message to give back, so the model is told why and
+makes the call again, twice at most, counted apart from drafts that are not one. Any other server
+error ends the run.
+
+Measured on 2026-10-06 and 07 against Ollama on a machine with one 16 GB GPU, one live run of the
+whole chain per line unless it says more, and not a claim about any other computer or run:
+
+| Model | What came of it |
+|---|---|
+| `qwen3-coder:30b` | accepted by the core, in about five minutes (305 s, and 164 s when asked for through the screen's commands) |
+| `gpt-oss:120b` | three runs: ended by a 500 for a call whose arguments were not JSON (before that was told back to the model); not done in 25 minutes, after sixteen turns of putting a design right at a minute and a half each; accepted in 637 s |
+| `devstral:24b` | not accepted after 613 s: its first message gave the request's own ids back as if they were the draft, and its last gave a draft with no documents, and it never wrote a design |
+
+A model that does not carry out the work (it is told to call tools, write SCXML, have the product
+check it, and answer with the draft) fails in the model and not in the adapter, and the run says
+what the model last said of it. Which model is large enough is the person's to find: a limit of
+minutes in the live test's environment (`SCE_LOCAL_MINUTES`) is what lets a slow one finish.
 
 **A request ends when it is told to or when its time is up, while it is being sent as well as while
 it is answered.** A server may read none of what is sent to it (a model that is busy, a connection
