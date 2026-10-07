@@ -1271,6 +1271,28 @@ describe("a model server of the person's", () => {
     ]);
   });
 
+  it("brings what the server said into view, because the button that asked is above it and the panel is long", async () => {
+    // What a window has and the test's document does not.
+    const proto = Element.prototype as unknown as { scrollIntoView?: (this: Element) => void };
+    const original = proto.scrollIntoView;
+    const brought: string[] = [];
+    proto.scrollIntoView = function (this: Element) {
+      brought.push(this.id);
+    };
+    try {
+      const r = await chooseServer({ servers: [[OLLAMA, listed(OLLAMA, ["m"])]] });
+      expect(brought).toEqual([]);
+
+      click(r.root, `[data-address="${OLLAMA}"]`);
+      await settle();
+
+      expect(brought).toEqual(["ai-server-status"]);
+    } finally {
+      if (original === undefined) delete proto.scrollIntoView;
+      else proto.scrollIntoView = original;
+    }
+  });
+
   it("asks the address that was typed, when the person presses check", async () => {
     const r = await chooseServer({ servers: [[FAR_SECURE, listed(FAR_SECURE, ["m"], { reach: "network", tls: true })]] });
     // Spaces around what was pasted are not part of the address.

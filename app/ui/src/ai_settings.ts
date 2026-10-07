@@ -179,6 +179,8 @@ export class AiSettings {
       this.server.setAsked(refusal(error, this.host));
     }
     this.host.redraw();
+    // What the server said is below the fold when the button that asked is above it.
+    this.server.reveal();
   }
 
   private async askClaude(): Promise<void> {

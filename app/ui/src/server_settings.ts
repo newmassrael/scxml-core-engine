@@ -45,6 +45,9 @@ const PRESETS: readonly { readonly name: string; readonly address: string }[] = 
   { name: "vLLM", address: "http://127.0.0.1:8000/v1" },
 ];
 
+/** The id of what the server said, which a screen can bring into view. */
+const STATUS_ID = "ai-server-status";
+
 export class ServerSection {
   private asked: Asked<ServerStatus> = { phase: "idle" };
   /** The name typed and not yet saved; `undefined` is the one that is kept. */
@@ -61,6 +64,15 @@ export class ServerSection {
 
   setAsked(asked: Asked<ServerStatus>): void {
     this.asked = asked;
+  }
+
+  /**
+   * Bring what the server said into view. The panel is longer than the sidebar is tall, and a
+   * button that asks (a server's button among the usual ones is above the answer) leaves the
+   * answer below the fold, where a person who pressed it does not look.
+   */
+  reveal(): void {
+    document.getElementById(STATUS_ID)?.scrollIntoView?.({ block: "nearest" });
   }
 
   /** Whether this window can say anything of a server: asking calls an address, which is the desktop window's. */
@@ -140,7 +152,7 @@ export class ServerSection {
         h("dt", {}, t("aiServerAddress")),
         h("dd", {}, this.addressField(), this.presets()),
         h("dt", {}, t("aiServerState")),
-        h("dd", {}, this.checkButton(), ...this.statusLines()),
+        h("dd", { id: STATUS_ID }, this.checkButton(), ...this.statusLines()),
         h("dt", {}, t("aiModel")),
         h("dd", {}, this.modelField()),
       ),

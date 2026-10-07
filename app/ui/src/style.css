@@ -305,8 +305,34 @@ textarea:focus-visible {
   margin: 12px 0;
 }
 
-/* A model server's fields: the name and the address are typed, so they are wide enough to read. */
+/* What a panel says of a client or a server: a label, and under it what is said of it. The browser's
+   own indent of a definition (40px) is a sixth of the sidebar, which is where this is drawn, and
+   leaves a typed field too narrow to read what is in it (seen in the desktop window). */
+.ai-facts {
+  margin: 8px 0 12px;
+}
+
+.ai-facts dt {
+  margin-top: 10px;
+  font-weight: 600;
+}
+
+.ai-facts dd {
+  margin: 2px 0 0;
+  /* Where a client is installed is a path with no place to break it, and the sidebar is narrow. */
+  overflow-wrap: anywhere;
+}
+
+/* A list of programs names each by its path, which is longer than the sidebar: it is cut to the
+   width it has and does not make the sidebar scroll sideways. */
+.ai-facts select,
+.ai-program select {
+  max-width: 100%;
+}
+
+/* A field that is typed fills the width it is given, and no more than a line of an address needs. */
 .ai-facts input[type="text"] {
+  box-sizing: border-box;
   width: min(100%, 36em);
 }
 
