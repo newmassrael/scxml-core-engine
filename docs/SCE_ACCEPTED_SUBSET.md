@@ -3292,7 +3292,9 @@ machine (`a_static_rust_send_target_is_held_to_its_declared_routes_rust.cases`);
 the same way: the value is compared with the declared routes, one that is none of
 them becomes the empty target, and the one `sendToTarget` that routes a value read at
 run time answers it as it answers any address nobody is at
-(`a_static_kotlin_send_target_is_held_to_its_declared_routes_kotlin.cases`). `typeexpr` is still
+(`a_static_kotlin_send_target_is_held_to_its_declared_routes_kotlin.cases`), and **Go**
+does too, through `engine.SendToTarget` and a `switch` over the declared routes
+(`a_static_go_send_target_is_held_to_its_declared_routes_go.cases`). `typeexpr` is still
 refused as above. A `<cancel>`'s
 `sendidexpr` is the same for the id of the delayed send it removes: a string
 computed from the machine's fields when the cancel runs, so the one `<cancel>`

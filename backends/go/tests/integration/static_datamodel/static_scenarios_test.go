@@ -68,6 +68,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_send_idlocation"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_send_namelist"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_send_params"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_send_target"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_string_capacity"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_whole_payload"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_wire_enum"
@@ -858,6 +859,19 @@ func TestASendsEventIsNamedWhenItRuns(t *testing.T) {
 		"pings":    func() any { return policy.Pings() },
 		"pongs":    func() any { return policy.Pongs() },
 		"refusals": func() any { return policy.Refusals() },
+	}))
+}
+
+// The `targetexpr` of a <send> is a string computed from the machine's fields when
+// the send runs, held to the routes the document declares as `sce:targets`
+// (docs/adr/0005, decision 3): the send goes by the entry that matches, and a value
+// in none of them is error.communication with nothing sent.
+func TestASendsTargetIsChosenAmongTheDeclaredRoutes(t *testing.T) {
+	policy := static_send_target.NewStaticSendTargetPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_send_target", drive[static_send_target.StaticSendTargetState, static_send_target.StaticSendTargetEvent](&policy, map[string]func() any{
+		"landed":  func() any { return policy.Landed() },
+		"refused": func() any { return policy.Refused() },
 	}))
 }
 

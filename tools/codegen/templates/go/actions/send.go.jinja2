@@ -166,10 +166,11 @@
 
    The whole element is one Go block, so two sends in one action block do not
    declare the same locals twice. #}
-{# Under `datamodel="sce-static"` a `delayexpr` and an `eventexpr` are lowered to
-   the strings they compute (`Action::native_delay`, `Action::native_event`), so
-   each is an argument like the others but needs no engine to be read. #}
-{% set send_prologue = (model.needs_script_engine and (action.eventexpr or action.targetexpr or action.typeexpr or action.delayexpr or has_namelist or action.idlocation)) or action.native_delay or action.native_event %}
+{# Under `datamodel="sce-static"` a `delayexpr`, an `eventexpr` and a `targetexpr` are
+   lowered to the strings they compute (`Action::native_delay`,
+   `Action::native_event`, `Action::native_target`), so each is an argument like the
+   others but needs no engine to be read. #}
+{% set send_prologue = (model.needs_script_engine and (action.eventexpr or action.targetexpr or action.typeexpr or action.delayexpr or has_namelist or action.idlocation)) or action.native_delay or action.native_event or action.native_target %}
 {% if send_prologue %}
 {% if model.needs_script_engine %}
 	p.ensureScriptEngine()
@@ -218,7 +219,37 @@
 	}
 	_ = sendEventName
 {% endif %}
-{% if action.targetexpr %}
+{% if action.native_target %}
+	// docs/adr/0005, decision 3: the target is a string computed from the machine's
+	// fields now, and the send goes only by a route the document declared as
+	// `sce:targets`. A value in none of them names no route this send may take — an
+	// address nobody answers at, which the arm reports as error.communication
+	// (W3C SCXML 6.2.4) — and an operation that fails cannot be evaluated, the
+	// argument error.
+	var sendTargetVal any
+	sendTarget := ""
+	if sendArgError == "" {
+{% if action.native_target_fails %}
+		var sceFailure scealgorithm.Failure
+{% endif %}
+		sceRoute := {{ action.native_target }}
+{% if action.native_target_fails %}
+		if sceFailure.Failed() {
+			sendArgError = "<send> targetexpr could not be evaluated"
+		} else {
+{% endif %}
+		switch sceRoute {
+		case {% for entry in action.targets %}"{{ entry | escape_go }}"{% if not loop.last %}, {% endif %}{% endfor %}:
+			sendTargetVal = sceRoute
+			sendTarget = sceRoute
+		}
+{% if action.native_target_fails %}
+		}
+{% endif %}
+	}
+	_ = sendTargetVal
+	_ = sendTarget
+{% elif action.targetexpr %}
 	// A target that evaluates to nothing is not an evaluation error: it is
 	// an address nobody answers at, which the arm reports as
 	// error.communication (W3C SCXML 6.2.4).
@@ -327,7 +358,7 @@
 		// event names its origin, so `targetexpr="_event.origin"` (test336)
 		// reads this session's location, never "".
 {% if 'error.communication' in model.events %}
-		errEvt := sce.NewPlatformError({{ machine_name }}Event{{ 'error.communication' | to_event_variant }}, "<send> targetexpr evaluated to nothing, so there is no target to reach")
+		errEvt := sce.NewPlatformError({{ machine_name }}Event{{ 'error.communication' | to_event_variant }}, "<send> targetexpr evaluated to nothing{% if action.native_target %}, or to a route the send does not declare{% endif %}, so there is no target to reach")
 		errEvt.Metadata.SendID = {{ send_id_go }}
 		engine.Raise(errEvt)
 {% endif %}
@@ -778,7 +809,7 @@
 {% endfor %}
 {% else %}
 	// W3C SCXML 6.2: External send
-{% if action.targetexpr and model.needs_script_engine %}
+{% if action.targetexpr and (model.needs_script_engine or action.native_target) %}
 	// W3C SCXML 6.2.4 + C.1: a targetexpr is a target — the value is routed as
 	// the same value written in `target` is, at once or after the delay, by
 	// the table sce.ClassifyTarget holds (C++ `SendHelper::classifyTarget`).
