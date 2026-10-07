@@ -3530,7 +3530,7 @@ fn bytes_as_hex_list(bytes: &[u8]) -> String {
 /// Whether `left op right` is a string concatenation.
 ///
 /// ECMA-262 13.15.3 makes `+` a concatenation as soon as one operand is a
-/// string, whatever the other turns out to be: `'E' + (52520 + n)` is a string
+/// string, whatever the other turns out to be: `'E' + (7300 + n)` is a string
 /// and never a sum. The numeric lattice ([`join_arith`]) has no place for a
 /// string, so without this the sum was `Unknown` and every emitter wrote the
 /// operator between its operands as written -- a pointer addition in C and

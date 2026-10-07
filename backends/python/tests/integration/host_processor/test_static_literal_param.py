@@ -63,9 +63,9 @@ def _request_of(sends: List[HostSendRequest], event: str) -> HostSendRequest:
 def test_a_literal_beside_a_field_crosses_as_written() -> None:
     sends = _run(["bump", "go"])
     notify = _request_of(sends, "notify")
-    assert notify.params == {"id": ["E24603"], "count": ["4"], "unit": ["ms"]}, "the text each <param> crosses as"
+    assert notify.params == {"id": ["E7401"], "count": ["4"], "unit": ["ms"]}, "the text each <param> crosses as"
     data = json.loads(notify.event_data)
-    assert data == {"id": "E24603", "count": 4, "unit": "ms"}, f"typed as the data model holds them: {notify.event_data}"
+    assert data == {"id": "E7401", "count": 4, "unit": "ms"}, f"typed as the data model holds them: {notify.event_data}"
 
 
 def test_the_field_is_read_when_the_send_runs_not_at_start_up() -> None:
@@ -81,6 +81,6 @@ def test_literals_alone_cross_as_the_same_pairs() -> None:
     # shares with ``notify``, as the same text and the same JSON.
     sends = _run(["bump", "go"])
     plain = _request_of(sends, "plain")
-    assert plain.params == {"id": ["E24603"], "unit": ["ms"]}
-    assert json.loads(plain.event_data) == {"id": "E24603", "unit": "ms"}
+    assert plain.params == {"id": ["E7401"], "unit": ["ms"]}
+    assert json.loads(plain.event_data) == {"id": "E7401", "unit": "ms"}
     assert len(sends) == 2, "both sends went"

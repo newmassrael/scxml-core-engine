@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-//! `'E' + (52520 + n)` is a string in every backend, as it is in ECMAScript.
+//! `'E' + (7300 + n)` is a string in every backend, as it is in ECMAScript.
 //!
 //! ECMA-262 13.15.3 makes `+` a concatenation as soon as one operand is a
 //! string, whatever the other turns out to be. The Lua emitter has always
@@ -10,7 +10,7 @@
 //! a string had no place in that lattice, the sum came out `Unknown`, and each
 //! emitter then wrote the operator between its operands as written:
 //!
-//! * C and C++ spelled `"E" + (52520 + n)`, which adds to a `const char *`: it
+//! * C and C++ spelled `"E" + (7300 + n)`, which adds to a `const char *`: it
 //!   compiles, and at run time reads whatever lies that many bytes past the
 //!   literal -- an event identifier that is a fragment of an unrelated string;
 //! * Rust and Go spelled the same text and were refused by their compilers;
@@ -39,7 +39,7 @@
 //! * C has nowhere to put the joined text and says so, rather than generate the
 //!   pointer addition this file exists to prevent.
 //! * Where the target toolchain is present, the generated code is RUN and the
-//!   value it returns is `E52521`, not merely well formed.
+//!   value it returns is `E7301`, not merely well formed.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -66,7 +66,7 @@ const DOCUMENT: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
   <sce:body>
     <sce:var name="r" type="string" init="''"/>
     <sce:if cond="n >= 1 &amp;&amp; n &lt;= 66">
-      <sce:assign target="r" expr="'E' + (52520 + n)"/>
+      <sce:assign target="r" expr="'E' + (7300 + n)"/>
     </sce:if>
     <sce:return expr="r"/>
   </sce:body>
@@ -171,7 +171,7 @@ fn adds_a_number_to_a_literal(source: &str) -> Option<String> {
             // it says whether it was converted: `.toString()` (Kotlin) is the
             // digits, a bare `;`, `,` or end of line is the sum itself.
             let line = compact(line);
-            ["\"E\"+(52520+n)", "'E'+(52520+n)"].iter().any(|written| {
+            ["\"E\"+(7300+n)", "'E'+(7300+n)"].iter().any(|written| {
                 line.match_indices(written)
                     .any(|(at, _)| !line[at + written.len()..].starts_with(".toString()"))
             })
@@ -185,7 +185,7 @@ fn adds_a_number_to_a_literal(source: &str) -> Option<String> {
 fn lines_naming_the_base(source: &str) -> Vec<String> {
     source
         .lines()
-        .filter(|line| line.contains("52520"))
+        .filter(|line| line.contains("7300"))
         .map(compact)
         .collect()
 }
@@ -226,11 +226,11 @@ fn no_backend_spells_a_string_plus_a_number_as_written() {
 #[test]
 fn each_backend_converts_the_integer_to_its_decimal_digits() {
     let spellings: &[(Language, &str)] = &[
-        (Language::Cpp, "std::string(\"E\")+std::to_string(52520+n)"),
-        (Language::Kotlin, "\"E\"+(52520+n).toString()"),
-        (Language::Rust, "format!(\"{}{}\",\"E\",52520+n)"),
-        (Language::Go, "\"E\"+strconv.FormatInt(int64(52520+n),10)"),
-        (Language::Python, "'E'+str(52520+n)"),
+        (Language::Cpp, "std::string(\"E\")+std::to_string(7300+n)"),
+        (Language::Kotlin, "\"E\"+(7300+n).toString()"),
+        (Language::Rust, "format!(\"{}{}\",\"E\",7300+n)"),
+        (Language::Go, "\"E\"+strconv.FormatInt(int64(7300+n),10)"),
+        (Language::Python, "'E'+str(7300+n)"),
     ];
     for &(language, spelling) in spellings {
         let lines = lines_naming_the_base(&generated(DOCUMENT, language));
@@ -266,7 +266,7 @@ fn a_go_file_that_uses_strconv_imports_it() {
 fn a_go_file_that_does_not_use_strconv_does_not_import_it() {
     // An unused import is a compile error in Go, so the import must follow the
     // text and not the document's kind.
-    let document = DOCUMENT.replace("'E' + (52520 + n)", "n + 1").replace(
+    let document = DOCUMENT.replace("'E' + (7300 + n)", "n + 1").replace(
         "<sce:return type=\"string\"/>",
         "<sce:return type=\"int32\"/>",
     );
@@ -417,15 +417,15 @@ fn the_generated_python_returns_the_identifier() {
     );
     assert_eq!(
         String::from_utf8_lossy(&out.stdout).trim(),
-        "E52521 E52586 ''",
+        "E7301 E7366 ''",
         "the generated Python does not return the identifier"
     );
 }
 
 /// What a driver prints for the three calls, in every language that is run.
-const EXPECTED_RUN: &str = "E52521 E52586 ";
+const EXPECTED_RUN: &str = "E7301 E7366 ";
 
-/// Go refused `"E" + (52520 + n)` at compile time, so what is run here is also
+/// Go refused `"E" + (7300 + n)` at compile time, so what is run here is also
 /// what compiles: the file is built with the standard library alone (the
 /// document is not may-fail, so it names no runtime package) and its function
 /// called. The package and function are READ off the generated file, not
@@ -476,7 +476,7 @@ fn the_generated_go_compiles_and_returns_the_identifier() {
     );
 }
 
-/// C++ built `"E" + (52520 + n)` as pointer arithmetic, so the first thing to
+/// C++ built `"E" + (7300 + n)` as pointer arithmetic, so the first thing to
 /// run is the generated header itself: it is compiled with nothing but the
 /// standard library, which also asks whether it includes what it names
 /// (`std::string`, `std::to_string`). The namespace and function are read off
