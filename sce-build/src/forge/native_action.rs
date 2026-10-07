@@ -55,7 +55,10 @@ const ACTION_TYPE: &str = "native_action";
 const EVENT_DATA_PREFIX: &str = "_event.data.";
 
 /// The symbolic name of the host operation that answers the host a child is
-/// built with (docs/adr/0005, decision 6): `actions_for_<invoke>` for an
+/// built with (docs/adr/0005, decision 6). A child's machine takes the host that
+/// performs its acts when it is built (§scxml-6.4.1), its first `<onentry>` may
+/// already perform one, so its parent obtains it each time the invocation
+/// starts: `actions_for_<invoke>` for an
 /// `<invoke type="scxml">`, and `actions_for_<invoke>_<stem>` for one candidate
 /// of a hybrid `<invoke>`, each candidate being a different document with its
 /// own acts. `field_suffix` is [`crate::model::InvokeBase::field_suffix`], the
