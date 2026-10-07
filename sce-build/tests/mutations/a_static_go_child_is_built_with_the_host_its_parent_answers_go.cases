@@ -44,6 +44,6 @@ PY
 
 mutation_case "the parent's host is asked twice for one start" <<'PY'
 edit("sce-build/src/forge/native_action.rs",
-     "        let call = call_expression(lang, &operation, &[]);\n        hosts.entry(operation.clone())",
-     "        let call = { let c = call_expression(lang, &operation, &[]); format!(\"func() {} {{ _ = {c}; return {c} }}()\", interface_name(lang, &machine_token(lang, child_name))) };\n        hosts.entry(operation.clone())")
+     "        let call = call_expression(lang, &operation, &[]);\n        let host = ChildHost {",
+     "        let call = { let c = call_expression(lang, &operation, &[]); format!(\"func() {} {{ _ = {c}; return {c} }}()\", interface_name(lang, &machine_token(lang, child_name))) };\n        let host = ChildHost {")
 PY

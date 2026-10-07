@@ -621,7 +621,10 @@ pub struct {{ machine_name }}Policy{{ policy_generics_decl }} {
 {% endif %}
 {% for invoke_info in model.invokes | scxml %}
     // W3C SCXML 6.4: Static invoke child '{{ invoke_info.invoke_id }}' ({{ invoke_info.child_name }})
-    child_{{ invoke_info.field_suffix }}: Option<Box<sce_rust_runtime::Engine<super::{{ invoke_info.child_name }}_sm::{{ invoke_info.child_name | to_machine_name }}Policy>>>,
+{# A child that declares acts is a policy generic over its host, so its type is
+   named with the type its parent's trait declares for that host
+   (docs/adr/0005, decision 6). #}
+    child_{{ invoke_info.field_suffix }}: Option<Box<sce_rust_runtime::Engine<super::{{ invoke_info.child_name }}_sm::{{ invoke_info.child_name | to_machine_name }}Policy{% if invoke_info.child_host_type %}<{{ invoke_info.child_host_type }}>{% endif %}>>>,
     pending_done_invoke_{{ invoke_info.field_suffix }}: bool,
 {% endfor %}
 {% for invoke_info in model.invokes | hybrid %}
@@ -629,7 +632,7 @@ pub struct {{ machine_name }}Policy{{ policy_generics_decl }} {
     // W3C SCXML 6.4 + SCE_ACCEPTED_SUBSET.md §2.13: one slot per declared
     // candidate for '{{ invoke_info.invoke_id }}', at most one ever filled.
 {% for candidate in invoke_info.candidates %}
-    child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}: Option<Box<sce_rust_runtime::Engine<super::{{ candidate.stem }}_sm::{{ candidate.stem | to_machine_name }}Policy>>>,
+    child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}: Option<Box<sce_rust_runtime::Engine<super::{{ candidate.stem }}_sm::{{ candidate.stem | to_machine_name }}Policy{% if candidate.child_host_type %}<{{ candidate.child_host_type }}>{% endif %}>>>,
 {% endfor %}
     pending_done_invoke_{{ invoke_info.field_suffix }}: bool,
 {% else %}

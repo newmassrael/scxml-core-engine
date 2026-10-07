@@ -68,26 +68,6 @@ fn host_operation(field_suffix: &str, candidate_stem: Option<&str>) -> String {
     }
 }
 
-/// Whether `lang`'s host interface declares the operations that answer a
-/// child's host ([`ChildHost`]). The one place that says so: a language's
-/// static lowering builds a child with the host its parent's host answers
-/// ([`crate::forge::static_lowering::StaticTarget::lowers_child_host`] reads
-/// this) in the commit that gives its interface the operation and replays the
-/// shared fixture, and until then it refuses such an `<invoke>`.
-pub fn declares_child_hosts(lang: Language) -> bool {
-    CHILD_HOST_LANGUAGES.contains(&lang)
-}
-
-/// The languages whose host interface answers a child's host: one element each,
-/// added by the commit that lowers it.
-const CHILD_HOST_LANGUAGES: &[Language] = &[
-    Language::Kotlin,
-    Language::Python,
-    Language::Go,
-    Language::Cpp,
-    Language::C11,
-];
-
 /// The first `<invoke type="scxml">` of `model` whose child declares
 /// `<sce:action>`s — or, of a hybrid one, a candidate that does — described for
 /// a refusal, with where the `<invoke>` is.
@@ -95,10 +75,9 @@ const CHILD_HOST_LANGUAGES: &[Language] = &[
 /// A child's machine takes the host that performs its acts when it is built
 /// (§scxml-6.4.1), so a parent that does not obtain one for it writes a call of
 /// that constructor with the host left out, which does not compile in Rust,
-/// Kotlin, Go or C++ and fails when the invoke starts in Python. A language that
-/// does not [`declare_child_hosts`](declares_child_hosts) refuses the document
-/// that has one, whatever data model the parent is under, and a `sce-static`
-/// target that is not a generated language answers the same question for itself.
+/// Kotlin, Go or C++ and fails when the invoke starts in Python. Every generated
+/// language obtains it from its parent's own host now; a `sce-static` target that
+/// is not one — the Interpreter's lowering — asks this for itself, and refuses.
 pub fn child_that_needs_a_host(model: &SCXMLModel) -> Option<(String, Option<SourceLocation>)> {
     model
         .states
@@ -976,7 +955,12 @@ fn render_with_options(
     // from even when it declares no act itself. Read before the walk below
     // borrows `model` for the actions, and written on each invoke so the
     // template that starts the child reads the call and not a name.
-    let child_hosts = lower_child_hosts(model, lang, namespace_prefix);
+    let child_hosts = lower_child_hosts(
+        model,
+        lang,
+        namespace_prefix,
+        &interface_name(lang, machine_name),
+    );
     let mut calls = CallRendering {
         lang,
         machine_name,
@@ -1042,7 +1026,7 @@ fn render_with_options(
     // apart, because it holds its calls in a `Vec` and the template emits it
     // only where `alloc` is.
     let recording_def = if any && lang == Language::Rust {
-        rust_recording_host(&interface_name, &sigs)
+        rust_recording_host(&interface_name, &sigs, &child_hosts)
     } else {
         String::new()
     };
@@ -1065,6 +1049,15 @@ struct ChildHost {
     child_interface: String,
 }
 
+impl ChildHost {
+    /// The associated type a Rust trait declares for the host this operation
+    /// answers (`ActionsForWorker`), which is also the name of the operation in
+    /// the casing a type has.
+    fn associated_type(&self) -> String {
+        filters::to_pascal_case(self.operation.clone())
+    }
+}
+
 /// The machine token a generated child's symbols carry in `lang` — the one
 /// [`interface_name`] is built from, as [`render`] is handed it for the child's
 /// own document: PascalCase for the five hosted backends, the raw name for C11.
@@ -1083,6 +1076,9 @@ fn child_interface_type(lang: Language, child_name: &str, namespace_prefix: &str
     let bare = interface_name(lang, &machine_token(lang, child_name));
     match lang {
         Language::Cpp => format!("::SCE::Generated::{namespace_prefix}{child_name}::{bare}"),
+        // A sibling module of the parent's, as the machine names the child it
+        // starts (`super::<child>_sm::<Child>Policy`).
+        Language::Rust => format!("super::{child_name}_sm::{bare}"),
         _ => bare,
     }
 }
@@ -1097,25 +1093,30 @@ fn lower_child_hosts(
     model: &mut SCXMLModel,
     lang: Language,
     namespace_prefix: &str,
+    parent_interface: &str,
 ) -> Vec<ChildHost> {
-    if !declares_child_hosts(lang) {
-        return Vec::new();
-    }
     let mut hosts: BTreeMap<String, ChildHost> = BTreeMap::new();
-    let mut declare = |operation: String, child_name: &str| -> String {
+    // The call, and the type it answers where the child is generic over its host.
+    let mut declare = |operation: String, child_name: &str| -> (String, String) {
         let call = call_expression(lang, &operation, &[]);
-        hosts.entry(operation.clone()).or_insert_with(|| ChildHost {
-            operation,
+        let host = ChildHost {
             child_interface: child_interface_type(lang, child_name, namespace_prefix),
-        });
-        call
+            operation: operation.clone(),
+        };
+        let host_type = match lang {
+            Language::Rust => format!("<A as {parent_interface}>::{}", host.associated_type()),
+            _ => String::new(),
+        };
+        hosts.entry(operation).or_insert(host);
+        (call, host_type)
     };
     for state in model.states.values_mut() {
         for invoke in &mut state.invokes {
             match invoke {
                 crate::model::Invoke::Scxml(info) if info.common.child_declares_host_acts => {
                     let operation = host_operation(&info.common.base.field_suffix, None);
-                    info.common.child_host_call = declare(operation, &info.common.child_name);
+                    (info.common.child_host_call, info.common.child_host_type) =
+                        declare(operation, &info.common.child_name);
                 }
                 crate::model::Invoke::Hybrid(info) => {
                     let suffix = info.common.base.field_suffix.clone();
@@ -1125,13 +1126,19 @@ fn lower_child_hosts(
                         .filter(|c| c.child_declares_host_acts)
                     {
                         let operation = host_operation(&suffix, Some(&candidate.stem));
-                        candidate.child_host_call = declare(operation, &candidate.stem);
+                        (candidate.child_host_call, candidate.child_host_type) =
+                            declare(operation, &candidate.stem);
                     }
                 }
                 _ => {}
             }
         }
     }
+    // Templates read an invoke from two places: the state that holds it, which was
+    // written above, and the document's own list of them ([`SCXMLModel::invokes`]),
+    // which the field declarations of a machine walk. The second is a view rebuilt
+    // from the first, so it is rebuilt.
+    model.refresh_invokes_view();
     hosts.into_values().collect()
 }
 
@@ -1542,8 +1549,26 @@ fn build_interface(
                     method_name(lang, name)
                 ));
             }
+            // The host of a child is a type the parent's host chooses, since the child's
+            // machine is generic over it (`ChildPolicy<A>`): an associated type bounded
+            // by the child's own trait, and an operation that answers a value of it.
+            // The bound is `'static` because `Engine` stores the policy and erases its
+            // lifetime.
+            let mut associated = String::new();
+            for child in children {
+                associated.push_str(&format!(
+                    "    type {}: {} + 'static;\n",
+                    child.associated_type(),
+                    child.child_interface
+                ));
+                methods.push_str(&format!(
+                    "    fn {}(&mut self) -> Self::{};\n",
+                    method_name(lang, &child.operation),
+                    child.associated_type()
+                ));
+            }
             format!(
-                "{}pub trait {interface_name} {{\n{methods}}}\n",
+                "{}pub trait {interface_name} {{\n{associated}{methods}}}\n",
                 doc("/// ")
             )
         }
@@ -1787,7 +1812,17 @@ fn kotlin_recording_host(
 /// `PartialEq`, so a test compares whole calls by value; a borrowed argument
 /// (`&str`, `&[u8]`) is recorded as its owned copy. The machine owns its host,
 /// so a test reads the calls back through `Policy::actions()`.
-fn rust_recording_host(interface_name: &str, sigs: &BTreeMap<String, Signature>) -> String {
+///
+/// A host that answers a child's host cannot invent one, so the recording host of
+/// such a parent is generic over what each child answers and takes, for each, the
+/// function that answers it, and records each question beside the acts — the twin
+/// of what [`kotlin_recording_host`] does. It then has no `Default` and no `Debug`,
+/// neither of which a function can give.
+fn rust_recording_host(
+    interface_name: &str,
+    sigs: &BTreeMap<String, Signature>,
+    children: &[ChildHost],
+) -> String {
     let lang = Language::Rust;
     let owned = |t: &SceType| -> String {
         match t {
@@ -1798,6 +1833,30 @@ fn rust_recording_host(interface_name: &str, sigs: &BTreeMap<String, Signature>)
     };
     let mut variants = String::new();
     let mut methods = String::new();
+    // What a parent with children adds: one type parameter and one source function
+    // per child host, and the operation that records the question and answers.
+    let mut type_params = Vec::new();
+    let mut bounds = Vec::new();
+    let mut fields = String::new();
+    let mut ctor_params = Vec::new();
+    let mut ctor_fields = Vec::new();
+    let mut associated = String::new();
+    for child in children {
+        let method = method_name(lang, &child.operation);
+        let variant = filters::to_pascal_case(method.clone());
+        let assoc = child.associated_type();
+        let param = format!("{assoc}Host");
+        type_params.push(param.clone());
+        bounds.push(format!("{param}: {} + 'static", child.child_interface));
+        fields.push_str(&format!("    {method}: Box<dyn FnMut() -> {param}>,\n"));
+        ctor_params.push(format!("{method}: impl FnMut() -> {param} + 'static"));
+        ctor_fields.push(format!("{method}: Box::new({method})"));
+        associated.push_str(&format!("    type {assoc} = {param};\n"));
+        variants.push_str(&format!("    {variant},\n"));
+        methods.push_str(&format!(
+            "    fn {method}(&mut self) -> {param} {{\n        self.calls.push({interface_name}Call::{variant});\n        (self.{method})()\n    }}\n"
+        ));
+    }
     for (name, sig) in sigs {
         let method = method_name(lang, name);
         let variant = filters::to_pascal_case(method.clone());
@@ -1835,6 +1894,34 @@ fn rust_recording_host(interface_name: &str, sigs: &BTreeMap<String, Signature>)
             values.join(", ")
         ));
     }
+    let generics = if type_params.is_empty() {
+        String::new()
+    } else {
+        format!("<{}>", type_params.join(", "))
+    };
+    let bounded = if bounds.is_empty() {
+        String::new()
+    } else {
+        format!("<{}>", bounds.join(", "))
+    };
+    // A function is neither `Default` nor `Debug`, so a recorder that holds one is
+    // built with `new` and derives neither.
+    let derive = if children.is_empty() {
+        "#[derive(Debug, Default)]\n"
+    } else {
+        ""
+    };
+    let constructor = if children.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "    /// A recorder that answers each child's host with what its function\n    \
+             /// returns, asked each time the machine starts the child.\n    \
+             pub fn new({}) -> Self {{\n        Self {{\n            calls: Vec::new(),\n            {},\n        }}\n    }}\n\n",
+            ctor_params.join(", "),
+            ctor_fields.join(",\n            ")
+        )
+    };
     format!(
         "/// One call the machine made of its host, recorded by\n\
          /// [`Recording{interface_name}`].\n\
@@ -1843,14 +1930,16 @@ fn rust_recording_host(interface_name: &str, sigs: &BTreeMap<String, Signature>)
          /// [`{interface_name}`] that performs nothing and records every call in\n\
          /// order — the host a test drives the machine with. Read\n\
          /// [`calls`](Self::calls) after the machine has run.\n\
-         #[derive(Debug, Default)]\n\
-         pub struct Recording{interface_name} {{\n    calls: Vec<{interface_name}Call>,\n}}\n\n\
-         impl Recording{interface_name} {{\n    \
+         {derive}\
+         pub struct Recording{interface_name}{bounded} {{\n    calls: Vec<{interface_name}Call>,\n{host_fields}}}\n\n\
+         impl{bounded} Recording{interface_name}{generics} {{\n\
+         {constructor}    \
          /// Every call so far, oldest first.\n    \
          pub fn calls(&self) -> &[{interface_name}Call] {{\n        &self.calls\n    }}\n\n    \
          /// Forget the calls recorded so far.\n    \
          pub fn clear(&mut self) {{\n        self.calls.clear();\n    }}\n}}\n\n\
-         impl {interface_name} for Recording{interface_name} {{\n{methods}}}\n"
+         impl{bounded} {interface_name} for Recording{interface_name}{generics} {{\n{associated}{methods}}}\n",
+        host_fields = fields,
     )
 }
 
@@ -2378,10 +2467,14 @@ mod tests {
             ],
         );
         sigs.insert("reset_slot".to_string(), Vec::new());
-        let out = rust_recording_host("MActions", &sigs);
+        let out = rust_recording_host("MActions", &sigs, &[]);
         assert!(
             out.contains("impl MActions for RecordingMActions {"),
             "the recorder implements the trait it is generated from:\n{out}"
+        );
+        assert!(
+            out.contains("#[derive(Debug, Default)]\npub struct RecordingMActions {"),
+            "a parent with no child to answer for is as it was:\n{out}"
         );
         // A borrowed argument is recorded as its owned copy, so a recorded
         // call outlives the dispatch and compares by value.
@@ -2397,5 +2490,62 @@ mod tests {
         );
         assert!(out.contains("    ResetSlot,\n"), "{out}");
         assert!(out.contains("fn reset_slot(&mut self) {"), "{out}");
+    }
+
+    /// The Rust trait of a parent declares, for each child, an associated type
+    /// bounded by the child's own trait and an operation that answers one, and
+    /// its recording host is generic over what each answers: it takes the function
+    /// that answers, records the question beside the acts, and derives neither
+    /// `Default` nor `Debug`, which a function cannot give.
+    #[test]
+    fn the_rust_trait_of_a_parent_answers_the_host_of_each_child() {
+        let children = [ChildHost {
+            operation: "actions_for_worker".to_string(),
+            child_interface: child_interface_type(Language::Rust, "worker", ""),
+        }];
+        assert_eq!(
+            children[0].child_interface,
+            "super::worker_sm::WorkerActions"
+        );
+        let mut sigs: BTreeMap<String, Signature> = BTreeMap::new();
+        sigs.insert("reset_slot".to_string(), Vec::new());
+        let out = build_interface(Language::Rust, "MActions", &sigs, &children);
+        assert!(
+            out.contains(
+                "pub trait MActions {\n    type ActionsForWorker: super::worker_sm::WorkerActions + 'static;\n"
+            ),
+            "the associated type leads the trait:\n{out}"
+        );
+        let act = out.find("fn reset_slot(&mut self);").expect(&out);
+        let factory = out
+            .find("fn actions_for_worker(&mut self) -> Self::ActionsForWorker;")
+            .expect(&out);
+        assert!(
+            act < factory,
+            "the acts, then the operation that answers a child's host:\n{out}"
+        );
+
+        let recording = rust_recording_host("MActions", &sigs, &children);
+        assert!(
+            recording.contains(
+                "pub struct RecordingMActions<ActionsForWorkerHost: super::worker_sm::WorkerActions + 'static> {"
+            ),
+            "{recording}"
+        );
+        assert!(!recording.contains("derive(Debug, Default)"), "{recording}");
+        assert!(
+            recording.contains(
+                "pub fn new(actions_for_worker: impl FnMut() -> ActionsForWorkerHost + 'static) -> Self {"
+            ),
+            "{recording}"
+        );
+        assert!(
+            recording.contains(
+                "fn actions_for_worker(&mut self) -> ActionsForWorkerHost {\n        self.calls.push(MActionsCall::ActionsForWorker);\n        (self.actions_for_worker)()\n    }"
+            ),
+            "the question is recorded, then answered:\n{recording}"
+        );
+        let plain = build_interface(Language::Rust, "MActions", &sigs, &[]);
+        assert!(!plain.contains("type "), "{plain}");
     }
 }

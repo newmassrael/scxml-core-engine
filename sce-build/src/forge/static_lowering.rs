@@ -354,12 +354,13 @@ pub trait StaticTarget {
     /// Whether an `<invoke type="scxml">` of a child that declares
     /// `<sce:action>`s is lowered, and so a candidate of a hybrid one: the child
     /// is built with the host its parent's own host answers, one operation per
-    /// child (docs/adr/0005, decision 6;
-    /// [`crate::forge::native_action::declares_child_hosts`]). A target that does
-    /// not is refused at the `<invoke>`, by name, as a parent that builds the
-    /// child without its host does not build.
+    /// child (docs/adr/0005, decision 6). Every generated language does, so the
+    /// default says so; a target that does not — the Interpreter's lowering, whose
+    /// child sessions are not built with a host their parent answers yet — is
+    /// refused at the `<invoke>`, by name, rather than left to run a child with no
+    /// host to perform its acts.
     fn lowers_child_host(&self) -> bool {
-        false
+        true
     }
     /// What the `srcexpr` attribute of a hybrid `<invoke>` is rewritten to, for
     /// a target that runs the document's own attribute and so has no field of
@@ -1099,11 +1100,6 @@ impl StaticTarget for KotlinTarget {
     // is, and held to the bound of the place it is written into.
     fn bounded_bytes(&self, value: &str, capacity: u32) -> String {
         self.bounded_string(value, capacity)
-    }
-    // The child is built with what the parent's host answers for it
-    // (`actions.actionsFor<Invoke>()`), each time the invocation starts.
-    fn lowers_child_host(&self) -> bool {
-        crate::forge::native_action::declares_child_hosts(Language::Kotlin)
     }
     fn assign(&self, target: &str, value: &str) -> String {
         format!("{target} = {value}")
@@ -3207,11 +3203,6 @@ impl StaticTarget for CppTarget {
     fn bounded_bytes(&self, value: &str, capacity: u32) -> String {
         format!("SCE::Forge::Checked::bounded(sce_failure_, {value}, {capacity}u)")
     }
-    // The child is built with the host its parent's host answers for it
-    // (`actions_->actionsFor<Invoke>()`), passed first, as its constructors take it.
-    fn lowers_child_host(&self) -> bool {
-        crate::forge::native_action::declares_child_hosts(Language::Cpp)
-    }
     fn assign(&self, target: &str, value: &str) -> String {
         format!("{target} = {value};")
     }
@@ -3797,11 +3788,6 @@ impl StaticTarget for GoTarget<'_> {
     fn bounded_bytes(&self, value: &str, capacity: u32) -> String {
         format!("scealgorithm.BoundedBytes(&sceFailure, {value}, {capacity})")
     }
-    // The child's policy is built with what the parent's host answers for it
-    // (`p.actions.ActionsFor<Invoke>()`), each time the invocation starts.
-    fn lowers_child_host(&self) -> bool {
-        crate::forge::native_action::declares_child_hosts(Language::Go)
-    }
     fn assign(&self, target: &str, value: &str) -> String {
         format!("{target} = {value}")
     }
@@ -4289,11 +4275,6 @@ impl StaticTarget for PythonTarget {
     // it is written to, the host's value being the machine's to keep.
     fn bounded_bytes(&self, value: &str, capacity: u32) -> String {
         self.bounded_string(value, capacity)
-    }
-    // The child's policy is built with what the parent's host answers for it
-    // (`self._actions.actions_for_<invoke>()`), each time the invocation starts.
-    fn lowers_child_host(&self) -> bool {
-        crate::forge::native_action::declares_child_hosts(Language::Python)
     }
     fn assign(&self, target: &str, value: &str) -> String {
         format!("{target} = {value}")
@@ -5083,12 +5064,6 @@ impl StaticTarget for CTarget {
     // answers the view, or an empty one with the failure recorded.
     fn bounded_bytes(&self, value: &str, capacity: u32) -> String {
         format!("sce_forge_bounded_bytes(&sce_failure_, {value}, {capacity}u)")
-    }
-    // The child is begun with the table its parent's table answers for it
-    // (`sm->actions.actions_for_<invoke>(sm->actions.user_data)`), which
-    // `_invoked_begin` copies and refuses when it is NULL or incomplete.
-    fn lowers_child_host(&self) -> bool {
-        crate::forge::native_action::declares_child_hosts(Language::C11)
     }
     // A buffer of the bound and the length it holds, named by the bound so that
     // two variables of one bound share a type, and declared under a guard so that

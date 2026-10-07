@@ -35,6 +35,6 @@ mutation_oracles backends/kotlin/tests/src/test/kotlin/com/sce/integration/AChil
 
 mutation_case "the parent's host is asked twice for one start" <<'PY'
 edit("sce-build/src/forge/native_action.rs",
-     "        let call = call_expression(lang, &operation, &[]);\n        hosts.entry(operation.clone())",
-     "        let call = { let c = call_expression(lang, &operation, &[]); format!(\"{c}.let {{ {c} }}\") };\n        hosts.entry(operation.clone())")
+     "        let call = call_expression(lang, &operation, &[]);\n        let host = ChildHost {",
+     "        let call = { let c = call_expression(lang, &operation, &[]); format!(\"{c}.let {{ {c} }}\") };\n        let host = ChildHost {")
 PY

@@ -31,8 +31,8 @@ mutation_oracles backends/c/tests/integration/test_static_child_host.c sce-build
 
 mutation_case "the parent's table is asked twice for one start" <<'PY'
 edit("sce-build/src/forge/native_action.rs",
-     "        let call = call_expression(lang, &operation, &[]);\n        hosts.entry(operation.clone())",
-     "        let call = { let c = call_expression(lang, &operation, &[]); format!(\"({c}, {c})\") };\n        hosts.entry(operation.clone())")
+     "        let call = call_expression(lang, &operation, &[]);\n        let host = ChildHost {",
+     "        let call = { let c = call_expression(lang, &operation, &[]); format!(\"({c}, {c})\") };\n        let host = ChildHost {")
 PY
 
 mutation_case "a NULL table is taken for one" <<'PY'

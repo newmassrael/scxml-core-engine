@@ -1564,28 +1564,6 @@ const STATIC_DATAMODEL_BACKENDS: &[Language] = &[
     Language::C11,
 ];
 
-/// Refuse an `<invoke>` of a child that declares `<sce:action>`s in a language
-/// whose host interface does not yet answer the child's host
-/// ([`crate::forge::native_action::declares_child_hosts`]), whatever data model
-/// the parent is under: the parent would build the child without the host it
-/// takes when it is built, which does not compile (docs/adr/0005, decision 6).
-fn reject_child_host_in_unsupported_lang(
-    model: &SCXMLModel,
-    language: Language,
-    name: &str,
-) -> Result<(), GenerateError> {
-    if crate::forge::native_action::declares_child_hosts(language) {
-        return Ok(());
-    }
-    match crate::forge::native_action::child_that_needs_a_host(model) {
-        None => Ok(()),
-        Some((construct, at)) => Err(GenerateError::unsupported_at(
-            format!("{construct} has no {name} lowering yet"),
-            at,
-        )),
-    }
-}
-
 fn reject_static_datamodel_in_unsupported_lang(
     model: &SCXMLModel,
     language: Language,
@@ -2245,7 +2223,6 @@ pub fn generate_with_options(
     reject_static_datamodel_in_unsupported_lang(model, Language::Rust)?;
     reject_native_conditions_in_unsupported_lang(model, "Rust")?;
     reject_native_scripts_in_unsupported_lang(model, "Rust")?;
-    reject_child_host_in_unsupported_lang(model, Language::Rust, "Rust")?;
     reject_silently_folded_conds(model)?;
     let mut env = new_env();
     load_templates(&mut env, template_dir, Language::Rust)?;
@@ -2339,7 +2316,6 @@ pub fn generate_with_templates(
     reject_static_datamodel_in_unsupported_lang(model, Language::Rust)?;
     reject_native_conditions_in_unsupported_lang(model, "Rust")?;
     reject_native_scripts_in_unsupported_lang(model, "Rust")?;
-    reject_child_host_in_unsupported_lang(model, Language::Rust, "Rust")?;
     reject_silently_folded_conds(model)?;
     let mut env = new_env();
     load_template_strings(&mut env, templates, Language::Rust)?;
@@ -2751,7 +2727,6 @@ fn render_cpp(
     // lifetime the exit chain has to end.
     reject_native_conditions_in_unsupported_lang(model, "C++")?;
     reject_native_scripts_in_unsupported_lang(model, "C++")?;
-    reject_child_host_in_unsupported_lang(model, Language::Cpp, "C++")?;
     reject_silently_folded_conds(model)?;
     let inl_filename = format!("{input_stem}_sm.inl");
     // §scxml-5.3: base_path is the directory containing the SCXML file,
@@ -2951,7 +2926,6 @@ fn render_c11(
     // has no allocator.
     reject_native_conditions_in_unsupported_lang(model, "C11")?;
     reject_native_scripts_in_unsupported_lang(model, "C11")?;
-    reject_child_host_in_unsupported_lang(model, Language::C11, "C11")?;
     reject_silently_folded_conds(model)?;
     reject_barrier_timeout_without_handler(model)?;
     reject_liveliness_without_handler(model)?;
@@ -3171,7 +3145,6 @@ pub fn generate_kotlin_for_engine(
     // dispatch and the `<invoke>` start/cancel pair into them.
     reject_native_conditions_in_unsupported_lang(model, "Kotlin")?;
     reject_native_scripts_in_unsupported_lang(model, "Kotlin")?;
-    reject_child_host_in_unsupported_lang(model, Language::Kotlin, "Kotlin")?;
     reject_silently_folded_conds(model)?;
     let mut env = new_env();
     load_templates(&mut env, template_dir, Language::Kotlin)?;
@@ -3195,7 +3168,6 @@ pub fn generate_kotlin_with_templates(
     // registries.
     reject_native_conditions_in_unsupported_lang(model, "Kotlin")?;
     reject_native_scripts_in_unsupported_lang(model, "Kotlin")?;
-    reject_child_host_in_unsupported_lang(model, Language::Kotlin, "Kotlin")?;
     reject_silently_folded_conds(model)?;
     let mut env = new_env();
     load_template_strings(&mut env, templates, Language::Kotlin)?;
@@ -3372,7 +3344,6 @@ pub fn generate_go_for_module(
     // exit chain has to end — which is why it landed second.
     reject_native_conditions_in_unsupported_lang(model, "Go")?;
     reject_native_scripts_in_unsupported_lang(model, "Go")?;
-    reject_child_host_in_unsupported_lang(model, Language::Go, "Go")?;
     let mut env = new_env();
     load_templates(&mut env, template_dir, Language::Go)?;
     filters::register_go_filters(&mut env, &document_scope(model));
@@ -3390,7 +3361,6 @@ pub fn generate_go_with_templates(
     // See `generate_go` above: the Go backend carries both host registries.
     reject_native_conditions_in_unsupported_lang(model, "Go")?;
     reject_native_scripts_in_unsupported_lang(model, "Go")?;
-    reject_child_host_in_unsupported_lang(model, Language::Go, "Go")?;
     let mut env = new_env();
     load_template_strings(&mut env, templates, Language::Go)?;
     filters::register_go_filters(&mut env, &document_scope(model));
@@ -3420,7 +3390,6 @@ pub fn generate_python(model: &SCXMLModel, template_dir: &Path) -> Result<String
     // `<send>` dispatch and the `<invoke>` start/cancel pair into them.
     reject_native_conditions_in_unsupported_lang(model, "Python")?;
     reject_native_scripts_in_unsupported_lang(model, "Python")?;
-    reject_child_host_in_unsupported_lang(model, Language::Python, "Python")?;
     reject_python_unsupported_features(model)?;
     let mut env = new_env();
     load_templates(&mut env, template_dir, Language::Python)?;
@@ -3440,7 +3409,6 @@ pub fn generate_python_with_templates(
     // registries.
     reject_native_conditions_in_unsupported_lang(model, "Python")?;
     reject_native_scripts_in_unsupported_lang(model, "Python")?;
-    reject_child_host_in_unsupported_lang(model, Language::Python, "Python")?;
     reject_python_unsupported_features(model)?;
     let mut env = new_env();
     load_template_strings(&mut env, templates, Language::Python)?;

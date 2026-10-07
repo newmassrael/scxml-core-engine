@@ -246,10 +246,13 @@
 {% macro hybrid_child_start(invoke_info, child, child_mod, child_policy_type, slot, model, machine_name) %}
                 // W3C SCXML 6.4: Create pre-generated child (Rust AOT: child resolved at codegen time)
                 // Engine DI Parity RFC: pass parent's script engine when child needs it.
+{# The host the child performs its acts through is asked of the parent's own host
+   here, where the invocation starts, so a state invoked again is given a fresh
+   one (docs/adr/0005, decision 6). It leads the policy's parameters. #}
 {% if child.child_needs_script_engine %}
-                let mut child_policy = super::{{ child_mod }}::{{ child_policy_type }}Policy::new(self.script_engine.clone());
+                let mut child_policy = super::{{ child_mod }}::{{ child_policy_type }}Policy::new({% if child.child_host_call %}{{ child.child_host_call }}, {% endif %}self.script_engine.clone());
 {% else %}
-                let mut child_policy = super::{{ child_mod }}::{{ child_policy_type }}Policy::new();
+                let mut child_policy = super::{{ child_mod }}::{{ child_policy_type }}Policy::new({{ child.child_host_call }});
 {% endif %}
                 child_policy.parent_external_queue = Some(engine.get_external_queue_handle());
                 child_policy.invoke_id = pending.invoke_id.clone();
@@ -367,9 +370,9 @@
                 // Engine DI Parity RFC: forward parent's script engine to child when the
                 // child Policy was generated with `model.needs_script_engine = true`.
 {% if invoke_info.child_needs_script_engine %}
-                let mut child_policy = super::{{ invoke_info.child_name }}_sm::{{ invoke_info.child_name | to_machine_name }}Policy::new(self.script_engine.clone());
+                let mut child_policy = super::{{ invoke_info.child_name }}_sm::{{ invoke_info.child_name | to_machine_name }}Policy::new({% if invoke_info.child_host_call %}{{ invoke_info.child_host_call }}, {% endif %}self.script_engine.clone());
 {% else %}
-                let mut child_policy = super::{{ invoke_info.child_name }}_sm::{{ invoke_info.child_name | to_machine_name }}Policy::new();
+                let mut child_policy = super::{{ invoke_info.child_name }}_sm::{{ invoke_info.child_name | to_machine_name }}Policy::new({{ invoke_info.child_host_call }});
 {% endif %}
                 // W3C SCXML 6.4: Pass parent session info to child for #_parent routing
                 child_policy.parent_external_queue = Some(engine.get_external_queue_handle());

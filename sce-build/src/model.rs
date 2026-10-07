@@ -1841,6 +1841,15 @@ pub struct InvokeSessionCommon {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     #[cfg_attr(test, schemars(skip))]
     pub child_host_call: String,
+    /// Codegen-internal: the type, in the target language, of what
+    /// [`Self::child_host_call`] answers, for a target whose child machine is
+    /// generic over its host and so has to be named with it — Rust's
+    /// `<A as ParentActions>::ActionsForWorker`. Empty for every other target and
+    /// for a child that declares no act. Set beside the call, and read by the
+    /// templates that spell the child's type.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[cfg_attr(test, schemars(skip))]
+    pub child_host_type: String,
 }
 
 impl std::ops::Deref for InvokeSessionCommon {
@@ -2305,6 +2314,12 @@ pub struct InvokeCandidate {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     #[cfg_attr(test, schemars(skip))]
     pub child_host_call: String,
+    /// Codegen-internal: the type of what [`Self::child_host_call`] answers, per
+    /// candidate — [`InvokeSessionCommon::child_host_type`]. Outside the IR
+    /// contract.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[cfg_attr(test, schemars(skip))]
+    pub child_host_type: String,
     /// Codegen-internal: the arguments the invoke hands THIS candidate, each
     /// lowered to a value of the type of the candidate's variable of the same
     /// name ([`Param::native_seed`]) — those the candidate declares, which is

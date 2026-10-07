@@ -1,5 +1,5 @@
 # Mutation cases for "an `<invoke type=\"scxml\">` of a child that declares
-# `<sce:action>`s is refused by a language that does not give the child its host"
+# `<sce:action>`s is refused by a target that does not give the child its host"
 # (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Child sessions"; docs/adr/0005, decision 6).
 #
 # Run with
@@ -7,30 +7,27 @@
 #
 # A child's machine takes the host that performs its acts when it is built, so a
 # parent that does not obtain one for it writes that constructor called with the
-# host left out: Rust, Kotlin, Go and C++ do not compile it and Python fails when
-# the invoke starts. A language answers the child's host from its parent's own
-# (`declares_child_hosts`) or refuses the invoke, a candidate of a hybrid one
-# included, and it does so at its entry for a parent of ANY data model, since a
-# parent under the ECMAScript data model never reaches the static lowering. The
-# static lowering asks the same of the targets that are not a generated language
-# (the Interpreter). The judges read each of the six languages and the Interpreter:
-# `CHILD_HOST_LOWERED` is the table that says which build the child, and the
-# neighbours in the same file read that a child with no act is still lowered.
-# The mutants take one decision away each:
+# host left out. Every generated language now obtains it from its parent's own host
+# (`every_language_builds_a_child_with_the_host_its_parent_answers`, for a parent of
+# either data model and for a candidate of a hybrid `<invoke>`), and what still
+# refuses is the Interpreter's lowering, which the static lowering asks
+# (`StaticTarget::lowers_child_host`) and which the same judges read through
+# `sce-codegen lower`, together with the child that declares no act, which it
+# lowers. The refusals each generated language used to carry, and the table of
+# which did, were retired when the last of them stopped refusing: their mutants
+# had no instance left to defend. The mutants take one decision away each:
 #
 #   a child that declares an act is let through;
 #   a child that declares no act is refused too;
 #   a candidate that declares an act is let through;
-#   every language is said to answer a child's host, or none;
-#   a language does not ask at its entry (a parent that is not static);
-#   the static lowering does not ask (the Interpreter);
+#   the static lowering does not ask;
 #   a target that answers is refused all the same.
 #
 # Anchors are literal slices of the source; an edit that moves one is reported
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_tests -p sce-build --features cli --test a_static_datamodel_holds_every_variable_to_a_type
-mutation_targets sce-build/src/forge/native_action.rs sce-build/src/generator.rs sce-build/src/forge/static_lowering.rs
+mutation_targets sce-build/src/forge/native_action.rs sce-build/src/forge/static_lowering.rs
 mutation_oracles sce-build/tests/a_static_datamodel_holds_every_variable_to_a_type.rs
 
 mutation_case "a child that declares an act is let through" <<'PY'
@@ -49,25 +46,6 @@ mutation_case "a candidate that declares an act is let through" <<'PY'
 edit("sce-build/src/forge/native_action.rs",
      "                .find(|candidate| candidate.child_declares_host_acts)\n",
      "                .find(|_| false)\n")
-PY
-
-# The anchor is the one expression, which the list a language joins does not move.
-mutation_case "every language is said to answer a child's host" <<'PY'
-edit("sce-build/src/forge/native_action.rs",
-     "    CHILD_HOST_LANGUAGES.contains(&lang)\n",
-     "    true || CHILD_HOST_LANGUAGES.contains(&lang)\n")
-PY
-
-mutation_case "no language is said to answer a child's host" <<'PY'
-edit("sce-build/src/forge/native_action.rs",
-     "    CHILD_HOST_LANGUAGES.contains(&lang)\n",
-     "    false && CHILD_HOST_LANGUAGES.contains(&lang)\n")
-PY
-
-mutation_case "a language does not ask at its entry" <<'PY'
-edit("sce-build/src/generator.rs",
-     "    match crate::forge::native_action::child_that_needs_a_host(model) {\n        None => Ok(()),",
-     "    match crate::forge::native_action::child_that_needs_a_host(model).filter(|_| false) {\n        None => Ok(()),")
 PY
 
 mutation_case "the static lowering does not ask" <<'PY'

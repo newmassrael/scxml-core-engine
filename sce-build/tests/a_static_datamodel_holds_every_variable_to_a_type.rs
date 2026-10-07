@@ -1499,20 +1499,13 @@ fn every_backend_hands_a_string_to_a_child_that_declares_its_bound() {
     assert!(ok, "go: the child declares `title`, a string:\n{out}");
 }
 
-/// What a language that lowers a `sce-static` document does with an `<invoke>` of
-/// a child that declares `<sce:action>`s (docs/adr/0005, decision 6): builds the
-/// child with the host its parent's own host answers (`true`), or refuses the
-/// invoke by name (`false`). A language changes its row when it lowers it and
-/// replays `static_child_host`, and the refusal is removed from the shared check
-/// when the last row is `true`.
-const CHILD_HOST_LOWERED: &[(&str, &str, bool)] = &[
-    ("rust", "Rust", false),
-    ("kotlin", "Kotlin", true),
-    ("go", "Go", true),
-    ("cpp", "C++", true),
-    ("python", "Python", true),
-    ("c11", "C11", true),
-];
+/// The generated languages, as `check` names them. Every one builds an
+/// `<invoke>` of a child that declares `<sce:action>`s with the host its parent's
+/// own host answers (docs/adr/0005, decision 6). Each was refused by name until it
+/// did, and the refusal was removed from the shared check when the last of them
+/// did; what still refuses is the Interpreter's lowering, which is no generated
+/// language and is read separately.
+const CHILD_HOST_LANGUAGES: &[&str] = &["rust", "kotlin", "go", "cpp", "python", "c11"];
 
 /// The arguments `check` takes to generate for `lang`: Go also names the module
 /// its packages live under.
@@ -1524,13 +1517,12 @@ fn check_args(lang: &'static str) -> Vec<&'static str> {
 }
 
 #[test]
-fn a_language_that_does_not_give_a_child_its_host_refuses_the_child() {
+fn every_language_builds_a_child_with_the_host_its_parent_answers() {
     // The child's machine takes the host that performs its acts when it is
-    // built. A parent that does not obtain one writes that constructor called
+    // built. A parent that did not obtain one wrote that constructor called
     // without it, which Rust, Kotlin, Go and C++ do not compile and Python fails
-    // at when the invoke starts, and C11 holds the child as a value with no host
-    // to give its act table to. So a language refuses the invoke until it answers
-    // the child's host from its parent's own (`CHILD_HOST_LOWERED`).
+    // at when the invoke starts, and C11 held the child as a value with no host
+    // to give its act table to. Every language now asks its parent's own host.
     let document = machine(
         r#"<state id="s">
     <invoke type="scxml" id="child">
@@ -1551,29 +1543,16 @@ fn a_language_that_does_not_give_a_child_its_host_refuses_the_child() {
     <transition event="done.invoke.child" target="done"/>
   </state>"#,
     );
-    for &(lang, name, lowered) in CHILD_HOST_LOWERED {
+    for &lang in CHILD_HOST_LANGUAGES {
         let (ok, out) = run(&check_args(lang), &document);
-        if lowered {
-            assert!(
-                ok,
-                "{lang} gives the child the host its parent answers:\n{out}"
-            );
-            continue;
-        }
-        assert!(!ok, "{lang} has no lowering for it yet:\n{out}");
         assert!(
-            out.contains("generate/unsupported-feature")
-                && out.contains(&format!("no {name} lowering yet")),
-            "{lang}: expected the unsupported-feature refusal naming {name}:\n{out}"
-        );
-        assert!(
-            out.contains(r#"an <invoke id=\"child\"> of a child that declares <sce:action>s"#),
-            "{lang}: it names the invoke:\n{out}"
+            ok,
+            "{lang} gives the child the host its parent answers:\n{out}"
         );
     }
     // The Interpreter lowers the document as ECMAScript and is no generated
-    // language, so the lowering itself answers for it: it has not been given a
-    // child's host either.
+    // language, so the lowering itself answers for it: a child session of its is
+    // not given a host by its parent yet, and it is refused by name.
     let (ok, out) = run(&["lower"], &document);
     assert!(!ok, "the Interpreter has no lowering for it yet:\n{out}");
     assert!(
@@ -1581,16 +1560,18 @@ fn a_language_that_does_not_give_a_child_its_host_refuses_the_child() {
             && out.contains(r#"an <invoke id=\"child\"> of a child that declares <sce:action>s"#),
         "the Interpreter: expected the refusal naming it and the invoke:\n{out}"
     );
+    // A child that declares no act is still lowered: it needs no host.
+    let (ok, out) = run(&["lower"], &invoking(""));
+    assert!(ok, "the Interpreter lowers a child with no act:\n{out}");
 }
 
 #[test]
-fn a_parent_of_another_data_model_is_given_the_same_answer_about_its_childs_host() {
+fn a_parent_of_another_data_model_gives_its_child_the_host_too() {
     // The child is a `sce-static` document with an act whatever the parent is
-    // under, and the parent builds it as it builds any child: so the refusal is
-    // the language's and not the static lowering's, which a parent under the
-    // ECMAScript data model never reaches. A language that does not answer the
-    // child's host from its parent's host used to generate a parent that did not
-    // build.
+    // under, and the parent builds it as it builds any child — a parent under the
+    // ECMAScript data model never reaches the static lowering, so a language that
+    // did not answer the child's host used to generate a parent that did not
+    // build, and said nothing.
     let document = r##"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="s">
@@ -1612,22 +1593,11 @@ fn a_parent_of_another_data_model_is_given_the_same_answer_about_its_childs_host
   <final id="done"/>
 </scxml>
 "##;
-    for &(lang, name, lowered) in CHILD_HOST_LOWERED {
+    for &lang in CHILD_HOST_LANGUAGES {
         let (ok, out) = run(&check_args(lang), document);
-        if lowered {
-            assert!(
-                ok,
-                "{lang} gives the child the host its parent answers:\n{out}"
-            );
-            continue;
-        }
-        assert!(!ok, "{lang} would build a child with no host:\n{out}");
         assert!(
-            out.contains("generate/unsupported-feature")
-                && out.contains(&format!("no {name} lowering yet"))
-                && out
-                    .contains(r#"an <invoke id=\"child\"> of a child that declares <sce:action>s"#),
-            "{lang}: expected the refusal naming {name} and the invoke:\n{out}"
+            ok,
+            "{lang} gives the child the host its parent answers:\n{out}"
         );
     }
 }
@@ -1650,33 +1620,31 @@ const HYBRID_ACTING: &str = r##"<?xml version="1.0"?>
 #[test]
 fn a_candidate_that_declares_acts_is_given_its_host_as_a_child_is() {
     // Each candidate of a hybrid `<invoke>` is a document of its own, with acts
-    // of its own, so a language that does not give a child its host refuses the
-    // invoke for the candidate that needs one — it used to generate a parent
-    // that did not build — and one that does gives it the host its parent's host
-    // answers for that candidate.
+    // of its own, so the host its parent's host answers is the candidate's: a
+    // language that did not give a child its host generated, for a candidate that
+    // needed one, a parent that did not build.
     let document = hybrid_invoking(HYBRID_ATTRS, "");
     let siblings = [
         ("first.scxml", HYBRID_FIRST),
         ("second.scxml", HYBRID_ACTING),
     ];
-    for &(lang, name, lowered) in CHILD_HOST_LOWERED {
+    for &lang in CHILD_HOST_LANGUAGES {
         let (ok, out) = run_beside(&check_args(lang), &document, &siblings);
-        if lowered {
-            assert!(
-                ok,
-                "{lang} gives the candidate the host its parent answers:\n{out}"
-            );
-            continue;
-        }
-        assert!(!ok, "{lang} has no lowering for it yet:\n{out}");
         assert!(
-            out.contains(&format!("no {name} lowering yet"))
-                && out.contains(
-                    r#"an <invoke id=\"child\"> that may start `second`, a child that declares <sce:action>s"#
-                ),
-            "{lang}: expected the refusal naming {name}, the invoke and the candidate:\n{out}"
+            ok,
+            "{lang} gives the candidate the host its parent answers:\n{out}"
         );
     }
+    // And the Interpreter, which does not yet, names the candidate.
+    let (ok, out) = run_beside(&["lower"], &document, &siblings);
+    assert!(!ok, "the Interpreter has no lowering for it yet:\n{out}");
+    assert!(
+        out.contains("no ecmascript lowering yet")
+            && out.contains(
+                r#"an <invoke id=\"child\"> that may start `second`, a child that declares <sce:action>s"#
+            ),
+        "the Interpreter: expected the refusal naming it, the invoke and the candidate:\n{out}"
+    );
 }
 
 /// A child written beside the document, declaring `start: uint32`.

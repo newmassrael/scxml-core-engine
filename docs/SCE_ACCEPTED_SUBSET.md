@@ -3412,8 +3412,11 @@ interface gains, for each `<invoke type="scxml">` whose child declares acts, one
 operation that answers the child's host (`fun actionsForWorker(): WorkerActions` in
 Kotlin, `def actions_for_worker(self)` in Python, `ActionsForWorker()` in Go,
 `virtual WorkerActions& actionsForWorker()` in C++, a reference to a host the answering
-host owns and keeps alive past the child's end, and a function pointer answering a
-pointer to the child's table in C11), and for
+host owns and keeps alive past the child's end, a function pointer answering a
+pointer to the child's table in C11, and in Rust an associated type bounded by the
+child's own trait with the operation that answers a value of it, since the child's
+machine is generic over its host and the parent's field names it
+`<A as ParentActions>::ActionsForWorker`), and for
 each candidate of a hybrid `<invoke>` that declares acts one of its own
 (`actionsForWorkStaticHostedFirst`), since each candidate is a document with acts of
 its own. The machine calls it each time the invocation starts — on entry of the
@@ -3428,26 +3431,30 @@ Python host object and keeps what it answered, and by
 `a_child_is_given_its_host_by_its_parent_test.go` in Go and
 `AChildIsGivenItsHostByItsParentTest.cpp` in C++ and `test_static_child_host.c` in C11,
 none of which has a saved state and so a restore; the C11 one adds the table that answers
-NULL, which is an invocation that does not happen). A parent that declares no act of its
-own still takes that host, and the recording host it generates takes one source per
-child, the function a test hands it, and records each question beside the acts. An act
+NULL, which is an invocation that does not happen; and by
+`a_child_is_given_its_host_by_its_parent.rs` in Rust, which restores). A parent that
+declares no act of its own still takes that host, and the recording host it generates
+takes one source per child, the function a test hands it (in Rust it is generic over what
+each answers, and derives neither `Default` nor `Debug`), and records each question
+beside the acts. An act
 whose name is spelled as one of those operations, in any language's convention, and
 two invokes whose ids differ only in spelling, are refused where the second is
 written (`<sce:action name="…">` names one host method, not two).
 
-This is Kotlin's, Python's, Go's, C++'s and C11's yet. A language that does not answer a child's host from its
-parent's own refuses the `<invoke>` at its entry, whatever data model the parent is
-under, as `generate/unsupported-feature` (`an <invoke id="child"> of a child that
-declares <sce:action>s has no Rust lowering yet`; a candidate is named by `an <invoke
-id="child"> that may start `second`, a child that declares <sce:action>s`), and the
-Interpreter's `lower` refuses it for the same reason. The code a parent would write
-otherwise is the child's constructor called with the host left out: measured
-2026-10-06, it does not compile in Rust, Kotlin, Go or C++ and Python fails when the
-invoke starts, and C11 held the child as a value with no act table to give it; and
-measured 2026-10-07, a parent that is not `sce-static` was not refused anywhere, since
-only the static lowering asked. A language lifts the refusal in the commit that gives
-its host interface the operation and replays the fixtures, and the refusal is removed
-from the shared check when the last has.
+Every generated language does this, for a parent of either data model. What does not
+yet is the Interpreter: its child sessions are built by the engine that runs the parent,
+with no host their parent's host answers, so `sce-codegen lower` refuses an `<invoke>` of
+a child that declares acts as `generate/unsupported-feature` (`an <invoke id="child"> of a
+child that declares <sce:action>s has no ecmascript lowering yet`; a candidate is named by
+`an <invoke id="child"> that may start `second`, a child that declares <sce:action>s`),
+and lowers a child that declares none. The code a generated parent would write otherwise
+is the child's constructor called with the host left out: measured 2026-10-06, it does
+not compile in Rust, Kotlin, Go or C++ and Python fails when the invoke starts, and C11
+held the child as a value with no act table to give it; and measured 2026-10-07, a
+parent that is not `sce-static` was not refused anywhere, since only the static lowering
+asked. Each language was refused by name until it gave its host interface the operation
+and replayed the fixtures, and the refusals were removed when the last of them did
+(2026-10-07).
 
 Each generated `sce-static` machine with such a variable carries the way in:
 Kotlin a nested `InvokeParams` and `acceptParams`, Rust `<Machine>InvokeParams` and
