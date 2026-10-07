@@ -344,6 +344,9 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheInterpreterDoesWha
     // field changed.
     EXPECT_NE(std::find(replayed.begin(), replayed.end(), "static_record_bytes"), replayed.end())
         << "static_record_bytes was not replayed: a record's byte string has no lowering for the Interpreter";
+    // ... and the bytes a typed payload carries, the text its wire spells them as.
+    EXPECT_NE(std::find(replayed.begin(), replayed.end(), "static_payload_bytes"), replayed.end())
+        << "static_payload_bytes was not replayed: a payload's byte string has no lowering for the Interpreter";
     for (const auto &name : notYetLowered) {
         RecordProperty("not_yet_lowered_" + name, "refused by sce-codegen lower");
     }

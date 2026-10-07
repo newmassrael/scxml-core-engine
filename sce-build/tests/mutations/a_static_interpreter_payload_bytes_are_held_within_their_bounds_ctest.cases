@@ -1,0 +1,50 @@
+# Mutation cases for "the bytes a typed payload carries are held within the bound of the
+# place they are written to" under the Interpreter
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A byte string"; docs/adr/0005, decision 2).
+#
+# A lowered document reads an event's data as the JSON it arrived as, and a payload's
+# byte string is the text of its bytes, one character to a byte. Every field of a
+# payload is read through the library's `field`, which refuses a value that is not what
+# its schema declares; for a byte string that is a text with no character past U+00FF.
+# The bound is held where the bytes are written, by `SceStatic.boundedBytes`, as a
+# variable's and a record's field are. `static_payload_bytes` is replayed by
+# `static_datamodel_lowered`, which also asserts that it is replayed and not left to a
+# refusal; the mutants below each take one decision away:
+#
+#   a payload's byte string is read by the library as a value of no type;
+#   a character past U+00FF is let through by the library's reader of a byte string;
+#   a record taken whole from a payload is not held to the bound of its bytes field;
+#   the Interpreter is not said to hold a payload's byte string, so the document is
+#     refused by name and not replayed.
+#
+# The library is embedded in the generator, so the regeneration is the build the
+# ctest names. Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^static_datamodel_lowered$'
+mutation_targets sce-build/src/forge/static_js/sce_static.js sce-build/src/forge/static_js.rs sce-build/src/forge/static_lowering.rs
+mutation_oracles tests/integration/AStaticDatamodelRunsLoweredUnderTheInterpreterTest.cpp sce-build/tests/fixtures/static_datamodel/static_payload_bytes.scxml sce-build/tests/fixtures/static_datamodel/scenarios/static_payload_bytes.json
+
+mutation_case "a payload's byte string is read by the library as a value of no type" <<'PY'
+edit("sce-build/src/forge/static_js/sce_static.js",
+     "    if (type === 'bytes') {",
+     "    if (type === 'bytes-unread') {")
+PY
+
+mutation_case "a character past U+00FF is let through by the library's reader of a byte string" <<'PY'
+edit("sce-build/src/forge/static_js/sce_static.js",
+     "      if (value.charCodeAt(i) > 0xFF) {\n        fail('the byte string holds a character past U+00FF, which is no byte');",
+     "      if (value.charCodeAt(i) > 0x10FFFF) {\n        fail('the byte string holds a character past U+00FF, which is no byte');")
+PY
+
+mutation_case "a record taken whole from a payload is not held to its bytes field's bound" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "            (SceType::Bytes, Some(bound)) => {\n                bounded = true;\n                let held = target.bounded_bytes(&read.text, bound);",
+     "            (SceType::Bytes, Some(bound)) if false => {\n                bounded = true;\n                let held = target.bounded_bytes(&read.text, bound);")
+PY
+
+mutation_case "the Interpreter is not said to hold a payload's byte string" <<'PY'
+edit("sce-build/src/forge/static_js.rs",
+     "    fn lowers_payload_bytes(&self) -> bool {\n        true\n    }",
+     "    fn lowers_payload_bytes(&self) -> bool {\n        false\n    }")
+PY

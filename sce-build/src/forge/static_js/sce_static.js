@@ -232,7 +232,27 @@
       }
       return value;
     }
+    if (type === 'bytes') {
+      /* The wire spells a byte string as its byte-exact Latin-1 text, one
+         character to a byte, so the field is the text and no longer than its
+         schema's bound only where it is written (boundedBytes). */
+      return byteText(value, name + ' is not text');
+    }
     fail('a field of type ' + String(type) + ' has no reader');
+  }
+
+  /* A byte string is the text of its bytes, one character to a byte: a value that
+     is not text, or holds a character past U+00FF, is no byte string. */
+  function byteText(value, notText) {
+    if (typeof value !== 'string') {
+      fail(notText);
+    }
+    for (var i = 0; i < value.length; i++) {
+      if (value.charCodeAt(i) > 0xFF) {
+        fail('the byte string holds a character past U+00FF, which is no byte');
+      }
+    }
+    return value;
   }
 
   return {
@@ -282,14 +302,7 @@
       return value;
     },
     boundedBytes: function (value, capacity) {
-      if (typeof value !== 'string') {
-        fail('expected a byte string, read ' + String(value));
-      }
-      for (var i = 0; i < value.length; i++) {
-        if (value.charCodeAt(i) > 0xFF) {
-          fail('the byte string holds a character past U+00FF, which is no byte');
-        }
-      }
+      byteText(value, 'expected a byte string, read ' + String(value));
       if (value.length > capacity) {
         fail('the byte string holds ' + String(value.length) + ' bytes, past its capacity of ' + String(capacity), 'capacity-exceeded');
       }

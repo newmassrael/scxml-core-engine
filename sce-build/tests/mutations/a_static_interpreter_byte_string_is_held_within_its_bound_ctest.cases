@@ -13,8 +13,9 @@
 #   a byte string is not bounded by the library at all.
 #
 # The library also refuses a character past U+00FF, which is no byte. No value of
-# this scenario holds one — its literals are printable ASCII — so no case judges that
-# refusal yet; the one that does comes with the bytes a payload carries in.
+# this scenario holds one — its literals are printable ASCII — so the case that judges
+# that refusal is the one of the bytes a payload carries in
+# (`a_static_interpreter_payload_bytes_are_held_within_their_bounds_ctest.cases`).
 #
 # The library is embedded in the generator, so the regeneration is the build the
 # ctest names. Anchors are literal slices of the source; an edit that moves one is

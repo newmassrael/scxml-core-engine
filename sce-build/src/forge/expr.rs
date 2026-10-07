@@ -8014,11 +8014,7 @@ fn emit_js(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError
         // refuses what a generated machine's lift of the payload refuses.
         ExprKind::Member { object, property } if matches!(&object.kind, ExprKind::Raw(accessor) if accessor == PAYLOAD_ACCESSOR) =>
         {
-            let Some(kind) = expr
-                .ty
-                .declared_spelling()
-                .filter(|kind| !matches!(*kind, "bytes"))
-            else {
+            let Some(kind) = expr.ty.declared_spelling() else {
                 return Err(ExprError::UnsupportedConstruct {
                     construct: format!(
                         "a read of the payload field `{property}`, of a type an ecmascript \
@@ -11158,7 +11154,7 @@ mod tests {
     #[test]
     fn js_refuses_a_payload_field_it_cannot_read() {
         let mut ctx = js_ctx();
-        ctx.insert_var("_event.data.raw", InferredType::Bytes);
+        ctx.insert_var("_event.data.raw", InferredType::UntypedInt);
         let renames: HashMap<&str, &str> = HashMap::from([("_event.data", "_event.data")]);
         let refusal = transpile_typed(
             "_event.data.raw",
@@ -11170,6 +11166,25 @@ mod tests {
         .unwrap_err()
         .to_string();
         assert!(refusal.contains("`raw`"), "{refusal}");
+    }
+
+    /// A payload's byte-string field is the text of its bytes, one character to a
+    /// byte, and is read through the library as every other field is, which refuses
+    /// a value that is not that text.
+    #[test]
+    fn js_reads_a_payload_byte_string_through_the_library() {
+        let mut ctx = js_ctx();
+        ctx.insert_var("_event.data.raw", InferredType::Bytes);
+        let renames: HashMap<&str, &str> = HashMap::from([("_event.data", "_event.data")]);
+        let text = transpile_typed(
+            "_event.data.raw",
+            ExprTarget::Js,
+            &ctx,
+            &renames,
+            InferredType::Unknown,
+        )
+        .unwrap();
+        assert_eq!(text, "SceStatic.field(_event.data, 'raw', 'bytes')");
     }
 
     /// The same document lowers on the six backends and on ECMAScript from one

@@ -405,6 +405,13 @@ impl StaticTarget for JsTarget {
     fn lowers_record_bytes(&self) -> bool {
         true
     }
+    // A payload is the engine's `_event.data`, read as the JSON it arrived as, and a
+    // byte-string field of it is the text of its bytes: one character to a byte, as the
+    // wire spells it. It is held to the bound of the place it is written to by the
+    // library call every byte string takes, which refuses a character past U+00FF.
+    fn lowers_payload_bytes(&self) -> bool {
+        true
+    }
     fn assign(&self, _target: &str, _value: &str) -> String {
         String::new()
     }
@@ -1350,7 +1357,7 @@ mod tests {
         }
         // Every type a payload field is read at is one `field` knows: the
         // integer types by their range, the rest by name.
-        for kind in ["float32", "float64", "bool", "string"] {
+        for kind in ["float32", "float64", "bool", "string", "bytes"] {
             assert!(
                 text.contains(&format!("'{kind}'")),
                 "`field` has no reader for `{kind}`"

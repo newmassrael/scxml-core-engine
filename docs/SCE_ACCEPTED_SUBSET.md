@@ -3689,8 +3689,10 @@ its byte-exact Latin-1 text: a byte above 0x7F is one byte, and the two bytes of
 character in the UTF-8 text; a character past U+00FF is no byte, so the payload that
 carries one does not read as its schema and is refused (`error.execution`, nothing
 written), whichever way the text spells it, an escape included. **Kotlin**, **Rust**,
-**Go**, **Python**, **C++** and **C11** hold it so far; the Interpreter's lowering refuses
-such a transition by name until it holds it.
+**Go**, **Python**, **C++**, **C11** and the **Interpreter** hold it: the Interpreter's data
+model holds a payload's byte string as the text its wire spells, one character to a byte,
+and reads it through the library's `field` as it reads every field of a payload, which
+refuses a value that is no text or holds a character past U+00FF.
 
 The bound is held where the bytes are written, as a string's is, and not where they are
 read, with one structural exception the shared scenario does not state: an engine whose
