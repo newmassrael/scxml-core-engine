@@ -8112,6 +8112,28 @@ fn validate_no_std_compatibility_impl(
         );
     }
 
+    // docs/adr/0005, decision 3: a computed target is sent by
+    // `Engine::send_to_target`, the one routing of a value read at run time, which
+    // the no_std runtime does not carry — its table is alloc-coupled as the invoke
+    // processing is. A machine that declares one is refused by name, as every
+    // construct a target has no lowering of yet is.
+    if let Some((_, send)) = model
+        .sends()
+        .into_iter()
+        .find(|(_, send)| !send.targets.is_empty())
+    {
+        return Some(
+            model.locate(
+                GenerateError::unsupported(
+                    "a <send> with a targetexpr has no Rust no_std lowering yet".to_string(),
+                )
+                .into(),
+                send.source_location.as_ref(),
+                &diag_label,
+            ),
+        );
+    }
+
     None
 }
 

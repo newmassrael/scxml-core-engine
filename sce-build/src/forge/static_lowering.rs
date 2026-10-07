@@ -1427,6 +1427,12 @@ impl StaticTarget for RustTarget {
     fn lowers_event_expr(&self) -> bool {
         true
     }
+    // The send template holds the string it computes to the routes the document
+    // declares as `sce:targets` and sends by `Engine::send_to_target`
+    // (docs/adr/0005, decision 3).
+    fn lowers_target_expr(&self) -> bool {
+        true
+    }
     // The cancel template hands the scheduler the id it computes
     // (`engine.cancel_event`).
     fn lowers_cancel_expr(&self) -> bool {

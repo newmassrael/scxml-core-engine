@@ -1148,12 +1148,16 @@ fn routing(send: &str) -> String {
     )
 }
 
-/// The generated languages that have no lowering of a `<send targetexpr>` yet,
-/// as `check` names them. Each is refused by name until it compares the value
-/// with the declared routes and sends by the one that matches (docs/adr/0005,
-/// decision 3); the Interpreter is read through `lower`.
-const COMPUTED_TARGET_REFUSING_LANGUAGES: &[&str] =
-    &["rust", "kotlin", "go", "cpp", "python", "c11"];
+/// The generated languages that lower a `<send targetexpr>`, as `check` names
+/// them: each compares the value with the declared routes and sends by the one
+/// that matches (docs/adr/0005, decision 3). The Interpreter is read through
+/// `lower`.
+const COMPUTED_TARGET_LOWERING_LANGUAGES: &[&str] = &["rust"];
+
+/// The generated languages that have no lowering of a `<send targetexpr>` yet.
+/// Each is refused by name until it writes one, and moves to the list above in
+/// the commit that does.
+const COMPUTED_TARGET_REFUSING_LANGUAGES: &[&str] = &["kotlin", "go", "cpp", "python", "c11"];
 
 #[test]
 fn a_computed_target_that_declares_its_routes_is_accepted_by_the_document() {
@@ -1300,6 +1304,33 @@ fn sce_targets_under_a_script_data_model_is_read_and_not_held_to() {
     assert!(
         out.contains("is not a route this machine sends by"),
         "the refusal says why:\n{out}"
+    );
+}
+
+#[test]
+fn every_language_that_lowers_a_computed_target_accepts_a_declared_one() {
+    let document =
+        routing(r##"<send event="go" targetexpr="route" sce:targets="#_internal #_parent"/>"##);
+    for &lang in COMPUTED_TARGET_LOWERING_LANGUAGES {
+        let (ok, out) = run(&check_args(lang), &document);
+        assert!(
+            ok,
+            "{lang} compares a computed target with the routes it declares:\n{out}"
+        );
+    }
+}
+
+#[test]
+fn a_computed_target_has_no_no_std_lowering_yet() {
+    // `Engine::send_to_target`, which routes a value read at run time, is not in the
+    // no_std runtime, so a machine that declares one is refused by name there.
+    let document =
+        routing(r##"<send event="go" targetexpr="route" sce:targets="#_internal #_parent"/>"##);
+    let (ok, out) = run(&["check", "-l", "rust", "--no-std"], &document);
+    assert!(!ok, "no_std has no routing of a computed target:\n{out}");
+    assert!(
+        out.contains("a <send> with a targetexpr has no Rust no_std lowering yet"),
+        "the refusal names the construct:\n{out}"
     );
 }
 

@@ -122,6 +122,9 @@ use sce_rust_tests::integration::static_datamodel::static_send_namelist_sm::{
 use sce_rust_tests::integration::static_datamodel::static_send_params_sm::{
     StaticSendParamsPersist, StaticSendParamsPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_send_target_sm::{
+    StaticSendTargetPersist, StaticSendTargetPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_string_capacity_sm::{
     StaticStringCapacityPersist, StaticStringCapacityPolicy,
 };
@@ -597,6 +600,21 @@ fn static_send_event_is_named_when_the_send_runs() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_send_event.json"
+        ),
+    );
+}
+
+// The `targetexpr` of a <send> is a string computed from the machine's fields when
+// the send runs, held to the routes the document declares as `sce:targets`
+// (docs/adr/0005, decision 3): the send goes by the entry that matches, and a value
+// in none of them is error.communication with nothing sent.
+#[test]
+fn static_send_target_is_chosen_among_the_declared_routes() {
+    replay(
+        Engine::new(StaticSendTargetPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_send_target.json"
         ),
     );
 }

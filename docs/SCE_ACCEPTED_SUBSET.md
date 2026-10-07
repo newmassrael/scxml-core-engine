@@ -3283,7 +3283,13 @@ the entries is the empty target, which its engine answers as it answers any addr
 nobody is at (`scenarios/static_send_target.json`, `fire` declaring `#_internal` and
 `#_parent` and `narrow` declaring `#_parent` alone; the lowering is refused by name,
 `a <send> with a targetexpr has no <language> lowering yet`, on a language that has
-not written it). `typeexpr` is still refused as above. A `<cancel>`'s
+not written it). **Rust** lowers it: the value is computed from the machine's fields,
+held to the declared routes by a `matches!` over them, and routed by the one
+`Engine::send_to_target` that routes a value read at run time for a script-engine
+machine (`a_static_rust_send_target_is_held_to_its_declared_routes_rust.cases`); a
+`no_std` build has no such routing and refuses the send by name
+(`a <send> with a targetexpr has no Rust no_std lowering yet`). `typeexpr` is still
+refused as above. A `<cancel>`'s
 `sendidexpr` is the same for the id of the delayed send it removes: a string
 computed from the machine's fields when the cancel runs, so the one `<cancel>`
 removes another send once the id it reads has changed. An id no send holds, the
