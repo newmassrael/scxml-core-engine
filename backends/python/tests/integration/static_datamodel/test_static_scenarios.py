@@ -355,6 +355,14 @@ def test_a_sends_event_is_named_when_it_runs() -> None:
     replay("static_send_event")
 
 
+# The `targetexpr` of a `<send>` is a string computed from the machine's fields when
+# the send runs, held to the routes the document declares as `sce:targets`
+# (docs/adr/0005, decision 3): the send goes by the entry that matches, and a value
+# in none of them is error.communication with nothing sent.
+def test_a_sends_target_is_chosen_among_the_declared_routes() -> None:
+    replay("static_send_target")
+
+
 # The `delayexpr` of a `<send>` is a string computed from the machine's fields when
 # the send runs, and read as the CSS2 time it must be; the scenario's
 # `advance_ms` steps move the engine's time on.

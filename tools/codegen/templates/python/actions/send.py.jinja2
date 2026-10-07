@@ -172,7 +172,24 @@
 {{ indent }}if not _evt_name:
 {{ indent }}    self._send_argument_error(engine, _sid, "<send> eventexpr could not be evaluated to an event name")
 {% endif %}
-{% if action.targetexpr %}
+{% if action.native_target %}
+{# docs/adr/0005, decision 3: the target is a string computed from the machine's
+   fields now (`Action::native_target`), and the send goes only by a route the
+   document declared as `sce:targets`. A value in none of them names no route this
+   send may take — an address nobody answers at, which is reported below as
+   error.communication (W3C SCXML C.1) — and an operation that fails cannot be
+   evaluated, the argument error. #}
+{% if action.native_target_fails %}
+{{ indent }}try:
+{{ indent }}    _target_str = {{ action.native_target }}
+{{ indent }}except sce_algorithm.AlgorithmFailure:
+{{ indent }}    self._send_argument_error(engine, _sid, "<send> targetexpr could not be evaluated")
+{% else %}
+{{ indent }}_target_str = {{ action.native_target }}
+{% endif %}
+{{ indent }}if _target_str not in ({% for entry in action.targets %}{{ entry | py_string_literal }}, {% endfor %}):
+{{ indent }}    _target_str = ""
+{% elif action.targetexpr %}
 {# §scxml-C-1: a target expression's value is read as text — the same reading
    C++ `resultToString` gives it. A target this processor cannot address is
    refused as a static one is (W3C SCXML 6.2, test194). #}
@@ -218,9 +235,13 @@
    other would (W3C SCXML 4.9). A self-sent event names its origin, so
    `targetexpr="_event.origin"` (test336) reads this session's location, never
    "". #}
+{% if action.native_target %}
+{{ indent }}if _is_unreachable_target(_target_str):
+{% else %}
 {{ indent }}if _target_value.to_python() is None or _is_unreachable_target(_target_str):
+{% endif %}
 {% if 'error.communication' in model.events %}
-{{ indent }}    engine.raise_internal({{ machine_name }}Event.{{ 'error.communication' | to_python_const }}, EventMetadata(data="<send> targetexpr evaluated to nothing, so there is no target to reach", send_id=_sid, event_type="platform"){{ route_ns.target_arg }})
+{{ indent }}    engine.raise_internal({{ machine_name }}Event.{{ 'error.communication' | to_python_const }}, EventMetadata(data="<send> targetexpr evaluated to nothing{% if action.native_target %}, or to a route the send does not declare{% endif %}, so there is no target to reach", send_id=_sid, event_type="platform"){{ route_ns.target_arg }})
 {% endif %}
 {{ indent }}    raise _ActionAbort
 {% endif %}
@@ -342,7 +363,7 @@
 {# SCE_MESH.md §mesh-19: a `targetexpr` may name a Mesh peer only once it is
    evaluated, so the build could not lower it; the two `targetexpr` arms below
    choose the same act the lowering arranges for a literal `#peer`. #}
-{% set dynamic_mesh = action.targetexpr and not action.typeexpr and not action.send_type_host_served and not action.send_type_unsupported and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') %}
+{% set dynamic_mesh = action.targetexpr and not action.native_target and not action.typeexpr and not action.send_type_host_served and not action.send_type_unsupported and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') %}
 {# ── The delivery ── #}
 {% if action.send_type_host_served %}
 {# §scxml-6.2.5 — the `type` is served by the HOST, which declared it to this

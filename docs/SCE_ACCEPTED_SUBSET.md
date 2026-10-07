@@ -3294,7 +3294,9 @@ them becomes the empty target, and the one `sendToTarget` that routes a value re
 run time answers it as it answers any address nobody is at
 (`a_static_kotlin_send_target_is_held_to_its_declared_routes_kotlin.cases`), and **Go**
 does too, through `engine.SendToTarget` and a `switch` over the declared routes
-(`a_static_go_send_target_is_held_to_its_declared_routes_go.cases`). `typeexpr` is still
+(`a_static_go_send_target_is_held_to_its_declared_routes_go.cases`), and **Python**
+compares the string with a tuple of them and routes it through `routed_to_target`
+(`a_static_python_send_target_is_held_to_its_declared_routes_python.cases`). `typeexpr` is still
 refused as above. A `<cancel>`'s
 `sendidexpr` is the same for the id of the delayed send it removes: a string
 computed from the machine's fields when the cancel runs, so the one `<cancel>`

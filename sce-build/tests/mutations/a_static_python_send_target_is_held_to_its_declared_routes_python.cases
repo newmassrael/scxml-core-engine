@@ -1,0 +1,37 @@
+# Mutation cases for "a computed target is chosen among the routes the document
+# declares" under the Python backend (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A computed
+# target"; docs/adr/0005, decision 3).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_python_send_target_is_held_to_its_declared_routes_python.cases`.
+#
+# `static_send_target` sends `landed` to the route its `route` variable holds, among
+# the routes the send declares: `fire` declares `#_internal` and `#_parent`, `narrow`
+# declares `#_parent` alone. The scenario holds what each leaves: a declared route
+# that a session answers at delivers (`landed`), and every other value — one the
+# machine could send by but this send did not declare, a declared parent that does
+# not exist, and a session nothing declares — is `error.communication` with nothing
+# sent (`refused`). The mutants each take one decision away:
+#
+#   a value that is none of the declared routes is let through;
+#   a value that names no route raises nothing.
+#
+# Anchors are literal slices of the template; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_pytest backends/python/tests integration/static_datamodel/test_static_scenarios.py
+mutation_regen scripts/regen_static_datamodel_python.sh
+mutation_runtime_targets tools/codegen/templates/python/actions/send.py.jinja2
+mutation_oracles backends/python/tests/integration/static_datamodel/test_static_scenarios.py sce-build/tests/fixtures/static_datamodel/static_send_target.scxml sce-build/tests/fixtures/static_datamodel/scenarios/static_send_target.json
+
+mutation_case "a value that is none of the declared routes is let through" <<'PY'
+edit("tools/codegen/templates/python/actions/send.py.jinja2",
+     "{{ indent }}    _target_str = \"\"\n",
+     "{{ indent }}    pass\n")
+PY
+
+mutation_case "a value that names no route raises nothing" <<'PY'
+edit("tools/codegen/templates/python/actions/send.py.jinja2",
+     "{{ indent }}if _is_unreachable_target(_target_str):\n",
+     "{{ indent }}if False and _is_unreachable_target(_target_str):\n")
+PY
