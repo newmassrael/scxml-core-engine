@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "SCXMLTypes.h"
+#include "common/Latin1Bytes.h"
 #include "core/HostProcessor.h"
 
 namespace SCE {
@@ -221,20 +222,13 @@ inline std::optional<std::string> requestFieldWire(const ::ScriptValue &value, c
         }
         // The script engine hands text as UTF-8; each character up to U+00FF
         // is one byte of the Latin-1 spelling.
-        std::size_t chars = 0;
-        for (std::size_t i = 0; i < s->size(); ++chars) {
-            const auto lead = static_cast<unsigned char>((*s)[i]);
-            if (lead < 0x80) {
-                i += 1;
-            } else if (lead == 0xC2 || lead == 0xC3) {
-                i += 2;
-            } else {
-                refusal = D::quoted(name) + " carries a character above U+00FF, which no single byte spells";
-                return std::nullopt;
-            }
+        std::vector<uint8_t> bytes;
+        if (const std::string why = Latin1Bytes::bytesOf(*s, bytes); !why.empty()) {
+            refusal = D::quoted(name) + " " + why;
+            return std::nullopt;
         }
-        if (chars > type.cap) {
-            refusal = D::quoted(name) + " is " + std::to_string(chars) + " bytes, past the " +
+        if (bytes.size() > type.cap) {
+            refusal = D::quoted(name) + " is " + std::to_string(bytes.size()) + " bytes, past the " +
                       std::to_string(type.cap) + " its schema declares";
             return std::nullopt;
         }
@@ -273,18 +267,8 @@ template <typename T> T requestField(const HostInvokeRequest &request, const cha
     } else if constexpr (std::is_same_v<T, std::vector<uint8_t>>) {
         // The Latin-1 spelling `requestFieldWire` checked, back as bytes.
         std::vector<uint8_t> out;
-        for (std::size_t i = 0; i < text.size();) {
-            const auto lead = static_cast<unsigned char>(text[i]);
-            if (lead < 0x80) {
-                out.push_back(lead);
-                i += 1;
-            } else if ((lead == 0xC2 || lead == 0xC3) && i + 1 < text.size()) {
-                out.push_back(
-                    static_cast<uint8_t>(((lead & 0x03) << 6) | (static_cast<unsigned char>(text[i + 1]) & 0x3F)));
-                i += 2;
-            } else {
-                throw broken();
-            }
+        if (!Latin1Bytes::bytesOf(text, out).empty()) {
+            throw broken();
         }
         return out;
     } else if constexpr (std::is_same_v<T, bool>) {

@@ -3,6 +3,7 @@
 #pragma once
 
 #include "common/JsonText.h"
+#include "common/Latin1Bytes.h"
 
 #include <cmath>
 #include <cstdint>
@@ -114,16 +115,21 @@ public:
      *
      * JSON has no byte string, so the wire carries the byte-exact Latin-1 text
      * the inject seam writes, and this reads it back the same way: every one of
-     * the 256 values is one character and back. Printable ASCII — what a bytes
-     * guard compares — is the same bytes under either reading.
+     * the 256 values is one character and back (`Latin1Bytes`). A byte above 0x7F
+     * is therefore the two bytes of its character in the text, and is one byte
+     * here; a character past U+00FF is no byte and is refused. Printable ASCII —
+     * what a bytes guard compares — is the same bytes under either reading.
      */
     std::string readBytes(const char *name, std::vector<uint8_t> &out) const {
         std::string text;
-        const std::string refusal = readString(name, text);
+        std::string refusal = readString(name, text);
         if (!refusal.empty()) {
             return refusal;
         }
-        out.assign(text.begin(), text.end());
+        refusal = Latin1Bytes::bytesOf(text, out);
+        if (!refusal.empty()) {
+            return std::string("'") + name + "' " + refusal;
+        }
         return {};
     }
 
@@ -208,7 +214,7 @@ public:
             return quote(name) + ":" + quote(value);
         } else if constexpr (std::is_same_v<T, std::vector<uint8_t>>) {
             // See readBytes for why Latin-1.
-            return quote(name) + ":" + quote(std::string(value.begin(), value.end()));
+            return quote(name) + ":" + quote(Latin1Bytes::textOf(value));
         } else if constexpr (std::is_floating_point_v<T>) {
             // The one spelling of a float (ARCHITECTURE.md, "JSON Number
             // Text"); `%.17g` wrote 0.1 as `0.10000000000000001`. JSON has no
@@ -362,7 +368,46 @@ private:
         return nullptr;
     }
 
-    /** One JSON string's characters, unescaped. */
+    /** Four hex digits at `digits`, as the number they spell; false at the first that is not one. */
+    static bool readHex4(const char *digits, unsigned &code) {
+        code = 0;
+        for (int i = 0; i < 4; i++) {
+            const char c = digits[i];
+            unsigned digit;
+            if (c >= '0' && c <= '9') {
+                digit = static_cast<unsigned>(c - '0');
+            } else if (c >= 'a' && c <= 'f') {
+                digit = static_cast<unsigned>(c - 'a' + 10);
+            } else if (c >= 'A' && c <= 'F') {
+                digit = static_cast<unsigned>(c - 'A' + 10);
+            } else {
+                return false;
+            }
+            code = (code << 4) | digit;
+        }
+        return true;
+    }
+
+    /** The UTF-8 of the character at code point `code`, appended to `out`. */
+    static void appendUtf8(std::string &out, unsigned code) {
+        if (code < 0x80u) {
+            out += static_cast<char>(code);
+        } else if (code < 0x800u) {
+            out += static_cast<char>(0xC0u | (code >> 6));
+            out += static_cast<char>(0x80u | (code & 0x3Fu));
+        } else if (code < 0x10000u) {
+            out += static_cast<char>(0xE0u | (code >> 12));
+            out += static_cast<char>(0x80u | ((code >> 6) & 0x3Fu));
+            out += static_cast<char>(0x80u | (code & 0x3Fu));
+        } else {
+            out += static_cast<char>(0xF0u | (code >> 18));
+            out += static_cast<char>(0x80u | ((code >> 12) & 0x3Fu));
+            out += static_cast<char>(0x80u | ((code >> 6) & 0x3Fu));
+            out += static_cast<char>(0x80u | (code & 0x3Fu));
+        }
+    }
+
+    /** One JSON string's characters, unescaped, as UTF-8. */
     static std::string walkText(const char *p, std::string &out) {
         if (*p != '"') {
             return "is not a text";
@@ -398,25 +443,23 @@ private:
                     break;
                 case 'u': {
                     unsigned code = 0;
-                    for (int i = 1; i <= 4; i++) {
-                        const char c = p[i];
-                        unsigned digit;
-                        if (c >= '0' && c <= '9') {
-                            digit = static_cast<unsigned>(c - '0');
-                        } else if (c >= 'a' && c <= 'f') {
-                            digit = static_cast<unsigned>(c - 'a' + 10);
-                        } else if (c >= 'A' && c <= 'F') {
-                            digit = static_cast<unsigned>(c - 'A' + 10);
-                        } else {
-                            return "is not a text (a \\u escape is not hex)";
-                        }
-                        code = (code << 4) | digit;
+                    if (!readHex4(p + 1, code)) {
+                        return "is not a text (a \\u escape is not hex)";
                     }
-                    if (code > 0xFFu) {
-                        return "carries a character above U+00FF, which no single byte spells";
-                    }
-                    out += static_cast<char>(code);
                     p += 4;
+                    if (code >= 0xD800u && code <= 0xDBFFu) {
+                        // The first half of a character past U+FFFF, whose second
+                        // half is the escape that follows.
+                        unsigned low = 0;
+                        if (p[1] != '\\' || p[2] != 'u' || !readHex4(p + 3, low) || low < 0xDC00u || low > 0xDFFFu) {
+                            return "is not a text (a \\u escape is half of a character)";
+                        }
+                        code = 0x10000u + ((code - 0xD800u) << 10) + (low - 0xDC00u);
+                        p += 6;
+                    } else if (code >= 0xDC00u && code <= 0xDFFFu) {
+                        return "is not a text (a \\u escape is half of a character)";
+                    }
+                    appendUtf8(out, code);
                     break;
                 }
                 default:

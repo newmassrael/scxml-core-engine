@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.7 (++20250804090312+cd708029e0b2-1~exp1~20250804210325.79)",
-  "embed_version": "5bc3c85d8a4",
+  "embed_version": "a3fc822761",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 306,
+  "symbol_count": 308,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -355,6 +355,18 @@
       "kind": "function",
       "name": "SCE::JsonText::quoted",
       "signature": "std::string SCE::JsonText::quoted(std::string_view)"
+    },
+    {
+      "header": "common/Latin1Bytes.h",
+      "kind": "function",
+      "name": "SCE::Latin1Bytes::bytesOf",
+      "signature": "std::string SCE::Latin1Bytes::bytesOf(std::string_view, std::vector<uint8_t> &)"
+    },
+    {
+      "header": "common/Latin1Bytes.h",
+      "kind": "function",
+      "name": "SCE::Latin1Bytes::textOf",
+      "signature": "std::string SCE::Latin1Bytes::textOf(const std::vector<uint8_t> &)"
     },
     {
       "header": "common/Logger.h",

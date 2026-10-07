@@ -499,6 +499,31 @@ apply_sce_test_policies(json_text_test)
 add_test(NAME JsonText COMMAND json_text_test)
 
 # ============================================================================
+# How a byte string rides in a text (docs/adr/0005, decision 2): the Latin-1
+# spelling a typed payload's wire carries, in SCE::Latin1Bytes and the payload lift
+# that uses it. Linked against googletest alone: a generated machine compiles and
+# links against `sce/include` with no runtime library, and this is the target that
+# says the two headers still allow it.
+# ============================================================================
+add_executable(event_payload_bytes_test
+    common/EventPayloadBytesTest.cpp
+)
+
+target_include_directories(event_payload_bytes_test
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/sce/include
+)
+
+target_link_libraries(event_payload_bytes_test
+    PRIVATE
+        GTest::gtest_main
+)
+
+apply_sce_test_policies(event_payload_bytes_test)
+
+add_test(NAME EventPayloadBytes COMMAND event_payload_bytes_test)
+
+# ============================================================================
 # One duration grammar (ARCHITECTURE.md, "Durations (Single Source of Truth)")
 #
 # SendSchedulingHelper::parseDelayString — the Interpreter's and the AOT

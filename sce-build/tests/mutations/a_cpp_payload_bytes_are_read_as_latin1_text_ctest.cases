@@ -1,0 +1,79 @@
+# Mutation cases for "a byte string rides in a C++ payload as its byte-exact Latin-1
+# text" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A byte string"; docs/adr/0005, decision 2).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_cpp_payload_bytes_are_read_as_latin1_text_ctest.cases`.
+#
+# The payload lift documented Latin-1 on both halves and kept neither: it read the bytes
+# of the UTF-8 text as the bytes of the field, so `ÿ` was the two bytes `C3 BF`, and it
+# wrote the bytes of the field into a JSON string as they were, which above 0x7F is not
+# text. Measured 2026-10-07 by `static_payload_bytes` against the generated C++ machine,
+# the only engine of the five that read a byte above 0x7F as more than one. A `\u` escape
+# was likewise one raw byte, and refused above U+00FF even in a string a script engine
+# reads. `EventPayloadBytes` holds the two headers to the text the other engines spell,
+# and links against googletest alone, so a generated machine still needs no runtime
+# library. The mutants take one decision away each:
+#
+#   a character past U+00FF is not told from a text that is not UTF-8;
+#   a byte above 0x7F is written as itself and not as its character;
+#   a two-byte character is read without the bits of its lead;
+#   a `\u` escape is one raw byte and not the UTF-8 of its character;
+#   a pair of surrogate escapes is not the one character it names;
+#   the second half of a pair is not checked to be one;
+#   the second half of a character stands alone;
+#   the field an inject seam writes is the bytes as they are.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^EventPayloadBytes$'
+mutation_targets sce/include/common/Latin1Bytes.h sce/include/common/EventPayloadLift.h
+mutation_oracles tests/common/EventPayloadBytesTest.cpp
+
+mutation_case "a character past U+00FF is not told from a text that is not UTF-8" <<'PY'
+edit("sce/include/common/Latin1Bytes.h",
+     "        } else if (lead >= 0xC4u && lead <= 0xF4u) {",
+     "        } else if (false && lead >= 0xC4u && lead <= 0xF4u) {")
+PY
+
+mutation_case "a byte above 0x7F is written as itself and not as its character" <<'PY'
+edit("sce/include/common/Latin1Bytes.h",
+     "        if (byte < 0x80u) {\n            text += static_cast<char>(byte);",
+     "        if (true) {\n            text += static_cast<char>(byte);")
+PY
+
+mutation_case "a two-byte character is read without the bits of its lead" <<'PY'
+edit("sce/include/common/Latin1Bytes.h",
+     "((lead & 0x03u) << 6)",
+     "(lead & 0x03u)")
+PY
+
+mutation_case "a unicode escape is one raw byte and not the UTF-8 of its character" <<'PY'
+edit("sce/include/common/EventPayloadLift.h",
+     "                    appendUtf8(out, code);",
+     "                    out += static_cast<char>(code);")
+PY
+
+mutation_case "a pair of surrogate escapes is not the one character it names" <<'PY'
+edit("sce/include/common/EventPayloadLift.h",
+     "                        code = 0x10000u + ((code - 0xD800u) << 10) + (low - 0xDC00u);",
+     "                        code = low;")
+PY
+
+mutation_case "the second half of a pair is not checked to be one" <<'PY'
+edit("sce/include/common/EventPayloadLift.h",
+     "!readHex4(p + 3, low) || low < 0xDC00u || low > 0xDFFFu) {",
+     "!readHex4(p + 3, low)) {")
+PY
+
+mutation_case "the second half of a character stands alone" <<'PY'
+edit("sce/include/common/EventPayloadLift.h",
+     "                    } else if (code >= 0xDC00u && code <= 0xDFFFu) {",
+     "                    } else if (false && code >= 0xDC00u && code <= 0xDFFFu) {")
+PY
+
+mutation_case "the field an inject seam writes is the bytes as they are" <<'PY'
+edit("sce/include/common/EventPayloadLift.h",
+     "quote(Latin1Bytes::textOf(value))",
+     "quote(std::string(value.begin(), value.end()))")
+PY
