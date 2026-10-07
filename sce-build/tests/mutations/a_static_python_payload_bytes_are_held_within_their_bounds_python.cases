@@ -1,0 +1,38 @@
+# Mutation cases for "the bytes a typed payload carries are held within the bound of the
+# place they are written to" under the Python backend
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A byte string"; docs/adr/0005, decision 2).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_python_payload_bytes_are_held_within_their_bounds_python.cases`.
+#
+# `static_payload_bytes` reads the bytes of a `framed.taken` payload into a bytes
+# variable of four, into a record's field of eight and into a whole record, and compares
+# them in a guard; it expects a value past the bound to leave what it was written to as
+# it was and `errors` to count it, and a payload that carries a character past U+00FF,
+# which is no byte, to be refused with nothing written. A Python `bytes` cannot be
+# written into, so no case judges that the machine keeps a copy of what a host raised the
+# event with: there is nothing for a copy to protect. The mutants take one decision away
+# each:
+#
+#   a record taken whole from a payload is not held to the bound of its bytes field;
+#   a character past U+00FF is dropped from the bytes it spells and not refused.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_pytest backends/python/tests integration/static_datamodel/
+mutation_regen scripts/regen_static_datamodel_python.sh
+mutation_runtime_targets sce-build/src/forge/static_lowering.rs backends/python/runtime/sce_runtime/event_payload.py
+mutation_oracles backends/python/tests/integration/static_datamodel/test_static_scenarios.py sce-build/tests/fixtures/static_datamodel/scenarios/static_payload_bytes.json
+
+mutation_case "a record taken whole from a payload is not held to its bytes field's bound" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "            (SceType::Bytes, Some(bound)) => {\n                bounded = true;\n                let held = target.bounded_bytes(&read.text, bound);",
+     "            (SceType::Bytes, Some(bound)) if false => {\n                bounded = true;\n                let held = target.bounded_bytes(&read.text, bound);")
+PY
+
+mutation_case "a character past U+00FF is dropped from the bytes and not refused" <<'PY'
+edit("backends/python/runtime/sce_runtime/event_payload.py",
+     "                return value.encode(\"latin-1\")\n            except UnicodeEncodeError as exc:",
+     "                return value.encode(\"latin-1\", errors=\"ignore\")\n            except UnicodeEncodeError as exc:")
+PY

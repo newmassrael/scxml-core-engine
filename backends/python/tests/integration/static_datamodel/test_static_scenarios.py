@@ -280,6 +280,29 @@ def test_a_record_of_the_same_bytes_is_equal_and_cannot_be_written_into() -> Non
         last.frame = b"zz"  # type: ignore[misc]
 
 
+# The bytes an event's payload carries are read into a bytes variable, into a record's
+# field and into a whole record, each held to its own bound: a value past it writes
+# nothing, raises error.execution and ends its block. The wire spells a byte string as
+# its byte-exact Latin-1 text, which a scenario states it as.
+def test_the_payload_of_an_event_carries_bytes_held_within_their_bounds() -> None:
+    replay("static_payload_bytes")
+
+
+# A Python `bytes` cannot be written into, so the machine may keep the very object a
+# host raised the event with: the host has no way to change what the machine read.
+def test_a_host_cannot_change_the_bytes_an_event_it_raised_carried() -> None:
+    module = importlib.import_module("integration.static_datamodel.static_payload_bytes_sm")
+    engine = module.create_engine()
+    engine.initialize()
+    carried = b"wxyz"
+    module.raise_framed_taken(engine, 100, carried)
+    held = getattr(engine.policy, module.SCE_HOST_NAMES["readers"]["held"])()
+    assert isinstance(held, bytes)
+    assert held == b"wxyz"
+    with pytest.raises(TypeError):
+        carried[0] = ord("X")  # type: ignore[index]
+
+
 # A record's string field is held to the UTF-8 bytes its schema declares: an
 # assignment past the bound — from a literal, a string variable or a payload —
 # writes nothing, raises error.execution and ends its block, and a list of such

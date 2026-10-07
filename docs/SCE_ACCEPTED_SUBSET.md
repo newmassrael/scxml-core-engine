@@ -3685,8 +3685,9 @@ A transition on an event whose payload carries a `bytes` field reads it into a `
 variable, into a record's field or into a whole record, held to the bound of the place
 it is written to (`scenarios/static_payload_bytes.json`,
 `StaticTarget::lowers_payload_bytes`), and compares it in a guard. The wire spells it as
-its byte-exact Latin-1 text. **Kotlin**, **Rust** and **Go** hold it so far; the other
-backends and the Interpreter's lowering refuse such a transition by name until each holds it. The
+its byte-exact Latin-1 text. **Kotlin**, **Rust**, **Go** and **Python** hold it so far;
+**C++**, **C11** and the Interpreter's lowering refuse such a transition by name until each
+holds it. The
 bound is held where the bytes are written, as a string's is, and not where they are
 read: a payload longer than its field's `sce:max-size` that takes a route writing none of
 it is only compared (a Rust `no_std` machine, whose payload buffer is a fixed array of
@@ -3694,8 +3695,9 @@ that bound, refuses such a payload outright), while a character past U+00FF is n
 the payload that carries one does not read as its schema and is refused
 (`error.execution`, nothing written). A Kotlin machine holds a copy of the array a host raised the event with
 (`SceChecked.bounded`), so a host that kept the array and wrote into it changes nothing
-of what the machine read; a Go machine does the same (`BoundedBytes`), and a Rust machine
-copies the borrowed bytes into the `Vec<u8>` it writes them to. A Kotlin record that holds a byte string compares
+of what the machine read; a Go machine does the same (`BoundedBytes`), a Rust machine
+copies the borrowed bytes into the `Vec<u8>` it writes them to, and a Python machine keeps
+the host's `bytes` itself, which nothing can write into. A Kotlin record that holds a byte string compares
 and hashes by the bytes and not by the identity of the array, as a data class would
 otherwise, and is handed to a host as `detached()`, a copy of each array, as is each
 record of a published list. A Rust record that holds one is `Clone` and no longer `Copy`

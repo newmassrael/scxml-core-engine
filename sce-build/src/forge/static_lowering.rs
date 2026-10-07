@@ -4351,6 +4351,12 @@ impl StaticTarget for PythonTarget {
     fn lowers_record_bytes(&self) -> bool {
         true
     }
+    // A payload's `bytes` field is read where the machine's own is, and held to the
+    // bound of the variable or the record's field it is written to. A Python `bytes`
+    // cannot be written into, so the host's value is the machine's to keep.
+    fn lowers_payload_bytes(&self) -> bool {
+        true
+    }
     fn assign(&self, target: &str, value: &str) -> String {
         format!("{target} = {value}")
     }
