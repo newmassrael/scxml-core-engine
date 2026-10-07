@@ -32,7 +32,14 @@ import { BILLING_WORDS, NOT_USED_WORDS, SIGN_IN_WORDS, programChoice } from "./a
 import type { Api, ConnectionRef } from "./api";
 import { CodexSection } from "./codex_settings";
 import { ServerSection } from "./server_settings";
-import type { Candidate, Connection, ConnectionListing, Described, SignInCommand } from "./contract";
+import type {
+  Candidate,
+  CodexStatus,
+  Connection,
+  ConnectionListing,
+  Described,
+  SignInCommand,
+} from "./contract";
 import { h } from "./dom";
 import type { Child } from "./dom";
 import type { Key } from "./i18n";
@@ -89,6 +96,12 @@ export class AiSettings {
   private readonly codex: CodexSection;
   /** What is a model server's in these settings, which has its own state to keep. */
   private readonly server: ServerSection;
+  /**
+   * How many times each client was asked about, so that an answer that comes after another was
+   * asked for is known to be of the program asked about before it, and is not shown.
+   */
+  private claudeAsks = 0;
+  private codexAsks = 0;
 
   constructor(private readonly host: AiSettingsHost) {
     this.codex = new CodexSection({
@@ -100,6 +113,7 @@ export class AiSettings {
       redraw: () => host.redraw(),
       recheck: (label) => this.recheck(label),
       commands: (commands) => this.commands(commands),
+      programChanged: () => void this.askCodex(),
     });
     this.server = new ServerSection({
       t: host.t,
@@ -184,38 +198,53 @@ export class AiSettings {
   }
 
   private async askClaude(): Promise<void> {
+    const asking = ++this.claudeAsks;
     this.asked = { phase: "asking" };
     this.host.redraw();
+    let answer: Asked;
     try {
-      // Asked about the connection these settings edit, which is not always the default: the
-      // program that answers is the one that connection names.
-      this.asked = { phase: "answered", status: await this.host.api.readClaudeStatus(CLAUDE_CONNECTION_ID) };
+      // Asked about the connection these settings edit, which is not always the default, and
+      // about the program that would be saved for it when another was chosen and not kept yet:
+      // the login shown is the login of that program, and not of the one that was there before.
+      answer = {
+        phase: "answered",
+        status: await this.host.api.readClaudeStatus(CLAUDE_CONNECTION_ID, this.draftProgram),
+      };
     } catch (error) {
       if (this.host.handled(error)) {
-        this.asked = { phase: "idle" };
+        if (asking === this.claudeAsks) this.asked = { phase: "idle" };
         return;
       }
-      this.asked = refusal(error, this.host);
+      answer = refusal(error, this.host);
     }
+    // A program chosen after this was asked has been asked about on its own, and what this found
+    // is of another program: it is not shown beside the choice that was made since.
+    if (asking !== this.claudeAsks) return;
+    this.asked = answer;
     await this.find();
     this.host.redraw();
   }
 
   private async askCodex(): Promise<void> {
+    const asking = ++this.codexAsks;
     this.codex.setAsked({ phase: "asking" });
     this.host.redraw();
+    let answer: Asked<CodexStatus>;
     try {
-      this.codex.setAsked({
+      // About the program that would be saved, as for Claude Code.
+      answer = {
         phase: "answered",
-        status: await this.host.api.readCodexStatus(CODEX_CONNECTION_ID),
-      });
+        status: await this.host.api.readCodexStatus(CODEX_CONNECTION_ID, this.codex.programDraft()),
+      };
     } catch (error) {
       if (this.host.handled(error)) {
-        this.codex.setAsked({ phase: "idle" });
+        if (asking === this.codexAsks) this.codex.setAsked({ phase: "idle" });
         return;
       }
-      this.codex.setAsked(refusal(error, this.host));
+      answer = refusal(error, this.host);
     }
+    if (asking !== this.codexAsks) return;
+    this.codex.setAsked(answer);
     await this.find();
     this.host.redraw();
   }
@@ -443,7 +472,12 @@ export class AiSettings {
       case "unasked":
         return [h("p", { class: "muted" }, t("aiNotAsked")), this.recheck("aiAsk")];
       case "asking":
-        return [h("p", { class: "muted", role: "status" }, t("aiAsking"))];
+        // A program the person chose is being asked of: the choice stays where it was, so that
+        // another can be chosen before this one is answered and the one in hand is not taken away.
+        return [
+          h("p", { class: "muted", role: "status" }, t("aiAsking")),
+          ...(this.draftProgram === undefined ? [] : [this.programChoice()]),
+        ];
       case "no-client":
         return [h("p", {}, t("aiNoClient")), this.recheck("aiRecheck")];
       case "client-unverified":
@@ -486,6 +520,9 @@ export class AiSettings {
       candidates: this.candidates,
       choose: (program) => {
         this.draftProgram = program;
+        // Who is signed in was asked of the program that was there, and a program that was chosen
+        // is another: it is asked of before anything is offered as the default.
+        void this.askClaude();
       },
     });
   }
@@ -622,7 +659,8 @@ export class AiSettings {
       ),
       h(
         "details",
-        { class: "advanced" },
+        // Open once a program was chosen here: what was just done is not folded away under the person.
+        { class: "advanced", open: this.draftProgram !== undefined },
         h("summary", {}, t("aiAdvanced")),
         this.programChoice(),
         h("p", { class: "muted" }, t("aiModelNote")),

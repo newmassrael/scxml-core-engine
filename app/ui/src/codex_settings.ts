@@ -54,6 +54,11 @@ export interface CodexSectionEnv {
   readonly recheck: (label: Key) => HTMLElement;
   /** The commands that sign in, each with how it bills and a button to copy it. */
   readonly commands: (commands: readonly SignInCommand[]) => HTMLElement;
+  /**
+   * Another program was chosen. Who is signed in was asked of the one that was there, so it is
+   * asked again of this one before anything is offered as the default.
+   */
+  readonly programChanged: () => void;
 }
 
 const SOURCE_WORDS: Record<CodexSource, Key> = {
@@ -130,6 +135,14 @@ export class CodexSection {
     return this.asked.phase === "answered" ? this.asked.status : null;
   }
 
+  /**
+   * The program chosen and not kept yet, which the status is asked of: `undefined` when none was
+   * chosen (the one the connection names is asked of), `null` for the application's own choice.
+   */
+  programDraft(): string | null | undefined {
+    return this.draftProgram;
+  }
+
   /** The program that would be saved: the one chosen in the list, else the one kept, else none. */
   private chosenProgram(): string | null {
     if (this.draftProgram !== undefined) return this.draftProgram;
@@ -154,7 +167,11 @@ export class CodexSection {
       case "unasked":
         return [h("p", { class: "muted" }, t("aiCodexNotAsked")), this.env.recheck("aiCodexAsk")];
       case "asking":
-        return [h("p", { class: "muted", role: "status" }, t("aiCodexAsking"))];
+        // As for Claude Code: a program that was chosen stays where it was while it is asked of.
+        return [
+          h("p", { class: "muted", role: "status" }, t("aiCodexAsking")),
+          ...(this.draftProgram === undefined ? [] : [this.programSelect()]),
+        ];
       case "unknown":
         return [h("p", {}, t("aiCodexUnknown", { reason: readiness.reason })), this.env.recheck("aiRecheck")];
       case "answered":
@@ -312,6 +329,7 @@ export class CodexSection {
       candidates: this.candidates,
       choose: (program) => {
         this.draftProgram = program;
+        this.env.programChanged();
       },
     });
   }
@@ -341,7 +359,12 @@ export class CodexSection {
   private controls(): Child[] {
     const t = this.env.t;
     return [
-      h("details", { class: "advanced" }, h("summary", {}, t("aiProgram")), this.programSelect()),
+      h(
+        "details",
+        { class: "advanced", open: this.draftProgram !== undefined },
+        h("summary", {}, t("aiProgram")),
+        this.programSelect(),
+      ),
       this.env.described.writes_settings
         ? h(
             "div",

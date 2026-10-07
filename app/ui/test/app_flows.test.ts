@@ -3275,6 +3275,25 @@ describe("asking for a model", () => {
     expect(root.querySelector<HTMLDetailsElement>("#ai-settings")?.open).toBe(true);
   });
 
+  it("keeps the program list under the person's keys while the program they chose is asked of", async () => {
+    const panel = root.querySelector<HTMLDetailsElement>("#ai-settings")!;
+    panel.open = true;
+    panel.dispatchEvent(new Event("toggle"));
+    const list = root.querySelector<HTMLSelectElement>("#ai-program")!;
+    list.focus();
+
+    list.value = "/home/me/.local/bin/claude";
+    list.dispatchEvent(new Event("change"));
+    await settle();
+
+    // The settings were drawn again, for the answer about the program that was chosen...
+    const after = root.querySelector<HTMLSelectElement>("#ai-program");
+    expect(core.callsOf("read_claude_status").at(-1)).toMatchObject({ executable: "/home/me/.local/bin/claude" });
+    expect(after).not.toBe(list);
+    // ...and the list the person was in is still the one in hand.
+    expect(document.activeElement).toBe(after);
+  });
+
   it("asks about the text the screen shows, and says the request waits for the AI", async () => {
     core.setAdapters([{ name: "desktop" }]);
     await click("Alpha");

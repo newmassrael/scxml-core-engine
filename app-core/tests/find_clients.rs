@@ -434,6 +434,102 @@ fn the_codex_status_is_of_the_connection_the_screen_asks_about_whether_or_not_it
 }
 
 #[test]
+fn the_status_can_be_asked_of_a_program_not_kept_yet_and_of_the_applications_own_choice() {
+    // The first one found is the application's own choice; the connection names the second.
+    let first = client("fc-draft-first", "2.1.291 (Claude Code)", SUBSCRIPTION);
+    let second = client("fc-draft-second", "2.1.280 (Claude Code)", SIGNED_OUT);
+    let rig = Rig::new("fc-draft", &[dir_of(&first), dir_of(&second)]);
+    rig.desktop("save_connection", claude_json(Some(&second)));
+    rig.desktop(
+        "set_default_connection",
+        json!({ "id": "claude", "expect": null }),
+    );
+
+    let kept = rig.desktop("read_claude_status", json!({ "connection": "claude" }));
+    let drafted = rig.desktop(
+        "read_claude_status",
+        json!({ "connection": "claude", "executable": first }),
+    );
+    let automatic = rig.desktop(
+        "read_claude_status",
+        json!({ "connection": "claude", "executable": null }),
+    );
+
+    // Asked about the connection, the program it names answers, as it did.
+    assert_eq!(kept["claude"]["client"]["version"], "2.1.280");
+    assert_eq!(kept["claude"]["account"]["state"], "signed-out");
+    // Asked about a program that is about to be kept, that program answers, and not the one that
+    // is kept: the login a screen shows is the login of the program that it would save.
+    assert_eq!(drafted["claude"]["client"]["version"], "2.1.291");
+    assert_eq!(drafted["claude"]["account"]["state"], "signed-in");
+    // And asked about no program, the application's own choice answers, which the kept one does not.
+    assert_eq!(automatic["claude"]["client"]["version"], "2.1.291");
+}
+
+#[test]
+fn a_program_the_application_did_not_find_is_not_asked_whatever_it_says_of_itself() {
+    let found = client("fc-ask-found", "2.1.291 (Claude Code)", SUBSCRIPTION);
+    let elsewhere = client("fc-ask-elsewhere", "2.1.291 (Claude Code)", SUBSCRIPTION);
+    let codex_found = codex_client("fc-ask-codex-found", "codex-cli 0.159.0");
+    let codex_elsewhere = codex_client("fc-ask-codex-elsewhere", "codex-cli 0.159.0");
+    let rig = Rig::new("fc-ask-unfound", &[dir_of(&found), dir_of(&codex_found)]);
+
+    let claude = rig
+        .ask(
+            Entrance::Desktop,
+            "read_claude_status",
+            json!({ "executable": elsewhere }),
+        )
+        .unwrap_err();
+    let codex = rig
+        .ask(
+            Entrance::Desktop,
+            "read_codex_status",
+            json!({ "executable": codex_elsewhere }),
+        )
+        .unwrap_err();
+    // One of the other client's is not one of this client's.
+    let crossed = rig
+        .ask(
+            Entrance::Desktop,
+            "read_claude_status",
+            json!({ "executable": codex_found }),
+        )
+        .unwrap_err();
+
+    // A command that started whatever path it was given would be a way to run any file.
+    for refused in [&claude, &codex, &crossed] {
+        assert_eq!(refused.kind, "bad-connection");
+        assert!(refused.message.contains("found"), "{}", refused.message);
+    }
+}
+
+#[test]
+fn the_codex_status_can_be_asked_of_a_program_not_kept_yet_as_well() {
+    let first = codex_client("fc-draft-codex-first", "codex-cli 0.158.0");
+    let second = codex_client("fc-draft-codex-second", "codex-cli 0.159.0");
+    let claude = client(
+        "fc-draft-codex-claude",
+        "2.1.291 (Claude Code)",
+        SUBSCRIPTION,
+    );
+    let rig = Rig::new(
+        "fc-draft-codex",
+        &[dir_of(&first), dir_of(&second), dir_of(&claude)],
+    );
+    rig.desktop("save_connection", codex_json(&second));
+
+    let kept = rig.desktop("read_codex_status", json!({ "connection": "gpt" }));
+    let drafted = rig.desktop(
+        "read_codex_status",
+        json!({ "connection": "gpt", "executable": first }),
+    );
+
+    assert_eq!(kept["codex"]["client"]["version"], "0.159.0");
+    assert_eq!(drafted["codex"]["client"]["version"], "0.158.0");
+}
+
+#[test]
 fn a_connection_that_names_no_program_is_not_given_the_one_the_default_names() {
     let automatic = client("fc-none-auto", "2.1.291 (Claude Code)", SUBSCRIPTION);
     let other = client("fc-none-other", "2.1.280 (Claude Code)", SIGNED_OUT);

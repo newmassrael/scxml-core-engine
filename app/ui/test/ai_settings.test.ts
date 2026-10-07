@@ -147,6 +147,12 @@ class FakeSettings {
   ];
   /** What the core says of the server at each address; one that is not here is not answering. */
   servers = new Map<string, ServerStatus | CommandFailure>();
+  /** What the core says of Claude Code when it is asked about a program (`null` is the automatic one). */
+  statusOfProgram = new Map<string | null, ClaudeStatus>();
+  /** The same for Codex. */
+  codexStatusOfProgram = new Map<string | null, CodexStatus>();
+  /** An answer about a program that is held back until the test lets it go. */
+  held = new Map<string | null, Promise<void>>();
 
   api(): Pick<
     Api,
@@ -170,18 +176,34 @@ class FakeSettings {
         if (this.refuseFinding !== null) throw this.refuseFinding;
         return { claude: this.found, codex: this.foundCodex };
       },
-      readCodexStatus: async (connection?: string) => {
-        this.calls.push({ name: "read_codex_status", args: { connection: connection ?? null } });
+      readCodexStatus: async (connection?: string, executable?: string | null) => {
+        this.calls.push({
+          name: "read_codex_status",
+          args: { connection: connection ?? null, ...(executable === undefined ? {} : { executable }) },
+        });
         if (this.codexStatus instanceof CommandFailure) throw this.codexStatus;
+        if (executable !== undefined) {
+          await this.held.get(executable);
+          const of = this.codexStatusOfProgram.get(executable);
+          if (of !== undefined) return of;
+        }
         return this.codexStatus;
       },
       listConnections: async () => {
         this.calls.push({ name: "list_connections", args: null });
         return this.listing;
       },
-      readClaudeStatus: async (connection?: string) => {
-        this.calls.push({ name: "read_claude_status", args: { connection: connection ?? null } });
+      readClaudeStatus: async (connection?: string, executable?: string | null) => {
+        this.calls.push({
+          name: "read_claude_status",
+          args: { connection: connection ?? null, ...(executable === undefined ? {} : { executable }) },
+        });
         if (this.status instanceof CommandFailure) throw this.status;
+        if (executable !== undefined) {
+          await this.held.get(executable);
+          const of = this.statusOfProgram.get(executable);
+          if (of !== undefined) return of;
+        }
         return this.status;
       },
       saveConnection: async (saved: Connection, base: Revision | null): Promise<Saved> => {
@@ -597,6 +619,8 @@ describe("which Claude Code a connection runs", () => {
     const select = r.root.querySelector<HTMLSelectElement>("#ai-program")!;
     select.value = OTHER_PROGRAM;
     select.dispatchEvent(new Event("change"));
+    // The program chosen is asked of first; the save is offered with its answer.
+    await settle();
 
     click(r.root, "#ai-save");
     await settle();
@@ -611,6 +635,7 @@ describe("which Claude Code a connection runs", () => {
     const select = r.root.querySelector<HTMLSelectElement>("#ai-program")!;
     select.value = "";
     select.dispatchEvent(new Event("change"));
+    await settle();
 
     click(r.root, "#ai-save");
     await settle();
@@ -667,6 +692,7 @@ describe("which Claude Code a connection runs", () => {
     const select = r.root.querySelector<HTMLSelectElement>("#ai-program")!;
     select.value = OTHER_PROGRAM;
     select.dispatchEvent(new Event("change"));
+    await settle();
 
     click(r.root, "#ai-save-program");
     await settle();
@@ -682,6 +708,7 @@ describe("which Claude Code a connection runs", () => {
     const select = r.root.querySelector<HTMLSelectElement>("#ai-program")!;
     select.value = OTHER_PROGRAM;
     select.dispatchEvent(new Event("change"));
+    await settle();
     const before = r.core.asked("read_claude_status").length;
 
     click(r.root, "#ai-save");
@@ -1025,6 +1052,7 @@ describe("saving a connection to Codex", () => {
     typeInto(r.root, "#ai-codex-model", "  gpt-x  ");
     choose(r.root, "#ai-codex-source", "app-store");
     choose(r.root, "#ai-codex-program", OTHER_CODEX);
+    await settle();
 
     click(r.root, "#ai-save");
     await settle();
@@ -1127,6 +1155,7 @@ describe("keeping the program a connection runs", () => {
     });
     await chooseCodex(r);
     choose(r.root, "#ai-codex-program", OTHER_CODEX);
+    await settle();
 
     click(r.root, "#ai-save-program");
     await settle();
@@ -1148,6 +1177,7 @@ describe("keeping the program a connection runs", () => {
     click(r.root, "#ai-kind-claude-code");
     await settle();
     choose(r.root, "#ai-program", OTHER_PROGRAM);
+    await settle();
 
     click(r.root, "#ai-save-program");
     await settle();
@@ -1167,15 +1197,16 @@ describe("keeping the program a connection runs", () => {
     click(r.root, "#ai-kind-claude-code");
     await settle();
     choose(r.root, "#ai-program", OTHER_PROGRAM);
+    await settle();
 
     click(r.root, "#ai-save-program");
     await settle();
 
     // Every time Claude Code was asked about, it was about the connection these settings keep for
     // it: asked about the default, the program that was just kept would not be the one that answers.
-    const asked = r.core.asked("read_claude_status");
-    expect(asked.length).toBeGreaterThanOrEqual(2);
-    expect(asked).toEqual(asked.map(() => ({ connection: CLAUDE_CONNECTION_ID })));
+    const asked = r.core.asked("read_claude_status") as { connection?: string }[];
+    expect(asked.length).toBeGreaterThanOrEqual(3);
+    expect(asked.map((a) => a.connection)).toEqual(asked.map(() => CLAUDE_CONNECTION_ID));
   });
 
   it("asks Codex about the connection to Codex, whichever connection is the default", async () => {
@@ -1198,6 +1229,180 @@ describe("keeping the program a connection runs", () => {
     ]);
     expect(r.core.listing.default).toBe(CODEX_CONNECTION_ID);
     expect(r.root.textContent).toContain("from the next generation");
+  });
+});
+
+// ---- the login that is shown is of the program that would be saved ----------------------------
+
+describe("changing the program a connection runs", () => {
+  /** A connection to Claude Code that runs the program `PROGRAM`, which somebody is signed in to. */
+  const keptOnProgram: ConnectionListing = {
+    connections: [{ connection: { ...connection("opus"), executable: PROGRAM }, revision: REVISION_1 }],
+    unreadable: [],
+    default: CLAUDE_CONNECTION_ID,
+  };
+  const signedOutStatus = statusOf({ state: "signed-out" });
+
+  const claudeOpened = async (): Promise<Rig> => {
+    const r = rig();
+    r.core.listing = keptOnProgram;
+    r.core.statusOfProgram.set(PROGRAM, statusOf(signedIn()));
+    r.core.statusOfProgram.set(OTHER_PROGRAM, signedOutStatus);
+    r.core.statusOfProgram.set(null, statusOf(signedIn()));
+    await r.settings.load();
+    r.settings.openPanel();
+    r.draw();
+    return r;
+  };
+
+  it("asks again about the program that was chosen, and does not offer the default for one nobody is signed in to", async () => {
+    const r = await claudeOpened();
+    // What is shown is of the program that is kept, and somebody is signed in to it.
+    expect(r.root.querySelector("#ai-save")).not.toBeNull();
+
+    choose(r.root, "#ai-program", OTHER_PROGRAM);
+    await settle();
+
+    // The question is about the program that would be saved, and what is shown is its answer.
+    const asked = r.core.asked("read_claude_status");
+    expect(asked[asked.length - 1]).toEqual({ connection: CLAUDE_CONNECTION_ID, executable: OTHER_PROGRAM });
+    expect(r.root.querySelector("#ai-save")).toBeNull();
+    expect(r.root.textContent).toContain("Nobody is signed in");
+    // Keeping the program is offered, and it does not make the connection the default.
+    click(r.root, "#ai-save-program");
+    await settle();
+    expect(r.core.asked("set_default_connection")).toEqual([]);
+    expect((r.core.asked("save_connection")[0] as { connection: Connection }).connection.executable).toBe(
+      OTHER_PROGRAM,
+    );
+  });
+
+  it("is asked about the application's own choice when that is what was chosen", async () => {
+    const r = await claudeOpened();
+
+    choose(r.root, "#ai-program", "");
+    await settle();
+
+    const asked = r.core.asked("read_claude_status");
+    expect(asked[asked.length - 1]).toEqual({ connection: CLAUDE_CONNECTION_ID, executable: null });
+  });
+
+  it("is asked of the program that is kept, with no program named, when nothing was chosen", async () => {
+    const r = await claudeOpened();
+
+    expect(r.core.asked("read_claude_status")).toEqual([{ connection: CLAUDE_CONNECTION_ID }]);
+  });
+
+  it("shows only the answer about the program chosen last, however late the one chosen before comes", async () => {
+    const r = await claudeOpened();
+    let release!: () => void;
+    r.core.held.set(OTHER_PROGRAM, new Promise<void>((resolve) => (release = resolve)));
+
+    // Another program is chosen, and its answer is slow; then the first one is chosen back.
+    choose(r.root, "#ai-program", OTHER_PROGRAM);
+    await settle();
+    choose(r.root, "#ai-program", PROGRAM);
+    await settle();
+    release();
+    await settle();
+
+    // The slow answer is about a program that is no longer the one chosen: it is not shown.
+    expect(r.root.textContent).not.toContain("Nobody is signed in");
+    expect(r.root.querySelector("#ai-save")).not.toBeNull();
+  });
+
+  it("keeps the choice on screen while the program chosen is asked of, and offers no save yet", async () => {
+    const r = await claudeOpened();
+    let release!: () => void;
+    r.core.held.set(OTHER_PROGRAM, new Promise<void>((resolve) => (release = resolve)));
+
+    choose(r.root, "#ai-program", OTHER_PROGRAM);
+    await settle();
+
+    // The list the person is using is still there, on what was chosen, and nothing can be saved as the default.
+    expect(r.root.textContent).toContain("Asking Claude Code");
+    expect(r.root.querySelector<HTMLSelectElement>("#ai-program")?.value).toBe(OTHER_PROGRAM);
+    expect(r.root.querySelector("#ai-save")).toBeNull();
+    release();
+    await settle();
+  });
+
+  it("does not fold the section the choice is in away from the person who just used it", async () => {
+    const r = await claudeOpened();
+    expect(r.root.querySelector<HTMLDetailsElement>("details.advanced")?.open).toBe(false);
+
+    // The application's own choice is one somebody is signed in to: the settings are ready again.
+    choose(r.root, "#ai-program", "");
+    await settle();
+
+    expect(r.root.querySelector("#ai-save")).not.toBeNull();
+    expect(r.root.querySelector<HTMLDetailsElement>("details.advanced")?.open).toBe(true);
+  });
+
+  /** A connection to Codex that runs the program `CODEX_PROGRAM`, which this build verified; `OTHER_CODEX` it did not. */
+  const codexOpened = async (): Promise<Rig> => {
+    const r = await opened({ listing: KEPT_CODEX });
+    r.core.codexStatusOfProgram.set(
+      OTHER_CODEX,
+      codexStatusOf({ support: { state: "unverified", reason: "this version has not been verified" } }),
+    );
+    r.core.codexStatusOfProgram.set(CODEX_PROGRAM, codexStatusOf());
+    r.core.listing = {
+      connections: [
+        { connection: codexConnection({ model: "gpt-kept", executable: CODEX_PROGRAM }), revision: REVISION_1 },
+      ],
+      unreadable: [],
+      default: CODEX_CONNECTION_ID,
+    };
+    await r.settings.reload();
+    await r.settings.ask();
+    r.settings.openPanel();
+    r.draw();
+    return r;
+  };
+
+  it("does not fold the Codex section the choice is in away from the person who just used it", async () => {
+    const r = await codexOpened();
+    r.core.codexStatusOfProgram.set(null, codexStatusOf());
+    expect(r.root.querySelector<HTMLDetailsElement>("details.advanced")?.open).toBe(false);
+
+    // The application's own choice is a Codex this build verified: the settings are ready again.
+    choose(r.root, "#ai-codex-program", "");
+    await settle();
+
+    expect(r.root.querySelector("#ai-save")).not.toBeNull();
+    expect(r.root.querySelector<HTMLDetailsElement>("details.advanced")?.open).toBe(true);
+  });
+
+  it("shows only the Codex answer about the program chosen last, however late the one chosen before comes", async () => {
+    const r = await codexOpened();
+    let release!: () => void;
+    r.core.held.set(OTHER_CODEX, new Promise<void>((resolve) => (release = resolve)));
+
+    // A version that was not verified is chosen and its answer is slow; then the verified one is chosen back.
+    choose(r.root, "#ai-codex-program", OTHER_CODEX);
+    await settle();
+    choose(r.root, "#ai-codex-program", CODEX_PROGRAM);
+    await settle();
+    release();
+    await settle();
+
+    // The slow answer is about a program that is no longer the one chosen: it is not shown.
+    expect(r.root.textContent).not.toContain("will wait");
+    expect(r.root.querySelector("#ai-save")).not.toBeNull();
+  });
+
+  it("is asked again for Codex, and a version this build did not verify is not offered as the default", async () => {
+    const r = await codexOpened();
+    expect(r.root.querySelector("#ai-save")).not.toBeNull();
+
+    choose(r.root, "#ai-codex-program", OTHER_CODEX);
+    await settle();
+
+    const asked = r.core.asked("read_codex_status");
+    expect(asked[asked.length - 1]).toEqual({ connection: CODEX_CONNECTION_ID, executable: OTHER_CODEX });
+    expect(r.root.querySelector("#ai-save")).toBeNull();
+    expect(r.root.textContent).toContain("will wait");
   });
 });
 

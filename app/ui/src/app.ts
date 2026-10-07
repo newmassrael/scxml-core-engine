@@ -1530,6 +1530,7 @@ export class App {
   private render(): void {
     const keep = this.captureEditorFocus();
     const keepAnswer = this.captureAnswerFocus();
+    const keepSettings = this.captureSettingsFocus();
     this.root.ownerDocument.documentElement.lang = this.locale;
     this.root.replaceChildren(
       h(
@@ -1548,6 +1549,7 @@ export class App {
     this.restoreEditorFocus(keep);
     this.refreshAnswersChrome();
     this.restoreAnswerFocus(keepAnswer);
+    this.restoreSettingsFocus(keepSettings);
     // Whatever moved what is unsaved (a save, a removal, another work) is told to
     // the desktop shell here too: the two chrome refreshes above return early when
     // there is no editor or no answers on screen.
@@ -1574,6 +1576,22 @@ export class App {
     if (field === undefined) return;
     field.focus();
     field.setSelectionRange(keep.start, keep.end);
+  }
+
+  /**
+   * The list of the AI settings that is being used, so that a redraw it caused (choosing a
+   * program asks who is signed in to it) does not take it from a person who is moving through it
+   * with the keys.
+   */
+  private captureSettingsFocus(): string | null {
+    const active = this.root.ownerDocument.activeElement;
+    if (!(active instanceof HTMLSelectElement) || !this.root.contains(active)) return null;
+    return active.id.startsWith("ai-") ? active.id : null;
+  }
+
+  private restoreSettingsFocus(id: string | null): void {
+    if (id === null) return;
+    this.root.querySelector<HTMLSelectElement>(`select[id="${id}"]`)?.focus();
   }
 
   /** Asked for when the address carried no token (a link handler may have cut it off). */

@@ -195,16 +195,20 @@ export interface Api {
    * program to ask it, so only the desktop window may; any other entrance is refused with
    * `not-allowed-here`. `connection` is the connection the screen is about: the program that
    * answers is the one it names, whether or not it is the default (the default's program answers
-   * when none is given, or when that connection is not kept yet).
+   * when none is given, or when that connection is not kept yet). `executable` is the program the
+   * screen is about to keep for it, which is not kept yet: that program answers, or the
+   * application's own choice when it is `null`; a program the application did not find is
+   * refused with `bad-connection`.
    */
-  readClaudeStatus(connection?: string): Promise<ClaudeStatus>;
+  readClaudeStatus(connection?: string, executable?: string | null): Promise<ClaudeStatus>;
   /**
    * Whether Codex is installed, whether this build verified that version, and who is signed in by
    * each of the three sources a connection can take its credential from. Starts the program to
    * ask it, so only the desktop window may; any other entrance is refused with `not-allowed-here`.
-   * `connection` is the connection the screen is about, as for Claude Code.
+   * `connection` and `executable` are the connection the screen is about and the program it is
+   * about to keep for it, as for Claude Code.
    */
-  readCodexStatus(connection?: string): Promise<CodexStatus>;
+  readCodexStatus(connection?: string, executable?: string | null): Promise<CodexStatus>;
   /**
    * The programs of each client the application finds (on the search path, then in the folders
    * the official installers use), each saying it is that client. A connection names a program
@@ -225,6 +229,18 @@ export interface Api {
 export interface ConnectionRef {
   readonly id: string;
   readonly revision: Revision;
+}
+
+/**
+ * What a status of a client is asked about. Each is sent only when it was given, and `executable`
+ * is sent when it is `null` too: `null` is the application's own choice of program, which is not
+ * the same as not saying (then it is the connection's program that answers).
+ */
+function statusArguments(connection: string | undefined, executable: string | null | undefined): Record<string, unknown> {
+  return {
+    ...(connection === undefined ? {} : { connection }),
+    ...(executable === undefined ? {} : { executable }),
+  };
 }
 
 export function apiOver(transport: Transport): Api {
@@ -346,15 +362,11 @@ export function apiOver(transport: Transport): Api {
     async setDefaultConnection(id, expect) {
       return parseDefaultConnection(await transport.call("set_default_connection", { id, expect }));
     },
-    async readClaudeStatus(connection) {
-      return parseClaudeStatus(
-        await transport.call("read_claude_status", connection === undefined ? {} : { connection }),
-      );
+    async readClaudeStatus(connection, executable) {
+      return parseClaudeStatus(await transport.call("read_claude_status", statusArguments(connection, executable)));
     },
-    async readCodexStatus(connection) {
-      return parseCodexStatus(
-        await transport.call("read_codex_status", connection === undefined ? {} : { connection }),
-      );
+    async readCodexStatus(connection, executable) {
+      return parseCodexStatus(await transport.call("read_codex_status", statusArguments(connection, executable)));
     },
     async findClients() {
       return parseFindClients(await transport.call("find_clients"));

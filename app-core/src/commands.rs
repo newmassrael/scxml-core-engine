@@ -228,7 +228,13 @@ const SETTINGS_WRITE: &[&str] = &[
 /// the one the default connection names. A screen that edits a connection that is not the default
 /// (a program kept for a client nobody is signed in to does not make it the default) asks about the
 /// connection it edits, and a core of 16 would refuse that argument as one it does not know.
-pub const COMMAND_SET_VERSION: u32 = 17;
+///
+/// 18: the same commands take the program the screen is about to keep (`executable`), which is not
+/// kept yet: the status is of that program, or of the application's own choice when it is `null`,
+/// and a program the application did not find is refused. A person who chose another program
+/// is told who is signed in to that one, and not to the one that was kept; a core of 17 would
+/// refuse the argument as one it does not know.
+pub const COMMAND_SET_VERSION: u32 = 18;
 
 /// A command that did not do what was asked, in a shape every shell can pass on.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -1336,6 +1342,21 @@ struct ReadClientStatus {
     /// None asks about the default connection, as a screen written for 16 does.
     #[serde(default)]
     connection: Option<String>,
+    /// The program the screen is about to keep for it, which is not kept yet: that program is the
+    /// one asked, whatever the connection names. `null` is the application's own choice, and
+    /// absent leaves it to the connection. A person who chose another program has not been told
+    /// who is signed in to it until this is asked of it.
+    #[serde(default, deserialize_with = "present")]
+    executable: Option<Option<String>>,
+}
+
+/// A field that is there, `null` or not, apart from one that is not there.
+fn present<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer).map(Some)
 }
 
 #[derive(Deserialize)]
@@ -1377,7 +1398,7 @@ fn connection_id(text: &str) -> Result<ConnectionId, CommandError> {
 /// replaced in between, or one that never was a candidate, is not one to run.
 fn check_executable<C: Clock>(
     context: &Context<'_, C>,
-    connection: &Connection,
+    adapter: AdapterKind,
     executable: &str,
 ) -> Result<(), CommandError> {
     let refuse = |why: &str| {
@@ -1388,7 +1409,7 @@ fn check_executable<C: Clock>(
         ))
     };
     let places = context.places();
-    let found = match connection.adapter {
+    let found = match adapter {
         AdapterKind::ClaudeCode => candidates(&places),
         AdapterKind::Codex => codex::candidates(&places),
         AdapterKind::Local => {
@@ -1405,6 +1426,26 @@ fn check_executable<C: Clock>(
         "that is not one of the programs the application found and asked: ask for them \
          (`find_clients`) and choose among those",
     ))
+}
+
+/// The program a status is asked of: the one the screen is about to keep (`executable`), which is
+/// one the application found (anything else is refused, because a command that started any path
+/// it was given would be a way to run any file) or its own choice, else the one the connection
+/// names.
+fn program_asked<C: Clock>(
+    context: &Context<'_, C>,
+    adapter: AdapterKind,
+    connection: Option<&str>,
+    executable: Option<Option<String>>,
+) -> Result<Option<PathBuf>, CommandError> {
+    match executable {
+        Some(Some(path)) => {
+            check_executable(context, adapter, &path)?;
+            Ok(Some(PathBuf::from(path)))
+        }
+        Some(None) => Ok(None),
+        None => connection_program(context, adapter, connection),
+    }
 }
 
 /// The program a generation would run for a connection to `adapter`, when a connection names one:
@@ -1469,12 +1510,20 @@ fn call_program<C: Clock>(
     }
     match name {
         "read_claude_status" => {
-            let ReadClientStatus { connection } = arguments(args)?;
-            // The program a generation would run: the one the connection the screen is about
-            // names (the default connection when it names none), or else the one the environment
-            // named, or else the first the application finds.
-            let named =
-                connection_program(context, AdapterKind::ClaudeCode, connection.as_deref())?;
+            let ReadClientStatus {
+                connection,
+                executable,
+            } = arguments(args)?;
+            // The program a generation would run: the one the screen is about to keep, or the one
+            // the connection the screen is about names (the default connection when it names
+            // none), or else the one the environment named, or else the first the application
+            // finds.
+            let named = program_asked(
+                context,
+                AdapterKind::ClaudeCode,
+                connection.as_deref(),
+                executable,
+            )?;
             let status = claude_status::read(
                 named.as_deref().or(context.claude),
                 context.policy,
@@ -1483,7 +1532,10 @@ fn call_program<C: Clock>(
             Ok(json!({ "claude": status }))
         }
         "read_codex_status" => {
-            let ReadClientStatus { connection } = arguments(args)?;
+            let ReadClientStatus {
+                connection,
+                executable,
+            } = arguments(args)?;
             // The application's own home for Codex is in the settings folder, so without one
             // there is no stored login to ask about.
             let Some(settings) = context.connections else {
@@ -1495,7 +1547,12 @@ fn call_program<C: Clock>(
                     detail: Value::Null,
                 });
             };
-            let named = connection_program(context, AdapterKind::Codex, connection.as_deref())?;
+            let named = program_asked(
+                context,
+                AdapterKind::Codex,
+                connection.as_deref(),
+                executable,
+            )?;
             let environment: Vec<(String, String)> = std::env::vars().collect();
             let status = codex_status::read(
                 named.as_deref().or(context.codex),
@@ -1583,7 +1640,7 @@ fn call_settings<C: Clock>(
             // anyone who can send the command. A program is chosen among the ones the application
             // found and asked, and only those are kept.
             if let Some(executable) = connection.executable.as_deref() {
-                check_executable(context, &connection, executable)?;
+                check_executable(context, connection.adapter, executable)?;
             }
             answer(&connections.save(&connection, base.as_ref())?)
         }

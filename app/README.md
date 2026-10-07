@@ -661,6 +661,15 @@ default, a program kept for a connection that is not one would be ignored and th
 program shown. The status is asked again after a save, of the program that is named now. The browser shell only
 shows what the desktop saved: it may not start a program or change a setting.
 
+**A program chosen and not saved is the one whose login is asked.** Both status commands take
+`executable` beside `connection`: a path asks of that program (it must be one the application
+found for that client, or the command refuses it as `bad-connection`), `null` asks of the
+application's own choice, and leaving it out asks of the program the connection names. Choosing
+another program in the list asks again at once, and an answer that comes after a later choice is
+dropped, so the login shown beside a program is that program's. Without this, a login that was
+verified for one program stayed beside another one chosen after it, and the save offered as the
+default was a save the person had not been shown to run.
+
 **The panel is for one way to reach a model at a time: Claude Code, Codex or a server of the
 person's own.** A choice of the three is at its top and starts on the one the default connection is
 for (Claude Code when there is none). Each is asked the first time it is looked at, and what was
