@@ -1,0 +1,60 @@
+# Mutation cases for "the bytes a typed payload carries are held within the bound of the
+# place they are written to" under the C11 backend
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A byte string"; docs/adr/0005, decision 2).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_c11_payload_bytes_are_held_within_their_bounds_ctest.cases`.
+#
+# A C11 payload holds a byte string as an array of the schema's bound and the length
+# beside it, which an expression reads as the view a byte string held by the machine is
+# read as. `static_payload_bytes` reads it into a bytes variable of four, into a record's
+# field of eight and into a whole record, and compares it in a guard; it expects a value
+# past the bound to leave what it was written to as it was and `errors` to count it, a
+# byte above 0x7F to be one byte, and a character past U+00FF to be refused with nothing
+# written. The mutants take one decision away each:
+#
+#   a record taken whole from a payload is not held to the bound of its bytes field;
+#   an assignment to a bytes variable is not held to its bound, whatever it is read from;
+#   a payload's bytes are read without the length beside them;
+#   the field of a record taken whole from a payload is not the buffer of its bound;
+#   a character written as itself is a byte of its UTF-8.
+#
+# The reader's text, each way it can be spelled, is held by `c11_unit_payload_bytes`
+# (`a_c11_payload_bytes_are_read_as_latin1_text_ctest.cases`).
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^c11_integration_static_scalars$'
+mutation_targets sce-build/src/forge/static_lowering.rs backends/c/runtime/include/sce/event_payload.h
+mutation_oracles backends/c/tests/integration/test_static_scalars.c sce-build/tests/fixtures/static_datamodel/scenarios/static_payload_bytes.json
+
+mutation_case "a record taken whole from a payload is not held to its bytes field's bound" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "            (SceType::Bytes, Some(bound)) => {\n                bounded = true;\n                let held = target.bounded_bytes(&read.text, bound);",
+     "            (SceType::Bytes, Some(bound)) if false => {\n                bounded = true;\n                let held = target.bounded_bytes(&read.text, bound);")
+PY
+
+mutation_case "an assignment to a bytes variable is not held to its bound" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "            } else if let Some(capacity) = rewrites.bytes.get(location) {",
+     "            } else if let Some(capacity) = rewrites.bytes.get(location).filter(|_| false) {")
+PY
+
+mutation_case "a payload's bytes are read without the length beside them" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "            \"(sce_forge_bytes_view_t){{ {accessor}.{field}, {accessor}.{field}_len }}\"",
+     "            \"(sce_forge_bytes_view_t){{ {accessor}.{field}, 0 }}\"")
+PY
+
+mutation_case "the field of a record taken whole from a payload is not the buffer of its bound" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "        format!(\"{}({bytes})\", c_bytes_storage_of(bound))",
+     "        format!(\"({}){{ 0 }}\", c_bytes_storage_type(bound))")
+PY
+
+mutation_case "a character written as itself is a byte of its UTF-8" <<'PY'
+edit("backends/c/runtime/include/sce/event_payload.h",
+     "            if (sink->bytes != NULL && code >= 0x80u) {",
+     "            if (false && sink->bytes != NULL && code >= 0x80u) {")
+PY

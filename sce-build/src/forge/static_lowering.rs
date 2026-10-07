@@ -412,6 +412,13 @@ pub trait StaticTarget {
     ) -> Option<String> {
         None
     }
+    /// How a target that holds a payload's byte-string field as a buffer and the
+    /// length beside it reads the field `field` of the payload `accessor` as the
+    /// one value an expression names — what a byte string held by the machine is
+    /// read as. `None` for a target whose payload holds the byte string as a value.
+    fn payload_bytes_read(&self, _accessor: &str, _field: &str) -> Option<String> {
+        None
+    }
     /// The expression lowerer's target.
     fn expr_target(&self) -> ExprTarget;
     /// The declared name of variable `id`'s field.
@@ -5196,6 +5203,24 @@ impl StaticTarget for CTarget {
     fn lowers_record_bytes(&self) -> bool {
         true
     }
+    // The buffer a bytes field of a record is made of, filled from the view of the
+    // bytes a payload carried, which were held to the bound.
+    fn record_bytes_runtime(&self, bound: u32, bytes: &str) -> String {
+        format!("{}({bytes})", c_bytes_storage_of(bound))
+    }
+    // A payload holds a byte string as an array of the schema's bound and the
+    // length beside it (`build_c11_event_payload`); an expression reads the two as
+    // the view a byte string held by the machine is read as.
+    fn payload_bytes_read(&self, accessor: &str, field: &str) -> Option<String> {
+        Some(format!(
+            "(sce_forge_bytes_view_t){{ {accessor}.{field}, {accessor}.{field}_len }}"
+        ))
+    }
+    // A payload's byte field is read where the machine's own is, and held to the
+    // bound of the variable or the record's field it is written to.
+    fn lowers_payload_bytes(&self) -> bool {
+        true
+    }
     // A buffer of the bound and its terminator, named by the bound so that two
     // variables of one bound share a type, and declared under a guard so that
     // two machines in one program do. The text is the buffer's `data`, which is
@@ -5752,6 +5777,8 @@ fn payload_record_value(
 /// whose payload is untyped data, which it reads a field of through a call
 /// that holds the value to the variants the enum declares. A target that holds
 /// the payload in a struct of its own reads the field off it and asks for none.
+/// A byte-string field is read here too, by a target that holds it as a buffer and
+/// its length ([`StaticTarget::payload_bytes_read`]).
 fn payload_enum_reads(
     target: &dyn StaticTarget,
     schema: Option<&EventSchemaModel>,
@@ -5765,16 +5792,19 @@ fn payload_enum_reads(
         .fields
         .iter()
         .filter_map(|field| {
-            let SceType::Enum(reference) = &field.sce_type else {
-                return None;
+            let read = match &field.sce_type {
+                SceType::Enum(reference) => {
+                    let variants: Vec<&str> = enums
+                        .get(&reference.alias)?
+                        .variants
+                        .iter()
+                        .map(|v| v.name.as_str())
+                        .collect();
+                    target.payload_enum_read(accessor, &field.id, &variants)?
+                }
+                SceType::Bytes => target.payload_bytes_read(accessor, &field.id)?,
+                _ => return None,
             };
-            let variants: Vec<&str> = enums
-                .get(&reference.alias)?
-                .variants
-                .iter()
-                .map(|v| v.name.as_str())
-                .collect();
-            let read = target.payload_enum_read(accessor, &field.id, &variants)?;
             Some((
                 format!(
                     "{}.{}",

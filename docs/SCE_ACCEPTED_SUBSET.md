@@ -3685,24 +3685,31 @@ A transition on an event whose payload carries a `bytes` field reads it into a `
 variable, into a record's field or into a whole record, held to the bound of the place
 it is written to (`scenarios/static_payload_bytes.json`,
 `StaticTarget::lowers_payload_bytes`), and compares it in a guard. The wire spells it as
-its byte-exact Latin-1 text. **Kotlin**, **Rust**, **Go**, **Python** and **C++** hold it
-so far; **C11** and the Interpreter's lowering refuse such a transition by name until each
-holds it. A byte above 0x7F is one byte and the two bytes of its character in the text, and
-a character past U+00FF is refused whichever way the text spells it, an escape included.
-Measured 2026-10-07 by this scenario, the C++ payload lift had read the bytes of the UTF-8
-text as the bytes of the field and written them into a JSON string as they were; it now
-reads and writes the Latin-1 text through `SCE::Latin1Bytes`, which a typed host request
-shares, and reads a `\u` escape in a text field as the character it names. The
-bound is held where the bytes are written, as a string's is, and not where they are
-read: a payload longer than its field's `sce:max-size` that takes a route writing none of
-it is only compared (a Rust `no_std` machine, whose payload buffer is a fixed array of
-that bound, refuses such a payload outright), while a character past U+00FF is no byte, so
-the payload that carries one does not read as its schema and is refused
-(`error.execution`, nothing written). A Kotlin machine holds a copy of the array a host raised the event with
+its byte-exact Latin-1 text: a byte above 0x7F is one byte, and the two bytes of its
+character in the UTF-8 text; a character past U+00FF is no byte, so the payload that
+carries one does not read as its schema and is refused (`error.execution`, nothing
+written), whichever way the text spells it, an escape included. **Kotlin**, **Rust**,
+**Go**, **Python**, **C++** and **C11** hold it so far; the Interpreter's lowering refuses
+such a transition by name until it holds it.
+
+The bound is held where the bytes are written, as a string's is, and not where they are
+read, with one structural exception the shared scenario does not state: an engine whose
+payload buffer is the bound itself (C11, and Rust without an allocator) refuses a payload
+longer than its field's `sce:max-size` whole at the lift, even on a route that writes none
+of it, where the others read it and only compare it. Measured 2026-10-07 by the scenario,
+the C++ payload lift had read the bytes of the UTF-8 text as the bytes of the field and
+written them into a JSON string as they were, and C11 had read a character written as
+itself byte by byte. Both now read the Latin-1 text (C++ through `SCE::Latin1Bytes`, which
+a typed host request shares), and C++ reads a `\u` escape in a text field as the character
+it names.
+
+A Kotlin machine holds a copy of the array a host raised the event with
 (`SceChecked.bounded`), so a host that kept the array and wrote into it changes nothing
 of what the machine read; a Go machine does the same (`BoundedBytes`), a Rust machine
 copies the borrowed bytes into the `Vec<u8>` it writes them to, and a Python machine keeps
-the host's `bytes` itself, which nothing can write into. A Kotlin record that holds a byte string compares
+the host's `bytes` itself, which nothing can write into. A C11 payload holds its bytes as
+an array of the schema's bound and the length beside it, which an expression reads as the
+view a byte string held by the machine is read as. A Kotlin record that holds a byte string compares
 and hashes by the bytes and not by the identity of the array, as a data class would
 otherwise, and is handed to a host as `detached()`, a copy of each array, as is each
 record of a published list. A Rust record that holds one is `Clone` and no longer `Copy`

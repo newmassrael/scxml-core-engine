@@ -125,9 +125,54 @@ static bool sce_scenario_take(sce_scenario_cursor_t *c, char want) {
     return true;
 }
 
+// The four hex digits at `p` as the number they spell, false at the first that is not one.
+static bool sce_scenario_hex4(const char *p, unsigned long *code) {
+    *code = 0;
+    for (int i = 0; i < 4; ++i) {
+        const char d = p[i];
+        unsigned digit;
+        if (d >= '0' && d <= '9') {
+            digit = (unsigned)(d - '0');
+        } else if (d >= 'a' && d <= 'f') {
+            digit = (unsigned)(d - 'a') + 10u;
+        } else if (d >= 'A' && d <= 'F') {
+            digit = (unsigned)(d - 'A') + 10u;
+        } else {
+            return false;
+        }
+        *code = (*code << 4) | digit;
+    }
+    return true;
+}
+
+// The UTF-8 of the character at `code`, written to `out`: how many bytes it is.
+static size_t sce_scenario_utf8(unsigned long code, char out[4]) {
+    if (code < 0x80ul) {
+        out[0] = (char)code;
+        return 1u;
+    }
+    if (code < 0x800ul) {
+        out[0] = (char)(0xC0ul | (code >> 6));
+        out[1] = (char)(0x80ul | (code & 0x3Ful));
+        return 2u;
+    }
+    if (code < 0x10000ul) {
+        out[0] = (char)(0xE0ul | (code >> 12));
+        out[1] = (char)(0x80ul | ((code >> 6) & 0x3Ful));
+        out[2] = (char)(0x80ul | (code & 0x3Ful));
+        return 3u;
+    }
+    out[0] = (char)(0xF0ul | (code >> 18));
+    out[1] = (char)(0x80ul | ((code >> 12) & 0x3Ful));
+    out[2] = (char)(0x80ul | ((code >> 6) & 0x3Ful));
+    out[3] = (char)(0x80ul | (code & 0x3Ful));
+    return 4u;
+}
+
 // A string, into `out` when there is one (`cap` bytes, terminator included).
-// `\uXXXX` is skipped and read as `?`: no key or name the machine is asked
-// about is spelled with one.
+// A `\uXXXX` escape is the UTF-8 of the character it names, a surrogate pair
+// the one character the two name together: a value a scenario states is spelled
+// with them, a byte above 0x7F as its character.
 static bool sce_scenario_string(sce_scenario_cursor_t *c, char *out, size_t cap) {
     sce_scenario_space(c);
     if (*c->at != '"') {
@@ -136,37 +181,56 @@ static bool sce_scenario_string(sce_scenario_cursor_t *c, char *out, size_t cap)
     c->at++;
     size_t n = 0;
     while (*c->at != '\0' && *c->at != '"') {
-        char ch = *c->at++;
-        if (ch == '\\') {
-            ch = *c->at++;
-            switch (ch) {
+        char piece[4];
+        size_t pieces = 1u;
+        piece[0] = *c->at++;
+        if (piece[0] == '\\') {
+            const char escape = *c->at++;
+            switch (escape) {
             case 'n':
-                ch = '\n';
+                piece[0] = '\n';
                 break;
             case 't':
-                ch = '\t';
+                piece[0] = '\t';
                 break;
-            case 'u':
-                for (int i = 0; i < 4 && *c->at != '\0'; ++i) {
-                    c->at++;
+            case 'u': {
+                unsigned long code = 0;
+                if (!sce_scenario_hex4(c->at, &code)) {
+                    return false;
                 }
-                ch = '?';
+                c->at += 4;
+                if (code >= 0xD800ul && code <= 0xDBFFul) {
+                    unsigned long low = 0;
+                    if (c->at[0] != '\\' || c->at[1] != 'u' || !sce_scenario_hex4(c->at + 2, &low) || low < 0xDC00ul ||
+                        low > 0xDFFFul) {
+                        return false;
+                    }
+                    c->at += 6;
+                    code = 0x10000ul + ((code - 0xD800ul) << 10) + (low - 0xDC00ul);
+                } else if (code >= 0xDC00ul && code <= 0xDFFFul) {
+                    return false;
+                }
+                pieces = sce_scenario_utf8(code, piece);
                 break;
+            }
             case '"':
             case '\\':
             case '/':
+                piece[0] = escape;
                 break;
             default:
                 return false;
             }
         }
-        if (out != NULL) {
-            if (n + 1 >= cap) {
-                return false;
+        for (size_t i = 0; i < pieces; ++i) {
+            if (out != NULL) {
+                if (n + 1 >= cap) {
+                    return false;
+                }
+                out[n] = piece[i];
             }
-            out[n] = ch;
+            n++;
         }
-        n++;
     }
     if (*c->at != '"') {
         return false;

@@ -595,7 +595,7 @@ const BYTES_HELD: &[BytesHeld] = &[
         name: "C11",
         variable: true,
         record: true,
-        payload: false,
+        payload: true,
     },
 ];
 

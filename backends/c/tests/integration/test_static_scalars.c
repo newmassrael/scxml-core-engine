@@ -106,6 +106,7 @@
 #include "static_foreach_sm.h"
 #include "static_list_sm.h"
 #include "static_overflow_sm.h"
+#include "static_payload_bytes_sm.h"
 #include "static_payload_enum_sm.h"
 #include "static_payload_relay_sm.h"
 #include "static_payload_sm.h"
@@ -725,6 +726,42 @@ static const record_variable_t record_bytes_records[] = {
     RECORD_ROW(static_record_bytes, last), RECORD_LIST_ROW(static_record_bytes, frames), {NULL, NULL, NULL, NULL}};
 STATIC_SCENARIO(static_record_bytes, record_bytes_states, record_bytes_variables, static_record_bytes_text, no_lists,
                 record_bytes_records)
+
+// static_payload_bytes: the bytes a typed payload carries — an array of the schema's
+// bound and the length beside it — are read as the view a byte string held by the
+// machine is, into a byte string variable, into a record's field and into a whole
+// record, each held to its own bound. The record is the one `static_record_bytes`
+// reads, of the same bound, so its field is the same type and is read the same way.
+VARIABLE_READER(static_payload_bytes, size)
+VARIABLE_READER(static_payload_bytes, matches)
+VARIABLE_READER(static_payload_bytes, misses)
+VARIABLE_READER(static_payload_bytes, errors)
+
+RECORD_READER(static_payload_bytes, last, static_payload_bytes_record_framed_t, FRAMED_FIELDS)
+RECORD_LIST_READER(static_payload_bytes, frames, static_payload_bytes_record_framed_view_t,
+                   static_payload_bytes_record_framed_t, FRAMED_FIELDS)
+
+static const char *static_payload_bytes_text(void *sm, const char *name) {
+    static char text[2 * 4 + 1];
+    if (strcmp(name, "held") == 0) {
+        return bytes_latin1_text(text, sizeof(text), static_payload_bytes_get_held((const static_payload_bytes_t *)sm));
+    }
+    return NULL;
+}
+
+static const name_value_t payload_bytes_states[] = {
+    {"idle", STATIC_PAYLOAD_BYTES_STATE_IDLE},
+};
+static const variable_t payload_bytes_variables[] = {
+    {"size", static_payload_bytes_read_size},
+    {"matches", static_payload_bytes_read_matches},
+    {"misses", static_payload_bytes_read_misses},
+    {"errors", static_payload_bytes_read_errors},
+};
+static const record_variable_t payload_bytes_records[] = {
+    RECORD_ROW(static_payload_bytes, last), RECORD_LIST_ROW(static_payload_bytes, frames), {NULL, NULL, NULL, NULL}};
+STATIC_SCENARIO(static_payload_bytes, payload_bytes_states, payload_bytes_variables, static_payload_bytes_text,
+                no_lists, payload_bytes_records)
 
 // static_donedata: a top-level final hands its done event the pairs of its
 // `<donedata>`, each read from the machine's own fields when the final is entered
@@ -1513,6 +1550,7 @@ int main(void) {
     bad |= static_string_capacity_scenario("static_string_capacity", 11);
     bad |= static_bytes_scenario("static_bytes", 12);
     bad |= static_record_bytes_scenario("static_record_bytes", 22);
+    bad |= static_payload_bytes_scenario("static_payload_bytes", 15);
     bad |= static_donedata_scenario("static_donedata", 6);
     bad |= static_donedata_content_scenario("static_donedata_content", 3);
     bad |= static_donedata_content_scenario("static_donedata_content_value", 4);
