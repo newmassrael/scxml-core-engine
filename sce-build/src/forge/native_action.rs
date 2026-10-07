@@ -85,6 +85,7 @@ const CHILD_HOST_LANGUAGES: &[Language] = &[
     Language::Python,
     Language::Go,
     Language::Cpp,
+    Language::C11,
 ];
 
 /// The first `<invoke type="scxml">` of `model` whose child declares
@@ -1651,6 +1652,17 @@ fn build_interface(
                     params.join(", ")
                 ));
             }
+            // The table of the host a child is built with, which `_invoked_begin`
+            // copies as `_init_with_actions` copies the machine's own: a pointer to
+            // a table the answering host owns for the length of the call, NULL
+            // for a host that has none to give (the start is then refused).
+            for child in children {
+                methods.push_str(&format!(
+                    "    const {} *(*{})(void *user_data);\n",
+                    child.child_interface,
+                    method_name(lang, &child.operation)
+                ));
+            }
             let tag = interface_name.trim_end_matches("_t");
             format!(
                 "/*\n{}\n   Every member must be non-NULL before the machine runs: an unset\n   \
@@ -2270,6 +2282,33 @@ mod tests {
         );
         let plain = build_interface(Language::Cpp, "MActions", &sigs, &[]);
         assert!(!plain.contains("actionsFor"), "{plain}");
+    }
+
+    /// The C11 table answers the child's host as a pointer to the child's own
+    /// table, after the acts, and the operation is among the members `_init`
+    /// refuses a table for lacking — it is one of [`NativeActions::operation_names`].
+    #[test]
+    fn the_c11_table_of_a_parent_answers_the_host_of_each_child() {
+        let children = [ChildHost {
+            operation: "actions_for_worker".to_string(),
+            child_interface: child_interface_type(Language::C11, "worker", ""),
+        }];
+        assert_eq!(children[0].child_interface, "worker_actions_t");
+        let mut sigs: BTreeMap<String, Signature> = BTreeMap::new();
+        sigs.insert("reset_slot".to_string(), Vec::new());
+        let out = build_interface(Language::C11, "m_actions_t", &sigs, &children);
+        let act = out
+            .find("void (*reset_slot)(void *user_data);")
+            .expect(&out);
+        let factory = out
+            .find("const worker_actions_t *(*actions_for_worker)(void *user_data);")
+            .expect(&out);
+        assert!(
+            act < factory,
+            "the acts, then the operation that answers a child's host:\n{out}"
+        );
+        let plain = build_interface(Language::C11, "m_actions_t", &sigs, &[]);
+        assert!(!plain.contains("actions_for"), "{plain}");
     }
 
     /// A document in which an act and a child's host would be one method is

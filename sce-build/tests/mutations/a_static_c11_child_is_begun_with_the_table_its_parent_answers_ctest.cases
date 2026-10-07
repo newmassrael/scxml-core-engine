@@ -1,0 +1,42 @@
+# Mutation cases for "a child that declares acts is begun with the table of the host
+# its parent's table answers, each time the invocation starts" under the C11 backend
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Child sessions"; docs/adr/0005, decision 6).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_c11_child_is_begun_with_the_table_its_parent_answers_ctest.cases`.
+#
+# `static_child_host` invokes `worker`, which performs `started` as it is entered and
+# `finished` as it ends; `static_child_host_hybrid` invokes whichever of two
+# candidates its `srcexpr` names, each with an act of its own. The test keeps every
+# table the parent's table answered and reads what each was asked: the parent's table
+# is asked once per start, the first act is already performed (the table was copied in
+# before the entry walk), a state invoked again is given a table of its own, a
+# candidate is given the table answered for IT and for no other, and a table that
+# answers NULL is an invocation that does not happen. The mutants take one decision
+# away each, and each still compiles — a mutated tree that does not is INCONCLUSIVE,
+# which fails the round, and C refuses a call with an argument missing:
+#
+#   the parent's table is asked twice for one start;
+#   a NULL table is taken for one.
+#
+# The generator is a Rust source the first mutation reaches, so the runner rebuilds
+# `sce-codegen` itself before the tree is built.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^c11_integration_static_child_host$'
+mutation_targets sce-build/src/forge/native_action.rs tools/codegen/templates/c/state_machine.c.jinja2
+mutation_oracles backends/c/tests/integration/test_static_child_host.c sce-build/tests/fixtures/static_datamodel/static_child_host.scxml sce-build/tests/fixtures/static_datamodel/static_child_host_hybrid.scxml sce-build/tests/fixtures/static_datamodel/static_hosted_first.scxml sce-build/tests/fixtures/static_datamodel/static_hosted_second.scxml
+
+mutation_case "the parent's table is asked twice for one start" <<'PY'
+edit("sce-build/src/forge/native_action.rs",
+     "        let call = call_expression(lang, &operation, &[]);\n        hosts.entry(operation.clone())",
+     "        let call = { let c = call_expression(lang, &operation, &[]); format!(\"({c}, {c})\") };\n        hosts.entry(operation.clone())")
+PY
+
+mutation_case "a NULL table is taken for one" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "    if (actions == NULL{% for op in native_action_ops %} || actions->{{ op }} == NULL{% endfor %}) {",
+     "    if (false{% for op in native_action_ops %} || actions->{{ op }} == NULL{% endfor %}) {")
+PY

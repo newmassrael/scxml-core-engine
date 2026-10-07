@@ -643,6 +643,29 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                of the `<param>`s and the `namelist`, and only then entered, so
                an `<onentry>` of its initial configuration reads what it was
                handed. Its parent routing is stamped by the same call. */
+            {% if invoke_info.child_host_call %}
+            /* docs/adr/0005, decision 6: the child declares `<sce:action>`s, so it
+               is begun with the table its parent's own table answers for it,
+               asked here — where the invocation starts — and copied before the
+               entry walk. A host that has none to give, or an incomplete one, is
+               an invocation that cannot start: it is reported and nothing is
+               spawned, as an invoke of a type no invoker serves is. */
+            if (!{{ csym_prefix }}{{ invoke_info.child_name }}_invoked_begin(
+                    &sm->child_{{ invoke_info.field_suffix }},
+                    {{ invoke_info.child_host_call }},
+                    {% if invoke_info.child_has_send_to_parent %}sm,
+                    {{ csym_prefix }}{{ model.name }}_dispatch_external_by_name{% else %}NULL,
+                    NULL{% endif %},
+                    p->invoke_id,
+                    {{ child_clock_c }})) {
+{% if 'error.execution' in model.events %}
+                {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                    "<invoke id='{{ invoke_info.invoke_id | escape_c }}'> was given no complete host for its child");
+{% endif %}
+                continue;
+            }
+            {% else %}
             {{ csym_prefix }}{{ invoke_info.child_name }}_invoked_begin(
                 &sm->child_{{ invoke_info.field_suffix }},
                 {% if invoke_info.child_has_send_to_parent %}sm,
@@ -650,6 +673,7 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                 NULL{% endif %},
                 p->invoke_id,
                 {{ child_clock_c }});
+            {% endif %}
             {% elif invoke_info.child_has_send_to_parent %}
             /* W3C SCXML 6.4 (test191/338): stamp parent-routing fields
                BEFORE the configuration entry walk by passing them
@@ -859,6 +883,27 @@ sce_copy_bounded_id(_done_evt.name, "done.invoke.{{ invoke_info.invoke_id | esca
                    then entered, so an `<onentry>` of its initial configuration
                    reads what it was handed. Its parent routing is stamped by
                    the same call. */
+{% if candidate.child_host_call %}
+                /* docs/adr/0005, decision 6: a candidate that declares
+                   `<sce:action>`s is begun with the table the parent's own table
+                   answers for IT, and refused as the invoke above is when there is
+                   none to give. */
+                if (!{{ csym_prefix }}{{ candidate.stem }}_invoked_begin(
+                        &sm->child_{{ invoke_info.field_suffix }}_{{ candidate.stem }},
+                        {{ candidate.child_host_call }},
+                        {% if candidate.child_has_send_to_parent %}sm,
+                        {{ csym_prefix }}{{ model.name }}_dispatch_external_by_name{% else %}NULL,
+                        NULL{% endif %},
+                        p->invoke_id,
+                        {{ child_clock_c }})) {
+{% if 'error.execution' in model.events %}
+                    {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                        "<invoke id='{{ invoke_info.invoke_id | escape_c }}'> was given no complete host for its child");
+{% endif %}
+                    continue;
+                }
+{% else %}
                 {{ csym_prefix }}{{ candidate.stem }}_invoked_begin(
                     &sm->child_{{ invoke_info.field_suffix }}_{{ candidate.stem }},
                     {% if candidate.child_has_send_to_parent %}sm,
@@ -866,6 +911,7 @@ sce_copy_bounded_id(_done_evt.name, "done.invoke.{{ invoke_info.invoke_id | esca
                     NULL{% endif %},
                     p->invoke_id,
                     {{ child_clock_c }});
+{% endif %}
 {% else %}
                 {{ csym_prefix }}{{ candidate.stem }}_init_with_parent(
                     &sm->child_{{ invoke_info.field_suffix }}_{{ candidate.stem }},

@@ -1511,7 +1511,7 @@ const CHILD_HOST_LOWERED: &[(&str, &str, bool)] = &[
     ("go", "Go", true),
     ("cpp", "C++", true),
     ("python", "Python", true),
-    ("c11", "C11", false),
+    ("c11", "C11", true),
 ];
 
 /// The arguments `check` takes to generate for `lang`: Go also names the module

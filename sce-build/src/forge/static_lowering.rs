@@ -5084,6 +5084,12 @@ impl StaticTarget for CTarget {
     fn bounded_bytes(&self, value: &str, capacity: u32) -> String {
         format!("sce_forge_bounded_bytes(&sce_failure_, {value}, {capacity}u)")
     }
+    // The child is begun with the table its parent's table answers for it
+    // (`sm->actions.actions_for_<invoke>(sm->actions.user_data)`), which
+    // `_invoked_begin` copies and refuses when it is NULL or incomplete.
+    fn lowers_child_host(&self) -> bool {
+        crate::forge::native_action::declares_child_hosts(Language::C11)
+    }
     // A buffer of the bound and the length it holds, named by the bound so that
     // two variables of one bound share a type, and declared under a guard so that
     // two machines in one program do. It has the shape of a list's view

@@ -3412,7 +3412,8 @@ interface gains, for each `<invoke type="scxml">` whose child declares acts, one
 operation that answers the child's host (`fun actionsForWorker(): WorkerActions` in
 Kotlin, `def actions_for_worker(self)` in Python, `ActionsForWorker()` in Go,
 `virtual WorkerActions& actionsForWorker()` in C++, a reference to a host the answering
-host owns and keeps alive past the child's end), and for
+host owns and keeps alive past the child's end, and a function pointer answering a
+pointer to the child's table in C11), and for
 each candidate of a hybrid `<invoke>` that declares acts one of its own
 (`actionsForWorkStaticHostedFirst`), since each candidate is a document with acts of
 its own. The machine calls it each time the invocation starts — on entry of the
@@ -3425,15 +3426,16 @@ by `AChildIsGivenItsHostByItsParentTest` and
 `test_a_child_is_given_its_host_by_its_parent.py` in Python, whose machine asks a
 Python host object and keeps what it answered, and by
 `a_child_is_given_its_host_by_its_parent_test.go` in Go and
-`AChildIsGivenItsHostByItsParentTest.cpp` in C++, neither of which has a saved state and
-so a restore). A parent that declares no act of its
+`AChildIsGivenItsHostByItsParentTest.cpp` in C++ and `test_static_child_host.c` in C11,
+none of which has a saved state and so a restore; the C11 one adds the table that answers
+NULL, which is an invocation that does not happen). A parent that declares no act of its
 own still takes that host, and the recording host it generates takes one source per
 child, the function a test hands it, and records each question beside the acts. An act
 whose name is spelled as one of those operations, in any language's convention, and
 two invokes whose ids differ only in spelling, are refused where the second is
 written (`<sce:action name="…">` names one host method, not two).
 
-This is Kotlin's, Python's, Go's and C++'s yet. A language that does not answer a child's host from its
+This is Kotlin's, Python's, Go's, C++'s and C11's yet. A language that does not answer a child's host from its
 parent's own refuses the `<invoke>` at its entry, whatever data model the parent is
 under, as `generate/unsupported-feature` (`an <invoke id="child"> of a child that
 declares <sce:action>s has no Rust lowering yet`; a candidate is named by `an <invoke
@@ -4368,10 +4370,13 @@ and all, into the child's buffer, which a value past it would have written beyon
 A value that
 cannot be computed raises `error.execution` and is left out, and the child still
 starts holding the value its `<data>` gave it (5.7.1). A child that declares
-`<sce:action>`s has no such door, for the acts are a host's to supply, and a
-parent that invokes one is refused by name on every backend that does not yet give
-the child the host its parent's host answers (**Child sessions**, above), C11
-included. `test_static_invoke.c` drives
+`<sce:action>`s is begun through a door of its own: `_invoked_begin` takes, after the
+child, the table of the host that performs its acts — the pointer its parent's table
+answers for it, as `const <child>_actions_t *(*actions_for_<invoke>)(void *user_data)` —
+and answers whether it accepted one, refusing a NULL or incomplete table as
+`_init_with_actions` does and leaving the child's storage as it was. The parent
+reports a refusal as `error.execution` where the document declares one, and spawns
+nothing (**Child sessions**, above; `test_static_child_host.c`). `test_static_invoke.c` drives
 `static_invoke` and `static_invoke_params` live (their saved halves have no C
 counterpart, since a C machine is not saved) and `static_invoke_entry`, which
 sits beside the C++ suite's own fixtures and whose child reads in its `<onentry>`

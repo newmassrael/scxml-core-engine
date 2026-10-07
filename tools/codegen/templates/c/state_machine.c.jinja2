@@ -6083,7 +6083,7 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_init_with_parent({{ csym_prefix
 {% endif %}
 }
 {% endif %}
-{% if static_datamodel and not has_native_actions %}
+{% if static_datamodel %}
 
 /* §scxml-6.4.1: the two steps a parent starts this machine in when it is a
    `datamodel="sce-static"` child (see the header). `_init_with_parent` cannot
@@ -6091,15 +6091,31 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_init_with_parent({{ csym_prefix
    variables their declared values — a script engine's datamodel seeds those,
    and this machine has none. Construction is the one `_init` runs, with no
    host wiring to install: the host started the parent, not this child. */
+{% if has_native_actions %}
+SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_invoked_begin({{ csym_prefix }}{{ model.name }}_t *sm,
+                                       const {{ native_actions_interface }} *actions,
+                                       void *parent_sm,
+{% else %}
 SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_invoked_begin({{ csym_prefix }}{{ model.name }}_t *sm,
                                        void *parent_sm,
+{% endif %}
                                        void (*dispatch)(void *parent_sm, const char *event_name, const char *invoke_id, const char *event_data),
                                        const char *invoke_id,
                                        sce_clock_t clock) {
 {% if not model.needs_event_scheduler %}
     (void)clock;
 {% endif %}
+{% if has_native_actions %}
+    /* The table is the host's answer for this child (docs/adr/0005, decision 6),
+       copied in by the construction before the entry walk. A NULL or incomplete
+       one is refused FIRST, so the child's storage is as the parent left it and
+       the parent can report the start as failed. */
+    if (!{{ csym_prefix }}{{ model.name }}_init_construct(sm{% if model.needs_event_scheduler %}, clock{% endif %}{% if model.needs_script_engine %}, NULL{% endif %}{% if model.host_processor_types %}, NULL{% endif %}{% if model.host_invoker_types %}, NULL{% endif %}, actions)) {
+        return false;
+    }
+{% else %}
     (void){{ csym_prefix }}{{ model.name }}_init_construct(sm{% if model.needs_event_scheduler %}, clock{% endif %}{% if model.needs_script_engine %}, NULL{% endif %}{% if model.host_processor_types %}, NULL{% endif %}{% if model.host_invoker_types %}, NULL{% endif %});
+{% endif %}
 {% if model.may_address_parent %}
     /* W3C SCXML 6.4: the parent-routing fields are stamped before the entry
        walk, for the reason `_init_with_parent` gives. */
@@ -6110,6 +6126,9 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_invoked_begin({{ csym_prefix }}
     (void)parent_sm;
     (void)dispatch;
     (void)invoke_id;
+{% endif %}
+{% if has_native_actions %}
+    return true;
 {% endif %}
 }
 
