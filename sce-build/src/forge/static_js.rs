@@ -500,6 +500,11 @@ impl StaticTarget for JsTarget {
     fn wire_value(&self, _ty: InferredType, value: &str) -> String {
         value.to_string()
     }
+    // A byte string is already the text of its bytes there, one character to a
+    // byte, which is what crosses.
+    fn wire_bytes(&self, value: &str) -> Option<String> {
+        Some(value.to_string())
+    }
     // An enum value is already the name its enum declares: a variant lowers to
     // that string, and a variable holds it.
     fn enum_wire_name(&self, _alias: &str, value: &str) -> Option<String> {

@@ -3103,7 +3103,7 @@ line of the element or attribute that breaks it:
 | `<invoke idlocation>` | Refused for want of a reader, not of a form: the id it would store is the one the build already wrote (the `id`, or `<state>.platform_N`), and this model reads no `_event.invokeid` — only `_event.data` — so a stored id has nothing to be compared with. A document that must name its invocation writes `id`, which `done.invoke.<id>` and `error.invoke.<id>` already match |
 | a `<param>` or a `namelist` name of an `<invoke type="scxml">` whose child is not a `sce-static` document this build read, does not declare the name as a top-level `<data>`, declares it as a list, a record, an enum or bytes, is handed it twice, or is handed a value not of the variable's type | See **Child sessions** below. Refused at the `<param>` as `scxml/static-datamodel-rule` (a value of the wrong type as the expression's own refusal) rather than accepted and never delivered |
 | a `<finalize>` of an `<invoke type="scxml">` | §6.5 runs it in the invoking machine before a child's event is processed, but the model keeps its body as one script text and the generated code hands that text to a script engine this model never builds (measured 2026-10-01: the Rust body is an empty block, Kotlin finds no engine): the assignment would be accepted and never run. Refused at the `<invoke>` as `scxml/static-datamodel-rule`; the invoking state takes what the child sent in a transition. An EMPTY `<finalize/>` beside a `<param location>` or a `namelist` is the same refusal: §6.5.2 gives it the meaning "update each from the event's data of that name", which the model writes out as that script text. Lowering a body is not the obstacle — a `<finalize>` runs before any child event is processed, to read that event's `_event.data`, and no type rule reaches a payload that arrives from whichever event comes next; a body that reads none has no consumer. Under `ecmascript` the same document runs it |
-| a `<param>` of a `<send>`, of a host-run `<invoke>` or of a `<donedata>` whose value is not a bool, a string, an integer of at most 32 bits, a real or an enum value held by a variable, a field of a record variable or a field of the payload, or reads a payload that is not in scope | See **Params** below. Refused at the `<param>` as `scxml/static-datamodel-rule`. An `<invoke>` typed by `sce:request` takes only literals |
+| a `<param>` of a `<send>`, of a host-run `<invoke>` or of a `<donedata>` whose value is not a bool, a string, a byte string, an integer of at most 32 bits, a real or an enum value held by a variable, a field of a record variable or a field of the payload, or reads a payload that is not in scope | See **Params** below. Refused at the `<param>` as `scxml/static-datamodel-rule`. An `<invoke>` typed by `sce:request` takes only literals |
 
 **Expressions.** Every other expression is a forge expression judged
 against one closed scope — the declared variables at their `sce:type`, each
@@ -3739,6 +3739,17 @@ length and then its bytes, assigned by copying both, and held to its bound by th
 of the value, which carries its length; a comparison of two of the same length and
 other bytes is a miss on every backend (`other` in the scenario). A Go, Python, C++ or
 C11 machine is not saved, so its host reads the value through its accessor.
+
+A byte string is a `<param>` of a `<send>`, of a host-run `<invoke>` and of a
+`<donedata>` as it is a payload's field: its byte-exact Latin-1 text, each byte the
+character of that code point, as the text a request carries and as the JSON string of
+the event's data (a quote, a backslash and a control byte escaped as any string's are).
+The machine that reads that event back through a typed payload holds the bytes it sent
+(`scenarios/static_bytes_wire.json`, which sends a variable to itself and finishes with
+it in a `<donedata>`). **Kotlin** and the **Interpreter**, whose data model already holds
+the text, carry it so far; the other backends refuse such a `<param>` by name (`has no
+Rust lowering: a byte string has no wire spelling here yet`) until each spells the text in
+the type it carries a string in (`StaticTarget::wire_bytes`).
 
 A saved state holds the variant by its declared name, `"agenda_list"`, which is
 the same on every backend and is not the constant a backend spells for it; one

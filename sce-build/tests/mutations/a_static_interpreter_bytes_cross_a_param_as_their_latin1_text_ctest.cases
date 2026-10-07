@@ -1,0 +1,25 @@
+# Mutation cases for "a byte string crosses a `<param>` and a `<donedata>` as its
+# byte-exact Latin-1 text" under the Interpreter
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A byte string"; docs/adr/0005, decision 2).
+#
+# A lowered document holds a byte string as the text of its bytes, one character to a
+# byte, which is what a `<param>` carries, so the document's own `<send>` and
+# `<donedata>` need nothing of the lowering but its leave to read one.
+# `static_bytes_wire` is replayed by `static_datamodel_lowered`, which also asserts that it
+# is replayed and not left to a refusal; the mutant below takes that leave away:
+#
+#   the Interpreter has no wire spelling for a byte string, so the document is refused by
+#   name and not replayed.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^static_datamodel_lowered$'
+mutation_targets sce-build/src/forge/static_js.rs
+mutation_oracles tests/integration/AStaticDatamodelRunsLoweredUnderTheInterpreterTest.cpp sce-build/tests/fixtures/static_datamodel/static_bytes_wire.scxml sce-build/tests/fixtures/static_datamodel/scenarios/static_bytes_wire.json
+
+mutation_case "the Interpreter has no wire spelling for a byte string" <<'PY'
+edit("sce-build/src/forge/static_js.rs",
+     "    fn wire_bytes(&self, value: &str) -> Option<String> {\n        Some(value.to_string())\n    }",
+     "    fn wire_bytes(&self, value: &str) -> Option<String> {\n        let _ = value;\n        None\n    }")
+PY

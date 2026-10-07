@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The event `static_bytes_wire.scxml` sends itself: the shape of `schema_framed.scxml`
+  under the name `framed.relayed`, a small integer and a byte string of at most eight
+  bytes. `sce:max-size` is the bound the field holds its bytes within
+  (docs/adr/0005, decision 2).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="schema_framed_relayed"
+       sce:event-name="framed.relayed">
+  <datamodel>
+    <data id="sensor" sce:type="uint8" sce:direction="in"/>
+    <data id="frame" sce:type="bytes" sce:max-size="8" sce:direction="in"/>
+  </datamodel>
+</scxml>

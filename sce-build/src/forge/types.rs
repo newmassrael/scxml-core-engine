@@ -500,13 +500,18 @@ impl InferredType {
     /// all of them. A 64-bit integer is not: Kotlin's wire helpers read a `Long`
     /// through a `Double`, so one past 2^53 would cross with its low bits wrong
     /// and no error, while Rust would carry it exactly — two backends giving one
-    /// document two values. Bytes, a list and a record have no such spelling
-    /// yet. A literal no context typed is the narrowest it can be (`int32`,
-    /// `float64`) rather than the widest ([`Self::to_sce_type`]'s choice), since
-    /// here a wider one is the one that is refused.
+    /// document two values. A byte string is carried exactly too, as its
+    /// byte-exact Latin-1 text (docs/adr/0005, decision 2), each backend spelling
+    /// the text its own way ([`StaticTarget::wire_bytes`]) and refusing by name
+    /// until it does. A list and a record have no such spelling yet. A literal no
+    /// context typed is the narrowest it can be (`int32`, `float64`) rather than
+    /// the widest ([`Self::to_sce_type`]'s choice), since here a wider one is the
+    /// one that is refused.
+    ///
+    /// [`StaticTarget::wire_bytes`]: crate::forge::static_lowering::StaticTarget::wire_bytes
     pub fn wire_param_slot(self) -> Option<InferredType> {
         match self {
-            Self::Bool | Self::Str | Self::Float { .. } => Some(self),
+            Self::Bool | Self::Str | Self::Bytes | Self::Float { .. } => Some(self),
             Self::Int { bits, .. } if bits <= 32 => Some(self),
             Self::UntypedInt => Some(Self::Int {
                 signed: true,

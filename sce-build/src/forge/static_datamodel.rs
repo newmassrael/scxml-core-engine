@@ -1359,12 +1359,12 @@ impl<'a> Judge<'a> {
                 construct,
                 &format!(
                     "{what} crosses as text and as a JSON value, which every \
-                     backend spells alike for a bool, a string, an integer of at most 32 bits, \
-                     a real, and an enum value held by a variable or by a field of a record \
-                     variable (as the name its enum declares); a 64-bit integer (which a \
-                     backend that reads numbers through a double would carry with its low bits \
-                     wrong), bytes, a list, a record and an enum value of a loop's item have \
-                     no such spelling yet"
+                     backend spells alike for a bool, a string, a byte string (as its \
+                     Latin-1 text), an integer of at most 32 bits, a real, and an enum value \
+                     held by a variable or by a field of a record variable (as the name its \
+                     enum declares); a 64-bit integer (which a backend that reads numbers \
+                     through a double would carry with its low bits wrong), a list, a record \
+                     and an enum value of a loop's item have no such spelling yet"
                 ),
                 line,
                 col,

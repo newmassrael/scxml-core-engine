@@ -1,0 +1,36 @@
+{
+  "machine": "static_bytes_wire",
+  "about": "A byte string crosses a <param> and a <donedata> as its byte-exact Latin-1 text, each byte the character of that code point. The host raises framed.taken with some bytes, the machine keeps them in `held`, sends them to itself as the <param>s of framed.relayed and reads that event back into `echo`, so what arrived is what was held; the final's <donedata> carries `echo` the same way. A byte above 0x7F is the character of its code point on the wire, and a quote, a backslash and a control byte are the escapes a JSON string needs for them. Expected values are derived from the bytes, not observed from a backend.",
+  "steps": [
+    { "note": "nothing has been held or relayed yet",
+      "expect": { "state": "idle", "variables": { "held": "ab", "echo": "", "relays": 0, "errors": 0 } } },
+
+    { "note": "the host raises bytes above 0x7F: the machine keeps them",
+      "event": "framed.taken", "data": { "sensor": 1, "frame": "ÿ\u0080a" },
+      "expect": { "variables": { "held": "ÿ\u0080a", "echo": "", "relays": 0, "errors": 0 } } },
+
+    { "note": "they cross as the <param> of a message to itself and are read back as the bytes that were held",
+      "event": "relay",
+      "expect": { "variables": { "held": "ÿ\u0080a", "echo": "ÿ\u0080a", "relays": 1, "errors": 0 } } },
+
+    { "note": "no bytes at all is a byte string of length zero, and crosses as the empty text",
+      "event": "framed.taken", "data": { "sensor": 1, "frame": "" },
+      "expect": { "variables": { "held": "", "echo": "ÿ\u0080a", "relays": 1, "errors": 0 } } },
+
+    { "note": "the empty byte string arrives as the empty byte string",
+      "event": "relay",
+      "expect": { "variables": { "held": "", "echo": "", "relays": 2, "errors": 0 } } },
+
+    { "note": "the bytes a JSON string escapes: a quote, a backslash, a newline, the control byte 0x01, an accented letter, 'z' and '!' fill the eight",
+      "event": "framed.taken", "data": { "sensor": 1, "frame": "\"\\\n\u0001éz!a" },
+      "expect": { "variables": { "held": "\"\\\n\u0001éz!a", "relays": 2, "errors": 0 } } },
+
+    { "note": "all eight arrive as they were",
+      "event": "relay",
+      "expect": { "variables": { "held": "\"\\\n\u0001éz!a", "echo": "\"\\\n\u0001éz!a", "relays": 3, "errors": 0 } } },
+
+    { "note": "the final's <donedata> carries `echo` as the same text",
+      "event": "finish",
+      "expect": { "ended": true, "donedata": { "frame": "\"\\\n\u0001éz!a" } } }
+  ]
+}

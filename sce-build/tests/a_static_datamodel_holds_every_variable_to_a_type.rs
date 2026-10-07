@@ -552,6 +552,8 @@ struct BytesHeld {
     record: bool,
     /// A transition on an event whose typed payload carries a `bytes` field.
     payload: bool,
+    /// A `bytes` variable as a `<param>`, which crosses as its Latin-1 text.
+    wire: bool,
 }
 
 const BYTES_HELD: &[BytesHeld] = &[
@@ -561,6 +563,7 @@ const BYTES_HELD: &[BytesHeld] = &[
         variable: true,
         record: true,
         payload: true,
+        wire: false,
     },
     BytesHeld {
         lang: "kotlin",
@@ -568,6 +571,7 @@ const BYTES_HELD: &[BytesHeld] = &[
         variable: true,
         record: true,
         payload: true,
+        wire: true,
     },
     BytesHeld {
         lang: "go",
@@ -575,6 +579,7 @@ const BYTES_HELD: &[BytesHeld] = &[
         variable: true,
         record: true,
         payload: true,
+        wire: false,
     },
     BytesHeld {
         lang: "cpp",
@@ -582,6 +587,7 @@ const BYTES_HELD: &[BytesHeld] = &[
         variable: true,
         record: true,
         payload: true,
+        wire: false,
     },
     BytesHeld {
         lang: "python",
@@ -589,6 +595,7 @@ const BYTES_HELD: &[BytesHeld] = &[
         variable: true,
         record: true,
         payload: true,
+        wire: false,
     },
     BytesHeld {
         lang: "c11",
@@ -596,6 +603,7 @@ const BYTES_HELD: &[BytesHeld] = &[
         variable: true,
         record: true,
         payload: true,
+        wire: false,
     },
 ];
 
@@ -637,7 +645,10 @@ struct ByteDocument {
     what: &'static str,
     holds: fn(&BytesHeld) -> bool,
     document: String,
+    /// The value a refusal names.
     names: &'static str,
+    /// How a refusal says a language has not lowered it, `{name}` being the language.
+    refusal: &'static str,
 }
 
 #[test]
@@ -658,6 +669,15 @@ fn a_language_holds_a_byte_string_or_refuses_it_by_name() {
   <final id="done"/>
 </scxml>
 "##;
+    let wired = r##"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static">
+  <datamodel><data id="held" sce:type="bytes" sce:capacity="8" expr="'ab'"/></datamodel>
+  <state id="idle">
+    <transition event="go" type="internal"><send event="sent"><param name="frame" expr="held"/></send></transition>
+  </state>
+</scxml>
+"##;
     let documents = [
         ByteDocument {
             what: "a bytes variable",
@@ -666,6 +686,7 @@ fn a_language_holds_a_byte_string_or_refuses_it_by_name() {
                 r#"<data id="frame" sce:type="bytes" sce:capacity="8" expr="'ab'"/>"#,
             ),
             names: r#"<data id=\"frame\" sce:type=\"bytes\">"#,
+            refusal: "no {name} lowering yet",
         },
         ByteDocument {
             what: "a record with a bytes field",
@@ -677,12 +698,21 @@ fn a_language_holds_a_byte_string_or_refuses_it_by_name() {
     </data>"#,
             ),
             names: "record:Frame with the field `frame` of type bytes",
+            refusal: "no {name} lowering yet",
         },
         ByteDocument {
             what: "a transition on an event whose payload carries bytes",
             holds: |held| held.payload,
             document: payload.to_string(),
             names: "a transition on `frame.taken`, an event whose payload carries `frame` of type bytes",
+            refusal: "no {name} lowering yet",
+        },
+        ByteDocument {
+            what: "a bytes variable as a <param>",
+            holds: |held| held.wire,
+            document: wired.to_string(),
+            names: r#"<param name=\"frame\"> `held`"#,
+            refusal: "has no {name} lowering: a byte string has no wire spelling here yet",
         },
     ];
     for ByteDocument {
@@ -690,6 +720,7 @@ fn a_language_holds_a_byte_string_or_refuses_it_by_name() {
         holds,
         document,
         names,
+        refusal,
     } in &documents
     {
         for held in BYTES_HELD {
@@ -702,7 +733,7 @@ fn a_language_holds_a_byte_string_or_refuses_it_by_name() {
             assert!(!ok, "{lang}, {what}: no lowering for it yet:\n{out}");
             assert!(
                 out.contains("generate/unsupported-feature")
-                    && out.contains(&format!("no {name} lowering yet"))
+                    && out.contains(&refusal.replace("{name}", name))
                     && out.contains(names),
                 "{lang}, {what}: expected the refusal naming {name} and the value:\n{out}"
             );

@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A byte string";
+  docs/adr/0005, decision 2): a byte string crosses a <param> and a <donedata> as its
+  byte-exact Latin-1 text, each byte the character of that code point, whichever engine
+  writes it and whichever reads it.
+
+  The host raises `framed.taken` with some bytes and the machine keeps them in `held`.
+  `relay` sends them to itself as `framed.relayed`, the byte string as a <param> beside
+  a small integer, and the machine reads that event's payload back into `echo`, so what
+  arrived is what was held: the bytes above 0x7F, a quote, a backslash and a control
+  byte included, which a JSON string has to escape. `finish` enters the final, whose
+  <donedata> carries `echo` the same way, and the scenario states the object it wrote.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static" name="static_bytes_wire">
+  <sce:import kind="event-schema" src="schema_framed.scxml" as="Framed"/>
+  <sce:import kind="event-schema" src="schema_framed_relayed.scxml" as="Relayed"/>
+  <datamodel>
+    <data id="held" sce:type="bytes" sce:capacity="8" expr="'ab'" sce:direction="out"/>
+    <data id="echo" sce:type="bytes" sce:capacity="8" expr="''" sce:direction="out"/>
+    <data id="relays" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="errors" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="idle">
+    <transition event="framed.taken" type="internal">
+      <assign location="held" expr="_event.data.frame"/>
+    </transition>
+    <transition event="relay" type="internal">
+      <send event="framed.relayed">
+        <param name="sensor" expr="3"/>
+        <param name="frame" expr="held"/>
+      </send>
+    </transition>
+    <transition event="framed.relayed" type="internal">
+      <assign location="echo" expr="_event.data.frame"/>
+      <assign location="relays" expr="relays + 1"/>
+    </transition>
+    <transition event="finish" target="done"/>
+    <transition event="error.execution" type="internal">
+      <assign location="errors" expr="errors + 1"/>
+    </transition>
+  </state>
+  <final id="done">
+    <donedata>
+      <param name="frame" expr="echo"/>
+    </donedata>
+  </final>
+</scxml>

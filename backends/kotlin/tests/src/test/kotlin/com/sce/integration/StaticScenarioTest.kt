@@ -23,6 +23,7 @@ package com.sce.integration
 import com.sce.integration.static_block_ends.StaticBlockEndsStateMachine
 import com.sce.integration.static_block_ends_list.StaticBlockEndsListStateMachine
 import com.sce.integration.static_bytes.StaticBytesStateMachine
+import com.sce.integration.static_bytes_wire.StaticBytesWireStateMachine
 import com.sce.integration.static_cancel_expr.StaticCancelExprStateMachine
 import com.sce.integration.static_counter.StaticCounterStateMachine
 import com.sce.integration.static_donedata.StaticDonedataStateMachine
@@ -261,6 +262,27 @@ class StaticScenarioTest {
         try {
             replay(
                 scenario("static_donedata"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+                donedata = { sm.donedataAtFinal() },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // A byte string crosses a <param> and a <donedata> as its byte-exact Latin-1 text:
+    // sent to itself and read back through the typed payload, and carried by the
+    // done event's data.
+    @Test
+    fun staticBytesWireCarriesAByteStringAsItsLatin1Text() {
+        val sm = StaticBytesWireStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_bytes_wire"),
                 send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
                 tick = { sm.tick() },
                 save = { sm.save() },

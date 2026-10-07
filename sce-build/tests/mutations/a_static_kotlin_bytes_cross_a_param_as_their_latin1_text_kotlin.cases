@@ -1,0 +1,41 @@
+# Mutation cases for "a byte string crosses a `<param>` and a `<donedata>` as its
+# byte-exact Latin-1 text" under the Kotlin backend
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A byte string"; docs/adr/0005, decision 2).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_kotlin_bytes_cross_a_param_as_their_latin1_text_kotlin.cases`.
+#
+# `static_bytes_wire` keeps the bytes the host raised, sends them to itself as the
+# `<param>` of `framed.relayed`, reads that event's payload back into `echo`, and finishes
+# with `echo` in a `<donedata>`. The bytes include some above 0x7F, a quote, a backslash
+# and a control byte, so the text has to be the character of each byte and a JSON string's
+# escapes, and not the bytes decoded as any other text. The mutants take one decision away
+# each:
+#
+#   a byte array crosses as the platform's decoding of it and not as its Latin-1 text;
+#   the runtime's text of a byte array takes a byte above 0x7F for a negative number.
+#
+# A mutant that refused the `<param>` is no case here: the regeneration skips a document a
+# language refuses, and would leave the machine it generated before standing.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_gradle . :sce-kotlin-tests:test --tests 'com.sce.integration.StaticScenarioTest' --tests 'com.sce.integration.StaticDatamodelTest'
+mutation_targets sce-build/src/forge/static_lowering.rs
+mutation_targets backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/EventPayload.kt
+mutation_targets backends/kotlin/tests/src/main/kotlin/com/sce/integration/static_bytes_wire/static_bytes_wireSm.kt
+mutation_regen scripts/regen_static_datamodel_kotlin.sh
+mutation_oracles backends/kotlin/tests/src/test/kotlin/com/sce/integration/StaticScenarioTest.kt sce-build/tests/fixtures/static_datamodel/scenarios/static_bytes_wire.json
+
+mutation_case "a byte array crosses as the platform's decoding of it" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "            &format!(\"com.sce.runtime.EventPayload.bytesAsText({value})\"),",
+     "            &format!(\"String({value})\"),")
+PY
+
+mutation_case "the runtime's text of a byte array takes a byte above 0x7F for a negative number" <<'PY'
+edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/EventPayload.kt",
+     "        val chars = CharArray(bytes.size) { (bytes[it].toInt() and 0xFF).toChar() }",
+     "        val chars = CharArray(bytes.size) { bytes[it].toInt().toChar() }")
+PY

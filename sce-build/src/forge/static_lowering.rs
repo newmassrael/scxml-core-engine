@@ -845,6 +845,16 @@ pub trait StaticTarget {
     fn enum_wire_name(&self, _alias: &str, _value: &str) -> Option<String> {
         None
     }
+    /// `value`, a lowered expression of an owned byte string, as the typed wire
+    /// value it crosses as: its byte-exact Latin-1 text, each byte the character
+    /// of that code point (docs/adr/0005, decision 2) — the form
+    /// [`Self::wire_value`] gives a string, in whichever type this backend carries
+    /// one, so a text a request carries and the JSON value of the event's data are
+    /// the same wherever the machine runs. `None` for a backend with no such
+    /// spelling yet, which refuses the `<param>` by name.
+    fn wire_bytes(&self, _value: &str) -> Option<String> {
+        None
+    }
 }
 
 /// Kotlin: a variable is a property of the machine class, a record an
@@ -1287,6 +1297,14 @@ impl StaticTarget for KotlinTarget {
     // The enum class declares `declaredName` beside its entries.
     fn enum_wire_name(&self, _alias: &str, value: &str) -> Option<String> {
         Some(format!("({value}).declaredName"))
+    }
+    // The text the runtime's payload encoder writes a byte array as, the string
+    // every wire helper then reads.
+    fn wire_bytes(&self, value: &str) -> Option<String> {
+        Some(self.wire_value(
+            InferredType::Str,
+            &format!("com.sce.runtime.EventPayload.bytesAsText({value})"),
+        ))
     }
 }
 
@@ -6451,7 +6469,10 @@ fn lower_wire_value(
     let slot = ty
         .wire_param_slot()
         .ok_or_else(|| refused("its type has no wire spelling".to_string()))?;
-    if !target.wire_admits(slot) {
+    // A byte string crosses as its Latin-1 text, which each backend spells in the
+    // type it carries a string in; one that does not yet is refused by name.
+    let bytes = slot == InferredType::Bytes;
+    if !bytes && !target.wire_admits(slot) {
         return Err(refused(format!(
             "a value of {slot:?} has no wire spelling here yet"
         )));
@@ -6461,7 +6482,14 @@ fn lower_wire_value(
     let value = transpile_into_owned(written, target.expr_target(), ctx, renames, slot)
         .map_err(|r| refused(r.error.to_string()))?;
     rewrites.note(written, param.spelling, &value.text);
-    Ok(Some((target.wire_value(slot, &value.text), value.can_fail)))
+    let wired = if bytes {
+        target
+            .wire_bytes(&value.text)
+            .ok_or_else(|| refused("a byte string has no wire spelling here yet".to_string()))?
+    } else {
+        target.wire_value(slot, &value.text)
+    };
+    Ok(Some((wired, value.can_fail)))
 }
 
 /// Lower the value of a `<param>` of a `<send>` or of a host-run `<invoke>`, in
