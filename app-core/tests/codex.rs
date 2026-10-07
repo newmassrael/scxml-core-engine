@@ -336,7 +336,23 @@ fn it_is_started_with_the_arguments_that_were_verified() {
             "{flag} is missing: {args:?}"
         );
     }
-    assert_eq!(after(&args, "-s"), Some("read-only"));
+    // What a command the client runs may read is a profile and not a sandbox mode: Codex refuses
+    // the two together, and the mode that does not write reads everything the person's account can.
+    assert!(
+        !args.iter().any(|a| a == "-s" || a == "--sandbox"),
+        "a sandbox mode is given beside the profile: {args:?}"
+    );
+    let settings: Vec<&str> = args
+        .windows(2)
+        .filter(|w| w[0] == "-c")
+        .map(|w| w[1].as_str())
+        .collect();
+    for setting in sce_app_core::codex::permission_settings() {
+        assert!(
+            settings.contains(&setting.as_str()),
+            "{setting} is missing: {args:?}"
+        );
+    }
     assert!(
         args.windows(2)
             .any(|w| w[0] == "-c" && w[1] == "approval_policy=\"never\""),

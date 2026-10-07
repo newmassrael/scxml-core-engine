@@ -17,6 +17,7 @@ mod common;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -49,6 +50,103 @@ fn real_codex_reads_checks_and_publishes_through_mcp() {
 #[ignore = "runs real Codex against a malicious synthetic specification"]
 fn an_imported_specification_cannot_grant_extra_tools() {
     run(true);
+}
+
+/// What a command the client runs may reach is read back from Codex and not from our arguments:
+/// a key it does not know is accepted without a word (`--strict-config` says nothing of a profile's
+/// keys), so a misspelt one would leave a policy that nobody chose. It needs the program and no
+/// login, no model and no money. The network setting is not among what Codex shows.
+#[test]
+#[ignore = "runs real Codex, without a login: it is only asked what it derived"]
+fn the_policy_codex_derives_from_a_run_reads_only_the_minimum_and_its_folder() {
+    let binary = std::env::var_os("SCE_CODEX")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("codex"));
+    let root = common::scratch("codex-policy");
+    let work = fs::canonicalize({
+        let work = root.join("work");
+        fs::create_dir_all(&work).unwrap();
+        work
+    })
+    .unwrap();
+    let home = root.join("home");
+    fs::create_dir_all(&home).unwrap();
+
+    let mut command = Command::new(&binary);
+    command.args(["debug", "prompt-input", "-c", "project_doc_max_bytes=0"]);
+    for setting in sce_app_core::codex::permission_settings() {
+        command.args(["-c", &setting]);
+    }
+    let output = command
+        .current_dir(&work)
+        .env("CODEX_HOME", &home)
+        .output()
+        .expect("Codex must start");
+    assert!(
+        output.status.success(),
+        "Codex did not accept the profile: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let items: Vec<Value> = serde_json::from_slice(&output.stdout).expect("a JSON list");
+    let shown: String = items
+        .iter()
+        .flat_map(|item| match &item["content"] {
+            Value::String(text) => vec![text.clone()],
+            Value::Array(parts) => parts
+                .iter()
+                .filter_map(|p| p["text"].as_str().map(str::to_string))
+                .collect(),
+            _ => Vec::new(),
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let start = shown
+        .find("<file_system type=\"restricted\">")
+        .unwrap_or_else(|| panic!("Codex did not derive a restricted file system: {shown}"));
+    let end = shown[start..]
+        .find("</file_system>")
+        .expect("a closed file system")
+        + start;
+    let derived = &shown[start..end];
+    println!("Derived: {derived}");
+
+    assert!(derived.contains("<special>:minimal</special>"), "{derived}");
+    assert!(
+        !derived.contains(":root"),
+        "the whole disk is readable: {derived}"
+    );
+    let accesses: Vec<&str> = derived.split("access=\"").skip(1).collect();
+    assert!(!accesses.is_empty());
+    assert!(
+        accesses.iter().all(|a| a.starts_with("read\"")),
+        "something is not read-only: {derived}"
+    );
+    // A folder it may read is the one the run works in, one of the programs Codex ships with
+    // (which is what the client starts a command with), or the aliases it makes for itself under
+    // its own home for the run. Not that home, nor the person's, nor a parent of either: the
+    // home holds the login the application keeps.
+    let shipped = fs::canonicalize(&binary)
+        .ok()
+        .and_then(|p| p.parent().and_then(Path::parent).map(Path::to_path_buf));
+    let aliases = fs::canonicalize(&home).unwrap().join("tmp").join("arg0");
+    let mut paths = Vec::new();
+    for piece in derived.split("<path>").skip(1) {
+        let path = piece.split("</path>").next().unwrap();
+        paths.push(PathBuf::from(path));
+    }
+    assert!(
+        paths.iter().any(|p| p == &work),
+        "the work folder is not readable: {derived}"
+    );
+    for path in &paths {
+        let ours = path.starts_with(&work);
+        let theirs = shipped.as_ref().is_some_and(|dir| path.starts_with(dir));
+        assert!(
+            ours || theirs || path.starts_with(&aliases),
+            "{} is readable: {derived}",
+            path.display()
+        );
+    }
 }
 
 fn run(attack: bool) {

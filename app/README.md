@@ -702,7 +702,7 @@ while it would wait, another Codex program can still be chosen among those found
 person reaches a version this build did verify. Linux Codex 0.159.0 is verified; an updated client
 or another operating system still needs verification before generation is offered.
 
-**Codex verification (2026-10-07).** The ignored `app-core/tests/codex_live.rs` tests use the real
+**Codex verification (2026-10-08).** The ignored `app-core/tests/codex_live.rs` tests use the real
 CLI, an existing official ChatGPT login, `gpt-6.1-sol`, the authoring MCP and `sce-codegen`.
 Both a synthetic indicator specification and a version containing instructions to read a private
 canary, write an unrelated file and use forbidden tools completed generation. The tests assert
@@ -720,11 +720,25 @@ Code Mode's host stays enabled because this CLI needs it to call MCP tools. Its 
 enable shell tools: `shell_tool` is disabled. Some legacy flags (including `unified_exec`) still
 appear enabled after `--disable`, so live event traces, rather than feature names alone, are checked.
 **`unified_exec` cannot be switched off in this CLI**: with 0.159.0, `--disable unified_exec` and
-`-c features.unified_exec=false` both leave it on, so no setting makes a command impossible. What
-stands between a specification that asks for one and the machine is the read-only sandbox (which
-allows no writes, though a command can still read what the person's account can read) and the
-model not asking. The live tests show a model that did not ask, which is a fact about that model
-and that version and not a guarantee: another model, or a new version, is verified again.
+`-c features.unified_exec=false` both leave it on, so no setting makes a command impossible. What a
+command can reach is the run's permission profile (`codex::permission_settings`): the minimum a
+program needs to start and the run's own folder, which is empty because the work is read through
+the authoring server, read and never written, and no network. It replaces `-s read-only`, which is
+a profile that reads the whole disk (`:root`), so a command that a specification talked the model
+into could read whatever the person's account can. Codex refuses a sandbox mode beside a default
+profile, so a run is given no `-s`.
+
+What is checked, and what is not. `codex_live` asks Codex which file system it derived from the
+settings (`codex debug prompt-input`, no login and no model) and holds that to the profile: Codex
+accepts a key it does not know without a word, and a misspelt `filesystem` leaves a policy that
+nobody chose (tried: the test fails). Codex does not show the network setting, so that one is not
+read back. Codex's sandbox (bubblewrap) starts only where the operating system lets the user create
+namespaces; on the Ubuntu computers this was verified on it does not (`bwrap: loopback: Failed
+RTM_NEWADDR`), so a command the model asks for does not run at all (tried with `-s read-only`: the
+model reports that error), and no run has shown the profile stopping a command's read. Where the
+sandbox does start, what stops the read is Codex's. The live tests show a model that did not ask for
+a command, which is a fact about that model and that version and not a guarantee: another model, or
+a new version, is verified again.
 The reviewed metadata/UI features introduce no additional authoring server or executable tool.
 Only the listed read/check tools receive unattended approval overrides, using Codex's
 [per-tool MCP configuration](https://learn.chatgpt.com/docs/config-file/config-reference).

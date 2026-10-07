@@ -10,9 +10,10 @@
 //!   it can read the work it was started for and check what it writes, and it cannot save to any
 //!   work, take or finish a request, or record an acceptance. The application saves what it
 //!   answers;
-//! - **a sandbox that does not write** (`-s read-only`), no question to a person who is not
-//!   there (`approval_policy="never"`), no web search, nothing kept (`--ephemeral`) and nothing
-//!   read from the person's own settings (`--ignore-user-config`);
+//! - **a sandbox that does not write and reads only the minimum and its own folder**
+//!   ([`permission_settings`]), no question to a person who is not there
+//!   (`approval_policy="never"`), no web search, nothing kept (`--ephemeral`) and nothing read
+//!   from the person's own settings (`--ignore-user-config`);
 //! - **the built-in features switched off that the support list says to switch off** (`--disable`),
 //!   which is a list and not a guarantee: Codex has no switch that turns its tools off, and gains
 //!   tools from version to version. That is why a version is run only when a person verified it
@@ -203,8 +204,6 @@ fn exec_arguments(
         "--ignore-user-config".into(),
         "--ignore-rules".into(),
         "--strict-config".into(),
-        "-s".into(),
-        "read-only".into(),
         "--skip-git-repo-check".into(),
         "-C".into(),
         scratch.display().to_string(),
@@ -223,6 +222,33 @@ fn exec_arguments(
     args
 }
 
+/// The name of the permission profile a run is given.
+const PERMISSIONS: &str = "sce_run";
+
+/// What a command the client runs may reach, as settings (`-c`): the minimum a program needs to
+/// start and the folder the run works in (empty: the client reads the work through the authoring
+/// server), read and never written, and no network.
+///
+/// The mode `-s read-only` is a profile that reads the whole disk (`:root`), so a command the
+/// client was asked to run by a specification could read whatever the person's account can. The
+/// client cannot switch off the tool that runs commands (`unified_exec`), and this is what its
+/// sandbox is told instead. Codex refuses a sandbox mode beside a default profile, so the run is
+/// given no `-s`.
+///
+/// What a person can read back is the file system Codex derived from these
+/// (`codex debug prompt-input`, held by `app-core/tests/codex_live.rs`). The network setting is
+/// not shown there, and the sandbox starts only where the operating system lets the user create
+/// namespaces (`bwrap`): where it cannot, no command runs at all.
+pub fn permission_settings() -> Vec<String> {
+    vec![
+        format!("default_permissions={}", toml_string(PERMISSIONS)),
+        format!(
+            "permissions.{PERMISSIONS}.filesystem={{\":minimal\"=\"read\",\":project_roots\"={{\".\"=\"read\"}}}}"
+        ),
+        format!("permissions.{PERMISSIONS}.network={{enabled=false}}"),
+    ]
+}
+
 /// The configuration a run is given on the command line, as `key=value` with a TOML value.
 fn run_settings(author: &AuthorServer) -> Vec<String> {
     let key = |name: &str| format!("mcp_servers.{SERVER}.{name}");
@@ -231,7 +257,8 @@ fn run_settings(author: &AuthorServer) -> Vec<String> {
         .iter()
         .map(|(name, value)| format!("{}={}", toml_string(name), toml_string(value)))
         .collect();
-    let mut settings = vec![
+    let mut settings = permission_settings();
+    settings.extend([
         "approval_policy=\"never\"".to_string(),
         "web_search=\"disabled\"".to_string(),
         "agents.enabled=false".to_string(),
@@ -264,7 +291,7 @@ fn run_settings(author: &AuthorServer) -> Vec<String> {
                 .collect::<Vec<_>>()
                 .join(",")
         ),
-    ];
+    ]);
     // Only these read/check tools may run unattended. Unknown or newly added tools never get
     // this override, and the scoped authoring server also refuses them at dispatch.
     settings.extend(AUTHOR_TOOLS.iter().map(|name| {
@@ -519,10 +546,10 @@ mod tests {
     fn what_a_person_verified_is_named_by_the_arguments_of_a_run() {
         let material = instruction_material(&support());
 
-        // The sandbox, the settings, the flags and the one place a login is kept.
+        // The profile, the settings, the flags and the one place a login is kept.
         for part in [
             "--ignore-user-config",
-            "read-only",
+            "default_permissions=",
             "approval_policy=\"never\"",
             "web_search=\"disabled\"",
             "--disable\nshell_tool",
@@ -531,6 +558,39 @@ mod tests {
         ] {
             assert!(material.contains(part), "{part} is not named: {material}");
         }
+    }
+
+    #[test]
+    fn a_command_the_client_runs_may_read_the_minimum_and_the_work_folder_and_nothing_else() {
+        let settings = permission_settings();
+        let text = settings.join("\n");
+
+        // The profile that is chosen is the profile that is defined.
+        assert!(
+            text.contains(&format!("default_permissions=\"{PERMISSIONS}\"")),
+            "{text}"
+        );
+        let filesystem = settings
+            .iter()
+            .find(|s| s.starts_with(&format!("permissions.{PERMISSIONS}.filesystem=")))
+            .unwrap_or_else(|| panic!("no file system is defined: {text}"));
+        assert!(filesystem.contains("\":minimal\"=\"read\""), "{filesystem}");
+        assert!(filesystem.contains("\":project_roots\""), "{filesystem}");
+        // Not the whole disk, not a place to write, and not the person's home.
+        for forbidden in [":root", "\"write\"", "\"none\"", "home", "~", "/"] {
+            assert!(
+                !filesystem.contains(forbidden),
+                "{forbidden:?} is in {filesystem}"
+            );
+        }
+        // No `-s`: Codex refuses a sandbox mode beside a default profile.
+        assert!(!text.contains("sandbox_mode"), "{text}");
+        assert!(
+            text.contains(&format!(
+                "permissions.{PERMISSIONS}.network={{enabled=false}}"
+            )),
+            "{text}"
+        );
     }
 
     #[test]
