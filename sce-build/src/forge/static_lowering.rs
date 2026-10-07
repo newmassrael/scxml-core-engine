@@ -1239,6 +1239,12 @@ impl StaticTarget for KotlinTarget {
     fn lowers_event_expr(&self) -> bool {
         true
     }
+    // The send template holds the string it computes to the routes the document
+    // declares as `sce:targets` and sends by `sendToTarget` (docs/adr/0005,
+    // decision 3).
+    fn lowers_target_expr(&self) -> bool {
+        true
+    }
     // The cancel template hands the scheduler the id it computes (`cancelSend`).
     fn lowers_cancel_expr(&self) -> bool {
         true

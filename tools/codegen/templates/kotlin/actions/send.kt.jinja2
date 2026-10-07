@@ -140,13 +140,17 @@
 {% endif %}
 {% endfor %}
 {% set dyn_event = (action.eventexpr and model.needs_script_engine and not action.event) or action.native_event %}
-{% set dyn_target = action.targetexpr and model.needs_script_engine %}
+{# A `targetexpr` is routed by the value it computes, which a script engine
+   evaluates or — under `datamodel="sce-static"` — the machine computes from its
+   own fields and holds to the routes the document declares
+   (`Action::native_target`, `Action::targets`). #}
+{% set dyn_target = action.targetexpr and (model.needs_script_engine or action.native_target) %}
 {% set dyn_delay = (action.delayexpr and model.needs_script_engine) or action.native_delay %}
 {% set has_delay = action.delay or action.delayexpr %}
 {% set is_http = action.send_type == 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor' %}
 {# A `targetexpr` that may name a Mesh peer at run time (SCE_MESH.md
    §mesh-19); decided here so the form below is built for it too. #}
-{% set dynamic_mesh = dyn_target and not action.typeexpr and not action.send_type_host_served and not action.send_type_unsupported and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') %}
+{% set dynamic_mesh = action.targetexpr and model.needs_script_engine and not action.typeexpr and not action.send_type_host_served and not action.send_type_unsupported and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') %}
 {# The form a transport posts is needed only by those that post one. #}
 {% set needs_wire_params = action.send_type_host_served or is_http or dynamic_mesh %}
 {# ── The element's own arguments, evaluated once ──
@@ -157,10 +161,11 @@
    first failure is one error.execution carrying the send id, the message goes
    nowhere, and — the error having been raised while the element was
    processed — the block ends (W3C SCXML 4.9): `return@send true`. #}
-{# Under `datamodel="sce-static"` a `delayexpr` and an `eventexpr` are lowered to
-   the strings they compute (`Action::native_delay`, `Action::native_event`), so
-   each is an argument like the others but needs no engine to be read. #}
-{% set send_prologue = (model.needs_script_engine and (action.eventexpr or action.targetexpr or action.typeexpr or action.delayexpr or has_namelist or action.idlocation)) or action.native_delay or action.native_event %}
+{# Under `datamodel="sce-static"` a `delayexpr`, an `eventexpr` and a `targetexpr` are
+   lowered to the strings they compute (`Action::native_delay`,
+   `Action::native_event`, `Action::native_target`), so each is an argument like the
+   others but needs no engine to be read. #}
+{% set send_prologue = (model.needs_script_engine and (action.eventexpr or action.targetexpr or action.typeexpr or action.delayexpr or has_namelist or action.idlocation)) or action.native_delay or action.native_event or action.native_target %}
             if (run send@{
 {% if action.native_idlocation %}
             // W3C SCXML 6.2.4: under `datamodel="sce-static"` the machine generates
@@ -229,7 +234,25 @@
                 return@send true
             }
 {% endif %}
-{% if action.targetexpr %}
+{% if action.native_target %}
+            // docs/adr/0005, decision 3: the target is a string computed from the
+            // machine's fields now, and the send goes only by a route the document
+            // declared as `sce:targets`. A value in none of them names no route this
+            // send may take — an address nobody answers at, which is reported below as
+            // error.communication (W3C SCXML C.1) — and an operation that fails cannot
+            // be evaluated, the argument error.
+{% if action.native_target_fails %}
+            val _computed: String = try {
+                {{ action.native_target }}
+            } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
+                raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> targetexpr could not be evaluated", {{ send_id_kt }})
+                return@send true
+            }
+{% else %}
+            val _computed: String = {{ action.native_target }}
+{% endif %}
+            val _rt: String = if (_computed == {% for entry in action.targets %}"{{ entry | escape_kotlin }}"{% if not loop.last %} || _computed == {% endif %}{% endfor %}) _computed else ""
+{% elif action.targetexpr %}
             // §scxml-C-1: a target expression's value is read as text — the
             // same reading C++ `resultToString` gives it.
             val _rt = try {
@@ -316,7 +339,7 @@
                 // W3C SCXML C.1 (test496): a target that names nothing is not
                 // reachable — error.communication, nothing delivered, and the
                 // error ends the block as any other would (W3C SCXML 4.9).
-                raisePlatformError({{ machine_name }}Event.Error.Communication, "<send> targetexpr evaluated to nothing, so there is no target to reach", {{ send_id_kt }})
+                raisePlatformError({{ machine_name }}Event.Error.Communication, "<send> targetexpr evaluated to nothing{% if action.native_target %}, or to a route the send does not declare{% endif %}, so there is no target to reach", {{ send_id_kt }})
                 return@send true
             }
 {% endif %}

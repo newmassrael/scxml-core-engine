@@ -3288,7 +3288,11 @@ held to the declared routes by a `matches!` over them, and routed by the one
 `Engine::send_to_target` that routes a value read at run time for a script-engine
 machine (`a_static_rust_send_target_is_held_to_its_declared_routes_rust.cases`); a
 `no_std` build has no such routing and refuses the send by name
-(`a <send> with a targetexpr has no Rust no_std lowering yet`). `typeexpr` is still
+(`a <send> with a targetexpr has no Rust no_std lowering yet`). **Kotlin** lowers it
+the same way: the value is compared with the declared routes, one that is none of
+them becomes the empty target, and the one `sendToTarget` that routes a value read at
+run time answers it as it answers any address nobody is at
+(`a_static_kotlin_send_target_is_held_to_its_declared_routes_kotlin.cases`). `typeexpr` is still
 refused as above. A `<cancel>`'s
 `sendidexpr` is the same for the id of the delayed send it removes: a string
 computed from the machine's fields when the cancel runs, so the one `<cancel>`

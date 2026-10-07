@@ -53,6 +53,7 @@ import com.sce.integration.static_send_event.StaticSendEventStateMachine
 import com.sce.integration.static_send_idlocation.StaticSendIdlocationStateMachine
 import com.sce.integration.static_send_namelist.StaticSendNamelistStateMachine
 import com.sce.integration.static_send_params.StaticSendParamsStateMachine
+import com.sce.integration.static_send_target.StaticSendTargetStateMachine
 import com.sce.integration.static_record_bytes.StaticRecordBytesStateMachine
 import com.sce.integration.static_record_string.StaticRecordStringStateMachine
 import com.sce.integration.static_string_capacity.StaticStringCapacityStateMachine
@@ -666,6 +667,27 @@ class StaticScenarioTest {
         try {
             replay(
                 scenario("static_send_event"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // The `targetexpr` of a <send> is a string computed from the machine's fields
+    // when the send runs, held to the routes the document declares as `sce:targets`
+    // (docs/adr/0005, decision 3): the send goes by the entry that matches, and a
+    // value in none of them is error.communication with nothing sent.
+    @Test
+    fun staticSendTargetIsChosenAmongTheDeclaredRoutes() {
+        val sm = StaticSendTargetStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_send_target"),
                 send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
                 tick = { sm.tick() },
                 save = { sm.save() },

@@ -1152,12 +1152,12 @@ fn routing(send: &str) -> String {
 /// them: each compares the value with the declared routes and sends by the one
 /// that matches (docs/adr/0005, decision 3). The Interpreter is read through
 /// `lower`.
-const COMPUTED_TARGET_LOWERING_LANGUAGES: &[&str] = &["rust"];
+const COMPUTED_TARGET_LOWERING_LANGUAGES: &[&str] = &["rust", "kotlin"];
 
 /// The generated languages that have no lowering of a `<send targetexpr>` yet.
 /// Each is refused by name until it writes one, and moves to the list above in
 /// the commit that does.
-const COMPUTED_TARGET_REFUSING_LANGUAGES: &[&str] = &["kotlin", "go", "cpp", "python", "c11"];
+const COMPUTED_TARGET_REFUSING_LANGUAGES: &[&str] = &["go", "cpp", "python", "c11"];
 
 #[test]
 fn a_computed_target_that_declares_its_routes_is_accepted_by_the_document() {
