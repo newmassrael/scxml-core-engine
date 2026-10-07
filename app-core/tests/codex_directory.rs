@@ -396,7 +396,11 @@ fn what_was_found_of_codex_is_not_asked_again_for_every_look() {
 fn a_codex_nobody_verified_waits_and_says_so_without_naming_a_path() {
     let rig = Rig::new("cdir-unverified", "Logged in using ChatGPT");
     let pin = rig.pin(&codex_connection(AuthSource::OfficialLogin));
-    let launch = rig.launch(Support::shipped(), &[PATH]);
+    // A list that verifies nothing, spelled out: the shipped one verifies a version, and this
+    // stand-in says that version.
+    let nothing_verified =
+        Support::from_json(r#"{"verified":[],"disabled_features":["shell_tool"]}"#).unwrap();
+    let launch = rig.launch(nothing_verified, &[PATH]);
 
     let said = refused(rig.directory(Some(launch)).generator_for(&pin));
 

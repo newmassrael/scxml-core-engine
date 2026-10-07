@@ -253,7 +253,7 @@ fn a_program_that_will_not_say_its_version_has_none() {
 #[test]
 fn a_codex_nobody_verified_is_not_started() {
     let fake = Fake::answering("codex-unverified", &answer("<scxml/>"));
-    let client = codex(&fake, AuthSource::AppStore, Support::shipped());
+    let client = codex(&fake, AuthSource::AppStore, support_with(&[], &[]));
 
     let refused = generate(&client).unwrap_err();
 
@@ -264,6 +264,33 @@ fn a_codex_nobody_verified_is_not_started() {
     assert!(said.contains("another connection"), "{said}");
     // Nothing was started for the run: it was refused before there was one.
     assert!(!fake.started());
+}
+
+#[test]
+fn feature_discovery_uses_an_empty_home_and_does_not_load_personal_settings() {
+    let dir = common::scratch("codex-default-features");
+    let binary = dir.join("codex");
+    let record = dir.join("feature-home");
+    common::write_program(
+        &binary,
+        &format!(
+            "#!/bin/sh\n[ -d \"$CODEX_HOME\" ] || exit 1\n\
+         [ \"$PWD\" = \"$CODEX_HOME\" ] || exit 2\n\
+         [ ! -e \"$CODEX_HOME/config.toml\" ] || exit 3\n\
+         printf '%s' \"$CODEX_HOME\" > '{}'\n\
+         printf 'new_tool stable true\\n'\n",
+            record.display()
+        ),
+    );
+    assert_eq!(
+        sce_app_core::codex::features_on(&binary).unwrap(),
+        vec!["new_tool"]
+    );
+    let temporary_home = fs::read_to_string(record).unwrap();
+    assert!(
+        !PathBuf::from(temporary_home).exists(),
+        "feature-check home was not cleaned up"
+    );
 }
 
 #[test]
@@ -300,6 +327,8 @@ fn it_is_started_with_the_arguments_that_were_verified() {
         "--json",
         "--ephemeral",
         "--ignore-user-config",
+        "--ignore-rules",
+        "--strict-config",
         "--skip-git-repo-check",
     ] {
         assert!(
@@ -326,6 +355,13 @@ fn it_is_started_with_the_arguments_that_were_verified() {
         "{args:?}"
     );
     assert_eq!(after(&args, "-m"), Some("gpt-test"));
+    for setting in ["agents.enabled=false", "project_doc_max_bytes=0"] {
+        assert!(args.windows(2).any(|w| w[0] == "-c" && w[1] == setting));
+    }
+    assert!(args.windows(2).any(|w| w[0] == "-c"
+        && w[1].starts_with("developer_instructions=")
+        && w[1].contains("never ask a question")
+        && w[1].contains("sce:unresolved")));
     // The prompt is the last thing, and it is standard input.
     assert_eq!(args.last().map(String::as_str), Some("-"));
 }
@@ -385,11 +421,15 @@ fn what_it_is_told_goes_in_on_standard_input_and_not_on_the_command_line() {
         !told.contains("The lock opens when the code matches."),
         "{told}"
     );
-    assert!(
-        !fake.argv().iter().any(|a| a.contains("door-lock")),
-        "{:?}",
-        fake.argv()
-    );
+    let args = fake.argv();
+    // Only the work id also reaches the server's scope configuration. Neither the task nor
+    // the specification belongs on the command line.
+    assert!(args
+        .iter()
+        .filter(|a| a.contains("door-lock"))
+        .all(|a| a.starts_with("mcp_servers.sce-author.env=")));
+    assert!(!args.iter().any(|a| a.contains("Write the model for")
+        || a.contains("The lock opens when the code matches.")));
 }
 
 #[test]
@@ -442,6 +482,12 @@ fn only_the_authoring_server_is_reachable_and_only_by_the_tools_the_task_needs()
         .find(|o| o.starts_with("mcp_servers.sce-author.env="))
         .unwrap();
     assert!(env.contains("\"SCE_WORKS_DIR\"=\"/works\""), "{env}");
+    assert!(env.contains("\"SCE_AUTHOR_WORK\"=\"door-lock\""), "{env}");
+    for name in AUTHOR_TOOLS {
+        assert!(overrides.contains(
+            &format!("mcp_servers.sce-author.tools.{name}.approval_mode=\"approve\"").as_str()
+        ));
+    }
     // The tools are the nine the client of the other kind is allowed, by their own names.
     let tools = overrides
         .iter()
@@ -532,6 +578,31 @@ fn a_run_with_a_key_from_the_environment_has_that_key_and_no_other_credential() 
     assert_eq!(fake.env_of("OPENAI_API_KEY"), None);
     assert_eq!(fake.env_of("OPENAI_IDENTITY_TOKEN"), None);
     assert_eq!(fake.env_of("CODEX_HOME").as_deref(), fake.home().to_str());
+}
+
+#[test]
+fn an_answer_that_names_a_file_is_refused_before_the_checker_opens_it() {
+    // The client ends with a document that imports a file of the machine, as a specification that
+    // says to would have it do. What the checker finds in a file comes back in the words it
+    // refuses with, and those go to the client when a draft is asked for again: so the answer is
+    // refused as it comes in, and nothing of the file, or where it is, is in what is said of it.
+    let private = common::scratch("codex-confined-private").join("secret.scxml");
+    fs::write(&private, "CANARY-not-for-the-client").unwrap();
+    let text = format!(
+        r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" initial="a"><sce:import as="L" src="{}" kind="enum"/></scxml>"#,
+        private.display()
+    );
+    let fake = Fake::answering("codex-confined", &answer(&text));
+    let client = verified(&fake);
+
+    let refused = generate(&client).unwrap_err();
+
+    let GenerateError::Unusable(said) = refused else {
+        panic!("not an answer that cannot be used: {refused:?}");
+    };
+    assert!(said.contains("the answer is not usable"), "{said}");
+    assert!(!said.contains("CANARY"), "{said}");
+    assert!(!said.contains(private.to_str().unwrap()), "{said}");
 }
 
 #[test]

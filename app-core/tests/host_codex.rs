@@ -60,7 +60,7 @@ fn programs(label: &str) -> Programs {
     common::write_program(
         &codex,
         "#!/bin/sh\n\
-         if [ \"$1\" = \"--version\" ]; then echo 'codex-cli 0.159.0'; exit 0; fi\n\
+         if [ \"$1\" = \"--version\" ]; then echo 'codex-cli 0.159.1'; exit 0; fi\n\
          if [ \"$1\" = \"features\" ]; then printf 'shell_tool  stable  true\\n'; exit 0; fi\n\
          if [ \"$1\" = \"login\" ]; then echo 'Logged in using ChatGPT'; exit 0; fi\n\
          cat > /dev/null\nexit 1\n",
@@ -174,10 +174,10 @@ fn a_computer_with_codex_and_no_claude_hosts_for_the_connections_it_has() {
 
     assert_eq!(host.not_hosted(), None);
     // The executor is reported as the client there is, with that client's version.
-    assert_eq!(host.client_version().as_deref(), Some("0.159.0"));
+    assert_eq!(host.client_version().as_deref(), Some("0.159.1"));
     let said = &store.host_status().unwrap().hosts[0];
     assert!(said.host.hosting);
-    assert_eq!(said.host.client_version.as_deref(), Some("0.159.0"));
+    assert_eq!(said.host.client_version.as_deref(), Some("0.159.1"));
     // The runner says what it is on its own thread, a moment after the host is up.
     within_ten_seconds("the executor did not report itself", || {
         !store.adapter_status().unwrap().adapters.is_empty()
@@ -202,7 +202,7 @@ fn a_request_made_for_codex_waits_with_its_reason_where_the_screen_reads_it() {
         Some((connections, Policy::shipped())),
     );
 
-    // The shipped build has verified no version of Codex, so the request is not run, and the
+    // This stand-in reports an unverified version, so the request is not run, and the
     // person is told so instead of waiting for an AI that will not come.
     within_ten_seconds("the request was not said to wait", || {
         !store.host_status().unwrap().hosts[0]
@@ -353,6 +353,6 @@ fn a_host_started_before_codex_was_installed_hosts_once_it_is() {
     within_ten_seconds("the host did not start once Codex was installed", || {
         host.not_hosted().is_none()
     });
-    assert_eq!(host.client_version().as_deref(), Some("0.159.0"));
+    assert_eq!(host.client_version().as_deref(), Some("0.159.1"));
     drop(host);
 }

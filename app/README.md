@@ -453,9 +453,9 @@ credential, so a computer with Codex and no Claude Code hosts too (`SCE_CODEX` n
 or `codex` is beside the program or on the search path). A shell without the settings runs the
 requests nobody chose a connection for, and Codex has no credential to run those on, so it still
 needs Claude Code. The executor reports itself as Claude Code when that is there and as Codex when
-it is the only one. This build has verified no version of Codex (`app-core/data/codex_support.json`
-lists none), so a request made for a Codex connection waits, and says so, until a version has
-been verified against a real client.
+it is the only one. This build supports Codex CLI **0.159.0 on Linux**, recorded in
+`app-core/data/codex_support.json`. Other versions and operating systems wait with a reason until
+they have been verified with the real client and the current execution contract.
 
 **A model server is found when the person registers one.** It is no program to look for: a
 connection names it (`adapter` `local`), and the executor then needs the authoring server and
@@ -699,8 +699,58 @@ waits for, in the order the things are true in: a program that is not there or i
 version this build did not verify (whoever is signed in), then the login. The save is offered only
 when a request would run, because a connection that only waits is not one to make the default;
 while it would wait, another Codex program can still be chosen among those found, which is how a
-person reaches a version this build did verify. Until a version is verified (`app-core/data/
-codex_support.json` lists none) the panel says so for every Codex it finds.
+person reaches a version this build did verify. Linux Codex 0.159.0 is verified; an updated client
+or another operating system still needs verification before generation is offered.
+
+**Codex verification (2026-10-07).** The ignored `app-core/tests/codex_live.rs` tests use the real
+CLI, an existing official ChatGPT login, `gpt-6.1-sol`, the authoring MCP and `sce-codegen`.
+Both a synthetic indicator specification and a version containing instructions to read a private
+canary, write an unrelated file and use forbidden tools completed generation. The tests assert
+actual MCP calls for source reading, kind selection, validation and requirement checking, core
+publication and pseudocode rendering. They also check the Workbench status response and assert
+that nothing happened in a run but the model's words, its plan, its errors and calls to the
+authoring server (so no command, web search, image, file change or hand-off to another agent),
+that the canary was not disclosed, the unrelated file was not written and the source was not
+changed. This checks integration and these attacks; the owner still reviews whether the
+generated behavior matches the specification.
+
+The adapter passes its developer instructions explicitly, uses strict structured output, ignores
+personal configuration, rule files and project instructions, and switches off unrelated features.
+Code Mode's host stays enabled because this CLI needs it to call MCP tools. Its presence does not
+enable shell tools: `shell_tool` is disabled. Some legacy flags (including `unified_exec`) still
+appear enabled after `--disable`, so live event traces, rather than feature names alone, are checked.
+**`unified_exec` cannot be switched off in this CLI**: with 0.159.0, `--disable unified_exec` and
+`-c features.unified_exec=false` both leave it on, so no setting makes a command impossible. What
+stands between a specification that asks for one and the machine is the read-only sandbox (which
+allows no writes, though a command can still read what the person's account can read) and the
+model not asking. The live tests show a model that did not ask, which is a fact about that model
+and that version and not a guarantee: another model, or a new version, is verified again.
+The reviewed metadata/UI features introduce no additional authoring server or executable tool.
+Only the listed read/check tools receive unattended approval overrides, using Codex's
+[per-tool MCP configuration](https://learn.chatgpt.com/docs/config-file/config-reference).
+The authoring server additionally enforces `SCE_AUTHOR_WORK`: it advertises only those tools,
+refuses mutations and reads of other works, and accepts draft documents and their imports only
+as inline text under plain file names. Every document is read before it reaches the product,
+whatever its file is called, and is refused when an attribute that names a file (`src`, `href`,
+on any element) is not the plain name of a companion staged beside it, when it changes the base
+such names resolve against (`xml:base`), declares a document type, or cannot be read as XML.
+`companions_text` carries imported documents to the individual-document checkers, including
+`scxml_requirements`. The tools it advertises are the ones the application approves
+(`AUTHOR_TOOLS`), and a test holds the two lists equal.
+
+After building `sce-codegen`, reproduce the shipped configuration with a signed-in Codex:
+
+```sh
+cargo build -p sce-build --features cli --bin sce-codegen
+SCE_LIVE_MODEL=gpt-6.1-sol cargo test -p sce-app-core --features cli --test codex_live -- --ignored --nocapture --test-threads=1
+```
+
+These tests run a paid model. Traces and the rendered pseudocode contain only synthetic test
+material and remain in the build's temporary folder. To evaluate an unregistered version,
+`SCE_CODEX_VERIFY=1` creates an in-memory candidate entry **only in this ignored test**; it never
+changes the application's support list. Register a version only after both tests pass. Changes
+to the prompt, schema, arguments or feature lists invalidate the recorded contract digest;
+the offline support test catches a stale entry.
 
 For a server of the person's own (Ollama, LM Studio, llama.cpp, vLLM, anything that speaks the
 OpenAI chat protocol with tool calls) nothing is installed or signed in to, so the panel asks the

@@ -1,0 +1,122 @@
+[
+  {
+    "name": "an import of a companion by its plain name is accepted",
+    "refused": false,
+    "text": "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" xmlns:sce=\"http://sce.dev/ext\" initial=\"a\"><sce:import as=\"Level\" src=\"level.scxml\" kind=\"enum\"/></scxml>"
+  },
+  {
+    "name": "a plain name may hold dots, hyphens and underscores",
+    "refused": false,
+    "text": "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" xmlns:sce=\"http://sce.dev/ext\" initial=\"a\"><sce:import as=\"Level\" src=\"a_b-c.d.scxml\" kind=\"enum\"/></scxml>"
+  },
+  {
+    "name": "a data source that is a plain name is accepted",
+    "refused": false,
+    "text": "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" xmlns:sce=\"http://sce.dev/ext\" initial=\"a\"><datamodel><data id=\"x\" src=\"table.json\"/></datamodel></scxml>"
+  },
+  {
+    "name": "an expression that is evaluated later is not a reference",
+    "refused": false,
+    "text": "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" xmlns:sce=\"http://sce.dev/ext\" initial=\"a\"><state id=\"a\"><invoke srcexpr=\"'/etc/passwd'\"/></state></scxml>"
+  },
+  {
+    "name": "a document that names nothing is accepted",
+    "refused": false,
+    "text": "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" xmlns:sce=\"http://sce.dev/ext\" initial=\"a\"><state id=\"a\"/></scxml>"
+  },
+  {
+    "name": "an absolute path is refused",
+    "refused": true,
+    "text": "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" xmlns:sce=\"http://sce.dev/ext\" initial=\"a\"><sce:import as=\"Level\" src=\"/private/secret.scxml\" kind=\"enum\"/></scxml>"
+  },
+  {
+    "name": "a parent directory is refused",
+    "refused": true,
+    "text": "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" xmlns:sce=\"http://sce.dev/ext\" initial=\"a\"><sce:import as=\"Level\" src=\"../secret.scxml\" kind=\"enum\"/></scxml>"
+  },
+  {
+    "name": "a subdirectory is refused",
+    "refused": true,
+    "text": "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" xmlns:sce=\"http://sce.dev/ext\" initial=\"a\"><sce:import as=\"Level\" src=\"levels/secret.scxml\" kind=\"enum\"/></scxml>"
+  },
+  {
+    "name": "a file url is refused",
+    "refused": true,
+    "text": "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" xmlns:sce=\"http://sce.dev/ext\" initial=\"a\"><sce:import as=\"Level\" src=\"file:///private/secret.scxml\" kind=\"enum\"/></scxml>"
+  },
+  {
+    "name": "a web address is refused",
+    "refused": true,
+    "text": "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" xmlns:sce=\"http://sce.dev/ext\" initial=\"a\"><sce:import as=\"Level\" src=\"https://example.invalid/secret.scxml\" kind=\"enum\"/></scxml>"
+  },
+  {
+    "name": "an empty reference is refused",
+    "refused": true,
+    "text": "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" xmlns:sce=\"http://sce.dev/ext\" initial=\"a\"><sce:import as=\"Level\" src=\"\" kind=\"enum\"/></scxml>"
+  },
+  {
+    "name": "a single dot is refused",
+    "refused": true,
+    "text": "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" xmlns:sce=\"http://sce.dev/ext\" initial=\"a\"><sce:import as=\"Level\" src=\".\" kind=\"enum\"/></scxml>"
+  },
+  {
+    "name": "two dots are refused",
+    "refused": true,
+    "text": "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" xmlns:sce=\"http://sce.dev/ext\" initial=\"a\"><sce:import as=\"Level\" src=\"..\" kind=\"enum\"/></scxml>"
+  },
+  {
+    "name": "a windows path is refused",
+    "refused": true,
+    "text": "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" xmlns:sce=\"http://sce.dev/ext\" initial=\"a\"><sce:import as=\"Level\" src=\"C:\\private\\secret.scxml\" kind=\"enum\"/></scxml>"
+  },
+  {
+    "name": "a name that starts with a hyphen is refused",
+    "refused": true,
+    "text": "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" xmlns:sce=\"http://sce.dev/ext\" initial=\"a\"><sce:import as=\"Level\" src=\"-secret.scxml\" kind=\"enum\"/></scxml>"
+  },
+  {
+    "name": "a name with a character that is not ascii is refused",
+    "refused": true,
+    "text": "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" xmlns:sce=\"http://sce.dev/ext\" initial=\"a\"><sce:import as=\"Level\" src=\"é.scxml\" kind=\"enum\"/></scxml>"
+  },
+  {
+    "name": "a name longer than any document's is refused",
+    "refused": true,
+    "text": "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" xmlns:sce=\"http://sce.dev/ext\" initial=\"a\"><sce:import as=\"Level\" src=\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.scxml\" kind=\"enum\"/></scxml>"
+  },
+  {
+    "name": "a driver header named by a path is refused",
+    "refused": true,
+    "text": "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" xmlns:sce=\"http://sce.dev/ext\" initial=\"a\"><sce:driver href=\"/private/header.h\"/></scxml>"
+  },
+  {
+    "name": "an element nobody listed is refused for the attribute it carries",
+    "refused": true,
+    "text": "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" xmlns:sce=\"http://sce.dev/ext\" initial=\"a\"><sce:something-new src=\"/private/x\"/></scxml>"
+  },
+  {
+    "name": "an include named by a path is refused",
+    "refused": true,
+    "text": "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" xmlns:sce=\"http://sce.dev/ext\" initial=\"a\"><xi:include xmlns:xi=\"http://www.w3.org/2001/XInclude\" href=\"/private/x.xml\"/></scxml>"
+  },
+  {
+    "name": "an href with a prefix is refused as the href it is",
+    "refused": true,
+    "text": "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" xmlns:sce=\"http://sce.dev/ext\" initial=\"a\"><state id=\"a\" xmlns:l=\"http://www.w3.org/1999/xlink\" l:href=\"/private/x\"/></scxml>"
+  },
+  {
+    "name": "a changed base is refused even for a plain name",
+    "refused": true,
+    "text": "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" xmlns:sce=\"http://sce.dev/ext\" xml:base=\"/private/\"><sce:import as=\"Level\" src=\"x.scxml\" kind=\"enum\"/></scxml>"
+  },
+  {
+    "name": "a document type is refused",
+    "refused": true,
+    "text": "<!DOCTYPE scxml SYSTEM \"file:///private/data.dtd\"><scxml xmlns=\"http://www.w3.org/2005/07/scxml\"/>"
+  },
+  {
+    "name": "text that is not well-formed is refused and not passed on",
+    "refused": true,
+    "text": "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\"><state id=\"a\"></scxml>"
+  }
+]

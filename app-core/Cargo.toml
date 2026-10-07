@@ -47,6 +47,12 @@ name = "claude_code_live"
 path = "tests/claude_code_live.rs"
 required-features = ["cli"]
 
+# Real Codex and MCP verification, explicitly opted into because it runs a paid model.
+[[test]]
+name = "codex_live"
+path = "tests/codex_live.rs"
+required-features = ["cli"]
+
 # The same, with a model on a model server the person runs (Ollama, llama.cpp, vLLM, LM Studio):
 # ignored unless asked for, and needs the server named in the environment.
 [[test]]
@@ -71,6 +77,9 @@ clap = { version = "4", features = ["derive"], optional = true }
 # (backends/rust/mesh/Cargo.toml), so that a build needs no TLS library of the system's.
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 webpki-roots = "1"
+# Reads a document an AI wrote, to refuse one that names a file (`src/document_files.rs`). The
+# reader the checker's own build uses (sce-build), which has no dependencies of its own.
+roxmltree = "0.20"
 
 [dev-dependencies]
 serde_json = "1"

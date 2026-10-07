@@ -21,6 +21,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 
+use crate::document_files::refuse_file_access;
 use crate::model_set::{Document, ModelFiles};
 use crate::requirements::Requirements;
 use crate::revision::Revision;
@@ -64,6 +65,13 @@ pub(crate) fn draft_from(answer: &Value) -> Result<Draft, String> {
             _ => Err("every entry of `model.documents` has a `name` and a `text`".to_string()),
         })
         .collect::<Result<_, _>>()?;
+    // The answer is the last thing a client writes and the first the application hands to the
+    // checker, with no authoring server between: what the server refuses a document for when it
+    // is handed over to be checked is refused here too, before the checker opens a file it names.
+    for document in &documents {
+        refuse_file_access(&document.name, &document.text)
+            .map_err(|why| format!("the answer is not usable: {why}"))?;
+    }
     let entry = answer["model"]["entry"].as_str();
     let model = match (documents.len(), entry) {
         (0, _) => return Err("`model.documents` is empty: the model has no documents".to_string()),
@@ -90,17 +98,20 @@ pub(crate) fn draft_from(answer: &Value) -> Result<Draft, String> {
 pub(crate) fn schema() -> Value {
     json!({
         "type": "object",
+        "additionalProperties": false,
         "required": ["model", "requirements"],
         "properties": {
             "model": {
                 "type": "object",
-                "required": ["documents"],
+                "additionalProperties": false,
+                "required": ["documents", "entry"],
                 "properties": {
                     "documents": {
                         "type": "array",
                         "minItems": 1,
                         "items": {
                             "type": "object",
+                            "additionalProperties": false,
                             "required": ["name", "text"],
                             "properties": {
                                 "name": {"type": "string"},
@@ -108,15 +119,16 @@ pub(crate) fn schema() -> Value {
                             },
                         },
                     },
-                    "entry": {"type": "string"},
+                    "entry": {"type": ["string", "null"]},
                 },
             },
             "requirements": {
                 "type": "object",
-                "required": ["manifest_text"],
+                "additionalProperties": false,
+                "required": ["manifest_text", "sidecar_text"],
                 "properties": {
                     "manifest_text": {"type": "string"},
-                    "sidecar_text": {"type": "string"},
+                    "sidecar_text": {"type": ["string", "null"]},
                 },
             },
         },
@@ -163,7 +175,10 @@ pub(crate) fn prompt(job: &Job) -> String {
             and cite it as sce:assumed=\"<id>\"; never leave an answered question \
             sce:unresolved.\n\
          3. Build the requirement list from `source.text` with scxml_requirement_set, and check \
-            the design against it with scxml_requirements.\n\
+            the design against it with scxml_requirements. Hand documents over as text. For \
+            a tool that takes document_text, also provide companions_text for every imported \
+            SCXML document, under the exact file name used by its import. Call decisions only \
+            when works_read provided a decisions_text record.\n\
          4. Do not call any tool that saves, takes a request or accepts: you have none. Your \
             last message is the draft in the form asked for: the model's documents exactly as \
             you checked them, and `manifest_text` and `sidecar_text` exactly as \
@@ -405,6 +420,98 @@ pub(crate) fn capture(mut command: Command, timeout: Duration) -> Result<Capture
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const SCXML: &str = r#"xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext""#;
+
+    /// An answer whose model is `documents` (name and text) with `entry` as its entry.
+    fn answer_of(documents: &[(&str, String)], entry: Option<&str>) -> Value {
+        json!({
+            "model": {
+                "documents": documents
+                    .iter()
+                    .map(|(name, text)| json!({"name": name, "text": text}))
+                    .collect::<Vec<_>>(),
+                "entry": entry,
+            },
+            "requirements": {"manifest_text": "{}\n", "sidecar_text": null},
+        })
+    }
+
+    #[test]
+    fn an_answer_whose_document_names_a_file_is_not_a_draft() {
+        // The answer is handed to the checker as it is, and what the checker finds in a file the
+        // document names comes back in its diagnostics, to the AI, when a draft is asked for again.
+        let text = format!(
+            r#"<scxml {SCXML} initial="a"><sce:import as="L" src="/private/secret.scxml" kind="enum"/></scxml>"#
+        );
+
+        let said = draft_from(&answer_of(&[("main.scxml", text)], None)).unwrap_err();
+
+        assert!(said.starts_with("the answer is not usable"), "{said}");
+        assert!(said.contains("main.scxml"), "{said}");
+    }
+
+    #[test]
+    fn what_a_companion_names_is_checked_as_what_the_entry_names_is() {
+        let entry = format!(
+            r#"<scxml {SCXML} initial="a"><sce:import as="L" src="levels.scxml" kind="enum"/></scxml>"#
+        );
+        let companion = format!(
+            r#"<scxml {SCXML} initial="a"><sce:import as="M" src="../secret.scxml" kind="enum"/></scxml>"#
+        );
+
+        let said = draft_from(&answer_of(
+            &[("main.scxml", entry), ("levels.scxml", companion)],
+            Some("main.scxml"),
+        ))
+        .unwrap_err();
+
+        assert!(said.contains("levels.scxml"), "{said}");
+    }
+
+    #[test]
+    fn documents_that_name_each_other_by_plain_names_are_a_draft() {
+        let entry = format!(
+            r#"<scxml {SCXML} initial="a"><sce:import as="L" src="levels.scxml" kind="enum"/></scxml>"#
+        );
+        let companion = format!(r#"<scxml {SCXML} initial="a"><state id="a"/></scxml>"#);
+
+        let draft = draft_from(&answer_of(
+            &[("main.scxml", entry), ("levels.scxml", companion)],
+            Some("main.scxml"),
+        ));
+
+        assert!(draft.is_ok(), "{:?}", draft.err());
+    }
+
+    #[test]
+    fn the_answer_schema_satisfies_strict_structured_output_rules() {
+        fn check(value: &Value) {
+            if value["type"] == "object" {
+                assert_eq!(value["additionalProperties"], false);
+                let properties = value["properties"].as_object().unwrap();
+                let required = value["required"].as_array().unwrap();
+                assert_eq!(required.len(), properties.len());
+                for (key, child) in properties {
+                    assert!(required.contains(&json!(key)));
+                    check(child);
+                }
+            }
+            if let Some(items) = value.get("items") {
+                check(items);
+            }
+        }
+        let answer = schema();
+        check(&answer);
+        assert_eq!(
+            answer["properties"]["model"]["properties"]["entry"]["type"],
+            json!(["string", "null"])
+        );
+        assert_eq!(
+            answer["properties"]["requirements"]["properties"]["sidecar_text"]["type"],
+            json!(["string", "null"])
+        );
+    }
 
     #[test]
     fn a_limit_is_said_in_the_unit_it_was_given_in() {

@@ -79,10 +79,12 @@ fn programs(label: &str) -> Programs {
         ),
     );
     let codex = dir.join("codex");
+    // A version the shipped support list does not verify: these tests wait on that, and the
+    // version the list verifies would let the request run.
     common::write_program(
         &codex,
         "#!/bin/sh\n\
-         if [ \"$1\" = \"--version\" ]; then echo 'codex-cli 0.159.0'; exit 0; fi\n\
+         if [ \"$1\" = \"--version\" ]; then echo 'codex-cli 0.159.1'; exit 0; fi\n\
          if [ \"$1\" = \"features\" ]; then printf 'shell_tool  stable  true\\n'; exit 0; fi\n\
          if [ \"$1\" = \"login\" ]; then echo 'Logged in using ChatGPT'; exit 0; fi\n\
          cat > /dev/null\nexit 1\n",
@@ -194,7 +196,7 @@ fn a_host_that_started_with_codex_runs_for_claude_code_installed_after_it() {
 
     // Hosting for Codex, and the request made for Claude Code waits, saying why.
     assert_eq!(host.not_hosted(), None);
-    assert_eq!(host.client_version().as_deref(), Some("0.159.0"));
+    assert_eq!(host.client_version().as_deref(), Some("0.159.1"));
     within_ten_seconds("the request was not said to wait", || {
         waiting_reason(&works).is_some()
     });

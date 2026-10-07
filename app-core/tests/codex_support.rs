@@ -77,7 +77,7 @@ fn a_line_that_is_not_a_feature_is_not_one() {
 
 #[test]
 fn nothing_is_verified_in_a_build_nobody_has_verified_a_version_for() {
-    let shipped = Support::shipped();
+    let shipped = support("[]", &["shell_tool"], &[]);
 
     assert!(shipped.verified().is_empty());
     let refused = shipped
@@ -87,6 +87,31 @@ fn nothing_is_verified_in_a_build_nobody_has_verified_a_version_for() {
         matches!(refused, Unsupported::Version { .. }),
         "{refused:?}"
     );
+}
+
+#[test]
+fn shipped_verifications_name_the_current_execution_contract() {
+    let shipped = Support::shipped();
+    let instructions = sce_app_core::codex::instructions_of(&shipped);
+    assert!(shipped
+        .verified()
+        .iter()
+        .any(|v| v.os == "linux" && v.version == "0.159.0"));
+    for entry in shipped.verified() {
+        assert_eq!(
+            entry.instructions, instructions,
+            "execution contract changed: rerun codex_live before updating support"
+        );
+        assert!(shipped
+            .check(&entry.os, &entry.version, &instructions, &[])
+            .is_ok());
+    }
+    assert!(shipped
+        .check("windows", "0.159.0", &instructions, &[])
+        .is_err());
+    assert!(shipped
+        .check("linux", "0.159.1", &instructions, &[])
+        .is_err());
 }
 
 #[test]

@@ -54,14 +54,24 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import pathlib
 import re
 import sys
 import tempfile
 import traceback
+import xml.etree.ElementTree as ET
 
 from . import brief as brief_sections
 from .brief import assemble
+
+# A headless Workbench generation is scoped to one work, with inline drafts only. The
+# application sets this in the server's environment; specification text cannot change it.
+WORKBENCH_TOOLS = frozenset({
+    "works_read", "scxml_kinds", "validate_scxml", "validate_scxml_set",
+    "scxml_unresolved", "decisions", "scxml_requirement_set", "scxml_requirements",
+    "render_scxml_pseudocode",
+})
 
 # The most the brief returns in one result. ⚠ Chosen for the smallest client:
 # a result near this size is about 15k tokens, which a 32k-context model can
@@ -314,7 +324,17 @@ _LEXICON_INPUT = {
                 "Vocabulary of the pseudocode page, passed to the generator "
                 "(default `en`; `ko` renders the grammar's words in Korean)."},
 }
-_DOCUMENT_INPUT = _file_input("document", "the SCXML document")
+_DOCUMENT_INPUT = {
+    **_file_input("document", "the SCXML document"),
+    "companions_text": {
+        "type": "array",
+        "description": "With document_text: the other SCXML documents it imports, each under its file name.",
+        "items": {
+            "type": "object", "required": ["name", "text"],
+            "properties": {"name": {"type": "string"}, "text": {"type": "string"}},
+        },
+    },
+}
 # ⚠ The description says what the file IS. Measured 2026-10-01 on a GPT run: the
 # input said only "the requirement manifest", and the client, having no format to
 # go on, wrote one by hand as YAML, was refused three times, and made the list
@@ -1871,6 +1891,54 @@ class ToolArgumentError(AuthoringError):
 # no directory, so it lands in the staging directory and nowhere else.
 _FILE_NAME = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]*")
 
+# What a staged text is is the tool's word, in the key it stages it under, and never the
+# caller's: a caller names the file as it likes (`main.txt`), and the product reads it as SCXML
+# all the same. These are the keys under which an SCXML document is staged.
+_SCXML_KEYS = frozenset({"document", "documents", "companions", "model", "design"})
+
+# An attribute that makes the product open a file, on whatever element it is: `sce:import src`,
+# `sce:driver href`, `script src`, `data src`, `invoke src`, an XInclude's `href`. Taken by the
+# attribute's name and not by a list of elements, so that an element the list did not know is
+# not a way round it.
+_FILE_ATTRIBUTES = frozenset({"src", "href"})
+_XML_BASE = "{http://www.w3.org/XML/1998/namespace}base"
+
+# The longest a document's file name is in the application (`MAX_NAME_CHARS`,
+# app-core/src/model_set.rs): a longer reference names no document of a draft. The application
+# reads the answer it ends with by the same rule (app-core/src/document_files.rs), and the cases
+# in tests/fixtures/file_references.json hold the two to it.
+_MAX_NAME_CHARS = 100
+
+
+def _refuse_file_access_in(text: str) -> None:
+    """Refuse an SCXML document handed over for a Workbench generation that would send the
+    product to a file this call did not stage.
+
+    A path hidden *inside* an inline document must not restore the file access the tools'
+    own arguments were stripped of: the product opens what an import names, and tells a file
+    that is there from one that is not. References are plain names, resolved only among the
+    companions staged beside the document. A document that cannot be read as XML here is
+    refused here too, and not passed on: a document this reader refuses and the product's
+    reader accepts would be a way past the check.
+    """
+    if re.search(r"<!DOCTYPE", text, re.IGNORECASE):
+        raise ToolArgumentError("Workbench SCXML cannot include a document type declaration")
+    try:
+        root = ET.fromstring(text)
+    except ET.ParseError as error:
+        raise ToolArgumentError(f"the document is not well-formed XML: {error}") from None
+    for node in root.iter():
+        for attribute, value in node.attrib.items():
+            if attribute == _XML_BASE:
+                raise ToolArgumentError(
+                    "Workbench SCXML cannot change the base its references resolve against")
+            if attribute.rsplit("}", 1)[-1] in _FILE_ATTRIBUTES and (
+                    not _FILE_NAME.fullmatch(value) or set(value) == {"."}
+                    or len(value) > _MAX_NAME_CHARS):
+                raise ToolArgumentError(
+                    "Workbench SCXML references must name inline companions, "
+                    "not local paths or URLs")
+
 
 class _Staging:
     """Where files handed over as text are written for the product to read.
@@ -1915,6 +1983,8 @@ class _Staging:
             raise ToolArgumentError(
                 f"'{key}_name' has to be a plain file name such as door.scxml, "
                 f"not {name!r}")
+        if os.environ.get("SCE_AUTHOR_WORK") and key in _SCXML_KEYS:
+            _refuse_file_access_in(text)
         if (directory, name) in self._names:
             raise ToolArgumentError(f"two files are named {name!r}")
         self._names.add((directory, name))
@@ -1934,7 +2004,13 @@ class _Staging:
             # Defaulted only when absent: an empty name is a caller's
             # mistake, and naming the file for them would hide it.
             name = args.get(f"{key}_name")
-            return self.write(default_name if name is None else name, text, key)
+            document = self.write(default_name if name is None else name, text, key)
+            if key == "document" and args.get("companions_text") is not None:
+                for child_name, child_text in _files_of(args["companions_text"], "'companions_text'"):
+                    self.write(child_name, child_text, "companions")
+            return document
+        if key == "document" and args.get("companions_text") is not None:
+            raise ToolArgumentError("'companions_text' requires 'document_text'")
         if path is None:
             if required:
                 raise ToolArgumentError(f"'{key}' or '{key}_text' is required: {what}")
@@ -1987,6 +2063,9 @@ class _Staging:
         return pathlib.Path("asked") / name
 
     def refuse_path(self, key: str) -> None:
+        if os.environ.get("SCE_AUTHOR_WORK"):
+            raise ToolArgumentError(
+                f"'{key}' names a local file; Workbench generation accepts only '{key}_text'")
         if self.remote:
             raise ToolArgumentError(
                 f"'{key}' names a file on the machine this server runs on, "
@@ -3411,6 +3490,12 @@ def call_tool(name: str, args: dict, *, remote: bool = False,
     """
     if designs_withheld is _NOT_STATED:
         designs_withheld = DESIGNS_WITHHELD if remote else None
+    work = os.environ.get("SCE_AUTHOR_WORK")
+    if work:
+        if name not in WORKBENCH_TOOLS:
+            return _failure(f"'{name}' is not available during Workbench generation")
+        if name == "works_read" and args.get("work") != work:
+            return _failure("Workbench generation may read only its assigned work")
     try:
         if name in _PACK_FREE:
             staging = _Staging(remote, designs_withheld)
@@ -3708,7 +3793,8 @@ def handle(message, *, remote: bool = False, designs_withheld=_NOT_STATED) -> di
             "instructions": SERVER_INSTRUCTIONS,
         }
     elif method == "tools/list":
-        result = {"tools": TOOLS}
+        result = {"tools": [t for t in TOOLS if t["name"] in WORKBENCH_TOOLS]
+                  if os.environ.get("SCE_AUTHOR_WORK") else TOOLS}
     elif method == "tools/call":
         params = message.get("params") or {}
         if not isinstance(params, dict):

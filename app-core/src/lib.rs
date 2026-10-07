@@ -52,6 +52,7 @@ pub mod codex_support;
 pub mod commands;
 pub mod connection;
 pub mod directory;
+mod document_files;
 pub mod error;
 pub mod figures;
 pub mod host;

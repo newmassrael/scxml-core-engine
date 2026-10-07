@@ -46,7 +46,10 @@ fn store(label: &str) -> Arc<WorkStore<Arc<ManualClock>>> {
 /// is ready (and speaks the protocol, for the run that is made for a server).
 fn settings(label: &str) -> HostSettings {
     let mut settings = HostSettings::from_lookup("desktop", lookup);
+    // Both named, and nowhere: a client left unnamed is looked for on the search path, and the one
+    // that is installed on the computer that runs the test is then the one found.
     settings.claude = Some(PathBuf::from("/nowhere/claude"));
+    settings.codex = Some(PathBuf::from("/nowhere/codex"));
     settings.author = Some(authoring_server(&common::scratch(label), &AUTHOR_TOOLS).command);
     settings.retry = Duration::from_millis(50);
     settings

@@ -136,9 +136,18 @@ impl Codex {
 
     /// The arguments of a run, which are what a person verifies. `scratch` is the folder the run
     /// works in, and `last` the file it writes its last message to.
-    fn arguments(&self, scratch: &Path, schema_file: &Path, last: &Path) -> Vec<String> {
+    fn arguments(
+        &self,
+        scratch: &Path,
+        schema_file: &Path,
+        last: &Path,
+        work: &str,
+    ) -> Vec<String> {
+        let mut author = self.author.clone();
+        author.env.retain(|(name, _)| name != "SCE_AUTHOR_WORK");
+        author.env.push(("SCE_AUTHOR_WORK".into(), work.into()));
         exec_arguments(
-            &self.author,
+            &author,
             self.support.disabled_features(),
             self.config.model.as_deref(),
             scratch,
@@ -192,6 +201,8 @@ fn exec_arguments(
     args.extend([
         "--ephemeral".into(),
         "--ignore-user-config".into(),
+        "--ignore-rules".into(),
+        "--strict-config".into(),
         "-s".into(),
         "read-only".into(),
         "--skip-git-repo-check".into(),
@@ -220,9 +231,12 @@ fn run_settings(author: &AuthorServer) -> Vec<String> {
         .iter()
         .map(|(name, value)| format!("{}={}", toml_string(name), toml_string(value)))
         .collect();
-    vec![
+    let mut settings = vec![
         "approval_policy=\"never\"".to_string(),
         "web_search=\"disabled\"".to_string(),
+        "agents.enabled=false".to_string(),
+        "project_doc_max_bytes=0".to_string(),
+        format!("developer_instructions={}", toml_string(SYSTEM_PROMPT)),
         auth_store_override(),
         format!(
             "{}={}",
@@ -240,6 +254,7 @@ fn run_settings(author: &AuthorServer) -> Vec<String> {
                 .join(",")
         ),
         format!("{}={{{}}}", key("env"), env.join(",")),
+        format!("{}=true", key("required")),
         format!(
             "{}=[{}]",
             key("enabled_tools"),
@@ -249,7 +264,16 @@ fn run_settings(author: &AuthorServer) -> Vec<String> {
                 .collect::<Vec<_>>()
                 .join(",")
         ),
-    ]
+    ];
+    // Only these read/check tools may run unattended. Unknown or newly added tools never get
+    // this override, and the scoped authoring server also refuses them at dispatch.
+    settings.extend(AUTHOR_TOOLS.iter().map(|name| {
+        format!(
+            "{}=\"approve\"",
+            key(&format!("tools.{name}.approval_mode"))
+        )
+    }));
+    settings
 }
 
 /// What decides where the client keeps a login, and the one place a login is kept for this build.
@@ -359,10 +383,16 @@ fn make_private_folder(path: &Path) -> std::io::Result<()> {
     folder.create(path)
 }
 
-/// The features `binary` has switched on, asked now.
+/// Default features, without the personal configuration a generation ignores. A private empty
+/// home is enough for this offline question; credentials stay in the home used for generation.
 pub fn features_on(binary: &Path) -> Result<Vec<String>, String> {
+    let scratch = Scratch::new("sce-codex-features")
+        .map_err(|e| format!("Codex feature check could not be prepared: {e}"))?;
     let mut command = Command::new(binary);
-    command.args(["features", "list"]);
+    command
+        .args(["features", "list"])
+        .current_dir(scratch.path())
+        .env("CODEX_HOME", scratch.path());
     let said =
         capture(command, SAY).map_err(|e| format!("Codex could not list its features: {e}"))?;
     if !said.status.success() {
@@ -450,7 +480,10 @@ fn instruction_material(support: &Support) -> String {
     let author = AuthorServer {
         command: PathBuf::from("<launcher>"),
         args: vec!["<argument>".to_string()],
-        env: vec![("<name>".to_string(), "<value>".to_string())],
+        env: vec![
+            ("<name>".to_string(), "<value>".to_string()),
+            ("SCE_AUTHOR_WORK".into(), "<work>".into()),
+        ],
     };
     let arguments = exec_arguments(
         &author,
@@ -610,7 +643,7 @@ impl Generator for Codex {
         let mut command = Command::new(&self.binary);
         command
             .current_dir(scratch.path())
-            .args(self.arguments(scratch.path(), &schema_file, &last))
+            .args(self.arguments(scratch.path(), &schema_file, &last, job.work.as_str()))
             .env_clear()
             .envs(kept)
             .stdin(Stdio::piped())

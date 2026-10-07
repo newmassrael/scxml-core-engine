@@ -32,7 +32,8 @@ use serde_json::{json, Value};
 
 use common::{scratch, FakeRenderer};
 
-const VERSION: &str = "0.159.0";
+// Deliberately outside the shipped support list. Tests that need verification build their own.
+const VERSION: &str = "0.159.1";
 
 const CHATGPT: &str = "Logged in using ChatGPT";
 const API_KEY: &str = "Logged in using an API key - sk-...abcd";
@@ -674,7 +675,7 @@ mod command {
 
         assert_eq!(said["codex"]["client"]["state"], "installed");
         assert_eq!(said["codex"]["client"]["version"], VERSION);
-        // This build has verified no version of Codex.
+        // This stand-in's version has not been verified by this build.
         assert_eq!(said["codex"]["support"]["state"], "unverified");
     }
 

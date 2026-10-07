@@ -635,6 +635,9 @@ mod hosting {
         let request = ask_for(&store, &id, Some(pin));
         let mut settings = HostSettings::from_lookup("desktop", lookup(&[]));
         settings.claude = Some(claude.clone());
+        // No Codex either: left unnamed it is looked for on the search path, and the one installed
+        // on the computer that runs this test would host the request before Claude Code is there.
+        settings.codex = Some(PathBuf::from("/nowhere/codex"));
         settings.author = Some(author);
         settings.retry = Duration::from_millis(50);
 
