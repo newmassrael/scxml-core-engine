@@ -342,7 +342,11 @@ to its words (carried, changed, new, retired) with what happened to the design's
 evidence for it (`scxml_acceptance_delta`): `outside-reach` when a design moved where
 the words did not (`moved-without-reason`) or still cites what the specification dropped
 (`retired-still-cited`), `within-reach` otherwise, with every place a second look should
-go (`look`). **scxml_revision_report** renders the same join as the page the owner reads:
+go (`look`). A requirement that no node cites, before or now, was not compared: it is
+`uncited`, counted apart (`summary.uncovered`) and never carried over, and when
+`summary.seen` is 0 (no requirement has evidence, or the kind of document has nowhere to
+cite one) the verdict says nothing about the design and the page says so.
+**scxml_revision_report** renders the same join as the page the owner reads:
 what carries over folded into one line, everything else listed with the places that
 moved, and a requirement's sentence printed only when given the sidecar of the revised
 list (the page then says it carries someone else's sentences). `within-reach` is not

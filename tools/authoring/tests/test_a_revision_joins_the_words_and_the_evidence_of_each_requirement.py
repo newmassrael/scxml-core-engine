@@ -54,7 +54,7 @@ class EveryRowOfTheTableComesOutOfTheJoin(unittest.TestCase):
         ("carried", "changed", "moved-without-reason", "violation"),
         ("carried", "dropped", "moved-without-reason", "violation"),
         ("carried", "new", "newly-cited", "look"),
-        ("carried", None, "carries-over", "ok"),
+        ("carried", None, "uncited", "uncovered"),
         ("changed", "changed", "revised", "ok"),
         ("changed", "new", "revised", "ok"),
         ("changed", "unchanged", "words-changed-design-same", "look"),
@@ -93,6 +93,52 @@ class EveryRowOfTheTableComesOutOfTheJoin(unittest.TestCase):
             found = row(revision.join(words(carried=["R9"]), evidence(line("R1", e))), "R1")
             self.assertEqual(("unlisted", "look", "unlisted"),
                              (found["kind"], found["severity"], found["words"]))
+
+
+class ARequirementNoNodeCitesWasNotCompared(unittest.TestCase):
+    """Found in review (2026-10-08): a carried requirement that no node cites, in the record or now,
+    was called `carries-over` and folded into the line that says the design was checked against it.
+    There was no evidence on either side, so nothing was checked."""
+
+    def test_it_is_uncited_and_counted_apart_and_never_carried_over(self):
+        result = revision.join(words(carried=["R1", "R2"]), evidence(line("R1", "unchanged")))
+        self.assertEqual(("carries-over", "ok"), (row(result, "R1")["kind"], row(result, "R1")["severity"]))
+        self.assertEqual(("uncited", "uncovered"), (row(result, "R2")["kind"], row(result, "R2")["severity"]))
+        self.assertEqual((1, 1, 1), (result["summary"]["uncovered"], result["summary"]["seen"],
+                                     result["summary"]["ok"]))
+        # It is not a finding against the revision.
+        self.assertEqual("within-reach", result["verdict"])
+
+    def test_the_page_lists_it_apart_and_does_not_fold_it_into_what_carries_over(self):
+        page = revision.render(revision.join(words(carried=["R1", "R2"]),
+                                             evidence(line("R1", "unchanged"))))
+        self.assertIn("## Not covered by this check (1)", page)
+        self.assertIn("- R2 -- uncited", page)
+        self.assertIn("## Carries over (1)", page)
+        carries = page.split("## Carries over")[1]
+        self.assertIn("R1", carries)
+        self.assertNotIn("R2", carries)
+        self.assertIn("cited by no node", page)
+
+    def test_a_check_that_saw_no_evidence_at_all_says_it_compared_nothing(self):
+        # A kind of document with nowhere to cite a requirement, or a design that cites none.
+        result = revision.join(words(carried=["R1", "R2", "R3"]), evidence())
+        self.assertEqual(0, result["summary"]["seen"])
+        self.assertEqual(3, result["summary"]["uncovered"])
+        self.assertEqual("within-reach", result["verdict"], "the verdict is unchanged: it is the page that must say")
+        page = revision.render(result)
+        self.assertIn("saw no evidence for any requirement", page)
+        self.assertIn("## Carries over (0)", page)
+
+    def test_no_such_warning_when_the_check_saw_something(self):
+        page = revision.render(revision.join(words(carried=["R1"]), evidence(line("R1", "unchanged"))))
+        self.assertNotIn("saw no evidence", page)
+        self.assertNotIn("Not covered", page)
+
+    def test_a_revision_that_lists_no_requirement_is_not_called_blind(self):
+        # Nothing listed, nothing to see: the empty revision is not "the check saw nothing".
+        page = revision.render(revision.join(words(), evidence()))
+        self.assertNotIn("saw no evidence", page)
 
 
 class OnlyAViolationMakesTheVerdictOutsideReach(unittest.TestCase):

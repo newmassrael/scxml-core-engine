@@ -20,6 +20,12 @@ words by the lineage; nothing here opens a file.
 ⚠ `carries-over` means the product's closure of what a requirement depends on reads the same
 (ADR 0007), not that the requirement is met, and an acceptance still lapses by its bytes. The page
 says so on its face.
+
+⚠ A requirement that no node cites, in the record or now, has no closure to read: it is `uncited`
+and `uncovered`, never `carries-over`. Folding it into "carries over" would say the design was
+checked against it when there was nothing to check (found in review, 2026-10-08). For a kind of
+document with nowhere to cite a requirement every requirement is `uncited`, and `summary.seen` is
+0: the check saw none of them, and the page says so.
 """
 
 from __future__ import annotations
@@ -29,7 +35,7 @@ from .errors import AuthoringError
 WORDS = ("carried", "changed", "new", "retired")
 EVIDENCE = ("unchanged", "changed", "new", "dropped")
 
-OK, LOOK, VIOLATION = "ok", "look", "violation"
+OK, LOOK, VIOLATION, UNCOVERED = "ok", "look", "violation", "uncovered"
 
 
 class RevisionError(AuthoringError):
@@ -93,7 +99,7 @@ _TABLE: dict[tuple[str, str | None], tuple[str, str]] = {
     ("carried", "changed"): ("moved-without-reason", VIOLATION),
     ("carried", "dropped"): ("moved-without-reason", VIOLATION),
     ("carried", "new"): ("newly-cited", LOOK),
-    ("carried", None): ("carries-over", OK),
+    ("carried", None): ("uncited", UNCOVERED),
     ("changed", "changed"): ("revised", OK),
     ("changed", "unchanged"): ("words-changed-design-same", LOOK),
     ("changed", "dropped"): ("changed-but-uncited", LOOK),
@@ -116,7 +122,9 @@ def join(words_delta: object, evidence_delta: object) -> dict:
     """The words and the evidence of a revision, joined by requirement id.
 
     ⚠ A requirement the words delta calls `carried` and no node cites, in the record or now, is
-    `carries-over`: nothing about it moved, and "not cited" is not a finding of this revision
+    `uncited` and `uncovered`: nothing about it moved, but nothing was compared either, and the
+    result counts it apart (`summary.uncovered`) so that "carries over" only ever means a requirement
+    whose evidence was read on both sides. It is not a finding against the revision
     (`scxml_requirements` already calls it `missing`)."""
     words = _words_of(words_delta)
     evidence, unclaimed = _evidence_of(evidence_delta)
@@ -142,6 +150,10 @@ def join(words_delta: object, evidence_delta: object) -> dict:
             "violations": len(violations),
             "look": sum(1 for r in rows if r["severity"] == LOOK) + (1 if added else 0),
             "ok": sum(1 for r in rows if r["severity"] == OK),
+            "uncovered": sum(1 for r in rows if r["severity"] == UNCOVERED),
+            # How many requirements the check saw evidence for, on either side. 0 with requirements
+            # listed means it compared nothing, whatever the verdict says.
+            "seen": sum(1 for r in rows if r["evidence"] != "none"),
             "kinds": summary,
         },
         "requirements": rows,
@@ -160,6 +172,8 @@ _WHY = {
     "revised": "its words and the design both moved",
     "implemented-new": "it is new and the design now carries it",
     "retired-cleanly": "the specification dropped it and no node cites it",
+    "uncited": "its words did not change and no node cites it, before or now, so there was nothing "
+               "to compare",
 }
 
 
@@ -182,8 +196,17 @@ def render(result: dict, sentences: dict[str, str] | None = None, *, title: str 
     if sentences is not None:
         out += ["⚠ This page carries sentences of the specification. It is a local artefact: do not "
                 "check it into a repository.", ""]
+    summary = result["summary"]
+    if summary["requirements"] and summary["seen"] == 0:
+        out += ["⚠ This check saw no evidence for any requirement: no node of the design cites one (or "
+                "its kind has nowhere to cite one), so it compared nothing. The verdict above says "
+                "nothing about the design.", ""]
+    elif summary["uncovered"]:
+        out += [f"{summary['uncovered']} requirement(s) are cited by no node, before or now, so this "
+                "check could not compare them; they are listed apart below and are not carried over.", ""]
     for heading, severity in (("Outside the revision's reach", VIOLATION), ("Look again", LOOK),
-                              ("Changed as the words asked", OK)):
+                              ("Changed as the words asked", OK),
+                              ("Not covered by this check", UNCOVERED)):
         group = [r for r in others if r["severity"] == severity]
         if not group:
             continue

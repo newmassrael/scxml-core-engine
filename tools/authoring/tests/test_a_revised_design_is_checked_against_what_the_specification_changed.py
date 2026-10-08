@@ -125,6 +125,18 @@ class ARevisedDesignIsCheckedAgainstWhatTheSpecificationChanged(unittest.TestCas
         self.assertEqual("within-reach", result["verdict"])
         self.assertEqual({"carries-over": len(ids)}, result["summary"]["kinds"])
 
+    def test_a_carried_requirement_no_node_cites_was_not_compared_and_is_not_carried_over(self):
+        ids = self.all_ids()
+        result = self.check("scxml_revision_check", words(carried=[*ids, "9.NOT-CITED"]))
+        self.assertEqual("within-reach", result["verdict"])
+        uncited = [r for r in result["requirements"] if r["kind"] == "uncited"]
+        self.assertEqual(["9.NOT-CITED"], [r["requirement"] for r in uncited])
+        self.assertEqual({"carries-over": len(ids), "uncited": 1}, result["summary"]["kinds"])
+        self.assertEqual((len(ids), 1), (result["summary"]["seen"], result["summary"]["uncovered"]))
+        page = self.check("scxml_revision_report", words(carried=[*ids, "9.NOT-CITED"]))["page"]
+        self.assertIn("## Not covered by this check (1)", page)
+        self.assertIn(f"## Carries over ({len(ids)})", page)
+
     def test_a_design_that_moved_where_the_words_did_not_is_outside_reach(self):
         ids = self.all_ids()
         self.edit_the_design()

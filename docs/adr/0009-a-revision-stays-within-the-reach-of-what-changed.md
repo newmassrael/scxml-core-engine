@@ -45,6 +45,7 @@ only what to look at again.**
    | words | evidence | kind | severity |
    |---|---|---|---|
    | carried | unchanged | `carries-over` | ok |
+   | carried | none (no node cites it, before or now) | `uncited` | uncovered |
    | carried | changed or dropped | `moved-without-reason` | **violation** |
    | carried | new | `newly-cited` | look |
    | changed | changed | `revised` | ok |
@@ -58,6 +59,16 @@ only what to look at again.**
 
    Rows that claim no requirement and are new to the design (`unclaimed.added`) are one more
    `look`: behaviour no sentence asked for.
+
+   ⚠ `uncited` is not `carries-over`. The first version of this table folded a carried requirement
+   that no node cites into `carries-over`, and the page then said the design had been checked
+   against it. A review found it the same day (2026-10-08): there is no evidence on either side, so
+   nothing was compared. `uncovered` is a severity of its own: it never changes the verdict, it is
+   counted apart (`summary.uncovered`), listed apart, and left out of the line of requirements that
+   carry over. `summary.seen` is the number of requirements the check saw evidence for. For a kind
+   of document with nowhere to cite a requirement (the product's `NoAnnotationSite`) every carried
+   requirement is `uncited` and `seen` is 0, and the page opens by saying the check compared
+   nothing, so a verdict of `within-reach` cannot be read as a finding about that design.
 2. **The verdict.** `outside-reach` when any finding is a violation, else `within-reach`. A
    violation is a design that moved where the specification did not ask it to, or kept a
    requirement the specification dropped. A `look` is a place a second look should go; it is never
@@ -107,7 +118,8 @@ and the whole path by `tests/test_a_revised_design_is_checked_against_what_the_s
 which runs the product's generator on the committed ISO design the other acceptance tests use:
 
 1. **Met.** Each row of the table is produced by the join: every (words, evidence) pair the join can
-   meet is one of twenty cases, and a test fails if a pair has no case.
+   meet is one of twenty cases, and a test fails if a pair has no case. (One of the twenty was
+   wrong when first written: see `uncited` above.)
 2. **Met.** A violation makes the verdict `outside-reach` and nothing else does: looks and new rows
    that claim nothing leave it `within-reach`.
 3. **Met.** A `delta` or an evidence object of the wrong shape is refused, and so is a requirement
