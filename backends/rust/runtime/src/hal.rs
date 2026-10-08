@@ -138,6 +138,9 @@ pub struct StdHal {
 /// loud-panicking fallback when no real HAL is wired.
 #[cfg(not(feature = "no_std"))]
 impl Hal for StdHal {
+    // The HAL is the door to the OS clock; this arm exists only where there is one
+    // (clippy.toml bans the call everywhere else in the crate).
+    #[allow(clippy::disallowed_methods)]
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     fn now_ticks_ms() -> u64 {
         // SAFETY: the EPOCH OnceLock is process-monotonic; Instant is
@@ -262,6 +265,9 @@ mod tests {
         );
     }
 
+    // Sleeps on the OS timer to watch the OS clock move, so it needs both.
+    #[allow(clippy::disallowed_methods)]
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     #[test]
     fn std_hal_ticks_observe_sleep_progress() {
         let t0 = StdHal::now_ticks_ms();

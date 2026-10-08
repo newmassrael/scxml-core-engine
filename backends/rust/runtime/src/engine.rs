@@ -4103,6 +4103,9 @@ impl<P: StatePolicy> Engine<P> {
     /// [`tick`](Self::tick) — from its own timer, or a worker's message loop —
     /// so it calls that. The function is left out of the build rather than left
     /// in to stop the module the first time it is called.
+    // The one place the engine reads the OS clock and blocks on an OS timer, and
+    // it is absent from a build for a target that has neither (clippy.toml).
+    #[allow(clippy::disallowed_methods)]
     #[cfg(all(
         not(feature = "no_std"),
         not(all(target_arch = "wasm32", target_os = "unknown"))

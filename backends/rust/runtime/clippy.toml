@@ -1,0 +1,23 @@
+# Reading or waiting on an operating-system clock is allowed in this crate in one
+# kind of place only: a function that is absent from a build for a target with no
+# such clock (`wasm32-unknown-unknown`), and says so with `#[cfg]` and an
+# `#[allow(clippy::disallowed_methods)]` beside it.
+#
+# Why a lint and not only the compile-time absence: on that target `Instant::now()`
+# and `SystemTime::now()` COMPILE and stop the module the first time they run, with
+# a message that names the platform and not the way out. A new call to one of them
+# in a path the engine takes would build, pass every native test, and trap in a
+# browser. The engine's time comes from `SceClock` (host-owned, `Manual` by default
+# on that target), never from here.
+#
+# This is the only crate of the web-facing three that needs the list: `forge-runtime`
+# and `portable-bytes` are unconditionally `#![no_std]`, so neither can name
+# `std::time` or `std::thread` at all. This crate is `std` unless its `no_std`
+# feature is on, which is why the ban is here.
+disallowed-methods = [
+    { path = "std::time::Instant::now", reason = "no clock on wasm32-unknown-unknown: it compiles and traps. Use the engine's SceClock, or cfg the function away on that target." },
+    { path = "std::time::Instant::elapsed", reason = "reads the OS clock like Instant::now" },
+    { path = "std::time::SystemTime::now", reason = "no clock on wasm32-unknown-unknown: it compiles and traps. Take the wall time from the host (save_at / restore_with)." },
+    { path = "std::time::SystemTime::elapsed", reason = "reads the OS clock like SystemTime::now" },
+    { path = "std::thread::sleep", reason = "blocks on an OS timer; the host drives the engine with tick() and advance_time_ms()." },
+]

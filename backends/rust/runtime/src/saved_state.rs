@@ -998,6 +998,8 @@ pub fn bounded_bytes(value: &Value, what: &str, capacity: usize) -> Result<Vec<u
 /// argument — and the generated `save` / `restore` that would have read it here
 /// are absent with it, so a call that could only have stopped the module is a
 /// compile error instead.
+// Reads the OS wall clock, and is absent where there is none (clippy.toml).
+#[allow(clippy::disallowed_methods)]
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 pub fn wall_clock_ms() -> u64 {
     use std::time::{SystemTime, UNIX_EPOCH};

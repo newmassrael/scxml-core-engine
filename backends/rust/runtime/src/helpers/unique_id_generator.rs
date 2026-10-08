@@ -195,6 +195,8 @@ pub fn reset_for_testing() {
 /// `wasm32-unknown-unknown`, which provides no wall clock either: an id's
 /// uniqueness never rested on its timestamp, so the id is built without one
 /// rather than from a clock that would stop the module.
+// Reads the OS wall clock, and is absent where there is none (clippy.toml).
+#[allow(clippy::disallowed_methods)]
 #[cfg(all(
     not(feature = "no_std"),
     not(all(target_arch = "wasm32", target_os = "unknown"))
