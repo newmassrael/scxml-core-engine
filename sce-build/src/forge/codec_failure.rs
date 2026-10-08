@@ -41,17 +41,43 @@ pub enum CodecFailure {
     CborWrongLength,
     /// A CBOR value does not fit its declared type or `sce:max-size`.
     CborOutOfRange,
+    /// A `sce:encoding="content-line"` component has a line, a parameter or
+    /// an `END:` the grammar does not admit (SCE_FORGE.md §4.6.4).
+    LineMalformed,
+    /// A content-line component lacks a property or parameter declared
+    /// `sce:required="true"`; on encode, a parameter was given without the
+    /// property it belongs to.
+    LineRequiredMissing,
+    /// A content-line property that holds one value occurs twice, a
+    /// parameter is given twice in one line, or a list passes its
+    /// `sce:max-count`.
+    LineTooMany,
+    /// A content-line value passes its `sce:max-size`.
+    LineTooLong,
+    /// A content-line TEXT carries an escape other than `\\`, `\;`, `\,`,
+    /// `\n` and `\N`.
+    LineBadEscape,
+    /// A content-line value its entry cannot hold: a control character,
+    /// invalid UTF-8, an integer or `bool` out of its type, a parameter of
+    /// more values than one, a `"` in a parameter value.
+    LineBadValue,
 }
 
 impl CodecFailure {
     /// Every failure, in declaration order — the set `parse` accepts.
-    pub const ALL: [CodecFailure; 6] = [
+    pub const ALL: [CodecFailure; 12] = [
         CodecFailure::NeedMoreBytes,
         CodecFailure::TlvChainOverflow,
         CodecFailure::CborMalformed,
         CodecFailure::CborRequiredKeyMissing,
         CodecFailure::CborWrongLength,
         CodecFailure::CborOutOfRange,
+        CodecFailure::LineMalformed,
+        CodecFailure::LineRequiredMissing,
+        CodecFailure::LineTooMany,
+        CodecFailure::LineTooLong,
+        CodecFailure::LineBadEscape,
+        CodecFailure::LineBadValue,
     ];
 
     /// Kebab-case name naming this failure in the conformance oracle's
@@ -64,6 +90,12 @@ impl CodecFailure {
             CodecFailure::CborRequiredKeyMissing => "cbor-required-key-missing",
             CodecFailure::CborWrongLength => "cbor-wrong-length",
             CodecFailure::CborOutOfRange => "cbor-out-of-range",
+            CodecFailure::LineMalformed => "line-malformed",
+            CodecFailure::LineRequiredMissing => "line-required-missing",
+            CodecFailure::LineTooMany => "line-too-many",
+            CodecFailure::LineTooLong => "line-too-long",
+            CodecFailure::LineBadEscape => "line-bad-escape",
+            CodecFailure::LineBadValue => "line-bad-value",
         }
     }
 
@@ -94,10 +126,25 @@ impl CodecFailure {
         )
     }
 
+    /// Whether this is a failure of the content-line reader or writer
+    /// (SCE_FORGE.md §4.6.4) rather than of a positional decode.
+    pub fn is_content_line(self) -> bool {
+        matches!(
+            self,
+            CodecFailure::LineMalformed
+                | CodecFailure::LineRequiredMissing
+                | CodecFailure::LineTooMany
+                | CodecFailure::LineTooLong
+                | CodecFailure::LineBadEscape
+                | CodecFailure::LineBadValue
+        )
+    }
+
     /// The statement a generated positional decode uses to signal this
-    /// failure. `None` for a CBOR failure: no generated statement raises
-    /// one — the runtime's CBOR reader and the CBOR codec templates return
-    /// it as a value (SCE_FORGE.md §4.6.1).
+    /// failure. `None` for a CBOR or content-line failure: the positional
+    /// codec's statements do not raise one — the runtime's readers and the
+    /// codec templates of those encodings return it as a value
+    /// (SCE_FORGE.md §4.6.1, §4.6.4).
     pub fn raise_stmt(self, lang: Language) -> Option<&'static str> {
         let truncated = matches!(self, CodecFailure::NeedMoreBytes);
         match self {
@@ -116,7 +163,13 @@ impl CodecFailure {
             CodecFailure::CborMalformed
             | CodecFailure::CborRequiredKeyMissing
             | CodecFailure::CborWrongLength
-            | CodecFailure::CborOutOfRange => None,
+            | CodecFailure::CborOutOfRange
+            | CodecFailure::LineMalformed
+            | CodecFailure::LineRequiredMissing
+            | CodecFailure::LineTooMany
+            | CodecFailure::LineTooLong
+            | CodecFailure::LineBadEscape
+            | CodecFailure::LineBadValue => None,
         }
     }
 
@@ -158,6 +211,32 @@ impl CodecFailure {
             (Language::C11, CodecFailure::CborOutOfRange) => {
                 Some("SCE_FORGE_CODEC_CBOR_OUT_OF_RANGE")
             }
+            // The content-line reader and writer return the runtime's typed
+            // error or status on the same three backends.
+            (Language::Rust, CodecFailure::LineMalformed) => Some("CodecError::LineMalformed"),
+            (Language::Rust, CodecFailure::LineRequiredMissing) => {
+                Some("CodecError::LineRequiredMissing")
+            }
+            (Language::Rust, CodecFailure::LineTooMany) => Some("CodecError::LineTooMany"),
+            (Language::Rust, CodecFailure::LineTooLong) => Some("CodecError::LineTooLong"),
+            (Language::Rust, CodecFailure::LineBadEscape) => Some("CodecError::LineBadEscape"),
+            (Language::Rust, CodecFailure::LineBadValue) => Some("CodecError::LineBadValue"),
+            (Language::Go, CodecFailure::LineMalformed) => Some("codec.ErrLineMalformed"),
+            (Language::Go, CodecFailure::LineRequiredMissing) => {
+                Some("codec.ErrLineRequiredMissing")
+            }
+            (Language::Go, CodecFailure::LineTooMany) => Some("codec.ErrLineTooMany"),
+            (Language::Go, CodecFailure::LineTooLong) => Some("codec.ErrLineTooLong"),
+            (Language::Go, CodecFailure::LineBadEscape) => Some("codec.ErrLineBadEscape"),
+            (Language::Go, CodecFailure::LineBadValue) => Some("codec.ErrLineBadValue"),
+            (Language::C11, CodecFailure::LineMalformed) => Some("SCE_FORGE_CODEC_LINE_MALFORMED"),
+            (Language::C11, CodecFailure::LineRequiredMissing) => {
+                Some("SCE_FORGE_CODEC_LINE_REQUIRED_MISSING")
+            }
+            (Language::C11, CodecFailure::LineTooMany) => Some("SCE_FORGE_CODEC_LINE_TOO_MANY"),
+            (Language::C11, CodecFailure::LineTooLong) => Some("SCE_FORGE_CODEC_LINE_TOO_LONG"),
+            (Language::C11, CodecFailure::LineBadEscape) => Some("SCE_FORGE_CODEC_LINE_BAD_ESCAPE"),
+            (Language::C11, CodecFailure::LineBadValue) => Some("SCE_FORGE_CODEC_LINE_BAD_VALUE"),
             // Cpp / Kotlin / Python: refusal is observable, its name is not.
             (Language::Cpp | Language::Kotlin | Language::Python, _) => None,
         }
@@ -175,6 +254,22 @@ mod tests {
         for f in CodecFailure::ALL {
             assert_eq!(CodecFailure::parse(f.wire_name()), Ok(f));
         }
+    }
+
+    /// A failure belongs to one family: a reject vector names the family its
+    /// codec has, and the harness refuses one from another.
+    #[test]
+    fn a_failure_is_cbor_or_content_line_or_neither_and_never_both() {
+        for f in CodecFailure::ALL {
+            assert!(!(f.is_cbor() && f.is_content_line()), "{f:?}");
+        }
+        assert_eq!(
+            CodecFailure::ALL
+                .iter()
+                .filter(|f| f.is_content_line())
+                .count(),
+            6
+        );
     }
 
     #[test]
@@ -209,7 +304,7 @@ mod tests {
     }
 
     /// A positional failure is raised by a generated statement on every
-    /// backend, and a CBOR one by none — the reader returns it.
+    /// backend, and a CBOR or content-line one by none — the reader returns it.
     #[test]
     fn only_a_positional_failure_has_a_raise_statement() {
         for lang in [
@@ -221,7 +316,11 @@ mod tests {
             Language::Python,
         ] {
             for f in CodecFailure::ALL {
-                assert_eq!(f.raise_stmt(lang).is_some(), !f.is_cbor(), "{lang:?} {f:?}");
+                assert_eq!(
+                    f.raise_stmt(lang).is_some(),
+                    !f.is_cbor() && !f.is_content_line(),
+                    "{lang:?} {f:?}"
+                );
             }
         }
     }
