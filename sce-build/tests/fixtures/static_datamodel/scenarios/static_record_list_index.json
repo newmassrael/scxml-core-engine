@@ -1,0 +1,44 @@
+{
+  "machine": "static_record_list_index",
+  "about": "A field of the element a list of records is indexed at, read in an assignment, an arithmetic operand and a guard. The read is checked as a list element's is: an index below zero, or not below the length, skips the statement it stands in (or makes the guard false) and raises error.execution, which the document counts in `refusals`. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "expect": { "state": "reading", "variables": { "cursor": 0, "day": 0, "year": 0, "sum": 0, "ordered": false, "refusals": 0 } } },
+
+    { "note": "an empty list has no element at the cursor: nothing is read and the cursor does not move",
+      "event": "next",
+      "expect": { "variables": { "day": 0, "year": 0, "cursor": 0, "refusals": 1 } } },
+    { "note": "nor a last one: len(days) - 1 is an unsigned underflow",
+      "event": "last",
+      "expect": { "variables": { "day": 0, "refusals": 2 } } },
+
+    { "event": "day.picked", "data": { "year": 2026, "month": 9, "dayOfMonth": 12 },
+      "expect": { "variables": { "refusals": 2 } } },
+    { "note": "the sum reads days[1], which a list of one does not have",
+      "event": "total",
+      "expect": { "variables": { "sum": 0, "refusals": 3 } } },
+    { "note": "the guard compares days[0] with days[1]: it is false and says so, and the unguarded `order` answers instead",
+      "event": "order",
+      "expect": { "variables": { "ordered": false, "refusals": 4 } } },
+
+    { "event": "day.picked", "data": { "year": 2027, "month": 2, "dayOfMonth": 20 },
+      "expect": { "variables": { "refusals": 4 } } },
+    { "event": "day.picked", "data": { "year": 2028, "month": 3, "dayOfMonth": 5 },
+      "expect": { "variables": { "refusals": 4 } } },
+
+    { "event": "total",
+      "expect": { "variables": { "sum": 32, "refusals": 4 } } },
+    { "note": "12 < 20 holds, so the guarded `order` is taken",
+      "event": "order",
+      "expect": { "variables": { "ordered": true, "refusals": 4 } } },
+    { "note": "the last day, by an index computed from the length",
+      "event": "last",
+      "expect": { "variables": { "day": 5, "refusals": 4 } } },
+
+    { "event": "next", "expect": { "variables": { "day": 12, "year": 2026, "cursor": 1 } } },
+    { "event": "next", "expect": { "variables": { "day": 20, "year": 2027, "cursor": 2 } } },
+    { "event": "next", "expect": { "variables": { "day": 5, "year": 2028, "cursor": 3, "refusals": 4 } } },
+    { "note": "index 3 is not below the length 3: nothing is read, and the cursor stays where it was",
+      "event": "next",
+      "expect": { "variables": { "day": 5, "year": 2028, "cursor": 3, "refusals": 5 } } }
+  ]
+}

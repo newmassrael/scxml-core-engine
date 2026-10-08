@@ -453,6 +453,27 @@ fn static_record_paths<'v>(
 ) -> Vec<(String, InferredType)> {
     let mut paths = Vec::new();
     for var in variables {
+        // An element of a `list<record:<alias>>` read by its index, `xs[i].f`, is
+        // read through `<id>[].<field>`: the index is a value and the path is
+        // not, and only a number or a bool is a value an expression computes with.
+        if let Some(ListElemType::Record { alias }) = var
+            .value_type
+            .as_ref()
+            .and_then(AlgorithmValueType::list_elem)
+        {
+            if let Some(schema) = records.get(alias) {
+                for field in &schema.fields {
+                    let ty = InferredType::from_sce_type(&field.sce_type);
+                    if matches!(
+                        ty,
+                        InferredType::Int { .. } | InferredType::Float { .. } | InferredType::Bool
+                    ) {
+                        paths.push((format!("{}{INDEXED_ELEMENT}{}", var.id, field.id), ty));
+                    }
+                }
+            }
+            continue;
+        }
         let Some(schema) = var
             .value_type
             .as_ref()
@@ -470,6 +491,11 @@ fn static_record_paths<'v>(
     }
     paths
 }
+
+/// What stands between a list's name and a field's in the path an indexed read
+/// of a list of records is typed and spelled by: `days[].dayOfMonth` is the
+/// field of `days[i]`, whatever `i` is.
+pub const INDEXED_ELEMENT: &str = "[].";
 
 /// The bound, in UTF-8 bytes, of each string field of a `record:<alias>`
 /// variable, under the dotted path an expression reads it by, `<id>.<field>`:
@@ -645,6 +671,16 @@ impl StaticScope {
         self.record_string_bounds
             .iter()
             .filter_map(|(path, _)| path.split_once('.'))
+    }
+
+    /// Each field of the element a list of records is indexed at, as the path it
+    /// is typed by (`days[].dayOfMonth`) and the field's own id — what a target
+    /// spells with the name it gives a record's field.
+    pub fn indexed_record_fields(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.record_paths.iter().filter_map(|(path, _)| {
+            path.split_once(INDEXED_ELEMENT)
+                .map(|(_, field)| (path.as_str(), field))
+        })
     }
 
     /// The dotted paths an expression may read: every record variable's

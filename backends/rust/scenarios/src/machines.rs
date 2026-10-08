@@ -127,6 +127,7 @@ scenarios! {
     "static_record_enum" => static_record_enum_sm::{StaticRecordEnumPolicy, StaticRecordEnumPersist};
     "static_record_fields" => static_record_fields_sm::{StaticRecordFieldsPolicy, StaticRecordFieldsPersist};
     "static_record_list" => static_record_list_sm::{StaticRecordListPolicy, StaticRecordListPersist};
+    "static_record_list_index" => static_record_list_index_sm::{StaticRecordListIndexPolicy, StaticRecordListIndexPersist};
     "static_record_real" => static_record_real_sm::{StaticRecordRealPolicy, StaticRecordRealPersist};
     "static_record_real32" => static_record_real32_sm::{StaticRecordReal32Policy, StaticRecordReal32Persist};
     "static_record_string" => static_record_string_sm::{StaticRecordStringPolicy, StaticRecordStringPersist};

@@ -641,11 +641,41 @@ fn resolve_names(ast: &mut TypedExpr, ctx: &TypeCtx<'_>, source: &str) -> Result
     reject_unknown_names(ast, ctx)?;
     reject_unnamed_record_elements(ast, source)?;
     reject_misdirected_indexing(ast, source)?;
+    reject_unreadable_element_fields(ast, source)?;
     reject_records_as_operands(ast, source, RecordPlace::Whole)?;
     reject_buffers_as_values(ast, source)?;
     reject_call_argument_mismatches(ast, ctx, source)?;
     lower_bytes_eq(ast, ctx);
     Ok(())
+}
+
+/// Refuse a field of the element a list of records is indexed at that is not a
+/// number or a `bool` the schema declares: the scope types `<list>[].<field>`
+/// for exactly those, so any other field — one the schema does not have, or a
+/// string, a byte string or an enum, which a `<foreach>` item reads — comes out
+/// of inference untyped and would reach every backend as an operand of no type.
+fn reject_unreadable_element_fields(expr: &TypedExpr, source: &str) -> Result<(), Refusal> {
+    if let ExprKind::Member { object, property } = &expr.kind {
+        if let Some(list) = indexed_list_name(object) {
+            if expr.ty == InferredType::Unknown {
+                return Err(ExprError::UnsupportedConstruct {
+                    construct: format!(
+                        "`{list}[…].{property}`, which is no number or bool field of the \
+                         element (a field of another type is read through a <foreach> item)"
+                    ),
+                    observed: expr
+                        .span
+                        .clone()
+                        .and_then(|span| source.get(span))
+                        .map(str::to_string),
+                }
+                .at(expr.span.clone()));
+            }
+        }
+    }
+    expr.children()
+        .into_iter()
+        .try_for_each(|child| reject_unreadable_element_fields(child, source))
 }
 
 /// Refuse an index read whose object is a value that holds no elements, or
@@ -713,6 +743,22 @@ fn reject_misdirected_indexing(expr: &TypedExpr, source: &str) -> Result<(), Ref
 /// fields the record rule types (SCE_FORGE.md §4.12); `xs[i]` has no name,
 /// so `xs[i].wallTime` would reach every backend as an operand of no type.
 fn reject_unnamed_record_elements(expr: &TypedExpr, source: &str) -> Result<(), Refusal> {
+    // `xs[i].f` is the one way an element of a list of records is read by its
+    // index: the field is typed through `<xs>[].<f>`, and the element itself is
+    // never a value. Its index and its list are walked as any expression is.
+    if let ExprKind::Member { object, .. } = &expr.kind {
+        if let ExprKind::Index {
+            object: list,
+            index,
+        } = &object.kind
+        {
+            if indexed_list_name(object).is_some() {
+                return [list.as_ref(), index.as_ref()]
+                    .into_iter()
+                    .try_for_each(|child| reject_unnamed_record_elements(child, source));
+            }
+        }
+    }
     if let ExprKind::Index { object, .. } = &expr.kind {
         if object.ty == InferredType::List(crate::forge::types::ListElem::Record) {
             return Err(ExprError::UnsupportedConstruct {
@@ -3357,6 +3403,17 @@ fn rename_identifiers(ast: &mut TypedExpr, renames: &HashMap<&str, &str>) {
                     return;
                 }
             }
+            // A field of the element a list of records is indexed at is spelled
+            // as the backend spells a record's field, `<list>[].<field>`.
+            if let Some(list) = indexed_list_name(object) {
+                let key = format!(
+                    "{list}{}{property}",
+                    crate::forge::type_ctx::INDEXED_ELEMENT
+                );
+                if let Some(renamed) = renames.get(key.as_str()) {
+                    *property = renamed.to_string();
+                }
+            }
             rename_identifiers(object, renames);
         }
         ExprKind::Index { object, index } => {
@@ -3459,6 +3516,25 @@ fn export_go_member_properties(ast: &mut TypedExpr) {
 /// and rename passes' qualified-key handling — generalizing the former
 /// bare-`Ident`-only lookup to arbitrary depth without changing the
 /// resolution semantics for any already-registered key shape.
+/// The name of the list `expr` reads one element of by an index — `days` in
+/// `days[i]` — when `expr` is exactly that read and the list holds records.
+fn indexed_list_name(expr: &TypedExpr) -> Option<&str> {
+    match &expr.kind {
+        ExprKind::Index { object, .. }
+        | ExprKind::Checked {
+            op: CheckedOp::Index,
+            left: object,
+            ..
+        } if object.ty == InferredType::List(crate::forge::types::ListElem::Record) => {
+            match &object.kind {
+                ExprKind::Ident(name) => Some(name.as_str()),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
 fn flatten_member_path(expr: &TypedExpr) -> Option<String> {
     match &expr.kind {
         ExprKind::Ident(name) => Some(name.clone()),
@@ -3789,9 +3865,15 @@ pub(crate) fn infer_types(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
             // so the Member node still carries its `Ident`/`Member` form
             // here; after rename the object may become `Raw(...)` and the
             // qualified-key lookup would no longer resolve.
-            match flatten_member_path(object) {
-                Some(base) => ctx.lookup_var(&format!("{base}.{property}")),
-                None => InferredType::Unknown,
+            match (flatten_member_path(object), indexed_list_name(object)) {
+                (Some(base), _) => ctx.lookup_var(&format!("{base}.{property}")),
+                // A field of the element a list of records is indexed at: its
+                // type is the schema's, whatever the index is.
+                (None, Some(list)) => ctx.lookup_var(&format!(
+                    "{list}{}{property}",
+                    crate::forge::type_ctx::INDEXED_ELEMENT
+                )),
+                (None, None) => InferredType::Unknown,
             }
         }
         ExprKind::Index { object, index } => {
@@ -8339,6 +8421,31 @@ fn emit_c(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError>
     Ok(c_coerce(raw, expr.ty, expected, expr))
 }
 
+/// A checked index read in C (SCE_FORGE.md §3.4.1), with `field` — empty, or
+/// `.name` — read from the element inside the same conditional: the failure is
+/// recorded and the read gives 0 when the index is outside the collection, and
+/// an index that is outside is never read, the collection's emptiness included.
+/// A `bytes` view and a `list<T>` view carry their length; a build-time array's is
+/// its `sizeof`.
+fn c_checked_index(left: &TypedExpr, index: &TypedExpr, field: &str) -> Result<String, ExprError> {
+    let object = wrap_postfix(left, emit_c(left, InferredType::Unknown)?);
+    let idx = emit_c(index, InferredType::Unknown)?;
+    let accessor = c_element_accessor(left.ty);
+    let len = if accessor.is_empty() {
+        format!("(sizeof({object}) / sizeof(({object})[0]))")
+    } else {
+        format!("({object}).len")
+    };
+    let from = match index.ty {
+        InferredType::Int { signed: false, .. } => "u",
+        _ => "i",
+    };
+    Ok(format!(
+        "(sce_forge_checked_index_from_{from}(&sce_failure_, {idx}, {len}) \
+         ? {object}{accessor}[{idx}]{field} : 0)"
+    ))
+}
+
 fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
     Ok(match &expr.kind {
         ExprKind::NumberLit(n) => portable_number_literal(n),
@@ -8492,6 +8599,29 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                 emit_c(alternate, expr.ty)?,
             )
         }
+        // A field of the element a list of records is indexed at: the field is read
+        // inside the checked conditional, which otherwise would be a struct against
+        // the `0` of a failed read.
+        ExprKind::Member { object, property }
+            if matches!(
+                &object.kind,
+                ExprKind::Checked {
+                    op: CheckedOp::Index,
+                    right: Some(_),
+                    ..
+                }
+            ) =>
+        {
+            let ExprKind::Checked {
+                left,
+                right: Some(index),
+                ..
+            } = &object.kind
+            else {
+                unreachable!("guarded by the match above")
+            };
+            c_checked_index(left, index, &format!(".{property}"))?
+        }
         ExprKind::Member { object, property } => {
             format!(
                 "{}.{property}",
@@ -8579,24 +8709,7 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             op: CheckedOp::Index,
             left,
             right: Some(index),
-        } => {
-            let object = wrap_postfix(left, emit_c(left, InferredType::Unknown)?);
-            let idx = emit_c(index, InferredType::Unknown)?;
-            let accessor = c_element_accessor(left.ty);
-            let len = if accessor.is_empty() {
-                format!("(sizeof({object}) / sizeof(({object})[0]))")
-            } else {
-                format!("({object}).len")
-            };
-            let from = match index.ty {
-                InferredType::Int { signed: false, .. } => "u",
-                _ => "i",
-            };
-            format!(
-                "(sce_forge_checked_index_from_{from}(&sce_failure_, {idx}, {len}) \
-                 ? {object}{accessor}[{idx}] : 0)"
-            )
-        }
+        } => c_checked_index(left, index, "")?,
         // SCE_FORGE.md §3.4.1: the runtime's helper for the operation's own
         // width, which records a failure in the body's `sce_failure_` and
         // yields 0; the statement around it returns that failure. C has no

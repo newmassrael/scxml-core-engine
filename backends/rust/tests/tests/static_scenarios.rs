@@ -107,6 +107,9 @@ use sce_rust_tests::integration::static_datamodel::static_record_enum_sm::{
 use sce_rust_tests::integration::static_datamodel::static_record_fields_sm::{
     StaticRecordFieldsPersist, StaticRecordFieldsPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_record_list_index_sm::{
+    StaticRecordListIndexPersist, StaticRecordListIndexPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_record_list_sm::{
     StaticRecordListPersist, StaticRecordListPolicy,
 };
@@ -471,6 +474,17 @@ fn static_whole_payload_is_taken_whole_as_a_record() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_whole_payload.json"
+        ),
+    );
+}
+
+#[test]
+fn static_record_list_index_reads_a_field_of_the_element_it_indexes() {
+    replay(
+        Engine::new(StaticRecordListIndexPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_record_list_index.json"
         ),
     );
 }

@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15): a field of the
+  element a list of records is indexed at. A calendar screen keeps the days it
+  has picked as records and a cursor into them, and reads `days[cursor].year`;
+  the element is never a value, only its fields are, each a number or a bool of
+  the type its schema gives it, so it stands wherever such a number does.
+
+  The read is checked as an element's is (static_list_index.scxml): an index
+  below zero, or not below the length, is a failure — the statement it stands
+  in is skipped, a guard it stands in is false, the block ends and
+  error.execution says so.
+
+  `next` reads the day under the cursor and moves it on, `last` reads the last
+  day by an index computed from the length, `total` adds the first two days'
+  numbers, and `order` is guarded by a comparison of their fields.
+  `refusals` counts the error.execution events the document answers.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="reading" datamodel="sce-static" name="static_record_list_index">
+  <sce:import kind="event-schema" src="schema_day.scxml" as="Day"/>
+  <datamodel>
+    <data id="draft" sce:type="record:Day">
+      <sce:set name="year" expr="2026"/>
+      <sce:set name="month" expr="1"/>
+      <sce:set name="dayOfMonth" expr="1"/>
+    </data>
+    <data id="days" sce:type="list&lt;record:Day&gt;" sce:capacity="3"/>
+    <data id="cursor" sce:type="int32" expr="0" sce:direction="out"/>
+    <data id="day" sce:type="uint8" expr="0" sce:direction="out"/>
+    <data id="year" sce:type="uint16" expr="0" sce:direction="out"/>
+    <data id="sum" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="ordered" sce:type="bool" expr="false" sce:direction="out"/>
+    <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="reading">
+    <transition event="day.picked" type="internal">
+      <assign location="draft.year" expr="_event.data.year"/>
+      <assign location="draft.month" expr="_event.data.month"/>
+      <assign location="draft.dayOfMonth" expr="_event.data.dayOfMonth"/>
+      <sce:append target="days" expr="draft"/>
+    </transition>
+    <transition event="next" type="internal">
+      <assign location="day" expr="days[cursor].dayOfMonth"/>
+      <assign location="year" expr="days[cursor].year"/>
+      <assign location="cursor" expr="cursor + 1"/>
+    </transition>
+    <transition event="last" type="internal">
+      <assign location="day" expr="days[len(days) - 1].dayOfMonth"/>
+    </transition>
+    <transition event="total" type="internal">
+      <assign location="sum" expr="days[0].dayOfMonth + days[1].dayOfMonth"/>
+    </transition>
+    <transition event="order" cond="days[0].dayOfMonth &lt; days[1].dayOfMonth" type="internal">
+      <assign location="ordered" expr="true"/>
+    </transition>
+    <transition event="order" type="internal">
+      <assign location="ordered" expr="false"/>
+    </transition>
+    <transition event="error.execution" type="internal">
+      <assign location="refusals" expr="refusals + 1"/>
+    </transition>
+  </state>
+</scxml>

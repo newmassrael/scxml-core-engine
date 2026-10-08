@@ -3978,8 +3978,18 @@ one. The index is a whole number of any integer type (a `bool`, a string or a
 real is `expression/unsupported-construct`), and only a list is indexed: a number
 is not, and an element is not a list, so `picked[0][0]` is refused. An element is
 read and never written: `<assign location="picked[0]">` is refused, as a whole
-list is, and so is the index of a list of records, whose elements are read
-through a `<foreach>` item.
+list is.
+
+Over a list of records the element is no value, and a **field** of it is:
+`days[cursor].dayOfMonth` is typed by the schema as `d.dayOfMonth` of a
+`<foreach>` item is, and stands wherever a number of that type does — and is
+checked as the element's own read is, the field taken from the element the
+index names. Only a field that is a number or a `bool` is read this way; a
+string, a byte string or an enum field is read through a `<foreach>` item, and
+so is the record whole (`last = days[0]` is `scxml/static-datamodel-rule`, as
+any record not named is). A field the schema does not declare is
+refused, and a field is read and never written
+(`<assign location="days[0].year">` is refused).
 
 The read is checked as an integer operation is (SCE_FORGE.md §3.4.1): an index
 below zero, or not below the length, is a failure — the element is not read, the
@@ -3999,7 +4009,8 @@ negative cursor below every length, and a length stored into a narrower variable
 Under any other data model a length
 keeps the untyped width it has, which takes that of what it meets.
 `scenarios/static_list_index.json` holds all of this on every engine that runs
-the model.
+the model, and `scenarios/static_record_list_index.json` the field of an
+indexed record.
 
 **A list of records.** `sce:type="list&lt;record:Day&gt;"` holds records of an
 imported event-schema, declared as a record variable is (a type of the

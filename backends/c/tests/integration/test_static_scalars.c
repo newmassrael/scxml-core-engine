@@ -125,6 +125,7 @@
 #include "static_record_bytes_sm.h"
 #include "static_record_enum_sm.h"
 #include "static_record_fields_sm.h"
+#include "static_record_list_index_sm.h"
 #include "static_record_list_sm.h"
 #include "static_record_real32_sm.h"
 #include "static_record_real_sm.h"
@@ -1261,6 +1262,26 @@ static const record_variable_t record_list_records[] = {RECORD_ROW(static_record
                                                         {NULL, NULL, NULL, NULL}};
 STATIC_SCENARIO(static_record_list, record_list_states, record_list_variables, NULL, no_lists, record_list_records)
 
+// static_record_list_index: a field of the element a list of records is indexed
+// at, read in an assignment, an operand and a guard; an index outside the list
+// reads nothing and raises `error.execution`.
+VARIABLE_READER(static_record_list_index, cursor)
+VARIABLE_READER(static_record_list_index, day)
+VARIABLE_READER(static_record_list_index, year)
+VARIABLE_READER(static_record_list_index, sum)
+VARIABLE_READER(static_record_list_index, ordered)
+VARIABLE_READER(static_record_list_index, refusals)
+static const name_value_t record_list_index_states[] = {
+    {"reading", STATIC_RECORD_LIST_INDEX_STATE_READING},
+};
+static const variable_t record_list_index_variables[] = {
+    {"cursor", static_record_list_index_read_cursor},   {"day", static_record_list_index_read_day},
+    {"year", static_record_list_index_read_year},       {"sum", static_record_list_index_read_sum},
+    {"ordered", static_record_list_index_read_ordered}, {"refusals", static_record_list_index_read_refusals},
+};
+STATIC_SCENARIO(static_record_list_index, record_list_index_states, record_list_index_variables, NULL, no_lists,
+                no_records)
+
 // static_record_enum: a record with an enum field is held in the machine's own
 // type for the enum — compared with `===`, assigned a variant, appended whole and
 // read through a loop's record item — and its field is observed as the name its
@@ -1805,6 +1826,7 @@ int main(void) {
     bad |= static_record_fields_scenario("static_record_fields", 9);
     bad |= static_record_scenario("static_record", 16);
     bad |= static_record_list_scenario("static_record_list", 14);
+    bad |= static_record_list_index_scenario("static_record_list_index", 15);
     bad |= static_record_enum_scenario("static_record_enum", 13);
     bad |= static_whole_payload_scenario("static_whole_payload", 9);
     bad |= static_wire_enum_scenario("static_wire_enum", 7);

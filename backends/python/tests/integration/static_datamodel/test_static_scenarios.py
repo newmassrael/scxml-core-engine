@@ -363,6 +363,12 @@ def test_a_list_holds_records_and_a_foreach_walks_them() -> None:
     replay("static_record_list")
 
 
+# A field of the element a list of records is indexed at is read like any
+# number, and an index outside the list is a failure.
+def test_a_field_of_an_indexed_record_is_read() -> None:
+    replay("static_record_list_index")
+
+
 # The payload of an event is a record of its schema taken whole: it replaces a
 # record variable in one assignment and is appended whole to a list.
 def test_the_payload_of_an_event_is_taken_whole_as_a_record() -> None:

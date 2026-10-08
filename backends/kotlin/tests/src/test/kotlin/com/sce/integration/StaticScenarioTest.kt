@@ -52,6 +52,7 @@ import com.sce.integration.static_record.StaticRecordStateMachine
 import com.sce.integration.static_record_fields.StaticRecordFieldsStateMachine
 import com.sce.integration.static_record_enum.StaticRecordEnumStateMachine
 import com.sce.integration.static_record_list.StaticRecordListStateMachine
+import com.sce.integration.static_record_list_index.StaticRecordListIndexStateMachine
 import com.sce.integration.static_record_real.StaticRecordRealStateMachine
 import com.sce.integration.static_record_real32.StaticRecordReal32StateMachine
 import com.sce.integration.static_send_content.StaticSendContentStateMachine
@@ -625,6 +626,23 @@ class StaticScenarioTest {
         try {
             replay(
                 scenario("static_record_list"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    @Test
+    fun staticRecordListIndexReadsAFieldOfTheElementItIndexes() {
+        val sm = StaticRecordListIndexStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_record_list_index"),
                 send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
                 tick = { sm.tick() },
                 save = { sm.save() },

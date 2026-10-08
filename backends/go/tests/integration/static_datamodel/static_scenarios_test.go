@@ -65,6 +65,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_enum"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_fields"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_list"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_list_index"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_real"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_real32"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_string"
@@ -676,6 +677,21 @@ func TestAListHoldsRecordsAndAForeachWalksThem(t *testing.T) {
 		"last":   func() any { return dayJSON(policy.Last()) },
 		"total":  func() any { return policy.Total() },
 		"errors": func() any { return policy.Errors() },
+	}))
+}
+
+// A field of the element a list of records is indexed at is read like any
+// number, and an index outside the list is a failure.
+func TestAFieldOfAnIndexedRecordIsRead(t *testing.T) {
+	policy := static_record_list_index.NewStaticRecordListIndexPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_record_list_index", drive[static_record_list_index.StaticRecordListIndexState, static_record_list_index.StaticRecordListIndexEvent](&policy, map[string]func() any{
+		"cursor":   func() any { return policy.Cursor() },
+		"day":      func() any { return policy.Day() },
+		"year":     func() any { return policy.Year() },
+		"sum":      func() any { return policy.Sum() },
+		"ordered":  func() any { return policy.Ordered() },
+		"refusals": func() any { return policy.Refusals() },
 	}))
 }
 

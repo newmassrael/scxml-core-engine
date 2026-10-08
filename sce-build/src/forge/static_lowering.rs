@@ -1786,6 +1786,13 @@ fn names(scope: &StaticScope, target: &dyn StaticTarget) -> Vec<(String, String)
                 .record_string_read(&record, field)
                 .map(|read| (format!("{var}.{field}"), read))
         }))
+        // A field of the element a list of records is indexed at: spelled as the
+        // target spells a record's field.
+        .chain(
+            scope
+                .indexed_record_fields()
+                .map(|(path, field)| (path.to_string(), target.record_field(field))),
+        )
         // A callee the target cannot reach is left out: `lower` has already
         // refused a document that calls one.
         .chain(scope.callees.iter().filter_map(|c| {

@@ -59,6 +59,7 @@
 #include "static_record_bytes_sm.h"
 #include "static_record_enum_sm.h"
 #include "static_record_fields_sm.h"
+#include "static_record_list_index_sm.h"
 #include "static_record_list_sm.h"
 #include "static_record_real32_sm.h"
 #include "static_record_real_sm.h"
@@ -1237,6 +1238,21 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, AListHoldsRecordsAndAForeachWalksThem
         {"errors", [](const Machine &m) { return json(m.errors()); }},
     });
     replay("static_record_list", driver);
+}
+
+// A field of the element a list of records is indexed at is read like any
+// number; an index outside the list reads nothing and raises error.execution.
+TEST(AStaticDatamodelRunsGeneratedCppTest, AFieldOfAnIndexedRecordIsRead) {
+    using Machine = G::static_record_list_index::static_record_list_index;
+    Driver<Machine> driver({
+        {"cursor", [](const Machine &m) { return json(m.cursor()); }},
+        {"day", [](const Machine &m) { return json(m.day()); }},
+        {"year", [](const Machine &m) { return json(m.year()); }},
+        {"sum", [](const Machine &m) { return json(m.sum()); }},
+        {"ordered", [](const Machine &m) { return json(m.ordered()); }},
+        {"refusals", [](const Machine &m) { return json(m.refusals()); }},
+    });
+    replay("static_record_list_index", driver);
 }
 
 // A record may hold an enum: its field is read back by the name the enum

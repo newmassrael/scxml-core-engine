@@ -158,3 +158,107 @@ fn a_list_is_still_no_value_and_an_element_is_still_no_place() {
     );
     refused(r#"<assign location="picked[0]" expr="1"/>"#, "picked[0]");
 }
+
+/// A statechart with a `list<record:Day>` `days`, a `record:Day` `draft`, a
+/// `uint32` `total`, a `uint8` `small` and the given `body` in one transition,
+/// beside the schema it imports.
+fn record_machine(body: &str) -> (tempfile::TempDir, PathBuf) {
+    let dir = tempdir().expect("tempdir");
+    std::fs::copy(
+        repo_root().join("sce-build/tests/fixtures/static_datamodel/schema_day.scxml"),
+        dir.path().join("schema_day.scxml"),
+    )
+    .expect("the Day schema");
+    let path = dir.path().join("probe.scxml");
+    std::fs::write(
+        &path,
+        format!(
+            r##"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s" datamodel="sce-static">
+  <sce:import kind="event-schema" src="schema_day.scxml" as="Day"/>
+  <datamodel>
+    <data id="days" sce:type="list&lt;record:Day&gt;" sce:capacity="3"/>
+    <data id="draft" sce:type="record:Day">
+      <sce:set name="year" expr="2026"/>
+      <sce:set name="month" expr="1"/>
+      <sce:set name="dayOfMonth" expr="1"/>
+    </data>
+    <data id="total" sce:type="uint32" expr="0"/>
+    <data id="small" sce:type="uint8" expr="0"/>
+  </datamodel>
+  <state id="s">
+    <transition event="go" type="internal">
+      {body}
+    </transition>
+  </state>
+</scxml>
+"##
+        ),
+    )
+    .expect("write probe");
+    (dir, path)
+}
+
+fn check_records(args: &[&str], body: &str) -> (bool, String) {
+    let (_dir, path) = record_machine(body);
+    let out = Command::new(sce_codegen_bin())
+        .arg("--workspace-root")
+        .arg(repo_root())
+        .arg("--error-format=json")
+        .args(args)
+        .arg(&path)
+        .output()
+        .expect("invoke sce-codegen");
+    (
+        out.status.success(),
+        String::from_utf8_lossy(&out.stderr).into_owned() + &String::from_utf8_lossy(&out.stdout),
+    )
+}
+
+#[test]
+fn a_field_of_an_element_is_read_by_the_elements_index() {
+    let body = r#"
+      <assign location="small" expr="days[0].dayOfMonth"/>
+      <assign location="total" expr="days[len(days) - 1].year + days[small].month * 2"/>
+      <if cond="days[0].dayOfMonth &lt; days[1].dayOfMonth">
+        <assign location="small" expr="1"/>
+      </if>"#;
+    for args in [
+        &["check"][..],
+        &["check", "-l", "rust"],
+        &["check", "-l", "kotlin"],
+        &["check", "-l", "cpp"],
+        &["check", "-l", "go"],
+        &["check", "-l", "python"],
+        &["check", "-l", "c11"],
+    ] {
+        let (ok, out) = check_records(args, body);
+        assert!(ok, "{args:?}: a field of an indexed element:\n{out}");
+    }
+}
+
+#[test]
+fn an_element_of_a_list_of_records_is_still_no_value() {
+    for (body, because) in [
+        (
+            r#"<assign location="draft" expr="days[0]"/>"#,
+            "a whole record of the schema Day is taken by name",
+        ),
+        (
+            r#"<assign location="small" expr="days[0].nothere"/>"#,
+            "days[0].nothere",
+        ),
+        (
+            r#"<assign location="days[0].year" expr="1"/>"#,
+            "days[0].year",
+        ),
+    ] {
+        let (ok, out) = check_records(&["check"], body);
+        assert!(!ok, "expected a refusal ({because}), got:\n{out}");
+        assert!(
+            out.contains(because),
+            "the refusal must say {because:?}:\n{out}"
+        );
+    }
+}

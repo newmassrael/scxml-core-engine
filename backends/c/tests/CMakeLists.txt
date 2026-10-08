@@ -2496,7 +2496,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     )
     # A record is a struct of its schema's fields, declared in the machine's own
     # header; the schema is the document the machine imports it from.
-    foreach(_STATIC_RECORD_MACHINE static_record_fields static_record_list)
+    foreach(_STATIC_RECORD_MACHINE static_record_fields static_record_list static_record_list_index)
         sce_generate_static_integration_c_test(${_STATIC_RECORD_MACHINE}
             "${SCE_C_INTEGRATION_GENERATED_DIR}"
             SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_STATIC_RECORD_MACHINE}.scxml"
@@ -2691,6 +2691,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_payload_bytes_SOURCES}
         ${INTEGRATION_C_TEST_static_bytes_wire_SOURCES}
         ${INTEGRATION_C_TEST_static_record_list_SOURCES}
+        ${INTEGRATION_C_TEST_static_record_list_index_SOURCES}
         ${INTEGRATION_C_TEST_static_record_enum_SOURCES}
         ${INTEGRATION_C_TEST_static_whole_payload_SOURCES}
         ${INTEGRATION_C_TEST_static_wire_enum_SOURCES}
