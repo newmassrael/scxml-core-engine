@@ -1,7 +1,7 @@
 # ADR 0011 — A work keeps its requirement lineage with its requirement list
 
-- Status: Proposed. Stage 1 is implemented and tested (see "What stage 1 measured"); stages 2 to 4
-  are not, and two decisions are the owner's: see "Open decisions"
+- Status: Accepted for stages 1 to 3 (implemented and tested, see "What stage 1 / 2 / 3 measured");
+  D1 decided (c) on 2026-10-09 and stage 4a is under way; D2 is the owner's: see "Open decisions"
 - Date: 2026-10-08
 - Scope: `app-core` (the requirement list's record, `save_requirements`, `read_requirements`,
   `save_request_candidate`, bundles), the `sce-work` command layer, the authoring MCP's
@@ -139,9 +139,13 @@ same compare-and-swap.**
   same cases run through both; the tests written for the Python version (the twenty pairs of the
   table, the neighbour rule, `between`, `extends`) become the cases the product's must pass.
 
-  Status: recommended, and the owner has asked whether (c) is the right long-term answer; it is
-  not recorded as decided until the owner says so. It is built when a surface other than the
-  authoring tools needs the judgment (stage 4), not before.
+  **Decided (c), 2026-10-09, by the owner**, who asked for the answer that is right in the long
+  run whatever it costs, was told it is larger than the table alone and that making a lineage
+  stays in Python, and said to confirm it and go on. Stage 4a below builds it: the product reads
+  two lineages and the acceptance record and judges, and the Python tools and `sce-work` call it.
+  The order is the safe one: first the cases both implementations must pass (4a-1), then the
+  product's command (4a-2), then the callers (4a-3), so the Python version stays the reference
+  until a second implementation has been held to the same cases.
 - **D2. A way to start the lineage over.** Recommendation: none. A specification written again
   from nothing is a new work, and an id that may be issued twice is the defect.
 
@@ -186,7 +190,21 @@ Criteria set before code. Each stage ends with a push; none needs the next.
    `scxml_revision_check` given the same two lineages, and a delta of a later step needs no
    composition. The join's home is D1.
 4. **The workbench report.** The screen shows the revision report of a work whose acceptance
-   lapsed because its text was revised. Depends on D1 and on the screen; not specified here.
+   lapsed because its text was revised. Depends on the screen; not specified here.
+   - **4a. The product judges (D1 (c)).** Three steps, each pushed:
+     1. *The cases.* `sce-build/tests/fixtures/revision_judgment/cases.json`, generated from the
+        Python implementation by `tools/authoring/eval/revision_judgment_cases.py` and guarded
+        against drift: the join (all twenty pairs of the table, the neighbour rule, the refusals of
+        a delta that is not the right shape), the page, `belongs_to`, `between`, `extends` and
+        `belongs_to_manifest`, each with the exact result or the exact refusal sentence. Done when
+        the Python reproduces the file and a test fails for any case that is left out of it.
+     2. *The command.* `sce-codegen revision-judge`: two lineages, the acceptance record's
+        manifest pin and the `acceptance-delta` lines in, the judgment (and the page) out; its
+        schema registered in `SCE_WIRE_CONTRACTS.md`. Done when it reproduces every case of 1 and
+        the breaks of its rules are each caught.
+     3. *The callers.* `works_revision_check/report` and `read_acceptance_delta` call it; the
+        Python join stays as the reference the cases are generated from, or is removed, whichever
+        the cases show to be safe.
 
 ## What stage 3 measured
 

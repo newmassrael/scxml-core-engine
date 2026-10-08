@@ -374,7 +374,9 @@ def belongs_to_manifest(lineage: dict, manifest_text: str) -> None:
     try:
         manifest = json.loads(manifest_text)
     except ValueError as error:
-        raise LineageError(f"the manifest is not JSON: {error}") from error
+        # No parser detail in the sentence: it is one library's wording, and the sentence is a
+        # case another implementation has to say in the same words.
+        raise LineageError("the manifest is not JSON") from error
     if not isinstance(manifest, dict):
         raise LineageError("the manifest is not a JSON object")
     last = lineage["revisions"][-1]
