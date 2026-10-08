@@ -69,6 +69,27 @@ enum class CodecError : std::uint8_t {
     /// field contradict each other, and `encode` refuses before writing the
     /// first byte, so the sink is untouched.
     PresentIfMismatch = 6,
+    /// A `sce:encoding="content-line"` codec (SCE_FORGE.md §4.6.4) read a line,
+    /// a parameter or an `END:` the grammar does not admit. Decode refuses with
+    /// `std::nullopt`, the C++ decode convention; a `ContentLine::Reader` keeps
+    /// the rule in `error()`.
+    LineMalformed = 7,
+    /// A content-line component lacked a property or parameter declared
+    /// `sce:required="true"`; on encode, a parameter was given without the
+    /// property it belongs to.
+    LineRequiredMissing = 8,
+    /// A content-line property that holds one value occurred twice, a parameter
+    /// was given twice in one line, or a list passed its `sce:max-count`.
+    LineTooMany = 9,
+    /// A content-line value passed its `sce:max-size`.
+    LineTooLong = 10,
+    /// A content-line TEXT carried an escape other than `\\`, `\;`, `\,`, `\n`
+    /// and `\N`.
+    LineBadEscape = 11,
+    /// A content-line value its entry cannot hold: a control character, invalid
+    /// UTF-8, an integer or `bool` out of its type, a parameter of more values
+    /// than one, a `"` in a parameter value.
+    LineBadValue = 12,
 };
 
 /// Read-only cursor over a borrowed input buffer. Decode bodies use

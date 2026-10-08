@@ -1357,9 +1357,18 @@ Kotlin generates it as a data class: a `String`, a `MutableList<String>` for a
 list, `null` for an absent optional entry, and the runtime's `ContentLineReader`
 and `ContentLineWriter` for the grammar. Its decode follows the Kotlin codec
 convention: every failure is `null`, with the rule that refused in
-`ContentLine.lastError`, and the cursor is left where it was. Each other backend
-refuses the codec by name (`generate/unsupported-feature`) until its own commit
-lands. The generator's refusal and the conformance harness's schedule
+`ContentLine.lastError`, and the cursor is left where it was.
+
+C++ generates it as a struct of `std::string`, `std::vector<std::string>` for a
+list and `std::optional` for an absent optional entry, over
+`sce/forge/content_line.h`. Its decode is `std::nullopt` on every refusal and
+leaves the cursor where it was; the rule that refused is a `Reader::error()` of
+the runtime, which a generated decode does not carry out. An encode refusal is a
+`CodecError` (`LineTooMany`, `LineTooLong`, `LineBadValue`,
+`LineRequiredMissing`); a value that is not UTF-8 is refused on encode as the
+decode would refuse it. Each other backend refuses the codec by name
+(`generate/unsupported-feature`) until its own commit lands. The generator's
+refusal and the conformance harness's schedule
 read one answer (`content_line_codec::refusal`), and the vectors every backend is
 held to (`codec_content_line_event` in `numerical_reference.json`) are written by
 an independent model of this page (`tests/forge/conformance/content_line_model.py`).

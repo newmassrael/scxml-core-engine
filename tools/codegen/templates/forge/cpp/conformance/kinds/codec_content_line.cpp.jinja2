@@ -1,0 +1,84 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# Content-line codec kind (SCE_FORGE.md §4.6.4) — { decoded, encoded } cases
+   and reject vectors, as the generic codec fragment has them, with what a
+   content-line component adds: an entry can be absent (`std::optional`) or a
+   list (`std::vector`), a case marked `decode_only` is an input the codec reads
+   and does not write, and a refused decode leaves the cursor where it found it.
+   C++ names no failure (the nullopt convention), so a reject asserts refusal.
+   The rejects are read from the reference like the cases are, and not inlined
+   as byte literals. #}
+    const auto &spec = ref["{{ f.ref_section }}"]["{{ f.name }}"];
+    int i = 0;
+    for (const auto &case_entry : spec["cases"]) {
+        const auto &decoded_json = case_entry["decoded"];
+        std::vector<std::uint8_t> expected_bytes;
+        for (const auto &b : case_entry["encoded"]) {
+            expected_bytes.push_back(static_cast<std::uint8_t>(b.get<unsigned int>()));
+        }
+        if (case_entry.contains("text") && case_entry["text"].is_string()) {
+            const auto text = case_entry["text"].get<std::string>();
+            CHECK(std::vector<std::uint8_t>(text.begin(), text.end()) == expected_bytes,
+                  "{{ f.name }} case %d: `text` and `encoded` disagree", i);
+        }
+        const bool decode_only = case_entry.value("decode_only", false);
+
+        ::SCE::Forge::SceCursor cursor(expected_bytes.data(), expected_bytes.size());
+        auto round_tripped = SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.name | to_pascal_case }}::decode(cursor);
+        CHECK(round_tripped.has_value(), "{{ f.name }} case %d decode returned nullopt", i);
+        if (round_tripped.has_value()) {
+{% for field in f.fields %}
+{% if field.list %}
+            CHECK(round_tripped->{{ field.name }} == decoded_json["{{ field.name }}"].get<std::vector<{{ field.type | cpp_type }}>>(),
+                  "{{ f.name }} case %d decode {{ field.name }}", i);
+{% elif field.optional %}
+            {
+                std::optional<{{ field.type | cpp_type }}> want;
+                if (!decoded_json["{{ field.name }}"].is_null()) {
+                    want = decoded_json["{{ field.name }}"].get<{{ field.type | cpp_type }}>();
+                }
+                CHECK(round_tripped->{{ field.name }} == want, "{{ f.name }} case %d decode {{ field.name }}", i);
+            }
+{% else %}
+            CHECK(round_tripped->{{ field.name }} == decoded_json["{{ field.name }}"].get<{{ field.type | cpp_type }}>(),
+                  "{{ f.name }} case %d decode {{ field.name }}", i);
+{% endif %}
+{% endfor %}
+        }
+
+        if (!decode_only) {
+            SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.name | to_pascal_case }} _codec_val{};
+{% for field in f.fields %}
+{% if field.list %}
+            _codec_val.{{ field.name }} = decoded_json["{{ field.name }}"].get<std::vector<{{ field.type | cpp_type }}>>();
+{% elif field.optional %}
+            if (!decoded_json["{{ field.name }}"].is_null()) {
+                _codec_val.{{ field.name }} = decoded_json["{{ field.name }}"].get<{{ field.type | cpp_type }}>();
+            }
+{% else %}
+            _codec_val.{{ field.name }} = decoded_json["{{ field.name }}"].get<{{ field.type | cpp_type }}>();
+{% endif %}
+{% endfor %}
+            auto encoded = _codec_val.encode_to_vec();
+            CHECK(encoded.has_value(), "{{ f.name }} case %d encode refused", i);
+            CHECK(encoded.value_or(std::vector<std::uint8_t>{}) == expected_bytes,
+                  "{{ f.name }} case %d encode: bytes differ", i);
+        }
+        ++i;
+    }
+
+    int reject_index = 0;
+    for (const auto &reject : spec["rejects"]) {
+        std::vector<std::uint8_t> reject_bytes;
+        for (const auto &b : reject["encoded"]) {
+            reject_bytes.push_back(static_cast<std::uint8_t>(b.get<unsigned int>()));
+        }
+        ::SCE::Forge::SceCursor reject_cursor(reject_bytes.data(), reject_bytes.size());
+        auto refused = SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.name | to_pascal_case }}::decode(reject_cursor);
+        CHECK(!refused.has_value(), "{{ f.name }} reject %d: %s", reject_index,
+              reject["why"].get<std::string>().c_str());
+        CHECK(reject_cursor.remaining() == reject_bytes.size(), "{{ f.name }} reject %d: the cursor moved",
+              reject_index);
+        ++reject_index;
+    }

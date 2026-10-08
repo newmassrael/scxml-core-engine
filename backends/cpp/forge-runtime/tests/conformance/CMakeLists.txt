@@ -297,3 +297,11 @@ add_executable(cbor_runtime_test "${CMAKE_CURRENT_SOURCE_DIR}/cbor_runtime_test.
 target_include_directories(cbor_runtime_test PRIVATE "${RUNTIME_INCLUDE_DIR}")
 target_compile_options(cbor_runtime_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
 add_test(NAME cbor_runtime COMMAND cbor_runtime_test)
+
+# The runtime's content lines on their own (sce/forge/content_line.h), under the
+# same blanket -Werror; what a generated content-line codec does with them is
+# judged by the harness above (codec_content_line_event).
+add_executable(content_line_runtime_test "${CMAKE_CURRENT_SOURCE_DIR}/content_line_runtime_test.cpp")
+target_include_directories(content_line_runtime_test PRIVATE "${RUNTIME_INCLUDE_DIR}")
+target_compile_options(content_line_runtime_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+add_test(NAME content_line_runtime COMMAND content_line_runtime_test)

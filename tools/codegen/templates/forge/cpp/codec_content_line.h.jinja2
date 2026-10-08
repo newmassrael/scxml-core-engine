@@ -1,0 +1,223 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{#- Where a read value goes: a list takes one more value, any other entry is
+    marked present (a second line of it is refused) and set. #}
+{% macro store(e, expr) -%}
+{% if e.is_list -%}
+out.{{ e.name }}.push_back({{ expr }});
+{%- else -%}
+{{ e.name }}_present = true;
+                out.{{ e.name }} = {{ expr }};
+{%- endif %}
+{%- endmacro %}
+{#- The read of one property's value and its store; a refusal returns
+    `std::nullopt` from `decode_at`, this backend's decode convention. The line
+    grammar — unfolding, TEXT escapes, quoting — is the runtime's
+    (`SCE::Forge::ContentLine`); this spells none of it. #}
+{% macro read_value(e) %}
+{% if e.kind == "string" %}
+                auto v = line->read_string({{ e.max_size }}, {{ "true" if e.text else "false" }});
+                if (!v) return std::nullopt;
+                {{ store(e, "std::move(*v)") }}
+{% elif e.kind == "bool" %}
+                const auto v = line->read_bool();
+                if (!v) return std::nullopt;
+                {{ store(e, "*v") }}
+{% elif e.kind == "uint" %}
+                const auto raw = line->read_uint(static_cast<std::uint64_t>(std::numeric_limits<{{ e.value_type }}>::max()));
+                if (!raw) return std::nullopt;
+                {{ store(e, "static_cast<" ~ e.value_type ~ ">(*raw)") }}
+{% else %}
+                const auto raw = line->read_int(static_cast<std::int64_t>(std::numeric_limits<{{ e.value_type }}>::min()),
+                                                static_cast<std::int64_t>(std::numeric_limits<{{ e.value_type }}>::max()));
+                if (!raw) return std::nullopt;
+                {{ store(e, "static_cast<" ~ e.value_type ~ ">(*raw)") }}
+{% endif %}
+{% endmacro %}
+{#- The write of one property's value `v`, its name and parameters already
+    written. #}
+{% macro write_value(e) %}
+{% if e.kind == "string" %}
+            if (auto e = out.string(v, {{ "true" if e.text else "false" }}, {{ e.max_size }})) return e;
+{% elif e.kind == "bool" %}
+            if (auto e = out.boolean(v)) return e;
+{% elif e.kind == "uint" %}
+            if (auto e = out.uint(static_cast<std::uint64_t>(v))) return e;
+{% else %}
+            if (auto e = out.integer(static_cast<std::int64_t>(v))) return e;
+{% endif %}
+{% endmacro %}
+{#- The parameters of a property, each written when present. #}
+{% macro write_params(e) %}
+{% for p in e.params %}
+{% if p.required %}
+            if (auto e = out.param("{{ p.param }}", {{ p.name }}, {{ p.max_size }})) return e;
+{% else %}
+            if ({{ p.name }}.has_value()) {
+                if (auto e = out.param("{{ p.param }}", *{{ p.name }}, {{ p.max_size }})) return e;
+            }
+{% endif %}
+{% endfor %}
+{% endmacro %}
+{{ sce_map.source_marker(source_location, "cpp", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec" sce:encoding="content-line")
+// Runtime: {{ runtime_dep }}
+// Do not edit — regenerate from the source SCXML file.
+
+#pragma once
+#ifndef {{ guard }}
+#define {{ guard }}
+
+#include <cstdint>
+#include <limits>
+#include <optional>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include "sce/forge/codec.h"
+#include "sce/forge/content_line.h"
+{% for imp in all_imports %}
+{% if imp.include_stmt %}
+{{ imp.include_stmt }}
+{% endif %}
+{% endfor %}
+
+namespace SCE::Generated::{{ namespace }} {
+
+/// One `{{ component }}` component of content lines (SCE_FORGE.md §4.6.4).
+/// Decode reads the properties this codec declares in any order and skips the
+/// rest; encode writes the entries present in declaration order, folded at 75
+/// octets. A required entry starts at its type's default and an optional one
+/// absent, so `{{ struct_name }}{}` is the infallible constructor every codec
+/// offers.
+struct {{ struct_name }} {
+{% for e in entries %}
+    /// Property `{{ e.property }}`{% if e.is_list %}, up to {{ e.max_count }} lines{% elif e.required %}, required{% endif %}.
+    {{ e.field_type }} {{ e.name }}{};
+{% for p in e.params %}
+    /// Parameter `{{ p.param }}` of `{{ e.property }}`{% if p.required %}, required{% endif %}.
+    {{ p.field_type }} {{ p.name }}{};
+{% endfor %}
+{% endfor %}
+
+    /// Decode one component from `cursor`. On success the cursor advances past
+    /// its `END:` line; `std::nullopt` on any refusal, with the cursor left
+    /// where it was.
+    static std::optional<{{ struct_name }}> decode(::SCE::Forge::SceCursor &cursor) {
+        ::SCE::Forge::SceCursor c = cursor;
+        auto value = decode_at(c);
+        if (value) {
+            cursor = c;
+        }
+        return value;
+    }
+
+    /// Encode this component into `w`; `std::nullopt` on success. A value past
+    /// its declared bound, or one a line could not carry, is refused, not
+    /// written (SCE_FORGE.md §4.6.4).
+    [[nodiscard]] std::optional<::SCE::Forge::CodecError> encode(::SCE::Forge::SceSink &w) const noexcept {
+        namespace cl = ::SCE::Forge::ContentLine;
+        cl::Writer out(w, "{{ component }}");
+        if (auto e = out.begin()) return e;
+{% for e in entries %}
+{% if e.is_list %}
+        if ({{ e.name }}.size() > {{ e.max_count }}) return ::SCE::Forge::CodecError::LineTooMany;
+        for (const auto &v : {{ e.name }}) {
+            if (auto e = out.property("{{ e.property }}")) return e;
+{{ write_value(e) }}        }
+{% elif e.required %}
+        {
+            const auto &v = {{ e.name }};
+            if (auto e = out.property("{{ e.property }}")) return e;
+{{ write_params(e) }}{{ write_value(e) }}        }
+{% else %}
+        if ({{ e.name }}.has_value()) {
+            const auto &v = *{{ e.name }};
+            if (auto e = out.property("{{ e.property }}")) return e;
+{{ write_params(e) }}{{ write_value(e) }}        }{% if e.optional_params %} else if ({% for p in e.optional_params %}{% if not loop.first %} || {% endif %}{{ p.name }}.has_value(){% endfor %}) {
+            // A parameter with no value of its property has no line to stand on.
+            return ::SCE::Forge::CodecError::LineRequiredMissing;
+        }{% endif %}
+
+{% endif %}
+{% endfor %}
+        return out.finish();
+    }
+
+    /// `encode` into a new vector; `std::nullopt` when encode refuses the value.
+    [[nodiscard]] std::optional<std::vector<std::uint8_t>> encode_to_vec() const {
+        std::vector<std::uint8_t> out;
+        ::SCE::Forge::VectorSink sink(out);
+        if (encode(sink)) {
+            return std::nullopt;
+        }
+        return out;
+    }
+
+private:
+    static std::optional<{{ struct_name }}> decode_at(::SCE::Forge::SceCursor &c) {
+        namespace cl = ::SCE::Forge::ContentLine;
+        auto reader = cl::Reader::begin(c.peek_slice(c.remaining()), c.remaining(), "{{ component }}");
+        if (!reader) return std::nullopt;
+        {{ struct_name }} out;
+{% for e in entries %}
+{% if not e.is_list %}
+        bool {{ e.name }}_present = false;
+{% endif %}
+{% for p in e.params %}
+        bool {{ p.name }}_present = false;
+{% endfor %}
+{% endfor %}
+        for (;;) {
+            auto line = reader->next();
+            if (!line) {
+                if (reader->failed()) return std::nullopt;
+                break;
+            }
+{% for e in entries %}
+            {% if not loop.first %}else {% endif %}if (line->is("{{ e.property }}")) {
+{% if e.is_list %}
+                if (out.{{ e.name }}.size() >= {{ e.max_count }}) return std::nullopt;
+{% else %}
+                if ({{ e.name }}_present) return std::nullopt;
+{% endif %}
+{% if e.params %}
+                for (;;) {
+                    const auto more = line->next_param();
+                    if (!more) return std::nullopt;
+                    if (!*more) break;
+{% for p in e.params %}
+                    {% if not loop.first %}else {% endif %}if (line->param_is("{{ p.param }}")) {
+                        if ({{ p.name }}_present) return std::nullopt;
+                        auto pv = line->read_param_string({{ p.max_size }});
+                        if (!pv) return std::nullopt;
+                        {{ p.name }}_present = true;
+                        out.{{ p.name }} = std::move(*pv);
+                    }
+{% endfor %}
+                }
+{% endif %}
+{{ read_value(e) }}            }
+{% endfor %}
+        }
+{% for e in entries %}
+{% if e.required %}
+        if (!{{ e.name }}_present) return std::nullopt;
+{% endif %}
+{% for p in e.params if p.required %}
+        if (!{{ p.name }}_present) return std::nullopt;
+{% endfor %}
+{% endfor %}
+        // Only a component that decoded whole moves the cursor.
+        if (!c.advance(reader->consumed())) return std::nullopt;
+        return out;
+    }
+};
+
+}  // namespace SCE::Generated::{{ namespace }}
+
+#endif  // {{ guard }}

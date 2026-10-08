@@ -29,7 +29,7 @@ use crate::generator::Language;
 /// generator's refusal and the conformance harness's schedule both read, so a
 /// fixture is run exactly where the generator admits it.
 pub fn lowers(lang: Language) -> bool {
-    matches!(lang, Language::Rust | Language::Kotlin)
+    matches!(lang, Language::Rust | Language::Kotlin | Language::Cpp)
 }
 
 /// Why `lang` does not generate the content-line codec `m`, or `None` when it
@@ -60,6 +60,7 @@ pub fn render(
     match lang {
         Language::Rust => render_rust(env, m, imports),
         Language::Kotlin => render_kotlin(env, m, imports),
+        Language::Cpp => render_cpp(env, m, imports),
         _ => unreachable!("`refusal` admits only a backend that has a render"),
     }
 }
@@ -165,24 +166,77 @@ fn render_kotlin(
         |_| "String".to_string(),
         |ty| Some(l.default_expr(ty)),
     );
-    for entry in &mut entries {
+    shape_fields(
+        &mut entries,
+        &FieldShapes {
+            list_type: "MutableList<String>",
+            list_default: Some("mutableListOf()"),
+            optional_type: &|t| format!("{t}?"),
+            optional_default: Some("null"),
+        },
+    );
+    insert_component(&mut ctx, m);
+    ctx.insert("entries".into(), entries.into());
+    l.render(env, "codec_content_line", ctx)
+}
+
+fn render_cpp(
+    env: &minijinja::Environment,
+    m: &CodecModel,
+    imports: &[ImportContext],
+) -> Result<String, ForgeError> {
+    let l = LangCtx::new(Language::Cpp, imports);
+    let mut ctx = l.base_context(&m.name);
+    l.insert_imports(&mut ctx, imports);
+    // Owned values, as every C++ codec holds them: a string is a `std::string`, a
+    // list a `std::vector`, and an optional entry or parameter a `std::optional`.
+    // A member is value-initialized, which is the right start for every kind
+    // this codec holds: an empty string, a zero, `false`.
+    let mut entries = entries_context(&l, m, |_| "std::string".to_string(), |_| None);
+    shape_fields(
+        &mut entries,
+        &FieldShapes {
+            list_type: "std::vector<std::string>",
+            list_default: None,
+            optional_type: &|t| format!("std::optional<{t}>"),
+            optional_default: None,
+        },
+    );
+    insert_component(&mut ctx, m);
+    ctx.insert("entries".into(), entries.into());
+    l.render(env, "codec_content_line", ctx)
+}
+
+/// How a backend spells an entry that is a list or is optional, and what such
+/// a field starts at, for [`shape_fields`].
+struct FieldShapes<'a> {
+    list_type: &'a str,
+    /// The start of a list, when the backend spells one.
+    list_default: Option<&'a str>,
+    /// The type of a value that may be absent.
+    optional_type: &'a dyn Fn(&str) -> String,
+    /// What an absent value starts at, when the backend spells one.
+    optional_default: Option<&'a str>,
+}
+
+/// Give each entry and each of its parameters the type of the field that holds
+/// it — the value's type when it is required, the backend's optional spelling
+/// when it is not, its list type for a list — and list the parameters that may be
+/// absent, which an encode must check against an absent property. A required
+/// value keeps the `default` the context gave it.
+fn shape_fields(entries: &mut [serde_json::Value], shapes: &FieldShapes<'_>) {
+    for entry in entries {
         let value_type = entry["value_type"].as_str().unwrap_or_default().to_string();
         let required = entry["required"].as_bool() == Some(true);
-        let (field_type, default) = if entry["is_list"].as_bool() == Some(true) {
-            (
-                "MutableList<String>".to_string(),
-                "mutableListOf()".to_string(),
-            )
-        } else if required {
-            (
-                value_type.clone(),
-                entry["default"].as_str().unwrap_or_default().to_string(),
-            )
+        if entry["is_list"].as_bool() == Some(true) {
+            entry["field_type"] = shapes.list_type.into();
+            entry["default"] = shapes.list_default.into();
+        } else if !required {
+            entry["field_type"] = (shapes.optional_type)(&value_type).into();
+            entry["default"] = shapes.optional_default.into();
         } else {
-            (format!("{value_type}?"), "null".to_string())
-        };
-        entry["field_type"] = field_type.into();
-        entry["default"] = default.into();
+            entry["field_type"] = value_type.into();
+        }
         let mut optional_params = Vec::new();
         if let Some(serde_json::Value::Array(params)) = entry.get_mut("params") {
             for param in params {
@@ -190,17 +244,14 @@ fn render_kotlin(
                 if param["required"].as_bool() == Some(true) {
                     param["field_type"] = value_type.into();
                 } else {
-                    param["field_type"] = format!("{value_type}?").into();
-                    param["default"] = "null".into();
+                    param["field_type"] = (shapes.optional_type)(&value_type).into();
+                    param["default"] = shapes.optional_default.into();
                     optional_params.push(serde_json::json!({ "name": param["name"] }));
                 }
             }
         }
         entry["optional_params"] = optional_params.into();
     }
-    insert_component(&mut ctx, m);
-    ctx.insert("entries".into(), entries.into());
-    l.render(env, "codec_content_line", ctx)
 }
 
 fn render_rust(
