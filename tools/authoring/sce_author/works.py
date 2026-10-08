@@ -166,6 +166,29 @@ def read_requirements(work: str) -> dict | None:
     return _requirements_of(answer["requirements"], answer["standing"], answer["source_head"])
 
 
+def read_requirements_at(work: str, revision: str) -> dict | None:
+    """The requirement list the work had at `revision` (a revision of its list chain, such as the
+    one an acceptance names in its basis), as `read_requirements` gives the current one.
+
+    The list as it was kept, not as the work stands: its `standing` is said against the text's
+    head now, which is of the revision read and not a claim about the list's own text."""
+    answer = call_work("read_requirements", {"id": work, "revision": revision})
+    return _requirements_of(answer["requirements"], answer["standing"], answer["source_head"])
+
+
+def read_acceptance_delta(work: str) -> dict:
+    """What moved in the work's design since the owner accepted it, requirement by requirement,
+    asked of the product (`sce-codegen acceptance-delta`) by the application's command layer.
+
+    One state of the work: `acceptance` (its `basis` names the list it was taken of), `now`
+    (the revisions it is compared with), `manifest` (the pin the product's record holds of the
+    list: document, revision and digest) and `lines` (the product's own, `None` for a work
+    nobody accepted). A report and not a verdict: the acceptance lapses by its bytes
+    (`read_acceptance`), and `unchanged` is the product's closure of what a requirement depends
+    on reading the same. A record the product cannot compare is refused in its words."""
+    return call_work("read_acceptance_delta", {"id": work})
+
+
 def _requirements_of(held: dict | None, standing: str | None,
                      source_head: str | None) -> dict | None:
     """The requirement list as a client reads it, from what the command layer answered."""

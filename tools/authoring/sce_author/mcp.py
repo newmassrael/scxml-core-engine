@@ -37,6 +37,8 @@ So the shape a caller gets is:
     works_read              one work: its text now, the model saved for it, its requirements, and the owner's acceptance
     works_save_model        save the model written for it, once the product accepts it
     works_save_requirements save the requirement list read from its text, once the product loads it
+    works_revision_check    what a revision of a work did to each requirement, and whether it stayed in reach
+    works_revision_report   the page the owner reads of that revision: only what to look at again
     works_begin_generation  take the work's request for a model (or make one), and hold it while you write
     works_finish_generation say it is done: the model and the list become the work's together
     works_fail_generation   say it could not be done, and why
@@ -101,7 +103,7 @@ from .scenario_driver import read_set as read_scenario_set
 from .scenario_driver import run as run_scenarios
 from .verify import validate_scxml as run_scxml_validation
 from .verify import (accept_design, acceptance_delta, acceptance_holds, acceptance_impact,
-                     acceptance_page,
+                     acceptance_page, delta_object,
                      design_requirement_records, diagram_figures, kind_catalog,
                      requirement_records, unresolved_markers, validate_scxml_set)
 from .verify import page_provenance, pseudo_page, verify as run_verify
@@ -1636,6 +1638,60 @@ TOOLS = [
                     "works_finish_generation; without it the list is saved as the work's "
                     "now, which a work that has had a model published by a generation "
                     "refuses (`bundled-work`).")},
+            },
+        },
+    },
+    {
+        "name": "works_revision_check",
+        "description": (
+            "What a revision of a work did, requirement by requirement, and whether it "
+            "stayed within the reach of what changed. Give only the `work`: the owner's "
+            "acceptance and the design and requirement list the work has now are read as "
+            "one state, and the two sides of the join are the work's own. The WORDS of "
+            "each requirement (carried, changed, new or retired) are derived from the "
+            "lineage of the list the owner accepted and the lineage of the list the work "
+            "has now, so any two revisions can be compared, however many lie between; the "
+            "EVIDENCE (unchanged, changed, new or dropped) is the product's own comparison "
+            "of the rows the owner was shown with the design as it is now. Returns JSON "
+            "like scxml_revision_check: `verdict` (`within-reach`, or `outside-reach` when "
+            "a design moved where the words did not, or still cites what the specification "
+            "dropped), `summary`, `requirements` (each with `kind` and `severity`) and "
+            "`unclaimed`, and `of`: the list and design revisions it is about. A "
+            "requirement that no node cites is `uncited` and was not compared; when "
+            "`summary.seen` is 0 the verdict says nothing about the design, and you must "
+            "say so. A report and not a verdict on the owner's acceptance: it lapses by "
+            "its bytes (works_read says whether it holds), `within-reach` is not `right`, "
+            "and nothing is accepted by this tool. Refused, in words, when nothing was "
+            "accepted, when either list has no lineage and no sidecar to make one from, or "
+            "when the acceptance was taken under an older evidence rule (take it again). "
+            "Local servers only."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "required": ["work"],
+            "properties": {
+                "work": {"type": "string", "description": "The work's `id`, from works_list."},
+            },
+        },
+    },
+    {
+        "name": "works_revision_report",
+        "description": (
+            "The page the owner reads of a revision of a work: only what to look at again, "
+            "with the requirements whose words and evidence both read the same folded into "
+            "one line. The same join as works_revision_check. Give `sentences: true` to "
+            "print each requirement's sentence from the work's own list; the page then "
+            "carries the owner's sentences and says so. Returns JSON: `verdict`, `summary` "
+            "and `page` -- show the page verbatim. Nothing is accepted by this tool. "
+            "Local servers only."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "required": ["work"],
+            "properties": {
+                "work": {"type": "string", "description": "The work's `id`, from works_list."},
+                "sentences": {"type": "boolean", "description": (
+                    "Print each listed requirement's sentence. Default false.")},
             },
         },
     },
@@ -3595,6 +3651,95 @@ _STUB_DESIGN = ('<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" in
                 '<state id="s"/></scxml>\n')
 
 
+def _lineage_of(held: dict, what: str) -> dict:
+    """The lineage of a list the work kept: the one saved with it, or, for a list made before
+    lineages, the one adopting it makes (the ids it has, the words behind them from its sidecar),
+    which is what a later list built against it was given in the first place. Refuses a list that
+    gives neither, saying what to do."""
+    if "lineage_text" in held:
+        return requirement_lineage.parse(held["lineage_text"])
+    if "sidecar_text" not in held:
+        raise requirement_lineage.LineageError(
+            f"the list {what} keeps no lineage and no sidecar, so the words behind its ids are "
+            "not known")
+    try:
+        manifest, sidecar = json.loads(held["manifest_text"]), json.loads(held["sidecar_text"])
+    except ValueError as error:
+        raise requirement_lineage.LineageError(f"the list {what} is not JSON: {error}") from error
+    texts = {id_: requirement_set.normalise(text) for id_, text in (sidecar.get("text") or {}).items()
+             if isinstance(text, str)}
+    return requirement_lineage.adopt(manifest.get("doc_id"), manifest, texts,
+                                     manifest_sha256=requirement_lineage.sha256_text(
+                                         held["manifest_text"]))
+
+
+def _work_revision_join(args: dict) -> tuple[dict | None, dict | None, dict | None]:
+    """A work's words joined with its evidence: `(result, newer list, failure to return)`.
+
+    The words are derived from two states of the work's own chain: the list the owner's
+    acceptance was taken of (its basis names it) and the list the work has now, each with its
+    lineage. The evidence is the product's own comparison of the design now with what the owner
+    was shown, asked by the application's command layer, which lays the work out as it always does
+    and reads the acceptance and the design as one state of the work. Both are the work's, so
+    nothing here can be handed another specification's delta, and the step between them is
+    whatever happened between those two revisions, however many there were."""
+    try:
+        read = works.read_acceptance_delta(args["work"])
+        if read["acceptance"] is None:
+            return None, None, _failure(
+                "this work has no acceptance: nothing was accepted, so there is nothing to compare "
+                "the design with. The owner accepts a design in the application")
+        basis, now = read["acceptance"]["basis"], read["now"]
+        older = works.read_requirements_at(args["work"], basis["requirements"])
+        newer = works.read_requirements_at(args["work"], now["requirements"])
+    except works.WorksError as exc:
+        return None, None, _works_refused(exc)
+    try:
+        words = requirement_lineage.between(_lineage_of(older, "the owner accepted"),
+                                            _lineage_of(newer, "the work has now"))
+        record = {"manifest": read["manifest"]}
+        revision.belongs_to(words, record)
+        result = revision.join(words, delta_object(read["lines"]))
+    except requirement_lineage.LineageError as error:
+        return None, None, _failure(
+            f"cannot say what the revision did to each requirement's words: {error}. Build the "
+            "list again with scxml_requirement_set against the lineage works_read gives and save "
+            "it with works_save_requirements")
+    except revision.RevisionError as error:
+        return None, None, _failure(str(error))
+    result["of"] = {"accepted": basis, "now": now}
+    return result, newer, None
+
+
+def _works_revision_check_tool(args: dict, staging: _Staging) -> dict:
+    """What a revision of a work did, per requirement: its words (from the work's lineage) beside
+    its evidence (from the product), and whether it stayed within the reach of what changed."""
+    staging.refuse_works("works_revision_check")
+    work = _name_arg(args, "work", "a work's id", required=True)
+    result, _, failure = _work_revision_join({"work": work})
+    return failure or _text(json.dumps(result, indent=2, ensure_ascii=False) + "\n")
+
+
+def _works_revision_report_tool(args: dict, staging: _Staging) -> dict:
+    """The page the owner reads of a revision of a work: only what to look at again."""
+    staging.refuse_works("works_revision_report")
+    work = _name_arg(args, "work", "a work's id", required=True)
+    result, newer, failure = _work_revision_join({"work": work})
+    if failure:
+        return failure
+    sentences = None
+    if args.get("sentences") is True:
+        try:
+            held = json.loads(newer["sidecar_text"])["text"]
+            sentences = {id_: text for id_, text in held.items() if isinstance(text, str)}
+        except (KeyError, ValueError, AttributeError):
+            sentences = {}
+    title = f"{result['of']['accepted']['requirements'][:12]} to {result['of']['now']['requirements'][:12]}"
+    answer = {"verdict": result["verdict"], "summary": result["summary"],
+              "page": revision.render(result, sentences, title=f"work {work}, list {title}")}
+    return _text(json.dumps(answer, indent=2, ensure_ascii=False) + "\n")
+
+
 def _lineage_refusal(work: str, base: str | None, by_generation: bool, manifest_text: str,
                      lineage_text: str | None) -> str | None:
     """Why the lineage handed to works_save_requirements cannot be kept with this list, or None.
@@ -3837,6 +3982,8 @@ _PACK_FREE = {
     "works_read": _works_read_tool,
     "works_save_model": _works_save_model_tool,
     "works_save_requirements": _works_save_requirements_tool,
+    "works_revision_check": _works_revision_check_tool,
+    "works_revision_report": _works_revision_report_tool,
     "works_begin_generation": _works_begin_generation_tool,
     "works_finish_generation": _works_finish_generation_tool,
     "works_fail_generation": _works_fail_generation_tool,

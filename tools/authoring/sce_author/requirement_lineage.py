@@ -317,6 +317,51 @@ def pin_manifest(lineage: dict, manifest_text: str) -> None:
     _checked(lineage)
 
 
+def between(older: dict, newer: dict) -> dict:
+    """What happened to each requirement's WORDS between two states of one work's lineage: the
+    `delta` that `scxml_requirement_set` would have returned had the revisions been built one
+    after the other, derived from the two lineages alone.
+
+    `older` is the lineage of the list an acceptance was taken of and `newer` the lineage of the
+    list the work has now. `newer` has to continue `older` (`extends`): a lineage of another
+    history says nothing about what became of the requirements of this one. An id that is live in
+    both is `carried` when the words it last had are the same and `changed` when they are not; one
+    live in `older` and retired in `newer` is `retired`; one live in `newer` and not in `older` is
+    `new`. One issued AND retired between the two is not listed: no design accepted at `older` can
+    cite it, and none now should.
+
+    ⚠ Any two states can be compared, not only neighbours, which is what a single delta of one
+    step cannot do (ADR 0009 refuses a delta of a later step than the record's). A requirement
+    reworded and reworded back is `carried`, as it is the same words as it was accepted with."""
+    extends(older, newer)
+    old_rows = {row["id"]: row for row in older["requirements"]}
+    carried, changed, new, retired = [], [], [], []
+    for row in sorted(newer["requirements"], key=lambda r: _id_order(r["id"])):
+        id_, was = row["id"], old_rows.get(row["id"])
+        live_now = row["retired_rev"] is None
+        live_then = was is not None and was["retired_rev"] is None
+        if live_then and live_now:
+            same = was["quotes"][-1]["sha256"] == row["quotes"][-1]["sha256"]
+            (carried if same else changed).append(id_)
+        elif live_then:
+            retired.append(id_)
+        elif live_now:
+            # Not live then and live now is an id issued since: `extends` has refused a retired
+            # id that lives again, so there is no other way to be here.
+            new.append(id_)
+    first, last = older["revisions"][-1], newer["revisions"][-1]
+    return {
+        "doc_id": newer["doc_id"], "from_rev": first["rev"],
+        "from_manifest_sha256": first.get("manifest_sha256"), "rev": last["rev"],
+        "specification_changed": first.get("spec_sha256") != last.get("spec_sha256"),
+        "requirements": {
+            "carried": carried,
+            "changed": [{"id": id_, "how": "lineage"} for id_ in changed],
+            "new": new, "retired": retired,
+        },
+    }
+
+
 def belongs_to_manifest(lineage: dict, manifest_text: str) -> None:
     """Refuse a lineage that is not the lineage of this manifest.
 

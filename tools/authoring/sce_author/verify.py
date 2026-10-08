@@ -1262,20 +1262,28 @@ def acceptance_delta(record: pathlib.Path, root: pathlib.Path,
                                       cwd=cwd)
     if refusal:
         return "", refusal
-    lines = json.loads(report)["lines"]
+    answer = delta_object(json.loads(report)["lines"])
+    return json.dumps(answer, indent=2, ensure_ascii=False) + "\n", ""
+
+
+def delta_object(lines: list) -> dict:
+    """The lines `acceptance-delta` writes (a line per requirement, the rows that claim nothing,
+    a summary) as the one object the authoring tools read, whoever asked the product: the
+    generator run here, or the application's command layer asking it of a work.
+
+    Gathered, not read again: what each requirement's evidence did is the product's to say."""
     summary = next((line for line in lines if line.get("kind") == "acceptance-delta-summary"), None)
     unclaimed = next((line for line in lines if line.get("kind") == "acceptance-delta-unclaimed"),
                      None)
     requirements = [{key: value for key, value in line.items() if key not in ("v", "kind")}
                     for line in lines if line.get("kind") == "acceptance-delta"]
-    answer = {
+    return {
         "version": 1,
         "summary": {key: summary[key] for key in ("requirements", "unchanged", "changed",
                                                   "new", "dropped")} if summary else None,
         "requirements": requirements,
         "unclaimed": {key: unclaimed[key] for key in ("added", "gone")} if unclaimed else None,
     }
-    return json.dumps(answer, indent=2, ensure_ascii=False) + "\n", ""
 
 
 def _json_line(stdout: str):

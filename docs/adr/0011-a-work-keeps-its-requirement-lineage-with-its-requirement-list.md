@@ -169,6 +169,49 @@ Criteria set before code. Each stage ends with a push; none needs the next.
 4. **The workbench report.** The screen shows the revision report of a work whose acceptance
    lapsed because its text was revised. Depends on D1 and on the screen; not specified here.
 
+## What stage 3 measured
+
+Implemented as `requirement_lineage.between` (the words of a revision, from two lineages),
+`works.read_requirements_at` and `works.read_acceptance_delta`, the tools `works_revision_check`
+and `works_revision_report` (`mcp._work_revision_join`), and, in `app-core`, a new command
+`read_acceptance_delta` (command set 20) over a new method of the acceptor,
+`delta_acceptance`, which stages the work as the product is always shown one and runs
+`acceptance-delta`. The acceptance and the design and list it is compared with are read as ONE
+state of the work, and the manifest the record pinned is passed on beside the lines. The join
+stays where ADR 0009 put it (D1 is not decided by this stage). Held by
+`app-core/tests/what_moved_in_a_work_since_it_was_accepted.rs` (6 tests), the stand-in and the
+real generator in `tests/acceptance_product.rs`, the contract file, the screen's guard
+(`parseReadAcceptanceDelta`, 2 tests; the screen does not show the report yet),
+`tests/test_a_lineage_is_only_ever_appended_to.py` (10 tests of `between`) and
+`tests/test_a_revision_of_a_work_is_checked_against_what_its_owner_accepted.py` (12 tests
+against the real `sce-work` and generator):
+
+1. **Met.** A work nothing was done to carries every requirement over; a sentence dropped with
+   its citation taken off is `retired-cleanly`; dropped and still cited is `outside-reach`
+   (`retired-still-cited`); a design moved where the words did not is `moved-without-reason`,
+   with the places the product names.
+2. **Met.** Two revisions after the acceptance are one step: the dropped sentence's id is
+   `retired-cleanly` and the new one `implemented-new`, with the id the lineage issued (`R4`, not
+   the dropped `R3` again). `between` lists neither an id issued and retired in between nor a
+   requirement reworded and reworded back as changed.
+3. **Met.** An acceptance of a list that had no lineage is compared by adopting its manifest
+   and sidecar; one with neither is refused in words; a work nobody accepted is refused
+   (`nothing was accepted`); a remote caller is not offered either tool.
+4. **Met, held by a test that alters the answer.** The manifest the acceptance pinned is
+   compared with the digest of the list the words start from. By construction the two agree on
+   every real path (a lineage is saved only beside the manifest it names), so the check cannot
+   fire there; it is held by patching the command's answer, as only a wrong staging could.
+5. **Met.** The product's own words reach the tool: a record it cannot compare (taken before it
+   kept the rows, or under another rule) is refused in its sentence, not read as "every
+   requirement is new".
+
+⚠ Where each refusal is held. The command's own tests use the in-process stand-in product, which
+cannot be made to refuse a record through the commands (a work always has a design to compare),
+so a test written there for "a record the product cannot compare" held nothing beyond the
+timeout and was removed rather than left claiming more. That refusal is held where a refusal can
+be made: `acceptance_product.rs` has a script stand-in that refuses a record without evidence and
+says nothing for a silent failure, as the real product does.
+
 ## What stage 2 measured
 
 Implemented in `tools/authoring`: `requirement_lineage.extends` and `belongs_to_manifest` (the two

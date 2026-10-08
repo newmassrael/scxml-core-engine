@@ -1080,6 +1080,21 @@ application opens (`SCE_WORKS_DIR`, else the per-user data directory).
   ids issued since are numbered from where the last left off). The core holds the
   first of these; the other two are this package's, because it owns what a lineage
   means (`docs/adr/0011-a-work-keeps-its-requirement-lineage-with-its-requirement-list.md`).
+- **`works_revision_check` and `works_revision_report` say what a revision of a work did**,
+  given only the `work`. Once the owner has accepted a design in the application and revised
+  the text, the words of each requirement (carried, changed, new or retired) are derived from
+  the lineage of the list the owner accepted and the lineage of the list the work has now, so
+  any two revisions can be compared however many lie between; the evidence (unchanged,
+  changed, new or dropped) is the product's own comparison of the rows the owner was shown
+  with the design as it is now, asked through the application's command layer
+  (`read_acceptance_delta`), which lays the work out as it always does and reads the
+  acceptance and the design as one state of the work. The join and its verdict are those of
+  `scxml_revision_check` (`within-reach` or `outside-reach`, with `uncited` requirements
+  counted apart and `summary.seen` saying how many were actually compared). A list made
+  before lineages is adopted from its manifest and sidecar; one with neither is refused in
+  words. `works_revision_report` is the page the owner reads, with a requirement's sentence
+  printed only with `sentences: true`. Nothing is accepted by either, and both are for local
+  servers.
 - **A model can be asked for, and written for the request.** The owner asks for a
   model in the application (`works_read` gives `request`: `queued` means nobody
   has taken it). `works_begin_generation` takes that request, or makes one for a

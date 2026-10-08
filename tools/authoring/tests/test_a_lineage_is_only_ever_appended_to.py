@@ -162,6 +162,89 @@ class ALineageThatTakesSomethingBackIsRefused(Histories):
         self.refused(self.second.lineage, self.broken(self.third, add), "would be issued twice")
 
 
+def kinds(delta):
+    wanted = delta["requirements"]
+    return {"carried": wanted["carried"], "changed": [c["id"] for c in wanted["changed"]],
+            "new": wanted["new"], "retired": wanted["retired"]}
+
+
+class TheWordsBetweenTwoStatesOfAWorkAreDerivedFromTheirLineages(Histories):
+    """The words delta of a revision, derived from the lineage of the list that was accepted and the
+    lineage of the list the work has now: any two states, however many revisions lie between."""
+
+    def test_a_state_between_itself_carries_everything_over(self):
+        self.assertEqual({"carried": ["R1", "R2", "R3", "R4", "R5"], "changed": [], "new": [],
+                          "retired": []}, kinds(rl.between(self.first.lineage, self.first.lineage)))
+
+    def test_one_step_says_what_it_dropped(self):
+        delta = rl.between(self.first.lineage, self.second.lineage)
+        self.assertEqual({"carried": ["R1", "R2", "R3", "R4"], "changed": [], "new": [],
+                          "retired": ["R5"]}, kinds(delta))
+
+    def test_two_steps_at_once_are_what_each_alone_would_say_put_together(self):
+        # R5 was dropped in the second revision and the third added R6 (a new id, not R5 again).
+        delta = rl.between(self.first.lineage, self.third.lineage)
+        self.assertEqual({"carried": ["R1", "R2", "R3", "R4"], "changed": [], "new": ["R6"],
+                          "retired": ["R5"]}, kinds(delta))
+
+    def test_what_is_issued_and_retired_between_the_two_is_not_listed(self):
+        gone = build(LAMP.replace(" Nothing else changes it.", ""), QUOTES[:4], self.first)
+        later = build(LAMP.replace(" Nothing else changes it.", " A reset key clears it."),
+                      QUOTES[:4] + ["A reset key clears it."], gone)
+        again = build(LAMP.replace(" Nothing else changes it.", ""), QUOTES[:4], later)
+        listed = kinds(rl.between(self.first.lineage, again.lineage))
+        self.assertEqual(["R5"], listed["retired"])
+        self.assertNotIn("R6", listed["new"] + listed["carried"] + listed["retired"])
+
+    def test_words_that_changed_are_changed_and_keep_their_id(self):
+        reworded = build(LAMP.replace("30 seconds", "45 seconds"), QUOTES[:3] + [
+            "After 45 seconds on, it turns itself off."] + QUOTES[4:], self.first)
+        delta = rl.between(self.first.lineage, reworded.lineage)
+        self.assertEqual(["R4"], kinds(delta)["changed"])
+        self.assertEqual(["R1", "R2", "R3", "R5"], kinds(delta)["carried"])
+
+    def test_words_reworded_and_reworded_back_are_carried(self):
+        away = build(LAMP.replace("30 seconds", "45 seconds"), QUOTES[:3] + [
+            "After 45 seconds on, it turns itself off."] + QUOTES[4:], self.first)
+        back = build(LAMP, QUOTES, away)
+        self.assertEqual([], kinds(rl.between(self.first.lineage, back.lineage))["changed"])
+
+    def test_the_delta_names_the_list_it_starts_from_and_the_revisions(self):
+        delta = rl.between(self.first.lineage, self.third.lineage)
+        self.assertEqual(("lamp", "1", "3"), (delta["doc_id"], delta["from_rev"], delta["rev"]))
+        self.assertEqual(self.first.lineage["revisions"][-1]["manifest_sha256"],
+                         delta["from_manifest_sha256"])
+        self.assertTrue(delta["specification_changed"])
+        self.assertFalse(rl.between(self.first.lineage, self.first.lineage)["specification_changed"])
+
+    def test_the_delta_has_the_shape_the_join_reads(self):
+        from sce_author import revision
+        record = {"manifest": {"doc_id": "lamp", "rev": "1",
+                               "sha256": self.first.lineage["revisions"][-1]["manifest_sha256"]}}
+        delta = rl.between(self.first.lineage, self.third.lineage)
+        revision.belongs_to(delta, record)
+        revision.join(delta, {"requirements": [], "unclaimed": {"added": [], "gone": 0}})
+
+    def test_a_lineage_that_does_not_continue_the_other_says_nothing_about_it(self):
+        other = rs.build(LAMP, items(QUOTES), doc_id="lamp")
+        for older, newer in ((self.third.lineage, self.first.lineage),
+                             (self.first.lineage, self.broken(other, lambda l: l.update(doc_id="x")))):
+            with self.subTest(), self.assertRaises(rl.LineageError):
+                rl.between(older, newer)
+
+    def test_a_lineage_adopted_from_a_list_that_predates_lineages_is_a_beginning_like_any(self):
+        manifest_text = rs.render_manifest(self.first.manifest)
+        adopted = rl.adopt("lamp", self.first.manifest,
+                           {i: rs.normalise(t) for i, t in self.first.sidecar["text"].items()},
+                           manifest_sha256=rl.sha256_text(manifest_text))
+        built = rs.build(LAMP.replace(" Nothing else changes it.", ""), items(QUOTES[:4]), doc_id="lamp",
+                         previous_manifest_text=manifest_text,
+                         previous_sidecar_text=json.dumps(self.first.sidecar))
+        delta = rl.between(adopted, built.lineage)
+        self.assertEqual(["R5"], kinds(delta)["retired"])
+        self.assertEqual(rl.sha256_text(manifest_text), delta["from_manifest_sha256"])
+
+
 class ALineageIsTheLineageOfTheManifestBesideIt(Histories):
     def test_the_lineage_of_a_call_is_the_lineage_of_its_manifest(self):
         rl.belongs_to_manifest(self.third.lineage, manifest_of(self.third))

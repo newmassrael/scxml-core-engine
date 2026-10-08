@@ -135,6 +135,7 @@ class TheServerSpeaksTheProtocol(unittest.TestCase):
              "scxml_acceptance_impact", "scxml_acceptance_delta", "scxml_revision_check",
              "scxml_revision_report", "scxml_accepted_for",
              "works_list", "works_read", "works_save_model", "works_save_requirements",
+             "works_revision_check", "works_revision_report",
              "works_begin_generation", "works_finish_generation", "works_fail_generation"},
             names)
 
@@ -185,7 +186,8 @@ class TheServerSpeaksTheProtocol(unittest.TestCase):
         # `scxml_revision_check` and `scxml_revision_report` join that with the words delta of
         # `scxml_requirement_set`, a pure step of this core with no pack and no command-line face.
         # `works_list`, `works_read`, `works_save_model`,
-        # `works_save_requirements` and the three that take, finish and give up a
+        # `works_save_requirements`, `works_revision_check`, `works_revision_report` and the
+        # three that take, finish and give up a
         # generation (`works_begin_generation`, `works_finish_generation`,
         # `works_fail_generation`) reach the workbench application's works
         # folder through its own `sce-work`, a step with no pack in it and no
@@ -194,7 +196,8 @@ class TheServerSpeaksTheProtocol(unittest.TestCase):
         # what a save is.
         mcp_only = {"scxml_kinds", "validate_scxml", "validate_scxml_set",
                     "works_list", "works_read", "works_save_model",
-                    "works_save_requirements", "works_begin_generation",
+                    "works_save_requirements", "works_revision_check",
+                    "works_revision_report", "works_begin_generation",
                     "works_finish_generation", "works_fail_generation",
                     "render_scxml_pseudocode",
                     "render_scxml_diagram",
