@@ -29,7 +29,7 @@ use crate::generator::Language;
 /// generator's refusal and the conformance harness's schedule both read, so a
 /// fixture is run exactly where the generator admits it.
 pub fn lowers(lang: Language) -> bool {
-    matches!(lang, Language::Rust)
+    matches!(lang, Language::Rust | Language::Kotlin)
 }
 
 /// Why `lang` does not generate the content-line codec `m`, or `None` when it
@@ -59,6 +59,7 @@ pub fn render(
     }
     match lang {
         Language::Rust => render_rust(env, m, imports),
+        Language::Kotlin => render_kotlin(env, m, imports),
         _ => unreachable!("`refusal` admits only a backend that has a render"),
     }
 }
@@ -82,6 +83,7 @@ fn entries_context(
     l: &LangCtx,
     m: &CodecModel,
     string_type: impl Fn(u32) -> String,
+    default_of: impl Fn(&SceType) -> Option<String>,
 ) -> Vec<serde_json::Value> {
     let model = m
         .content_line
@@ -109,6 +111,7 @@ fn entries_context(
                         "required": p.required,
                         "max_size": p.max_size,
                         "value_type": value_type(p),
+                        "default": default_of(&p.sce_type),
                     })
                 })
                 .collect();
@@ -124,10 +127,80 @@ fn entries_context(
                 "max_count": e.max_count,
                 "is_list": e.max_count.is_some(),
                 "value_type": value_type(e),
+                "default": default_of(&e.sce_type),
                 "params": params,
             })
         })
         .collect()
+}
+
+/// The component the codec reads and writes, as the name between `BEGIN:` and
+/// `END:`.
+fn insert_component(ctx: &mut serde_json::Map<String, serde_json::Value>, m: &CodecModel) {
+    ctx.insert(
+        "component".into(),
+        m.content_line
+            .as_ref()
+            .map(|c| c.component.clone())
+            .unwrap_or_default()
+            .into(),
+    );
+}
+
+fn render_kotlin(
+    env: &minijinja::Environment,
+    m: &CodecModel,
+    imports: &[ImportContext],
+) -> Result<String, ForgeError> {
+    let l = LangCtx::new(Language::Kotlin, imports);
+    let mut ctx = l.base_context(&m.name);
+    l.insert_imports(&mut ctx, imports);
+    // Owned values, as every Kotlin codec holds them: a string is a `String`, a
+    // list a `MutableList`, and an optional entry or parameter absent is `null`.
+    // A required entry starts at its type's own default and is filled in by
+    // decode.
+    let mut entries = entries_context(
+        &l,
+        m,
+        |_| "String".to_string(),
+        |ty| Some(l.default_expr(ty)),
+    );
+    for entry in &mut entries {
+        let value_type = entry["value_type"].as_str().unwrap_or_default().to_string();
+        let required = entry["required"].as_bool() == Some(true);
+        let (field_type, default) = if entry["is_list"].as_bool() == Some(true) {
+            (
+                "MutableList<String>".to_string(),
+                "mutableListOf()".to_string(),
+            )
+        } else if required {
+            (
+                value_type.clone(),
+                entry["default"].as_str().unwrap_or_default().to_string(),
+            )
+        } else {
+            (format!("{value_type}?"), "null".to_string())
+        };
+        entry["field_type"] = field_type.into();
+        entry["default"] = default.into();
+        let mut optional_params = Vec::new();
+        if let Some(serde_json::Value::Array(params)) = entry.get_mut("params") {
+            for param in params {
+                let value_type = param["value_type"].as_str().unwrap_or_default().to_string();
+                if param["required"].as_bool() == Some(true) {
+                    param["field_type"] = value_type.into();
+                } else {
+                    param["field_type"] = format!("{value_type}?").into();
+                    param["default"] = "null".into();
+                    optional_params.push(serde_json::json!({ "name": param["name"] }));
+                }
+            }
+        }
+        entry["optional_params"] = optional_params.into();
+    }
+    insert_component(&mut ctx, m);
+    ctx.insert("entries".into(), entries.into());
+    l.render(env, "codec_content_line", ctx)
 }
 
 fn render_rust(
@@ -140,7 +213,7 @@ fn render_rust(
     l.insert_imports(&mut ctx, imports);
     // A value lives in the bounded storage its `sce:max-size` names, so neither
     // direction allocates and the struct borrows nothing from its input.
-    let mut entries = entries_context(&l, m, |n| format!("heapless::String<{n}>"));
+    let mut entries = entries_context(&l, m, |n| format!("heapless::String<{n}>"), |_| None);
     for entry in &mut entries {
         let value_type = entry["value_type"].as_str().unwrap_or_default().to_string();
         let required = entry["required"].as_bool() == Some(true);
@@ -175,14 +248,7 @@ fn render_rust(
             }
         }
     }
-    ctx.insert(
-        "component".into(),
-        m.content_line
-            .as_ref()
-            .map(|c| c.component.clone())
-            .unwrap_or_default()
-            .into(),
-    );
+    insert_component(&mut ctx, m);
     ctx.insert("entries".into(), entries.into());
     ctx.insert(
         "codec_struct_derives_attr".into(),

@@ -1,0 +1,86 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# Content-line codec kind (SCE_FORGE.md §4.6.4) — { decoded, encoded } cases
+   and reject vectors, as the generic codec fragment has them, with what a
+   content-line component adds: an entry can be absent (`null`) or a list, a case
+   marked `decode_only` is an input the codec reads and does not write, and a
+   refused decode leaves the cursor where it found it. Kotlin names no failure
+   (the null-sentinel convention), so a reject asserts refusal; the rule that
+   refused is `ContentLine.lastError`, which `ContentLineCodecTest` pins. #}
+        val spec = ref["{{ f.ref_section }}"]!!.jsonObject["{{ f.name }}"]!!.jsonObject
+        spec["cases"]!!.jsonArray.forEachIndexed { i, caseEl ->
+            val decoded = caseEl.jsonObject["decoded"]!!.jsonObject
+            val expectedBytes = caseEl.jsonObject["encoded"]!!.jsonArray
+                .map { it.jsonPrimitive.int.toByte() }
+                .toByteArray()
+            caseEl.jsonObject["text"]?.takeIf { it !is kotlinx.serialization.json.JsonNull }?.let { text ->
+                assertTrue(
+                    text.jsonPrimitive.content.encodeToByteArray().contentEquals(expectedBytes),
+                    "{{ f.name }} case $i: `text` and `encoded` disagree",
+                )
+            }
+            val decodeOnly = caseEl.jsonObject["decode_only"]?.jsonPrimitive?.boolean ?: false
+
+            val cursor = com.sce.forge.runtime.SceCursor(expectedBytes)
+            val roundTripped = {{ f.name | to_pascal_case }}.decode(cursor)
+                ?: error("{{ f.name }} case $i decode returned null")
+{% for field in f.fields %}
+{% if field.list %}
+            assertEquals(
+                decoded["{{ field.name }}"]!!.jsonArray.map { it.jsonPrimitive.content },
+                roundTripped.{{ field.name }}.toList(),
+                "{{ f.name }} case $i decode {{ field.name }}",
+            )
+{% else %}
+            assertEquals(
+                decoded["{{ field.name }}"]!!.let { el ->
+                    if (el is kotlinx.serialization.json.JsonNull) null else {{ 'el' | kt_unmarshal(field.type) }}
+                },
+                roundTripped.{{ field.name }},
+                "{{ f.name }} case $i decode {{ field.name }}",
+            )
+{% endif %}
+{% endfor %}
+
+            if (!decodeOnly) {
+                val valueObj = {{ f.name | to_pascal_case }}()
+{% for field in f.fields %}
+{% if field.list %}
+                valueObj.{{ field.name }}.addAll(decoded["{{ field.name }}"]!!.jsonArray.map { it.jsonPrimitive.content })
+{% else %}
+                decoded["{{ field.name }}"]!!.let { el ->
+                    if (el !is kotlinx.serialization.json.JsonNull) valueObj.{{ field.name }} = {{ 'el' | kt_unmarshal(field.type) }}
+                }
+{% endif %}
+{% endfor %}
+                val encoded = valueObj.encodeToByteArray()
+                    ?: error("{{ f.name }} case $i encode refused")
+                assertTrue(
+                    encoded.contentEquals(expectedBytes),
+                    "{{ f.name }} case $i encode: actual=${encoded.decodeToString()} expected=${expectedBytes.decodeToString()}",
+                )
+            }
+        }
+
+{# Decode-rejection vectors: the wire this codec MUST refuse, read from the
+   reference like the cases are. They are not inlined as byte literals: this
+   codec's vectors are whole components, and a test method holds 64 KB of
+   bytecode — 77 literals of a few hundred bytes each pass it. A refusal leaves
+   the cursor where it found it. #}
+        spec["rejects"]!!.jsonArray.forEachIndexed { i, rejectEl ->
+            val rejectBytes = rejectEl.jsonObject["encoded"]!!.jsonArray
+                .map { it.jsonPrimitive.int.toByte() }
+                .toByteArray()
+            val rejectCursor = com.sce.forge.runtime.SceCursor(rejectBytes)
+            val why = rejectEl.jsonObject["why"]!!.jsonPrimitive.content
+            assertTrue(
+                {{ f.name | to_pascal_case }}.decode(rejectCursor) == null,
+                "{{ f.name }} reject $i: $why",
+            )
+            assertEquals(
+                rejectBytes.size,
+                rejectCursor.remaining(),
+                "{{ f.name }} reject $i: the cursor moved",
+            )
+        }

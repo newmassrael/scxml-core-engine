@@ -1,0 +1,214 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{#- The read of one property's value, as the expression bound to it; a refusal
+    returns `null` from `decode`, this backend's decode convention. The line
+    grammar — unfolding, TEXT escapes, quoting — is the runtime's
+    (`com.sce.forge.runtime.ContentLine*`); this spells none of it. #}
+{% macro read_value(e) -%}
+{%- if e.kind == "string" -%}
+line.readString({{ e.max_size }}, {{ "true" if e.text else "false" }}) ?: return null
+{%- elif e.kind == "bool" -%}
+line.readBool() ?: return null
+{%- elif e.kind == "uint" and e.value_type == "ULong" -%}
+line.readUint(ULong.MAX_VALUE) ?: return null
+{%- elif e.kind == "uint" -%}
+(line.readUint({{ e.value_type }}.MAX_VALUE.toULong()) ?: return null).to{{ e.value_type }}()
+{%- elif e.kind == "int" and e.value_type == "Long" -%}
+line.readInt(Long.MIN_VALUE, Long.MAX_VALUE) ?: return null
+{%- else -%}
+(line.readInt({{ e.value_type }}.MIN_VALUE.toLong(), {{ e.value_type }}.MAX_VALUE.toLong()) ?: return null).to{{ e.value_type }}()
+{%- endif -%}
+{%- endmacro %}
+{#- The write of one property's value `v`, its name and parameters already
+    written. #}
+{% macro write_value(e) -%}
+{%- if e.kind == "string" -%}
+out.string(v, {{ "true" if e.text else "false" }}, {{ e.max_size }})?.let { return it }
+{%- elif e.kind == "bool" -%}
+out.boolean(v)?.let { return it }
+{%- elif e.kind == "uint" -%}
+out.uint(v.toULong())?.let { return it }
+{%- else -%}
+out.int(v.toLong())?.let { return it }
+{%- endif -%}
+{%- endmacro %}
+{{ sce_map.source_marker(source_location, "kotlin", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec" sce:encoding="content-line")
+// Runtime: {{ runtime_dep }}
+// Do not edit — regenerate from the source SCXML file.
+
+package com.sce.generated.{{ package }}
+
+import com.sce.forge.runtime.CodecError
+import com.sce.forge.runtime.ContentLine
+import com.sce.forge.runtime.ContentLineReader
+import com.sce.forge.runtime.ContentLineWriter
+import com.sce.forge.runtime.MutableListSink
+import com.sce.forge.runtime.SceCursor
+import com.sce.forge.runtime.SceSink
+{% for imp in all_imports %}
+{% if imp.include_stmt %}
+{{ imp.include_stmt }}
+{% endif %}
+{% endfor %}
+
+/**
+ * One `{{ component }}` component of content lines (SCE_FORGE.md §4.6.4).
+ * Decode reads the properties this codec declares in any order and skips the
+ * rest; encode writes the entries present in declaration order, folded at 75
+ * octets. A required entry starts at its type's default and an optional one
+ * absent (`null`), so `{{ struct_name }}()` is the infallible constructor every
+ * codec offers.
+ */
+data class {{ struct_name }}(
+{% for e in entries %}
+    /** Property `{{ e.property }}`{% if e.is_list %}, up to {{ e.max_count }} lines{% elif e.required %}, required{% endif %}. */
+    var {{ e.name }}: {{ e.field_type }} = {{ e.default }},
+{% for p in e.params %}
+    /** Parameter `{{ p.param }}` of `{{ e.property }}`{% if p.required %}, required{% endif %}. */
+    var {{ p.name }}: {{ p.field_type }} = {{ p.default }},
+{% endfor %}
+{% endfor %}
+) {
+    /**
+     * Encode this component into [w]; `null` on success. A value past its
+     * declared bound, or one a line could not carry, is refused, not written
+     * (SCE_FORGE.md §4.6.4).
+     */
+    fun encode(w: SceSink): CodecError? {
+        val out = ContentLineWriter(w, "{{ component }}")
+        out.begin()?.let { return it }
+{% for e in entries %}
+{% if e.is_list %}
+        if ({{ e.name }}.size > {{ e.max_count }}) return ContentLine.fail(CodecError.LineTooMany)
+        for (v in {{ e.name }}) {
+            out.property("{{ e.property }}")?.let { return it }
+            {{ write_value(e) }}
+        }
+{% elif e.required %}
+        run {
+            val v = {{ e.name }}
+            out.property("{{ e.property }}")?.let { return it }
+{% for p in e.params %}
+{% if p.required %}
+            out.param("{{ p.param }}", {{ p.name }}, {{ p.max_size }})?.let { return it }
+{% else %}
+            val {{ p.name }}Value = {{ p.name }}
+            if ({{ p.name }}Value != null) out.param("{{ p.param }}", {{ p.name }}Value, {{ p.max_size }})?.let { return it }
+{% endif %}
+{% endfor %}
+            {{ write_value(e) }}
+        }
+{% else %}
+        run {
+            val v = {{ e.name }}
+{% for p in e.params if not p.required %}
+            val {{ p.name }}Value = {{ p.name }}
+{% endfor %}
+            if (v != null) {
+                out.property("{{ e.property }}")?.let { return it }
+{% for p in e.params %}
+{% if p.required %}
+                out.param("{{ p.param }}", {{ p.name }}, {{ p.max_size }})?.let { return it }
+{% else %}
+                if ({{ p.name }}Value != null) out.param("{{ p.param }}", {{ p.name }}Value, {{ p.max_size }})?.let { return it }
+{% endif %}
+{% endfor %}
+                {{ write_value(e) }}
+            }{% if e.optional_params %} else if ({% for p in e.optional_params %}{% if not loop.first %} || {% endif %}{{ p.name }}Value != null{% endfor %}) {
+                // A parameter with no value of its property has no line to stand on.
+                return ContentLine.fail(CodecError.LineRequiredMissing)
+            }{% endif %}
+
+        }
+{% endif %}
+{% endfor %}
+        return out.finish()
+    }
+
+    /** [encode] into a new array; `null` when encode refuses the value. */
+    fun encodeToByteArray(): ByteArray? {
+        val out = mutableListOf<Byte>()
+        if (encode(MutableListSink(out)) != null) return null
+        return out.toByteArray()
+    }
+
+    companion object {
+        /**
+         * Decode one component from [cursor]. On success the cursor advances past
+         * its `END:` line; `null` on any refusal, with the cursor left where it
+         * was and [ContentLine.lastError] naming the rule.
+         */
+        fun decode(cursor: SceCursor): {{ struct_name }}? {
+            val rest = cursor.peekSlice(cursor.remaining()) ?: return null
+            val reader = ContentLineReader.begin(rest, "{{ component }}") ?: return null
+{% for e in entries %}
+{% if e.is_list %}
+            val {{ e.name }}Values = mutableListOf<String>()
+{% else %}
+            var {{ e.name }}Value: {{ e.value_type }}? = null
+{% endif %}
+{% for p in e.params %}
+            var {{ p.name }}Read: {{ p.value_type }}? = null
+{% endfor %}
+{% endfor %}
+            while (true) {
+                val line = reader.next()
+                if (line == null) {
+                    if (reader.failed) return null
+                    break
+                }
+{% for e in entries %}
+                {% if not loop.first %}else {% endif %}if (line.isNamed("{{ e.property }}")) {
+{% if e.is_list %}
+                    if ({{ e.name }}Values.size >= {{ e.max_count }}) {
+                        return ContentLine.refuse(CodecError.LineTooMany)
+                    }
+{% else %}
+                    if ({{ e.name }}Value != null) return ContentLine.refuse(CodecError.LineTooMany)
+{% endif %}
+{% if e.params %}
+                    while (line.nextParam() ?: return null) {
+{% for p in e.params %}
+                        {% if not loop.first %}else {% endif %}if (line.paramNamed("{{ p.param }}")) {
+                            if ({{ p.name }}Read != null) return ContentLine.refuse(CodecError.LineTooMany)
+                            {{ p.name }}Read = line.readParamString({{ p.max_size }}) ?: return null
+                        }
+{% endfor %}
+                    }
+{% endif %}
+{% if e.is_list %}
+                    {{ e.name }}Values.add({{ read_value(e) }})
+{% else %}
+                    {{ e.name }}Value = {{ read_value(e) }}
+{% endif %}
+                }
+{% endfor %}
+            }
+            val value = {{ struct_name }}(
+{% for e in entries %}
+{% if e.is_list %}
+                {{ e.name }} = {{ e.name }}Values,
+{% elif e.required %}
+                {{ e.name }} = {{ e.name }}Value ?: return ContentLine.refuse(CodecError.LineRequiredMissing),
+{% else %}
+                {{ e.name }} = {{ e.name }}Value,
+{% endif %}
+{% for p in e.params %}
+{% if p.required %}
+                {{ p.name }} = {{ p.name }}Read ?: return ContentLine.refuse(CodecError.LineRequiredMissing),
+{% else %}
+                {{ p.name }} = {{ p.name }}Read,
+{% endif %}
+{% endfor %}
+{% endfor %}
+            )
+            // Only a component that decoded whole moves the cursor.
+            cursor.advance(reader.consumed())
+            return value
+        }
+    }
+}

@@ -376,7 +376,7 @@ fn a_codec_with_no_property_is_refused() {
 /// The backends that generate a content-line codec. A backend joins this list in
 /// the commit that generates it, and not before: the generator refuses the
 /// codec by name everywhere else.
-const GENERATED: [Language; 1] = [Language::Rust];
+const GENERATED: [Language; 2] = [Language::Rust, Language::Kotlin];
 
 #[test]
 fn a_backend_that_has_not_landed_refuses_a_content_line_codec_by_name() {
@@ -409,7 +409,7 @@ fn the_generator_refuses_the_codec_by_name_where_no_backend_generates_it() {
     let dir = tempdir().expect("tempdir");
     let source = dir.path().join("probe_event.scxml");
     std::fs::write(&source, document("", EVENT)).expect("write the document");
-    for lang in ["kotlin", "cpp", "go", "python", "c11"] {
+    for lang in ["cpp", "go", "python", "c11"] {
         let out = dir.path().join(format!("out_{lang}"));
         let mut command = Command::new(env!("CARGO_BIN_EXE_sce-codegen"));
         command
