@@ -14,7 +14,9 @@
 # test passed while no machine could start in a browser.
 #
 # This gate builds the scenario replay crate for that target and runs it under
-# Node, one fresh instance per scenario. The scenarios are the engine-neutral
+# Node and in headless Chrome, one fresh instance per scenario. Chrome is the web
+# target's own host and Node the faster one; the same module has to pass in both.
+# The scenarios are the engine-neutral
 # files every backend replays (`sce-build/tests/fixtures/static_datamodel/
 # scenarios/*.json`), so the module is held to the answers the native engine, the
 # C++ one and the other four are held to, and not to answers of its own.
@@ -34,7 +36,8 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 TARGET="wasm32-unknown-unknown"
 CRATE="sce-rust-scenarios"
-RUNNER="backends/rust/scenarios/wasm/run.mjs"
+NODE_RUNNER="backends/rust/scenarios/wasm/run.mjs"
+CHROME_RUNNER="backends/rust/scenarios/wasm/run_chrome.mjs"
 
 # The target's standard library is a rustup component, not part of the
 # toolchain: a machine that has a compiler and not this component fails inside
@@ -72,14 +75,31 @@ sce_gate_step "building $CRATE for $TARGET"
 cargo build -p "$CRATE" --target "$TARGET" \
     || sce_gate_fail "cargo build -p $CRATE --target $TARGET"
 
-glue="$(mktemp -d)"
-sce_gate_on_exit "rm -rf '$glue'"
+module="${CARGO_TARGET_DIR:-$SCE_REPO_ROOT/target}/$TARGET/debug/${CRATE//-/_}.wasm"
+node_glue="$(mktemp -d)"
+web_glue="$(mktemp -d)"
+sce_gate_on_exit "rm -rf '$node_glue' '$web_glue'"
 
-sce_gate_step "writing the Node glue (wasm-bindgen ${locked})"
-wasm-bindgen --target nodejs --out-dir "$glue" \
-    "${CARGO_TARGET_DIR:-$SCE_REPO_ROOT/target}/$TARGET/debug/${CRATE//-/_}.wasm" \
-    || sce_gate_fail "wasm-bindgen could not read the module cargo built"
+# One module, two glues: the tool writes a different loader for each host, and a
+# module it has processed for one is not the file the other loads.
+sce_gate_step "writing the glue for Node and for the web (wasm-bindgen ${locked})"
+wasm-bindgen --target nodejs --out-dir "$node_glue" "$module" \
+    || sce_gate_fail "wasm-bindgen (nodejs) could not read the module cargo built"
+wasm-bindgen --target web --out-dir "$web_glue" "$module" \
+    || sce_gate_fail "wasm-bindgen (web) could not read the module cargo built"
 
 sce_gate_step "replaying every scenario in the module under Node"
-node "$RUNNER" "$glue" \
-    || sce_gate_fail "a scenario failed in the $TARGET module: the engine does not do on that target what the scenario holds it to (each failing scenario and its panic are printed above)"
+node "$NODE_RUNNER" "$node_glue" \
+    || sce_gate_fail "a scenario failed in the $TARGET module under Node: the engine does not do on that target what the scenario holds it to (each failing scenario and its panic are printed above)"
+
+# The web target is Chrome, so Chrome is the host whose verdict matters; Node is
+# the faster one. A machine with no Chrome cannot give that verdict, which is the
+# gate's input missing (exit 3) and not a fault of the module.
+sce_gate_step "replaying every scenario in the module in Chrome"
+chrome_status=0
+node "$CHROME_RUNNER" "$web_glue" || chrome_status=$?
+case "$chrome_status" in
+    0) ;;
+    3) sce_gate_cannot_run "no Chrome on PATH (install google-chrome, or name one in CHROME_BIN); the web target is Chrome" ;;
+    *) sce_gate_fail "the $TARGET module failed in Chrome, or the page could not report (each failing scenario and its panic, or the reason, are printed above)" ;;
+esac

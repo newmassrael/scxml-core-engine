@@ -1,0 +1,66 @@
+<!doctype html>
+<!--
+  SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+  SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+
+  The page `run_chrome.mjs` serves to a headless Chrome: it loads the scenario module
+  the way a web host does (an ES module and a streamed `.wasm`), replays each scenario
+  in an instance of its own, and posts what happened back to the server that served it.
+
+  A panic on wasm32-unknown-unknown stops the module and cannot be caught inside it, so
+  a scenario that fails leaves its instance unusable. Each scenario therefore imports
+  the glue under a URL of its own: a different query string is a different module
+  record, and a different instance of the module with it. The `.wasm` is resolved
+  against the glue's URL without the query, so every instance reads the same file.
+-->
+<meta charset="utf-8">
+<title>Rust engine scenarios</title>
+<script type="module">
+  const pattern = new URLSearchParams(location.search).get("only");
+  const only = pattern ? new RegExp(pattern) : null;
+
+  const instance = async (label) => {
+    const glue = await import(`./pkg/sce_rust_scenarios.js?instance=${label}`);
+    await glue.default();
+    return glue;
+  };
+
+  let result;
+  try {
+    const names = (await instance("names")).scenario_names().split(",").filter(Boolean);
+    const selected = names.filter((name) => !only || only.test(name));
+    const failures = [];
+    let pass = 0;
+    const started = performance.now();
+    const original = console.error;
+    for (const [n, name] of selected.entries()) {
+      const glue = await instance(n);
+      const panics = [];
+      // The panic hook in the module writes the message to console.error, which is
+      // the whole of why a scenario failed.
+      console.error = (...args) => panics.push(args.join(" "));
+      try {
+        glue.run_scenario(name);
+        pass += 1;
+      } catch (trap) {
+        failures.push({
+          name,
+          trap: String(trap?.message ?? trap).split("\n")[0],
+          panic: panics.join(" | ").replace(/\s+/g, " "),
+        });
+      } finally {
+        console.error = original;
+      }
+    }
+    result = {
+      names,
+      selected: selected.length,
+      pass,
+      failures,
+      seconds: (performance.now() - started) / 1000,
+    };
+  } catch (error) {
+    result = { error: String(error?.stack ?? error) };
+  }
+  await fetch("/result", { method: "POST", body: JSON.stringify(result) });
+</script>

@@ -12,39 +12,24 @@
 // scenarios are the committed files (`sce-build/tests/fixtures/static_datamodel/
 // scenarios/*.json`) that every backend replays; the module holds their text, and
 // the directory is read here only to check that the module holds all of them.
+//
+// The same module runs in Chrome through `run_chrome.mjs`, which is the host the
+// web target actually has.
 
 import { createRequire } from "node:module";
-import { readdirSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { heldMismatch, report } from "./scenarios.mjs";
 
-const here = path.dirname(fileURLToPath(import.meta.url));
 const outDir = path.resolve(process.argv[2] ?? "");
 const only = process.argv[3] ? new RegExp(process.argv[3]) : null;
 const glue = path.join(outDir, "sce_rust_scenarios.js");
 const require = createRequire(import.meta.url);
 
-const scenarioDir = path.resolve(
-  here,
-  "../../../../sce-build/tests/fixtures/static_datamodel/scenarios",
-);
-const onDisk = readdirSync(scenarioDir)
-  .filter((file) => file.endsWith(".json"))
-  .map((file) => file.slice(0, -".json".length))
-  .sort();
-
 const names = require(glue).scenario_names().split(",").filter(Boolean);
 
-// The module must hold every scenario of the directory, and only those: a scenario
-// the module does not hold is one this target never replays.
-const held = [...names].sort();
-const missing = onDisk.filter((name) => !held.includes(name));
-const extra = held.filter((name) => !onDisk.includes(name));
-if (onDisk.length < 40 || missing.length || extra.length) {
-  console.log(
-    `the module's scenarios are not the directory's (directory ${onDisk.length}, module ${held.length}): ` +
-      `not in the module: ${missing.join(",") || "-"}; not in the directory: ${extra.join(",") || "-"}`,
-  );
+const mismatch = heldMismatch(names);
+if (mismatch) {
+  console.log(mismatch);
   process.exit(2);
 }
 
@@ -72,11 +57,12 @@ for (const name of selected) {
   }
 }
 
-console.log(
-  `scenarios: ${selected.length}  pass: ${pass}  fail: ${failures.length}  ` +
-    `(${((Date.now() - started) / 1000).toFixed(1)}s)`,
+process.exit(
+  report({
+    host: "node",
+    selected: selected.length,
+    pass,
+    failures,
+    seconds: (Date.now() - started) / 1000,
+  }),
 );
-for (const failure of failures) {
-  console.log(`FAIL ${failure.name}: ${failure.panic || failure.trap}`);
-}
-process.exit(failures.length ? 1 : 0);

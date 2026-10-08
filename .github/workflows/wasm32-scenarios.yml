@@ -1,7 +1,7 @@
 name: Rust engine on wasm32
 
-# The Rust engine, built as the module a browser loads and run under Node on the
-# scenarios every backend replays.
+# The Rust engine, built as the module a browser loads and run under Node and in
+# headless Chrome on the scenarios every backend replays.
 #
 # No other lane can say whether the engine starts on this target. A
 # `wasm32-unknown-unknown` module is handed no clock, no threads and no files by
@@ -15,6 +15,8 @@ name: Rust engine on wasm32
 # gate needs and does not hold on a push: the target's standard library, Node,
 # and a `wasm-bindgen` command-line tool at exactly the version `Cargo.lock`
 # holds for the library (the glue and the module are only compatible at one).
+# Chrome is not installed here: the hosted runner image carries it, and the gate
+# refuses to pass without it rather than skipping the web target's own host.
 #
 # The triggers are what the module is made of: the engine, the forge runtime it
 # checks integers with, the replay crate, the committed machines it replays and
