@@ -1,0 +1,206 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{#- The read of one property's value, as the statement that stores it. The
+    line grammar — unfolding, TEXT escapes, quoting — is the runtime's
+    (`sce_forge_runtime::content_line`); this spells none of it. #}
+{% macro store_value(e) -%}
+{%- if e.kind == "string" and e.is_list -%}
+{{ e.local }}
+                .push(line.read_string::<{{ e.max_size }}>({{ "true" if e.text else "false" }})?)
+                .map_err(|_| CodecError::LineTooMany)?;
+{%- elif e.kind == "string" -%}
+{{ e.local }} = Some(line.read_string::<{{ e.max_size }}>({{ "true" if e.text else "false" }})?);
+{%- elif e.kind == "bool" -%}
+{{ e.local }} = Some(line.read_bool()?);
+{%- elif e.kind == "uint" and e.value_type == "u64" -%}
+{{ e.local }} = Some(line.read_uint(u64::MAX)?);
+{%- elif e.kind == "uint" -%}
+{{ e.local }} = Some(line.read_uint(u64::from({{ e.value_type }}::MAX))? as {{ e.value_type }});
+{%- elif e.kind == "int" and e.value_type == "i64" -%}
+{{ e.local }} = Some(line.read_int(i64::MIN, i64::MAX)?);
+{%- else -%}
+{{ e.local }} = Some(line.read_int(i64::from({{ e.value_type }}::MIN), i64::from({{ e.value_type }}::MAX))? as {{ e.value_type }});
+{%- endif -%}
+{%- endmacro %}
+{#- The write of one property's value `v`, its name and parameters already
+    written. #}
+{% macro write_value(e) -%}
+{%- if e.kind == "string" -%}
+out.string(v, {{ "true" if e.text else "false" }}, {{ e.max_size }})?;
+{%- elif e.kind == "bool" -%}
+out.boolean(*v)?;
+{%- elif e.kind == "uint" and e.value_type == "u64" -%}
+out.uint(*v)?;
+{%- elif e.kind == "uint" -%}
+out.uint(u64::from(*v))?;
+{%- elif e.kind == "int" and e.value_type == "i64" -%}
+out.int(*v)?;
+{%- else -%}
+out.int(i64::from(*v))?;
+{%- endif -%}
+{%- endmacro %}
+{{ sce_map.source_marker(source_location, "rust", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec" sce:encoding="content-line")
+// Runtime: {{ runtime_dep }}
+// Do not edit — regenerate from the source SCXML file.
+
+use sce_forge_runtime::codec::{CodecError, SceCursor, SceSink};
+use sce_forge_runtime::content_line::{ContentLineReader, ContentLineWriter};
+use sce_forge_runtime::heapless;
+// `VecSink` and the heap-backed `encode_to_vec` facade are gated on the
+// runtime's `alloc` feature, as they are for a positional codec.
+#[cfg(feature = "alloc")]
+extern crate alloc;
+#[cfg(feature = "alloc")]
+use alloc::vec::Vec;
+#[cfg(feature = "alloc")]
+use sce_forge_runtime::codec::VecSink;
+
+/// One `{{ component }}` component of content lines (SCE_FORGE.md §4.6.4).
+/// Decode reads the properties this codec declares in any order and skips the
+/// rest; encode writes the entries present in declaration order, folded at 75
+/// octets. A value lives in the bounded storage its `sce:max-size` names, so
+/// neither direction allocates.
+// pub API: codecs are intended for cross-crate consumption (SCE_FORGE.md
+// §6 codec), so an unused field is not dead code.
+#[allow(dead_code)]
+{{ codec_struct_derives_attr }}
+pub struct {{ struct_name }} {
+{% for e in entries %}
+    /// Property `{{ e.property }}`{% if e.is_list %}, up to {{ e.max_count }} lines{% elif e.required %}, required{% endif %}.
+    pub {{ e.name }}: {{ e.field_type }},
+{% for p in e.params %}
+    /// Parameter `{{ p.param }}` of `{{ e.property }}`{% if p.required %}, required{% endif %}.
+    pub {{ p.name }}: {{ p.field_type }},
+{% endfor %}
+{% endfor %}
+}
+
+#[allow(dead_code)]
+impl {{ struct_name }} {
+    /// An instance with every value at its type's [`Default`] and every
+    /// optional entry absent — the infallible constructor every codec offers,
+    /// as a positional one does.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Decode one component from `cursor`. On success the cursor advances past
+    /// its `END:` line; on any refusal it is left untouched.
+    pub fn decode(cursor: &mut SceCursor<'_>) -> Result<Self, CodecError> {
+        let mut reader =
+            ContentLineReader::begin(cursor.peek_slice(cursor.remaining())?, "{{ component }}")?;
+{% for e in entries %}
+        let mut {{ e.local }}: {{ e.local_type }} = {{ e.local_init }};
+{% for p in e.params %}
+        let mut {{ p.local }}: Option<{{ p.value_type }}> = None;
+{% endfor %}
+{% endfor %}
+        while let Some(mut line) = reader.next_property()? {
+{% for e in entries %}
+            {% if not loop.first %}else {% endif %}if line.is("{{ e.property }}") {
+{% if e.is_list %}
+                if {{ e.local }}.is_full() {
+                    return Err(CodecError::LineTooMany);
+                }
+{% else %}
+                if {{ e.local }}.is_some() {
+                    return Err(CodecError::LineTooMany);
+                }
+{% endif %}
+{% if e.params %}
+                while line.next_param()? {
+{% for p in e.params %}
+                    {% if not loop.first %}else {% endif %}if line.param_is("{{ p.param }}") {
+                        if {{ p.local }}.is_some() {
+                            return Err(CodecError::LineTooMany);
+                        }
+                        {{ p.local }} = Some(line.read_param_string::<{{ p.max_size }}>()?);
+                    }
+{% endfor %}
+                }
+{% endif %}
+                {{ store_value(e) }}
+            }
+{% endfor %}
+        }
+        let value = Self {
+{% for e in entries %}
+{% if e.required %}
+            {{ e.name }}: {{ e.local }}.ok_or(CodecError::LineRequiredMissing)?,
+{% else %}
+            {{ e.name }}: {{ e.local }},
+{% endif %}
+{% for p in e.params %}
+{% if p.required %}
+            {{ p.name }}: {{ p.local }}.ok_or(CodecError::LineRequiredMissing)?,
+{% else %}
+            {{ p.name }}: {{ p.local }},
+{% endif %}
+{% endfor %}
+{% endfor %}
+        };
+        // Only a component that decoded whole moves the cursor.
+        cursor.advance(reader.consumed())?;
+        Ok(value)
+    }
+
+    /// Encode this component into `w`. A value past its declared bound, or one
+    /// a line could not carry, is refused (SCE_FORGE.md §4.6.4).
+    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
+        let mut out = ContentLineWriter::begin(w, "{{ component }}")?;
+{% for e in entries %}
+{% if e.is_list %}
+        for v in &self.{{ e.name }} {
+            out.property("{{ e.property }}")?;
+            {{ write_value(e) }}
+        }
+{% elif e.required %}
+        {
+            let v = &self.{{ e.name }};
+            out.property("{{ e.property }}")?;
+{% for p in e.params %}
+{% if p.required %}
+            out.param("{{ p.param }}", &self.{{ p.name }}, {{ p.max_size }})?;
+{% else %}
+            if let Some(p) = &self.{{ p.name }} {
+                out.param("{{ p.param }}", p, {{ p.max_size }})?;
+            }
+{% endif %}
+{% endfor %}
+            {{ write_value(e) }}
+        }
+{% else %}
+        if let Some(v) = &self.{{ e.name }} {
+            out.property("{{ e.property }}")?;
+{% for p in e.params %}
+{% if p.required %}
+            out.param("{{ p.param }}", &self.{{ p.name }}, {{ p.max_size }})?;
+{% else %}
+            if let Some(p) = &self.{{ p.name }} {
+                out.param("{{ p.param }}", p, {{ p.max_size }})?;
+            }
+{% endif %}
+{% endfor %}
+            {{ write_value(e) }}
+        }{% if e.params %} else if {% for p in e.params %}{% if not loop.first %} || {% endif %}self.{{ p.name }}.is_some(){% endfor %} {
+            // A parameter with no value of its property has no line to stand on.
+            return Err(CodecError::LineRequiredMissing);
+        }{% endif %}
+
+{% endif %}
+{% endfor %}
+        out.finish()
+    }
+
+    /// [`encode`](Self::encode) into a new `Vec`.
+    #[cfg(feature = "alloc")]
+    pub fn encode_to_vec(&self) -> Result<Vec<u8>, CodecError> {
+        let mut out: Vec<u8> = Vec::new();
+        self.encode(&mut VecSink::new(&mut out))?;
+        Ok(out)
+    }
+}

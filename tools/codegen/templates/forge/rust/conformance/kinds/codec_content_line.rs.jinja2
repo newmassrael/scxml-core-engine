@@ -1,0 +1,166 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# Content-line codec kind (SCE_FORGE.md §4.6.4) — { decoded, encoded } cases
+   and reject vectors, as the generic codec fragment has them, with what a
+   content-line component adds: a value lives in bounded storage and not in a
+   borrow of the input, so the struct is filled by assignment from the oracle
+   (the bound is the field's own type, `heapless::String::try_from` infers it);
+   an entry can be absent, and a property can be a list; and a case marked
+   `decode_only` is an input the codec reads and does not write, so only its
+   decode is held. The encode goes into a caller-owned buffer, the way a target
+   without a heap writes it, and so needs no `alloc`. #}
+    let spec = &reference["{{ f.ref_section }}"]["{{ f.name }}"];
+    for (i, case) in spec["cases"]
+        .as_array()
+        .expect("cases must be array")
+        .iter()
+        .enumerate()
+    {
+        let decoded = &case["decoded"];
+        let expected_bytes: Vec<u8> = case["encoded"]
+            .as_array()
+            .expect("encoded must be array")
+            .iter()
+            .map(|v| v.as_u64().expect("byte must be u64") as u8)
+            .collect();
+        if let Some(text) = case["text"].as_str() {
+            assert_eq!(
+                text.as_bytes(),
+                expected_bytes.as_slice(),
+                "{{ f.name }} case {i}: `text` and `encoded` disagree"
+            );
+        }
+
+        let mut cursor = ::sce_forge_runtime::codec::SceCursor::new(&expected_bytes);
+        let round_tripped = {{ f.name | to_pascal_case }}::decode(&mut cursor)
+            .expect("{{ f.name }} case {i} decode must succeed");
+{% for field in f.fields %}
+{% if field.list %}
+        {
+            let want: Vec<&str> = decoded["{{ field.name }}"]
+                .as_array()
+                .expect("{{ field.name }} must be an array")
+                .iter()
+                .map(|v| v.as_str().expect("a list value is a string"))
+                .collect();
+            let got: Vec<&str> = round_tripped
+                .{{ field.name | to_snake_case }}
+                .iter()
+                .map(|s| s.as_str())
+                .collect();
+            assert_eq!(got, want, "{{ f.name }} case {i} decode {{ field.name }}");
+        }
+{% elif field.type == "string" and field.optional %}
+        assert_eq!(
+            round_tripped.{{ field.name | to_snake_case }}.as_deref(),
+            decoded["{{ field.name }}"].as_str(),
+            "{{ f.name }} case {i} decode {{ field.name }}"
+        );
+{% elif field.type == "string" %}
+        assert_eq!(
+            round_tripped.{{ field.name | to_snake_case }}.as_str(),
+            decoded["{{ field.name }}"].as_str().expect("{{ field.name }} must be a string"),
+            "{{ f.name }} case {i} decode {{ field.name }}"
+        );
+{% elif field.optional %}
+        assert_eq!(
+            round_tripped.{{ field.name | to_snake_case }},
+            if decoded["{{ field.name }}"].is_null() {
+                None
+            } else {
+                Some({{ ('decoded["' ~ field.name ~ '"]') | rust_unmarshal(field.type) }})
+            },
+            "{{ f.name }} case {i} decode {{ field.name }}"
+        );
+{% else %}
+        assert_eq!(
+            round_tripped.{{ field.name | to_snake_case }},
+            {{ ('decoded["' ~ field.name ~ '"]') | rust_unmarshal(field.type) }},
+            "{{ f.name }} case {i} decode {{ field.name }}"
+        );
+{% endif %}
+{% endfor %}
+
+        if !case["decode_only"].as_bool().unwrap_or(false) {
+            let mut value = {{ f.name | to_pascal_case }}::new();
+{% for field in f.fields %}
+{% if field.list %}
+            for v in decoded["{{ field.name }}"]
+                .as_array()
+                .expect("{{ field.name }} must be an array")
+            {
+                value
+                    .{{ field.name | to_snake_case }}
+                    .push(
+                        ::sce_forge_runtime::heapless::String::try_from(
+                            v.as_str().expect("a list value is a string"),
+                        )
+                        .expect("a case value fits its bound"),
+                    )
+                    .expect("a case list fits its bound");
+            }
+{% elif field.type == "string" and field.optional %}
+            if let Some(s) = decoded["{{ field.name }}"].as_str() {
+                value.{{ field.name | to_snake_case }} = Some(
+                    ::sce_forge_runtime::heapless::String::try_from(s)
+                        .expect("a case value fits its bound"),
+                );
+            }
+{% elif field.type == "string" %}
+            value.{{ field.name | to_snake_case }} = ::sce_forge_runtime::heapless::String::try_from(
+                decoded["{{ field.name }}"].as_str().expect("{{ field.name }} must be a string"),
+            )
+            .expect("a case value fits its bound");
+{% elif field.optional %}
+            if !decoded["{{ field.name }}"].is_null() {
+                value.{{ field.name | to_snake_case }} =
+                    Some({{ ('decoded["' ~ field.name ~ '"]') | rust_unmarshal(field.type) }});
+            }
+{% else %}
+            value.{{ field.name | to_snake_case }} =
+                {{ ('decoded["' ~ field.name ~ '"]') | rust_unmarshal(field.type) }};
+{% endif %}
+{% endfor %}
+            let mut buffer = [0u8; 4096];
+            let mut sink = ::sce_forge_runtime::codec::SliceSink::new(&mut buffer);
+            value
+                .encode(&mut sink)
+                .expect("{{ f.name }} case {i} encode must succeed");
+            assert_eq!(
+                &*sink.into_written(),
+                expected_bytes.as_slice(),
+                "{{ f.name }} case {i} encode"
+            );
+        }
+    }
+
+{# Decode-rejection vectors: the wire this codec MUST refuse, paired with the
+   failure it must refuse with. `r.symbol` is the backend's name for the
+   failure; Rust has one for each, so the assertion is on the typed error and
+   not merely on refusal. #}
+{% for r in f.rejects %}
+    {
+        let wire: [u8; {{ r.encoded | length }}] = [{{ r.encoded | join(", ") }}];
+        let mut cursor = ::sce_forge_runtime::codec::SceCursor::new(&wire);
+        let outcome = {{ f.name | to_pascal_case }}::decode(&mut cursor);
+        match outcome {
+            Ok(accepted) => panic!(
+                "{{ f.name }} reject {{ loop.index0 }} ({{ r.why }}): decode returned Ok({accepted:?})"
+            ),
+            Err(refused) => {
+                assert_eq!(
+                    refused,
+                    ::sce_forge_runtime::codec::{{ r.symbol }},
+                    "{{ f.name }} reject {{ loop.index0 }}: {{ r.why }}"
+                );
+                // A refusal leaves the cursor where it found it.
+                assert_eq!(
+                    cursor.remaining(),
+                    wire.len(),
+                    "{{ f.name }} reject {{ loop.index0 }}: the cursor moved"
+                );
+            }
+        }
+    }
+{% endfor %}

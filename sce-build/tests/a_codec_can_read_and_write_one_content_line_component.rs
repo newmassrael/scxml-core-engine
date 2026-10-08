@@ -373,8 +373,13 @@ fn a_codec_with_no_property_is_refused() {
     assert!(why.contains("sce:property"), "{why}");
 }
 
+/// The backends that generate a content-line codec. A backend joins this list in
+/// the commit that generates it, and not before: the generator refuses the
+/// codec by name everywhere else.
+const GENERATED: [Language; 1] = [Language::Rust];
+
 #[test]
-fn no_backend_generates_a_content_line_codec_yet_and_each_says_so_by_name() {
+fn a_backend_that_has_not_landed_refuses_a_content_line_codec_by_name() {
     let m = codec(&document("", EVENT));
     for lang in [
         Language::Rust,
@@ -384,22 +389,27 @@ fn no_backend_generates_a_content_line_codec_yet_and_each_says_so_by_name() {
         Language::Python,
         Language::C11,
     ] {
-        assert!(!content_line_codec::lowers(lang), "{lang:?}");
-        let why = content_line_codec::refusal(lang, &m)
-            .unwrap_or_else(|| panic!("{lang:?} generated a codec no backend has landed"));
-        assert!(
-            why.contains("content-line") && why.contains("probe_event"),
-            "{lang:?}: {why}"
-        );
+        let landed = GENERATED.contains(&lang);
+        assert_eq!(content_line_codec::lowers(lang), landed, "{lang:?}");
+        match content_line_codec::refusal(lang, &m) {
+            None => assert!(landed, "{lang:?} generated a codec no backend has landed"),
+            Some(why) => {
+                assert!(!landed, "{lang:?} landed and still refuses: {why}");
+                assert!(
+                    why.contains("content-line") && why.contains("probe_event"),
+                    "{lang:?}: {why}"
+                );
+            }
+        }
     }
 }
 
 #[test]
-fn the_generator_refuses_the_codec_by_name_in_every_language() {
+fn the_generator_refuses_the_codec_by_name_where_no_backend_generates_it() {
     let dir = tempdir().expect("tempdir");
     let source = dir.path().join("probe_event.scxml");
     std::fs::write(&source, document("", EVENT)).expect("write the document");
-    for lang in ["rust", "kotlin", "cpp", "go", "python", "c11"] {
+    for lang in ["kotlin", "cpp", "go", "python", "c11"] {
         let out = dir.path().join(format!("out_{lang}"));
         let mut command = Command::new(env!("CARGO_BIN_EXE_sce-codegen"));
         command
@@ -421,6 +431,46 @@ fn the_generator_refuses_the_codec_by_name_in_every_language() {
                 && text.contains("no ")
                 && text.contains("generation yet"),
             "{lang} did not say so by name:\n{text}"
+        );
+    }
+}
+
+#[test]
+fn rust_generates_the_codec_and_it_reads_and_writes_through_the_runtime_alone() {
+    let dir = tempdir().expect("tempdir");
+    let source = dir.path().join("probe_event.scxml");
+    std::fs::write(&source, document("", EVENT)).expect("write the document");
+    let out = dir.path().join("out_rust");
+    let output = Command::new(env!("CARGO_BIN_EXE_sce-codegen"))
+        .args(["generate", "-l", "rust", "-o"])
+        .arg(&out)
+        .arg(&source)
+        .output()
+        .expect("run sce-codegen");
+    assert!(
+        output.status.success(),
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let generated = std::fs::read_to_string(out.join("probe_event.rs")).expect("generated file");
+    // The line grammar is the runtime's: the codec calls it and spells none of it.
+    for needle in [
+        "ContentLineReader::begin(",
+        "ContentLineWriter::begin(",
+        "heapless::String<256>",
+        "heapless::Vec<heapless::String<32>, 64>",
+        "Option<u32>",
+        "Option<bool>",
+        "CodecError::LineRequiredMissing",
+        "CodecError::LineTooMany",
+    ] {
+        assert!(generated.contains(needle), "missing {needle}:\n{generated}");
+    }
+    for borrowed in ["\\r\\n", "b\"BEGIN", "BEGIN:"] {
+        assert!(
+            !generated.contains(borrowed),
+            "the generated codec spells the wire itself ({borrowed}):\n{generated}"
         );
     }
 }

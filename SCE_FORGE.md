@@ -1346,10 +1346,17 @@ two parameters of one name on a property, a parameter with no entry of its prope
 before it, and a parameter on a property that has `sce:max-count` (each of its lines
 would need its own parameters, which is a list of records this encoding does not have).
 
-**Generation.** No backend generates a content-line codec yet: each refuses it by
-name (`generate/unsupported-feature`) until its own commit lands. The generator's
-refusal and the conformance harness's schedule read one answer
-(`content_line_codec::refusal`).
+**Generation.** Rust generates a content-line codec: a struct whose string values
+are `heapless::String<N>` of their `sce:max-size`, whose optional entries are
+`Option`, and whose lists are `heapless::Vec<_, M>` of their `sce:max-count`, so
+neither direction allocates and the struct borrows nothing from its input. Decode
+and encode call the runtime's `sce_forge_runtime::content_line` (the reader, the
+writer and every rule of the section above) and spell none of the grammar. Each
+other backend refuses the codec by name (`generate/unsupported-feature`) until its
+own commit lands. The generator's refusal and the conformance harness's schedule
+read one answer (`content_line_codec::refusal`), and the vectors every backend is
+held to (`codec_content_line_event` in `numerical_reference.json`) are written by
+an independent model of this page (`tests/forge/conformance/content_line_model.py`).
 
 ### 4.7 validator
 

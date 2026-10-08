@@ -23,6 +23,7 @@ extern crate alloc;
 pub mod algorithm;
 pub mod cbor;
 pub mod codec;
+pub mod content_line;
 pub mod filter;
 pub mod interpolation;
 pub mod lookup;

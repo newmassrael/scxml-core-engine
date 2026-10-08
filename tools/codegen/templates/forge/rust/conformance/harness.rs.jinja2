@@ -76,7 +76,14 @@ fn assert_close(actual: f64, expected: f64, tol: f64, label: &str) {
 #[test]
 fn {{ f.name }}_matches_reference() {
     let reference = load_reference();
+{# A content-line codec is a codec with its own fragment: its values live in
+   bounded storage, an entry can be absent or a list, and a case can be read
+   only (SCE_FORGE.md §4.6.4). #}
+{% if f.kind == "codec" and f.content_line %}
+{% set _kind_tmpl = "kinds/codec_content_line.rs.jinja2" %}
+{% else %}
 {% set _kind_tmpl = "kinds/" ~ f.kind ~ ".rs.jinja2" %}
+{% endif %}
 {% include _kind_tmpl %}
 
 }
