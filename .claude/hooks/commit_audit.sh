@@ -664,6 +664,12 @@ MEMO_VALIDATION=""
 # — the script died on the unbound read a few lines later instead of
 # asking its five questions.
 MEMO_ERRORS=""
+MEMO_OUTSIDE=""
+# Per-worktree stamp: the time this worktree last passed every gate. The
+# scan start is taken BEFORE validation and becomes the stamp, so a file
+# written while the check runs is still in the next window.
+MEMORY_STAMP="$GIT_DIR/.claude-memory-audit-stamp"
+SCAN_START="$(date +%s.%N)"
 if [ -d "$MEMORY_DIR" ]; then
   # Full memory tree lifecycle validation. Every .md file (except
   # MEMORY.md) must declare frontmatter `status:` from the 8-value
@@ -672,11 +678,36 @@ if [ -d "$MEMORY_DIR" ]; then
   # and emit no dangling [[wikilink]] or broken MEMORY.md path link.
   # Surface only open next_*.md in the audit list. Any violation aborts
   # the commit (silently-broken hooks impossible).
-  MEMO_VALIDATION="$(MEMORY_DIR="$MEMORY_DIR" python3 -c '
+  #
+  # Only the files written since this worktree last passed this check
+  # are held to the contract. The memory directory is shared by every
+  # session working on the project and lives outside git, so no commit
+  # "contains" a memory file; what a commit can be answerable for is the
+  # files written since the last time the check passed here. Without
+  # this, one session's malformed file blocked every other session's
+  # commits until somebody fixed it, and the session that wrote it was
+  # often gone. The stamp is written only after every gate passes, so a
+  # violation stays in the window (and keeps blocking) until it is fixed.
+  # No stamp (first run in a worktree, or unreadable) checks everything.
+  MEMO_VALIDATION="$(MEMORY_DIR="$MEMORY_DIR" AUDIT_STAMP="$MEMORY_STAMP" python3 -c '
 import os, re, sys
 from pathlib import Path
 
 MEMORY_DIR = Path(os.environ["MEMORY_DIR"])
+STAMP = os.environ.get("AUDIT_STAMP", "")
+try:
+    SINCE = os.stat(STAMP).st_mtime if STAMP else None
+except OSError:
+    SINCE = None
+
+def in_window(path):
+    """True when the file was written since the last pass (or when that is unknown)."""
+    if SINCE is None:
+        return True
+    try:
+        return path.stat().st_mtime >= SINCE
+    except OSError:
+        return True
 VALID = {"open", "active", "feedback",
          "landed", "superseded", "refuted", "retired", "retrospective"}
 CLOSED = {"landed", "superseded", "refuted", "retired", "retrospective"}
@@ -699,6 +730,7 @@ SUFFIX_RULES = [
 ]
 
 errors = []
+outside_window = []
 open_memos = []
 
 def read_status(path):
@@ -721,17 +753,14 @@ def read_status(path):
             return m.group(1).strip("\x27\x22"), None
     return None, "no status field"
 
-for f in sorted(MEMORY_DIR.rglob("*.md")):
-    if f.name == "MEMORY.md":
-        continue
+def judge(f):
+    """Return (violations, is_open_next) for one memory file."""
     rel = f.relative_to(MEMORY_DIR).as_posix()
     status, err = read_status(f)
     if err:
-        errors.append(f"{rel}: {err}")
-        continue
+        return [f"{rel}: {err}"], False
     if status not in VALID:
-        errors.append(f"{rel}: invalid status {status!r}")
-        continue
+        return [f"{rel}: invalid status {status!r}"], False
 
     # Path-based contract: archive bucket invariants.
     parts = f.relative_to(MEMORY_DIR).parts
@@ -739,25 +768,21 @@ for f in sorted(MEMORY_DIR.rglob("*.md")):
         if len(parts) == 2:
             # archive/<aggregator>.md → must be active
             if status != "active":
-                errors.append(f"{rel}: archive top-level aggregator must be active (got {status!r})")
-                continue
+                return [f"{rel}: archive top-level aggregator must be active (got {status!r})"], False
         else:
             # archive/closed/**/*.md → must be closed status
             if status not in CLOSED:
-                errors.append(f"{rel}: archive/closed/** must be a closed status (got {status!r})")
-                continue
+                return [f"{rel}: archive/closed/** must be a closed status (got {status!r})"], False
 
     # Prefix contract.
     if f.name.startswith("next_"):
         if status != "open":
-            errors.append(f"{rel}: next_*.md must be status:open (got {status!r})")
-            continue
-        open_memos.append(f.name)
-        continue
+            return [f"{rel}: next_*.md must be status:open (got {status!r})"], False
+        return [], True
     if f.name.startswith("feedback_"):
         if status != "feedback":
-            errors.append(f"{rel}: feedback_*.md must be status:feedback (got {status!r})")
-        continue
+            return [f"{rel}: feedback_*.md must be status:feedback (got {status!r})"], False
+        return [], False
 
     # Suffix contract.
     stem = f.stem
@@ -769,7 +794,21 @@ for f in sorted(MEMORY_DIR.rglob("*.md")):
     if matched_suffix is not None:
         suffix, required = matched_suffix
         if status != required:
-            errors.append(f"{rel}: filename suffix {suffix!r} requires status:{required} (got {status!r})")
+            return [f"{rel}: filename suffix {suffix!r} requires status:{required} (got {status!r})"], False
+    return [], False
+
+# Every file is judged, because the open next_*.md list must be complete;
+# only the ones written inside the window can block the commit.
+for f in sorted(MEMORY_DIR.rglob("*.md")):
+    if f.name == "MEMORY.md":
+        continue
+    found, is_open = judge(f)
+    if is_open:
+        open_memos.append(f.name)
+    if in_window(f):
+        errors.extend(found)
+    else:
+        outside_window.extend(found)
 
 # Build slug set for dangling [[wikilink]] gate.
 slugs = set()
@@ -781,8 +820,11 @@ def strip_code(content):
     content = re.sub(r"`[^`\n]*`", "", content)
     return content
 
-# Dangling [[wikilink]] gate.
+# Dangling [[wikilink]] gate. The slug set above is global (a link may
+# point at any file); only links written inside the window are judged.
 for f in MEMORY_DIR.rglob("*.md"):
+    if not in_window(f):
+        continue
     try:
         cleaned = strip_code(f.read_text())
     except Exception:
@@ -793,9 +835,9 @@ for f in MEMORY_DIR.rglob("*.md"):
         if slug not in slugs:
             errors.append(f"{rel}: dangling wikilink [[{m.group(1)}]]")
 
-# MEMORY.md path-link existence gate.
+# MEMORY.md path-link existence gate, when the index itself was written.
 memory_md = MEMORY_DIR / "MEMORY.md"
-if memory_md.exists():
+if memory_md.exists() and in_window(memory_md):
     try:
         content = memory_md.read_text()
     except Exception:
@@ -815,26 +857,39 @@ for e in errors:
 print("--OPEN-MEMOS--")
 for n in sorted(open_memos):
     print(n)
+print("--OUTSIDE-WINDOW--")
+for e in outside_window:
+    print(e)
 ')"
 
   # Parse python output into MEMO_ERRORS + NEXT_MEMOS.
-  in_errors=1
-  in_open=0
+  section=errors
   MEMO_ERRORS=""
   while IFS= read -r line; do
     case "$line" in
-      "--ERRORS--") in_errors=1; in_open=0; continue ;;
-      "--OPEN-MEMOS--") in_errors=0; in_open=1; continue ;;
+      "--ERRORS--") section=errors; continue ;;
+      "--OPEN-MEMOS--") section=open; continue ;;
+      "--OUTSIDE-WINDOW--") section=outside; continue ;;
     esac
-    if [ "$in_errors" -eq 1 ] && [ -n "$line" ]; then
-      MEMO_ERRORS="${MEMO_ERRORS}
-       - $line"
-    fi
-    if [ "$in_open" -eq 1 ] && [ -n "$line" ]; then
-      NEXT_MEMOS="${NEXT_MEMOS}
-       - $line"
-    fi
+    [ -n "$line" ] || continue
+    case "$section" in
+      errors) MEMO_ERRORS="${MEMO_ERRORS}
+       - $line" ;;
+      open) NEXT_MEMOS="${NEXT_MEMOS}
+       - $line" ;;
+      outside) MEMO_OUTSIDE="${MEMO_OUTSIDE}
+       - $line" ;;
+    esac
   done <<< "$MEMO_VALIDATION"
+fi
+
+# Said, not hidden: files this commit is not answerable for that still
+# break the contract. It does not block, and it is not this commit's to fix.
+if [ -n "$MEMO_OUTSIDE" ]; then
+  {
+    echo "memory contract: file(s) not written since this worktree last passed"
+    echo "also break it (not blocking, not this commit's to fix):${MEMO_OUTSIDE}"
+  } >&2
 fi
 
 # Fail loud on schema or contract violations — re-validate every retry
@@ -844,6 +899,8 @@ if [ -n "$MEMO_ERRORS" ]; then
     echo "=== COMMIT BLOCKED: memory lifecycle contract violations ==="
     echo ""
     echo "Files in $MEMORY_DIR"
+    echo "written since this worktree last passed this check ($MEMORY_STAMP;"
+    echo "no stamp = every file)"
     echo "must comply with claudedocs/rfc-memory-sixth-wave.md +"
     echo "claudedocs/rfc-memory-seventh-wave.md:"
     echo "  - status: from {open, active, feedback,"
@@ -873,4 +930,13 @@ fi
 # All gates passed. The message-based checks above run from the
 # `commit-msg` git hook and the diff-based ones from `pre-commit`,
 # so every check is git-guaranteed rather than harness-dependent.
+#
+# Only now is the memory window closed: a failure above leaves the stamp
+# where it was, so the same files are judged again on the retry.
+if [ -d "$MEMORY_DIR" ]; then
+  if ! touch -d "@${SCAN_START}" "$MEMORY_STAMP"; then
+    echo "memory contract: could not write $MEMORY_STAMP;" >&2
+    echo "the next commit in this worktree will check every memory file." >&2
+  fi
+fi
 exit 0

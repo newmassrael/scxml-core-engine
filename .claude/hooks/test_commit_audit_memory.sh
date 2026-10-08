@@ -301,10 +301,133 @@ INDEX
 err="$(invoke_hook "$proj")"
 assert_no_memory_block "memory-md-good" "$err" || failures=$((failures + 1))
 
+# ── The window: only files written since the last pass can block ──
+# A stamp inside the project's git dir records the last pass. Files older
+# than it are not this commit's to answer for; no stamp checks everything.
+stamp_of() { printf '%s\n' "$1/.git/.claude-memory-audit-stamp"; }
+write_at() {   # write_at <path> <when, as touch -d takes it>
+    touch -d "$2" "$1"
+}
+assert_says() {
+    local desc="$1" needle="$2" stderr="$3"
+    if ! grep -qF "$needle" <<<"$stderr"; then
+        echo "FAIL [$desc]: expected the output to say '$needle', got:" >&2
+        echo "$stderr" | head -10 | sed 's/^/        /' >&2
+        return 1
+    fi
+    return 0
+}
+
+# ── Case 18: a violation older than the stamp does not block, and is said ──
+proj="$(make_project case-window-old-violation)"
+md="$(memdir_for "$proj")"
+write_memo_no_status "$md" "older_notes.md"
+write_at "$md/older_notes.md" "10 minutes ago"
+write_at "$(stamp_of "$proj")" "5 minutes ago"
+err="$(invoke_hook "$proj")"
+assert_no_memory_block "window-old-violation-passes" "$err" || failures=$((failures + 1))
+assert_says "window-old-violation-said" "older_notes.md: no status field" "$err" || failures=$((failures + 1))
+
+# ── Case 19: a violation written after the stamp blocks ────────
+proj="$(make_project case-window-new-violation)"
+md="$(memdir_for "$proj")"
+write_at "$(stamp_of "$proj")" "5 minutes ago"
+write_memo_no_status "$md" "newer_notes.md"
+err="$(invoke_hook "$proj")"
+assert_blocks_with "window-new-violation" "newer_notes.md: no status field" "$err" || failures=$((failures + 1))
+
+# ── Case 20: no stamp checks every file, old ones too (fail closed) ──
+proj="$(make_project case-window-no-stamp)"
+md="$(memdir_for "$proj")"
+write_memo_no_status "$md" "ancient_notes.md"
+write_at "$md/ancient_notes.md" "3 days ago"
+err="$(invoke_hook "$proj")"
+assert_blocks_with "window-no-stamp" "ancient_notes.md: no status field" "$err" || failures=$((failures + 1))
+
+# ── Case 21: a pass writes the stamp, and the next window opens there ──
+proj="$(make_project case-window-pass-writes-stamp)"
+md="$(memdir_for "$proj")"
+write_memo "$md" "topic_landed.md" "landed"
+err="$(invoke_hook "$proj")"
+assert_no_memory_block "window-first-pass" "$err" || failures=$((failures + 1))
+if [ ! -e "$(stamp_of "$proj")" ]; then
+    echo "FAIL [window-pass-writes-stamp]: no stamp after a passing run" >&2
+    failures=$((failures + 1))
+fi
+write_memo_no_status "$md" "backdated_notes.md"
+write_at "$md/backdated_notes.md" "1 hour ago"
+err="$(invoke_hook "$proj")"
+assert_no_memory_block "window-backdated-after-pass" "$err" || failures=$((failures + 1))
+sleep 1
+write_memo_no_status "$md" "fresh_notes.md"
+err="$(invoke_hook "$proj")"
+assert_blocks_with "window-fresh-after-pass" "fresh_notes.md: no status field" "$err" || failures=$((failures + 1))
+
+# ── Case 22: a blocked run leaves the stamp where it was ───────
+proj="$(make_project case-window-block-keeps-stamp)"
+md="$(memdir_for "$proj")"
+write_at "$(stamp_of "$proj")" "5 minutes ago"
+before="$(stat -c %Y "$(stamp_of "$proj")")"
+write_memo_no_status "$md" "newer_notes.md"
+err="$(invoke_hook "$proj")"
+assert_blocks_with "window-block-keeps-stamp" "newer_notes.md" "$err" || failures=$((failures + 1))
+after="$(stat -c %Y "$(stamp_of "$proj")")"
+if [ "$before" != "$after" ]; then
+    echo "FAIL [window-block-keeps-stamp]: a blocked run moved the stamp ($before -> $after)" >&2
+    failures=$((failures + 1))
+fi
+
+# ── Case 23: an old dangling wikilink does not block, a new one does ──
+proj="$(make_project case-window-wikilink)"
+md="$(memdir_for "$proj")"
+cat > "$md/old_landed.md" <<'MEMO'
+---
+name: old
+description: refers to a missing slug
+status: landed
+type: project
+---
+
+See [[nonexistent-slug]] for details.
+MEMO
+write_at "$md/old_landed.md" "10 minutes ago"
+write_at "$(stamp_of "$proj")" "5 minutes ago"
+err="$(invoke_hook "$proj")"
+assert_no_memory_block "window-old-wikilink-passes" "$err" || failures=$((failures + 1))
+cat > "$md/new_landed.md" <<'MEMO'
+---
+name: new
+description: refers to a missing slug
+status: landed
+type: project
+---
+
+See [[nonexistent-slug]] for details.
+MEMO
+write_at "$(stamp_of "$proj")" "5 minutes ago"
+err="$(invoke_hook "$proj")"
+assert_blocks_with "window-new-wikilink" "new_landed.md: dangling wikilink" "$err" || failures=$((failures + 1))
+
+# ── Case 24: an old MEMORY.md broken link does not block, a rewritten one does ──
+proj="$(make_project case-window-memory-md)"
+md="$(memdir_for "$proj")"
+cat > "$md/MEMORY.md" <<'INDEX'
+## Index
+
+- [Missing](does_not_exist.md) — broken link
+INDEX
+write_at "$md/MEMORY.md" "10 minutes ago"
+write_at "$(stamp_of "$proj")" "5 minutes ago"
+err="$(invoke_hook "$proj")"
+assert_no_memory_block "window-old-index-passes" "$err" || failures=$((failures + 1))
+touch "$md/MEMORY.md"
+err="$(invoke_hook "$proj")"
+assert_blocks_with "window-rewritten-index" "MEMORY.md: broken link to does_not_exist.md" "$err" || failures=$((failures + 1))
+
 if [ "$failures" -gt 0 ]; then
     echo "" >&2
     echo "$failures memory-lifecycle test case(s) failed." >&2
     exit 1
 fi
 
-echo "OK: 17 memory lifecycle contract cases verified against live hook."
+echo "OK: 24 memory lifecycle contract cases verified against live hook."
