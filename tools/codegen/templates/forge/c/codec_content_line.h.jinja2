@@ -1,0 +1,270 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{#- One step that returns its status unless it succeeded. #}
+{% macro step(call, i) %}
+{{ i }}s = {{ call }};
+{{ i }}if (s != SCE_FORGE_CODEC_OK) {
+{{ i }}    return s;
+{{ i }}}
+{% endmacro %}
+{#- The read of one property's value into its holder; a refusal returns its
+    status, this backend's decode convention. The line grammar — unfolding, TEXT
+    escapes, quoting — is the runtime's (`sce_forge_cl_*`); this spells none of
+    it. #}
+{% macro read_value(e) %}
+{% if e.kind == "string" and e.is_list %}
+{{ step("sce_forge_cl_property_read_string(&line, " ~ e.max_size ~ "U, " ~ ("true" if e.text else "false") ~ ", v->" ~ e.name ~ "[v->" ~ e.name ~ "_count], &v->" ~ e.name ~ "_len[v->" ~ e.name ~ "_count])", "            ") }}
+            v->{{ e.name }}_count++;
+{% elif e.kind == "string" %}
+{{ step("sce_forge_cl_property_read_string(&line, " ~ e.max_size ~ "U, " ~ ("true" if e.text else "false") ~ ", v->" ~ e.name ~ ", &v->" ~ e.name ~ "_len)", "            ") }}
+{% elif e.kind == "bool" %}
+{{ step("sce_forge_cl_property_read_bool(&line, &v->" ~ e.name ~ ")", "            ") }}
+{% elif e.kind == "uint" %}
+{{ step("sce_forge_cl_property_read_uint(&line, " ~ e.max_expr ~ ", &raw_u)", "            ") }}
+            v->{{ e.name }} = ({{ e.value_type }})raw_u;
+{% else %}
+{{ step("sce_forge_cl_property_read_int(&line, " ~ e.min_expr ~ ", " ~ e.max_expr ~ ", &raw_i)", "            ") }}
+            v->{{ e.name }} = ({{ e.value_type }})raw_i;
+{% endif %}
+{% endmacro %}
+{#- The write of one property's value, its name and parameters already
+    written, at indent `i`; `element` is the value's holder. #}
+{% macro write_value(e, i, element, length) %}
+{% if e.kind == "string" %}
+{{ step("sce_forge_cl_writer_string(&out, " ~ element ~ ", " ~ length ~ ", " ~ ("true" if e.text else "false") ~ ", " ~ e.max_size ~ "U)", i) }}
+{% elif e.kind == "bool" %}
+{{ step("sce_forge_cl_writer_bool(&out, " ~ element ~ ")", i) }}
+{% elif e.kind == "uint" %}
+{{ step("sce_forge_cl_writer_uint(&out, (uint64_t)" ~ element ~ ")", i) }}
+{% else %}
+{{ step("sce_forge_cl_writer_int(&out, (int64_t)" ~ element ~ ")", i) }}
+{% endif %}
+{% endmacro %}
+{#- The parameters of a property, each written when present, at indent `i`. #}
+{% macro write_params(e, i) %}
+{% for p in e.params %}
+{% if p.required %}
+{{ step("sce_forge_cl_writer_param(&out, \"" ~ p.param ~ "\", self->" ~ p.name ~ ", self->" ~ p.name ~ "_len, " ~ p.max_size ~ "U)", i) }}
+{% else %}
+{{ i }}if (self->{{ p.name }}_present) {
+{{ step("sce_forge_cl_writer_param(&out, \"" ~ p.param ~ "\", self->" ~ p.name ~ ", self->" ~ p.name ~ "_len, " ~ p.max_size ~ "U)", i ~ "    ") }}
+{{ i }}}
+{% endif %}
+{% endfor %}
+{% endmacro %}
+{{ sce_map.source_marker(source_location, "c", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+/* SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec" sce:encoding="content-line")
+ * Runtime: {{ runtime_dep }}
+ * Do not edit — regenerate from the source SCXML file. */
+
+#ifndef {{ guard }}
+#define {{ guard }}
+
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <string.h>
+
+#include "sce/forge/codec.h"
+#include "sce/forge/content_line.h"
+{% for imp in all_imports %}
+{% if imp.include_stmt %}
+{{ imp.include_stmt }}
+{% endif %}
+{% endfor %}
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* The most bytes this component encodes to, folds and escapes included: a buffer
+ * of this size never makes `{{ c_encode_to_buf_func }}` report
+ * SCE_FORGE_CODEC_BUFFER_OVERFLOW. */
+#define {{ c_max_bytes_macro }} {{ max_encoded_bytes }}U
+
+/* One `{{ component }}` component of content lines (SCE_FORGE.md §4.6.4). Decode
+ * reads the properties this codec declares in any order and skips the rest;
+ * encode writes the entries present in declaration order, folded at 75 octets.
+ * A string is held in a fixed array the size of its bound, with its length
+ * beside it; a list holds up to its `sce:max-count` of them with a count; an
+ * optional entry or parameter is present when `<name>_present` is true. A
+ * zero-initialised value is the infallible starting value: every entry at its
+ * zero, every optional one absent. */
+typedef struct {
+{% for e in entries %}
+    /* Property `{{ e.property }}`{% if e.is_list %}, up to {{ e.max_count }} lines{% elif e.required %}, required{% endif %}. */
+{% if e.kind == "string" and e.is_list %}
+    char {{ e.name }}[{{ e.max_count }}][{{ e.max_size }}];
+    size_t {{ e.name }}_len[{{ e.max_count }}];
+    size_t {{ e.name }}_count;
+{% elif e.kind == "string" %}
+    char {{ e.name }}[{{ e.max_size }}];
+    size_t {{ e.name }}_len;
+{% else %}
+    {{ e.value_type }} {{ e.name }};
+{% endif %}
+{% if not e.required and not e.is_list %}
+    bool {{ e.name }}_present;
+{% endif %}
+{% for p in e.params %}
+    /* Parameter `{{ p.param }}` of `{{ e.property }}`{% if p.required %}, required{% endif %}. */
+    char {{ p.name }}[{{ p.max_size }}];
+    size_t {{ p.name }}_len;
+{% if not p.required %}
+    bool {{ p.name }}_present;
+{% endif %}
+{% endfor %}
+{% endfor %}
+} {{ c_struct_typedef }};
+
+/* Decode one component from `cursor` into `*out`. On SCE_FORGE_CODEC_OK the
+ * cursor has advanced past its `END:` line; on any other status the cursor is
+ * where it was and `*out` holds no value to read — the positional C decode's
+ * contract. Written through `out` rather than into a local copy: a struct whose
+ * strings are declared large is too large for a stack. */
+static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *cursor, {{ c_struct_typedef }} *out) {
+    sce_forge_cursor_t c = *cursor;
+    {{ c_struct_typedef }} *v = out;
+    sce_forge_cl_reader_t reader;
+    uint64_t raw_u = 0;
+    int64_t raw_i = 0;
+    sce_forge_codec_status_t s;
+{% for e in entries %}
+{% if not e.is_list %}
+    bool seen_{{ e.name }} = false;
+{% endif %}
+{% for p in e.params %}
+    bool seen_{{ p.name }} = false;
+{% endfor %}
+{% endfor %}
+    (void)raw_u;
+    (void)raw_i;
+    s = sce_forge_cl_reader_begin(&reader, sce_forge_cursor_peek(&c, sce_forge_cursor_remaining(&c)),
+                                  sce_forge_cursor_remaining(&c), "{{ component }}");
+    if (s != SCE_FORGE_CODEC_OK) {
+        return s;
+    }
+    memset(v, 0, sizeof *v);
+    for (;;) {
+        sce_forge_cl_property_t line;
+        bool has = false;
+        s = sce_forge_cl_reader_next(&reader, &line, &has);
+        if (s != SCE_FORGE_CODEC_OK) {
+            return s;
+        }
+        if (!has) {
+            break;
+        }
+{% for e in entries %}
+        {% if not loop.first %}else {% endif %}if (sce_forge_cl_property_is(&line, "{{ e.property }}")) {
+{% if e.is_list %}
+            if (v->{{ e.name }}_count >= {{ e.max_count }}U) {
+                return SCE_FORGE_CODEC_LINE_TOO_MANY;
+            }
+{% else %}
+            if (seen_{{ e.name }}) {
+                return SCE_FORGE_CODEC_LINE_TOO_MANY;
+            }
+{% endif %}
+{% if e.params %}
+            for (;;) {
+                bool more = false;
+{{ step("sce_forge_cl_property_next_param(&line, &more)", "                ") }}
+                if (!more) {
+                    break;
+                }
+{% for p in e.params %}
+                {% if not loop.first %}else {% endif %}if (sce_forge_cl_property_param_is(&line, "{{ p.param }}")) {
+                    if (seen_{{ p.name }}) {
+                        return SCE_FORGE_CODEC_LINE_TOO_MANY;
+                    }
+{{ step("sce_forge_cl_property_read_param_string(&line, " ~ p.max_size ~ "U, v->" ~ p.name ~ ", &v->" ~ p.name ~ "_len)", "                    ") }}
+                    seen_{{ p.name }} = true;
+{% if not p.required %}
+                    v->{{ p.name }}_present = true;
+{% endif %}
+                }
+{% endfor %}
+            }
+{% endif %}
+{{ read_value(e) }}{% if not e.is_list %}
+            seen_{{ e.name }} = true;
+{% if not e.required %}
+            v->{{ e.name }}_present = true;
+{% endif %}
+{% endif %}
+        }
+{% endfor %}
+    }
+{% for e in entries %}
+{% if e.required %}
+    if (!seen_{{ e.name }}) {
+        return SCE_FORGE_CODEC_LINE_REQUIRED_MISSING;
+    }
+{% endif %}
+{% for p in e.params if p.required %}
+    if (!seen_{{ p.name }}) {
+        return SCE_FORGE_CODEC_LINE_REQUIRED_MISSING;
+    }
+{% endfor %}
+{% endfor %}
+    /* Only a component that decoded whole moves the cursor. */
+    if (!sce_forge_cursor_advance(&c, sce_forge_cl_reader_consumed(&reader))) {
+        return SCE_FORGE_CODEC_NEED_MORE_BYTES;
+    }
+    *cursor = c;
+    return SCE_FORGE_CODEC_OK;
+}
+
+/* Encode `*self` into `w`. A value past its declared bound, or one a line could
+ * not carry, is refused with the status of the rule rather than written
+ * (SCE_FORGE.md §4.6.4). */
+static inline sce_forge_codec_status_t {{ c_encode_func }}(const {{ c_struct_typedef }} *self, sce_forge_writer_t *w) {
+    sce_forge_cl_writer_t out = sce_forge_cl_writer_init(w, "{{ component }}");
+    sce_forge_codec_status_t s;
+{{ step("sce_forge_cl_writer_begin(&out)", "    ") }}
+{% for e in entries %}
+{% if e.is_list %}
+    if (self->{{ e.name }}_count > {{ e.max_count }}U) {
+        return SCE_FORGE_CODEC_LINE_TOO_MANY;
+    }
+    {
+        size_t i;
+        for (i = 0; i < self->{{ e.name }}_count; ++i) {
+{{ step("sce_forge_cl_writer_property(&out, \"" ~ e.property ~ "\")", "            ") }}
+{{ write_value(e, "            ", "self->" ~ e.name ~ "[i]", "self->" ~ e.name ~ "_len[i]") }}        }
+    }
+{% elif e.required %}
+    {
+{{ step("sce_forge_cl_writer_property(&out, \"" ~ e.property ~ "\")", "        ") }}
+{{ write_params(e, "        ") }}{{ write_value(e, "        ", "self->" ~ e.name, "self->" ~ e.name ~ "_len") }}    }
+{% else %}
+    if (self->{{ e.name }}_present) {
+{{ step("sce_forge_cl_writer_property(&out, \"" ~ e.property ~ "\")", "        ") }}
+{{ write_params(e, "        ") }}{{ write_value(e, "        ", "self->" ~ e.name, "self->" ~ e.name ~ "_len") }}    }{% if e.optional_params %} else if ({% for p in e.optional_params %}{% if not loop.first %} || {% endif %}self->{{ p.name }}_present{% endfor %}) {
+        /* A parameter with no value of its property has no line to stand on. */
+        return SCE_FORGE_CODEC_LINE_REQUIRED_MISSING;
+    }{% endif %}
+
+{% endif %}
+{% endfor %}
+    return sce_forge_cl_writer_finish(&out);
+}
+
+/* `{{ c_encode_func }}` into the caller's `buf` of `cap` bytes, the count written
+ * into `*out_len`. */
+static inline sce_forge_codec_status_t {{ c_encode_to_buf_func }}(const {{ c_struct_typedef }} *self, uint8_t *buf, size_t cap, size_t *out_len) {
+    sce_forge_writer_t w = sce_forge_writer_init_buf(buf, cap);
+    sce_forge_codec_status_t s = {{ c_encode_func }}(self, &w);
+    *out_len = sce_forge_writer_position(&w);
+    return s;
+}
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* {{ guard }} */

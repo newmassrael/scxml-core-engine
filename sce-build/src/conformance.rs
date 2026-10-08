@@ -1034,6 +1034,41 @@ pub fn c_literal_for(value: &serde_json::Value, ty: &str) -> String {
     }
 }
 
+/// The bytes an oracle value stands for: a string as its UTF-8, an array of
+/// integers as the bytes they name. `None` for anything else.
+fn oracle_bytes(value: &serde_json::Value) -> Option<Vec<u8>> {
+    match value {
+        serde_json::Value::String(s) => Some(s.as_bytes().to_vec()),
+        serde_json::Value::Array(items) => items
+            .iter()
+            .map(|b| b.as_u64().and_then(|b| u8::try_from(b).ok()))
+            .collect(),
+        _ => None,
+    }
+}
+
+/// A C string literal for `bytes`, every byte exactly as it is: a printable
+/// ASCII character stands for itself, except `"`, `\` and `?` (a trigraph
+/// opener), and every other byte is a three-digit octal escape, which — unlike
+/// a hex escape — cannot swallow the character after it.
+///
+/// A content-line oracle value is arbitrary text: it may hold a newline, a
+/// quote, a backslash or UTF-8, none of which `c_literal`'s bare `"{s}"`
+/// carries.
+pub fn c_bytes_literal_for(bytes: &[u8]) -> String {
+    let mut out = String::with_capacity(bytes.len() + 2);
+    out.push('"');
+    for &b in bytes {
+        if (0x20..0x7F).contains(&b) && !matches!(b, b'"' | b'\\' | b'?') {
+            out.push(char::from(b));
+        } else {
+            out.push_str(&format!("\\{b:03o}"));
+        }
+    }
+    out.push('"');
+    out
+}
+
 /// Map a canonical type to its Kotlin native type name.
 pub fn kt_type_for(ty: &str) -> &'static str {
     match ty {
@@ -1109,6 +1144,22 @@ pub fn register_conformance_filters(env: &mut minijinja::Environment) {
     // produces the exact C11 source literal — replacing the runtime
     // JSON parsing every other backend does at test execution time.
     env.add_filter("c_type", |ty: String| c_type_for(&ty).to_string());
+    // A string or a byte array as a C string literal, and its length in bytes
+    // (a string's is its UTF-8 length, which the template's own `length` —
+    // a count of characters — is not).
+    env.add_filter("c_bytes_literal", |value: minijinja::Value| -> String {
+        let json: serde_json::Value =
+            serde_json::to_value(value).unwrap_or(serde_json::Value::Null);
+        match oracle_bytes(&json) {
+            Some(bytes) => c_bytes_literal_for(&bytes),
+            None => format!("/* not bytes: {json} */"),
+        }
+    });
+    env.add_filter("byte_len", |value: minijinja::Value| -> usize {
+        let json: serde_json::Value =
+            serde_json::to_value(value).unwrap_or(serde_json::Value::Null);
+        oracle_bytes(&json).map_or(0, |bytes| bytes.len())
+    });
     env.add_filter(
         "c_literal",
         |value: minijinja::Value, ty: String| -> String {

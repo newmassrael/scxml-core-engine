@@ -1,0 +1,187 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# Content-line codec kind (SCE_FORGE.md §4.6.4) — { decoded, encoded } cases
+   and reject vectors, as the generic codec fragment has them, with what a
+   content-line component adds: an entry can be absent or a list, a case marked
+   `decode_only` is an input the codec reads and does not write, a refused
+   decode leaves the cursor where it found it, and C names each failure by its
+   status. C has no JSON parser, so the oracle is baked in: each string is a C
+   literal written byte by byte (`c_bytes_literal`: a value may hold a newline,
+   a quote, a backslash or UTF-8), and the bytes of a case are one such literal.
+   A case's size is its own, not a fixed buffer's: a folded component is longer
+   than the 256 bytes the generic fragment reserves. #}
+static void test_{{ f.name }}(void) {
+    typedef struct {
+{% for field in f.fields %}
+{% set fn = field.name | to_snake_case %}
+{% if field.list %}
+{% set ns = namespace(most=1) %}
+{% for c in f.cases %}
+{% if (c.decoded[field.name] | length) > ns.most %}{% set ns.most = c.decoded[field.name] | length %}{% endif %}
+{% endfor %}
+        const char *input_{{ fn }}[{{ ns.most }}];
+        size_t input_{{ fn }}_len[{{ ns.most }}];
+        size_t input_{{ fn }}_count;
+{% elif field.type == "string" %}
+        const char *input_{{ fn }};
+        size_t input_{{ fn }}_len;
+{% else %}
+        {{ field.type | c_type }} input_{{ fn }};
+{% endif %}
+{% if field.optional %}
+        bool input_{{ fn }}_present;
+{% endif %}
+{% endfor %}
+        bool decode_only;
+        size_t expected_len;
+        const uint8_t *expected_bytes;
+    } {{ f.name }}_case_t;
+    static const {{ f.name }}_case_t cases[] = {
+{% for c in f.cases %}
+        {
+{% for field in f.fields %}
+{% set fn = field.name | to_snake_case %}
+{% if field.list %}
+            .input_{{ fn }} = { {% for item in c.decoded[field.name] %}{{ item | c_bytes_literal }}{% if not loop.last %}, {% endif %}{% endfor %}{% if (c.decoded[field.name] | length) == 0 %}NULL{% endif %} },
+            .input_{{ fn }}_len = { {% for item in c.decoded[field.name] %}{{ item | byte_len }}{% if not loop.last %}, {% endif %}{% endfor %}{% if (c.decoded[field.name] | length) == 0 %}0{% endif %} },
+            .input_{{ fn }}_count = {{ c.decoded[field.name] | length }},
+{% elif field.optional and c.decoded[field.name] is none %}
+            .input_{{ fn }}_present = false,
+{% elif field.optional %}
+            .input_{{ fn }}_present = true,
+{% endif %}
+{% if field.list %}
+{% elif field.optional and c.decoded[field.name] is none %}
+{# Absent: the value member stays zero-initialised. #}
+{% elif field.type == "string" %}
+            .input_{{ fn }} = {{ c.decoded[field.name] | c_bytes_literal }},
+            .input_{{ fn }}_len = {{ c.decoded[field.name] | byte_len }},
+{% else %}
+            .input_{{ fn }} = {{ c.decoded[field.name] | c_literal(field.type) }},
+{% endif %}
+{% endfor %}
+            .decode_only = {{ "true" if (c.decode_only is defined and c.decode_only) else "false" }},
+            .expected_len = {{ c.encoded | length }},
+            .expected_bytes = (const uint8_t *){{ c.encoded | c_bytes_literal }},
+        },
+{% endfor %}
+    };
+    const size_t n = sizeof(cases) / sizeof(cases[0]);
+    for (size_t i = 0; i < n; ++i) {
+        {# Static for the reason the generic fragment's is: a codec's strings can
+           be declared large enough that its value is too large for a stack. #}
+        static {{ f.name }}_t round_tripped;
+        sce_forge_cursor_t cursor = sce_forge_cursor_init(cases[i].expected_bytes, cases[i].expected_len);
+        if ({{ f.name }}_decode(&cursor, &round_tripped) != SCE_FORGE_CODEC_OK) {
+            fprintf(stderr, "FAIL: {{ f.name }} case %zu decode: returned non-ok\n", i);
+            ++g_failures;
+            continue;
+        }
+{% for field in f.fields %}
+{% set fn = field.name | to_snake_case %}
+{% if field.list %}
+        if (round_tripped.{{ fn }}_count != cases[i].input_{{ fn }}_count) {
+            fprintf(stderr, "FAIL: {{ f.name }} case %zu decode field {{ field.name }}: count actual=%zu expected=%zu\n",
+                i, round_tripped.{{ fn }}_count, cases[i].input_{{ fn }}_count);
+            ++g_failures;
+            continue;
+        }
+        for (size_t k = 0; k < cases[i].input_{{ fn }}_count; ++k) {
+            if (round_tripped.{{ fn }}_len[k] != cases[i].input_{{ fn }}_len[k] ||
+                memcmp(round_tripped.{{ fn }}[k], cases[i].input_{{ fn }}[k], cases[i].input_{{ fn }}_len[k]) != 0) {
+                fprintf(stderr, "FAIL: {{ f.name }} case %zu decode field {{ field.name }}[%zu]\n", i, k);
+                ++g_failures;
+            }
+        }
+{% else %}
+{% if field.optional %}
+        if (round_tripped.{{ fn }}_present != cases[i].input_{{ fn }}_present) {
+            fprintf(stderr, "FAIL: {{ f.name }} case %zu decode field {{ field.name }}: present actual=%d expected=%d\n",
+                i, (int)round_tripped.{{ fn }}_present, (int)cases[i].input_{{ fn }}_present);
+            ++g_failures;
+            continue;
+        }
+        if (cases[i].input_{{ fn }}_present) {
+{% endif %}
+{% if field.type == "string" %}
+        if (round_tripped.{{ fn }}_len != cases[i].input_{{ fn }}_len ||
+            memcmp(round_tripped.{{ fn }}, cases[i].input_{{ fn }}, cases[i].input_{{ fn }}_len) != 0) {
+            fprintf(stderr, "FAIL: {{ f.name }} case %zu decode field {{ field.name }}: actual_len=%zu expected_len=%zu\n",
+                i, round_tripped.{{ fn }}_len, cases[i].input_{{ fn }}_len);
+            ++g_failures;
+        }
+{% else %}
+        if (round_tripped.{{ fn }} != cases[i].input_{{ fn }}) {
+            fprintf(stderr, "FAIL: {{ f.name }} case %zu decode field {{ field.name }}: actual=%lld expected=%lld\n",
+                i, (long long)round_tripped.{{ fn }}, (long long)cases[i].input_{{ fn }});
+            ++g_failures;
+        }
+{% endif %}
+{% if field.optional %}
+        }
+{% endif %}
+{% endif %}
+{% endfor %}
+        if (cases[i].decode_only) {
+            continue;
+        }
+        static {{ f.name }}_t val;
+        memset(&val, 0, sizeof val);
+{% for field in f.fields %}
+{% set fn = field.name | to_snake_case %}
+{% if field.list %}
+        for (size_t k = 0; k < cases[i].input_{{ fn }}_count; ++k) {
+            memcpy(val.{{ fn }}[k], cases[i].input_{{ fn }}[k], cases[i].input_{{ fn }}_len[k]);
+            val.{{ fn }}_len[k] = cases[i].input_{{ fn }}_len[k];
+        }
+        val.{{ fn }}_count = cases[i].input_{{ fn }}_count;
+{% else %}
+{% if field.optional %}
+        val.{{ fn }}_present = cases[i].input_{{ fn }}_present;
+{% endif %}
+{% if field.type == "string" %}
+        if (cases[i].input_{{ fn }}_len > 0) {
+            memcpy(val.{{ fn }}, cases[i].input_{{ fn }}, cases[i].input_{{ fn }}_len);
+        }
+        val.{{ fn }}_len = cases[i].input_{{ fn }}_len;
+{% else %}
+        val.{{ fn }} = cases[i].input_{{ fn }};
+{% endif %}
+{% endif %}
+{% endfor %}
+        {
+            uint8_t encoded_buf[{{ (f.name | to_upper_snake_case) ~ "_MAX_BYTES" }}];
+            size_t encoded_len = 0;
+            sce_forge_codec_status_t _enc_st = {{ f.name }}_encode_to_buf(&val, encoded_buf, sizeof(encoded_buf), &encoded_len);
+            if (_enc_st != SCE_FORGE_CODEC_OK ||
+                encoded_len != cases[i].expected_len ||
+                memcmp(encoded_buf, cases[i].expected_bytes, cases[i].expected_len) != 0) {
+                fprintf(stderr,
+                    "FAIL: {{ f.name }} case %zu encode: status=%d len actual=%zu expected=%zu\n",
+                    i, (int)_enc_st, encoded_len, cases[i].expected_len);
+                ++g_failures;
+            }
+        }
+    }
+{# Decode-rejection vectors: the wire this codec MUST refuse, paired with the
+   status it must refuse with. A refusal leaves the cursor where it found it. #}
+{% for r in f.rejects %}
+    {
+        static const uint8_t reject_bytes[] = { {{ r.encoded | join(", ") }} };
+        static {{ f.name }}_t reject_out;
+        sce_forge_cursor_t reject_cursor =
+            sce_forge_cursor_init(reject_bytes, sizeof(reject_bytes));
+        sce_forge_codec_status_t reject_st = {{ f.name }}_decode(&reject_cursor, &reject_out);
+        if (reject_st != {{ r.symbol }}) {
+            fprintf(stderr,
+                "FAIL: {{ f.name }} reject {{ loop.index0 }}: {{ r.why }} (status=%d expected=%d)\n",
+                (int)reject_st, (int){{ r.symbol }});
+            ++g_failures;
+        } else if (sce_forge_cursor_remaining(&reject_cursor) != sizeof(reject_bytes)) {
+            fprintf(stderr, "FAIL: {{ f.name }} reject {{ loop.index0 }}: the cursor moved\n");
+            ++g_failures;
+        }
+    }
+{% endfor %}
+}

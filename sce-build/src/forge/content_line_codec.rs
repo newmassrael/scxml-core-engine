@@ -31,7 +31,12 @@ use crate::generator::Language;
 pub fn lowers(lang: Language) -> bool {
     matches!(
         lang,
-        Language::Rust | Language::Kotlin | Language::Cpp | Language::Go | Language::Python
+        Language::Rust
+            | Language::Kotlin
+            | Language::Cpp
+            | Language::Go
+            | Language::Python
+            | Language::C11
     )
 }
 
@@ -66,7 +71,7 @@ pub fn render(
         Language::Cpp => render_cpp(env, m, imports),
         Language::Go => render_go(env, m, imports),
         Language::Python => render_python(env, m, imports),
-        _ => unreachable!("`refusal` admits only a backend that has a render"),
+        Language::C11 => render_c(env, m, imports),
     }
 }
 
@@ -333,7 +338,6 @@ fn shape_fields(entries: &mut [serde_json::Value], shapes: &FieldShapes<'_>) {
         } else {
             entry["field_type"] = value_type.into();
         }
-        let mut optional_params = Vec::new();
         if let Some(serde_json::Value::Array(params)) = entry.get_mut("params") {
             for param in params {
                 let value_type = param["value_type"].as_str().unwrap_or_default().to_string();
@@ -342,12 +346,105 @@ fn shape_fields(entries: &mut [serde_json::Value], shapes: &FieldShapes<'_>) {
                 } else {
                     param["field_type"] = (shapes.optional_type)(&value_type).into();
                     param["default"] = shapes.optional_default.into();
-                    optional_params.push(serde_json::json!({ "name": param["name"] }));
                 }
             }
         }
-        entry["optional_params"] = optional_params.into();
+        mark_optional_params(entry);
     }
+}
+
+/// List, as `optional_params`, the parameters of `entry` that may be absent:
+/// an encode of an absent property must check that none of them is given.
+fn mark_optional_params(entry: &mut serde_json::Value) {
+    let optional: Vec<serde_json::Value> = entry["params"]
+        .as_array()
+        .map(|params| {
+            params
+                .iter()
+                .filter(|p| p["required"].as_bool() != Some(true))
+                .map(|p| serde_json::json!({ "name": p["name"] }))
+                .collect()
+        })
+        .unwrap_or_default();
+    entry["optional_params"] = optional.into();
+}
+
+fn render_c(
+    env: &minijinja::Environment,
+    m: &CodecModel,
+    imports: &[ImportContext],
+) -> Result<String, ForgeError> {
+    let l = LangCtx::new(Language::C11, imports);
+    let mut ctx = l.base_context(&m.name);
+    l.insert_imports(&mut ctx, imports);
+    crate::forge::generator::insert_c_codec_symbols(&mut ctx, &m.name);
+    // A string is a fixed array the size of its bound beside its length, a list
+    // an array of them beside a count, and an optional entry or parameter a
+    // `<name>_present` flag beside its value: no allocation, as the rest of the
+    // C11 runtime. Every string has its bound (`sce:max-size` is required of
+    // one), so C11 refuses nothing the other backends admit.
+    let mut entries = entries_context(&l, m, |_| "char".to_string(), |_| None);
+    for entry in &mut entries {
+        mark_optional_params(entry);
+        // The bounds of an integer entry's read, as C literals: a 64-bit literal
+        // needs its width said, and the smallest int64 has no literal at all.
+        let (min, max) = (entry["min"].as_i64(), entry["max"].as_u64());
+        if let (Some(min), Some(max)) = (min, max) {
+            entry["max_expr"] = if entry["kind"] == "uint" {
+                format!("UINT64_C({max})")
+            } else {
+                format!("INT64_C({max})")
+            }
+            .into();
+            entry["min_expr"] = if min == i64::MIN {
+                "INT64_MIN".to_string()
+            } else {
+                format!("INT64_C({min})")
+            }
+            .into();
+        }
+    }
+    insert_component(&mut ctx, m);
+    ctx.insert("entries".into(), entries.into());
+    ctx.insert("max_encoded_bytes".into(), max_encoded_bytes(m).into());
+    l.render(env, "codec_content_line", ctx)
+}
+
+/// The most bytes `m` encodes to, folds and escapes included: a bound a C11
+/// caller sizes an `encode_to_buf` buffer by. Every entry present at its
+/// largest — a TEXT with every character escaped, a list full — and every
+/// logical line cut as often as a cut can fall (a line carries at least 71
+/// payload octets between cuts, the widest unit being four).
+fn max_encoded_bytes(m: &CodecModel) -> u64 {
+    let Some(model) = m.content_line.as_ref() else {
+        return 0;
+    };
+    let component = model.component.len() as u64;
+    // `BEGIN:` + component + CRLF, `END:` + component + CRLF.
+    let mut total = 2 * component + 6 + 4 + 4;
+    for entry in model.entries.iter().filter(|e| e.param.is_none()) {
+        let mut logical = entry.property.len() as u64;
+        for param in model
+            .entries
+            .iter()
+            .filter(|p| p.param.is_some() && p.property.eq_ignore_ascii_case(&entry.property))
+        {
+            // `;` + name + `=` + the quotes + the value.
+            let name = param.param.as_deref().map_or(0, str::len) as u64;
+            logical += 1 + name + 1 + 2 + u64::from(param.max_size.unwrap_or(0));
+        }
+        let value = match &entry.sce_type {
+            SceType::String => {
+                u64::from(entry.max_size.unwrap_or(0)) * if entry.text { 2 } else { 1 }
+            }
+            SceType::Bool => 5,
+            _ => 20,
+        };
+        logical += 1 + value;
+        let physical = logical + 2 + 3 * (logical / 70 + 1);
+        total += physical * u64::from(entry.max_count.unwrap_or(1));
+    }
+    total
 }
 
 fn render_rust(

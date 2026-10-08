@@ -53,7 +53,13 @@ static int close_enough(double actual, double expected, double tol) {
 
 {% for f in fixtures %}
 /* ── {{ f.kind }}: {{ f.name }} ──────────────────────────── */
+{# A content-line codec is a codec with its own fragment: an entry can be
+   absent or a list, and a case can be read only (SCE_FORGE.md §4.6.4). #}
+{% if f.kind == "codec" and f.content_line %}
+{% set _kind_tmpl = "kinds/codec_content_line.c.jinja2" %}
+{% else %}
 {% set _kind_tmpl = "kinds/" ~ f.kind ~ ".c.jinja2" %}
+{% endif %}
 {% include _kind_tmpl %}
 
 {% endfor %}

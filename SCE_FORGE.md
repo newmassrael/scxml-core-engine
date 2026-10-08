@@ -1379,12 +1379,22 @@ Python generates it as a dataclass of `str`, `List[str]` for a list and `None`
 for an absent optional entry, over `sce_forge_runtime.content_line`. Its decode
 is `None` on every refusal and leaves the cursor where it was; its encode raises
 the typed error of the rule (`LineTooLong`, `LineBadValue`, ...), and holds an
-integer to its declared width, which a Python `int` does not carry itself. Each
-other backend refuses the codec by name (`generate/unsupported-feature`) until its
-own commit lands. The generator's refusal and the conformance harness's schedule
-read one answer (`content_line_codec::refusal`), and the vectors every backend is
-held to (`codec_content_line_event` in `numerical_reference.json`) are written by
-an independent model of this page (`tests/forge/conformance/content_line_model.py`).
+integer to its declared width, which a Python `int` does not carry itself.
+
+C11 generates it over `sce/forge/content_line.h`, with no allocation: a string is
+a `char` array of its `sce:max-size` beside its length, a list an array of them
+beside a count (`<name>_count`), and an optional entry or parameter a
+`<name>_present` flag beside its value. Decode answers the status of the rule that
+refused (`SCE_FORGE_CODEC_LINE_MALFORMED`, `_REQUIRED_MISSING`, `_TOO_MANY`,
+`_TOO_LONG`, `_BAD_ESCAPE`, `_BAD_VALUE`, or `_NEED_MORE_BYTES`) and leaves the
+cursor where it was. `<NAME>_MAX_BYTES` is the most a component encodes to, folds
+and escapes included, so a buffer of that size never overflows.
+
+Every backend generates it, and the generator's refusal and the conformance
+harness's schedule read one answer (`content_line_codec::refusal`). The vectors
+every backend is held to (`codec_content_line_event` in
+`numerical_reference.json`) are written by an independent model of this page
+(`tests/forge/conformance/content_line_model.py`).
 
 ### 4.7 validator
 

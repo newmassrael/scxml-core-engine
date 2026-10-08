@@ -373,19 +373,12 @@ fn a_codec_with_no_property_is_refused() {
     assert!(why.contains("sce:property"), "{why}");
 }
 
-/// The backends that generate a content-line codec. A backend joins this list in
-/// the commit that generates it, and not before: the generator refuses the
-/// codec by name everywhere else.
-const GENERATED: [Language; 5] = [
-    Language::Rust,
-    Language::Kotlin,
-    Language::Cpp,
-    Language::Go,
-    Language::Python,
-];
-
+/// Every backend generates a content-line codec, and the generator's refusal and
+/// the conformance harness's schedule read one answer for it
+/// (`content_line_codec::refusal`). A backend that had not landed would be
+/// refused by name there, as each was until its own commit.
 #[test]
-fn a_backend_that_has_not_landed_refuses_a_content_line_codec_by_name() {
+fn every_backend_generates_a_content_line_codec() {
     let m = codec(&document("", EVENT));
     for lang in [
         Language::Rust,
@@ -395,45 +388,36 @@ fn a_backend_that_has_not_landed_refuses_a_content_line_codec_by_name() {
         Language::Python,
         Language::C11,
     ] {
-        let landed = GENERATED.contains(&lang);
-        assert_eq!(content_line_codec::lowers(lang), landed, "{lang:?}");
-        match content_line_codec::refusal(lang, &m) {
-            None => assert!(landed, "{lang:?} generated a codec no backend has landed"),
-            Some(why) => {
-                assert!(!landed, "{lang:?} landed and still refuses: {why}");
-                assert!(
-                    why.contains("content-line") && why.contains("probe_event"),
-                    "{lang:?}: {why}"
-                );
-            }
-        }
+        assert!(content_line_codec::lowers(lang), "{lang:?}");
+        assert_eq!(content_line_codec::refusal(lang, &m), None, "{lang:?}");
     }
 }
 
 #[test]
-fn the_generator_refuses_the_codec_by_name_where_no_backend_generates_it() {
+fn the_generator_writes_the_codec_in_every_language() {
     let dir = tempdir().expect("tempdir");
     let source = dir.path().join("probe_event.scxml");
     std::fs::write(&source, document("", EVENT)).expect("write the document");
-    for lang in ["c11"] {
+    for lang in ["rust", "kotlin", "cpp", "go", "python", "c11"] {
         let out = dir.path().join(format!("out_{lang}"));
         let mut command = Command::new(env!("CARGO_BIN_EXE_sce-codegen"));
         command
             .args(["generate", "-l", lang, "-o"])
             .arg(&out)
             .arg(&source);
+        if lang == "go" {
+            command.args(["--go-module-prefix", "x/y"]);
+        }
         let output = command.output().expect("run sce-codegen");
         let text = format!(
             "{}{}",
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
-        assert!(!output.status.success(), "{lang} generated:\n{text}");
+        assert!(output.status.success(), "{lang} refused:\n{text}");
         assert!(
-            text.contains("content-line")
-                && text.contains("no ")
-                && text.contains("generation yet"),
-            "{lang} did not say so by name:\n{text}"
+            !text.contains("generation yet"),
+            "{lang} still says it has no generation:\n{text}"
         );
     }
 }

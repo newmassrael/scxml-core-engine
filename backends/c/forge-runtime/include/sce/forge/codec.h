@@ -88,6 +88,28 @@ typedef enum {
     SCE_FORGE_CODEC_CBOR_TOO_DEEP = 10,
     /* A CBOR value does not fit its entry's type or `sce:max-size`. */
     SCE_FORGE_CODEC_CBOR_OUT_OF_RANGE = 11,
+    /* An `sce:encoding="content-line"` component has a line, a parameter or an
+     * `END:` the grammar does not admit (SCE_FORGE.md §4.6.4). The six line
+     * statuses mirror the typed `CodecError::Line*` of Rust and
+     * `codec.ErrLine*` of Go. */
+    SCE_FORGE_CODEC_LINE_MALFORMED = 12,
+    /* A content-line component lacks a property or parameter declared
+     * `sce:required="true"`; on encode, a parameter was given without the
+     * property it belongs to. */
+    SCE_FORGE_CODEC_LINE_REQUIRED_MISSING = 13,
+    /* A content-line property that holds one value occurred twice, a
+     * parameter was given twice in one line, or a list passed its
+     * `sce:max-count`. */
+    SCE_FORGE_CODEC_LINE_TOO_MANY = 14,
+    /* A content-line value passed its `sce:max-size`. */
+    SCE_FORGE_CODEC_LINE_TOO_LONG = 15,
+    /* A content-line TEXT carried an escape other than `\\`, `\;`, `\,`, `\n`
+     * and `\N`. */
+    SCE_FORGE_CODEC_LINE_BAD_ESCAPE = 16,
+    /* A content-line value its entry cannot hold: a control character, invalid
+     * UTF-8, an integer or `bool` out of its type, a parameter of more values
+     * than one, a `"` in a parameter value. */
+    SCE_FORGE_CODEC_LINE_BAD_VALUE = 17,
 } sce_forge_codec_status_t;
 
 /* Read-only cursor over a borrowed input buffer. Decode bodies bind a
