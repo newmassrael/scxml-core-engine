@@ -40,10 +40,24 @@ def body(answer: dict) -> dict:
 FIXTURE_MANIFEST_SHA = hashlib.sha256((FIXTURES / MANIFEST).read_bytes()).hexdigest()
 
 
+def fixture_sidecar_text() -> str:
+    """The sidecar of the committed manifest: its own ids over placeholder sentences. The words
+    behind the ids are part of which list an acceptance was taken against (the manifest is
+    coordinates only), and the committed manifest has no sidecar of its own."""
+    manifest = json.loads((FIXTURES / MANIFEST).read_text(encoding="utf-8"))
+    return json.dumps({"doc_id": manifest["doc_id"], "rev": manifest["rev"],
+                       "text": {r["id"]: f"Placeholder sentence for {r['id']}."
+                                for r in manifest["requirements"]}}, indent=2) + "\n"
+
+
+FIXTURE_SIDECAR_SHA = hashlib.sha256(fixture_sidecar_text().encode("utf-8")).hexdigest()
+
+
 def words(carried=(), changed=(), new=(), retired=(), **extra):
     """A words delta of the committed manifest's specification, from the revision and the list
-    (by the digest of its manifest) the record pins."""
+    (by the digests of its manifest and its sidecar) the record pins."""
     return {"doc_id": "ISO-13400-2", "from_rev": "2019", "from_manifest_sha256": FIXTURE_MANIFEST_SHA,
+            "from_sidecar_sha256": FIXTURE_SIDECAR_SHA,
             "requirements": {"carried": list(carried),
                              "changed": [{"id": i, "how": "near-match"} for i in changed],
                              "new": list(new), "retired": list(retired)}, **extra}
@@ -64,9 +78,12 @@ class ARevisedDesignIsCheckedAgainstWhatTheSpecificationChanged(unittest.TestCas
         self.original = self.design.read_text(encoding="utf-8")
         self.prose = self.root / "spec" / "prose.md"
         self.prose.write_text(PROSE, encoding="utf-8")
+        self.sidecar = self.root / "spec" / "requirements.sidecar.json"
+        self.sidecar.write_text(fixture_sidecar_text(), encoding="utf-8")
         self.record = self.root / "acceptance.json"
         accepted = call_tool("scxml_accept", {
             "document": str(self.design), "manifest": str(self.root / "spec" / MANIFEST),
+            "sidecar": str(self.sidecar),
             "variant": "base", "root": str(self.root), "out": str(self.record),
             "sources": [str(self.prose)]})
         self.assertFalse(accepted.get("isError"), accepted)
@@ -302,9 +319,12 @@ class TheDeltaOfALineageIsThatOfTheListTheRecordPinned(unittest.TestCase):
         self.prose.write_text(LAMP + "\n", encoding="utf-8")
         self.design = self.root / "design" / "lamp.scxml"
         self.design.write_text(LAMP_DESIGN, encoding="utf-8")
+        self.sidecar = self.root / "spec" / "requirements.sidecar.json"
+        self.sidecar.write_text(rs.answer(self.first)["sidecar_text"], encoding="utf-8")
         self.record = self.root / "acceptance.json"
         accepted = call_tool("scxml_accept", {
             "document": str(self.design), "manifest": str(self.manifest), "variant": "base",
+            "sidecar": str(self.sidecar),
             "root": str(self.root), "out": str(self.record), "sources": [str(self.prose)]})
         self.assertFalse(accepted.get("isError"), accepted)
 
@@ -339,7 +359,7 @@ class TheDeltaOfALineageIsThatOfTheListTheRecordPinned(unittest.TestCase):
         other = rs.build(LAMP, quoted("The lamp starts off.", "Pressing the switch turns it on."),
                          doc_id="lamp", rev="1")
         other.manifest["extraction"]["method"] = "ai-pass-2"
-        rl.pin_manifest(other.lineage, rs.render_manifest(other.manifest))
+        rl.pin_list(other.lineage, rs.render_manifest(other.manifest), rs.render_sidecar(other.sidecar))
         delta = self.revised(other).delta
         self.assertEqual(("lamp", "1"), (delta["doc_id"], delta["from_rev"]))
         answer = self.check(delta)

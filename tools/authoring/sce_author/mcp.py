@@ -1209,7 +1209,12 @@ TOOLS = [
             "never lapses the acceptance. The record also keeps, per "
             "requirement, digests of the rows the design showed the owner for "
             "it (`evidence`), so a later acceptance can be offered as a "
-            "difference."
+            "difference. Give the manifest's sidecar (`sidecar`, the "
+            "sentences behind its ids) whenever the list has one: only its "
+            "digest is pinned, and without it a revision of this design "
+            "cannot be judged, because a manifest is coordinates only and "
+            "another specification's list of the same shape would be taken "
+            "for this one."
         ),
         "inputSchema": {
             "type": "object",
@@ -1219,6 +1224,7 @@ TOOLS = [
                 **_MANIFEST_INPUT,
                 **_AUTHORED_FROM_INPUT,
                 **_file_input("succeeds", "the acceptance record this one replaces"),
+                **_file_input("sidecar", "the sidecar of the manifest, the sentences behind its ids"),
                 "variant": {"type": "string", "description": "The variant accepted."},
                 "root": {"type": "string", "description": (
                     "Directory every pinned path is recorded relative to "
@@ -3078,7 +3084,9 @@ def _accept_tool(args: dict, staging: _Staging) -> dict:
             variant, root, out, sources=sources, decisions=decisions, profile=profile,
             scenarios=scenarios, channel=ACCEPTED_BY_CLIENT,
             succeeds=staging.file(args, "succeeds", "the acceptance record this one replaces",
-                                  "previous.acceptance.json", required=False))
+                                  "previous.acceptance.json", required=False),
+            sidecar=staging.file(args, "sidecar", "the sidecar of the manifest",
+                                 "requirements.sidecar.json", required=False))
         if refusal:
             return _failure(refusal)
         return _text(_with_open_at_acceptance(report, out))
@@ -3096,11 +3104,13 @@ def _accept_tool(args: dict, staging: _Staging) -> dict:
     record = pathlib.Path("acceptance.json")
     succeeds = staging.file(args, "succeeds", "the acceptance record this one replaces",
                             "previous.acceptance.json", required=False)
+    sidecar = staging.file(args, "sidecar", "the sidecar of the manifest",
+                           "requirements.sidecar.json", required=False)
     report, refusal = accept_design(document, manifest, variant, pathlib.Path("."),
                                     record, sources=sources, decisions=decisions,
                                     profile=profile, scenarios=scenarios,
                                     channel=ACCEPTED_BY_CLIENT, succeeds=succeeds,
-                                    cwd=staging.dir)
+                                    sidecar=sidecar, cwd=staging.dir)
     if refusal:
         return _failure(refusal)
     answer = json.loads(_with_open_at_acceptance(report, staging.dir / record))
@@ -3670,7 +3680,9 @@ def _lineage_of(held: dict, what: str) -> dict:
              if isinstance(text, str)}
     return requirement_lineage.adopt(manifest.get("doc_id"), manifest, texts,
                                      manifest_sha256=requirement_lineage.sha256_text(
-                                         held["manifest_text"]))
+                                         held["manifest_text"]),
+                                     sidecar_sha256=requirement_lineage.sha256_text(
+                                         held["sidecar_text"]))
 
 
 def _work_revision_join(args: dict) -> tuple[dict | None, dict | None, dict | None]:
@@ -3741,15 +3753,15 @@ def _works_revision_report_tool(args: dict, staging: _Staging) -> dict:
 
 
 def _lineage_refusal(work: str, base: str | None, by_generation: bool, manifest_text: str,
-                     lineage_text: str | None) -> str | None:
+                     sidecar_text: str | None, lineage_text: str | None) -> str | None:
     """Why the lineage handed to works_save_requirements cannot be kept with this list, or None.
 
     A list and the lineage it was built against are saved as one record
     (`docs/adr/0011-a-work-keeps-its-requirement-lineage-with-its-requirement-list.md`), and
     this is where what the core does not judge is judged: that the lineage is the lineage of THIS
-    manifest, and that it continues the one the work holds (an id is issued once, and a retired
-    one never lives again). The core refuses only what it can see without knowing what a
-    lineage means: that a lineage the work holds is not dropped.
+    list (its manifest and its sidecar), and that it continues the one the work holds (an id is
+    issued once, and a retired one never lives again). The core refuses only what it can see
+    without knowing what a lineage means: that a lineage the work holds is not dropped.
 
     A direct save from a `base` that is not the list's head is the core's to refuse as a
     conflict, and is not judged here: the lineage is judged against the head it would replace."""
@@ -3767,7 +3779,7 @@ def _lineage_refusal(work: str, base: str | None, by_generation: bool, manifest_
         return None
     try:
         following = requirement_lineage.parse(lineage_text)
-        requirement_lineage.belongs_to_manifest(following, manifest_text)
+        requirement_lineage.belongs_to_list(following, manifest_text, sidecar_text)
         if held_lineage is not None and (by_generation or base == held["revision"]):
             requirement_lineage.extends(requirement_lineage.parse(held_lineage), following)
     except requirement_lineage.LineageError as error:
@@ -3819,7 +3831,7 @@ def _works_save_requirements_tool(args: dict, staging: _Staging) -> dict:
                         "and save it unchanged.\n" + refusal)
     try:
         lineage_refusal = _lineage_refusal(work, base, generation is not None,
-                                           manifest_text, lineage_text)
+                                           manifest_text, sidecar_text, lineage_text)
         if lineage_refusal:
             return _failure(lineage_refusal)
         if generation is None:

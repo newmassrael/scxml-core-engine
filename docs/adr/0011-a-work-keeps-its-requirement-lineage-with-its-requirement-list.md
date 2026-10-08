@@ -361,3 +361,37 @@ Not done in this stage, by design: nothing in `tools/authoring` gives or reads a
 a client the previous list's lineage, so a generation in the application still builds its ids
 without one. That is the larger half of the main path and is named here so that stage 2 is not
 read as closing it.
+
+## Review of 2026-10-09: two findings, both reproduced
+
+A review of the tip after stage 2 made two findings. Both were reproduced before anything was
+changed, and each is a case of a judgment that was made in one place and not in the other.
+
+1. **Another specification's list of the same shape was taken for the accepted one.** The
+   manifest's digest names the shape of a list (an id, a section, a modality) and no word of it,
+   so two specifications with the same ids and sections have one manifest text. Measured with
+   two different two-sentence specifications: one manifest text, and the delta of one belonged to
+   the acceptance of the other (`revision.belongs_to` passed). **Repaid:** the lineage keeps the
+   sidecar's digest beside the manifest's on each revision (`sidecar_sha256`, `pin_list`), the
+   delta names it (`from_sidecar_sha256`), the acceptance record pins it (`manifest.sidecar_sha256`,
+   `accept --sidecar`, only the digest), and `belongs_to` compares it. The check on a list and its
+   lineage, `belongs_to_manifest`, became `belongs_to_list` and takes the sidecar too; a list saved
+   with a lineage has to come with the sidecar that lineage names. The shared cases were
+   regenerated with the new refusals (the same shape over other words, no digest of the words on
+   either side, a record taken without them). Records taken before keep their bytes and are refused
+   for a revision with the reason: accept again with the sidecar. ADR 0009 item 6 has the rest.
+
+2. **A lineage that does not continue the work's was saved.** The core refuses a list that
+   LOSES the lineage; it did not ask whether a lineage it was given CONTINUES the one it holds,
+   because that was left to the authoring tool (`mcp._lineage_refusal`), and the application's own
+   paths do not go through that tool: a model that builds its list without passing the work's
+   lineage gets a fresh lineage, which the core sees as "a lineage" and keeps, and the retired
+   id is issued again to another requirement. Measured by saving, from a work holding the
+   `previous` lineage of each `extends` case of the shared cases, the `following` one: the six
+   that continue were saved, and so were all twelve that do not (a retired id made live again, an
+   id numbered twice, a history rewritten, another specification). **Not yet repaid.** The
+   decision is the one already taken (D1 (c)): the product judges, so `extends` and
+   `belongs_to_list` are to be done in Rust against the same cases, as `sce-codegen
+   revision-judge`, and the core's save and publication paths are to call it. The existing test
+   that holds "another lineage replaces it" is the design this reverses and is to be replaced with
+   it.

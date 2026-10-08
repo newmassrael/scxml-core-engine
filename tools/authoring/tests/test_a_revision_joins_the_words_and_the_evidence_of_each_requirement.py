@@ -30,12 +30,14 @@ from sce_author import mcp, process, revision, verify
 
 
 MANIFEST_SHA = "a" * 64
+SIDECAR_SHA = "c" * 64
 
 
 def words(carried=(), changed=(), new=(), retired=(), **extra):
     """A words delta as scxml_requirement_set returns it: of specification `lamp`, from revision 1,
-    whose list's manifest has the digest `MANIFEST_SHA`."""
+    whose list's manifest and sidecar have the digests `MANIFEST_SHA` and `SIDECAR_SHA`."""
     return {"doc_id": "lamp", "from_rev": "1", "from_manifest_sha256": MANIFEST_SHA,
+            "from_sidecar_sha256": SIDECAR_SHA,
             "requirements": {"carried": list(carried),
                              "changed": [{"id": i, "how": "near-match"} for i in changed],
                              "new": list(new), "retired": list(retired)}, **extra}
@@ -258,7 +260,8 @@ class AWordsDeltaIsJoinedOnlyToTheRecordOfTheRevisionItStartsFrom(unittest.TestC
     complaint and gives a verdict about nothing (found in review, 2026-10-08)."""
 
     RECORD = {"record": "sce-acceptance-record", "v": 1,
-              "manifest": {"doc_id": "lamp", "rev": "3", "sha256": MANIFEST_SHA}}
+              "manifest": {"doc_id": "lamp", "rev": "3", "sha256": MANIFEST_SHA,
+                           "sidecar_sha256": SIDECAR_SHA}}
 
     def test_a_delta_of_the_same_specification_from_the_revision_of_the_record_is_accepted(self):
         revision.belongs_to(words(from_rev="3"), self.RECORD)
@@ -280,11 +283,29 @@ class AWordsDeltaIsJoinedOnlyToTheRecordOfTheRevisionItStartsFrom(unittest.TestC
              words(from_rev="3", from_manifest_sha256=None), "does not say which list"),
             ("a digest that is not text",
              words(from_rev="3", from_manifest_sha256=7), "does not say which list"),
+            # The manifest is coordinates only, so a list of the same shape over other words has its
+            # digest: the words are what the pair of digests adds.
+            ("the same shape over other words",
+             words(from_rev="3", from_sidecar_sha256=other_list), "sidecar digest is"),
+            ("no digest of the words it starts from",
+             words(from_rev="3", from_sidecar_sha256=None), "does not say which words"),
+            ("a words digest that is not text",
+             words(from_rev="3", from_sidecar_sha256=7), "does not say which words"),
         )
         for what, delta, message in cases:
             with self.subTest(what), self.assertRaises(revision.RevisionError) as raised:
                 revision.belongs_to(delta, self.RECORD)
             self.assertIn(message, str(raised.exception))
+
+    def test_a_record_taken_without_the_words_is_refused_and_says_to_accept_again(self):
+        for what, pin in (("no digest", None), ("a digest that is not text", 7)):
+            record = {"manifest": {**self.RECORD["manifest"], "sidecar_sha256": pin}}
+            if pin is None:
+                del record["manifest"]["sidecar_sha256"]
+            with self.subTest(what), self.assertRaises(revision.RevisionError) as raised:
+                revision.belongs_to(words(from_rev="3"), record)
+            self.assertIn("pins no sidecar", str(raised.exception))
+            self.assertIn("Accept the design again", str(raised.exception))
 
     def test_a_record_that_pins_no_manifest_leaves_nothing_to_check_against(self):
         for record in ({}, {"manifest": None}, {"manifest": {"doc_id": "lamp"}},
@@ -376,7 +397,8 @@ class TheToolsReachTheProductsDelta(unittest.TestCase):
         self.record = pathlib.Path(directory.name) / "acceptance.json"
         self.record.write_text(json.dumps({"record": "sce-acceptance-record", "v": 1,
                                            "manifest": {"doc_id": "lamp", "rev": "1",
-                                                        "sha256": MANIFEST_SHA}}),
+                                                        "sha256": MANIFEST_SHA,
+                                                        "sidecar_sha256": SIDECAR_SHA}}),
                                encoding="utf-8")
 
     def run_tool(self, name: str, **arguments):
@@ -442,6 +464,8 @@ class TheToolsReachTheProductsDelta(unittest.TestCase):
                 ("another starting revision", words(carried=["R1", "R2"], from_rev="2")),
                 ("another copy of the same name and revision",
                  words(carried=["R1", "R2"], from_manifest_sha256="b" * 64)),
+                ("the same shape over other words",
+                 words(carried=["R1", "R2"], from_sidecar_sha256="b" * 64)),
                 ("no specification named", {k: v for k, v in words(carried=["R1"]).items() if k != "doc_id"}),
                 ("no starting revision", {k: v for k, v in words(carried=["R1"]).items() if k != "from_rev"})):
             with self.subTest(what):

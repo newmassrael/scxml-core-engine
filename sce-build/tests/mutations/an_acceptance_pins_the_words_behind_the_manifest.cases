@@ -1,0 +1,69 @@
+# Mutation cases for "an acceptance pins the words behind the manifest".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/an_acceptance_pins_the_words_behind_the_manifest.cases`.
+#
+# A manifest is coordinates only, so two lists of one shape and different sentences have one
+# manifest digest, and a revision of one read as a revision of the other. The record therefore
+# pins the sidecar's digest beside the manifest's. Things that are easy to get wrong and read as
+# success: the command line dropping the sidecar on the way to the record (the acceptance then
+# says nothing of the words, as before), the digest being taken over the wrong file, a sidecar
+# that is not the manifest's own being pinned all the same, a manifest that is not the pinned
+# one being tied to the sidecar, a record without the words naming a field it does not have (it
+# would no longer be the bytes it was), and a digest that is not one being read back as a record.
+#
+# Each case below takes one of those away and must make a test of
+# `an_acceptance_pins_the_words_behind_the_manifest.rs` red.
+#
+# ⚠ A mutated tree is built under `-D warnings`, so every case keeps each binding it had in
+# use: a mutation that stops reading one is an unused-variable ERROR, the tree does not
+# compile, and the verdict is INCONCLUSIVE.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported INCONCLUSIVE with
+# the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test an_acceptance_pins_the_words_behind_the_manifest
+mutation_targets sce-build/src/acceptance_record.rs sce-build/src/bin/sce_codegen.rs
+mutation_oracles sce-build/tests/an_acceptance_pins_the_words_behind_the_manifest.rs
+
+mutation_case "the command line drops the sidecar before the record is written" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     "    let record = match sidecar {\n        Some(sidecar) => record\n            .with_words(",
+     "    let record = match sidecar.filter(|_| false) {\n        Some(sidecar) => record\n            .with_words(")
+PY
+
+mutation_case "the record keeps no digest of the sidecar it was given" <<'PY'
+edit("sce-build/src/acceptance_record.rs",
+     "        self.manifest.sidecar_sha256 = Some(file_sha256(sidecar)?);",
+     "        self.manifest.sidecar_sha256 = file_sha256(sidecar)?.is_empty().then(String::new);")
+PY
+
+mutation_case "the digest is taken over the manifest and not the sidecar" <<'PY'
+edit("sce-build/src/acceptance_record.rs",
+     "        self.manifest.sidecar_sha256 = Some(file_sha256(sidecar)?);",
+     "        self.manifest.sidecar_sha256 = Some(file_sha256(manifest)?);")
+PY
+
+mutation_case "a sidecar that is not the manifest's own is pinned all the same" <<'PY'
+edit("sce-build/src/acceptance_record.rs",
+     "        RequirementSidecar::load(sidecar, &loaded).map_err(RecordError::Words)?;",
+     "        let _ = RequirementSidecar::load(sidecar, &loaded);")
+PY
+
+mutation_case "a manifest that is not the pinned one is tied to the sidecar" <<'PY'
+edit("sce-build/src/acceptance_record.rs",
+     "        if file_sha256(manifest)? != self.manifest.sha256 {",
+     "        if file_sha256(manifest)? != self.manifest.sha256 && false {")
+PY
+
+mutation_case "a record without the words names a field it does not have" <<'PY'
+edit("sce-build/src/acceptance_record.rs",
+     "    #[serde(default, skip_serializing_if = \"Option::is_none\")]\n    pub sidecar_sha256",
+     "    #[serde(default)]\n    pub sidecar_sha256")
+PY
+
+mutation_case "a digest that is not one is read back as a record" <<'PY'
+edit("sce-build/src/acceptance_record.rs",
+     "            .chain(wire.manifest.sidecar_sha256.iter())\n",
+     "")
+PY

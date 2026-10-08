@@ -14,6 +14,10 @@
 //! ```text
 //!   manifest   doc_id + rev, and its bytes    a requirement added under an
 //!                                             unchanged rev still moves it
+//!   words      the bytes of the sidecar,      a manifest holds coordinates
+//!              when the caller gave it        only, so two lists of one shape
+//!                                             and different sentences share
+//!                                             one manifest digest
 //!   variant    the name the acceptance was    accepting base says nothing
 //!              given for                      about base + tls (RFC §5.2d)
 //!   inputs     every file the parse READ,     the entry document is not the
@@ -203,6 +207,7 @@ use serde::{Deserialize, Serialize};
 use crate::generator_witness::{hex_encode, sha256_bytes};
 use crate::parser::SCXMLParser;
 use crate::requirement_manifest::{ManifestError, RequirementManifest};
+use crate::requirement_sidecar::{RequirementSidecar, SidecarError};
 
 /// The value a record's `record` field holds. A JSON file naming any other
 /// kind is refused before its pins are read.
@@ -348,6 +353,19 @@ pub struct ManifestPin {
     /// Over the manifest's bytes. `rev` alone is what the specification's
     /// owner says moved; the bytes are what did.
     pub sha256: String,
+    /// Over the bytes of the sidecar, the sentences behind the manifest's ids.
+    ///
+    /// A manifest is coordinates only (an id, a section, a modality), so two
+    /// lists of one shape and different sentences have one `sha256`, and a
+    /// revision of one reads as a revision of the other. The sentences are
+    /// never copied into the record, only their digest, so the record can be
+    /// committed where the sidecar is not. Absent when the acceptance was
+    /// taken without the sidecar: what the owner accepted is then a list the
+    /// record cannot tell from another of its shape, and a revision of it
+    /// cannot be judged against its words. Left out of the JSON when absent,
+    /// so a record taken without it is the bytes it was before this field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sidecar_sha256: Option<String>,
 }
 
 /// One file the design was read from.
@@ -702,6 +720,10 @@ pub enum RecordError {
     Source {
         detail: String,
     },
+    /// The sidecar given as the words behind the manifest is not the
+    /// manifest's own, or cannot be read. The sidecar loader's refusal,
+    /// unchanged, so the same sidecar is one diagnostic whichever door read it.
+    Words(SidecarError),
 }
 
 impl fmt::Display for RecordError {
@@ -726,6 +748,7 @@ impl fmt::Display for RecordError {
                 write!(f, "not an acceptance record: {detail}")
             }
             RecordError::Source { detail } => write!(f, "{detail}"),
+            RecordError::Words(inner) => write!(f, "{inner}"),
         }
     }
 }
@@ -746,6 +769,7 @@ impl RecordError {
             RecordError::Variant { .. } => "variant",
             RecordError::Format { .. } => "format",
             RecordError::Source { .. } => "source",
+            RecordError::Words(inner) => inner.kind(),
         }
     }
 }
@@ -782,6 +806,7 @@ impl AcceptanceRecord {
             doc_id: loaded.doc_id,
             rev: loaded.rev,
             sha256: file_sha256(manifest)?,
+            sidecar_sha256: None,
         };
         let document_path = canonical(document)?;
         // A design accepted under a profile says what it left open the way a
@@ -821,6 +846,33 @@ impl AcceptanceRecord {
             succeeds: None,
             channel: None,
         })
+    }
+
+    /// The same record, also pinning the sentences behind the manifest's ids.
+    ///
+    /// `manifest` has to be the file this record pinned, and `sidecar` the
+    /// manifest's own (the sidecar loader's refusals, unchanged: another
+    /// document, another revision, no sentence at all). Only the sidecar's
+    /// digest is kept; its sentences stay where they are.
+    ///
+    /// Without this a revision of the accepted design cannot be tied to the
+    /// list the owner accepted: the manifest's digest names the shape of the
+    /// list, and a list of another specification with the same shape has it
+    /// too.
+    pub fn with_words(mut self, manifest: &Path, sidecar: &Path) -> Result<Self, RecordError> {
+        if file_sha256(manifest)? != self.manifest.sha256 {
+            return Err(RecordError::Source {
+                detail: format!(
+                    "{} is not the manifest this record pins, so a sidecar cannot be tied \
+                     to it",
+                    manifest.display()
+                ),
+            });
+        }
+        let loaded = RequirementManifest::load(manifest).map_err(RecordError::Manifest)?;
+        RequirementSidecar::load(sidecar, &loaded).map_err(RecordError::Words)?;
+        self.manifest.sidecar_sha256 = Some(file_sha256(sidecar)?);
+        Ok(self)
     }
 
     /// The same record, stating `previous` as the record it replaces.
@@ -1179,6 +1231,7 @@ impl AcceptanceRecord {
             check_relative(path)?;
         }
         for digest in std::iter::once(&wire.manifest.sha256)
+            .chain(wire.manifest.sidecar_sha256.iter())
             .chain(wire.inputs.iter().map(|pin| &pin.sha256))
             .chain(wire.authored_from.iter().map(|pin| &pin.sha256))
             .chain(wire.succeeds.iter().map(|pin| &pin.sha256))

@@ -44,7 +44,7 @@ class TheFileIsWhatThePythonGivesNow(unittest.TestCase):
         cases = held()
         table = cases["lineages"]
         for section, keys in (("between", ("older", "newer")), ("extends", ("previous", "following")),
-                              ("belongs_to_manifest", ("lineage",))):
+                              ("belongs_to_list", ("lineage",))):
             for case in cases[section]:
                 for key in keys:
                     self.assertIn(case[key], table, f"{section}: {case['name']}")
@@ -53,7 +53,7 @@ class TheFileIsWhatThePythonGivesNow(unittest.TestCase):
         cases = held()
         used = set()
         for section, keys in (("between", ("older", "newer")), ("extends", ("previous", "following")),
-                              ("belongs_to_manifest", ("lineage",))):
+                              ("belongs_to_list", ("lineage",))):
             for case in cases[section]:
                 used.update(case[key] for key in keys)
         self.assertEqual(set(), set(cases["lineages"]) - used)
@@ -100,6 +100,7 @@ class EveryRefusalOfALineageCheckHasACaseThatReachesItForThatReason(unittest.Tes
         "fewer revisions": "revisions are never taken back",
         "an earlier revision rewritten": "is not rewritten",
         "a revision with another after it is final": "is not rewritten",
+        "a revision's words digest with another after it is final": "is not rewritten",
         "an id forgotten": "an id is never forgotten",
         "an id first issued in another revision": "was first issued in revision",
         "a retired id made live again": "a retired id is never issued again",
@@ -109,7 +110,7 @@ class EveryRefusalOfALineageCheckHasACaseThatReachesItForThatReason(unittest.Tes
         "a new id that was already issued by number": "would be issued twice",
         "a next that is behind": "is behind the work's",
     }
-    MANIFEST = {
+    LIST = {
         "the manifest of another revision": "last revision is",
         "the manifest of another specification": "the lineage is of",
         "the same list spelt another way": "another manifest than this one",
@@ -117,6 +118,12 @@ class EveryRefusalOfALineageCheckHasACaseThatReachesItForThatReason(unittest.Tes
         "a lineage with no digest at all": "does not say which manifest",
         "a manifest that is not JSON": "the manifest is not JSON",
         "a manifest that is not an object": "the manifest is not a JSON object",
+        "the sidecar of another revision": "another sidecar than this one",
+        "the same ids over other words": "another sidecar than this one",
+        "the same sidecar spelt another way": "another sidecar than this one",
+        "no sidecar given": "no sidecar was given",
+        "a lineage with a null words digest": "does not say which sidecar",
+        "a lineage with no words digest at all": "does not say which sidecar",
     }
     BELONGS = {
         "another specification": "is of specification",
@@ -129,6 +136,11 @@ class EveryRefusalOfALineageCheckHasACaseThatReachesItForThatReason(unittest.Tes
         "another copy under the same name and revision": "not the same list",
         "no digest of the list it starts from": "does not say which list",
         "a digest that is not text": "does not say which list",
+        "the same shape over other words": "sidecar digest is",
+        "no digest of the words it starts from": "does not say which words",
+        "a words digest that is not text": "does not say which words",
+        "a record taken without the words": "pins no sidecar",
+        "a record whose words digest is not text": "pins no sidecar",
         "a record that pins no manifest": "pins no manifest",
         "a record whose manifest has no digest": "pins no manifest",
         "a record whose manifest has no revision": "pins no manifest",
@@ -147,14 +159,14 @@ class EveryRefusalOfALineageCheckHasACaseThatReachesItForThatReason(unittest.Tes
             self.assertIn(fragment, refusal(by_name[name]), name)
         self.assertEqual(set(self.EXTENDS), {n for n, c in by_name.items() if refusal(c)})
 
-    def test_belongs_to_manifest(self):
-        self.reasons("belongs_to_manifest", self.MANIFEST)
+    def test_belongs_to_list(self):
+        self.reasons("belongs_to_list", self.LIST)
 
     def test_belongs_to(self):
         self.reasons("belongs_to", self.BELONGS)
 
     def test_what_is_meant_to_be_accepted_is_accepted(self):
-        accepted = {"extends": 6, "belongs_to": 1, "belongs_to_manifest": 1}
+        accepted = {"extends": 6, "belongs_to": 1, "belongs_to_list": 1}
         for section, count in accepted.items():
             ok = [c for c in held()[section] if c["expect"] == "ok"]
             self.assertEqual(count, len(ok), section)

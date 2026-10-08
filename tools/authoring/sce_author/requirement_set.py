@@ -216,10 +216,12 @@ def build(specification: str, items: object, *, doc_id: str = "spec",
                      for n in range(1, len(spans) + 1)],
         "requirements": entries,
     }
-    # The lineage names the list this revision is by the digest of the exact text a caller saves.
-    rl.pin_manifest(built.lineage, render_manifest(built.manifest))
     built.sidecar = {"doc_id": doc_id, "rev": built.rev,
                      "text": {r.id: r.quote for r in built.requirements}}
+    # The lineage names the list this revision is by the digests of the exact texts a caller
+    # saves: the manifest is coordinates only, so the sidecar's, the words behind the ids, is
+    # what tells this list from another specification's list of the same shape.
+    rl.pin_list(built.lineage, render_manifest(built.manifest), render_sidecar(built.sidecar))
 
     covered = [False] * len(source)
     for start, end, _, _ in located:
@@ -247,6 +249,12 @@ def render_manifest(manifest: dict) -> str:
     """The manifest as the text a caller saves, which an acceptance pins by its digest and the
     lineage names the list by."""
     return json.dumps(manifest, indent=2) + "\n"
+
+
+def render_sidecar(sidecar: dict) -> str:
+    """The sidecar as the text a caller saves, which the lineage names the list by (with the
+    manifest) and an acceptance pins by its digest."""
+    return json.dumps(sidecar, indent=2, ensure_ascii=False) + "\n"
 
 
 def _json(text: str, what: str) -> dict:
@@ -288,7 +296,8 @@ def _identify(doc_id: str, rev: str, spec: rl.Spec, quotes: list[str], lineage_t
             raise RequirementSetError("the previous manifest needs its sidecar: the words behind its ids "
                                       "are not in the manifest")
         previous = rl.adopt(doc_id, _json(manifest_text, "the previous manifest"), texts,
-                            manifest_sha256=rl.sha256_text(manifest_text))
+                            manifest_sha256=rl.sha256_text(manifest_text),
+                            sidecar_sha256=rl.sha256_text(sidecar_text))
     return rl.advance(previous, doc_id, spec, quotes, texts=texts,
                       continues={normalise(k): v for k, v in (continues or {}).items()})
 
@@ -319,7 +328,7 @@ def answer(built: Built) -> dict:
         "unclaimed_words": [{"sentence": s, "text": t}
                             for s, t in built.unclaimed_words],
         "manifest_text": render_manifest(built.manifest),
-        "sidecar_text": json.dumps(built.sidecar, indent=2, ensure_ascii=False) + "\n",
+        "sidecar_text": render_sidecar(built.sidecar),
         "lineage_text": rl.render(built.lineage),
         "basis": ("synthesized: this prose specification names no requirements of "
                   "its own, so the list is the client's reading of it and nothing "

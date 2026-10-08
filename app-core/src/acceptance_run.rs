@@ -257,6 +257,12 @@ impl Acceptor for SceCodegen {
         if let Some(answers) = &staged.answers {
             command.arg("--decisions").arg(answers);
         }
+        // The words behind the list's ids: a manifest is coordinates only, so the record
+        // names the list the owner accepted by their digest as well, and a later revision
+        // can be tied to THIS list rather than to any list of its shape.
+        if let Some(sidecar) = &staged.sidecar {
+            command.arg("--sidecar").arg(sidecar);
+        }
         command.args(["--channel", crate::acceptance::CHANNEL]);
         let run = run_bounded(command, scratch.path(), self.timeout())?;
         if !run.success {

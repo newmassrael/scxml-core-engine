@@ -246,10 +246,12 @@ def render_cases():
 # -- is the delta the record's ---------------------------------------------------------------
 
 MANIFEST_SHA = "a" * 64
+SIDECAR_SHA = "c" * 64
 
 
 def delta_of(**changes):
     delta = {"doc_id": "lamp", "from_rev": "3", "from_manifest_sha256": MANIFEST_SHA,
+             "from_sidecar_sha256": SIDECAR_SHA,
              "requirements": {"carried": [], "changed": [], "new": [], "retired": []}}
     for key, value in changes.items():
         if value is None:
@@ -260,7 +262,8 @@ def delta_of(**changes):
 
 
 def record_of(**manifest):
-    pin = {"path": "spec/requirements.manifest.json", "doc_id": "lamp", "rev": "3", "sha256": MANIFEST_SHA}
+    pin = {"path": "spec/requirements.manifest.json", "doc_id": "lamp", "rev": "3", "sha256": MANIFEST_SHA,
+           "sidecar_sha256": SIDECAR_SHA}
     for key, value in manifest.items():
         if value is None:
             pin.pop(key, None)
@@ -287,6 +290,13 @@ def belongs_to_cases():
              delta_of(from_manifest_sha256="b" * 64), record_of()),
         case("no digest of the list it starts from", delta_of(from_manifest_sha256=None), record_of()),
         case("a digest that is not text", delta_of(from_manifest_sha256=7), record_of()),
+        # The manifest is coordinates only: another specification of the same shape, or the same
+        # ids over other sentences, has the manifest's digest and not the sidecar's.
+        case("the same shape over other words", delta_of(from_sidecar_sha256="b" * 64), record_of()),
+        case("no digest of the words it starts from", delta_of(from_sidecar_sha256=None), record_of()),
+        case("a words digest that is not text", delta_of(from_sidecar_sha256=7), record_of()),
+        case("a record taken without the words", delta_of(), record_of(sidecar_sha256=None)),
+        case("a record whose words digest is not text", delta_of(), record_of(sidecar_sha256=7)),
         case("a record that pins no manifest", delta_of(), {}),
         case("a record whose manifest has no digest", delta_of(), record_of(sha256=None)),
         case("a record whose manifest has no revision", delta_of(), record_of(rev=None)),
@@ -388,6 +398,9 @@ def extends_cases(table: Lineages):
     def rewrite_last(lineage):
         lineage["revisions"][0]["manifest_sha256"] = "0" * 64
 
+    def rewrite_last_words(lineage):
+        lineage["revisions"][0]["sidecar_sha256"] = "0" * 64
+
     def forget(lineage):
         lineage["requirements"] = [r for r in lineage["requirements"] if r["id"] != "R5"]
 
@@ -436,6 +449,8 @@ def extends_cases(table: Lineages):
              variant("second, its first revision rewritten", "second", rewrite_old)),
         case("a revision with another after it is final", named["first"],
              variant("second, its first manifest digest rewritten", "second", rewrite_last)),
+        case("a revision's words digest with another after it is final", named["first"],
+             variant("second, its first sidecar digest rewritten", "second", rewrite_last_words)),
         case("an id forgotten", named["second"], variant("third, an id forgotten", "third", forget)),
         case("an id first issued in another revision", named["second"],
              variant("third, an id first issued elsewhere", "third", move_first)),
@@ -455,14 +470,16 @@ def extends_cases(table: Lineages):
     ]
 
 
-def belongs_to_manifest_cases(table: Lineages):
+def belongs_to_list_cases(table: Lineages):
     h = histories()
     third = h["third"]
     text = rs.render_manifest(third.manifest)
+    words = rs.render_sidecar(third.sidecar)
 
-    def case(name, lineage, manifest_text):
+    def case(name, lineage, manifest_text, sidecar_text=words):
         return {"name": name, "lineage": lineage, "manifest_text": manifest_text,
-                "expect": checked(rl.belongs_to_manifest, table.held[lineage], manifest_text)}
+                "sidecar_text": sidecar_text,
+                "expect": checked(rl.belongs_to_list, table.held[lineage], manifest_text, sidecar_text)}
 
     other = json.loads(text)
     other["doc_id"] = "other"
@@ -470,9 +487,17 @@ def belongs_to_manifest_cases(table: Lineages):
     nodigest["revisions"][-1]["manifest_sha256"] = None
     gone = copy.deepcopy(third.lineage)
     gone["revisions"][-1].pop("manifest_sha256")
+    nowords = copy.deepcopy(third.lineage)
+    nowords["revisions"][-1]["sidecar_sha256"] = None
+    nowords_at_all = copy.deepcopy(third.lineage)
+    nowords_at_all["revisions"][-1].pop("sidecar_sha256")
+    # The same ids over other sentences: the manifest is coordinates only, so it is the same text.
+    reworded = json.loads(words)
+    first_id = next(iter(reworded["text"]))
+    reworded["text"][first_id] = reworded["text"][first_id] + " Another sentence."
     named = table.add("third", third.lineage)
     return [
-        case("the lineage of a call is the lineage of its manifest", named, text),
+        case("the lineage of a call is the lineage of its list", named, text),
         case("the manifest of another revision", named, rs.render_manifest(h["second"].manifest)),
         case("the manifest of another specification", named, json.dumps(other, indent=2) + "\n"),
         case("the same list spelt another way", named, json.dumps(json.loads(text), indent=4) + "\n"),
@@ -480,6 +505,13 @@ def belongs_to_manifest_cases(table: Lineages):
         case("a lineage with no digest at all", table.add("third, no manifest digest", gone), text),
         case("a manifest that is not JSON", named, "not json"),
         case("a manifest that is not an object", named, "[]"),
+        case("the sidecar of another revision", named, text, rs.render_sidecar(h["second"].sidecar)),
+        case("the same ids over other words", named, text, rs.render_sidecar(reworded)),
+        case("the same sidecar spelt another way", named, text, json.dumps(json.loads(words), indent=4) + "\n"),
+        case("no sidecar given", named, text, None),
+        case("a lineage with a null words digest", table.add("third, a null sidecar digest", nowords), text),
+        case("a lineage with no words digest at all",
+             table.add("third, no sidecar digest", nowords_at_all), text),
     ]
 
 
@@ -487,7 +519,7 @@ def build_cases() -> dict:
     table = Lineages()
     between = between_cases(table)
     extends = extends_cases(table)
-    belongs_to_manifest = belongs_to_manifest_cases(table)
+    belongs_to_list = belongs_to_list_cases(table)
     return {
         "about": "Cases a judgment of a revision has to pass, in any language. Generated by "
                  "tools/authoring/eval/revision_judgment_cases.py from the Python reference; "
@@ -499,7 +531,7 @@ def build_cases() -> dict:
         "belongs_to": belongs_to_cases(),
         "between": between,
         "extends": extends,
-        "belongs_to_manifest": belongs_to_manifest,
+        "belongs_to_list": belongs_to_list,
     }
 
 

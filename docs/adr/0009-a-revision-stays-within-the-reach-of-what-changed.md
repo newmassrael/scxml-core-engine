@@ -132,7 +132,24 @@ only what to look at again.**
    the manifest it was adopted from. A delta that does not say (a lineage made before the digest
    was recorded, whose last revision has none) is refused with the reason; a list written again
    for the same text is a different list and is pinned again. The chain is held end to end by a
-   test that builds a list, has the product pin it, builds the next revision and joins the two. A delta of a LATER step is refused too: it says what changed since that step, not
+   test that builds a list, has the product pin it, builds the next revision and joins the two.
+
+   ⚠ The manifest's digest was not enough either, and a third review found it on 2026-10-09: a
+   manifest is coordinates only (an id, a section, a modality; it holds no word of the
+   specification, by design, `sce-build/src/requirement_manifest.rs`), so two lists of one shape
+   and different sentences have one manifest text and one digest. Measured: two specifications
+   ("the blind rises when the button is pressed" and "the blind lowers when the lever is
+   pulled") built the very same manifest, and the delta of one belonged to the acceptance of the
+   other. The words behind the ids are in the sidecar, so the delta also names the sidecar it
+   starts from (`from_sidecar_sha256`), the lineage keeps that digest on each revision's row
+   (`sidecar_sha256`, pinned with the manifest's by `pin_list`), and the acceptance record pins it
+   beside the manifest's (`manifest.sidecar_sha256`, given to `accept` with `--sidecar`; only the
+   digest is kept, so the record can be committed where the sidecar is not). `belongs_to`
+   compares all of them. A record taken without the sidecar, or a delta whose lineage did not keep
+   the digest, is refused with the reason and what to do: a revision cannot be tied to the list
+   that was accepted by its shape alone. A record taken without the field keeps its bytes.
+
+   A delta of a LATER step is refused too: it says what changed since that step, not
    since the revision the design was accepted for, and a requirement reworded in between would
    read as carried. Composing the steps between the record and now is not built; until it is, the
    check is made against the revision the design was accepted for.

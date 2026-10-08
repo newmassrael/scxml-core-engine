@@ -2468,6 +2468,16 @@ enum Commands {
         /// Closed requirement set the acceptance was measured against.
         #[arg(long)]
         manifest: String,
+        /// The sidecar of `--manifest`: the sentences behind its ids.
+        ///
+        /// Only its sha256 is recorded (the sentences are not copied), so
+        /// the record can be committed where the sidecar is not. A manifest
+        /// is coordinates only: two lists of one shape and different
+        /// sentences have one manifest digest, and without this a revision
+        /// of the accepted design cannot be tied to the list that was
+        /// accepted. The sidecar is refused unless it is the manifest's own.
+        #[arg(long, value_name = "PATH")]
+        sidecar: Option<String>,
         /// The variant the acceptance is for. Compared verbatim.
         #[arg(long)]
         variant: String,
@@ -3421,6 +3431,7 @@ fn main() {
         Commands::Accept {
             scxml,
             manifest,
+            sidecar,
             variant,
             root,
             out,
@@ -3434,6 +3445,7 @@ fn main() {
             &AcceptRequest {
                 scxml: &scxml,
                 manifest: &manifest,
+                sidecar: sidecar.as_deref(),
                 variant: &variant,
                 root: &root,
                 out: &out,
@@ -9573,6 +9585,8 @@ fn check_scenario_set(sources: &[(sce_build::acceptance_record::SourceRole, Path
 struct AcceptRequest<'a> {
     scxml: &'a str,
     manifest: &'a str,
+    /// The manifest's sidecar, whose digest is pinned beside the manifest's.
+    sidecar: Option<&'a str>,
     variant: &'a str,
     root: &'a str,
     out: &'a str,
@@ -9590,6 +9604,7 @@ fn cmd_accept(
     let AcceptRequest {
         scxml,
         manifest,
+        sidecar,
         variant,
         root,
         out,
@@ -9602,7 +9617,10 @@ fn cmd_accept(
     // as one opaque failure to pin a design, which tells the caller which
     // command failed and nothing about why.
     let design = read_design(scxml, error_format);
-    let _ = load_requirement_manifest(manifest);
+    let loaded_manifest = load_requirement_manifest(manifest);
+    if let Some(sidecar) = sidecar {
+        let _ = load_requirement_sidecar(sidecar, &loaded_manifest);
+    }
     check_scenario_set(sources);
 
     // A design is accepted under the profile it is held to. The profile is
@@ -9643,6 +9661,19 @@ fn cmd_accept(
         })
     })
     .stated_by(channel);
+    let record = match sidecar {
+        Some(sidecar) => record
+            .with_words(Path::new(manifest), Path::new(sidecar))
+            .unwrap_or_else(|e| {
+                cli_exit(CliError::ClosureInputUnusable {
+                    path: sidecar.to_string(),
+                    what: "requirement sidecar",
+                    kind: e.kind(),
+                    detail: e.to_string(),
+                })
+            }),
+        None => record,
+    };
     // The record this one replaces is read through the same door the record
     // itself is, so a file that is not a record, or is another specification's,
     // is refused with the loader's own sentence.

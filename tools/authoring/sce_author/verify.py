@@ -1126,10 +1126,17 @@ def accept_design(document: pathlib.Path, manifest: pathlib.Path, variant: str,
                   scenarios: pathlib.Path | None = None,
                   channel: str | None = None,
                   succeeds: pathlib.Path | None = None,
+                  sidecar: pathlib.Path | None = None,
                   cwd: pathlib.Path | None = None) -> tuple[str, str]:
     """Pin what a person accepted (`sce-codegen accept`): the record at
     `out` names every file the acceptance rests on, by hash, relative to
     `root`, so `acceptance_holds` can tell when one of them moves.
+
+    `sidecar` is the manifest's sidecar, the sentences behind its ids: only its digest is
+    pinned, beside the manifest's. A manifest is coordinates only, so without it two lists of
+    one shape and different sentences are one list to a revision's judgment
+    (`revision.belongs_to`), and a delta built from another specification belongs to this
+    acceptance. The product refuses a sidecar that is not the manifest's own.
 
     `sources` and `decisions` are what the design was authored from: the
     specification files and the owner's decision record. Pinned too, so a
@@ -1157,6 +1164,8 @@ def accept_design(document: pathlib.Path, manifest: pathlib.Path, variant: str,
     args = ["accept", str(document), "--manifest", str(manifest),
             "--variant", variant, "--root", str(root), "--out", str(out),
             *_authored_from(sources, decisions, profile, scenarios)]
+    if sidecar is not None:
+        args += ["--sidecar", str(sidecar)]
     if channel is not None:
         args += ["--channel", channel]
     if succeeds is not None:

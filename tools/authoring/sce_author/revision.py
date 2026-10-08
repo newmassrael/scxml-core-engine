@@ -55,10 +55,15 @@ def belongs_to(delta: object, record: object) -> None:
     it: another specification's delta that happens to name `R1` to `R5` joins the design's evidence
     without a word of complaint and gives a verdict about nothing (found in review, 2026-10-08).
     A delta names the specification it describes (`doc_id`), the revision it starts from
-    (`from_rev`) and the digest of the manifest of that revision's list (`from_manifest_sha256`);
-    the record pins the manifest it was taken against (`manifest.doc_id`, `manifest.rev`,
-    `manifest.sha256`). All three have to agree: a name and a number are carried by every copy of a
-    specification, and only the digest says it is THIS list (a second review, 2026-10-08).
+    (`from_rev`) and the digests of the manifest and the sidecar of that revision's list
+    (`from_manifest_sha256`, `from_sidecar_sha256`); the record pins the manifest it was taken
+    against (`manifest.doc_id`, `manifest.rev`, `manifest.sha256`) and the sidecar beside it
+    (`manifest.sidecar_sha256`). All have to agree: a name and a number are carried by every copy
+    of a specification, and only the digest says it is THIS list (a second review, 2026-10-08).
+    The manifest's digest is not enough: a manifest is coordinates only (an id, a section, a
+    modality), so a list of another specification with the same shape has it too, and its delta
+    would join this design's evidence; the sidecar's digest, over the words behind the ids, is
+    what tells the two apart (a review, 2026-10-09).
     A delta from a LATER revision than the record's is refused
     too: it says what changed since that revision, not since the one the design was accepted for,
     and a requirement reworded in between would read as carried."""
@@ -96,6 +101,24 @@ def belongs_to(delta: object, record: object) -> None:
                             f"the same list, though both are revision {manifest['rev']} of "
                             f"'{manifest['doc_id']}' (another copy of the specification, or a list "
                             "written again for the same text)")
+    if not isinstance(delta.get("from_sidecar_sha256"), str):
+        raise RevisionError("the words delta does not say which words it starts from "
+                            "(`from_sidecar_sha256`): the lineage it was built against predates "
+                            "recording the sidecar's digest, or the revision it starts from was "
+                            "adopted without the sidecar. A manifest is coordinates only, so it does "
+                            "not tell two lists of one shape apart; build the revised list again from "
+                            "the manifest and sidecar the design was accepted against")
+    if not isinstance(manifest.get("sidecar_sha256"), str):
+        raise RevisionError("the acceptance record pins no sidecar (`manifest.sidecar_sha256`): it was "
+                            "taken without the words behind the ids, and a manifest is coordinates "
+                            "only, so nothing says the words delta starts from the list that was "
+                            "accepted. Accept the design again, giving the sidecar")
+    if delta["from_sidecar_sha256"] != manifest["sidecar_sha256"]:
+        raise RevisionError(f"the words delta starts from words whose sidecar digest is "
+                            f"{delta['from_sidecar_sha256'][:12]} and the acceptance record was taken "
+                            f"against a sidecar whose digest is {manifest['sidecar_sha256'][:12]}: "
+                            f"they are not the same list, though the manifest is the same (another "
+                            f"specification of the same shape, or the same ids over other sentences)")
 
 
 def _words_of(delta: object) -> dict[str, str]:

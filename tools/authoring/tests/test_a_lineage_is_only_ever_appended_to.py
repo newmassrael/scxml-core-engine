@@ -5,8 +5,10 @@ A work keeps the lineage a requirement list was built against, in the same recor
 refuses to lose it. What the core does not know is what a lineage MEANS, so two more questions
 are the authoring package's, asked before a list is saved:
 
-* `belongs_to_manifest`: is this the lineage of THIS manifest? A list and its lineage are one
-  fact, and a lineage whose last revision names another list would be stored beside this one;
+* `belongs_to_list`: is this the lineage of THIS list, its manifest and its sidecar? A list and
+  its lineage are one fact, and a lineage whose last revision names another list would be stored
+  beside this one. The manifest is coordinates only, so it cannot tell two lists of one shape
+  apart; the sidecar, the words behind the ids, does;
 * `extends`: does it continue the lineage the work holds? Nothing a lineage said is taken back: an
   id once issued is still there with the words it had, a retired id stays retired, revisions are
   the same revisions with more after them, and ids issued since are numbered from where the last
@@ -45,6 +47,10 @@ def build(prose, quotes, previous=None, statement="s"):
 
 def manifest_of(built):
     return rs.render_manifest(built.manifest)
+
+
+def sidecar_of(built):
+    return rs.render_sidecar(built.sidecar)
 
 
 class Histories(unittest.TestCase):
@@ -214,13 +220,16 @@ class TheWordsBetweenTwoStatesOfAWorkAreDerivedFromTheirLineages(Histories):
         self.assertEqual(("lamp", "1", "3"), (delta["doc_id"], delta["from_rev"], delta["rev"]))
         self.assertEqual(self.first.lineage["revisions"][-1]["manifest_sha256"],
                          delta["from_manifest_sha256"])
+        self.assertEqual(self.first.lineage["revisions"][-1]["sidecar_sha256"],
+                         delta["from_sidecar_sha256"])
         self.assertTrue(delta["specification_changed"])
         self.assertFalse(rl.between(self.first.lineage, self.first.lineage)["specification_changed"])
 
     def test_the_delta_has_the_shape_the_join_reads(self):
         from sce_author import revision
         record = {"manifest": {"doc_id": "lamp", "rev": "1",
-                               "sha256": self.first.lineage["revisions"][-1]["manifest_sha256"]}}
+                               "sha256": self.first.lineage["revisions"][-1]["manifest_sha256"],
+                               "sidecar_sha256": self.first.lineage["revisions"][-1]["sidecar_sha256"]}}
         delta = rl.between(self.first.lineage, self.third.lineage)
         revision.belongs_to(delta, record)
         revision.join(delta, {"requirements": [], "unclaimed": {"added": [], "gone": 0}})
@@ -234,25 +243,66 @@ class TheWordsBetweenTwoStatesOfAWorkAreDerivedFromTheirLineages(Histories):
 
     def test_a_lineage_adopted_from_a_list_that_predates_lineages_is_a_beginning_like_any(self):
         manifest_text = rs.render_manifest(self.first.manifest)
+        sidecar_text = json.dumps(self.first.sidecar)
         adopted = rl.adopt("lamp", self.first.manifest,
                            {i: rs.normalise(t) for i, t in self.first.sidecar["text"].items()},
-                           manifest_sha256=rl.sha256_text(manifest_text))
+                           manifest_sha256=rl.sha256_text(manifest_text),
+                           sidecar_sha256=rl.sha256_text(sidecar_text))
         built = rs.build(LAMP.replace(" Nothing else changes it.", ""), items(QUOTES[:4]), doc_id="lamp",
                          previous_manifest_text=manifest_text,
-                         previous_sidecar_text=json.dumps(self.first.sidecar))
+                         previous_sidecar_text=sidecar_text)
         delta = rl.between(adopted, built.lineage)
         self.assertEqual(["R5"], kinds(delta)["retired"])
         self.assertEqual(rl.sha256_text(manifest_text), delta["from_manifest_sha256"])
+        self.assertEqual(rl.sha256_text(sidecar_text), delta["from_sidecar_sha256"])
 
 
-class ALineageIsTheLineageOfTheManifestBesideIt(Histories):
-    def test_the_lineage_of_a_call_is_the_lineage_of_its_manifest(self):
-        rl.belongs_to_manifest(self.third.lineage, manifest_of(self.third))
+class ALineageIsTheLineageOfTheListBesideIt(Histories):
+    def test_the_lineage_of_a_call_is_the_lineage_of_its_list(self):
+        rl.belongs_to_list(self.third.lineage, manifest_of(self.third), sidecar_of(self.third))
 
-    def refused(self, lineage, manifest_text, says):
+    OWN = object()
+
+    def refused(self, lineage, manifest_text, says, sidecar_text=OWN):
+        if sidecar_text is self.OWN:
+            sidecar_text = sidecar_of(self.third)
         with self.assertRaises(rl.LineageError) as raised:
-            rl.belongs_to_manifest(lineage, manifest_text)
+            rl.belongs_to_list(lineage, manifest_text, sidecar_text)
         self.assertIn(says, str(raised.exception))
+
+    def test_the_sidecar_of_another_revision(self):
+        self.refused(self.third.lineage, manifest_of(self.third), "another sidecar than this one",
+                     sidecar_of(self.second))
+
+    def test_the_same_shape_over_other_words_is_another_list_though_the_manifest_is_the_same(self):
+        # The manifest is coordinates only: nothing in it says what the sentences are, so a list of
+        # another specification with the same ids and sections has the same manifest text.
+        away = build(LAMP.replace("30 seconds", "45 seconds"),
+                     QUOTES[:3] + ["After 45 seconds on, it turns itself off."] + QUOTES[4:])
+        self.assertEqual(manifest_of(self.first), manifest_of(away))
+        self.refused(self.first.lineage, manifest_of(away), "another sidecar than this one",
+                     sidecar_of(away))
+
+    def test_a_sidecar_that_is_the_same_words_with_another_spelling(self):
+        text = json.dumps(json.loads(sidecar_of(self.third)), indent=4) + "\n"
+        self.refused(self.third.lineage, manifest_of(self.third), "another sidecar than this one", text)
+
+    def test_no_sidecar_given_for_a_lineage_that_names_one(self):
+        self.refused(self.third.lineage, manifest_of(self.third), "no sidecar was given", None)
+
+    def test_a_lineage_that_does_not_say_which_sidecar_it_was_written_as(self):
+        for what, lineage in (
+                ("a null digest", self.broken(self.third, lambda l: l["revisions"][-1].update(sidecar_sha256=None))),
+                ("no digest at all", self.broken(self.third, lambda l: l["revisions"][-1].pop("sidecar_sha256")))):
+            with self.subTest(what):
+                self.refused(lineage, manifest_of(self.third), "does not say which sidecar")
+
+    def test_a_sidecar_digest_rewritten_in_a_revision_with_another_after_it_is_refused(self):
+        def rewrite(lineage):
+            lineage["revisions"][0]["sidecar_sha256"] = "0" * 64
+        with self.assertRaises(rl.LineageError) as raised:
+            rl.extends(self.first.lineage, self.broken(self.second, rewrite))
+        self.assertIn("is not rewritten", str(raised.exception))
 
     def test_the_manifest_of_another_revision(self):
         self.refused(self.third.lineage, manifest_of(self.second), "last revision is")

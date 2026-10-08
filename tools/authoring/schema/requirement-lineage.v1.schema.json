@@ -37,6 +37,10 @@
           "manifest_sha256": {
             "type": ["string", "null"],
             "description": "Over the exact text of the manifest this revision's list was written as, which an acceptance pins by the same digest. What lets a words delta say which list it starts from: a document name and a revision number are carried by every copy of a specification. Null, or absent from a lineage made before it was recorded, when the list's manifest is unknown."
+          },
+          "sidecar_sha256": {
+            "type": ["string", "null"],
+            "description": "Over the exact text of the sidecar this revision's list was written as: the words behind the ids. A manifest is coordinates only (an id, a section, a modality), so two lists of one shape and different sentences share its digest; this one tells them apart, and an acceptance pins the same digest (`manifest.sidecar_sha256`). Null, or absent from a lineage made before it was recorded, when the list's words are unknown."
           }
         }
       }
