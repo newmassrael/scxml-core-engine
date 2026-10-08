@@ -54,7 +54,7 @@ An entry is a `<data>` of the codec's `<datamodel>`:
 | `sce:value="text"` | On `string`: the value is an RFC 5545 TEXT, so `\\`, `\;`, `\,` and `\n` are escapes on both sides. Without it the value is carried as written. Only TEXT escapes; a date-time, an `RRULE` and a URI are not TEXT. |
 | `sce:param` | The entry is the named parameter of the property `sce:property` names, not its value (`TZID` of `DTSTART`). `string` or `enum`. A parameter value that holds `:`, `;` or `,` is written between double quotes and read back without them. |
 | `sce:required="true"` | A decode of a component without the property is refused. Optional otherwise, in every language. |
-| `sce:max-size` | The most bytes a `string` entry holds, after unescaping. |
+| `sce:max-size` | Required on every `string`: the most bytes it holds, after unescaping. A text is as long as its sender wrote it, so the bound is the codec's to state, and every backend then holds a value in storage it can size. |
 | `sce:max-count` | On a value entry, the most lines of the property a component holds, at least 2; the entry is then a bounded list of values in line order. |
 
 ### 2. The wire rules are written once, and every backend writes the same bytes

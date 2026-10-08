@@ -157,13 +157,19 @@ fn declarations(parsed: &ParsedForge) -> Vec<(&str, Declared)> {
             );
         }
         ForgeDocument::Codec(m) => {
-            // A CBOR codec's entries are its fields (SCE_FORGE.md §4.6.1).
+            // A CBOR or content-line codec's entries are its fields
+            // (SCE_FORGE.md §4.6.1, §4.6.4).
             push(
                 &mut out,
                 m.fields
                     .iter()
                     .map(|f| f.id.as_str())
-                    .chain(m.cbor_entries.iter().map(|e| e.id.as_str())),
+                    .chain(m.cbor_entries.iter().map(|e| e.id.as_str()))
+                    .chain(
+                        m.content_line
+                            .iter()
+                            .flat_map(|c| c.entries.iter().map(|e| e.id.as_str())),
+                    ),
                 Declared::Field,
             );
             push(

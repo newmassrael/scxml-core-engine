@@ -2717,6 +2717,15 @@ pub struct CodecModel {
     /// field with an offset of zero.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub cbor_entries: Vec<CborEntry>,
+    /// The component and the property entries of a `sce:encoding="content-line"`
+    /// codec (SCE_FORGE.md §4.6.4, docs/adr/0010). `None` for every other
+    /// encoding.
+    ///
+    /// ⚠ One field and not two (a component name beside a list of entries), so
+    /// that a codec of another encoding has nothing of this shape to carry and
+    /// the pair cannot be half set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content_line: Option<ContentLineModel>,
 }
 
 /// How a codec lays its fields on the wire (SCE_FORGE.md §4.6).
@@ -2733,6 +2742,10 @@ pub enum CodecEncoding {
     /// written in ascending key order with the shortest heads on encode
     /// (RFC 8949 §4.2.1).
     Cbor,
+    /// One RFC 5545 component of content lines (`BEGIN:`, properties,
+    /// `END:`), folded at 75 octets, with TEXT escapes and `;`-separated
+    /// parameters (docs/adr/0010).
+    ContentLine,
 }
 
 impl CodecEncoding {
@@ -2766,6 +2779,52 @@ pub struct CborEntry {
     /// `sce:max-size`: the most bytes a `string` or `bytes` entry holds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_size: Option<u32>,
+}
+
+/// A `sce:encoding="content-line"` codec's wire shape (SCE_FORGE.md §4.6.4).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct ContentLineModel {
+    /// `sce:component`: the name between `BEGIN:` and `END:` (`VEVENT`).
+    pub component: String,
+    /// The entries, in declaration order: the order a property's line is
+    /// written in, and a property's parameters after its name.
+    pub entries: Vec<ContentLineEntry>,
+}
+
+/// One entry of a content-line codec: a property's value, or one of its
+/// parameters (SCE_FORGE.md §4.6.4).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct ContentLineEntry {
+    pub id: String,
+    /// 1-based row of the declaring element, as on [`CodecField`].
+    #[serde(skip)]
+    pub line: Option<u32>,
+    /// `sce:property`: the property name, matched case-insensitively on
+    /// decode and written as declared.
+    pub property: String,
+    /// `sce:param`: when set, this entry is the named parameter of
+    /// [`Self::property`] and not its value.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub param: Option<String>,
+    /// `string`, an integer, `bool` or `enum:<alias>`; a parameter is a
+    /// `string` or an `enum:<alias>`.
+    pub sce_type: SceType,
+    /// `sce:value="text"` on a `string` value: an RFC 5545 TEXT, so `\\`,
+    /// `\;`, `\,` and `\n` are escapes on both sides.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub text: bool,
+    /// `sce:required="true"`: a decode of a component without it is refused.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub required: bool,
+    /// `sce:max-size`: the most bytes a `string` entry holds, after unescaping.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_size: Option<u32>,
+    /// `sce:max-count`: the most lines of the property a component holds
+    /// (at least 2); the entry is then a bounded list of values.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_count: Option<u32>,
 }
 
 impl CodecModel {

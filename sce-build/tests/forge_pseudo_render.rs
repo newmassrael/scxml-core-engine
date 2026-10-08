@@ -1022,6 +1022,7 @@ fn a_codec_renders_every_field_it_can_carry() {
         source_location: None,
         encoding: Default::default(),
         cbor_entries: Vec::new(),
+        content_line: None,
     };
 
     let expected = "\
@@ -1105,6 +1106,7 @@ fn a_chain_identifier_that_leaves_flags_out_renders_one_line_per_flag() {
         source_location: None,
         encoding: Default::default(),
         cbor_entries: Vec::new(),
+        content_line: None,
     };
     assert_eq!(
         render(&ForgeDocument::Codec(m)).unwrap(),

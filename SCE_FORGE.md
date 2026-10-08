@@ -1218,6 +1218,69 @@ that only the chain supplies is unbound for any other consumer of the same entry
 codec — an embed, a repeat, another chain, a variant arm — and is refused there
 as `codec/flag-input-unbound`.
 
+#### 4.6.4 `sce:encoding="content-line"` — one RFC 5545 component
+
+A codec whose root carries `sce:encoding="content-line"` reads and writes one
+component of RFC 5545 content lines instead of fields at byte positions
+(`docs/adr/0010`). The root names the component, and each entry is a `<data>`
+of its `<datamodel>` that names a property:
+
+```xml
+<scxml sce:kind="codec" sce:encoding="content-line" sce:component="VEVENT" name="event">
+  <datamodel>
+    <data id="raw"         sce:type="bytes"  sce:direction="in"/>
+    <data id="uid"         sce:type="string" sce:property="UID"     sce:required="true" sce:max-size="256"/>
+    <data id="summary"     sce:type="string" sce:property="SUMMARY" sce:value="text"    sce:max-size="512"/>
+    <data id="dtstart"     sce:type="string" sce:property="DTSTART" sce:required="true" sce:max-size="32"/>
+    <data id="dtstartTzid" sce:type="string" sce:property="DTSTART" sce:param="TZID"    sce:max-size="64"/>
+    <data id="rrule"       sce:type="string" sce:property="RRULE"   sce:max-size="256"/>
+    <data id="exdate"      sce:type="string" sce:property="EXDATE"  sce:max-count="64"  sce:max-size="32"/>
+  </datamodel>
+</scxml>
+```
+
+| Attribute | Meaning |
+|---|---|
+| `sce:component` (root) | The name between `BEGIN:` and `END:`. Letters, digits and hyphens. |
+| `sce:property` | The property the entry reads and writes. Matched case-insensitively on decode, written as declared. Letters, digits and hyphens. |
+| `sce:type` | `string`, an integer (`uint8`–`uint64`, `int8`–`int64`), `bool` (`TRUE`/`FALSE`) or `enum:<alias>` (the declared name of a variant). A parameter is a `string` or an `enum:<alias>`. |
+| `sce:value="text"` | On a `string` value: an RFC 5545 TEXT, so `\\`, `\;`, `\,` and `\n` are escapes on both sides. Without it the value is carried as written — a date-time, an `RRULE` and a URI are not TEXT. |
+| `sce:param` | The entry is the named parameter of the property `sce:property` names, not its value. It follows the entry of that property. |
+| `sce:required="true"` | A decode of a component without the property (or the parameter) is refused. An entry that is not required is optional in every language. |
+| `sce:max-size` | Required on every `string`: the most bytes it holds, after unescaping. |
+| `sce:max-count` | On a `string` value, at least 2: the most lines of the property a component holds. The entry is then a bounded list of values in line order. |
+
+**Wire rules.** Encode writes `BEGIN:<component>`, the entries present in
+declaration order — a property's parameters after its name in declaration
+order, then `:` and the value — and `END:<component>`, each line ending in CRLF.
+A parameter value that holds `:`, `;` or `,` is written between double quotes.
+A line longer than 75 octets is folded: CRLF and one space, at a place that does
+not split a UTF-8 sequence. Decode unfolds, takes the first `BEGIN:<component>`
+to its `END:<component>` (a `VCALENDAR` around it is no concern of the codec's),
+reads the properties it declares, and skips a property it does not declare and any
+nested component (`VALARM`) whole. It refuses a malformed line, a property that
+repeats where the entry holds one value, a list past its `sce:max-count`, a value
+past its `sce:max-size`, a bad escape in a TEXT, an integer, `bool` or enum value
+the entry cannot hold, and a required property that is absent.
+
+A component decoded and encoded again does not carry the properties the codec
+does not declare: `.ics` here is an import and export format, not a store.
+
+**Refused on a content-line codec** — each is a position or belongs to another
+encoding: `sce:byte`, `sce:bit-offset`, `sce:bit-size`, `sce:endian`,
+`sce:default-endian`, `sce:length-field`, `sce:length-arith`, `sce:present-if`,
+`sce:dma-burst-align`, `sce:key`, `sce:length`, and the `<sce:field>`,
+`<sce:flags>`, `<sce:repeat>`, `<sce:tlv-chain>`, `<sce:embed>`, `<sce:variant>`,
+`<sce:flag-inputs>` and `<sce:test-vector>` elements. Two entries of one property,
+two parameters of one name on a property, a parameter with no entry of its property
+before it, and a parameter on a property that has `sce:max-count` (each of its lines
+would need its own parameters, which is a list of records this encoding does not have).
+
+**Generation.** No backend generates a content-line codec yet: each refuses it by
+name (`generate/unsupported-feature`) until its own commit lands. The generator's
+refusal and the conformance harness's schedule read one answer
+(`content_line_codec::refusal`).
+
 ### 4.7 validator
 
 Range check, rate-of-change detection, plausibility verification. Validator has minimal internal state (previous values for rate-of-change).

@@ -41,11 +41,12 @@ use crate::forge::model::{
     AlgorithmConst, AlgorithmConstType, AlgorithmModel, AlgorithmParam, AlgorithmSignature,
     AlgorithmStmt, AlgorithmValueType, BackpressurePolicy, BitSize, BoundedCollectionModel,
     BufferPoolModel, BufferPoolVariant, CachePolicy, CallArg, CborEntry, CodecEncoding, CodecField,
-    CodecModel, CodecTestVector, CodecVariant, CountRef, DecodedField, DecodedFieldValue,
-    DecodedValue, Endian, FlagDef, FlagInput, FoldBody, PeekByteSpec, PresentIfPredicate,
-    PresentIfScope, ProcedureAssign, ProcedureDoneParam, ProcedureHelper, ProcedureModel,
-    ProcedureSendAction, ProcedureState, ProcedureTransition, TestVector, TestVectorValue,
-    TlvEntryFlagBind, TlvEntryId, TlvOverflowPolicy, TlvTerminateStrategy, VariantArm,
+    CodecModel, CodecTestVector, CodecVariant, ContentLineEntry, ContentLineModel, CountRef,
+    DecodedField, DecodedFieldValue, DecodedValue, Endian, FlagDef, FlagInput, FoldBody,
+    PeekByteSpec, PresentIfPredicate, PresentIfScope, ProcedureAssign, ProcedureDoneParam,
+    ProcedureHelper, ProcedureModel, ProcedureSendAction, ProcedureState, ProcedureTransition,
+    TestVector, TestVectorValue, TlvEntryFlagBind, TlvEntryId, TlvOverflowPolicy,
+    TlvTerminateStrategy, VariantArm,
 };
 use crate::forge::model::{
     CapacitySource, CollectionOrdering, ConcurrencyMode, ConditionModel, Direction, EnumModel,
@@ -2275,6 +2276,110 @@ fn parse_cbor_codec(head: &Line<'_>, body: &[&Line<'_>]) -> Result<CodecModel, P
         source_location: None,
         encoding: CodecEncoding::Cbor,
         cbor_entries: entries,
+        content_line: None,
+    })
+}
+
+/// `codec <name> encoding content-line component <C>`, then `entry <id>:
+/// <type> property <P> [param <Q>] [text] [required] [max-size <n>]
+/// [max-count <n>]` lines (docs/adr/0010).
+fn parse_content_line_codec(head: &Line<'_>, body: &[&Line<'_>]) -> Result<CodecModel, ParseError> {
+    let w: Vec<&str> = head.text.split_whitespace().collect();
+    if w.get(4).copied() != Some("component") {
+        return Err(ParseError {
+            line: head.number,
+            why: "a content-line codec names its component: `component <NAME>`".to_string(),
+        });
+    }
+    let component = w
+        .get(5)
+        .copied()
+        .filter(|c| !c.is_empty())
+        .ok_or_else(|| ParseError {
+            line: head.number,
+            why: "`component` needs a name".to_string(),
+        })?
+        .to_string();
+    let mut entries = Vec::new();
+    for line in body {
+        let lw: Vec<&str> = line.text.split_whitespace().collect();
+        let fail = |why: String| ParseError {
+            line: line.number,
+            why,
+        };
+        if lw.first().copied() != Some("entry") {
+            return Err(fail(format!(
+                "`{}` is not a content-line codec body line",
+                line.text
+            )));
+        }
+        let id = lw
+            .get(1)
+            .and_then(|v| v.strip_suffix(':'))
+            .ok_or_else(|| fail("a content-line entry needs `<id>:`".to_string()))?;
+        let type_word = lw.get(2).copied().unwrap_or("");
+        let sce_type = SceType::from_attr(type_word)
+            .ok_or_else(|| fail(format!("`{type_word}` is not an sce:type")))?;
+        if lw.get(3).copied() != Some("property") {
+            return Err(fail(
+                "a content-line entry's type is followed by `property <NAME>`".to_string(),
+            ));
+        }
+        let property = lw
+            .get(4)
+            .copied()
+            .ok_or_else(|| fail("`property` needs a name".to_string()))?
+            .to_string();
+        let mut entry = ContentLineEntry {
+            id: undo(id, line.number)?,
+            line: None,
+            property,
+            param: None,
+            sce_type,
+            text: false,
+            required: false,
+            max_size: None,
+            max_count: None,
+        };
+        let mut rest = lw[5..].iter();
+        while let Some(word) = rest.next() {
+            let mut number = |what: &str| {
+                rest.next()
+                    .and_then(|v| v.parse::<u32>().ok())
+                    .ok_or_else(|| fail(format!("`{what}` needs a number")))
+            };
+            match *word {
+                "text" => entry.text = true,
+                "required" => entry.required = true,
+                "max-size" => entry.max_size = Some(number("max-size")?),
+                "max-count" => entry.max_count = Some(number("max-count")?),
+                "param" => {
+                    let name = rest
+                        .next()
+                        .ok_or_else(|| fail("`param` needs a name".to_string()))?;
+                    entry.param = Some((*name).to_string());
+                }
+                other => {
+                    return Err(fail(format!(
+                        "`{other}` is not a content-line entry clause"
+                    )))
+                }
+            }
+        }
+        entries.push(entry);
+    }
+    Ok(CodecModel {
+        name: undo(w.get(1).copied().unwrap_or(""), head.number)?,
+        default_endian: Endian::Big,
+        input_length: None,
+        fields: Vec::new(),
+        variant: None,
+        flag_inputs: Vec::new(),
+        test_vectors: Vec::new(),
+        source_location: None,
+        encoding: CodecEncoding::ContentLine,
+        cbor_entries: Vec::new(),
+        content_line: Some(ContentLineModel { component, entries }),
     })
 }
 
@@ -2284,6 +2389,7 @@ fn parse_codec(head: &Line<'_>, body: &[&Line<'_>]) -> Result<CodecModel, ParseE
     if w.get(2).copied() == Some("encoding") {
         return match w.get(3).copied() {
             Some("cbor") => parse_cbor_codec(head, body),
+            Some("content-line") => parse_content_line_codec(head, body),
             other => Err(ParseError {
                 line: head.number,
                 why: format!("`{}` is not a codec encoding", other.unwrap_or("")),
@@ -2304,6 +2410,7 @@ fn parse_codec(head: &Line<'_>, body: &[&Line<'_>]) -> Result<CodecModel, ParseE
         source_location: None,
         encoding: Default::default(),
         cbor_entries: Vec::new(),
+        content_line: None,
     };
 
     for (line, kids) in group(body) {

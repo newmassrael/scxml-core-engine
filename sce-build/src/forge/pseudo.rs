@@ -3088,6 +3088,9 @@ fn render_codec(m: &CodecModel) -> Vec<Node> {
     if m.encoding == CodecEncoding::Cbor {
         return render_cbor_codec(m);
     }
+    if m.encoding == CodecEncoding::ContentLine {
+        return render_content_line_codec(m);
+    }
     let mut out = Out::new();
     let mut head = vec![
         Part::Word(Word::Codec),
@@ -3144,6 +3147,51 @@ fn render_cbor_codec(m: &CodecModel) -> Vec<Node> {
             }
             if let Some(n) = e.max_size {
                 let _ = write!(line, " max-size {n}");
+            }
+            out.line(&line);
+        }
+    });
+    out.nodes
+}
+
+/// `codec <name> encoding content-line component <C>`, then one line per entry:
+/// `entry <id>: <type> property <P> [param <Q>] [text] [required] [max-size <n>]
+/// [max-count <n>]` (docs/adr/0010).
+fn render_content_line_codec(m: &CodecModel) -> Vec<Node> {
+    let mut out = Out::new();
+    let Some(content) = &m.content_line else {
+        return out.nodes;
+    };
+    out.line_of(vec![
+        Part::Word(Word::Codec),
+        Part::Text(text(&m.name).into_owned()),
+        Part::Word(Word::Encoding),
+        Part::Word(Word::ContentLine),
+        Part::Word(Word::Component),
+        Part::Text(text(&content.component).into_owned()),
+    ]);
+    out.nested(|out| {
+        for e in &content.entries {
+            let mut line = format!(
+                "entry {}: {} property {}",
+                text(&e.id),
+                e.sce_type.as_attr(),
+                text(&e.property)
+            );
+            if let Some(param) = &e.param {
+                let _ = write!(line, " param {}", text(param));
+            }
+            if e.text {
+                line.push_str(" text");
+            }
+            if e.required {
+                line.push_str(" required");
+            }
+            if let Some(n) = e.max_size {
+                let _ = write!(line, " max-size {n}");
+            }
+            if let Some(n) = e.max_count {
+                let _ = write!(line, " max-count {n}");
             }
             out.line(&line);
         }

@@ -5077,6 +5077,10 @@ fn render_codec(
     if m.encoding == CodecEncoding::Cbor {
         return crate::forge::cbor_codec::render(env, m, imports, lang);
     }
+    // SCE_FORGE.md §4.6.4: so is a content-line codec, for the same reason.
+    if m.encoding == CodecEncoding::ContentLine {
+        return crate::forge::content_line_codec::render(env, m, imports, lang);
+    }
     // RFC §synth-5-B "MCU-only codec sub-features" — codec-content-level MCU
     // classification. After the all-backend closures only DMA alignment (item B3)
     // genuinely needs MCU-class hardware (memory-mapped peripherals,

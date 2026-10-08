@@ -553,6 +553,7 @@ mod tests {
                 source_location: None,
                 encoding: Default::default(),
                 cbor_entries: Vec::new(),
+                content_line: None,
             }),
             ForgeDocument::Validator(ValidatorModel {
                 name: "v".into(),

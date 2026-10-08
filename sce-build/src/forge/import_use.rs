@@ -312,6 +312,12 @@ impl Names {
                 for entry in &m.cbor_entries {
                     self.ty(&entry.sce_type);
                 }
+                // A content-line codec's entries likewise (SCE_FORGE.md §4.6.4).
+                if let Some(content) = &m.content_line {
+                    for entry in &content.entries {
+                        self.ty(&entry.sce_type);
+                    }
+                }
                 Ok(())
             }
             ForgeDocument::Filter(m) => self.fields([&m.input, &m.output]),

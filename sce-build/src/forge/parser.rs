@@ -1718,6 +1718,7 @@ fn parse_cbor_codec(
         source_location: forge_source_location_of(root, doc),
         encoding: CodecEncoding::Cbor,
         cbor_entries: entries,
+        content_line: None,
     })
 }
 
@@ -1877,6 +1878,382 @@ fn parse_cbor_entry(
     })
 }
 
+/// An RFC 5545 name: `iana-token` and `x-name` are letters, digits and hyphens.
+fn is_content_line_name(text: &str) -> bool {
+    !text.is_empty() && text.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+}
+
+/// A `sce:encoding="content-line"` codec: one RFC 5545 component whose
+/// entries are the `<data sce:property>` elements of its `<datamodel>`
+/// (SCE_FORGE.md §4.6.4, docs/adr/0010).
+///
+/// Refused rather than ignored, as on a CBOR codec: every position and the
+/// CBOR key and exact length, because a component of content lines has no
+/// place for any of them to shape.
+fn parse_content_line_codec(
+    root: &roxmltree::Node,
+    label: DocumentLabel<'_>,
+) -> Result<CodecModel, Located<ForgeError>> {
+    let doc = label.diagnostic_label;
+    let datamodel = find_child(root, "datamodel").ok_or_else(|| {
+        located(
+            root,
+            doc,
+            ValidationError::MissingElement {
+                kind: ForgeKind::Codec,
+                element: "datamodel".into(),
+            },
+        )
+    })?;
+    let component = sce_attr(root, "component").ok_or_else(|| {
+        located(
+            root,
+            doc,
+            ValidationError::MissingAttribute {
+                element: "Codec (sce:encoding=\"content-line\")".into(),
+                attr: "sce:component".into(),
+            },
+        )
+    })?;
+    if !is_content_line_name(&component) {
+        return Err(located(
+            root,
+            doc,
+            ValidationError::AttributeRuleViolated {
+                element: "Codec".into(),
+                attr: "sce:component".into(),
+                value: component,
+                rule: "an RFC 5545 name: letters, digits and hyphens".into(),
+            },
+        ));
+    }
+    if let Some(attr) = ["default-endian"]
+        .into_iter()
+        .find(|a| sce_attr(root, a).is_some())
+    {
+        return Err(located(
+            root,
+            doc,
+            ValidationError::AttributeRuleViolated {
+                element: "Codec".into(),
+                attr: format!("sce:{attr}"),
+                value: sce_attr(root, attr).unwrap_or_default(),
+                rule: "no byte-order attribute on a sce:encoding=\"content-line\" codec: it \
+                       writes text"
+                    .into(),
+            },
+        ));
+    }
+    for child in datamodel.children().filter(|c| c.is_element()) {
+        let name = child.tag_name().name();
+        if name != "data" {
+            return Err(located(
+                &child,
+                doc,
+                ValidationError::UnexpectedChildElement {
+                    parent: "Codec datamodel (sce:encoding=\"content-line\")".into(),
+                    child: name.to_string(),
+                    allowed: vec!["data".into()],
+                },
+            ));
+        }
+    }
+    for element in ["variant", "flag-inputs", "test-vector"] {
+        if let Some(child) = find_child(root, element) {
+            return Err(located(
+                &child,
+                doc,
+                ValidationError::UnexpectedChildElement {
+                    parent: "Codec (sce:encoding=\"content-line\")".into(),
+                    child: format!("sce:{element}"),
+                    allowed: vec!["datamodel".into()],
+                },
+            ));
+        }
+    }
+
+    let mut entries: Vec<ContentLineEntry> = Vec::new();
+    for data in data_children(&datamodel) {
+        // The input frame names no field; it is the text the codec decodes.
+        if sce_attr(&data, "direction").as_deref() == Some("in") {
+            judge_input_frame_type(&data, doc)?;
+            continue;
+        }
+        entries.push(parse_content_line_entry(&data, doc, &entries)?);
+    }
+    if !entries.iter().any(|e| e.param.is_none()) {
+        return Err(located(
+            &datamodel,
+            doc,
+            ValidationError::MissingElement {
+                kind: ForgeKind::Codec,
+                element: "data sce:property".into(),
+            },
+        ));
+    }
+
+    Ok(CodecModel {
+        name: label.identifier.to_string(),
+        default_endian: Endian::Big,
+        input_length: None,
+        fields: Vec::new(),
+        variant: None,
+        flag_inputs: Vec::new(),
+        test_vectors: Vec::new(),
+        source_location: forge_source_location_of(root, doc),
+        encoding: CodecEncoding::ContentLine,
+        cbor_entries: Vec::new(),
+        content_line: Some(ContentLineModel { component, entries }),
+    })
+}
+
+/// One `<data sce:property>` entry of a content-line codec, judged against
+/// the entries declared before it: a parameter follows the entry of the
+/// property it belongs to.
+fn parse_content_line_entry(
+    node: &roxmltree::Node,
+    doc: &str,
+    before: &[ContentLineEntry],
+) -> Result<ContentLineEntry, Located<ForgeError>> {
+    let refuse = |error: ValidationError| located(node, doc, error);
+    let id = node
+        .attribute("id")
+        .ok_or_else(|| {
+            refuse(ValidationError::MissingAttribute {
+                element: "Codec entry".into(),
+                attr: "id".into(),
+            })
+        })?
+        .to_string();
+    let element = format!("Codec entry '{id}'");
+    if let Some(attr) = CODEC_POSITIONAL_ATTRS
+        .iter()
+        .chain(["key", "length"].iter())
+        .find(|a| sce_attr(node, a).is_some())
+    {
+        return Err(refuse(ValidationError::AttributeRuleViolated {
+            element,
+            attr: format!("sce:{attr}"),
+            value: sce_attr(node, attr).unwrap_or_default(),
+            rule: "no position, key or exact length on an entry of a \
+                   sce:encoding=\"content-line\" codec: it is placed by its sce:property"
+                .into(),
+        }));
+    }
+    if before.iter().any(|e| e.id == id) {
+        return Err(refuse(ValidationError::DuplicateId {
+            kind: ForgeKind::Codec,
+            what: "entry id".into(),
+            id,
+        }));
+    }
+    let property = sce_attr(node, "property").ok_or_else(|| {
+        refuse(ValidationError::MissingAttribute {
+            element: element.clone(),
+            attr: "sce:property".into(),
+        })
+    })?;
+    if !is_content_line_name(&property) {
+        return Err(refuse(ValidationError::AttributeRuleViolated {
+            element,
+            attr: "sce:property".into(),
+            value: property,
+            rule: "an RFC 5545 name: letters, digits and hyphens".into(),
+        }));
+    }
+    let param = sce_attr(node, "param");
+    if let Some(name) = &param {
+        if !is_content_line_name(name) {
+            return Err(refuse(ValidationError::AttributeRuleViolated {
+                element,
+                attr: "sce:param".into(),
+                value: name.clone(),
+                rule: "an RFC 5545 name: letters, digits and hyphens".into(),
+            }));
+        }
+    }
+
+    let type_text = sce_attr(node, "type").ok_or_else(|| {
+        refuse(ValidationError::MissingAttribute {
+            element: element.clone(),
+            attr: "sce:type".into(),
+        })
+    })?;
+    let sce_type = read_type_attr(
+        node,
+        doc,
+        TypeGrammar::ScalarOrEnumRef,
+        format!("entry '{id}'"),
+        "sce:type",
+        &type_text,
+    )?;
+    let admitted = if param.is_some() {
+        matches!(sce_type, SceType::String | SceType::Enum(_))
+    } else {
+        sce_type.is_unsigned()
+            || sce_type.is_signed()
+            || matches!(sce_type, SceType::Bool | SceType::String | SceType::Enum(_))
+    };
+    if !admitted {
+        return Err(refuse(ValidationError::AttributeRuleViolated {
+            element,
+            attr: "sce:type".into(),
+            value: type_text,
+            rule: if param.is_some() {
+                "string or enum:<alias> — what a parameter of a content line holds"
+            } else {
+                "string, an integer, bool or enum:<alias> — the kinds a \
+                 sce:encoding=\"content-line\" codec writes"
+            }
+            .into(),
+        }));
+    }
+
+    let text = match sce_attr(node, "value").as_deref() {
+        None => false,
+        Some("text") => true,
+        Some(other) => {
+            return Err(refuse(ValidationError::InvalidAttribute {
+                element,
+                attr: "sce:value".into(),
+                value: other.to_string(),
+                allowed: vec!["text".into()],
+            }))
+        }
+    };
+    if text && (param.is_some() || sce_type != SceType::String) {
+        return Err(refuse(ValidationError::AttributeRuleViolated {
+            element,
+            attr: "sce:value".into(),
+            value: "text".into(),
+            rule: "an RFC 5545 TEXT value on a string property entry only".into(),
+        }));
+    }
+    let required = match sce_attr(node, "required").as_deref() {
+        None | Some("false") => false,
+        Some("true") => true,
+        Some(other) => {
+            return Err(refuse(ValidationError::InvalidAttribute {
+                element,
+                attr: "sce:required".into(),
+                value: other.to_string(),
+                allowed: vec!["true".into(), "false".into()],
+            }))
+        }
+    };
+    let positive = |attr: &str| -> Result<Option<u32>, Located<ForgeError>> {
+        let Some(text) = sce_attr(node, attr) else {
+            return Ok(None);
+        };
+        parse_int(&text)
+            .filter(|n| *n > 0)
+            .map(Some)
+            .ok_or_else(|| {
+                refuse(ValidationError::AttributeRuleViolated {
+                    element: element.clone(),
+                    attr: format!("sce:{attr}"),
+                    value: text,
+                    rule: "a positive integer".into(),
+                })
+            })
+    };
+    let max_size = positive("max-size")?;
+    let max_count = positive("max-count")?;
+    if max_size.is_some() && sce_type != SceType::String {
+        return Err(refuse(ValidationError::AttributeRuleViolated {
+            element,
+            attr: "sce:max-size".into(),
+            value: max_size.unwrap_or_default().to_string(),
+            rule: "a size bound on a string entry only".into(),
+        }));
+    }
+    // A text is as long as its sender wrote it, so the bound is the codec's to
+    // state: every backend then holds a value in storage it can size, as a CBOR
+    // string of a C11 codec must.
+    if max_size.is_none() && sce_type == SceType::String {
+        return Err(refuse(ValidationError::MissingAttribute {
+            element,
+            attr: "sce:max-size".into(),
+        }));
+    }
+    if let Some(count) = max_count {
+        if param.is_some() || sce_type != SceType::String || count < 2 {
+            return Err(refuse(ValidationError::AttributeRuleViolated {
+                element,
+                attr: "sce:max-count".into(),
+                value: count.to_string(),
+                rule: "at least 2, on a string property entry only: a list of the values of \
+                       a repeated property"
+                    .into(),
+            }));
+        }
+    }
+
+    // The property's value entry is one entry; a parameter names one declared
+    // before it; neither repeats, and a repeated property takes no parameter
+    // (docs/adr/0010, decision 4).
+    let owner = before
+        .iter()
+        .find(|e| e.param.is_none() && e.property.eq_ignore_ascii_case(&property));
+    match (&param, owner) {
+        (None, Some(_)) => {
+            return Err(refuse(ValidationError::DuplicateId {
+                kind: ForgeKind::Codec,
+                what: "sce:property".into(),
+                id: property,
+            }));
+        }
+        (Some(name), None) => {
+            return Err(refuse(ValidationError::AttributeRuleViolated {
+                element,
+                attr: "sce:param".into(),
+                value: name.clone(),
+                rule: format!(
+                    "a parameter follows the entry of its property: no entry of `{property}` is \
+                     declared before it"
+                ),
+            }));
+        }
+        (Some(name), Some(owner)) => {
+            if owner.max_count.is_some() {
+                return Err(refuse(ValidationError::AttributeRuleViolated {
+                    element,
+                    attr: "sce:param".into(),
+                    value: name.clone(),
+                    rule: "no parameter on a repeated property: each of its lines would need \
+                           its own, which is a list of records"
+                        .into(),
+                }));
+            }
+            if before.iter().any(|e| {
+                e.property.eq_ignore_ascii_case(&property)
+                    && e.param
+                        .as_deref()
+                        .is_some_and(|p| p.eq_ignore_ascii_case(name))
+            }) {
+                return Err(refuse(ValidationError::DuplicateId {
+                    kind: ForgeKind::Codec,
+                    what: "sce:param".into(),
+                    id: format!("{property};{name}"),
+                }));
+            }
+        }
+        (None, None) => {}
+    }
+
+    Ok(ContentLineEntry {
+        id,
+        line: Some(row_of(node)),
+        property,
+        param,
+        sce_type,
+        text,
+        required,
+        max_size,
+        max_count,
+    })
+}
+
 /// A codec's input frame — its `<data sce:direction="in">` — is the bytes
 /// the codec decodes, whichever encoding it has, so the one `sce:type` it
 /// may declare is `bytes`. Read rather than skipped: until 2026-09-28 both
@@ -1907,6 +2284,7 @@ fn parse_codec(
     match sce_attr(root, "encoding").as_deref() {
         None | Some("positional") => {}
         Some("cbor") => return parse_cbor_codec(root, label),
+        Some("content-line") => return parse_content_line_codec(root, label),
         Some(other) => {
             return Err(located(
                 root,
@@ -1915,7 +2293,7 @@ fn parse_codec(
                     element: "Codec".into(),
                     attr: "sce:encoding".into(),
                     value: other.to_string(),
-                    allowed: vec!["positional".into(), "cbor".into()],
+                    allowed: vec!["positional".into(), "cbor".into(), "content-line".into()],
                 },
             ))
         }
@@ -2110,6 +2488,7 @@ fn parse_codec(
         source_location: forge_source_location_of(root, label.diagnostic_label),
         encoding: CodecEncoding::Positional,
         cbor_entries: Vec::new(),
+        content_line: None,
     })
 }
 /// RFC flag inversion — parse the optional codec-level
@@ -10726,6 +11105,8 @@ const KNOWN_SCE_ATTRS: &[&str] = &[
     "bit-size",
     "byte",
     "capacity",
+    // A content-line codec names its component on the root (SCE_FORGE.md §4.6.4).
+    "component",
     // ⚠ `codec-id` left this roster on 2026-09-28. It was read by NOTHING
     // and was kept because "a name that is merely unread costs the check
     // nothing" — but it did cost: 79 conformance documents carried a
@@ -10768,6 +11149,8 @@ const KNOWN_SCE_ATTRS: &[&str] = &[
     "length-arith",
     "length-field",
     "length-from",
+    // The most lines of a repeated property a content-line codec holds.
+    "max-count",
     "max-delta",
     "max-iter",
     "max-size",
@@ -10777,9 +11160,13 @@ const KNOWN_SCE_ATTRS: &[&str] = &[
     "on-leave",
     "on-miss",
     "out-of-bounds",
+    // A content-line codec entry that is a parameter of a property.
+    "param",
     "payload",
     "plausibility",
     "present-if",
+    // A content-line codec entry's property name (SCE_FORGE.md §4.6.4).
+    "property",
     "provenance",
     "quantity",
     "range-max",
@@ -10806,6 +11193,8 @@ const KNOWN_SCE_ATTRS: &[&str] = &[
     "unresolved",
     "unresolved-candidates",
     "unresolved-reason",
+    // `sce:value="text"`: a content-line string that is an RFC 5545 TEXT.
+    "value",
     "window",
 ];
 

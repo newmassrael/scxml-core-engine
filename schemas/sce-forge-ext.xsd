@@ -412,9 +412,26 @@
       <xs:restriction base="xs:string">
         <xs:enumeration value="positional"/>
         <xs:enumeration value="cbor"/>
+        <xs:enumeration value="content-line"/>
       </xs:restriction>
     </xs:simpleType>
   </xs:attribute>
+  <!-- Section 4.6.4: a `content-line` codec writes one RFC 5545 component
+       (sce:component, the name between BEGIN: and END:) whose entries are the
+       <data sce:property> elements: a property's value, or with sce:param one
+       of its parameters. sce:value="text" makes a string an RFC 5545 TEXT
+       (escaped); sce:max-count makes a property a bounded list of its lines. -->
+  <xs:attribute name="component" type="xs:string"/>
+  <xs:attribute name="property" type="xs:string"/>
+  <xs:attribute name="param" type="xs:string"/>
+  <xs:attribute name="value">
+    <xs:simpleType>
+      <xs:restriction base="xs:string">
+        <xs:enumeration value="text"/>
+      </xs:restriction>
+    </xs:simpleType>
+  </xs:attribute>
+  <xs:attribute name="max-count" type="xs:positiveInteger"/>
   <!-- Section 4.6: a CBOR codec entry's map key — 0..23, a one-byte head. -->
   <xs:attribute name="key">
     <xs:simpleType>
