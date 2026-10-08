@@ -4120,25 +4120,57 @@ fn a_cpp_send_param_is_lowered_to_native_code_and_not_handed_to_an_engine() {
 }
 
 #[test]
-fn a_basic_http_send_carrying_a_param_is_refused_by_name_in_cpp() {
-    // A BasicHTTP send carries each value as the text a form does, which the C++
-    // machine does not spell from a typed value; it is named, not left to
-    // generate a request with no body. The refusal is decided by the construct,
-    // not by where the request would go, so the target names no endpoint of the
-    // suite (the fixture port is spelled once, in `basic_http_test_endpoint.h`).
+fn a_cpp_basic_http_send_carries_its_params_as_the_text_a_form_does() {
+    // C++ refused a BasicHTTP send carrying a `<param>` by name. The request of
+    // such a send is a rendering of the text map every other delivery reads
+    // (docs/adr/0005, decision 4): the value is computed into a `ScriptValue` from
+    // the machine's own fields, given its text by the one header call that does
+    // it, and the engine hands the map to its transport. So what is read is the
+    // machine: the text map is filled from the lowered value, the request goes
+    // through `performHttpSend`, and no script engine is asked for the pair. The
+    // target names no endpoint of the suite (the fixture port is spelled once, in
+    // `basic_http_test_endpoint.h`).
     let document = machine(
         r#"<state id="s">
     <transition event="go" type="internal">
-      <send type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor" target="http://example.invalid/hook" event="note"><param name="k" expr="count"/></send>
+      <send type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor" target="http://example.invalid/hook" event="note"><param name="k" expr="count + 1"/></send>
     </transition>
   </state>"#,
     );
-    let (ok, out) = run(&["check", "-l", "cpp"], &document);
-    assert!(!ok, "C++ has no lowering for it yet:\n{out}");
+    let out_dir = tempdir().expect("tempdir");
+    let (ok, out) = run(
+        &[
+            "generate",
+            "-l",
+            "cpp",
+            "-o",
+            out_dir.path().to_str().expect("a path"),
+        ],
+        &document,
+    );
+    assert!(ok, "the machine generates:\n{out}");
     assert!(
-        out.contains("generate/unsupported-feature")
-            && out.contains("a BasicHTTP <send> carrying a <param>"),
-        "expected the unsupported-feature refusal naming the construct:\n{out}"
+        out.contains("\"needs_script_engine\":false"),
+        "a sce-static machine's params are read from its fields:\n{out}"
+    );
+    let generated: Vec<_> = std::fs::read_dir(out_dir.path())
+        .expect("the output directory")
+        .map(|entry| entry.expect("an entry").path())
+        .filter(|path| path.extension().is_some_and(|e| e == "inl"))
+        .collect();
+    assert_eq!(generated.len(), 1, "one machine: {generated:?}");
+    let source = std::fs::read_to_string(&generated[0]).expect("a generated machine");
+    assert!(
+        source.contains("::SCE::ScriptResultUtils::valueText(paramValue)"),
+        "the pair's text is the lowered value's"
+    );
+    assert!(
+        source.contains("engine.performHttpSend("),
+        "the request goes through the engine's transport"
+    );
+    assert!(
+        !source.contains("scriptEngine.evaluateExpression("),
+        "no script engine reads a send param"
     );
 }
 

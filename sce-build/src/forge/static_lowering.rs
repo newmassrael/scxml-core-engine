@@ -3020,17 +3020,11 @@ impl CppTarget {
                 // A list is filled, emptied and walked by native statements.
                 "sce_append" | "sce_clear" | "foreach" => {}
                 // A param is the typed value of the data model crossed to the
-                // event's JSON, and a literal `<content>` is the text it spells.
-                // A BasicHTTP send also needs each value as the text a form
-                // carries, which the machine does not spell yet.
-                "send"
-                    if !action.params.is_empty()
-                        && effective_send_types(action).any(|send_type| {
-                            send_type == "http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"
-                        }) =>
-                {
-                    return Some("a BasicHTTP <send> carrying a <param>".to_string())
-                }
+                // event's JSON and, as the text a form carries
+                // (`ScriptResultUtils::valueText`), to the request of a BasicHTTP
+                // send, which the engine hands to its transport
+                // (docs/adr/0005, decision 4). A literal `<content>` is the text it
+                // spells.
                 "send" => {}
                 other => return Some(format!("<{other}>")),
             }

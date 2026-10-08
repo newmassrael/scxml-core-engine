@@ -1,0 +1,36 @@
+# Mutation cases for "the `<param>`s of a BasicHTTP `<send>` cross as the text a form
+# carries" under the Python backend (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Params";
+# docs/adr/0005, decision 4).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_python_send_over_http_carries_its_params_python.cases`.
+#
+# `static_send_http` sends a request carrying six pairs read from the machine's fields
+# and one carrying `count` beside a `big` that overflows. The engine hands the request
+# to its transport with the text map the machine built from its typed pairs, which the
+# test reads. The mutants each take one decision of that away, and each still compiles:
+#
+#   a pair's value is computed and not carried;
+#   the request is handed no pairs at all.
+#
+# Python reads the template as source at generation time, so the regeneration is the
+# command that carries a mutated template into the machine the tests import. Anchors
+# are literal slices of the template; an edit that moves one is reported INCONCLUSIVE
+# with the anchor quoted, never as a pass.
+
+mutation_pytest backends/python/tests integration/static_datamodel/test_a_static_send_over_http_carries_its_params.py
+mutation_regen scripts/regen_static_datamodel_python.sh
+mutation_runtime_targets tools/codegen/templates/python/actions/send.py.jinja2
+mutation_oracles backends/python/tests/integration/static_datamodel/test_a_static_send_over_http_carries_its_params.py sce-build/tests/fixtures/static_datamodel/static_send_http.scxml
+
+mutation_case "a pair's value is computed and not carried" <<'PY'
+edit("tools/codegen/templates/python/actions/send.py.jinja2",
+     "{{ indent }}    self._put_param(_data, _data_repeats, {{ param.name | py_string_literal }}, ({{ param.native_value }}).to_python())",
+     "{{ indent }}    self._put_param(_data, _data_repeats, {{ param.name | py_string_literal }}, (({{ param.native_value }}).to_python(), \"\")[1])")
+PY
+
+mutation_case "a BasicHTTP request is handed no pairs" <<'PY'
+edit("tools/codegen/templates/python/actions/send.py.jinja2",
+     "{% endif %}, self._wire_params_from_payload(_data), _sid)\n{% endif %}\n{% elif not action.targetexpr and action.target == '#_parent' %}",
+     "{% endif %}, {}, _sid)\n{% endif %}\n{% elif not action.targetexpr and action.target == '#_parent' %}")
+PY

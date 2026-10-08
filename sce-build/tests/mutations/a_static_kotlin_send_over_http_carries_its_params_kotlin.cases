@@ -1,0 +1,36 @@
+# Mutation cases for "the `<param>`s of a BasicHTTP `<send>` cross as the text a form
+# carries" under the Kotlin backend (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Params";
+# docs/adr/0005, decision 4).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_kotlin_send_over_http_carries_its_params_kotlin.cases`.
+#
+# `static_send_http` sends a request carrying six pairs read from the machine's fields
+# and one carrying `count` beside a `big` that overflows. The engine hands the request
+# to its transport with the text map the machine built from its typed pairs, which the
+# test reads. The mutants each take one decision of that away, and each still compiles:
+#
+#   a pair's value is not rendered as the text it spells;
+#   the request is handed no pairs at all.
+#
+# The template reaches the tests only through the committed machine the regeneration
+# writes, so both halves are declared. Anchors are literal slices of the template; an
+# edit that moves one is reported INCONCLUSIVE with the anchor quoted, never as a
+# pass.
+
+mutation_gradle . :sce-kotlin-tests:test --tests 'com.sce.integration.AStaticSendOverHttpCarriesItsParamsTest'
+mutation_targets tools/codegen/templates/kotlin/actions/send.kt.jinja2 backends/kotlin/tests/src/main/kotlin/com/sce/integration/static_send_http/static_send_httpSm.kt
+mutation_regen scripts/regen_static_datamodel_kotlin.sh
+mutation_oracles backends/kotlin/tests/src/test/kotlin/com/sce/integration/AStaticSendOverHttpCarriesItsParamsTest.kt sce-build/tests/fixtures/static_datamodel/static_send_http.scxml
+
+mutation_case "a pair's value is not rendered as the text it spells" <<'PY'
+edit("tools/codegen/templates/kotlin/actions/send.kt.jinja2",
+     "if (v is RepeatedParam) v.values.map { valueToWireString(it) } else listOf(valueToWireString(v))",
+     "if (v is RepeatedParam) v.values.map { valueToWireString(it) } else listOf(\"\")")
+PY
+
+mutation_case "a BasicHTTP request is handed no pairs" <<'PY'
+edit("tools/codegen/templates/kotlin/actions/send.kt.jinja2",
+     ", httpContent, sendWireParams, {{ send_id_kt }})\n{% endif %}\n{% elif not (action.event or dyn_event) %}",
+     ", httpContent, emptyMap(), {{ send_id_kt }})\n{% endif %}\n{% elif not (action.event or dyn_event) %}")
+PY

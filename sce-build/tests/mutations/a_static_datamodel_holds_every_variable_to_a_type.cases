@@ -157,6 +157,15 @@ edit("sce-build/src/parser.rs",
      "        if false {\n")
 PY
 
+# A BasicHTTP send's params are the text map the engine hands its transport, which the
+# C++ machine fills from each lowered value (docs/adr/0005, decision 4). The refusal
+# put back names a construct that generates and runs, and the judge reads the machine.
+mutation_case "C++ refuses a BasicHTTP send's param again" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "                // spells.\n                \"send\" => {}",
+     "                // spells.\n                \"send\"\n                    if !action.params.is_empty()\n                        && effective_send_types(action).any(|send_type| {\n                            send_type == \"http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor\"\n                        }) =>\n                {\n                    return Some(\"a BasicHTTP <send> carrying a <param>\".to_string())\n                }\n                \"send\" => {}")
+PY
+
 # The declaration names the values an expression may take, so a send with none has
 # nothing it could choose among.
 mutation_case "a declaration is let stand on a send with no computed target" <<'PY'

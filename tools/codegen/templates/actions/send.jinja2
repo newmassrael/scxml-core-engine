@@ -103,8 +103,9 @@ typedParams["{{ param.name | escape_cpp }}"].push_back(ScriptValue(std::string("
    maps are filled, as a literal's are: the typed one is the JSON every delivery
    carries, and the text one is what a host-served processor's request holds as
    its `params` — a host that read only the JSON would get a pair the other
-   backends also hand it as text. A BasicHTTP send with a param is refused by name
-   where the machine is lowered. #}
+   backends also hand it as text. It is also what a BasicHTTP request's form is a
+   rendering of: the engine hands the text map to its transport, so the pair
+   needs no second spelling (docs/adr/0005, decision 4). #}
 {
 {% if param.native_fails %}
     SCE::Forge::AlgorithmFailure sce_failure_;

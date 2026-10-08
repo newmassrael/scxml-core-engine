@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 0665514219a2bd1920179bb95b88947aea9f3cb1e16b583d8593e5f3d24c015b
+// source-hash: 8831cdf9a24d5319be675dfb105f20981ee799a3ff543da9abd5bce677e481a1
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_wire_enum.scxml

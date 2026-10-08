@@ -1,0 +1,44 @@
+# Mutation cases for "the `<param>`s of a BasicHTTP `<send>` cross as the text a form
+# carries" under the Go backend (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Params";
+# docs/adr/0005, decision 4).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_go_send_over_http_carries_its_params_go.cases`.
+#
+# `static_send_http` sends a request carrying six pairs read from the machine's fields
+# and one carrying `count` beside a `big` that overflows. The engine hands the request
+# to its transport with the text map the machine built from its typed pairs, which the
+# test reads. The mutants each take one decision of that away, and each still compiles:
+#
+#   a pair that cannot fail carries no value;
+#   a pair that can fail carries no value;
+#   the request is handed no pairs at all.
+#
+# The template reaches the tests only through the committed machine the regeneration
+# writes, so both halves are declared. Anchors are literal slices of the template; an
+# edit that moves one is reported INCONCLUSIVE with the anchor quoted, never as a
+# pass.
+
+mutation_go backends/go/tests ./integration/static_datamodel/
+mutation_targets tools/codegen/templates/go/actions/send.go.jinja2
+mutation_targets backends/go/tests/integration/static_datamodel/static_send_http/static_send_http_sm.go
+mutation_regen scripts/regen_static_datamodel_go.sh
+mutation_oracles backends/go/tests/integration/static_datamodel/a_static_send_over_http_carries_its_params_test.go sce-build/tests/fixtures/static_datamodel/static_send_http.scxml
+
+mutation_case "a pair that cannot fail carries no value" <<'PY'
+edit("tools/codegen/templates/go/actions/send.go.jinja2",
+     "{% else %}\n\t\t\tparts = append(parts, sce.EventDataParam{Name: \"{{ param.name | escape_go }}\", Value: sceValue})\n{% endif %}\n\t\t}\n{% elif param.expr %}",
+     "{% else %}\n\t\t\t_ = sceValue\n\t\t\tparts = append(parts, sce.EventDataParam{Name: \"{{ param.name | escape_go }}\", Value: \"\"})\n{% endif %}\n\t\t}\n{% elif param.expr %}")
+PY
+
+mutation_case "a pair that can fail carries no value" <<'PY'
+edit("tools/codegen/templates/go/actions/send.go.jinja2",
+     "\t\t\tif !sceFailure.Failed() {\n\t\t\t\tparts = append(parts, sce.EventDataParam{Name: \"{{ param.name | escape_go }}\", Value: sceValue})",
+     "\t\t\tif !sceFailure.Failed() {\n\t\t\t\t_ = sceValue\n\t\t\t\tparts = append(parts, sce.EventDataParam{Name: \"{{ param.name | escape_go }}\", Value: \"\"})")
+PY
+
+mutation_case "a BasicHTTP request is handed no pairs" <<'PY'
+edit("tools/codegen/templates/go/actions/send.go.jinja2",
+     "\t\t\thttpParams := sce.WireParamsFromTypedParams(parts)\n{% elif has_params %}",
+     "\t\t\thttpParams := sce.WireParamsFromTypedParams(parts)\n\t\t\thttpParams = map[string][]string{}\n{% elif has_params %}")
+PY

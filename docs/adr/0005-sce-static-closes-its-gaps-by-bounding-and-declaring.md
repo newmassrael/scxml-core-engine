@@ -163,6 +163,22 @@ sends (each value as the text a form carries), and the processor is the runtime'
 generated code. A type the host serves is lowered already (`--host-processor`); a type
 neither the runtime nor the host serves stays refused by name at the `<send>`.
 
+As landed for Rust, Kotlin, Go, Python and C++: the machine hands its engine the text
+each `<param>` spells, by the one rule every engine writes (a string as itself, an
+integer as its decimal digits, a bool as `true` or `false`, a real as its ECMAScript
+`String()`), and the engine's transport renders the form from it. Four of the five
+already did, and nothing had ever read what they produced: no fixture sent BasicHTTP from
+a `sce-static` machine. `static_send_http` is that fixture, held on each engine by a test
+that records the request where the engine hands it to its transport (every engine has a
+callback for that, so no listener is involved). A scenario states what a machine's fields
+hold and not what it sent, so the fixture has none; the Interpreter creates its HTTP
+client through a factory and runs the document's own `<send>`, and is held by the W3C
+`harness: http` fixtures as before. C++ refused the construct by name until now, and the
+refusal had outlived its reason: it was written before the machine filled the text map,
+and is removed with no new template code. C11 still refuses every BasicHTTP type. Its
+runtime has an HTTP client, but no callback a test can observe and no native spelling of a
+typed value as wire text; that is the step that remains.
+
 ### 5. A mesh `<invoke>` is lowered by each backend as its mesh runtime lands
 
 `SCE_MESH.md` ("Current realization state") says the mesh runtime exists for C++ only

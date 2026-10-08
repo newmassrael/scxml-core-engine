@@ -1,0 +1,38 @@
+# Mutation cases for "the `<param>`s of a BasicHTTP `<send>` cross as the text a form
+# carries" under the Rust backend (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Params";
+# docs/adr/0005, decision 4).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_rust_send_over_http_carries_its_params_rust.cases`.
+#
+# `static_send_http` sends a request carrying six pairs read from the machine's fields
+# and one carrying `count` beside a `big` that overflows. The engine hands the request
+# to its transport with the text map the machine built from its typed pairs, which the
+# test reads. The mutants each take one decision of that away, and each still compiles:
+#
+#   a field's value is computed and never put among the pairs;
+#   the request is handed no pairs at all.
+#
+# The template reaches the tests only through the committed machine the regeneration
+# writes, so both halves are declared: the generated file is compiled into the test,
+# and the command is what carries a mutated template into it. Anchors are literal
+# slices of the template; an edit that moves one is reported INCONCLUSIVE with the
+# anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-tests --test a_static_send_over_http_carries_its_params
+mutation_targets tools/codegen/templates/rust/actions/send.rs.jinja2
+mutation_targets backends/rust/tests/src/integration/static_datamodel/static_send_http_sm.rs
+mutation_regen scripts/regen_static_datamodel_rust.sh
+mutation_oracles backends/rust/tests/tests/a_static_send_over_http_carries_its_params.rs sce-build/tests/fixtures/static_datamodel/static_send_http.scxml
+
+mutation_case "a field's value is computed and never put among the pairs" <<'PY'
+edit("tools/codegen/templates/rust/actions/send.rs.jinja2",
+     "        wire_params.entry(\"{{ param.name | escape_rust }}\".to_string()).or_default().push({{ param.native_value }});",
+     "        let _ = {{ param.native_value }};")
+PY
+
+mutation_case "a BasicHTTP request is handed no pairs" <<'PY'
+edit("tools/codegen/templates/rust/actions/send.rs.jinja2",
+     "        let http_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);\n{% elif has_params %}",
+     "        let http_params = std::collections::HashMap::<String, Vec<String>>::new();\n{% elif has_params %}")
+PY

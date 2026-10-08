@@ -1,0 +1,44 @@
+# Mutation cases for "the `<param>`s of a BasicHTTP `<send>` cross as the text a form
+# carries" under the C++ backend (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Params";
+# docs/adr/0005, decision 4).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_cpp_send_over_http_carries_its_params_ctest.cases`.
+#
+# `static_send_http` sends one BasicHTTP request carrying six pairs (`count`, `ready`,
+# `label`, `delta` and `ratio` read from fields; `twice` a checked multiplication that
+# can fail) and one carrying `count` beside a `big` that overflows. The engine hands
+# the request to its transport with the text map the machine filled, which the test
+# reads: so the map is what the machine writes, and the mutants each take one decision
+# of it away, and each still compiles:
+#
+#   the text of a param that cannot fail is not put in the map;
+#   the text of a param that can fail is not put in the map;
+#   the request is handed no pairs at all.
+#
+# The template is read by the generator binary CMake already holds, so the build the
+# ctest names carries a mutated template into the generated machine. Anchors are
+# literal slices of the template; an edit that moves one is reported INCONCLUSIVE
+# with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^static_datamodel_generated_cpp$'
+mutation_targets tools/codegen/templates/actions/send.jinja2
+mutation_oracles tests/integration/AStaticDatamodelRunsGeneratedCppTest.cpp sce-build/tests/fixtures/static_datamodel/static_send_http.scxml
+
+mutation_case "the text of a param that cannot fail is not put in the map" <<'PY'
+edit("tools/codegen/templates/actions/send.jinja2",
+     "{% else %}\n    params[\"{{ param.name | escape_cpp }}\"].push_back(\n        ::SCE::ScriptResultUtils::valueText(paramValue));",
+     "{% else %}\n    params[\"{{ param.name | escape_cpp }}\"].push_back(\n        std::string());")
+PY
+
+mutation_case "the text of a param that can fail is not put in the map" <<'PY'
+edit("tools/codegen/templates/actions/send.jinja2",
+     "    } else {\n        params[\"{{ param.name | escape_cpp }}\"].push_back(\n            ::SCE::ScriptResultUtils::valueText(paramValue));",
+     "    } else {\n        params[\"{{ param.name | escape_cpp }}\"].push_back(\n            std::string());")
+PY
+
+mutation_case "a BasicHTTP request is handed no pairs" <<'PY'
+edit("tools/codegen/templates/actions/send.jinja2",
+     "{% endif %}, params, sendId);\n{% endif %}\n{% elif action.targetexpr and (action.event or dyn_event) %}",
+     "{% endif %}, std::map<std::string, std::vector<std::string>>{}, sendId);\n{% endif %}\n{% elif action.targetexpr and (action.event or dyn_event) %}")
+PY

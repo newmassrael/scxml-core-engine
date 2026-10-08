@@ -3161,7 +3161,13 @@ machine's fields at the moment the element runs — W3C SCXML 6.2.3 evaluates a
 instant, and a `<final>`'s donedata is evaluated as the state is entered (5.5)
 — and lowered to native
 code, so it needs no script engine and reads the value the field holds now,
-which a copy kept anywhere else would not. A `location` names a variable and is
+which a copy kept anywhere else would not. A BasicHTTP `<send>` carries the same
+pairs: the engine hands its transport the text each value spells (a string as
+itself, an integer as its decimal digits, a bool as `true` or `false`, a real as
+its ECMAScript `String()`), and the transport renders the form from it
+(docs/adr/0005, decision 4; `static_send_http`, held on each engine by a test
+that records the request — Rust, Kotlin, Go, Python and C++; C11 refuses a BasicHTTP
+send for want of a lowering). A `location` names a variable and is
 read as `expr="<variable>"`. A `<send>`'s `namelist` is the `<param name="x"
 expr="x"/>` of each name in it, after the `<param>`s the element writes, held to
 the same rule: a name no variable declares, or a variable of a type that has no
@@ -3329,8 +3335,8 @@ processor's, and whose `<else>` is a `<send>` of a type nothing delivers through
 every engine already answers with `error.execution`
 (`a_computed_type_expands_to_one_send_for_each_processor_it_declares.cases`). Each
 engine therefore delivers by the arm it has for a written type, and a language that
-refuses a written one refuses a set that names it — C11 BasicHTTP, C++ a BasicHTTP
-`<param>`. The Interpreter runs the document's own `<send>`, so its lowering rewrites
+refuses a written one refuses a set that names it — C11 refuses BasicHTTP. The
+Interpreter runs the document's own `<send>`, so its lowering rewrites
 the attribute to `SceStatic.processor(<expression>, [<entries>])`, which throws for a
 value outside the set, so the attribute cannot be evaluated and the engine raises
 `error.execution` with nothing sent
@@ -4076,8 +4082,9 @@ yet"): scalar variables, a transition's guard, `<assign>`, `<if>` /
 the typed map the event's JSON is built from (a pair whose value failed is
 reported and left out and the message still goes, §scxml-5.7.1), and a literal
 `<content>` is the normalised text handed to the helper `<donedata>` takes with
-no data model; a BasicHTTP `<send>` that carries a `<param>` is refused by name,
-because it needs each value as the text a form carries — `In()`, a `<sce:action>`
+no data model, and a BasicHTTP `<send>`'s `<param>`s are the text map the engine
+hands its transport, which renders the form (docs/adr/0005, decision 4) —
+`In()`, a `<sce:action>`
 whose arguments are typed expressions
 of the machine's variables, an event's typed payload, an enum variable, a
 record variable, and a list of numbers, bools or records with `<sce:append>`,
