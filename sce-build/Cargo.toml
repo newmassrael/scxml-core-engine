@@ -808,6 +808,13 @@ name = "cli_acceptance_record_wire"
 path = "tests/cli_acceptance_record_wire.rs"
 required-features = ["cli"]
 
+# `acceptance-delta`, through the binary: a record's evidence against a design now, per
+# requirement, and the lines it prints against the ones the library computes.
+[[test]]
+name = "an_acceptance_says_what_moved_since_it_was_taken"
+path = "tests/an_acceptance_says_what_moved_since_it_was_taken.rs"
+required-features = ["cli"]
+
 [[test]]
 name = "cli_lint_parity"
 path = "tests/cli_lint_parity.rs"
