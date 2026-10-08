@@ -31,7 +31,9 @@ So the shape a caller gets is:
     scxml_acceptance_check  whether that acceptance still holds
     scxml_acceptance_impact which of several acceptances a changed shared file touches
     scxml_acceptance_delta  what moved in a design since it was accepted, per requirement
-    works_list             the specifications the owner keeps in the workbench application
+    scxml_revision_check    whether a revised design stayed within the reach of what changed
+    scxml_revision_report   the page the owner reads for a revision: only what to look at again
+    works_list            the specifications the owner keeps in the workbench application
     works_read              one work: its text now, the model saved for it, its requirements, and the owner's acceptance
     works_save_model        save the model written for it, once the product accepts it
     works_save_requirements save the requirement list read from its text, once the product loads it
@@ -93,7 +95,7 @@ from .gaps import ORDER as GAP_ORDER
 from .gaps import report as gap_report
 from .pack import check_pack, load_pack
 from .pseudo import render as render_pseudo
-from . import house_rule, requirement_set, works
+from . import house_rule, requirement_set, revision, works
 from .scenario_driver import answer as scenario_answer
 from .scenario_driver import read_set as read_scenario_set
 from .scenario_driver import run as run_scenarios
@@ -191,7 +193,12 @@ SERVER_INSTRUCTIONS = (
     "design was edited or drafted again after the owner accepted it, "
     "scxml_acceptance_delta says which requirements' evidence moved and where "
     "(give it the acceptance record and the draft): tell the owner those, and "
-    "that the others read the same, not that they are met. "
+    "that the others read the same, not that they are met. When the specification "
+    "was revised and scxml_accepted_for hands back the accepted design as "
+    "`revise_from`, revise that design instead of drafting afresh: build the "
+    "requirement list against its lineage, change only what its `delta` says "
+    "moved, run scxml_revision_check, fix every violation or explain it to the "
+    "owner, and show them the page scxml_revision_report returns verbatim. "
     "Put the <?xml ...?> declaration "
     "first in every file, with nothing before it -- not a comment. What you "
     "check is the text you save and show: check the file as saved. "
@@ -1316,6 +1323,77 @@ TOOLS = [
                          "description": "The directory the record's paths are relative to."},
                 "design": {"type": "string", "description": (
                     "Path to another draft of the design to compare with (local servers only).")},
+            },
+        },
+    },
+    {
+        "name": "scxml_revision_check",
+        "description": (
+            "Say whether a revised design stayed within the reach of what the "
+            "specification changed. Use it after the specification was revised, "
+            "the requirement list was built again against its lineage "
+            "(scxml_requirement_set with `lineage` and `previous_sidecar`) and the "
+            "design was revised from the accepted one. Give `delta` (the `delta` "
+            "that scxml_requirement_set returned for the revised list, as it "
+            "came), `record` (the acceptance record scxml_accept wrote) and "
+            "`root`; `design` names the revised draft when it is not the "
+            "record's own document. Local servers only. It joins, per "
+            "requirement, what happened to its WORDS (carried, changed, new, "
+            "retired) with what happened to the design's EVIDENCE for it "
+            "(scxml_acceptance_delta). Returns JSON: `verdict` "
+            "(`within-reach`, or `outside-reach` when a design moved where the "
+            "words did not, or still cites what the specification dropped), "
+            "`summary`, `requirements` (each with `kind` and `severity`: "
+            "`violation`, `look` or `ok`, and the places that moved) and "
+            "`unclaimed` (new rows no requirement claims). Tell the owner every "
+            "violation and every look; `within-reach` is not `right`, and "
+            "nothing is accepted by this tool. A violation is for you to fix in "
+            "the design, or to explain to the owner."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "required": ["delta", "record", "root"],
+            "properties": {
+                "delta": {"type": "object", "description": (
+                    "The `delta` scxml_requirement_set returned for the revised list.")},
+                "record": {"type": "string",
+                           "description": "Path to the acceptance record (local servers only)."},
+                "root": {"type": "string",
+                         "description": "The directory the record's paths are relative to."},
+                "design": {"type": "string", "description": (
+                    "Path to the revised draft, when not the record's own document.")},
+            },
+        },
+    },
+    {
+        "name": "scxml_revision_report",
+        "description": (
+            "The page the owner reads before accepting a revised design: only "
+            "what to look at again, with the requirements whose words and "
+            "evidence both read the same folded into one line. The same join "
+            "as scxml_revision_check and the same arguments (`delta`, `record`, "
+            "`root`, optionally `design`). Give `sidecar` (or `sidecar_text`), "
+            "the sidecar of the revised list, to print each requirement's "
+            "sentence; without it the page holds ids and places and no words, "
+            "and with it the page carries someone else's sentences and says so. "
+            "Returns JSON: `verdict`, `summary` and `page` -- show the page "
+            "verbatim. `carries over` means the product's closure of what the "
+            "requirement depends on reads the same, not that it is met. Nothing "
+            "is accepted by this tool."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "required": ["delta", "record", "root"],
+            "properties": {
+                "delta": {"type": "object", "description": (
+                    "The `delta` scxml_requirement_set returned for the revised list.")},
+                "record": {"type": "string",
+                           "description": "Path to the acceptance record (local servers only)."},
+                "root": {"type": "string",
+                         "description": "The directory the record's paths are relative to."},
+                "design": {"type": "string", "description": (
+                    "Path to the revised draft, when not the record's own document.")},
+                **_file_input("sidecar", "the sidecar of the revised requirement list"),
             },
         },
     },
@@ -3017,6 +3095,81 @@ def _acceptance_delta_tool(args: dict, staging: _Staging) -> dict:
                                      cwd=staging.dir))
 
 
+def _revision_join(args: dict, staging: _Staging):
+    """The words delta joined with the evidence of the design now, or a failure to return."""
+    if staging.remote:
+        raise ToolArgumentError(
+            "the revision tools read the owner's own acceptance record and design, so they are "
+            "offered on a local server only")
+    delta = args.get("delta")
+    if not isinstance(delta, dict):
+        raise ToolArgumentError("'delta' has to be the `delta` object scxml_requirement_set returned "
+                                "for the revised list")
+    record = _path_arg(args, "record", "the acceptance record")
+    root = _path_arg(args, "root", "the directory the record's paths are relative to")
+    design = (_path_arg(args, "design", "the revised draft").resolve()
+              if args.get("design") is not None else None)
+    report, refusal = acceptance_delta(record.resolve(), root.resolve(), design=design,
+                                       cwd=staging.dir)
+    if refusal:
+        return None, _failure(refusal)
+    try:
+        return revision.join(delta, json.loads(report)), None
+    except revision.RevisionError as error:
+        raise ToolArgumentError(str(error)) from error
+
+
+def _revision_check_tool(args: dict, staging: _Staging) -> dict:
+    result, failure = _revision_join(args, staging)
+    return failure or _text(json.dumps(result, indent=2, ensure_ascii=False) + "\n")
+
+
+def _revision_report_tool(args: dict, staging: _Staging) -> dict:
+    result, failure = _revision_join(args, staging)
+    if failure:
+        return failure
+    sentences = None
+    sidecar = staging.file(args, "sidecar", "the sidecar of the revised requirement list",
+                           "requirements.sidecar.json", required=False)
+    if sidecar is not None:
+        try:
+            held = json.loads(_staged_text(staging, sidecar, "the sidecar"))["text"]
+            sentences = {id_: text for id_, text in held.items() if isinstance(text, str)}
+        except (ValueError, KeyError, AttributeError) as error:
+            raise ToolArgumentError(f"'sidecar' is not a requirement sidecar: {error}") from error
+    delta = args["delta"]
+    title = (f"revision {delta['from_rev']} to {delta['rev']}"
+             if isinstance(delta.get("from_rev"), str) and isinstance(delta.get("rev"), str) else "")
+    answer = {"verdict": result["verdict"], "summary": result["summary"],
+              "page": revision.render(result, sentences, title=title)}
+    return _text(json.dumps(answer, indent=2, ensure_ascii=False) + "\n")
+
+
+# The lapses that mean the design's OWN files are not as they were accepted. Every other lapse is
+# of what the design was authored from (the specification, the decision record, the profile, the
+# examples, the manifest, a house rule), and leaves the accepted design on disk exactly as it was.
+_DESIGN_MOVED = frozenset({"moved", "missing", "added", "unparseable"})
+
+
+def _revise_from(record_path: pathlib.Path, base: pathlib.Path, cwd: pathlib.Path | None):
+    """The accepted design as `{document, document_text, page}`, when none of its own files moved
+    since it was accepted; else None. Asked of the product's own `acceptance-impact`, which answers
+    each lapse as data with its `kind`, never of the sentences the check prints."""
+    report, refusal = acceptance_impact([record_path.resolve()], base.resolve(), cwd=cwd)
+    if refusal:
+        return None
+    entries = json.loads(report)["records"]
+    if len(entries) != 1 or "lapses" not in entries[0]:
+        return None
+    if any(lapse.get("kind") in _DESIGN_MOVED for lapse in entries[0]["lapses"]):
+        return None
+    document = json.loads(record_path.read_text(encoding="utf-8"))["document"]
+    page, refused = pseudo_page(base / document, None, None, cwd=cwd)
+    return {"document": document,
+            "document_text": (base / document).read_text(encoding="utf-8"),
+            "page": page if not refused else None}
+
+
 def _accepted_for_tool(args: dict, staging: _Staging) -> dict:
     """The accepted design for this specification, when there is one.
 
@@ -3041,12 +3194,24 @@ def _accepted_for_tool(args: dict, staging: _Staging) -> dict:
     if refusal:
         return _failure(refusal)
     answer = json.loads(report)
-    if answer["verdict"] != "holds":
-        answer["next"] = ("no accepted design answers for these files: write a draft, "
-                          "and show the owner what differs")
-        return _text(json.dumps(answer, indent=2, ensure_ascii=False) + "\n")
     base = root if cwd is None else cwd / root
     record_path = record if cwd is None else cwd / record
+    if answer["verdict"] != "holds":
+        revise = _revise_from(record_path, base, cwd)
+        if revise is None:
+            answer["next"] = ("no accepted design answers for these files: write a draft, "
+                              "and show the owner what differs; the design's own files moved since "
+                              "it was accepted, so the accepted design is no longer there to start "
+                              "from")
+        else:
+            answer["revise_from"] = revise
+            answer["next"] = (
+                "the acceptance lapsed only because what the design was authored from moved, and "
+                "the accepted design is still on disk as accepted: revise it, do not write a new "
+                "draft. Build the requirement list again against its lineage (scxml_requirement_set "
+                "with `lineage` and `previous_sidecar`), change only what its `delta` says moved, "
+                "then run scxml_revision_check and show the owner scxml_revision_report")
+        return _text(json.dumps(answer, indent=2, ensure_ascii=False) + "\n")
     document = json.loads(record_path.read_text(encoding="utf-8"))["document"]
     page, refused = pseudo_page(base / document, None, None, cwd=cwd)
     answer.update(
@@ -3568,6 +3733,8 @@ _PACK_FREE = {
     "scxml_accepted_for": _accepted_for_tool,
     "scxml_acceptance_impact": _acceptance_impact_tool,
     "scxml_acceptance_delta": _acceptance_delta_tool,
+    "scxml_revision_check": _revision_check_tool,
+    "scxml_revision_report": _revision_report_tool,
 }
 
 

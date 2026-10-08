@@ -132,7 +132,8 @@ class TheServerSpeaksTheProtocol(unittest.TestCase):
              "render_scxml_diagram", "scxml_unresolved", "scxml_requirement_set",
              "scxml_requirements", "scxml_scenarios", "scxml_house_rule",
              "scxml_acceptance_report", "scxml_accept", "scxml_acceptance_check",
-             "scxml_acceptance_impact", "scxml_acceptance_delta", "scxml_accepted_for",
+             "scxml_acceptance_impact", "scxml_acceptance_delta", "scxml_revision_check",
+             "scxml_revision_report", "scxml_accepted_for",
              "works_list", "works_read", "works_save_model", "works_save_requirements",
              "works_begin_generation", "works_finish_generation", "works_fail_generation"},
             names)
@@ -181,6 +182,8 @@ class TheServerSpeaksTheProtocol(unittest.TestCase):
         # `acceptance-impact`, like the other acceptance tools: the question is
         # about the owner's records, and no pack is in it. `scxml_acceptance_delta`
         # is the same over `acceptance-delta`: a record and a design, no pack.
+        # `scxml_revision_check` and `scxml_revision_report` join that with the words delta of
+        # `scxml_requirement_set`, a pure step of this core with no pack and no command-line face.
         # `works_list`, `works_read`, `works_save_model`,
         # `works_save_requirements` and the three that take, finish and give up a
         # generation (`works_begin_generation`, `works_finish_generation`,
@@ -198,7 +201,7 @@ class TheServerSpeaksTheProtocol(unittest.TestCase):
                     "scxml_unresolved", "scxml_requirement_set", "scxml_requirements",
                     "scxml_scenarios", "scxml_house_rule",
                     "scxml_acceptance_report", "scxml_acceptance_impact",
-                    "scxml_acceptance_delta",
+                    "scxml_acceptance_delta", "scxml_revision_check", "scxml_revision_report",
                     "scxml_accept", "scxml_acceptance_check", "scxml_accepted_for"}
         self.assertEqual(commands, {t["name"] for t in mcp.TOOLS} - mcp_only)
 

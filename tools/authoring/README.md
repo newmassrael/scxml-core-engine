@@ -331,6 +331,26 @@ depends on reading the same, and the acceptance still lapses by its bytes. A rec
 taken before records kept this evidence is refused. Local servers only
 (`docs/adr/0008-an-acceptance-says-what-moved-since-it-was-taken.md`).
 
+**Revising from the accepted design.** When the specification was revised and the
+design's own files did not move, `scxml_accepted_for` answers `lapsed` and also hands
+the accepted design back (`revise_from`: its document, its text and its page): revise
+that, do not draft afresh. When a design file moved the accepted bytes are gone and no
+base is offered. Build the requirement list again against its lineage
+(`scxml_requirement_set` with `lineage` and `previous_sidecar`), change only what its
+`delta` says moved, then **scxml_revision_check** joins, per requirement, what happened
+to its words (carried, changed, new, retired) with what happened to the design's
+evidence for it (`scxml_acceptance_delta`): `outside-reach` when a design moved where
+the words did not (`moved-without-reason`) or still cites what the specification dropped
+(`retired-still-cited`), `within-reach` otherwise, with every place a second look should
+go (`look`). **scxml_revision_report** renders the same join as the page the owner reads:
+what carries over folded into one line, everything else listed with the places that
+moved, and a requirement's sentence printed only when given the sidecar of the revised
+list (the page then says it carries someone else's sentences). `within-reach` is not
+"right": it says the design's changes are accounted for by changes in the words, on the
+product's closure of what a requirement depends on, and the scenarios of an unchanged
+requirement are still played with `scxml_scenarios`. Local servers only
+(`docs/adr/0009-a-revision-stays-within-the-reach-of-what-changed.md`).
+
 #### Examples a design is played against
 
 A requirement met by something NOT happening ("nothing is sent after the
