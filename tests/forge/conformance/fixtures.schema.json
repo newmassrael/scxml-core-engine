@@ -482,6 +482,10 @@
               "description": "The document is `sce:encoding=\"cbor\"` (SCE_FORGE.md §4.6.1): its encode can refuse a value, so a fragment unwraps the encode's result, and its non-required entries are `optional` fields. Derived from the same parse the generator reads, like `has_test_vectors`; fixtures.json never states it.",
               "type": "boolean"
             },
+            "content_line": {
+              "description": "The document is `sce:encoding=\"content-line\"` (SCE_FORGE.md §4.6.4): its encode and decode can refuse a value, a case may be `decode_only` (an input the codec reads and does not write), and its non-required entries are `optional` and its `sce:max-count` ones `list` fields. Derived from the same parse the generator reads; fixtures.json never states it.",
+              "type": "boolean"
+            },
             "fields": {
               "type": "array",
               "items": {
@@ -797,6 +801,10 @@
       "properties": {
         "compare": {
           "$ref": "#/definitions/CompareMode"
+        },
+        "list": {
+          "description": "The field is a list of values — a property of an `sce:encoding=\"content-line\"` codec that declares `sce:max-count` (SCE_FORGE.md §4.6.4), which each language carries as its bounded list. A round-trip case writes it as a JSON array, and an empty one is an absent property. Derived from the document, like `optional`.",
+          "type": "boolean"
         },
         "name": {
           "type": "string"
