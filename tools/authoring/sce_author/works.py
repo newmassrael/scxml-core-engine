@@ -176,6 +176,11 @@ def _requirements_of(held: dict | None, standing: str | None,
             "manifest_text": held["manifest"]}
     if held["sidecar"] is not None:
         read["sidecar_text"] = held["sidecar"]
+    # Present only for a list that has one (a list made before lineages, or by a client that
+    # did not give one, has none). What the next revision of the text is built against, so that
+    # an id is issued once: give it back as `lineage` to scxml_requirement_set.
+    if held.get("lineage") is not None:
+        read["lineage_text"] = held["lineage"]
     return read
 
 
@@ -213,18 +218,25 @@ def read_acceptance(work: str) -> dict:
 
 
 def save_requirements(work: str, base: str | None, written_for: str | None, *,
-                      manifest: str, sidecar: str | None = None) -> dict:
-    """Save the work's next requirement list: the `manifest` (coordinates) and the
-    `sidecar` (the quoted sentences), each as the text `scxml_requirement_set` made.
+                      manifest: str, sidecar: str | None = None,
+                      lineage: str | None = None) -> dict:
+    """Save the work's next requirement list: the `manifest` (coordinates), the
+    `sidecar` (the quoted sentences) and the `lineage` (which id was issued for which
+    requirement, across the revisions of the text), each as the text
+    `scxml_requirement_set` made.
 
     `base` is the list revision the writer read (None for a work's first list); a base
     that is no longer current is refused as a `conflict` and nothing is written.
     `written_for` is the text revision the list was read from, or None when the writer
     cannot say -- which the application shows as unstated, and not as current.
+
+    A list saved without a lineage onto a work that holds one is refused
+    (`lineage-dropped`): the next revision would issue an id that was retired again.
     """
     return call_work("save_requirements", {
         "id": work, "base": base, "written_for": written_for, "manifest": manifest,
-        **({"sidecar": sidecar} if sidecar is not None else {})})
+        **({"sidecar": sidecar} if sidecar is not None else {}),
+        **({"lineage": lineage} if lineage is not None else {})})
 
 
 def _model_of(answer: dict) -> dict | None:

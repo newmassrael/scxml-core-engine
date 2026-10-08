@@ -1062,6 +1062,24 @@ application opens (`SCE_WORKS_DIR`, else the per-user data directory).
   `sidecar_text` byte for byte (the owner's acceptance pins their hash), the text
   revision it was `written_for`, and its `standing` against the text, so a list
   read from an earlier text is `behind` and the client is told to build it again.
+  **The work keeps the lineage of its list** (`lineage_text`, which `works_read`
+  gives back when the list has one): which id was issued for which requirement
+  across the revisions of the text, hashes and numbers and no word of it. A client
+  that builds the next list gives `scxml_requirement_set` the `lineage_text` and the
+  `sidecar_text` it read as `lineage_text` and `previous_sidecar_text` (a list that
+  has none yet: its `manifest_text` as `previous_manifest_text`) and saves the three
+  texts it returns together, so every requirement keeps its id and an id that was
+  retired is never issued again; measured on three revisions of a three-sentence
+  text, a manifest and a sidecar alone gave the new sentence the dropped one's id.
+  `works_save_requirements` refuses, and writes nothing, for a list that would lose
+  the lineage the work holds (`lineage-dropped`; a generation's is told at once and
+  not when it is finished), for a lineage that is not the lineage of this manifest
+  (the digest of its last revision's manifest, its document and revision are
+  compared), and for one that does not continue the work's (an id is never forgotten,
+  a retired one never lives again, a requirement's history is only added to, the
+  ids issued since are numbered from where the last left off). The core holds the
+  first of these; the other two are this package's, because it owns what a lineage
+  means (`docs/adr/0011-a-work-keeps-its-requirement-lineage-with-its-requirement-list.md`).
 - **A model can be asked for, and written for the request.** The owner asks for a
   model in the application (`works_read` gives `request`: `queued` means nobody
   has taken it). `works_begin_generation` takes that request, or makes one for a

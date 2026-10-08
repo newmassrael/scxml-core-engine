@@ -95,7 +95,7 @@ from .gaps import ORDER as GAP_ORDER
 from .gaps import report as gap_report
 from .pack import check_pack, load_pack
 from .pseudo import render as render_pseudo
-from . import house_rule, requirement_set, revision, works
+from . import house_rule, requirement_lineage, requirement_set, revision, works
 from .scenario_driver import answer as scenario_answer
 from .scenario_driver import read_set as read_scenario_set
 from .scenario_driver import run as run_scenarios
@@ -266,7 +266,14 @@ SERVER_INSTRUCTIONS = (
     "with scxml_requirement_set from the text works_read gave you and save "
     "them with works_save_requirements (source_revision = source.revision), "
     "and works_read gives them back as manifest_text and sidecar_text for "
-    "scxml_requirements and scxml_acceptance_report. The owner accepts a "
+    "scxml_requirements and scxml_acceptance_report. When the work already "
+    "holds a list, build the next one against it: give scxml_requirement_set "
+    "works_read's requirements.lineage_text as lineage_text and its "
+    "sidecar_text as previous_sidecar_text (a list that has no lineage yet: its "
+    "manifest_text as previous_manifest_text), and save the manifest_text, "
+    "sidecar_text and lineage_text it returns together; the lineage is what "
+    "keeps an id from being issued twice, and a work that holds one refuses a "
+    "list without it. The owner accepts a "
     "design in the application, on the page SCE writes there: nothing here "
     "records that acceptance, and works_read only tells you whether one "
     "exists (`acceptance`) and whether it still holds. When it holds, the "
@@ -1481,8 +1488,10 @@ TOOLS = [
             "again and write the model again from it. A work that has no text "
             "yet has `source` null: tell the owner, and write nothing. "
             "`requirements` is the list the text was read into, when one was "
-            "saved (`manifest_text` and `sidecar_text` exactly as saved, its "
-            "`standing` against the text); `acceptance` says whether the OWNER "
+            "saved (`manifest_text`, `sidecar_text` and, when it has one, "
+            "`lineage_text` exactly as saved, its `standing` against the text; "
+            "the lineage is what a revised list is built against so that every "
+            "requirement keeps its id); `acceptance` says whether the OWNER "
             "accepted this design in the application: `standing` is `none`, "
             "`holds` or `lapsed` (with SCE's own sentence of what moved, "
             "`lapse`), with when (`accepted_at`), on which `channel` and what "
@@ -1581,7 +1590,11 @@ TOOLS = [
             "Save the requirement list you read from a work's text, so the owner "
             "can accept a design against it in the application. Build the list "
             "with scxml_requirement_set from the `source.text` works_read gave "
-            "you and pass its `manifest_text` and `sidecar_text` here unchanged; "
+            "you and pass its `manifest_text`, `sidecar_text` and `lineage_text` "
+            "here unchanged (when the work already holds a list, give "
+            "scxml_requirement_set the `requirements.lineage_text` works_read "
+            "returned as its `lineage_text`, and its `sidecar_text` as "
+            "`previous_sidecar_text`, so each requirement keeps its id); "
             "give `source_revision` = the `source.revision` you read (without it "
             "the application can only say that nobody recorded which text the "
             "list is about), and `base` = the `requirements.revision` works_read "
@@ -1603,6 +1616,15 @@ TOOLS = [
                 "sidecar_text": {"type": "string", "description": (
                     "The sidecar scxml_requirement_set returned (the sentences each id "
                     "quotes), exactly as it returned it.")},
+                "lineage_text": {"type": "string", "description": (
+                    "The lineage scxml_requirement_set returned (which id was issued for "
+                    "which requirement, across the revisions of the text; hashes and "
+                    "numbers, no word of the text), exactly as it returned it, from the "
+                    "same call as the manifest. Give it whenever you have it: a work that "
+                    "holds one refuses a list without (`lineage-dropped`), because the next "
+                    "revision would issue an id that was retired again, to another "
+                    "requirement. It has to be the lineage of this manifest and to continue "
+                    "the one the work holds.")},
                 "source_revision": {"type": "string", "description": (
                     "The `source.revision` of the specification text the list was read from.")},
                 "base": {"type": "string", "description": (
@@ -3283,6 +3305,13 @@ _WORKS_REFUSED_NEXT = {
         "save it again giving the request, and say works_finish_generation again"),
     "candidate-moved": (
         "the request was written to after the check ran: say works_finish_generation again"),
+    "lineage-dropped": (
+        "this work keeps the lineage its requirement list was built against, and a list without "
+        "it would let an id that was retired be issued again to another requirement: read the "
+        "work with works_read, build the list again with scxml_requirement_set giving it "
+        "`requirements.lineage_text` as `lineage_text` and `requirements.sidecar_text` as "
+        "`previous_sidecar_text`, and save the manifest_text, sidecar_text and lineage_text it "
+        "returns together"),
 }
 
 
@@ -3416,7 +3445,7 @@ def _requirements_next(requirements: dict | None, by_generation: bool = False) -
         return ("; the requirement list is written with the model, for the same request: build "
                 "it from `source.text` with scxml_requirement_set and save it with "
                 "works_save_requirements giving the request, so the owner can accept a design "
-                "against it")
+                "against it" + _built_against(requirements))
     if requirements is None:
         return ("; this work keeps no requirement list yet: build one from `source.text` with "
                 "scxml_requirement_set and save it with works_save_requirements, so the owner "
@@ -3424,8 +3453,26 @@ def _requirements_next(requirements: dict | None, by_generation: bool = False) -
     if requirements["standing"] != "current":
         return (f"; the requirement list is `{requirements['standing']}` against the text: build "
                 "it again from `source.text` and save it with works_save_requirements, giving "
-                "base = requirements.revision")
+                "base = requirements.revision" + _built_against(requirements))
     return ""
+
+
+def _built_against(requirements: dict | None) -> str:
+    """How a list that follows one the work already holds is built, so that every requirement
+    keeps its id: against the lineage the work keeps (or, for a list that has none yet, against
+    the list itself, from which one is made)."""
+    if requirements is None:
+        return ""
+    if "lineage_text" in requirements:
+        return ("; build it against the list the work holds: give scxml_requirement_set "
+                "`requirements.lineage_text` as `lineage_text` and `requirements.sidecar_text` "
+                "as `previous_sidecar_text`, and save the `lineage_text` it returns with the "
+                "list, so that each requirement keeps its id and a retired id is not issued "
+                "again")
+    return ("; build it against the list the work holds: give scxml_requirement_set "
+            "`requirements.manifest_text` as `previous_manifest_text` and "
+            "`requirements.sidecar_text` as `previous_sidecar_text`, and save the "
+            "`lineage_text` it returns with the list, so that each requirement keeps its id")
 
 
 def _acceptance_next(acceptance: dict | None, otherwise: str) -> str:
@@ -3548,6 +3595,44 @@ _STUB_DESIGN = ('<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" in
                 '<state id="s"/></scxml>\n')
 
 
+def _lineage_refusal(work: str, base: str | None, by_generation: bool, manifest_text: str,
+                     lineage_text: str | None) -> str | None:
+    """Why the lineage handed to works_save_requirements cannot be kept with this list, or None.
+
+    A list and the lineage it was built against are saved as one record
+    (`docs/adr/0011-a-work-keeps-its-requirement-lineage-with-its-requirement-list.md`), and
+    this is where what the core does not judge is judged: that the lineage is the lineage of THIS
+    manifest, and that it continues the one the work holds (an id is issued once, and a retired
+    one never lives again). The core refuses only what it can see without knowing what a
+    lineage means: that a lineage the work holds is not dropped.
+
+    A direct save from a `base` that is not the list's head is the core's to refuse as a
+    conflict, and is not judged here: the lineage is judged against the head it would replace."""
+    held = works.read_requirements(work)
+    held_lineage = held.get("lineage_text") if held else None
+    if lineage_text is None:
+        if held_lineage is not None and by_generation:
+            # A direct save is refused by the core at once; a generation's list is only judged
+            # when it is published, which is late to be told.
+            return ("not saved: this work keeps a requirement lineage, and the list has none. Build "
+                    "the list again with scxml_requirement_set, giving it `requirements.lineage_text` "
+                    "from works_read as `lineage_text` and the sidecar as `previous_sidecar_text`, "
+                    "and save the `lineage_text` it returns with the list: without it the next "
+                    "revision would issue an id that was retired again")
+        return None
+    try:
+        following = requirement_lineage.parse(lineage_text)
+        requirement_lineage.belongs_to_manifest(following, manifest_text)
+        if held_lineage is not None and (by_generation or base == held["revision"]):
+            requirement_lineage.extends(requirement_lineage.parse(held_lineage), following)
+    except requirement_lineage.LineageError as error:
+        return ("not saved: the lineage cannot be kept with this list, so the work keeps what it "
+                f"has: {error}. Build the list again with scxml_requirement_set from the "
+                "lineage works_read gave you and save the manifest_text, sidecar_text and "
+                "lineage_text it returns together, unchanged")
+    return None
+
+
 def _works_save_requirements_tool(args: dict, staging: _Staging) -> dict:
     """Save a requirement list to a work, after the product's own loader has accepted it.
 
@@ -3576,6 +3661,10 @@ def _works_save_requirements_tool(args: dict, staging: _Staging) -> dict:
     if sidecar_text is not None and not isinstance(sidecar_text, str):
         raise ToolArgumentError(
             "'sidecar_text' has to be the sidecar scxml_requirement_set returned, as text")
+    lineage_text = args.get("lineage_text")
+    if lineage_text is not None and (not isinstance(lineage_text, str) or not lineage_text.strip()):
+        raise ToolArgumentError(
+            "'lineage_text' has to be the lineage scxml_requirement_set returned, as text")
     manifest = staging.write("requirements.manifest.json", manifest_text, "manifest")
     document = staging.write("stub.scxml", _STUB_DESIGN, "design")
     _, refusal = requirement_records(document, manifest, cwd=staging.dir)
@@ -3584,14 +3673,19 @@ def _works_save_requirements_tool(args: dict, staging: _Staging) -> dict:
                         "work keeps the list it has. Build it again with scxml_requirement_set "
                         "and save it unchanged.\n" + refusal)
     try:
+        lineage_refusal = _lineage_refusal(work, base, generation is not None,
+                                           manifest_text, lineage_text)
+        if lineage_refusal:
+            return _failure(lineage_refusal)
         if generation is None:
-            saved = works.save_requirements(work, base, source_revision,
-                                            manifest=manifest_text, sidecar=sidecar_text)
+            saved = works.save_requirements(work, base, source_revision, manifest=manifest_text,
+                                            sidecar=sidecar_text, lineage=lineage_text)
         else:
             saved = works.generations().save_candidate(
                 request, instructions=INSTRUCTIONS_VERSION, requirements={
                 "manifest": manifest_text,
-                **({"sidecar": sidecar_text} if sidecar_text is not None else {})})
+                **({"sidecar": sidecar_text} if sidecar_text is not None else {}),
+                **({"lineage": lineage_text} if lineage_text is not None else {})})
     except works.WorksError as exc:
         return _works_refused(exc)
     answer = {"version": 1, "work": work, **saved,

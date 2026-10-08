@@ -317,6 +317,97 @@ def pin_manifest(lineage: dict, manifest_text: str) -> None:
     _checked(lineage)
 
 
+def belongs_to_manifest(lineage: dict, manifest_text: str) -> None:
+    """Refuse a lineage that is not the lineage of this manifest.
+
+    A list and its lineage are one fact, "which ids this list uses and which were ever issued"
+    (`docs/adr/0011-a-work-keeps-its-requirement-lineage-with-its-requirement-list.md`), and a
+    save of one beside the other's of another revision would store a lineage whose last revision
+    names a list that is not the one beside it. The lineage names its last list by the digest of
+    the exact manifest text (`manifest_sha256`), the document and the revision, and all three are
+    compared with the manifest handed over."""
+    try:
+        manifest = json.loads(manifest_text)
+    except ValueError as error:
+        raise LineageError(f"the manifest is not JSON: {error}") from error
+    if not isinstance(manifest, dict):
+        raise LineageError("the manifest is not a JSON object")
+    last = lineage["revisions"][-1]
+    if lineage["doc_id"] != manifest.get("doc_id"):
+        raise LineageError(f"the lineage is of '{lineage['doc_id']}' and the manifest of "
+                           f"'{manifest.get('doc_id')}'")
+    if last["rev"] != manifest.get("rev"):
+        raise LineageError(f"the lineage's last revision is {last['rev']} and the manifest's is "
+                           f"{manifest.get('rev')}")
+    if last.get("manifest_sha256") is None:
+        raise LineageError("the lineage does not say which manifest its last revision was written "
+                           "as (it predates recording the digest, or was adopted without the "
+                           "manifest): build the list again with scxml_requirement_set")
+    if last["manifest_sha256"] != sha256_text(manifest_text):
+        raise LineageError("the lineage was made with another manifest than this one (the digests "
+                           "differ): give the manifest_text and the lineage_text of one call of "
+                           "scxml_requirement_set, unchanged")
+
+
+def extends(previous: dict, following: dict) -> None:
+    """Refuse a lineage that is not the continuation of `previous`.
+
+    A lineage is only ever appended to: nothing it said is taken back. An id once issued is
+    still there, with the words it had, and a retired id stays retired and never lives again;
+    the revisions are the same revisions with more after them; and the ids issued since are
+    numbered from where `previous` left off, so that none is issued twice. A save is held to this
+    by the authoring tool before it goes to the work, because a lineage of another history that
+    happens to be well formed would otherwise replace the one the work holds. What `previous`
+    was is the work's; nothing here reads it from a file.
+
+    Two things may change in the last revision's row and the quotes it made, and only there: the
+    same text re-read into a different list is the same revision with another manifest (so the
+    digest differs), and a requirement re-quoted within it has its last quote replaced."""
+    if previous["doc_id"] != following["doc_id"]:
+        raise LineageError(f"the lineage is of '{following['doc_id']}' and the work's is of "
+                           f"'{previous['doc_id']}': one lineage follows one specification")
+    if following["next"] < previous["next"]:
+        raise LineageError(f"the lineage's next ({following['next']}) is behind the work's "
+                           f"({previous['next']}): ids already issued would be issued again")
+    before, after = previous["revisions"], following["revisions"]
+    if len(after) < len(before):
+        raise LineageError(f"the lineage has {len(after)} revision(s) and the work's has "
+                           f"{len(before)}: revisions are never taken back")
+    for position, row in enumerate(before):
+        now = after[position]
+        same_text_again = (position == len(before) - 1 and len(after) == len(before))
+        kept = {k: v for k, v in row.items() if not (same_text_again and k == "manifest_sha256")}
+        if {k: v for k, v in now.items() if k in kept} != kept:
+            raise LineageError(f"revision {row['rev']} of the lineage is not the revision the work "
+                               "holds: a revision is not rewritten")
+    last_rev = before[-1]["rev"]
+    held = {row["id"]: row for row in following["requirements"]}
+    for row in previous["requirements"]:
+        id_, now = row["id"], held.get(row["id"])
+        if now is None:
+            raise LineageError(f"{id_} is in the work's lineage and not in this one: an id is "
+                               "never forgotten")
+        if now["first_rev"] != row["first_rev"]:
+            raise LineageError(f"{id_} was first issued in revision {row['first_rev']} and this "
+                               f"lineage says {now['first_rev']}")
+        if row["retired_rev"] is not None and now["retired_rev"] != row["retired_rev"]:
+            raise LineageError(f"{id_} was retired in revision {row['retired_rev']} and this "
+                               "lineage makes it live again: a retired id is never issued again")
+        old, new = row["quotes"], now["quotes"]
+        if len(new) < len(old) or old[:-1] != new[:len(old) - 1]:
+            raise LineageError(f"the words {id_} has had are not the ones the work holds: a "
+                               "requirement's history is only added to")
+        edge, edge_now = old[-1], new[len(old) - 1]
+        if edge != edge_now and not (edge["rev"] == edge_now["rev"] == last_rev):
+            raise LineageError(f"the last words {id_} had in revision {edge['rev']} are not the "
+                               "ones the work holds")
+    for id_ in held.keys() - {row["id"] for row in previous["requirements"]}:
+        found = _ID.fullmatch(id_)
+        if not found or int(found.group(1)) < previous["next"]:
+            raise LineageError(f"{id_} is new in this lineage and is not an id issued from the "
+                               f"work's next (R{previous['next']}): an id would be issued twice")
+
+
 def _set_quote(row: dict, rev: str, digest: str) -> None:
     quotes = row["quotes"]
     if quotes[-1]["rev"] == rev:
