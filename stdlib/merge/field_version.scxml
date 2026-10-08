@@ -10,10 +10,10 @@
   scalars (SCE_FORGE.md §4.12), so a record does not hold a record. `arrival` is
   the number the server gave the write when it took it in.
 
-  `batchId` groups the writes one agent run made, as a commit groups changes;
-  0 is no batch. `origin` says who wrote it: 0 a person, 1 an agent, 2 an
-  undo. An undo is an ordinary write that restores an earlier value, and
-  `revertsBatch` names the batch it undoes (0 otherwise).
+  `batchId` groups the writes made together, as a commit groups changes; 0 is no
+  batch. `origin` says how it was written: 0 typed by a person, 1 written by a
+  program, 2 an undo. An undo is an ordinary write that restores an earlier
+  value, and `revertsBatch` names the batch it undoes (0 otherwise).
 
   `valueRef` is a handle to the value written, 0 for a field with no value. The
   value itself stays with the host: a record cannot hold a string, and an undo
