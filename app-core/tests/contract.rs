@@ -448,6 +448,15 @@ fn replies() -> Value {
     let held = answer(&store, "read_acceptance", json!({"id": accepted_id}));
     let acceptance_revision = held["acceptance"]["revision"].clone();
     answers.insert("read_acceptance".into(), held);
+    // What moved since the owner accepted: nothing yet.
+    answers.insert(
+        "read_acceptance_delta".into(),
+        answer(&store, "read_acceptance_delta", json!({"id": accepted_id})),
+    );
+    answers.insert(
+        "read_acceptance_delta_none".into(),
+        answer(&store, "read_acceptance_delta", json!({"id": id})),
+    );
     // The acceptance holds for the revisions it was taken of.
     answers.insert(
         "read_judgment_accepted".into(),
@@ -496,6 +505,11 @@ fn replies() -> Value {
     let lapsed = answer(&store, "read_acceptance", json!({"id": accepted_id}));
     let lapsed_now = lapsed["now"].clone();
     answers.insert("read_acceptance_lapsed".into(), lapsed);
+    // ... and what moved once the design did: the product's lines, requirement by requirement.
+    answers.insert(
+        "read_acceptance_delta_moved".into(),
+        answer(&store, "read_acceptance_delta", json!({"id": accepted_id})),
+    );
     // Asked of the design as it is now, the acceptance has lapsed; asked of the design it was
     // read as, it still holds, because the verdict is of the revisions named and not of the
     // work as it stands.

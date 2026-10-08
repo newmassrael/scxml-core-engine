@@ -3,7 +3,7 @@
 
 //! Asking the product about a work's requirements and acceptance.
 //!
-//! Four things are the product's to say, and this module only runs them and passes on
+//! Five things are the product's to say, and this module only runs them and passes on
 //! what they write:
 //!
 //! - `requirements --manifest`: for each requirement the list names, whether the design
@@ -13,7 +13,9 @@
 //!   requirement is shown with the words it quotes and the places that cite it;
 //! - `accept`: the record that pins what the owner accepted;
 //! - `acceptance-check`: whether a record still holds against the work as it is now,
-//!   and what moved when it does not.
+//!   and what moved when it does not;
+//! - `acceptance-delta`: for each requirement, whether the rows the owner was shown for it
+//!   read the same in the work as it is now, and where they moved when they do not.
 //!
 //! ⚠ "Missing" and "open" are statements the product makes about the design, and the
 //! application does not weigh them. Accepting a design that misses a requirement or
@@ -99,6 +101,20 @@ pub trait Acceptor: Send + Sync {
         snapshot: &Snapshot,
         record: &str,
     ) -> Result<CheckOutcome, RenderError>;
+
+    /// What moved, per requirement, in the work as `snapshot` puts it now since `record` (an
+    /// earlier acceptance's) was taken: the product's own `acceptance-delta`, one JSON record
+    /// per line, as it wrote them.
+    ///
+    /// ⚠ A report and not a verdict. The acceptance lapses by its bytes whatever this says, and
+    /// `unchanged` is the product's closure of what a requirement depends on reading the same,
+    /// not a statement that it is still met. A record the product cannot compare (one made
+    /// before it kept the rows, or under another rule for them) is refused in its words.
+    fn delta_acceptance(
+        &self,
+        snapshot: &Snapshot,
+        record: &str,
+    ) -> Result<Vec<Value>, RenderError>;
 }
 
 impl Acceptor for NoRenderer {
@@ -111,6 +127,10 @@ impl Acceptor for NoRenderer {
     }
 
     fn check_acceptance(&self, _: &Snapshot, _: &str) -> Result<CheckOutcome, RenderError> {
+        Err(NoRenderer::unavailable())
+    }
+
+    fn delta_acceptance(&self, _: &Snapshot, _: &str) -> Result<Vec<Value>, RenderError> {
         Err(NoRenderer::unavailable())
     }
 }
@@ -307,6 +327,44 @@ impl Acceptor for SceCodegen {
             }
         }
         Err(refusal(&run.stderr, run.code))
+    }
+
+    fn delta_acceptance(
+        &self,
+        snapshot: &Snapshot,
+        record: &str,
+    ) -> Result<Vec<Value>, RenderError> {
+        // The work is staged the way it is whenever the product is asked about it, so the design
+        // the record names (`design/...`) is the work's model as it is now: one definition of how
+        // a work is laid out, here and nowhere else.
+        let scratch = stage_scratch()?;
+        let staged = snapshot
+            .stage(&scratch.path().join("work"))
+            .map_err(staging_failed)?;
+        let record_file = scratch.path().join("acceptance.json");
+        fs::write(&record_file, record).map_err(staging_failed)?;
+
+        let mut command = self.command();
+        command
+            .args(["--error-format", "json", "acceptance-delta"])
+            .arg(&record_file)
+            .arg("--root")
+            .arg(&staged.root);
+        let run = run_bounded(command, scratch.path(), self.timeout())?;
+        if !run.success {
+            return Err(refusal(&run.stderr, run.code));
+        }
+        run.stdout
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| {
+                serde_json::from_str::<Value>(line).map_err(|e| RenderError::Failed {
+                    reason: format!(
+                        "the product's acceptance-delta wrote a line that is not JSON: {e}"
+                    ),
+                })
+            })
+            .collect()
     }
 }
 

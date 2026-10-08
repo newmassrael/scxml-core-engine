@@ -41,6 +41,7 @@ import {
   parseJudgment,
   parseListing,
   parseReadAcceptance,
+  parseReadAcceptanceDelta,
   parseReadAnswers,
   parseReadConnection,
   parseReadModel,
@@ -89,6 +90,7 @@ const parsers: Record<string, (value: unknown) => unknown> = {
   requirements_report: parseRequirementsReport,
   accept: parseSaved,
   read_acceptance: parseReadAcceptance,
+  read_acceptance_delta: parseReadAcceptanceDelta,
   read_work_snapshot: parseWorkSnapshot,
   read_judgment: parseJudgment,
   read_work_heads: parseWorkHeads,
@@ -869,6 +871,33 @@ describe("a reply that is not the promised shape", () => {
     const figures = replies.answers["figures"] as { sheets: Record<string, unknown>[] };
     expect(() => parseFigures({ ...figures, sheets: [{ name: "a.svg" }] })).toThrow(/figures\.sheets\[0\]\.svg/);
     expect(() => parseFigures({ ...figures, generator: 3 })).toThrow(/figures\.generator/);
+  });
+
+  it("reads what moved since the owner accepted as the product's lines beside the pin and the revisions", () => {
+    const none = parseReadAcceptanceDelta(replies.answers["read_acceptance_delta_none"]);
+    expect(none).toEqual({ acceptance: null, manifest: null, lines: null, now: null });
+
+    const unmoved = parseReadAcceptanceDelta(replies.answers["read_acceptance_delta"]);
+    expect(unmoved.manifest?.doc_id).toBe("door");
+    expect(unmoved.lines?.filter((l) => l["kind"] === "acceptance-delta").map((l) => l["evidence"]))
+      .toEqual(["unchanged", "unchanged"]);
+
+    const moved = parseReadAcceptanceDelta(replies.answers["read_acceptance_delta_moved"]);
+    expect(moved.lines?.[0]?.["moved"]).toEqual(["design/model.scxml"]);
+    // The comparison was made at the design that is now, against the acceptance that was taken.
+    expect(moved.acceptance?.basis.model).not.toBe(moved.now?.model);
+    expect(moved.acceptance?.revision).toBe(unmoved.acceptance?.revision);
+  });
+
+  it("refuses a delta that is only partly there", () => {
+    const held = replies.answers["read_acceptance_delta"] as Record<string, unknown>;
+    expect(() => parseReadAcceptanceDelta({ ...held, lines: null })).toThrow(/read_acceptance_delta\.lines/);
+    expect(() => parseReadAcceptanceDelta({ ...held, manifest: null })).toThrow(/read_acceptance_delta\.manifest/);
+    expect(() => parseReadAcceptanceDelta({ ...held, lines: [1] })).toThrow(/lines\[0\]/);
+    expect(() => parseReadAcceptanceDelta({ ...held, now: { source: "a".repeat(64) } })).toThrow(/now\.model/);
+    // Nobody accepted: there is nothing to compare, and a part left over is a contradiction.
+    const none = replies.answers["read_acceptance_delta_none"] as Record<string, unknown>;
+    expect(() => parseReadAcceptanceDelta({ ...none, lines: [] })).toThrow(/null when nobody accepted/);
   });
 
   it("is refused when an acceptance and its standing disagree, or a measure is not the shape the screen reads", () => {

@@ -106,9 +106,19 @@ impl Acceptor for FakeRenderer {
                 message: "the design cannot be read".to_string(),
             });
         }
+        // The manifest pin has the shape the product's record gives it: where, whose, which
+        // revision, and the digest of the bytes.
+        let list: serde_json::Value =
+            serde_json::from_str(&snapshot.requirements.manifest).expect("a manifest is JSON");
         let record = serde_json::json!({
             "record": "fake-acceptance",
             "channel": "direct",
+            "manifest": {
+                "path": "spec/requirements.manifest.json",
+                "doc_id": list["doc_id"],
+                "rev": list["rev"],
+                "sha256": Revision::of(snapshot.requirements.manifest.as_bytes()).to_string(),
+            },
             "pins": pinned(snapshot),
         })
         .to_string();
@@ -153,6 +163,71 @@ impl Acceptor for FakeRenderer {
                 says: lapses.join("; "),
             }
         })
+    }
+
+    /// What the product's `acceptance-delta` says, in the shape it says it: a line for every
+    /// requirement the list names, `changed` (with the documents that moved) when a document of
+    /// the design is not the one the record pinned and `unchanged` when none moved, then the
+    /// rows that claim nothing and a summary. A record that pins no design is refused, as the
+    /// product refuses one it cannot compare.
+    fn delta_acceptance(
+        &self,
+        snapshot: &Snapshot,
+        record: &str,
+    ) -> Result<Vec<serde_json::Value>, RenderError> {
+        let wire: serde_json::Value = serde_json::from_str(record).expect("a fake record");
+        let then: Vec<(String, String)> = serde_json::from_value(wire["pins"].clone()).unwrap();
+        if !then.iter().any(|(path, _)| path.starts_with("design/")) {
+            return Err(RenderError::Refused {
+                code: "cli/closure-input-unusable".to_string(),
+                message: "the record states no evidence".to_string(),
+            });
+        }
+        let now = pinned(snapshot);
+        let moved: Vec<String> = now
+            .iter()
+            .filter(|(path, digest)| {
+                path.starts_with("design/")
+                    && then
+                        .iter()
+                        .find(|(p, _)| p == path)
+                        .is_none_or(|(_, d)| d != digest)
+            })
+            .map(|(path, _)| path.clone())
+            .collect();
+        let list: serde_json::Value =
+            serde_json::from_str(&snapshot.requirements.manifest).expect("a manifest is JSON");
+        let ids: Vec<String> = list["requirements"]
+            .as_array()
+            .map(|all| {
+                all.iter()
+                    .filter_map(|r| r["id"].as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let mut lines: Vec<serde_json::Value> = ids
+            .iter()
+            .map(|id| {
+                if moved.is_empty() {
+                    serde_json::json!({"v": 1, "kind": "acceptance-delta",
+                                       "requirement": id, "evidence": "unchanged"})
+                } else {
+                    serde_json::json!({"v": 1, "kind": "acceptance-delta",
+                                       "requirement": id, "evidence": "changed",
+                                       "moved": moved, "gone": moved.len()})
+                }
+            })
+            .collect();
+        lines.push(
+            serde_json::json!({"v": 1, "kind": "acceptance-delta-unclaimed",
+                                      "added": [], "gone": 0}),
+        );
+        let changed = if moved.is_empty() { 0 } else { ids.len() };
+        lines.push(serde_json::json!({
+            "v": 1, "kind": "acceptance-delta-summary", "record": "acceptance.json",
+            "requirements": ids.len(), "unchanged": ids.len() - changed, "changed": changed,
+            "new": 0, "dropped": 0}));
+        Ok(lines)
     }
 }
 
@@ -225,7 +300,7 @@ impl ModelReviewer for RefusingRenderer {
     }
 }
 
-/// The product not answering at all, for each of the three questions.
+/// The product not answering at all, for each of the four questions.
 impl Acceptor for RefusingRenderer {
     fn report_requirements(&self, _: &Snapshot) -> Result<RequirementsReport, RenderError> {
         Err(RenderError::TimedOut { seconds: 30 })
@@ -236,6 +311,14 @@ impl Acceptor for RefusingRenderer {
     }
 
     fn check_acceptance(&self, _: &Snapshot, _: &str) -> Result<CheckOutcome, RenderError> {
+        Err(RenderError::TimedOut { seconds: 30 })
+    }
+
+    fn delta_acceptance(
+        &self,
+        _: &Snapshot,
+        _: &str,
+    ) -> Result<Vec<serde_json::Value>, RenderError> {
         Err(RenderError::TimedOut { seconds: 30 })
     }
 }

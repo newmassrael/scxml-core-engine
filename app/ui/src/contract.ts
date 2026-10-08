@@ -10,7 +10,7 @@
 // later core may add some); missing or mistyped ones are not.
 
 /** The command set this screen was written for (`COMMAND_SET_VERSION` in the core). */
-export const SUPPORTED_COMMAND_SET_VERSION = 19;
+export const SUPPORTED_COMMAND_SET_VERSION = 20;
 
 /** A revision: the SHA-256 of a saved text, as 64 lowercase hex digits. */
 export type Revision = string;
@@ -237,6 +237,17 @@ export interface AcceptanceRecord {
   readonly basis: Basis;
   /** What SCE listed as left open when it was accepted, in its sentences. */
   readonly open: readonly string[];
+}
+
+/** `read_acceptance_delta`: what moved since the owner accepted, as the product wrote it. */
+export interface ReadAcceptanceDelta {
+  readonly acceptance: AcceptanceRecord | null;
+  /** The manifest the product's record pinned: where, whose, which revision, its digest. */
+  readonly manifest: { readonly doc_id: string; readonly rev: string; readonly sha256: string } | null;
+  /** The product's own lines, one JSON object each, in the order it wrote them. */
+  readonly lines: readonly Record<string, unknown>[] | null;
+  /** The revisions the comparison was made at. */
+  readonly now: Basis | null;
 }
 
 /** `read_acceptance`. */
@@ -1138,6 +1149,35 @@ export function parseReadAcceptance(value: unknown): ReadAcceptance {
     acceptance: parseAcceptanceRecord(held, `${where}.acceptance`),
     standing: state,
     lapse,
+    now: parseBasis(r["now"], `${where}.now`),
+  };
+}
+
+/**
+ * `read_acceptance_delta`. A report the screen does not show yet (the revision report of a work
+ * is for the client that revises it), so this holds the shape and nothing is read out of the
+ * lines: all four parts are there together or none is, which is what a work nobody accepted says.
+ */
+export function parseReadAcceptanceDelta(value: unknown): ReadAcceptanceDelta {
+  const where = "read_acceptance_delta";
+  const r = record(value, where);
+  if (r["acceptance"] === null) {
+    for (const part of ["manifest", "lines", "now"]) {
+      if (r[part] !== null) throw new ContractError(`${where}.${part}`, "null when nobody accepted");
+    }
+    return { acceptance: null, manifest: null, lines: null, now: null };
+  }
+  const pin = record(r["manifest"], `${where}.manifest`);
+  const lines = r["lines"];
+  if (!Array.isArray(lines)) throw new ContractError(`${where}.lines`, "a list of the product's lines");
+  return {
+    acceptance: parseAcceptanceRecord(r["acceptance"], `${where}.acceptance`),
+    manifest: {
+      doc_id: text(pin, "doc_id", `${where}.manifest`),
+      rev: text(pin, "rev", `${where}.manifest`),
+      sha256: text(pin, "sha256", `${where}.manifest`),
+    },
+    lines: lines.map((line, i) => record(line, `${where}.lines[${i}]`)),
     now: parseBasis(r["now"], `${where}.now`),
   };
 }

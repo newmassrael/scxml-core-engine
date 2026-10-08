@@ -81,6 +81,20 @@ case "$cmd" in
     [ -f "$root/design/model.scxml" ] || { echo '{"v":1,"code":"cli/missing-design","message":"no design under the root"}' >&2; exit 3; }
     [ -f "$root/spec/source.txt" ] || { echo '{"v":1,"code":"cli/missing-source","message":"no source under the root"}' >&2; exit 3; }
     exit 0;;
+  acceptance-delta)
+    record="$(cat "$first")"
+    case "$record" in
+      *NOEVIDENCE*) echo '{"v":1,"code":"cli/closure-input-unusable","message":"the record states no evidence (it was taken before records kept it)"}' >&2; exit 20;;
+      *SILENT*) exit 3;;
+    esac
+    FLAG=--root; root="$(flag "$@")"
+    [ -f "$root/design/model.scxml" ] || { echo '{"v":1,"code":"cli/missing-design","message":"no design under the root"}' >&2; exit 3; }
+    echo '{"v":1,"kind":"acceptance-delta","requirement":"R1","evidence":"unchanged"}'
+    echo '{"v":1,"kind":"acceptance-delta","requirement":"R2","evidence":"changed","moved":["states.a"],"gone":1}'
+    echo ''
+    echo '{"v":1,"kind":"acceptance-delta-unclaimed","added":[],"gone":0}'
+    echo '{"v":1,"kind":"acceptance-delta-summary","record":"r","requirements":2,"unchanged":1,"changed":1,"new":0,"dropped":0}'
+    exit 0;;
 esac
 usage "no such command $cmd"
 "#;
@@ -304,6 +318,48 @@ fn a_check_says_holds_or_the_products_sentence_and_nothing_else_is_a_lapse() {
     ));
 }
 
+/// What moved since a record was taken is the product's own comparison, asked of the work laid
+/// out the way the product is always shown one (the record names `design/...`), and its lines
+/// are passed on as it wrote them: in order, none dropped, none invented, a blank line not one.
+#[test]
+fn the_delta_is_asked_for_the_laid_out_work_and_its_lines_are_passed_on_as_written() {
+    let now = snapshot("<scxml/>", true, None);
+
+    let lines = generator()
+        .delta_acceptance(&now, "{\"record\":\"sce-acceptance-record\"}")
+        .unwrap();
+
+    let kinds: Vec<&str> = lines.iter().map(|l| l["kind"].as_str().unwrap()).collect();
+    assert_eq!(
+        kinds,
+        [
+            "acceptance-delta",
+            "acceptance-delta",
+            "acceptance-delta-unclaimed",
+            "acceptance-delta-summary"
+        ]
+    );
+    assert_eq!(lines[1]["moved"], serde_json::json!(["states.a"]));
+    assert_eq!(lines[1]["gone"], 1);
+}
+
+#[test]
+fn a_record_the_product_cannot_compare_is_refused_in_its_words_and_silence_is_a_failure() {
+    let now = snapshot("<scxml/>", true, None);
+
+    match generator().delta_acceptance(&now, "{\"record\":\"NOEVIDENCE\"}") {
+        Err(RenderError::Refused { code, message }) => {
+            assert_eq!(code, "cli/closure-input-unusable");
+            assert!(message.contains("states no evidence"), "{message}");
+        }
+        other => panic!("a record without evidence was compared: {other:?}"),
+    }
+    assert!(matches!(
+        generator().delta_acceptance(&now, "{\"record\":\"SILENT\"}"),
+        Err(RenderError::Failed { .. })
+    ));
+}
+
 /// A design of the product's own, with the requirement list its own tests hold it to.
 const DOOR: &str = include_str!(
     "../../sce-build/tests/fixtures/requirement_closure/doip_nl_connection_states.scxml"
@@ -361,6 +417,45 @@ fn the_real_generator_measures_accepts_and_notices_what_moved() {
     assert_eq!(
         real.check_acceptance(&accepted, &taken.record).unwrap(),
         CheckOutcome::Holds
+    );
+
+    // What moved since, requirement by requirement. The work as accepted moved nothing; the
+    // same design with one cited event renamed moves what depends on that transition and
+    // nothing else, and the lines are the product's own (a requirement, where it moved).
+    let delta = |now: &Snapshot| real.delta_acceptance(now, &taken.record).unwrap();
+    let evidence_of = |lines: &[serde_json::Value], id: &str| {
+        lines
+            .iter()
+            .find(|l| l["kind"] == "acceptance-delta" && l["requirement"] == id)
+            .unwrap_or_else(|| panic!("no line for {id}"))["evidence"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
+    let untouched = delta(&accepted);
+    assert!(
+        untouched
+            .iter()
+            .filter(|l| l["kind"] == "acceptance-delta")
+            .all(|l| l["evidence"] == "unchanged"),
+        "{untouched:?}"
+    );
+    let renamed = delta(&work(
+        &DOOR.replace("event=\"tcp_established\"", "event=\"tcp_up\""),
+        text,
+        None,
+    ));
+    assert_eq!(evidence_of(&renamed, "3.DoIP-127"), "changed");
+    assert_eq!(evidence_of(&renamed, "3.DoIP-133"), "unchanged");
+    // A comment moves no row the owner was shown: the acceptance lapses (its bytes moved), and
+    // no requirement's evidence did.
+    let commented = delta(&work(&format!("{DOOR}<!-- edited -->\n"), text, None));
+    assert!(
+        commented
+            .iter()
+            .filter(|l| l["kind"] == "acceptance-delta")
+            .all(|l| l["evidence"] == "unchanged"),
+        "{commented:?}"
     );
 
     let lapsed = |now: &Snapshot| match real.check_acceptance(now, &taken.record).unwrap() {

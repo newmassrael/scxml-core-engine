@@ -67,6 +67,7 @@ pub const COMMANDS: &[&str] = &[
     "requirements_report",
     "accept",
     "read_acceptance",
+    "read_acceptance_delta",
     "read_judgment",
     "read_work_snapshot",
     "read_work_heads",
@@ -242,7 +243,14 @@ const SETTINGS_WRITE: &[&str] = &[
 /// refused as `lineage-dropped`, and so is a candidate published that way. A screen written for
 /// 18 would not know the argument or the refusal, and a core of 18 would refuse the argument as
 /// one it does not know.
-pub const COMMAND_SET_VERSION: u32 = 19;
+///
+/// 20: what moved in a work's design since the owner accepted it can be asked of the product
+/// requirement by requirement (`read_acceptance_delta`): the product's own comparison of the rows
+/// the owner was shown with the work's design as it is now, read with the acceptance as one state
+/// of the work, and the manifest the acceptance pinned. A report and not a verdict: the acceptance
+/// still lapses by its bytes (`read_acceptance`). A screen written for 19 does not ask for it, and
+/// a core of 19 would refuse it as `unknown-command`.
+pub const COMMAND_SET_VERSION: u32 = 20;
 
 /// A command that did not do what was asked, in a shape every shell can pass on.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -1990,6 +1998,43 @@ fn call_works<C: Clock>(
                 "acceptance": acceptance_json(&saved.revision, &acceptance),
                 "standing": standing,
                 "lapse": lapse,
+                "now": now.basis,
+            }))
+        }
+        "read_acceptance_delta" => {
+            let OneWork { id } = arguments(args)?;
+            let id = work_id(&id)?;
+            // ONE state of the work: the acceptance and the design and list it is compared with
+            // are read together, so a save landing between them cannot make the comparison one
+            // of an acceptance and a design that were never both the work's.
+            let state = store.read_work_snapshot(&id)?;
+            let Some(saved) = state.acceptance else {
+                return Ok(json!({
+                    "acceptance": null,
+                    "manifest": null,
+                    "lines": null,
+                    "now": null,
+                }));
+            };
+            let acceptance = Acceptance::parse(&saved.text)?;
+            let source = state.source.ok_or_else(|| none_saved("a text", &id))?;
+            let model = state.model.ok_or_else(|| none_saved("a model", &id))?;
+            let requirements = state
+                .requirements
+                .ok_or_else(|| none_saved("a requirement list", &id))?;
+            let now = now_of(source, model, requirements, state.answers)?;
+            let lines = renderer.delta_acceptance(&now.snapshot, &acceptance.record)?;
+            // The manifest the record pinned (its document, revision and digest), so a caller
+            // that holds a words-side comparison can say it is about THIS list and not another
+            // of the same name and number. The product's record is not otherwise passed on.
+            let manifest = serde_json::from_str::<Value>(&acceptance.record)
+                .ok()
+                .and_then(|record| record.get("manifest").cloned())
+                .unwrap_or(Value::Null);
+            Ok(json!({
+                "acceptance": acceptance_json(&saved.revision, &acceptance),
+                "manifest": manifest,
+                "lines": lines,
                 "now": now.basis,
             }))
         }

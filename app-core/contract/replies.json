@@ -4,7 +4,7 @@
     "accept": {
       "outcome": "saved",
       "parent": null,
-      "revision": "55ba436ef940ccb91b7811c951a9af3ba5c78a1e19fff391a6caebe158b4220c"
+      "revision": "93957b04e5dde4486eb8006a0be4a530c2e5b6082265dc239211c4394b8d59f3"
     },
     "bundle_history": {
       "entries": [
@@ -110,7 +110,7 @@
       "deleted": "main"
     },
     "describe": {
-      "command_set_version": 19,
+      "command_set_version": 20,
       "commands": [
         "describe",
         "list_works",
@@ -132,6 +132,7 @@
         "requirements_report",
         "accept",
         "read_acceptance",
+        "read_acceptance_delta",
         "read_judgment",
         "read_work_snapshot",
         "read_work_heads",
@@ -169,7 +170,7 @@
       "writes_settings": false
     },
     "describe_desktop": {
-      "command_set_version": 19,
+      "command_set_version": 20,
       "commands": [
         "describe",
         "list_works",
@@ -191,6 +192,7 @@
         "requirements_report",
         "accept",
         "read_acceptance",
+        "read_acceptance_delta",
         "read_judgment",
         "read_work_snapshot",
         "read_work_heads",
@@ -540,7 +542,7 @@
         "open": [
           "1 question(s) the specification leaves open (open-guard)"
         ],
-        "revision": "55ba436ef940ccb91b7811c951a9af3ba5c78a1e19fff391a6caebe158b4220c"
+        "revision": "93957b04e5dde4486eb8006a0be4a530c2e5b6082265dc239211c4394b8d59f3"
       },
       "lapse": null,
       "now": {
@@ -549,6 +551,132 @@
         "source": "00277e3a4c223a2ec90dd8eebf4d691b8d266dac58f270f25f5201e314803d44"
       },
       "standing": "holds"
+    },
+    "read_acceptance_delta": {
+      "acceptance": {
+        "accepted_at": "2026-10-03T09:00:00Z",
+        "basis": {
+          "model": "d04a9a83aac49bced5e6628fcf2579eb56ff8ba6016cb3d53f04e2212285bcc2",
+          "requirements": "4d86ca1649ee720dca5c51bc7817f96f64c1b8dc23e0b528b7b82715b0fd2a6d",
+          "source": "00277e3a4c223a2ec90dd8eebf4d691b8d266dac58f270f25f5201e314803d44"
+        },
+        "channel": "direct",
+        "open": [
+          "1 question(s) the specification leaves open (open-guard)"
+        ],
+        "revision": "93957b04e5dde4486eb8006a0be4a530c2e5b6082265dc239211c4394b8d59f3"
+      },
+      "lines": [
+        {
+          "evidence": "unchanged",
+          "kind": "acceptance-delta",
+          "requirement": "R1",
+          "v": 1
+        },
+        {
+          "evidence": "unchanged",
+          "kind": "acceptance-delta",
+          "requirement": "R2",
+          "v": 1
+        },
+        {
+          "added": [],
+          "gone": 0,
+          "kind": "acceptance-delta-unclaimed",
+          "v": 1
+        },
+        {
+          "changed": 0,
+          "dropped": 0,
+          "kind": "acceptance-delta-summary",
+          "new": 0,
+          "record": "acceptance.json",
+          "requirements": 2,
+          "unchanged": 2,
+          "v": 1
+        }
+      ],
+      "manifest": {
+        "doc_id": "door",
+        "path": "spec/requirements.manifest.json",
+        "rev": "1",
+        "sha256": "27746da1c38f95dd027c1a5838685a01dad665424d08c8672866c487507b7758"
+      },
+      "now": {
+        "model": "d04a9a83aac49bced5e6628fcf2579eb56ff8ba6016cb3d53f04e2212285bcc2",
+        "requirements": "4d86ca1649ee720dca5c51bc7817f96f64c1b8dc23e0b528b7b82715b0fd2a6d",
+        "source": "00277e3a4c223a2ec90dd8eebf4d691b8d266dac58f270f25f5201e314803d44"
+      }
+    },
+    "read_acceptance_delta_moved": {
+      "acceptance": {
+        "accepted_at": "2026-10-03T09:00:00Z",
+        "basis": {
+          "model": "d04a9a83aac49bced5e6628fcf2579eb56ff8ba6016cb3d53f04e2212285bcc2",
+          "requirements": "4d86ca1649ee720dca5c51bc7817f96f64c1b8dc23e0b528b7b82715b0fd2a6d",
+          "source": "00277e3a4c223a2ec90dd8eebf4d691b8d266dac58f270f25f5201e314803d44"
+        },
+        "channel": "direct",
+        "open": [
+          "1 question(s) the specification leaves open (open-guard)"
+        ],
+        "revision": "93957b04e5dde4486eb8006a0be4a530c2e5b6082265dc239211c4394b8d59f3"
+      },
+      "lines": [
+        {
+          "evidence": "changed",
+          "gone": 1,
+          "kind": "acceptance-delta",
+          "moved": [
+            "design/model.scxml"
+          ],
+          "requirement": "R1",
+          "v": 1
+        },
+        {
+          "evidence": "changed",
+          "gone": 1,
+          "kind": "acceptance-delta",
+          "moved": [
+            "design/model.scxml"
+          ],
+          "requirement": "R2",
+          "v": 1
+        },
+        {
+          "added": [],
+          "gone": 0,
+          "kind": "acceptance-delta-unclaimed",
+          "v": 1
+        },
+        {
+          "changed": 2,
+          "dropped": 0,
+          "kind": "acceptance-delta-summary",
+          "new": 0,
+          "record": "acceptance.json",
+          "requirements": 2,
+          "unchanged": 0,
+          "v": 1
+        }
+      ],
+      "manifest": {
+        "doc_id": "door",
+        "path": "spec/requirements.manifest.json",
+        "rev": "1",
+        "sha256": "27746da1c38f95dd027c1a5838685a01dad665424d08c8672866c487507b7758"
+      },
+      "now": {
+        "model": "0c2ab3203427b9e511dd0e7e6036bebbb82f82ca844dd999705fb2d51cfd3bca",
+        "requirements": "4d86ca1649ee720dca5c51bc7817f96f64c1b8dc23e0b528b7b82715b0fd2a6d",
+        "source": "00277e3a4c223a2ec90dd8eebf4d691b8d266dac58f270f25f5201e314803d44"
+      }
+    },
+    "read_acceptance_delta_none": {
+      "acceptance": null,
+      "lines": null,
+      "manifest": null,
+      "now": null
     },
     "read_acceptance_lapsed": {
       "acceptance": {
@@ -562,7 +690,7 @@
         "open": [
           "1 question(s) the specification leaves open (open-guard)"
         ],
-        "revision": "55ba436ef940ccb91b7811c951a9af3ba5c78a1e19fff391a6caebe158b4220c"
+        "revision": "93957b04e5dde4486eb8006a0be4a530c2e5b6082265dc239211c4394b8d59f3"
       },
       "lapse": "design/model.scxml moved",
       "now": {
@@ -1734,7 +1862,7 @@
       "source": "7dc2f2d866dfb913b74841a0abff1709551fc1f7bc0f302d43251d0f60ce9e97"
     },
     "read_work_heads_accepted": {
-      "acceptance": "55ba436ef940ccb91b7811c951a9af3ba5c78a1e19fff391a6caebe158b4220c",
+      "acceptance": "93957b04e5dde4486eb8006a0be4a530c2e5b6082265dc239211c4394b8d59f3",
       "answers": null,
       "bundle": null,
       "model": {
@@ -1849,7 +1977,7 @@
         "open": [
           "1 question(s) the specification leaves open (open-guard)"
         ],
-        "revision": "55ba436ef940ccb91b7811c951a9af3ba5c78a1e19fff391a6caebe158b4220c"
+        "revision": "93957b04e5dde4486eb8006a0be4a530c2e5b6082265dc239211c4394b8d59f3"
       },
       "answers": null,
       "bundle": null,
@@ -2248,7 +2376,7 @@
       "default": "main"
     }
   },
-  "command_set_version": 19,
+  "command_set_version": 20,
   "refusals": {
     "active-request": {
       "detail": {
@@ -2515,7 +2643,7 @@
     },
     "unknown-command": {
       "kind": "unknown-command",
-      "message": "`nope` is not a command; the commands are describe, list_works, create_work, read_work, read_source, save_source, history, save_model, read_model, model_history, figures, remove_work, review, read_answers, save_answers, save_requirements, read_requirements, requirements_report, accept, read_acceptance, read_judgment, read_work_snapshot, read_work_heads, request_generation, read_request, list_requests, list_open_requests, claim_request, heartbeat_request, save_request_candidate, read_request_candidate, complete_request, fail_request, cancel_request, report_adapter, read_adapter_status, read_host_status, read_bundle, bundle_history, list_connections, read_connection, read_auth_policy, read_claude_status, read_codex_status, find_clients, read_server_status, save_connection, delete_connection, set_default_connection"
+      "message": "`nope` is not a command; the commands are describe, list_works, create_work, read_work, read_source, save_source, history, save_model, read_model, model_history, figures, remove_work, review, read_answers, save_answers, save_requirements, read_requirements, requirements_report, accept, read_acceptance, read_acceptance_delta, read_judgment, read_work_snapshot, read_work_heads, request_generation, read_request, list_requests, list_open_requests, claim_request, heartbeat_request, save_request_candidate, read_request_candidate, complete_request, fail_request, cancel_request, report_adapter, read_adapter_status, read_host_status, read_bundle, bundle_history, list_connections, read_connection, read_auth_policy, read_claude_status, read_codex_status, find_clients, read_server_status, save_connection, delete_connection, set_default_connection"
     },
     "wrong-connection": {
       "detail": {
