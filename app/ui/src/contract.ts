@@ -10,7 +10,7 @@
 // later core may add some); missing or mistyped ones are not.
 
 /** The command set this screen was written for (`COMMAND_SET_VERSION` in the core). */
-export const SUPPORTED_COMMAND_SET_VERSION = 21;
+export const SUPPORTED_COMMAND_SET_VERSION = 22;
 
 /** A revision: the SHA-256 of a saved text, as 64 lowercase hex digits. */
 export type Revision = string;
@@ -248,6 +248,30 @@ export interface ReadAcceptanceDelta {
   readonly lines: readonly Record<string, unknown>[] | null;
   /** The revisions the comparison was made at. */
   readonly now: Basis | null;
+}
+
+/**
+ * `read_revision_report`: what a revision of a work did, requirement by requirement. The words
+ * of each requirement (from the work's own lineages) beside what the design's evidence did, the
+ * verdict, and the page an owner reads.
+ */
+export interface ReadRevisionReport {
+  readonly acceptance: AcceptanceRecord | null;
+  readonly report: RevisionReport | null;
+}
+
+/** The judgment of a revision, as the product gives it. */
+export interface RevisionReport {
+  /** `within-reach` or `outside-reach`. */
+  readonly verdict: string;
+  readonly summary: Readonly<Record<string, unknown>>;
+  /** One row per requirement: its words, its evidence, the kind and the severity. */
+  readonly requirements: readonly Readonly<Record<string, unknown>>[];
+  readonly unclaimed: Readonly<Record<string, unknown>>;
+  /** The revisions of the accepted list and of the list the work has now. */
+  readonly of: { readonly accepted: Basis; readonly now: Basis };
+  /** The page, in the product's words. */
+  readonly page: string;
 }
 
 /** `read_acceptance`. */
@@ -1179,6 +1203,38 @@ export function parseReadAcceptanceDelta(value: unknown): ReadAcceptanceDelta {
     },
     lines: lines.map((line, i) => record(line, `${where}.lines[${i}]`)),
     now: parseBasis(r["now"], `${where}.now`),
+  };
+}
+
+/**
+ * `read_revision_report`. The acceptance and the report are both there or both null, which is
+ * what a work nobody accepted says; the screen shows the page and the verdict, and holds the
+ * rows as the product wrote them.
+ */
+export function parseReadRevisionReport(value: unknown): ReadRevisionReport {
+  const where = "read_revision_report";
+  const r = record(value, where);
+  if (r["acceptance"] === null) {
+    if (r["report"] !== null) throw new ContractError(`${where}.report`, "null when nobody accepted");
+    return { acceptance: null, report: null };
+  }
+  const report = record(r["report"], `${where}.report`);
+  const rows = report["requirements"];
+  if (!Array.isArray(rows)) throw new ContractError(`${where}.report.requirements`, "a list of rows");
+  const of = record(report["of"], `${where}.report.of`);
+  return {
+    acceptance: parseAcceptanceRecord(r["acceptance"], `${where}.acceptance`),
+    report: {
+      verdict: text(report, "verdict", `${where}.report`),
+      summary: record(report["summary"], `${where}.report.summary`),
+      requirements: rows.map((row, i) => record(row, `${where}.report.requirements[${i}]`)),
+      unclaimed: record(report["unclaimed"], `${where}.report.unclaimed`),
+      of: {
+        accepted: parseBasis(of["accepted"], `${where}.report.of.accepted`),
+        now: parseBasis(of["now"], `${where}.report.of.now`),
+      },
+      page: text(report, "page", `${where}.report`),
+    },
   };
 }
 

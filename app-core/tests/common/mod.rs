@@ -110,15 +110,22 @@ impl Acceptor for FakeRenderer {
         // revision, and the digest of the bytes.
         let list: serde_json::Value =
             serde_json::from_str(&snapshot.requirements.manifest).expect("a manifest is JSON");
+        let mut manifest_pin = serde_json::json!({
+            "path": "spec/requirements.manifest.json",
+            "doc_id": list["doc_id"],
+            "rev": list["rev"],
+            "sha256": Revision::of(snapshot.requirements.manifest.as_bytes()).to_string(),
+        });
+        // And the digest of the sidecar when the list has one: the words behind the ids, which
+        // the product pins beside the manifest (a manifest is coordinates only).
+        if let Some(sidecar) = &snapshot.requirements.sidecar {
+            manifest_pin["sidecar_sha256"] =
+                serde_json::json!(Revision::of(sidecar.as_bytes()).to_string());
+        }
         let record = serde_json::json!({
             "record": "fake-acceptance",
             "channel": "direct",
-            "manifest": {
-                "path": "spec/requirements.manifest.json",
-                "doc_id": list["doc_id"],
-                "rev": list["rev"],
-                "sha256": Revision::of(snapshot.requirements.manifest.as_bytes()).to_string(),
-            },
+            "manifest": manifest_pin,
             "pins": pinned(snapshot),
         })
         .to_string();

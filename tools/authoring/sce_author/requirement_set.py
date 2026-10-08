@@ -95,8 +95,9 @@ class Built:
 
 def normalise(text: str) -> str:
     """Whitespace collapsed to single spaces: a specification wrapped at
-    another width, or a quote copied across a line break, is the same words."""
-    return re.sub(r"\s+", " ", text).strip()
+    another width, or a quote copied across a line break, is the same words.
+    One definition, with the lineage that digests the result (`requirement_lineage.normalise`)."""
+    return rl.normalise(text)
 
 
 def sentences(text: str) -> list[tuple[int, int]]:

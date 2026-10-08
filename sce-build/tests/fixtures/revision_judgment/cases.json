@@ -895,6 +895,265 @@
    "older": "third"
   }
  ],
+ "delta_object": [
+  {
+   "expect": {
+    "requirements": [
+     {
+      "evidence": "unchanged",
+      "requirement": "R1"
+     },
+     {
+      "evidence": "changed",
+      "gone": 1,
+      "moved": [
+       "states.a.transitions[1]"
+      ],
+      "requirement": "R2"
+     }
+    ],
+    "summary": {
+     "changed": 1,
+     "dropped": 0,
+     "new": 0,
+     "requirements": 2,
+     "unchanged": 1
+    },
+    "unclaimed": {
+     "added": [
+      "states.b"
+     ],
+     "gone": 2
+    },
+    "version": 1
+   },
+   "lines": [
+    {
+     "evidence": "unchanged",
+     "kind": "acceptance-delta",
+     "requirement": "R1",
+     "v": 1
+    },
+    {
+     "evidence": "changed",
+     "gone": 1,
+     "kind": "acceptance-delta",
+     "moved": [
+      "states.a.transitions[1]"
+     ],
+     "requirement": "R2",
+     "v": 1
+    },
+    {
+     "added": [
+      "states.b"
+     ],
+     "gone": 2,
+     "kind": "acceptance-delta-unclaimed",
+     "v": 1
+    },
+    {
+     "changed": 1,
+     "dropped": 0,
+     "kind": "acceptance-delta-summary",
+     "new": 0,
+     "record": "r",
+     "requirements": 2,
+     "unchanged": 1,
+     "v": 1
+    }
+   ],
+   "name": "every kind of line"
+  },
+  {
+   "expect": {
+    "requirements": [
+     {
+      "evidence": "unchanged",
+      "requirement": "R1"
+     },
+     {
+      "evidence": "changed",
+      "gone": 1,
+      "moved": [
+       "states.a.transitions[1]"
+      ],
+      "requirement": "R2"
+     }
+    ],
+    "summary": null,
+    "unclaimed": {
+     "added": [
+      "states.b"
+     ],
+     "gone": 2
+    },
+    "version": 1
+   },
+   "lines": [
+    {
+     "evidence": "unchanged",
+     "kind": "acceptance-delta",
+     "requirement": "R1",
+     "v": 1
+    },
+    {
+     "evidence": "changed",
+     "gone": 1,
+     "kind": "acceptance-delta",
+     "moved": [
+      "states.a.transitions[1]"
+     ],
+     "requirement": "R2",
+     "v": 1
+    },
+    {
+     "added": [
+      "states.b"
+     ],
+     "gone": 2,
+     "kind": "acceptance-delta-unclaimed",
+     "v": 1
+    }
+   ],
+   "name": "no summary"
+  },
+  {
+   "expect": {
+    "requirements": [
+     {
+      "evidence": "unchanged",
+      "requirement": "R1"
+     },
+     {
+      "evidence": "changed",
+      "gone": 1,
+      "moved": [
+       "states.a.transitions[1]"
+      ],
+      "requirement": "R2"
+     }
+    ],
+    "summary": {
+     "changed": 1,
+     "dropped": 0,
+     "new": 0,
+     "requirements": 2,
+     "unchanged": 1
+    },
+    "unclaimed": null,
+    "version": 1
+   },
+   "lines": [
+    {
+     "evidence": "unchanged",
+     "kind": "acceptance-delta",
+     "requirement": "R1",
+     "v": 1
+    },
+    {
+     "evidence": "changed",
+     "gone": 1,
+     "kind": "acceptance-delta",
+     "moved": [
+      "states.a.transitions[1]"
+     ],
+     "requirement": "R2",
+     "v": 1
+    },
+    {
+     "changed": 1,
+     "dropped": 0,
+     "kind": "acceptance-delta-summary",
+     "new": 0,
+     "record": "r",
+     "requirements": 2,
+     "unchanged": 1,
+     "v": 1
+    }
+   ],
+   "name": "no unclaimed line"
+  },
+  {
+   "expect": {
+    "requirements": [],
+    "summary": null,
+    "unclaimed": null,
+    "version": 1
+   },
+   "lines": [],
+   "name": "no lines at all"
+  },
+  {
+   "expect": {
+    "requirements": [
+     {
+      "evidence": "unchanged",
+      "requirement": "R1"
+     }
+    ],
+    "summary": {
+     "changed": 1,
+     "dropped": 0,
+     "new": 0,
+     "requirements": 2,
+     "unchanged": 1
+    },
+    "unclaimed": null,
+    "version": 1
+   },
+   "lines": [
+    {
+     "evidence": "unchanged",
+     "kind": "acceptance-delta",
+     "requirement": "R1",
+     "v": 1
+    },
+    {
+     "kind": "other",
+     "v": 1
+    },
+    {
+     "changed": 1,
+     "dropped": 0,
+     "kind": "acceptance-delta-summary",
+     "new": 0,
+     "record": "r",
+     "requirements": 2,
+     "unchanged": 1,
+     "v": 1
+    }
+   ],
+   "name": "a line of another kind is not gathered"
+  },
+  {
+   "expect": {
+    "requirements": [],
+    "summary": {
+     "changed": 1,
+     "dropped": 0,
+     "new": 0,
+     "requirements": 2,
+     "unchanged": 1
+    },
+    "unclaimed": null,
+    "version": 1
+   },
+   "lines": [
+    {
+     "changed": 1,
+     "dropped": 0,
+     "kind": "acceptance-delta-summary",
+     "new": 0,
+     "record": "r",
+     "requirements": 2,
+     "unchanged": 1,
+     "v": 1
+    }
+   ],
+   "name": "the record named by the summary is not kept"
+  }
+ ],
  "extends": [
   {
    "expect": "ok",
@@ -6675,6 +6934,501 @@
    "sidecar_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"3\",\n  \"text\": {\n    \"R1\": \"The lamp starts off.\",\n    \"R2\": \"Pressing the switch turns it on\",\n    \"R3\": \"pressing it again turns it off\",\n    \"R4\": \"After 30 seconds on, it turns itself off.\",\n    \"R6\": \"A reset key clears it.\"\n  }\n}\n"
   }
  },
+ "of_list": [
+  {
+   "expect": {
+    "ok": {
+     "doc_id": "lamp",
+     "lineage": "sce-requirement-lineage",
+     "next": 6,
+     "requirements": [
+      {
+       "first_rev": "1",
+       "id": "R1",
+       "quotes": [
+        {
+         "rev": "1",
+         "sha256": "6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d"
+        }
+       ],
+       "retired_rev": null
+      },
+      {
+       "first_rev": "1",
+       "id": "R2",
+       "quotes": [
+        {
+         "rev": "1",
+         "sha256": "ae667461fcb2645c429818f101268823113ada6c2c3d963a66bae3c0377d8719"
+        }
+       ],
+       "retired_rev": null
+      },
+      {
+       "first_rev": "1",
+       "id": "R3",
+       "quotes": [
+        {
+         "rev": "1",
+         "sha256": "6f4410cfd3079860f7efa4ddc3fdd27fe7f9255a79f60cab05b7e587467a4384"
+        }
+       ],
+       "retired_rev": null
+      },
+      {
+       "first_rev": "1",
+       "id": "R4",
+       "quotes": [
+        {
+         "rev": "1",
+         "sha256": "aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545"
+        }
+       ],
+       "retired_rev": null
+      },
+      {
+       "first_rev": "1",
+       "id": "R5",
+       "quotes": [
+        {
+         "rev": "1",
+         "sha256": "2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1"
+        }
+       ],
+       "retired_rev": null
+      }
+     ],
+     "revisions": [
+      {
+       "manifest_sha256": "0c87ee2a943cababedd4a9ba270f2da7ead34eab11a19b1970aee20e4a3055f8",
+       "rev": "1",
+       "sentence_sha256": [
+        "6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d",
+        "c3f38ff61890455cd2dff6a03a23d84d702b41cba9bfcd44e6d395c100c5ecaf",
+        "aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545",
+        "2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1"
+       ],
+       "sidecar_sha256": "3892e4be2a6bf9a864d19d3c4038af0b0030a84a3b0310e649553989087d5902",
+       "spec_sha256": "730c09a7a3d8fe56a9a1a995e8717ee588b434b4c7930fe98253bcfe464c684a"
+      }
+     ],
+     "v": 1
+    }
+   },
+   "held": {
+    "lineage_text": "{\n  \"lineage\": \"sce-requirement-lineage\",\n  \"v\": 1,\n  \"doc_id\": \"lamp\",\n  \"next\": 6,\n  \"revisions\": [\n    {\n      \"rev\": \"1\",\n      \"spec_sha256\": \"730c09a7a3d8fe56a9a1a995e8717ee588b434b4c7930fe98253bcfe464c684a\",\n      \"sentence_sha256\": [\n        \"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\",\n        \"c3f38ff61890455cd2dff6a03a23d84d702b41cba9bfcd44e6d395c100c5ecaf\",\n        \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\",\n        \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"\n      ],\n      \"manifest_sha256\": \"0c87ee2a943cababedd4a9ba270f2da7ead34eab11a19b1970aee20e4a3055f8\",\n      \"sidecar_sha256\": \"3892e4be2a6bf9a864d19d3c4038af0b0030a84a3b0310e649553989087d5902\"\n    }\n  ],\n  \"requirements\": [\n    {\n      \"id\": \"R1\",\n      \"first_rev\": \"1\",\n      \"retired_rev\": null,\n      \"quotes\": [\n        {\n          \"rev\": \"1\",\n          \"sha256\": \"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\"\n        }\n      ]\n    },\n    {\n      \"id\": \"R2\",\n      \"first_rev\": \"1\",\n      \"retired_rev\": null,\n      \"quotes\": [\n        {\n          \"rev\": \"1\",\n          \"sha256\": \"ae667461fcb2645c429818f101268823113ada6c2c3d963a66bae3c0377d8719\"\n        }\n      ]\n    },\n    {\n      \"id\": \"R3\",\n      \"first_rev\": \"1\",\n      \"retired_rev\": null,\n      \"quotes\": [\n        {\n          \"rev\": \"1\",\n          \"sha256\": \"6f4410cfd3079860f7efa4ddc3fdd27fe7f9255a79f60cab05b7e587467a4384\"\n        }\n      ]\n    },\n    {\n      \"id\": \"R4\",\n      \"first_rev\": \"1\",\n      \"retired_rev\": null,\n      \"quotes\": [\n        {\n          \"rev\": \"1\",\n          \"sha256\": \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\"\n        }\n      ]\n    },\n    {\n      \"id\": \"R5\",\n      \"first_rev\": \"1\",\n      \"retired_rev\": null,\n      \"quotes\": [\n        {\n          \"rev\": \"1\",\n          \"sha256\": \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"\n        }\n      ]\n    }\n  ]\n}\n",
+    "manifest_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"1\",\n  \"extraction\": {\n    \"ids\": \"synthesized\",\n    \"trace\": \"none\",\n    \"modality_convention\": \"english-modal-verbs\",\n    \"method\": \"ai-pass-1\"\n  },\n  \"sections\": [\n    {\n      \"id\": \"S1\",\n      \"title\": \"Sentence 1\"\n    },\n    {\n      \"id\": \"S2\",\n      \"title\": \"Sentence 2\"\n    },\n    {\n      \"id\": \"S3\",\n      \"title\": \"Sentence 3\"\n    },\n    {\n      \"id\": \"S4\",\n      \"title\": \"Sentence 4\"\n    }\n  ],\n  \"requirements\": [\n    {\n      \"id\": \"R1\",\n      \"section\": \"S1\"\n    },\n    {\n      \"id\": \"R2\",\n      \"section\": \"S2\"\n    },\n    {\n      \"id\": \"R3\",\n      \"section\": \"S2\"\n    },\n    {\n      \"id\": \"R4\",\n      \"section\": \"S3\"\n    },\n    {\n      \"id\": \"R5\",\n      \"section\": \"S4\"\n    }\n  ]\n}\n",
+    "sidecar_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"1\",\n  \"text\": {\n    \"R1\": \"The lamp starts off.\",\n    \"R2\": \"Pressing the switch turns it on\",\n    \"R3\": \"pressing it again turns it off\",\n    \"R4\": \"After 30 seconds on, it turns itself off.\",\n    \"R5\": \"Nothing else changes it.\"\n  }\n}\n"
+   },
+   "name": "a list that keeps its lineage",
+   "what": "the work has now"
+  },
+  {
+   "expect": {
+    "ok": {
+     "doc_id": "lamp",
+     "lineage": "sce-requirement-lineage",
+     "next": 6,
+     "requirements": [
+      {
+       "first_rev": "1",
+       "id": "R1",
+       "quotes": [
+        {
+         "rev": "1",
+         "sha256": "6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d"
+        }
+       ],
+       "retired_rev": null
+      },
+      {
+       "first_rev": "1",
+       "id": "R2",
+       "quotes": [
+        {
+         "rev": "1",
+         "sha256": "ae667461fcb2645c429818f101268823113ada6c2c3d963a66bae3c0377d8719"
+        }
+       ],
+       "retired_rev": null
+      },
+      {
+       "first_rev": "1",
+       "id": "R3",
+       "quotes": [
+        {
+         "rev": "1",
+         "sha256": "6f4410cfd3079860f7efa4ddc3fdd27fe7f9255a79f60cab05b7e587467a4384"
+        }
+       ],
+       "retired_rev": null
+      },
+      {
+       "first_rev": "1",
+       "id": "R4",
+       "quotes": [
+        {
+         "rev": "1",
+         "sha256": "aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545"
+        }
+       ],
+       "retired_rev": null
+      },
+      {
+       "first_rev": "1",
+       "id": "R5",
+       "quotes": [
+        {
+         "rev": "1",
+         "sha256": "2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1"
+        }
+       ],
+       "retired_rev": null
+      }
+     ],
+     "revisions": [
+      {
+       "manifest_sha256": "0c87ee2a943cababedd4a9ba270f2da7ead34eab11a19b1970aee20e4a3055f8",
+       "rev": "1",
+       "sentence_sha256": [
+        "6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d",
+        "c3f38ff61890455cd2dff6a03a23d84d702b41cba9bfcd44e6d395c100c5ecaf",
+        "aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545",
+        "2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1"
+       ],
+       "sidecar_sha256": "3892e4be2a6bf9a864d19d3c4038af0b0030a84a3b0310e649553989087d5902",
+       "spec_sha256": "730c09a7a3d8fe56a9a1a995e8717ee588b434b4c7930fe98253bcfe464c684a"
+      }
+     ],
+     "v": 1
+    }
+   },
+   "held": {
+    "lineage_text": "{\n  \"lineage\": \"sce-requirement-lineage\",\n  \"v\": 1,\n  \"doc_id\": \"lamp\",\n  \"next\": 6,\n  \"revisions\": [\n    {\n      \"rev\": \"1\",\n      \"spec_sha256\": \"730c09a7a3d8fe56a9a1a995e8717ee588b434b4c7930fe98253bcfe464c684a\",\n      \"sentence_sha256\": [\n        \"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\",\n        \"c3f38ff61890455cd2dff6a03a23d84d702b41cba9bfcd44e6d395c100c5ecaf\",\n        \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\",\n        \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"\n      ],\n      \"manifest_sha256\": \"0c87ee2a943cababedd4a9ba270f2da7ead34eab11a19b1970aee20e4a3055f8\",\n      \"sidecar_sha256\": \"3892e4be2a6bf9a864d19d3c4038af0b0030a84a3b0310e649553989087d5902\"\n    }\n  ],\n  \"requirements\": [\n    {\n      \"id\": \"R1\",\n      \"first_rev\": \"1\",\n      \"retired_rev\": null,\n      \"quotes\": [\n        {\n          \"rev\": \"1\",\n          \"sha256\": \"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\"\n        }\n      ]\n    },\n    {\n      \"id\": \"R2\",\n      \"first_rev\": \"1\",\n      \"retired_rev\": null,\n      \"quotes\": [\n        {\n          \"rev\": \"1\",\n          \"sha256\": \"ae667461fcb2645c429818f101268823113ada6c2c3d963a66bae3c0377d8719\"\n        }\n      ]\n    },\n    {\n      \"id\": \"R3\",\n      \"first_rev\": \"1\",\n      \"retired_rev\": null,\n      \"quotes\": [\n        {\n          \"rev\": \"1\",\n          \"sha256\": \"6f4410cfd3079860f7efa4ddc3fdd27fe7f9255a79f60cab05b7e587467a4384\"\n        }\n      ]\n    },\n    {\n      \"id\": \"R4\",\n      \"first_rev\": \"1\",\n      \"retired_rev\": null,\n      \"quotes\": [\n        {\n          \"rev\": \"1\",\n          \"sha256\": \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\"\n        }\n      ]\n    },\n    {\n      \"id\": \"R5\",\n      \"first_rev\": \"1\",\n      \"retired_rev\": null,\n      \"quotes\": [\n        {\n          \"rev\": \"1\",\n          \"sha256\": \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"\n        }\n      ]\n    }\n  ]\n}\n",
+    "manifest_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"1\",\n  \"extraction\": {\n    \"ids\": \"synthesized\",\n    \"trace\": \"none\",\n    \"modality_convention\": \"english-modal-verbs\",\n    \"method\": \"ai-pass-1\"\n  },\n  \"sections\": [\n    {\n      \"id\": \"S1\",\n      \"title\": \"Sentence 1\"\n    },\n    {\n      \"id\": \"S2\",\n      \"title\": \"Sentence 2\"\n    },\n    {\n      \"id\": \"S3\",\n      \"title\": \"Sentence 3\"\n    },\n    {\n      \"id\": \"S4\",\n      \"title\": \"Sentence 4\"\n    }\n  ],\n  \"requirements\": [\n    {\n      \"id\": \"R1\",\n      \"section\": \"S1\"\n    },\n    {\n      \"id\": \"R2\",\n      \"section\": \"S2\"\n    },\n    {\n      \"id\": \"R3\",\n      \"section\": \"S2\"\n    },\n    {\n      \"id\": \"R4\",\n      \"section\": \"S3\"\n    },\n    {\n      \"id\": \"R5\",\n      \"section\": \"S4\"\n    }\n  ]\n}\n"
+   },
+   "name": "a lineage with no sidecar beside it",
+   "what": "the work has now"
+  },
+  {
+   "expect": {
+    "ok": {
+     "doc_id": "lamp",
+     "lineage": "sce-requirement-lineage",
+     "next": 6,
+     "requirements": [
+      {
+       "first_rev": "1",
+       "id": "R1",
+       "quotes": [
+        {
+         "rev": "1",
+         "sha256": "6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d"
+        }
+       ],
+       "retired_rev": null
+      },
+      {
+       "first_rev": "1",
+       "id": "R2",
+       "quotes": [
+        {
+         "rev": "1",
+         "sha256": "ae667461fcb2645c429818f101268823113ada6c2c3d963a66bae3c0377d8719"
+        }
+       ],
+       "retired_rev": null
+      },
+      {
+       "first_rev": "1",
+       "id": "R3",
+       "quotes": [
+        {
+         "rev": "1",
+         "sha256": "6f4410cfd3079860f7efa4ddc3fdd27fe7f9255a79f60cab05b7e587467a4384"
+        }
+       ],
+       "retired_rev": null
+      },
+      {
+       "first_rev": "1",
+       "id": "R4",
+       "quotes": [
+        {
+         "rev": "1",
+         "sha256": "aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545"
+        }
+       ],
+       "retired_rev": null
+      },
+      {
+       "first_rev": "1",
+       "id": "R5",
+       "quotes": [
+        {
+         "rev": "1",
+         "sha256": "2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1"
+        }
+       ],
+       "retired_rev": null
+      }
+     ],
+     "revisions": [
+      {
+       "manifest_sha256": "0c87ee2a943cababedd4a9ba270f2da7ead34eab11a19b1970aee20e4a3055f8",
+       "rev": "1",
+       "sentence_sha256": [],
+       "sidecar_sha256": "3892e4be2a6bf9a864d19d3c4038af0b0030a84a3b0310e649553989087d5902",
+       "spec_sha256": null
+      }
+     ],
+     "v": 1
+    }
+   },
+   "held": {
+    "manifest_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"1\",\n  \"extraction\": {\n    \"ids\": \"synthesized\",\n    \"trace\": \"none\",\n    \"modality_convention\": \"english-modal-verbs\",\n    \"method\": \"ai-pass-1\"\n  },\n  \"sections\": [\n    {\n      \"id\": \"S1\",\n      \"title\": \"Sentence 1\"\n    },\n    {\n      \"id\": \"S2\",\n      \"title\": \"Sentence 2\"\n    },\n    {\n      \"id\": \"S3\",\n      \"title\": \"Sentence 3\"\n    },\n    {\n      \"id\": \"S4\",\n      \"title\": \"Sentence 4\"\n    }\n  ],\n  \"requirements\": [\n    {\n      \"id\": \"R1\",\n      \"section\": \"S1\"\n    },\n    {\n      \"id\": \"R2\",\n      \"section\": \"S2\"\n    },\n    {\n      \"id\": \"R3\",\n      \"section\": \"S2\"\n    },\n    {\n      \"id\": \"R4\",\n      \"section\": \"S3\"\n    },\n    {\n      \"id\": \"R5\",\n      \"section\": \"S4\"\n    }\n  ]\n}\n",
+    "sidecar_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"1\",\n  \"text\": {\n    \"R1\": \"The lamp starts off.\",\n    \"R2\": \"Pressing the switch turns it on\",\n    \"R3\": \"pressing it again turns it off\",\n    \"R4\": \"After 30 seconds on, it turns itself off.\",\n    \"R5\": \"Nothing else changes it.\"\n  }\n}\n"
+   },
+   "name": "a list made before lineages is adopted",
+   "what": "the work has now"
+  },
+  {
+   "expect": {
+    "ok": {
+     "doc_id": "lamp",
+     "lineage": "sce-requirement-lineage",
+     "next": 6,
+     "requirements": [
+      {
+       "first_rev": "1",
+       "id": "R1",
+       "quotes": [
+        {
+         "rev": "1",
+         "sha256": "6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d"
+        }
+       ],
+       "retired_rev": null
+      },
+      {
+       "first_rev": "1",
+       "id": "R2",
+       "quotes": [
+        {
+         "rev": "1",
+         "sha256": "ae667461fcb2645c429818f101268823113ada6c2c3d963a66bae3c0377d8719"
+        }
+       ],
+       "retired_rev": null
+      },
+      {
+       "first_rev": "1",
+       "id": "R3",
+       "quotes": [
+        {
+         "rev": "1",
+         "sha256": "6f4410cfd3079860f7efa4ddc3fdd27fe7f9255a79f60cab05b7e587467a4384"
+        }
+       ],
+       "retired_rev": null
+      },
+      {
+       "first_rev": "1",
+       "id": "R4",
+       "quotes": [
+        {
+         "rev": "1",
+         "sha256": "aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545"
+        }
+       ],
+       "retired_rev": null
+      },
+      {
+       "first_rev": "1",
+       "id": "R5",
+       "quotes": [
+        {
+         "rev": "1",
+         "sha256": "2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1"
+        }
+       ],
+       "retired_rev": null
+      }
+     ],
+     "revisions": [
+      {
+       "manifest_sha256": "0c87ee2a943cababedd4a9ba270f2da7ead34eab11a19b1970aee20e4a3055f8",
+       "rev": "1",
+       "sentence_sha256": [],
+       "sidecar_sha256": "d34dd3fe80a7dabba7b40a0fd3fd7dc1d9afb47439c31716b4518b2aab900b51",
+       "spec_sha256": null
+      }
+     ],
+     "v": 1
+    }
+   },
+   "held": {
+    "manifest_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"1\",\n  \"extraction\": {\n    \"ids\": \"synthesized\",\n    \"trace\": \"none\",\n    \"modality_convention\": \"english-modal-verbs\",\n    \"method\": \"ai-pass-1\"\n  },\n  \"sections\": [\n    {\n      \"id\": \"S1\",\n      \"title\": \"Sentence 1\"\n    },\n    {\n      \"id\": \"S2\",\n      \"title\": \"Sentence 2\"\n    },\n    {\n      \"id\": \"S3\",\n      \"title\": \"Sentence 3\"\n    },\n    {\n      \"id\": \"S4\",\n      \"title\": \"Sentence 4\"\n    }\n  ],\n  \"requirements\": [\n    {\n      \"id\": \"R1\",\n      \"section\": \"S1\"\n    },\n    {\n      \"id\": \"R2\",\n      \"section\": \"S2\"\n    },\n    {\n      \"id\": \"R3\",\n      \"section\": \"S2\"\n    },\n    {\n      \"id\": \"R4\",\n      \"section\": \"S3\"\n    },\n    {\n      \"id\": \"R5\",\n      \"section\": \"S4\"\n    }\n  ]\n}\n",
+    "sidecar_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"1\",\n  \"text\": {\n    \"R1\": \"  The lamp\\n  starts   off.\\u00a0 \",\n    \"R2\": \"Pressing the switch turns it on\",\n    \"R3\": \"pressing it again turns it off\",\n    \"R4\": \"After 30 seconds on, it turns itself off.\",\n    \"R5\": \"Nothing else changes it.\"\n  }\n}\n"
+   },
+   "name": "adoption reads the words with their whitespace collapsed",
+   "what": "the work has now"
+  },
+  {
+   "expect": {
+    "refused": "the list the work has now keeps no lineage and no sidecar, so the words behind its ids are not known"
+   },
+   "held": {
+    "manifest_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"1\",\n  \"extraction\": {\n    \"ids\": \"synthesized\",\n    \"trace\": \"none\",\n    \"modality_convention\": \"english-modal-verbs\",\n    \"method\": \"ai-pass-1\"\n  },\n  \"sections\": [\n    {\n      \"id\": \"S1\",\n      \"title\": \"Sentence 1\"\n    },\n    {\n      \"id\": \"S2\",\n      \"title\": \"Sentence 2\"\n    },\n    {\n      \"id\": \"S3\",\n      \"title\": \"Sentence 3\"\n    },\n    {\n      \"id\": \"S4\",\n      \"title\": \"Sentence 4\"\n    }\n  ],\n  \"requirements\": [\n    {\n      \"id\": \"R1\",\n      \"section\": \"S1\"\n    },\n    {\n      \"id\": \"R2\",\n      \"section\": \"S2\"\n    },\n    {\n      \"id\": \"R3\",\n      \"section\": \"S2\"\n    },\n    {\n      \"id\": \"R4\",\n      \"section\": \"S3\"\n    },\n    {\n      \"id\": \"R5\",\n      \"section\": \"S4\"\n    }\n  ]\n}\n"
+   },
+   "name": "a list with neither a lineage nor a sidecar",
+   "what": "the work has now"
+  },
+  {
+   "expect": {
+    "refused": "the lineage is not JSON"
+   },
+   "held": {
+    "lineage_text": "not json",
+    "manifest_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"1\",\n  \"extraction\": {\n    \"ids\": \"synthesized\",\n    \"trace\": \"none\",\n    \"modality_convention\": \"english-modal-verbs\",\n    \"method\": \"ai-pass-1\"\n  },\n  \"sections\": [\n    {\n      \"id\": \"S1\",\n      \"title\": \"Sentence 1\"\n    },\n    {\n      \"id\": \"S2\",\n      \"title\": \"Sentence 2\"\n    },\n    {\n      \"id\": \"S3\",\n      \"title\": \"Sentence 3\"\n    },\n    {\n      \"id\": \"S4\",\n      \"title\": \"Sentence 4\"\n    }\n  ],\n  \"requirements\": [\n    {\n      \"id\": \"R1\",\n      \"section\": \"S1\"\n    },\n    {\n      \"id\": \"R2\",\n      \"section\": \"S2\"\n    },\n    {\n      \"id\": \"R3\",\n      \"section\": \"S2\"\n    },\n    {\n      \"id\": \"R4\",\n      \"section\": \"S3\"\n    },\n    {\n      \"id\": \"R5\",\n      \"section\": \"S4\"\n    }\n  ]\n}\n",
+    "sidecar_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"1\",\n  \"text\": {\n    \"R1\": \"The lamp starts off.\",\n    \"R2\": \"Pressing the switch turns it on\",\n    \"R3\": \"pressing it again turns it off\",\n    \"R4\": \"After 30 seconds on, it turns itself off.\",\n    \"R5\": \"Nothing else changes it.\"\n  }\n}\n"
+   },
+   "name": "a lineage that is not JSON",
+   "what": "the work has now"
+  },
+  {
+   "expect": {
+    "refused": "the list the work has now is not JSON"
+   },
+   "held": {
+    "manifest_text": "not json",
+    "sidecar_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"1\",\n  \"text\": {\n    \"R1\": \"The lamp starts off.\",\n    \"R2\": \"Pressing the switch turns it on\",\n    \"R3\": \"pressing it again turns it off\",\n    \"R4\": \"After 30 seconds on, it turns itself off.\",\n    \"R5\": \"Nothing else changes it.\"\n  }\n}\n"
+   },
+   "name": "a manifest that is not JSON",
+   "what": "the work has now"
+  },
+  {
+   "expect": {
+    "refused": "the list the work has now is not JSON"
+   },
+   "held": {
+    "manifest_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"1\",\n  \"extraction\": {\n    \"ids\": \"synthesized\",\n    \"trace\": \"none\",\n    \"modality_convention\": \"english-modal-verbs\",\n    \"method\": \"ai-pass-1\"\n  },\n  \"sections\": [\n    {\n      \"id\": \"S1\",\n      \"title\": \"Sentence 1\"\n    },\n    {\n      \"id\": \"S2\",\n      \"title\": \"Sentence 2\"\n    },\n    {\n      \"id\": \"S3\",\n      \"title\": \"Sentence 3\"\n    },\n    {\n      \"id\": \"S4\",\n      \"title\": \"Sentence 4\"\n    }\n  ],\n  \"requirements\": [\n    {\n      \"id\": \"R1\",\n      \"section\": \"S1\"\n    },\n    {\n      \"id\": \"R2\",\n      \"section\": \"S2\"\n    },\n    {\n      \"id\": \"R3\",\n      \"section\": \"S2\"\n    },\n    {\n      \"id\": \"R4\",\n      \"section\": \"S3\"\n    },\n    {\n      \"id\": \"R5\",\n      \"section\": \"S4\"\n    }\n  ]\n}\n",
+    "sidecar_text": "not json"
+   },
+   "name": "a sidecar that is not JSON",
+   "what": "the work has now"
+  },
+  {
+   "expect": {
+    "refused": "the list the work has now is not a pair of JSON objects"
+   },
+   "held": {
+    "manifest_text": "[]",
+    "sidecar_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"1\",\n  \"text\": {\n    \"R1\": \"The lamp starts off.\",\n    \"R2\": \"Pressing the switch turns it on\",\n    \"R3\": \"pressing it again turns it off\",\n    \"R4\": \"After 30 seconds on, it turns itself off.\",\n    \"R5\": \"Nothing else changes it.\"\n  }\n}\n"
+   },
+   "name": "a manifest that is not an object",
+   "what": "the work has now"
+  },
+  {
+   "expect": {
+    "refused": "the list the work has now is not a pair of JSON objects"
+   },
+   "held": {
+    "manifest_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"1\",\n  \"extraction\": {\n    \"ids\": \"synthesized\",\n    \"trace\": \"none\",\n    \"modality_convention\": \"english-modal-verbs\",\n    \"method\": \"ai-pass-1\"\n  },\n  \"sections\": [\n    {\n      \"id\": \"S1\",\n      \"title\": \"Sentence 1\"\n    },\n    {\n      \"id\": \"S2\",\n      \"title\": \"Sentence 2\"\n    },\n    {\n      \"id\": \"S3\",\n      \"title\": \"Sentence 3\"\n    },\n    {\n      \"id\": \"S4\",\n      \"title\": \"Sentence 4\"\n    }\n  ],\n  \"requirements\": [\n    {\n      \"id\": \"R1\",\n      \"section\": \"S1\"\n    },\n    {\n      \"id\": \"R2\",\n      \"section\": \"S2\"\n    },\n    {\n      \"id\": \"R3\",\n      \"section\": \"S2\"\n    },\n    {\n      \"id\": \"R4\",\n      \"section\": \"S3\"\n    },\n    {\n      \"id\": \"R5\",\n      \"section\": \"S4\"\n    }\n  ]\n}\n",
+    "sidecar_text": "[]"
+   },
+   "name": "a sidecar that is not an object",
+   "what": "the work has now"
+  },
+  {
+   "expect": {
+    "refused": "the lineage has no doc_id"
+   },
+   "held": {
+    "manifest_text": "{\n  \"rev\": \"1\",\n  \"extraction\": {\n    \"ids\": \"synthesized\",\n    \"trace\": \"none\",\n    \"modality_convention\": \"english-modal-verbs\",\n    \"method\": \"ai-pass-1\"\n  },\n  \"sections\": [\n    {\n      \"id\": \"S1\",\n      \"title\": \"Sentence 1\"\n    },\n    {\n      \"id\": \"S2\",\n      \"title\": \"Sentence 2\"\n    },\n    {\n      \"id\": \"S3\",\n      \"title\": \"Sentence 3\"\n    },\n    {\n      \"id\": \"S4\",\n      \"title\": \"Sentence 4\"\n    }\n  ],\n  \"requirements\": [\n    {\n      \"id\": \"R1\",\n      \"section\": \"S1\"\n    },\n    {\n      \"id\": \"R2\",\n      \"section\": \"S2\"\n    },\n    {\n      \"id\": \"R3\",\n      \"section\": \"S2\"\n    },\n    {\n      \"id\": \"R4\",\n      \"section\": \"S3\"\n    },\n    {\n      \"id\": \"R5\",\n      \"section\": \"S4\"\n    }\n  ]\n}\n",
+    "sidecar_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"1\",\n  \"text\": {\n    \"R1\": \"The lamp starts off.\",\n    \"R2\": \"Pressing the switch turns it on\",\n    \"R3\": \"pressing it again turns it off\",\n    \"R4\": \"After 30 seconds on, it turns itself off.\",\n    \"R5\": \"Nothing else changes it.\"\n  }\n}\n"
+   },
+   "name": "a manifest with no document",
+   "what": "the work has now"
+  },
+  {
+   "expect": {
+    "refused": "the previous manifest carries the source's own ids; nothing here renumbers those, and nothing here would carry them either"
+   },
+   "held": {
+    "manifest_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"1\",\n  \"extraction\": {\n    \"ids\": \"native\",\n    \"trace\": \"none\",\n    \"modality_convention\": \"english-modal-verbs\",\n    \"method\": \"ai-pass-1\"\n  },\n  \"sections\": [\n    {\n      \"id\": \"S1\",\n      \"title\": \"Sentence 1\"\n    },\n    {\n      \"id\": \"S2\",\n      \"title\": \"Sentence 2\"\n    },\n    {\n      \"id\": \"S3\",\n      \"title\": \"Sentence 3\"\n    },\n    {\n      \"id\": \"S4\",\n      \"title\": \"Sentence 4\"\n    }\n  ],\n  \"requirements\": [\n    {\n      \"id\": \"R1\",\n      \"section\": \"S1\"\n    },\n    {\n      \"id\": \"R2\",\n      \"section\": \"S2\"\n    },\n    {\n      \"id\": \"R3\",\n      \"section\": \"S2\"\n    },\n    {\n      \"id\": \"R4\",\n      \"section\": \"S3\"\n    },\n    {\n      \"id\": \"R5\",\n      \"section\": \"S4\"\n    }\n  ]\n}\n",
+    "sidecar_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"1\",\n  \"text\": {\n    \"R1\": \"The lamp starts off.\",\n    \"R2\": \"Pressing the switch turns it on\",\n    \"R3\": \"pressing it again turns it off\",\n    \"R4\": \"After 30 seconds on, it turns itself off.\",\n    \"R5\": \"Nothing else changes it.\"\n  }\n}\n"
+   },
+   "name": "a manifest that carries the source's own ids",
+   "what": "the work has now"
+  },
+  {
+   "expect": {
+    "refused": "the previous manifest carries the source's own ids; nothing here renumbers those, and nothing here would carry them either"
+   },
+   "held": {
+    "manifest_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"1\",\n  \"sections\": [\n    {\n      \"id\": \"S1\",\n      \"title\": \"Sentence 1\"\n    },\n    {\n      \"id\": \"S2\",\n      \"title\": \"Sentence 2\"\n    },\n    {\n      \"id\": \"S3\",\n      \"title\": \"Sentence 3\"\n    },\n    {\n      \"id\": \"S4\",\n      \"title\": \"Sentence 4\"\n    }\n  ],\n  \"requirements\": [\n    {\n      \"id\": \"R1\",\n      \"section\": \"S1\"\n    },\n    {\n      \"id\": \"R2\",\n      \"section\": \"S2\"\n    },\n    {\n      \"id\": \"R3\",\n      \"section\": \"S2\"\n    },\n    {\n      \"id\": \"R4\",\n      \"section\": \"S3\"\n    },\n    {\n      \"id\": \"R5\",\n      \"section\": \"S4\"\n    }\n  ]\n}\n",
+    "sidecar_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"1\",\n  \"text\": {\n    \"R1\": \"The lamp starts off.\",\n    \"R2\": \"Pressing the switch turns it on\",\n    \"R3\": \"pressing it again turns it off\",\n    \"R4\": \"After 30 seconds on, it turns itself off.\",\n    \"R5\": \"Nothing else changes it.\"\n  }\n}\n"
+   },
+   "name": "a manifest with no extraction",
+   "what": "the work has now"
+  },
+  {
+   "expect": {
+    "refused": "the previous manifest's rev 'a' is not a whole number, so the next one cannot be told"
+   },
+   "held": {
+    "manifest_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"a\",\n  \"extraction\": {\n    \"ids\": \"synthesized\",\n    \"trace\": \"none\",\n    \"modality_convention\": \"english-modal-verbs\",\n    \"method\": \"ai-pass-1\"\n  },\n  \"sections\": [\n    {\n      \"id\": \"S1\",\n      \"title\": \"Sentence 1\"\n    },\n    {\n      \"id\": \"S2\",\n      \"title\": \"Sentence 2\"\n    },\n    {\n      \"id\": \"S3\",\n      \"title\": \"Sentence 3\"\n    },\n    {\n      \"id\": \"S4\",\n      \"title\": \"Sentence 4\"\n    }\n  ],\n  \"requirements\": [\n    {\n      \"id\": \"R1\",\n      \"section\": \"S1\"\n    },\n    {\n      \"id\": \"R2\",\n      \"section\": \"S2\"\n    },\n    {\n      \"id\": \"R3\",\n      \"section\": \"S2\"\n    },\n    {\n      \"id\": \"R4\",\n      \"section\": \"S3\"\n    },\n    {\n      \"id\": \"R5\",\n      \"section\": \"S4\"\n    }\n  ]\n}\n",
+    "sidecar_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"1\",\n  \"text\": {\n    \"R1\": \"The lamp starts off.\",\n    \"R2\": \"Pressing the switch turns it on\",\n    \"R3\": \"pressing it again turns it off\",\n    \"R4\": \"After 30 seconds on, it turns itself off.\",\n    \"R5\": \"Nothing else changes it.\"\n  }\n}\n"
+   },
+   "name": "a revision that is not a whole number",
+   "what": "the work has now"
+  },
+  {
+   "expect": {
+    "refused": "the previous manifest's rev None is not a whole number, so the next one cannot be told"
+   },
+   "held": {
+    "manifest_text": "{\n  \"doc_id\": \"lamp\",\n  \"extraction\": {\n    \"ids\": \"synthesized\",\n    \"trace\": \"none\",\n    \"modality_convention\": \"english-modal-verbs\",\n    \"method\": \"ai-pass-1\"\n  },\n  \"sections\": [\n    {\n      \"id\": \"S1\",\n      \"title\": \"Sentence 1\"\n    },\n    {\n      \"id\": \"S2\",\n      \"title\": \"Sentence 2\"\n    },\n    {\n      \"id\": \"S3\",\n      \"title\": \"Sentence 3\"\n    },\n    {\n      \"id\": \"S4\",\n      \"title\": \"Sentence 4\"\n    }\n  ],\n  \"requirements\": [\n    {\n      \"id\": \"R1\",\n      \"section\": \"S1\"\n    },\n    {\n      \"id\": \"R2\",\n      \"section\": \"S2\"\n    },\n    {\n      \"id\": \"R3\",\n      \"section\": \"S2\"\n    },\n    {\n      \"id\": \"R4\",\n      \"section\": \"S3\"\n    },\n    {\n      \"id\": \"R5\",\n      \"section\": \"S4\"\n    }\n  ]\n}\n",
+    "sidecar_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"1\",\n  \"text\": {\n    \"R1\": \"The lamp starts off.\",\n    \"R2\": \"Pressing the switch turns it on\",\n    \"R3\": \"pressing it again turns it off\",\n    \"R4\": \"After 30 seconds on, it turns itself off.\",\n    \"R5\": \"Nothing else changes it.\"\n  }\n}\n"
+   },
+   "name": "a manifest with no revision",
+   "what": "the work has now"
+  },
+  {
+   "expect": {
+    "refused": "the previous sidecar has no words for the previous manifest's 'R1'"
+   },
+   "held": {
+    "manifest_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"1\",\n  \"extraction\": {\n    \"ids\": \"synthesized\",\n    \"trace\": \"none\",\n    \"modality_convention\": \"english-modal-verbs\",\n    \"method\": \"ai-pass-1\"\n  },\n  \"sections\": [\n    {\n      \"id\": \"S1\",\n      \"title\": \"Sentence 1\"\n    },\n    {\n      \"id\": \"S2\",\n      \"title\": \"Sentence 2\"\n    },\n    {\n      \"id\": \"S3\",\n      \"title\": \"Sentence 3\"\n    },\n    {\n      \"id\": \"S4\",\n      \"title\": \"Sentence 4\"\n    }\n  ],\n  \"requirements\": [\n    {\n      \"id\": \"R1\",\n      \"section\": \"S1\"\n    },\n    {\n      \"id\": \"R2\",\n      \"section\": \"S2\"\n    },\n    {\n      \"id\": \"R3\",\n      \"section\": \"S2\"\n    },\n    {\n      \"id\": \"R4\",\n      \"section\": \"S3\"\n    },\n    {\n      \"id\": \"R5\",\n      \"section\": \"S4\"\n    }\n  ]\n}\n",
+    "sidecar_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"1\",\n  \"text\": {\n    \"R2\": \"Pressing the switch turns it on\",\n    \"R3\": \"pressing it again turns it off\",\n    \"R4\": \"After 30 seconds on, it turns itself off.\",\n    \"R5\": \"Nothing else changes it.\"\n  }\n}\n"
+   },
+   "name": "a requirement the sidecar has no words for",
+   "what": "the work has now"
+  },
+  {
+   "expect": {
+    "refused": "the previous sidecar has no words for the previous manifest's 'R1'"
+   },
+   "held": {
+    "manifest_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"1\",\n  \"extraction\": {\n    \"ids\": \"synthesized\",\n    \"trace\": \"none\",\n    \"modality_convention\": \"english-modal-verbs\",\n    \"method\": \"ai-pass-1\"\n  },\n  \"sections\": [\n    {\n      \"id\": \"S1\",\n      \"title\": \"Sentence 1\"\n    },\n    {\n      \"id\": \"S2\",\n      \"title\": \"Sentence 2\"\n    },\n    {\n      \"id\": \"S3\",\n      \"title\": \"Sentence 3\"\n    },\n    {\n      \"id\": \"S4\",\n      \"title\": \"Sentence 4\"\n    }\n  ],\n  \"requirements\": [\n    {\n      \"id\": \"R1\",\n      \"section\": \"S1\"\n    },\n    {\n      \"id\": \"R2\",\n      \"section\": \"S2\"\n    },\n    {\n      \"id\": \"R3\",\n      \"section\": \"S2\"\n    },\n    {\n      \"id\": \"R4\",\n      \"section\": \"S3\"\n    },\n    {\n      \"id\": \"R5\",\n      \"section\": \"S4\"\n    }\n  ]\n}\n",
+    "sidecar_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"1\",\n  \"text\": {\n    \"R1\": \"  \",\n    \"R2\": \"Pressing the switch turns it on\",\n    \"R3\": \"pressing it again turns it off\",\n    \"R4\": \"After 30 seconds on, it turns itself off.\",\n    \"R5\": \"Nothing else changes it.\"\n  }\n}\n"
+   },
+   "name": "words that are blank",
+   "what": "the work has now"
+  },
+  {
+   "expect": {
+    "refused": "the previous manifest lists no requirements"
+   },
+   "held": {
+    "manifest_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"1\",\n  \"extraction\": {\n    \"ids\": \"synthesized\",\n    \"trace\": \"none\",\n    \"modality_convention\": \"english-modal-verbs\",\n    \"method\": \"ai-pass-1\"\n  },\n  \"sections\": [\n    {\n      \"id\": \"S1\",\n      \"title\": \"Sentence 1\"\n    },\n    {\n      \"id\": \"S2\",\n      \"title\": \"Sentence 2\"\n    },\n    {\n      \"id\": \"S3\",\n      \"title\": \"Sentence 3\"\n    },\n    {\n      \"id\": \"S4\",\n      \"title\": \"Sentence 4\"\n    }\n  ],\n  \"requirements\": []\n}\n",
+    "sidecar_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"1\",\n  \"text\": {\n    \"R1\": \"The lamp starts off.\",\n    \"R2\": \"Pressing the switch turns it on\",\n    \"R3\": \"pressing it again turns it off\",\n    \"R4\": \"After 30 seconds on, it turns itself off.\",\n    \"R5\": \"Nothing else changes it.\"\n  }\n}\n"
+   },
+   "name": "no requirements",
+   "what": "the work has now"
+  }
+ ],
  "parse": [
   {
    "expect": "ok",

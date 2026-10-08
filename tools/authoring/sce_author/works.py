@@ -189,6 +189,17 @@ def read_acceptance_delta(work: str) -> dict:
     return call_work("read_acceptance_delta", {"id": work})
 
 
+def read_revision_report(work: str, sentences: bool = False) -> dict:
+    """What the revision of the work did, requirement by requirement, judged by the product
+    (`read_revision_report`): the words of each requirement from the work's own lineages beside
+    what the design's evidence did, whether the revision stayed within the reach of what
+    changed, and the page an owner reads (`report.page`; with `sentences`, carrying the
+    specification's sentences). `report` is `None` for a work nobody accepted. A list the product
+    can say nothing of the words of is refused as `revision-not-judged`, in the sentence a person
+    is told."""
+    return call_work("read_revision_report", {"id": work, "sentences": sentences})
+
+
 def _requirements_of(held: dict | None, standing: str | None,
                      source_head: str | None) -> dict | None:
     """The requirement list as a client reads it, from what the command layer answered."""

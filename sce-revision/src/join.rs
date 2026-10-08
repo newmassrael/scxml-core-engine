@@ -64,6 +64,46 @@ fn classify(words: &str, evidence: Option<&str>) -> (&'static str, &'static str)
     }
 }
 
+/// The lines `acceptance-delta` writes (a line per requirement, the rows that claim nothing, a
+/// summary) as the one object [`join`] reads, whoever asked the product: the generator run on a
+/// tree, or the application's command layer asking it of a work.
+///
+/// Gathered, not read again: what each requirement's evidence did is the product's to say.
+pub fn delta_object(lines: &Value) -> Value {
+    let lines = lines.as_array().map(Vec::as_slice).unwrap_or_default();
+    let first_of = |kind: &str| lines.iter().find(|line| line["kind"] == kind);
+    let pick = |line: &Value, keys: &[&str]| {
+        let mut picked = Map::new();
+        for key in keys {
+            picked.insert((*key).to_string(), line[*key].clone());
+        }
+        Value::Object(picked)
+    };
+    let requirements: Vec<Value> = lines
+        .iter()
+        .filter(|line| line["kind"] == "acceptance-delta")
+        .filter_map(|line| line.as_object())
+        .map(|line| {
+            Value::Object(
+                line.iter()
+                    .filter(|(key, _)| key.as_str() != "v" && key.as_str() != "kind")
+                    .map(|(key, value)| (key.clone(), value.clone()))
+                    .collect(),
+            )
+        })
+        .collect();
+    json!({
+        "version": 1,
+        "summary": first_of("acceptance-delta-summary").map(|summary| pick(
+            summary,
+            &["requirements", "unchanged", "changed", "new", "dropped"],
+        )),
+        "requirements": requirements,
+        "unclaimed": first_of("acceptance-delta-unclaimed")
+            .map(|unclaimed| pick(unclaimed, &["added", "gone"])),
+    })
+}
+
 /// requirement id -> its words status, from the delta the requirement-set tool returned.
 fn words_of(delta: &Value) -> Judgment<BTreeMap<String, String>> {
     let Some(found) = delta["requirements"].as_object() else {

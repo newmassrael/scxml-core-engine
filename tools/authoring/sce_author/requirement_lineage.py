@@ -92,8 +92,15 @@ class LineageError(AuthoringError):
 
 def sha256_text(text: str) -> str:
     """The digest of text the caller has already normalised. The lineage does not
-    normalise: what counts as the same words is `requirement_set.normalise`'s."""
+    normalise: what counts as the same words is `normalise`'s."""
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def normalise(text: str) -> str:
+    """Whitespace collapsed to single spaces: a specification wrapped at another width, or a
+    quote copied across a line break, is the same words. What counts as the same words for every
+    digest the lineage keeps; `requirement_set.normalise` is this."""
+    return re.sub(r"\s+", " ", text).strip()
 
 
 @dataclass
@@ -170,6 +177,31 @@ def adopt(doc_id: str, manifest: dict, texts: dict[str, str],
         "revisions": [{"rev": rev, "spec_sha256": None, "sentence_sha256": [],
                        "manifest_sha256": manifest_sha256, "sidecar_sha256": sidecar_sha256}],
         "requirements": rows})
+
+
+def of_list(held: dict, what: str) -> dict:
+    """The lineage of a list a work kept: the one saved with it, or, for a list made before
+    lineages, the one adopting it makes (the ids it has, the words behind them from its sidecar),
+    which is what a later list built against it was given in the first place. Refuses a list that
+    gives neither, saying what to do. `what` names the list in the sentence."""
+    if "lineage_text" in held:
+        return parse(held["lineage_text"])
+    if "sidecar_text" not in held:
+        raise LineageError(f"the list {what} keeps no lineage and no sidecar, so the words behind "
+                           "its ids are not known")
+    try:
+        manifest, sidecar = json.loads(held["manifest_text"]), json.loads(held["sidecar_text"])
+    except ValueError as error:
+        # No parser detail in the sentence: it is one library's wording, and the sentence is a case
+        # another implementation has to say in the same words.
+        raise LineageError(f"the list {what} is not JSON") from error
+    if not isinstance(manifest, dict) or not isinstance(sidecar, dict):
+        raise LineageError(f"the list {what} is not a pair of JSON objects")
+    texts = {id_: normalise(text) for id_, text in (sidecar.get("text") or {}).items()
+             if isinstance(text, str)}
+    return adopt(manifest.get("doc_id"), manifest, texts,
+                 manifest_sha256=sha256_text(held["manifest_text"]),
+                 sidecar_sha256=sha256_text(held["sidecar_text"]))
 
 
 def advance(prev: dict, doc_id: str, spec: Spec, quotes: list[str], *,

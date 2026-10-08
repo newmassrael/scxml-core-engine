@@ -42,6 +42,7 @@ import {
   parseListing,
   parseReadAcceptance,
   parseReadAcceptanceDelta,
+  parseReadRevisionReport,
   parseReadAnswers,
   parseReadConnection,
   parseReadModel,
@@ -91,6 +92,7 @@ const parsers: Record<string, (value: unknown) => unknown> = {
   accept: parseSaved,
   read_acceptance: parseReadAcceptance,
   read_acceptance_delta: parseReadAcceptanceDelta,
+  read_revision_report: parseReadRevisionReport,
   read_work_snapshot: parseWorkSnapshot,
   read_judgment: parseJudgment,
   read_work_heads: parseWorkHeads,
@@ -898,6 +900,35 @@ describe("a reply that is not the promised shape", () => {
     // Nobody accepted: there is nothing to compare, and a part left over is a contradiction.
     const none = replies.answers["read_acceptance_delta_none"] as Record<string, unknown>;
     expect(() => parseReadAcceptanceDelta({ ...none, lines: [] })).toThrow(/null when nobody accepted/);
+  });
+
+  it("reads what a revision did as the verdict, the rows and the page beside the two revisions it is about", () => {
+    const none = parseReadRevisionReport(replies.answers["read_revision_report_none"]);
+    expect(none).toEqual({ acceptance: null, report: null });
+
+    const read = parseReadRevisionReport(replies.answers["read_revision_report"]);
+    expect(read.report?.verdict).toBe("within-reach");
+    // The second revision of the list dropped a sentence: its id is retired and four carry over.
+    expect(read.report?.requirements.map((row) => row["kind"]).sort())
+      .toEqual(["carries-over", "carries-over", "carries-over", "carries-over", "retired-cleanly"]);
+    expect(read.report?.page).toContain("Verdict: within-reach");
+    // The two states are the work's own chain: the list accepted and the list the work has now.
+    expect(read.report?.of.accepted.requirements).not.toBe(read.report?.of.now.requirements);
+    expect(read.acceptance?.basis.requirements).toBe(read.report?.of.accepted.requirements);
+  });
+
+  it("refuses a revision report that is only partly there", () => {
+    const held = replies.answers["read_revision_report"] as Record<string, unknown>;
+    const report = held["report"] as Record<string, unknown>;
+    expect(() => parseReadRevisionReport({ ...held, report: null })).toThrow(/read_revision_report\.report/);
+    expect(() => parseReadRevisionReport({ ...held, report: { ...report, requirements: {} } }))
+      .toThrow(/report\.requirements/);
+    expect(() => parseReadRevisionReport({ ...held, report: { ...report, page: 3 } })).toThrow(/report\.page/);
+    expect(() => parseReadRevisionReport({ ...held, report: { ...report, of: { accepted: report["of"] } } }))
+      .toThrow(/report\.of\./);
+    // Nobody accepted: there is nothing to report, and a report left over is a contradiction.
+    const none = replies.answers["read_revision_report_none"] as Record<string, unknown>;
+    expect(() => parseReadRevisionReport({ ...none, report: held["report"] })).toThrow(/null when nobody accepted/);
   });
 
   it("is refused when an acceptance and its standing disagree, or a measure is not the shape the screen reads", () => {

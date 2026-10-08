@@ -11,7 +11,8 @@
 //! changed what a person is told, so the sentence is compared and not only the fact of a refusal.
 
 use sce_revision::{
-    belongs_to, belongs_to_list, between, extends, join, parse, render, LineageError,
+    belongs_to, belongs_to_list, between, delta_object, extends, join, of_list, parse, render,
+    LineageError,
 };
 use serde_json::{json, Value};
 
@@ -105,6 +106,21 @@ fn a_delta_belongs_to_the_record_of_its_revision_or_is_refused_in_the_pythons_wo
     held_to_the_python("belongs_to", |case, _| {
         verdict(belongs_to(&case["delta"], &case["record"]))
     });
+}
+
+#[test]
+fn the_lineage_of_a_list_a_work_kept_is_the_pythons_adopted_or_refused_in_its_words() {
+    held_to_the_python("of_list", |case, _| {
+        outcome(of_list(
+            &case["held"],
+            case["what"].as_str().expect("a case says what the list is"),
+        ))
+    });
+}
+
+#[test]
+fn the_lines_of_a_delta_are_gathered_as_the_python_gathers_them() {
+    held_to_the_python("delta_object", |case, _| delta_object(&case["lines"]));
 }
 
 #[test]

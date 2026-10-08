@@ -32,7 +32,7 @@ HERE = pathlib.Path(__file__).resolve().parent
 ROOT = HERE.parents[2]
 sys.path.insert(0, str(HERE.parent))
 
-from sce_author import requirement_lineage as rl, requirement_set as rs, revision  # noqa: E402
+from sce_author import requirement_lineage as rl, requirement_set as rs, revision, verify  # noqa: E402
 
 CASES = ROOT / "sce-build" / "tests" / "fixtures" / "revision_judgment" / "cases.json"
 
@@ -368,6 +368,87 @@ def list_cases():
             for name, built in histories().items()}
 
 
+def of_list_cases():
+    """The lineage of a list a work kept: the one saved with it, or the one adopting a list that
+    predates lineages makes. The inputs are the texts a work holds of a list; the expectation is
+    the lineage or the exact sentence of the refusal."""
+    first = histories()["first"]
+    manifest = rs.render_manifest(first.manifest)
+    sidecar = rs.render_sidecar(first.sidecar)
+    lineage = rl.render(first.lineage)
+
+    def case(name, **held):
+        return {"name": name, "held": held, "what": "the work has now",
+                "expect": outcome(rl.of_list, held, "the work has now")}
+
+    def manifest_with(edit):
+        data = json.loads(manifest)
+        edit(data)
+        return json.dumps(data, indent=2) + "\n"
+
+    def sidecar_with(edit):
+        data = json.loads(sidecar)
+        edit(data)
+        return json.dumps(data, indent=2) + "\n"
+
+    # The same words laid out across lines and spaces: adoption digests them collapsed.
+    wrapped = sidecar_with(lambda s: s["text"].update(
+        R1="  The lamp\n  starts   off.  "))
+    return [
+        case("a list that keeps its lineage", manifest_text=manifest, sidecar_text=sidecar,
+             lineage_text=lineage),
+        case("a lineage with no sidecar beside it", manifest_text=manifest, lineage_text=lineage),
+        case("a list made before lineages is adopted", manifest_text=manifest, sidecar_text=sidecar),
+        case("adoption reads the words with their whitespace collapsed", manifest_text=manifest,
+             sidecar_text=wrapped),
+        case("a list with neither a lineage nor a sidecar", manifest_text=manifest),
+        case("a lineage that is not JSON", manifest_text=manifest, sidecar_text=sidecar,
+             lineage_text="not json"),
+        case("a manifest that is not JSON", manifest_text="not json", sidecar_text=sidecar),
+        case("a sidecar that is not JSON", manifest_text=manifest, sidecar_text="not json"),
+        case("a manifest that is not an object", manifest_text="[]", sidecar_text=sidecar),
+        case("a sidecar that is not an object", manifest_text=manifest, sidecar_text="[]"),
+        case("a manifest with no document", manifest_text=manifest_with(lambda m: m.pop("doc_id")),
+             sidecar_text=sidecar),
+        case("a manifest that carries the source's own ids",
+             manifest_text=manifest_with(lambda m: m["extraction"].update(ids="native")),
+             sidecar_text=sidecar),
+        case("a manifest with no extraction",
+             manifest_text=manifest_with(lambda m: m.pop("extraction")), sidecar_text=sidecar),
+        case("a revision that is not a whole number",
+             manifest_text=manifest_with(lambda m: m.update(rev="a")), sidecar_text=sidecar),
+        case("a manifest with no revision",
+             manifest_text=manifest_with(lambda m: m.pop("rev")), sidecar_text=sidecar),
+        case("a requirement the sidecar has no words for", manifest_text=manifest,
+             sidecar_text=sidecar_with(lambda s: s["text"].pop("R1"))),
+        case("words that are blank", manifest_text=manifest,
+             sidecar_text=sidecar_with(lambda s: s["text"].update(R1="  "))),
+        case("no requirements", manifest_text=manifest_with(lambda m: m.update(requirements=[])),
+             sidecar_text=sidecar),
+    ]
+
+
+def delta_object_cases():
+    """The lines `acceptance-delta` writes, gathered into the one object the judgment reads."""
+    def case(name, lines):
+        return {"name": name, "lines": lines, "expect": verify.delta_object(lines)}
+
+    requirement = {"v": 1, "kind": "acceptance-delta", "requirement": "R1", "evidence": "unchanged"}
+    moved = {"v": 1, "kind": "acceptance-delta", "requirement": "R2", "evidence": "changed",
+             "moved": ["states.a.transitions[1]"], "gone": 1}
+    unclaimed = {"v": 1, "kind": "acceptance-delta-unclaimed", "added": ["states.b"], "gone": 2}
+    summary = {"v": 1, "kind": "acceptance-delta-summary", "record": "r", "requirements": 2,
+               "unchanged": 1, "changed": 1, "new": 0, "dropped": 0}
+    return [
+        case("every kind of line", [requirement, moved, unclaimed, summary]),
+        case("no summary", [requirement, moved, unclaimed]),
+        case("no unclaimed line", [requirement, moved, summary]),
+        case("no lines at all", []),
+        case("a line of another kind is not gathered", [requirement, {"v": 1, "kind": "other"}, summary]),
+        case("the record named by the summary is not kept", [summary]),
+    ]
+
+
 def parse_cases():
     """What reading a lineage's text refuses. Each case breaks one rule of a lineage this module
     wrote and leaves the rest as the first revision's lineage has them, so that the sentence is the
@@ -607,6 +688,8 @@ def build_cases() -> dict:
         "extends": extends,
         "belongs_to_list": belongs_to_list,
         "parse": parse_cases(),
+        "of_list": of_list_cases(),
+        "delta_object": delta_object_cases(),
         "lists": list_cases(),
     }
 

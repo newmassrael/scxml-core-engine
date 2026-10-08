@@ -4,7 +4,7 @@
     "accept": {
       "outcome": "saved",
       "parent": null,
-      "revision": "93957b04e5dde4486eb8006a0be4a530c2e5b6082265dc239211c4394b8d59f3"
+      "revision": "93e3f3785b8745e6f7b2f70208f65def3de581686c8e109d6fea653094a7c7a1"
     },
     "bundle_history": {
       "entries": [
@@ -110,7 +110,7 @@
       "deleted": "main"
     },
     "describe": {
-      "command_set_version": 21,
+      "command_set_version": 22,
       "commands": [
         "describe",
         "list_works",
@@ -133,6 +133,7 @@
         "accept",
         "read_acceptance",
         "read_acceptance_delta",
+        "read_revision_report",
         "read_judgment",
         "read_work_snapshot",
         "read_work_heads",
@@ -170,7 +171,7 @@
       "writes_settings": false
     },
     "describe_desktop": {
-      "command_set_version": 21,
+      "command_set_version": 22,
       "commands": [
         "describe",
         "list_works",
@@ -193,6 +194,7 @@
         "accept",
         "read_acceptance",
         "read_acceptance_delta",
+        "read_revision_report",
         "read_judgment",
         "read_work_snapshot",
         "read_work_heads",
@@ -542,7 +544,7 @@
         "open": [
           "1 question(s) the specification leaves open (open-guard)"
         ],
-        "revision": "93957b04e5dde4486eb8006a0be4a530c2e5b6082265dc239211c4394b8d59f3"
+        "revision": "93e3f3785b8745e6f7b2f70208f65def3de581686c8e109d6fea653094a7c7a1"
       },
       "lapse": null,
       "now": {
@@ -564,7 +566,7 @@
         "open": [
           "1 question(s) the specification leaves open (open-guard)"
         ],
-        "revision": "93957b04e5dde4486eb8006a0be4a530c2e5b6082265dc239211c4394b8d59f3"
+        "revision": "93e3f3785b8745e6f7b2f70208f65def3de581686c8e109d6fea653094a7c7a1"
       },
       "lines": [
         {
@@ -600,7 +602,8 @@
         "doc_id": "door",
         "path": "spec/requirements.manifest.json",
         "rev": "1",
-        "sha256": "27746da1c38f95dd027c1a5838685a01dad665424d08c8672866c487507b7758"
+        "sha256": "27746da1c38f95dd027c1a5838685a01dad665424d08c8672866c487507b7758",
+        "sidecar_sha256": "0ca15765dea67bba411bfbea323c254d5d290836069dfbfc0ceff1f6487d1d63"
       },
       "now": {
         "model": "d04a9a83aac49bced5e6628fcf2579eb56ff8ba6016cb3d53f04e2212285bcc2",
@@ -620,7 +623,7 @@
         "open": [
           "1 question(s) the specification leaves open (open-guard)"
         ],
-        "revision": "93957b04e5dde4486eb8006a0be4a530c2e5b6082265dc239211c4394b8d59f3"
+        "revision": "93e3f3785b8745e6f7b2f70208f65def3de581686c8e109d6fea653094a7c7a1"
       },
       "lines": [
         {
@@ -664,7 +667,8 @@
         "doc_id": "door",
         "path": "spec/requirements.manifest.json",
         "rev": "1",
-        "sha256": "27746da1c38f95dd027c1a5838685a01dad665424d08c8672866c487507b7758"
+        "sha256": "27746da1c38f95dd027c1a5838685a01dad665424d08c8672866c487507b7758",
+        "sidecar_sha256": "0ca15765dea67bba411bfbea323c254d5d290836069dfbfc0ceff1f6487d1d63"
       },
       "now": {
         "model": "0c2ab3203427b9e511dd0e7e6036bebbb82f82ca844dd999705fb2d51cfd3bca",
@@ -690,7 +694,7 @@
         "open": [
           "1 question(s) the specification leaves open (open-guard)"
         ],
-        "revision": "93957b04e5dde4486eb8006a0be4a530c2e5b6082265dc239211c4394b8d59f3"
+        "revision": "93e3f3785b8745e6f7b2f70208f65def3de581686c8e109d6fea653094a7c7a1"
       },
       "lapse": "design/model.scxml moved",
       "now": {
@@ -1769,6 +1773,92 @@
       "source_head": "00277e3a4c223a2ec90dd8eebf4d691b8d266dac58f270f25f5201e314803d44",
       "standing": null
     },
+    "read_revision_report": {
+      "acceptance": {
+        "accepted_at": "2026-10-03T09:00:00Z",
+        "basis": {
+          "model": "cb32b5ceb8a996381e767f792b12d632de419708c0aef5e51ef8f0b1cd0a6bb4",
+          "requirements": "e38b44fa8e6e71697235ca990c104c54eba8e2cf051022c50627600a1085fcc8",
+          "source": "6f2b3e246b6b5f39a4714e3972d0d21825256f8892c7c17a6354d7601e20b8f4"
+        },
+        "channel": "direct",
+        "open": [],
+        "revision": "bcc6fd3fab41f0c354025815052b53c6ea449dd0e43fa261e7b4d7fa2bdb1e3c"
+      },
+      "report": {
+        "of": {
+          "accepted": {
+            "model": "cb32b5ceb8a996381e767f792b12d632de419708c0aef5e51ef8f0b1cd0a6bb4",
+            "requirements": "e38b44fa8e6e71697235ca990c104c54eba8e2cf051022c50627600a1085fcc8",
+            "source": "6f2b3e246b6b5f39a4714e3972d0d21825256f8892c7c17a6354d7601e20b8f4"
+          },
+          "now": {
+            "model": "cb32b5ceb8a996381e767f792b12d632de419708c0aef5e51ef8f0b1cd0a6bb4",
+            "requirements": "113a2b40e00b0c88b1bea0180971045e6fd3db134ce4dd8bab9c09341a048e44",
+            "source": "6f2b3e246b6b5f39a4714e3972d0d21825256f8892c7c17a6354d7601e20b8f4"
+          }
+        },
+        "page": "# Revision report: work <revision-work-id>, list e38b44fa8e6e to 113a2b40e00b\n\nVerdict: within-reach. The design moved only where the words did.\n\n`carries over` means the words read the same and so does the product's closure of what the requirement depends on. It does not say the requirement is met, and the acceptance still lapses by its bytes: accepting again is the owner's.\n\n## Changed as the words asked (1)\n\n- R5 -- retired-cleanly: the specification dropped it and no node cites it (words retired, evidence none)\n\n## Carries over (4)\n\nR1, R2, R3, R4\n",
+        "requirements": [
+          {
+            "evidence": "unchanged",
+            "kind": "carries-over",
+            "requirement": "R1",
+            "severity": "ok",
+            "words": "carried"
+          },
+          {
+            "evidence": "unchanged",
+            "kind": "carries-over",
+            "requirement": "R2",
+            "severity": "ok",
+            "words": "carried"
+          },
+          {
+            "evidence": "unchanged",
+            "kind": "carries-over",
+            "requirement": "R3",
+            "severity": "ok",
+            "words": "carried"
+          },
+          {
+            "evidence": "unchanged",
+            "kind": "carries-over",
+            "requirement": "R4",
+            "severity": "ok",
+            "words": "carried"
+          },
+          {
+            "evidence": "none",
+            "kind": "retired-cleanly",
+            "requirement": "R5",
+            "severity": "ok",
+            "words": "retired"
+          }
+        ],
+        "summary": {
+          "kinds": {
+            "carries-over": 4,
+            "retired-cleanly": 1
+          },
+          "look": 0,
+          "ok": 5,
+          "requirements": 5,
+          "seen": 4,
+          "uncovered": 0,
+          "violations": 0
+        },
+        "unclaimed": {
+          "added": [],
+          "gone": 0
+        },
+        "verdict": "within-reach"
+      }
+    },
+    "read_revision_report_none": {
+      "acceptance": null,
+      "report": null
+    },
     "read_server_status_certificate": {
       "server": {
         "address": "https://models.example.com/v1",
@@ -1862,7 +1952,7 @@
       "source": "7dc2f2d866dfb913b74841a0abff1709551fc1f7bc0f302d43251d0f60ce9e97"
     },
     "read_work_heads_accepted": {
-      "acceptance": "93957b04e5dde4486eb8006a0be4a530c2e5b6082265dc239211c4394b8d59f3",
+      "acceptance": "93e3f3785b8745e6f7b2f70208f65def3de581686c8e109d6fea653094a7c7a1",
       "answers": null,
       "bundle": null,
       "model": {
@@ -1977,7 +2067,7 @@
         "open": [
           "1 question(s) the specification leaves open (open-guard)"
         ],
-        "revision": "93957b04e5dde4486eb8006a0be4a530c2e5b6082265dc239211c4394b8d59f3"
+        "revision": "93e3f3785b8745e6f7b2f70208f65def3de581686c8e109d6fea653094a7c7a1"
       },
       "answers": null,
       "bundle": null,
@@ -2376,7 +2466,7 @@
       "default": "main"
     }
   },
-  "command_set_version": 21,
+  "command_set_version": 22,
   "refusals": {
     "active-request": {
       "detail": {
@@ -2644,6 +2734,11 @@
       "kind": "request-held",
       "message": "the request <request-id> is held by `adapter-a` until 2026-10-03T09:01:00Z; the one that holds it renews"
     },
+    "revision-not-judged": {
+      "detail": {},
+      "kind": "revision-not-judged",
+      "message": "cannot say what the revision did to each requirement's words: the previous manifest carries the source's own ids; nothing here renumbers those, and nothing here would carry them either. Build the list again with scxml_requirement_set against the lineage works_read gives and save it with works_save_requirements"
+    },
     "sce-refused": {
       "detail": {
         "code": "cli/diagram-does-not-fit"
@@ -2664,7 +2759,7 @@
     },
     "unknown-command": {
       "kind": "unknown-command",
-      "message": "`nope` is not a command; the commands are describe, list_works, create_work, read_work, read_source, save_source, history, save_model, read_model, model_history, figures, remove_work, review, read_answers, save_answers, save_requirements, read_requirements, requirements_report, accept, read_acceptance, read_acceptance_delta, read_judgment, read_work_snapshot, read_work_heads, request_generation, read_request, list_requests, list_open_requests, claim_request, heartbeat_request, save_request_candidate, read_request_candidate, complete_request, fail_request, cancel_request, report_adapter, read_adapter_status, read_host_status, read_bundle, bundle_history, list_connections, read_connection, read_auth_policy, read_claude_status, read_codex_status, find_clients, read_server_status, save_connection, delete_connection, set_default_connection"
+      "message": "`nope` is not a command; the commands are describe, list_works, create_work, read_work, read_source, save_source, history, save_model, read_model, model_history, figures, remove_work, review, read_answers, save_answers, save_requirements, read_requirements, requirements_report, accept, read_acceptance, read_acceptance_delta, read_revision_report, read_judgment, read_work_snapshot, read_work_heads, request_generation, read_request, list_requests, list_open_requests, claim_request, heartbeat_request, save_request_candidate, read_request_candidate, complete_request, fail_request, cancel_request, report_adapter, read_adapter_status, read_host_status, read_bundle, bundle_history, list_connections, read_connection, read_auth_policy, read_claude_status, read_codex_status, find_clients, read_server_status, save_connection, delete_connection, set_default_connection"
     },
     "wrong-connection": {
       "detail": {

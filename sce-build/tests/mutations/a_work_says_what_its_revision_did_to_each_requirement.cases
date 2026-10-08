@@ -1,0 +1,58 @@
+# Mutation cases for "a work says what its revision did to each requirement".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_work_says_what_its_revision_did_to_each_requirement.cases`.
+#
+# `read_revision_report` lays a work out for the judgment of `sce-revision`: the list that was
+# accepted (read at the revision the acceptance names) and the list the work has now, each as a
+# lineage, the manifest the acceptance pinned, and the product's lines. The judgment is held to
+# the Python by the shared cases; what a mutation here can break is the laying out. Things that
+# are easy to get wrong and read as success: the words taken from the list now on both sides (a
+# dropped sentence then reads as carried), the acceptance's pin never asked (words about a list
+# the owner did not accept), and the specification's sentences printed whether or not they were
+# asked for (they are someone else's, and the page says it is a local artefact only when it
+# carries them).
+#
+# Each case below takes one of those away and must make a test of
+# `app-core/tests/a_work_says_what_its_revision_did_to_each_requirement.rs` red.
+#
+# ⚠ A mutated tree is built under `-D warnings`, so every case keeps each binding it had in
+# use: a mutation that stops reading one is an unused-variable ERROR, the tree does not
+# compile, and the verdict is INCONCLUSIVE.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported INCONCLUSIVE with
+# the anchor quoted, never as a pass.
+
+mutation_tests -p sce-app-core --test a_work_says_what_its_revision_did_to_each_requirement
+mutation_targets app-core/src/revision_report.rs app-core/src/commands.rs
+mutation_oracles app-core/tests/a_work_says_what_its_revision_did_to_each_requirement.rs
+
+mutation_case "the words of the accepted list are read from the list the work has now" <<'PY'
+edit("app-core/src/revision_report.rs",
+     "        &sce_revision::of_list(&held(older), \"the owner accepted\").map_err(cannot_say)?,",
+     "        &sce_revision::of_list(&held(newer), \"the owner accepted\").map_err(cannot_say)?,")
+PY
+
+mutation_case "the acceptance's pin is never asked" <<'PY'
+edit("app-core/src/revision_report.rs",
+     "    sce_revision::belongs_to(&words, &record).map_err(said)?;",
+     "    let _ = (&record, said);")
+PY
+
+mutation_case "the sentences of the specification are on the page whether or not they were asked for" <<'PY'
+edit("app-core/src/revision_report.rs",
+     "    let sentences = with_sentences.then(|| sentences_of(newer));",
+     "    let sentences = Some(sentences_of(newer)).filter(|_| with_sentences || !with_sentences);")
+PY
+
+mutation_case "a work nobody accepted is reported on" <<'PY'
+edit("app-core/src/commands.rs",
+     "            let Some(saved) = state.acceptance else {\n                return Ok(json!({ \"acceptance\": null, \"report\": null }));\n            };",
+     "            let Some(saved) = state.acceptance.or_else(|| panic!(\"no acceptance\")) else {\n                return Ok(json!({ \"acceptance\": null, \"report\": null }));\n            };")
+PY
+
+mutation_case "the list that was accepted is read at the head and not at the revision the acceptance names" <<'PY'
+edit("app-core/src/commands.rs",
+     "                .read_requirements(&id, Some(&acceptance.basis.requirements))?",
+     "                .read_requirements(&id, None)?")
+PY

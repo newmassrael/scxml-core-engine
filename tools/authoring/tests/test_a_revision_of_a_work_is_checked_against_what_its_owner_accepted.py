@@ -246,20 +246,10 @@ class ARevisionOfAWork(unittest.TestCase):
         self.assertTrue(refused.get("isError"), body(refused))
         self.assertIn("keeps no lineage and no sidecar", body(refused))
 
-    def test_an_acceptance_that_pinned_another_manifest_than_the_list_is_refused(self):
-        # By construction the manifest an acceptance pins is the list it was taken of, so the two
-        # agree on every real path. This holds the check for the day they do not (a staging that
-        # laid out another manifest): the words would then be about a list the owner never
-        # accepted, and the page would say so with confidence. The answer is altered here, as the
-        # application's command layer would have to be wrong to alter it.
-        self.accepted_lamp()
-        self.revise(SECOND, [ON, SWITCH], design())
-        real = works.read_acceptance_delta(self.work)
-        altered = {**real, "manifest": {**real["manifest"], "sha256": "b" * 64}}
-        with unittest.mock.patch.object(works, "read_acceptance_delta", lambda work: altered):
-            refused = call("works_revision_check", work=self.work)
-        self.assertTrue(refused.get("isError"), body(refused))
-        self.assertIn("not the same list", body(refused))
+    # An acceptance that pinned another manifest than the list it was taken of is refused by the
+    # product now, and that refusal is held where it is made: `app-core/tests/a_work_says_what_
+    # its_revision_did_to_each_requirement.rs` (`an_acceptance_that_pinned_another_manifest_than_
+    # the_list_is_refused`), with a stand-in whose record pins another manifest.
 
     def test_a_remote_caller_is_not_offered_the_works_folder(self):
         # A work that WAS accepted, so that a tool that did not refuse a remote caller would

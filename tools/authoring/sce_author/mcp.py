@@ -103,7 +103,7 @@ from .scenario_driver import read_set as read_scenario_set
 from .scenario_driver import run as run_scenarios
 from .verify import validate_scxml as run_scxml_validation
 from .verify import (accept_design, acceptance_delta, acceptance_holds, acceptance_impact,
-                     acceptance_page, delta_object,
+                     acceptance_page,
                      design_requirement_records, diagram_figures, kind_catalog,
                      requirement_records, unresolved_markers, validate_scxml_set)
 from .verify import page_provenance, pseudo_page, verify as run_verify
@@ -3661,66 +3661,28 @@ _STUB_DESIGN = ('<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" in
                 '<state id="s"/></scxml>\n')
 
 
-def _lineage_of(held: dict, what: str) -> dict:
-    """The lineage of a list the work kept: the one saved with it, or, for a list made before
-    lineages, the one adopting it makes (the ids it has, the words behind them from its sidecar),
-    which is what a later list built against it was given in the first place. Refuses a list that
-    gives neither, saying what to do."""
-    if "lineage_text" in held:
-        return requirement_lineage.parse(held["lineage_text"])
-    if "sidecar_text" not in held:
-        raise requirement_lineage.LineageError(
-            f"the list {what} keeps no lineage and no sidecar, so the words behind its ids are "
-            "not known")
+def _work_revision_report(work: str, sentences: bool) -> tuple[dict | None, dict | None]:
+    """What the revision of a work did, judged by the product: `(report, failure to return)`.
+
+    The words are derived from two states of the work's own chain (the list the owner's
+    acceptance was taken of and the list the work has now, each with its lineage), the evidence
+    is the product's own comparison of the design now with what the owner was shown, and the two
+    are joined by the product (`read_revision_report`, which is `sce-revision`: the same words as
+    `requirement_lineage` and `revision` here, held to them by the shared cases). Both are the
+    work's, so nothing here can be handed another specification's delta, and the step between
+    them is whatever happened between those two revisions, however many there were."""
     try:
-        manifest, sidecar = json.loads(held["manifest_text"]), json.loads(held["sidecar_text"])
-    except ValueError as error:
-        raise requirement_lineage.LineageError(f"the list {what} is not JSON: {error}") from error
-    texts = {id_: requirement_set.normalise(text) for id_, text in (sidecar.get("text") or {}).items()
-             if isinstance(text, str)}
-    return requirement_lineage.adopt(manifest.get("doc_id"), manifest, texts,
-                                     manifest_sha256=requirement_lineage.sha256_text(
-                                         held["manifest_text"]),
-                                     sidecar_sha256=requirement_lineage.sha256_text(
-                                         held["sidecar_text"]))
-
-
-def _work_revision_join(args: dict) -> tuple[dict | None, dict | None, dict | None]:
-    """A work's words joined with its evidence: `(result, newer list, failure to return)`.
-
-    The words are derived from two states of the work's own chain: the list the owner's
-    acceptance was taken of (its basis names it) and the list the work has now, each with its
-    lineage. The evidence is the product's own comparison of the design now with what the owner
-    was shown, asked by the application's command layer, which lays the work out as it always does
-    and reads the acceptance and the design as one state of the work. Both are the work's, so
-    nothing here can be handed another specification's delta, and the step between them is
-    whatever happened between those two revisions, however many there were."""
-    try:
-        read = works.read_acceptance_delta(args["work"])
-        if read["acceptance"] is None:
-            return None, None, _failure(
-                "this work has no acceptance: nothing was accepted, so there is nothing to compare "
-                "the design with. The owner accepts a design in the application")
-        basis, now = read["acceptance"]["basis"], read["now"]
-        older = works.read_requirements_at(args["work"], basis["requirements"])
-        newer = works.read_requirements_at(args["work"], now["requirements"])
+        read = works.read_revision_report(work, sentences)
     except works.WorksError as exc:
-        return None, None, _works_refused(exc)
-    try:
-        words = requirement_lineage.between(_lineage_of(older, "the owner accepted"),
-                                            _lineage_of(newer, "the work has now"))
-        record = {"manifest": read["manifest"]}
-        revision.belongs_to(words, record)
-        result = revision.join(words, delta_object(read["lines"]))
-    except requirement_lineage.LineageError as error:
-        return None, None, _failure(
-            f"cannot say what the revision did to each requirement's words: {error}. Build the "
-            "list again with scxml_requirement_set against the lineage works_read gives and save "
-            "it with works_save_requirements")
-    except revision.RevisionError as error:
-        return None, None, _failure(str(error))
-    result["of"] = {"accepted": basis, "now": now}
-    return result, newer, None
+        if exc.kind == "revision-not-judged":
+            # The sentence a person is told, as the judgment gave it.
+            return None, _failure(str(exc))
+        return None, _works_refused(exc)
+    if read["report"] is None:
+        return None, _failure(
+            "this work has no acceptance: nothing was accepted, so there is nothing to compare "
+            "the design with. The owner accepts a design in the application")
+    return read["report"], None
 
 
 def _works_revision_check_tool(args: dict, staging: _Staging) -> dict:
@@ -3728,27 +3690,21 @@ def _works_revision_check_tool(args: dict, staging: _Staging) -> dict:
     its evidence (from the product), and whether it stayed within the reach of what changed."""
     staging.refuse_works("works_revision_check")
     work = _name_arg(args, "work", "a work's id", required=True)
-    result, _, failure = _work_revision_join({"work": work})
-    return failure or _text(json.dumps(result, indent=2, ensure_ascii=False) + "\n")
+    report, failure = _work_revision_report(work, False)
+    if failure:
+        return failure
+    result = {key: value for key, value in report.items() if key != "page"}
+    return _text(json.dumps(result, indent=2, ensure_ascii=False) + "\n")
 
 
 def _works_revision_report_tool(args: dict, staging: _Staging) -> dict:
     """The page the owner reads of a revision of a work: only what to look at again."""
     staging.refuse_works("works_revision_report")
     work = _name_arg(args, "work", "a work's id", required=True)
-    result, newer, failure = _work_revision_join({"work": work})
+    report, failure = _work_revision_report(work, args.get("sentences") is True)
     if failure:
         return failure
-    sentences = None
-    if args.get("sentences") is True:
-        try:
-            held = json.loads(newer["sidecar_text"])["text"]
-            sentences = {id_: text for id_, text in held.items() if isinstance(text, str)}
-        except (KeyError, ValueError, AttributeError):
-            sentences = {}
-    title = f"{result['of']['accepted']['requirements'][:12]} to {result['of']['now']['requirements'][:12]}"
-    answer = {"verdict": result["verdict"], "summary": result["summary"],
-              "page": revision.render(result, sentences, title=f"work {work}, list {title}")}
+    answer = {"verdict": report["verdict"], "summary": report["summary"], "page": report["page"]}
     return _text(json.dumps(answer, indent=2, ensure_ascii=False) + "\n")
 
 

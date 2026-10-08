@@ -1405,6 +1405,62 @@ fn replies() -> Value {
         ),
     );
 
+    // What a revision of a work did, requirement by requirement: a work whose lists keep their
+    // lineages, accepted at the first revision and revised to the second. In a work of its own,
+    // after the others, so that no earlier reply moves.
+    let revision_work = answer(
+        &store,
+        "create_work",
+        json!({"title": "Window blind revision"}),
+    );
+    let revision_id = revision_work["id"].as_str().unwrap().to_string();
+    let revision_head = answer(
+        &store,
+        "save_source",
+        json!({"id": revision_id, "text": "The blind rises. The blind stops at the top."}),
+    )["revision"]
+        .clone();
+    answer(
+        &store,
+        "save_model",
+        json!({"id": revision_id, "text": "<scxml><state id=\"a\"/></scxml>",
+               "written_for": revision_head}),
+    );
+    let first_list = answer(
+        &store,
+        "save_requirements",
+        json!({"id": revision_id, "manifest": list("first", "manifest_text"),
+               "sidecar": list("first", "sidecar_text"),
+               "lineage": list("first", "lineage_text"), "written_for": revision_head}),
+    );
+    let shown_revision = answer(&store, "requirements_report", json!({"id": revision_id}));
+    answer(
+        &store,
+        "accept",
+        json!({"id": revision_id, "expect": shown_revision["basis"]}),
+    );
+    answer(
+        &store,
+        "save_requirements",
+        json!({"id": revision_id, "manifest": list("second", "manifest_text"),
+               "sidecar": list("second", "sidecar_text"),
+               "lineage": list("second", "lineage_text"),
+               "base": first_list["revision"], "written_for": revision_head}),
+    );
+    answers.insert(
+        "read_revision_report".into(),
+        answer(&store, "read_revision_report", json!({"id": revision_id})),
+    );
+    answers.insert(
+        "read_revision_report_none".into(),
+        answer(&store, "read_revision_report", json!({"id": id})),
+    );
+    // A list that keeps no lineage and no sidecar says nothing of its words.
+    refusals.insert(
+        "revision-not-judged".into(),
+        refusal(&store, "read_revision_report", json!({"id": accepted_id})),
+    );
+
     // A command without a written-down reply is a command the screen's test
     // cannot hold to account.
     for command in COMMANDS {
@@ -1427,6 +1483,7 @@ fn replies() -> Value {
     name_the_unstable(&mut document, &other_id, "<removed-work-id>");
     name_the_unstable(&mut document, &accepted_id, "<accepted-work-id>");
     name_the_unstable(&mut document, &lineage_id, "<lineage-work-id>");
+    name_the_unstable(&mut document, &revision_id, "<revision-work-id>");
     name_the_unstable(&mut document, &request_id, "<request-id>");
     name_the_unstable(&mut document, &failed_id, "<failed-request-id>");
     name_the_unstable(&mut document, &cancelled_id, "<cancelled-request-id>");

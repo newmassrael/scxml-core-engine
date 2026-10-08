@@ -170,3 +170,39 @@ edit("sce-revision/src/join.rs",
      "    if requirements != 0 && summary[\"seen\"].as_i64().unwrap_or(0) == 0 {",
      "    if false && requirements != 0 && summary[\"seen\"].as_i64().unwrap_or(0) == 0 {")
 PY
+
+mutation_case "adopt: a manifest that carries the source's own ids is adopted" <<'PY'
+edit("sce-revision/src/lib.rs",
+     "    if manifest[\"extraction\"][\"ids\"] != \"synthesized\" || !manifest[\"extraction\"].is_object() {",
+     "    if false && manifest[\"extraction\"][\"ids\"] != \"synthesized\" {")
+PY
+
+mutation_case "adopt: a revision that is not a whole number is adopted" <<'PY'
+edit("sce-revision/src/lib.rs",
+     "    if !whole {",
+     "    if false && !whole {")
+PY
+
+mutation_case "adopt: a manifest that lists no requirements is adopted" <<'PY'
+edit("sce-revision/src/lib.rs",
+     "    if rows.is_empty() {",
+     "    if false && rows.is_empty() {")
+PY
+
+mutation_case "of_list: a pair that is not objects is adopted" <<'PY'
+edit("sce-revision/src/lib.rs",
+     "    if !manifest.is_object() || !sidecar.is_object() {",
+     "    if false && (!manifest.is_object() || !sidecar.is_object()) {")
+PY
+
+mutation_case "normalise: words are not collapsed before they are digested" <<'PY'
+edit("sce-revision/src/lib.rs",
+     "    text.split_whitespace().collect::<Vec<_>>().join(\" \")",
+     "    text.trim().to_string()")
+PY
+
+mutation_case "delta_object: a line of another kind is gathered as a requirement" <<'PY'
+edit("sce-revision/src/join.rs",
+     "        .filter(|line| line[\"kind\"] == \"acceptance-delta\")",
+     "        .filter(|line| line[\"kind\"] != \"acceptance-delta-summary\")")
+PY

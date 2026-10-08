@@ -68,6 +68,7 @@ pub const COMMANDS: &[&str] = &[
     "accept",
     "read_acceptance",
     "read_acceptance_delta",
+    "read_revision_report",
     "read_judgment",
     "read_work_snapshot",
     "read_work_heads",
@@ -259,7 +260,15 @@ const SETTINGS_WRITE: &[&str] = &[
 /// rewritten, an id numbered twice) is refused, so that an id means one requirement for ever
 /// whatever built the list. A screen written for 20 does not know these refusals, and a core of
 /// 20 would save such a list.
-pub const COMMAND_SET_VERSION: u32 = 21;
+///
+/// 22: what a revision of a work did can be asked of the product requirement by requirement
+/// (`read_revision_report`): the words of each requirement from the work's own lineages beside
+/// what the design's evidence did, whether the revision stayed within the reach of what changed,
+/// and the page an owner reads, judged by the product and not by the client that revises. A
+/// screen written for 21 does not ask for it, and a core of 21 would refuse it as
+/// `unknown-command`. A list the product cannot say anything of the words of is refused as
+/// `revision-not-judged`, in the sentence a person is told.
+pub const COMMAND_SET_VERSION: u32 = 22;
 
 /// A command that did not do what was asked, in a shape every shell can pass on.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -381,6 +390,15 @@ struct CreateWork {
 #[serde(deny_unknown_fields)]
 struct OneWork {
     id: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RevisionReport {
+    id: String,
+    /// Print the specification's sentences on the page, which then says it is a local artefact.
+    #[serde(default)]
+    sentences: bool,
 }
 
 #[derive(Deserialize)]
@@ -2045,6 +2063,59 @@ fn call_works<C: Clock>(
                 "manifest": manifest,
                 "lines": lines,
                 "now": now.basis,
+            }))
+        }
+        "read_revision_report" => {
+            let RevisionReport { id, sentences } = arguments(args)?;
+            let id = work_id(&id)?;
+            // ONE state of the work, as `read_acceptance_delta` reads it: the acceptance, and the
+            // design and list it is compared with.
+            let state = store.read_work_snapshot(&id)?;
+            let Some(saved) = state.acceptance else {
+                return Ok(json!({ "acceptance": null, "report": null }));
+            };
+            let acceptance = Acceptance::parse(&saved.text)?;
+            let source = state.source.ok_or_else(|| none_saved("a text", &id))?;
+            let model = state.model.ok_or_else(|| none_saved("a model", &id))?;
+            let requirements = state
+                .requirements
+                .ok_or_else(|| none_saved("a requirement list", &id))?;
+            let now = now_of(source, model, requirements, state.answers)?;
+            let lines = renderer.delta_acceptance(&now.snapshot, &acceptance.record)?;
+            // The list the owner accepted is the work's own, read at the revision the
+            // acceptance names: the words side is derived from two states of one chain.
+            let accepted = store
+                .read_requirements(&id, Some(&acceptance.basis.requirements))?
+                .ok_or_else(|| none_saved("the requirement list that was accepted", &id))?;
+            let accepted = Requirements::parse(&accepted.text)?;
+            let pin = serde_json::from_str::<Value>(&acceptance.record)
+                .ok()
+                .and_then(|record| record.get("manifest").cloned())
+                .unwrap_or(Value::Null);
+            let title = format!(
+                "work {id}, list {} to {}",
+                acceptance.basis.requirements.short(),
+                now.basis.requirements.short()
+            );
+            let report = crate::revision_report::judge(
+                &accepted,
+                &now.snapshot.requirements,
+                &pin,
+                &json!(lines),
+                json!({ "accepted": acceptance.basis, "now": now.basis }),
+                sentences,
+                &title,
+            )
+            .map_err(|not_judged| {
+                CommandError::from(StoreError::refused(
+                    "revision-not-judged",
+                    not_judged.0,
+                    json!({}),
+                ))
+            })?;
+            Ok(json!({
+                "acceptance": acceptance_json(&saved.revision, &acceptance),
+                "report": report,
             }))
         }
         "read_work_snapshot" => {

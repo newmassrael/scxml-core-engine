@@ -35,7 +35,7 @@ use sha2::{Digest, Sha256};
 mod join;
 mod revision;
 
-pub use join::{join, render, SHARED};
+pub use join::{delta_object, join, render, SHARED};
 pub use revision::belongs_to;
 
 /// What a lineage says it is.
@@ -300,6 +300,142 @@ pub fn check(lineage: &Value) -> Judgment<()> {
         ));
     }
     Ok(())
+}
+
+// -- the lineage of a list that predates lineages --------------------------------------------
+
+/// Whitespace collapsed to single spaces: a specification wrapped at another width, or a quote
+/// copied across a line break, is the same words. What counts as the same words for every digest
+/// the lineage keeps. (Python's `\s` also takes the four ASCII separators U+001C to U+001F, which
+/// Unicode does not call whitespace and Rust does not collapse; no specification has one.)
+pub fn normalise(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// A lineage for a list that was built before lineages existed: the ids are the manifest's, the
+/// words behind them are `texts` (the sidecar's, already normalised), the revision is the
+/// manifest's. Whether the specification changed since cannot be told (its digest was never
+/// kept), so the next revision is a new one. The digests are those of the manifest and sidecar
+/// texts it was adopted from, which the lineage keeps as that revision's list.
+pub fn adopt(
+    doc_id: &Value,
+    manifest: &Value,
+    texts: &BTreeMap<String, String>,
+    manifest_sha256: Option<&str>,
+    sidecar_sha256: Option<&str>,
+) -> Judgment<Value> {
+    if manifest["doc_id"] != *doc_id {
+        return refuse(format!(
+            "the previous manifest is for '{}', not '{}'",
+            show(&manifest["doc_id"]),
+            show(doc_id)
+        ));
+    }
+    if manifest["extraction"]["ids"] != "synthesized" || !manifest["extraction"].is_object() {
+        return refuse(
+            "the previous manifest carries the source's own ids; nothing here renumbers those, \
+             and nothing here would carry them either",
+        );
+    }
+    let rev = &manifest["rev"];
+    let whole = rev
+        .as_str()
+        .is_some_and(|rev| !rev.is_empty() && rev.bytes().all(|byte| byte.is_ascii_digit()));
+    if !whole {
+        return refuse(format!(
+            "the previous manifest's rev {} is not a whole number, so the next one cannot be told",
+            repr(rev)
+        ));
+    }
+    let mut rows: Vec<Value> = Vec::new();
+    let mut top: u128 = 0;
+    let entries = manifest["requirements"]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    for entry in entries {
+        let id = &entry["id"];
+        let quote = id
+            .as_str()
+            .and_then(|id| texts.get(id))
+            .filter(|quote| !quote.is_empty());
+        let (Some(id_text), Some(quote)) = (id.as_str(), quote) else {
+            return refuse(format!(
+                "the previous sidecar has no words for the previous manifest's '{}'",
+                show(id)
+            ));
+        };
+        if let Some(number) = id_number(id_text) {
+            top = top.max(number);
+        }
+        rows.push(json!({
+            "id": id_text, "first_rev": rev, "retired_rev": Value::Null,
+            "quotes": [{ "rev": rev, "sha256": sha256_text(quote) }],
+        }));
+    }
+    if rows.is_empty() {
+        return refuse("the previous manifest lists no requirements");
+    }
+    let lineage = json!({
+        "lineage": LINEAGE_KIND, "v": LINEAGE_VERSION, "doc_id": doc_id,
+        "next": u64::try_from(top + 1).unwrap_or(u64::MAX),
+        "revisions": [{
+            "rev": rev, "spec_sha256": Value::Null, "sentence_sha256": [],
+            "manifest_sha256": manifest_sha256, "sidecar_sha256": sidecar_sha256,
+        }],
+        "requirements": rows,
+    });
+    check(&lineage)?;
+    Ok(lineage)
+}
+
+/// The lineage of a list a work kept: the one saved with it, or, for a list made before
+/// lineages, the one adopting it makes (the ids it has, the words behind them from its sidecar),
+/// which is what a later list built against it was given in the first place. Refuses a list that
+/// gives neither, saying what to do. `held` carries the texts of the list (`manifest_text`,
+/// `sidecar_text` and `lineage_text`, the last two absent when it keeps none) and `what` names
+/// the list in the sentence.
+pub fn of_list(held: &Value, what: &str) -> Judgment<Value> {
+    if let Some(lineage) = held.get("lineage_text") {
+        return parse(lineage.as_str().unwrap_or_default());
+    }
+    let Some(sidecar_text) = held.get("sidecar_text") else {
+        return refuse(format!(
+            "the list {what} keeps no lineage and no sidecar, so the words behind its ids are not \
+             known"
+        ));
+    };
+    let (manifest_text, sidecar_text) = (
+        held["manifest_text"].as_str().unwrap_or_default(),
+        sidecar_text.as_str().unwrap_or_default(),
+    );
+    // No parser detail in the sentence: it is one library's wording, and the sentence is a case
+    // another implementation has to say in the same words.
+    let (Ok(manifest), Ok(sidecar)) = (
+        serde_json::from_str::<Value>(manifest_text),
+        serde_json::from_str::<Value>(sidecar_text),
+    ) else {
+        return refuse(format!("the list {what} is not JSON"));
+    };
+    if !manifest.is_object() || !sidecar.is_object() {
+        return refuse(format!("the list {what} is not a pair of JSON objects"));
+    }
+    let texts: BTreeMap<String, String> = sidecar["text"]
+        .as_object()
+        .map(|words| {
+            words
+                .iter()
+                .filter_map(|(id, text)| text.as_str().map(|text| (id.clone(), normalise(text))))
+                .collect()
+        })
+        .unwrap_or_default();
+    adopt(
+        &manifest["doc_id"],
+        &manifest,
+        &texts,
+        Some(&sha256_text(manifest_text)),
+        Some(&sha256_text(sidecar_text)),
+    )
 }
 
 // -- does it continue the work's -------------------------------------------------------------

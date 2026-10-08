@@ -410,5 +410,18 @@ changed, and each is a case of a judgment that was made in one place and not in 
    by a published candidate, after which the executor writes the list again and publishes it.
    The command set moved to 21 for the new refusals.
 
-   What is left of D1 (c) is not this finding's: `belongs_to`, `join` and the page (`render`)
-   are still the Python's, and the application's `works_revision_*` still goes through it.
+   The rest of D1 (c) followed, and closes it for a work: `sce-revision` also holds `belongs_to`,
+   `join`, `render`, the lines of the product's `acceptance-delta` gathered into the object the
+   join reads (`delta_object`), and the lineage of a list that predates lineages (`of_list`,
+   which adopts it from its sidecar), each held to the Python by the same cases sentence for
+   sentence. The application's command layer asks it as one command, `read_revision_report`
+   (command set 22): the acceptance and the design and list it is compared with are read as ONE
+   state of the work, the list that was accepted is read at the revision the acceptance names,
+   and the answer is the verdict, the rows, the revisions the two states are about and the page,
+   or `revision-not-judged` in the sentence a person is told (a list that keeps no lineage and
+   no sidecar says nothing of its words; an acceptance that pinned another manifest than the
+   list it was taken of is not about it). `works_revision_check` and `works_revision_report` are
+   now that command and nothing more, so the screen and the tools judge a revision with one
+   implementation. The Python `revision.py` and `requirement_lineage.py` stay as the reference
+   the cases are written from, and as the judgment of the tools that are handed a delta and a
+   record by hand (`scxml_revision_check`, `scxml_revision_report`), which no work is behind.

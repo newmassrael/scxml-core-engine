@@ -66,6 +66,7 @@ pub mod requests;
 pub mod requirements;
 pub mod review;
 pub mod revision;
+pub mod revision_report;
 pub mod runner;
 pub mod server_status;
 pub mod store;
