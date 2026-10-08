@@ -54,9 +54,12 @@ def belongs_to(delta: object, record: object) -> None:
     The join is by requirement id, and an id means nothing outside the specification that issued
     it: another specification's delta that happens to name `R1` to `R5` joins the design's evidence
     without a word of complaint and gives a verdict about nothing (found in review, 2026-10-08).
-    A delta names the specification it describes (`doc_id`) and the revision it starts from
-    (`from_rev`); the record pins the manifest it was taken against (`manifest.doc_id`,
-    `manifest.rev`). Both have to agree. A delta from a LATER revision than the record's is refused
+    A delta names the specification it describes (`doc_id`), the revision it starts from
+    (`from_rev`) and the digest of the manifest of that revision's list (`from_manifest_sha256`);
+    the record pins the manifest it was taken against (`manifest.doc_id`, `manifest.rev`,
+    `manifest.sha256`). All three have to agree: a name and a number are carried by every copy of a
+    specification, and only the digest says it is THIS list (a second review, 2026-10-08).
+    A delta from a LATER revision than the record's is refused
     too: it says what changed since that revision, not since the one the design was accepted for,
     and a requirement reworded in between would read as carried."""
     if not isinstance(delta, dict) or not isinstance(delta.get("doc_id"), str) \
@@ -65,11 +68,18 @@ def belongs_to(delta: object, record: object) -> None:
                             "(`from_rev`): it was not built by this version of scxml_requirement_set, "
                             "so nothing says it describes this record's specification. Build the "
                             "revised list again against its lineage and give the `delta` it returns")
+    if not isinstance(delta.get("from_manifest_sha256"), str):
+        raise RevisionError("the words delta does not say which list it starts from "
+                            "(`from_manifest_sha256`): the lineage it was built against predates "
+                            "recording the manifest's digest, or the revision it starts from was "
+                            "adopted without the manifest. A name and a revision number do not tell "
+                            "two lists of one specification apart; build the revised list again from "
+                            "the manifest and sidecar the design was accepted against")
     manifest = record.get("manifest") if isinstance(record, dict) else None
     if not isinstance(manifest, dict) or not isinstance(manifest.get("doc_id"), str) \
-            or not isinstance(manifest.get("rev"), str):
-        raise RevisionError("the acceptance record pins no manifest `doc_id` and `rev`, so there is "
-                            "nothing to check the words delta against")
+            or not isinstance(manifest.get("rev"), str) or not isinstance(manifest.get("sha256"), str):
+        raise RevisionError("the acceptance record pins no manifest `doc_id`, `rev` and `sha256`, so "
+                            "there is nothing to check the words delta against")
     if delta["doc_id"] != manifest["doc_id"]:
         raise RevisionError(f"the words delta is of specification '{delta['doc_id']}' and the "
                             f"acceptance record was taken against '{manifest['doc_id']}'")
@@ -79,6 +89,13 @@ def belongs_to(delta: object, record: object) -> None:
                             f"revision {manifest['rev']}: it describes a different step. Build the "
                             "list again against the lineage as it was at the revision the design was "
                             "accepted for")
+    if delta["from_manifest_sha256"] != manifest["sha256"]:
+        raise RevisionError(f"the words delta starts from a list whose manifest digest is "
+                            f"{delta['from_manifest_sha256'][:12]} and the acceptance record was taken "
+                            f"against a manifest whose digest is {manifest['sha256'][:12]}: they are not "
+                            f"the same list, though both are revision {manifest['rev']} of "
+                            f"'{manifest['doc_id']}' (another copy of the specification, or a list "
+                            "written again for the same text)")
 
 
 def _words_of(delta: object) -> dict[str, str]:

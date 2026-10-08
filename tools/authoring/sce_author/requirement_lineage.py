@@ -15,7 +15,8 @@ text"); the lineage is committed too. What compares two wordings, when the words
 are needed, is the previous sidecar the caller still holds.
 
     {"lineage": "sce-requirement-lineage", "v": 1, "doc_id": "spec", "next": 12,
-     "revisions": [{"rev": "1", "spec_sha256": "...", "sentence_sha256": ["...", ...]}],
+     "revisions": [{"rev": "1", "spec_sha256": "...", "sentence_sha256": ["...", ...],
+                    "manifest_sha256": "..."}],
      "requirements": [{"id": "R1", "first_rev": "1", "retired_rev": null,
                        "quotes": [{"rev": "1", "sha256": "..."}]}]}
 
@@ -76,6 +77,7 @@ SIMILARITY = 0.8
 MARGIN = 0.1
 GRAM = 3
 
+_REVISION_KEYS = {"rev", "spec_sha256", "sentence_sha256", "manifest_sha256"}
 _ID = re.compile(r"R([0-9]+)")
 _WORD = re.compile(r"\w+")
 
@@ -127,12 +129,14 @@ def first(doc_id: str, spec: Spec, quotes: list[str], rev: str = "1") -> Advance
     return Advance(lineage, rev, ids, ["new"] * len(ids), None)
 
 
-def adopt(doc_id: str, manifest: dict, texts: dict[str, str]) -> dict:
+def adopt(doc_id: str, manifest: dict, texts: dict[str, str],
+          manifest_sha256: str | None = None) -> dict:
     """A lineage for a list that was built before lineages existed: the ids are the
     manifest's, the words behind them are `texts` (the sidecar's, already
     normalised), the revision is the manifest's. Whether the specification
     changed since cannot be told (its digest was never kept), so the next
-    revision is a new one."""
+    revision is a new one. `manifest_sha256` is the digest of the manifest text it was
+    adopted from, which the lineage keeps as that revision's list."""
     if manifest.get("doc_id") != doc_id:
         raise LineageError(f"the previous manifest is for '{manifest.get('doc_id')}', not '{doc_id}'")
     extraction = manifest.get("extraction")
@@ -158,7 +162,8 @@ def adopt(doc_id: str, manifest: dict, texts: dict[str, str]) -> dict:
         raise LineageError("the previous manifest lists no requirements")
     return _checked({
         "lineage": LINEAGE_KIND, "v": LINEAGE_VERSION, "doc_id": doc_id, "next": top + 1,
-        "revisions": [{"rev": rev, "spec_sha256": None, "sentence_sha256": []}],
+        "revisions": [{"rev": rev, "spec_sha256": None, "sentence_sha256": [],
+                       "manifest_sha256": manifest_sha256}],
         "requirements": rows})
 
 
@@ -260,10 +265,12 @@ def advance(prev: dict, doc_id: str, spec: Spec, quotes: list[str], *,
     lineage = _checked({"lineage": LINEAGE_KIND, "v": LINEAGE_VERSION, "doc_id": doc_id, "next": counter,
                         "revisions": revisions, "requirements": requirements})
 
-    # `doc_id` and `from_rev` say which specification, and which step of it, the ids below are about:
-    # `revision.belongs_to` compares them with the acceptance record's manifest.
+    # `doc_id`, `from_rev` and `from_manifest_sha256` say which specification, which step of it and
+    # which list the ids below are about: `revision.belongs_to` compares them with the acceptance
+    # record's manifest. A name and a number do not tell two copies of one list apart; the digest does.
     delta = {
-        "doc_id": doc_id, "from_rev": last["rev"], "rev": rev, "specification_changed": not same_text,
+        "doc_id": doc_id, "from_rev": last["rev"], "from_manifest_sha256": last.get("manifest_sha256"),
+        "rev": rev, "specification_changed": not same_text,
         "requirements": {
             "carried": [ids[n] for n in range(len(quotes)) if statuses[n] == "carried"],
             "changed": [{"id": ids[n], "how": carried[n][2]} for n in range(len(quotes))
@@ -293,8 +300,21 @@ def render(lineage: dict) -> str:
     return json.dumps(lineage, indent=2, ensure_ascii=False) + "\n"
 
 
-def _revision_row(rev: str, spec: Spec) -> dict:
-    return {"rev": rev, "spec_sha256": spec.sha256, "sentence_sha256": list(spec.sentence_sha256)}
+def _revision_row(rev: str, spec: Spec, manifest_sha256: str | None = None) -> dict:
+    """`manifest_sha256` is the digest of the manifest this revision's list was written as. A
+    revision is a row before its manifest exists, so it is None until `pin_manifest` sets it."""
+    return {"rev": rev, "spec_sha256": spec.sha256, "sentence_sha256": list(spec.sentence_sha256),
+            "manifest_sha256": manifest_sha256}
+
+
+def pin_manifest(lineage: dict, manifest_text: str) -> None:
+    """Record, on the lineage's last revision, the digest of the manifest text that list was
+    written as: exactly the bytes a caller saves, which an acceptance pins by their digest.
+
+    What lets a words delta say WHICH list it starts from. A document name and a revision number
+    name a list as well as two copies of one specification can: both carry the same pair."""
+    lineage["revisions"][-1]["manifest_sha256"] = sha256_text(manifest_text)
+    _checked(lineage)
 
 
 def _set_quote(row: dict, rev: str, digest: str) -> None:
@@ -405,10 +425,15 @@ def _checked(lineage: object) -> dict:
         raise LineageError("the lineage holds no revision")
     seen_revs = []
     for row in revisions:
-        if not isinstance(row, dict) or set(row) != {"rev", "spec_sha256", "sentence_sha256"} \
+        # `manifest_sha256` is written always and may be absent from a lineage made before it
+        # was recorded, which says the list's manifest is unknown, as None does.
+        if not isinstance(row, dict) \
+                or not {"rev", "spec_sha256", "sentence_sha256"} <= set(row) <= _REVISION_KEYS \
                 or not isinstance(row["rev"], str) or not isinstance(row["sentence_sha256"], list) \
-                or not (row["spec_sha256"] is None or isinstance(row["spec_sha256"], str)):
-            raise LineageError("a revision row of the lineage is not {rev, spec_sha256, sentence_sha256}")
+                or not (row["spec_sha256"] is None or isinstance(row["spec_sha256"], str)) \
+                or not (row.get("manifest_sha256") is None or isinstance(row["manifest_sha256"], str)):
+            raise LineageError("a revision row of the lineage is not {rev, spec_sha256, sentence_sha256, "
+                               "manifest_sha256}")
         seen_revs.append(row["rev"])
     if len(set(seen_revs)) != len(seen_revs):
         raise LineageError("the lineage names a rev twice")

@@ -29,9 +29,13 @@ from unittest import mock
 from sce_author import mcp, process, revision, verify
 
 
+MANIFEST_SHA = "a" * 64
+
+
 def words(carried=(), changed=(), new=(), retired=(), **extra):
-    """A words delta as scxml_requirement_set returns it: of specification `lamp`, from revision 1."""
-    return {"doc_id": "lamp", "from_rev": "1",
+    """A words delta as scxml_requirement_set returns it: of specification `lamp`, from revision 1,
+    whose list's manifest has the digest `MANIFEST_SHA`."""
+    return {"doc_id": "lamp", "from_rev": "1", "from_manifest_sha256": MANIFEST_SHA,
             "requirements": {"carried": list(carried),
                              "changed": [{"id": i, "how": "near-match"} for i in changed],
                              "new": list(new), "retired": list(retired)}, **extra}
@@ -253,12 +257,14 @@ class AWordsDeltaIsJoinedOnlyToTheRecordOfTheRevisionItStartsFrom(unittest.TestC
     of it. A delta of another specification, or of a step the record was not taken at, joins without
     complaint and gives a verdict about nothing (found in review, 2026-10-08)."""
 
-    RECORD = {"record": "sce-acceptance-record", "v": 1, "manifest": {"doc_id": "lamp", "rev": "3"}}
+    RECORD = {"record": "sce-acceptance-record", "v": 1,
+              "manifest": {"doc_id": "lamp", "rev": "3", "sha256": MANIFEST_SHA}}
 
     def test_a_delta_of_the_same_specification_from_the_revision_of_the_record_is_accepted(self):
         revision.belongs_to(words(from_rev="3"), self.RECORD)
 
     def test_each_way_the_delta_can_not_be_the_records_is_refused_and_says_which(self):
+        other_list = "b" * 64
         cases = (
             ("another specification", words(doc_id="other", from_rev="3"), "'other'"),
             ("an earlier step", words(from_rev="2"), "starts from revision 2"),
@@ -267,6 +273,13 @@ class AWordsDeltaIsJoinedOnlyToTheRecordOfTheRevisionItStartsFrom(unittest.TestC
             ("no step", {"doc_id": "lamp", "requirements": {}}, "names no specification"),
             ("a specification that is not text", {"doc_id": 7, "from_rev": "3"}, "names no specification"),
             ("not an object", ["lamp"], "names no specification"),
+            # The same name and the same number, another list: what the pair alone cannot tell.
+            ("another copy under the same name and revision",
+             words(from_rev="3", from_manifest_sha256=other_list), "not the same list"),
+            ("no digest of the list it starts from",
+             words(from_rev="3", from_manifest_sha256=None), "does not say which list"),
+            ("a digest that is not text",
+             words(from_rev="3", from_manifest_sha256=7), "does not say which list"),
         )
         for what, delta, message in cases:
             with self.subTest(what), self.assertRaises(revision.RevisionError) as raised:
@@ -362,7 +375,8 @@ class TheToolsReachTheProductsDelta(unittest.TestCase):
         self.addCleanup(directory.cleanup)
         self.record = pathlib.Path(directory.name) / "acceptance.json"
         self.record.write_text(json.dumps({"record": "sce-acceptance-record", "v": 1,
-                                           "manifest": {"doc_id": "lamp", "rev": "1"}}),
+                                           "manifest": {"doc_id": "lamp", "rev": "1",
+                                                        "sha256": MANIFEST_SHA}}),
                                encoding="utf-8")
 
     def run_tool(self, name: str, **arguments):
@@ -426,6 +440,8 @@ class TheToolsReachTheProductsDelta(unittest.TestCase):
         for what, delta in (
                 ("another specification", words(carried=["R1", "R2"], doc_id="other")),
                 ("another starting revision", words(carried=["R1", "R2"], from_rev="2")),
+                ("another copy of the same name and revision",
+                 words(carried=["R1", "R2"], from_manifest_sha256="b" * 64)),
                 ("no specification named", {k: v for k, v in words(carried=["R1"]).items() if k != "doc_id"}),
                 ("no starting revision", {k: v for k, v in words(carried=["R1"]).items() if k != "from_rev"})):
             with self.subTest(what):

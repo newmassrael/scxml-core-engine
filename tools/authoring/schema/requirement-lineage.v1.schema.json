@@ -33,6 +33,10 @@
             "type": "array",
             "items": {"type": "string"},
             "description": "One digest per sentence of the revision, in reading order (empty when adopted). What lets two revisions be compared sentence by sentence without either text."
+          },
+          "manifest_sha256": {
+            "type": ["string", "null"],
+            "description": "Over the exact text of the manifest this revision's list was written as, which an acceptance pins by the same digest. What lets a words delta say which list it starts from: a document name and a revision number are carried by every copy of a specification. Null, or absent from a lineage made before it was recorded, when the list's manifest is unknown."
           }
         }
       }

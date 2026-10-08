@@ -216,6 +216,8 @@ def build(specification: str, items: object, *, doc_id: str = "spec",
                      for n in range(1, len(spans) + 1)],
         "requirements": entries,
     }
+    # The lineage names the list this revision is by the digest of the exact text a caller saves.
+    rl.pin_manifest(built.lineage, render_manifest(built.manifest))
     built.sidecar = {"doc_id": doc_id, "rev": built.rev,
                      "text": {r.id: r.quote for r in built.requirements}}
 
@@ -239,6 +241,12 @@ def build(specification: str, items: object, *, doc_id: str = "spec",
                     built.unclaimed_words.append((label, piece))
                 run = None
     return built
+
+
+def render_manifest(manifest: dict) -> str:
+    """The manifest as the text a caller saves, which an acceptance pins by its digest and the
+    lineage names the list by."""
+    return json.dumps(manifest, indent=2) + "\n"
 
 
 def _json(text: str, what: str) -> dict:
@@ -279,7 +287,8 @@ def _identify(doc_id: str, rev: str, spec: rl.Spec, quotes: list[str], lineage_t
         if texts is None:
             raise RequirementSetError("the previous manifest needs its sidecar: the words behind its ids "
                                       "are not in the manifest")
-        previous = rl.adopt(doc_id, _json(manifest_text, "the previous manifest"), texts)
+        previous = rl.adopt(doc_id, _json(manifest_text, "the previous manifest"), texts,
+                            manifest_sha256=rl.sha256_text(manifest_text))
     return rl.advance(previous, doc_id, spec, quotes, texts=texts,
                       continues={normalise(k): v for k, v in (continues or {}).items()})
 
@@ -309,7 +318,7 @@ def answer(built: Built) -> dict:
                                 for s, t in built.unclaimed_sentences],
         "unclaimed_words": [{"sentence": s, "text": t}
                             for s, t in built.unclaimed_words],
-        "manifest_text": json.dumps(built.manifest, indent=2) + "\n",
+        "manifest_text": render_manifest(built.manifest),
         "sidecar_text": json.dumps(built.sidecar, indent=2, ensure_ascii=False) + "\n",
         "lineage_text": rl.render(built.lineage),
         "basis": ("synthesized: this prose specification names no requirements of "

@@ -120,7 +120,19 @@ only what to look at again.**
    The delta now names its specification (`doc_id`) and the revision it starts from (`from_rev`),
    and `revision.belongs_to` compares them with the record's `manifest.doc_id` and `manifest.rev`.
    A delta that names neither (built before this check), another specification, or another step
-   is refused. A delta of a LATER step is refused too: it says what changed since that step, not
+   is refused.
+
+   ⚠ A name and a number were not enough, and a second review found it the same day: every copy
+   of a specification carries the same `doc_id` and the same revision number, so a delta of
+   ANOTHER copy joined, and a design changed alone read `within-reach`. The delta also names the
+   list it starts from, by the digest of the exact manifest text that list was written as
+   (`from_manifest_sha256`), and `belongs_to` compares it with the record's `manifest.sha256`,
+   the digest the product pins. The lineage keeps that digest on each revision's row
+   (`manifest_sha256`, set once the manifest text exists), and an adopted list takes the digest of
+   the manifest it was adopted from. A delta that does not say (a lineage made before the digest
+   was recorded, whose last revision has none) is refused with the reason; a list written again
+   for the same text is a different list and is pinned again. The chain is held end to end by a
+   test that builds a list, has the product pin it, builds the next revision and joins the two. A delta of a LATER step is refused too: it says what changed since that step, not
    since the revision the design was accepted for, and a requirement reworded in between would
    read as carried. Composing the steps between the record and now is not built; until it is, the
    check is made against the revision the design was accepted for.

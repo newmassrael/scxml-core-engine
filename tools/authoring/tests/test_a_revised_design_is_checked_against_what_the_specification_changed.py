@@ -11,12 +11,14 @@ evidence did, and `scxml_revision_report` renders it for the owner
 
 from __future__ import annotations
 
+import hashlib
 import json
 import pathlib
 import shutil
 import tempfile
 import unittest
 
+from sce_author import requirement_lineage as rl, requirement_set as rs
 from sce_author.mcp import call_tool
 from sce_author.verify import _default_codegen
 
@@ -35,9 +37,13 @@ def body(answer: dict) -> dict:
     return json.loads(answer["content"][0]["text"])
 
 
+FIXTURE_MANIFEST_SHA = hashlib.sha256((FIXTURES / MANIFEST).read_bytes()).hexdigest()
+
+
 def words(carried=(), changed=(), new=(), retired=(), **extra):
-    """A words delta of the committed manifest's specification, from the revision the record pins."""
-    return {"doc_id": "ISO-13400-2", "from_rev": "2019",
+    """A words delta of the committed manifest's specification, from the revision and the list
+    (by the digest of its manifest) the record pins."""
+    return {"doc_id": "ISO-13400-2", "from_rev": "2019", "from_manifest_sha256": FIXTURE_MANIFEST_SHA,
             "requirements": {"carried": list(carried),
                              "changed": [{"id": i, "how": "near-match"} for i in changed],
                              "new": list(new), "retired": list(retired)}, **extra}
@@ -222,13 +228,32 @@ class ARevisedDesignIsCheckedAgainstWhatTheSpecificationChanged(unittest.TestCas
         self.edit_the_design()
         for what, delta, message in (
                 ("another specification", words(carried=ids, doc_id="OTHER-SPEC"), "'OTHER-SPEC'"),
-                ("another revision", words(carried=ids, from_rev="2020"), "starts from revision 2020")):
+                ("another revision", words(carried=ids, from_rev="2020"), "starts from revision 2020"),
+                # Same name, same number, another list: only the digest of its manifest says so.
+                ("another copy", words(carried=ids, from_manifest_sha256="b" * 64), "not the same list")):
             for tool in ("scxml_revision_check", "scxml_revision_report"):
                 with self.subTest(what, tool=tool):
                     answer = call_tool(tool, {"delta": delta, "record": str(self.record),
                                               "root": str(self.root)})
                     self.assertTrue(answer.get("isError"), answer)
                     self.assertIn(message, answer["content"][0]["text"])
+
+    def test_a_record_whose_evidence_was_made_under_another_rule_is_refused_with_the_reason(self):
+        # An internal transition recorded by a build that left `type` out of its row has the digest an
+        # external one has now: compared, a change from one to the other would read `unchanged`.
+        record = json.loads(self.record.read_text(encoding="utf-8"))
+        self.assertEqual(2, record["evidence_rule"], "the product names the rule it made the evidence under")
+        del record["evidence_rule"]
+        self.record.write_text(json.dumps(record), encoding="utf-8")
+        for tool in ("scxml_revision_check", "scxml_acceptance_delta"):
+            arguments = {"record": str(self.record), "root": str(self.root)}
+            if tool != "scxml_acceptance_delta":
+                arguments["delta"] = words(carried=["3.DoIP-127"])
+            answer = call_tool(tool, arguments)
+            with self.subTest(tool):
+                self.assertTrue(answer.get("isError"), answer)
+                self.assertIn("rule 1", answer["content"][0]["text"])
+                self.assertIn("take the acceptance again", answer["content"][0]["text"])
 
     def test_a_record_from_before_evidence_is_refused_and_not_read_as_everything_new(self):
         record = json.loads(self.record.read_text(encoding="utf-8"))
@@ -240,6 +265,86 @@ class ARevisedDesignIsCheckedAgainstWhatTheSpecificationChanged(unittest.TestCas
             "root": str(self.root)})
         self.assertTrue(answer.get("isError"), answer)
         self.assertIn("states no evidence", answer["content"][0]["text"])
+
+
+LAMP = "The lamp starts off. Pressing the switch turns it on."
+LAMP_REVISED = LAMP + " After 30 seconds on, it turns itself off."
+LAMP_DESIGN = """<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="off">
+  <state id="off" sce:req="R1"><transition event="press" target="on" sce:req="R2"/></state>
+  <state id="on"/>
+</scxml>
+"""
+
+
+def quoted(*sentences):
+    return [{"quote": s, "statement": "s"} for s in sentences]
+
+
+@unittest.skipUnless(_default_codegen().exists(),
+                     "the record is the product's; build sce-codegen first")
+class TheDeltaOfALineageIsThatOfTheListTheRecordPinned(unittest.TestCase):
+    """The whole chain, with no fixture manifest: a list built by `requirement_set` is written as the
+    text the tool returned, the product pins that text's digest in the record, and the next revision's
+    delta names the same digest. The test that holds the two ends meet is this one."""
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = pathlib.Path(temporary.name)
+        (self.root / "spec").mkdir()
+        (self.root / "design").mkdir()
+        self.first = rs.build(LAMP, quoted("The lamp starts off.", "Pressing the switch turns it on."),
+                              doc_id="lamp")
+        self.manifest = self.root / "spec" / "requirements.manifest.json"
+        self.manifest.write_text(rs.answer(self.first)["manifest_text"], encoding="utf-8")
+        self.prose = self.root / "spec" / "prose.md"
+        self.prose.write_text(LAMP + "\n", encoding="utf-8")
+        self.design = self.root / "design" / "lamp.scxml"
+        self.design.write_text(LAMP_DESIGN, encoding="utf-8")
+        self.record = self.root / "acceptance.json"
+        accepted = call_tool("scxml_accept", {
+            "document": str(self.design), "manifest": str(self.manifest), "variant": "base",
+            "root": str(self.root), "out": str(self.record), "sources": [str(self.prose)]})
+        self.assertFalse(accepted.get("isError"), accepted)
+
+    def revised(self, first=None):
+        first = first or self.first
+        return rs.build(LAMP_REVISED,
+                        quoted("The lamp starts off.", "Pressing the switch turns it on.",
+                               "After 30 seconds on, it turns itself off."),
+                        doc_id="lamp", lineage_text=rl.render(first.lineage),
+                        previous_sidecar_text=json.dumps(first.sidecar))
+
+    def check(self, delta):
+        return call_tool("scxml_revision_check", {"delta": delta, "record": str(self.record),
+                                                  "root": str(self.root)})
+
+    def test_the_record_pins_the_digest_the_lineage_names_the_list_by(self):
+        pinned = json.loads(self.record.read_text(encoding="utf-8"))["manifest"]["sha256"]
+        self.assertEqual(pinned, self.first.lineage["revisions"][-1]["manifest_sha256"])
+        self.assertEqual(pinned, self.revised().delta["from_manifest_sha256"])
+
+    def test_the_delta_of_the_revision_built_against_that_lineage_is_joined(self):
+        answer = self.check(self.revised().delta)
+        self.assertFalse(answer.get("isError"), answer)
+        result = body(answer)
+        self.assertEqual("within-reach", result["verdict"])
+        kinds = {r["requirement"]: r["kind"] for r in result["requirements"]}
+        self.assertEqual({"R1": "carries-over", "R2": "carries-over", "R3": "unimplemented-new"}, kinds)
+
+    def test_the_delta_of_another_list_called_the_same_is_refused_though_every_number_agrees(self):
+        # Same document name, same revision number, the same two sentences quoted, written as a
+        # different list (a statement differs, so the manifest does not): the pair a copy shares.
+        other = rs.build(LAMP, quoted("The lamp starts off.", "Pressing the switch turns it on."),
+                         doc_id="lamp", rev="1")
+        other.manifest["extraction"]["method"] = "ai-pass-2"
+        rl.pin_manifest(other.lineage, rs.render_manifest(other.manifest))
+        delta = self.revised(other).delta
+        self.assertEqual(("lamp", "1"), (delta["doc_id"], delta["from_rev"]))
+        answer = self.check(delta)
+        self.assertTrue(answer.get("isError"), answer)
+        self.assertIn("not the same list", answer["content"][0]["text"])
 
 
 if __name__ == "__main__":

@@ -19,6 +19,7 @@ requirement. These tests hold what that promises:
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import pathlib
@@ -164,6 +165,53 @@ class ARevisionKeepsTheIdOfEveryRequirementItStillHas(unittest.TestCase):
         self.assertEqual(["R1", "R2", "R3", "R4", "R5", "R6"],
                          [id_of(third, q) for q in LAMP_QUOTES + ["A reset key clears it."]])
         self.assertEqual("R7", id_of(third, "A fuse protects it."))
+
+
+class TheLineageNamesTheListOfEachRevisionByItsManifestsDigest(unittest.TestCase):
+    """A name and a revision number are carried by every copy of a specification; the digest of the
+    exact manifest text a caller saves, which an acceptance pins, is what says it is THIS list."""
+
+    def sha(self, text):
+        return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+    def test_each_revision_row_holds_the_digest_of_the_manifest_text_its_list_was_written_as(self):
+        first = build(LAMP, LAMP_QUOTES)
+        second = revise(first, LAMP + " A reset key clears it.", LAMP_QUOTES + ["A reset key clears it."])
+        self.assertEqual(self.sha(rs.answer(first)["manifest_text"]),
+                         first.lineage["revisions"][-1]["manifest_sha256"])
+        self.assertEqual([self.sha(rs.answer(first)["manifest_text"]), self.sha(rs.answer(second)["manifest_text"])],
+                         [row["manifest_sha256"] for row in second.lineage["revisions"]])
+
+    def test_the_delta_starts_from_the_list_the_previous_revision_was_written_as(self):
+        first = build(LAMP, LAMP_QUOTES)
+        second = revise(first, LAMP + " A reset key clears it.", LAMP_QUOTES + ["A reset key clears it."])
+        self.assertEqual(self.sha(rs.answer(first)["manifest_text"]), second.delta["from_manifest_sha256"])
+
+    def test_a_list_written_again_for_the_same_text_is_pinned_again(self):
+        first = build(LAMP, LAMP_QUOTES)
+        again = revise(first, LAMP, LAMP_QUOTES[:4] + ["Nothing else changes it"])
+        self.assertEqual(first.lineage["revisions"][-1]["rev"], again.lineage["revisions"][-1]["rev"])
+        self.assertEqual(self.sha(rs.answer(again)["manifest_text"]),
+                         again.lineage["revisions"][-1]["manifest_sha256"])
+        self.assertEqual(self.sha(rs.answer(first)["manifest_text"]), again.delta["from_manifest_sha256"])
+
+    def test_a_list_that_predates_lineages_is_adopted_with_the_digest_of_the_manifest_it_was_given(self):
+        old = build(LAMP, LAMP_QUOTES)
+        manifest_text, sidecar_text = rs.answer(old)["manifest_text"], rs.answer(old)["sidecar_text"]
+        second = build(LAMP + " A reset key clears it.", LAMP_QUOTES + ["A reset key clears it."],
+                       previous_manifest_text=manifest_text, previous_sidecar_text=sidecar_text)
+        self.assertEqual(self.sha(manifest_text), second.delta["from_manifest_sha256"])
+
+    def test_a_lineage_made_before_the_digest_was_kept_still_reads_and_says_it_is_unknown(self):
+        first = build(LAMP, LAMP_QUOTES)
+        old = json.loads(rl.render(first.lineage))
+        for row in old["revisions"]:
+            del row["manifest_sha256"]
+        second = rs.build(LAMP + " A reset key clears it.", items(LAMP_QUOTES + ["A reset key clears it."]),
+                          lineage_text=json.dumps(old), previous_sidecar_text=json.dumps(first.sidecar))
+        self.assertIsNone(second.delta["from_manifest_sha256"])
+        self.assertEqual(self.sha(rs.answer(second)["manifest_text"]),
+                         second.lineage["revisions"][-1]["manifest_sha256"])
 
 
 class TheDeltaNamesTheSpecificationAndTheStepItDescribes(unittest.TestCase):
