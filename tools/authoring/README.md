@@ -342,7 +342,10 @@ to its words (carried, changed, new, retired) with what happened to the design's
 evidence for it (`scxml_acceptance_delta`): `outside-reach` when a design moved where
 the words did not (`moved-without-reason`) or still cites what the specification dropped
 (`retired-still-cited`), `within-reach` otherwise, with every place a second look should
-go (`look`). A requirement that no node cites, before or now, was not compared: it is
+go (`look`). A requirement whose words did not change but whose evidence moved ONLY at
+places a changed or new requirement also stands on (several requirements cite one node) is
+a `look`, `moved-with-a-changed-neighbour`, and names that neighbour (`shared_with`): check
+that it still holds there. A requirement that no node cites, before or now, was not compared: it is
 `uncited`, counted apart (`summary.uncovered`) and never carried over, and when
 `summary.seen` is 0 (no requirement has evidence, or the kind of document has nowhere to
 cite one) the verdict says nothing about the design and the page says so.

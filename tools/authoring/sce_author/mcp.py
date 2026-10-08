@@ -1350,8 +1350,11 @@ TOOLS = [
             "(`summary.uncovered`), never carried over: there was nothing to "
             "compare. `summary.seen` is how many requirements the check saw "
             "evidence for; when it is 0 the verdict says nothing about the "
-            "design, and you must say so. Tell the owner every violation and "
-            "every look; `within-reach` is not `right`, and "
+            "design, and you must say so. A requirement whose words did not "
+            "change and whose evidence moved only where a changed or new "
+            "requirement also stands is `moved-with-a-changed-neighbour`, a "
+            "look that names the neighbour in `shared_with`. Tell the owner "
+            "every violation and every look; `within-reach` is not `right`, and "
             "nothing is accepted by this tool. A violation is for you to fix in "
             "the design, or to explain to the owner."
         ),

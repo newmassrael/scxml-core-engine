@@ -171,6 +171,80 @@ class OnlyAViolationMakesTheVerdictOutsideReach(unittest.TestCase):
         self.assertEqual(2, result["summary"]["ok"])
 
 
+class ACarriedRequirementThatMovedOnlyWhereAChangedOneStandsIsALookNotAViolation(unittest.TestCase):
+    """A node is cited by several requirements at once. Changing it for the one the specification
+    asked to change moves the evidence of the others too (a real trial, 2026-10-08: a pop-up state
+    cited by R7 and R8, R8's sound changed, and R7 read as a violation). Such a requirement is a
+    `look` that names the neighbour, and only when nothing else about it moved."""
+
+    PLACE = "states.alarm.on_entry_blocks[0][0]"
+
+    def joined(self, neighbour_words, neighbour_line, carried_line=None):
+        delta = words(carried=["R1"], **neighbour_words)
+        return revision.join(delta, evidence(carried_line or line("R1", "changed", moved=[self.PLACE], gone=1),
+                                             neighbour_line))
+
+    def test_a_neighbour_whose_words_are_new_explains_it_and_is_named(self):
+        result = self.joined({"new": ["R2"]}, line("R2", "new", at=[self.PLACE, "states.alarm"]))
+        explained = row(result, "R1")
+        self.assertEqual(("moved-with-a-changed-neighbour", "look"), (explained["kind"], explained["severity"]))
+        self.assertEqual(["R2"], explained["shared_with"])
+        self.assertEqual("within-reach", result["verdict"])
+        self.assertEqual(0, result["summary"]["violations"])
+
+    def test_a_neighbour_whose_words_changed_explains_it_by_the_places_it_moved(self):
+        result = self.joined({"changed": ["R2"]}, line("R2", "changed", moved=[self.PLACE], gone=1))
+        self.assertEqual("moved-with-a-changed-neighbour", row(result, "R1")["kind"])
+        self.assertEqual("revised", row(result, "R2")["kind"])
+
+    def test_every_place_it_moved_has_to_be_one_the_neighbour_stands_on(self):
+        for what, line_ in (("a place the neighbour does not stand on",
+                             line("R1", "changed", moved=[self.PLACE, "states.elsewhere"], gone=1)),
+                            ("a neighbour that shares none of it",
+                             line("R1", "changed", moved=["states.elsewhere"], gone=1))):
+            with self.subTest(what):
+                result = self.joined({"new": ["R2"]}, line("R2", "new", at=[self.PLACE]), line_)
+                self.assertEqual(("moved-without-reason", "violation"),
+                                 (row(result, "R1")["kind"], row(result, "R1")["severity"]))
+                self.assertEqual("outside-reach", result["verdict"])
+
+    def test_more_recorded_rows_gone_than_places_moved_is_a_loss_no_neighbour_accounts_for(self):
+        result = self.joined({"new": ["R2"]}, line("R2", "new", at=[self.PLACE]),
+                             line("R1", "changed", moved=[self.PLACE], gone=2))
+        self.assertEqual("moved-without-reason", row(result, "R1")["kind"])
+
+    def test_a_neighbour_whose_words_did_not_change_explains_nothing(self):
+        delta = words(carried=["R1", "R2"])
+        result = revision.join(delta, evidence(line("R1", "changed", moved=[self.PLACE], gone=1),
+                                               line("R2", "changed", moved=[self.PLACE], gone=1)))
+        self.assertEqual(["moved-without-reason"] * 2, [r["kind"] for r in result["requirements"]])
+        self.assertEqual("outside-reach", result["verdict"])
+
+    def test_a_neighbour_that_is_retired_or_dropped_explains_nothing(self):
+        result = self.joined({"retired": ["R2"]}, line("R2", "dropped", gone=1))
+        self.assertEqual("moved-without-reason", row(result, "R1")["kind"])
+
+    def test_a_carried_requirement_whose_citations_all_vanished_is_not_explained(self):
+        result = self.joined({"new": ["R2"]}, line("R2", "new", at=[self.PLACE]), line("R1", "dropped", gone=1))
+        self.assertEqual("moved-without-reason", row(result, "R1")["kind"])
+
+    def test_all_the_neighbours_that_share_a_place_are_named(self):
+        delta = words(carried=["R1"], new=["R2"], changed=["R3"])
+        result = revision.join(delta, evidence(line("R1", "changed", moved=["a", "b"], gone=2),
+                                               line("R2", "new", at=["a"]),
+                                               line("R3", "changed", moved=["b"], gone=1)))
+        self.assertEqual(["R2", "R3"], row(result, "R1")["shared_with"])
+
+    def test_the_page_lists_it_under_look_again_with_the_neighbour(self):
+        result = self.joined({"new": ["R2"]}, line("R2", "new", at=[self.PLACE]))
+        page = revision.render(result)
+        self.assertIn("## Look again", page)
+        self.assertIn("- R1 -- moved-with-a-changed-neighbour", page)
+        self.assertIn("shared with R2", page)
+        self.assertNotIn("## Outside the revision's reach", page)
+        self.assertIn("Verdict: within-reach", page)
+
+
 class WhatIsNotADeltaIsRefusedAndNotReadAsNothingMoved(unittest.TestCase):
     def test_a_words_delta_that_is_not_the_one_the_tool_returned(self):
         for bad in (None, [], {}, {"requirements": []}, {"requirements": {"carried": []}},

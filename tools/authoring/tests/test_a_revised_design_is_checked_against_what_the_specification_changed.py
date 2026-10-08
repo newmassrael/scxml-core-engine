@@ -27,6 +27,8 @@ DOCUMENT = "doip_nl_connection_states.scxml"
 PROSE = "The connection closes after the inactivity timeout.\n"
 REVISED = "The connection closes after the inactivity timeout, or at once on a fault.\n"
 EVENT = 'event="tcp_established"'
+# A transition two requirements cite (`sce:req="3.DoIP-124 3.DoIP-081"`): editing it moves both.
+SHARED_EVENT = 'event="alive_check_response"'
 
 
 def body(answer: dict) -> dict:
@@ -82,6 +84,11 @@ class ARevisedDesignIsCheckedAgainstWhatTheSpecificationChanged(unittest.TestCas
     def edit_the_design(self) -> None:
         self.assertEqual(1, self.original.count(EVENT), "the fixture changed under the test")
         self.design.write_text(self.original.replace(EVENT, 'event="tcp_up"'), encoding="utf-8")
+
+    def edit_the_transition_two_requirements_cite(self) -> None:
+        self.assertEqual(1, self.original.count(SHARED_EVENT), "the fixture changed under the test")
+        self.design.write_text(self.original.replace(SHARED_EVENT, 'event="alive_check_reply"'),
+                               encoding="utf-8")
 
     def check(self, tool: str, delta: dict, **extra) -> dict:
         answer = call_tool(tool, {"delta": delta, "record": str(self.record),
@@ -162,6 +169,32 @@ class ARevisedDesignIsCheckedAgainstWhatTheSpecificationChanged(unittest.TestCas
         # The places that moved are the product's, and the edited transition is one of them.
         places = [p for r in result["requirements"] for p in r.get("moved", ())]
         self.assertTrue(any("transitions[" in p for p in places), places)
+
+    def test_a_requirement_sharing_the_edited_node_with_a_changed_one_is_a_look_that_names_it(self):
+        # `3.DoIP-124` and `3.DoIP-081` cite the same transition. The specification asked for the first to
+        # change; the product moves the evidence of both, and the second is not a design that wandered.
+        ids = self.all_ids()
+        self.edit_the_transition_two_requirements_cite()
+        self.assertEqual(["3.DoIP-081", "3.DoIP-124"], sorted(self.moved()))
+        delta = words(carried=[i for i in ids if i != "3.DoIP-124"], changed=["3.DoIP-124"])
+        result = self.check("scxml_revision_check", delta)
+        self.assertEqual("within-reach", result["verdict"])
+        neighbour = next(r for r in result["requirements"] if r["requirement"] == "3.DoIP-081")
+        self.assertEqual(("moved-with-a-changed-neighbour", "look", ["3.DoIP-124"]),
+                         (neighbour["kind"], neighbour["severity"], neighbour["shared_with"]))
+        self.assertTrue(neighbour["moved"] and all("transitions[" in p for p in neighbour["moved"]))
+        page = self.check("scxml_revision_report", delta)["page"]
+        self.assertIn("- 3.DoIP-081 -- moved-with-a-changed-neighbour", page)
+        self.assertIn("shared with 3.DoIP-124", page)
+
+    def test_the_same_edit_with_neither_requirement_changed_is_two_violations(self):
+        ids = self.all_ids()
+        self.edit_the_transition_two_requirements_cite()
+        result = self.check("scxml_revision_check", words(carried=ids))
+        self.assertEqual("outside-reach", result["verdict"])
+        self.assertEqual(["3.DoIP-081", "3.DoIP-124"],
+                         sorted(r["requirement"] for r in result["requirements"]
+                                if r["severity"] == "violation"))
 
     def test_the_report_is_the_page_the_owner_reads_and_prints_a_sentence_only_when_given_one(self):
         ids = self.all_ids()

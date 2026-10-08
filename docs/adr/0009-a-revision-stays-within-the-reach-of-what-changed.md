@@ -47,6 +47,7 @@ only what to look at again.**
    | carried | unchanged | `carries-over` | ok |
    | carried | none (no node cites it, before or now) | `uncited` | uncovered |
    | carried | changed or dropped | `moved-without-reason` | **violation** |
+   | carried | changed, only where a changed or new requirement also stands | `moved-with-a-changed-neighbour` | look |
    | carried | new | `newly-cited` | look |
    | changed | changed | `revised` | ok |
    | changed | unchanged | `words-changed-design-same` | look |
@@ -69,6 +70,26 @@ only what to look at again.**
    of document with nowhere to cite a requirement (the product's `NoAnnotationSite`) every carried
    requirement is `uncited` and `seen` is 0, and the page opens by saying the check compared
    nothing, so a verdict of `within-reach` cannot be read as a finding about that design.
+   ⚠ `moved-with-a-changed-neighbour` is not `moved-without-reason`. A node is cited by several
+   requirements, and the product's closure of each includes the node's rows, so asking ONE
+   requirement to change moves the evidence of every requirement that cites the same node. The
+   first version called all of those violations, and a real trial (2026-10-08: a pop-up state
+   cited by R7 and R8, the sound of R8 changed, R7 read as a violation) made a correct revision
+   in place come out `outside-reach`. The rule, in `revision._explained_by_neighbours`:
+   a carried requirement whose evidence `changed` is a look when
+   - EVERY place it moved is a place that a requirement whose words `changed` or are `new` also
+     moved (`moved`) or newly stands on (`at`); and
+   - no more recorded rows are `gone` than places moved (a row that disappeared cannot be
+     located, so more rows gone than places gained is a loss no neighbour accounts for).
+
+   Anything else stays a violation: a place no changed requirement stands on, a carried
+   neighbour (two requirements whose words did not change have no reason to move together), a
+   retired or dropped neighbour (it has no place to stand on now), and a requirement whose
+   citations all vanished (`dropped`). The row names the neighbours (`shared_with`) and the page
+   prints them. It is a look and not an ok because the shared place is exactly where the
+   neighbour's edit could have broken the requirement nobody asked to change: the owner is sent
+   to that place with the neighbour's name, which is a shorter look than a violation with no
+   cause.
 2. **The verdict.** `outside-reach` when any finding is a violation, else `within-reach`. A
    violation is a design that moved where the specification did not ask it to, or kept a
    requirement the specification dropped. A `look` is a place a second look should go; it is never
@@ -106,6 +127,12 @@ only what to look at again.**
 - **A second look is still the owner's.** Nothing is accepted by these tools.
 - **The closure is the product's.** A dependency it does not follow can move without moving a
   requirement's evidence (ADR 0007), and the report inherits that.
+- **A shared place can hide a real fault.** The neighbour rule reads places, not meaning. If a
+  carried requirement and a changed one stand on the same node and the edit for the changed one
+  broke the carried one, the check says `look`, not `violation`: it is in the owner's list, with
+  the neighbour's name and the place, and only the scenarios (not run here) or the owner can say
+  whether it still holds. Places are matched exactly: a child of a node the neighbour stands on is
+  not explained by it, which errs towards the violation.
 - **Matching is by id, so it is only as good as the lineage.** A requirement the lineage carried
   wrongly (ADR 0006: a replacement taken for a rewording) reads as `revised` and is listed, which
   is the safe direction.
@@ -136,12 +163,21 @@ which runs the product's generator on the committed ISO design the other accepta
    none; an unchanged specification is still answered as before.
 7. **Met.** A record from before evidence is refused through the tool rather than read as "every
    requirement is new".
+8. **Met, against the real product.** On the committed design, editing the one transition that
+   `3.DoIP-124` and `3.DoIP-081` both cite moves both; with `3.DoIP-124` `changed` and
+   `3.DoIP-081` carried, the second is `moved-with-a-changed-neighbour` (a look naming
+   `3.DoIP-124`) and the verdict `within-reach`; with both carried the same edit is two
+   violations. The unit cases hold the limits of the rule: a place the neighbour does not stand
+   on, more rows gone than places moved, a carried, retired or dropped neighbour, and a requirement
+   whose citations all vanished each stay a violation.
 
-Twelve ways of breaking the join (the verdict ignoring violations, each violation row turned into
-an `ok` or a `look`, new unclaimed rows not counted, the page listing what carries over as findings,
-the two shape checks and the two duplicate checks switched off, a sentence quoted though none was
-given) were put to those tests and each was caught. With the product's binary built, the whole
-authoring suite passes (1494 tests, 51 skipped for a missing optional tool).
+Twenty-four ways of breaking the join (the verdict ignoring violations, each violation row turned
+into an `ok` or a `look`, new unclaimed rows not counted, the page listing what carries over as
+findings, the two shape checks and the two duplicate checks switched off, a sentence quoted though
+none was given, a carried neighbour explaining a move, rows gone not bounded by places moved, one
+shared place being enough, an explained move counted as `ok`, the neighbour not named) were put to
+those tests and each was caught. With the product's binary built, the whole authoring suite passes
+(1517 tests, 51 skipped for a missing optional tool).
 
 Not done: the scenarios of an unchanged requirement are not replayed by this check. `scxml_scenarios`
 plays them and a revision should run it; folding that into the verdict needs the scenario set

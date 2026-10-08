@@ -26,6 +26,12 @@ and `uncovered`, never `carries-over`. Folding it into "carries over" would say 
 checked against it when there was nothing to check (found in review, 2026-10-08). For a kind of
 document with nowhere to cite a requirement every requirement is `uncited`, and `summary.seen` is
 0: the check saw none of them, and the page says so.
+
+⚠ A carried requirement whose evidence moved is a `moved-without-reason` violation unless every
+place it moved is one that a requirement whose words changed (or that is new) also stands on. A node
+is cited by several requirements, so asking one to change moves the others' evidence; that case is
+`moved-with-a-changed-neighbour`, a `look` that names the neighbour (found in a real trial,
+2026-10-08, where it made a correct in-place revision read as a violation).
 """
 
 from __future__ import annotations
@@ -118,6 +124,42 @@ _TABLE: dict[tuple[str, str | None], tuple[str, str]] = {
 }
 
 
+SHARED = "moved-with-a-changed-neighbour"
+
+
+def _explained_by_neighbours(rows: list[dict]) -> None:
+    """Re-read, in place, the carried requirements that moved only at places a requirement whose
+    words DID change (or that is new) also stands on.
+
+    A design node is cited by several requirements at once, and the product's closure of each one
+    includes the node's rows. When the specification asks for one requirement to change, the node
+    it changes moves the evidence of every requirement that cites the same node, and those
+    requirements' words did not change. Calling that `moved-without-reason` blames the design for
+    obeying the specification (a trial on a real component, 2026-10-08: a pop-up state cited by R7
+    and R8, the sound of R8 changed, R7 read as a violation).
+
+    It is a `look` and not `ok`: the place is exactly where the changed neighbour's edit could have
+    broken the requirement that was not asked to change, and the row names that neighbour. It is
+    explained only when EVERY place it moved is one the neighbour moved or newly stands on, and
+    when no more recorded rows are gone than places moved (a row that disappeared cannot be located,
+    so more rows gone than places gained is a loss nothing accounts for). A carried neighbour never
+    explains: two requirements whose words did not change have no reason to move together."""
+    asked = {}
+    for row in rows:
+        if row["words"] in ("changed", "new") and row["evidence"] in ("changed", "new"):
+            asked[row["requirement"]] = set(row.get("moved") or row.get("at") or ())
+    for row in rows:
+        if row["kind"] != "moved-without-reason" or row["evidence"] != "changed":
+            continue
+        places = set(row.get("moved") or ())
+        if not places or int(row.get("gone") or 0) > len(places):
+            continue
+        sharing = {id_: shared for id_, shared in asked.items() if places & shared}
+        if places <= set().union(*sharing.values()):
+            row["kind"], row["severity"] = SHARED, LOOK
+            row["shared_with"] = sorted(sharing)
+
+
 def join(words_delta: object, evidence_delta: object) -> dict:
     """The words and the evidence of a revision, joined by requirement id.
 
@@ -140,6 +182,7 @@ def join(words_delta: object, evidence_delta: object) -> dict:
                 if key in line:
                     row[key] = line[key]
         rows.append(row)
+    _explained_by_neighbours(rows)
     added = list(unclaimed.get("added") or [])
     summary = {kind: sum(1 for r in rows if r["kind"] == kind) for kind in sorted({r["kind"] for r in rows})}
     violations = [r for r in rows if r["severity"] == VIOLATION]
@@ -163,6 +206,8 @@ def join(words_delta: object, evidence_delta: object) -> dict:
 
 _WHY = {
     "moved-without-reason": "its words did not change and the design moved",
+    SHARED: "its words did not change; the design moved only where a requirement whose words did "
+            "change also stands, so check that this one still holds there",
     "retired-still-cited": "the specification dropped it and the design still cites it",
     "newly-cited": "its words did not change and the design now cites it",
     "words-changed-design-same": "its words changed and the design reads the same",
@@ -217,6 +262,8 @@ def render(result: dict, sentences: dict[str, str] | None = None, *, title: str 
             places = list(r.get("moved") or r.get("at") or ())
             if places:
                 line += "; now at " + ", ".join(places)
+            if r.get("shared_with"):
+                line += "; shared with " + ", ".join(r["shared_with"])
             if r.get("gone"):
                 line += f"; {r['gone']} recorded row(s) gone"
             out.append(line)
