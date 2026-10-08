@@ -27,6 +27,9 @@ sce-rust-runtime = { path = "../runtime", default-features = false }
 # runtime's helpers (SCE_FORGE.md §3.4.1); the crate is `#![no_std]`, so it needs
 # nothing of the operating system.
 sce-forge-runtime = { path = "../forge-runtime" }
+# An algorithm that returns a list answers in the owned list this leaf crate
+# holds, which a machine that assigns one names by path.
+sce-portable-bytes = { path = "../portable-bytes" }
 # `float_roundtrip` makes a JSON real parse to the nearest double, as the
 # conformance harness's own parse does (backends/rust/forge-conformance).
 serde_json = { version = "1", features = ["float_roundtrip"] }

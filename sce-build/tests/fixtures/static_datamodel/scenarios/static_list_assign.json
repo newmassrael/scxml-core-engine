@@ -1,0 +1,30 @@
+{
+  "machine": "static_list_assign",
+  "about": "A list variable assigned what an imported algorithm returns as a list: the assignment replaces the list whole (a longer one, a shorter one, an empty one), and a call that fails — first + i overflows a uint8 — leaves the list as it was, skips the statement and the rest of its block, and raises error.execution, which the document counts in `refusals`. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "expect": { "state": "showing", "variables": { "shown": [], "first": 10, "size": 0, "refusals": 0 } } },
+
+    { "event": "show",
+      "expect": { "variables": { "shown": [10, 11, 12], "size": 3, "refusals": 0 } } },
+    { "note": "a longer list replaces it whole, up to the eight the variable holds",
+      "event": "all",
+      "expect": { "variables": { "shown": [10, 11, 12, 13, 14, 15, 16, 17], "size": 8 } } },
+    { "note": "an empty one replaces it too",
+      "event": "empty",
+      "expect": { "variables": { "shown": [], "size": 0 } } },
+
+    { "event": "show",
+      "expect": { "variables": { "shown": [10, 11, 12], "size": 3 } } },
+    { "event": "late",
+      "expect": { "variables": { "first": 253 } } },
+    { "note": "253, 254 and 255 fit a uint8",
+      "event": "show",
+      "expect": { "variables": { "shown": [253, 254, 255], "size": 3, "refusals": 0 } } },
+    { "note": "the fourth, 256, does not: the call fails, `shown` keeps what it held, `size` is not reassigned, and error.execution says so",
+      "event": "all",
+      "expect": { "variables": { "shown": [253, 254, 255], "size": 3, "refusals": 1 } } },
+    { "note": "a call that does not reach 256 is not affected by the failure before it",
+      "event": "empty",
+      "expect": { "variables": { "shown": [], "size": 0, "refusals": 1 } } }
+  ]
+}

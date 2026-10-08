@@ -476,6 +476,31 @@ fn static_signature(
                 diag_label,
             ));
         }
+        // ... and neither is the list an imported algorithm returns, which only
+        // an <assign> to a list variable takes.
+        if let Some(callee) = static_scope
+            .whole_list_call(&arg.expr)
+            .map(|c| c.alias.clone())
+            .or_else(|| static_scope.list_returning_call_used_as_value(&arg.expr))
+        {
+            return Err(crate::forge::error::Located::in_file(
+                crate::forge::expression_site::ExpressionSite::new(
+                    &arg.expr,
+                    arg.expr_spelling.as_ref(),
+                )
+                .place(
+                    crate::forge::error::ExprError::UnsupportedConstruct {
+                        construct: format!(
+                            "the list `{callee}` returns, as a host action's argument (it is \
+                             taken whole by an <assign> to a list variable)"
+                        ),
+                        observed: Some(callee),
+                    }
+                    .at(None),
+                ),
+                diag_label,
+            ));
+        }
         let ty = static_argument_type(&ctx, arg).map_err(|refusal| match refusal {
             ArgumentRefusal::Expression(refusal) => crate::forge::error::Located::in_file(
                 crate::forge::expression_site::ExpressionSite::new(

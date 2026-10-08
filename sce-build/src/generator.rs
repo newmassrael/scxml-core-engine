@@ -3304,6 +3304,7 @@ fn render_kotlin(
                 .collect::<Vec<_>>()
         ),
         static_type_defs => static_lowering.type_defs.join("\n"),
+        static_file_annotations => &static_lowering.file_annotations,
         static_imports => &static_lowering.imports,
         static_records => minijinja::Value::from_serialize(&static_lowering.records),
         static_saved_shape => &static_lowering.saved_shape,

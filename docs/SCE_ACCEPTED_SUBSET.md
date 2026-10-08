@@ -4065,7 +4065,10 @@ or a host action's argument, judged against the signature the forge import
 pass discovers — its parameters' and return's types. An algorithm whose
 signature takes or returns a `list<T>` or a `record:` is not called from a
 statechart — a host calls it, and another algorithm when its slots are
-records (SCE_FORGE.md §4.12) — and is refused where it is called. The import is
+records (SCE_FORGE.md §4.12) — and is refused where it is called, with one
+exception: an algorithm that takes scalars only, declares `may-fail` and
+returns a `list<T>` of numbers or bools with a `returns-max-size` is taken
+whole by an `<assign>` to a list variable (below). The import is
 read where the document is parsed and refused there if its file is missing
 or is not an algorithm (`import/file-not-found`, `import/kind-mismatch`,
 `import/not-forge`); under any other data model an algorithm import is
@@ -4075,6 +4078,30 @@ later. Kotlin calls the function the algorithm's own generation emits and
 imports it by the line a forge kind importing it writes
 (`import com.sce.generated.<name>.*`); `sce-codegen generate` does not
 generate the algorithm itself, so it is generated beside the machine.
+
+**A list an algorithm returns.** `<assign location="shown" expr="DayRun(first, 3)"/>`
+replaces the list variable `shown` with what the imported algorithm returns, a
+`list<T>` of the variable's own element (`<sce:return type="list&lt;uint8&gt;"
+returns-max-size="8" may-fail="true"/>`). The call is the whole of the
+expression: a returned list is no value anywhere else — not an operand, not
+`len(DayRun(…))`, not an index's object, not a host action's argument, not the
+value of a scalar variable — and each of those is `expression/unsupported-construct`.
+The algorithm takes scalars only and declares `may-fail`, which is how a
+statechart receives the failure of a list that cannot be built (an arithmetic
+overflow in its body, a capacity it would pass); any other list-returning
+algorithm stays a host's to call.
+
+The variable must be able to hold all the algorithm may return: `returns-max-size`
+above the variable's `sce:capacity` is refused when the document is built
+(`expression/unsupported-construct`, naming both numbers), because a machine holds
+the same list wherever it runs and a bound that could be passed would be an overflow
+later. The element types agree or the assignment is refused naming both. A call
+that fails is a failed statement like any other: the list is left as it was, the
+statement and the rest of its block do not run, and `error.execution` says so
+(W3C SCXML 4.9). `scenarios/static_list_assign.json` holds this on every engine
+that runs the model, and Rust, Kotlin, C++, Go, Python and C each hold the
+returned list in the form their algorithm returns it before the variable takes a
+copy — the machine's own list is never the algorithm's.
 
 **Code generation.** A backend lowers the model once its templates hold
 the variables as fields and route every expression through the forge

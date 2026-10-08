@@ -19,6 +19,11 @@
 {# SCE Protocol-Synthesis RFC §synth-5-O: SCE-MAP marker anchoring the
    generated Kotlin file to the `<scxml>` root element's source. #}
 {{ sce_map.source_marker(model.source_location, "kotlin", module_level=true, symbol_artifact=sce_artifact.machine) }}
+{# SCE Accepted Subset §2.15: what the machine's file is allowed to use of the
+   code it calls, which a file annotation says before the package. #}
+{% for line in static_file_annotations %}
+{{ line }}
+{% endfor %}
 
 package {{ kotlin_package_prefix | default("com.sce.generated") }}.{{ model.name | lower }}
 

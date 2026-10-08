@@ -123,8 +123,9 @@ done
 # too), and an algorithm's package is `com.sce.generated.<snake>` whatever
 # the machine's prefix — the package the machine's import line names.
 ALGORITHM_ROOT="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/generated"
-# algorithm_days_in_month: called from static_record's guard.
-ALGORITHMS=(days_in_month)
+# algorithm_days_in_month: called from static_record's guard. algorithm_day_run:
+# its list is what static_list_assign takes whole.
+ALGORITHMS=(days_in_month day_run)
 for algorithm in "${ALGORITHMS[@]}"; do
     "$CODEGEN" generate "$INPUT_ROOT/algorithm_$algorithm.scxml" -l kotlin -o "$TMP/algorithm_$algorithm/"
     dir="$ALGORITHM_ROOT/$algorithm"

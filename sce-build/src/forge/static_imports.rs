@@ -89,6 +89,13 @@ pub(crate) fn resolve(
             ret: signature.ret,
             host_only: signature.host_only,
             may_fail: signature.may_fail,
+            list_return: signature.list_return.map(|returned| {
+                crate::forge::type_ctx::StaticListReturn {
+                    params: returned.params,
+                    elem: returned.elem,
+                    max_size: returned.max_size,
+                }
+            }),
             line: import.line,
         });
     }

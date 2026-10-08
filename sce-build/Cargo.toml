@@ -1169,5 +1169,13 @@ name = "a_list_element_is_read_by_its_index"
 path = "tests/a_list_element_is_read_by_its_index.rs"
 required-features = ["cli"]
 
+# A list variable assigned what an imported algorithm returns is judged and
+# lowered by the binary (docs/SCE_ACCEPTED_SUBSET.md §2.15), so the target spawns
+# `sce-codegen` and carries the `cli` gate.
+[[test]]
+name = "a_list_is_assigned_what_an_algorithm_returns"
+path = "tests/a_list_is_assigned_what_an_algorithm_returns.rs"
+required-features = ["cli"]
+
 [lints]
 workspace = true

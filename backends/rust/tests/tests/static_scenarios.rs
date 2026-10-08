@@ -71,6 +71,9 @@ use sce_rust_tests::integration::static_datamodel::static_invoke_sm::{
 use sce_rust_tests::integration::static_datamodel::static_invoke_string_sm::{
     StaticInvokeStringPersist, StaticInvokeStringPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_list_assign_sm::{
+    StaticListAssignPersist, StaticListAssignPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_list_index_sm::{
     StaticListIndexPersist, StaticListIndexPolicy,
 };
@@ -355,6 +358,17 @@ fn static_list_fills_to_its_capacity_and_is_emptied() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_list.json"
+        ),
+    );
+}
+
+#[test]
+fn static_list_assign_takes_what_an_algorithm_returns_whole() {
+    replay(
+        Engine::new(StaticListAssignPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_list_assign.json"
         ),
     );
 }

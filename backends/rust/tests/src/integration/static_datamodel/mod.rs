@@ -1,5 +1,6 @@
 // GENERATED -- DO NOT EDIT (scripts/regen_static_datamodel_rust.sh)
 
+pub mod day_run;
 pub mod days_in_month;
 pub mod static_block_ends_list_sm;
 pub mod static_block_ends_sm;
@@ -37,6 +38,7 @@ pub mod static_invoke_string__sce_synth_invoke__fits_sm;
 pub mod static_invoke_string__sce_synth_invoke__over_sm;
 pub mod static_invoke_string__sce_synth_invoke__wide_sm;
 pub mod static_invoke_string_sm;
+pub mod static_list_assign_sm;
 pub mod static_list_index_sm;
 pub mod static_list_sm;
 pub mod static_overflow_sm;

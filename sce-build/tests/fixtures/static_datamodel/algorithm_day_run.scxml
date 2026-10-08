@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The `count` numbers from `first` on, as a list — the algorithm
+  static_list_assign.scxml imports and assigns to a list variable
+  (docs/SCE_ACCEPTED_SUBSET.md §2.15), so a calendar screen fills the days it
+  shows in one step. A list of at most 8 comes back; asking for more is a
+  failure, not a longer list.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm"
+       name="day_run"
+       version="1.0">
+  <sce:signature>
+    <sce:param name="first" type="uint8"/>
+    <sce:param name="count" type="uint8"/>
+    <sce:return type="list&lt;uint8&gt;" returns-max-size="8" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="out" type="list&lt;uint8&gt;" capacity="8"/>
+    <sce:var name="i" type="uint8" init="0"/>
+    <sce:while cond="i &lt; count" max-iter="8">
+      <sce:append target="out" expr="first + i"/>
+      <sce:assign target="i" expr="i + 1"/>
+    </sce:while>
+    <sce:return expr="out"/>
+  </sce:body>
+</scxml>

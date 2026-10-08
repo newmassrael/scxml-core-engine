@@ -52,6 +52,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_invoke_params"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_invoke_string"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_list"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_list_assign"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_list_index"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_overflow"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_payload"
@@ -567,6 +568,19 @@ func TestAListIsFilledToItsBoundAndEmptied(t *testing.T) {
 		"picked":   func() any { return policy.Picked() },
 		"refusals": func() any { return policy.Refusals() },
 		"count":    func() any { return policy.Count() },
+	}))
+}
+
+// A list variable takes what an algorithm returns as a list, whole; a call that
+// fails leaves the list as it was and raises error.execution.
+func TestAListTakesWhatAnAlgorithmReturnsWhole(t *testing.T) {
+	policy := static_list_assign.NewStaticListAssignPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_list_assign", drive[static_list_assign.StaticListAssignState, static_list_assign.StaticListAssignEvent](&policy, map[string]func() any{
+		"shown":    func() any { return policy.Shown() },
+		"first":    func() any { return policy.First() },
+		"size":     func() any { return policy.Size() },
+		"refusals": func() any { return policy.Refusals() },
 	}))
 }
 

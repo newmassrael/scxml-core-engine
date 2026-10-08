@@ -140,6 +140,22 @@ pub struct StaticCallee {
     pub may_fail: bool,
     /// The `<sce:import>` element's row, for a refusal of the import itself.
     pub line: Option<u32>,
+    /// What it returns when that is a list of numbers or bools and it takes
+    /// scalars only: the list a statechart may take, whole, into a list
+    /// variable of its own, and nothing else a statechart may do with it.
+    pub list_return: Option<StaticListReturn>,
+}
+
+/// A list an imported algorithm returns, as a `sce-static` statechart takes it
+/// whole ([`StaticCallee::list_return`]).
+#[derive(Debug, Clone)]
+pub struct StaticListReturn {
+    /// The scalar slots it takes, in order.
+    pub params: Vec<SceType>,
+    /// The type of each element it returns.
+    pub elem: SceType,
+    /// The most elements it may return (`sce:returns-max-size`).
+    pub max_size: u32,
 }
 
 /// Populate `ctx.vars` with every **stateful** import's alias as an opaque
@@ -715,6 +731,30 @@ impl StaticScope {
             })
     }
 
+    /// The imported callee `expr` is, taken whole, a call of — and that returns a
+    /// list a statechart may take into a list variable — or `None`.
+    pub fn whole_list_call(&self, expr: &str) -> Option<&StaticCallee> {
+        let (whole, _) = crate::forge::expr::called_names(expr).ok()?;
+        let whole = whole?;
+        self.callees
+            .iter()
+            .find(|c| c.alias == whole && c.list_return.is_some())
+    }
+
+    /// The alias of a callee that returns a list when `expr` calls one anywhere
+    /// but as its whole: a list a call returns is a value only as the right side
+    /// of an assignment to a list variable, never an operand, an argument, a
+    /// guard or an index's object — the rule a list variable is held to
+    /// ([`Self::list_read_as_value`]).
+    pub fn list_returning_call_used_as_value(&self, expr: &str) -> Option<String> {
+        let (_, others) = crate::forge::expr::called_names(expr).ok()?;
+        others.into_iter().find(|name| {
+            self.callees
+                .iter()
+                .any(|c| &c.alias == name && c.list_return.is_some())
+        })
+    }
+
     /// The [`TypeCtx`] over this scope with `paths` ([`Self::paths`]) in it.
     pub fn ctx<'a>(
         &'a self,
@@ -733,6 +773,29 @@ impl StaticScope {
                 callee.may_fail,
             ) {
                 ctx.insert_func(callee.alias.as_str(), sig);
+            }
+            // A callee returning a list a statechart takes whole is typed by what
+            // it takes and returns, so the one place it may stand —
+            // the right side of an assignment to a list variable — is judged and
+            // lowered as any call is. Anywhere else the judge refuses it
+            // ([`Self::list_returning_call_used_as_value`]).
+            if let Some(returned) = &callee.list_return {
+                if let Some(elem) = crate::forge::types::ListElem::of(&returned.elem) {
+                    ctx.insert_func(
+                        callee.alias.as_str(),
+                        FuncSig {
+                            may_fail: callee.may_fail,
+                            ..FuncSig::new(
+                                returned
+                                    .params
+                                    .iter()
+                                    .map(InferredType::from_sce_type)
+                                    .collect(),
+                                InferredType::List(elem),
+                            )
+                        },
+                    );
+                }
             }
         }
         // E12 D5: a machine receives the failures of what it runs — an

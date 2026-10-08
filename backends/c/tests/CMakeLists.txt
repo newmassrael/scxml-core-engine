@@ -2494,6 +2494,26 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_list_index.scxml"
         STAGE_ALSO schema_day.scxml
     )
+    # A list variable takes whole what an algorithm returns as a list, whose
+    # header is generated once beside the machine that includes it.
+    set(_DAY_RUN_HEADER "${SCE_C_INTEGRATION_GENERATED_DIR}/day_run.h")
+    set(_DAY_RUN_SOURCE
+        "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/algorithm_day_run.scxml")
+    add_custom_command(
+        OUTPUT "${_DAY_RUN_HEADER}"
+        COMMAND "${SCE_CODEGEN}" generate "${_DAY_RUN_SOURCE}"
+                -l c11 -o "${SCE_C_INTEGRATION_GENERATED_DIR}"
+                --write-deps "${_DAY_RUN_HEADER}.d"
+        DEPENDS "${_DAY_RUN_SOURCE}" "${SCE_CODEGEN}"
+        DEPFILE "${_DAY_RUN_HEADER}.d"
+        COMMENT "Generating C11 algorithm: day_run.h"
+        VERBATIM
+    )
+    sce_generate_static_integration_c_test(static_list_assign
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_list_assign.scxml"
+        STAGE_ALSO algorithm_day_run.scxml
+    )
     # A record is a struct of its schema's fields, declared in the machine's own
     # header; the schema is the document the machine imports it from.
     foreach(_STATIC_RECORD_MACHINE static_record_fields static_record_list static_record_list_index)
@@ -2683,6 +2703,8 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_invoke_string_SOURCES}
         ${INTEGRATION_C_TEST_static_list_SOURCES}
         ${INTEGRATION_C_TEST_static_list_index_SOURCES}
+        ${INTEGRATION_C_TEST_static_list_assign_SOURCES}
+        ${_DAY_RUN_HEADER}
         ${INTEGRATION_C_TEST_static_record_fields_SOURCES}
         ${INTEGRATION_C_TEST_static_record_real_SOURCES}
         ${INTEGRATION_C_TEST_static_record_real32_SOURCES}

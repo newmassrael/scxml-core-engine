@@ -26683,6 +26683,23 @@ fn c11_take(value_type: &str, primary_symbol: &str) -> String {
     )
 }
 
+/// C11's `<symbol>_take` of a result that is its own value — a list, whose
+/// `items` and `len` are the struct's: the struct itself, or the failure recorded
+/// in the caller's `sce_failure_` and a zero one the statement around it never
+/// uses.
+fn c11_take_whole(primary_symbol: &str) -> String {
+    format!(
+        "static inline {primary_symbol}_result_t {primary_symbol}_take(\
+         sce_forge_algorithm_failure_t *failure, {primary_symbol}_result_t result) {{\n\
+         \x20   if (!result.ok) {{\n\
+         \x20       sce_forge_algorithm_fail(failure, result.why);\n\
+         \x20       return ({primary_symbol}_result_t){{0}};\n\
+         \x20   }}\n\
+         \x20   return result;\n\
+         }}\n\n"
+    )
+}
+
 /// The error a Rust algorithm's `Result` carries. A buffer append past its
 /// capacity is the only failure of an algorithm that does not declare
 /// `may-fail`; one that does returns `sce_forge_runtime::algorithm::
@@ -27656,10 +27673,21 @@ fn render_algorithm(
                     "use sce_portable_bytes::{SceOwnedList, CapacityExceeded};\n\n".to_string()
                 }
                 Language::Kotlin => list.kotlin_buffer_import().to_string(),
-                Language::C11 => list.c11_result_typedef(
-                    list_return_cap.expect("checked when building return_type"),
-                    &primary_symbol,
-                    may_fail,
+                // A `may-fail` list rides in its result struct whole, and its
+                // `_take` hands that struct to a caller that passes the failure on
+                // (`expr::pass_failure_on`): the list is read from `items`/`len`.
+                Language::C11 => format!(
+                    "{}{}",
+                    list.c11_result_typedef(
+                        list_return_cap.expect("checked when building return_type"),
+                        &primary_symbol,
+                        may_fail,
+                    ),
+                    if may_fail {
+                        c11_take_whole(&primary_symbol)
+                    } else {
+                        String::new()
+                    }
                 ),
                 Language::Cpp | Language::Go | Language::Python => String::new(),
             }

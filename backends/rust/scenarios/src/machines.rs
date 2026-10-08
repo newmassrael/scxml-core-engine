@@ -114,6 +114,7 @@ scenarios! {
     "static_invoke_params" => static_invoke_params_sm::{StaticInvokeParamsPolicy, StaticInvokeParamsPersist};
     "static_invoke_string" => static_invoke_string_sm::{StaticInvokeStringPolicy, StaticInvokeStringPersist};
     "static_list" => static_list_sm::{StaticListPolicy, StaticListPersist};
+    "static_list_assign" => static_list_assign_sm::{StaticListAssignPolicy, StaticListAssignPersist};
     "static_list_index" => static_list_index_sm::{StaticListIndexPolicy, StaticListIndexPersist};
     "static_overflow" => static_overflow_sm::{StaticOverflowPolicy, StaticOverflowPersist};
     "static_payload" => static_payload_sm::{StaticPayloadPolicy, StaticPayloadPersist};

@@ -504,6 +504,20 @@ impl<'a> Judge<'a> {
         if let Some(list) = self.scope.list_read_as_value(expr) {
             return Err(place(list_read_refusal(&list)));
         }
+        // A list an imported algorithm returns is taken whole into a list
+        // variable and is no value anywhere else.
+        if let Some(callee) = self.scope.list_returning_call_used_as_value(expr) {
+            return Err(place(
+                crate::forge::error::ExprError::UnsupportedConstruct {
+                    construct: format!(
+                        "the list `{callee}` returns, used as a value (it is taken whole by an \
+                         <assign> to a list variable)"
+                    ),
+                    observed: Some(callee),
+                }
+                .at(None),
+            ));
+        }
         let ty = judge_into(expr, ctx, expected).map_err(place)?;
         // An enum value is typed `Unknown`, so the slot cannot refuse it a
         // number's place: say here where it may stand and where it may not.
@@ -790,6 +804,86 @@ impl<'a> Judge<'a> {
             "",
             &field.id,
         ))
+    }
+
+    /// An `<assign>` of `callee`'s list to the list variable `list`: the call's
+    /// arguments are judged against the scalars it takes, its element is the
+    /// list's own, and the list can hold as many as it may return — a machine
+    /// holds the same list wherever it runs, so a bound that could be passed is
+    /// refused when the document is built and not by an overflow later.
+    fn list_from_call(
+        &self,
+        ctx: &TypeCtx<'_>,
+        action: &Action,
+        list: &Variable,
+        callee: &crate::forge::type_ctx::StaticCallee,
+    ) -> Result<(), Located<ForgeError>> {
+        let returned = callee
+            .list_return
+            .as_ref()
+            .expect("whole_list_call answers a callee that returns a list");
+        let place = |construct: String| {
+            Located::in_file(
+                ExpressionSite::new(&action.expr, action.spellings.get("expr")).place(
+                    crate::forge::error::ExprError::UnsupportedConstruct {
+                        construct,
+                        observed: Some(action.expr.trim().to_string()),
+                    }
+                    .at(None),
+                ),
+                self.diag_label,
+            )
+        };
+        let held = match list
+            .value_type
+            .as_ref()
+            .and_then(crate::forge::model::AlgorithmValueType::list_elem)
+        {
+            Some(crate::forge::model::ListElemType::Scalar(elem)) => elem,
+            _ => {
+                return Err(place(format!(
+                    "`{}` returns a list of {}, and `{}` holds records",
+                    callee.alias,
+                    returned.elem.as_attr(),
+                    list.id
+                )))
+            }
+        };
+        if *held != returned.elem {
+            return Err(place(format!(
+                "`{}` returns a list of {}, and `{}` holds {}",
+                callee.alias,
+                returned.elem.as_attr(),
+                list.id,
+                held.as_attr()
+            )));
+        }
+        let capacity = list.capacity.unwrap_or(0);
+        if returned.max_size > capacity {
+            return Err(place(format!(
+                "`{}` may return at most {} of {}, and `{}` holds at most {} (its \
+                 sce:capacity)",
+                callee.alias,
+                returned.max_size,
+                returned.elem.as_attr(),
+                list.id,
+                capacity
+            )));
+        }
+        let Some(elem) = crate::forge::types::ListElem::of(&returned.elem) else {
+            return Err(place(format!(
+                "`{}` returns a list of {}, which a list variable does not hold",
+                callee.alias,
+                returned.elem.as_attr()
+            )));
+        };
+        self.expr(
+            ctx,
+            &action.expr,
+            action.spellings.get("expr"),
+            Expected::Slot(InferredType::List(elem)),
+        )?;
+        Ok(())
     }
 
     /// The `list<T>` variable `name` names, if it names one.
@@ -1494,14 +1588,20 @@ impl<'a> Judge<'a> {
                         state,
                     );
                 }
-                if self.list_var(location).is_some() {
+                if let Some(list) = self.list_var(location) {
+                    // The one list a statechart takes whole: what an imported
+                    // algorithm returns, when the variable can hold all it may.
+                    if let Some(callee) = self.scope.whole_list_call(&action.expr) {
+                        return self.list_from_call(ctx, action, list, callee);
+                    }
                     return Err(Located::in_file(
                         ExpressionSite::new(&action.location, action.spellings.get("location"))
                             .place(
                                 crate::forge::error::ExprError::UnsupportedConstruct {
                                     construct: format!(
                                         "an assignment to the whole list `{location}` (a list \
-                                         is filled by <sce:append> and emptied by <sce:clear>)"
+                                         is filled by <sce:append> and emptied by <sce:clear>, \
+                                         or takes what an imported algorithm returns as a list)"
                                     ),
                                     observed: Some(location.to_string()),
                                 }

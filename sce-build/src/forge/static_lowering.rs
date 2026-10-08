@@ -89,6 +89,10 @@ pub struct StaticLowering {
     /// event-schema a `record:<alias>` variable names, declared in the
     /// machine's own file the way its event payload types are.
     pub type_defs: Vec<String>,
+    /// The annotations the machine's file begins with, before its package, for
+    /// what it uses of the code it calls — Kotlin's opt-in to the unsigned arrays
+    /// an algorithm's list is returned in.
+    pub file_annotations: Vec<String>,
     /// The import line of each algorithm the document calls — the line a
     /// forge kind importing the same algorithm writes, so the machine reaches
     /// the function where the algorithm's own generation put it.
@@ -659,6 +663,25 @@ pub trait StaticTarget {
     }
     /// `target = value`.
     fn assign(&self, target: &str, value: &str) -> String;
+    /// `target = <the list value holds>` for the list variable `target`, `value`
+    /// being what an imported algorithm returns as a list with its failure
+    /// already passed on. The assignment by default, which is right where the
+    /// returned list is the list variable's own kind of value.
+    fn assign_list(&self, target: &str, value: &str, _elem: &SceType) -> String {
+        self.assign(target, value)
+    }
+    /// The annotation the machine's file begins with when it takes a list an
+    /// algorithm returns: the opt-in to a type the call's result is held in, for a
+    /// target whose language gates it. `None` for the others.
+    fn file_annotation_for_list_call(&self) -> Option<String> {
+        None
+    }
+    /// The type of the local a list `symbol` returns is held in while it is
+    /// computed, for a target that names it — C has no `auto`. `None` for the
+    /// other targets, whose locals are typed by what they infer.
+    fn list_result_type(&self, _symbol: &str) -> Option<String> {
+        None
+    }
     /// The id the machine generates for a `<send idlocation>`, as an owned
     /// string expression evaluated where the send runs: `_auto_send_` and the
     /// number of ids this machine has generated, counted from one. The count is
@@ -1126,6 +1149,17 @@ impl StaticTarget for KotlinTarget {
     fn assign(&self, target: &str, value: &str) -> String {
         format!("{target} = {value}")
     }
+    // An algorithm's list is an array of its element; the machine's own is the
+    // immutable `List` of it.
+    fn assign_list(&self, target: &str, value: &str, _elem: &SceType) -> String {
+        format!("{target} = ({value}).toList()")
+    }
+    // The unsigned arrays an algorithm returns its list in are still
+    // experimental in the standard library, and the machine holds one for the
+    // length of the call.
+    fn file_annotation_for_list_call(&self) -> Option<String> {
+        Some("@file:OptIn(ExperimentalUnsignedTypes::class)".to_string())
+    }
     // The machine counts the ids it generates, in the engine it extends.
     fn fresh_send_id(&self) -> String {
         "nextAutoSendId()".to_string()
@@ -1528,6 +1562,11 @@ impl StaticTarget for RustTarget {
     }
     fn assign(&self, target: &str, value: &str) -> String {
         format!("{target} = {value};")
+    }
+    // An algorithm's list is a fixed-capacity owned list; the machine's own is a
+    // `Vec` of its elements.
+    fn assign_list(&self, target: &str, value: &str, _elem: &SceType) -> String {
+        format!("{target} = ({value}).as_slice().to_vec();")
     }
     fn assign_field(&self, target: &str, field: &str, value: &str) -> String {
         format!("{target}.{field} = {value};")
@@ -2427,10 +2466,19 @@ pub fn lower(
             })?;
         }
     }
+    // A machine that takes a list an algorithm returns holds, in the code that
+    // calls it, the type the algorithm returns it in, which a target may have to
+    // be told it may use.
+    let file_annotations = if scope.callees.iter().any(|c| c.list_return.is_some()) {
+        target.file_annotation_for_list_call().into_iter().collect()
+    } else {
+        Vec::new()
+    };
     Ok(StaticLowering {
         fields,
         payload_events,
         type_defs: declarations.type_defs,
+        file_annotations,
         imports,
         records: declarations.records,
         enums: declarations.enums,
@@ -4321,6 +4369,10 @@ impl StaticTarget for PythonTarget {
     fn assign(&self, target: &str, value: &str) -> String {
         format!("{target} = {value}")
     }
+    // The machine's list is its own: a copy of the one the algorithm returned.
+    fn assign_list(&self, target: &str, value: &str, _elem: &SceType) -> String {
+        format!("{target} = list({value})")
+    }
     // The count is the engine's the action is handed, which spells the id
     // `_auto_send_` and the number, as every backend does.
     fn fresh_send_id(&self) -> String {
@@ -5233,6 +5285,18 @@ impl StaticTarget for CTarget {
     fn assign(&self, target: &str, value: &str) -> String {
         format!("{target} = {value};")
     }
+    // The list an algorithm returned is its result struct, read from `items` and
+    // `len`; the machine's own list is the library's `{len, data[bound]}`, which the
+    // judge has held to at least as many as the algorithm may return.
+    fn assign_list(&self, target: &str, value: &str, _elem: &SceType) -> String {
+        format!(
+            "memcpy({target}.data, {value}.items, {value}.len * sizeof({target}.data[0])); \
+             {target}.len = {value}.len;"
+        )
+    }
+    fn list_result_type(&self, symbol: &str) -> Option<String> {
+        Some(format!("{symbol}_result_t"))
+    }
     // The count and the buffer the id is formatted into are fields of the
     // machine (`SCXMLModel::needs_auto_send_id`), and the runtime's helper
     // answers the buffer.
@@ -6046,8 +6110,24 @@ fn lower_action(
                     let name = renames.get(location).copied().unwrap_or(location);
                     let is_string = rewrites.strings.contains_key(location);
                     let is_bytes = rewrites.bytes.contains_key(location);
+                    // A list variable takes what an imported algorithm returns
+                    // as a list, whole — the judge held the right side to that
+                    // call and the variable to its bound.
+                    let returned_list = rewrites
+                        .lists
+                        .get(location)
+                        .and_then(|(elem, _)| match elem {
+                            crate::forge::model::ListElemType::Scalar(elem) => Some(elem.clone()),
+                            crate::forge::model::ListElemType::Record { .. } => None,
+                        })
+                        .and_then(|elem| {
+                            let (whole, _) = crate::forge::expr::called_names(&action.expr).ok()?;
+                            Some((elem, whole?))
+                        });
                     let write = |v: &str| {
-                        if is_string {
+                        if let Some((elem, _)) = &returned_list {
+                            target.assign_list(name, v, elem)
+                        } else if is_string {
                             target.assign_string(name, v)
                         } else if is_bytes {
                             target.assign_bytes(name, v)
@@ -6055,7 +6135,21 @@ fn lower_action(
                             target.assign(name, v)
                         }
                     };
+                    // A target that names the type of the local the returned list
+                    // is held in while it is computed.
+                    let held_list = returned_list.as_ref().and_then(|(_, alias)| {
+                        target.list_result_type(renames.get(alias.as_str()).copied()?)
+                    });
                     match &whole_record {
+                        _ if held_list.is_some() && value.can_fail => (
+                            target.receiving_write_of(
+                                &write,
+                                &value.text,
+                                held_list.as_deref().unwrap_or_default(),
+                                &failed(construct),
+                            ),
+                            true,
+                        ),
                         // A record made whole from a payload that can fail is
                         // held while it is computed in a value of its own type.
                         Some(held) if value.can_fail => (

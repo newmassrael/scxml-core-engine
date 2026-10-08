@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15): a list variable
+  assigned what an imported algorithm returns as a list. A calendar screen that
+  shows a run of days asks the algorithm that computes them for the whole run
+  and holds it in one step, instead of appending one at a time.
+
+  The assignment replaces the list, and `Range` may return up to eight, which
+  `shown` is declared to hold. A call that fails — `first + i` overflows a
+  uint8 past 255 — leaves the list as it was, skips the statement it stands in,
+  ends the block and raises error.execution, as every failing statement does.
+  `refusals` counts the error.execution events the document answers.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="showing" datamodel="sce-static" name="static_list_assign">
+  <sce:import kind="algorithm" src="algorithm_day_run.scxml" as="Range"/>
+  <datamodel>
+    <data id="shown" sce:type="list&lt;uint8&gt;" sce:capacity="8" sce:direction="out"/>
+    <data id="first" sce:type="uint8" expr="10" sce:direction="out"/>
+    <data id="size" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="showing">
+    <transition event="show" type="internal">
+      <assign location="shown" expr="Range(first, 3)"/>
+      <assign location="size" expr="len(shown)"/>
+    </transition>
+    <transition event="all" type="internal">
+      <assign location="shown" expr="Range(first, 8)"/>
+      <assign location="size" expr="len(shown)"/>
+    </transition>
+    <transition event="empty" type="internal">
+      <assign location="shown" expr="Range(first, 0)"/>
+      <assign location="size" expr="len(shown)"/>
+    </transition>
+    <transition event="late" type="internal">
+      <assign location="first" expr="253"/>
+    </transition>
+    <transition event="error.execution" type="internal">
+      <assign location="refusals" expr="refusals + 1"/>
+    </transition>
+  </state>
+</scxml>

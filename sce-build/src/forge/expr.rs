@@ -2292,6 +2292,37 @@ pub fn identifiers_read_as_values(raw_expr: &str) -> Result<Vec<String>, Refusal
     Ok(names)
 }
 
+/// The callees `raw_expr` calls by a bare name: the callee of the call that is
+/// the whole expression, if it is one, and the callee of every other call in it,
+/// each in the order met. What a `sce-static` statechart asks to tell a list an
+/// algorithm returns taken whole into a list variable from one used as a value
+/// (SCE Accepted Subset §2.15).
+pub fn called_names(raw_expr: &str) -> Result<(Option<String>, Vec<String>), Refusal> {
+    fn walk(node: &TypedExpr, is_root: bool, others: &mut Vec<String>) {
+        if let ExprKind::Call { callee, .. } = &node.kind {
+            if !is_root {
+                if let ExprKind::Ident(name) = &callee.kind {
+                    others.push(name.clone());
+                }
+            }
+        }
+        for child in node.children() {
+            walk(child, false, others);
+        }
+    }
+    let ast = parse_to_ast(raw_expr.trim())?;
+    let whole = match &ast.kind {
+        ExprKind::Call { callee, .. } => match &callee.kind {
+            ExprKind::Ident(name) => Some(name.clone()),
+            _ => None,
+        },
+        _ => None,
+    };
+    let mut others = Vec::new();
+    walk(&ast, true, &mut others);
+    Ok((whole, others))
+}
+
 /// Replace the contents of every string literal with spaces of equal length,
 /// preserving expression length and non-string token positions.
 pub fn strip_string_literals(expr: &str) -> String {
@@ -7507,6 +7538,8 @@ fn go_nameable_type(ty: InferredType) -> Option<String> {
         InferredType::Bool => "bool".to_string(),
         InferredType::Str => "string".to_string(),
         InferredType::Bytes => "[]byte".to_string(),
+        // The slice an algorithm's list return is, of the element it names.
+        InferredType::List(elem) => format!("[]{}", go_nameable_type(elem.element_type())?),
         InferredType::Record(id) => crate::forge::generator::event_schema_payload_type(
             id.schema_name(),
             crate::generator::Language::Go,

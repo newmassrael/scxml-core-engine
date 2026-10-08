@@ -259,6 +259,12 @@ def test_a_list_is_filled_to_its_bound_and_emptied() -> None:
     replay("static_list")
 
 
+# A list variable takes what an algorithm returns as a list, whole; a call that
+# fails leaves it as it was.
+def test_a_list_takes_what_an_algorithm_returns_whole() -> None:
+    replay("static_list_assign")
+
+
 # An element is read by its index, and an index outside the list is a failure.
 def test_a_list_element_is_read_by_its_index() -> None:
     replay("static_list_index")

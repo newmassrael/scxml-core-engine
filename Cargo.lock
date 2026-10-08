@@ -1931,6 +1931,7 @@ name = "sce-rust-scenarios"
 version = "0.1.0"
 dependencies = [
  "sce-forge-runtime",
+ "sce-portable-bytes",
  "sce-rust-runtime",
  "serde_json",
  "wasm-bindgen",
@@ -1944,6 +1945,7 @@ dependencies = [
  "linkme",
  "reqwest",
  "sce-forge-runtime",
+ "sce-portable-bytes",
  "sce-rust-lua",
  "sce-rust-mesh",
  "sce-rust-runtime",

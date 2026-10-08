@@ -21,6 +21,9 @@ sce-rust-lua = { path = "../lua" }
 # forge runtime's helpers, and the algorithms it calls answer through the
 # same crate's error type (SCE Accepted Subset §2.15, SCE_FORGE.md §3.4.1).
 sce-forge-runtime = { path = "../forge-runtime" }
+# An algorithm that returns a list answers in the owned list this leaf crate
+# holds, which the static machines that assign one name by path.
+sce-portable-bytes = { path = "../portable-bytes" }
 linkme = { workspace = true }
 # No `log` entry, deliberately. Nothing hand-written here calls it — the
 # line existed only because generated machines emitted a bare `log::error!`

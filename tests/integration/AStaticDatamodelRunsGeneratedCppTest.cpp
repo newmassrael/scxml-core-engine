@@ -47,6 +47,7 @@
 #include "static_invoke_params_sm.h"
 #include "static_invoke_sm.h"
 #include "static_invoke_string_sm.h"
+#include "static_list_assign_sm.h"
 #include "static_list_index_sm.h"
 #include "static_list_sm.h"
 #include "static_overflow_sm.h"
@@ -491,6 +492,19 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, AListIsFilledToItsBoundAndEmptied) {
         {"count", [](const Machine &m) { return json(m.count()); }},
     });
     replay("static_list", driver);
+}
+
+// A list variable takes whole what an algorithm returns as a list; a call that
+// fails leaves it as it was and raises error.execution.
+TEST(AStaticDatamodelRunsGeneratedCppTest, AListTakesWhatAnAlgorithmReturnsWhole) {
+    using Machine = G::static_list_assign::static_list_assign;
+    Driver<Machine> driver({
+        {"shown", [](const Machine &m) { return json(m.shown()); }},
+        {"first", [](const Machine &m) { return json(m.first()); }},
+        {"size", [](const Machine &m) { return json(m.size()); }},
+        {"refusals", [](const Machine &m) { return json(m.refusals()); }},
+    });
+    replay("static_list_assign", driver);
 }
 
 // An element is read by its index like any number; an index below zero or not

@@ -5853,6 +5853,26 @@ pub(crate) struct StatelessSignature {
     /// a failure in place of a value, received only in a `may-fail`
     /// algorithm's body.
     pub(crate) may_fail: bool,
+    /// What it returns when that is a list of numbers or bools and every slot
+    /// it takes is a scalar — the one list shape a `sce-static` statechart may
+    /// take, whole, into a list variable of its own
+    /// (docs/SCE_ACCEPTED_SUBSET.md §2.15). Set beside `host_only`, which still
+    /// refuses every other caller; `params` stay empty and say nothing, so
+    /// the scalar slots are [`Self::list_return`]'s to carry.
+    pub(crate) list_return: Option<ListReturn>,
+}
+
+/// A list an algorithm returns, as a `sce-static` statechart takes it
+/// ([`StatelessSignature::list_return`]).
+#[derive(Debug, Clone)]
+pub(crate) struct ListReturn {
+    /// The scalar slots it takes, in order.
+    pub(crate) params: Vec<forge::model::SceType>,
+    /// The type of each element it returns.
+    pub(crate) elem: forge::model::SceType,
+    /// The most elements it may return (`sce:returns-max-size`), which the
+    /// list variable it is assigned to must be able to hold.
+    pub(crate) max_size: u32,
 }
 
 /// Extract parameter and return types for a stateless imported kind.
@@ -5945,9 +5965,32 @@ pub(crate) fn discover_stateless_signature(
             // record-slot callee is still called from a body (its slots ride
             // in `record_slots`), and that call passes the failure on.
             if let Some(reason) = host_only {
+                // Scalar slots in and a list of scalars out: the shape a
+                // statechart takes whole into a list variable.
+                // It declares `may-fail`: an algorithm that does not can still fail
+                // by capacity, which only a `may-fail` caller receives.
+                let list_return = m
+                    .signature
+                    .params
+                    .iter()
+                    .map(|p| p.sce_type.scalar().cloned())
+                    .collect::<Option<Vec<_>>>()
+                    .filter(|_| m.signature.may_fail)
+                    .and_then(|params| {
+                        let elem = match m.signature.return_type.as_ref()?.list_elem()? {
+                            forge::model::ListElemType::Scalar(elem) => elem.clone(),
+                            forge::model::ListElemType::Record { .. } => return None,
+                        };
+                        Some(ListReturn {
+                            params,
+                            elem,
+                            max_size: m.signature.returns_max_size?,
+                        })
+                    });
                 return StatelessSignature {
                     host_only: Some(reason),
                     may_fail: m.signature.may_fail,
+                    list_return,
                     ..StatelessSignature::default()
                 };
             }
@@ -5965,6 +6008,7 @@ pub(crate) fn discover_stateless_signature(
                     .and_then(|t| t.scalar().cloned()),
                 host_only: None,
                 may_fail: m.signature.may_fail,
+                list_return: None,
             }
         }
         _ => StatelessSignature::default(),
