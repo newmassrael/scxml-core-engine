@@ -314,7 +314,7 @@ fn code_of(source: &str) -> String {
             }
             at(j) == b'"'
         } {
-            // A raw string: `r"…"`, `r#"…"#`.
+            // A raw string: `r"..."`, `r#"..."#`.
             let mut hashes = 0;
             let mut j = i + 1;
             while at(j) == b'#' {
@@ -351,8 +351,8 @@ fn code_of(source: &str) -> String {
             i += 1;
             out.extend_from_slice(b"\"\"");
         } else if b == b'\'' {
-            // A character literal (`'x'`, `'\n'`, `'한'`), whose quote must not be taken for the
-            // start of a string, or a lifetime (`'a`), which is code.
+            // A character literal (`'x'`, `'\n'`, one of several bytes), whose quote must not be
+            // taken for the start of a string, or a lifetime (`'a`), which is code.
             if at(i + 1) == b'\\' {
                 let mut j = i + 2;
                 while j < bytes.len() && bytes[j] != b'\'' {
@@ -459,7 +459,7 @@ fn opens_in(source: &str) -> Vec<Open> {
     found
 }
 
-/// The sources of the generator, as `src/…` and their text.
+/// The sources of the generator, as `src/...` and their text.
 fn sources() -> Vec<(String, String)> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut found = Vec::new();
@@ -628,7 +628,7 @@ fn a_quote_in_a_character_does_not_open_a_string_and_a_lifetime_is_code() {
     let source = "
 fn a<'x>(s: &'x str) -> bool {
     let q = '\"';
-    let other = '한';
+    let other = '\u{d55c}';
     std::fs::read(s).is_ok() && s.contains(q) && other != 'a'
 }
 ";
