@@ -385,6 +385,19 @@ def test_a_cancel_removes_the_send_its_id_names() -> None:
     replay("static_cancel_expr")
 
 
+# Four delayed sends armed on entering a state are delivered when each is due, two
+# due the same moment in the order they were sent, and the last takes the machine
+# to its final state; the scenario's `advance_ms` steps move the engine's time on.
+def test_timers_deliver_each_send_when_it_is_due() -> None:
+    replay("static_timers")
+
+
+# The same machine stopped: a `<cancel>` by the id of the longest send removes that
+# one and no other, so the machine never ends.
+def test_stopping_cancels_the_send_its_id_names_and_no_other() -> None:
+    replay("static_timers_stop")
+
+
 # The `idlocation` of a `<send>` names a string variable the machine writes the id
 # it generates for the send to, which a later `<cancel sendidexpr>` names; the
 # scenario's `advance_ms` steps move the engine's time on.

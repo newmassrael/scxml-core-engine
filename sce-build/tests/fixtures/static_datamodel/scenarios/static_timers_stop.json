@@ -1,0 +1,24 @@
+{
+  "machine": "static_timers",
+  "about": "The same machine, stopped: `stop` runs a <cancel> of the send with the id `timer`, the five-second `timeout`, and removes only that one. The other three sends are still delivered, in the order of `static_timers`, and the machine never reaches `done` however long it waits. Every read is at least 500ms from a due time, so an engine on a real clock reads the same answer as one on a manual clock. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "note": "armed on entering `waiting`; nothing has been delivered",
+      "expect": { "state": "waiting", "variables": { "trace": 0 } } },
+
+    { "note": "`stop` cancels the send with the id `timer`; it changes no variable",
+      "event": "stop",
+      "expect": { "state": "waiting", "variables": { "trace": 0 } } },
+
+    { "note": "1500ms in: `inner` is still delivered",
+      "advance_ms": 1500,
+      "expect": { "state": "waiting", "variables": { "trace": 1 } } },
+
+    { "note": "2500ms in: `beat` then `echo`, due together, are still delivered in the order they were sent",
+      "advance_ms": 1000,
+      "expect": { "state": "waiting", "variables": { "trace": 124 } } },
+
+    { "note": "5500ms in: past the five seconds `timeout` was due at, it was cancelled, so the machine is still waiting",
+      "advance_ms": 3000,
+      "expect": { "state": "waiting", "variables": { "trace": 124 } } }
+  ]
+}

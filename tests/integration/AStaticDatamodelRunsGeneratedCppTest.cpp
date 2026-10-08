@@ -71,6 +71,7 @@
 #include "static_send_target_sm.h"
 #include "static_send_type_sm.h"
 #include "static_string_capacity_sm.h"
+#include "static_timers_sm.h"
 #include "static_whole_payload_sm.h"
 #include "static_wire_enum_sm.h"
 #include "sync_client_sm.h"
@@ -771,6 +772,28 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, ACancelRemovesTheSendItsIdNames) {
         {"refusals", [](const Machine &m) { return json(m.refusals()); }},
     });
     replay("static_cancel_expr", driver);
+}
+
+// Four delayed sends armed on entering a state are delivered when each is due, two
+// due the same moment in the order they were sent, and the last takes the machine
+// to its final state; the machine runs on a manual clock, which the scenario's
+// `advance_ms` steps move on.
+TEST(AStaticDatamodelRunsGeneratedCppTest, TimersDeliverEachSendWhenItIsDue) {
+    using Machine = G::static_timers::static_timers;
+    Driver<Machine> driver({
+        {"trace", [](const Machine &m) { return json(m.trace()); }},
+    });
+    replay("static_timers", driver);
+}
+
+// The same machine stopped: a `<cancel>` by the id of the longest send removes that
+// one and no other, so the machine never ends.
+TEST(AStaticDatamodelRunsGeneratedCppTest, StoppingCancelsTheSendItsIdNamesAndNoOther) {
+    using Machine = G::static_timers::static_timers;
+    Driver<Machine> driver({
+        {"trace", [](const Machine &m) { return json(m.trace()); }},
+    });
+    replay("static_timers_stop", driver);
 }
 
 // The `idlocation` of a `<send>` names a string variable the machine writes the id

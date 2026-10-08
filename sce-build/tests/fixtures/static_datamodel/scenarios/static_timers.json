@@ -1,0 +1,28 @@
+{
+  "machine": "static_timers",
+  "about": "Four delayed sends are armed on entering `waiting`: `inner` at 1s to the internal queue, `beat` and `echo` both at 2s, and `timeout` at 5s. Each appends a digit to `trace` when it is delivered (inner 1, beat 2, echo 4, timeout 3), so the number says which were delivered and in what order. `beat` and `echo` are due the same moment and are delivered in the order they were sent, beat first, which is 124 and not 142. Every read is at least 500ms from a due time, so an engine on a real clock reads the same answer as one on a manual clock. The `3` of `timeout` is not readable, because the machine ends in the same step and an ended machine has nothing to read. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "note": "armed on entering `waiting`; nothing has been delivered",
+      "expect": { "state": "waiting", "variables": { "trace": 0 } } },
+
+    { "note": "500ms in: the first send is not due until 1s",
+      "advance_ms": 500,
+      "expect": { "state": "waiting", "variables": { "trace": 0 } } },
+
+    { "note": "1500ms in: `inner` was delivered, once",
+      "advance_ms": 1000,
+      "expect": { "state": "waiting", "variables": { "trace": 1 } } },
+
+    { "note": "2500ms in: `beat` then `echo`, due together, in the order they were sent",
+      "advance_ms": 1000,
+      "expect": { "state": "waiting", "variables": { "trace": 124 } } },
+
+    { "note": "4500ms in: `timeout` is due at 5s, so nothing more has been delivered",
+      "advance_ms": 2000,
+      "expect": { "state": "waiting", "variables": { "trace": 124 } } },
+
+    { "note": "5500ms in: `timeout` was delivered and took the machine to the final `done`; a machine that ended has no state to read",
+      "advance_ms": 1000,
+      "expect": { "ended": true } }
+  ]
+}

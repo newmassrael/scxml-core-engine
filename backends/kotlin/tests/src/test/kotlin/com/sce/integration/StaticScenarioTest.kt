@@ -58,6 +58,7 @@ import com.sce.integration.static_send_type.StaticSendTypeStateMachine
 import com.sce.integration.static_record_bytes.StaticRecordBytesStateMachine
 import com.sce.integration.static_record_string.StaticRecordStringStateMachine
 import com.sce.integration.static_string_capacity.StaticStringCapacityStateMachine
+import com.sce.integration.static_timers.StaticTimersStateMachine
 import com.sce.integration.static_whole_payload.StaticWholePayloadStateMachine
 import com.sce.integration.static_wire_enum.StaticWireEnumStateMachine
 import com.sce.integration.sync_client.SyncClientStateMachine
@@ -755,6 +756,50 @@ class StaticScenarioTest {
         try {
             replay(
                 scenario("static_cancel_expr"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+                advance = { ms -> sm.advanceTimeMs(ms) },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // Four delayed sends armed on entering a state are delivered when each is
+    // due, two due the same moment in the order they were sent, and the last takes
+    // the machine to its final state; the machine runs on a manual clock, which
+    // the scenario's `advance_ms` steps move on.
+    @Test
+    fun staticTimersDeliverEachSendWhenItIsDue() {
+        val sm = StaticTimersStateMachine()
+        sm.clock = ManualClock(0)
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_timers"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+                advance = { ms -> sm.advanceTimeMs(ms) },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // The same machine stopped: a <cancel> by the id of the longest send removes
+    // that one and no other, so the machine never ends.
+    @Test
+    fun staticTimersStopCancelsTheSendItsIdNamesAndNoOther() {
+        val sm = StaticTimersStateMachine()
+        sm.clock = ManualClock(0)
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_timers_stop"),
                 send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
                 tick = { sm.tick() },
                 save = { sm.save() },

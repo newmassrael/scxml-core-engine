@@ -134,6 +134,9 @@ use sce_rust_tests::integration::static_datamodel::static_send_type_sm::{
 use sce_rust_tests::integration::static_datamodel::static_string_capacity_sm::{
     StaticStringCapacityPersist, StaticStringCapacityPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_timers_sm::{
+    StaticTimersPersist, StaticTimersPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_whole_payload_sm::{
     StaticWholePayloadPersist, StaticWholePayloadPolicy,
 };
@@ -540,6 +543,38 @@ fn static_send_type_is_chosen_among_the_declared_processors() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_send_type.json"
+        ),
+    );
+}
+
+// Four delayed sends armed on entering a state are delivered when each is due,
+// two due the same moment in the order they were sent, and the last takes the
+// machine to its final state; the engine runs on a manual clock, which the
+// scenario's `advance_ms` steps move on.
+#[test]
+fn static_timers_deliver_each_send_when_it_is_due() {
+    let mut engine = Engine::new(StaticTimersPolicy::new());
+    engine.set_clock(SceClock::Manual(0));
+    replay(
+        engine,
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_timers.json"
+        ),
+    );
+}
+
+// The same machine stopped: a <cancel> by the id of the longest send removes that
+// one and no other, so the machine never ends.
+#[test]
+fn static_timers_stop_cancels_the_send_its_id_names_and_no_other() {
+    let mut engine = Engine::new(StaticTimersPolicy::new());
+    engine.set_clock(SceClock::Manual(0));
+    replay(
+        engine,
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_timers_stop.json"
         ),
     );
 }

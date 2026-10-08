@@ -2610,6 +2610,14 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/sync_client.scxml"
     )
 
+    # The delayed-send machine of `static_timers` is generated once and used by two
+    # executables: the scenarios below, and its own save-and-restore cases further
+    # down.
+    sce_generate_static_integration_c_test(static_timers
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_timers.scxml"
+    )
+
     add_executable(sce_c_integration_static_scalars
         integration/test_static_scalars.c
         ${INTEGRATION_C_TEST_static_counter_SOURCES}
@@ -2635,6 +2643,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_send_type_SOURCES}
         ${INTEGRATION_C_TEST_static_cancel_expr_SOURCES}
         ${INTEGRATION_C_TEST_static_send_idlocation_SOURCES}
+        ${INTEGRATION_C_TEST_static_timers_SOURCES}
         ${INTEGRATION_C_TEST_static_list_SOURCES}
         ${INTEGRATION_C_TEST_static_record_fields_SOURCES}
         ${INTEGRATION_C_TEST_static_record_real_SOURCES}
@@ -2754,11 +2763,8 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # machine's own clock brings each due, in the order it was sent, and a
     # `<cancel>` removes the one it names. The document is the one the Rust,
     # Kotlin and Go suites save and restore; the machine here runs on a clock
-    # the test moves, so no case sleeps.
-    sce_generate_static_integration_c_test(static_timers
-        "${SCE_C_INTEGRATION_GENERATED_DIR}"
-        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_timers.scxml"
-    )
+    # the test moves, so no case sleeps. The machine is generated beside the
+    # scenarios above.
     add_executable(sce_c_integration_static_timers
         integration/test_static_timers.c
         ${INTEGRATION_C_TEST_static_timers_SOURCES}

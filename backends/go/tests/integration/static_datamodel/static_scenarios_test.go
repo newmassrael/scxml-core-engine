@@ -71,6 +71,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_send_target"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_send_type"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_string_capacity"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_timers"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_whole_payload"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_wire_enum"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/sync_client"
@@ -912,6 +913,28 @@ func TestACancelRemovesTheSendItsIdNames(t *testing.T) {
 		"a_fired":  func() any { return policy.AFired() },
 		"b_fired":  func() any { return policy.BFired() },
 		"refusals": func() any { return policy.Refusals() },
+	}))
+}
+
+// Four delayed sends armed on entering a state are delivered when each is due,
+// two due the same moment in the order they were sent, and the last takes the
+// machine to its final state; the machine runs on a manual clock, which the
+// scenario's `advance_ms` steps move on.
+func TestTimersDeliverEachSendWhenItIsDue(t *testing.T) {
+	policy := static_timers.NewStaticTimersPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_timers", drive[static_timers.StaticTimersState, static_timers.StaticTimersEvent](&policy, map[string]func() any{
+		"trace": func() any { return policy.Trace() },
+	}))
+}
+
+// The same machine stopped: a <cancel> by the id of the longest send removes that
+// one and no other, so the machine never ends.
+func TestStoppingCancelsTheSendItsIdNamesAndNoOther(t *testing.T) {
+	policy := static_timers.NewStaticTimersPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_timers_stop", drive[static_timers.StaticTimersState, static_timers.StaticTimersEvent](&policy, map[string]func() any{
+		"trace": func() any { return policy.Trace() },
 	}))
 }
 

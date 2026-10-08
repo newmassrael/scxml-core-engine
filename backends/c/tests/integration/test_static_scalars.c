@@ -130,6 +130,7 @@
 #include "static_send_target_sm.h"
 #include "static_send_type_sm.h"
 #include "static_string_capacity_sm.h"
+#include "static_timers_sm.h"
 #include "static_whole_payload_sm.h"
 #include "static_wire_enum_sm.h"
 #include "sync_client_sm.h"
@@ -1464,6 +1465,21 @@ static const variable_t idlocation_variables[] = {
 };
 STATIC_SCENARIO_TIMED(static_send_idlocation, idlocation_states, idlocation_variables, NULL, no_lists, no_records)
 
+// static_timers: four delayed sends armed on entering a state are delivered when
+// each is due, two due the same moment in the order they were sent, and the last
+// takes the machine to its final state; a `<cancel>` by the id of the longest
+// removes that one and no other. The machine's sends wait on a clock the scenario
+// owns.
+VARIABLE_READER(static_timers, trace)
+
+static const name_value_t timers_states[] = {
+    {"waiting", STATIC_TIMERS_STATE_WAITING},
+};
+static const variable_t timers_variables[] = {
+    {"trace", static_timers_read_trace},
+};
+STATIC_SCENARIO_TIMED(static_timers, timers_states, timers_variables, NULL, no_lists, no_records)
+
 // static_donedata_record: a top-level final whose `<donedata>` names a record in
 // its `<content expr>` hands its done event the pairs of the record's fields, read
 // when the state is entered — an enum field as the name its enum declares.
@@ -1636,6 +1652,8 @@ int main(void) {
     bad |= static_send_delay_scenario("static_send_delay", 12);
     bad |= static_cancel_expr_scenario("static_cancel_expr", 16);
     bad |= static_send_idlocation_scenario("static_send_idlocation", 13);
+    bad |= static_timers_scenario("static_timers", 6);
+    bad |= static_timers_scenario("static_timers_stop", 5);
     bad |= sync_client_scenario("sync_client", 30);
     bad |= content_that_reads_a_payload_does_not_run_for_a_delivery_without_one();
     bad |= a_payload_enum_field_is_written_as_the_name_its_enum_declares();

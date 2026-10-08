@@ -101,6 +101,8 @@ scenarios! {
     "static_send_target" => static_send_target_sm::{StaticSendTargetPolicy, StaticSendTargetPersist};
     "static_send_type" => static_send_type_sm::{StaticSendTypePolicy, StaticSendTypePersist};
     "static_string_capacity" => static_string_capacity_sm::{StaticStringCapacityPolicy, StaticStringCapacityPersist};
+    "static_timers" => static_timers_sm::{StaticTimersPolicy, StaticTimersPersist} @ Manual;
+    "static_timers_stop" => static_timers_sm::{StaticTimersPolicy, StaticTimersPersist} @ Manual;
     "static_whole_payload" => static_whole_payload_sm::{StaticWholePayloadPolicy, StaticWholePayloadPersist};
     "static_wire_enum" => static_wire_enum_sm::{StaticWireEnumPolicy, StaticWireEnumPersist};
     "sync_client" => sync_client_sm::{SyncClientPolicy, SyncClientPersist};
