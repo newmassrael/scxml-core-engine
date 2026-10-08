@@ -728,19 +728,53 @@ a profile that reads the whole disk (`:root`), so a command that a specification
 into could read whatever the person's account can. Codex refuses a sandbox mode beside a default
 profile, so a run is given no `-s`.
 
-What is checked, and what is not. `codex_live` asks Codex what it derived from the settings, with
-no login and no model, and holds that to the profile: the file system from `codex debug
+What is checked. Two `codex_live` tests need Codex and no login and no model. One asks what Codex
+derived from the settings and holds that to the profile: the file system from `codex debug
 prompt-input`, and the network setting from the sandbox policy in the answer to a session's start
 (`codex app-server`, `networkAccess`). Codex accepts a key it does not know without a word, and a
-misspelt `filesystem` leaves a policy that nobody chose (tried: the test fails); the network key
-does change the value it reports (tried with `enabled=true`). That a connection is refused was not
-tried. Codex's sandbox (bubblewrap) starts only where the operating system lets the user create
-namespaces; on the Ubuntu computers this was verified on it does not (`bwrap: loopback: Failed
-RTM_NEWADDR`), so a command the model asks for does not run at all (tried with `-s read-only`: the
-model reports that error), and no run has shown the profile stopping a command's read. Where the
-sandbox does start, what stops the read is Codex's. The live tests show a model that did not ask for
-a command, which is a fact about that model and that version and not a guarantee: another model, or
-a new version, is verified again.
+misspelt `filesystem` leaves a policy that nobody chose (tried: the test fails). The other runs
+commands in the sandbox (`command/exec`) and holds what they do: a file in the run's folder is
+read; a file in another folder and the login in the home Codex is given are not there for the
+command; writing is refused (`Read-only file system`); a connection to a listener on the host is
+refused, and the same command connects when the network key is `enabled=true`, so the test can
+tell the two apart. The same commands under `-s read-only` read the person's home folder and
+another folder, which is what the profile replaces. Each was tried against a profile with the whole
+disk read (`:root`), with the run's folder writable and with the network open, and failed.
+
+When a command runs at all. Codex starts a command by running itself again inside the sandbox, so a
+command runs only where the profile reads the program. Installed under a folder the profile reads
+(a system-wide install), a command runs and is held to the above. Installed under the person's home
+folder (`npm`, `nvm`), the program is not readable there, and no command runs at all, not even
+`true` (tried: `bwrap: execvp ... No such file or directory`). Either way a command reads none of
+the person's files outside the run's folder, the minimum a program needs to start excepted. The
+command test reads the install folder as well, so as to test the first.
+
+Where Codex's sandbox does not start. It uses bubblewrap, which needs the user to create a
+namespace. On Ubuntu 24.04 (`kernel.apparmor_restrict_unprivileged_userns=1`) a program that does
+moves into the AppArmor profile `unprivileged_userns`, which denies every capability, so `bwrap`
+cannot map the user (`setting up uid map: Permission denied`) or bring up a closed network's
+loopback (`loopback: Failed RTM_NEWADDR`); `unshare -Ur` fails the same way, so it is the system's
+policy and not `bwrap`'s or Codex's. Four computers had it, and a command the model asked for then
+did not run at all (tried with `-s read-only`: the model reports that error). It is lifted for
+`bwrap` alone, as Ubuntu 25.04 ships it, by `/etc/apparmor.d/bwrap`:
+
+```
+abi <abi/4.0>,
+include <tunables/global>
+
+profile bwrap /usr/bin/bwrap flags=(unconfined) {
+  userns,
+
+  include if exists <local/bwrap>
+}
+```
+
+and `sudo apparmor_parser -r /etc/apparmor.d/bwrap` (undo: `sudo apparmor_parser -R` of it, then
+remove the file). That is a decision about a computer's security and not the application's: it is
+made by the person who owns it, and where it is not made the sandbox does not start and no command
+runs, which is the safe side. The live tests show a model that did not ask for a command, which is a
+fact about that model and that version and not a guarantee: another model, or a new version, is
+verified again.
 The reviewed metadata/UI features introduce no additional authoring server or executable tool.
 Only the listed read/check tools receive unattended approval overrides, using Codex's
 [per-tool MCP configuration](https://learn.chatgpt.com/docs/config-file/config-reference).

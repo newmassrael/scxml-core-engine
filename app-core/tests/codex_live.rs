@@ -18,7 +18,7 @@ use std::fs;
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::{mpsc, Arc};
 use std::time::Duration;
 
@@ -132,9 +132,7 @@ fn the_policy_codex_derives_from_a_run_reads_only_the_minimum_and_its_folder() {
     // (which is what the client starts a command with), or the aliases it makes for itself under
     // its own home for the run. Not that home, nor the person's, nor a parent of either: the
     // home holds the login the application keeps.
-    let shipped = fs::canonicalize(&binary)
-        .ok()
-        .and_then(|p| p.parent().and_then(Path::parent).map(Path::to_path_buf));
+    let shipped = install_folder_of(&binary);
     let aliases = fs::canonicalize(&home).unwrap().join("tmp").join("arg0");
     let mut paths = Vec::new();
     for piece in derived.split("<path>").skip(1) {
@@ -160,62 +158,224 @@ fn the_policy_codex_derives_from_a_run_reads_only_the_minimum_and_its_folder() {
     );
 }
 
+/// The folder a run may read of the program Codex is: the program's folder and the one above it,
+/// where it keeps the programs it ships with (the shell a command is started with among them).
+fn install_folder_of(binary: &Path) -> Option<PathBuf> {
+    fs::canonicalize(binary)
+        .ok()
+        .and_then(|p| p.parent().and_then(Path::parent).map(Path::to_path_buf))
+}
+
 /// What Codex says of the network for a session it starts with the run's settings: the legacy
 /// sandbox policy in its answer to `thread/start`, which is how its own clients read it.
 fn network_access_of(binary: &Path, work: &Path, home: &Path) -> bool {
-    let mut command = Command::new(binary);
-    command
-        .arg("app-server")
-        .args(["-c", "project_doc_max_bytes=0"]);
-    for setting in sce_app_core::codex::permission_settings() {
-        command.args(["-c", &setting]);
-    }
-    let mut child = command
-        .current_dir(work)
-        .env("CODEX_HOME", home)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .expect("Codex's app-server must start");
-    let mut input = child.stdin.take().unwrap();
-    let output = child.stdout.take().unwrap();
-    let (lines_in, lines) = mpsc::channel();
-    std::thread::spawn(move || {
-        for line in BufReader::new(output).lines().map_while(Result::ok) {
-            if lines_in.send(line).is_err() {
-                break;
-            }
+    let mut server = AppServer::start(
+        binary,
+        work,
+        home,
+        &sce_app_core::codex::permission_settings(),
+    );
+    let started = server.ask("thread/start", json!({"cwd": work, "ephemeral": true}));
+    started["result"]["sandbox"]["networkAccess"]
+        .as_bool()
+        .unwrap_or_else(|| panic!("Codex did not say the network setting: {started}"))
+}
+
+/// Codex's `app-server`, started with `settings` the way a run is and spoken to in lines of JSON
+/// on its standard input and output. Stopped when it goes out of scope.
+struct AppServer {
+    child: Child,
+    input: ChildStdin,
+    lines: mpsc::Receiver<String>,
+    next: u64,
+}
+
+impl AppServer {
+    fn start(binary: &Path, work: &Path, home: &Path, settings: &[String]) -> AppServer {
+        let mut command = Command::new(binary);
+        command
+            .arg("app-server")
+            .args(["-c", "project_doc_max_bytes=0"]);
+        for setting in settings {
+            command.args(["-c", setting]);
         }
-    });
-    let mut send = |message: Value| {
-        writeln!(input, "{message}").unwrap();
-        input.flush().unwrap();
-    };
-    // The answer to `id`; a request Codex makes of us carries a method and is not an answer.
-    let answer_to = |id: u64| -> Value {
+        let mut child = command
+            .current_dir(work)
+            .env("CODEX_HOME", home)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("Codex's app-server must start");
+        let input = child.stdin.take().unwrap();
+        let output = child.stdout.take().unwrap();
+        let (lines_in, lines) = mpsc::channel();
+        std::thread::spawn(move || {
+            for line in BufReader::new(output).lines().map_while(Result::ok) {
+                if lines_in.send(line).is_err() {
+                    break;
+                }
+            }
+        });
+        let mut server = AppServer {
+            child,
+            input,
+            lines,
+            next: 1,
+        };
+        server.ask(
+            "initialize",
+            json!({"clientInfo": {"name": "sce-policy-test", "version": "0"}}),
+        );
+        server.send(json!({"method": "initialized"}));
+        server
+    }
+
+    fn send(&mut self, message: Value) {
+        writeln!(self.input, "{message}").unwrap();
+        self.input.flush().unwrap();
+    }
+
+    /// The answer to a request. A message Codex sends us that carries a method is a request of
+    /// its own and not an answer.
+    fn ask(&mut self, method: &str, params: Value) -> Value {
+        let id = self.next;
+        self.next += 1;
+        self.send(json!({"id": id, "method": method, "params": params}));
         loop {
-            let line = lines
-                .recv_timeout(Duration::from_secs(60))
+            let line = self
+                .lines
+                .recv_timeout(Duration::from_secs(90))
                 .expect("Codex's app-server answers");
             let message: Value = serde_json::from_str(&line).expect("a JSON message");
             if message["id"] == id && message.get("method").is_none() {
                 return message;
             }
         }
+    }
+
+    /// A command run in the sandbox the server was started with, without a model: its exit code,
+    /// its standard output and its standard error.
+    fn exec(&mut self, work: &Path, argv: &[&str]) -> (i64, String, String) {
+        let answer = self.ask(
+            "command/exec",
+            json!({"command": argv, "cwd": work, "timeoutMs": 30000}),
+        );
+        let result = &answer["result"];
+        (
+            result["exitCode"]
+                .as_i64()
+                .unwrap_or_else(|| panic!("{argv:?} was not run: {answer}")),
+            result["stdout"].as_str().unwrap_or("").to_string(),
+            result["stderr"].as_str().unwrap_or("").to_string(),
+        )
+    }
+}
+
+impl Drop for AppServer {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+/// The settings of a run with the folder Codex is installed in read as well.
+///
+/// The sandbox starts a command by running Codex again inside it, so a command runs only where the
+/// profile reads the program: under a folder it already reads (a system-wide install) it does, and
+/// under the person's home folder (an install by `npm` or `nvm`) it does not, and no command runs
+/// at all. What a command may read when it does run is what is held here, so the folder is read.
+fn settings_reading(installed: &Path) -> Vec<String> {
+    let mut seen = 0;
+    let settings = sce_app_core::codex::permission_settings()
+        .into_iter()
+        .map(|setting| {
+            if !setting.contains(".filesystem=") {
+                return setting;
+            }
+            seen += 1;
+            let table = setting.strip_suffix('}').expect("a table of paths");
+            format!("{table},\"{}\"=\"read\"}}", installed.display())
+        })
+        .collect();
+    assert_eq!(seen, 1, "the file system is set once");
+    settings
+}
+
+/// What a command that runs in the sandbox may do, tried with commands and not read from a
+/// description. Needs the sandbox to start, which on Ubuntu 24.04 it does not until `bwrap` may
+/// create user namespaces (README, "Where Codex's sandbox does not start"): where it cannot, this
+/// fails and says so, and does not pass for having tried nothing.
+#[test]
+#[ignore = "runs real Codex, without a login: commands are run in its sandbox"]
+fn a_command_in_the_sandbox_reads_only_its_folder_and_can_neither_write_nor_connect() {
+    let binary = sce_app_core::codex::locate(
+        std::env::var_os("SCE_CODEX").map(PathBuf::from).as_deref(),
+        &sce_app_core::claude_code::Search::from_environment(),
+    )
+    .expect("a Codex to ask: put it on the search path or name it in SCE_CODEX");
+    let installed = install_folder_of(&binary).expect("the folder Codex is installed in");
+    let root = common::scratch("codex-sandbox");
+    let folder = |name: &str| {
+        let path = root.join(name);
+        fs::create_dir_all(&path).unwrap();
+        fs::canonicalize(path).unwrap()
     };
-    send(json!({"id": 1, "method": "initialize",
-                "params": {"clientInfo": {"name": "sce-policy-test", "version": "0"}}}));
-    answer_to(1);
-    send(json!({"method": "initialized"}));
-    send(json!({"id": 2, "method": "thread/start",
-                "params": {"cwd": work, "ephemeral": true}}));
-    let started = answer_to(2);
-    let _ = child.kill();
-    let _ = child.wait();
-    started["result"]["sandbox"]["networkAccess"]
-        .as_bool()
-        .unwrap_or_else(|| panic!("Codex did not say the network setting: {started}"))
+    let (work, outside, home) = (folder("work"), folder("outside"), folder("home"));
+    let secret = format!("CANARY-{}", std::process::id());
+    fs::write(work.join("inside.txt"), "INSIDE-OK\n").unwrap();
+    fs::write(outside.join("canary.txt"), &secret).unwrap();
+    // The login the application keeps in the home it gives Codex.
+    fs::write(home.join("auth.json"), &secret).unwrap();
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    std::thread::spawn(move || for _ in listener.incoming() {});
+    let connect = format!("exec 3<>/dev/tcp/127.0.0.1/{port} && echo CONNECTED");
+    let show = |path: &Path| path.display().to_string();
+
+    let closed_settings = settings_reading(&installed);
+    let mut closed = AppServer::start(&binary, &work, &home, &closed_settings);
+    let (code, _, said) = closed.exec(&work, &["true"]);
+    assert_eq!(
+        code, 0,
+        "the sandbox does not start here, so nothing was tried: {said}"
+    );
+
+    let (code, out, said) = closed.exec(&work, &["cat", &show(&work.join("inside.txt"))]);
+    assert!(
+        code == 0 && out.contains("INSIDE-OK"),
+        "{code} {out} {said}"
+    );
+    for private in [outside.join("canary.txt"), home.join("auth.json")] {
+        let (code, out, said) = closed.exec(&work, &["cat", &show(&private)]);
+        assert!(
+            code != 0 && !out.contains(&secret),
+            "{} was read: {code} {out} {said}",
+            private.display()
+        );
+    }
+    let written = show(&work.join("w.txt"));
+    let (code, _, said) = closed.exec(&work, &["sh", "-c", &format!("echo x > '{written}'")]);
+    assert!(code != 0 && !work.join("w.txt").exists(), "{code} {said}");
+    let (code, out, said) = closed.exec(&work, &["bash", "-c", &connect]);
+    assert!(
+        code != 0 && !out.contains("CONNECTED"),
+        "a connection was made: {code} {out} {said}"
+    );
+    drop(closed);
+
+    // The same command with the network open connects, so the refusal above is the setting's.
+    let open_settings: Vec<String> = closed_settings
+        .iter()
+        .map(|s| s.replace("enabled=false", "enabled=true"))
+        .collect();
+    assert_ne!(open_settings, closed_settings, "the network key moved");
+    let mut open = AppServer::start(&binary, &work, &home, &open_settings);
+    let (code, out, said) = open.exec(&work, &["bash", "-c", &connect]);
+    assert!(
+        code == 0 && out.contains("CONNECTED"),
+        "the check cannot tell a closed network from an open one: {code} {out} {said}"
+    );
 }
 
 fn run(attack: bool) {
