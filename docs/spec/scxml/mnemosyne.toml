@@ -190,6 +190,16 @@ scan_exclusions = [
     "backends/rust/probes/",
     "backends/rust/runtime/tests/",
     "backends/rust/tests/",
+    # The Rust arm's scenario replay (`sce-rust-scenarios`), taken out of
+    # `backends/rust/tests/` so the wasm32 build can run it without that crate's
+    # Lua and HTTP dependencies. It is the same code under the same status: it
+    # implements no clause, it replays what every backend is held to. Measured
+    # 2026-10-08: one citation in this workspace's namespace (the event-matching
+    # clause, in the doc comment of `replay`), carried over unchanged from
+    # `backends/rust/tests/tests/static_scenarios.rs` where it was already
+    # declared out. The existence axis still reads it, so excluding the crate
+    # swallows no section from this gate.
+    "backends/rust/scenarios/",
     "sce-build/examples/",
     "sce-build/tests/",
     "tests/",

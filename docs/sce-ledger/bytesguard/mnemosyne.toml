@@ -136,6 +136,10 @@ scan_exclusions = [
     "backends/rust/probes/",
     "backends/rust/runtime/tests/",
     "backends/rust/tests/",
+    # The Rust arm's scenario replay (`sce-rust-scenarios`), taken out of
+    # `backends/rust/tests/` so the wasm32 build can run it. Measured 2026-10-08:
+    # no §bytesguard- cite in it; its one section citation is the SCXML ledger's.
+    "backends/rust/scenarios/",
     "sce-build/examples/",
     "tests/forge/expected/",
     # The specification workbench (`app-core/` and `app/`). Measured 2026-10-03
