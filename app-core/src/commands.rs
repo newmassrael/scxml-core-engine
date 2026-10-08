@@ -250,7 +250,16 @@ const SETTINGS_WRITE: &[&str] = &[
 /// of the work, and the manifest the acceptance pinned. A report and not a verdict: the acceptance
 /// still lapses by its bytes (`read_acceptance`). A screen written for 19 does not ask for it, and
 /// a core of 19 would refuse it as `unknown-command`.
-pub const COMMAND_SET_VERSION: u32 = 20;
+///
+/// 21: a requirement list's lineage is judged when the list is saved or published, and not only
+/// for being lost: one that is not a lineage (`lineage-unusable`), that is not the lineage of the
+/// list beside it (`lineage-of-another-list`: it names the manifest and the sidecar by their
+/// digests, so a list with its sidecar left out is refused too) or that does not continue the
+/// work's (`lineage-not-continued`: an id taken back, a retired id lived again, a history
+/// rewritten, an id numbered twice) is refused, so that an id means one requirement for ever
+/// whatever built the list. A screen written for 20 does not know these refusals, and a core of
+/// 20 would save such a list.
+pub const COMMAND_SET_VERSION: u32 = 21;
 
 /// A command that did not do what was asked, in a shape every shell can pass on.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

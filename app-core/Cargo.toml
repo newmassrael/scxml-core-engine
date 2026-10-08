@@ -71,6 +71,10 @@ cli = ["dep:clap"]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = { workspace = true }
+# Judges a requirement list's lineage when a list is saved or published: whether it is a
+# lineage, the list's own, and the continuation of the one the work holds. One implementation,
+# so that this store and the generator refuse in the same words.
+sce-revision = { path = "../sce-revision" }
 clap = { version = "4", features = ["derive"], optional = true }
 # A model server the person reaches over https (a tunnel, a server on another computer). rustls
 # with the ring provider and the web's roots, as the mesh binding's wss client has it

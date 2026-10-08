@@ -1,0 +1,100 @@
+# Mutation cases for "the judgment of a revision is the Python's".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/the_judgment_of_a_revision_is_the_pythons.cases`.
+#
+# `sce-revision` judges a requirement lineage: that it is one, that it continues the one a work
+# holds, that it is the lineage of the list beside it, and what became of the words between two
+# states. It is held to the Python reference by the shared cases, sentence by sentence. Each
+# case below switches off ONE rule of one of those judgments and must make a test of
+# `sce-revision/tests/the_cases_the_python_gives.rs` red: a rule no case reaches would let a
+# port be wrong in a way nobody sees.
+#
+# ⚠ A mutated tree is built under `-D warnings`, so every case keeps each binding it had in
+# use: a mutation that stops reading one is an unused-variable ERROR, the tree does not
+# compile, and the verdict is INCONCLUSIVE.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported INCONCLUSIVE with
+# the anchor quoted, never as a pass.
+
+mutation_tests -p sce-revision --test the_cases_the_python_gives
+mutation_targets sce-revision/src/lib.rs
+mutation_oracles sce-revision/tests/the_cases_the_python_gives.rs
+
+mutation_case "extends: a lineage of another specification continues" <<'PY'
+edit("sce-revision/src/lib.rs",
+     "    if previous[\"doc_id\"] != following[\"doc_id\"] {",
+     "    if false && previous[\"doc_id\"] != following[\"doc_id\"] {")
+PY
+
+mutation_case "extends: a next that is behind continues" <<'PY'
+edit("sce-revision/src/lib.rs",
+     "    if following_next < previous_next {",
+     "    if false && following_next < previous_next {")
+PY
+
+mutation_case "extends: a revision may be rewritten" <<'PY'
+edit("sce-revision/src/lib.rs",
+     "        if !kept_as_it_was {",
+     "        if false && !kept_as_it_was {")
+PY
+
+mutation_case "extends: the sidecar digest of the last revision is not allowed to move when the text is read again" <<'PY'
+edit("sce-revision/src/lib.rs",
+     "            .filter(|(key, _)| !(same_text_again && LIST_DIGESTS.contains(&key.as_str())))",
+     "            .filter(|(key, _)| !(same_text_again && key.as_str() == \"manifest_sha256\"))")
+PY
+
+mutation_case "extends: an id may be issued in another revision than it was" <<'PY'
+edit("sce-revision/src/lib.rs",
+     "        if now[\"first_rev\"] != row[\"first_rev\"] {",
+     "        if false && now[\"first_rev\"] != row[\"first_rev\"] {")
+PY
+
+mutation_case "extends: a retired id may live again" <<'PY'
+edit("sce-revision/src/lib.rs",
+     "        if !row[\"retired_rev\"].is_null() && now[\"retired_rev\"] != row[\"retired_rev\"] {",
+     "        if false && !row[\"retired_rev\"].is_null() && now[\"retired_rev\"] != row[\"retired_rev\"] {")
+PY
+
+mutation_case "extends: a requirement's history may be rewritten" <<'PY'
+edit("sce-revision/src/lib.rs",
+     "        if new.len() < old.len() || old[..old.len() - 1] != new[..old.len() - 1] {",
+     "        if new.len() < old.len() {")
+PY
+
+mutation_case "extends: the last words may be replaced in any revision" <<'PY'
+edit("sce-revision/src/lib.rs",
+     "        if edge != edge_now && !(edge[\"rev\"] == edge_now[\"rev\"] && edge[\"rev\"] == *last_rev) {",
+     "        if false && edge != edge_now && !(edge[\"rev\"] == edge_now[\"rev\"] && edge[\"rev\"] == *last_rev) {")
+PY
+
+mutation_case "extends: an id may be numbered below the work's next" <<'PY'
+edit("sce-revision/src/lib.rs",
+     "            Some(number) => i128::try_from(number).map_or(true, |number| number >= previous_next),",
+     "            Some(number) => i128::try_from(number).map_or(true, |number| number >= 0),")
+PY
+
+mutation_case "belongs_to_list: the sidecar's digest is not compared" <<'PY'
+edit("sce-revision/src/lib.rs",
+     "    if sidecar_digest != sha256_text(sidecar_text) {",
+     "    if false && sidecar_digest != sha256_text(sidecar_text) {")
+PY
+
+mutation_case "belongs_to_list: the manifest's digest is not compared" <<'PY'
+edit("sce-revision/src/lib.rs",
+     "    if manifest_digest != sha256_text(manifest_text) {",
+     "    if false && manifest_digest != sha256_text(manifest_text) {")
+PY
+
+mutation_case "parse: an id issued twice is a lineage" <<'PY'
+edit("sce-revision/src/lib.rs",
+     "        if !ids.insert(id) {",
+     "        if false && !ids.insert(id) {")
+PY
+
+mutation_case "between: words that changed are carried" <<'PY'
+edit("sce-revision/src/lib.rs",
+     "                if last_quote(was)[\"sha256\"] == last_quote(row)[\"sha256\"] {",
+     "                if true || last_quote(was)[\"sha256\"] == last_quote(row)[\"sha256\"] {")
+PY

@@ -159,14 +159,58 @@ class EveryRefusalOfALineageCheckHasACaseThatReachesItForThatReason(unittest.Tes
             self.assertIn(fragment, refusal(by_name[name]), name)
         self.assertEqual(set(self.EXTENDS), {n for n, c in by_name.items() if refusal(c)})
 
+    PARSE = {
+        "text that is not JSON": "the lineage is not JSON",
+        "JSON that is not an object": "not a requirement lineage",
+        "an object with a key more": "not a requirement lineage",
+        "an object with a key less": "not a requirement lineage",
+        "another kind": "not a v1 sce-requirement-lineage",
+        "another version": "not a v1 sce-requirement-lineage",
+        "no document": "the lineage has no doc_id",
+        "a document that is not text": "the lineage has no doc_id",
+        "no revision": "the lineage holds no revision",
+        "revisions that are not a list": "the lineage holds no revision",
+        "a revision row with a key more": "a revision row of the lineage is not",
+        "a revision row with no revision": "a revision row of the lineage is not",
+        "a revision that is not text": "a revision row of the lineage is not",
+        "sentence digests that are not a list": "a revision row of the lineage is not",
+        "a manifest digest that is not text": "a revision row of the lineage is not",
+        "a sidecar digest that is not text": "a revision row of the lineage is not",
+        "a revision named twice": "the lineage names a rev twice",
+        "requirements that are not a list": "the lineage's requirements are not a list",
+        "a requirement row with a key more": "a requirement row of the lineage is not",
+        "a requirement with no quote": "a requirement row of the lineage is not",
+        "a requirement id that is not text": "a requirement row of the lineage is not",
+        "an id issued twice": "the lineage issues R1 twice",
+        "a first revision the lineage has no row for": "which the lineage has no row for",
+        "a retired revision the lineage has no row for": "which the lineage has no row for",
+        "a quote revision the lineage has no row for": "which the lineage has no row for",
+        "a quote row with a key more": "a quote row of R1 is not",
+        "a quote digest that is not text": "a quote row of R1 is not",
+        "a next that is not past every id": "is not past every id it issued",
+        "a next that is not a number": "is not past every id it issued",
+        "a next that is a truth value": "is not past every id it issued",
+    }
+
     def test_belongs_to_list(self):
         self.reasons("belongs_to_list", self.LIST)
+
+    def test_parse(self):
+        self.reasons("parse", self.PARSE)
+
+    def test_every_list_a_store_is_tested_with_is_the_list_of_its_own_lineage(self):
+        lists = held()["lists"]
+        self.assertGreaterEqual(len(lists), 3)
+        for name, three in lists.items():
+            with self.subTest(name):
+                rl.belongs_to_list(rl.parse(three["lineage_text"]), three["manifest_text"],
+                                   three["sidecar_text"])
 
     def test_belongs_to(self):
         self.reasons("belongs_to", self.BELONGS)
 
     def test_what_is_meant_to_be_accepted_is_accepted(self):
-        accepted = {"extends": 6, "belongs_to": 1, "belongs_to_list": 1}
+        accepted = {"extends": 6, "belongs_to": 1, "belongs_to_list": 1, "parse": 1}
         for section, count in accepted.items():
             ok = [c for c in held()[section] if c["expect"] == "ok"]
             self.assertEqual(count, len(ok), section)

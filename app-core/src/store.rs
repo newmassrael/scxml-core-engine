@@ -1158,42 +1158,97 @@ impl<C: Clock> WorkStore<C> {
         self.save_text_locked(&dir, id, artifact, text, base, written_for)
     }
 
-    /// Refuse a requirement list that would lose the lineage the work's current one holds.
+    /// Refuse a requirement list whose lineage the work cannot keep.
     ///
     /// The lineage is what makes an id mean one requirement for ever: it remembers which ids
-    /// were issued and retired, so that a retired id is never issued again. A list saved
-    /// without it onto one that has it starts that memory over, and the next revision would
-    /// issue a retired id to a new requirement with nothing to say so (measured: the third
+    /// were issued and retired, so that a retired id is never issued again. Four ways of saving
+    /// a list would start that memory over or put another's in its place, and the next revision
+    /// would issue a retired id to a new requirement with nothing to say so (measured: the third
     /// revision of a three-sentence specification gave the dropped sentence's `R3` to the new
-    /// one). There is no override: a specification written again from nothing is a new work.
+    /// one). Each is refused, and there is no override: a specification written again from
+    /// nothing is a new work.
     ///
-    /// Only judged when both texts are lists this build reads: the store keeps text, and a
-    /// text it cannot read as a list is not one this refusal can speak of. The caller holds the
-    /// work's lock, so the head it reads is the head the save replaces.
-    pub(crate) fn refuse_a_dropped_lineage(
+    /// * `lineage-dropped`: the work's list has a lineage and this one has none;
+    /// * `lineage-unusable`: what this list calls its lineage is not one;
+    /// * `lineage-of-another-list`: it is a lineage, but not of THIS list's manifest and sidecar,
+    ///   which it names by their digests;
+    /// * `lineage-not-continued`: it is the list's own, but not the continuation of the work's:
+    ///   it takes back an id, lets a retired one live, rewrites a revision or numbers an id that
+    ///   was issued already (a model that built its list without the lineage it was given gets a
+    ///   fresh one, which starts at `R1` again).
+    ///
+    /// The judgment is the product's (`sce-revision`), the same words as the authoring tools
+    /// give. Only judged when the list is one this build reads: the store keeps text, and a text
+    /// it cannot read as a list is not one this refusal can speak of. A lineage the work holds
+    /// that this build cannot read is not continued or contradicted, and the new one is judged on
+    /// its own. The caller holds the work's lock, so the head it reads is the head the save
+    /// replaces.
+    pub(crate) fn refuse_a_lineage_not_kept(
         &self,
         id: &WorkId,
         next: &str,
     ) -> Result<(), StoreError> {
-        let Some((revision, held)) = self
+        let head = self
             .read_claimed(Artifact::Requirements, id, None)?
-            .map(|(revision, _, text)| (revision, text))
-        else {
+            .map(|(revision, _, text)| (revision, text));
+        let Ok(list) = crate::requirements::Requirements::parse(next) else {
             return Ok(());
         };
-        let had = crate::requirements::stored_has_lineage(&held).unwrap_or(false);
-        let has = crate::requirements::stored_has_lineage(next).unwrap_or(true);
-        if had && !has {
-            return Err(StoreError::refused(
-                "lineage-dropped",
-                format!(
-                    "work `{id}` keeps a requirement lineage and this list has none: saving it \
-                     would let an id that was retired be issued again, to another requirement. \
-                     Build the list against the lineage `read_requirements` returns and give the \
-                     lineage that build returns"
-                ),
-                serde_json::json!({ "revision": revision }),
-            ));
+        let held = head
+            .as_ref()
+            .and_then(|(_, text)| crate::requirements::Requirements::parse(text).ok())
+            .and_then(|held| held.lineage);
+        let detail = serde_json::json!({ "revision": head.as_ref().map(|(revision, _)| revision) });
+        let Some(text) = list.lineage.as_deref() else {
+            if held.is_some() {
+                return Err(StoreError::refused(
+                    "lineage-dropped",
+                    format!(
+                        "work `{id}` keeps a requirement lineage and this list has none: saving \
+                         it would let an id that was retired be issued again, to another \
+                         requirement. Build the list against the lineage `read_requirements` \
+                         returns and give the lineage that build returns"
+                    ),
+                    detail,
+                ));
+            }
+            return Ok(());
+        };
+        let lineage = sce_revision::parse(text).map_err(|why| {
+            StoreError::refused(
+                "lineage-unusable",
+                format!("work `{id}`: the lineage given with this list is not one: {why}"),
+                detail.clone(),
+            )
+        })?;
+        sce_revision::belongs_to_list(&lineage, &list.manifest, list.sidecar.as_deref()).map_err(
+            |why| {
+                StoreError::refused(
+                    "lineage-of-another-list",
+                    format!(
+                        "work `{id}`: the lineage given is not the lineage of this list: {why}. \
+                         Give the manifest, the sidecar and the lineage of one build, unchanged"
+                    ),
+                    detail.clone(),
+                )
+            },
+        )?;
+        if let Some(previous) = held
+            .as_deref()
+            .and_then(|held| sce_revision::parse(held).ok())
+        {
+            sce_revision::extends(&previous, &lineage).map_err(|why| {
+                StoreError::refused(
+                    "lineage-not-continued",
+                    format!(
+                        "work `{id}` keeps a requirement lineage and the one given does not \
+                         continue it: {why}. Build the list against the lineage \
+                         `read_requirements` returns, so that every id keeps the requirement it \
+                         was issued for and a retired id is never issued again"
+                    ),
+                    detail.clone(),
+                )
+            })?;
         }
         Ok(())
     }
@@ -1249,7 +1304,7 @@ impl<C: Clock> WorkStore<C> {
             });
         }
         if artifact == Artifact::Requirements {
-            self.refuse_a_dropped_lineage(id, text)?;
+            self.refuse_a_lineage_not_kept(id, text)?;
         }
         let revision = Revision::of(text.as_bytes());
         if current.as_ref() == Some(&revision) {

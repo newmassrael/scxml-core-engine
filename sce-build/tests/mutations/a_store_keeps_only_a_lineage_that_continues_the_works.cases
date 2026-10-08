@@ -1,0 +1,53 @@
+# Mutation cases for "a store keeps only a lineage that continues the work's".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_store_keeps_only_a_lineage_that_continues_the_works.cases`.
+#
+# The store refused a list that LOST the lineage and nothing else, so a model that built its
+# list without the lineage it was given got a fresh one, which the store kept, and a retired id
+# was issued again to another requirement (review of 2026-10-09). It now judges the lineage of a
+# list when the list is saved or published: that it is a lineage, that it is the list's own, and
+# that it continues the work's. Each case below takes one of those away, or leaves the
+# publication path out, and must make a test of
+# `app-core/tests/a_work_keeps_the_lineage_of_its_requirement_list.rs` red.
+#
+# ⚠ A mutated tree is built under `-D warnings`, so every case keeps each binding it had in
+# use: a mutation that stops reading one is an unused-variable ERROR, the tree does not
+# compile, and the verdict is INCONCLUSIVE.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported INCONCLUSIVE with
+# the anchor quoted, never as a pass.
+
+mutation_tests -p sce-app-core --test a_work_keeps_the_lineage_of_its_requirement_list
+mutation_targets app-core/src/store.rs app-core/src/store/bundle_store.rs
+mutation_oracles app-core/tests/a_work_keeps_the_lineage_of_its_requirement_list.rs
+
+mutation_case "a list that loses the lineage is saved" <<'PY'
+edit("app-core/src/store.rs",
+     "            if held.is_some() {\n                return Err(StoreError::refused(\n                    \"lineage-dropped\",",
+     "            if held.is_some() && false {\n                return Err(StoreError::refused(\n                    \"lineage-dropped\",")
+PY
+
+mutation_case "what names itself a lineage and is not one is kept" <<'PY'
+edit("app-core/src/store.rs",
+     "        let lineage = sce_revision::parse(text).map_err(|why| {",
+     "        let lineage = serde_json::from_str::<serde_json::Value>(text).map_err(|why| {")
+PY
+
+mutation_case "a lineage that is not the list's own is kept" <<'PY'
+edit("app-core/src/store.rs",
+     "        sce_revision::belongs_to_list(&lineage, &list.manifest, list.sidecar.as_deref()).map_err(\n            |why| {",
+     "        sce_revision::belongs_to_list(&lineage, &list.manifest, list.sidecar.as_deref())\n            .or(Ok::<(), sce_revision::LineageError>(()))\n            .map_err(|why| {")
+PY
+
+mutation_case "a lineage that does not continue the work's is kept" <<'PY'
+edit("app-core/src/store.rs",
+     "            sce_revision::extends(&previous, &lineage).map_err(|why| {",
+     "            sce_revision::extends(&previous, &previous).map_err(|why| {")
+PY
+
+mutation_case "a published candidate is not judged" <<'PY'
+edit("app-core/src/store/bundle_store.rs",
+     "            self.refuse_a_lineage_not_kept(id, &text)?;",
+     "            let _ = (id, &text);")
+PY

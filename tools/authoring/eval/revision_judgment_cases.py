@@ -328,8 +328,12 @@ def histories():
                      QUOTES[:3] + ["After 45 seconds on, it turns itself off."] + QUOTES[4:], first)
     back = build(LAMP, QUOTES, reworded)
     again = build(LAMP, QUOTES[:4], first)
+    reworded_then_added = build(
+        LAMP.replace("30 seconds", "45 seconds").replace(
+            "Nothing else changes it.", "Nothing else changes it. " + RESET),
+        QUOTES[:3] + ["After 45 seconds on, it turns itself off.", QUOTES[4], RESET], reworded)
     return {"first": first, "second": second, "third": third, "reworded": reworded, "back": back,
-            "again": again}
+            "again": again, "reworded then added": reworded_then_added}
 
 
 class Lineages:
@@ -351,6 +355,79 @@ def _next_behind(h) -> dict:
     behind = copy.deepcopy(h["third"].lineage)
     behind["next"] = h["first"].lineage["next"] - 1
     return behind
+
+
+def list_cases():
+    """Lists a caller saves, each as the three texts one call of `scxml_requirement_set` gives:
+    the manifest, the sidecar and the lineage that names them by their digests. What a store that
+    judges a lineage is tested with, in any language: a lineage and a list that do not belong
+    together are refused, so a test cannot make up one from hand-typed hashes."""
+    return {name: {"manifest_text": rs.render_manifest(built.manifest),
+                   "sidecar_text": rs.render_sidecar(built.sidecar),
+                   "lineage_text": rl.render(built.lineage)}
+            for name, built in histories().items()}
+
+
+def parse_cases():
+    """What reading a lineage's text refuses. Each case breaks one rule of a lineage this module
+    wrote and leaves the rest as the first revision's lineage has them, so that the sentence is the
+    rule's own."""
+    first = histories()["first"].lineage
+
+    def case(name, text):
+        return {"name": name, "text": text, "expect": checked(rl.parse, text)}
+
+    def broken(edit):
+        lineage = copy.deepcopy(first)
+        edit(lineage)
+        return json.dumps(lineage)
+
+    def drop(key):
+        return broken(lambda l: l.pop(key))
+
+    def revision_row(edit):
+        return broken(lambda l: edit(l["revisions"][0]))
+
+    def requirement_row(edit):
+        return broken(lambda l: edit(l["requirements"][0]))
+
+    def second_revision(lineage):
+        lineage["revisions"].append(dict(lineage["revisions"][0]))
+
+    return [
+        case("a lineage a call gave", json.dumps(first)),
+        case("text that is not JSON", "not json"),
+        case("JSON that is not an object", "[]"),
+        case("an object with a key more", broken(lambda l: l.update(extra=1))),
+        case("an object with a key less", drop("next")),
+        case("another kind", broken(lambda l: l.update(lineage="sce-something-else"))),
+        case("another version", broken(lambda l: l.update(v=2))),
+        case("no document", broken(lambda l: l.update(doc_id=""))),
+        case("a document that is not text", broken(lambda l: l.update(doc_id=7))),
+        case("no revision", broken(lambda l: l.update(revisions=[]))),
+        case("revisions that are not a list", broken(lambda l: l.update(revisions="one"))),
+        case("a revision row with a key more", revision_row(lambda r: r.update(extra=1))),
+        case("a revision row with no revision", revision_row(lambda r: r.pop("rev"))),
+        case("a revision that is not text", revision_row(lambda r: r.update(rev=1))),
+        case("sentence digests that are not a list", revision_row(lambda r: r.update(sentence_sha256="x"))),
+        case("a manifest digest that is not text", revision_row(lambda r: r.update(manifest_sha256=7))),
+        case("a sidecar digest that is not text", revision_row(lambda r: r.update(sidecar_sha256=7))),
+        case("a revision named twice", broken(second_revision)),
+        case("requirements that are not a list", broken(lambda l: l.update(requirements="R1"))),
+        case("a requirement row with a key more", requirement_row(lambda r: r.update(extra=1))),
+        case("a requirement with no quote", requirement_row(lambda r: r.update(quotes=[]))),
+        case("a requirement id that is not text", requirement_row(lambda r: r.update(id=1))),
+        case("an id issued twice", broken(lambda l: l["requirements"].append(dict(l["requirements"][0])))),
+        case("a first revision the lineage has no row for", requirement_row(lambda r: r.update(first_rev="9"))),
+        case("a retired revision the lineage has no row for", requirement_row(lambda r: r.update(retired_rev="9"))),
+        case("a quote revision the lineage has no row for",
+             requirement_row(lambda r: r["quotes"][0].update(rev="9"))),
+        case("a quote row with a key more", requirement_row(lambda r: r["quotes"][0].update(extra=1))),
+        case("a quote digest that is not text", requirement_row(lambda r: r["quotes"][0].update(sha256=7))),
+        case("a next that is not past every id", broken(lambda l: l.update(next=3))),
+        case("a next that is not a number", broken(lambda l: l.update(next="six"))),
+        case("a next that is a truth value", broken(lambda l: l.update(next=True))),
+    ]
 
 
 def between_cases(table: Lineages):
@@ -428,13 +505,10 @@ def extends_cases(table: Lineages):
         lineage["requirements"].append({"id": "R0", "first_rev": "3", "retired_rev": None,
                                         "quotes": [{"rev": "3", "sha256": "0" * 64}]})
 
-    reworded_twice = build(LAMP.replace("30 seconds", "45 seconds").replace(
-        "Nothing else changes it.", "Nothing else changes it. " + RESET),
-        QUOTES[:3] + ["After 45 seconds on, it turns itself off.", QUOTES[4], RESET], h["reworded"])
     def variant(name, base, edit):
         return table.add(name, broken(h[base], edit))
 
-    twice = table.add("reworded, then a requirement added", reworded_twice.lineage)
+    twice = named["reworded then added"]
     return [
         case("a step after a step", named["first"], named["second"]),
         case("the next step", named["second"], named["third"]),
@@ -532,6 +606,8 @@ def build_cases() -> dict:
         "between": between,
         "extends": extends,
         "belongs_to_list": belongs_to_list,
+        "parse": parse_cases(),
+        "lists": list_cases(),
     }
 
 

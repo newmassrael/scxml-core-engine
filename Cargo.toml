@@ -21,6 +21,7 @@ members = [
     "backends/rust/link-runtime",
     "backends/rust/mesh",
     "backends/rust/scenarios",
+    "sce-revision",
     "app-core",
 ]
 # The application links a GUI toolkit and is a workspace of its own (see

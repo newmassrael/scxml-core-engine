@@ -300,7 +300,9 @@ def parse(text: str) -> dict:
     try:
         data = json.loads(text)
     except ValueError as error:
-        raise LineageError(f"the lineage is not JSON: {error}") from error
+        # No parser detail in the sentence: it is one library's wording, and the sentence is a
+        # case another implementation has to say in the same words.
+        raise LineageError("the lineage is not JSON") from error
     return _checked(data)
 
 

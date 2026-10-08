@@ -1024,7 +1024,7 @@
   },
   {
    "expect": "ok",
-   "following": "reworded, then a requirement added",
+   "following": "reworded then added",
    "name": "an earlier requirement's history kept and one added",
    "previous": "reworded"
   },
@@ -4547,100 +4547,7 @@
    ],
    "v": 1
   },
-  "reworded, a requirement's history rewritten": {
-   "doc_id": "lamp",
-   "lineage": "sce-requirement-lineage",
-   "next": 6,
-   "requirements": [
-    {
-     "first_rev": "1",
-     "id": "R1",
-     "quotes": [
-      {
-       "rev": "1",
-       "sha256": "6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d"
-      }
-     ],
-     "retired_rev": null
-    },
-    {
-     "first_rev": "1",
-     "id": "R2",
-     "quotes": [
-      {
-       "rev": "1",
-       "sha256": "ae667461fcb2645c429818f101268823113ada6c2c3d963a66bae3c0377d8719"
-      }
-     ],
-     "retired_rev": null
-    },
-    {
-     "first_rev": "1",
-     "id": "R3",
-     "quotes": [
-      {
-       "rev": "1",
-       "sha256": "6f4410cfd3079860f7efa4ddc3fdd27fe7f9255a79f60cab05b7e587467a4384"
-      }
-     ],
-     "retired_rev": null
-    },
-    {
-     "first_rev": "1",
-     "id": "R4",
-     "quotes": [
-      {
-       "rev": "1",
-       "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
-      },
-      {
-       "rev": "2",
-       "sha256": "39e1938a76d448241d0f201abf0482d93210c1302a3fcf6be1e71989fc542ac1"
-      }
-     ],
-     "retired_rev": null
-    },
-    {
-     "first_rev": "1",
-     "id": "R5",
-     "quotes": [
-      {
-       "rev": "1",
-       "sha256": "2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1"
-      }
-     ],
-     "retired_rev": null
-    }
-   ],
-   "revisions": [
-    {
-     "manifest_sha256": "0c87ee2a943cababedd4a9ba270f2da7ead34eab11a19b1970aee20e4a3055f8",
-     "rev": "1",
-     "sentence_sha256": [
-      "6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d",
-      "c3f38ff61890455cd2dff6a03a23d84d702b41cba9bfcd44e6d395c100c5ecaf",
-      "aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545",
-      "2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1"
-     ],
-     "sidecar_sha256": "3892e4be2a6bf9a864d19d3c4038af0b0030a84a3b0310e649553989087d5902",
-     "spec_sha256": "730c09a7a3d8fe56a9a1a995e8717ee588b434b4c7930fe98253bcfe464c684a"
-    },
-    {
-     "manifest_sha256": "d40292733386130da4e8e7b5b9b25dc86b89c2128b93a8346ec1626a54501ab3",
-     "rev": "2",
-     "sentence_sha256": [
-      "6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d",
-      "c3f38ff61890455cd2dff6a03a23d84d702b41cba9bfcd44e6d395c100c5ecaf",
-      "39e1938a76d448241d0f201abf0482d93210c1302a3fcf6be1e71989fc542ac1",
-      "2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1"
-     ],
-     "sidecar_sha256": "98ae5988076aa5d0c06a3620d4a2a6cb69e7f109a03681a4c0338da9500223af",
-     "spec_sha256": "515756a9115bbefdc560b54ca359558c9ea1df642d9bf4792a143ffbc139731e"
-    }
-   ],
-   "v": 1
-  },
-  "reworded, then a requirement added": {
+  "reworded then added": {
    "doc_id": "lamp",
    "lineage": "sce-requirement-lineage",
    "next": 7,
@@ -4753,6 +4660,99 @@
      ],
      "sidecar_sha256": "76be438ef3ed66bba9df69c6435f5b5da96b7c0def7de43f3a962753ca9c864d",
      "spec_sha256": "f8b95c53d3eeeaeef5a6aa8cc82b25d82ecb0883b33be2d184bc9a9c009b5228"
+    }
+   ],
+   "v": 1
+  },
+  "reworded, a requirement's history rewritten": {
+   "doc_id": "lamp",
+   "lineage": "sce-requirement-lineage",
+   "next": 6,
+   "requirements": [
+    {
+     "first_rev": "1",
+     "id": "R1",
+     "quotes": [
+      {
+       "rev": "1",
+       "sha256": "6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d"
+      }
+     ],
+     "retired_rev": null
+    },
+    {
+     "first_rev": "1",
+     "id": "R2",
+     "quotes": [
+      {
+       "rev": "1",
+       "sha256": "ae667461fcb2645c429818f101268823113ada6c2c3d963a66bae3c0377d8719"
+      }
+     ],
+     "retired_rev": null
+    },
+    {
+     "first_rev": "1",
+     "id": "R3",
+     "quotes": [
+      {
+       "rev": "1",
+       "sha256": "6f4410cfd3079860f7efa4ddc3fdd27fe7f9255a79f60cab05b7e587467a4384"
+      }
+     ],
+     "retired_rev": null
+    },
+    {
+     "first_rev": "1",
+     "id": "R4",
+     "quotes": [
+      {
+       "rev": "1",
+       "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      {
+       "rev": "2",
+       "sha256": "39e1938a76d448241d0f201abf0482d93210c1302a3fcf6be1e71989fc542ac1"
+      }
+     ],
+     "retired_rev": null
+    },
+    {
+     "first_rev": "1",
+     "id": "R5",
+     "quotes": [
+      {
+       "rev": "1",
+       "sha256": "2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1"
+      }
+     ],
+     "retired_rev": null
+    }
+   ],
+   "revisions": [
+    {
+     "manifest_sha256": "0c87ee2a943cababedd4a9ba270f2da7ead34eab11a19b1970aee20e4a3055f8",
+     "rev": "1",
+     "sentence_sha256": [
+      "6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d",
+      "c3f38ff61890455cd2dff6a03a23d84d702b41cba9bfcd44e6d395c100c5ecaf",
+      "aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545",
+      "2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1"
+     ],
+     "sidecar_sha256": "3892e4be2a6bf9a864d19d3c4038af0b0030a84a3b0310e649553989087d5902",
+     "spec_sha256": "730c09a7a3d8fe56a9a1a995e8717ee588b434b4c7930fe98253bcfe464c684a"
+    },
+    {
+     "manifest_sha256": "d40292733386130da4e8e7b5b9b25dc86b89c2128b93a8346ec1626a54501ab3",
+     "rev": "2",
+     "sentence_sha256": [
+      "6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d",
+      "c3f38ff61890455cd2dff6a03a23d84d702b41cba9bfcd44e6d395c100c5ecaf",
+      "39e1938a76d448241d0f201abf0482d93210c1302a3fcf6be1e71989fc542ac1",
+      "2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1"
+     ],
+     "sidecar_sha256": "98ae5988076aa5d0c06a3620d4a2a6cb69e7f109a03681a4c0338da9500223af",
+     "spec_sha256": "515756a9115bbefdc560b54ca359558c9ea1df642d9bf4792a143ffbc139731e"
     }
    ],
    "v": 1
@@ -6638,6 +6638,260 @@
    "v": 1
   }
  },
+ "lists": {
+  "again": {
+   "lineage_text": "{\n  \"lineage\": \"sce-requirement-lineage\",\n  \"v\": 1,\n  \"doc_id\": \"lamp\",\n  \"next\": 6,\n  \"revisions\": [\n    {\n      \"rev\": \"1\",\n      \"spec_sha256\": \"730c09a7a3d8fe56a9a1a995e8717ee588b434b4c7930fe98253bcfe464c684a\",\n      \"sentence_sha256\": [\n        \"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\",\n        \"c3f38ff61890455cd2dff6a03a23d84d702b41cba9bfcd44e6d395c100c5ecaf\",\n        \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\",\n        \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"\n      ],\n      \"manifest_sha256\": \"b08971b0dd30620f2297d6e9edf798466bd5e655f4b64de4a221dd0b81936fd9\",\n      \"sidecar_sha256\": \"70e88e438fd52f716a73037f46e37cf1ac322c760e36f86f7d60f9346378cfbd\"\n    }\n  ],\n  \"requirements\": [\n    {\n      \"id\": \"R1\",\n      \"first_rev\": \"1\",\n      \"retired_rev\": null,\n      \"quotes\": [\n        {\n          \"rev\": \"1\",\n          \"sha256\": \"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\"\n        }\n      ]\n    },\n    {\n      \"id\": \"R2\",\n      \"first_rev\": \"1\",\n      \"retired_rev\": null,\n      \"quotes\": [\n        {\n          \"rev\": \"1\",\n          \"sha256\": \"ae667461fcb2645c429818f101268823113ada6c2c3d963a66bae3c0377d8719\"\n        }\n      ]\n    },\n    {\n      \"id\": \"R3\",\n      \"first_rev\": \"1\",\n      \"retired_rev\": null,\n      \"quotes\": [\n        {\n          \"rev\": \"1\",\n          \"sha256\": \"6f4410cfd3079860f7efa4ddc3fdd27fe7f9255a79f60cab05b7e587467a4384\"\n        }\n      ]\n    },\n    {\n      \"id\": \"R4\",\n      \"first_rev\": \"1\",\n      \"retired_rev\": null,\n      \"quotes\": [\n        {\n          \"rev\": \"1\",\n          \"sha256\": \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\"\n        }\n      ]\n    },\n    {\n      \"id\": \"R5\",\n      \"first_rev\": \"1\",\n      \"retired_rev\": \"1\",\n      \"quotes\": [\n        {\n          \"rev\": \"1\",\n          \"sha256\": \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"\n        }\n      ]\n    }\n  ]\n}\n",
+   "manifest_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"1\",\n  \"extraction\": {\n    \"ids\": \"synthesized\",\n    \"trace\": \"none\",\n    \"modality_convention\": \"english-modal-verbs\",\n    \"method\": \"ai-pass-1\"\n  },\n  \"sections\": [\n    {\n      \"id\": \"S1\",\n      \"title\": \"Sentence 1\"\n    },\n    {\n      \"id\": \"S2\",\n      \"title\": \"Sentence 2\"\n    },\n    {\n      \"id\": \"S3\",\n      \"title\": \"Sentence 3\"\n    },\n    {\n      \"id\": \"S4\",\n      \"title\": \"Sentence 4\"\n    }\n  ],\n  \"requirements\": [\n    {\n      \"id\": \"R1\",\n      \"section\": \"S1\"\n    },\n    {\n      \"id\": \"R2\",\n      \"section\": \"S2\"\n    },\n    {\n      \"id\": \"R3\",\n      \"section\": \"S2\"\n    },\n    {\n      \"id\": \"R4\",\n      \"section\": \"S3\"\n    }\n  ]\n}\n",
+   "sidecar_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"1\",\n  \"text\": {\n    \"R1\": \"The lamp starts off.\",\n    \"R2\": \"Pressing the switch turns it on\",\n    \"R3\": \"pressing it again turns it off\",\n    \"R4\": \"After 30 seconds on, it turns itself off.\"\n  }\n}\n"
+  },
+  "back": {
+   "lineage_text": "{\n  \"lineage\": \"sce-requirement-lineage\",\n  \"v\": 1,\n  \"doc_id\": \"lamp\",\n  \"next\": 6,\n  \"revisions\": [\n    {\n      \"rev\": \"1\",\n      \"spec_sha256\": \"730c09a7a3d8fe56a9a1a995e8717ee588b434b4c7930fe98253bcfe464c684a\",\n      \"sentence_sha256\": [\n        \"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\",\n        \"c3f38ff61890455cd2dff6a03a23d84d702b41cba9bfcd44e6d395c100c5ecaf\",\n        \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\",\n        \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"\n      ],\n      \"manifest_sha256\": \"0c87ee2a943cababedd4a9ba270f2da7ead34eab11a19b1970aee20e4a3055f8\",\n      \"sidecar_sha256\": \"3892e4be2a6bf9a864d19d3c4038af0b0030a84a3b0310e649553989087d5902\"\n    },\n    {\n      \"rev\": \"2\",\n      \"spec_sha256\": \"515756a9115bbefdc560b54ca359558c9ea1df642d9bf4792a143ffbc139731e\",\n      \"sentence_sha256\": [\n        \"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\",\n        \"c3f38ff61890455cd2dff6a03a23d84d702b41cba9bfcd44e6d395c100c5ecaf\",\n        \"39e1938a76d448241d0f201abf0482d93210c1302a3fcf6be1e71989fc542ac1\",\n        \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"\n      ],\n      \"manifest_sha256\": \"d40292733386130da4e8e7b5b9b25dc86b89c2128b93a8346ec1626a54501ab3\",\n      \"sidecar_sha256\": \"98ae5988076aa5d0c06a3620d4a2a6cb69e7f109a03681a4c0338da9500223af\"\n    },\n    {\n      \"rev\": \"3\",\n      \"spec_sha256\": \"730c09a7a3d8fe56a9a1a995e8717ee588b434b4c7930fe98253bcfe464c684a\",\n      \"sentence_sha256\": [\n        \"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\",\n        \"c3f38ff61890455cd2dff6a03a23d84d702b41cba9bfcd44e6d395c100c5ecaf\",\n        \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\",\n        \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"\n      ],\n      \"manifest_sha256\": \"90f9f689283d94701a0ee3444a539dabf96f6fb89573dd2b95128e210291adf9\",\n      \"sidecar_sha256\": \"1603c2f01531a224f04ec64517e6412129dda7ec0e8d7ea1f7d782341f5b9a81\"\n    }\n  ],\n  \"requirements\": [\n    {\n      \"id\": \"R1\",\n      \"first_rev\": \"1\",\n      \"retired_rev\": null,\n      \"quotes\": [\n        {\n          \"rev\": \"1\",\n          \"sha256\": \"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\"\n        }\n      ]\n    },\n    {\n      \"id\": \"R2\",\n      \"first_rev\": \"1\",\n      \"retired_rev\": null,\n      \"quotes\": [\n        {\n          \"rev\": \"1\",\n          \"sha256\": \"ae667461fcb2645c429818f101268823113ada6c2c3d963a66bae3c0377d8719\"\n        }\n      ]\n    },\n    {\n      \"id\": \"R3\",\n      \"first_rev\": \"1\",\n      \"retired_rev\": null,\n      \"quotes\": [\n        {\n          \"rev\": \"1\",\n          \"sha256\": \"6f4410cfd3079860f7efa4ddc3fdd27fe7f9255a79f60cab05b7e587467a4384\"\n        }\n      ]\n    },\n    {\n      \"id\": \"R4\",\n      \"first_rev\": \"1\",\n      \"retired_rev\": null,\n      \"quotes\": [\n        {\n          \"rev\": \"1\",\n          \"sha256\": \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\"\n        },\n        {\n          \"rev\": \"2\",\n          \"sha256\": \"39e1938a76d448241d0f201abf0482d93210c1302a3fcf6be1e71989fc542ac1\"\n        },\n        {\n          \"rev\": \"3\",\n          \"sha256\": \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\"\n        }\n      ]\n    },\n    {\n      \"id\": \"R5\",\n      \"first_rev\": \"1\",\n      \"retired_rev\": null,\n      \"quotes\": [\n        {\n          \"rev\": \"1\",\n          \"sha256\": \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"\n        }\n      ]\n    }\n  ]\n}\n",
+   "manifest_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"3\",\n  \"extraction\": {\n    \"ids\": \"synthesized\",\n    \"trace\": \"none\",\n    \"modality_convention\": \"english-modal-verbs\",\n    \"method\": \"ai-pass-1\"\n  },\n  \"sections\": [\n    {\n      \"id\": \"S1\",\n      \"title\": \"Sentence 1\"\n    },\n    {\n      \"id\": \"S2\",\n      \"title\": \"Sentence 2\"\n    },\n    {\n      \"id\": \"S3\",\n      \"title\": \"Sentence 3\"\n    },\n    {\n      \"id\": \"S4\",\n      \"title\": \"Sentence 4\"\n    }\n  ],\n  \"requirements\": [\n    {\n      \"id\": \"R1\",\n      \"section\": \"S1\"\n    },\n    {\n      \"id\": \"R2\",\n      \"section\": \"S2\"\n    },\n    {\n      \"id\": \"R3\",\n      \"section\": \"S2\"\n    },\n    {\n      \"id\": \"R4\",\n      \"section\": \"S3\"\n    },\n    {\n      \"id\": \"R5\",\n      \"section\": \"S4\"\n    }\n  ]\n}\n",
+   "sidecar_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"3\",\n  \"text\": {\n    \"R1\": \"The lamp starts off.\",\n    \"R2\": \"Pressing the switch turns it on\",\n    \"R3\": \"pressing it again turns it off\",\n    \"R4\": \"After 30 seconds on, it turns itself off.\",\n    \"R5\": \"Nothing else changes it.\"\n  }\n}\n"
+  },
+  "first": {
+   "lineage_text": "{\n  \"lineage\": \"sce-requirement-lineage\",\n  \"v\": 1,\n  \"doc_id\": \"lamp\",\n  \"next\": 6,\n  \"revisions\": [\n    {\n      \"rev\": \"1\",\n      \"spec_sha256\": \"730c09a7a3d8fe56a9a1a995e8717ee588b434b4c7930fe98253bcfe464c684a\",\n      \"sentence_sha256\": [\n        \"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\",\n        \"c3f38ff61890455cd2dff6a03a23d84d702b41cba9bfcd44e6d395c100c5ecaf\",\n        \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\",\n        \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"\n      ],\n      \"manifest_sha256\": \"0c87ee2a943cababedd4a9ba270f2da7ead34eab11a19b1970aee20e4a3055f8\",\n      \"sidecar_sha256\": \"3892e4be2a6bf9a864d19d3c4038af0b0030a84a3b0310e649553989087d5902\"\n    }\n  ],\n  \"requirements\": [\n    {\n      \"id\": \"R1\",\n      \"first_rev\": \"1\",\n      \"retired_rev\": null,\n      \"quotes\": [\n        {\n          \"rev\": \"1\",\n          \"sha256\": \"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\"\n        }\n      ]\n    },\n    {\n      \"id\": \"R2\",\n      \"first_rev\": \"1\",\n      \"retired_rev\": null,\n      \"quotes\": [\n        {\n          \"rev\": \"1\",\n          \"sha256\": \"ae667461fcb2645c429818f101268823113ada6c2c3d963a66bae3c0377d8719\"\n        }\n      ]\n    },\n    {\n      \"id\": \"R3\",\n      \"first_rev\": \"1\",\n      \"retired_rev\": null,\n      \"quotes\": [\n        {\n          \"rev\": \"1\",\n          \"sha256\": \"6f4410cfd3079860f7efa4ddc3fdd27fe7f9255a79f60cab05b7e587467a4384\"\n        }\n      ]\n    },\n    {\n      \"id\": \"R4\",\n      \"first_rev\": \"1\",\n      \"retired_rev\": null,\n      \"quotes\": [\n        {\n          \"rev\": \"1\",\n          \"sha256\": \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\"\n        }\n      ]\n    },\n    {\n      \"id\": \"R5\",\n      \"first_rev\": \"1\",\n      \"retired_rev\": null,\n      \"quotes\": [\n        {\n          \"rev\": \"1\",\n          \"sha256\": \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"\n        }\n      ]\n    }\n  ]\n}\n",
+   "manifest_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"1\",\n  \"extraction\": {\n    \"ids\": \"synthesized\",\n    \"trace\": \"none\",\n    \"modality_convention\": \"english-modal-verbs\",\n    \"method\": \"ai-pass-1\"\n  },\n  \"sections\": [\n    {\n      \"id\": \"S1\",\n      \"title\": \"Sentence 1\"\n    },\n    {\n      \"id\": \"S2\",\n      \"title\": \"Sentence 2\"\n    },\n    {\n      \"id\": \"S3\",\n      \"title\": \"Sentence 3\"\n    },\n    {\n      \"id\": \"S4\",\n      \"title\": \"Sentence 4\"\n    }\n  ],\n  \"requirements\": [\n    {\n      \"id\": \"R1\",\n      \"section\": \"S1\"\n    },\n    {\n      \"id\": \"R2\",\n      \"section\": \"S2\"\n    },\n    {\n      \"id\": \"R3\",\n      \"section\": \"S2\"\n    },\n    {\n      \"id\": \"R4\",\n      \"section\": \"S3\"\n    },\n    {\n      \"id\": \"R5\",\n      \"section\": \"S4\"\n    }\n  ]\n}\n",
+   "sidecar_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"1\",\n  \"text\": {\n    \"R1\": \"The lamp starts off.\",\n    \"R2\": \"Pressing the switch turns it on\",\n    \"R3\": \"pressing it again turns it off\",\n    \"R4\": \"After 30 seconds on, it turns itself off.\",\n    \"R5\": \"Nothing else changes it.\"\n  }\n}\n"
+  },
+  "reworded": {
+   "lineage_text": "{\n  \"lineage\": \"sce-requirement-lineage\",\n  \"v\": 1,\n  \"doc_id\": \"lamp\",\n  \"next\": 6,\n  \"revisions\": [\n    {\n      \"rev\": \"1\",\n      \"spec_sha256\": \"730c09a7a3d8fe56a9a1a995e8717ee588b434b4c7930fe98253bcfe464c684a\",\n      \"sentence_sha256\": [\n        \"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\",\n        \"c3f38ff61890455cd2dff6a03a23d84d702b41cba9bfcd44e6d395c100c5ecaf\",\n        \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\",\n        \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"\n      ],\n      \"manifest_sha256\": \"0c87ee2a943cababedd4a9ba270f2da7ead34eab11a19b1970aee20e4a3055f8\",\n      \"sidecar_sha256\": \"3892e4be2a6bf9a864d19d3c4038af0b0030a84a3b0310e649553989087d5902\"\n    },\n    {\n      \"rev\": \"2\",\n      \"spec_sha256\": \"515756a9115bbefdc560b54ca359558c9ea1df642d9bf4792a143ffbc139731e\",\n      \"sentence_sha256\": [\n        \"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\",\n        \"c3f38ff61890455cd2dff6a03a23d84d702b41cba9bfcd44e6d395c100c5ecaf\",\n        \"39e1938a76d448241d0f201abf0482d93210c1302a3fcf6be1e71989fc542ac1\",\n        \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"\n      ],\n      \"manifest_sha256\": \"d40292733386130da4e8e7b5b9b25dc86b89c2128b93a8346ec1626a54501ab3\",\n      \"sidecar_sha256\": \"98ae5988076aa5d0c06a3620d4a2a6cb69e7f109a03681a4c0338da9500223af\"\n    }\n  ],\n  \"requirements\": [\n    {\n      \"id\": \"R1\",\n      \"first_rev\": \"1\",\n      \"retired_rev\": null,\n      \"quotes\": [\n        {\n          \"rev\": \"1\",\n          \"sha256\": \"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\"\n        }\n      ]\n    },\n    {\n      \"id\": \"R2\",\n      \"first_rev\": \"1\",\n      \"retired_rev\": null,\n      \"quotes\": [\n        {\n          \"rev\": \"1\",\n          \"sha256\": \"ae667461fcb2645c429818f101268823113ada6c2c3d963a66bae3c0377d8719\"\n        }\n      ]\n    },\n    {\n      \"id\": \"R3\",\n      \"first_rev\": \"1\",\n      \"retired_rev\": null,\n      \"quotes\": [\n        {\n          \"rev\": \"1\",\n          \"sha256\": \"6f4410cfd3079860f7efa4ddc3fdd27fe7f9255a79f60cab05b7e587467a4384\"\n        }\n      ]\n    },\n    {\n      \"id\": \"R4\",\n      \"first_rev\": \"1\",\n      \"retired_rev\": null,\n      \"quotes\": [\n        {\n          \"rev\": \"1\",\n          \"sha256\": \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\"\n        },\n        {\n          \"rev\": \"2\",\n          \"sha256\": \"39e1938a76d448241d0f201abf0482d93210c1302a3fcf6be1e71989fc542ac1\"\n        }\n      ]\n    },\n    {\n      \"id\": \"R5\",\n      \"first_rev\": \"1\",\n      \"retired_rev\": null,\n      \"quotes\": [\n        {\n          \"rev\": \"1\",\n          \"sha256\": \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"\n        }\n      ]\n    }\n  ]\n}\n",
+   "manifest_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"2\",\n  \"extraction\": {\n    \"ids\": \"synthesized\",\n    \"trace\": \"none\",\n    \"modality_convention\": \"english-modal-verbs\",\n    \"method\": \"ai-pass-1\"\n  },\n  \"sections\": [\n    {\n      \"id\": \"S1\",\n      \"title\": \"Sentence 1\"\n    },\n    {\n      \"id\": \"S2\",\n      \"title\": \"Sentence 2\"\n    },\n    {\n      \"id\": \"S3\",\n      \"title\": \"Sentence 3\"\n    },\n    {\n      \"id\": \"S4\",\n      \"title\": \"Sentence 4\"\n    }\n  ],\n  \"requirements\": [\n    {\n      \"id\": \"R1\",\n      \"section\": \"S1\"\n    },\n    {\n      \"id\": \"R2\",\n      \"section\": \"S2\"\n    },\n    {\n      \"id\": \"R3\",\n      \"section\": \"S2\"\n    },\n    {\n      \"id\": \"R4\",\n      \"section\": \"S3\"\n    },\n    {\n      \"id\": \"R5\",\n      \"section\": \"S4\"\n    }\n  ]\n}\n",
+   "sidecar_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"2\",\n  \"text\": {\n    \"R1\": \"The lamp starts off.\",\n    \"R2\": \"Pressing the switch turns it on\",\n    \"R3\": \"pressing it again turns it off\",\n    \"R4\": \"After 45 seconds on, it turns itself off.\",\n    \"R5\": \"Nothing else changes it.\"\n  }\n}\n"
+  },
+  "reworded then added": {
+   "lineage_text": "{\n  \"lineage\": \"sce-requirement-lineage\",\n  \"v\": 1,\n  \"doc_id\": \"lamp\",\n  \"next\": 7,\n  \"revisions\": [\n    {\n      \"rev\": \"1\",\n      \"spec_sha256\": \"730c09a7a3d8fe56a9a1a995e8717ee588b434b4c7930fe98253bcfe464c684a\",\n      \"sentence_sha256\": [\n        \"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\",\n        \"c3f38ff61890455cd2dff6a03a23d84d702b41cba9bfcd44e6d395c100c5ecaf\",\n        \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\",\n        \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"\n      ],\n      \"manifest_sha256\": \"0c87ee2a943cababedd4a9ba270f2da7ead34eab11a19b1970aee20e4a3055f8\",\n      \"sidecar_sha256\": \"3892e4be2a6bf9a864d19d3c4038af0b0030a84a3b0310e649553989087d5902\"\n    },\n    {\n      \"rev\": \"2\",\n      \"spec_sha256\": \"515756a9115bbefdc560b54ca359558c9ea1df642d9bf4792a143ffbc139731e\",\n      \"sentence_sha256\": [\n        \"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\",\n        \"c3f38ff61890455cd2dff6a03a23d84d702b41cba9bfcd44e6d395c100c5ecaf\",\n        \"39e1938a76d448241d0f201abf0482d93210c1302a3fcf6be1e71989fc542ac1\",\n        \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"\n      ],\n      \"manifest_sha256\": \"d40292733386130da4e8e7b5b9b25dc86b89c2128b93a8346ec1626a54501ab3\",\n      \"sidecar_sha256\": \"98ae5988076aa5d0c06a3620d4a2a6cb69e7f109a03681a4c0338da9500223af\"\n    },\n    {\n      \"rev\": \"3\",\n      \"spec_sha256\": \"f8b95c53d3eeeaeef5a6aa8cc82b25d82ecb0883b33be2d184bc9a9c009b5228\",\n      \"sentence_sha256\": [\n        \"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\",\n        \"c3f38ff61890455cd2dff6a03a23d84d702b41cba9bfcd44e6d395c100c5ecaf\",\n        \"39e1938a76d448241d0f201abf0482d93210c1302a3fcf6be1e71989fc542ac1\",\n        \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\",\n        \"3913882e0e247a257915ee3736c172f521fb10fef819c6b6250fe0a5785534f9\"\n      ],\n      \"manifest_sha256\": \"9c3b9b25b25b75a23590fc1f6000cc7d823b817f2b6546c9e09621c38027fd31\",\n      \"sidecar_sha256\": \"76be438ef3ed66bba9df69c6435f5b5da96b7c0def7de43f3a962753ca9c864d\"\n    }\n  ],\n  \"requirements\": [\n    {\n      \"id\": \"R1\",\n      \"first_rev\": \"1\",\n      \"retired_rev\": null,\n      \"quotes\": [\n        {\n          \"rev\": \"1\",\n          \"sha256\": \"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\"\n        }\n      ]\n    },\n    {\n      \"id\": \"R2\",\n      \"first_rev\": \"1\",\n      \"retired_rev\": null,\n      \"quotes\": [\n        {\n          \"rev\": \"1\",\n          \"sha256\": \"ae667461fcb2645c429818f101268823113ada6c2c3d963a66bae3c0377d8719\"\n        }\n      ]\n    },\n    {\n      \"id\": \"R3\",\n      \"first_rev\": \"1\",\n      \"retired_rev\": null,\n      \"quotes\": [\n        {\n          \"rev\": \"1\",\n          \"sha256\": \"6f4410cfd3079860f7efa4ddc3fdd27fe7f9255a79f60cab05b7e587467a4384\"\n        }\n      ]\n    },\n    {\n      \"id\": \"R4\",\n      \"first_rev\": \"1\",\n      \"retired_rev\": null,\n      \"quotes\": [\n        {\n          \"rev\": \"1\",\n          \"sha256\": \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\"\n        },\n        {\n          \"rev\": \"2\",\n          \"sha256\": \"39e1938a76d448241d0f201abf0482d93210c1302a3fcf6be1e71989fc542ac1\"\n        }\n      ]\n    },\n    {\n      \"id\": \"R5\",\n      \"first_rev\": \"1\",\n      \"retired_rev\": null,\n      \"quotes\": [\n        {\n          \"rev\": \"1\",\n          \"sha256\": \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"\n        }\n      ]\n    },\n    {\n      \"id\": \"R6\",\n      \"first_rev\": \"3\",\n      \"retired_rev\": null,\n      \"quotes\": [\n        {\n          \"rev\": \"3\",\n          \"sha256\": \"3913882e0e247a257915ee3736c172f521fb10fef819c6b6250fe0a5785534f9\"\n        }\n      ]\n    }\n  ]\n}\n",
+   "manifest_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"3\",\n  \"extraction\": {\n    \"ids\": \"synthesized\",\n    \"trace\": \"none\",\n    \"modality_convention\": \"english-modal-verbs\",\n    \"method\": \"ai-pass-1\"\n  },\n  \"sections\": [\n    {\n      \"id\": \"S1\",\n      \"title\": \"Sentence 1\"\n    },\n    {\n      \"id\": \"S2\",\n      \"title\": \"Sentence 2\"\n    },\n    {\n      \"id\": \"S3\",\n      \"title\": \"Sentence 3\"\n    },\n    {\n      \"id\": \"S4\",\n      \"title\": \"Sentence 4\"\n    },\n    {\n      \"id\": \"S5\",\n      \"title\": \"Sentence 5\"\n    }\n  ],\n  \"requirements\": [\n    {\n      \"id\": \"R1\",\n      \"section\": \"S1\"\n    },\n    {\n      \"id\": \"R2\",\n      \"section\": \"S2\"\n    },\n    {\n      \"id\": \"R3\",\n      \"section\": \"S2\"\n    },\n    {\n      \"id\": \"R4\",\n      \"section\": \"S3\"\n    },\n    {\n      \"id\": \"R5\",\n      \"section\": \"S4\"\n    },\n    {\n      \"id\": \"R6\",\n      \"section\": \"S5\"\n    }\n  ]\n}\n",
+   "sidecar_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"3\",\n  \"text\": {\n    \"R1\": \"The lamp starts off.\",\n    \"R2\": \"Pressing the switch turns it on\",\n    \"R3\": \"pressing it again turns it off\",\n    \"R4\": \"After 45 seconds on, it turns itself off.\",\n    \"R5\": \"Nothing else changes it.\",\n    \"R6\": \"A reset key clears it.\"\n  }\n}\n"
+  },
+  "second": {
+   "lineage_text": "{\n  \"lineage\": \"sce-requirement-lineage\",\n  \"v\": 1,\n  \"doc_id\": \"lamp\",\n  \"next\": 6,\n  \"revisions\": [\n    {\n      \"rev\": \"1\",\n      \"spec_sha256\": \"730c09a7a3d8fe56a9a1a995e8717ee588b434b4c7930fe98253bcfe464c684a\",\n      \"sentence_sha256\": [\n        \"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\",\n        \"c3f38ff61890455cd2dff6a03a23d84d702b41cba9bfcd44e6d395c100c5ecaf\",\n        \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\",\n        \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"\n      ],\n      \"manifest_sha256\": \"0c87ee2a943cababedd4a9ba270f2da7ead34eab11a19b1970aee20e4a3055f8\",\n      \"sidecar_sha256\": \"3892e4be2a6bf9a864d19d3c4038af0b0030a84a3b0310e649553989087d5902\"\n    },\n    {\n      \"rev\": \"2\",\n      \"spec_sha256\": \"b729aebf5dece3ea4d584414527772a75b3d7bc73e483df70e5784f30a97b951\",\n      \"sentence_sha256\": [\n        \"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\",\n        \"c3f38ff61890455cd2dff6a03a23d84d702b41cba9bfcd44e6d395c100c5ecaf\",\n        \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\"\n      ],\n      \"manifest_sha256\": \"f71cceaaeaec1156853efc3d7b95bd88a251196c6440c8dc73df031e3f05ed6a\",\n      \"sidecar_sha256\": \"22cb1ec1a77dc0998b4b83b6ba8b2abbd65b2bd4c63c212d04234328425911ea\"\n    }\n  ],\n  \"requirements\": [\n    {\n      \"id\": \"R1\",\n      \"first_rev\": \"1\",\n      \"retired_rev\": null,\n      \"quotes\": [\n        {\n          \"rev\": \"1\",\n          \"sha256\": \"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\"\n        }\n      ]\n    },\n    {\n      \"id\": \"R2\",\n      \"first_rev\": \"1\",\n      \"retired_rev\": null,\n      \"quotes\": [\n        {\n          \"rev\": \"1\",\n          \"sha256\": \"ae667461fcb2645c429818f101268823113ada6c2c3d963a66bae3c0377d8719\"\n        }\n      ]\n    },\n    {\n      \"id\": \"R3\",\n      \"first_rev\": \"1\",\n      \"retired_rev\": null,\n      \"quotes\": [\n        {\n          \"rev\": \"1\",\n          \"sha256\": \"6f4410cfd3079860f7efa4ddc3fdd27fe7f9255a79f60cab05b7e587467a4384\"\n        }\n      ]\n    },\n    {\n      \"id\": \"R4\",\n      \"first_rev\": \"1\",\n      \"retired_rev\": null,\n      \"quotes\": [\n        {\n          \"rev\": \"1\",\n          \"sha256\": \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\"\n        }\n      ]\n    },\n    {\n      \"id\": \"R5\",\n      \"first_rev\": \"1\",\n      \"retired_rev\": \"2\",\n      \"quotes\": [\n        {\n          \"rev\": \"1\",\n          \"sha256\": \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"\n        }\n      ]\n    }\n  ]\n}\n",
+   "manifest_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"2\",\n  \"extraction\": {\n    \"ids\": \"synthesized\",\n    \"trace\": \"none\",\n    \"modality_convention\": \"english-modal-verbs\",\n    \"method\": \"ai-pass-1\"\n  },\n  \"sections\": [\n    {\n      \"id\": \"S1\",\n      \"title\": \"Sentence 1\"\n    },\n    {\n      \"id\": \"S2\",\n      \"title\": \"Sentence 2\"\n    },\n    {\n      \"id\": \"S3\",\n      \"title\": \"Sentence 3\"\n    }\n  ],\n  \"requirements\": [\n    {\n      \"id\": \"R1\",\n      \"section\": \"S1\"\n    },\n    {\n      \"id\": \"R2\",\n      \"section\": \"S2\"\n    },\n    {\n      \"id\": \"R3\",\n      \"section\": \"S2\"\n    },\n    {\n      \"id\": \"R4\",\n      \"section\": \"S3\"\n    }\n  ]\n}\n",
+   "sidecar_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"2\",\n  \"text\": {\n    \"R1\": \"The lamp starts off.\",\n    \"R2\": \"Pressing the switch turns it on\",\n    \"R3\": \"pressing it again turns it off\",\n    \"R4\": \"After 30 seconds on, it turns itself off.\"\n  }\n}\n"
+  },
+  "third": {
+   "lineage_text": "{\n  \"lineage\": \"sce-requirement-lineage\",\n  \"v\": 1,\n  \"doc_id\": \"lamp\",\n  \"next\": 7,\n  \"revisions\": [\n    {\n      \"rev\": \"1\",\n      \"spec_sha256\": \"730c09a7a3d8fe56a9a1a995e8717ee588b434b4c7930fe98253bcfe464c684a\",\n      \"sentence_sha256\": [\n        \"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\",\n        \"c3f38ff61890455cd2dff6a03a23d84d702b41cba9bfcd44e6d395c100c5ecaf\",\n        \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\",\n        \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"\n      ],\n      \"manifest_sha256\": \"0c87ee2a943cababedd4a9ba270f2da7ead34eab11a19b1970aee20e4a3055f8\",\n      \"sidecar_sha256\": \"3892e4be2a6bf9a864d19d3c4038af0b0030a84a3b0310e649553989087d5902\"\n    },\n    {\n      \"rev\": \"2\",\n      \"spec_sha256\": \"b729aebf5dece3ea4d584414527772a75b3d7bc73e483df70e5784f30a97b951\",\n      \"sentence_sha256\": [\n        \"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\",\n        \"c3f38ff61890455cd2dff6a03a23d84d702b41cba9bfcd44e6d395c100c5ecaf\",\n        \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\"\n      ],\n      \"manifest_sha256\": \"f71cceaaeaec1156853efc3d7b95bd88a251196c6440c8dc73df031e3f05ed6a\",\n      \"sidecar_sha256\": \"22cb1ec1a77dc0998b4b83b6ba8b2abbd65b2bd4c63c212d04234328425911ea\"\n    },\n    {\n      \"rev\": \"3\",\n      \"spec_sha256\": \"5eeb5f9f7f731e0f8a211f802fb11cbc7cf0a2e25effb98075bcbc2297946c4f\",\n      \"sentence_sha256\": [\n        \"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\",\n        \"c3f38ff61890455cd2dff6a03a23d84d702b41cba9bfcd44e6d395c100c5ecaf\",\n        \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\",\n        \"3913882e0e247a257915ee3736c172f521fb10fef819c6b6250fe0a5785534f9\"\n      ],\n      \"manifest_sha256\": \"b1ae1fb58a0b9f614f34085f03ddeb3d74c49b20f3eb5d480796c9d5fe3d1fa3\",\n      \"sidecar_sha256\": \"effd5dddebf8717defa0579ebd252f17ffb7a60065e45ff447f3bc2f23c1528b\"\n    }\n  ],\n  \"requirements\": [\n    {\n      \"id\": \"R1\",\n      \"first_rev\": \"1\",\n      \"retired_rev\": null,\n      \"quotes\": [\n        {\n          \"rev\": \"1\",\n          \"sha256\": \"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\"\n        }\n      ]\n    },\n    {\n      \"id\": \"R2\",\n      \"first_rev\": \"1\",\n      \"retired_rev\": null,\n      \"quotes\": [\n        {\n          \"rev\": \"1\",\n          \"sha256\": \"ae667461fcb2645c429818f101268823113ada6c2c3d963a66bae3c0377d8719\"\n        }\n      ]\n    },\n    {\n      \"id\": \"R3\",\n      \"first_rev\": \"1\",\n      \"retired_rev\": null,\n      \"quotes\": [\n        {\n          \"rev\": \"1\",\n          \"sha256\": \"6f4410cfd3079860f7efa4ddc3fdd27fe7f9255a79f60cab05b7e587467a4384\"\n        }\n      ]\n    },\n    {\n      \"id\": \"R4\",\n      \"first_rev\": \"1\",\n      \"retired_rev\": null,\n      \"quotes\": [\n        {\n          \"rev\": \"1\",\n          \"sha256\": \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\"\n        }\n      ]\n    },\n    {\n      \"id\": \"R5\",\n      \"first_rev\": \"1\",\n      \"retired_rev\": \"2\",\n      \"quotes\": [\n        {\n          \"rev\": \"1\",\n          \"sha256\": \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"\n        }\n      ]\n    },\n    {\n      \"id\": \"R6\",\n      \"first_rev\": \"3\",\n      \"retired_rev\": null,\n      \"quotes\": [\n        {\n          \"rev\": \"3\",\n          \"sha256\": \"3913882e0e247a257915ee3736c172f521fb10fef819c6b6250fe0a5785534f9\"\n        }\n      ]\n    }\n  ]\n}\n",
+   "manifest_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"3\",\n  \"extraction\": {\n    \"ids\": \"synthesized\",\n    \"trace\": \"none\",\n    \"modality_convention\": \"english-modal-verbs\",\n    \"method\": \"ai-pass-1\"\n  },\n  \"sections\": [\n    {\n      \"id\": \"S1\",\n      \"title\": \"Sentence 1\"\n    },\n    {\n      \"id\": \"S2\",\n      \"title\": \"Sentence 2\"\n    },\n    {\n      \"id\": \"S3\",\n      \"title\": \"Sentence 3\"\n    },\n    {\n      \"id\": \"S4\",\n      \"title\": \"Sentence 4\"\n    }\n  ],\n  \"requirements\": [\n    {\n      \"id\": \"R1\",\n      \"section\": \"S1\"\n    },\n    {\n      \"id\": \"R2\",\n      \"section\": \"S2\"\n    },\n    {\n      \"id\": \"R3\",\n      \"section\": \"S2\"\n    },\n    {\n      \"id\": \"R4\",\n      \"section\": \"S3\"\n    },\n    {\n      \"id\": \"R6\",\n      \"section\": \"S4\"\n    }\n  ]\n}\n",
+   "sidecar_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"3\",\n  \"text\": {\n    \"R1\": \"The lamp starts off.\",\n    \"R2\": \"Pressing the switch turns it on\",\n    \"R3\": \"pressing it again turns it off\",\n    \"R4\": \"After 30 seconds on, it turns itself off.\",\n    \"R6\": \"A reset key clears it.\"\n  }\n}\n"
+  }
+ },
+ "parse": [
+  {
+   "expect": "ok",
+   "name": "a lineage a call gave",
+   "text": "{\"lineage\": \"sce-requirement-lineage\", \"v\": 1, \"doc_id\": \"lamp\", \"next\": 6, \"revisions\": [{\"rev\": \"1\", \"spec_sha256\": \"730c09a7a3d8fe56a9a1a995e8717ee588b434b4c7930fe98253bcfe464c684a\", \"sentence_sha256\": [\"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\", \"c3f38ff61890455cd2dff6a03a23d84d702b41cba9bfcd44e6d395c100c5ecaf\", \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\", \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"], \"manifest_sha256\": \"0c87ee2a943cababedd4a9ba270f2da7ead34eab11a19b1970aee20e4a3055f8\", \"sidecar_sha256\": \"3892e4be2a6bf9a864d19d3c4038af0b0030a84a3b0310e649553989087d5902\"}], \"requirements\": [{\"id\": \"R1\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\"}]}, {\"id\": \"R2\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"ae667461fcb2645c429818f101268823113ada6c2c3d963a66bae3c0377d8719\"}]}, {\"id\": \"R3\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"6f4410cfd3079860f7efa4ddc3fdd27fe7f9255a79f60cab05b7e587467a4384\"}]}, {\"id\": \"R4\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\"}]}, {\"id\": \"R5\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"}]}]}"
+  },
+  {
+   "expect": {
+    "refused": "the lineage is not JSON"
+   },
+   "name": "text that is not JSON",
+   "text": "not json"
+  },
+  {
+   "expect": {
+    "refused": "not a requirement lineage: it has to be an object with exactly doc_id, lineage, next, requirements, revisions, v"
+   },
+   "name": "JSON that is not an object",
+   "text": "[]"
+  },
+  {
+   "expect": {
+    "refused": "not a requirement lineage: it has to be an object with exactly doc_id, lineage, next, requirements, revisions, v"
+   },
+   "name": "an object with a key more",
+   "text": "{\"lineage\": \"sce-requirement-lineage\", \"v\": 1, \"doc_id\": \"lamp\", \"next\": 6, \"revisions\": [{\"rev\": \"1\", \"spec_sha256\": \"730c09a7a3d8fe56a9a1a995e8717ee588b434b4c7930fe98253bcfe464c684a\", \"sentence_sha256\": [\"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\", \"c3f38ff61890455cd2dff6a03a23d84d702b41cba9bfcd44e6d395c100c5ecaf\", \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\", \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"], \"manifest_sha256\": \"0c87ee2a943cababedd4a9ba270f2da7ead34eab11a19b1970aee20e4a3055f8\", \"sidecar_sha256\": \"3892e4be2a6bf9a864d19d3c4038af0b0030a84a3b0310e649553989087d5902\"}], \"requirements\": [{\"id\": \"R1\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\"}]}, {\"id\": \"R2\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"ae667461fcb2645c429818f101268823113ada6c2c3d963a66bae3c0377d8719\"}]}, {\"id\": \"R3\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"6f4410cfd3079860f7efa4ddc3fdd27fe7f9255a79f60cab05b7e587467a4384\"}]}, {\"id\": \"R4\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\"}]}, {\"id\": \"R5\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"}]}], \"extra\": 1}"
+  },
+  {
+   "expect": {
+    "refused": "not a requirement lineage: it has to be an object with exactly doc_id, lineage, next, requirements, revisions, v"
+   },
+   "name": "an object with a key less",
+   "text": "{\"lineage\": \"sce-requirement-lineage\", \"v\": 1, \"doc_id\": \"lamp\", \"revisions\": [{\"rev\": \"1\", \"spec_sha256\": \"730c09a7a3d8fe56a9a1a995e8717ee588b434b4c7930fe98253bcfe464c684a\", \"sentence_sha256\": [\"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\", \"c3f38ff61890455cd2dff6a03a23d84d702b41cba9bfcd44e6d395c100c5ecaf\", \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\", \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"], \"manifest_sha256\": \"0c87ee2a943cababedd4a9ba270f2da7ead34eab11a19b1970aee20e4a3055f8\", \"sidecar_sha256\": \"3892e4be2a6bf9a864d19d3c4038af0b0030a84a3b0310e649553989087d5902\"}], \"requirements\": [{\"id\": \"R1\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\"}]}, {\"id\": \"R2\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"ae667461fcb2645c429818f101268823113ada6c2c3d963a66bae3c0377d8719\"}]}, {\"id\": \"R3\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"6f4410cfd3079860f7efa4ddc3fdd27fe7f9255a79f60cab05b7e587467a4384\"}]}, {\"id\": \"R4\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\"}]}, {\"id\": \"R5\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"}]}]}"
+  },
+  {
+   "expect": {
+    "refused": "not a v1 sce-requirement-lineage"
+   },
+   "name": "another kind",
+   "text": "{\"lineage\": \"sce-something-else\", \"v\": 1, \"doc_id\": \"lamp\", \"next\": 6, \"revisions\": [{\"rev\": \"1\", \"spec_sha256\": \"730c09a7a3d8fe56a9a1a995e8717ee588b434b4c7930fe98253bcfe464c684a\", \"sentence_sha256\": [\"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\", \"c3f38ff61890455cd2dff6a03a23d84d702b41cba9bfcd44e6d395c100c5ecaf\", \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\", \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"], \"manifest_sha256\": \"0c87ee2a943cababedd4a9ba270f2da7ead34eab11a19b1970aee20e4a3055f8\", \"sidecar_sha256\": \"3892e4be2a6bf9a864d19d3c4038af0b0030a84a3b0310e649553989087d5902\"}], \"requirements\": [{\"id\": \"R1\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\"}]}, {\"id\": \"R2\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"ae667461fcb2645c429818f101268823113ada6c2c3d963a66bae3c0377d8719\"}]}, {\"id\": \"R3\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"6f4410cfd3079860f7efa4ddc3fdd27fe7f9255a79f60cab05b7e587467a4384\"}]}, {\"id\": \"R4\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\"}]}, {\"id\": \"R5\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"}]}]}"
+  },
+  {
+   "expect": {
+    "refused": "not a v1 sce-requirement-lineage"
+   },
+   "name": "another version",
+   "text": "{\"lineage\": \"sce-requirement-lineage\", \"v\": 2, \"doc_id\": \"lamp\", \"next\": 6, \"revisions\": [{\"rev\": \"1\", \"spec_sha256\": \"730c09a7a3d8fe56a9a1a995e8717ee588b434b4c7930fe98253bcfe464c684a\", \"sentence_sha256\": [\"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\", \"c3f38ff61890455cd2dff6a03a23d84d702b41cba9bfcd44e6d395c100c5ecaf\", \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\", \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"], \"manifest_sha256\": \"0c87ee2a943cababedd4a9ba270f2da7ead34eab11a19b1970aee20e4a3055f8\", \"sidecar_sha256\": \"3892e4be2a6bf9a864d19d3c4038af0b0030a84a3b0310e649553989087d5902\"}], \"requirements\": [{\"id\": \"R1\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\"}]}, {\"id\": \"R2\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"ae667461fcb2645c429818f101268823113ada6c2c3d963a66bae3c0377d8719\"}]}, {\"id\": \"R3\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"6f4410cfd3079860f7efa4ddc3fdd27fe7f9255a79f60cab05b7e587467a4384\"}]}, {\"id\": \"R4\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\"}]}, {\"id\": \"R5\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"}]}]}"
+  },
+  {
+   "expect": {
+    "refused": "the lineage has no doc_id"
+   },
+   "name": "no document",
+   "text": "{\"lineage\": \"sce-requirement-lineage\", \"v\": 1, \"doc_id\": \"\", \"next\": 6, \"revisions\": [{\"rev\": \"1\", \"spec_sha256\": \"730c09a7a3d8fe56a9a1a995e8717ee588b434b4c7930fe98253bcfe464c684a\", \"sentence_sha256\": [\"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\", \"c3f38ff61890455cd2dff6a03a23d84d702b41cba9bfcd44e6d395c100c5ecaf\", \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\", \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"], \"manifest_sha256\": \"0c87ee2a943cababedd4a9ba270f2da7ead34eab11a19b1970aee20e4a3055f8\", \"sidecar_sha256\": \"3892e4be2a6bf9a864d19d3c4038af0b0030a84a3b0310e649553989087d5902\"}], \"requirements\": [{\"id\": \"R1\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\"}]}, {\"id\": \"R2\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"ae667461fcb2645c429818f101268823113ada6c2c3d963a66bae3c0377d8719\"}]}, {\"id\": \"R3\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"6f4410cfd3079860f7efa4ddc3fdd27fe7f9255a79f60cab05b7e587467a4384\"}]}, {\"id\": \"R4\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\"}]}, {\"id\": \"R5\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"}]}]}"
+  },
+  {
+   "expect": {
+    "refused": "the lineage has no doc_id"
+   },
+   "name": "a document that is not text",
+   "text": "{\"lineage\": \"sce-requirement-lineage\", \"v\": 1, \"doc_id\": 7, \"next\": 6, \"revisions\": [{\"rev\": \"1\", \"spec_sha256\": \"730c09a7a3d8fe56a9a1a995e8717ee588b434b4c7930fe98253bcfe464c684a\", \"sentence_sha256\": [\"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\", \"c3f38ff61890455cd2dff6a03a23d84d702b41cba9bfcd44e6d395c100c5ecaf\", \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\", \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"], \"manifest_sha256\": \"0c87ee2a943cababedd4a9ba270f2da7ead34eab11a19b1970aee20e4a3055f8\", \"sidecar_sha256\": \"3892e4be2a6bf9a864d19d3c4038af0b0030a84a3b0310e649553989087d5902\"}], \"requirements\": [{\"id\": \"R1\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\"}]}, {\"id\": \"R2\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"ae667461fcb2645c429818f101268823113ada6c2c3d963a66bae3c0377d8719\"}]}, {\"id\": \"R3\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"6f4410cfd3079860f7efa4ddc3fdd27fe7f9255a79f60cab05b7e587467a4384\"}]}, {\"id\": \"R4\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\"}]}, {\"id\": \"R5\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"}]}]}"
+  },
+  {
+   "expect": {
+    "refused": "the lineage holds no revision"
+   },
+   "name": "no revision",
+   "text": "{\"lineage\": \"sce-requirement-lineage\", \"v\": 1, \"doc_id\": \"lamp\", \"next\": 6, \"revisions\": [], \"requirements\": [{\"id\": \"R1\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\"}]}, {\"id\": \"R2\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"ae667461fcb2645c429818f101268823113ada6c2c3d963a66bae3c0377d8719\"}]}, {\"id\": \"R3\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"6f4410cfd3079860f7efa4ddc3fdd27fe7f9255a79f60cab05b7e587467a4384\"}]}, {\"id\": \"R4\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\"}]}, {\"id\": \"R5\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"}]}]}"
+  },
+  {
+   "expect": {
+    "refused": "the lineage holds no revision"
+   },
+   "name": "revisions that are not a list",
+   "text": "{\"lineage\": \"sce-requirement-lineage\", \"v\": 1, \"doc_id\": \"lamp\", \"next\": 6, \"revisions\": \"one\", \"requirements\": [{\"id\": \"R1\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\"}]}, {\"id\": \"R2\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"ae667461fcb2645c429818f101268823113ada6c2c3d963a66bae3c0377d8719\"}]}, {\"id\": \"R3\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"6f4410cfd3079860f7efa4ddc3fdd27fe7f9255a79f60cab05b7e587467a4384\"}]}, {\"id\": \"R4\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\"}]}, {\"id\": \"R5\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"}]}]}"
+  },
+  {
+   "expect": {
+    "refused": "a revision row of the lineage is not {rev, spec_sha256, sentence_sha256, manifest_sha256, sidecar_sha256}"
+   },
+   "name": "a revision row with a key more",
+   "text": "{\"lineage\": \"sce-requirement-lineage\", \"v\": 1, \"doc_id\": \"lamp\", \"next\": 6, \"revisions\": [{\"rev\": \"1\", \"spec_sha256\": \"730c09a7a3d8fe56a9a1a995e8717ee588b434b4c7930fe98253bcfe464c684a\", \"sentence_sha256\": [\"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\", \"c3f38ff61890455cd2dff6a03a23d84d702b41cba9bfcd44e6d395c100c5ecaf\", \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\", \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"], \"manifest_sha256\": \"0c87ee2a943cababedd4a9ba270f2da7ead34eab11a19b1970aee20e4a3055f8\", \"sidecar_sha256\": \"3892e4be2a6bf9a864d19d3c4038af0b0030a84a3b0310e649553989087d5902\", \"extra\": 1}], \"requirements\": [{\"id\": \"R1\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\"}]}, {\"id\": \"R2\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"ae667461fcb2645c429818f101268823113ada6c2c3d963a66bae3c0377d8719\"}]}, {\"id\": \"R3\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"6f4410cfd3079860f7efa4ddc3fdd27fe7f9255a79f60cab05b7e587467a4384\"}]}, {\"id\": \"R4\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\"}]}, {\"id\": \"R5\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"}]}]}"
+  },
+  {
+   "expect": {
+    "refused": "a revision row of the lineage is not {rev, spec_sha256, sentence_sha256, manifest_sha256, sidecar_sha256}"
+   },
+   "name": "a revision row with no revision",
+   "text": "{\"lineage\": \"sce-requirement-lineage\", \"v\": 1, \"doc_id\": \"lamp\", \"next\": 6, \"revisions\": [{\"spec_sha256\": \"730c09a7a3d8fe56a9a1a995e8717ee588b434b4c7930fe98253bcfe464c684a\", \"sentence_sha256\": [\"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\", \"c3f38ff61890455cd2dff6a03a23d84d702b41cba9bfcd44e6d395c100c5ecaf\", \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\", \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"], \"manifest_sha256\": \"0c87ee2a943cababedd4a9ba270f2da7ead34eab11a19b1970aee20e4a3055f8\", \"sidecar_sha256\": \"3892e4be2a6bf9a864d19d3c4038af0b0030a84a3b0310e649553989087d5902\"}], \"requirements\": [{\"id\": \"R1\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\"}]}, {\"id\": \"R2\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"ae667461fcb2645c429818f101268823113ada6c2c3d963a66bae3c0377d8719\"}]}, {\"id\": \"R3\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"6f4410cfd3079860f7efa4ddc3fdd27fe7f9255a79f60cab05b7e587467a4384\"}]}, {\"id\": \"R4\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\"}]}, {\"id\": \"R5\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"}]}]}"
+  },
+  {
+   "expect": {
+    "refused": "a revision row of the lineage is not {rev, spec_sha256, sentence_sha256, manifest_sha256, sidecar_sha256}"
+   },
+   "name": "a revision that is not text",
+   "text": "{\"lineage\": \"sce-requirement-lineage\", \"v\": 1, \"doc_id\": \"lamp\", \"next\": 6, \"revisions\": [{\"rev\": 1, \"spec_sha256\": \"730c09a7a3d8fe56a9a1a995e8717ee588b434b4c7930fe98253bcfe464c684a\", \"sentence_sha256\": [\"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\", \"c3f38ff61890455cd2dff6a03a23d84d702b41cba9bfcd44e6d395c100c5ecaf\", \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\", \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"], \"manifest_sha256\": \"0c87ee2a943cababedd4a9ba270f2da7ead34eab11a19b1970aee20e4a3055f8\", \"sidecar_sha256\": \"3892e4be2a6bf9a864d19d3c4038af0b0030a84a3b0310e649553989087d5902\"}], \"requirements\": [{\"id\": \"R1\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\"}]}, {\"id\": \"R2\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"ae667461fcb2645c429818f101268823113ada6c2c3d963a66bae3c0377d8719\"}]}, {\"id\": \"R3\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"6f4410cfd3079860f7efa4ddc3fdd27fe7f9255a79f60cab05b7e587467a4384\"}]}, {\"id\": \"R4\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\"}]}, {\"id\": \"R5\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"}]}]}"
+  },
+  {
+   "expect": {
+    "refused": "a revision row of the lineage is not {rev, spec_sha256, sentence_sha256, manifest_sha256, sidecar_sha256}"
+   },
+   "name": "sentence digests that are not a list",
+   "text": "{\"lineage\": \"sce-requirement-lineage\", \"v\": 1, \"doc_id\": \"lamp\", \"next\": 6, \"revisions\": [{\"rev\": \"1\", \"spec_sha256\": \"730c09a7a3d8fe56a9a1a995e8717ee588b434b4c7930fe98253bcfe464c684a\", \"sentence_sha256\": \"x\", \"manifest_sha256\": \"0c87ee2a943cababedd4a9ba270f2da7ead34eab11a19b1970aee20e4a3055f8\", \"sidecar_sha256\": \"3892e4be2a6bf9a864d19d3c4038af0b0030a84a3b0310e649553989087d5902\"}], \"requirements\": [{\"id\": \"R1\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\"}]}, {\"id\": \"R2\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"ae667461fcb2645c429818f101268823113ada6c2c3d963a66bae3c0377d8719\"}]}, {\"id\": \"R3\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"6f4410cfd3079860f7efa4ddc3fdd27fe7f9255a79f60cab05b7e587467a4384\"}]}, {\"id\": \"R4\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\"}]}, {\"id\": \"R5\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"}]}]}"
+  },
+  {
+   "expect": {
+    "refused": "a revision row of the lineage is not {rev, spec_sha256, sentence_sha256, manifest_sha256, sidecar_sha256}"
+   },
+   "name": "a manifest digest that is not text",
+   "text": "{\"lineage\": \"sce-requirement-lineage\", \"v\": 1, \"doc_id\": \"lamp\", \"next\": 6, \"revisions\": [{\"rev\": \"1\", \"spec_sha256\": \"730c09a7a3d8fe56a9a1a995e8717ee588b434b4c7930fe98253bcfe464c684a\", \"sentence_sha256\": [\"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\", \"c3f38ff61890455cd2dff6a03a23d84d702b41cba9bfcd44e6d395c100c5ecaf\", \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\", \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"], \"manifest_sha256\": 7, \"sidecar_sha256\": \"3892e4be2a6bf9a864d19d3c4038af0b0030a84a3b0310e649553989087d5902\"}], \"requirements\": [{\"id\": \"R1\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\"}]}, {\"id\": \"R2\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"ae667461fcb2645c429818f101268823113ada6c2c3d963a66bae3c0377d8719\"}]}, {\"id\": \"R3\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"6f4410cfd3079860f7efa4ddc3fdd27fe7f9255a79f60cab05b7e587467a4384\"}]}, {\"id\": \"R4\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\"}]}, {\"id\": \"R5\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"}]}]}"
+  },
+  {
+   "expect": {
+    "refused": "a revision row of the lineage is not {rev, spec_sha256, sentence_sha256, manifest_sha256, sidecar_sha256}"
+   },
+   "name": "a sidecar digest that is not text",
+   "text": "{\"lineage\": \"sce-requirement-lineage\", \"v\": 1, \"doc_id\": \"lamp\", \"next\": 6, \"revisions\": [{\"rev\": \"1\", \"spec_sha256\": \"730c09a7a3d8fe56a9a1a995e8717ee588b434b4c7930fe98253bcfe464c684a\", \"sentence_sha256\": [\"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\", \"c3f38ff61890455cd2dff6a03a23d84d702b41cba9bfcd44e6d395c100c5ecaf\", \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\", \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"], \"manifest_sha256\": \"0c87ee2a943cababedd4a9ba270f2da7ead34eab11a19b1970aee20e4a3055f8\", \"sidecar_sha256\": 7}], \"requirements\": [{\"id\": \"R1\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\"}]}, {\"id\": \"R2\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"ae667461fcb2645c429818f101268823113ada6c2c3d963a66bae3c0377d8719\"}]}, {\"id\": \"R3\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"6f4410cfd3079860f7efa4ddc3fdd27fe7f9255a79f60cab05b7e587467a4384\"}]}, {\"id\": \"R4\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\"}]}, {\"id\": \"R5\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"}]}]}"
+  },
+  {
+   "expect": {
+    "refused": "the lineage names a rev twice"
+   },
+   "name": "a revision named twice",
+   "text": "{\"lineage\": \"sce-requirement-lineage\", \"v\": 1, \"doc_id\": \"lamp\", \"next\": 6, \"revisions\": [{\"rev\": \"1\", \"spec_sha256\": \"730c09a7a3d8fe56a9a1a995e8717ee588b434b4c7930fe98253bcfe464c684a\", \"sentence_sha256\": [\"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\", \"c3f38ff61890455cd2dff6a03a23d84d702b41cba9bfcd44e6d395c100c5ecaf\", \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\", \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"], \"manifest_sha256\": \"0c87ee2a943cababedd4a9ba270f2da7ead34eab11a19b1970aee20e4a3055f8\", \"sidecar_sha256\": \"3892e4be2a6bf9a864d19d3c4038af0b0030a84a3b0310e649553989087d5902\"}, {\"rev\": \"1\", \"spec_sha256\": \"730c09a7a3d8fe56a9a1a995e8717ee588b434b4c7930fe98253bcfe464c684a\", \"sentence_sha256\": [\"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\", \"c3f38ff61890455cd2dff6a03a23d84d702b41cba9bfcd44e6d395c100c5ecaf\", \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\", \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"], \"manifest_sha256\": \"0c87ee2a943cababedd4a9ba270f2da7ead34eab11a19b1970aee20e4a3055f8\", \"sidecar_sha256\": \"3892e4be2a6bf9a864d19d3c4038af0b0030a84a3b0310e649553989087d5902\"}], \"requirements\": [{\"id\": \"R1\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\"}]}, {\"id\": \"R2\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"ae667461fcb2645c429818f101268823113ada6c2c3d963a66bae3c0377d8719\"}]}, {\"id\": \"R3\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"6f4410cfd3079860f7efa4ddc3fdd27fe7f9255a79f60cab05b7e587467a4384\"}]}, {\"id\": \"R4\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\"}]}, {\"id\": \"R5\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"}]}]}"
+  },
+  {
+   "expect": {
+    "refused": "the lineage's requirements are not a list"
+   },
+   "name": "requirements that are not a list",
+   "text": "{\"lineage\": \"sce-requirement-lineage\", \"v\": 1, \"doc_id\": \"lamp\", \"next\": 6, \"revisions\": [{\"rev\": \"1\", \"spec_sha256\": \"730c09a7a3d8fe56a9a1a995e8717ee588b434b4c7930fe98253bcfe464c684a\", \"sentence_sha256\": [\"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\", \"c3f38ff61890455cd2dff6a03a23d84d702b41cba9bfcd44e6d395c100c5ecaf\", \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\", \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"], \"manifest_sha256\": \"0c87ee2a943cababedd4a9ba270f2da7ead34eab11a19b1970aee20e4a3055f8\", \"sidecar_sha256\": \"3892e4be2a6bf9a864d19d3c4038af0b0030a84a3b0310e649553989087d5902\"}], \"requirements\": \"R1\"}"
+  },
+  {
+   "expect": {
+    "refused": "a requirement row of the lineage is not {id, first_rev, retired_rev, quotes}"
+   },
+   "name": "a requirement row with a key more",
+   "text": "{\"lineage\": \"sce-requirement-lineage\", \"v\": 1, \"doc_id\": \"lamp\", \"next\": 6, \"revisions\": [{\"rev\": \"1\", \"spec_sha256\": \"730c09a7a3d8fe56a9a1a995e8717ee588b434b4c7930fe98253bcfe464c684a\", \"sentence_sha256\": [\"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\", \"c3f38ff61890455cd2dff6a03a23d84d702b41cba9bfcd44e6d395c100c5ecaf\", \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\", \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"], \"manifest_sha256\": \"0c87ee2a943cababedd4a9ba270f2da7ead34eab11a19b1970aee20e4a3055f8\", \"sidecar_sha256\": \"3892e4be2a6bf9a864d19d3c4038af0b0030a84a3b0310e649553989087d5902\"}], \"requirements\": [{\"id\": \"R1\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\"}], \"extra\": 1}, {\"id\": \"R2\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"ae667461fcb2645c429818f101268823113ada6c2c3d963a66bae3c0377d8719\"}]}, {\"id\": \"R3\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"6f4410cfd3079860f7efa4ddc3fdd27fe7f9255a79f60cab05b7e587467a4384\"}]}, {\"id\": \"R4\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\"}]}, {\"id\": \"R5\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"}]}]}"
+  },
+  {
+   "expect": {
+    "refused": "a requirement row of the lineage is not {id, first_rev, retired_rev, quotes}"
+   },
+   "name": "a requirement with no quote",
+   "text": "{\"lineage\": \"sce-requirement-lineage\", \"v\": 1, \"doc_id\": \"lamp\", \"next\": 6, \"revisions\": [{\"rev\": \"1\", \"spec_sha256\": \"730c09a7a3d8fe56a9a1a995e8717ee588b434b4c7930fe98253bcfe464c684a\", \"sentence_sha256\": [\"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\", \"c3f38ff61890455cd2dff6a03a23d84d702b41cba9bfcd44e6d395c100c5ecaf\", \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\", \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"], \"manifest_sha256\": \"0c87ee2a943cababedd4a9ba270f2da7ead34eab11a19b1970aee20e4a3055f8\", \"sidecar_sha256\": \"3892e4be2a6bf9a864d19d3c4038af0b0030a84a3b0310e649553989087d5902\"}], \"requirements\": [{\"id\": \"R1\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": []}, {\"id\": \"R2\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"ae667461fcb2645c429818f101268823113ada6c2c3d963a66bae3c0377d8719\"}]}, {\"id\": \"R3\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"6f4410cfd3079860f7efa4ddc3fdd27fe7f9255a79f60cab05b7e587467a4384\"}]}, {\"id\": \"R4\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\"}]}, {\"id\": \"R5\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"}]}]}"
+  },
+  {
+   "expect": {
+    "refused": "a requirement row of the lineage is not {id, first_rev, retired_rev, quotes}"
+   },
+   "name": "a requirement id that is not text",
+   "text": "{\"lineage\": \"sce-requirement-lineage\", \"v\": 1, \"doc_id\": \"lamp\", \"next\": 6, \"revisions\": [{\"rev\": \"1\", \"spec_sha256\": \"730c09a7a3d8fe56a9a1a995e8717ee588b434b4c7930fe98253bcfe464c684a\", \"sentence_sha256\": [\"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\", \"c3f38ff61890455cd2dff6a03a23d84d702b41cba9bfcd44e6d395c100c5ecaf\", \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\", \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"], \"manifest_sha256\": \"0c87ee2a943cababedd4a9ba270f2da7ead34eab11a19b1970aee20e4a3055f8\", \"sidecar_sha256\": \"3892e4be2a6bf9a864d19d3c4038af0b0030a84a3b0310e649553989087d5902\"}], \"requirements\": [{\"id\": 1, \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\"}]}, {\"id\": \"R2\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"ae667461fcb2645c429818f101268823113ada6c2c3d963a66bae3c0377d8719\"}]}, {\"id\": \"R3\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"6f4410cfd3079860f7efa4ddc3fdd27fe7f9255a79f60cab05b7e587467a4384\"}]}, {\"id\": \"R4\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\"}]}, {\"id\": \"R5\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"}]}]}"
+  },
+  {
+   "expect": {
+    "refused": "the lineage issues R1 twice"
+   },
+   "name": "an id issued twice",
+   "text": "{\"lineage\": \"sce-requirement-lineage\", \"v\": 1, \"doc_id\": \"lamp\", \"next\": 6, \"revisions\": [{\"rev\": \"1\", \"spec_sha256\": \"730c09a7a3d8fe56a9a1a995e8717ee588b434b4c7930fe98253bcfe464c684a\", \"sentence_sha256\": [\"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\", \"c3f38ff61890455cd2dff6a03a23d84d702b41cba9bfcd44e6d395c100c5ecaf\", \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\", \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"], \"manifest_sha256\": \"0c87ee2a943cababedd4a9ba270f2da7ead34eab11a19b1970aee20e4a3055f8\", \"sidecar_sha256\": \"3892e4be2a6bf9a864d19d3c4038af0b0030a84a3b0310e649553989087d5902\"}], \"requirements\": [{\"id\": \"R1\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\"}]}, {\"id\": \"R2\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"ae667461fcb2645c429818f101268823113ada6c2c3d963a66bae3c0377d8719\"}]}, {\"id\": \"R3\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"6f4410cfd3079860f7efa4ddc3fdd27fe7f9255a79f60cab05b7e587467a4384\"}]}, {\"id\": \"R4\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\"}]}, {\"id\": \"R5\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"}]}, {\"id\": \"R1\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\"}]}]}"
+  },
+  {
+   "expect": {
+    "refused": "R1 names rev '9', which the lineage has no row for"
+   },
+   "name": "a first revision the lineage has no row for",
+   "text": "{\"lineage\": \"sce-requirement-lineage\", \"v\": 1, \"doc_id\": \"lamp\", \"next\": 6, \"revisions\": [{\"rev\": \"1\", \"spec_sha256\": \"730c09a7a3d8fe56a9a1a995e8717ee588b434b4c7930fe98253bcfe464c684a\", \"sentence_sha256\": [\"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\", \"c3f38ff61890455cd2dff6a03a23d84d702b41cba9bfcd44e6d395c100c5ecaf\", \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\", \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"], \"manifest_sha256\": \"0c87ee2a943cababedd4a9ba270f2da7ead34eab11a19b1970aee20e4a3055f8\", \"sidecar_sha256\": \"3892e4be2a6bf9a864d19d3c4038af0b0030a84a3b0310e649553989087d5902\"}], \"requirements\": [{\"id\": \"R1\", \"first_rev\": \"9\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\"}]}, {\"id\": \"R2\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"ae667461fcb2645c429818f101268823113ada6c2c3d963a66bae3c0377d8719\"}]}, {\"id\": \"R3\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"6f4410cfd3079860f7efa4ddc3fdd27fe7f9255a79f60cab05b7e587467a4384\"}]}, {\"id\": \"R4\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\"}]}, {\"id\": \"R5\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"}]}]}"
+  },
+  {
+   "expect": {
+    "refused": "R1 names rev '9', which the lineage has no row for"
+   },
+   "name": "a retired revision the lineage has no row for",
+   "text": "{\"lineage\": \"sce-requirement-lineage\", \"v\": 1, \"doc_id\": \"lamp\", \"next\": 6, \"revisions\": [{\"rev\": \"1\", \"spec_sha256\": \"730c09a7a3d8fe56a9a1a995e8717ee588b434b4c7930fe98253bcfe464c684a\", \"sentence_sha256\": [\"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\", \"c3f38ff61890455cd2dff6a03a23d84d702b41cba9bfcd44e6d395c100c5ecaf\", \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\", \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"], \"manifest_sha256\": \"0c87ee2a943cababedd4a9ba270f2da7ead34eab11a19b1970aee20e4a3055f8\", \"sidecar_sha256\": \"3892e4be2a6bf9a864d19d3c4038af0b0030a84a3b0310e649553989087d5902\"}], \"requirements\": [{\"id\": \"R1\", \"first_rev\": \"1\", \"retired_rev\": \"9\", \"quotes\": [{\"rev\": \"1\", \"sha256\": \"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\"}]}, {\"id\": \"R2\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"ae667461fcb2645c429818f101268823113ada6c2c3d963a66bae3c0377d8719\"}]}, {\"id\": \"R3\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"6f4410cfd3079860f7efa4ddc3fdd27fe7f9255a79f60cab05b7e587467a4384\"}]}, {\"id\": \"R4\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\"}]}, {\"id\": \"R5\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"}]}]}"
+  },
+  {
+   "expect": {
+    "refused": "R1 names rev '9', which the lineage has no row for"
+   },
+   "name": "a quote revision the lineage has no row for",
+   "text": "{\"lineage\": \"sce-requirement-lineage\", \"v\": 1, \"doc_id\": \"lamp\", \"next\": 6, \"revisions\": [{\"rev\": \"1\", \"spec_sha256\": \"730c09a7a3d8fe56a9a1a995e8717ee588b434b4c7930fe98253bcfe464c684a\", \"sentence_sha256\": [\"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\", \"c3f38ff61890455cd2dff6a03a23d84d702b41cba9bfcd44e6d395c100c5ecaf\", \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\", \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"], \"manifest_sha256\": \"0c87ee2a943cababedd4a9ba270f2da7ead34eab11a19b1970aee20e4a3055f8\", \"sidecar_sha256\": \"3892e4be2a6bf9a864d19d3c4038af0b0030a84a3b0310e649553989087d5902\"}], \"requirements\": [{\"id\": \"R1\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"9\", \"sha256\": \"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\"}]}, {\"id\": \"R2\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"ae667461fcb2645c429818f101268823113ada6c2c3d963a66bae3c0377d8719\"}]}, {\"id\": \"R3\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"6f4410cfd3079860f7efa4ddc3fdd27fe7f9255a79f60cab05b7e587467a4384\"}]}, {\"id\": \"R4\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\"}]}, {\"id\": \"R5\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"}]}]}"
+  },
+  {
+   "expect": {
+    "refused": "a quote row of R1 is not {rev, sha256}"
+   },
+   "name": "a quote row with a key more",
+   "text": "{\"lineage\": \"sce-requirement-lineage\", \"v\": 1, \"doc_id\": \"lamp\", \"next\": 6, \"revisions\": [{\"rev\": \"1\", \"spec_sha256\": \"730c09a7a3d8fe56a9a1a995e8717ee588b434b4c7930fe98253bcfe464c684a\", \"sentence_sha256\": [\"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\", \"c3f38ff61890455cd2dff6a03a23d84d702b41cba9bfcd44e6d395c100c5ecaf\", \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\", \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"], \"manifest_sha256\": \"0c87ee2a943cababedd4a9ba270f2da7ead34eab11a19b1970aee20e4a3055f8\", \"sidecar_sha256\": \"3892e4be2a6bf9a864d19d3c4038af0b0030a84a3b0310e649553989087d5902\"}], \"requirements\": [{\"id\": \"R1\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\", \"extra\": 1}]}, {\"id\": \"R2\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"ae667461fcb2645c429818f101268823113ada6c2c3d963a66bae3c0377d8719\"}]}, {\"id\": \"R3\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"6f4410cfd3079860f7efa4ddc3fdd27fe7f9255a79f60cab05b7e587467a4384\"}]}, {\"id\": \"R4\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\"}]}, {\"id\": \"R5\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"}]}]}"
+  },
+  {
+   "expect": {
+    "refused": "a quote row of R1 is not {rev, sha256}"
+   },
+   "name": "a quote digest that is not text",
+   "text": "{\"lineage\": \"sce-requirement-lineage\", \"v\": 1, \"doc_id\": \"lamp\", \"next\": 6, \"revisions\": [{\"rev\": \"1\", \"spec_sha256\": \"730c09a7a3d8fe56a9a1a995e8717ee588b434b4c7930fe98253bcfe464c684a\", \"sentence_sha256\": [\"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\", \"c3f38ff61890455cd2dff6a03a23d84d702b41cba9bfcd44e6d395c100c5ecaf\", \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\", \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"], \"manifest_sha256\": \"0c87ee2a943cababedd4a9ba270f2da7ead34eab11a19b1970aee20e4a3055f8\", \"sidecar_sha256\": \"3892e4be2a6bf9a864d19d3c4038af0b0030a84a3b0310e649553989087d5902\"}], \"requirements\": [{\"id\": \"R1\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": 7}]}, {\"id\": \"R2\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"ae667461fcb2645c429818f101268823113ada6c2c3d963a66bae3c0377d8719\"}]}, {\"id\": \"R3\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"6f4410cfd3079860f7efa4ddc3fdd27fe7f9255a79f60cab05b7e587467a4384\"}]}, {\"id\": \"R4\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\"}]}, {\"id\": \"R5\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"}]}]}"
+  },
+  {
+   "expect": {
+    "refused": "the lineage's next (3) is not past every id it issued (R5): an id would be issued twice"
+   },
+   "name": "a next that is not past every id",
+   "text": "{\"lineage\": \"sce-requirement-lineage\", \"v\": 1, \"doc_id\": \"lamp\", \"next\": 3, \"revisions\": [{\"rev\": \"1\", \"spec_sha256\": \"730c09a7a3d8fe56a9a1a995e8717ee588b434b4c7930fe98253bcfe464c684a\", \"sentence_sha256\": [\"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\", \"c3f38ff61890455cd2dff6a03a23d84d702b41cba9bfcd44e6d395c100c5ecaf\", \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\", \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"], \"manifest_sha256\": \"0c87ee2a943cababedd4a9ba270f2da7ead34eab11a19b1970aee20e4a3055f8\", \"sidecar_sha256\": \"3892e4be2a6bf9a864d19d3c4038af0b0030a84a3b0310e649553989087d5902\"}], \"requirements\": [{\"id\": \"R1\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\"}]}, {\"id\": \"R2\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"ae667461fcb2645c429818f101268823113ada6c2c3d963a66bae3c0377d8719\"}]}, {\"id\": \"R3\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"6f4410cfd3079860f7efa4ddc3fdd27fe7f9255a79f60cab05b7e587467a4384\"}]}, {\"id\": \"R4\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\"}]}, {\"id\": \"R5\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"}]}]}"
+  },
+  {
+   "expect": {
+    "refused": "the lineage's next ('six') is not past every id it issued (R5): an id would be issued twice"
+   },
+   "name": "a next that is not a number",
+   "text": "{\"lineage\": \"sce-requirement-lineage\", \"v\": 1, \"doc_id\": \"lamp\", \"next\": \"six\", \"revisions\": [{\"rev\": \"1\", \"spec_sha256\": \"730c09a7a3d8fe56a9a1a995e8717ee588b434b4c7930fe98253bcfe464c684a\", \"sentence_sha256\": [\"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\", \"c3f38ff61890455cd2dff6a03a23d84d702b41cba9bfcd44e6d395c100c5ecaf\", \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\", \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"], \"manifest_sha256\": \"0c87ee2a943cababedd4a9ba270f2da7ead34eab11a19b1970aee20e4a3055f8\", \"sidecar_sha256\": \"3892e4be2a6bf9a864d19d3c4038af0b0030a84a3b0310e649553989087d5902\"}], \"requirements\": [{\"id\": \"R1\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\"}]}, {\"id\": \"R2\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"ae667461fcb2645c429818f101268823113ada6c2c3d963a66bae3c0377d8719\"}]}, {\"id\": \"R3\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"6f4410cfd3079860f7efa4ddc3fdd27fe7f9255a79f60cab05b7e587467a4384\"}]}, {\"id\": \"R4\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\"}]}, {\"id\": \"R5\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"}]}]}"
+  },
+  {
+   "expect": {
+    "refused": "the lineage's next (True) is not past every id it issued (R5): an id would be issued twice"
+   },
+   "name": "a next that is a truth value",
+   "text": "{\"lineage\": \"sce-requirement-lineage\", \"v\": 1, \"doc_id\": \"lamp\", \"next\": true, \"revisions\": [{\"rev\": \"1\", \"spec_sha256\": \"730c09a7a3d8fe56a9a1a995e8717ee588b434b4c7930fe98253bcfe464c684a\", \"sentence_sha256\": [\"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\", \"c3f38ff61890455cd2dff6a03a23d84d702b41cba9bfcd44e6d395c100c5ecaf\", \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\", \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"], \"manifest_sha256\": \"0c87ee2a943cababedd4a9ba270f2da7ead34eab11a19b1970aee20e4a3055f8\", \"sidecar_sha256\": \"3892e4be2a6bf9a864d19d3c4038af0b0030a84a3b0310e649553989087d5902\"}], \"requirements\": [{\"id\": \"R1\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\"}]}, {\"id\": \"R2\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"ae667461fcb2645c429818f101268823113ada6c2c3d963a66bae3c0377d8719\"}]}, {\"id\": \"R3\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"6f4410cfd3079860f7efa4ddc3fdd27fe7f9255a79f60cab05b7e587467a4384\"}]}, {\"id\": \"R4\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\"}]}, {\"id\": \"R5\", \"first_rev\": \"1\", \"retired_rev\": null, \"quotes\": [{\"rev\": \"1\", \"sha256\": \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"}]}]}"
+  }
+ ],
  "render": [
   {
    "expect": "# Revision report: revision 1 to 2\n\nVerdict: within-reach. The design moved only where the words did.\n\n`carries over` means the words read the same and so does the product's closure of what the requirement depends on. It does not say the requirement is met, and the acceptance still lapses by its bytes: accepting again is the owner's.\n\n## Carries over (1)\n\nR1\n",

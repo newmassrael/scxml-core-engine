@@ -1334,15 +1334,20 @@ fn replies() -> Value {
         json!({"id": lineage_id, "text": "The blind rises. The blind stops at the top."}),
     );
     let lineage_head = lineage_source["revision"].as_str().unwrap().to_string();
-    let lineage_manifest = "{\"doc_id\":\"blind\",\"rev\":\"1\",\
-                            \"requirements\":[{\"id\":\"R1\"},{\"id\":\"R2\"}]}\n";
-    let lineage_text = "{\"lineage\":\"sce-requirement-lineage\",\"v\":1,\"doc_id\":\"blind\",\
-                        \"next\":3,\"revisions\":[],\"requirements\":[]}\n";
+    // The lists are the three texts of real calls of the authoring tool (the shared cases of the
+    // revision judgment), because a store that judges a lineage refuses one that is not the
+    // list's own: a lineage made up from hand-typed hashes would not be saved.
+    let cases: Value = serde_json::from_str(include_str!(
+        "../../sce-build/tests/fixtures/revision_judgment/cases.json"
+    ))
+    .unwrap();
+    let list = |name: &str, key: &str| cases["lists"][name][key].as_str().unwrap().to_string();
     let held = answer(
         &store,
         "save_requirements",
-        json!({"id": lineage_id, "manifest": lineage_manifest, "lineage": lineage_text,
-               "written_for": lineage_head}),
+        json!({"id": lineage_id, "manifest": list("second", "manifest_text"),
+               "sidecar": list("second", "sidecar_text"),
+               "lineage": list("second", "lineage_text"), "written_for": lineage_head}),
     );
     let held_revision = held["revision"].as_str().unwrap().to_string();
     answers.insert("save_requirements_lineage".into(), held);
@@ -1350,13 +1355,53 @@ fn replies() -> Value {
         "read_requirements_lineage".into(),
         answer(&store, "read_requirements", json!({"id": lineage_id})),
     );
+    // Each refusal of a lineage the work cannot keep, from the work holding the second revision.
+    let save_over_it = |manifest: String, sidecar: String, lineage: Option<String>| {
+        let mut args = json!({"id": lineage_id, "manifest": manifest, "sidecar": sidecar,
+                              "base": held_revision, "written_for": lineage_head});
+        if let Some(lineage) = lineage {
+            args["lineage"] = json!(lineage);
+        }
+        refusal(&store, "save_requirements", args)
+    };
     refusals.insert(
         "lineage-dropped".into(),
-        refusal(
-            &store,
-            "save_requirements",
-            json!({"id": lineage_id, "manifest": lineage_manifest, "base": held_revision,
-                   "written_for": lineage_head}),
+        save_over_it(
+            list("second", "manifest_text"),
+            list("second", "sidecar_text"),
+            None,
+        ),
+    );
+    // It names itself a lineage, so the record reads it, and it is none.
+    refusals.insert(
+        "lineage-unusable".into(),
+        save_over_it(
+            list("second", "manifest_text"),
+            list("second", "sidecar_text"),
+            Some(
+                "{\"lineage\":\"sce-requirement-lineage\",\"v\":1,\"doc_id\":\"lamp\",\
+                 \"next\":3,\"revisions\":[],\"requirements\":[]}\n"
+                    .to_string(),
+            ),
+        ),
+    );
+    // The first revision's lineage beside the second revision's list.
+    refusals.insert(
+        "lineage-of-another-list".into(),
+        save_over_it(
+            list("second", "manifest_text"),
+            list("second", "sidecar_text"),
+            Some(list("first", "lineage_text")),
+        ),
+    );
+    // A list of its own lineage that has one revision where the work's has two: a model that
+    // built the list again without the lineage it was given.
+    refusals.insert(
+        "lineage-not-continued".into(),
+        save_over_it(
+            list("again", "manifest_text"),
+            list("again", "sidecar_text"),
+            Some(list("again", "lineage_text")),
         ),
     );
 

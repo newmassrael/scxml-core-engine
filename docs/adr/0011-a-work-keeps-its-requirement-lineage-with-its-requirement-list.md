@@ -389,9 +389,26 @@ changed, and each is a case of a judgment that was made in one place and not in 
    id is issued again to another requirement. Measured by saving, from a work holding the
    `previous` lineage of each `extends` case of the shared cases, the `following` one: the six
    that continue were saved, and so were all twelve that do not (a retired id made live again, an
-   id numbered twice, a history rewritten, another specification). **Not yet repaid.** The
-   decision is the one already taken (D1 (c)): the product judges, so `extends` and
-   `belongs_to_list` are to be done in Rust against the same cases, as `sce-codegen
-   revision-judge`, and the core's save and publication paths are to call it. The existing test
-   that holds "another lineage replaces it" is the design this reverses and is to be replaced with
-   it.
+   id numbered twice, a history rewritten, another specification). **Repaid:** the decision is
+   the one already taken (D1 (c)), the product judges. The judgment is a crate of its own,
+   `sce-revision` (a member of the root workspace, which both the store and the generator can
+   depend on without the one depending on the other): `parse`, `extends`, `belongs_to_list` and
+   `between`, in the Python's own sentences, held to it by the shared cases
+   (`tests/the_cases_the_python_gives.rs`: every case, the sentence compared and not only the
+   fact of a refusal). The store calls it when a list is saved or published
+   (`refuse_a_lineage_not_kept`) and refuses four things in the order a person would want to be
+   told: `lineage-dropped` (the work's list has a lineage and this one has none),
+   `lineage-unusable` (it is not a lineage), `lineage-of-another-list` (it is not THIS list's,
+   by the digests of its manifest and sidecar, so a list saved with a lineage has to come with
+   the sidecar the lineage names) and `lineage-not-continued` (it does not continue the work's).
+   The record stays as tolerant as it was (a lineage names itself), so that what the store holds
+   stays readable whatever it says; the judgment is at the door. The test that held "another
+   lineage replaces it" was the design this reverses and is replaced: the eighteen `extends`
+   cases of the shared cases are saved from a work holding their `previous`, the cases that
+   continue are saved and the others are refused, and the review's own case (a list built
+   without the lineage it was given, which starts at `R1` again) is refused by a direct save and
+   by a published candidate, after which the executor writes the list again and publishes it.
+   The command set moved to 21 for the new refusals.
+
+   What is left of D1 (c) is not this finding's: `belongs_to`, `join` and the page (`render`)
+   are still the Python's, and the application's `works_revision_*` still goes through it.

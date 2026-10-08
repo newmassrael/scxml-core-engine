@@ -110,7 +110,7 @@
       "deleted": "main"
     },
     "describe": {
-      "command_set_version": 20,
+      "command_set_version": 21,
       "commands": [
         "describe",
         "list_works",
@@ -170,7 +170,7 @@
       "writes_settings": false
     },
     "describe_desktop": {
-      "command_set_version": 20,
+      "command_set_version": 21,
       "commands": [
         "describe",
         "list_works",
@@ -1755,10 +1755,10 @@
     },
     "read_requirements_lineage": {
       "requirements": {
-        "lineage": "{\"lineage\":\"sce-requirement-lineage\",\"v\":1,\"doc_id\":\"blind\",\"next\":3,\"revisions\":[],\"requirements\":[]}\n",
-        "manifest": "{\"doc_id\":\"blind\",\"rev\":\"1\",\"requirements\":[{\"id\":\"R1\"},{\"id\":\"R2\"}]}\n",
-        "revision": "61de1530a6ff794c9925ffb57c42a4d7bc4d4b5052659d2a9854fc7ed672d4b8",
-        "sidecar": null,
+        "lineage": "{\n  \"lineage\": \"sce-requirement-lineage\",\n  \"v\": 1,\n  \"doc_id\": \"lamp\",\n  \"next\": 6,\n  \"revisions\": [\n    {\n      \"rev\": \"1\",\n      \"spec_sha256\": \"730c09a7a3d8fe56a9a1a995e8717ee588b434b4c7930fe98253bcfe464c684a\",\n      \"sentence_sha256\": [\n        \"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\",\n        \"c3f38ff61890455cd2dff6a03a23d84d702b41cba9bfcd44e6d395c100c5ecaf\",\n        \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\",\n        \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"\n      ],\n      \"manifest_sha256\": \"0c87ee2a943cababedd4a9ba270f2da7ead34eab11a19b1970aee20e4a3055f8\",\n      \"sidecar_sha256\": \"3892e4be2a6bf9a864d19d3c4038af0b0030a84a3b0310e649553989087d5902\"\n    },\n    {\n      \"rev\": \"2\",\n      \"spec_sha256\": \"b729aebf5dece3ea4d584414527772a75b3d7bc73e483df70e5784f30a97b951\",\n      \"sentence_sha256\": [\n        \"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\",\n        \"c3f38ff61890455cd2dff6a03a23d84d702b41cba9bfcd44e6d395c100c5ecaf\",\n        \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\"\n      ],\n      \"manifest_sha256\": \"f71cceaaeaec1156853efc3d7b95bd88a251196c6440c8dc73df031e3f05ed6a\",\n      \"sidecar_sha256\": \"22cb1ec1a77dc0998b4b83b6ba8b2abbd65b2bd4c63c212d04234328425911ea\"\n    }\n  ],\n  \"requirements\": [\n    {\n      \"id\": \"R1\",\n      \"first_rev\": \"1\",\n      \"retired_rev\": null,\n      \"quotes\": [\n        {\n          \"rev\": \"1\",\n          \"sha256\": \"6ee2890b115436bb40d50741150d56e338225f95ccd528d2979ab39a5be3491d\"\n        }\n      ]\n    },\n    {\n      \"id\": \"R2\",\n      \"first_rev\": \"1\",\n      \"retired_rev\": null,\n      \"quotes\": [\n        {\n          \"rev\": \"1\",\n          \"sha256\": \"ae667461fcb2645c429818f101268823113ada6c2c3d963a66bae3c0377d8719\"\n        }\n      ]\n    },\n    {\n      \"id\": \"R3\",\n      \"first_rev\": \"1\",\n      \"retired_rev\": null,\n      \"quotes\": [\n        {\n          \"rev\": \"1\",\n          \"sha256\": \"6f4410cfd3079860f7efa4ddc3fdd27fe7f9255a79f60cab05b7e587467a4384\"\n        }\n      ]\n    },\n    {\n      \"id\": \"R4\",\n      \"first_rev\": \"1\",\n      \"retired_rev\": null,\n      \"quotes\": [\n        {\n          \"rev\": \"1\",\n          \"sha256\": \"aa652ef50739509da8a8fad21e2ddc50030bcda7dd48d568a77fd78cb4df9545\"\n        }\n      ]\n    },\n    {\n      \"id\": \"R5\",\n      \"first_rev\": \"1\",\n      \"retired_rev\": \"2\",\n      \"quotes\": [\n        {\n          \"rev\": \"1\",\n          \"sha256\": \"2a7a88ee6e666c1ede736f70e93c23d49c45f74a5878e403ea9d06d977c133d1\"\n        }\n      ]\n    }\n  ]\n}\n",
+        "manifest": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"2\",\n  \"extraction\": {\n    \"ids\": \"synthesized\",\n    \"trace\": \"none\",\n    \"modality_convention\": \"english-modal-verbs\",\n    \"method\": \"ai-pass-1\"\n  },\n  \"sections\": [\n    {\n      \"id\": \"S1\",\n      \"title\": \"Sentence 1\"\n    },\n    {\n      \"id\": \"S2\",\n      \"title\": \"Sentence 2\"\n    },\n    {\n      \"id\": \"S3\",\n      \"title\": \"Sentence 3\"\n    }\n  ],\n  \"requirements\": [\n    {\n      \"id\": \"R1\",\n      \"section\": \"S1\"\n    },\n    {\n      \"id\": \"R2\",\n      \"section\": \"S2\"\n    },\n    {\n      \"id\": \"R3\",\n      \"section\": \"S2\"\n    },\n    {\n      \"id\": \"R4\",\n      \"section\": \"S3\"\n    }\n  ]\n}\n",
+        "revision": "113a2b40e00b0c88b1bea0180971045e6fd3db134ce4dd8bab9c09341a048e44",
+        "sidecar": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"2\",\n  \"text\": {\n    \"R1\": \"The lamp starts off.\",\n    \"R2\": \"Pressing the switch turns it on\",\n    \"R3\": \"pressing it again turns it off\",\n    \"R4\": \"After 30 seconds on, it turns itself off.\"\n  }\n}\n",
         "written_for": "6f2b3e246b6b5f39a4714e3972d0d21825256f8892c7c17a6354d7601e20b8f4"
       },
       "source_head": "6f2b3e246b6b5f39a4714e3972d0d21825256f8892c7c17a6354d7601e20b8f4",
@@ -2352,7 +2352,7 @@
     "save_requirements_lineage": {
       "outcome": "saved",
       "parent": null,
-      "revision": "61de1530a6ff794c9925ffb57c42a4d7bc4d4b5052659d2a9854fc7ed672d4b8"
+      "revision": "113a2b40e00b0c88b1bea0180971045e6fd3db134ce4dd8bab9c09341a048e44"
     },
     "save_requirements_unchanged": {
       "outcome": "unchanged",
@@ -2376,7 +2376,7 @@
       "default": "main"
     }
   },
-  "command_set_version": 20,
+  "command_set_version": 21,
   "refusals": {
     "active-request": {
       "detail": {
@@ -2489,10 +2489,31 @@
     },
     "lineage-dropped": {
       "detail": {
-        "revision": "61de1530a6ff794c9925ffb57c42a4d7bc4d4b5052659d2a9854fc7ed672d4b8"
+        "revision": "113a2b40e00b0c88b1bea0180971045e6fd3db134ce4dd8bab9c09341a048e44"
       },
       "kind": "lineage-dropped",
       "message": "work `<lineage-work-id>` keeps a requirement lineage and this list has none: saving it would let an id that was retired be issued again, to another requirement. Build the list against the lineage `read_requirements` returns and give the lineage that build returns"
+    },
+    "lineage-not-continued": {
+      "detail": {
+        "revision": "113a2b40e00b0c88b1bea0180971045e6fd3db134ce4dd8bab9c09341a048e44"
+      },
+      "kind": "lineage-not-continued",
+      "message": "work `<lineage-work-id>` keeps a requirement lineage and the one given does not continue it: the lineage has 1 revision(s) and the work's has 2: revisions are never taken back. Build the list against the lineage `read_requirements` returns, so that every id keeps the requirement it was issued for and a retired id is never issued again"
+    },
+    "lineage-of-another-list": {
+      "detail": {
+        "revision": "113a2b40e00b0c88b1bea0180971045e6fd3db134ce4dd8bab9c09341a048e44"
+      },
+      "kind": "lineage-of-another-list",
+      "message": "work `<lineage-work-id>`: the lineage given is not the lineage of this list: the lineage's last revision is 1 and the manifest's is 2. Give the manifest, the sidecar and the lineage of one build, unchanged"
+    },
+    "lineage-unusable": {
+      "detail": {
+        "revision": "113a2b40e00b0c88b1bea0180971045e6fd3db134ce4dd8bab9c09341a048e44"
+      },
+      "kind": "lineage-unusable",
+      "message": "work `<lineage-work-id>`: the lineage given with this list is not one: the lineage holds no revision"
     },
     "model-conflict": {
       "detail": {

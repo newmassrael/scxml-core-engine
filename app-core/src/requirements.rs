@@ -176,14 +176,11 @@ impl Requirements {
     }
 }
 
-/// Whether a stored list holds a lineage. A text that is not a list is the store's to call
-/// corrupt, and is passed on as that.
-pub fn stored_has_lineage(text: &str) -> Result<bool, RequirementsError> {
-    Ok(Requirements::parse(text)?.lineage.is_some())
-}
-
 /// A lineage as it is read from a caller: a JSON object that names itself. Nothing more is
-/// asked here, because what a lineage says is the authoring package's.
+/// asked here: the record is a text the store keeps, and whether it is a lineage, the list's own
+/// and the work's continued is judged where a list is saved or published
+/// (`WorkStore::refuse_a_lineage_not_kept`, by `sce-revision`), so that a record this build
+/// reads stays readable whatever it says.
 fn check_lineage(text: &str) -> Result<(), RequirementsError> {
     match serde_json::from_str::<serde_json::Value>(text) {
         Ok(serde_json::Value::Object(object))
@@ -273,7 +270,6 @@ mod tests {
         assert_eq!(again.manifest, MANIFEST);
         assert_eq!(again, list);
         assert_eq!(again.stored_text(), text);
-        assert!(stored_has_lineage(&text).unwrap());
     }
 
     #[test]

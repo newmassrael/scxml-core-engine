@@ -2603,10 +2603,19 @@ version = "0.1.0"
 dependencies = [
  "roxmltree",
  "rustls",
+ "sce-revision",
  "serde",
  "serde_json",
  "sha2",
  "webpki-roots",
+]
+
+[[package]]
+name = "sce-revision"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "sha2",
 ]
 
 [[package]]

@@ -1,0 +1,31 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+#
+# sce-revision -- the judgment of a revision of a requirement list.
+#
+# ADR 0011 (D1 (c)) puts the judgment of a revision in the product: the application and the
+# generator both have to say, in the same words, whether a lineage continues the one a work
+# holds, whether it is the lineage of the list beside it, and what became of each requirement's
+# words between two states. That is one implementation here, so the store that refuses a save and
+# the command that reports a revision cannot disagree. It reads and writes nothing; it takes
+# values and gives a verdict.
+
+[package]
+name = "sce-revision"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Judges a revision of a requirement list: lineages, what continues them, what became of the words"
+
+[lib]
+name = "sce_revision"
+
+[lints]
+workspace = true
+
+[dependencies]
+serde_json = "1"
+sha2 = { workspace = true }
