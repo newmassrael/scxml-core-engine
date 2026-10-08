@@ -2070,6 +2070,12 @@ _SCXML_KEYS = frozenset({"document", "documents", "companions", "model", "design
 # a file by it. What holds is the product, which opens a file only inside the folder this server
 # runs it in (`process.run`, `SCE_FILE_ROOT`), whatever names it.
 _FILE_ATTRIBUTES = frozenset({"src", "href", "template"})
+# An attribute of SCE's namespace whose value lists documents, separated by white space, each of
+# which the product may open: `sce:candidates`, the documents an `<invoke srcexpr>` may choose
+# among, which the generator copies into what it writes. Only in the namespace: the `candidates`
+# of an `<sce:unresolved>` has no namespace and lists kinds, and `sce:unresolved-candidates` is
+# another name.
+_FILE_LIST_ATTRIBUTES = frozenset({"{http://sce.dev/ext}candidates"})
 _XML_BASE = "{http://www.w3.org/XML/1998/namespace}base"
 
 # The longest a document's file name is in the application (`MAX_NAME_CHARS`,
@@ -2077,6 +2083,12 @@ _XML_BASE = "{http://www.w3.org/XML/1998/namespace}base"
 # reads the answer it ends with by the same rule (app-core/src/document_files.rs), and the cases
 # in tests/fixtures/file_references.json hold the two to it.
 _MAX_NAME_CHARS = 100
+
+
+def _is_plain_name(value: str) -> bool:
+    """Whether `value` is the plain name of a document staged beside the one that names it."""
+    return bool(_FILE_NAME.fullmatch(value)) and set(value) != {"."} \
+        and len(value) <= _MAX_NAME_CHARS
 
 
 def _refuse_file_access_in(text: str) -> None:
@@ -2101,9 +2113,12 @@ def _refuse_file_access_in(text: str) -> None:
             if attribute == _XML_BASE:
                 raise ToolArgumentError(
                     "Workbench SCXML cannot change the base its references resolve against")
-            if attribute.rsplit("}", 1)[-1] in _FILE_ATTRIBUTES and (
-                    not _FILE_NAME.fullmatch(value) or set(value) == {"."}
-                    or len(value) > _MAX_NAME_CHARS):
+            if attribute in _FILE_LIST_ATTRIBUTES:
+                names_a_file_wrongly = not all(_is_plain_name(listed) for listed in value.split())
+            else:
+                names_a_file_wrongly = (attribute.rsplit("}", 1)[-1] in _FILE_ATTRIBUTES
+                                        and not _is_plain_name(value))
+            if names_a_file_wrongly:
                 raise ToolArgumentError(
                     "Workbench SCXML references must name inline companions, "
                     "not local paths or URLs")

@@ -32,6 +32,16 @@ const XML_NAMESPACE: &str = "http://www.w3.org/XML/1998/namespace";
 /// (`figures::run_bounded`, `SCE_FILE_ROOT`), whatever names the file.
 const FILE_ATTRIBUTES: [&str; 3] = ["src", "href", "template"];
 
+/// The namespace of SCE's own attributes (`sce:candidates`).
+const SCE_NAMESPACE: &str = "http://sce.dev/ext";
+
+/// An attribute of SCE's namespace whose value lists documents, separated by white space, each of
+/// which the checker may open: `sce:candidates`, the documents an `<invoke srcexpr>` may choose
+/// among, which the generator copies into what it writes. Only in the namespace: the `candidates`
+/// of an `<sce:unresolved>` has no namespace and lists kinds, and `sce:unresolved-candidates` is
+/// another name.
+const FILE_LISTS: [&str; 1] = ["candidates"];
+
 /// Refuse `text`, the document `name` of a draft, when it would send the checker to a file that is
 /// not one of the documents of the draft: a name that is not one plain name, a base to resolve
 /// names against, a document type, or text that cannot be read as XML here. The last is refused
@@ -51,8 +61,18 @@ pub(crate) fn refuse_file_access(name: &str, text: &str) -> Result<(), String> {
                     "`{name}` changes the base its references resolve against (`xml:base`)"
                 ));
             }
-            if FILE_ATTRIBUTES.contains(&attribute.name()) && check_name(attribute.value()).is_err()
-            {
+            let lists_files = attribute.namespace() == Some(SCE_NAMESPACE)
+                && FILE_LISTS.contains(&attribute.name());
+            let names_a_file_wrongly = if lists_files {
+                attribute
+                    .value()
+                    .split_whitespace()
+                    .any(|listed| check_name(listed).is_err())
+            } else {
+                FILE_ATTRIBUTES.contains(&attribute.name())
+                    && check_name(attribute.value()).is_err()
+            };
+            if names_a_file_wrongly {
                 return Err(format!(
                     "`{name}` has a `{}` that is not the plain name of another document of the \
                      draft: a reference may name a companion and no file",

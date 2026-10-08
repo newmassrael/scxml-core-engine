@@ -133,5 +133,30 @@
     "name": "text that is not well-formed is refused and not passed on",
     "refused": true,
     "text": "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\"><state id=\"a\"></scxml>"
+  },
+  {
+    "name": "invoke candidates named by plain names are accepted",
+    "refused": false,
+    "text": "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" xmlns:sce=\"http://sce.dev/ext\" initial=\"a\"><state id=\"a\"><invoke srcexpr=\"which\" sce:candidates=\"a.scxml b-2.scxml\"/></state></scxml>"
+  },
+  {
+    "name": "an invoke candidate named by an absolute path is refused",
+    "refused": true,
+    "text": "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" xmlns:sce=\"http://sce.dev/ext\" initial=\"a\"><state id=\"a\"><invoke srcexpr=\"which\" sce:candidates=\"/private/secret.scxml\"/></state></scxml>"
+  },
+  {
+    "name": "an invoke candidate that climbs out is refused when it is not the first",
+    "refused": true,
+    "text": "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" xmlns:sce=\"http://sce.dev/ext\" initial=\"a\"><state id=\"a\"><invoke srcexpr=\"which\" sce:candidates=\"a.scxml ../secret.scxml\"/></state></scxml>"
+  },
+  {
+    "name": "a list of kinds that is not in the sce namespace is no list of files",
+    "refused": false,
+    "text": "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" xmlns:sce=\"http://sce.dev/ext\" initial=\"a\"><sce:unresolved id=\"k\" reason=\"r\" candidates=\"statechart, workflow\"/></scxml>"
+  },
+  {
+    "name": "the candidates of an unresolved question are not files either",
+    "refused": false,
+    "text": "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" xmlns:sce=\"http://sce.dev/ext\" initial=\"a\"><state id=\"a\" sce:unresolved=\"kind\" sce:unresolved-reason=\"r\" sce:unresolved-candidates=\"statechart, workflow\"/></scxml>"
   }
 ]

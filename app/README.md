@@ -785,7 +785,8 @@ specification could make a client read a file through it. It advertises only tho
 refuses mutations and reads of other works, and accepts draft documents and their imports only
 as inline text under plain file names. Every document is read before it reaches the product,
 whatever its file is called, and is refused when an attribute that names a file (`src`, `href`,
-on any element) is not the plain name of a companion staged beside it, when it changes the base
+`template`, on any element; and each name in the list of an `sce:candidates`) is not the plain
+name of a companion staged beside it, when it changes the base
 such names resolve against (`xml:base`), declares a document type, or cannot be read as XML.
 `companions_text` carries imported documents to the individual-document checkers, including
 `scxml_requirements`. The tools it advertises are the ones the application approves
