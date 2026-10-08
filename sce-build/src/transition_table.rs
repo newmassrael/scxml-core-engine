@@ -56,7 +56,7 @@ use std::io::{self, Write};
 
 use serde::Serialize;
 
-use crate::model::SCXMLModel;
+use crate::model::{SCXMLModel, Transition};
 use crate::requirements_report::{walk_nodes, ActionSite, NodeSubject};
 
 /// The literal printed in `source` for a node claiming no requirement.
@@ -113,6 +113,30 @@ fn or_dash(value: &str) -> String {
     }
 }
 
+/// The `to` cell of a transition: where it goes, and how it gets there when
+/// that is not the default.
+///
+/// `type` decides whether a transition to a descendant of its source leaves
+/// the source (`external`, the default) or does not (`internal`), and so
+/// whether the source's `<onexit>` and `<onentry>` run again. A document
+/// counting in that `<onentry>` counted 2 after one such transition when it
+/// was `external` and 1 when it was `internal`, and this cell was the same
+/// for both: the acceptance record's evidence is a digest of these cells, so
+/// `acceptance-delta` called the requirement `unchanged`.
+/// `an_attribute_that_changes_a_transition_changes_its_row` is what moves
+/// every attribute of a transition and requires this row to move with it.
+///
+/// Written as `name=value`, as the `action` cell writes an attribute, and only
+/// when it is not the default, so no row of a document that never wrote the
+/// attribute changes and no record taken of one is disturbed.
+fn where_the_transition_goes(transition: &Transition) -> String {
+    let target = or_dash(&transition.target);
+    match transition.transition_type.as_str() {
+        "" | "external" => target,
+        other => format!("{target} type={other}"),
+    }
+}
+
 /// Every row of `model`, in document order.
 ///
 /// Built over [`walk_nodes`] — the traversal the requirements report
@@ -159,7 +183,7 @@ pub fn transition_table(model: &SCXMLModel) -> Vec<TransitionRow> {
                     },
                     guard: or_dash(&transition.cond),
                     after: EMPTY_CELL.to_string(),
-                    to: or_dash(&transition.target),
+                    to: where_the_transition_goes(transition),
                     action: if transition.actions.is_empty() {
                         EMPTY_CELL.to_string()
                     } else {

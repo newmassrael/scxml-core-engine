@@ -128,3 +128,24 @@ integration files) pass.
 
 Not done in this step: nothing compares two records, and no report uses the digests yet. That is
 step 3 and step 5.
+
+## A row that omitted an attribute omitted it from the evidence (2026-10-08)
+
+The evidence is a digest of the report's rows, so it can only see what a row shows. The review
+table's header said in so many words that a transition's own attributes were not yet in it, and
+that was carried into this ADR's scope without being named as a hole: a transition written
+`external` and the same transition written `internal` had byte-identical rows, so
+`acceptance-delta` called the requirement `unchanged` for a change that decides whether the source
+state's `<onentry>` runs again (§scxml-3.13). A review of the revision tools found it.
+
+- **The cell.** The `to` cell of a transition now ends in `type=internal` (or whatever the
+  attribute says) when it is not the default `external`. The default is left out, so no row of a
+  document that never wrote the attribute changes and no record already taken is disturbed;
+  spelling the default out moves nothing.
+- **The proof is a sweep, not a list.** `an_attribute_that_changes_a_transition_changes_its_row`
+  moves every attribute of every transition of a fixture, one at a time, and requires the row to
+  move whenever the parsed model of the transition does. Before the cell changed it found exactly
+  this: 13 moves changed a transition's model and the 3 that were `type` hid. It also holds the
+  states (`initial`, a history's `type`) and found nothing hidden there. What it does not hold: a
+  state's `id` (renaming moves every reference to it), and the transition inside an `<initial>`
+  or a `<history>`, which is an action row.

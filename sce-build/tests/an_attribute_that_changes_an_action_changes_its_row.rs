@@ -38,13 +38,15 @@
 //!   as inert rather than silently dropped.
 //!
 //! ⚠ Scope, stated rather than implied: this holds action rows. A
-//! transition's own attributes (`type`, for one) and a state's are not
-//! yet in the table at all, and are residue for the rounds after this.
+//! transition's own attributes are held by
+//! `an_attribute_that_changes_a_transition_changes_its_row`, which uses the
+//! same oracle; a state's own attributes are not held by either.
+
+mod common;
 
 use std::collections::BTreeSet;
 
-use sce_build::model::SCXMLModel;
-use sce_build::parser::SCXMLParser;
+use common::row_oracle::{at, parse, sites, SCXML_NS};
 use sce_build::transition_table::{transition_table, TransitionRow};
 
 /// Every kind of executable content, with the attributes each accepts.
@@ -101,67 +103,15 @@ const DOC: &str = r##"<scxml xmlns="http://www.w3.org/2005/07/scxml"
   <state id="t"/>
 </scxml>"##;
 
-const SCXML_NS: &str = "http://www.w3.org/2005/07/scxml";
-const SCE_NS: &str = "http://sce.dev/ext";
-
-fn parse(text: &str) -> Option<SCXMLModel> {
-    SCXMLParser::new().parse_string(text, "cells").ok()
-}
-
-/// One attribute to mutate: its byte range in [`DOC`] and what it names.
-struct Site {
-    range: std::ops::Range<usize>,
-    what: String,
-}
-
-/// Every attribute of every element inside executable content.
-///
-/// Read from the document with a real XML parser, so the population is
-/// what the author wrote rather than what anyone thought to list.
-fn sites() -> Vec<Site> {
-    let doc = roxmltree::Document::parse(DOC).expect("the fixture is well-formed XML");
-    let mut out = Vec::new();
-    for node in doc.descendants().filter(|n| n.is_element()) {
-        let inside_content = node.ancestors().skip(1).any(|a| {
-            a.tag_name().namespace() == Some(SCXML_NS)
-                && matches!(a.tag_name().name(), "onentry" | "onexit" | "transition")
-        });
-        if !inside_content {
-            continue;
-        }
-        for attr in node.attributes() {
-            if attr.namespace() == Some(SCE_NS) {
-                continue;
-            }
-            out.push(Site {
-                range: attr.range_value(),
-                what: format!("<{} {}>", node.tag_name().name(), attr.name()),
-            });
-        }
-    }
-    out
-}
-
-/// The value of a JSON tree at a `node_path` such as
-/// `states.s.on_entry_blocks[0][3].then_actions[0]`.
-///
-/// Walk paths name the serialised model's own fields, which is what lets
-/// a row be lined up with the model it came from.
-fn at<'a>(tree: &'a serde_json::Value, node_path: &str) -> Option<&'a serde_json::Value> {
-    let mut cursor = tree;
-    for segment in node_path.split('.') {
-        let (key, indices) = match segment.find('[') {
-            Some(open) => (&segment[..open], &segment[open..]),
-            None => (segment, ""),
-        };
-        if !key.is_empty() {
-            cursor = cursor.get(key)?;
-        }
-        for index in indices.split(['[', ']']).filter(|s| !s.is_empty()) {
-            cursor = cursor.get(index.parse::<usize>().ok()?)?;
-        }
-    }
-    Some(cursor)
+/// Whether an element sits inside executable content: the population of
+/// this test is every attribute of every such element, read from the
+/// document with a real XML parser, so it is what the author wrote rather
+/// than what anyone thought to list.
+fn executable_content(node: &roxmltree::Node) -> bool {
+    node.ancestors().skip(1).any(|a| {
+        a.tag_name().namespace() == Some(SCXML_NS)
+            && matches!(a.tag_name().name(), "onentry" | "onexit" | "transition")
+    })
 }
 
 /// An action's serialised form with what is not behaviour removed.
@@ -213,7 +163,7 @@ fn an_attribute_that_changes_an_action_changes_its_row() {
     let original_tree = serde_json::to_value(&original).expect("the model serialises");
     let original_rows = transition_table(&original);
 
-    let sites = sites();
+    let sites = sites(DOC, |node, _| executable_content(node));
     let (mut effective, mut inert, mut unparsable) = (0usize, 0usize, 0usize);
     let mut hidden: Vec<String> = Vec::new();
 

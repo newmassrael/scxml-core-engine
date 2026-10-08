@@ -63,6 +63,21 @@ const ALARM: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce=
 </scxml>
 "#;
 
+/// R1 on a state whose `<onentry>` counts, R2 on the transition from it to one of its
+/// own children. `external` leaves `outer` and enters it again, so the count is 2 after
+/// `go`; `internal` does not, and it stays 1.
+const REENTRY: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="outer" datamodel="ecmascript">
+  <datamodel><data id="entered" expr="0"/></datamodel>
+  <state id="outer" initial="inner_a" sce:req="R1">
+    <onentry><assign location="entered" expr="entered + 1"/></onentry>
+    <transition event="go" target="inner_b" type="external" sce:req="R2"/>
+    <state id="inner_a"/>
+    <state id="inner_b"/>
+  </state>
+</scxml>
+"#;
+
 const LOOKUP: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        sce:kind="lookup" name="severity">
   <datamodel>
@@ -174,6 +189,27 @@ fn retiming_the_delay_reports_what_depends_on_it_and_nothing_else() {
         delta.unclaimed_added
     );
     assert_eq!(delta.unclaimed_gone, 1);
+}
+
+#[test]
+fn a_transition_made_internal_reports_its_requirement_changed_with_the_transitions_place() {
+    // What the transition does moves (`external` leaves `outer` and enters it again, so its
+    // `<onentry>` runs again; `internal` does not, §scxml-3.13) and the event, the guard, the
+    // target and the actions do not: only `type` says so, and it once was in no row.
+    let tree = Tree::new(REENTRY);
+    let record = tree.take();
+    tree.design(&REENTRY.replace("type=\"external\"", "type=\"internal\""));
+    let delta = tree.delta(&record);
+    match change(&delta, "R2") {
+        RequirementChange::Changed { moved, gone } => {
+            assert!(
+                moved.contains(&"states.outer.transitions[0]".to_string()),
+                "R2 does not name the transition whose type changed: {moved:?}"
+            );
+            assert_eq!(*gone, 1);
+        }
+        other => panic!("R2 should have changed, got {other:?}"),
+    }
 }
 
 #[test]
