@@ -65,8 +65,14 @@
 //! dequeue's marking of an entry that holds another cycle's index unsafe (the
 //! last two matter only on a second lap with a dequeue ahead of the enqueue,
 //! which takes more operations than three preemptions of two or three
-//! threads give). Weaken one and the models stay green; layers 2 and 5 are
-//! what stands behind them.
+//! threads give). Weaken one and the models stay green. Measured
+//! 2026-10-09 for the last two (the head check removed; the unsafe marking
+//! removed): the recorded histories and the thread test stay green too, so
+//! nothing run in this tree defends them. Miri and ThreadSanitizer look for
+//! undefined behaviour and data races, not lost elements, and were not run on
+//! mutants of these four. They are the reference implementation's, kept as
+//! written, and a change to one needs a targeted schedule written for it
+//! first.
 //!
 //! **Counters never wrap in practice.** Head and tail are 64-bit and the
 //! algorithm tolerates a stalled participant for [`WRAP_BOUND_OPS`]
@@ -592,14 +598,21 @@ mod tests {
         }
     }
 
+    /// How many times the single-threaded runs below repeat. Miri interprets
+    /// every step and is about a hundred times slower than native execution,
+    /// so under it the runs are a few rounds: enough to cross a cycle of the
+    /// smallest ring, which is what it is there to check for undefined
+    /// behaviour, while the native runs are what take the cycles far.
+    const ROUNDS: usize = if cfg!(miri) { 6 } else { 300 };
+
     #[test]
     fn capacity_is_exact_and_order_holds_over_many_cycles() {
-        fills_and_drains::<1, 1>(300);
-        fills_and_drains::<2, 2>(300);
-        fills_and_drains::<3, 4>(300);
-        fills_and_drains::<5, 8>(300);
-        fills_and_drains::<8, 8>(300);
-        fills_and_drains::<13, 16>(200);
+        fills_and_drains::<1, 1>(ROUNDS);
+        fills_and_drains::<2, 2>(ROUNDS);
+        fills_and_drains::<3, 4>(ROUNDS);
+        fills_and_drains::<5, 8>(ROUNDS);
+        fills_and_drains::<8, 8>(ROUNDS);
+        fills_and_drains::<13, 16>(ROUNDS * 2 / 3);
     }
 
     /// Many pops of an empty queue run the threshold down; an element pushed
@@ -608,7 +621,7 @@ mod tests {
     fn an_element_pushed_after_many_empty_pops_is_seen() {
         let queue = Scq::<u64, 3, 4>::new();
         let (producer, consumer) = (queue.producer(), queue.consumer());
-        for _ in 0..200 {
+        for _ in 0..ROUNDS * 2 / 3 {
             assert_eq!(consumer.try_pop(), None);
         }
         for value in 1..=3 {

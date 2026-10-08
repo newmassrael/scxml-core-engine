@@ -3684,7 +3684,7 @@ layer states what it establishes and what it cannot.
 | 2. Linearizability | per-backend stress runs write histories in one JSON format; one checker, written once, judges them all | that each concurrent history is equivalent to a sequential one, a refusal excused only by slots other participants hold |
 | 3. Memory-model exploration | loom (Rust), GenMC (C11, C++), Lincheck model checking (Kotlin JVM) | every interleaving and weak-memory outcome within the model's bounds |
 | 4. Progress | Lincheck `checkObstructionFreedom`; loom schedules that suspend one participant | finds violations; passing does not prove lock-freedom (Lincheck checks obstruction-freedom only) |
-| 5. Memory safety | Miri, ASan, TSan (`scripts/build_tsan.sh`) | no use-after-free, no data race |
+| 5. Memory safety | Miri, ASan, TSan (Rust: pinned nightly in `forge-rust`; C/C++: `scripts/build_tsan.sh`) | no use-after-free, no data race; not a lost element (layers 2, 3) |
 | 6. No allocation | Rust `no_std` without the `alloc` crate; C11 linked without a `malloc` symbol | an allocation shows up as a build failure |
 | 7. Mutation | a casefile for every hand-over ordering in the runtime; each weakening must turn layer 3 red, and one layer 3 cannot reach is named in its module (SCQ has four) | that layer 3 observes what it claims to |
 | 8. Refusals | a fixture for every refused combination, listed in the `docs/SCE_ACCEPTED_SUBSET.md` appendix | that no refusal silently becomes a weaker guarantee |

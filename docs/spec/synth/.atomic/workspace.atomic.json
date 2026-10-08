@@ -5081,6 +5081,10 @@
         {
           "file": "sce-build/tests/mutations/an_scq_queue_orders_every_index_hand_over.cases",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/forge-runtime/tests/queue_threads.rs",
+          "kind": "references"
         }
       ]
     },

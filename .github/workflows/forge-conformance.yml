@@ -198,7 +198,11 @@ jobs:
   conformance-rust:
     name: Rust Forge Conformance
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # 20, from 10: the arm now also runs the queue runtime under Miri and
+    # ThreadSanitizer (scripts/gate forge-rust), which build a sysroot and an
+    # instrumented standard library on a cold cache. Measured on a warm
+    # machine, 2026-10-09, those steps take about three minutes.
+    timeout-minutes: 20
 
     steps:
     - name: Checkout Repository
