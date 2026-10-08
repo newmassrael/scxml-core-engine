@@ -780,7 +780,10 @@ element carries and the elements no requirement asked for;
 accepting; `scxml_accept` records that acceptance and `scxml_acceptance_check`
 asks whether it still holds. Each JSON answer carries `verdict`, the command's
 output, and every `diagnostics` record. `scxml_accept` states a person's
-decision: call it only on the owner's word, after they have read the report.
+decision: call it only on the owner's word, after they have read the report. Give it the
+manifest's `sidecar` as well whenever the list has one: only its digest is pinned (the
+sentences are never copied into the record), and without it a revision of the design cannot
+be tied to the list that was accepted, because a manifest is coordinates only.
 
 `accepted` from `validate_scxml` is the product's verdict, and a document can
 be accepted without being finished: a draft that left a count
@@ -1073,28 +1076,37 @@ application opens (`SCE_WORKS_DIR`, else the per-user data directory).
   text, a manifest and a sidecar alone gave the new sentence the dropped one's id.
   `works_save_requirements` refuses, and writes nothing, for a list that would lose
   the lineage the work holds (`lineage-dropped`; a generation's is told at once and
-  not when it is finished), for a lineage that is not the lineage of this manifest
-  (the digest of its last revision's manifest, its document and revision are
-  compared), and for one that does not continue the work's (an id is never forgotten,
+  not when it is finished), for a lineage that is not the lineage of this list (the
+  digests of its last revision's manifest AND sidecar, its document and revision are
+  compared: a manifest is coordinates only, so another specification's list of the same
+  shape has its digest, and a list saved with a lineage has to come with the sidecar the
+  lineage names), and for one that does not continue the work's (an id is never forgotten,
   a retired one never lives again, a requirement's history is only added to, the
-  ids issued since are numbered from where the last left off). The core holds the
-  first of these; the other two are this package's, because it owns what a lineage
-  means (`docs/adr/0011-a-work-keeps-its-requirement-lineage-with-its-requirement-list.md`).
+  ids issued since are numbered from where the last left off). The core holds all of these
+  now, for a client that does not go through this package as well (the application's own
+  generation): the judgment is the crate `sce-revision`, held to this package's by the shared
+  cases (`sce-build/tests/fixtures/revision_judgment/cases.json`, written by
+  `eval/revision_judgment_cases.py`), sentence for sentence, and this package asks the same
+  question first so that a client is told in these words before it saves
+  (`docs/adr/0011-a-work-keeps-its-requirement-lineage-with-its-requirement-list.md`).
 - **`works_revision_check` and `works_revision_report` say what a revision of a work did**,
   given only the `work`. Once the owner has accepted a design in the application and revised
   the text, the words of each requirement (carried, changed, new or retired) are derived from
   the lineage of the list the owner accepted and the lineage of the list the work has now, so
   any two revisions can be compared however many lie between; the evidence (unchanged,
   changed, new or dropped) is the product's own comparison of the rows the owner was shown
-  with the design as it is now, asked through the application's command layer
-  (`read_acceptance_delta`), which lays the work out as it always does and reads the
-  acceptance and the design as one state of the work. The join and its verdict are those of
+  with the design as it is now. Both are ONE command of the application's command layer,
+  `read_revision_report`, which lays the work out as it always does, reads the acceptance and
+  the design as one state of the work, and judges the revision itself (the crate
+  `sce-revision`, so the screen and these tools say the same thing with one implementation);
+  these tools only hand its answer on. The join and its verdict are those of
   `scxml_revision_check` (`within-reach` or `outside-reach`, with `uncited` requirements
   counted apart and `summary.seen` saying how many were actually compared). A list made
   before lineages is adopted from its manifest and sidecar; one with neither is refused in
-  words. `works_revision_report` is the page the owner reads, with a requirement's sentence
-  printed only with `sentences: true`. Nothing is accepted by either, and both are for local
-  servers.
+  words (`revision-not-judged`), and so is an acceptance that pinned another manifest or
+  another sidecar than the list it was taken of. `works_revision_report` is the page the owner
+  reads, with a requirement's sentence printed only with `sentences: true`. Nothing is accepted
+  by either, and both are for local servers.
 - **A model can be asked for, and written for the request.** The owner asks for a
   model in the application (`works_read` gives `request`: `queued` means nobody
   has taken it). `works_begin_generation` takes that request, or makes one for a
