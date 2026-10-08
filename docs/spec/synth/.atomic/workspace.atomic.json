@@ -5069,6 +5069,18 @@
         {
           "file": "sce-build/tests/mutations/an_spsc_queue_orders_every_slot_hand_over.cases",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/forge-runtime/src/queue/scq.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/forge-runtime/tests/loom_queue_scq.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/mutations/an_scq_queue_orders_every_index_hand_over.cases",
+          "kind": "references"
         }
       ]
     },

@@ -61,10 +61,15 @@ loom = "0.7"
 #   cargo test --release -p sce-forge-runtime --target-dir target/loom \
 #       --config 'build.rustflags=["--cfg","loom"]' --test loom_queue_spsc
 #
-# `scripts/gates/forge-rust.sh` runs exactly that.
+# `scripts/gates/forge-rust.sh` runs exactly that, once per model file.
 [[test]]
 name = "loom_queue_spsc"
 path = "tests/loom_queue_spsc.rs"
+test = false
+
+[[test]]
+name = "loom_queue_scq"
+path = "tests/loom_queue_scq.rs"
 test = false
 
 [lints]

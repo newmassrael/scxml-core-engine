@@ -98,6 +98,194 @@
         { "op": "pop", "expect": 1 },
         { "op": "destroy", "expect": [] }
       ]
+    },
+    {
+      "id": "bounded_scq_capacity_is_exact",
+      "summary": "Many producers and many consumers: a queue of capacity 3, which a ring of 4 serves, takes three elements and refuses the fourth",
+      "storage": "bounded",
+      "producers": "many",
+      "consumers": "many",
+      "capacity": 3,
+      "steps": [
+        { "op": "capacity", "expect": 3 },
+        { "op": "push", "value": 1, "expect": "ok" },
+        { "op": "push", "value": 2, "expect": "ok" },
+        { "op": "push", "value": 3, "expect": "ok" },
+        { "op": "push", "value": 4, "expect": "full" },
+        { "op": "pop", "expect": 1 },
+        { "op": "push", "value": 4, "expect": "ok" },
+        { "op": "push", "value": 5, "expect": "full" },
+        { "op": "pop", "expect": 2 },
+        { "op": "pop", "expect": 3 },
+        { "op": "pop", "expect": 4 },
+        { "op": "pop", "expect": "empty" }
+      ]
+    },
+    {
+      "id": "bounded_scq_capacity_is_not_rounded_up_to_the_ring",
+      "summary": "A queue of capacity 5 sits on a ring of 8 and still holds exactly 5",
+      "storage": "bounded",
+      "producers": "many",
+      "consumers": "many",
+      "capacity": 5,
+      "steps": [
+        { "op": "push", "value": 1, "expect": "ok" },
+        { "op": "push", "value": 2, "expect": "ok" },
+        { "op": "push", "value": 3, "expect": "ok" },
+        { "op": "push", "value": 4, "expect": "ok" },
+        { "op": "push", "value": 5, "expect": "ok" },
+        { "op": "push", "value": 6, "expect": "full" },
+        { "op": "pop", "expect": 1 },
+        { "op": "push", "value": 6, "expect": "ok" },
+        { "op": "push", "value": 7, "expect": "full" },
+        { "op": "pop", "expect": 2 },
+        { "op": "pop", "expect": 3 },
+        { "op": "pop", "expect": 4 },
+        { "op": "pop", "expect": 5 },
+        { "op": "pop", "expect": 6 },
+        { "op": "pop", "expect": "empty" }
+      ]
+    },
+    {
+      "id": "bounded_scq_capacity_one",
+      "summary": "A queue of capacity 1 alternates between full and empty",
+      "storage": "bounded",
+      "producers": "many",
+      "consumers": "many",
+      "capacity": 1,
+      "steps": [
+        { "op": "pop", "expect": "empty" },
+        { "op": "push", "value": 10, "expect": "ok" },
+        { "op": "push", "value": 11, "expect": "full" },
+        { "op": "pop", "expect": 10 },
+        { "op": "pop", "expect": "empty" },
+        { "op": "push", "value": 11, "expect": "ok" },
+        { "op": "pop", "expect": 11 },
+        { "op": "pop", "expect": "empty" }
+      ]
+    },
+    {
+      "id": "bounded_scq_order_holds_across_many_cycles",
+      "summary": "Order holds while the ring's cycles advance many times",
+      "storage": "bounded",
+      "producers": "many",
+      "consumers": "many",
+      "capacity": 2,
+      "steps": [
+        { "op": "push", "value": 1, "expect": "ok" },
+        { "op": "push", "value": 2, "expect": "ok" },
+        { "op": "pop", "expect": 1 },
+        { "op": "push", "value": 3, "expect": "ok" },
+        { "op": "pop", "expect": 2 },
+        { "op": "push", "value": 4, "expect": "ok" },
+        { "op": "pop", "expect": 3 },
+        { "op": "push", "value": 5, "expect": "ok" },
+        { "op": "push", "value": 6, "expect": "full" },
+        { "op": "pop", "expect": 4 },
+        { "op": "push", "value": 6, "expect": "ok" },
+        { "op": "pop", "expect": 5 },
+        { "op": "pop", "expect": 6 },
+        { "op": "pop", "expect": "empty" },
+        { "op": "push", "value": 7, "expect": "ok" },
+        { "op": "push", "value": 8, "expect": "ok" },
+        { "op": "pop", "expect": 7 },
+        { "op": "pop", "expect": 8 },
+        { "op": "pop", "expect": "empty" }
+      ]
+    },
+    {
+      "id": "bounded_scq_an_element_pushed_after_many_empty_pops_is_seen",
+      "summary": "Pops of an empty queue spend the ring's empty-detection budget; an element pushed after them must still come out",
+      "storage": "bounded",
+      "producers": "many",
+      "consumers": "many",
+      "capacity": 3,
+      "steps": [
+        { "op": "pop", "expect": "empty" },
+        { "op": "pop", "expect": "empty" },
+        { "op": "pop", "expect": "empty" },
+        { "op": "pop", "expect": "empty" },
+        { "op": "pop", "expect": "empty" },
+        { "op": "pop", "expect": "empty" },
+        { "op": "pop", "expect": "empty" },
+        { "op": "pop", "expect": "empty" },
+        { "op": "pop", "expect": "empty" },
+        { "op": "pop", "expect": "empty" },
+        { "op": "pop", "expect": "empty" },
+        { "op": "pop", "expect": "empty" },
+        { "op": "pop", "expect": "empty" },
+        { "op": "pop", "expect": "empty" },
+        { "op": "push", "value": 1, "expect": "ok" },
+        { "op": "push", "value": 2, "expect": "ok" },
+        { "op": "pop", "expect": 1 },
+        { "op": "pop", "expect": 2 },
+        { "op": "pop", "expect": "empty" }
+      ]
+    },
+    {
+      "id": "bounded_scq_destroy_destroys_what_it_holds",
+      "summary": "Destroying a queue destroys exactly the elements still in it",
+      "storage": "bounded",
+      "producers": "many",
+      "consumers": "many",
+      "capacity": 5,
+      "steps": [
+        { "op": "push", "value": 1, "expect": "ok" },
+        { "op": "push", "value": 2, "expect": "ok" },
+        { "op": "push", "value": 3, "expect": "ok" },
+        { "op": "push", "value": 4, "expect": "ok" },
+        { "op": "pop", "expect": 1 },
+        { "op": "destroy", "expect": [2, 3, 4] }
+      ]
+    },
+    {
+      "id": "bounded_scq_destroy_of_an_empty_queue",
+      "summary": "Destroying an empty queue destroys nothing",
+      "storage": "bounded",
+      "producers": "many",
+      "consumers": "many",
+      "capacity": 2,
+      "steps": [
+        { "op": "push", "value": 1, "expect": "ok" },
+        { "op": "pop", "expect": 1 },
+        { "op": "destroy", "expect": [] }
+      ]
+    },
+    {
+      "id": "bounded_many_producers_one_consumer_capacity_is_exact",
+      "summary": "Any cardinality other than one and one selects the same algorithm: many producers and one consumer hold exactly their capacity",
+      "storage": "bounded",
+      "producers": "many",
+      "consumers": "one",
+      "capacity": 3,
+      "steps": [
+        { "op": "push", "value": 1, "expect": "ok" },
+        { "op": "push", "value": 2, "expect": "ok" },
+        { "op": "push", "value": 3, "expect": "ok" },
+        { "op": "push", "value": 4, "expect": "full" },
+        { "op": "pop", "expect": 1 },
+        { "op": "pop", "expect": 2 },
+        { "op": "pop", "expect": 3 },
+        { "op": "pop", "expect": "empty" }
+      ]
+    },
+    {
+      "id": "bounded_one_producer_many_consumers_capacity_is_exact",
+      "summary": "One producer and many consumers hold exactly their capacity",
+      "storage": "bounded",
+      "producers": "one",
+      "consumers": "many",
+      "capacity": 3,
+      "steps": [
+        { "op": "push", "value": 1, "expect": "ok" },
+        { "op": "push", "value": 2, "expect": "ok" },
+        { "op": "push", "value": 3, "expect": "ok" },
+        { "op": "push", "value": 4, "expect": "full" },
+        { "op": "pop", "expect": 1 },
+        { "op": "pop", "expect": 2 },
+        { "op": "pop", "expect": 3 },
+        { "op": "pop", "expect": "empty" }
+      ]
     }
   ]
 }

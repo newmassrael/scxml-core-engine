@@ -14,13 +14,24 @@
 //! Modules:
 //! - [`spsc`] — the `bounded` row for one producer and one consumer: a
 //!   Lamport ring, wait-free on both sides.
+//! - [`scq`] — the `bounded` row for any other cardinality: Nikolaev's SCQ
+//!   data queue, lock-free on both sides. It is absent on a target without
+//!   64-bit atomics, which is the target the RFC refuses that row for.
 //!
 //! No allocation, no global state, no threads (SCE_FORGE.md §2.1, C1/C2):
 //! a queue owns its storage, and where it lives is the caller's choice.
 
+#[cfg(target_has_atomic = "64")]
+pub mod scq;
 pub mod spsc;
 
 mod sync;
+
+/// Keeps what it wraps on a cache line of its own, so two indices that two
+/// cores update do not contend for one. It costs a cache line each and
+/// changes nothing about correctness.
+#[repr(align(64))]
+pub(crate) struct Padded<T>(pub(crate) T);
 
 /// Why a push did not take its element. The element comes back, so the
 /// caller decides what happens to it.

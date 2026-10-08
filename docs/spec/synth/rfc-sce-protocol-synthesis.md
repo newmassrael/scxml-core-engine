@@ -3365,7 +3365,7 @@ resolved, so neither survival path is foreclosed.
 
 ### 5.P New kind: `queue`
 
-**Status.** Decided 2026-09-30; nothing below is implemented. The
+**Status.** Decided 2026-09-30; the Rust spsc and scq rows exist. The
 owner asked that nothing be left open, so every choice this section
 makes is a decision of that date, and none is deferred to
 implementation. Three of them are the owner's own: the kind is named
@@ -3686,7 +3686,7 @@ layer states what it establishes and what it cannot.
 | 4. Progress | Lincheck `checkObstructionFreedom`; loom schedules that suspend one participant | finds violations; passing does not prove lock-freedom (Lincheck checks obstruction-freedom only) |
 | 5. Memory safety | Miri, ASan, TSan (`scripts/build_tsan.sh`) | no use-after-free, no data race |
 | 6. No allocation | Rust `no_std` without the `alloc` crate; C11 linked without a `malloc` symbol | an allocation shows up as a build failure |
-| 7. Mutation | a casefile for every ordering and fence in the runtime; each weakening must turn layer 3 red | that layer 3 observes what it claims to |
+| 7. Mutation | a casefile for every hand-over ordering in the runtime; each weakening must turn layer 3 red, and one layer 3 cannot reach is named in its module (SCQ has four) | that layer 3 observes what it claims to |
 | 8. Refusals | a fixture for every refused combination, listed in the `docs/SCE_ACCEPTED_SUBSET.md` appendix | that no refusal silently becomes a weaker guarantee |
 
 Go and Python have no tool for layer 3. Their evidence stops at

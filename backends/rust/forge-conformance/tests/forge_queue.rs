@@ -8,8 +8,9 @@
 //!   `tests/forge/conformance/queue_contract.json` runs against the runtime
 //!   queue its storage row names. A row this arm has no runtime for is
 //!   refused by name, never skipped.
-//! - **Linearizability.** Real two-thread runs of the one-producer,
-//!   one-consumer queue record what each side observed, and
+//! - **Linearizability.** Real runs of the one-producer, one-consumer queue
+//!   on two threads, and of the SCQ queue with several producers and several
+//!   consumers, record what each participant observed, and
 //!   `sce_forge_conformance::queue_history::check` judges the record.
 //!
 //! The checker is tested here as well, against histories built by hand,
@@ -21,8 +22,10 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
+use std::time::{Duration, Instant};
 
 use sce_forge_conformance::queue_history::{check, Call, History, Operation, Outcome, Verdict};
+use sce_forge_runtime::queue::scq::Scq;
 use sce_forge_runtime::queue::spsc::Spsc;
 use sce_forge_runtime::queue::PushError;
 use serde_json::Value;
@@ -58,9 +61,62 @@ fn field<'a>(value: &'a Value, key: &str, context: &str) -> &'a Value {
         .unwrap_or_else(|| panic!("{context}: missing \"{key}\""))
 }
 
-fn run_bounded_spsc<const N: usize>(id: &str, steps: &[Value]) {
+/// What a scenario asks of a queue, so one reading of the steps serves every
+/// runtime this arm has. Each runtime reaches its producer and consumer its
+/// own way; the scenarios do not know how.
+trait Subject {
+    const CAPACITY: usize;
+    fn new() -> Self;
+    fn capacity(&self) -> usize;
+    fn push(&mut self, element: Tracked) -> Result<(), PushError<Tracked>>;
+    fn pop(&mut self) -> Option<Tracked>;
+}
+
+impl<const N: usize> Subject for Spsc<Tracked, N> {
+    const CAPACITY: usize = Spsc::<Tracked, N>::CAPACITY;
+
+    fn new() -> Self {
+        Spsc::new()
+    }
+
+    fn capacity(&self) -> usize {
+        Spsc::capacity(self)
+    }
+
+    fn push(&mut self, element: Tracked) -> Result<(), PushError<Tracked>> {
+        let (mut producer, _consumer) = self.split();
+        producer.try_push(element)
+    }
+
+    fn pop(&mut self) -> Option<Tracked> {
+        let (_producer, mut consumer) = self.split();
+        consumer.try_pop()
+    }
+}
+
+impl<const N: usize, const R: usize> Subject for Scq<Tracked, N, R> {
+    const CAPACITY: usize = Scq::<Tracked, N, R>::CAPACITY;
+
+    fn new() -> Self {
+        Scq::new()
+    }
+
+    fn capacity(&self) -> usize {
+        Scq::capacity(self)
+    }
+
+    fn push(&mut self, element: Tracked) -> Result<(), PushError<Tracked>> {
+        self.producer().try_push(element)
+    }
+
+    fn pop(&mut self) -> Option<Tracked> {
+        self.consumer().try_pop()
+    }
+}
+
+fn run_scenario<S: Subject>(id: &str, steps: &[Value]) {
     let destroyed = Rc::new(RefCell::new(Vec::new()));
-    let mut queue = Some(Spsc::<Tracked, N>::new());
+    let mut queue = Some(S::new());
 
     for (index, step) in steps.iter().enumerate() {
         let context = format!("scenario {id} step {index}");
@@ -75,18 +131,17 @@ fn run_bounded_spsc<const N: usize>(id: &str, steps: &[Value]) {
         match op {
             "capacity" => {
                 assert_eq!(Some(live.capacity() as u64), expect.as_u64(), "{context}");
-                assert_eq!(Spsc::<Tracked, N>::CAPACITY, live.capacity(), "{context}");
+                assert_eq!(S::CAPACITY, live.capacity(), "{context}");
             }
             "push" => {
                 let value = field(step, "value", &context)
                     .as_u64()
                     .unwrap_or_else(|| panic!("{context}: \"value\" is not an unsigned integer"));
-                let (mut producer, _consumer) = live.split();
                 let element = Tracked {
                     value,
                     destroyed: destroyed.clone(),
                 };
-                match (producer.try_push(element), expect.as_str()) {
+                match (live.push(element), expect.as_str()) {
                     (Ok(()), Some("ok")) => {}
                     (Err(PushError::Full(back)), Some("full")) => {
                         assert_eq!(
@@ -104,8 +159,7 @@ fn run_bounded_spsc<const N: usize>(id: &str, steps: &[Value]) {
                 }
             }
             "pop" => {
-                let (_producer, mut consumer) = live.split();
-                let popped = consumer.try_pop().map(|element| element.value);
+                let popped = live.pop().map(|element| element.value);
                 match expect {
                     Value::String(s) if s == "empty" => {
                         assert_eq!(popped, None, "{context}: expected the queue to be empty")
@@ -140,10 +194,23 @@ fn run_bounded_spsc<const N: usize>(id: &str, steps: &[Value]) {
 /// compile time; a scenario naming another capacity stops here by name.
 fn dispatch_bounded_spsc(id: &str, capacity: u64, steps: &[Value]) {
     match capacity {
-        1 => run_bounded_spsc::<1>(id, steps),
-        2 => run_bounded_spsc::<2>(id, steps),
-        3 => run_bounded_spsc::<3>(id, steps),
-        4 => run_bounded_spsc::<4>(id, steps),
+        1 => run_scenario::<Spsc<Tracked, 1>>(id, steps),
+        2 => run_scenario::<Spsc<Tracked, 2>>(id, steps),
+        3 => run_scenario::<Spsc<Tracked, 3>>(id, steps),
+        4 => run_scenario::<Spsc<Tracked, 4>>(id, steps),
+        other => panic!("scenario {id}: capacity {other} is not in this arm's dispatch; add it"),
+    }
+}
+
+/// The same for the SCQ row, whose ring is the capacity rounded up to a
+/// power of two, so each capacity names both.
+fn dispatch_bounded_scq(id: &str, capacity: u64, steps: &[Value]) {
+    match capacity {
+        1 => run_scenario::<Scq<Tracked, 1, 1>>(id, steps),
+        2 => run_scenario::<Scq<Tracked, 2, 2>>(id, steps),
+        3 => run_scenario::<Scq<Tracked, 3, 4>>(id, steps),
+        4 => run_scenario::<Scq<Tracked, 4, 4>>(id, steps),
+        5 => run_scenario::<Scq<Tracked, 5, 8>>(id, steps),
         other => panic!("scenario {id}: capacity {other} is not in this arm's dispatch; add it"),
     }
 }
@@ -181,6 +248,12 @@ fn every_contract_scenario_holds() {
         match row {
             (Some("bounded"), Some("one"), Some("one")) => {
                 dispatch_bounded_spsc(id, capacity, steps)
+            }
+            // Any other cardinality selects the SCQ row (the RFC's selection
+            // table), so the three combinations share one runtime.
+            (Some("bounded"), Some("many"), Some("many" | "one"))
+            | (Some("bounded"), Some("one"), Some("many")) => {
+                dispatch_bounded_scq(id, capacity, steps)
             }
             other => panic!("scenario {id}: the Rust arm has no runtime for the row {other:?}"),
         }
@@ -466,6 +539,167 @@ fn a_recorded_run_with_two_values_swapped_is_refused() {
     let (a, b) = (pops[first].outcome, pops[second].outcome);
     pops[first].outcome = b;
     pops[second].outcome = a;
+    let v = check(&history);
+    assert!(is_refused(&v), "{v:?}");
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Layer 2 — real runs of the SCQ queue, many producers and many consumers
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// How long a recorded run may take before it is called stuck. A queue that
+/// lost an element leaves its consumers waiting for it for ever, and a test
+/// that hangs is a failure nobody can read.
+const STUCK_AFTER: Duration = Duration::from_secs(120);
+
+/// Run `producers` producer threads and `consumers` consumer threads on one
+/// queue, each producer pushing `values_per_producer` values of its own, and
+/// record every attempt every thread made — the refused pushes and the empty
+/// pops too, because those are results the checker must account for.
+///
+/// The clock is the one the one-producer run reads: a SeqCst counter each
+/// thread reads before and after every call, so "returned before invoked" in
+/// the record means it in the run. Every value is unique (a producer's values
+/// run from `p * values_per_producer + 1`), which is what lets the checker
+/// tell which push a pop took.
+fn record_scq_run<const N: usize, const R: usize>(
+    producers: usize,
+    consumers: usize,
+    values_per_producer: u64,
+) -> History {
+    let queue = Scq::<u64, N, R>::new();
+    let clock = AtomicU64::new(1);
+    let delivered = AtomicU64::new(0);
+    let total = producers as u64 * values_per_producer;
+    let started = Instant::now();
+    let (queue, clock, delivered) = (&queue, &clock, &delivered);
+    let tick = move || clock.fetch_add(1, Ordering::SeqCst);
+
+    let participants = thread::scope(|scope| {
+        let mut threads = Vec::new();
+        for who in 0..producers {
+            threads.push(scope.spawn(move || {
+                let producer = queue.producer();
+                let mut ops = Vec::new();
+                for k in 1..=values_per_producer {
+                    let value = who as u64 * values_per_producer + k;
+                    loop {
+                        let invoked = tick();
+                        let result = producer.try_push(value);
+                        let returned = tick();
+                        match result {
+                            Ok(()) => {
+                                ops.push(push(value, Outcome::Pushed, invoked, returned));
+                                break;
+                            }
+                            Err(PushError::Full(_)) => {
+                                ops.push(push(value, Outcome::Full, invoked, returned));
+                                assert!(started.elapsed() < STUCK_AFTER, "a producer is stuck");
+                                thread::yield_now();
+                            }
+                            Err(PushError::OutOfMemory(_)) => {
+                                panic!("a bounded queue reported OutOfMemory")
+                            }
+                        }
+                    }
+                }
+                ops
+            }));
+        }
+        for _ in 0..consumers {
+            threads.push(scope.spawn(move || {
+                let consumer = queue.consumer();
+                let mut ops = Vec::new();
+                while delivered.load(Ordering::SeqCst) < total {
+                    let invoked = tick();
+                    let result = consumer.try_pop();
+                    let returned = tick();
+                    match result {
+                        Some(value) => {
+                            delivered.fetch_add(1, Ordering::SeqCst);
+                            ops.push(pop(Outcome::Popped(value), invoked, returned));
+                        }
+                        None => {
+                            ops.push(pop(Outcome::Empty, invoked, returned));
+                            assert!(started.elapsed() < STUCK_AFTER, "a consumer is stuck");
+                            thread::yield_now();
+                        }
+                    }
+                }
+                ops
+            }));
+        }
+        threads
+            .into_iter()
+            .map(|handle| handle.join().unwrap())
+            .collect::<Vec<_>>()
+    });
+
+    History {
+        capacity: N,
+        participants,
+    }
+}
+
+/// Every value any participant popped, in no particular order.
+fn every_popped_value(history: &History) -> Vec<u64> {
+    history
+        .participants
+        .iter()
+        .flatten()
+        .filter_map(|op| match op.outcome {
+            Outcome::Popped(value) => Some(value),
+            _ => None,
+        })
+        .collect()
+}
+
+fn assert_scq_run_is_linearizable<const N: usize, const R: usize>(
+    producers: usize,
+    consumers: usize,
+    values_per_producer: u64,
+) {
+    let history = record_scq_run::<N, R>(producers, consumers, values_per_producer);
+    let shape = format!(
+        "capacity {N}, {producers} producer(s), {consumers} consumer(s), \
+         {values_per_producer} values each"
+    );
+    let mut popped = every_popped_value(&history);
+    popped.sort_unstable();
+    assert_eq!(
+        popped,
+        (1..=producers as u64 * values_per_producer).collect::<Vec<_>>(),
+        "{shape}: every value comes out exactly once"
+    );
+    assert_eq!(check(&history), Verdict::Linearizable, "{shape}");
+}
+
+#[test]
+fn recorded_scq_runs_are_linearizable() {
+    assert_scq_run_is_linearizable::<1, 1>(2, 2, 150);
+    assert_scq_run_is_linearizable::<3, 4>(2, 2, 150);
+    assert_scq_run_is_linearizable::<8, 8>(2, 2, 150);
+    assert_scq_run_is_linearizable::<2, 2>(3, 1, 120);
+    assert_scq_run_is_linearizable::<4, 4>(1, 3, 120);
+    assert_scq_run_is_linearizable::<5, 8>(2, 2, 150);
+}
+
+/// A real record with a value nobody pushed in place of one that was popped
+/// must be refused. The check on the check, for the many-participant search:
+/// it shows the search can tell a run the queue produced from one it did not,
+/// on a history of the shape the test above judges.
+#[test]
+fn a_recorded_scq_run_with_a_foreign_value_is_refused() {
+    let mut history = record_scq_run::<3, 4>(2, 2, 40);
+    let foreign = 1_000_000;
+    let corrupted = history
+        .participants
+        .iter_mut()
+        .flatten()
+        .filter(|op| matches!(op.outcome, Outcome::Popped(_)))
+        .nth(30)
+        .expect("a run of 80 values pops at least 31");
+    corrupted.outcome = Outcome::Popped(foreign);
     let v = check(&history);
     assert!(is_refused(&v), "{v:?}");
 }

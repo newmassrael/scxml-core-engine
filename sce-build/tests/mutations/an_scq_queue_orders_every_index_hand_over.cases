@@ -1,0 +1,129 @@
+# Mutation cases for "an SCQ queue orders every index hand-over".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/an_scq_queue_orders_every_index_hand_over.cases`.
+#
+# The SCQ data queue of SCE Protocol-Synthesis RFC §synth-5-P keeps its
+# elements in a slot array and hands each slot from one participant to the
+# next by moving the slot's index through two rings, each a fetch-and-add on a
+# ticket, a compare-and-swap on an entry and a fetch-or that consumes it. The
+# oracle is the loom models in
+# `backends/rust/forge-runtime/tests/loom_queue_scq.rs`, which explore every
+# interleaving within three preemptions and every outcome the memory model
+# allows, and fail when a slot is read or written with no happens-before edge
+# from the access before it. The cases below each take one hand-over away: the
+# release that publishes an index, the acquire that takes it, the rules that
+# say which entry a ticket may use, and the order of a slot access and the
+# index move that hands the slot on.
+#
+# What this file does not claim. Four things in `scq.rs` were tried as cases
+# and read SURVIVED, one at a time and together, and are not listed:
+#
+#   - the ordering of the two ticket fetch-and-adds;
+#   - the ordering of an enqueue's first read of the entry it will fill;
+#   - an enqueue's check that the head has not passed an unsafe entry;
+#   - a dequeue's marking of an entry that holds another cycle's index unsafe.
+#
+# The first two are redundant with the compare-and-swap that follows them,
+# which carries the hand-over. The last two matter only when a dequeue has
+# passed an entry that holds an index of an older cycle before the enqueue of
+# the next cycle arrives, which takes three operations on one ring and a
+# second lap of it; a model of two or three threads bounded at three
+# preemptions does not reach that state, and growing it until it does is not
+# within what loom can enumerate. They stay in the code as the reference
+# implementation has them, and the module documentation of `scq.rs` says that
+# no mutation case defends them. A listing of them here would read SURVIVED
+# and keep the mutation-rounds lane red for a fact already stated.
+#
+# A weakened hand-over fails a model one of two ways: loom reports the
+# unordered slot access, and the unwinding drops the queue, whose `Drop`
+# touches the cell loom still holds, so the test binary aborts instead of
+# printing a result (the runner reads that as caught and says how the binary
+# died); or an assertion on what came out fails first.
+#
+# The models build only under `--cfg loom`. The selector passes it as a cargo
+# `--config` rather than through RUSTFLAGS, so the casefile carries the whole
+# command, and gives the build a target directory of its own so that the cfg
+# does not invalidate the ordinary build's.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-forge-runtime --release --target-dir target/loom --config 'build.rustflags=["--cfg","loom"]' --test loom_queue_scq
+mutation_targets backends/rust/forge-runtime/src/queue/scq.rs
+mutation_oracles backends/rust/forge-runtime/tests/loom_queue_scq.rs
+
+# ── The two ends of an index hand-over ─────────────────────────────
+
+mutation_case "an enqueue publishes its index without releasing it" <<'PY'
+edit("backends/rust/forge-runtime/src/queue/scq.rs",
+     r'''                    ticket_cycle ^ stored,
+                    Ordering::AcqRel,''',
+     r'''                    ticket_cycle ^ stored,
+                    Ordering::Acquire,''')
+PY
+
+# The two edits are one case because either alone is covered by the other: the
+# load acquires the entry, and so does the fetch-or that consumes it, and the
+# slot is read only after both. Take both away and nothing acquires it.
+mutation_case "a dequeue takes an index from an entry without acquiring it" <<'PY'
+edit("backends/rust/forge-runtime/src/queue/scq.rs",
+     r'''            'look: loop {
+                let mut entry = slot.load(Ordering::Acquire);''',
+     r'''            'look: loop {
+                let mut entry = slot.load(Ordering::Relaxed);''')
+edit("backends/rust/forge-runtime/src/queue/scq.rs",
+     r'''slot.fetch_or(Self::INDEX_MASK, Ordering::AcqRel);''',
+     r'''slot.fetch_or(Self::INDEX_MASK, Ordering::Relaxed);''')
+PY
+
+# ── Which entry a ticket may use ───────────────────────────────────
+
+# An enqueue that fills an entry of its own cycle writes over an index a
+# dequeue of that cycle has already consumed or is about to.
+mutation_case "an enqueue fills an entry of its own cycle" <<'PY'
+edit("backends/rust/forge-runtime/src/queue/scq.rs",
+     r'''                let usable = before(entry_cycle, ticket_cycle)''',
+     r'''                let usable = at_or_before(entry_cycle, ticket_cycle)''')
+PY
+
+# A dequeue that finds an entry empty and moves on must leave it in its own
+# cycle, so that the enqueue holding the same ticket cannot fill it behind the
+# head and lose the element.
+mutation_case "a dequeue leaves an empty entry in the cycle it found it in" <<'PY'
+edit("backends/rust/forge-runtime/src/queue/scq.rs",
+     r'''                        replacement = ticket_cycle ^ ((!entry) & n);''',
+     r'''                        replacement = entry;''')
+PY
+
+# ── The data queue around the rings ────────────────────────────────
+
+mutation_case "a push publishes the slot's index before it writes the element" <<'PY'
+edit("backends/rust/forge-runtime/src/queue/scq.rs",
+     r'''        queue.slots[index].with_mut(|slot| unsafe { slot.write(MaybeUninit::new(value)) });
+        queue.allocated.enqueue(index);''',
+     r'''        queue.allocated.enqueue(index);
+        queue.slots[index].with_mut(|slot| unsafe { slot.write(MaybeUninit::new(value)) });''')
+PY
+
+mutation_case "a pop returns the slot to the free ring before it reads the element" <<'PY'
+edit("backends/rust/forge-runtime/src/queue/scq.rs",
+     r'''        let value = queue.slots[index].with(|slot| unsafe { (*slot).assume_init_read() });
+        queue.free.enqueue(index);''',
+     r'''        queue.free.enqueue(index);
+        let value = queue.slots[index].with(|slot| unsafe { (*slot).assume_init_read() });''')
+PY
+
+mutation_case "the free ring starts one index short" <<'PY'
+edit("backends/rust/forge-runtime/src/queue/scq.rs",
+     r'''            free: Ring::new(N),
+            slots: core::array::from_fn''',
+     r'''            free: Ring::new(N - 1),
+            slots: core::array::from_fn''')
+PY
+
+mutation_case "a dropped queue leaves what it holds undropped" <<'PY'
+edit("backends/rust/forge-runtime/src/queue/scq.rs",
+     r'''        while let Some(index) = self.allocated.dequeue() {''',
+     r'''        while let Some(index) = self.allocated.dequeue().filter(|_| false) {''')
+PY

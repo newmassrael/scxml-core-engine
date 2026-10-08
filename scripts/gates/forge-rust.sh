@@ -28,8 +28,10 @@ cargo test --release -p sce-forge-conformance --features alloc \
 # verification layer 3). They build only under `--cfg loom` and the target is
 # `test = false`, so no other lane reaches them; this is the one that does.
 # The cfg goes in as a cargo `--config`, not RUSTFLAGS, so this line and the
-# casefile `an_spsc_queue_orders_every_slot_hand_over.cases` spell one command,
+# casefiles `an_spsc_queue_orders_every_slot_hand_over.cases` and
+# `an_scq_queue_orders_every_index_hand_over.cases` spell one command each,
 # and `target/loom` keeps the cfg from invalidating the release build above.
 cargo test --release -p sce-forge-runtime --target-dir target/loom \
-    --config 'build.rustflags=["--cfg","loom"]' --test loom_queue_spsc \
+    --config 'build.rustflags=["--cfg","loom"]' \
+    --test loom_queue_spsc --test loom_queue_scq \
     || sce_gate_fail "Rust forge queue loom models"

@@ -26,13 +26,7 @@
 use core::mem::MaybeUninit;
 
 use super::sync::{AtomicUsize, Ordering, UnsafeCell};
-use super::PushError;
-
-/// Keeps the producer's index and the consumer's index on separate cache
-/// lines, so a push and a pop running on two cores do not contend for one.
-/// It costs two cache lines per queue and changes nothing about correctness.
-#[repr(align(64))]
-struct Padded<T>(T);
+use super::{Padded, PushError};
 
 /// A bounded queue of exactly `N` elements for one producer and one
 /// consumer.
