@@ -1,0 +1,190 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{#- The read of one property's value, as the expression bound to it; a refusal
+    raises the runtime's typed error, which `decode` turns into `None`, this
+    backend's decode convention. The line grammar — unfolding, TEXT escapes,
+    quoting — is the runtime's (`sce_forge_runtime.content_line`); this spells
+    none of it. #}
+{% macro read_value(e) -%}
+{%- if e.kind == "string" -%}
+line.read_string({{ e.max_size }}, {{ "True" if e.text else "False" }})
+{%- elif e.kind == "bool" -%}
+line.read_bool()
+{%- elif e.kind == "uint" -%}
+line.read_uint({{ e.max }})
+{%- else -%}
+line.read_int({{ e.min }}, {{ e.max }})
+{%- endif -%}
+{%- endmacro %}
+{#- The write of one property's value `v`, its name and parameters already
+    written, at indent `i`. #}
+{% macro write_value(e, i) %}
+{% if e.kind == "string" %}
+{{ i }}out.string(v, {{ "True" if e.text else "False" }}, {{ e.max_size }})
+{% elif e.kind == "bool" %}
+{{ i }}out.boolean(v)
+{% else %}
+{#- A Python int is unbounded, so the declared width is held here rather than
+    by the type. #}
+{{ i }}if not {{ e.min }} <= v <= {{ e.max }}:
+{{ i }}    raise content_line.LineBadValue()
+{{ i }}out.{{ "uint" if e.kind == "uint" else "integer" }}(v)
+{% endif %}
+{% endmacro %}
+{#- The parameters of a property, each written when present, at indent `i`. #}
+{% macro write_params(e, i) %}
+{% for p in e.params %}
+{% if p.required %}
+{{ i }}out.param("{{ p.param }}", self.{{ p.name }}, {{ p.max_size }})
+{% else %}
+{{ i }}if self.{{ p.name }} is not None:
+{{ i }}    out.param("{{ p.param }}", self.{{ p.name }}, {{ p.max_size }})
+{% endif %}
+{% endfor %}
+{% endmacro %}
+{{ sce_map.source_marker(source_location, "python", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+# SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec" sce:encoding="content-line")
+# Runtime: {{ runtime_dep }}
+# Do not edit — regenerate from the source SCXML file.
+
+from __future__ import annotations
+
+from sce_forge_runtime import content_line
+from sce_forge_runtime.codec import BytearraySink, CodecError, SceCursor, SceSink
+{% for imp in all_imports %}
+{% if imp.include_stmt %}
+{{ imp.include_stmt }}
+{% endif %}
+{% endfor %}
+
+from dataclasses import dataclass, field
+from typing import List, Optional
+
+
+@dataclass
+class {{ struct_name }}:
+    """One ``{{ component }}`` component of content lines (SCE_FORGE.md
+    §4.6.4). Decode reads the properties this codec declares in any order and
+    skips the rest; encode writes the entries present in declaration order,
+    folded at 75 octets. A required entry starts at its type's default and an
+    optional one absent (``None``), so ``{{ struct_name }}()`` is the
+    infallible constructor every codec offers."""
+
+{% for e in entries %}
+    #: Property ``{{ e.property }}``{% if e.is_list %}, up to {{ e.max_count }} lines{% elif e.required %}, required{% endif %}.
+    {{ e.name }}: {{ e.field_type }} = {{ e.default }}
+{% for p in e.params %}
+    #: Parameter ``{{ p.param }}`` of ``{{ e.property }}``{% if p.required %}, required{% endif %}.
+    {{ p.name }}: {{ p.field_type }} = {{ p.default }}
+{% endfor %}
+{% endfor %}
+
+    @classmethod
+    def decode(cls, cursor: SceCursor) -> Optional[{{ struct_name }}]:
+        """Decode one component from ``cursor``. On success the cursor
+        advances past its ``END:`` line; ``None`` on any refusal, with the
+        cursor left where it was."""
+        mark = cursor.mark()
+        try:
+            return cls._decode_at(cursor)
+        except CodecError:
+            cursor.reset(mark)
+            return None
+
+    @classmethod
+    def _decode_at(cls, c: SceCursor) -> {{ struct_name }}:
+        reader = content_line.ContentLineReader.begin(c.peek_slice(c.remaining()), "{{ component }}")
+{% for e in entries %}
+{% if e.is_list %}
+        held_{{ e.name }}: List[str] = []
+{% else %}
+        held_{{ e.name }}: Optional[{{ e.value_type }}] = None
+{% endif %}
+{% for p in e.params %}
+        held_{{ p.name }}: Optional[{{ p.value_type }}] = None
+{% endfor %}
+{% endfor %}
+        while True:
+            line = reader.next_property()
+            if line is None:
+                break
+{% for e in entries %}
+{% if loop.first %}            if{% else %}            elif{% endif %} line.is_named("{{ e.property }}"):
+{% if e.is_list %}
+                if len(held_{{ e.name }}) >= {{ e.max_count }}:
+                    raise content_line.LineTooMany()
+{% else %}
+                if held_{{ e.name }} is not None:
+                    raise content_line.LineTooMany()
+{% endif %}
+{% if e.params %}
+                while line.next_param():
+{% for p in e.params %}
+{% if loop.first %}                    if{% else %}                    elif{% endif %} line.param_is("{{ p.param }}"):
+                        if held_{{ p.name }} is not None:
+                            raise content_line.LineTooMany()
+                        held_{{ p.name }} = line.read_param_string({{ p.max_size }})
+{% endfor %}
+{% endif %}
+{% if e.is_list %}
+                held_{{ e.name }}.append({{ read_value(e) }})
+{% else %}
+                held_{{ e.name }} = {{ read_value(e) }}
+{% endif %}
+{% endfor %}
+{% for e in entries %}
+{% if e.required %}
+        if held_{{ e.name }} is None:
+            raise content_line.LineRequiredMissing()
+{% endif %}
+{% for p in e.params if p.required %}
+        if held_{{ p.name }} is None:
+            raise content_line.LineRequiredMissing()
+{% endfor %}
+{% endfor %}
+        # Only a component that decoded whole moves the cursor.
+        c.advance(reader.consumed())
+        return cls(
+{% for e in entries %}
+            {{ e.name }}=held_{{ e.name }},
+{% for p in e.params %}
+            {{ p.name }}=held_{{ p.name }},
+{% endfor %}
+{% endfor %}
+        )
+
+    def encode(self, w: SceSink) -> None:
+        """Encode this component into ``w``. A value past its declared bound,
+        or one a line could not carry, raises the typed error of the rule
+        (SCE_FORGE.md §4.6.4) rather than being written."""
+        out = content_line.ContentLineWriter(w, "{{ component }}")
+        out.begin()
+{% for e in entries %}
+{% if e.is_list %}
+        if len(self.{{ e.name }}) > {{ e.max_count }}:
+            raise content_line.LineTooMany()
+        for v in self.{{ e.name }}:
+            out.property("{{ e.property }}")
+{{ write_value(e, "            ") }}{% elif e.required %}
+        v = self.{{ e.name }}
+        out.property("{{ e.property }}")
+{{ write_params(e, "        ") }}{{ write_value(e, "        ") }}{% else %}
+        v = self.{{ e.name }}
+        if v is not None:
+            out.property("{{ e.property }}")
+{{ write_params(e, "            ") }}{{ write_value(e, "            ") }}{% if e.optional_params %}        elif {% for p in e.optional_params %}{% if not loop.first %} or {% endif %}self.{{ p.name }} is not None{% endfor %}:
+            # A parameter with no value of its property has no line to stand on.
+            raise content_line.LineRequiredMissing()
+{% endif %}{% endif %}
+{% endfor %}
+        out.finish()
+
+    def encode_to_bytes(self) -> bytes:
+        """:meth:`encode` into a new ``bytes``; raises as :meth:`encode`
+        does when it refuses the value."""
+        out = bytearray()
+        self.encode(BytearraySink(out))
+        return bytes(out)

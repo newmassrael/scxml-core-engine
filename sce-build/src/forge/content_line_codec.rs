@@ -31,7 +31,7 @@ use crate::generator::Language;
 pub fn lowers(lang: Language) -> bool {
     matches!(
         lang,
-        Language::Rust | Language::Kotlin | Language::Cpp | Language::Go
+        Language::Rust | Language::Kotlin | Language::Cpp | Language::Go | Language::Python
     )
 }
 
@@ -65,6 +65,7 @@ pub fn render(
         Language::Kotlin => render_kotlin(env, m, imports),
         Language::Cpp => render_cpp(env, m, imports),
         Language::Go => render_go(env, m, imports),
+        Language::Python => render_python(env, m, imports),
         _ => unreachable!("`refusal` admits only a backend that has a render"),
     }
 }
@@ -87,6 +88,23 @@ fn int_bits(ty: &SceType) -> Option<u32> {
         SceType::Uint16 | SceType::Int16 => 16,
         SceType::Uint32 | SceType::Int32 => 32,
         SceType::Uint64 | SceType::Int64 => 64,
+        _ => return None,
+    })
+}
+
+/// The smallest and largest number an integer type holds, as the bounds its
+/// entry's read and write are held to — for a backend whose integer carries no
+/// width of its own.
+fn int_range(ty: &SceType) -> Option<(i64, u64)> {
+    Some(match ty {
+        SceType::Uint8 => (0, u64::from(u8::MAX)),
+        SceType::Uint16 => (0, u64::from(u16::MAX)),
+        SceType::Uint32 => (0, u64::from(u32::MAX)),
+        SceType::Uint64 => (0, u64::MAX),
+        SceType::Int8 => (i64::from(i8::MIN), i8::MAX as u64),
+        SceType::Int16 => (i64::from(i16::MIN), i16::MAX as u64),
+        SceType::Int32 => (i64::from(i32::MIN), i32::MAX as u64),
+        SceType::Int64 => (i64::MIN, i64::MAX as u64),
         _ => return None,
     })
 }
@@ -145,6 +163,8 @@ fn entries_context(
                 "is_list": e.max_count.is_some(),
                 "value_type": value_type(e),
                 "bits": int_bits(&e.sce_type),
+                "min": int_range(&e.sce_type).map(|r| r.0),
+                "max": int_range(&e.sce_type).map(|r| r.1),
                 "default": default_of(&e.sce_type),
                 "params": params,
             })
@@ -217,6 +237,34 @@ fn render_cpp(
             list_default: None,
             optional_type: &|t| format!("std::optional<{t}>"),
             optional_default: None,
+        },
+    );
+    insert_component(&mut ctx, m);
+    ctx.insert("entries".into(), entries.into());
+    l.render(env, "codec_content_line", ctx)
+}
+
+fn render_python(
+    env: &minijinja::Environment,
+    m: &CodecModel,
+    imports: &[ImportContext],
+) -> Result<String, ForgeError> {
+    let l = LangCtx::new(Language::Python, imports);
+    let mut ctx = l.base_context(&m.name);
+    l.insert_imports(&mut ctx, imports);
+    // Owned values, as every Python codec holds them: a `str`, a `List[str]`
+    // that each instance starts empty, and an optional entry or parameter
+    // `None`. A required entry starts at its type's own default. A Python `int`
+    // has no width, so an integer entry carries its bounds for the template to
+    // hold.
+    let mut entries = entries_context(&l, m, |_| "str".to_string(), |ty| Some(l.default_expr(ty)));
+    shape_fields(
+        &mut entries,
+        &FieldShapes {
+            list_type: "List[str]",
+            list_default: Some("field(default_factory=list)"),
+            optional_type: &|t| format!("Optional[{t}]"),
+            optional_default: Some("None"),
         },
     );
     insert_component(&mut ctx, m);

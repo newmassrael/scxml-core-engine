@@ -1373,9 +1373,15 @@ an absent optional entry, over `codec.ContentLineReader` and
 `codec.ContentLineWriter`. Its decode returns the typed error of the rule that
 refused (`codec.ErrLineMalformed`, `ErrLineRequiredMissing`, `ErrLineTooMany`,
 `ErrLineTooLong`, `ErrLineBadEscape`, `ErrLineBadValue`, or `ErrNeedMoreBytes`),
-unwrapped, and leaves the cursor where it was. Each other backend refuses the
-codec by name (`generate/unsupported-feature`) until its own commit lands. The
-generator's refusal and the conformance harness's schedule
+unwrapped, and leaves the cursor where it was.
+
+Python generates it as a dataclass of `str`, `List[str]` for a list and `None`
+for an absent optional entry, over `sce_forge_runtime.content_line`. Its decode
+is `None` on every refusal and leaves the cursor where it was; its encode raises
+the typed error of the rule (`LineTooLong`, `LineBadValue`, ...), and holds an
+integer to its declared width, which a Python `int` does not carry itself. Each
+other backend refuses the codec by name (`generate/unsupported-feature`) until its
+own commit lands. The generator's refusal and the conformance harness's schedule
 read one answer (`content_line_codec::refusal`), and the vectors every backend is
 held to (`codec_content_line_event` in `numerical_reference.json`) are written by
 an independent model of this page (`tests/forge/conformance/content_line_model.py`).

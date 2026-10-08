@@ -1,0 +1,61 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# Content-line codec kind (SCE_FORGE.md §4.6.4) — { decoded, encoded } cases
+   and reject vectors, as the generic codec fragment has them, with what a
+   content-line component adds: an entry can be absent (`None`) or a list, a
+   case marked `decode_only` is an input the codec reads and does not write, and
+   a refused decode leaves the cursor where it found it. The generated decode
+   funnels every `CodecError` into `None`, so a reject asserts refusal; the rule
+   that refused is the runtime's, which its own tests pin. The rejects are read
+   from the reference like the cases are. #}
+        from sce_forge_runtime.codec import SceCursor as _SceCursor
+        for i, case in enumerate(spec["cases"]):
+            decoded = case["decoded"]
+            expected_bytes = bytes(case["encoded"])
+            if case.get("text") is not None:
+                self.assertEqual(
+                    case["text"].encode("utf-8"),
+                    expected_bytes,
+                    f"{{ f.name }} case {i}: text and encoded disagree",
+                )
+
+            cursor = _SceCursor(expected_bytes)
+            round_tripped = {{ f.name }}.{{ f.name | to_pascal_case }}.decode(cursor)
+            self.assertIsNotNone(
+                round_tripped,
+                f"{{ f.name }} case {i} decode returned None",
+            )
+{% for field in f.fields %}
+            self.assertEqual(
+                getattr(round_tripped, "{{ field.name | to_snake_case }}"),
+                decoded["{{ field.name }}"],
+                f"{{ f.name }} case {i} decode {{ field.name }}",
+            )
+{% endfor %}
+
+            if case.get("decode_only"):
+                continue
+            value = {{ f.name }}.{{ f.name | to_pascal_case }}(
+{% for field in f.fields %}
+                {{ field.name | to_snake_case }}=decoded["{{ field.name }}"],
+{% endfor %}
+            )
+            self.assertEqual(
+                value.encode_to_bytes(),
+                expected_bytes,
+                f"{{ f.name }} case {i} encode",
+            )
+
+        for i, reject in enumerate(spec["rejects"]):
+            reject_bytes = bytes(reject["encoded"])
+            reject_cursor = _SceCursor(reject_bytes)
+            self.assertIsNone(
+                {{ f.name }}.{{ f.name | to_pascal_case }}.decode(reject_cursor),
+                f"{{ f.name }} reject {i}: {reject['why']}",
+            )
+            self.assertEqual(
+                reject_cursor.remaining(),
+                len(reject_bytes),
+                f"{{ f.name }} reject {i}: the cursor moved",
+            )
