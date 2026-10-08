@@ -2267,6 +2267,25 @@
       ]
     },
     {
+      "name": "codec_content_line_event",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "fields": [
+        { "name": "uid", "type": "string", "compare": "equality" },
+        { "name": "dtstart", "type": "string", "compare": "equality" },
+        { "name": "dtstartTzid", "type": "string", "compare": "equality" },
+        { "name": "summary", "type": "string", "compare": "equality" },
+        { "name": "description", "type": "string", "compare": "equality" },
+        { "name": "organizer", "type": "string", "compare": "equality" },
+        { "name": "organizerCn", "type": "string", "compare": "equality" },
+        { "name": "rrule", "type": "string", "compare": "equality" },
+        { "name": "exdate", "type": "string", "compare": "equality" },
+        { "name": "sequence", "type": "u16", "compare": "equality" },
+        { "name": "priority", "type": "i32", "compare": "equality" },
+        { "name": "allDay", "type": "bool", "compare": "equality" }
+      ]
+    },
+    {
       "name": "codec_flags_basic",
       "kind": "codec",
       "ref_section": "codecs",

@@ -135,6 +135,8 @@ import re
 import sys
 from pathlib import Path
 
+import content_line_model
+
 REFERENCE = Path("tests/forge/conformance/numerical_reference.json")
 
 I32_MIN, I32_MAX = -(2**31), 2**31 - 1
@@ -3056,12 +3058,17 @@ def main(argv) -> int:
     original = REFERENCE.read_text(encoding="utf-8")
     json.loads(original)
     text, report = regenerate(original)
+    # The content-line codec's cases are not arguments and answers but a
+    # component and its bytes, so their model writes the whole fixture (see the
+    # module's own page) rather than the `fuzz` lines of a list.
+    text, content_line_report = content_line_model.regenerate(text)
     json.loads(text)
     for fixture, checked, dropped, made, kinds in report:
         print(
             f"{fixture}: model agrees with {checked} hand cases; "
             f"{made} generated (was {dropped}): {kinds}"
         )
+    print(content_line_report)
     if text == original:
         print("numerical_reference.json: unchanged")
         return 0

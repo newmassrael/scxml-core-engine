@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Conformance fixture: a codec that reads and writes one component of content
+  lines (SCE_FORGE.md §4.6.4, docs/adr/0010).
+
+  The entries are chosen so that every rule of the page is reached by a case or a
+  reject vector: a required property with a required parameter (`dtstart`,
+  `dtstartTzid`), an optional property with an optional parameter (`organizer`,
+  `organizerCn`), a TEXT that escapes (`summary`, `description`), a value carried
+  as it is (`rrule`), a bounded list (`exdate`), and a number of each kind
+  (`sequence` unsigned, `priority` signed, `allDay` a truth value). The widths
+  are those the manifest's canonical types name; the other widths are held by the
+  runtime's own tests.
+
+  The bounds are small on purpose: a reject vector that passes one is a few bytes
+  long. `description` is the one long enough to fold.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="codec" sce:encoding="content-line" sce:component="VEVENT"
+       name="codec_content_line_event">
+  <datamodel>
+    <data id="raw" sce:type="bytes" sce:direction="in"/>
+    <data id="uid" sce:type="string" sce:property="UID" sce:required="true" sce:max-size="24"/>
+    <data id="dtstart" sce:type="string" sce:property="DTSTART" sce:required="true" sce:max-size="20"/>
+    <data id="dtstartTzid" sce:type="string" sce:property="DTSTART" sce:param="TZID" sce:required="true" sce:max-size="24"/>
+    <data id="summary" sce:type="string" sce:property="SUMMARY" sce:value="text" sce:max-size="24"/>
+    <data id="description" sce:type="string" sce:property="DESCRIPTION" sce:value="text" sce:max-size="160"/>
+    <data id="organizer" sce:type="string" sce:property="ORGANIZER" sce:max-size="40"/>
+    <data id="organizerCn" sce:type="string" sce:property="ORGANIZER" sce:param="CN" sce:max-size="24"/>
+    <data id="rrule" sce:type="string" sce:property="RRULE" sce:max-size="40"/>
+    <data id="exdate" sce:type="string" sce:property="EXDATE" sce:max-count="3" sce:max-size="20"/>
+    <data id="sequence" sce:type="uint16" sce:property="SEQUENCE"/>
+    <data id="priority" sce:type="int32" sce:property="PRIORITY"/>
+    <data id="allDay" sce:type="bool" sce:property="X-ALL-DAY"/>
+  </datamodel>
+</scxml>

@@ -287,6 +287,13 @@ pub struct StructField {
     /// time, like `has_test_vectors`; fixtures.json never states it.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub optional: bool,
+    /// The field is a list of values — a property of an
+    /// `sce:encoding="content-line"` codec that declares `sce:max-count`
+    /// (SCE_FORGE.md §4.6.4), which each language carries as its bounded list.
+    /// A round-trip case writes it as a JSON array, and an empty one is an
+    /// absent property. Derived from the document, like `optional`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub list: bool,
 }
 
 /// One `<sce:variant name="..." value="..."/>` of an `sce:kind="enum"`.
@@ -633,6 +640,14 @@ pub enum FixtureSpec {
         /// `has_test_vectors`; fixtures.json never states it.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         cbor: bool,
+        /// The document is `sce:encoding="content-line"` (SCE_FORGE.md §4.6.4):
+        /// its encode and decode can refuse a value, a case may be `decode_only`
+        /// (an input the codec reads and does not write), and its non-required
+        /// entries are `optional` and its `sce:max-count` ones `list` fields.
+        /// Derived from the same parse the generator reads; fixtures.json never
+        /// states it.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        content_line: bool,
     },
     /// Periodic timer (`SCE_FORGE.md` §4.10). ONE per document — the
     /// generated class wraps a single `ITimer&` and exposes `start()`,
@@ -1239,6 +1254,7 @@ impl Manifest {
                     fields,
                     has_test_vectors,
                     cbor,
+                    content_line,
                 } => {
                     if *cbor {
                         return Err(format!(
@@ -1247,11 +1263,26 @@ impl Manifest {
                             f.name
                         ));
                     }
+                    if *content_line {
+                        return Err(format!(
+                            "fixture {}: codec `content_line` is derived from the \
+                             SCXML (sce:encoding); remove it from fixtures.json",
+                            f.name
+                        ));
+                    }
                     if let Some(field) = fields.iter().find(|field| field.optional) {
                         return Err(format!(
                             "fixture {}: field `{}` states `optional`, which is \
-                             derived from the SCXML (sce:required on a CBOR \
-                             entry); remove it from fixtures.json",
+                             derived from the SCXML (sce:required on a CBOR or \
+                             content-line entry); remove it from fixtures.json",
+                            f.name, field.name
+                        ));
+                    }
+                    if let Some(field) = fields.iter().find(|field| field.list) {
+                        return Err(format!(
+                            "fixture {}: field `{}` states `list`, which is \
+                             derived from the SCXML (sce:max-count on a \
+                             content-line entry); remove it from fixtures.json",
                             f.name, field.name
                         ));
                     }
@@ -1647,6 +1678,14 @@ pub fn lang_supports_fixture(
             let model = read_codec_model(&scxml_path, &fixture.name)?;
             if model.encoding == crate::forge::model::CodecEncoding::Cbor
                 && crate::forge::cbor_codec::refusal(language, &model).is_some()
+            {
+                return Ok(false);
+            }
+            // The same for a `sce:encoding="content-line"` codec (SCE_FORGE.md
+            // §4.6.4): scheduled exactly where `content_line_codec::refusal`
+            // admits it.
+            if model.encoding == crate::forge::model::CodecEncoding::ContentLine
+                && crate::forge::content_line_codec::refusal(language, &model).is_some()
             {
                 return Ok(false);
             }
@@ -2063,36 +2102,49 @@ fn read_codec_model(
     }
 }
 
-/// Fill a CBOR codec fixture's derived shape from its document: whether it
-/// is CBOR, and which listed fields are optional. Every listed field of a
-/// CBOR codec must name one of its entries — a manifest field the document
-/// does not declare would be asserted against a struct member that does not
-/// exist, which the fragment would report as a compile error rather than as
+/// Fill a codec fixture's derived shape from its document: whether it is CBOR
+/// or content-line, and which listed fields are optional or lists. Every listed
+/// field of such a codec must name one of its entries — a manifest field the
+/// document does not declare would be asserted against a struct member that does
+/// not exist, which the fragment would report as a compile error rather than as
 /// the manifest's.
-fn derive_codec_cbor_shape(
+fn derive_codec_shape(
     scxml_path: &Path,
     fixture_name: &str,
     fields: &mut [StructField],
     cbor: &mut bool,
+    content_line: &mut bool,
 ) -> Result<(), String> {
     let model = read_codec_model(scxml_path, fixture_name)?;
     *cbor = model.encoding == crate::forge::model::CodecEncoding::Cbor;
-    if !*cbor {
-        return Ok(());
+    *content_line = model.encoding == crate::forge::model::CodecEncoding::ContentLine;
+    let missing = |field: &StructField, what: &str| {
+        format!(
+            "fixture {fixture_name}: field `{}` is not an entry of the {what} codec {}",
+            field.name,
+            scxml_path.display()
+        )
+    };
+    if *cbor {
+        for field in fields.iter_mut() {
+            let entry = model
+                .cbor_entries
+                .iter()
+                .find(|e| e.id == field.name)
+                .ok_or_else(|| missing(field, "CBOR"))?;
+            field.optional = !entry.required;
+        }
     }
-    for field in fields.iter_mut() {
-        let entry = model
-            .cbor_entries
-            .iter()
-            .find(|e| e.id == field.name)
-            .ok_or_else(|| {
-                format!(
-                    "fixture {fixture_name}: field `{}` is not an entry of the CBOR codec {}",
-                    field.name,
-                    scxml_path.display()
-                )
-            })?;
-        field.optional = !entry.required;
+    if let Some(lines) = model.content_line.as_ref().filter(|_| *content_line) {
+        for field in fields.iter_mut() {
+            let entry = lines
+                .entries
+                .iter()
+                .find(|e| e.id == field.name)
+                .ok_or_else(|| missing(field, "content-line"))?;
+            field.list = entry.max_count.is_some();
+            field.optional = !entry.required && !field.list;
+        }
     }
     Ok(())
 }
@@ -2383,6 +2435,31 @@ fn fold_reject_vectors(
                 fixture.name
             ));
         }
+        // The same for a content-line reader's failures, and the other way
+        // round: a positional or CBOR failure on a content-line codec is a
+        // vector its decode could never satisfy.
+        let codec_is_content_line = matches!(
+            fixture.spec,
+            FixtureSpec::Codec {
+                content_line: true,
+                ..
+            }
+        );
+        if failure.is_content_line() && !codec_is_content_line {
+            return Err(format!(
+                "{at}: '{error_name}' is a content-line failure, and {} is not an \
+                 sce:encoding=\"content-line\" codec",
+                fixture.name
+            ));
+        }
+        if codec_is_content_line
+            && !failure.is_content_line()
+            && failure != CodecFailure::NeedMoreBytes
+        {
+            return Err(format!(
+                "{at}: '{error_name}' is not a failure a content-line codec raises"
+            ));
+        }
 
         let mut out = serde_json::Map::new();
         out.insert("why".into(), serde_json::Value::from(why));
@@ -2639,9 +2716,10 @@ pub fn render_harness(
                 fields,
                 has_test_vectors,
                 cbor,
+                content_line,
             } => {
                 if document_exists(&scxml_path) {
-                    derive_codec_cbor_shape(&scxml_path, &fixture_name, fields, cbor)?;
+                    derive_codec_shape(&scxml_path, &fixture_name, fields, cbor, content_line)?;
                 }
                 // RFC §synth-5-B test-vector: enrich the manifest with the
                 // SCXML-derived `<sce:test-vector>` flag so the per-language
