@@ -1,0 +1,277 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{#- The read of one property's value into `v`, which the caller stores; a
+    refusal returns its typed error, this backend's decode convention. The
+    line grammar — unfolding, TEXT escapes, quoting — is the runtime's
+    (`codec.ContentLine*`); this spells none of it. #}
+{% macro read_value(e) %}
+{% if e.kind == "string" %}
+			v, err := line.ReadString({{ e.max_size }}, {{ "true" if e.text else "false" }})
+			if err != nil {
+				return nil, err
+			}
+{% elif e.kind == "bool" %}
+			v, err := line.ReadBool()
+			if err != nil {
+				return nil, err
+			}
+{% elif e.kind == "uint" %}
+			raw, err := line.ReadUint(uint64(math.MaxUint{{ e.bits }}))
+			if err != nil {
+				return nil, err
+			}
+			v := {{ e.value_type }}(raw)
+{% else %}
+			raw, err := line.ReadInt(math.MinInt{{ e.bits }}, math.MaxInt{{ e.bits }})
+			if err != nil {
+				return nil, err
+			}
+			v := {{ e.value_type }}(raw)
+{% endif %}
+{% endmacro %}
+{#- Where a read value goes: a list takes one more value, an optional entry is
+    a pointer, a required one is the value itself. #}
+{% macro store(e) %}
+{% if e.is_list %}
+			out.{{ e.name }} = append(out.{{ e.name }}, v)
+{% elif e.required %}
+			out.{{ e.name }} = v
+			{{ e.name | lower }}Seen = true
+{% else %}
+			out.{{ e.name }} = &v
+			{{ e.name | lower }}Seen = true
+{% endif %}
+{% endmacro %}
+{#- The write of one property's value `v`, its name and parameters already
+    written. #}
+{% macro write_value(e) %}
+{% if e.kind == "string" %}
+		if err := out.String(v, {{ "true" if e.text else "false" }}, {{ e.max_size }}); err != nil {
+			return err
+		}
+{% elif e.kind == "bool" %}
+		if err := out.Bool(v); err != nil {
+			return err
+		}
+{% elif e.kind == "uint" %}
+		if err := out.Uint(uint64(v)); err != nil {
+			return err
+		}
+{% else %}
+		if err := out.Int(int64(v)); err != nil {
+			return err
+		}
+{% endif %}
+{% endmacro %}
+{#- The parameters of a property, each written when present. #}
+{% macro write_params(e) %}
+{% for p in e.params %}
+{% if p.required %}
+		if err := out.Param("{{ p.param }}", s.{{ p.name }}, {{ p.max_size }}); err != nil {
+			return err
+		}
+{% else %}
+		if s.{{ p.name }} != nil {
+			if err := out.Param("{{ p.param }}", *s.{{ p.name }}, {{ p.max_size }}); err != nil {
+				return err
+			}
+		}
+{% endif %}
+{% endfor %}
+{% endmacro %}
+{{ sce_map.source_marker(source_location, "go", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec" sce:encoding="content-line")
+// Runtime: {{ runtime_dep }}
+// Do not edit — regenerate from the source SCXML file.
+
+package {{ package }}
+
+import (
+{% if uses_math %}
+	"math"
+
+{% endif %}
+	"github.com/newmassrael/sce-forge-runtime/codec"
+{% for imp in all_imports %}
+{% if imp.include_stmt %}
+{{ imp.include_stmt }}
+{% endif %}
+{% endfor %}
+)
+
+// {{ struct_name }} is one `{{ component }}` component of content lines
+// (SCE_FORGE.md §4.6.4). Decode reads the properties this codec declares in any
+// order and skips the rest; encode writes the entries present in declaration
+// order, folded at 75 octets. An optional entry is a pointer, nil when absent.
+type {{ struct_name }} struct {
+{% for e in entries %}
+	// {{ e.name }} is property `{{ e.property }}`{% if e.is_list %}, up to {{ e.max_count }} lines{% elif e.required %}, required{% endif %}.
+	{{ e.name }} {{ e.field_type }}
+{% for p in e.params %}
+	// {{ p.name }} is parameter `{{ p.param }}` of `{{ e.property }}`{% if p.required %}, required{% endif %}.
+	{{ p.name }} {{ p.field_type }}
+{% endfor %}
+{% endfor %}
+}
+
+// New{{ struct_name }} returns the infallible starting value: a required entry
+// at its type's default, an optional one absent.
+func New{{ struct_name }}() *{{ struct_name }} {
+	return &{{ struct_name }}{}
+}
+
+// Decode{{ struct_name }} decodes one component from cursor. On success the
+// cursor advances past its `END:` line; on any refusal it returns the error with
+// the cursor left where it was.
+func Decode{{ struct_name }}(cursor *codec.SceCursor) (*{{ struct_name }}, error) {
+	c := *cursor
+	value, err := decode{{ struct_name }}At(&c)
+	if err != nil {
+		return nil, err
+	}
+	*cursor = c
+	return value, nil
+}
+
+func decode{{ struct_name }}At(c *codec.SceCursor) (*{{ struct_name }}, error) {
+	rest, err := c.PeekSlice(c.Remaining())
+	if err != nil {
+		return nil, err
+	}
+	reader, err := codec.NewContentLineReader(rest, "{{ component }}")
+	if err != nil {
+		return nil, err
+	}
+	out := &{{ struct_name }}{}
+{% for e in entries %}
+{% if not e.is_list %}
+	{{ e.name | lower }}Seen := false
+{% endif %}
+{% for p in e.params %}
+	{{ p.name | lower }}Seen := false
+{% endfor %}
+{% endfor %}
+	for {
+		line, err := reader.Next()
+		if err != nil {
+			return nil, err
+		}
+		if line == nil {
+			break
+		}
+		switch {
+{% for e in entries %}
+		case line.Is("{{ e.property }}"):
+{% if e.is_list %}
+			if len(out.{{ e.name }}) >= {{ e.max_count }} {
+				return nil, codec.ErrLineTooMany
+			}
+{% else %}
+			if {{ e.name | lower }}Seen {
+				return nil, codec.ErrLineTooMany
+			}
+{% endif %}
+{% if e.params %}
+			for {
+				more, err := line.NextParam()
+				if err != nil {
+					return nil, err
+				}
+				if !more {
+					break
+				}
+				switch {
+{% for p in e.params %}
+				case line.ParamIs("{{ p.param }}"):
+					if {{ p.name | lower }}Seen {
+						return nil, codec.ErrLineTooMany
+					}
+					pv, err := line.ReadParamString({{ p.max_size }})
+					if err != nil {
+						return nil, err
+					}
+{% if p.required %}
+					out.{{ p.name }} = pv
+{% else %}
+					out.{{ p.name }} = &pv
+{% endif %}
+					{{ p.name | lower }}Seen = true
+{% endfor %}
+				}
+			}
+{% endif %}
+{{ read_value(e) }}{{ store(e) }}{% endfor %}
+		}
+	}
+{% for e in entries %}
+{% if e.required %}
+	if !{{ e.name | lower }}Seen {
+		return nil, codec.ErrLineRequiredMissing
+	}
+{% endif %}
+{% for p in e.params if p.required %}
+	if !{{ p.name | lower }}Seen {
+		return nil, codec.ErrLineRequiredMissing
+	}
+{% endfor %}
+{% endfor %}
+	// Only a component that decoded whole moves the cursor.
+	if err := c.Advance(reader.Consumed()); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// Encode writes this component into w; nil on success. A value past its
+// declared bound, or one a line could not carry, is refused, not written
+// (SCE_FORGE.md §4.6.4).
+func (s *{{ struct_name }}) Encode(w codec.SceSink) error {
+	out := codec.NewContentLineWriter(w, "{{ component }}")
+	if err := out.Begin(); err != nil {
+		return err
+	}
+{% for e in entries %}
+{% if e.is_list %}
+	if len(s.{{ e.name }}) > {{ e.max_count }} {
+		return codec.ErrLineTooMany
+	}
+	for _, v := range s.{{ e.name }} {
+		if err := out.Property("{{ e.property }}"); err != nil {
+			return err
+		}
+{{ write_value(e) }}	}
+{% elif e.required %}
+	{
+		v := s.{{ e.name }}
+		if err := out.Property("{{ e.property }}"); err != nil {
+			return err
+		}
+{{ write_params(e) }}{{ write_value(e) }}	}
+{% else %}
+	if s.{{ e.name }} != nil {
+		v := *s.{{ e.name }}
+		if err := out.Property("{{ e.property }}"); err != nil {
+			return err
+		}
+{{ write_params(e) }}{{ write_value(e) }}	}{% if e.optional_params %} else if {% for p in e.optional_params %}{% if not loop.first %} || {% endif %}s.{{ p.name }} != nil{% endfor %} {
+		// A parameter with no value of its property has no line to stand on.
+		return codec.ErrLineRequiredMissing
+	}{% endif %}
+
+{% endif %}
+{% endfor %}
+	return out.Finish()
+}
+
+// EncodeToBytes is Encode into a new slice; the error when encode refuses the
+// value.
+func (s *{{ struct_name }}) EncodeToBytes() ([]byte, error) {
+	var out []byte
+	if err := s.Encode(codec.NewBytesSink(&out)); err != nil {
+		return nil, err
+	}
+	return out, nil
+}

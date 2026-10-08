@@ -29,7 +29,10 @@ use crate::generator::Language;
 /// generator's refusal and the conformance harness's schedule both read, so a
 /// fixture is run exactly where the generator admits it.
 pub fn lowers(lang: Language) -> bool {
-    matches!(lang, Language::Rust | Language::Kotlin | Language::Cpp)
+    matches!(
+        lang,
+        Language::Rust | Language::Kotlin | Language::Cpp | Language::Go
+    )
 }
 
 /// Why `lang` does not generate the content-line codec `m`, or `None` when it
@@ -61,6 +64,7 @@ pub fn render(
         Language::Rust => render_rust(env, m, imports),
         Language::Kotlin => render_kotlin(env, m, imports),
         Language::Cpp => render_cpp(env, m, imports),
+        Language::Go => render_go(env, m, imports),
         _ => unreachable!("`refusal` admits only a backend that has a render"),
     }
 }
@@ -73,6 +77,18 @@ fn kind(entry: &ContentLineEntry) -> &'static str {
         ty if ty.is_signed() => "int",
         _ => "uint",
     }
+}
+
+/// The width in bits of an integer type, as the bound its entry's read is held
+/// to — written into the context once so no template spells a width.
+fn int_bits(ty: &SceType) -> Option<u32> {
+    Some(match ty {
+        SceType::Uint8 | SceType::Int8 => 8,
+        SceType::Uint16 | SceType::Int16 => 16,
+        SceType::Uint32 | SceType::Int32 => 32,
+        SceType::Uint64 | SceType::Int64 => 64,
+        _ => return None,
+    })
 }
 
 /// The value entries of `m` in declaration order, each with the parameters
@@ -128,6 +144,7 @@ fn entries_context(
                 "max_count": e.max_count,
                 "is_list": e.max_count.is_some(),
                 "value_type": value_type(e),
+                "bits": int_bits(&e.sce_type),
                 "default": default_of(&e.sce_type),
                 "params": params,
             })
@@ -202,6 +219,37 @@ fn render_cpp(
             optional_default: None,
         },
     );
+    insert_component(&mut ctx, m);
+    ctx.insert("entries".into(), entries.into());
+    l.render(env, "codec_content_line", ctx)
+}
+
+fn render_go(
+    env: &minijinja::Environment,
+    m: &CodecModel,
+    imports: &[ImportContext],
+) -> Result<String, ForgeError> {
+    let l = LangCtx::new(Language::Go, imports);
+    let mut ctx = l.base_context(&m.name);
+    l.insert_imports(&mut ctx, imports);
+    // Owned values, as every Go codec holds them: a string is a `string`, a list a
+    // slice, and an optional entry or parameter a pointer, nil when absent. A
+    // field starts at its zero value, which is the right start for every kind
+    // this codec holds.
+    let mut entries = entries_context(&l, m, |_| "string".to_string(), |_| None);
+    shape_fields(
+        &mut entries,
+        &FieldShapes {
+            list_type: "[]string",
+            list_default: None,
+            optional_type: &|t| format!("*{t}"),
+            optional_default: None,
+        },
+    );
+    // `math` is imported for the bounds of an integer entry's read, and only
+    // then: an unused import is a compile error in Go.
+    let uses_math = entries.iter().any(|e| e["bits"].is_u64());
+    ctx.insert("uses_math".into(), uses_math.into());
     insert_component(&mut ctx, m);
     ctx.insert("entries".into(), entries.into());
     l.render(env, "codec_content_line", ctx)

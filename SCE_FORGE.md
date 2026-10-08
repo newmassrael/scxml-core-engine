@@ -1366,9 +1366,16 @@ leaves the cursor where it was; the rule that refused is a `Reader::error()` of
 the runtime, which a generated decode does not carry out. An encode refusal is a
 `CodecError` (`LineTooMany`, `LineTooLong`, `LineBadValue`,
 `LineRequiredMissing`); a value that is not UTF-8 is refused on encode as the
-decode would refuse it. Each other backend refuses the codec by name
-(`generate/unsupported-feature`) until its own commit lands. The generator's
-refusal and the conformance harness's schedule
+decode would refuse it.
+
+Go generates it as a struct of `string`, `[]string` for a list and a pointer for
+an absent optional entry, over `codec.ContentLineReader` and
+`codec.ContentLineWriter`. Its decode returns the typed error of the rule that
+refused (`codec.ErrLineMalformed`, `ErrLineRequiredMissing`, `ErrLineTooMany`,
+`ErrLineTooLong`, `ErrLineBadEscape`, `ErrLineBadValue`, or `ErrNeedMoreBytes`),
+unwrapped, and leaves the cursor where it was. Each other backend refuses the
+codec by name (`generate/unsupported-feature`) until its own commit lands. The
+generator's refusal and the conformance harness's schedule
 read one answer (`content_line_codec::refusal`), and the vectors every backend is
 held to (`codec_content_line_event` in `numerical_reference.json`) are written by
 an independent model of this page (`tests/forge/conformance/content_line_model.py`).

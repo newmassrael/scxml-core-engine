@@ -155,9 +155,15 @@ type codecSpec struct {
 // base64-encoded string; the oracle stores bytes as a JSON array of
 // unsigned integers, which unmarshals cleanly into `[]int` and is
 // converted to `[]byte` at use site inside the codec fragment.
+//
+// `Text` and `DecodeOnly` are a content-line codec's (SCE_FORGE.md §4.6.4): the
+// component as a reader checks it, and an input the codec reads and does not
+// write. No other kind's case states either.
 type codecCase struct {
-	Decoded json.RawMessage `json:"decoded"`
-	Encoded []int           `json:"encoded"`
+	Decoded    json.RawMessage `json:"decoded"`
+	Encoded    []int           `json:"encoded"`
+	Text       *string         `json:"text"`
+	DecodeOnly bool            `json:"decode_only"`
 }
 
 // ⚠ This described the removed multi-timer `<data sce:timer=…>` shape — a
@@ -521,7 +527,13 @@ func {{ f.name | to_camel_case }}ValueName(v {{ f.name }}.{{ f.output_id | to_pa
 // ── {{ f.kind }}: {{ f.name }} ────────────────────────────
 func Test{{ f.name | to_pascal_case }}(t *testing.T) {
 	ref := loadReference(t)
+{# A content-line codec is a codec with its own fragment: an entry can be
+   absent or a list, and a case can be read only (SCE_FORGE.md §4.6.4). #}
+{% if f.kind == "codec" and f.content_line %}
+{% set _kind_tmpl = "kinds/codec_content_line.go.jinja2" %}
+{% else %}
 {% set _kind_tmpl = "kinds/" ~ f.kind ~ ".go.jinja2" %}
+{% endif %}
 {% include _kind_tmpl %}
 
 }

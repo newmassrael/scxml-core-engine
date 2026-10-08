@@ -1,0 +1,92 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# Content-line codec kind (SCE_FORGE.md §4.6.4) — { decoded, encoded } cases
+   and reject vectors, as the generic codec fragment has them, with what a
+   content-line component adds: an entry can be absent (a nil pointer) or a list
+   (a slice), a case marked `decode_only` is an input the codec reads and does
+   not write, and a refused decode leaves the cursor where it found it. Go names
+   each failure, so a reject asserts the sentinel itself. #}
+	cases := ref.codecCases(t, "{{ f.ref_section }}", "{{ f.name }}")
+	type decodedShape struct {
+{% for field in f.fields %}
+		{# An absent entry is JSON `null`, which unmarshals to a nil pointer —
+		   the generated struct's own spelling of an absent optional entry. #}
+		{{ field.name | to_pascal_case }} {% if field.list %}[]{% elif field.optional %}*{% endif %}{{ field.type | go_type }} `json:"{{ field.name }}"`
+{% endfor %}
+	}
+	for i, c := range cases {
+		var d decodedShape
+		unmarshalOrFatal(t, c.Decoded, &d, "{{ f.name }} decoded")
+		expectedBytes := make([]byte, len(c.Encoded))
+		for j, b := range c.Encoded {
+			expectedBytes[j] = byte(b)
+		}
+		if c.Text != nil && *c.Text != string(expectedBytes) {
+			t.Errorf("{{ f.name }} case %d: `text` and `encoded` disagree", i)
+		}
+
+		cursor := codec.NewSceCursor(expectedBytes)
+		roundTripped, err := {{ f.name }}.Decode{{ f.name | to_pascal_case }}(&cursor)
+		if err != nil {
+			t.Errorf("{{ f.name }} case %d decode returned error: %v", i, err)
+			continue
+		}
+{% for field in f.fields %}
+{% set fp = field.name | to_pascal_case %}
+{% if field.list %}
+		if len(roundTripped.{{ fp }}) != len(d.{{ fp }}) {
+			t.Errorf("{{ f.name }} case %d decode {{ field.name }}: count actual=%d expected=%d", i, len(roundTripped.{{ fp }}), len(d.{{ fp }}))
+		} else {
+			for j := range d.{{ fp }} {
+				if roundTripped.{{ fp }}[j] != d.{{ fp }}[j] {
+					t.Errorf("{{ f.name }} case %d decode {{ field.name }}[%d]: actual=%q expected=%q", i, j, roundTripped.{{ fp }}[j], d.{{ fp }}[j])
+				}
+			}
+		}
+{% elif field.optional %}
+		if (roundTripped.{{ fp }} == nil) != (d.{{ fp }} == nil) ||
+			(roundTripped.{{ fp }} != nil && *roundTripped.{{ fp }} != *d.{{ fp }}) {
+			t.Errorf("{{ f.name }} case %d decode {{ field.name }}: present actual=%v expected=%v, or the values differ", i, roundTripped.{{ fp }} != nil, d.{{ fp }} != nil)
+		}
+{% else %}
+		if roundTripped.{{ fp }} != d.{{ fp }} {
+			t.Errorf("{{ f.name }} case %d decode {{ field.name }}: actual=%v expected=%v", i, roundTripped.{{ fp }}, d.{{ fp }})
+		}
+{% endif %}
+{% endfor %}
+
+		if c.DecodeOnly {
+			continue
+		}
+		value := &{{ f.name }}.{{ f.name | to_pascal_case }}{
+{% for field in f.fields %}
+			{{ field.name | to_pascal_case }}: d.{{ field.name | to_pascal_case }},
+{% endfor %}
+		}
+		encoded, encodeErr := value.EncodeToBytes()
+		if encodeErr != nil {
+			t.Errorf("{{ f.name }} case %d encode refused: %v", i, encodeErr)
+			continue
+		}
+		if string(encoded) != string(expectedBytes) {
+			t.Errorf("{{ f.name }} case %d encode: actual=%q expected=%q", i, encoded, expectedBytes)
+		}
+	}
+
+{# Decode-rejection vectors: the wire this codec MUST refuse, paired with the
+   sentinel it must refuse with. Compared with `!=` rather than errors.Is: the
+   generated decode returns these sentinels unwrapped, and if that ever stops
+   being true the comparison fails loudly here rather than passing on the wrong
+   refusal. A refusal leaves the cursor where it found it. #}
+{% for r in f.rejects %}
+	{
+		rejectBytes := []byte{ {{ r.encoded | join(", ") }} }
+		rejectCursor := codec.NewSceCursor(rejectBytes)
+		if accepted, refused := {{ f.name }}.Decode{{ f.name | to_pascal_case }}(&rejectCursor); refused != {{ r.symbol }} {
+			t.Errorf("{{ f.name }} reject {{ loop.index0 }}: {{ r.why }} (err=%v value=%+v)", refused, accepted)
+		} else if rejectCursor.Remaining() != len(rejectBytes) {
+			t.Errorf("{{ f.name }} reject {{ loop.index0 }}: the cursor moved")
+		}
+	}
+{% endfor %}
