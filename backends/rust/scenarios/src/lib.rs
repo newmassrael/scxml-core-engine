@@ -16,6 +16,7 @@
 pub mod hosts;
 pub mod integration;
 pub mod machines;
+pub mod vocabulary;
 #[cfg(target_arch = "wasm32")]
 pub mod wasm;
 

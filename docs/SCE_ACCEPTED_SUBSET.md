@@ -4950,13 +4950,93 @@ any expression is, and the action is performed by the host installed on the
 machine.
 `tests/integration/AStaticDatamodelRunsLoweredUnderTheInterpreterTest.cpp`
 replays the scenarios the generated backends replay
-(`sce-build/tests/fixtures/static_datamodel/scenarios/*.json`) against the
-lowered documents, so one oracle judges the engines; the four fixtures that
-invoke a child have no scenario of their own, and the same file runs each of them
-under the Interpreter and holds it to what the generated backends'
-`a_static_child_is_handed_its_params` and its siblings hold them to — the fourth,
-`static_invoke_hybrid`, from the directory `lower --out-dir` writes. The same
-file runs the table of document stems through the library's `candidate`.
+(`sce-build/tests/fixtures/static_datamodel/scenarios/*.json`, described below)
+against the lowered documents, so one oracle judges the engines. The fixtures
+that invoke a child are replayed there as well as run by hand: the three whose
+child is written inline (`static_invoke`, `static_invoke_params`,
+`static_invoke_string`) have a scenario each, and the same file also holds each of
+them to what the generated backends' `a_static_child_is_handed_its_params` and its
+siblings hold them to; the three whose child is a candidate document or whose
+host the parent answers (`static_invoke_hybrid`, `static_child_host`,
+`static_child_host_hybrid`) have no scenario and are run by hand alone, the two
+hybrid ones from the directory `lower --out-dir` writes. The same file runs the
+table of document stems through the library's `candidate`.
+
+**A scenario of a static machine.** A scenario is a JSON file in
+`sce-build/tests/fixtures/static_datamodel/scenarios/` that states what a machine
+holds after each event, in words no engine owns, so one file judges every engine
+that runs the machine. It is not the scenario set of §2.18, which is a person's
+examples of what a specification says and runs on nothing until a driver is
+written for a design: a scenario of this kind belongs to a fixture of this section
+and is replayed by seven drivers in six languages, the six generated backends and
+the Interpreter. These are the first three of the six steps of
+`static_timers.json`, without its `about`:
+
+```json
+{ "machine": "static_timers",
+  "steps": [
+    { "note": "armed on entering `waiting`; nothing has been delivered",
+      "expect": { "state": "waiting", "variables": { "trace": 0 } } },
+    { "note": "500ms in: the first send is not due until 1s",
+      "advance_ms": 500,
+      "expect": { "state": "waiting", "variables": { "trace": 0 } } },
+    { "note": "1500ms in: `inner` was delivered, once",
+      "advance_ms": 1000,
+      "expect": { "state": "waiting", "variables": { "trace": 1 } } } ] }
+```
+
+| Member | Of | What it says |
+|---|---|---|
+| `machine` | scenario | the fixture the scenario drives, by its stem; several scenarios may drive one (`static_timers_stop` drives `static_timers`), so a scenario is told by its file name |
+| `about` | scenario | prose for the reader; no driver reads it |
+| `steps` | scenario | the steps, in order; a scenario with none judges nothing |
+| `note` | step | prose, shown when the step fails |
+| `event` | step | an external event, by the name the document gives it; a name no event of the machine matches (W3C SCXML 3.12.1) fails the step unless `dropped` is true |
+| `data` | step | the event's payload as JSON, from which the machine lifts the typed fields its schema names |
+| `dropped` | step | `true` when the step expects the machine to drop the event because none of its events matches the name |
+| `advance_ms` | step | moves the machine's manual clock on by that many milliseconds and runs what came due |
+| `expect` | step | what the machine holds after the step, below; every step has one |
+| `state` | expect | the atomic state the machine is in |
+| `configuration` | expect | the set of every active state, a compound or a parallel one with the atomic ones below it, by the id the document gives it; the order is not part of the answer |
+| `variables` | expect | variable to value, for the variables the document publishes (`sce:direction="out"`): a number, a bool, an enum by its declared name, a string, a record as an object of its fields, a list as an array, a real written with a fraction or an exponent |
+| `ended` | expect | `true` when the machine ended in a top-level `<final>`; such a machine has no saved state, so the step states nothing but `ended`, `donedata` and `host_calls` |
+| `donedata` | expect | with `ended`, the data the final's `<donedata>` left for an invoking parent, as JSON, compared as a value |
+| `host_calls` | expect | the calls the machine made of its host in this step, oldest first: `{"action": <the name the document gives the <sce:action>>, "args": [<each <sce:arg>, in the document's order>]}`; the start's calls belong to the first step, a step that states none is not judged on them, and they are not carried into the next |
+
+A step sends an event or moves time and does not do both: the drivers do not agree
+on which comes first, and no scenario needs it. A machine that publishes no
+variable, such as `static_host_call`, is read from what it told its host, which is
+why `host_calls` exists; a driver whose machine records no host refuses a step
+that states it rather than pass it.
+
+A step is read after the macrostep its event started has run to quiescence, and
+the first step, which may send none, after the machine has started and settled.
+The generated policy says which call a machine needs (`needs_event_scheduler`):
+`step` drains the queues and nothing else, and a machine with a delayed send or a
+child session is driven by `tick`. The engine reports no point at which it has
+settled, so a driver runs five rounds, enough for a child to take an event its
+parent forwarded in one round and for its end to reach the parent in the next;
+a round that finds nothing to do changes nothing. Time is virtual on the
+generated backends. The Interpreter's scheduler runs on the wall clock, so it
+waits the time a step names: a scenario keeps every read at least 500ms from a
+due time, and the time it moves is the time the Interpreter spends on it.
+
+What holds the scenarios to one meaning. Each driver — `static_scenarios.rs`
+(Rust), `StaticScenarioTest.kt`, `AStaticDatamodelRunsGeneratedCppTest.cpp`,
+`static_scenarios_test.go`, `test_static_scenarios.py`, and `test_static_scalars.c`
+with `static_scenario.h` — must name every scenario of a machine its backend
+lowers, which `every_scenario_is_replayed_on_every_backend_that_lowers_its_machine`
+asks the generator rather than a list; the Interpreter finds them by scanning the
+directory. The Rust table `backends/rust/scenarios/src/machines.rs` is also built
+for `wasm32-unknown-unknown` and run under Node and Chrome
+(`scripts/gate wasm32-scenarios`). A member a driver does not know is ignored by
+most and refused by the C one, so a misspelt key would pass where nothing reads
+it: `backends/rust/scenarios/src/vocabulary.rs` holds the members and the rules
+between them, and `every_scenario_keeps_to_the_vocabulary_every_driver_replays`
+holds every file to it. A fixture a scenario cannot judge, such as what a machine
+sent over a transport (`static_send_http`), has none and is held by tests of each
+engine. To add a scenario, write the file, add its row to the Rust table, and
+name it in each driver; a driver that does not fails the guard above.
 
 **An algorithm on its own.** `sce-codegen lower-algorithm <document>` lowers one
 `sce:kind="algorithm"` document without a statechart around it — an

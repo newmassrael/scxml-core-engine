@@ -6,6 +6,8 @@
 // wasm32 build of the same table is held to.
 
 use sce_rust_scenarios::machines::{run, scenario_text, NAMES};
+use sce_rust_scenarios::vocabulary;
+use serde_json::{json, Value};
 use std::collections::BTreeSet;
 use std::path::Path;
 
@@ -84,6 +86,91 @@ fn every_scenario_replays() {
         failed.len(),
         failed.join("\n")
     );
+}
+
+/// A member a driver does not know is ignored by most and refused by one, so a
+/// misspelt key would pass where nothing reads it. Every committed scenario is
+/// held to the vocabulary, and one failure names them all.
+#[test]
+fn every_scenario_keeps_to_the_vocabulary_every_driver_replays() {
+    let mut refused = Vec::new();
+    for name in NAMES {
+        let text = scenario_text(name).expect("the table names its own scenario");
+        let scenario: Value = serde_json::from_str(text).expect("a scenario is JSON");
+        if let Err(why) = vocabulary::check(&scenario) {
+            refused.push(format!("{name}: {why}"));
+        }
+    }
+    assert!(
+        refused.is_empty(),
+        "{} scenario(s) leave the vocabulary:\n{}",
+        refused.len(),
+        refused.join("\n")
+    );
+}
+
+/// The rules are held by what they refuse: each case is a scenario that breaks
+/// one, and a check that accepted everything would fail every one of them.
+#[test]
+fn each_rule_of_the_vocabulary_refuses_what_it_is_for() {
+    let step = |extra: Value| {
+        let mut base = json!({"expect": {"state": "idle"}});
+        base.as_object_mut()
+            .expect("an object")
+            .extend(extra.as_object().expect("an object").clone());
+        json!({"machine": "m", "steps": [base]})
+    };
+    let cases = [
+        (
+            json!({"machine": "m", "steps": [{"expect": {}}], "extra": 1}),
+            "the scenario carries `extra`",
+        ),
+        (
+            json!({"machine": "m", "steps": []}),
+            "no steps judges nothing",
+        ),
+        (
+            json!({"machine": "m", "steps": [{"expect": {"hostcalls": []}}]}),
+            "`expect` carries `hostcalls`",
+        ),
+        (step(json!({"advance": 5})), "the step carries `advance`"),
+        (step(json!({"event": "go", "advance_ms": 5})), "not both"),
+        (
+            step(json!({"dropped": true})),
+            "`dropped` belongs to a step that sends an event",
+        ),
+        (
+            json!({"machine": "m", "steps": [{"event": "go"}]}),
+            "states what it expects",
+        ),
+        (
+            json!({"machine": "m", "steps": [{"expect": {"ended": true, "state": "s"}}]}),
+            "a machine that ended has no `state`",
+        ),
+        (
+            json!({"machine": "m", "steps": [{"expect": {"donedata": {}}}]}),
+            "`donedata` belongs to a step that expects `ended`",
+        ),
+        (
+            json!({"machine": "m", "steps": [{"expect": {"host_calls": [{"action": "a"}]}}]}),
+            "carries its `args`",
+        ),
+        (
+            json!({"machine": "m", "steps": [{"expect": {"host_calls": [{"action": "a", "args": [], "x": 1}]}}]}),
+            "a host call carries `x`",
+        ),
+    ];
+    for (scenario, reason) in cases {
+        match vocabulary::check(&scenario) {
+            Ok(()) => {
+                panic!("accepted a scenario that should be refused for `{reason}`: {scenario}")
+            }
+            Err(why) => assert!(
+                why.contains(reason),
+                "refused for `{why}`, not for `{reason}`: {scenario}"
+            ),
+        }
+    }
 }
 
 #[test]
