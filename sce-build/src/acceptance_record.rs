@@ -366,6 +366,39 @@ pub struct PredecessorPin {
     pub sha256: String,
 }
 
+/// What became of one requirement's evidence between a record and a design
+/// ([`AcceptanceRecord::evidence_delta`]). Serialised for `acceptance-delta`, one
+/// line a requirement, with `evidence` naming the variant.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "evidence", rename_all = "kebab-case")]
+pub enum RequirementChange {
+    /// The design shows the same rows for it as the record kept.
+    Unchanged,
+    /// Some row differs. `moved` is where, in the design now, the rows the record
+    /// lacks are; `gone` is how many recorded rows no row of the design matches,
+    /// which can be counted and not located, since the row that held them is not
+    /// there to point at.
+    Changed { moved: Vec<String>, gone: usize },
+    /// Cited by a node now and with no evidence in the record. `at` is where.
+    New { at: Vec<String> },
+    /// Evidence in the record, and no node cites it now.
+    Dropped { gone: usize },
+}
+
+/// What moved in a design since a record was taken: the evidence per requirement,
+/// and the rows that claim nothing. See [`AcceptanceRecord::evidence_delta`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EvidenceDelta {
+    /// Every requirement either side cites. One a manifest lists and neither side
+    /// cites has no entry: `requirements` already calls that `missing`.
+    pub requirements: BTreeMap<String, RequirementChange>,
+    /// Where, in the design now, the rows that claim nothing and are not in the
+    /// record are.
+    pub unclaimed_added: Vec<String>,
+    /// How many recorded rows that claimed nothing no row of the design matches.
+    pub unclaimed_gone: usize,
+}
+
 /// An acceptance, pinned. See the module docs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AcceptanceRecord {
@@ -736,10 +769,7 @@ impl AcceptanceRecord {
             .map_err(|failure| failure.into_take_error(document))?;
         let applied_rules = applied_rules_of(&house_rules, &reading.cited);
         let open_at_acceptance = reading.open;
-        let Evidence {
-            by_requirement: evidence,
-            unclaimed,
-        } = reading.evidence;
+        let (evidence, unclaimed) = reading.evidence.digests();
         let mut authored_from = Vec::with_capacity(sources.len());
         for (role, path) in sources {
             authored_from.push(SourcePin {
@@ -793,6 +823,72 @@ impl AcceptanceRecord {
             sha256: file_sha256(&previous)?,
         });
         Ok(self)
+    }
+
+    /// What moved in `document` since this record was taken, requirement by
+    /// requirement: the record's digests against the rows of the design as it is
+    /// now. A report, not a verdict: the acceptance lapses by its bytes whatever
+    /// this says, and `unchanged` means the product's closure of what a requirement
+    /// depends on reads the same, not that the requirement is still met.
+    ///
+    /// The comparison needs the design and not a second record because a digest
+    /// has no place the owner can open, and a row of the design has one.
+    /// `document` is whatever the caller names: the record's own document, which
+    /// the caller resolves against the root it reads the record under, or another
+    /// draft of it.
+    ///
+    /// ⚠ Refused for a record that states no evidence at all against a design that
+    /// has rows: it was taken before records kept them, and reading it as "every
+    /// requirement is new" would call the whole design changed.
+    pub fn evidence_delta(&self, document: &Path) -> Result<EvidenceDelta, RecordError> {
+        let document = canonical(document)?;
+        let (_, reading) =
+            design_inputs(&document, &[]).map_err(|failure| failure.into_take_error(&document))?;
+        let now = reading.evidence;
+        if self.evidence.is_empty()
+            && self.unclaimed.is_empty()
+            && (!now.by_requirement.is_empty() || !now.unclaimed.is_empty())
+        {
+            return Err(RecordError::Format {
+                detail: "the record states no evidence (it was taken before records kept it), so \
+                         there is nothing to compare the design with; take the acceptance again"
+                    .to_string(),
+            });
+        }
+        let mut requirements = BTreeMap::new();
+        let ids: std::collections::BTreeSet<&String> = self
+            .evidence
+            .keys()
+            .chain(now.by_requirement.keys())
+            .collect();
+        for id in ids {
+            let change = match (self.evidence.get(id), now.by_requirement.get(id)) {
+                (Some(recorded), Some(rows)) => {
+                    let (moved, gone) = compare_rows(recorded, rows);
+                    if moved.is_empty() && gone == 0 {
+                        RequirementChange::Unchanged
+                    } else {
+                        RequirementChange::Changed { moved, gone }
+                    }
+                }
+                (Some(recorded), None) => RequirementChange::Dropped {
+                    gone: recorded.len(),
+                },
+                (None, Some(rows)) => {
+                    let mut at: Vec<String> = rows.iter().map(|row| row.at.clone()).collect();
+                    at.sort();
+                    RequirementChange::New { at }
+                }
+                (None, None) => continue,
+            };
+            requirements.insert(id.clone(), change);
+        }
+        let (unclaimed_added, unclaimed_gone) = compare_rows(&self.unclaimed, &now.unclaimed);
+        Ok(EvidenceDelta {
+            requirements,
+            unclaimed_added,
+            unclaimed_gone,
+        })
     }
 
     /// The same record, stating `channel` as the surface that took it. Taking the
@@ -1235,12 +1331,37 @@ struct DesignReading {
     evidence: Evidence,
 }
 
-/// What the report shows an owner for each requirement, as digests: the module
-/// docs' "What each requirement rested on".
+/// One row of the review table as a record sees it: its digest, and where it
+/// is in the design that was read (a statechart's `node_path`, a forge node's
+/// path). The record keeps the digest; the place is for [`evidence_delta`],
+/// which has the design in hand and the record's digests only.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct EvidenceRow {
+    digest: String,
+    at: String,
+}
+
+/// What the report shows an owner for each requirement: the module docs' "What
+/// each requirement rested on". Rows are sorted, so a list of digests read off
+/// them is in order.
 #[derive(Debug, Default)]
 struct Evidence {
-    by_requirement: BTreeMap<String, Vec<String>>,
-    unclaimed: Vec<String>,
+    by_requirement: BTreeMap<String, Vec<EvidenceRow>>,
+    unclaimed: Vec<EvidenceRow>,
+}
+
+impl Evidence {
+    /// The record's form: digests only, in order.
+    fn digests(&self) -> (BTreeMap<String, Vec<String>>, Vec<String>) {
+        let digests = |rows: &[EvidenceRow]| rows.iter().map(|row| row.digest.clone()).collect();
+        (
+            self.by_requirement
+                .iter()
+                .map(|(id, rows)| (id.clone(), digests(rows)))
+                .collect(),
+            digests(&self.unclaimed),
+        )
+    }
 }
 
 /// The digest of one row of the review table, `source` column left out and
@@ -1287,6 +1408,10 @@ fn statechart_evidence(model: &crate::model::SCXMLModel) -> Evidence {
                 .map(|id| (*id).to_string())
         })
         .collect();
+    let evidence_row = |row: &crate::transition_table::TransitionRow| EvidenceRow {
+        digest: statechart_row_digest(row),
+        at: row.node_path.clone(),
+    };
     let mut by_requirement = BTreeMap::new();
     for id in cited {
         // A node can be in a fragment for two reasons; it is one row.
@@ -1295,18 +1420,18 @@ fn statechart_evidence(model: &crate::model::SCXMLModel) -> Evidence {
                 .into_iter()
                 .map(|dependency| dependency.node_path)
                 .collect();
-        let mut digests: Vec<String> = paths
+        let mut found: Vec<EvidenceRow> = paths
             .iter()
             .filter_map(|path| by_path.get(path.as_str()))
-            .map(|row| statechart_row_digest(row))
+            .map(|row| evidence_row(row))
             .collect();
-        digests.sort();
-        by_requirement.insert(id, digests);
+        found.sort();
+        by_requirement.insert(id, found);
     }
-    let mut unclaimed: Vec<String> = rows
+    let mut unclaimed: Vec<EvidenceRow> = rows
         .iter()
         .filter(|row| row.is_unclaimed())
-        .map(statechart_row_digest)
+        .map(evidence_row)
         .collect();
     unclaimed.sort();
     Evidence {
@@ -1322,29 +1447,51 @@ fn forge_evidence(doc: &crate::forge::model::ForgeDocument) -> Evidence {
     let Ok(rows) = crate::forge::review_table::review_table(doc) else {
         return Evidence::default();
     };
-    let mut by_requirement: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    let mut by_requirement: BTreeMap<String, Vec<EvidenceRow>> = BTreeMap::new();
     let mut unclaimed = Vec::new();
     for row in &rows {
-        let digest = forge_row_digest(row);
+        let found = EvidenceRow {
+            digest: forge_row_digest(row),
+            at: row.node.clone(),
+        };
         if row.is_unclaimed() {
-            unclaimed.push(digest);
+            unclaimed.push(found);
             continue;
         }
         for id in row.source.split_whitespace() {
             by_requirement
                 .entry(id.to_string())
                 .or_default()
-                .push(digest.clone());
+                .push(found.clone());
         }
     }
-    for digests in by_requirement.values_mut() {
-        digests.sort();
+    for found in by_requirement.values_mut() {
+        found.sort();
     }
     unclaimed.sort();
     Evidence {
         by_requirement,
         unclaimed,
     }
+}
+
+/// A record's digests against the rows of a design now, as multisets: the places
+/// (sorted) of the rows the record lacks, and how many recorded digests no row
+/// matches. Two equal digests are two rows, so a digest matched once is spent.
+fn compare_rows(recorded: &[String], now: &[EvidenceRow]) -> (Vec<String>, usize) {
+    let mut left: BTreeMap<&str, usize> = BTreeMap::new();
+    for digest in recorded {
+        *left.entry(digest.as_str()).or_default() += 1;
+    }
+    let mut moved = Vec::new();
+    for row in now {
+        match left.get_mut(row.digest.as_str()) {
+            Some(count) if *count > 0 => *count -= 1,
+            _ => moved.push(row.at.clone()),
+        }
+    }
+    moved.sort();
+    (moved, left.values().sum())
 }
 
 /// A record's evidence as read back: every key a name, every digest a sha256,

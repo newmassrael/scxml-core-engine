@@ -318,6 +318,19 @@ and the steps it opens are in
 `docs/adr/0006-a-requirement-keeps-its-id-across-a-revision.md`. Not done: keeping
 the lineage with a work in the application.
 
+An acceptance record also keeps, per requirement, digests of the rows the report
+showed the owner for it (`evidence`, with `unclaimed` for the rows that claim
+nothing, and `succeeds` for the record it replaced: ADR 0007). **scxml_acceptance_delta**
+sets that against the design as it is now: for each requirement `unchanged`,
+`changed` (`moved`, the places in the design now of rows the record lacks, and
+`gone`, how many recorded rows nothing matches), `new` (`at`) or `dropped`. Give it
+the record, the root its paths are read against and, for another draft of the design,
+`design`. It is a report and says what a second look should be about, never that a
+requirement is still met: `unchanged` is the product's closure of what the requirement
+depends on reading the same, and the acceptance still lapses by its bytes. A record
+taken before records kept this evidence is refused. Local servers only
+(`docs/adr/0008-an-acceptance-says-what-moved-since-it-was-taken.md`).
+
 #### Examples a design is played against
 
 A requirement met by something NOT happening ("nothing is sent after the

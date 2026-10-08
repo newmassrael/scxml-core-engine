@@ -2602,6 +2602,27 @@ enum Commands {
         #[arg(long)]
         root: String,
     },
+    /// Say what moved in a design since an acceptance record was taken, per
+    /// requirement.
+    ///
+    /// The record's digests of the rows the report showed the owner for each
+    /// requirement, against the rows of the design as it is now. Each requirement
+    /// is `unchanged`, `changed` (where the rows the record lacks are now, and how
+    /// many recorded rows no row matches), `new` or `dropped`, one JSON line each;
+    /// then one line for the rows that claim nothing, and a summary. A report: it
+    /// exits 0 whenever it ran. A record from before records kept evidence, or a
+    /// design that does not parse, is refused.
+    AcceptanceDelta {
+        /// Acceptance record written by `accept`.
+        record: String,
+        /// Root the record's paths are read against.
+        #[arg(long)]
+        root: String,
+        /// The design to compare with, when not the record's own document: another
+        /// draft of the same design.
+        #[arg(long, value_name = "SCXML")]
+        design: Option<String>,
+    },
     Requirements {
         /// SCXML file path. Several documents are read as ONE design, and
         /// then `--manifest` is required.
@@ -3447,6 +3468,11 @@ fn main() {
             ),
         ),
         Commands::AcceptanceImpact { records, root } => cmd_acceptance_impact(&records, &root),
+        Commands::AcceptanceDelta {
+            record,
+            root,
+            design,
+        } => cmd_acceptance_delta(&record, &root, design.as_deref()),
         Commands::RequirementClosure { manifest } => cmd_requirement_closure(&manifest),
         Commands::Unresolved { scxml, profile } => {
             cmd_unresolved(&scxml, profile.as_deref(), error_format)
@@ -3557,6 +3583,7 @@ fn assert_unchanged_refusal(command: &Commands) -> Option<String> {
         | Commands::Accept { .. }
         | Commands::AcceptanceCheck { .. }
         | Commands::AcceptanceImpact { .. }
+        | Commands::AcceptanceDelta { .. }
         | Commands::RequirementClosure { .. }
         | Commands::Unresolved { .. }
         | Commands::Coverage { .. }
@@ -9814,6 +9841,90 @@ fn cmd_acceptance_impact(records: &[String], root: &str) {
     lines.push(serde_json::json!({
         "v": 1, "kind": "acceptance-impact-summary", "records": records.len(),
         "holding": holding, "lapsed": lapsed, "unusable": unusable,
+    }));
+    out_stream(|w| {
+        for line in &lines {
+            writeln!(w, "{line}")?;
+        }
+        Ok(())
+    });
+}
+
+/// Subcommand: acceptance-delta.
+///
+/// What moved in a design since a record was taken, a line each:
+///
+/// ```text
+/// {"v":1,"kind":"acceptance-delta","requirement":"R3","evidence":"unchanged"}
+/// {"v":1,"kind":"acceptance-delta","requirement":"R3","evidence":"changed",
+///  "moved":["states.alarm.on_entry_blocks[0][0]"],"gone":1}
+/// {"v":1,"kind":"acceptance-delta","requirement":"R4","evidence":"new","at":["…"]}
+/// {"v":1,"kind":"acceptance-delta","requirement":"R7","evidence":"dropped","gone":2}
+/// {"v":1,"kind":"acceptance-delta-unclaimed","added":["…"],"gone":0}
+/// {"v":1,"kind":"acceptance-delta-summary","record":P,"requirements":N,
+///  "unchanged":a,"changed":b,"new":c,"dropped":d}
+/// ```
+///
+/// ⚠ A report, so the exit status is 0 whenever it ran. What it cannot answer is a
+/// refusal through the same door `acceptance-check` uses: a record that does not
+/// read, a record from before evidence was kept, a design that does not parse.
+fn cmd_acceptance_delta(record: &str, root: &str, design: Option<&str>) {
+    use sce_build::acceptance_record::{AcceptanceRecord, RequirementChange};
+
+    let unusable = |path: &str, what: &'static str, kind: &'static str, detail: String| -> ! {
+        cli_exit(CliError::ClosureInputUnusable {
+            path: path.to_string(),
+            what,
+            kind,
+            detail,
+        })
+    };
+    let text = fs::read_to_string(record).unwrap_or_else(|e| {
+        unusable(
+            record,
+            "acceptance record",
+            "read",
+            format!("{record}: {e}"),
+        )
+    });
+    let loaded = AcceptanceRecord::from_json(&text)
+        .unwrap_or_else(|e| unusable(record, "acceptance record", e.kind(), e.to_string()));
+    let document = match design {
+        Some(path) => PathBuf::from(path),
+        None => Path::new(root).join(&loaded.document),
+    };
+    let delta = loaded.evidence_delta(&document).unwrap_or_else(|e| {
+        unusable(
+            &document.display().to_string(),
+            "design to compare",
+            e.kind(),
+            e.to_string(),
+        )
+    });
+
+    let (mut unchanged, mut changed, mut new, mut dropped) = (0usize, 0usize, 0usize, 0usize);
+    let mut lines: Vec<serde_json::Value> = Vec::new();
+    for (id, change) in &delta.requirements {
+        match change {
+            RequirementChange::Unchanged => unchanged += 1,
+            RequirementChange::Changed { .. } => changed += 1,
+            RequirementChange::New { .. } => new += 1,
+            RequirementChange::Dropped { .. } => dropped += 1,
+        }
+        let mut line = serde_json::to_value(change).expect("a change serialises");
+        line["v"] = serde_json::json!(1);
+        line["kind"] = serde_json::json!("acceptance-delta");
+        line["requirement"] = serde_json::json!(id);
+        lines.push(line);
+    }
+    lines.push(serde_json::json!({
+        "v": 1, "kind": "acceptance-delta-unclaimed",
+        "added": delta.unclaimed_added, "gone": delta.unclaimed_gone,
+    }));
+    lines.push(serde_json::json!({
+        "v": 1, "kind": "acceptance-delta-summary", "record": record,
+        "requirements": delta.requirements.len(),
+        "unchanged": unchanged, "changed": changed, "new": new, "dropped": dropped,
     }));
     out_stream(|w| {
         for line in &lines {

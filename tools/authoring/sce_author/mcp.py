@@ -30,7 +30,8 @@ So the shape a caller gets is:
     scxml_accept            record the OWNER's acceptance, on their word only
     scxml_acceptance_check  whether that acceptance still holds
     scxml_acceptance_impact which of several acceptances a changed shared file touches
-    works_list              the specifications the owner keeps in the workbench application
+    scxml_acceptance_delta  what moved in a design since it was accepted, per requirement
+    works_list             the specifications the owner keeps in the workbench application
     works_read              one work: its text now, the model saved for it, its requirements, and the owner's acceptance
     works_save_model        save the model written for it, once the product accepts it
     works_save_requirements save the requirement list read from its text, once the product loads it
@@ -97,7 +98,8 @@ from .scenario_driver import answer as scenario_answer
 from .scenario_driver import read_set as read_scenario_set
 from .scenario_driver import run as run_scenarios
 from .verify import validate_scxml as run_scxml_validation
-from .verify import (accept_design, acceptance_holds, acceptance_impact, acceptance_page,
+from .verify import (accept_design, acceptance_delta, acceptance_holds, acceptance_impact,
+                     acceptance_page,
                      design_requirement_records, diagram_figures, kind_catalog,
                      requirement_records, unresolved_markers, validate_scxml_set)
 from .verify import page_provenance, pseudo_page, verify as run_verify
@@ -185,7 +187,11 @@ SERVER_INSTRUCTIONS = (
     "changes a rule of a profile several specifications share, "
     "scxml_acceptance_impact names the acceptances that applied it (give it "
     "their records): tell the owner those first, since their behaviour rests "
-    "on words that changed, and re-accept nothing without their say. "
+    "on words that changed, and re-accept nothing without their say. When a "
+    "design was edited or drafted again after the owner accepted it, "
+    "scxml_acceptance_delta says which requirements' evidence moved and where "
+    "(give it the acceptance record and the draft): tell the owner those, and "
+    "that the others read the same, not that they are met. "
     "Put the <?xml ...?> declaration "
     "first in every file, with nothing before it -- not a comment. What you "
     "check is the text you save and show: check the file as saved. "
@@ -1274,6 +1280,42 @@ TOOLS = [
                             "description": "Paths to acceptance records (local servers only)."},
                 "root": {"type": "string",
                          "description": "The directory the records' paths are relative to."},
+            },
+        },
+    },
+    {
+        "name": "scxml_acceptance_delta",
+        "description": (
+            "Say what moved in a design since the owner accepted it, requirement "
+            "by requirement. Use it when a specification was revised and a design "
+            "was edited or drafted again, before asking the owner to accept "
+            "again: it tells them which requirements to look at again. Give "
+            "`record` (the acceptance record scxml_accept wrote) and `root` (the "
+            "directory its paths are read against); `design` names another "
+            "draft to compare with, and left out the record's own document is "
+            "compared. Local servers only: it reads the owner's own tree. "
+            "Returns JSON: `summary` (requirements, unchanged, changed, new, "
+            "dropped), `requirements` (each with `evidence`: `unchanged`; "
+            "`changed`, with `moved`, the places in the design now of rows the "
+            "record lacks, and `gone`, how many recorded rows nothing matches; "
+            "`new`, with `at`; or `dropped`, with `gone`) and `unclaimed` (rows "
+            "that claim no requirement: `added` places, `gone` count). A "
+            "requirement is `unchanged` when the product's closure of what it "
+            "depends on reads the same: say that, never that it is still met, "
+            "and the acceptance still lapses by its bytes. A record taken "
+            "before records kept this evidence is refused: take the acceptance "
+            "again. Nothing is accepted by this tool."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "required": ["record", "root"],
+            "properties": {
+                "record": {"type": "string",
+                           "description": "Path to the acceptance record (local servers only)."},
+                "root": {"type": "string",
+                         "description": "The directory the record's paths are relative to."},
+                "design": {"type": "string", "description": (
+                    "Path to another draft of the design to compare with (local servers only).")},
             },
         },
     },
@@ -2960,6 +3002,21 @@ def _acceptance_impact_tool(args: dict, staging: _Staging) -> dict:
                                       root.resolve(), cwd=staging.dir))
 
 
+def _acceptance_delta_tool(args: dict, staging: _Staging) -> dict:
+    if staging.remote:
+        # As for the impact tool: the question is about the owner's own tree, and
+        # a remote caller has none here.
+        raise ToolArgumentError(
+            "scxml_acceptance_delta reads the owner's own acceptance record and design, so it "
+            "is offered on a local server only")
+    record = _path_arg(args, "record", "the acceptance record")
+    root = _path_arg(args, "root", "the directory the record's paths are relative to")
+    design = (_path_arg(args, "design", "the draft to compare with").resolve()
+              if args.get("design") is not None else None)
+    return _answer(*acceptance_delta(record.resolve(), root.resolve(), design=design,
+                                     cwd=staging.dir))
+
+
 def _accepted_for_tool(args: dict, staging: _Staging) -> dict:
     """The accepted design for this specification, when there is one.
 
@@ -3510,6 +3567,7 @@ _PACK_FREE = {
     "scxml_acceptance_check": _acceptance_check_tool,
     "scxml_accepted_for": _accepted_for_tool,
     "scxml_acceptance_impact": _acceptance_impact_tool,
+    "scxml_acceptance_delta": _acceptance_delta_tool,
 }
 
 

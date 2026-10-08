@@ -132,7 +132,7 @@ class TheServerSpeaksTheProtocol(unittest.TestCase):
              "render_scxml_diagram", "scxml_unresolved", "scxml_requirement_set",
              "scxml_requirements", "scxml_scenarios", "scxml_house_rule",
              "scxml_acceptance_report", "scxml_accept", "scxml_acceptance_check",
-             "scxml_acceptance_impact", "scxml_accepted_for",
+             "scxml_acceptance_impact", "scxml_acceptance_delta", "scxml_accepted_for",
              "works_list", "works_read", "works_save_model", "works_save_requirements",
              "works_begin_generation", "works_finish_generation", "works_fail_generation"},
             names)
@@ -179,7 +179,8 @@ class TheServerSpeaksTheProtocol(unittest.TestCase):
         # face (a profile is a file the owner keeps; this tool only returns it).
         # `scxml_acceptance_impact` is an adapter over the product's own
         # `acceptance-impact`, like the other acceptance tools: the question is
-        # about the owner's records, and no pack is in it.
+        # about the owner's records, and no pack is in it. `scxml_acceptance_delta`
+        # is the same over `acceptance-delta`: a record and a design, no pack.
         # `works_list`, `works_read`, `works_save_model`,
         # `works_save_requirements` and the three that take, finish and give up a
         # generation (`works_begin_generation`, `works_finish_generation`,
@@ -197,6 +198,7 @@ class TheServerSpeaksTheProtocol(unittest.TestCase):
                     "scxml_unresolved", "scxml_requirement_set", "scxml_requirements",
                     "scxml_scenarios", "scxml_house_rule",
                     "scxml_acceptance_report", "scxml_acceptance_impact",
+                    "scxml_acceptance_delta",
                     "scxml_accept", "scxml_acceptance_check", "scxml_accepted_for"}
         self.assertEqual(commands, {t["name"] for t in mcp.TOOLS} - mcp_only)
 

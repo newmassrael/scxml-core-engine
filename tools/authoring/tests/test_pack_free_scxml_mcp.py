@@ -310,6 +310,12 @@ class PackFreeScxmlMcp(unittest.TestCase):
              ["accept", doc, "--manifest", manifest, "--variant", "base",
               "--root", here("."), "--out", here("acc.json"), "--channel", "relayed",
               "--succeeds", here(doc)]),
+            # What moved since the acceptance: the record and the root, and another
+            # draft only when one is named.
+            ("scxml_acceptance_delta", dict(record=doc, root="."),
+             ["acceptance-delta", here(doc), "--root", here(".")]),
+            ("scxml_acceptance_delta", dict(record=doc, root=".", design=answers),
+             ["acceptance-delta", here(doc), "--root", here("."), "--design", here(answers)]),
         ]
         for name, arguments, expected in cases:
             with self.subTest(name=name):

@@ -1238,6 +1238,46 @@ def acceptance_impact(records: list[pathlib.Path], root: pathlib.Path,
     return json.dumps(answer, indent=2, ensure_ascii=False) + "\n", ""
 
 
+def acceptance_delta(record: pathlib.Path, root: pathlib.Path,
+                     codegen: pathlib.Path | None = None, *,
+                     design: pathlib.Path | None = None,
+                     cwd: pathlib.Path | None = None) -> tuple[str, str]:
+    """What moved in a design since an acceptance record was taken, requirement by
+    requirement (`sce-codegen acceptance-delta`), as one JSON object.
+
+    The product compares the record's digests of the rows the owner was shown for
+    each requirement with the rows of the design as it is now: `unchanged`,
+    `changed` (`moved`, where the rows the record lacks are now, and `gone`, how
+    many recorded rows no row matches), `new` (`at`) or `dropped` (`gone`). The
+    lines are gathered, not read again. `design` names another draft to compare
+    with; left out, the record's own document is compared.
+
+    ⚠ A report, not a verdict: the acceptance lapses by its bytes whatever this
+    says, and `unchanged` is the product's closure of what a requirement depends
+    on reading the same, not a statement that the requirement is still met."""
+    args = ["acceptance-delta", str(record), "--root", str(root)]
+    if design is not None:
+        args += ["--design", str(design)]
+    report, refusal = _product_answer(args, codegen, answer="lines", read=_json_lines,
+                                      cwd=cwd)
+    if refusal:
+        return "", refusal
+    lines = json.loads(report)["lines"]
+    summary = next((line for line in lines if line.get("kind") == "acceptance-delta-summary"), None)
+    unclaimed = next((line for line in lines if line.get("kind") == "acceptance-delta-unclaimed"),
+                     None)
+    requirements = [{key: value for key, value in line.items() if key not in ("v", "kind")}
+                    for line in lines if line.get("kind") == "acceptance-delta"]
+    answer = {
+        "version": 1,
+        "summary": {key: summary[key] for key in ("requirements", "unchanged", "changed",
+                                                  "new", "dropped")} if summary else None,
+        "requirements": requirements,
+        "unclaimed": {key: unclaimed[key] for key in ("added", "gone")} if unclaimed else None,
+    }
+    return json.dumps(answer, indent=2, ensure_ascii=False) + "\n", ""
+
+
 def _json_line(stdout: str):
     """The one JSON line a subcommand writes on success -- `check`'s
     manifest, `kinds`' catalog -- or the raw text when it is not one, never
