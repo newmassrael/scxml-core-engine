@@ -3099,7 +3099,8 @@ line of the element or attribute that breaks it:
 | `<data>` with in-line content | The initial value is `expr` — in-line content has no type |
 | `<data>` without `expr` | Every variable declares its initial value; no zero, empty string or first variant stands in. A record variable's is its `<sce:set>`s, and it takes no `expr`; a list starts empty and takes `sce:capacity` instead |
 | `<script>` with script text | No scripting language; a native `<script><cpp>` / `<kt>` block is admitted, as under `null` |
-| `<send typeexpr>`, a `<send idlocation>` that names no string variable the id fits (see **Generated send ids** below) | No typed form: each is evaluated as script-engine text by every backend's templates |
+| a `<send idlocation>` that names no string variable the id fits (see **Generated send ids** below) | No typed form: it is evaluated as script-engine text by every backend's templates |
+| a `<send typeexpr>` that declares no `sce:types`, one written beside a `type` or a `targetexpr`, or a `sce:types` that names a type other than the SCXML or BasicHTTP processor, two entries of one type, no entry, or a send with no `typeexpr` | See **A computed type** below. A `typeexpr` is a string expression; the processors it can take are declared, since a machine with no script engine has nothing to learn them from when the send runs. Refused at the attribute as `scxml/static-datamodel-rule` (the missing declaration and the two types or targets) or where `sce:types` is written (`validation/incompatible-attributes`, `validation/empty-value`) |
 | a `<send targetexpr>` that declares no `sce:targets`, one written beside a `target`, or a `sce:targets` that names a route the SCXML Event I/O Processor cannot address, a Mesh peer, two entries of one route, no entry, a send with no `targetexpr`, or a `type` other than the SCXML processor | See **A computed target** below. A `targetexpr` is a string expression; the routes it can take are declared, since a machine with no script engine has nothing to learn them from when the send runs. Refused at the attribute as `scxml/static-datamodel-rule` (the missing declaration and the two targets) or where `sce:targets` is written (`validation/incompatible-attributes`, `validation/empty-value`) |
 | a hybrid `<invoke>` that declares no `sce:candidates`, one whose `<content expr>` produces the child's document, a candidate that is not a `sce-static` document this build read, a `srcexpr` that is not a string, or an argument no candidate declares a variable for or of another type than the candidate's variable | See **A hybrid `<invoke>`** under §2.13. Refused at the `<invoke>` (or its `<param>`) as `scxml/static-datamodel-rule`: with no declared set there is no finite list of children to lower, and an argument every candidate would drop is refused as a static invoke's is |
 | `<invoke idlocation>` | Refused for want of a reader, not of a form: the id it would store is the one the build already wrote (the `id`, or `<state>.platform_N`), and this model reads no `_event.invokeid` — only `_event.data` — so a stored id has nothing to be compared with. A document that must name its invocation writes `id`, which `done.invoke.<id>` and `error.invoke.<id>` already match |
@@ -3305,8 +3306,36 @@ session passes the empty own-session id
 holds the route in a buffer it fills only with an entry the value equals — a value no
 entry names leaves it empty, which the one table `sce_classify_send_target` reads as an
 address nobody answers at
-(`a_static_c11_send_target_is_held_to_its_declared_routes_ctest.cases`). `typeexpr` is still
-refused as above. A `<cancel>`'s
+(`a_static_c11_send_target_is_held_to_its_declared_routes_ctest.cases`). A `<send>`'s
+`typeexpr` is **a computed type**, for the reason a computed target is: a string
+computed from the machine's fields when the send runs, chosen among the processors the
+document declares as `sce:types="http://www.w3.org/TR/scxml/#SCXMLEventProcessor
+http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"` (docs/adr/0005, decision 3). The
+value is compared with the entries when the send runs, and the send is delivered by the
+processor the matching entry names; a value in none of them is `error.execution` and
+nothing is sent — whether or not it names a processor this build serves, since the
+declaration is what the send was held to. An entry is a processor every generated
+language and the Interpreter deliver through, by its URI: the SCXML Event I/O Processor
+and BasicHTTP. A type the host serves is chosen by a written `type`, as before. Where
+the attribute is written, an entry that names no such processor, one named twice
+(`validation/incompatible-attributes`), none at all (`validation/empty-value`), and
+`sce:types` on a send with no `typeexpr` are refused; at the `typeexpr` itself
+(`scxml/static-datamodel-rule`) so is one that declares no set, one beside a `type`,
+and one beside a `targetexpr`, since a target chosen among `#_` locations is no address
+for the HTTP processor the type may name. No generated language has a template of its
+own for it: the walk expands the `<send>` into an `<if>` whose branches are one `<send>`
+of a written `type` for each declared processor, taken when the value is that
+processor's, and whose `<else>` is a `<send>` of a type nothing delivers through, which
+every engine already answers with `error.execution`
+(`a_computed_type_expands_to_one_send_for_each_processor_it_declares.cases`). Each
+engine therefore delivers by the arm it has for a written type, and a language that
+refuses a written one refuses a set that names it — C11 BasicHTTP, C++ a BasicHTTP
+`<param>`. The Interpreter runs the document's own `<send>`, so its lowering rewrites
+the attribute to `SceStatic.processor(<expression>, [<entries>])`, which throws for a
+value outside the set, so the attribute cannot be evaluated and the engine raises
+`error.execution` with nothing sent
+(`scenarios/static_send_type.json`, on the six generated backends and the
+Interpreter). A `<cancel>`'s
 `sendidexpr` is the same for the id of the delayed send it removes: a string
 computed from the machine's fields when the cancel runs, so the one `<cancel>`
 removes another send once the id it reads has changed. An id no send holds, the

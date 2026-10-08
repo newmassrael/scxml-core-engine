@@ -345,7 +345,8 @@ pub(crate) fn what_the_state_is(state: &crate::model::State) -> String {
 pub(crate) fn what_the_action_does(action: &crate::model::Action) -> String {
     let mut parts = vec![action.action_type.clone()];
     let targets = action.targets.join(" ");
-    let fields: [(&str, &str); 20] = [
+    let types = action.types.join(" ");
+    let fields: [(&str, &str); 21] = [
         ("name", action.native_action_name.as_str()),
         ("event", action.event.as_str()),
         ("eventexpr", action.eventexpr.as_str()),
@@ -357,6 +358,7 @@ pub(crate) fn what_the_action_does(action: &crate::model::Action) -> String {
         ("targets", targets.as_str()),
         ("type", action.send_type.as_str()),
         ("typeexpr", action.typeexpr.as_str()),
+        ("types", types.as_str()),
         ("namelist", action.namelist.as_str()),
         ("location", action.location.as_str()),
         ("expr", action.expr.as_str()),

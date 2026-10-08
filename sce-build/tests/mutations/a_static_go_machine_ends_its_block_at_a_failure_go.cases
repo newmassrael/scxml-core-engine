@@ -93,6 +93,7 @@ mutation_targets backends/go/tests/integration/static_datamodel/static_send_idlo
 mutation_targets backends/go/tests/integration/static_datamodel/static_send_namelist/static_send_namelist_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_send_params/static_send_params_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_send_target/static_send_target_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_send_type/static_send_type_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_string_capacity/static_string_capacity_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_timers/static_timers_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_whole_payload/static_whole_payload_sm.go

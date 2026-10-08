@@ -310,6 +310,16 @@ pub struct Action {
 
     pub typeexpr: String,
 
+    /// `sce:types` (docs/adr/0005, decision 3): the Event I/O Processor types a
+    /// `<send typeexpr>` of a `datamodel="sce-static"` document can take, each a
+    /// type as a written `type` is. The send goes by the processor the value the
+    /// expression computes names when it runs, and a value in none of them is
+    /// `error.execution` with nothing sent. Empty for a send that declares none.
+    /// Read under every data model and held to only under `sce-static`, as
+    /// [`Self::targets`] is.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub types: Vec<String>,
+
     /// `true` when [`Self::send_type`] is a literal naming an Event I/O
     /// Processor this build has no delivery path for, so the emitted
     /// code raises `error.execution` at this site instead of sending
@@ -927,6 +937,7 @@ impl Action {
                 "targets",
                 "send_type",
                 "typeexpr",
+                "types",
                 "delay",
                 "delayexpr",
                 "id",

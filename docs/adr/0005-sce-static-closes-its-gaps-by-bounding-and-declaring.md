@@ -119,7 +119,7 @@ hybrid `<invoke>` declares `sce:candidates`:
 
 ```xml
 <send event="go" targetexpr="route" sce:targets="#_parent #_internal"/>
-<send event="go" typeexpr="kind"    sce:types="http scxml"/>
+<send event="go" typeexpr="kind"    sce:types="http://www.w3.org/TR/scxml/#SCXMLEventProcessor http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"/>
 ```
 
 The expression is a string expression, lowered natively. The machine compares its value
@@ -131,6 +131,21 @@ expression with no declared set (there is no finite list to lower), two entries 
 one route, and an attribute written and left empty. A declared entry that neither the
 machine's own processors nor the host's declared types (`--host-processor`) serve is
 refused where it is declared, by name.
+
+As landed, a `typeexpr` entry is a processor every generated language and the Interpreter
+deliver through, written by its URI: the SCXML Event I/O Processor and BasicHTTP. A type
+the host serves is still chosen by a written `type`, which the host's declaration claims
+after the parse; letting a computed type select one is a separate step, because the host
+registry is a per-build input and the set a document declares would then depend on it.
+A `targetexpr` and a `typeexpr` are not computed together: a target chosen among `#_`
+locations is no address for the HTTP processor the type may name.
+
+A computed type has no template of its own in any language. The walk expands the `<send>`
+into an `<if>` whose branches are one `<send>` of a written `type` for each declared
+entry, taken when the value equals it, and whose `<else>` is a `<send>` of a type nothing
+delivers through. Every engine already answers that with `error.execution`, so the
+choice is made once and each engine delivers by the arm it has for a written type; the
+refusals a language holds for a written type apply to each declared entry.
 
 Rejected:
 

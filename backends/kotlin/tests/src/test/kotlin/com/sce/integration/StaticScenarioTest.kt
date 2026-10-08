@@ -54,6 +54,7 @@ import com.sce.integration.static_send_idlocation.StaticSendIdlocationStateMachi
 import com.sce.integration.static_send_namelist.StaticSendNamelistStateMachine
 import com.sce.integration.static_send_params.StaticSendParamsStateMachine
 import com.sce.integration.static_send_target.StaticSendTargetStateMachine
+import com.sce.integration.static_send_type.StaticSendTypeStateMachine
 import com.sce.integration.static_record_bytes.StaticRecordBytesStateMachine
 import com.sce.integration.static_record_string.StaticRecordStringStateMachine
 import com.sce.integration.static_string_capacity.StaticStringCapacityStateMachine
@@ -688,6 +689,28 @@ class StaticScenarioTest {
         try {
             replay(
                 scenario("static_send_target"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // The `typeexpr` of a <send> is a string computed from the machine's fields
+    // when the send runs, held to the processors the document declares as
+    // `sce:types` (docs/adr/0005, decision 3): the send is delivered by the processor
+    // the matching entry names, and a value in none of them is error.execution with
+    // nothing sent.
+    @Test
+    fun staticSendTypeIsChosenAmongTheDeclaredProcessors() {
+        val sm = StaticSendTypeStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_send_type"),
                 send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
                 tick = { sm.tick() },
                 save = { sm.save() },

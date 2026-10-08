@@ -130,10 +130,6 @@ struct ContentExpr<'a> {
     beside: bool,
 }
 
-/// The attributes of executable content that carry an expression this model
-/// does not type, with the element each belongs to. Refused where written.
-const UNTYPED_ACTION_ATTRIBUTES: &[(&str, &str)] = &[("send", "typeexpr")];
-
 /// The most bytes of the id a machine generates for a `<send idlocation>`:
 /// `_auto_send_` and the twenty digits of the largest `u64` count. The number
 /// every runtime's `AUTO_SEND_ID_MAX_LEN` states
@@ -947,26 +943,9 @@ impl<'a> Judge<'a> {
         Ok(())
     }
 
-    /// The refusal of an expression attribute this model has no typed form
-    /// for, placed on the attribute.
-    fn untyped(
-        &self,
-        construct: String,
-        spelling: Option<&crate::attribute_spelling::AttributeSpelling>,
-        state: &str,
-        value: &str,
-    ) -> Located<ForgeError> {
-        self.untyped_at(
-            construct,
-            spelling.map(|s| s.row()),
-            spelling.map(|s| s.col()),
-            state,
-            value,
-        )
-    }
-
-    /// [`Self::untyped`] placed at `line`/`col` — for a construct the model
-    /// records by its element's position rather than by an attribute's.
+    /// The refusal of an expression this model has no typed form for, placed
+    /// at `line`/`col` — for a construct the model records by its element's
+    /// position rather than by an attribute's.
     fn untyped_at(
         &self,
         construct: String,
@@ -1117,6 +1096,58 @@ impl<'a> Judge<'a> {
         self.expr(
             ctx,
             &action.targetexpr,
+            spelling,
+            Expected::Slot(InferredType::Str),
+        )?;
+        Ok(())
+    }
+
+    /// A `<send>`'s `typeexpr`: a string, the Event I/O Processor the send is
+    /// delivered through, computed from the machine's fields when the send runs
+    /// and chosen among the types the document declares as `sce:types`
+    /// (docs/adr/0005, decision 3). An expression with no declared set is refused
+    /// where it is written, naming the attribute to add. The element takes one
+    /// type, a written one or an expression, so a `type` beside it is refused; and
+    /// a computed target beside a computed type is refused, since a target chosen
+    /// among `#_` locations is no address for the HTTP processor the type may name.
+    fn type_expr(
+        &self,
+        ctx: &TypeCtx<'_>,
+        action: &Action,
+        state: &str,
+    ) -> Result<(), Located<ForgeError>> {
+        let spelling = action.spellings.get("typeexpr");
+        let refuse = |rule: &str| {
+            self.rule_at(
+                format!("typeexpr=\"{}\"", action.typeexpr),
+                rule,
+                spelling.map(|s| s.row()),
+                spelling.map(|s| s.col()),
+                state,
+                &action.typeexpr,
+            )
+        };
+        if !action.send_type.trim().is_empty() {
+            return Err(refuse(
+                "a <send> names its type as `type` or as `typeexpr`, and never as both",
+            ));
+        }
+        if !action.targetexpr.trim().is_empty() {
+            return Err(refuse(
+                "a <send> computes its type or its target, not both: a target chosen among \
+                 `#_` locations is no address for the HTTP processor the type may name",
+            ));
+        }
+        if action.types.is_empty() {
+            return Err(refuse(
+                "a computed type is chosen among the processors the document declares, since \
+                 this data model has no engine to learn them when the send runs: add \
+                 `sce:types` naming each value the expression can take",
+            ));
+        }
+        self.expr(
+            ctx,
+            &action.typeexpr,
             spelling,
             Expected::Slot(InferredType::Str),
         )?;
@@ -1440,20 +1471,6 @@ impl<'a> Judge<'a> {
         state: &str,
     ) -> Result<(), Located<ForgeError>> {
         let kind = action.action_type.as_str();
-        for (element, attr) in UNTYPED_ACTION_ATTRIBUTES {
-            if kind != *element {
-                continue;
-            }
-            let value = action_attribute(action, attr);
-            if !value.is_empty() {
-                return Err(self.untyped(
-                    format!("{attr}=\"{value}\""),
-                    action.spellings.get(attr),
-                    state,
-                    value,
-                ));
-            }
-        }
         match kind {
             "assign" => {
                 // A record is built whole and updated a field at a time
@@ -1568,6 +1585,9 @@ impl<'a> Judge<'a> {
                 }
                 if !action.targetexpr.is_empty() {
                     self.target_expr(ctx, action, state)?;
+                }
+                if !action.typeexpr.is_empty() {
+                    self.type_expr(ctx, action, state)?;
                 }
                 if !action.delayexpr.is_empty() {
                     self.delay_expr(ctx, action, state)?;
@@ -2237,16 +2257,5 @@ impl<'a> Judge<'a> {
             }
         }
         Ok(())
-    }
-}
-
-/// The value of one of [`UNTYPED_ACTION_ATTRIBUTES`] on `action`.
-fn action_attribute<'a>(action: &'a Action, attr: &str) -> &'a str {
-    match attr {
-        "targetexpr" => &action.targetexpr,
-        "typeexpr" => &action.typeexpr,
-        // An attribute listed in [`UNTYPED_ACTION_ATTRIBUTES`] and read nowhere
-        // here would be refused never, which is the worst way to fail.
-        other => unreachable!("`{other}` is read by no arm of action_attribute"),
     }
 }

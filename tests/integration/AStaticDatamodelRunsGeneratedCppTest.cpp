@@ -68,6 +68,7 @@
 #include "static_send_namelist_sm.h"
 #include "static_send_params_sm.h"
 #include "static_send_target_sm.h"
+#include "static_send_type_sm.h"
 #include "static_string_capacity_sm.h"
 #include "static_whole_payload_sm.h"
 #include "static_wire_enum_sm.h"
@@ -661,6 +662,19 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, ASendsTargetIsChosenAmongTheDeclaredR
         {"refused", [](const Machine &m) { return json(m.refused()); }},
     });
     replay("static_send_target", driver);
+}
+
+// The `typeexpr` of a `<send>` is a string computed from the machine's fields when
+// the send runs, held to the processors the document declares as `sce:types`
+// (docs/adr/0005, decision 3): the send is delivered by the processor the matching
+// entry names, and a value in none of them is error.execution with nothing sent.
+TEST(AStaticDatamodelRunsGeneratedCppTest, ASendsTypeIsChosenAmongTheDeclaredProcessors) {
+    using Machine = G::static_send_type::static_send_type;
+    Driver<Machine> driver({
+        {"landed", [](const Machine &m) { return json(m.landed()); }},
+        {"refused", [](const Machine &m) { return json(m.refused()); }},
+    });
+    replay("static_send_type", driver);
 }
 
 // The `delayexpr` of a `<send>` is a string computed from the machine's fields when

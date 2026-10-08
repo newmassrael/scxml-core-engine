@@ -242,6 +242,13 @@
         "typeexpr": {
           "type": "string"
         },
+        "types": {
+          "description": "`sce:types` (docs/adr/0005, decision 3): the Event I/O Processor types a `<send typeexpr>` of a `datamodel=\"sce-static\"` document can take, each a type as a written `type` is. The send goes by the processor the value the expression computes names when it runs, and a value in none of them is `error.execution` with nothing sent. Empty for a send that declares none. Read under every data model and held to only under `sce-static`, as [`Self::targets`] is.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "unresolved": {
           "description": "`sce:unresolved` placeholder markers attached to this executable-content element.",
           "items": {

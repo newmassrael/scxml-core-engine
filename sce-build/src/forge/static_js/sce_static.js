@@ -338,6 +338,15 @@
       }
       return entries.indexOf(value) < 0 ? '' : value;
     },
+    processor: function (value, entries) {
+      if (typeof value !== 'string') {
+        fail('expected the string a computed type is, read ' + String(value));
+      }
+      if (entries.indexOf(value) < 0) {
+        fail('the type ' + value + ' is not one the send declares in sce:types');
+      }
+      return value;
+    },
     candidate: function (value, stems) {
       if (typeof value !== 'string') {
         fail('expected the string a hybrid invoke names its document by, read ' + String(value));

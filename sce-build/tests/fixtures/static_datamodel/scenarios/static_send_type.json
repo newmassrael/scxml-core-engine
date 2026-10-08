@@ -1,0 +1,40 @@
+{
+  "machine": "static_send_type",
+  "about": "The `typeexpr` of a <send> is a string computed from the machine's fields when the send runs, held to the processors the document declares as `sce:types`: the send is delivered by the processor the matching entry names, and a value in none of them is error.execution with nothing sent. `kind` holds the SCXML Event I/O Processor to begin with, so `fire` delivers `landed` to this session. `aim.bogus` makes it a type nothing serves, and `aim.http` a processor this build serves (BasicHTTP) that this send does not declare: each is refused. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "note": "nothing has been sent yet",
+      "expect": { "state": "idle", "variables": { "landed": 0, "refused": 0 } } },
+
+    { "note": "the type the machine holds is a declared one: the event is delivered",
+      "event": "fire",
+      "expect": { "variables": { "landed": 1, "refused": 0 } } },
+
+    { "note": "and again: the send reads the type each time it runs",
+      "event": "fire",
+      "expect": { "variables": { "landed": 2, "refused": 0 } } },
+
+    { "note": "the type changes to one nothing serves; nothing is sent",
+      "event": "aim.bogus",
+      "expect": { "variables": { "landed": 2, "refused": 0 } } },
+
+    { "note": "a value in none of the declared types cannot be delivered: error.execution, and nothing sent",
+      "event": "fire",
+      "expect": { "variables": { "landed": 2, "refused": 1 } } },
+
+    { "note": "the type changes to BasicHTTP, a processor this build serves",
+      "event": "aim.http",
+      "expect": { "variables": { "landed": 2, "refused": 1 } } },
+
+    { "note": "this send did not declare it: refused all the same, and nothing sent",
+      "event": "fire",
+      "expect": { "variables": { "landed": 2, "refused": 2 } } },
+
+    { "note": "the type is a declared one again, and the machine goes on",
+      "event": "aim.scxml",
+      "expect": { "variables": { "landed": 2, "refused": 2 } } },
+
+    { "note": "fire delivers it",
+      "event": "fire",
+      "expect": { "variables": { "landed": 3, "refused": 2 } } }
+  ]
+}

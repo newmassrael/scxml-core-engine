@@ -9887,6 +9887,10 @@
         {
           "file": "backends/python/runtime/sce_runtime/host_processor.py",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/static_lowering.rs",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",

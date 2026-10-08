@@ -1,0 +1,45 @@
+# Mutation cases for "a computed type is chosen among the processors the document
+# declares" under the Interpreter (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A computed
+# type"; docs/adr/0005, decision 3).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_interpreter_send_type_is_held_to_its_declared_processors_ctest.cases`.
+#
+# The Interpreter runs the document's own `<send>`, so the lowering rewrites the
+# `typeexpr` to a call of the library that holds the value to the processors the
+# document declares as `sce:types`: a value that is none of them cannot be
+# evaluated, so the send raises `error.execution` with nothing sent. `static_send_type`
+# is replayed by `static_datamodel_lowered`: `fire` declares the SCXML Event I/O
+# Processor alone, so a type nothing serves, and BasicHTTP, which the engine serves
+# but this send did not declare, are both refused. The mutants each take one decision
+# away:
+#
+#   a value that is none of the declared processors is let through;
+#   the declared processors are not given to the library;
+#   the attribute is held with the library's helper for a target.
+#
+# The library is embedded in the generator, so the regeneration is the build the
+# ctest names. Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^static_datamodel_lowered$'
+mutation_targets sce-build/src/forge/static_js/sce_static.js sce-build/src/forge/static_js.rs
+mutation_oracles tests/integration/AStaticDatamodelRunsLoweredUnderTheInterpreterTest.cpp sce-build/tests/fixtures/static_datamodel/static_send_type.scxml sce-build/tests/fixtures/static_datamodel/scenarios/static_send_type.json
+
+mutation_case "a value that is none of the declared processors is let through" <<'PY'
+edit("sce-build/src/forge/static_js/sce_static.js",
+     "      if (entries.indexOf(value) < 0) {\n        fail('the type '",
+     "      if (false && entries.indexOf(value) < 0) {\n        fail('the type '")
+PY
+
+mutation_case "the declared processors are not given to the library" <<'PY'
+edit("sce-build/src/forge/static_js.rs",
+     "            \"{RUNTIME_GLOBAL}.processor({native_type}, [{}])\",\n            names.join(\", \")",
+     "            \"{RUNTIME_GLOBAL}.processor({native_type}, [{}])\",\n            names.iter().take(0).cloned().collect::<Vec<_>>().join(\", \")")
+PY
+
+mutation_case "the attribute is held with the helper for a target" <<'PY'
+edit("sce-build/src/forge/static_js.rs",
+     "\"{RUNTIME_GLOBAL}.processor({native_type}, [{}])\"",
+     "\"{RUNTIME_GLOBAL}.route({native_type}, [{}])\"")
+PY

@@ -125,6 +125,9 @@ use sce_rust_tests::integration::static_datamodel::static_send_params_sm::{
 use sce_rust_tests::integration::static_datamodel::static_send_target_sm::{
     StaticSendTargetPersist, StaticSendTargetPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_send_type_sm::{
+    StaticSendTypePersist, StaticSendTypePolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_string_capacity_sm::{
     StaticStringCapacityPersist, StaticStringCapacityPolicy,
 };
@@ -615,6 +618,21 @@ fn static_send_target_is_chosen_among_the_declared_routes() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_send_target.json"
+        ),
+    );
+}
+
+// The `typeexpr` of a <send> is a string computed from the machine's fields when
+// the send runs, held to the processors the document declares as `sce:types`
+// (docs/adr/0005, decision 3): the send is delivered by the processor the matching
+// entry names, and a value in none of them is error.execution with nothing sent.
+#[test]
+fn static_send_type_is_chosen_among_the_declared_processors() {
+    replay(
+        Engine::new(StaticSendTypePolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_send_type.json"
         ),
     );
 }

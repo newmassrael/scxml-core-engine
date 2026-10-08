@@ -547,6 +547,21 @@ impl StaticTarget for JsTarget {
             names.join(", ")
         ))
     }
+    // Its own `<send>` evaluates the `typeexpr` and delivers by the processor the
+    // value names, so the attribute becomes the call that holds the value to the
+    // types the document declares as `sce:types`: one that is none of them throws,
+    // the attribute cannot be evaluated, and `error.execution` is raised with
+    // nothing sent (docs/adr/0005, decision 3).
+    fn type_expr_site(&self, native_type: &str, entries: &[String]) -> Option<String> {
+        let names: Vec<String> = entries
+            .iter()
+            .map(|entry| serde_json::to_string(entry).expect("a string is JSON"))
+            .collect();
+        Some(format!(
+            "{RUNTIME_GLOBAL}.processor({native_type}, [{}])",
+            names.join(", ")
+        ))
+    }
     fn hybrid_src_site(&self, native_src: &str, stems: &[&str]) -> Option<String> {
         let names: Vec<String> = stems
             .iter()

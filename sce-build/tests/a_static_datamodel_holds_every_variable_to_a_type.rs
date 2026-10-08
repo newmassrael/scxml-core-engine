@@ -1119,18 +1119,22 @@ fn an_assignment_of_another_kind_is_refused() {
 }
 
 #[test]
-fn an_expression_the_model_has_no_typed_form_for_is_refused() {
-    // `typeexpr` is evaluated as script text by every backend's templates,
-    // so admitting it would run part of the document in a language it never
-    // declared.
+fn a_computed_type_that_declares_nothing_is_refused_naming_the_attribute() {
+    // No engine learns the processors at run time, so the ones the expression can
+    // name are written down: an expression with no declared set is refused where it
+    // is written, and the refusal names the attribute that would say which.
     let (ok, out) = run(
         &["check"],
         &machine(
             r#"<state id="s"><onentry><send event="go" typeexpr="'http://www.w3.org/TR/scxml/#SCXMLEventProcessor'"/></onentry></state>"#,
         ),
     );
-    assert!(!ok, "typeexpr has no typed form here:\n{out}");
+    assert!(!ok, "no engine learns the processors at run time:\n{out}");
     assert_refused_at(&out, "scxml/static-datamodel-rule", 8);
+    assert!(
+        out.contains("add `sce:types`"),
+        "the refusal names the attribute to add:\n{out}"
+    );
 }
 
 // ── A computed target is chosen among the routes the document declares ──
@@ -1328,6 +1332,208 @@ fn a_computed_target_has_no_no_std_lowering_yet() {
         out.contains("a <send> with a targetexpr has no Rust no_std lowering yet"),
         "the refusal names the construct:\n{out}"
     );
+}
+
+// ── A computed type is chosen among the processors the document declares ─
+
+/// The SCXML Event I/O Processor and BasicHTTP, as a document spells them.
+const SCXML_PROCESSOR: &str = "http://www.w3.org/TR/scxml/#SCXMLEventProcessor";
+const HTTP_PROCESSOR: &str = "http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor";
+
+/// `machine`, with a string variable `kind` for a `typeexpr` to read, and `send`
+/// made as the state's entry. The extra variable puts the state on line 9.
+fn typing(send: &str) -> String {
+    machine(&format!(
+        r#"<state id="s"><onentry>{send}</onentry></state>"#
+    ))
+    .replace(
+        r#"<data id="ready" sce:type="bool" expr="false"/>"#,
+        &format!(
+            r#"<data id="ready" sce:type="bool" expr="false"/>
+    <data id="kind" sce:type="string" sce:capacity="64" expr="'{SCXML_PROCESSOR}'"/>"#
+        ),
+    )
+}
+
+#[test]
+fn a_computed_type_that_declares_its_processors_is_accepted_by_the_document() {
+    let document = typing(&format!(
+        r##"<send event="go" typeexpr="kind" sce:types="{SCXML_PROCESSOR} {HTTP_PROCESSOR}"/>"##
+    ));
+    let (ok, out) = run(&["check"], &document);
+    assert!(
+        ok,
+        "a declared set of processors makes the type finite:\n{out}"
+    );
+    let (ok, out) = run(&["lower"], &document);
+    assert!(ok, "the Interpreter lowers a computed type:\n{out}");
+    // The attribute is an XML one, so the entries' quotes are written as entities.
+    assert!(
+        out.contains(&format!(
+            "SceStatic.processor(kind, [&quot;{SCXML_PROCESSOR}&quot;, &quot;{HTTP_PROCESSOR}&quot;])"
+        )),
+        "the lowered attribute holds the value to the declared types:\n{out}"
+    );
+}
+
+#[test]
+fn a_type_written_beside_a_computed_one_is_refused() {
+    let (ok, out) = run(
+        &["check"],
+        &typing(&format!(
+            r##"<send event="go" type="{SCXML_PROCESSOR}" typeexpr="kind" sce:types="{SCXML_PROCESSOR}"/>"##
+        )),
+    );
+    assert!(!ok, "a send takes one type:\n{out}");
+    assert!(
+        out.contains("never as both"),
+        "the refusal says why:\n{out}"
+    );
+}
+
+#[test]
+fn a_computed_type_beside_a_computed_target_is_refused() {
+    let (ok, out) = run(
+        &["check"],
+        &typing(&format!(
+            r##"<send event="go" typeexpr="kind" sce:types="{SCXML_PROCESSOR}" targetexpr="kind" sce:targets="#_internal"/>"##
+        )),
+    );
+    assert!(!ok, "a send computes its type or its target:\n{out}");
+    assert!(
+        out.contains("computes its type or its target, not both"),
+        "the refusal says why:\n{out}"
+    );
+}
+
+#[test]
+fn a_computed_type_is_judged_as_the_string_it_is_compared_as() {
+    // The value is compared with the declared processors as text: an integer is no
+    // type, and a name nothing declares is no value at all.
+    for expression in ["count", "kind_nothing_declares"] {
+        let (ok, out) = run(
+            &["check"],
+            &typing(&format!(
+                r##"<send event="go" typeexpr="{expression}" sce:types="{SCXML_PROCESSOR}"/>"##
+            )),
+        );
+        assert!(!ok, "typeexpr=\"{expression}\" is no string:\n{out}");
+    }
+}
+
+#[test]
+fn the_types_a_computed_type_declares_are_held_to_what_a_build_delivers_through() {
+    for (declared, fragment) in [
+        (
+            "scxml",
+            "is not an Event I/O Processor a computed type selects",
+        ),
+        (
+            "urn:example:other",
+            "is not an Event I/O Processor a computed type selects",
+        ),
+        (
+            &format!("{SCXML_PROCESSOR} {SCXML_PROCESSOR}") as &str,
+            "twice",
+        ),
+    ] {
+        let (ok, out) = run(
+            &["check"],
+            &typing(&format!(
+                r##"<send event="go" typeexpr="kind" sce:types="{declared}"/>"##
+            )),
+        );
+        assert!(!ok, "sce:types=\"{declared}\" is refused:\n{out}");
+        assert!(
+            out.contains(fragment),
+            "sce:types=\"{declared}\": expected `{fragment}`:\n{out}"
+        );
+    }
+    let (ok, out) = run(
+        &["check"],
+        &typing(r##"<send event="go" typeexpr="kind" sce:types="  "/>"##),
+    );
+    assert!(
+        !ok,
+        "an attribute written and left blank declares nothing:\n{out}"
+    );
+    assert!(
+        out.contains("sce:types"),
+        "the refusal names the attribute:\n{out}"
+    );
+    let (ok, out) = run(
+        &["check"],
+        &typing(&format!(
+            r##"<send event="go" sce:types="{SCXML_PROCESSOR}"/>"##
+        )),
+    );
+    assert!(!ok, "no expression chooses among them:\n{out}");
+    assert!(
+        out.contains("belongs only on a send that has one"),
+        "the refusal says why:\n{out}"
+    );
+}
+
+#[test]
+fn sce_types_under_a_script_data_model_is_read_and_not_held_to() {
+    // As `sce:targets` is: read so that a document an Interpreter lowering writes
+    // is the document it was, and an entry that is no processor is refused here as
+    // there.
+    let document = format!(
+        r##"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s" datamodel="ecmascript">
+  <state id="s">
+    <onentry><send event="go" typeexpr="'{SCXML_PROCESSOR}'" sce:types="{SCXML_PROCESSOR}"/></onentry>
+  </state>
+</scxml>
+"##
+    );
+    let (ok, out) = run(&["check"], &document);
+    assert!(
+        ok,
+        "a declaration under a script data model is read:\n{out}"
+    );
+    let (ok, out) = run(
+        &["check"],
+        &document.replace(
+            &format!("sce:types=\"{SCXML_PROCESSOR}\""),
+            "sce:types=\"scxml\"",
+        ),
+    );
+    assert!(
+        !ok,
+        "an entry that is no processor is refused there too:\n{out}"
+    );
+}
+
+#[test]
+fn every_generated_language_delivers_a_computed_type_by_the_processor_it_names() {
+    // The SCXML Event I/O Processor is delivered through by every language; the
+    // choice is a literal-type send for each declared type, taken by comparing the
+    // value, so what a language lowers of a written `type` it lowers of each entry.
+    let scxml_only = typing(&format!(
+        r##"<send event="go" typeexpr="kind" sce:types="{SCXML_PROCESSOR}"/>"##
+    ));
+    for &lang in COMPUTED_TARGET_LANGUAGES {
+        let (ok, out) = run(&check_args(lang), &scxml_only);
+        assert!(ok, "{lang} delivers a computed SCXML type:\n{out}");
+    }
+    // BasicHTTP is a processor C11 holds no delivery path for, so a set that may name
+    // it is refused by name there, as a written BasicHTTP `type` is.
+    let with_http = typing(&format!(
+        r##"<send event="go" typeexpr="kind" sce:types="{SCXML_PROCESSOR} {HTTP_PROCESSOR}"/>"##
+    ));
+    let (ok, out) = run(&check_args("c11"), &with_http);
+    assert!(!ok, "C11 has no delivery path for BasicHTTP:\n{out}");
+    assert!(
+        out.contains(&format!("a <send> of type `{HTTP_PROCESSOR}`")),
+        "the refusal names the type:\n{out}"
+    );
+    for lang in ["rust", "kotlin", "go", "python", "cpp"] {
+        let (ok, out) = run(&check_args(lang), &with_http);
+        assert!(ok, "{lang} delivers a computed BasicHTTP type:\n{out}");
+    }
 }
 
 // ── A host action's arguments are typed expressions ─────────────────────

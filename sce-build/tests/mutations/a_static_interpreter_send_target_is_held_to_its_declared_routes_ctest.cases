@@ -35,8 +35,8 @@ PY
 
 mutation_case "the declared routes are not given to the library" <<'PY'
 edit("sce-build/src/forge/static_js.rs",
-     "            .map(|entry| serde_json::to_string(entry).expect(\"a string is JSON\"))\n",
-     "            .filter(|_| false)\n            .map(|entry| serde_json::to_string(entry).expect(\"a string is JSON\"))\n")
+     "            .map(|entry| serde_json::to_string(entry).expect(\"a string is JSON\"))\n            .collect();\n        Some(format!(\n            \"{RUNTIME_GLOBAL}.route(",
+     "            .filter(|_| false)\n            .map(|entry| serde_json::to_string(entry).expect(\"a string is JSON\"))\n            .collect();\n        Some(format!(\n            \"{RUNTIME_GLOBAL}.route(")
 PY
 
 mutation_case "the attribute is not rewritten at all" <<'PY'

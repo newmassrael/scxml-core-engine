@@ -69,6 +69,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_send_namelist"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_send_params"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_send_target"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_send_type"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_string_capacity"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_whole_payload"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_wire_enum"
@@ -870,6 +871,19 @@ func TestASendsTargetIsChosenAmongTheDeclaredRoutes(t *testing.T) {
 	policy := static_send_target.NewStaticSendTargetPolicy()
 	policy.SessionID = sce.GenerateSessionID()
 	replay(t, "static_send_target", drive[static_send_target.StaticSendTargetState, static_send_target.StaticSendTargetEvent](&policy, map[string]func() any{
+		"landed":  func() any { return policy.Landed() },
+		"refused": func() any { return policy.Refused() },
+	}))
+}
+
+// The `typeexpr` of a <send> is a string computed from the machine's fields when
+// the send runs, held to the processors the document declares as `sce:types`
+// (docs/adr/0005, decision 3): the send is delivered by the processor the matching
+// entry names, and a value in none of them is error.execution with nothing sent.
+func TestASendsTypeIsChosenAmongTheDeclaredProcessors(t *testing.T) {
+	policy := static_send_type.NewStaticSendTypePolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_send_type", drive[static_send_type.StaticSendTypeState, static_send_type.StaticSendTypeEvent](&policy, map[string]func() any{
 		"landed":  func() any { return policy.Landed() },
 		"refused": func() any { return policy.Refused() },
 	}))

@@ -334,6 +334,18 @@ pub trait StaticTarget {
     fn target_expr_site(&self, _native_target: &str, _entries: &[String]) -> Option<String> {
         None
     }
+    /// What the `typeexpr` attribute of a `<send>` is rewritten to, for a target
+    /// that runs the document's own attribute (docs/adr/0005, decision 3):
+    /// `native_type`, the string the attribute computes, held to the `entries` the
+    /// document declares as `sce:types` — one that is none of them cannot be
+    /// evaluated, which the engine answers as `error.execution` with nothing
+    /// sent. `None` for a target that generates the choice: it is expanded where
+    /// the `<send>` stands into one literal-type `<send>` for each entry
+    /// ([`expand_computed_type`]), so each engine delivers by the processor its own
+    /// arms already deliver a written `type` through.
+    fn type_expr_site(&self, _native_type: &str, _entries: &[String]) -> Option<String> {
+        None
+    }
     /// Whether a `<cancel>`'s `sendidexpr` is lowered to the string it computes
     /// ([`Action::native_sendid`]) that the backend hands the scheduler when the
     /// cancel runs. A target that does not is refused where the `<cancel>` is
@@ -1906,6 +1918,7 @@ pub fn lower(
         target,
         sites: Default::default(),
         elements: Default::default(),
+        next_if_ordinal: std::cell::Cell::new(max_if_ordinal(model) + 1),
     };
 
     let refused = |what: &str, text: &str, refusal: Refusal| {
@@ -2886,9 +2899,21 @@ struct Rewrites<'m> {
     /// The elements the walk has lowered to another
     /// ([`StaticLowering::elements`]).
     elements: std::cell::RefCell<Vec<LoweredElement>>,
+    /// The number the next `<if>` the walk writes takes
+    /// ([`Action::if_ordinal`]): one past the largest the document holds, so a
+    /// choice the walk expands ([`expand_computed_type`]) never shares the flag a
+    /// condition that fails is recorded on with one the author wrote.
+    next_if_ordinal: std::cell::Cell<u32>,
 }
 
 impl Rewrites<'_> {
+    /// The ordinal for an `<if>` the walk writes, and the one after it.
+    fn take_if_ordinal(&self) -> u32 {
+        let ordinal = self.next_if_ordinal.get();
+        self.next_if_ordinal.set(ordinal + 1);
+        ordinal
+    }
+
     /// Opens the walk of a transition whose event's payload `schema` is
     /// declared (`None` for a walk that has none in scope): the enum fields it
     /// holds are values of the enums the schema names, and the payload taken
@@ -3000,8 +3025,9 @@ impl CppTarget {
                 // carries, which the machine does not spell yet.
                 "send"
                     if !action.params.is_empty()
-                        && action.send_type
-                            == "http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor" =>
+                        && effective_send_types(action).any(|send_type| {
+                            send_type == "http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"
+                        }) =>
                 {
                     return Some("a BasicHTTP <send> carrying a <param>".to_string())
                 }
@@ -4576,11 +4602,15 @@ impl CTarget {
                 // names do. A processor that no one is declared to serve is
                 // refused by name.
                 "send" => {
-                    let scxml_processor = action.send_type.is_empty()
-                        || action.send_type == "scxml"
-                        || action.send_type.ends_with("#SCXMLEventProcessor");
-                    if !scxml_processor && !action.send_type_host_served {
-                        return Some(format!("a <send> of type `{}`", action.send_type));
+                    // A computed type is delivered by the processor each type it
+                    // declares names, so each is held to what a written one is.
+                    for send_type in effective_send_types(action) {
+                        let scxml_processor = send_type.is_empty()
+                            || send_type == "scxml"
+                            || send_type.ends_with("#SCXMLEventProcessor");
+                        if !scxml_processor && !action.send_type_host_served {
+                            return Some(format!("a <send> of type `{send_type}`"));
+                        }
                     }
                     if let Some(name) = namelist_name_taken(
                         action.params.iter().map(|p| p.name.as_str()),
@@ -5719,6 +5749,94 @@ fn execution_failure(rewrites: &Rewrites<'_>, construct: &str) -> String {
     }
 }
 
+/// The processor types a `<send>` is delivered through: the ones its `typeexpr`
+/// may compute to, as the document declares them (`sce:types`), or the one it
+/// writes — empty when it writes none, which is the SCXML Event I/O Processor.
+/// What a target refuses of a written `type` it refuses of each of these.
+fn effective_send_types(action: &Action) -> impl Iterator<Item = &str> {
+    let declared = !action.typeexpr.trim().is_empty() && !action.types.is_empty();
+    let written = (!declared).then_some(action.send_type.as_str());
+    action
+        .types
+        .iter()
+        .map(String::as_str)
+        .filter(move |_| declared)
+        .chain(written)
+}
+
+/// The largest [`Action::if_ordinal`] `model` holds, over every block of
+/// executable content and the default transition of every history.
+fn max_if_ordinal(model: &SCXMLModel) -> u32 {
+    let mut largest = 0;
+    let mut note = |action: &Action| {
+        action.walk(&mut |a| {
+            if a.action_type == "if" {
+                largest = largest.max(a.if_ordinal);
+            }
+        });
+    };
+    for state in model.states.values() {
+        for block in state.executable_blocks() {
+            block.iter().for_each(&mut note);
+        }
+    }
+    for history in model.history_states.values() {
+        history.default_actions.iter().for_each(&mut note);
+    }
+    largest
+}
+
+/// The type a `<send>` is given where the value its `typeexpr` computes is none
+/// the document declares: no processor this build delivers through, so the send
+/// raises `error.execution` as it does for a written `type` that names one
+/// (§scxml-6.2.5).
+const UNDECLARED_SEND_TYPE: &str = "sce:undeclared-type";
+
+/// Expand a `<send typeexpr>` of a `sce-static` document into the choice it makes
+/// (docs/adr/0005, decision 3): an `<if>` whose branches are one `<send>` for each
+/// processor the document declares as `sce:types`, each with the `type` written
+/// out, taken when the value the expression computes is that processor's, and
+/// whose `<else>` is the `<send>` of a type nothing delivers through — so a value
+/// the document did not declare is `error.execution` with nothing sent, by the
+/// arm every engine already has for it.
+///
+/// The `<send>` is copied whole: its event, target, delay, `<param>`s and
+/// `<content>` are the same for every branch, and the branch taken is the one that
+/// runs. What the type decides — whether the target is one the SCXML Event I/O
+/// Processor can address, and whether the type is one this build delivers through
+/// — is decided again for the copy, as the parser decides it for a written `type`.
+fn expand_computed_type(send: &Action, if_ordinal: u32) -> Action {
+    use crate::host_processor_analyzer::{
+        is_supported_send_type, is_unsupported_scxml_target, SCXML_EVENT_PROCESSOR_TYPE,
+    };
+    let delivered_by = |send_type: &str| -> Action {
+        let mut copy = send.clone();
+        copy.typeexpr.clear();
+        copy.types.clear();
+        copy.send_type = send_type.to_string();
+        copy.send_type_unsupported = !is_supported_send_type(send_type);
+        copy.target_unsupported = copy.targetexpr.is_empty()
+            && send_type == SCXML_EVENT_PROCESSOR_TYPE
+            && is_unsupported_scxml_target(&copy.target);
+        copy
+    };
+    let names = |entry: &str| format!("({}) === '{}'", send.typeexpr.trim(), entry);
+    let mut entries = send.types.iter();
+    let first = entries
+        .next()
+        .expect("the judge held a computed type to a declared set");
+    let resolved = crate::parser::resolve_cond(&names(first), &Default::default());
+    let mut chain = Action::if_then(names(first), vec![delivered_by(first)]);
+    chain.cond_constant = resolved.cond_constant;
+    chain.if_ordinal = if_ordinal;
+    chain.source_location = send.source_location.clone();
+    for entry in entries {
+        chain.push_elseif(names(entry), vec![delivered_by(entry)]);
+    }
+    chain.set_else(vec![delivered_by(UNDECLARED_SEND_TYPE)]);
+    chain
+}
+
 /// Lower every action of `actions` in place. `true` when any expression
 /// lowered reads the triggering event's payload.
 fn lower_actions(
@@ -5773,6 +5891,23 @@ fn lower_action(
     };
     let reads = crate::forge::expr::references_event_data_lexically;
     let mut reads_payload = false;
+    // A processor named by an expression (docs/adr/0005, decision 3): a target
+    // that runs the document's own `<send>` holds the value to the types the
+    // document declares where the attribute stands; every other generates the
+    // choice, a literal-type `<send>` for each type the document declares under
+    // an `<if>` that compares the value with it, so each engine delivers by the
+    // processor its own arms deliver a written `type` through. What the walk goes
+    // on to lower is then that `<if>` and the sends it holds.
+    if action.action_type == "send" && !action.typeexpr.trim().is_empty() {
+        let value = lower(&action.typeexpr, InferredType::Str)?;
+        match target.type_expr_site(&value.text, &action.types) {
+            Some(site) => {
+                reads_payload |= reads(&action.typeexpr);
+                rewrites.note(&action.typeexpr, action.spellings.get("typeexpr"), &site);
+            }
+            None => *action = expand_computed_type(action, rewrites.take_if_ordinal()),
+        }
+    }
     // Each statement lands whole in `native_code`, and each condition in
     // `native_cond` — the slots every backend's action dispatcher reads before
     // its own spellings, so the IR the author wrote is left as it was.
@@ -7367,5 +7502,81 @@ mod tests {
             assert!(!text.contains("to_string"), "{inits:?} {statements:?}");
             assert!(!text.contains("toString"), "{inits:?} {statements:?}");
         }
+    }
+
+    /// A `<send event="e" typeexpr="kind">` declaring `types`.
+    fn send_computing_its_type(types: &[&str]) -> Action {
+        Action {
+            action_type: "send".to_string(),
+            event: "e".to_string(),
+            typeexpr: " kind ".to_string(),
+            types: types.iter().map(|t| t.to_string()).collect(),
+            ..Action::default()
+        }
+    }
+
+    #[test]
+    fn a_computed_type_expands_to_one_send_for_each_processor_it_declares() {
+        use crate::host_processor_analyzer::{
+            BASIC_HTTP_EVENT_PROCESSOR_TYPE as HTTP, SCXML_EVENT_PROCESSOR_TYPE as SCXML,
+        };
+        let expanded = expand_computed_type(&send_computing_its_type(&[SCXML, HTTP]), 7);
+        assert_eq!(expanded.action_type, "if");
+        assert_eq!(
+            expanded.if_ordinal, 7,
+            "the choice takes the ordinal it was given"
+        );
+        assert_eq!(expanded.cond, format!("(kind) === '{SCXML}'"));
+
+        // Read through the model's one definition of what lies inside an action.
+        use crate::model::BlockRole;
+        let blocks = expanded.nested_blocks();
+        let then = blocks
+            .iter()
+            .find(|block| block.role == BlockRole::Then)
+            .expect("the first entry is the then");
+        let elseifs: Vec<_> = blocks
+            .iter()
+            .filter(|block| block.role == BlockRole::ElseIf)
+            .collect();
+        assert_eq!(elseifs.len(), 1);
+        let http_cond = format!("(kind) === '{HTTP}'");
+        assert_eq!(elseifs[0].cond, Some(http_cond.as_str()));
+
+        let branches = [(then.actions, SCXML), (elseifs[0].actions, HTTP)];
+        for (actions, send_type) in branches {
+            let [send] = actions else {
+                panic!("a branch holds the one send: {actions:?}")
+            };
+            assert_eq!(send.send_type, send_type);
+            assert_eq!(send.event, "e", "the send is copied whole");
+            assert!(
+                send.typeexpr.is_empty() && send.types.is_empty(),
+                "a branch writes its type out: {send:?}"
+            );
+            assert!(
+                !send.send_type_unsupported,
+                "{send_type} is delivered through"
+            );
+        }
+    }
+
+    #[test]
+    fn a_computed_type_none_of_the_declared_ones_matches_is_sent_by_a_type_nothing_serves() {
+        use crate::host_processor_analyzer::SCXML_EVENT_PROCESSOR_TYPE as SCXML;
+        let expanded = expand_computed_type(&send_computing_its_type(&[SCXML]), 1);
+        let blocks = expanded.nested_blocks();
+        let otherwise = blocks
+            .iter()
+            .find(|block| block.role == crate::model::BlockRole::Else)
+            .expect("the choice has an else");
+        let [otherwise] = otherwise.actions else {
+            panic!("the else holds the one send: {:?}", otherwise.actions)
+        };
+        assert_eq!(otherwise.send_type, UNDECLARED_SEND_TYPE);
+        assert!(
+            otherwise.send_type_unsupported,
+            "the undeclared type raises error.execution, as a written one nothing serves does"
+        );
     }
 }

@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A computed type"):
+  the `typeexpr` of a <send>. A generated machine has no script engine to learn
+  which processor a send may go through when it runs, so the types the expression
+  can take are declared as `sce:types` (docs/adr/0005, decision 3), and the value it
+  computes is compared with them when the send runs. The send is delivered by the
+  processor the matching entry names; a value in none of them is `error.execution`
+  and nothing is sent — whether or not it names a processor this build serves.
+
+  `kind` holds the SCXML Event I/O Processor to begin with, which `fire` sends
+  `landed` through, to this session's queue. `aim.bogus` makes it a type nothing
+  serves, and `aim.http` makes it BasicHTTP, a processor this build serves but
+  this send does not declare: each is refused, and the value is read when the send
+  runs, not when the document was read.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static" name="static_send_type">
+  <datamodel>
+    <data id="kind" sce:type="string" sce:capacity="64" expr="'http://www.w3.org/TR/scxml/#SCXMLEventProcessor'"/>
+    <data id="landed" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="refused" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="idle">
+    <transition event="fire" type="internal">
+      <send event="landed" typeexpr="kind" sce:types="http://www.w3.org/TR/scxml/#SCXMLEventProcessor"/>
+    </transition>
+    <transition event="aim.scxml" type="internal">
+      <assign location="kind" expr="'http://www.w3.org/TR/scxml/#SCXMLEventProcessor'"/>
+    </transition>
+    <transition event="aim.bogus" type="internal">
+      <assign location="kind" expr="'urn:example:no-such-processor'"/>
+    </transition>
+    <transition event="aim.http" type="internal">
+      <assign location="kind" expr="'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'"/>
+    </transition>
+    <transition event="landed" type="internal">
+      <assign location="landed" expr="landed + 1"/>
+    </transition>
+    <transition event="error.execution" type="internal">
+      <assign location="refused" expr="refused + 1"/>
+    </transition>
+  </state>
+</scxml>

@@ -7,15 +7,15 @@
 # Each case takes one rule of the model away, and each has to turn the
 # suite red on its own. The model's point is that a document under it needs
 # no script engine, so the rules that matter most are the ones that keep an
-# untyped expression from reaching one: a closed scope, a judged place, an
-# attribute with no typed form refused.
+# untyped expression from reaching one: a closed scope, a judged place, and an
+# attribute that computes a value held to the finite set the document declares.
 
 mutation_tests -p sce-build --features cli --test a_static_datamodel_holds_every_variable_to_a_type
 # The rules live in `sce-codegen`, which the tests run as a subprocess — the
 # evidence a mutation reached what ran is the file differing on disk while
 # the tests ran.
 mutation_targets sce-build/tests/a_static_datamodel_holds_every_variable_to_a_type.rs
-mutation_runtime_targets sce-build/src/forge/static_datamodel.rs sce-build/src/forge/static_lowering.rs sce-build/src/forge/type_ctx.rs sce-build/src/kotlin.rs sce-build/src/model.rs sce-build/src/parser.rs sce-build/src/script_engine_analyzer.rs sce-build/src/generator.rs tools/codegen/templates/python/actions/send.py.jinja2 tools/codegen/templates/kotlin/actions/send.kt.jinja2 tools/codegen/templates/c/state_machine.c.jinja2 tools/codegen/templates/go/entry_exit_actions.go.jinja2 tools/codegen/templates/rust/entry_exit_actions.rs.jinja2 tools/codegen/templates/python/entry_exit_actions.py.jinja2 tools/codegen/templates/kotlin/entry_exit_actions.kt.jinja2 tools/codegen/templates/entry_exit_actions.jinja2
+mutation_runtime_targets sce-build/src/forge/static_datamodel.rs sce-build/src/forge/static_lowering.rs sce-build/src/forge/static_js.rs sce-build/src/forge/type_ctx.rs sce-build/src/kotlin.rs sce-build/src/model.rs sce-build/src/parser.rs sce-build/src/script_engine_analyzer.rs sce-build/src/generator.rs tools/codegen/templates/python/actions/send.py.jinja2 tools/codegen/templates/kotlin/actions/send.kt.jinja2 tools/codegen/templates/c/state_machine.c.jinja2 tools/codegen/templates/go/entry_exit_actions.go.jinja2 tools/codegen/templates/rust/entry_exit_actions.rs.jinja2 tools/codegen/templates/python/entry_exit_actions.py.jinja2 tools/codegen/templates/kotlin/entry_exit_actions.kt.jinja2 tools/codegen/templates/entry_exit_actions.jinja2
 
 # A transition's condition stops being judged as a bool: `cond="count + 1"`
 # generates, and every backend emits a guard of an integer.
@@ -48,12 +48,80 @@ edit("sce-build/src/forge/type_ctx.rs",
     ctx.insert_record("_event", RecordShape::Open);""")
 PY
 
-# `typeexpr` stops being refused, so script text reaches a document that
-# declared it has none.
-mutation_case "an attribute with no typed form is admitted" <<'PY'
+# A computed type is chosen among the processors the document declares
+# (docs/adr/0005, decision 3). One that declares none is let through, and the
+# machine would have no finite set to compare the value with.
+mutation_case "a computed type that declares no processor is let through" <<'PY'
 edit("sce-build/src/forge/static_datamodel.rs",
-     """&[("send", "typeexpr")];""",
-     """&[];""")
+     "        if action.types.is_empty() {\n",
+     "        if action.types.is_empty() && false {\n")
+PY
+
+# The value is compared with the declared processors as text, so the expression is
+# judged as a string. Left a hint, an integer is a type.
+mutation_case "a computed type is not judged as a string" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     "            &action.typeexpr,\n            spelling,\n            Expected::Slot(InferredType::Str),",
+     "            &action.typeexpr,\n            spelling,\n            Expected::Hint(InferredType::Unknown),")
+PY
+
+# A send takes one type. The case lets a written one stand beside the expression,
+# so the document names two and the machine reads one of them.
+mutation_case "a type is let stand beside a computed one" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     "        if !action.send_type.trim().is_empty() {\n            return Err(refuse(\n",
+     "        if !action.send_type.trim().is_empty() && false {\n            return Err(refuse(\n")
+PY
+
+# A target chosen among `#_` locations is no address for the HTTP processor a
+# computed type may name, so a send computes its type or its target.
+mutation_case "a computed target is let stand beside a computed type" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     "        if !action.targetexpr.trim().is_empty() {\n            return Err(refuse(\n",
+     "        if !action.targetexpr.trim().is_empty() && false {\n            return Err(refuse(\n")
+PY
+
+# A processor is declared once: the value is matched against the set, and a repeat
+# is two entries claiming one answer.
+mutation_case "a processor is declared twice and let through" <<'PY'
+edit("sce-build/src/parser.rs",
+     "        if !seen.insert(entry) {\n            return Err(incompatible(format!(\n                \"sce:types names",
+     "        if false && !seen.insert(entry) {\n            return Err(incompatible(format!(\n                \"sce:types names")
+PY
+
+# An entry that is no processor every build delivers through is a type the machine
+# would refuse at run time for every value, so it is refused where it is written.
+mutation_case "a type no build delivers through is declared and let through" <<'PY'
+edit("sce-build/src/parser.rs",
+     "        if !crate::host_processor_analyzer::SUPPORTED_SEND_TYPES.contains(&entry) {\n",
+     "        if false {\n")
+PY
+
+# The declaration names the values an expression may take, so a send with none has
+# nothing it could choose among.
+mutation_case "a type declaration is let stand on a send with no computed type" <<'PY'
+edit("sce-build/src/parser.rs",
+     "    if action.typeexpr.is_empty() {\n        return Err(incompatible(",
+     "    if action.typeexpr.is_empty() && false {\n        return Err(incompatible(")
+PY
+
+# C holds no delivery path for BasicHTTP, so a set that may name it is refused there
+# by the type, as a written one is. Left to see only the written `type`, a computed
+# one that names BasicHTTP reaches a template that has no arm for it.
+mutation_case "C is not told which processors a computed type may name" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "    let declared = !action.typeexpr.trim().is_empty() && !action.types.is_empty();\n",
+     "    let declared = false;\n")
+PY
+
+# The Interpreter's own `<send>` evaluates the attribute, so it is rewritten to the
+# call that holds the value to the declared processors: the helper for a target
+# answers an empty string for a value outside the set, which is a send of the default
+# processor.
+mutation_case "the Interpreter's type is held with the helper for a target" <<'PY'
+edit("sce-build/src/forge/static_js.rs",
+     "\"{RUNTIME_GLOBAL}.processor({native_type}, [{}])\"",
+     "\"{RUNTIME_GLOBAL}.route({native_type}, [{}])\"")
 PY
 
 # A computed target is chosen among the routes the document declares
@@ -77,8 +145,8 @@ PY
 # two entries claiming one answer.
 mutation_case "a route is declared twice and let through" <<'PY'
 edit("sce-build/src/parser.rs",
-     "        if !seen.insert(entry) {\n",
-     "        if false && !seen.insert(entry) {\n")
+     "        if !seen.insert(entry) {\n            return Err(incompatible(format!(\n                \"sce:targets names",
+     "        if false && !seen.insert(entry) {\n            return Err(incompatible(format!(\n                \"sce:targets names")
 PY
 
 # An entry that names no route the machine sends by is a target the processor cannot
@@ -174,8 +242,8 @@ PY
 # C stops lowering the text and refuses the send by name again.
 mutation_case "C refuses a send content again" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
-     "                \"send\" => {\n                    let scxml_processor = action.send_type.is_empty()",
-     "                \"send\" => {\n                    if !action.content.is_empty() {\n                        return Some(\"a <send> with a <content>\".to_string());\n                    }\n                    let scxml_processor = action.send_type.is_empty()")
+     "                \"send\" => {\n                    // A computed type is delivered by the processor each type it\n",
+     "                \"send\" => {\n                    if !action.content.is_empty() {\n                        return Some(\"a <send> with a <content>\".to_string());\n                    }\n                    // A computed type is delivered by the processor each type it\n")
 PY
 
 # A `<donedata>`'s inline `<content>` is finished at build time the way a `<send>`'s

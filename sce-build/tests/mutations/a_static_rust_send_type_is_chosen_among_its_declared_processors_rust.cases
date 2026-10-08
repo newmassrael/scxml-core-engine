@@ -1,0 +1,41 @@
+# Mutation cases for "a computed type is chosen among the processors the document
+# declares" under the Rust backend (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A computed
+# type"; docs/adr/0005, decision 3).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_rust_send_type_is_chosen_among_its_declared_processors_rust.cases`.
+#
+# `static_send_type` sends `landed` through the processor its `kind` variable holds,
+# among the one the send declares. The scenario holds what each value leaves: the
+# declared processor delivers (`landed`), and every other value — a type nothing
+# serves, and BasicHTTP, which this build serves but this send did not declare — is
+# `error.execution` with nothing sent (`refused`). The expansion that makes the
+# choice is the walk's, shared by every language, so the mutants edit it and the
+# regeneration carries them into the committed machine; each still compiles:
+#
+#   the value is compared for inequality, so no processor is ever the one chosen;
+#   a value that is none of the declared processors is delivered through the
+#   declared one.
+#
+# The shape the expansion returns is held by its own unit tests, in
+# `a_computed_type_expands_to_one_send_for_each_processor_it_declares.cases`.
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-tests --test static_scenarios static_send_type
+mutation_targets sce-build/src/forge/static_lowering.rs
+mutation_targets backends/rust/tests/src/integration/static_datamodel/static_send_type_sm.rs
+mutation_regen scripts/regen_static_datamodel_rust.sh
+mutation_oracles backends/rust/tests/tests/static_scenarios.rs sce-build/tests/fixtures/static_datamodel/static_send_type.scxml sce-build/tests/fixtures/static_datamodel/scenarios/static_send_type.json
+
+mutation_case "no processor is ever the one chosen" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "format!(\"({}) === '{}'\", send.typeexpr.trim(), entry)",
+     "format!(\"({}) !== '{}'\", send.typeexpr.trim(), entry)")
+PY
+
+mutation_case "a value that is none of the declared processors is delivered" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "    chain.set_else(vec![delivered_by(UNDECLARED_SEND_TYPE)]);\n",
+     "    chain.set_else(vec![delivered_by(first)]);\n")
+PY

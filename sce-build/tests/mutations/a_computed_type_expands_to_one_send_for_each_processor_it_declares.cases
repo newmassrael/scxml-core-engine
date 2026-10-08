@@ -1,0 +1,58 @@
+# Mutation cases for "a computed type expands to one send for each processor it
+# declares" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A computed type"; docs/adr/0005,
+# decision 3).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_computed_type_expands_to_one_send_for_each_processor_it_declares.cases`.
+#
+# No generated language has a template of its own for `typeexpr`: the walk expands
+# `<send typeexpr sce:types>` into an `<if>` whose branches are one `<send>` of a
+# written `type` for each declared processor, taken when the value the expression
+# computes is that processor's, and whose `<else>` is a `<send>` of a type nothing
+# delivers through — so every engine answers a value outside the set with the arm it
+# already has for such a type. The unit tests read the shape the expansion returns,
+# and the mutants each take one decision of it away:
+#
+#   the value is compared for inequality;
+#   a processor after the first is left out of the choice;
+#   the `<else>` delivers through a declared processor instead of refusing;
+#   a branch keeps the expression it was chosen by;
+#   the type of a branch is taken as one this build delivers through, whatever it is.
+#
+# The tests live in the file the mutants edit, so it is its own oracle. Anchors are
+# literal slices of the source; an edit that moves one is reported INCONCLUSIVE with
+# the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --lib forge::static_lowering::tests::a_computed_type
+mutation_targets sce-build/src/forge/static_lowering.rs
+mutation_oracles sce-build/src/forge/static_lowering.rs
+
+mutation_case "the value is compared for inequality" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "format!(\"({}) === '{}'\", send.typeexpr.trim(), entry)",
+     "format!(\"({}) !== '{}'\", send.typeexpr.trim(), entry)")
+PY
+
+mutation_case "a processor after the first is left out of the choice" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "    for entry in entries {\n        chain.push_elseif(",
+     "    for entry in entries.take(0) {\n        chain.push_elseif(")
+PY
+
+mutation_case "the else delivers through a declared processor" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "    chain.set_else(vec![delivered_by(UNDECLARED_SEND_TYPE)]);\n",
+     "    chain.set_else(vec![delivered_by(first)]);\n")
+PY
+
+mutation_case "a branch keeps the expression it was chosen by" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "        copy.typeexpr.clear();\n        copy.types.clear();\n",
+     "        copy.types.clear();\n")
+PY
+
+mutation_case "a type nothing delivers through is taken as one that is" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "        copy.send_type_unsupported = !is_supported_send_type(send_type);\n",
+     "        copy.send_type_unsupported = false && !is_supported_send_type(send_type);\n")
+PY

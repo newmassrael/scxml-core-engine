@@ -130,7 +130,8 @@ fn every_fixture_is_lowered_or_refused_by_name() {
     // `sendidexpr`, or the variable a `<send>`'s generated id is written to in
     // an `idlocation`, which the Interpreter reads itself, or the route a
     // `targetexpr` computes among the `sce:targets` the document declares, which
-    // the lowering holds the value to; and a child that declares `<sce:action>`s,
+    // the lowering holds the value to, or the processor a `typeexpr` computes
+    // among its `sce:types`, held to the same way; and a child that declares `<sce:action>`s,
     // inline or as a candidate of a hybrid `<invoke>`, which the engine gives the
     // host its parent's host answers.
     for name in [
@@ -140,6 +141,7 @@ fn every_fixture_is_lowered_or_refused_by_name() {
         "static_send_delay",
         "static_send_event",
         "static_send_target",
+        "static_send_type",
         "static_send_idlocation",
         "static_child_host",
         "static_child_host_hybrid",

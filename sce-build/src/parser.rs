@@ -1445,6 +1445,80 @@ fn collect_send_targets(
     Ok(out)
 }
 
+/// Read `sce:types` of a `<send typeexpr>` (docs/adr/0005, decision 3): the
+/// Event I/O Processor types the expression can take, each the value it computes
+/// to name that processor. Read under every data model for the reason
+/// [`collect_send_targets`] states, and refused where it is written for the
+/// reasons that one is:
+///
+/// * **No `typeexpr`.** The attribute names the values an expression may take.
+/// * **An entry that is no processor this build delivers through.** The
+///   processors a computed type can select are the ones every generated language
+///   and the Interpreter deliver through — the SCXML Event I/O Processor and
+///   BasicHTTP (`SUPPORTED_SEND_TYPES`). A type the host serves is chosen by a
+///   written `type`, which the host's declaration claims after the parse.
+/// * **Two entries naming one type, or none at all.**
+fn collect_send_types(
+    node: &roxmltree::Node,
+    action: &Action,
+    source_name: &str,
+) -> Result<Vec<String>, crate::forge::error::Located<crate::forge::error::ForgeError>> {
+    use crate::forge::error::{Located, ValidationError};
+    use std::collections::HashSet;
+
+    let raw = match crate::sce_attr::read(node, "types") {
+        Some(s) => s,
+        None => return Ok(Vec::new()),
+    };
+
+    let pos = node.document().text_pos_at(node.range().start);
+    let at = |err: ValidationError| -> Located<crate::forge::error::ForgeError> {
+        Located::new(err.into(), source_name, Some(pos.row), Some(pos.col))
+    };
+    let incompatible = |detail: String| {
+        at(ValidationError::IncompatibleAttributes {
+            element: "<send>".to_string(),
+            detail,
+        })
+    };
+
+    if action.typeexpr.is_empty() {
+        return Err(incompatible(
+            "sce:types names the values a `typeexpr` may take, so it belongs only on a \
+             send that has one"
+                .to_string(),
+        ));
+    }
+
+    let mut seen: HashSet<&str> = HashSet::new();
+    let mut out: Vec<String> = Vec::new();
+    for entry in raw.split_whitespace() {
+        if !crate::host_processor_analyzer::SUPPORTED_SEND_TYPES.contains(&entry) {
+            return Err(incompatible(format!(
+                "sce:types entry '{entry}' is not an Event I/O Processor a computed type \
+                 selects: the SCXML Event I/O Processor and BasicHTTP are, by their \
+                 URIs, and a type the host serves is chosen by a written `type`"
+            )));
+        }
+        if !seen.insert(entry) {
+            return Err(incompatible(format!(
+                "sce:types names '{entry}' twice; the value the expression computes is \
+                 matched against the set, so two entries sharing one is two processors \
+                 claiming the same answer"
+            )));
+        }
+        out.push(entry.to_string());
+    }
+
+    if out.is_empty() {
+        return Err(at(ValidationError::EmptyValue {
+            element: "<send>".to_string(),
+            attr: "sce:types".to_string(),
+        }));
+    }
+    Ok(out)
+}
+
 /// Read the optional `sce:req="ID1 ID2 ..."` attribute and return
 /// the whitespace-separated requirement IDs. Returns `Ok(vec![])`
 /// when the attribute is absent. Rejects the first duplicate token
@@ -3653,6 +3727,7 @@ impl SCXMLParser {
         action.send_type = elem.attribute("type").unwrap_or("").to_string();
         action.typeexpr = elem.attribute("typeexpr").unwrap_or("").to_string();
         action.targets = collect_send_targets(elem, action, source_name)?;
+        action.types = collect_send_types(elem, action, source_name)?;
         // Decided where the attribute arrives, so every backend's send
         // template reads one answer instead of re-deriving it from its
         // own copy of the accepted set.
@@ -3779,7 +3854,15 @@ impl SCXMLParser {
         }
 
         // BasicHTTP send detection
-        if action.send_type == "http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"
+        // docs/adr/0005, decision 3: a computed type that may name BasicHTTP makes the
+        // send one over HTTP as a written one does.
+        let may_be_basic_http = action.send_type
+            == crate::host_processor_analyzer::BASIC_HTTP_EVENT_PROCESSOR_TYPE
+            || action
+                .types
+                .iter()
+                .any(|t| t == crate::host_processor_analyzer::BASIC_HTTP_EVENT_PROCESSOR_TYPE);
+        if may_be_basic_http
             && (action.target.starts_with("http://") || action.target.starts_with("https://"))
         {
             model.needs_http_send = true;

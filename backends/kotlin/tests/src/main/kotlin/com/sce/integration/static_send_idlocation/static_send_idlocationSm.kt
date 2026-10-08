@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: ae9d5cfab95c0cc5735b6cfc7f8be270a02d917fc84091175492688fbe3b3627
+// source-hash: 0665514219a2bd1920179bb95b88947aea9f3cb1e16b583d8593e5f3d24c015b
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_send_idlocation.scxml

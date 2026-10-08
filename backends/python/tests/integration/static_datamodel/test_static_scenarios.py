@@ -363,6 +363,14 @@ def test_a_sends_target_is_chosen_among_the_declared_routes() -> None:
     replay("static_send_target")
 
 
+# The `typeexpr` of a `<send>` is a string computed from the machine's fields when
+# the send runs, held to the processors the document declares as `sce:types`
+# (docs/adr/0005, decision 3): the send is delivered by the processor the matching
+# entry names, and a value in none of them is error.execution with nothing sent.
+def test_a_sends_type_is_chosen_among_the_declared_processors() -> None:
+    replay("static_send_type")
+
+
 # The `delayexpr` of a `<send>` is a string computed from the machine's fields when
 # the send runs, and read as the CSS2 time it must be; the scenario's
 # `advance_ms` steps move the engine's time on.
