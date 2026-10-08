@@ -303,6 +303,13 @@ class PackFreeScxmlMcp(unittest.TestCase):
              dict(record=doc, variant="base", root=".", sources=[doc], decisions=answers),
              ["acceptance-check", doc, "--variant", "base", "--root", here("."),
               "--source", here(doc), "--decisions", here(answers)]),
+            # The record an acceptance replaces reaches `accept`, after the channel.
+            ("scxml_accept",
+             dict(document=doc, manifest=manifest, variant="base", root=".", out="acc.json",
+                  succeeds=doc),
+             ["accept", doc, "--manifest", manifest, "--variant", "base",
+              "--root", here("."), "--out", here("acc.json"), "--channel", "relayed",
+              "--succeeds", here(doc)]),
         ]
         for name, arguments, expected in cases:
             with self.subTest(name=name):

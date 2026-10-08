@@ -148,6 +148,42 @@
 //! and it cannot lapse. Optional and omitted when not stated, so a record that
 //! never needed it keeps the bytes it always had.
 //!
+//! # What each requirement rested on
+//!
+//! ```text
+//!   evidence    per requirement id, the digests   "bytes moved" says nothing about
+//!               of the rows the report showed     WHICH requirement's evidence did
+//!               the owner for it
+//!   unclaimed   the digests of the rows that      the `(none)` block; an unannotated
+//!               carry no requirement id           row a cited node depends on is here
+//!               themselves                        too, and in the fragment that reaches it
+//!   succeeds    the record this one replaced,     a chain of acceptances an auditor
+//!               by path and sha256                can walk
+//! ```
+//!
+//! `evidence` is what a person was shown, not a second reading of the design:
+//! the rows are the ones [`crate::acceptance_report`] puts in front of the owner
+//! (a statechart's [`crate::acceptance_report::fragment`] of each cited
+//! requirement, selected from [`crate::transition_table`]; a forge document's
+//! [`crate::forge::review_table`] rows that claim it), so the report and the
+//! record cannot disagree about what depends on what.
+//!
+//! A digest covers a row WITHOUT its `source` column (the claim is the key, not
+//! the content) and WITH its position: transition order inside a state is
+//! behaviour in SCXML, so a digest that left position out would call two
+//! differently ordered machines equal. The price is the direction this module
+//! always chooses: a transition inserted before others in the same state moves
+//! the digests of the ones after it, and the owner is asked for a second look at
+//! a requirement that did not need one.
+//!
+//! ⚠ Like `open_at_acceptance` it states and does not enforce, and it cannot
+//! lapse: the design is pinned by its bytes, and an edit to it is a lapse
+//! whatever the digests say. What the digests are for is the NEXT acceptance,
+//! which can be offered as a difference. They are the product's closure of what
+//! a requirement depends on, not a proof of its behaviour: a dependency the
+//! closure does not follow is not in them. Optional and omitted when empty, so a
+//! record taken before they existed keeps its bytes.
+//!
 //! # Deliberately not `Deserialize`
 //!
 //! [`AcceptanceRecord`] is obtained from [`AcceptanceRecord::take`] or
@@ -320,6 +356,16 @@ pub struct InputPin {
     pub sha256: String,
 }
 
+/// The record an acceptance replaced.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PredecessorPin {
+    /// Relative to the record's root.
+    pub path: String,
+    /// Over the previous record's bytes.
+    pub sha256: String,
+}
+
 /// An acceptance, pinned. See the module docs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AcceptanceRecord {
@@ -353,6 +399,18 @@ pub struct AcceptanceRecord {
     /// open is pinned by its bytes, and a design whose open matters moved
     /// has moved.
     pub open_at_acceptance: Vec<crate::open_matters::OpenMatter>,
+    /// For each requirement the design cites, the sorted sha256 digests of the
+    /// rows the report showed the owner for it ("What each requirement rested
+    /// on" in the module docs). A requirement the design does not cite has no
+    /// key: no evidence is not an empty fragment.
+    ///
+    /// ⚠ A statement of what a person was shown, not a condition the record
+    /// enforces and not a proof of behaviour. It cannot lapse.
+    pub evidence: BTreeMap<String, Vec<String>>,
+    /// The sorted digests of the rows that claim no requirement.
+    pub unclaimed: Vec<String>,
+    /// The record this one replaced, when the caller said.
+    pub succeeds: Option<PredecessorPin>,
     /// Which surface stated the acceptance, when it said. See the module docs.
     pub channel: Option<Channel>,
 }
@@ -373,6 +431,12 @@ struct RecordWire {
     applied_rules: Vec<AppliedRule>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     open_at_acceptance: Vec<crate::open_matters::OpenMatter>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    evidence: BTreeMap<String, Vec<String>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    unclaimed: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    succeeds: Option<PredecessorPin>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     channel: Option<Channel>,
 }
@@ -672,6 +736,10 @@ impl AcceptanceRecord {
             .map_err(|failure| failure.into_take_error(document))?;
         let applied_rules = applied_rules_of(&house_rules, &reading.cited);
         let open_at_acceptance = reading.open;
+        let Evidence {
+            by_requirement: evidence,
+            unclaimed,
+        } = reading.evidence;
         let mut authored_from = Vec::with_capacity(sources.len());
         for (role, path) in sources {
             authored_from.push(SourcePin {
@@ -690,8 +758,41 @@ impl AcceptanceRecord {
             authored_from,
             applied_rules,
             open_at_acceptance,
+            evidence,
+            unclaimed,
+            succeeds: None,
             channel: None,
         })
+    }
+
+    /// The same record, stating `previous` as the record it replaces.
+    ///
+    /// `previous` has to be a record this module reads, taken for the same
+    /// specification (`doc_id`): an acceptance replaces an acceptance of the
+    /// same thing, not of another. It is pinned by its bytes and named relative
+    /// to `root`, like every other file. Like `channel` it says how the
+    /// acceptance stood when it was taken and cannot lapse.
+    pub fn succeeding(mut self, root: &Path, previous: &Path) -> Result<Self, RecordError> {
+        let root = canonical(root)?;
+        let previous = canonical(previous)?;
+        let text = std::fs::read_to_string(&previous).map_err(|source| RecordError::Read {
+            path: previous.display().to_string(),
+            source,
+        })?;
+        let earlier = AcceptanceRecord::from_json(&text)?;
+        if earlier.manifest.doc_id != self.manifest.doc_id {
+            return Err(RecordError::Format {
+                detail: format!(
+                    "the record to replace is for specification `{}`, and this one is for `{}`",
+                    earlier.manifest.doc_id, self.manifest.doc_id
+                ),
+            });
+        }
+        self.succeeds = Some(PredecessorPin {
+            path: relative(&root, &previous)?,
+            sha256: file_sha256(&previous)?,
+        });
+        Ok(self)
     }
 
     /// The same record, stating `channel` as the surface that took it. Taking the
@@ -901,6 +1002,9 @@ impl AcceptanceRecord {
             authored_from: self.authored_from.clone(),
             applied_rules: self.applied_rules.clone(),
             open_at_acceptance: self.open_at_acceptance.clone(),
+            evidence: self.evidence.clone(),
+            unclaimed: self.unclaimed.clone(),
+            succeeds: self.succeeds.clone(),
             channel: self.channel,
         };
         let mut text = serde_json::to_string_pretty(&wire)
@@ -930,15 +1034,18 @@ impl AcceptanceRecord {
             .chain(std::iter::once(&wire.manifest.path))
             .chain(wire.inputs.iter().map(|pin| &pin.path))
             .chain(wire.authored_from.iter().map(|pin| &pin.path))
+            .chain(wire.succeeds.iter().map(|pin| &pin.path))
         {
             check_relative(path)?;
         }
         for digest in std::iter::once(&wire.manifest.sha256)
             .chain(wire.inputs.iter().map(|pin| &pin.sha256))
             .chain(wire.authored_from.iter().map(|pin| &pin.sha256))
+            .chain(wire.succeeds.iter().map(|pin| &pin.sha256))
         {
             check_sha256(digest)?;
         }
+        check_evidence(&wire.evidence, &wire.unclaimed)?;
         let mut authored_from = wire.authored_from;
         authored_from.sort();
         check_sources(&authored_from).map_err(|e| RecordError::Format {
@@ -999,6 +1106,9 @@ impl AcceptanceRecord {
             authored_from,
             applied_rules,
             open_at_acceptance: wire.open_at_acceptance,
+            evidence: wire.evidence,
+            unclaimed: wire.unclaimed,
+            succeeds: wire.succeeds,
             channel: wire.channel,
         })
     }
@@ -1122,6 +1232,152 @@ fn applied_rules_of(
 struct DesignReading {
     open: Vec<crate::open_matters::OpenMatter>,
     cited: Vec<(String, usize)>,
+    evidence: Evidence,
+}
+
+/// What the report shows an owner for each requirement, as digests: the module
+/// docs' "What each requirement rested on".
+#[derive(Debug, Default)]
+struct Evidence {
+    by_requirement: BTreeMap<String, Vec<String>>,
+    unclaimed: Vec<String>,
+}
+
+/// The digest of one row of the review table, `source` column left out and
+/// position left in. A JSON array of fixed shape, so no cell can run into the
+/// next, and a tag so a statechart's row and a forge row cannot collide.
+fn row_digest(cells: &[&str]) -> String {
+    let text = serde_json::to_string(cells).expect("a list of strings always serialises");
+    hex_encode(&sha256_bytes(text.as_bytes()))
+}
+
+fn statechart_row_digest(row: &crate::transition_table::TransitionRow) -> String {
+    row_digest(&[
+        "statechart-row",
+        &row.from,
+        &row.event,
+        &row.guard,
+        &row.after,
+        &row.to,
+        &row.action,
+        &row.node_path,
+    ])
+}
+
+fn forge_row_digest(row: &crate::forge::review_table::ReviewRow) -> String {
+    row_digest(&["forge-row", &row.node, row.node_type, &row.detail])
+}
+
+/// The evidence of a statechart: for each requirement id a node cites, the rows
+/// of its [`crate::acceptance_report::fragment`] (the dependency closure the
+/// report prints, never the nodes carrying the id alone), and the rows that
+/// claim nothing.
+fn statechart_evidence(model: &crate::model::SCXMLModel) -> Evidence {
+    let rows = crate::transition_table::transition_table(model);
+    let by_path: BTreeMap<&str, &crate::transition_table::TransitionRow> = rows
+        .iter()
+        .map(|row| (row.node_path.as_str(), row))
+        .collect();
+    let cited: std::collections::BTreeSet<String> = crate::requirements_report::walk_nodes(model)
+        .iter()
+        .flat_map(|node| {
+            node.record
+                .requirement_ids
+                .iter()
+                .map(|id| (*id).to_string())
+        })
+        .collect();
+    let mut by_requirement = BTreeMap::new();
+    for id in cited {
+        // A node can be in a fragment for two reasons; it is one row.
+        let paths: std::collections::BTreeSet<String> =
+            crate::acceptance_report::fragment(model, &id)
+                .into_iter()
+                .map(|dependency| dependency.node_path)
+                .collect();
+        let mut digests: Vec<String> = paths
+            .iter()
+            .filter_map(|path| by_path.get(path.as_str()))
+            .map(|row| statechart_row_digest(row))
+            .collect();
+        digests.sort();
+        by_requirement.insert(id, digests);
+    }
+    let mut unclaimed: Vec<String> = rows
+        .iter()
+        .filter(|row| row.is_unclaimed())
+        .map(statechart_row_digest)
+        .collect();
+    unclaimed.sort();
+    Evidence {
+        by_requirement,
+        unclaimed,
+    }
+}
+
+/// The evidence of a forge document: the rows of its review table that claim
+/// each id, and the rows that claim nothing. A kind with no annotation site has
+/// none, which is "nothing to say", not "nothing claimed".
+fn forge_evidence(doc: &crate::forge::model::ForgeDocument) -> Evidence {
+    let Ok(rows) = crate::forge::review_table::review_table(doc) else {
+        return Evidence::default();
+    };
+    let mut by_requirement: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    let mut unclaimed = Vec::new();
+    for row in &rows {
+        let digest = forge_row_digest(row);
+        if row.is_unclaimed() {
+            unclaimed.push(digest);
+            continue;
+        }
+        for id in row.source.split_whitespace() {
+            by_requirement
+                .entry(id.to_string())
+                .or_default()
+                .push(digest.clone());
+        }
+    }
+    for digests in by_requirement.values_mut() {
+        digests.sort();
+    }
+    unclaimed.sort();
+    Evidence {
+        by_requirement,
+        unclaimed,
+    }
+}
+
+/// A record's evidence as read back: every key a name, every digest a sha256,
+/// every list in order. Refuses what `take` would not write.
+fn check_evidence(
+    evidence: &BTreeMap<String, Vec<String>>,
+    unclaimed: &[String],
+) -> Result<(), RecordError> {
+    let sorted = |digests: &[String]| digests.windows(2).all(|pair| pair[0] <= pair[1]);
+    for (id, digests) in evidence {
+        if id.is_empty() {
+            return Err(RecordError::Format {
+                detail: "the evidence names a requirement with an empty id".to_string(),
+            });
+        }
+        for digest in digests {
+            check_sha256(digest)?;
+        }
+        if !sorted(digests) {
+            return Err(RecordError::Format {
+                detail: format!("the evidence of `{id}` is not in order"),
+            });
+        }
+    }
+    for digest in unclaimed {
+        check_sha256(digest)?;
+    }
+    if !sorted(unclaimed) {
+        return Err(RecordError::Format {
+            detail: "the unclaimed digests are not in order".to_string(),
+        });
+    }
+    Ok(())
 }
 
 /// Every file a parse of `document` reads, pinned relative to `root`, and what
@@ -1197,6 +1453,7 @@ fn design_inputs(
                 DesignReading {
                     open,
                     cited: crate::unresolved_check::applied_house_rules(&markers),
+                    evidence: statechart_evidence(&model),
                 },
             ))
         }
@@ -1228,7 +1485,11 @@ fn design_inputs(
                     .chain(imports)
                     .filter(|path| !crate::forge::stdlib::names_standard(path))
                     .collect(),
-                DesignReading { open, cited },
+                DesignReading {
+                    open,
+                    cited,
+                    evidence: forge_evidence(&parsed.document),
+                },
             ))
         }
     }

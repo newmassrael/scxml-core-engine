@@ -473,6 +473,69 @@ fn a_channel_that_is_not_one_is_refused() {
     assert!(AcceptanceRecord::from_json(&twice).is_err(), "{twice}");
 }
 
+/// `accept --succeeds` pins the record the new one replaces: its path relative to
+/// the root, its bytes by sha256. A file that is not a record is refused with the
+/// unusable-input code and no record is left behind.
+#[test]
+fn the_record_an_acceptance_replaces_is_pinned_and_a_file_that_is_not_one_is_refused() {
+    let root = design_root();
+    assert!(accept(root.path()).status.success());
+    let first = fs::read(root.path().join(RECORD)).expect("the first record");
+
+    let succeeding = |previous: &str, out: &str| {
+        run(
+            &[
+                "accept",
+                &root.path().join(HOST).display().to_string(),
+                "--manifest",
+                &root.path().join(MANIFEST).display().to_string(),
+                "--variant",
+                "base",
+                "--root",
+                &root.path().display().to_string(),
+                "--out",
+                &root.path().join(out).display().to_string(),
+                "--succeeds",
+                &root.path().join(previous).display().to_string(),
+            ],
+            root.path(),
+        )
+    };
+
+    let next = succeeding(RECORD, "acceptance/next.json");
+    assert!(next.status.success(), "{next:?}");
+    let written: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(root.path().join("acceptance/next.json")).expect("the next record"),
+    )
+    .expect("JSON");
+    assert_eq!(written["succeeds"]["path"], RECORD);
+    {
+        use sha2::{Digest, Sha256};
+        assert_eq!(
+            written["succeeds"]["sha256"],
+            format!("{:x}", Sha256::digest(&first))
+        );
+    }
+    // It says how the acceptance stood and cannot lapse: the next record still holds.
+    let held = check(
+        root.path(),
+        &root.path().join("acceptance/next.json"),
+        "base",
+    );
+    assert_eq!(held.status.code(), Some(0), "{held:?}");
+
+    let refused = succeeding(MANIFEST, "acceptance/refused.json");
+    assert_eq!(refused.status.code(), Some(20), "{refused:?}");
+    assert_eq!(
+        codes(&refused),
+        vec!["cli/closure-input-unusable".to_string()]
+    );
+    assert!(
+        !root.path().join("acceptance/refused.json").exists(),
+        "a refused succession left a record behind"
+    );
+}
+
 /// The record has no schema file, so the registry's row and
 /// `ACCEPTANCE_RECORD_STATUS` are the two places its stability lives —
 /// `SCE_WIRE_CONTRACTS.md` requires one commit to move both.

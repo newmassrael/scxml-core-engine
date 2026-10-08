@@ -1181,7 +1181,13 @@ TOOLS = [
             "each house rule the design applied (`applied_rules` in the "
             "answer: tell the owner what each rule said), so a profile that "
             "changes later is reported rule by rule, with the places the "
-            "design relied on each."
+            "design relied on each. When this acceptance replaces an earlier "
+            "one of the same specification, give that record as `succeeds`: "
+            "this one pins it, so the chain of acceptances can be walked; it "
+            "never lapses the acceptance. The record also keeps, per "
+            "requirement, digests of the rows the design showed the owner for "
+            "it (`evidence`), so a later acceptance can be offered as a "
+            "difference."
         ),
         "inputSchema": {
             "type": "object",
@@ -1190,6 +1196,7 @@ TOOLS = [
                 **_DOCUMENT_INPUT,
                 **_MANIFEST_INPUT,
                 **_AUTHORED_FROM_INPUT,
+                **_file_input("succeeds", "the acceptance record this one replaces"),
                 "variant": {"type": "string", "description": "The variant accepted."},
                 "root": {"type": "string", "description": (
                     "Directory every pinned path is recorded relative to "
@@ -2845,7 +2852,9 @@ def _accept_tool(args: dict, staging: _Staging) -> dict:
             _file_arg(args, "document", "the accepted SCXML document").resolve(),
             _file_arg(args, "manifest", "the requirement manifest").resolve(),
             variant, root, out, sources=sources, decisions=decisions, profile=profile,
-            scenarios=scenarios, channel=ACCEPTED_BY_CLIENT)
+            scenarios=scenarios, channel=ACCEPTED_BY_CLIENT,
+            succeeds=staging.file(args, "succeeds", "the acceptance record this one replaces",
+                                  "previous.acceptance.json", required=False))
         if refusal:
             return _failure(refusal)
         return _text(_with_open_at_acceptance(report, out))
@@ -2861,10 +2870,13 @@ def _accept_tool(args: dict, staging: _Staging) -> dict:
                             "requirements.manifest.json")
     sources, decisions, profile, scenarios = _authored_from(args, staging)
     record = pathlib.Path("acceptance.json")
+    succeeds = staging.file(args, "succeeds", "the acceptance record this one replaces",
+                            "previous.acceptance.json", required=False)
     report, refusal = accept_design(document, manifest, variant, pathlib.Path("."),
                                     record, sources=sources, decisions=decisions,
                                     profile=profile, scenarios=scenarios,
-                                    channel=ACCEPTED_BY_CLIENT, cwd=staging.dir)
+                                    channel=ACCEPTED_BY_CLIENT, succeeds=succeeds,
+                                    cwd=staging.dir)
     if refusal:
         return _failure(refusal)
     answer = json.loads(_with_open_at_acceptance(report, staging.dir / record))

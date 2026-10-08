@@ -2520,6 +2520,14 @@ enum Commands {
         /// not in the room. Left out, the record states nothing about it.
         #[arg(long, value_name = "CHANNEL")]
         channel: Option<sce_build::acceptance_record::Channel>,
+        /// The acceptance record this one replaces, if there is one.
+        ///
+        /// It has to be a record this tool reads, taken for the same
+        /// specification. Pinned by its bytes and named relative to `--root`.
+        /// It says how the acceptance stood when it was taken and cannot
+        /// lapse; it makes a chain of acceptances an auditor can walk.
+        #[arg(long, value_name = "RECORD")]
+        succeeds: Option<String>,
     },
     /// Judge the claims that point OUT of a document — Requirement-closure
     /// RFC §5.2e/§5.2f.
@@ -3400,6 +3408,7 @@ fn main() {
             profile,
             scenarios,
             channel,
+            succeeds,
         } => cmd_accept(
             &AcceptRequest {
                 scxml: &scxml,
@@ -3408,6 +3417,7 @@ fn main() {
                 root: &root,
                 out: &out,
                 channel,
+                succeeds: succeeds.as_deref(),
             },
             &authored_from(
                 &source,
@@ -9539,6 +9549,8 @@ struct AcceptRequest<'a> {
     out: &'a str,
     /// Which surface says the owner accepted, when the caller said.
     channel: Option<sce_build::acceptance_record::Channel>,
+    /// The record this acceptance replaces, when the caller said.
+    succeeds: Option<&'a str>,
 }
 
 fn cmd_accept(
@@ -9553,6 +9565,7 @@ fn cmd_accept(
         root,
         out,
         channel,
+        succeeds,
     } = *request;
     // Each input is refused through its own door first, so a document that
     // does not parse reports its `xml/*` code and a manifest that does not
@@ -9601,6 +9614,22 @@ fn cmd_accept(
         })
     })
     .stated_by(channel);
+    // The record this one replaces is read through the same door the record
+    // itself is, so a file that is not a record, or is another specification's,
+    // is refused with the loader's own sentence.
+    let record = match succeeds {
+        Some(previous) => record
+            .succeeding(Path::new(root), Path::new(previous))
+            .unwrap_or_else(|e| {
+                cli_exit(CliError::ClosureInputUnusable {
+                    path: previous.to_string(),
+                    what: "acceptance record to replace",
+                    kind: e.kind(),
+                    detail: e.to_string(),
+                })
+            }),
+        None => record,
+    };
     fs::write(out, record.to_json()).unwrap_or_else(|source| {
         cli_exit(CliError::WriteOutput {
             path: out.to_string(),
