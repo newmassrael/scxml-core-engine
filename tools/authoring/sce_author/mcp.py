@@ -1335,7 +1335,9 @@ TOOLS = [
             "(scxml_requirement_set with `lineage` and `previous_sidecar`) and the "
             "design was revised from the accepted one. Give `delta` (the `delta` "
             "that scxml_requirement_set returned for the revised list, as it "
-            "came), `record` (the acceptance record scxml_accept wrote) and "
+            "came; it names its specification and the revision it starts from, "
+            "and is refused when they are not the record's manifest's), "
+            "`record` (the acceptance record scxml_accept wrote) and "
             "`root`; `design` names the revised draft when it is not the "
             "record's own document. Local servers only. It joins, per "
             "requirement, what happened to its WORDS (carried, changed, new, "
@@ -3122,6 +3124,11 @@ def _revision_join(args: dict, staging: _Staging):
     if refusal:
         return None, _failure(refusal)
     try:
+        held = json.loads(record.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise ToolArgumentError(f"'record' cannot be read as an acceptance record: {error}") from error
+    try:
+        revision.belongs_to(delta, held)
         return revision.join(delta, json.loads(report)), None
     except revision.RevisionError as error:
         raise ToolArgumentError(str(error)) from error

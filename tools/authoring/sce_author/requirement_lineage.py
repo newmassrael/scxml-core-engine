@@ -260,8 +260,10 @@ def advance(prev: dict, doc_id: str, spec: Spec, quotes: list[str], *,
     lineage = _checked({"lineage": LINEAGE_KIND, "v": LINEAGE_VERSION, "doc_id": doc_id, "next": counter,
                         "revisions": revisions, "requirements": requirements})
 
+    # `doc_id` and `from_rev` say which specification, and which step of it, the ids below are about:
+    # `revision.belongs_to` compares them with the acceptance record's manifest.
     delta = {
-        "from_rev": last["rev"], "rev": rev, "specification_changed": not same_text,
+        "doc_id": doc_id, "from_rev": last["rev"], "rev": rev, "specification_changed": not same_text,
         "requirements": {
             "carried": [ids[n] for n in range(len(quotes)) if statuses[n] == "carried"],
             "changed": [{"id": ids[n], "how": carried[n][2]} for n in range(len(quotes))

@@ -48,6 +48,39 @@ class RevisionError(AuthoringError):
     """A delta that is not one this module can read."""
 
 
+def belongs_to(delta: object, record: object) -> None:
+    """Refuse a words delta that is not the one of the revision this acceptance was taken against.
+
+    The join is by requirement id, and an id means nothing outside the specification that issued
+    it: another specification's delta that happens to name `R1` to `R5` joins the design's evidence
+    without a word of complaint and gives a verdict about nothing (found in review, 2026-10-08).
+    A delta names the specification it describes (`doc_id`) and the revision it starts from
+    (`from_rev`); the record pins the manifest it was taken against (`manifest.doc_id`,
+    `manifest.rev`). Both have to agree. A delta from a LATER revision than the record's is refused
+    too: it says what changed since that revision, not since the one the design was accepted for,
+    and a requirement reworded in between would read as carried."""
+    if not isinstance(delta, dict) or not isinstance(delta.get("doc_id"), str) \
+            or not isinstance(delta.get("from_rev"), str):
+        raise RevisionError("the words delta names no specification (`doc_id`) or starting revision "
+                            "(`from_rev`): it was not built by this version of scxml_requirement_set, "
+                            "so nothing says it describes this record's specification. Build the "
+                            "revised list again against its lineage and give the `delta` it returns")
+    manifest = record.get("manifest") if isinstance(record, dict) else None
+    if not isinstance(manifest, dict) or not isinstance(manifest.get("doc_id"), str) \
+            or not isinstance(manifest.get("rev"), str):
+        raise RevisionError("the acceptance record pins no manifest `doc_id` and `rev`, so there is "
+                            "nothing to check the words delta against")
+    if delta["doc_id"] != manifest["doc_id"]:
+        raise RevisionError(f"the words delta is of specification '{delta['doc_id']}' and the "
+                            f"acceptance record was taken against '{manifest['doc_id']}'")
+    if delta["from_rev"] != manifest["rev"]:
+        raise RevisionError(f"the words delta starts from revision {delta['from_rev']} of "
+                            f"'{delta['doc_id']}' and the acceptance record was taken against "
+                            f"revision {manifest['rev']}: it describes a different step. Build the "
+                            "list again against the lineage as it was at the revision the design was "
+                            "accepted for")
+
+
 def _words_of(delta: object) -> dict[str, str]:
     """requirement id -> its words status, from the `delta` `scxml_requirement_set` returned."""
     if not isinstance(delta, dict) or not isinstance(delta.get("requirements"), dict):

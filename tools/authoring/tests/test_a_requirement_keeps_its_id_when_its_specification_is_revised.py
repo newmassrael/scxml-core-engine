@@ -166,6 +166,16 @@ class ARevisionKeepsTheIdOfEveryRequirementItStillHas(unittest.TestCase):
         self.assertEqual("R7", id_of(third, "A fuse protects it."))
 
 
+class TheDeltaNamesTheSpecificationAndTheStepItDescribes(unittest.TestCase):
+    def test_it_carries_the_doc_id_and_the_revision_it_starts_from(self):
+        # `revision.belongs_to` compares these with the acceptance record's manifest, so a delta of
+        # another specification, or of another step, is not joined to the wrong design.
+        first = build(LAMP, LAMP_QUOTES)
+        second = revise(first, LAMP + " A reset key clears it.", LAMP_QUOTES + ["A reset key clears it."])
+        self.assertEqual(("spec", "1", "2"),
+                         (second.delta["doc_id"], second.delta["from_rev"], second.delta["rev"]))
+
+
 class SameIsClaimedOnEqualWordsOnly(unittest.TestCase):
     REWORDED = LAMP.replace("30 seconds", "45 seconds")
     REWORDED_QUOTES = LAMP_QUOTES[:3] + ["After 45 seconds on, it turns itself off."] + LAMP_QUOTES[4:]

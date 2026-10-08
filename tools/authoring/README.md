@@ -337,7 +337,9 @@ the accepted design back (`revise_from`: its document, its text and its page): r
 that, do not draft afresh. When a design file moved the accepted bytes are gone and no
 base is offered. Build the requirement list again against its lineage
 (`scxml_requirement_set` with `lineage` and `previous_sidecar`), change only what its
-`delta` says moved, then **scxml_revision_check** joins, per requirement, what happened
+`delta` says moved (it names its specification and the revision it starts from, and is
+refused unless they are the acceptance record's manifest's), then
+**scxml_revision_check** joins, per requirement, what happened
 to its words (carried, changed, new, retired) with what happened to the design's
 evidence for it (`scxml_acceptance_delta`): `outside-reach` when a design moved where
 the words did not (`moved-without-reason`) or still cites what the specification dropped

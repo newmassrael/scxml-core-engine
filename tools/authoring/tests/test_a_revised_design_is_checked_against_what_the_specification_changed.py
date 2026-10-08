@@ -35,10 +35,12 @@ def body(answer: dict) -> dict:
     return json.loads(answer["content"][0]["text"])
 
 
-def words(carried=(), changed=(), new=(), retired=()):
-    return {"requirements": {"carried": list(carried),
+def words(carried=(), changed=(), new=(), retired=(), **extra):
+    """A words delta of the committed manifest's specification, from the revision the record pins."""
+    return {"doc_id": "ISO-13400-2", "from_rev": "2019",
+            "requirements": {"carried": list(carried),
                              "changed": [{"id": i, "how": "near-match"} for i in changed],
-                             "new": list(new), "retired": list(retired)}}
+                             "new": list(new), "retired": list(retired)}, **extra}
 
 
 @unittest.skipUnless(_default_codegen().exists(),
@@ -211,6 +213,22 @@ class ARevisedDesignIsCheckedAgainstWhatTheSpecificationChanged(unittest.TestCas
         with_words = self.check("scxml_revision_report", delta, sidecar_text=sidecar)
         self.assertIn("The inactivity timeout is five minutes.", with_words["page"])
         self.assertIn("local artefact", with_words["page"])
+
+    def test_a_delta_of_another_specification_is_refused_though_every_id_it_names_exists(self):
+        # The ids are the record's own, so a join by id alone would have run. The delta is of another
+        # specification, or starts from a revision the record was not taken at: neither describes
+        # the step this design was accepted for.
+        ids = self.all_ids()
+        self.edit_the_design()
+        for what, delta, message in (
+                ("another specification", words(carried=ids, doc_id="OTHER-SPEC"), "'OTHER-SPEC'"),
+                ("another revision", words(carried=ids, from_rev="2020"), "starts from revision 2020")):
+            for tool in ("scxml_revision_check", "scxml_revision_report"):
+                with self.subTest(what, tool=tool):
+                    answer = call_tool(tool, {"delta": delta, "record": str(self.record),
+                                              "root": str(self.root)})
+                    self.assertTrue(answer.get("isError"), answer)
+                    self.assertIn(message, answer["content"][0]["text"])
 
     def test_a_record_from_before_evidence_is_refused_and_not_read_as_everything_new(self):
         record = json.loads(self.record.read_text(encoding="utf-8"))

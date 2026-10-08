@@ -112,6 +112,18 @@ only what to look at again.**
    list was built (passed back as it came). The evidence is computed inside the tool from the
    acceptance record, the root and, for another draft, `design`, through the product. Local
    servers only, like `scxml_acceptance_delta`.
+
+   ⚠ The delta has to be the record's own. The join is by requirement id, and an id means nothing
+   outside the specification that issued it: the first version checked only the delta's shape, so
+   another specification's delta that named the same ids joined this design's evidence and gave a
+   verdict about nothing (found in review, 2026-10-08, with a synthetic pair of specifications).
+   The delta now names its specification (`doc_id`) and the revision it starts from (`from_rev`),
+   and `revision.belongs_to` compares them with the record's `manifest.doc_id` and `manifest.rev`.
+   A delta that names neither (built before this check), another specification, or another step
+   is refused. A delta of a LATER step is refused too: it says what changed since that step, not
+   since the revision the design was accepted for, and a requirement reworded in between would
+   read as carried. Composing the steps between the record and now is not built; until it is, the
+   check is made against the revision the design was accepted for.
 7. **Starting from the accepted design.** When `scxml_accepted_for` finds the acceptance lapsed,
    and every lapse is of what the design was AUTHORED from (the specification, the decision record,
    the profile, the examples, the manifest) and none of the design's own files, the accepted design

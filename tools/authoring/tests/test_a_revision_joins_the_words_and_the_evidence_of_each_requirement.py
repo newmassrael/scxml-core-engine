@@ -22,6 +22,7 @@ import json
 import pathlib
 import subprocess
 import sys
+import tempfile
 import unittest
 from unittest import mock
 
@@ -29,7 +30,9 @@ from sce_author import mcp, process, revision, verify
 
 
 def words(carried=(), changed=(), new=(), retired=(), **extra):
-    return {"requirements": {"carried": list(carried),
+    """A words delta as scxml_requirement_set returns it: of specification `lamp`, from revision 1."""
+    return {"doc_id": "lamp", "from_rev": "1",
+            "requirements": {"carried": list(carried),
                              "changed": [{"id": i, "how": "near-match"} for i in changed],
                              "new": list(new), "retired": list(retired)}, **extra}
 
@@ -245,6 +248,38 @@ class ACarriedRequirementThatMovedOnlyWhereAChangedOneStandsIsALookNotAViolation
         self.assertIn("Verdict: within-reach", page)
 
 
+class AWordsDeltaIsJoinedOnlyToTheRecordOfTheRevisionItStartsFrom(unittest.TestCase):
+    """Ids mean something only inside the specification that issued them, and a delta describes one step
+    of it. A delta of another specification, or of a step the record was not taken at, joins without
+    complaint and gives a verdict about nothing (found in review, 2026-10-08)."""
+
+    RECORD = {"record": "sce-acceptance-record", "v": 1, "manifest": {"doc_id": "lamp", "rev": "3"}}
+
+    def test_a_delta_of_the_same_specification_from_the_revision_of_the_record_is_accepted(self):
+        revision.belongs_to(words(from_rev="3"), self.RECORD)
+
+    def test_each_way_the_delta_can_not_be_the_records_is_refused_and_says_which(self):
+        cases = (
+            ("another specification", words(doc_id="other", from_rev="3"), "'other'"),
+            ("an earlier step", words(from_rev="2"), "starts from revision 2"),
+            ("a later step", words(from_rev="4"), "starts from revision 4"),
+            ("no specification", {"from_rev": "3", "requirements": {}}, "names no specification"),
+            ("no step", {"doc_id": "lamp", "requirements": {}}, "names no specification"),
+            ("a specification that is not text", {"doc_id": 7, "from_rev": "3"}, "names no specification"),
+            ("not an object", ["lamp"], "names no specification"),
+        )
+        for what, delta, message in cases:
+            with self.subTest(what), self.assertRaises(revision.RevisionError) as raised:
+                revision.belongs_to(delta, self.RECORD)
+            self.assertIn(message, str(raised.exception))
+
+    def test_a_record_that_pins_no_manifest_leaves_nothing_to_check_against(self):
+        for record in ({}, {"manifest": None}, {"manifest": {"doc_id": "lamp"}},
+                       {"manifest": {"rev": "3"}}, "not a record", None):
+            with self.subTest(record=record), self.assertRaises(revision.RevisionError):
+                revision.belongs_to(words(from_rev="3"), record)
+
+
 class WhatIsNotADeltaIsRefusedAndNotReadAsNothingMoved(unittest.TestCase):
     def test_a_words_delta_that_is_not_the_one_the_tool_returned(self):
         for bad in (None, [], {}, {"requirements": []}, {"requirements": {"carried": []}},
@@ -322,6 +357,14 @@ class TheToolsReachTheProductsDelta(unittest.TestCase):
         {"v": 1, "kind": "acceptance-delta-summary", "record": "r", "requirements": 2,
          "unchanged": 1, "changed": 1, "new": 0, "dropped": 0})) + "\n"
 
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.record = pathlib.Path(directory.name) / "acceptance.json"
+        self.record.write_text(json.dumps({"record": "sce-acceptance-record", "v": 1,
+                                           "manifest": {"doc_id": "lamp", "rev": "1"}}),
+                               encoding="utf-8")
+
     def run_tool(self, name: str, **arguments):
         seen = {}
 
@@ -336,7 +379,7 @@ class TheToolsReachTheProductsDelta(unittest.TestCase):
 
     def test_the_check_asks_the_product_and_joins_what_comes_back(self):
         result, argv = self.run_tool("scxml_revision_check", delta=words(carried=["R1", "R2"]),
-                                     record="acceptance.json", root=".")
+                                     record=str(self.record), root=".")
         self.assertFalse(result.get("isError"), result["content"][0]["text"])
         self.assertEqual("acceptance-delta", argv[argv.index("acceptance-delta")])
         self.assertIn("--root", argv)
@@ -347,34 +390,58 @@ class TheToolsReachTheProductsDelta(unittest.TestCase):
 
     def test_a_named_draft_reaches_the_product_as_design(self):
         _, argv = self.run_tool("scxml_revision_check", delta=words(carried=["R1", "R2"]),
-                                record="acceptance.json", root=".", design="draft.scxml")
+                                record=str(self.record), root=".", design="draft.scxml")
         self.assertEqual(str(pathlib.Path("draft.scxml").resolve()), argv[argv.index("--design") + 1])
 
     def test_the_report_carries_the_page_and_a_sentence_only_when_a_sidecar_is_given(self):
         delta = words(carried=["R1"], changed=["R2"], from_rev="1", rev="2")
-        plain, _ = self.run_tool("scxml_revision_report", delta=delta, record="a.json", root=".")
+        plain, _ = self.run_tool("scxml_revision_report", delta=delta, record=str(self.record), root=".")
         page = json.loads(plain["content"][0]["text"])["page"]
         self.assertIn("# Revision report: revision 1 to 2", page)
         self.assertNotIn("local artefact", page)
         sidecar = json.dumps({"doc_id": "d", "rev": "2", "text": {"R2": "The lamp turns off."}})
-        given, _ = self.run_tool("scxml_revision_report", delta=delta, record="a.json", root=".",
+        given, _ = self.run_tool("scxml_revision_report", delta=delta, record=str(self.record), root=".",
                                  sidecar_text=sidecar)
         text = json.loads(given["content"][0]["text"])["page"]
         self.assertIn("The lamp turns off.", text)
         self.assertIn("local artefact", text)
 
     def test_a_delta_that_is_not_one_is_an_argument_error_the_client_can_read(self):
-        for arguments in ({"record": "a.json", "root": "."},
-                          {"delta": "not an object", "record": "a.json", "root": "."},
-                          {"delta": {"requirements": []}, "record": "a.json", "root": "."}):
+        record = str(self.record)
+        for arguments in ({"record": record, "root": "."},
+                          {"delta": "not an object", "record": record, "root": "."},
+                          {"delta": {"requirements": []}, "record": record, "root": "."}):
             with self.subTest(arguments=sorted(arguments)):
                 result, _ = self.run_tool("scxml_revision_check", **arguments)
                 self.assertTrue(result.get("isError"))
 
     def test_a_sidecar_that_is_not_one_is_refused(self):
         result, _ = self.run_tool("scxml_revision_report", delta=words(carried=["R1"]),
-                                  record="a.json", root=".", sidecar_text="[]")
+                                  record=str(self.record), root=".", sidecar_text="[]")
         self.assertTrue(result.get("isError"))
+
+    def test_a_delta_of_another_specification_is_refused_before_it_is_joined(self):
+        # The words of `other` happen to name R1 and R2 as well. Without the check this joined and
+        # said `outside-reach` about a design none of those ids were issued for.
+        for what, delta in (
+                ("another specification", words(carried=["R1", "R2"], doc_id="other")),
+                ("another starting revision", words(carried=["R1", "R2"], from_rev="2")),
+                ("no specification named", {k: v for k, v in words(carried=["R1"]).items() if k != "doc_id"}),
+                ("no starting revision", {k: v for k, v in words(carried=["R1"]).items() if k != "from_rev"})):
+            with self.subTest(what):
+                result, _ = self.run_tool("scxml_revision_check", delta=delta,
+                                          record=str(self.record), root=".")
+                self.assertTrue(result.get("isError"), result["content"][0]["text"])
+                report, _ = self.run_tool("scxml_revision_report", delta=delta,
+                                          record=str(self.record), root=".")
+                self.assertTrue(report.get("isError"))
+
+    def test_a_record_that_cannot_be_read_is_refused_and_says_so(self):
+        self.record.write_text("not json", encoding="utf-8")
+        result, _ = self.run_tool("scxml_revision_check", delta=words(carried=["R1"]),
+                                  record=str(self.record), root=".")
+        self.assertTrue(result.get("isError"))
+        self.assertIn("cannot be read", result["content"][0]["text"])
 
     def test_both_tools_are_offered_with_the_arguments_they_need(self):
         for name in ("scxml_revision_check", "scxml_revision_report"):
