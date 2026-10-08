@@ -3453,12 +3453,12 @@ memory the caller owns.
   takes the §5.L `CapacitySource` forms (`const`, or `source="deploy"`
   with a key).
 
-**Capacity is exact.** `<sce:bounded capacity="N">` holds exactly N
-elements. A Lamport ring is exactly N slots; an SCQ ring is rounded
-up to a power of two and keeps two index rings of twice that size,
-as the algorithm requires (Nikolaev 2019). The
-storage cost that results is emitted as a generated constant
-(`STORAGE_BYTES`) so that a no-alloc target can budget it.
+**Capacity is exact at rest.** `<sce:bounded capacity="N">` never holds
+more than N elements and, with no operation in flight, refuses a push
+exactly when it holds N. A Lamport ring is N slots; an SCQ ring rounds
+up to a power of two and keeps two index rings, as the algorithm
+requires (Nikolaev 2019). The storage cost that results is emitted as
+`STORAGE_BYTES`, so that a no-alloc target can budget it.
 
 **Storage modes.**
 
@@ -3641,11 +3641,11 @@ capacity() -> usize                                       // bounded only; a com
   `Clone`; the other backends check ownership in debug builds. A
   `many` side's handles can be cloned, and where a domain exists
   each clone takes one of its `participants` slots.
-- A full bounded queue rejects the push. Overwriting the oldest
-  element is excluded from this kind: a producer that removes an
-  element is a second consumer, so that is a different contract, and
-  a kind for it would be admitted under `SCE_FORGE.md` §10 on its own
-  evidence.
+- A full bounded queue rejects the push. The SCQ rows may also reject
+  it while other participants' operations hold slots, at most one per
+  participant: a pop returns its slot only after reading its element.
+  Overwriting the oldest element is excluded: a producer that removes
+  one is a second consumer, a different contract (`SCE_FORGE.md` §10).
 - There is no blocking pop. Waiting is scheduling, which `SCE_FORGE.md`
   §2.1 leaves to the user; a `worker` or `timer` supplies it.
 - Elements still queued when the queue is destroyed are destroyed
@@ -3681,7 +3681,7 @@ layer states what it establishes and what it cannot.
 | Layer | Means | Establishes |
 |---|---|---|
 | 1. Contract scenarios | single-threaded operation sequences in the `tests/forge/conformance/fixtures.json` shape, run on all six backends | FIFO order, exact capacity and failure reasons, identical everywhere |
-| 2. Linearizability | per-backend stress runs write histories in one JSON format; one checker, written once, judges them all | that each concurrent history is equivalent to a sequential one |
+| 2. Linearizability | per-backend stress runs write histories in one JSON format; one checker, written once, judges them all | that each concurrent history is equivalent to a sequential one, a refusal excused only by slots other participants hold |
 | 3. Memory-model exploration | loom (Rust), GenMC (C11, C++), Lincheck model checking (Kotlin JVM) | every interleaving and weak-memory outcome within the model's bounds |
 | 4. Progress | Lincheck `checkObstructionFreedom`; loom schedules that suspend one participant | finds violations; passing does not prove lock-freedom (Lincheck checks obstruction-freedom only) |
 | 5. Memory safety | Miri, ASan, TSan (`scripts/build_tsan.sh`) | no use-after-free, no data race |

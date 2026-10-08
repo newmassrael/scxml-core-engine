@@ -26,12 +26,25 @@
 //! pointer: it is position-independent, which is what lets a mesh channel
 //! place it in shared memory.
 //!
-//! **Capacity is exact.** The rings are rounded up to a power of two
+//! **Capacity is exact at rest.** The rings are rounded up to a power of two
 //! (`R == N.next_power_of_two()`, checked when the queue is built), but only
-//! `N` indices ever circulate, so exactly `N` elements fit. Both are
-//! parameters because Rust cannot size an array from an expression of
+//! `N` indices ever circulate, so never more than `N` elements fit, and a
+//! queue nothing is running on refuses a push exactly when it holds `N`. Both
+//! are parameters because Rust cannot size an array from an expression of
 //! another parameter; the generator states both, and [`Scq::LAYOUT`] refuses
 //! a pair that disagrees.
+//!
+//! **A push may be refused while others hold slots.** A slot's index goes
+//! back to the free ring only after the pop that took the element has read
+//! it, and a push holds the index it took until it has published its element.
+//! A push that looks for an index in that window finds none and reports the
+//! queue full, though fewer than `N` elements are in it: waiting for the
+//! operation that holds the slot would not be lock-free, since that
+//! participant may be stopped. The shortfall is at most one slot per other
+//! participant. Measured 2026-10-08, about one recorded run in 250 shows it
+//! with two producers and two consumers on a loaded machine, and a history
+//! checker that required the strict count refused those runs
+//! (`queue_history::Refusal`).
 //!
 //! **Ordering.** The reference's: acquire loads, acquire-release
 //! read-modify-writes, and sequentially consistent accesses to the
@@ -350,8 +363,9 @@ impl<const R: usize> Ring<R> {
     }
 }
 
-/// A bounded queue of exactly `N` elements for any number of producers and
-/// any number of consumers, lock-free.
+/// A bounded queue of at most `N` elements for any number of producers and
+/// any number of consumers, lock-free. Exactly `N` fit when nothing else is
+/// running.
 ///
 /// `R` is `N` rounded up to a power of two; [`Scq::LAYOUT`] checks it. The
 /// queue owns its storage and allocates nothing, so it may be a `static`.
@@ -474,8 +488,10 @@ impl<T, const N: usize, const R: usize> Copy for Producer<'_, T, N, R> {}
 
 impl<T, const N: usize, const R: usize> Producer<'_, T, N, R> {
     /// Push `value`, or hand it back in [`PushError::Full`] when the queue
-    /// holds its capacity. Lock-free: some operation completes in a bounded
-    /// number of steps whatever the other participants are doing.
+    /// holds its capacity, or while other participants' operations hold the
+    /// slots it is short of (module documentation). Lock-free: some operation
+    /// completes in a bounded number of steps whatever the other participants
+    /// are doing.
     pub fn try_push(&self, value: T) -> Result<(), PushError<T>> {
         let queue = self.queue;
         let Some(index) = queue.free.dequeue() else {

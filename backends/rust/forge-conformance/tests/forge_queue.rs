@@ -24,7 +24,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use sce_forge_conformance::queue_history::{check, Call, History, Operation, Outcome, Verdict};
+use sce_forge_conformance::queue_history::{
+    check, Call, History, Operation, Outcome, Refusal, Verdict,
+};
 use sce_forge_runtime::queue::scq::Scq;
 use sce_forge_runtime::queue::spsc::Spsc;
 use sce_forge_runtime::queue::PushError;
@@ -283,8 +285,13 @@ fn pop(outcome: Outcome, invoked: u64, returned: u64) -> Operation {
 }
 
 fn verdict(capacity: usize, participants: Vec<Vec<Operation>>) -> Verdict {
+    verdict_under(Refusal::AtCapacity, capacity, participants)
+}
+
+fn verdict_under(refusal: Refusal, capacity: usize, participants: Vec<Vec<Operation>>) -> Verdict {
     check(&History {
         capacity,
+        refusal,
         participants,
     })
 }
@@ -484,6 +491,7 @@ fn record_spsc_run<const N: usize>() -> History {
 
     History {
         capacity: N,
+        refusal: Refusal::AtCapacity,
         participants: vec![pushes, pops],
     }
 }
@@ -637,6 +645,7 @@ fn record_scq_run<const N: usize, const R: usize>(
 
     History {
         capacity: N,
+        refusal: Refusal::WhileSlotsAreHeld,
         participants,
     }
 }
@@ -671,17 +680,146 @@ fn assert_scq_run_is_linearizable<const N: usize, const R: usize>(
         (1..=producers as u64 * values_per_producer).collect::<Vec<_>>(),
         "{shape}: every value comes out exactly once"
     );
-    assert_eq!(check(&history), Verdict::Linearizable, "{shape}");
+    let verdict = check(&history);
+    assert!(
+        verdict == Verdict::Linearizable,
+        "{shape}: {verdict:?}\n{}",
+        describe_stall(&history, &verdict)
+    );
 }
+
+/// What the search could not get past, in words: the next operation each
+/// participant had left unplaced when it ran out of choices, and every other
+/// operation that overlapped the first of them. A verdict that says only that
+/// no sequence exists sends the reader back to re-run a test whose run is
+/// gone.
+fn describe_stall(history: &History, verdict: &Verdict) -> String {
+    let Verdict::NotLinearizable { deepest, .. } = verdict else {
+        return String::new();
+    };
+    let mut text = String::new();
+    let mut first: Option<(usize, Operation)> = None;
+    for (who, placed) in deepest.iter().enumerate() {
+        match history.participants[who].get(*placed) {
+            Some(op) => {
+                text.push_str(&format!(
+                    "  participant {who} stalled at op {placed}: {op:?}\n"
+                ));
+                let earlier = match first {
+                    None => true,
+                    Some((_, earliest)) => op.invoked < earliest.invoked,
+                };
+                if earlier {
+                    first = Some((who, *op));
+                }
+            }
+            None => text.push_str(&format!("  participant {who} had placed everything\n")),
+        }
+    }
+    if let Some((who, stalled)) = first {
+        text.push_str(&format!("  overlapping participant {who}'s {stalled:?}:\n"));
+        for (other, ops) in history.participants.iter().enumerate() {
+            for (at, op) in ops.iter().enumerate() {
+                if other != who && op.invoked < stalled.returned && stalled.invoked < op.returned {
+                    text.push_str(&format!("    participant {other} op {at}: {op:?}\n"));
+                }
+            }
+        }
+    }
+    text
+}
+
+/// How many times each shape is recorded. One recording is a draw from the
+/// schedules the machine happens to give, and the schedules that matter (a
+/// pop stopped between taking its element and handing its slot back) are a
+/// fraction of a percent of them, so the shapes are drawn many times: a
+/// thousand-odd recordings take about two seconds.
+const RECORDINGS_PER_SHAPE: usize = 150;
 
 #[test]
 fn recorded_scq_runs_are_linearizable() {
-    assert_scq_run_is_linearizable::<1, 1>(2, 2, 150);
-    assert_scq_run_is_linearizable::<3, 4>(2, 2, 150);
-    assert_scq_run_is_linearizable::<8, 8>(2, 2, 150);
-    assert_scq_run_is_linearizable::<2, 2>(3, 1, 120);
-    assert_scq_run_is_linearizable::<4, 4>(1, 3, 120);
-    assert_scq_run_is_linearizable::<5, 8>(2, 2, 150);
+    for _ in 0..RECORDINGS_PER_SHAPE {
+        assert_scq_run_is_linearizable::<1, 1>(2, 2, 150);
+        assert_scq_run_is_linearizable::<3, 4>(2, 2, 150);
+        assert_scq_run_is_linearizable::<8, 8>(2, 2, 150);
+        assert_scq_run_is_linearizable::<2, 2>(3, 1, 120);
+        assert_scq_run_is_linearizable::<4, 4>(1, 3, 120);
+        assert_scq_run_is_linearizable::<5, 8>(2, 2, 150);
+    }
+}
+
+// The refusal the SCQ rows are held to (`Refusal::WhileSlotsAreHeld`), and the
+// limits that keep it from excusing a queue that is simply too small. The
+// three histories below share one shape: capacity 2, one slow pop that is
+// still in flight while a fast pop and a push complete behind it.
+
+/// Capacity 2. `P0` fills it with 1 and 2; `C0`'s pop of 1 starts at 5 and
+/// does not return until `slow_pop_returns`; `C1` pops 2 and returns at 9, so
+/// by FIFO both pops precede everything after 9; `P0` pushes 3 and returns at
+/// 11; `P1`'s push of 4 runs over 12 to 13 and is refused. The sequential
+/// queue holds 1 element there, not 2.
+fn a_refused_push_behind_a_slow_pop(slow_pop_returns: u64) -> Vec<Vec<Operation>> {
+    vec![
+        vec![
+            push(1, Outcome::Pushed, 1, 2),
+            push(2, Outcome::Pushed, 3, 4),
+            push(3, Outcome::Pushed, 10, 11),
+        ],
+        vec![pop(Outcome::Popped(1), 5, slow_pop_returns)],
+        vec![pop(Outcome::Popped(2), 6, 9)],
+        vec![push(4, Outcome::Full, 12, 13)],
+    ]
+}
+
+#[test]
+fn a_slot_held_by_a_slow_pop_explains_a_refusal_only_under_the_relaxed_rule() {
+    let held = a_refused_push_behind_a_slow_pop(20);
+    assert!(
+        is_refused(&verdict_under(Refusal::AtCapacity, 2, held.clone())),
+        "the sequential queue holds 1 of 2 elements when the push is refused"
+    );
+    assert_eq!(
+        verdict_under(Refusal::WhileSlotsAreHeld, 2, held),
+        Verdict::Linearizable,
+        "the pop of 1 is still in flight and holds the slot the push needed"
+    );
+}
+
+#[test]
+fn a_refusal_no_overlapping_operation_explains_is_refused_under_both_rules() {
+    // The slow pop returns at 8, before the refused push is invoked at 12:
+    // nothing holds a slot while it runs, so the queue was not full.
+    let at_rest = a_refused_push_behind_a_slow_pop(8);
+    for refusal in [Refusal::AtCapacity, Refusal::WhileSlotsAreHeld] {
+        let v = verdict_under(refusal, 2, at_rest.clone());
+        assert!(is_refused(&v), "{refusal:?}: {v:?}");
+    }
+}
+
+#[test]
+fn one_participant_holds_one_slot_however_many_operations_it_overlaps_with() {
+    // Capacity 3, one element left when the push is refused, so two slots
+    // would have to be held. `C0` is the only other participant running
+    // alongside it, with two operations that both overlap the refused push,
+    // but a participant is in one operation at a time and holds one slot.
+    let v = verdict_under(
+        Refusal::WhileSlotsAreHeld,
+        3,
+        vec![
+            vec![
+                push(1, Outcome::Pushed, 1, 2),
+                push(2, Outcome::Pushed, 3, 4),
+                push(3, Outcome::Pushed, 5, 6),
+            ],
+            vec![
+                pop(Outcome::Popped(1), 7, 8),
+                pop(Outcome::Popped(2), 9, 10),
+            ],
+            vec![pop(Outcome::Popped(3), 11, 13), pop(Outcome::Empty, 14, 16)],
+            vec![push(4, Outcome::Full, 12, 15)],
+        ],
+    );
+    assert!(is_refused(&v), "{v:?}");
 }
 
 /// A real record with a value nobody pushed in place of one that was popped

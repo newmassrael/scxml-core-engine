@@ -8,8 +8,11 @@
 //! The document states a contract and names no algorithm; each algorithm
 //! the kind's selection table names lives here once. The contract every one
 //! of them keeps: linearizable FIFO in which the push of an element
-//! happens-before the pop that returns it, at the exact capacity declared.
-//! Memory ordering is not a parameter — it is part of each algorithm.
+//! happens-before the pop that returns it, never holding more than the
+//! capacity declared and holding exactly that when nothing is running. The
+//! [`scq`] rows may refuse a push while another participant's operation holds
+//! a slot; the Lamport row never does. Memory ordering is not a parameter —
+//! it is part of each algorithm.
 //!
 //! Modules:
 //! - [`spsc`] — the `bounded` row for one producer and one consumer: a

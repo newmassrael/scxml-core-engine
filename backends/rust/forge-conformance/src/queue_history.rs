@@ -13,7 +13,8 @@
 //! - keeps every operation that returned before another was invoked ahead
 //!   of it, and
 //! - is a run of the sequential bounded FIFO of the queue's capacity, in
-//!   which each operation gives the result it was observed to give.
+//!   which each operation gives the result it was observed to give, a
+//!   refused push judged as the history's [`Refusal`] says.
 //!
 //! [`check`] searches for that sequence — Wing and Gong's search, with the
 //! memo of states already explored that Lowe added — and says which
@@ -57,11 +58,38 @@ pub struct Operation {
     pub returned: u64,
 }
 
+/// When a queue may refuse a push.
+///
+/// The sequential queue refuses a push exactly when it holds its capacity.
+/// A concurrent queue whose slots are handed back one at a time cannot always
+/// do the same: a pop that has taken its element out of the queue still holds
+/// the slot it was in until it has handed the slot back, and a push that has
+/// taken a free slot holds it until it has published its element. A push
+/// that looks for a slot in that window finds none, and refusing it is all a
+/// lock-free queue can do, since waiting for a participant that may be
+/// stopped is not lock-free. The element count the refusal can be blamed on
+/// is therefore short by at most the slots those other operations hold.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Refusal {
+    /// A push is refused only when the queue holds its capacity. The one
+    /// producer and one consumer of a Lamport ring keep this: its slot is
+    /// handed back by the same store that retires the element.
+    AtCapacity,
+    /// A push is also refused while operations of other participants that
+    /// overlap it hold the slots the queue is short of: at most one slot per
+    /// other participant, since a participant has one operation in flight.
+    /// Capacity is exact at rest, and a refusal that no overlapping
+    /// operation could explain is still a violation.
+    WhileSlotsAreHeld,
+}
+
 /// Everything one run observed.
 #[derive(Debug, Clone)]
 pub struct History {
     /// The capacity of the sequential queue the run is judged against.
     pub capacity: usize,
+    /// When a push may be refused.
+    pub refusal: Refusal,
     /// One list per participant, in that participant's program order.
     pub participants: Vec<Vec<Operation>>,
 }
@@ -90,6 +118,7 @@ pub fn check(history: &History) -> Verdict {
     }
 
     let participants = &history.participants;
+    let held = slots_other_participants_may_hold(history);
     let start = State {
         frontier: vec![0; participants.len()],
         queue: VecDeque::new(),
@@ -123,7 +152,8 @@ pub fn check(history: &History) -> Verdict {
             if !may_come_next(participants, &frame.state.frontier, who, op) {
                 continue;
             }
-            let Some(queue) = apply(&frame.state.queue, op, history.capacity) else {
+            let slack = held[who][frame.state.frontier[who]];
+            let Some(queue) = apply(&frame.state.queue, op, history.capacity, slack) else {
                 continue;
             };
             let mut frontier = frame.state.frontier.clone();
@@ -190,16 +220,60 @@ fn may_come_next(
     })
 }
 
+/// For each operation, how many slots the operations of other participants
+/// may hold while it runs, which is how short of the capacity the queue may
+/// be when that operation is a refused push.
+///
+/// Zero everywhere under [`Refusal::AtCapacity`]. Under
+/// [`Refusal::WhileSlotsAreHeld`] it is, for a push observed refused, the
+/// number of other participants with any operation overlapping it, and zero
+/// for every other operation: only a refusal has a count to explain.
+fn slots_other_participants_may_hold(history: &History) -> Vec<Vec<usize>> {
+    history
+        .participants
+        .iter()
+        .enumerate()
+        .map(|(who, ops)| {
+            ops.iter()
+                .map(|op| {
+                    if history.refusal != Refusal::WhileSlotsAreHeld || op.outcome != Outcome::Full
+                    {
+                        return 0;
+                    }
+                    history
+                        .participants
+                        .iter()
+                        .enumerate()
+                        .filter(|(other, others)| {
+                            *other != who
+                                && others
+                                    .iter()
+                                    .any(|o| o.invoked < op.returned && op.invoked < o.returned)
+                        })
+                        .count()
+                })
+                .collect()
+        })
+        .collect()
+}
+
 /// The sequential queue after `op`, or `None` when the sequential queue
-/// would not give the outcome `op` was observed to give.
-fn apply(queue: &VecDeque<u64>, op: &Operation, capacity: usize) -> Option<VecDeque<u64>> {
+/// would not give the outcome `op` was observed to give. `slack` is how many
+/// slots other participants' operations may be holding, which only a refused
+/// push can draw on.
+fn apply(
+    queue: &VecDeque<u64>,
+    op: &Operation,
+    capacity: usize,
+    slack: usize,
+) -> Option<VecDeque<u64>> {
     match (op.call, op.outcome) {
         (Call::Push(value), Outcome::Pushed) if queue.len() < capacity => {
             let mut next = queue.clone();
             next.push_back(value);
             Some(next)
         }
-        (Call::Push(_), Outcome::Full) if queue.len() == capacity => Some(queue.clone()),
+        (Call::Push(_), Outcome::Full) if queue.len() + slack >= capacity => Some(queue.clone()),
         (Call::Pop, Outcome::Popped(value)) if queue.front() == Some(&value) => {
             let mut next = queue.clone();
             next.pop_front();
