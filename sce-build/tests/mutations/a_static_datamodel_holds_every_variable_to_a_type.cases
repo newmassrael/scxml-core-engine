@@ -166,6 +166,15 @@ edit("sce-build/src/forge/static_lowering.rs",
      "                // spells.\n                \"send\"\n                    if !action.params.is_empty()\n                        && effective_send_types(action).any(|send_type| {\n                            send_type == \"http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor\"\n                        }) =>\n                {\n                    return Some(\"a BasicHTTP <send> carrying a <param>\".to_string())\n                }\n                \"send\" => {}")
 PY
 
+# C11 performs a BasicHTTP send itself, through the arm a host-served send uses and
+# the HTTP client a platform supplies. The refusal put back names a type the machine
+# generates and runs.
+mutation_case "C11 refuses a BasicHTTP send again" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "                        let basic_http = send_type.ends_with(\"#BasicHTTPEventProcessor\");",
+     "                        let basic_http = false;")
+PY
+
 # The declaration names the values an expression may take, so a send with none has
 # nothing it could choose among.
 mutation_case "a declaration is let stand on a send with no computed target" <<'PY'

@@ -3166,8 +3166,9 @@ pairs: the engine hands its transport the text each value spells (a string as
 itself, an integer as its decimal digits, a bool as `true` or `false`, a real as
 its ECMAScript `String()`), and the transport renders the form from it
 (docs/adr/0005, decision 4; `static_send_http`, held on each engine by a test
-that records the request — Rust, Kotlin, Go, Python and C++; C11 refuses a BasicHTTP
-send for want of a lowering). A `location` names a variable and is
+that records the request — Rust, Kotlin, Go, Python and C++ through the engine's
+callback for it, and C11 through a client of its own that a test provides in place of
+the platform's). A `location` names a variable and is
 read as `expr="<variable>"`. A `<send>`'s `namelist` is the `<param name="x"
 expr="x"/>` of each name in it, after the `<param>`s the element writes, held to
 the same rule: a name no variable declares, or a variable of a type that has no
@@ -3335,7 +3336,7 @@ processor's, and whose `<else>` is a `<send>` of a type nothing delivers through
 every engine already answers with `error.execution`
 (`a_computed_type_expands_to_one_send_for_each_processor_it_declares.cases`). Each
 engine therefore delivers by the arm it has for a written type, and a language that
-refuses a written one refuses a set that names it — C11 refuses BasicHTTP. The
+refuses a written one refuses a set that names it, and none refuses BasicHTTP. The
 Interpreter runs the document's own `<send>`, so its lowering rewrites
 the attribute to `SceStatic.processor(<expression>, [<entries>])`, which throws for a
 value outside the set, so the attribute cannot be evaluated and the engine raises

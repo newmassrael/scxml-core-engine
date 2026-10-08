@@ -15443,6 +15443,10 @@
           "file": "backends/python/runtime/sce_runtime/engine.py",
           "symbol": "_perform_deferred_host_send",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/static_lowering.rs",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {

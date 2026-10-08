@@ -1519,20 +1519,29 @@ fn every_generated_language_delivers_a_computed_type_by_the_processor_it_names()
         let (ok, out) = run(&check_args(lang), &scxml_only);
         assert!(ok, "{lang} delivers a computed SCXML type:\n{out}");
     }
-    // BasicHTTP is a processor C11 holds no delivery path for, so a set that may name
-    // it is refused by name there, as a written BasicHTTP `type` is.
+    // BasicHTTP is delivered through by every language too (docs/adr/0005, decision
+    // 4): the machine performs it itself, so a set that may name it is lowered
+    // wherever a written BasicHTTP `type` is, which is everywhere.
     let with_http = typing(&format!(
         r##"<send event="go" typeexpr="kind" sce:types="{SCXML_PROCESSOR} {HTTP_PROCESSOR}"/>"##
     ));
-    let (ok, out) = run(&check_args("c11"), &with_http);
-    assert!(!ok, "C11 has no delivery path for BasicHTTP:\n{out}");
-    assert!(
-        out.contains(&format!("a <send> of type `{HTTP_PROCESSOR}`")),
-        "the refusal names the type:\n{out}"
-    );
-    for lang in ["rust", "kotlin", "go", "python", "cpp"] {
+    for &lang in COMPUTED_TARGET_LANGUAGES {
         let (ok, out) = run(&check_args(lang), &with_http);
         assert!(ok, "{lang} delivers a computed BasicHTTP type:\n{out}");
+    }
+}
+
+#[test]
+fn every_generated_language_lowers_a_basic_http_send_carrying_params() {
+    // The pairs of a BasicHTTP request are the text map the machine already fills for
+    // every other delivery (docs/adr/0005, decision 4), so no language refuses one:
+    // C++ and C11 did, by name, until they wrote it.
+    let document = typing(&format!(
+        r##"<send event="note" type="{HTTP_PROCESSOR}" target="http://example.invalid/hook"><param name="k" expr="count"/></send>"##
+    ));
+    for &lang in COMPUTED_TARGET_LANGUAGES {
+        let (ok, out) = run(&check_args(lang), &document);
+        assert!(ok, "{lang} lowers a BasicHTTP send with a param:\n{out}");
     }
 }
 

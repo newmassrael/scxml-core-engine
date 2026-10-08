@@ -4602,7 +4602,12 @@ impl CTarget {
                         let scxml_processor = send_type.is_empty()
                             || send_type == "scxml"
                             || send_type.ends_with("#SCXMLEventProcessor");
-                        if !scxml_processor && !action.send_type_host_served {
+                        // BasicHTTP is the one processor the machine performs
+                        // itself (§scxml-C-2): its request is built by the arm a
+                        // host-served send is, and made by the runtime's HTTP client
+                        // (docs/adr/0005, decision 4).
+                        let basic_http = send_type.ends_with("#BasicHTTPEventProcessor");
+                        if !scxml_processor && !basic_http && !action.send_type_host_served {
                             return Some(format!("a <send> of type `{send_type}`"));
                         }
                     }

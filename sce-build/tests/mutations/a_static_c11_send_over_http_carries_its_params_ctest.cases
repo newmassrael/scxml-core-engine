@@ -1,0 +1,37 @@
+# Mutation cases for "the `<param>`s of a BasicHTTP `<send>` cross as the text a form
+# carries" under the C11 backend (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Params";
+# docs/adr/0005, decision 4).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_c11_send_over_http_carries_its_params_ctest.cases`.
+#
+# `static_send_http` sends a request carrying six pairs read from the machine's fields
+# and one carrying `count` beside a `big` that overflows. The machine builds the request
+# through the arm a host-served send uses and makes its POST through the HTTP client a
+# platform supplies; the test is that platform, keeps the request, and reads the form
+# it was handed. The mutants each take one decision of that away, and each still
+# compiles:
+#
+#   a pair's text is written empty;
+#   the request is handed no pairs at all.
+#
+# The template reaches the test only through the generated machine CMake builds, so
+# the ctest is the command that carries a mutated template into it. Anchors are literal
+# slices of the template; an edit that moves one is reported INCONCLUSIVE with the
+# anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^c11_integration_static_send_http$'
+mutation_targets tools/codegen/templates/c/state_machine.c.jinja2
+mutation_oracles backends/c/tests/integration/test_static_send_http.c sce-build/tests/fixtures/static_datamodel/static_send_http.scxml
+
+mutation_case "a pair's text is written empty" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "                                _host_params[_host_param_count].value = _host_param_texts[{{ loop.index0 }}];",
+     "                                _host_params[_host_param_count].value = \"\";")
+PY
+
+mutation_case "the request is handed no pairs at all" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "                _host_req.params = _host_params;\n                _host_req.param_count = _host_param_count;",
+     "                _host_req.params = _host_params;\n                _host_req.param_count = 0;")
+PY

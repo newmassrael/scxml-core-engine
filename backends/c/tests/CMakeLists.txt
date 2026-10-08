@@ -2717,6 +2717,39 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # The `<param>`s of a BasicHTTP `<send>` (docs/adr/0005, decision 4): the
+    # machine makes its POST through the HTTP client a platform supplies
+    # (`sce/http_client.h`), and this test is that platform -- it keeps the
+    # request. It is linked WITHOUT `sce_c_runtime_posix`, so the test's own
+    # client is the only definition of those symbols and the link is the proof.
+    sce_generate_static_integration_c_test(static_send_http
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_send_http.scxml"
+    )
+    add_executable(sce_c_integration_static_send_http
+        integration/test_static_send_http.c
+        ${INTEGRATION_C_TEST_static_send_http_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_static_send_http PRIVATE
+        sce_c_runtime sce_c_base
+    )
+    target_include_directories(sce_c_integration_static_send_http PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
+    )
+    set_target_properties(sce_c_integration_static_send_http PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_static_send_http
+        COMMAND sce_c_integration_static_send_http
+    )
+    set_tests_properties(c11_integration_static_send_http PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # Delayed `<send>`s still waiting under `datamodel="sce-static"`: the
     # machine's own clock brings each due, in the order it was sent, and a
     # `<cancel>` removes the one it names. The document is the one the Rust,
