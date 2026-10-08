@@ -1,0 +1,64 @@
+{
+  "about": "Specifications with a closed requirement list each, and the edits an owner makes to a specification between two drafts. The list is the owner's reading, fixed here so that no model is in the measurement: revision_identity.py applies each edit to the prose and to the list by rule, so what each requirement of the first revision became in the second is known by construction, not judged. An edit's `truth` is derived, never written: a requirement whose quote is untouched is `same`, one whose words the edit rewrote is `changed`, one whose sentence the edit removed is `gone`.",
+  "cases": [
+    {
+      "id": "vending-controller",
+      "prose": "The vending controller starts idle with no credit. Inserting a coin adds its value to the credit; 100 and 500 coins are accepted and any other coin is returned at once. A product button selects a product. When the credit is at least the selected product's price, the product is dispensed and the change is returned; otherwise the price is shown. Pressing cancel returns the whole credit and the controller goes back to idle. If credit is held and nothing happens for 30 seconds, the credit is returned. While dispensing, buttons are ignored. When the dispense-done sensor reports, the controller is idle again. If the selected product is out of stock it is not dispensed and a sold-out message is shown.",
+      "requirements": [
+        {"quote": "The vending controller starts idle with no credit.", "statement": "starts idle with no credit"},
+        {"quote": "Inserting a coin adds its value to the credit", "statement": "a coin adds its value"},
+        {"quote": "100 and 500 coins are accepted and any other coin is returned at once", "statement": "only 100 and 500 are kept"},
+        {"quote": "A product button selects a product.", "statement": "a button selects"},
+        {"quote": "When the credit is at least the selected product's price, the product is dispensed and the change is returned", "statement": "dispense with change"},
+        {"quote": "otherwise the price is shown", "statement": "short credit shows the price"},
+        {"quote": "Pressing cancel returns the whole credit and the controller goes back to idle.", "statement": "cancel"},
+        {"quote": "If credit is held and nothing happens for 30 seconds, the credit is returned.", "statement": "credit timeout"},
+        {"quote": "While dispensing, buttons are ignored.", "statement": "buttons ignored while dispensing", "modality": "shall_not"},
+        {"quote": "When the dispense-done sensor reports, the controller is idle again.", "statement": "back to idle"},
+        {"quote": "If the selected product is out of stock it is not dispensed and a sold-out message is shown.", "statement": "sold out"}
+      ],
+      "edits": [
+        {"id": "insert-early", "ops": [{"op": "insert_after", "after": "The vending controller starts idle with no credit.", "sentence": "The display shows the credit at all times.", "requirement": {"quote": "The display shows the credit at all times.", "statement": "credit is displayed"}}]},
+        {"id": "append", "ops": [{"op": "append", "sentence": "A reset key clears the machine.", "requirement": {"quote": "A reset key clears the machine.", "statement": "reset key"}}]},
+        {"id": "delete", "ops": [{"op": "delete", "sentence": "A product button selects a product."}]},
+        {"id": "reword-a-number", "ops": [{"op": "replace", "old": "30 seconds", "new": "45 seconds"}]},
+        {"id": "swap-two-sentences", "ops": [{"op": "swap", "a": "A product button selects a product.", "b": "Pressing cancel returns the whole credit and the controller goes back to idle."}]},
+        {"id": "reflow", "ops": [{"op": "reflow", "width": 40}]}
+      ]
+    },
+    {
+      "id": "door-with-auto-close",
+      "prose": "The door controller keeps the door in one of four conditions: closed, opening, open and closing. An open request while the door is closed starts opening it. When the fully-open sensor reports, the door is open. If the door has been open for 20 seconds without a new open request, it starts closing. An open request while closing reverses it to opening. When the fully-closed sensor reports, the door is closed.",
+      "requirements": [
+        {"quote": "The door controller keeps the door in one of four conditions: closed, opening, open and closing.", "statement": "four conditions"},
+        {"quote": "An open request while the door is closed starts opening it.", "statement": "open request when closed"},
+        {"quote": "When the fully-open sensor reports, the door is open.", "statement": "fully open"},
+        {"quote": "If the door has been open for 20 seconds without a new open request, it starts closing.", "statement": "auto close"},
+        {"quote": "An open request while closing reverses it to opening.", "statement": "reverse"},
+        {"quote": "When the fully-closed sensor reports, the door is closed.", "statement": "fully closed"}
+      ],
+      "edits": [
+        {"id": "insert-early", "ops": [{"op": "insert_after", "after": "The door controller keeps the door in one of four conditions: closed, opening, open and closing.", "sentence": "A closed door stays closed until it is asked to open.", "requirement": {"quote": "A closed door stays closed until it is asked to open.", "statement": "closed stays closed", "modality": "shall_not"}}]},
+        {"id": "delete", "ops": [{"op": "delete", "sentence": "An open request while closing reverses it to opening."}]},
+        {"id": "reword-a-number", "ops": [{"op": "replace", "old": "20 seconds", "new": "30 seconds"}]},
+        {"id": "reflow", "ops": [{"op": "reflow", "width": 40}]}
+      ]
+    },
+    {
+      "id": "connection-keeper",
+      "prose": "The connection keeper starts disconnected and immediately tries to connect. If the attempt succeeds it is connected; if it fails it waits 5 seconds and tries again, indefinitely. While connected, a link-lost notification returns it to waiting 5 seconds before the next attempt. A shutdown request in any condition stops it for good.",
+      "requirements": [
+        {"quote": "The connection keeper starts disconnected and immediately tries to connect.", "statement": "starts and tries"},
+        {"quote": "If the attempt succeeds it is connected", "statement": "success connects"},
+        {"quote": "if it fails it waits 5 seconds and tries again, indefinitely", "statement": "retry after 5 seconds"},
+        {"quote": "While connected, a link-lost notification returns it to waiting 5 seconds before the next attempt.", "statement": "link lost"},
+        {"quote": "A shutdown request in any condition stops it for good.", "statement": "shutdown"}
+      ],
+      "edits": [
+        {"id": "insert-early", "ops": [{"op": "insert_after", "after": "The connection keeper starts disconnected and immediately tries to connect.", "sentence": "Each attempt is logged.", "requirement": {"quote": "Each attempt is logged.", "statement": "attempts are logged"}}]},
+        {"id": "reword-a-number", "ops": [{"op": "replace", "old": "5 seconds", "new": "10 seconds"}]},
+        {"id": "reflow", "ops": [{"op": "reflow", "width": 40}]}
+      ]
+    }
+  ]
+}

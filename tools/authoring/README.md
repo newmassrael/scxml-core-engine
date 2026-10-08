@@ -287,6 +287,22 @@ cannot say whether that is the profile or the sample. The three cases are the
 ones the product was shaped on and the lists were written by the owner's side
 before the drafts, so this is not a blind test.
 
+#### When the specification is revised
+
+A revised specification lapses an acceptance, and the next draft is written
+afresh. Saying which requirements the revision touched needs an id to mean the
+same requirement in both revisions, and today it does not: `scxml_requirement_set`
+numbers the quoted requirements in reading order and leaves `rev` at `1`.
+`eval/revision_identity.py` measures that without a model: it applies an owner's
+edit to a specification and to its requirement list by rule and reports what
+became of every id. Over three specifications and 13 edits, 29 of 105 ids named
+a different requirement in the second revision with nothing to flag it (a sentence
+inserted anywhere but the end, a sentence deleted, two swapped); an appended
+sentence, a reworded number and a reflow moved none. The figures, the constraints
+behind the proposal and the steps it opens are in
+`docs/adr/0006-a-requirement-keeps-its-id-across-a-revision.md`, which is
+`Proposed`: nothing in the tools has changed yet.
+
 #### Examples a design is played against
 
 A requirement met by something NOT happening ("nothing is sent after the
