@@ -92,7 +92,9 @@ and sameness are two facts, kept apart.**
       keeps that id (`carried-with-edit`, and the requirement is **changed**: its words are
       not its predecessor's). Unambiguous means one counterpart above the similarity
       threshold and a margin to the next; the threshold is a starting value that the harness
-      decides, not a number to trust before it has measured false pairings. ⚠ The words of
+      decides, not a number to trust before it has measured false pairings. Similarity is the
+      Dice coefficient over the character trigrams of the two quotes' words (lower-cased,
+      punctuation ignored), see "Similarity reads characters" below. ⚠ The words of
       the id's last quote are not in the lineage, so this needs them: the caller gives the
       previous sidecar (`previous_sidecar`), each text is used only if its sha256 is the one
       the lineage last saw for that id, and without them 3b does nothing and the requirement
@@ -205,9 +207,36 @@ Against the criteria this ADR set:
    not a rate.
 5. **Met.** `rev` is 2 for every edit that changes a word and stays 1 for the reflow.
 
+### Similarity reads characters, not words (2026-10-08)
+
+The first version counted whole words. A revision trial on a real component (a sound identifier
+going from `...1` to `...2` in a quote kept as short as the requirement allows) showed what
+that does to a short quote: `shown with beep_fuel_low_1` against `...low_2` shares two words
+of three (0.67), and the bare identifier shares none (0.00), so a one-character edit was read as a
+retired requirement and a new one, and every later check was built on a requirement that had
+lost its history. Dice over character trigrams (the words joined by single spaces, padded at
+both ends) scores the same edits 0.81 to 0.94, requirements that share nothing 0.0 to 0.25 and
+two sentences about one device that share some words (`Pressing the switch turns it on` against
+`pressing it again turns it off`) 0.55, so the unchanged `SIMILARITY` of 0.8 separates them.
+
+What it does not claim:
+
+- **The corpus cannot tune the threshold.** The 16 edits above read identically at 0.6, 0.7,
+  0.75, 0.8 and 0.85 (the totals of the table are unchanged by the move to trigrams), so 0.8 is
+  kept for want of a measurement that prefers another value, not because one does.
+- **A very short identifier still falls short.** One character of ten (`beep_low_1` to
+  `...2`) scores 0.75. Any threshold has a length below which one edit is too large a share; the
+  failure is the loud one (a retired id and a new one) and a test holds it.
+- **Two quotes that differ in one meaningful word still score high** (the corpus's `the door is
+  closed.` against `the door is locked.` in one longer sentence, 0.90, and the pump's `the gate
+  is open.` against `...is shut.`, 0.90) and no similarity separates them. The margin rule keeps an ambiguous pair
+  from being carried, and a carried one is `changed`, never `same`.
+
 Tests of the tool hold the rest: the first list is the list it always was, an id of a closed
 requirement is never issued again, an ambiguous near match carries nothing, a continuation that
 does not fit is refused, the lineage holds no word of the specification, and a lineage that is
-another specification's, malformed, or would issue an id twice is refused. Twelve ways of
-breaking the lineage's rules were put to those tests and all twelve were caught (one was not,
-at first: a continuation claiming an id twice, which the tests did not exercise and now do).
+another specification's, malformed, or would issue an id twice is refused. Seventeen ways of
+breaking the lineage's rules were put to those tests and all seventeen were caught (one was not,
+at first: a continuation claiming an id twice, which the tests did not exercise and now do; and
+two of the five added for the trigram similarity, case and punctuation, survived until a test
+held that a change of capitals or punctuation alone keeps an id).

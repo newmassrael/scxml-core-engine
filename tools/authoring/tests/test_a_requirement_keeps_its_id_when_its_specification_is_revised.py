@@ -238,6 +238,61 @@ class SameIsClaimedOnEqualWordsOnly(unittest.TestCase):
                    continues={"A reset key clears it.": "R5"})
 
 
+class ASingleCharacterEditedInAShortQuoteIsStillTheSameRequirementReworded(unittest.TestCase):
+    """A quote is kept as short as the requirement allows, and a short quote is often one identifier. The
+    similarity counts the character trigrams of its words, so changing one character of an identifier
+    moves a few trigrams of many, where counting whole words said two quotes of three words shared two
+    and a bare identifier shared none (a trial on a real component, 2026-10-08)."""
+
+    PROSE = "The cluster plays beep_fuel_low_1. The cluster shows the fuel icon."
+    QUOTES = ["beep_fuel_low_1", "The cluster shows the fuel icon."]
+
+    def revised(self, old, new):
+        first = build(self.PROSE.replace("beep_fuel_low_1", old), [old, self.QUOTES[1]])
+        prose = self.PROSE.replace("beep_fuel_low_1", new)
+        return revise(first, prose, [new, self.QUOTES[1]])
+
+    def test_a_bare_identifier_with_one_character_changed_keeps_its_id(self):
+        second = self.revised("beep_fuel_low_1", "beep_fuel_low_2")
+        self.assertEqual("R1", id_of(second, "beep_fuel_low_2"))
+        self.assertEqual([{"id": "R1", "how": "near-match"}], second.delta["requirements"]["changed"])
+        self.assertEqual([], second.delta["requirements"]["retired"])
+
+    def test_the_same_edit_inside_a_longer_quote_keeps_its_id(self):
+        old, new = "The cluster plays beep_fuel_low_1", "The cluster plays beep_fuel_low_2"
+        second = self.revised(old, new)
+        self.assertEqual("R1", id_of(second, new))
+        self.assertEqual("changed", next(r.status for r in second.requirements if r.id == "R1"))
+
+    def test_another_identifier_is_not_the_same_requirement(self):
+        second = self.revised("beep_fuel_low_1", "beep_fuel_hi_1")
+        self.assertEqual("R3", id_of(second, "beep_fuel_hi_1"))
+        self.assertEqual(["R1"], second.delta["requirements"]["retired"])
+
+    def test_an_unrelated_sentence_is_not_the_same_requirement(self):
+        second = self.revised("beep_fuel_low_1", "A chime follows the icon.")
+        self.assertEqual("R3", id_of(second, "A chime follows the icon."))
+        self.assertEqual(["R1"], second.delta["requirements"]["retired"])
+
+    def test_a_change_of_capitals_or_punctuation_alone_keeps_its_id(self):
+        # The similarity reads the words, not how they are written: neither a title-cased sentence nor a
+        # list that lost its commas is another requirement.
+        for what, old, new in (("capitals", "The lamp starts off.", "The Lamp Starts Off."),
+                               ("punctuation", "fuel, low, warn", "fuel low warn")):
+            with self.subTest(what):
+                first = build(f"A. {old} B.", [old])
+                second = revise(first, f"A. {new} B.", [new])
+                self.assertEqual("R1", id_of(second, new))
+                self.assertEqual([{"id": "R1", "how": "near-match"}], second.delta["requirements"]["changed"])
+
+    def test_a_very_short_identifier_falls_short_and_is_said_so_by_a_retirement(self):
+        # beep_low_1 -> 2 scores 0.75 against 0.8: the edit is one character of ten. This is the limit of
+        # any similarity, and it fails loudly (a retired id and a new one), never as a wrong succession.
+        second = self.revised("beep_low_1", "beep_low_2")
+        self.assertEqual("R3", id_of(second, "beep_low_2"))
+        self.assertEqual(["R1"], second.delta["requirements"]["retired"])
+
+
 class TheWordsBehindTheIdsAreOnlyUsedWhenTheLineageVouchesForThem(unittest.TestCase):
     def test_a_sidecar_that_is_not_the_one_the_lineage_saw_is_set_aside_and_said(self):
         first = build(LAMP, LAMP_QUOTES)

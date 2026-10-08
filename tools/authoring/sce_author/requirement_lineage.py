@@ -55,10 +55,26 @@ from .errors import AuthoringError
 LINEAGE_KIND = "sce-requirement-lineage"
 LINEAGE_VERSION = 1
 
-# Dice coefficient over the words of two quotes, and how far ahead of the next
-# best candidate (for either side of the pair) a pair has to be to be believed.
+# Dice coefficient over the character trigrams of two quotes' words, and how far
+# ahead of the next best candidate (for either side of the pair) a pair has to be
+# to be believed.
+#
+# ⚠ Trigrams and not words. The first version counted whole words, and a quote the
+# client was told to keep "as short as the requirement allows" is a few words, one of
+# which is often an identifier: `shown with beep_fuel_low_1` against `...low_2` shared two
+# of three words (0.67) and a bare `beep_fuel_low_1` none (0.00), so a one-character edit
+# was read as a new requirement and a retired one (a trial on a real component, 2026-10-08).
+# On trigrams that edit scores 0.81 to 0.94, an edited number 0.90, and requirements that
+# share nothing 0.0 to 0.25 (two sentences about one device, 0.55), so the same 0.8 now
+# separates them. Below about fourteen characters one edit is too large a share and falls
+# short (`beep_low_1` to `2`, 0.75): loudly, as a retirement and a new id. What trigrams do
+# not separate -- `When the fully-closed sensor reports, the door is closed.` and `...is
+# locked.` (0.90), `...the gate is open.` and `...is shut.` (0.90) -- no similarity can: a
+# person has to read those, and the margin rule and the `changed` status are what keep them
+# safe.
 SIMILARITY = 0.8
 MARGIN = 0.1
+GRAM = 3
 
 _ID = re.compile(r"R([0-9]+)")
 _WORD = re.compile(r"\w+")
@@ -311,8 +327,15 @@ def _usable_words(texts: dict[str, str], latest: dict[str, str], taken: set[str]
     return usable
 
 
+def _grams(text: str) -> Counter:
+    """The character trigrams of a quote's words, lower-cased and joined by single spaces, with the
+    ends padded so a word at either end counts as much as one in the middle."""
+    padded = " " * (GRAM - 1) + " ".join(_WORD.findall(text.lower())) + " " * (GRAM - 1)
+    return Counter(padded[i:i + GRAM] for i in range(len(padded) - GRAM + 1))
+
+
 def _dice(a: str, b: str) -> float:
-    left, right = Counter(_WORD.findall(a.lower())), Counter(_WORD.findall(b.lower()))
+    left, right = _grams(a), _grams(b)
     both = sum((left & right).values())
     total = sum(left.values()) + sum(right.values())
     return 2 * both / total if total else 0.0
