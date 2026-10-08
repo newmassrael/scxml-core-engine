@@ -122,7 +122,26 @@ same compare-and-swap.**
   move it into the product as one command (`revision-join`, with its schema registered in
   `SCE_WIRE_CONTRACTS.md`) that the Python tools and `sce-work` both call. **Recommendation: (c).**
   It changes where ADR 0009's table lives and adds a wire surface, so it is not done by this
-  ADR. Stages 1 and 2 below do not depend on it.
+  ADR. Stages 1 to 3 do not depend on it.
+
+  ⚠ **(c) is larger than the paragraph above says (2026-10-09).** The join table is not the only
+  part a screen would need: `between`, `extends` and `belongs_to_manifest`, which derive the
+  words of a revision from two lineages and say whether a lineage continues another, are Python
+  too, so a product command that took the join alone would leave the application calling Python
+  for the words. (c) done as the long-term answer is the product READING lineages and judging
+  from them: it takes the two lineages and the record, compares them, and joins. What stays on
+  the authoring side is MAKING a lineage (the similarity of a quote to the words an id last had,
+  adoption, `continues`), because deciding that two sentences are one requirement is deciding
+  what the requirements ARE, and the product measures a design against a list it did not write.
+  The cost this leaves, stated: the lineage's format is then known to two implementations (the
+  authoring package makes and checks it, the product reads and compares it), held together by the
+  one schema file (`tools/authoring/schema/requirement-lineage.v1.schema.json`) and by the
+  same cases run through both; the tests written for the Python version (the twenty pairs of the
+  table, the neighbour rule, `between`, `extends`) become the cases the product's must pass.
+
+  Status: recommended, and the owner has asked whether (c) is the right long-term answer; it is
+  not recorded as decided until the owner says so. It is built when a surface other than the
+  authoring tools needs the judgment (stage 4), not before.
 - **D2. A way to start the lineage over.** Recommendation: none. A specification written again
   from nothing is a new work, and an id that may be issued twice is the defect.
 
