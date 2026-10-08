@@ -2246,6 +2246,17 @@ impl<'a> Judge<'a> {
             }
             return Ok(());
         }
+        // A Mesh request's `<param>`s are the request its router is handed, read
+        // from the machine's fields when the invocation starts and lowered to
+        // native code like a host-run invoke's (docs/adr/0005, decision 5). Its
+        // event name and deadline are constants the parser has already taken out.
+        if let Invoke::MeshRpc(_) = invoke {
+            let element = format!("<invoke id=\"{}\">", base.invoke_id);
+            for param in &base.params {
+                self.wire_param(ctx, &WireParam::of_param(param), &element, state)?;
+            }
+            return Ok(());
+        }
         for param in &base.params {
             if !param.expr.trim().is_empty() {
                 self.expr(

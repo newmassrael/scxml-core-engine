@@ -1,0 +1,18 @@
+# docs/adr/0005, decision 5 -- local-transport bindings for the static Mesh request
+# fixture. Both machines declare each other as local targets, so codegen emits a
+# TransportRouter for the caller whose peer is the receiver, as deploy_invoke.yaml
+# does for the script-engine pair.
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake_static_invoke:
+        source: brake_static_invoke.scxml
+        bindings:
+          "#motor_static_invoke":
+            transport: local
+      motor_static_invoke:
+        source: motor_static_invoke.scxml
+        bindings:
+          "#brake_static_invoke":
+            transport: local

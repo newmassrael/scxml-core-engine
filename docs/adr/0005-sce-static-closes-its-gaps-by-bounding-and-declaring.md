@@ -21,7 +21,7 @@ refuses are the ones where one of those two things is missing:
 | `bytes` (variable, record field, payload field) | a bound, and a spelling on the wire |
 | `<send targetexpr>` / `<send typeexpr>` | the set of values the expression can take |
 | a `<send>` to another processor | the same set, plus a lowering of the processor's own type |
-| a mesh `<invoke>` | a lowering in each backend's mesh runtime (C++ has one) |
+| a mesh `<invoke>` | a lowering in C++, whose generated router takes the request itself (the other five reach the host's router already) |
 | an `<invoke type="scxml">` of a child that declares `<sce:action>`s | a way for the parent to give the child its host |
 
 Two of these were measured on 2026-10-06 to be worse than "not yet written":
@@ -48,8 +48,9 @@ method that lifts the refusal.**
 
 One document has one answer on every engine that runs it. A construct that only some
 engines can hold is therefore refused on all of them until all can. The mesh is the one
-exception, because it is a service a backend gains with its own runtime: a backend that
-has it lowers it, and the rest refuse by name until theirs lands (decision 5).
+exception, because it is a service an engine has a route to or does not: the six
+generated languages lower a mesh request through the route they serve it by, and the
+Interpreter, which has no mesh route, refuses it by name (decision 5).
 
 ## Decisions
 
@@ -187,23 +188,48 @@ POSIX). C11's test is that platform: it provides the client itself, keeps the re
 instead of making it, and is linked without the POSIX runtime, so its client is the only
 definition of those symbols.
 
-### 5. A mesh `<invoke>` is lowered by each backend as its mesh runtime lands
+### 5. A mesh `<invoke>` is lowered through the route its backend serves it by
 
-`SCE_MESH.md` ("Current realization state") says the mesh runtime exists for C++ only
-today, and that a mesh construct addressed to another backend is refused at build time
-rather than dropped. That is where the work stands, not a limit of the design: the mesh
-is meant for every backend. The static lowering follows the rule it follows for every
-other construct here. `<invoke type="sce:mesh-rpc">` is lowered by the C++ target (and so
-by the Interpreter, which is C++), and refused by name by Rust, Kotlin, Go, Python and
-C11 as "no lowering yet". Each of them lifts the refusal
-(`StaticTarget::lowers_mesh_invoke`) in the commit that lands its mesh runtime and its
-lowering.
+Every backend serves `<invoke type="sce:mesh-rpc">` by exactly one of two routes
+(`SCE_MESH.md` §9.5, "Backend coverage"). C++ generates its own `TransportRouter`, and the
+request lowers into that router's `performMeshInvoke`. The other five hand the request to
+a router the host registers: the build rewrites the invoke into a host-served `<invoke>`
+of that type before the static lowering sees it, and a `sce-static` machine already
+lowers the `<param>`s of one (`SCE_ACCEPTED_SUBSET.md` §2.12, "Types the host runs").
+
+This decision first read the mesh as a runtime the five lacked, to be lowered one
+backend at a time as each gained it, and read the Interpreter as C++ and so as lowering
+it with C++. Both were wrong, and the tree says so: the five serve a static mesh request
+today with no change, which `a_static_datamodel_holds_every_variable_to_a_type` holds
+for each of them, and the Interpreter is an engine of its own that has no mesh route to
+lower into. What was left was C++, the one backend where the request reaches the
+lowering as itself, and which refused it by name.
+
+As landed, C++ computes each `<param>` of a mesh request from the machine's own fields
+when the invocation starts, as it does a host-served `<invoke>`'s, and hands the router
+the text of each (a string as itself, an integer as its decimal digits, a bool as `true`
+or `false`, a real as its ECMAScript `String()`) beside the typed value. A value that
+failed is the evaluation that failed (§scxml-5.7.1): `error.execution` is raised, the pair
+is left out, and the request still goes. The peer is the `src` the invoke writes. A
+`srcexpr` would name the peer from a value computed when the invoke runs, which needs a
+declared set of peers as `sce:targets` is for a `<send>`, and stays refused, as does an
+`idlocation`; neither is part of this step.
+`tests/mesh/test_mesh_static_invoke_request.cpp` records the request where the router
+hands it to its link, with no transport, and links no script engine: the link is the
+proof that no param reached one.
+
+The Interpreter stays refused, by name, as "a mesh `<invoke>`". Giving it a mesh route
+is a product decision about the Interpreter and not about `sce-static`, and a lowering
+written for it here would be the only code in that engine that a `sce-static` document
+alone could reach.
 
 Rejected:
 
 - *Refusing the five by contract, with a message that says the mesh is C++ only.* It
-  would write a limit the design does not have, and a reader of the refusal would take
-  it as permanent.
+  would write a limit the design does not have, and it would refuse documents the five
+  already serve.
+- *Lowering the request in C++ through the script-engine arm.* A `sce-static` machine has
+  none, and the arm's evaluation is the text this model exists not to run.
 
 ### 6. The parent gives a child its host through a factory on the parent's own host
 
@@ -254,8 +280,8 @@ only when the last engine has flipped it.
 2. The child's host (decision 6). Fixture: a child declaring an act, invoked, restored,
    and invoked again.
 3. `targetexpr` / `typeexpr` (decision 3), then BasicHTTP `<param>`s (decision 4).
-4. The mesh `<invoke>` (decision 5): the C++ lowering first, then each other backend
-   with its mesh runtime.
+4. The mesh `<invoke>` (decision 5): the C++ lowering. The other five serve the request
+   through the host's router and need none; the Interpreter has no mesh route.
 
 ## Consequences
 

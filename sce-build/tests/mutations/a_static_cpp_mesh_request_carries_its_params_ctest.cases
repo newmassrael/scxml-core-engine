@@ -1,0 +1,52 @@
+# Mutation cases for "the `<param>`s of a Mesh request are read from the machine's own
+# fields and cross as the request's payload" under the C++ backend
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Params"; docs/adr/0005, decision 5).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_cpp_mesh_request_carries_its_params_ctest.cases`.
+#
+# `brake_static_invoke` requests `motor_static_invoke` with five pairs (`load`, `engaged`
+# and `gain` read from fields, `doubled` an expression, and `boom` a checked
+# multiplication that fails once `bump` has made `load` 4). The test links no script
+# engine and reads the request where the router the build generates hands it to its
+# link: so the payload is what the machine writes, and the mutants each take one
+# decision of it away, and each still compiles:
+#
+#   the text of a param that was read is not put in the map;
+#   the typed value of a param that was read is not handed on;
+#   a param whose value failed is carried anyway;
+#   a param whose value failed is not reported.
+#
+# The test is registered only when the tree is configured with `SCE_ENABLE_MESH=ON`,
+# which the C++ suite's own build is. The template is read by the generator binary
+# CMake already holds, so the build the ctest names carries a mutated template into
+# the generated machine. Anchors are literal slices of the template; an edit that
+# moves one is reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^mesh_static_invoke_request_verification$'
+mutation_targets tools/codegen/templates/entry_exit_actions.jinja2
+mutation_oracles tests/mesh/test_mesh_static_invoke_request.cpp tests/mesh/brake_static_invoke.scxml
+
+mutation_case "the text of a param that was read is not put in the map" <<'PY'
+edit("tools/codegen/templates/entry_exit_actions.jinja2",
+     "                            _mesh_params_{{ invoke_info.invoke_id }}[\"{{ param.name | escape_cpp }}\"].push_back(\n                                ::SCE::ScriptResultUtils::valueText(paramValue));",
+     "                            _mesh_params_{{ invoke_info.invoke_id }}[\"{{ param.name | escape_cpp }}\"].push_back(\n                                std::string());")
+PY
+
+mutation_case "the typed value of a param that was read is not handed on" <<'PY'
+edit("tools/codegen/templates/entry_exit_actions.jinja2",
+     "                            _mesh_typed_params_{{ invoke_info.invoke_id }}[\"{{ param.name | escape_cpp }}\"].push_back(std::move(paramValue));",
+     "                            (void)paramValue;")
+PY
+
+mutation_case "a param whose value failed is carried anyway" <<'PY'
+edit("tools/codegen/templates/entry_exit_actions.jinja2",
+     "                                \"<invoke type='sce:mesh-rpc'> <param name='{{ param.name | escape_cpp }}'> could not be read\"));\n                        } else\n{% endif %}",
+     "                                \"<invoke type='sce:mesh-rpc'> <param name='{{ param.name | escape_cpp }}'> could not be read\"));\n                        }\n{% endif %}")
+PY
+
+mutation_case "a param whose value failed is not reported" <<'PY'
+edit("tools/codegen/templates/entry_exit_actions.jinja2",
+     "                            engine.raise(typename Engine::EventWithMetadata(Event::Error_execution,\n                                \"<invoke type='sce:mesh-rpc'> <param name='{{ param.name | escape_cpp }}'> could not be read\"));\n                        } else\n{% endif %}",
+     "                            (void)engine;\n                        } else\n{% endif %}")
+PY

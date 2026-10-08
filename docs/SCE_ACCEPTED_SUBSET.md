@@ -3155,7 +3155,9 @@ A conditional whose branches are a payload's enum field and a variant has no typ
 can name and is refused there as it was for any value of no type.
 
 **Params.** A `<param>` of a `<send>`, of an `<invoke>` the host runs
-(§2.12) and of a `<final>`'s `<donedata>` is a typed expression read from the
+(§2.12), of a Mesh request (§2.6; the six generated languages lower it, and the
+Interpreter, which has no mesh route, refuses it by name as "a mesh `<invoke>`") and of a
+`<final>`'s `<donedata>` is a typed expression read from the
 machine's fields at the moment the element runs — W3C SCXML 6.2.3 evaluates a
 `<send>`'s arguments once, at the send, a start of an invoke is the same
 instant, and a `<final>`'s donedata is evaluated as the state is entered (5.5)
@@ -4101,7 +4103,15 @@ starts — as a host-served `<send>`'s are, which carry the same two renderings.
 failed computation leaves out. A hybrid `<invoke>` (§2.13) reads the stem of the
 string its `srcexpr` computes (`SCE::documentStem`) and starts the candidate it
 names, handing it the values it keeps and evaluating the rest. A bytes variable
-and a mesh invoke are not lowered yet. A call is the
+is not lowered yet. A mesh `<invoke>` (§2.6) is lowered through the router the build
+generates for the deployment (docs/adr/0005, decision 5): each `<param>` is
+computed into a `ScriptValue` from the machine's own fields when the invocation
+starts, and the router is handed the text of each beside the typed value; a value
+that failed is reported (`error.execution`) and its pair left out, and the request
+still goes (§scxml-5.7.1). Its `srcexpr` and `idlocation` are refused.
+`tests/mesh/test_mesh_static_invoke_request.cpp` drives `brake_static_invoke`,
+linked without a script engine, and holds the request where the router hands it to its
+link. A call is the
 algorithm's own free function, `SCE::Generated::<Name>::<name>(…)`, wrapped in
 `Checked::take(sce_failure_, …)` when the algorithm can fail, so a failed call
 is received as any failed operation is; the machine's header includes the
@@ -4163,8 +4173,10 @@ whose arguments are typed expressions of the machine's variables.
 on the wire for both the send and the invoke, and the pair a failed computation
 leaves out. A hybrid `<invoke>` (§2.13) reads the stem of the string its
 `srcexpr` computes (`sce.DocumentStem`) and starts the candidate it names,
-generated into the parent's package, handing it the values it keeps. Bytes, and a
-mesh invoke, are not lowered yet. Each variable is
+generated into the parent's package, handing it the values it keeps. Bytes is not
+lowered yet. A mesh `<invoke>` (§2.6) reaches the host's Mesh router as an
+`<invoke>` the host serves, its `<param>`s lowered as that one's are
+(docs/adr/0005, decision 5). Each variable is
 a field of the generated policy, `v<PascalCase id>`, initialised in the
 constructor; a published one has an exported reader of the author's name
 (`Count()`), which answers a copy of a list. An enum is a named integer over the
@@ -4259,8 +4271,10 @@ rendered as text) and `event_data` (its JSON), a value that failed left out and
 reported (5.7.1); `test_static_host_params.py` drives `statechart_static_host_params`
 and holds the value on the wire. A hybrid `<invoke>` (§2.13) reads the stem of the
 string its `srcexpr` computes (`document_stem`) and starts the candidate it names,
-a module beside its parent, handing it the values it keeps. A mesh `<invoke>` and
-`bytes` are not lowered yet. Each variable is an attribute of
+a module beside its parent, handing it the values it keeps. `bytes` is not lowered
+yet. A mesh `<invoke>` (§2.6) reaches the host's Mesh router as an `<invoke>` the
+host serves, its `<param>`s lowered as that one's are (docs/adr/0005, decision 5).
+Each variable is an attribute of
 the generated policy, `v_<snake_case id>`, set in its constructor from the
 variables declared before it; a published one has a reader of the author's name
 (`count()`), which answers a copy of a list. An enum is an `IntEnum` over the
@@ -4311,15 +4325,17 @@ of either width or such records with its `<sce:append>`, `<sce:clear>` and `<for
 `<param>`s of a final's `<donedata>`, a `<send>` to the machine's own event
 processor or to one the host serves (`--host-processor`) with its `<param>`s or its
 literal `<content>` (the text it spells, finished at build time and copied into the
-event's data, as on every other backend), an
+event's data, as on every other backend), a BasicHTTP `<send>` with its `<param>`s
+(docs/adr/0005, decision 4), an
 `<invoke type="scxml">` of a child that
 declares no `<sce:action>`, handed numbers, bools and strings, and an `<invoke>`
-the host serves (`--host-invoker`) with its `<param>`s, and a hybrid `<invoke>`
+the host serves (`--host-invoker`) with its `<param>`s, a mesh `<invoke>` (§2.6),
+which reaches the host's Mesh router as one of those (docs/adr/0005, decision 5), and a hybrid `<invoke>`
 whose candidates are `sce-static` documents (§2.13): the machine reads the stem of
 the string its `srcexpr` computes (`sce_document_stem`) and starts the candidate it
 names as a static child is started — begun, handed the values it keeps, entered,
-driven — evaluating the arguments it keeps no variable for. Bytes, a `<send>` to
-another processor, a mesh `<invoke>`, an `<invoke>` or a `<send>` of a
+driven — evaluating the arguments it keeps no variable for. Bytes, an `<invoke>` or a
+`<send>` of a
 type the host was not declared to serve, a `namelist` name that a `<param>` of
 the same `<send>` or `<invoke>` or an earlier name of the `namelist` already names
 and a

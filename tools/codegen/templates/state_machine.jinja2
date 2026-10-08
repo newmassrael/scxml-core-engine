@@ -120,6 +120,14 @@
 // helper with nothing declaring it.
 #include "common/NamelistHelper.h"
 {% endif %}
+{% if model.invokes | mesh_rpc and not model.needs_script_engine %}
+// docs/adr/0005, decision 5: a Mesh request's `<param>` under `datamodel="sce-static"`
+// is given its text by `ScriptResultUtils::valueText`, a header-only helper. The
+// include a machine with a script engine gets below is not there for one without,
+// and a machine whose only native params are on this `<invoke>` has no send or
+// namelist to bring it in through `NamelistHelper.h`.
+#include "scripting/ScriptResultUtils.h"
+{% endif %}
 {% if model.needs_script_engine %}
 #include "common/FinalizeHelper.h"
 {% endif %}

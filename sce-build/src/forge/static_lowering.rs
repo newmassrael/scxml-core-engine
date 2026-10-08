@@ -373,6 +373,17 @@ pub trait StaticTarget {
     fn lowers_hybrid_invoke(&self) -> bool {
         false
     }
+    /// Whether a Mesh request, `<invoke type="sce:mesh-rpc">`, is lowered by
+    /// this target itself: its `<param>`s read from the machine's fields when the
+    /// invocation starts and handed to the router the backend generates for the
+    /// document's deployment (`docs/adr/0005`, decision 5). Only a backend with a
+    /// router of its own does: every other one serves the request through its host
+    /// ([`crate::host_processor_analyzer::lower_mesh`]), which has turned it into
+    /// a host-served invoke before the walk, so a request that reaches a target
+    /// that does not is one that has no route to be served by.
+    fn lowers_mesh_invoke(&self) -> bool {
+        false
+    }
     /// What the `srcexpr` attribute of a hybrid `<invoke>` is rewritten to, for
     /// a target that runs the document's own attribute and so has no field of
     /// the machine to read the value from: `native_src`, the string the
@@ -2202,7 +2213,13 @@ pub fn lower(
                 crate::model::Invoke::Hybrid(info) => {
                     lower_hybrid_invoke(info, &plain_ctx, &plain_renames, &rewrites)?;
                 }
-                _ => {}
+                // A Mesh request's own params, read when it is sent: its event name
+                // and deadline are constants of the build and never reach here.
+                crate::model::Invoke::MeshRpc(info) => {
+                    for param in &mut info.base.params {
+                        lower_wire_param(param, &plain_ctx, &plain_renames, &rewrites)?;
+                    }
+                }
             }
         }
         // What a `<final>` hands the event it raises is read from the
@@ -3062,8 +3079,12 @@ impl StaticTarget for CppTarget {
                     return Some(found);
                 }
             }
-            if let Some(other) = unlowered_invoke(&state.invokes, true, self.lowers_hybrid_invoke())
-            {
+            if let Some(other) = unlowered_invoke(
+                &state.invokes,
+                true,
+                self.lowers_hybrid_invoke(),
+                self.lowers_mesh_invoke(),
+            ) {
                 return Some(other);
             }
         }
@@ -3396,6 +3417,12 @@ impl StaticTarget for CppTarget {
     fn lowers_hybrid_invoke(&self) -> bool {
         true
     }
+    // A Mesh request goes out by the router the build generates for the
+    // deployment (`performMeshInvoke`); its params are written from the
+    // machine's fields as a host-run invoke's are.
+    fn lowers_mesh_invoke(&self) -> bool {
+        true
+    }
     // The member the payload channel fills when the engine dequeues an event
     // of this name (`build_cpp_event_payload`), read by the typed guards and
     // by a `<sce:action>`'s arguments alike.
@@ -3468,19 +3495,21 @@ fn namelist_name_taken<'a>(
 /// not lowered yet, a hybrid one only by a target that `lowers_hybrid` — one whose
 /// invoke code reads the stem of the string its `srcexpr` computes — and one the
 /// host runs only by a target that `lowers_host_run` — one whose invoke code reads
-/// a request's `<param>`s from the machine's own fields.
+/// a request's `<param>`s from the machine's own fields, and a Mesh request only by
+/// a target that `lowers_mesh` — one whose backend generates a router of its own.
 fn unlowered_invoke(
     invokes: &[crate::model::Invoke],
     lowers_host_run: bool,
     lowers_hybrid: bool,
+    lowers_mesh: bool,
 ) -> Option<String> {
     invokes
         .iter()
         .find(|i| match i {
             crate::model::Invoke::Scxml(_) => false,
             crate::model::Invoke::Hybrid(_) => !lowers_hybrid,
+            crate::model::Invoke::MeshRpc(_) => !lowers_mesh,
             crate::model::Invoke::Unsupported(info) => !(lowers_host_run && info.host_served),
-            _ => true,
         })
         .map(|other| {
             match other {
@@ -3612,8 +3641,12 @@ impl StaticTarget for GoTarget<'_> {
                     return Some(found);
                 }
             }
-            if let Some(other) = unlowered_invoke(&state.invokes, true, self.lowers_hybrid_invoke())
-            {
+            if let Some(other) = unlowered_invoke(
+                &state.invokes,
+                true,
+                self.lowers_hybrid_invoke(),
+                self.lowers_mesh_invoke(),
+            ) {
                 return Some(other);
             }
         }
@@ -4128,8 +4161,12 @@ impl StaticTarget for PythonTarget {
                     return Some(found);
                 }
             }
-            if let Some(other) = unlowered_invoke(&state.invokes, true, self.lowers_hybrid_invoke())
-            {
+            if let Some(other) = unlowered_invoke(
+                &state.invokes,
+                true,
+                self.lowers_hybrid_invoke(),
+                self.lowers_mesh_invoke(),
+            ) {
                 return Some(other);
             }
         }
@@ -4638,7 +4675,7 @@ impl CTarget {
     /// `<param>`s are written into the request from the machine's own fields
     /// (`sce/forge/wire.h`), as a final's are.
     fn unlowered_invoke(invokes: &[crate::model::Invoke], lowers_hybrid: bool) -> Option<String> {
-        if let Some(other) = unlowered_invoke(invokes, true, lowers_hybrid) {
+        if let Some(other) = unlowered_invoke(invokes, true, lowers_hybrid, false) {
             return Some(other);
         }
         invokes.iter().find_map(|invoke| match invoke {

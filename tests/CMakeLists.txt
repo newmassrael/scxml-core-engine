@@ -4732,6 +4732,86 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     add_test(NAME mesh_cross_target_rpc_reply_verification
              COMMAND mesh_cross_target_rpc_reply_test)
 
+    # ── SCE_MESH §9.5 under `datamodel="sce-static"` (docs/adr/0005, decision 5) ──
+    # The `<param>`s of a Mesh request are read from the machine's own fields when
+    # the invocation starts. The machine has no script engine, and the test is
+    # linked without one: the link is the proof that no param reached an engine.
+    # The request is observed where the router hands it to its link, so no
+    # transport is involved; the peer is only the machine type the router is
+    # parameterised on.
+    set(MESH_STATIC_INVOKE_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_static_invoke_generated")
+    set(MESH_STATIC_INVOKE_DEPLOY "${MESH_TEST_DIR}/deploy_static_invoke.yaml")
+
+    add_custom_command(
+        OUTPUT "${MESH_STATIC_INVOKE_OUTPUT_DIR}/brake_static_invoke_sm.h"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_STATIC_INVOKE_OUTPUT_DIR}"
+        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_static_invoke.scxml" -l cpp
+                -o "${MESH_STATIC_INVOKE_OUTPUT_DIR}"
+                --deploy "${MESH_STATIC_INVOKE_DEPLOY}"
+                --write-deps "${MESH_STATIC_INVOKE_OUTPUT_DIR}/brake_static_invoke_sm.h.d"
+        DEPENDS "${MESH_TEST_DIR}/brake_static_invoke.scxml" "${SCE_CODEGEN}"
+        DEPFILE "${MESH_STATIC_INVOKE_OUTPUT_DIR}/brake_static_invoke_sm.h.d"
+        COMMENT "Mesh: Generating brake_static_invoke_sm.h (§9.5 static invoke)"
+        VERBATIM
+    )
+
+    add_custom_command(
+        OUTPUT "${MESH_STATIC_INVOKE_OUTPUT_DIR}/motor_static_invoke_sm.h"
+        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_static_invoke.scxml" -l cpp
+                -o "${MESH_STATIC_INVOKE_OUTPUT_DIR}"
+                --deploy "${MESH_STATIC_INVOKE_DEPLOY}"
+                --write-deps "${MESH_STATIC_INVOKE_OUTPUT_DIR}/motor_static_invoke_sm.h.d"
+        DEPENDS "${MESH_TEST_DIR}/motor_static_invoke.scxml" "${SCE_CODEGEN}"
+        DEPFILE "${MESH_STATIC_INVOKE_OUTPUT_DIR}/motor_static_invoke_sm.h.d"
+        COMMENT "Mesh: Generating motor_static_invoke_sm.h (§9.5 static invoke receiver)"
+        VERBATIM
+    )
+
+    add_custom_command(
+        OUTPUT "${MESH_STATIC_INVOKE_OUTPUT_DIR}/brake_static_invoke_transport.h"
+        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_static_invoke.scxml" -l cpp
+                -o "${MESH_STATIC_INVOKE_OUTPUT_DIR}"
+                --deploy "${MESH_STATIC_INVOKE_DEPLOY}"
+                --transport-only
+                --write-deps "${MESH_STATIC_INVOKE_OUTPUT_DIR}/brake_static_invoke_transport.h.d"
+        DEPENDS "${MESH_TEST_DIR}/brake_static_invoke.scxml" "${MESH_STATIC_INVOKE_DEPLOY}"
+                "${MESH_TEST_DIR}/motor_static_invoke.scxml"
+                "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+                "${MESH_STATIC_INVOKE_OUTPUT_DIR}/brake_static_invoke_sm.h"
+        DEPFILE "${MESH_STATIC_INVOKE_OUTPUT_DIR}/brake_static_invoke_transport.h.d"
+        COMMENT "Mesh: Generating brake_static_invoke_transport.h (§9.5 static invoke plumbing)"
+        VERBATIM
+    )
+
+    add_executable(mesh_static_invoke_request_test
+        mesh/test_mesh_static_invoke_request.cpp
+        "${MESH_STATIC_INVOKE_OUTPUT_DIR}/brake_static_invoke_sm.h"
+        "${MESH_STATIC_INVOKE_OUTPUT_DIR}/motor_static_invoke_sm.h"
+        "${MESH_STATIC_INVOKE_OUTPUT_DIR}/brake_static_invoke_transport.h"
+    )
+
+    # The checked arithmetic a static machine's params use (`sce/forge/algorithm.h`)
+    # sits beside the engine's headers, as it does for `static_datamodel_generated_cpp_test`.
+    target_include_directories(mesh_static_invoke_request_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/sce/include
+            ${CMAKE_SOURCE_DIR}/backends/cpp/forge-runtime/include
+            ${MESH_STATIC_INVOKE_OUTPUT_DIR}
+    )
+
+    target_link_libraries(mesh_static_invoke_request_test
+        PRIVATE
+            sce_base
+            sce_mesh_common
+    )
+
+    target_compile_features(mesh_static_invoke_request_test PRIVATE cxx_std_17)
+
+    apply_sce_test_policies(mesh_static_invoke_request_test)
+
+    add_test(NAME mesh_static_invoke_request_verification
+             COMMAND mesh_static_invoke_request_test)
+
     # §9.5 deadline expiry: motor never replies, 50ms deadline fires
     # error.invoke on the scheduler thread. SCE_THREAD_SAFE enables the
     # EventQueueManager mutex so the scheduler thread's raiseExternal push

@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Params"; docs/adr/0005,
+  decision 5): a Mesh request, `<invoke type="sce:mesh-rpc">`, whose `<param>`s are
+  read from the machine's own fields when the invocation starts. A static machine
+  has no script engine to evaluate a param, so each value is native code over the
+  fields, and the request goes out by the router the build generates for the
+  deployment, as it does for a document that does have one (`brake_invoke.scxml`).
+
+  `bump` changes `load` and `engaged` before the request is made, so a copy taken at
+  start-up (`load` 3, `engaged` false) is told from the value the fields hold now:
+
+    load = 4   engaged = true   doubled = 8   gain = 1.5
+
+  `doubled` is an expression rather than a variable, so a lowering that handled only
+  a bare name would still be wrong. `boom` is `load * 2000000000`, which a 32-bit
+  field cannot hold: the checked multiplication fails, so its pair is left out and
+  `error.execution` is raised (§scxml-5.7.1) while the request still goes with the
+  pairs that could be read. `errors` counts those.
+
+  The event name rides in `_mesh_event`, which the build takes out as a constant
+  and the router puts in the envelope's `type`; it is never a pair of the payload.
+  The reply is observed by `done.invoke`, the generic name every mesh fixture uses.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" datamodel="sce-static" name="brake_static_invoke" initial="idle">
+  <datamodel>
+    <data id="load" sce:type="uint32" expr="3"/>
+    <data id="engaged" sce:type="bool" expr="false"/>
+    <data id="gain" sce:type="float64" expr="1.5"/>
+    <data id="errors" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="idle">
+    <transition event="bump" type="internal">
+      <assign location="load" expr="4"/>
+      <assign location="engaged" expr="true"/>
+    </transition>
+    <transition event="go" target="computing"/>
+  </state>
+  <state id="computing">
+    <invoke type="sce:mesh-rpc" src="#motor_static_invoke">
+      <param name="_mesh_event" expr="'service.request.compute_force'"/>
+      <param name="load" expr="load"/>
+      <param name="engaged" expr="engaged"/>
+      <param name="doubled" expr="load * 2"/>
+      <param name="gain" expr="gain"/>
+      <param name="boom" expr="load * 2000000000"/>
+    </invoke>
+    <transition event="done.invoke" target="ok"/>
+    <transition event="error.invoke" target="failed"/>
+    <transition event="error.execution" type="internal">
+      <assign location="errors" expr="errors + 1"/>
+    </transition>
+  </state>
+  <final id="ok"/>
+  <final id="failed"/>
+</scxml>

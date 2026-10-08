@@ -196,13 +196,18 @@ impl ScriptEngineCauseKind {
             // A `<cancel>`'s `sendidexpr` the model admits is a string over the
             // machine's fields, lowered to the id the scheduler is handed
             // (`Action::native_sendid`).
-            | C::CancelExpr { .. } => true,
+            | C::CancelExpr { .. }
+            // A Mesh request's `<param>`s the model admits are read from the
+            // machine's fields when the invocation starts, as a host-run invoke's
+            // are (`static_lowering::lower_wire_param`); its peer is written and
+            // it stores no id, since the model refuses a `srcexpr` and an
+            // `idlocation`, which is the rest of what this cause stands for.
+            | C::MeshRpcRequestExpr { .. } => true,
             C::GlobalScript
             | C::UnresolvedExternalScript
             | C::SendDynamicAttr { .. }
             | C::InlineScriptAction { .. }
             | C::MeshRpcSrcExpr { .. }
-            | C::MeshRpcRequestExpr { .. }
             | C::ChildInvokeNeedsScriptEngine { .. } => false,
         }
     }
@@ -969,6 +974,45 @@ mod tests {
             </scxml>"##
             ),
             |kind| matches!(kind, ScriptEngineCauseKind::SendDynamicAttr { .. }),
+        );
+    }
+
+    /// A Mesh request's `<param>`s of a `sce-static` document are read from the
+    /// machine's fields when the invocation starts, so they cost no engine; under a
+    /// script data model the same params are evaluated by one and do
+    /// (docs/adr/0005, decision 5).
+    #[test]
+    fn a_mesh_request_param_costs_a_static_document_no_engine() {
+        let static_model = parse(
+            r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" initial="s" datamodel="sce-static">
+                <datamodel><data id="speed" sce:type="uint32" expr="1"/></datamodel>
+                <state id="s">
+                    <invoke id="m1" type="sce:mesh-rpc" src="#motor">
+                        <param name="_mesh_event" expr="'service.request.ping'"/>
+                        <param name="speed" expr="speed + 1"/>
+                    </invoke>
+                </state>
+            </scxml>"##,
+        );
+        assert!(
+            analyze(&static_model).iter().all(|cause| !matches!(
+                cause.kind,
+                ScriptEngineCauseKind::MeshRpcRequestExpr { .. }
+            )),
+            "a request's params are native code under this data model: {:?}",
+            analyze(&static_model)
+        );
+        contains_cause(
+            r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s" datamodel="ecmascript">
+                <datamodel><data id="speed" expr="1"/></datamodel>
+                <state id="s">
+                    <invoke id="m1" type="sce:mesh-rpc" src="#motor">
+                        <param name="_mesh_event" expr="'service.request.ping'"/>
+                        <param name="speed" expr="speed + 1"/>
+                    </invoke>
+                </state>
+            </scxml>"##,
+            |kind| matches!(kind, ScriptEngineCauseKind::MeshRpcRequestExpr { .. }),
         );
     }
 

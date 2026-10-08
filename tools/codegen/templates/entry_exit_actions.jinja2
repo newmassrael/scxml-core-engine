@@ -268,7 +268,7 @@
                     std::map<std::string, std::vector<ScriptValue>> _mesh_typed_params_{{ invoke_info.invoke_id }};
 {% set mesh_eval_ns = namespace(needed=false) %}
 {% for param in invoke_info.params %}
-{% if not param.is_static_literal and (param.expr or param.location) %}
+{% if not param.is_static_literal and not param.native_value and (param.expr or param.location) %}
 {% set mesh_eval_ns.needed = true %}
 {% endif %}
 {% endfor %}
@@ -279,6 +279,31 @@
 {% for param in invoke_info.params %}
 {% if param.is_static_literal %}
                     _mesh_params_{{ invoke_info.invoke_id }}["{{ param.name | escape_cpp }}"].push_back("{{ param.static_value | escape_cpp }}");
+{% elif param.native_value %}
+                    {
+                        // `datamodel="sce-static"` (SCE Accepted Subset §2.15):
+                        // the value is native code over the machine's own
+                        // fields, read now, with no script engine to ask. A
+                        // checked operation that fails is the evaluation that
+                        // failed (§scxml-5.7.1): reported and its pair left out,
+                        // while the request still goes, as a failing `<param>`
+                        // costs it below.
+{% if param.native_fails %}
+                        SCE::Forge::AlgorithmFailure sce_failure_;
+{% endif %}
+                        ScriptValue paramValue = {{ param.native_value }};
+{% if param.native_fails %}
+                        if (sce_failure_.failed()) SCE_UNLIKELY {
+                            engine.raise(typename Engine::EventWithMetadata(Event::Error_execution,
+                                "<invoke type='sce:mesh-rpc'> <param name='{{ param.name | escape_cpp }}'> could not be read"));
+                        } else
+{% endif %}
+                        {
+                            _mesh_params_{{ invoke_info.invoke_id }}["{{ param.name | escape_cpp }}"].push_back(
+                                ::SCE::ScriptResultUtils::valueText(paramValue));
+                            _mesh_typed_params_{{ invoke_info.invoke_id }}["{{ param.name | escape_cpp }}"].push_back(std::move(paramValue));
+                        }
+                    }
 {% elif not (param.expr or param.location) %}
                     // §scxml-5.7.1: an empty location names no location in the
                     // data model — reported, and the pair left out.

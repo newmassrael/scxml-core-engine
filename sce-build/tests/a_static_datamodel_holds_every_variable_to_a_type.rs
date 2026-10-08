@@ -4183,6 +4183,119 @@ fn a_cpp_basic_http_send_carries_its_params_as_the_text_a_form_does() {
     );
 }
 
+/// A static document with a Mesh request in its state `s`, carrying `params`.
+fn mesh_requesting(params: &str) -> String {
+    machine(&format!(
+        r##"<state id="s"><invoke type="sce:mesh-rpc" id="ask" src="#peer">
+      <param name="_mesh_event" expr="'service.request'"/>{params}
+    </invoke></state>"##
+    ))
+}
+
+#[test]
+fn a_cpp_mesh_request_reads_its_params_from_the_fields_and_asks_no_engine() {
+    // C++ refused a Mesh request by name. It keeps its own route — the router the
+    // build generates for the deployment — so the request is not turned into a
+    // host-served invoke as it is elsewhere; the machine writes its params from its
+    // own fields, hands the router their JSON, and no script engine is asked
+    // (docs/adr/0005, decision 5). What is read is the machine.
+    let document = mesh_requesting(r#"<param name="k" expr="count + 1"/>"#);
+    let out_dir = tempdir().expect("tempdir");
+    let (ok, out) = run(
+        &[
+            "generate",
+            "-l",
+            "cpp",
+            "-o",
+            out_dir.path().to_str().expect("a path"),
+        ],
+        &document,
+    );
+    assert!(ok, "the machine generates:\n{out}");
+    assert!(
+        out.contains("\"needs_script_engine\":false"),
+        "a static machine's request params are read from its fields:\n{out}"
+    );
+    let generated: Vec<_> = std::fs::read_dir(out_dir.path())
+        .expect("the output directory")
+        .map(|entry| entry.expect("an entry").path())
+        .filter(|path| path.extension().is_some_and(|e| e == "inl"))
+        .collect();
+    assert_eq!(generated.len(), 1, "one machine: {generated:?}");
+    let source = std::fs::read_to_string(&generated[0]).expect("a generated machine");
+    assert!(
+        source.contains("::SCE::ScriptResultUtils::valueText(paramValue)"),
+        "the pair's text is the lowered value's"
+    );
+    assert!(
+        source.contains("performMeshInvoke("),
+        "the request goes out by the router's callback"
+    );
+    assert!(
+        !source.contains("scriptEngine_mesh_") && !source.contains("evaluateExpression("),
+        "no script engine reads a request param"
+    );
+}
+
+#[test]
+fn every_generated_language_serves_a_static_mesh_request_by_the_route_it_has() {
+    // One route per backend, as `every_backend_serves_a_mesh_request_by_exactly_one_route`
+    // holds it: the five without a router of their own hand the request to the host
+    // as a host-served invoke, and C++ sends it by the router it generates. None
+    // refuses a static document that carries one.
+    let document = mesh_requesting(r#"<param name="k" expr="count"/>"#);
+    for &lang in COMPUTED_TARGET_LANGUAGES {
+        let (ok, out) = run(&check_args(lang), &document);
+        assert!(ok, "{lang} serves a static Mesh request:\n{out}");
+    }
+}
+
+#[test]
+fn the_interpreter_has_no_mesh_route_so_a_static_mesh_request_is_refused_by_name() {
+    // The Interpreter runs the document's own `<invoke>`, and has no route to send a
+    // Mesh request by (it answers `error.execution`: the platform supports no such
+    // service), so there is nothing for the lowering to hand the request to. It is
+    // refused where the build writes the document for it, by name.
+    let (ok, out) = run(
+        &["lower"],
+        &mesh_requesting(r#"<param name="k" expr="count"/>"#),
+    );
+    assert!(!ok, "the Interpreter has no Mesh route:\n{out}");
+    assert!(
+        out.contains("a mesh <invoke>"),
+        "the refusal names the construct:\n{out}"
+    );
+}
+
+#[test]
+fn a_mesh_request_param_is_held_to_the_data_model_and_its_peer_is_written() {
+    // A param is a typed expression of the machine's fields, so one that names
+    // nothing the machine declares is refused where it is written; and the peer is
+    // written (`src`), since a `srcexpr` is script-engine text this model has none for.
+    let (ok, out) = run(
+        &["check"],
+        &mesh_requesting(r#"<param name="k" expr="nothing_declares_this"/>"#),
+    );
+    assert!(!ok, "a name nothing declares is no value:\n{out}");
+    assert!(
+        out.contains("nothing_declares_this"),
+        "the refusal names what was written:\n{out}"
+    );
+    let (ok, out) = run(
+        &["check"],
+        &machine(
+            r##"<state id="s"><invoke type="sce:mesh-rpc" id="ask" srcexpr="'#peer'">
+      <param name="_mesh_event" expr="'service.request'"/>
+    </invoke></state>"##,
+        ),
+    );
+    assert!(!ok, "a computed peer has no typed form:\n{out}");
+    assert!(
+        out.contains("srcexpr"),
+        "the refusal names the attribute:\n{out}"
+    );
+}
+
 #[test]
 fn a_python_host_action_argument_that_can_fail_is_received_where_the_call_stands() {
     // Python refused a `<sce:action>` by name. A failing argument is an
