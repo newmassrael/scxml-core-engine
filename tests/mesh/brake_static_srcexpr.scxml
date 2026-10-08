@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Params"; docs/adr/0005,
+  decision 7): a Mesh request, `<invoke type="sce:mesh-rpc">`, that names its peer by
+  `srcexpr`. A static machine has no script engine to evaluate the attribute, so the
+  peer is a string computed from the machine's own fields when the invocation starts,
+  and the request goes out by the router the build generates for the deployment, to the
+  binding that string names (SCE_MESH.md §9.5), as it does for a document that does have
+  a script engine (`srcexpr_client.scxml`).
+
+  `peer` starts as the one binding the deployment declares. `ghost` and `shapeless`
+  change it before a request is made, so the value read at the start of each invocation
+  is told from the one the machine started with, and from the two ways a name can
+  fail:
+
+    ghost      '#ghost_target'          well formed, and no binding of the deployment
+    shapeless  'motor_static_srcexpr'   not a '#<machine_name>'
+    home       '#motor_static_srcexpr'  the binding again
+
+  A failure is `error.execution` once (§9.5, "three-tier error table"), nothing is sent,
+  and the machine returns to `idle` to try again; `errors` counts them.
+
+  `overflow` starts a request whose peer cannot be computed: `load * 2000000000` is the
+  checked multiplication a 32-bit field cannot hold, so the attribute cannot be evaluated
+  and fails the same way, with nothing sent.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" datamodel="sce-static" name="brake_static_srcexpr" initial="idle">
+  <datamodel>
+    <data id="peer" sce:type="string" sce:capacity="32" expr="'#motor_static_srcexpr'"/>
+    <data id="load" sce:type="uint32" expr="3"/>
+    <data id="errors" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="idle">
+    <transition event="ghost" type="internal">
+      <assign location="peer" expr="'#ghost_target'"/>
+    </transition>
+    <transition event="shapeless" type="internal">
+      <assign location="peer" expr="'motor_static_srcexpr'"/>
+    </transition>
+    <transition event="home" type="internal">
+      <assign location="peer" expr="'#motor_static_srcexpr'"/>
+    </transition>
+    <transition event="go" target="computing"/>
+    <transition event="overflow" target="computing_overflow"/>
+  </state>
+  <state id="computing_overflow">
+    <invoke type="sce:mesh-rpc" id="askover" srcexpr="'#motor_static_srcexpr' + (load * 2000000000)">
+      <param name="_mesh_event" expr="'service.request.compute_force'"/>
+    </invoke>
+    <transition event="done.invoke" target="ok"/>
+    <transition event="error.execution" target="idle">
+      <assign location="errors" expr="errors + 1"/>
+    </transition>
+  </state>
+  <state id="computing">
+    <invoke type="sce:mesh-rpc" srcexpr="peer">
+      <param name="_mesh_event" expr="'service.request.compute_force'"/>
+      <param name="load" expr="load"/>
+    </invoke>
+    <transition event="done.invoke" target="ok"/>
+    <transition event="error.invoke" target="failed"/>
+    <transition event="error.execution" target="idle">
+      <assign location="errors" expr="errors + 1"/>
+    </transition>
+  </state>
+  <final id="ok"/>
+  <final id="failed"/>
+</scxml>

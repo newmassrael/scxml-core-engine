@@ -1,0 +1,20 @@
+# docs/adr/0005, decision 7 -- local-transport bindings for the static Mesh request that
+# names its peer by `srcexpr`. The one binding of the caller is the whole set of peers
+# its `srcexpr` can name (SCE_MESH.md §9.5: it picks among the declared bindings and
+# discovers nothing), so `#motor_static_srcexpr` is what the router carries and what
+# `#ghost_target` fails to match. Both machines declare each other as local targets, as
+# deploy_static_invoke.yaml does.
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake_static_srcexpr:
+        source: brake_static_srcexpr.scxml
+        bindings:
+          "#motor_static_srcexpr":
+            transport: local
+      motor_static_srcexpr:
+        source: motor_static_srcexpr.scxml
+        bindings:
+          "#brake_static_srcexpr":
+            transport: local

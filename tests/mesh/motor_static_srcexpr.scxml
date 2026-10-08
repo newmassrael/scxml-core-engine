@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The peer a static Mesh request names by `srcexpr`, for brake_static_srcexpr. The
+     router the build generates for the caller is parameterised on the peer's machine
+     type, so the deployment declares one; the request is observed at the caller's
+     router, and the reply the test hands it is built by hand. The same receiver as
+     motor_static_invoke.scxml, answering the machine that has its own name. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="null" name="motor_static_srcexpr" initial="ready">
+    <state id="ready">
+        <transition event="service.request.compute_force" target="replying"/>
+    </state>
+    <state id="replying">
+        <onentry>
+            <send target="#brake_static_srcexpr" event="service.response.compute_force"/>
+        </onentry>
+    </state>
+</scxml>

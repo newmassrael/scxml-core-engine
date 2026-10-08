@@ -4812,6 +4812,81 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     add_test(NAME mesh_static_invoke_request_verification
              COMMAND mesh_static_invoke_request_test)
 
+    # ── The same request naming its peer by `srcexpr` (docs/adr/0005, decision 7) ──
+    # The peer is a string the machine computes from its own fields when the
+    # invocation starts, looked up among the bindings the deployment declares. The
+    # test is linked without a script engine for the reason the one above is.
+    set(MESH_STATIC_SRCEXPR_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_static_srcexpr_generated")
+    set(MESH_STATIC_SRCEXPR_DEPLOY "${MESH_TEST_DIR}/deploy_static_srcexpr.yaml")
+
+    add_custom_command(
+        OUTPUT "${MESH_STATIC_SRCEXPR_OUTPUT_DIR}/brake_static_srcexpr_sm.h"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_STATIC_SRCEXPR_OUTPUT_DIR}"
+        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_static_srcexpr.scxml" -l cpp
+                -o "${MESH_STATIC_SRCEXPR_OUTPUT_DIR}"
+                --deploy "${MESH_STATIC_SRCEXPR_DEPLOY}"
+                --write-deps "${MESH_STATIC_SRCEXPR_OUTPUT_DIR}/brake_static_srcexpr_sm.h.d"
+        DEPENDS "${MESH_TEST_DIR}/brake_static_srcexpr.scxml" "${SCE_CODEGEN}"
+        DEPFILE "${MESH_STATIC_SRCEXPR_OUTPUT_DIR}/brake_static_srcexpr_sm.h.d"
+        COMMENT "Mesh: Generating brake_static_srcexpr_sm.h (§9.5 static srcexpr)"
+        VERBATIM
+    )
+
+    add_custom_command(
+        OUTPUT "${MESH_STATIC_SRCEXPR_OUTPUT_DIR}/motor_static_srcexpr_sm.h"
+        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_static_srcexpr.scxml" -l cpp
+                -o "${MESH_STATIC_SRCEXPR_OUTPUT_DIR}"
+                --deploy "${MESH_STATIC_SRCEXPR_DEPLOY}"
+                --write-deps "${MESH_STATIC_SRCEXPR_OUTPUT_DIR}/motor_static_srcexpr_sm.h.d"
+        DEPENDS "${MESH_TEST_DIR}/motor_static_srcexpr.scxml" "${SCE_CODEGEN}"
+        DEPFILE "${MESH_STATIC_SRCEXPR_OUTPUT_DIR}/motor_static_srcexpr_sm.h.d"
+        COMMENT "Mesh: Generating motor_static_srcexpr_sm.h (§9.5 static srcexpr receiver)"
+        VERBATIM
+    )
+
+    add_custom_command(
+        OUTPUT "${MESH_STATIC_SRCEXPR_OUTPUT_DIR}/brake_static_srcexpr_transport.h"
+        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_static_srcexpr.scxml" -l cpp
+                -o "${MESH_STATIC_SRCEXPR_OUTPUT_DIR}"
+                --deploy "${MESH_STATIC_SRCEXPR_DEPLOY}"
+                --transport-only
+                --write-deps "${MESH_STATIC_SRCEXPR_OUTPUT_DIR}/brake_static_srcexpr_transport.h.d"
+        DEPENDS "${MESH_TEST_DIR}/brake_static_srcexpr.scxml" "${MESH_STATIC_SRCEXPR_DEPLOY}"
+                "${MESH_TEST_DIR}/motor_static_srcexpr.scxml"
+                "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+                "${MESH_STATIC_SRCEXPR_OUTPUT_DIR}/brake_static_srcexpr_sm.h"
+        DEPFILE "${MESH_STATIC_SRCEXPR_OUTPUT_DIR}/brake_static_srcexpr_transport.h.d"
+        COMMENT "Mesh: Generating brake_static_srcexpr_transport.h (§9.5 static srcexpr plumbing)"
+        VERBATIM
+    )
+
+    add_executable(mesh_static_invoke_srcexpr_test
+        mesh/test_mesh_static_invoke_srcexpr.cpp
+        "${MESH_STATIC_SRCEXPR_OUTPUT_DIR}/brake_static_srcexpr_sm.h"
+        "${MESH_STATIC_SRCEXPR_OUTPUT_DIR}/motor_static_srcexpr_sm.h"
+        "${MESH_STATIC_SRCEXPR_OUTPUT_DIR}/brake_static_srcexpr_transport.h"
+    )
+
+    target_include_directories(mesh_static_invoke_srcexpr_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/sce/include
+            ${CMAKE_SOURCE_DIR}/backends/cpp/forge-runtime/include
+            ${MESH_STATIC_SRCEXPR_OUTPUT_DIR}
+    )
+
+    target_link_libraries(mesh_static_invoke_srcexpr_test
+        PRIVATE
+            sce_base
+            sce_mesh_common
+    )
+
+    target_compile_features(mesh_static_invoke_srcexpr_test PRIVATE cxx_std_17)
+
+    apply_sce_test_policies(mesh_static_invoke_srcexpr_test)
+
+    add_test(NAME mesh_static_invoke_srcexpr_verification
+             COMMAND mesh_static_invoke_srcexpr_test)
+
     # §9.5 deadline expiry: motor never replies, 50ms deadline fires
     # error.invoke on the scheduler thread. SCE_THREAD_SAFE enables the
     # EventQueueManager mutex so the scheduler thread's raiseExternal push

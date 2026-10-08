@@ -2213,12 +2213,8 @@ pub fn lower(
                 crate::model::Invoke::Hybrid(info) => {
                     lower_hybrid_invoke(info, &plain_ctx, &plain_renames, &rewrites)?;
                 }
-                // A Mesh request's own params, read when it is sent: its event name
-                // and deadline are constants of the build and never reach here.
                 crate::model::Invoke::MeshRpc(info) => {
-                    for param in &mut info.base.params {
-                        lower_wire_param(param, &plain_ctx, &plain_renames, &rewrites)?;
-                    }
+                    lower_mesh_request(info, &plain_ctx, &plain_renames, &rewrites)?;
                 }
             }
         }
@@ -6610,6 +6606,46 @@ fn lower_host_request_strings(
         (info.native_content, info.native_content_fails) =
             lower(&info.contentexpr, "<content expr>")?;
         info.contentexpr.clear();
+    }
+    Ok(())
+}
+
+/// Lower a Mesh request, in place: its `srcexpr` to the string it computes, which
+/// the machine reads when the invocation starts to name the peer it asks
+/// ([`crate::model::MeshRpcInvokeInfo::native_src`]), and each `<param>` to the
+/// value the request carries. The attribute is left standing, since the templates
+/// read it as "this request resolves its peer when it starts" and only the site that
+/// evaluates it prefers the lowered string. Read when the invocation starts, where
+/// no event's payload is in scope, so the lowering is given none; the event name and
+/// the deadline are constants of the build and never reach here.
+///
+/// Validation already held the expression to a string
+/// ([`crate::forge::static_datamodel`]), so a refusal here is a lowering this
+/// backend lacks, not a mistake in the document.
+fn lower_mesh_request(
+    info: &mut crate::model::MeshRpcInvokeInfo,
+    ctx: &crate::forge::types::TypeCtx<'_>,
+    renames: &HashMap<&str, &str>,
+    rewrites: &Rewrites<'_>,
+) -> Result<(), GenerateError> {
+    let target = rewrites.target;
+    if let crate::model::MeshRpcTarget::SrcExpr { srcexpr } = &info.target {
+        let lang = target.name();
+        let value = transpile_into_owned(
+            srcexpr,
+            target.expr_target(),
+            ctx,
+            renames,
+            InferredType::Str,
+        )
+        .map_err(|r| {
+            GenerateError::unsupported(format!("`{srcexpr}` has no {lang} lowering: {}", r.error))
+        })?;
+        info.native_src = value.text;
+        info.native_src_fails = value.can_fail;
+    }
+    for param in &mut info.base.params {
+        lower_wire_param(param, ctx, renames, rewrites)?;
     }
     Ok(())
 }

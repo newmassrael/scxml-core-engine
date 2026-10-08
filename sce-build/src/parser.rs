@@ -4992,6 +4992,7 @@ impl SCXMLParser {
             target,
             mesh_event,
             deadline_ms,
+            ..Default::default()
         })
     }
 

@@ -1984,6 +1984,23 @@ pub struct MeshRpcInvokeInfo {
     /// templates can use the canonical `is not none` test without
     /// tripping over `undefined` vs `null` ambiguity.
     pub deadline_ms: Option<u64>,
+    /// Codegen-internal: the native expression of the string [`MeshRpcTarget::SrcExpr`]
+    /// computes, which a machine of a data model with no script engine reads
+    /// when the invocation starts to name the peer it asks. Empty for a `src`,
+    /// and for a document under another data model, whose `srcexpr` a script
+    /// engine evaluates. Unlike a hybrid `<invoke>`'s, the attribute is left
+    /// standing: the templates read it as "this request resolves its peer when
+    /// it starts", and only the one site that evaluates it prefers this.
+    /// Transient and outside the AST contract, as [`Action::native_code`] is.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[cfg_attr(test, schemars(skip))]
+    pub native_src: String,
+    /// Codegen-internal: whether [`Self::native_src`] can fail — a checked
+    /// integer operation in the expression. A failure is an attribute that
+    /// cannot be evaluated: `error.execution` is raised and nothing is sent.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(test, schemars(skip))]
+    pub native_src_fails: bool,
 }
 
 impl std::ops::Deref for MeshRpcInvokeInfo {

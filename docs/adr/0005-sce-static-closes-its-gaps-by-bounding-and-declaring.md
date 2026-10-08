@@ -210,10 +210,9 @@ when the invocation starts, as it does a host-served `<invoke>`'s, and hands the
 the text of each (a string as itself, an integer as its decimal digits, a bool as `true`
 or `false`, a real as its ECMAScript `String()`) beside the typed value. A value that
 failed is the evaluation that failed (§scxml-5.7.1): `error.execution` is raised, the pair
-is left out, and the request still goes. The peer is the `src` the invoke writes. A
-`srcexpr` would name the peer from a value computed when the invoke runs, which needs a
-declared set of peers as `sce:targets` is for a `<send>`, and stays refused, as does an
-`idlocation`; neither is part of this step.
+is left out, and the request still goes. The peer is the `src` the invoke writes; naming
+it by `srcexpr` is decision 7. An `idlocation` is refused here as on every `<invoke>` of
+this model.
 `tests/mesh/test_mesh_static_invoke_request.cpp` records the request where the router
 hands it to its link, with no transport, and links no script engine: the link is the
 proof that no param reached one.
@@ -268,6 +267,40 @@ Rejected:
   contract, which a merged interface would let the parent's host answer differently from
   the document that declares them.
 
+### 7. A mesh request names its peer by a string the machine computes, among the bindings the deployment declares
+
+`<invoke type="sce:mesh-rpc" srcexpr="peer">` picks its peer when the invocation starts.
+`SCE_MESH.md` §9.5 already says what it can pick among: the bindings the deployment
+declares, and nothing it discovers. A name that matches none of them is a setup fault of
+the pre-envelope tier, `error.execution`, and so is one that is not a
+`#<machine_name>`. That is the declared set this model asks for of a computed choice, and
+the build already reads it, so the document declares nothing more (`sce:targets` is
+written on a `<send>` because no deployment lists the routes it can take).
+
+As landed, the attribute is a string expression, held to a string and lowered natively.
+C++ keeps its own route, so it is the one backend whose machine reads the peer itself:
+the string is computed from the machine's fields when the invocation starts, shaped
+against `#<machine_name>`, stashed for the `<cancel>` the state's exit pairs with it, and
+handed to the router's `performMeshInvoke`, whose lookup is the deployment's bindings. A
+value that cannot be computed (a checked operation that fails) is an attribute that cannot
+be evaluated: `error.execution` once and nothing is sent, as it is for a hybrid
+`<invoke srcexpr>`. The other five hand the request to the host's router as a host-served
+`<invoke>`, and every one of them already lowers the `srcexpr` of such an invoke
+(`StaticTarget::lowers_host_src_expr`), so the document needs nothing from them. The
+Interpreter stays refused by name, as in decision 5. An `idlocation` stays refused.
+`tests/mesh/test_mesh_static_invoke_srcexpr.cpp` holds the peer the field names, a
+well-formed name no binding carries, a name of the wrong shape, a peer that cannot be
+computed, the peer read again at each start, and the reply reaching the machine.
+
+Rejected:
+
+- *Declaring the peers on the invoke* (`sce:peers`). The deployment is the list, the build
+  reads it, and a second one in the document could differ from it: a name in one and not
+  the other would be a fault only the machine's run could find.
+- *Checking the name against the deployment when the build runs.* The value is computed
+  when the request is made, which the build cannot see; the router's answer is the check,
+  and it is the one a document under a script engine already gets.
+
 ## Order of work and what lifts each refusal
 
 Each refusal is a method on the target (`StaticTarget::lowers_…`) that defaults to
@@ -281,7 +314,8 @@ only when the last engine has flipped it.
    and invoked again.
 3. `targetexpr` / `typeexpr` (decision 3), then BasicHTTP `<param>`s (decision 4).
 4. The mesh `<invoke>` (decision 5): the C++ lowering. The other five serve the request
-   through the host's router and need none; the Interpreter has no mesh route.
+   through the host's router and need none; the Interpreter has no mesh route. Then its
+   peer by `srcexpr` (decision 7), the same split.
 
 ## Consequences
 

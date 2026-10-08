@@ -4268,10 +4268,9 @@ fn the_interpreter_has_no_mesh_route_so_a_static_mesh_request_is_refused_by_name
 }
 
 #[test]
-fn a_mesh_request_param_is_held_to_the_data_model_and_its_peer_is_written() {
+fn a_mesh_request_param_is_held_to_the_data_model() {
     // A param is a typed expression of the machine's fields, so one that names
-    // nothing the machine declares is refused where it is written; and the peer is
-    // written (`src`), since a `srcexpr` is script-engine text this model has none for.
+    // nothing the machine declares is refused where it is written.
     let (ok, out) = run(
         &["check"],
         &mesh_requesting(r#"<param name="k" expr="nothing_declares_this"/>"#),
@@ -4281,18 +4280,111 @@ fn a_mesh_request_param_is_held_to_the_data_model_and_its_peer_is_written() {
         out.contains("nothing_declares_this"),
         "the refusal names what was written:\n{out}"
     );
+}
+
+/// A static document whose state `s` carries a Mesh request naming its peer by
+/// `srcexpr`, over `count: uint32` and `peer: string`.
+fn mesh_asking(srcexpr: &str) -> String {
+    format!(
+        r##"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s" datamodel="sce-static">
+  <datamodel>
+    <data id="count" sce:type="uint32" expr="0"/>
+    <data id="peer" sce:type="string" sce:capacity="16" expr="'#peer'"/>
+  </datamodel>
+  <state id="s"><invoke type="sce:mesh-rpc" id="ask" srcexpr="{srcexpr}">
+    <param name="_mesh_event" expr="'service.request'"/>
+  </invoke></state>
+  <final id="done"/>
+</scxml>
+"##
+    )
+}
+
+#[test]
+fn a_cpp_mesh_request_reads_its_peer_from_the_fields_and_asks_no_engine() {
+    // The peer is a string over the machine's own fields, read when the invocation
+    // starts and looked up among the bindings the deployment declares
+    // (docs/adr/0005, decision 7). Where the document keeps a script engine the
+    // attribute is evaluated by it; here nothing is, so what is read is the machine.
+    let out_dir = tempdir().expect("tempdir");
     let (ok, out) = run(
-        &["check"],
-        &machine(
-            r##"<state id="s"><invoke type="sce:mesh-rpc" id="ask" srcexpr="'#peer'">
-      <param name="_mesh_event" expr="'service.request'"/>
-    </invoke></state>"##,
-        ),
+        &[
+            "generate",
+            "-l",
+            "cpp",
+            "-o",
+            out_dir.path().to_str().expect("a path"),
+        ],
+        &mesh_asking("peer"),
     );
-    assert!(!ok, "a computed peer has no typed form:\n{out}");
+    assert!(ok, "the machine generates:\n{out}");
     assert!(
-        out.contains("srcexpr"),
-        "the refusal names the attribute:\n{out}"
+        out.contains("\"needs_script_engine\":false"),
+        "a static machine's request peer is read from its fields:\n{out}"
+    );
+    let generated: Vec<_> = std::fs::read_dir(out_dir.path())
+        .expect("the output directory")
+        .map(|entry| entry.expect("an entry").path())
+        .filter(|path| path.extension().is_some_and(|e| e == "inl"))
+        .collect();
+    assert_eq!(generated.len(), 1, "one machine: {generated:?}");
+    let source = std::fs::read_to_string(&generated[0]).expect("a generated machine");
+    assert!(
+        source.contains("_srcexpr_read_ask"),
+        "the peer is the string the machine computes"
+    );
+    assert!(
+        source.contains("performMeshInvoke(this->_mesh_resolved_src_"),
+        "the request goes to the peer the string names, by the router's callback"
+    );
+    assert!(
+        !source.contains("_srcexpr_engine_") && !source.contains("evaluateExpression("),
+        "no script engine reads the peer"
+    );
+}
+
+#[test]
+fn every_generated_language_serves_a_static_mesh_request_that_names_its_peer() {
+    // The five without a router of their own hand the request to the host as a
+    // host-served invoke, whose `srcexpr` every one of them lowers, and C++ sends it by
+    // the router it generates. None refuses a static document that carries one.
+    for &lang in COMPUTED_TARGET_LANGUAGES {
+        let (ok, out) = run(&check_args(lang), &mesh_asking("peer"));
+        assert!(
+            ok,
+            "{lang} serves a static Mesh request naming its peer:\n{out}"
+        );
+    }
+}
+
+#[test]
+fn the_interpreter_refuses_a_static_mesh_request_that_names_its_peer_by_name() {
+    // It has no Mesh route to send the request by, whichever way the peer is named.
+    let (ok, out) = run(&["lower"], &mesh_asking("peer"));
+    assert!(!ok, "the Interpreter has no Mesh route:\n{out}");
+    assert!(
+        out.contains("a mesh <invoke>"),
+        "the refusal names the construct:\n{out}"
+    );
+}
+
+#[test]
+fn a_mesh_request_srcexpr_is_held_to_a_string_of_the_data_model() {
+    // The peer is a name, so the expression is a string: an integer is no name, and a
+    // variable nothing declares is no value.
+    let (ok, out) = run(&["check"], &mesh_asking("count"));
+    assert!(!ok, "an integer is not a peer's name:\n{out}");
+    assert!(
+        out.contains("count"),
+        "the refusal names what was written:\n{out}"
+    );
+    let (ok, out) = run(&["check"], &mesh_asking("nothing_declares_this"));
+    assert!(!ok, "a name nothing declares is no value:\n{out}");
+    assert!(
+        out.contains("nothing_declares_this"),
+        "the refusal names what was written:\n{out}"
     );
 }
 

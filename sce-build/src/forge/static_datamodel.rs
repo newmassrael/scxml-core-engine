@@ -943,28 +943,6 @@ impl<'a> Judge<'a> {
         Ok(())
     }
 
-    /// The refusal of an expression this model has no typed form for, placed
-    /// at `line`/`col` — for a construct the model records by its element's
-    /// position rather than by an attribute's.
-    fn untyped_at(
-        &self,
-        construct: String,
-        line: Option<u32>,
-        col: Option<u32>,
-        state: &str,
-        value: &str,
-    ) -> Located<ForgeError> {
-        self.rule_at(
-            construct,
-            "this data model types the expressions of <data>, a condition, \
-             <assign>, <log> and <param>; this attribute has no typed form",
-            line,
-            col,
-            state,
-            value,
-        )
-    }
-
     /// A refusal under the rule `rule`, placed at `line`/`col`: the one shape
     /// every refusal of this pass takes, whatever the rule says.
     fn rule_at(
@@ -2102,18 +2080,10 @@ impl<'a> Judge<'a> {
         let base = invoke.base();
         let at = base.source_location.as_ref();
         let (line, col) = (at.and_then(|l| l.line), at.and_then(|l| l.col));
-        // A mesh-rpc `srcexpr` names its peer by an expression, evaluated as
-        // script-engine text. The `namelist` of a child session is judged with
-        // its `<param>`s ([`Self::child_arguments`]), and the `namelist` and
-        // `srcexpr` of a host-run invoke with the request it hands the host,
-        // below.
-        let srcexpr = match invoke {
-            Invoke::MeshRpc(info) => match &info.target {
-                crate::model::MeshRpcTarget::SrcExpr { srcexpr } => srcexpr.as_str(),
-                _ => "",
-            },
-            _ => "",
-        };
+        // The `namelist` of a child session is judged with its `<param>`s
+        // ([`Self::child_arguments`]), and the `namelist` and `srcexpr` of a
+        // host-run invoke, and the `<param>`s and `srcexpr` of a Mesh request,
+        // with the request they hand, below.
         // An `idlocation` stores the id the build already wrote for the invoke —
         // its `id`, or `<state>.platform_N` — and this model reads no
         // `_event.invokeid`, only `_event.data`, so nothing could compare what it
@@ -2135,15 +2105,6 @@ impl<'a> Judge<'a> {
         // starts, among the documents it declares.
         if let Invoke::Hybrid(info) = invoke {
             return self.hybrid_invoke(ctx, info, state);
-        }
-        if !srcexpr.is_empty() {
-            return Err(self.untyped_at(
-                format!("srcexpr=\"{srcexpr}\""),
-                line,
-                col,
-                state,
-                srcexpr,
-            ));
         }
         // A host-run invoke's `<param>` is part of the request the host
         // receives, and is judged below.
@@ -2250,7 +2211,13 @@ impl<'a> Judge<'a> {
         // from the machine's fields when the invocation starts and lowered to
         // native code like a host-run invoke's (docs/adr/0005, decision 5). Its
         // event name and deadline are constants the parser has already taken out.
-        if let Invoke::MeshRpc(_) = invoke {
+        // Its peer is a string computed the same way when the invocation starts
+        // (docs/adr/0005, decision 7), among the bindings the deployment declares:
+        // a name that matches none is `error.execution` when the request is made.
+        if let Invoke::MeshRpc(info) = invoke {
+            if let crate::model::MeshRpcTarget::SrcExpr { srcexpr } = &info.target {
+                self.expr(ctx, srcexpr, None, Expected::Slot(InferredType::Str))?;
+            }
             let element = format!("<invoke id=\"{}\">", base.invoke_id);
             for param in &base.params {
                 self.wire_param(ctx, &WireParam::of_param(param), &element, state)?;

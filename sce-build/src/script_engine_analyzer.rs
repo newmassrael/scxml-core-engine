@@ -199,15 +199,18 @@ impl ScriptEngineCauseKind {
             | C::CancelExpr { .. }
             // A Mesh request's `<param>`s the model admits are read from the
             // machine's fields when the invocation starts, as a host-run invoke's
-            // are (`static_lowering::lower_wire_param`); its peer is written and
-            // it stores no id, since the model refuses a `srcexpr` and an
-            // `idlocation`, which is the rest of what this cause stands for.
-            | C::MeshRpcRequestExpr { .. } => true,
+            // are (`static_lowering::lower_wire_param`); it stores no id, since
+            // the model refuses an `idlocation`, which is the rest of what this
+            // cause stands for.
+            | C::MeshRpcRequestExpr { .. }
+            // A Mesh request's `srcexpr` the model admits is a string over the
+            // machine's fields, lowered to the name of the peer it asks
+            // (`MeshRpcInvokeInfo::native_src`).
+            | C::MeshRpcSrcExpr { .. } => true,
             C::GlobalScript
             | C::UnresolvedExternalScript
             | C::SendDynamicAttr { .. }
             | C::InlineScriptAction { .. }
-            | C::MeshRpcSrcExpr { .. }
             | C::ChildInvokeNeedsScriptEngine { .. } => false,
         }
     }
@@ -1013,6 +1016,42 @@ mod tests {
                 </state>
             </scxml>"##,
             |kind| matches!(kind, ScriptEngineCauseKind::MeshRpcRequestExpr { .. }),
+        );
+    }
+
+    /// A Mesh request's `srcexpr` of a `sce-static` document is a string over the
+    /// machine's fields, read when the invocation starts, so it costs no engine;
+    /// under a script data model it is evaluated by one and does
+    /// (docs/adr/0005, decision 7).
+    #[test]
+    fn a_mesh_request_srcexpr_costs_a_static_document_no_engine() {
+        let static_model = parse(
+            r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" initial="s" datamodel="sce-static">
+                <datamodel><data id="peer" sce:type="string" sce:capacity="16" expr="'#motor'"/></datamodel>
+                <state id="s">
+                    <invoke id="m1" type="sce:mesh-rpc" srcexpr="peer">
+                        <param name="_mesh_event" expr="'service.request.ping'"/>
+                    </invoke>
+                </state>
+            </scxml>"##,
+        );
+        assert!(
+            analyze(&static_model)
+                .iter()
+                .all(|cause| !matches!(cause.kind, ScriptEngineCauseKind::MeshRpcSrcExpr { .. })),
+            "a request's peer is native code under this data model: {:?}",
+            analyze(&static_model)
+        );
+        contains_cause(
+            r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s" datamodel="ecmascript">
+                <datamodel><data id="peer" expr="'#motor'"/></datamodel>
+                <state id="s">
+                    <invoke id="m1" type="sce:mesh-rpc" srcexpr="peer">
+                        <param name="_mesh_event" expr="'service.request.ping'"/>
+                    </invoke>
+                </state>
+            </scxml>"##,
+            |kind| matches!(kind, ScriptEngineCauseKind::MeshRpcSrcExpr { .. }),
         );
     }
 

@@ -353,6 +353,32 @@
                     // could pick a different machine than the correlation
                     // entry was registered against).
                     {
+{% if invoke_info.native_src %}
+                        // `datamodel="sce-static"` (docs/adr/0005, decision 7): the
+                        // peer is a string computed from the machine's own
+                        // fields now, with no script engine to ask. One that
+                        // cannot be computed is an attribute that cannot be
+                        // evaluated: error.execution, and nothing is sent.
+                        std::string _resolved_src_{{ invoke_info.invoke_id }};
+                        bool _srcexpr_read_{{ invoke_info.invoke_id }} = true;
+                        {
+{% if invoke_info.native_src_fails %}
+                            SCE::Forge::AlgorithmFailure sce_failure_;
+{% endif %}
+                            _resolved_src_{{ invoke_info.invoke_id }} = {{ invoke_info.native_src }};
+{% if invoke_info.native_src_fails %}
+                            if (sce_failure_.failed()) SCE_UNLIKELY {
+                                _srcexpr_read_{{ invoke_info.invoke_id }} = false;
+                            }
+{% endif %}
+                        }
+                        if (!_srcexpr_read_{{ invoke_info.invoke_id }}) {
+                            engine.raise(typename Engine::EventWithMetadata(
+                                Event::Error_execution,
+                                "mesh-rpc invoke '{{ invoke_info.invoke_id }}' srcexpr evaluation failed: {{ invoke_info.srcexpr | escape_cpp }}"));
+                            this->_mesh_resolved_src_{{ invoke_info.field_suffix }}_.clear();
+                        } else {
+{% else %}
                         this->ensureScriptEngine();
                         auto& _srcexpr_engine_{{ invoke_info.invoke_id }} = getScriptEngine();
                         auto _srcexpr_result_{{ invoke_info.invoke_id }} =
@@ -367,6 +393,7 @@
                         } else {
                             std::string _resolved_src_{{ invoke_info.invoke_id }} =
                                 ::SCE::ScriptResultUtils::resultToString(_srcexpr_result_{{ invoke_info.invoke_id }});
+{% endif %}
                             static const std::regex _srcexpr_shape_{{ invoke_info.invoke_id }}(
                                 R"(^#[A-Za-z_][A-Za-z0-9_]*$)");
                             if (!std::regex_match(_resolved_src_{{ invoke_info.invoke_id }},

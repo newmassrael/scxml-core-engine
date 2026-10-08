@@ -489,8 +489,11 @@ PY
 # names a send; and it is not lowered, so a backend with no engine cancels nothing.
 mutation_case "a cancel sendidexpr needs a script engine again" <<'PY'
 edit("sce-build/src/script_engine_analyzer.rs",
-     "            // (`Action::native_sendid`).\n            | C::CancelExpr { .. }\n            // A Mesh request's `<param>`s the model admits are read from the\n            // machine's fields when the invocation starts, as a host-run invoke's\n            // are (`static_lowering::lower_wire_param`); its peer is written and\n            // it stores no id, since the model refuses a `srcexpr` and an\n            // `idlocation`, which is the rest of what this cause stands for.\n            | C::MeshRpcRequestExpr { .. } => true,\n            C::GlobalScript\n",
-     "            // (`Action::native_sendid`).\n            | C::MeshRpcRequestExpr { .. } => true,\n            C::GlobalScript\n            | C::CancelExpr { .. }\n")
+     "            // (`Action::native_sendid`).\n            | C::CancelExpr { .. }\n",
+     "            // (`Action::native_sendid`).\n")
+edit("sce-build/src/script_engine_analyzer.rs",
+     "            | C::MeshRpcSrcExpr { .. } => true,\n            C::GlobalScript\n",
+     "            | C::MeshRpcSrcExpr { .. } => true,\n            C::GlobalScript\n            | C::CancelExpr { .. }\n")
 PY
 
 mutation_case "a sendid is admitted beside a cancel sendidexpr" <<'PY'
@@ -520,8 +523,8 @@ PY
 # machine lacks; and the Kotlin template is not told the string it was lowered to.
 mutation_case "a host-run invoke's srcexpr is script text again" <<'PY'
 edit("sce-build/src/forge/static_datamodel.rs",
-     "                _ => \"\",\n            },\n            _ => \"\",\n        };\n        // An `idlocation` stores the id the build already wrote for the invoke —\n",
-     "                _ => \"\",\n            },\n            Invoke::Unsupported(info) => info.srcexpr.as_str(),\n            _ => \"\",\n        };\n        // An `idlocation` stores the id the build already wrote for the invoke —\n")
+     "                self.expr(\n                    ctx,\n                    &info.srcexpr,\n                    spelling,\n                    Expected::Slot(InferredType::Str),\n                )?;",
+     "                return Err(self.rule_at(\n                    info.srcexpr.clone(),\n                    \"this attribute has no typed form\",\n                    line,\n                    col,\n                    state,\n                    &info.srcexpr,\n                ));")
 PY
 
 mutation_case "a src is admitted beside a host-run invoke's srcexpr" <<'PY'
@@ -731,16 +734,42 @@ PY
 # asks a script engine and the machine is one that needs one.
 mutation_case "a Mesh request's params are not lowered" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
-     "                crate::model::Invoke::MeshRpc(info) => {\n                    for param in &mut info.base.params {\n                        lower_wire_param(param, &plain_ctx, &plain_renames, &rewrites)?;\n                    }\n                }",
-     "                crate::model::Invoke::MeshRpc(_) => {}")
+     "    for param in &mut info.base.params {\n        lower_wire_param(param, ctx, renames, rewrites)?;\n    }\n    Ok(())\n}\n\n/// Lower the value of each `<param>` of a `<final>`",
+     "    let _ = &mut info.base.params;\n    Ok(())\n}\n\n/// Lower the value of each `<param>` of a `<final>`")
 PY
 
 # The params the model admits cost no engine, so a machine that has only these is one
 # that needs none. The case charges them to one, as a script data model's are.
 mutation_case "a Mesh request's params are charged to a script engine" <<'PY'
 edit("sce-build/src/script_engine_analyzer.rs",
-     "            | C::MeshRpcRequestExpr { .. } => true,",
-     "            => true,\n            C::MeshRpcRequestExpr { .. } => false,")
+     "            | C::MeshRpcRequestExpr { .. }\n            // A Mesh request's `srcexpr`",
+     "            // A Mesh request's `srcexpr`")
+edit("sce-build/src/script_engine_analyzer.rs",
+     "            | C::MeshRpcSrcExpr { .. } => true,\n            C::GlobalScript\n",
+     "            | C::MeshRpcSrcExpr { .. } => true,\n            C::GlobalScript\n            | C::MeshRpcRequestExpr { .. }\n")
+PY
+
+# A Mesh request names its peer by a string the machine computes (docs/adr/0005,
+# decision 7). Three mutants take one step away: the attribute is judged against no
+# type, so an integer names a peer; it is lowered to nothing, so the template falls to
+# the arm that asks a script engine; and the analyzer charges it to an engine, as a
+# script data model's is.
+mutation_case "a Mesh request's srcexpr is not judged" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     "                self.expr(ctx, srcexpr, None, Expected::Slot(InferredType::Str))?;",
+     "                let _ = srcexpr;")
+PY
+
+mutation_case "a Mesh request's srcexpr is not lowered" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "        info.native_src = value.text;\n        info.native_src_fails = value.can_fail;\n    }\n    for param in &mut info.base.params {",
+     "        let _ = (value.text, value.can_fail);\n    }\n    for param in &mut info.base.params {")
+PY
+
+mutation_case "a Mesh request's srcexpr is charged to a script engine" <<'PY'
+edit("sce-build/src/script_engine_analyzer.rs",
+     "            | C::MeshRpcSrcExpr { .. } => true,\n            C::GlobalScript\n",
+     "            => true,\n            C::GlobalScript\n            | C::MeshRpcSrcExpr { .. }\n")
 PY
 
 # A target that has no route for a Mesh request refuses it by name. The case lets

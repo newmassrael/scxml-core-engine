@@ -3367,6 +3367,7 @@ fn parse_scxml_invoke(
             })?,
             mesh_event,
             deadline_ms,
+            ..Default::default()
         }),
         // Anything else is the `Unsupported` arm, whose `invoke_type`
         // IS the word the `type` clause carried — the renderer writes
