@@ -453,6 +453,7 @@ fn each_invoke_shape_renders_once_and_whole() {
             },
             mesh_event: "ping".to_string(),
             deadline_ms: Some(250),
+            ..MeshRpcInvokeInfo::default()
         }),
         Invoke::Unsupported(UnsupportedInvokeInfo {
             base: base("i4"),
