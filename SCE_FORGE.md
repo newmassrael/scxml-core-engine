@@ -1953,6 +1953,27 @@ class DiagSession : public SCE::StateMachine {
 }
 ```
 
+### 5.6 Policy as data
+
+A limit, a window or a mode that a product changes without a release is data, and the logic that reads it is a document compiled once. The composition below carries such a *policy* from where it is decided to the machine that reads it. It is a pattern and not a library: SCE has no reflection over a record's fields, so a policy's schema, its rules and its layering are written for each policy, and what this section fixes is the shape and what each step is held to.
+
+| Step | Kind | What it does | What holds it |
+|------|------|--------------|---------------|
+| Shape | `event-schema` with `enum:` fields | Names the policy: fixed-width integers, `bool` and `enum:` values (§4.12). | A `sce-static` machine takes the record as the whole payload of one event. A payload that does not fit — an enum name the document does not declare, an integer past its width — is refused as a whole and writes nothing, not even the fields that did fit: the scenarios `static_whole_payload` and `static_payload_enum`, replayed by every backend. |
+| Rules between fields | `validator` | One document per rule. The inputs are the record's fields spread out as scalars and `enum:` values, and the rule is the document's one `sce:plausibility` (§4.7). | `forge_{rust,cpp,c11,go,python,kotlin}_enum_validator_runtime` hold all six backends to one table, including that a field's range is checked before the rule between fields. |
+| Layers | `algorithm` over `record:` | `(base, over, mask) → record`: field *i* comes from `over` when bit *i* of `mask` is set and from `base` otherwise. A field may follow a rule of its own instead; the held example lets the stricter of two modes win whatever the mask says. | `forge_{rust,cpp,c11,go,python,kotlin}_enum_record_layer_runtime`, again one table for six backends. |
+| Reception | `statechart` (`sce-static`) | Holds the finished record in a record variable and reads its fields in guards. | The same scenarios. |
+
+The pattern asks the host for three steps, in this order:
+
+1. Collect the layers and fold them with the layering algorithm, from the weakest to the strongest.
+2. Spread the result into each rule's validator. When one fails, the previous record stays and nothing is sent.
+3. Send the finished record as the payload of one event.
+
+The host takes steps 1 and 2 and not the machine, because a statechart does not call algorithms (§4.12, "Calls between algorithms"). That is also why the machine promises only what its schema gives it, a record that fits: the rules between fields are held before the event, by the validators.
+
+What this does not do. It is not an expression language: a policy is values, and the behaviour that reads them is compiled, so a rule the documents cannot say is a change to a document. A `mask` carries 64 fields, so a larger policy is split into groups. A validator document holds one `sce:plausibility`, so n rules between fields are n documents. And an `enum:` value reaches a payload only by its declared name.
+
 ---
 
 ## 6. Code Generation Architecture
