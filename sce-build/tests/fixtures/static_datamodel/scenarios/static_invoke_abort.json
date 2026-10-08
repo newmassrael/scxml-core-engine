@@ -1,0 +1,20 @@
+{
+  "machine": "static_invoke",
+  "about": "The same machine, left while its child runs: `abort` leaves `working` for `idle`, and the invocation lives only as long as the state that holds it (W3C SCXML 6.4), so the child is cancelled and never ends. Nothing the parent is sent afterwards reaches it, and no `done.invoke` follows. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "note": "the child is running",
+      "expect": { "state": "working", "variables": { "completed": 0 } } },
+
+    { "note": "`a` moves the child on to wait for `b`",
+      "event": "a",
+      "expect": { "state": "working", "variables": { "completed": 0 } } },
+
+    { "note": "`abort` leaves the state that invokes: the child is cancelled",
+      "event": "abort",
+      "expect": { "state": "idle", "variables": { "completed": 0 } } },
+
+    { "note": "the child that would have ended on `b` is gone, so nothing counts",
+      "event": "b",
+      "expect": { "state": "idle", "variables": { "completed": 0 } } }
+  ]
+}

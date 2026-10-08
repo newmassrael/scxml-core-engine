@@ -394,6 +394,19 @@ def test_a_cancel_removes_the_send_its_id_names() -> None:
     replay("static_cancel_expr")
 
 
+# A child session an `<invoke>` started is driven through its parent by
+# autoforward, takes the events it waits for in order, and its end reaches the
+# parent as `done.invoke`, which the parent counts.
+def test_an_invoked_child_is_driven_and_counted() -> None:
+    replay("static_invoke")
+
+
+# Leaving the state that holds an `<invoke>` cancels the child, which then ends
+# nothing and counts nothing.
+def test_leaving_the_state_of_an_invoke_cancels_the_child() -> None:
+    replay("static_invoke_abort")
+
+
 # A `<history>` remembers what its parent held when it was left, and entering it
 # brings that back: the shallow one the child that was active, the deep one the
 # atomic states below, and a deep one of a `<parallel>` both regions at once. The

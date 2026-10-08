@@ -1,0 +1,28 @@
+{
+  "machine": "static_invoke",
+  "about": "`working` invokes `worker`, a child that takes two events in order, `a` then `b`, and ends. The parent forwards what it is sent (autoforward), so the child is driven through the parent and a run is read from the parent alone: `done.invoke.worker` counts the run in `completed` and leaves the parent in `working`. A `b` the child is not waiting for does nothing to it. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "note": "the child is running; nothing has ended",
+      "expect": { "state": "working", "variables": { "completed": 0 } } },
+
+    { "note": "`b` reaches a child that is waiting for `a`, and it takes no transition on it",
+      "event": "b",
+      "expect": { "state": "working", "variables": { "completed": 0 } } },
+
+    { "note": "`a` moves the child on to wait for `b`",
+      "event": "a",
+      "expect": { "state": "working", "variables": { "completed": 0 } } },
+
+    { "note": "`b` ends the child in its final state, and `done.invoke.worker` counts the run; the parent stays in the state that invokes",
+      "event": "b",
+      "expect": { "state": "working", "variables": { "completed": 1 } } },
+
+    { "note": "the child is gone, so a later `a` reaches nothing and counts nothing",
+      "event": "a",
+      "expect": { "state": "working", "variables": { "completed": 1 } } },
+
+    { "note": "`finish` leaves for the final state of the parent",
+      "event": "finish",
+      "expect": { "ended": true } }
+  ]
+}

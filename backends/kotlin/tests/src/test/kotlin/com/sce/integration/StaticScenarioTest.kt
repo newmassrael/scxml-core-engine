@@ -34,6 +34,7 @@ import com.sce.integration.static_event_arrival.StaticEventArrivalStateMachine
 import com.sce.integration.static_event_wildcard.StaticEventWildcardStateMachine
 import com.sce.integration.static_foreach.StaticForeachStateMachine
 import com.sce.integration.static_history.StaticHistoryStateMachine
+import com.sce.integration.static_invoke.StaticInvokeStateMachine
 import com.sce.integration.static_list.StaticListStateMachine
 import com.sce.integration.static_overflow.StaticOverflowStateMachine
 import com.sce.integration.static_payload.StaticPayloadStateMachine
@@ -79,6 +80,15 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
+
+/**
+ * How many rounds a host gives a machine that needs `tick` after an event before
+ * it reads the machine back. The engine reports no point at which it has settled,
+ * so a host runs rounds: a child session takes an event the parent forwarded in
+ * one round and its end reaches the parent in the next, which is two for each
+ * level of child. A round that finds nothing to do changes nothing.
+ */
+private const val SETTLE_TICKS = 5
 
 @DisplayName("StaticScenario — sce-static machines replay the scenarios every backend replays (Kotlin AOT)")
 class StaticScenarioTest {
@@ -612,6 +622,47 @@ class StaticScenarioTest {
                 scenario("static_foreach"),
                 send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
                 tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // A child session an <invoke> started is driven through its parent by
+    // autoforward, takes the events it waits for in order, and its end reaches the
+    // parent as `done.invoke`, which the parent counts. The machine needs `tick`,
+    // and the engine reports no point at which it has settled: a child takes an
+    // event in one round and its end reaches the parent in the next.
+    @Test
+    fun staticInvokeCountsTheRunOfTheChildItDrives() {
+        val sm = StaticInvokeStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_invoke"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { repeat(SETTLE_TICKS) { sm.tick() } },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // Leaving the state that holds an <invoke> cancels the child, which then ends
+    // nothing and counts nothing.
+    @Test
+    fun staticInvokeAbortCancelsTheChildWithTheStateThatHoldsIt() {
+        val sm = StaticInvokeStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_invoke_abort"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { repeat(SETTLE_TICKS) { sm.tick() } },
                 save = { sm.save() },
                 ended = { sm.isInFinalState },
             )

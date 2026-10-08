@@ -106,6 +106,7 @@
 #include "static_event_wildcard_sm.h"
 #include "static_foreach_sm.h"
 #include "static_history_sm.h"
+#include "static_invoke_sm.h"
 #include "static_list_sm.h"
 #include "static_overflow_sm.h"
 #include "static_payload_bytes_sm.h"
@@ -1498,6 +1499,21 @@ static const variable_t history_variables[] = {
 };
 STATIC_SCENARIO(static_history, history_states, history_variables, NULL, no_lists, no_records)
 
+// static_invoke: a child session an `<invoke>` started is driven through its
+// parent by autoforward, takes the events it waits for in order, and its end
+// reaches the parent as `done.invoke`, which the parent counts. Leaving the state
+// that holds the invoke cancels the child.
+VARIABLE_READER(static_invoke, completed)
+
+static const name_value_t invoke_states[] = {
+    {"working", STATIC_INVOKE_STATE_WORKING},
+    {"idle", STATIC_INVOKE_STATE_IDLE},
+};
+static const variable_t invoke_variables[] = {
+    {"completed", static_invoke_read_completed},
+};
+STATIC_SCENARIO(static_invoke, invoke_states, invoke_variables, NULL, no_lists, no_records)
+
 // static_timers: four delayed sends armed on entering a state are delivered when
 // each is due, two due the same moment in the order they were sent, and the last
 // takes the machine to its final state; a `<cancel>` by the id of the longest
@@ -1686,6 +1702,8 @@ int main(void) {
     bad |= static_cancel_expr_scenario("static_cancel_expr", 16);
     bad |= static_send_idlocation_scenario("static_send_idlocation", 13);
     bad |= static_history_scenario("static_history", 17);
+    bad |= static_invoke_scenario("static_invoke", 6);
+    bad |= static_invoke_scenario("static_invoke_abort", 4);
     bad |= static_timers_scenario("static_timers", 6);
     bad |= static_timers_scenario("static_timers_stop", 5);
     bad |= sync_client_scenario("sync_client", 30);

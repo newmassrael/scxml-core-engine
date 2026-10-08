@@ -62,6 +62,9 @@ use sce_rust_tests::integration::static_datamodel::static_foreach_sm::{
 use sce_rust_tests::integration::static_datamodel::static_history_sm::{
     StaticHistoryPersist, StaticHistoryPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_invoke_sm::{
+    StaticInvokePersist, StaticInvokePolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_list_sm::{
     StaticListPersist, StaticListPolicy,
 };
@@ -459,6 +462,33 @@ fn static_record_list_appends_a_record_whole_and_walks_it_by_field() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_record_list.json"
+        ),
+    );
+}
+
+// A child session an <invoke> started is driven through its parent by
+// autoforward, takes the events it waits for in order, and its end reaches the
+// parent as `done.invoke`, which the parent counts.
+#[test]
+fn static_invoke_counts_the_run_of_the_child_it_drives() {
+    replay(
+        Engine::new(StaticInvokePolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_invoke.json"
+        ),
+    );
+}
+
+// Leaving the state that holds an <invoke> cancels the child, which then ends
+// nothing and counts nothing.
+#[test]
+fn static_invoke_abort_cancels_the_child_with_the_state_that_holds_it() {
+    replay(
+        Engine::new(StaticInvokePolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_invoke_abort.json"
         ),
     );
 }

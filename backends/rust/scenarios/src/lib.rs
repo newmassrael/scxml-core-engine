@@ -21,6 +21,14 @@ use sce_rust_runtime::saved_state::SavedState;
 use sce_rust_runtime::{Engine, StatePolicy};
 use serde_json::Value;
 
+/// How many rounds a host gives a machine that needs `tick` after an event
+/// before it reads the machine back. The engine reports no point at which it has
+/// settled, so a host runs rounds: a child session takes an event the parent
+/// forwarded in one round and its end reaches the parent in the next, which is
+/// two for each level of child. Five is what the other backends' suites give a
+/// machine, and a round that finds nothing to do changes nothing.
+const SETTLE_TICKS: usize = 5;
+
 /// Replay `scenario` against `engine`, reading the machine back with
 /// `save` after every step. An event name no event of the machine matches
 /// fails the replay: the engine drops one silently, which would otherwise
@@ -58,7 +66,16 @@ pub fn replay<P: StatePolicy>(
             );
             let data = step.get("data").map(Value::to_string).unwrap_or_default();
             engine.raise_external_by_name(event, &data);
-            engine.step();
+            // The generator says which call a machine needs: `step` drains the
+            // queues and nothing else, and a machine with a delayed send or a
+            // child session is driven by `tick`, which also runs those.
+            if P::NEEDS_EVENT_SCHEDULER {
+                for _ in 0..SETTLE_TICKS {
+                    engine.tick();
+                }
+            } else {
+                engine.step();
+            }
         }
         let expect = &step["expect"];
         let note = step.get("note").and_then(Value::as_str).unwrap_or("");

@@ -2618,6 +2618,14 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_timers.scxml"
     )
 
+    # The `<invoke type="scxml">` machine of `static_invoke` is generated once and
+    # used by two executables: the scenarios below, and the child-session cases
+    # further down.
+    sce_generate_static_integration_c_test(static_invoke
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_invoke.scxml"
+    )
+
     # A machine with a `<history>` and a `<parallel>`: what its history brought
     # back is read from the machine's whole active configuration.
     sce_generate_static_integration_c_test(static_history
@@ -2652,6 +2660,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_send_idlocation_SOURCES}
         ${INTEGRATION_C_TEST_static_timers_SOURCES}
         ${INTEGRATION_C_TEST_static_history_SOURCES}
+        ${INTEGRATION_C_TEST_static_invoke_SOURCES}
         ${INTEGRATION_C_TEST_static_list_SOURCES}
         ${INTEGRATION_C_TEST_static_record_fields_SOURCES}
         ${INTEGRATION_C_TEST_static_record_real_SOURCES}
@@ -2805,7 +2814,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # suite's own, for the reason `static_host_call_arguments` does. Each
     # `<invoke>`'s child is a document the parent's generation writes beside it,
     # which the staging declares from the generator's own plan.
-    foreach(_STATIC_INVOKE_MACHINE static_invoke static_invoke_hybrid static_invoke_hybrid_saved static_invoke_params static_invoke_string)
+    foreach(_STATIC_INVOKE_MACHINE static_invoke_hybrid static_invoke_hybrid_saved static_invoke_params static_invoke_string)
         sce_generate_static_integration_c_test(${_STATIC_INVOKE_MACHINE}
             "${SCE_C_INTEGRATION_GENERATED_DIR}"
             SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_STATIC_INVOKE_MACHINE}.scxml"

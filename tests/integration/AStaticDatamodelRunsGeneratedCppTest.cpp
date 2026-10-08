@@ -45,6 +45,7 @@
 #include "static_invoke_hybrid_saved_sm.h"
 #include "static_invoke_hybrid_sm.h"
 #include "static_invoke_params_sm.h"
+#include "static_invoke_sm.h"
 #include "static_invoke_string_sm.h"
 #include "static_list_sm.h"
 #include "static_overflow_sm.h"
@@ -127,6 +128,11 @@ json readScenario(const std::string &machine) {
     return json::parse(in);
 }
 
+/// How many rounds a host gives a machine that needs `tick` after an event before
+/// it reads the machine back: two for each level of child session, and a round
+/// that finds nothing to do changes nothing.
+constexpr int kSettleTicks = 5;
+
 /// One generated machine as a scenario sees it: events by their document name,
 /// and the published variables by theirs.
 template <typename Machine> class Driver {
@@ -152,7 +158,19 @@ public:
     /// fields its schema names.
     void send(const std::string &name, const std::string &data = "") {
         machine_.raiseExternal(name, data);
-        machine_.step();
+        // The generated policy says which call the machine needs: `step` drains
+        // the queues and nothing else, and a machine with a delayed send or a
+        // child session is driven by `tick`, which also runs those. The engine
+        // reports no point at which it has settled, so a host runs rounds: a child
+        // takes an event the parent forwarded in one round and its end reaches the
+        // parent in the next.
+        if constexpr (::SCE::Core::NeedsEventScheduler<typename Machine::PolicyType>) {
+            for (int round = 0; round < kSettleTicks; ++round) {
+                machine_.tick();
+            }
+        } else {
+            machine_.step();
+        }
     }
 
     /// Whether an event arriving under `name` reaches the machine at all, as the
@@ -790,6 +808,27 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, ACancelRemovesTheSendItsIdNames) {
         {"refusals", [](const Machine &m) { return json(m.refusals()); }},
     });
     replay("static_cancel_expr", driver);
+}
+
+// A child session an `<invoke>` started is driven through its parent by
+// autoforward, takes the events it waits for in order, and its end reaches the
+// parent as `done.invoke`, which the parent counts.
+TEST(AStaticDatamodelRunsGeneratedCppTest, AnInvokedChildIsDrivenAndCounted) {
+    using Machine = G::static_invoke::static_invoke;
+    Driver<Machine> driver({
+        {"completed", [](const Machine &m) { return json(m.completed()); }},
+    });
+    replay("static_invoke", driver);
+}
+
+// Leaving the state that holds an `<invoke>` cancels the child, which then ends
+// nothing and counts nothing.
+TEST(AStaticDatamodelRunsGeneratedCppTest, LeavingTheStateOfAnInvokeCancelsTheChild) {
+    using Machine = G::static_invoke::static_invoke;
+    Driver<Machine> driver({
+        {"completed", [](const Machine &m) { return json(m.completed()); }},
+    });
+    replay("static_invoke_abort", driver);
 }
 
 // A `<history>` remembers what its parent held when it was left, and entering it

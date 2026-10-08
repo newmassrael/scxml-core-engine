@@ -48,6 +48,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_history"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_host_call"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_host_call_arguments"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_invoke"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_list"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_overflow"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_payload"
@@ -192,6 +193,14 @@ type machine struct {
 	variables     map[string]func() any
 }
 
+// settleTicks is how many rounds a host gives a machine that needs `Tick` after
+// an event before it reads the machine back. The engine reports no point at
+// which it has settled, so a host runs rounds: a child session takes an event
+// the parent forwarded in one round and its end reaches the parent in the next,
+// which is two for each level of child. Five is what the other backends' suites
+// give a machine, and a round that finds nothing to do changes nothing.
+const settleTicks = 5
+
 // drive starts `policy` and returns it as a machine.
 func drive[S interface {
 	comparable
@@ -203,7 +212,16 @@ func drive[S interface {
 	return machine{
 		send: func(name, data string) {
 			engine.RaiseExternalByName(name, data)
-			engine.Step()
+			// The generated policy says which call the machine needs: `Step`
+			// drains the queues and nothing else, and a machine with a delayed
+			// send or a child session is driven by `Tick`, which also runs those.
+			if scheduled, ok := any(policy).(interface{ NeedsEventScheduler() bool }); ok && scheduled.NeedsEventScheduler() {
+				for i := 0; i < settleTicks; i++ {
+					engine.Tick()
+				}
+			} else {
+				engine.Step()
+			}
 		},
 		advance: engine.AdvanceTimeMs,
 		resolves: func(name string) bool {
@@ -937,6 +955,27 @@ func TestACancelRemovesTheSendItsIdNames(t *testing.T) {
 		"a_fired":  func() any { return policy.AFired() },
 		"b_fired":  func() any { return policy.BFired() },
 		"refusals": func() any { return policy.Refusals() },
+	}))
+}
+
+// A child session an <invoke> started is driven through its parent by
+// autoforward, takes the events it waits for in order, and its end reaches the
+// parent as `done.invoke`, which the parent counts.
+func TestAnInvokedChildIsDrivenAndCounted(t *testing.T) {
+	policy := static_invoke.NewStaticInvokePolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_invoke", drive[static_invoke.StaticInvokeState, static_invoke.StaticInvokeEvent](&policy, map[string]func() any{
+		"completed": func() any { return policy.Completed() },
+	}))
+}
+
+// Leaving the state that holds an <invoke> cancels the child, which then ends
+// nothing and counts nothing.
+func TestLeavingTheStateOfAnInvokeCancelsTheChild(t *testing.T) {
+	policy := static_invoke.NewStaticInvokePolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_invoke_abort", drive[static_invoke.StaticInvokeState, static_invoke.StaticInvokeEvent](&policy, map[string]func() any{
+		"completed": func() any { return policy.Completed() },
 	}))
 }
 
