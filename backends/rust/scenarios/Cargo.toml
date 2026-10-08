@@ -1,0 +1,45 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+
+[package]
+name = "sce-rust-scenarios"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Replays the engine-neutral scenarios of a datamodel=\"sce-static\" machine against the Rust engine"
+
+# The scenario replay of the Rust arm, in one place, for every target the Rust
+# engine runs on. The scenarios are data (`sce-build/tests/fixtures/static_datamodel/
+# scenarios/*.json`) that every backend replays and judges by the same answer; this
+# crate is what the Rust arm replays them WITH, so a new target — wasm32 — joins that
+# matrix by running this code and not by porting a test suite.
+#
+# It depends on the engine and nothing that needs an operating system: the
+# W3C test crate (`sce-rust-tests`) links Lua (C) and `reqwest`, which a
+# wasm32-unknown-unknown build has neither the C toolchain nor the sockets for.
+
+[dependencies]
+sce-rust-runtime = { path = "../runtime", default-features = false }
+# A `datamodel="sce-static"` machine checks its integer operations with the forge
+# runtime's helpers (SCE_FORGE.md §3.4.1); the crate is `#![no_std]`, so it needs
+# nothing of the operating system.
+sce-forge-runtime = { path = "../forge-runtime" }
+# `float_roundtrip` makes a JSON real parse to the nearest double, as the
+# conformance harness's own parse does (backends/rust/forge-conformance).
+serde_json = { version = "1", features = ["float_roundtrip"] }
+
+# The wasm32 build is a cdylib a host script loads (`wasm/run.mjs`); every other
+# target uses the rlib, which is what the native tests link.
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+# The version `Cargo.lock` holds is the one `wasm-bindgen-cli` must be: the
+# generated glue and the module are only compatible at the same version.
+wasm-bindgen = "0.2"
+
+[lints]
+workspace = true

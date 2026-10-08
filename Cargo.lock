@@ -1918,6 +1918,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "sce-rust-scenarios"
+version = "0.1.0"
+dependencies = [
+ "sce-forge-runtime",
+ "sce-rust-runtime",
+ "serde_json",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "sce-rust-tests"
 version = "0.1.0"
 dependencies = [
@@ -1928,6 +1938,7 @@ dependencies = [
  "sce-rust-lua",
  "sce-rust-mesh",
  "sce-rust-runtime",
+ "sce-rust-scenarios",
  "serde_json",
 ]
 

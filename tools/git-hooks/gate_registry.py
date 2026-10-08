@@ -204,6 +204,10 @@ COST_MEASURED: dict[str, str] = {
     # 72s with the opt-1 one `Cargo.toml` now builds, under load 23. The
     # figure is a stopwatch read of the gate's own work, not paced.
     "authoring-core": "2026-09-24",
+    # The gate script run once end to end through `bx --local` on 2026-10-08:
+    # 128s on a first dev-profile build of the target, under load 20. Not taken
+    # by `scripts/gate --measure`, which is refused locally for this repository.
+    "wasm32-scenarios": "2026-10-08",
     # Run once end to end through `bx` on 2026-10-03, warm: 66s. Not taken by
     # `scripts/gate --measure`, which is refused locally for this repository.
     "app": "2026-10-03",
@@ -1205,6 +1209,33 @@ GATES: dict[str, dict] = {
                    "filter IS the trigger — the two cannot disagree.",
         "cost_s": 77,
         "summary": "codegen + visualizer + DOOM WASM builds",
+    },
+    # The Rust engine as the module a browser loads, run under Node on the
+    # scenarios every backend replays. No other lane can say whether the engine
+    # starts on `wasm32-unknown-unknown`: that target gives a module no clock,
+    # and the failure compiles and traps only when the module runs.
+    #
+    # `ci_only` for what it needs rather than for the number alone: the target's
+    # standard library, Node, and a `wasm-bindgen` tool at exactly the version
+    # `Cargo.lock` holds, none of which a push can assume. The workflow's
+    # filter IS the trigger, as `visualizer-wasm`'s is.
+    #
+    # Measured 2026-10-08 as the gate script itself, through `bx --local`
+    # (`scripts/gate --measure` is refused locally for this repository): 128s
+    # under load 20, which is the FIRST dev-profile build of the target on that
+    # tree, so a warm one is shorter. The same gate built in release took 620s
+    # (`lto = "thin"` with one codegen unit over 44 generated machines), which is
+    # why it builds the dev profile.
+    "wasm32-scenarios": {
+        "workflows": ["wasm32-scenarios.yml"],
+        "runner_workflow": True,
+        "ci_only": "128s measured 2026-10-08 on a first dev-profile build "
+                   "(620s in release). wasm32-scenarios.yml runs it, and "
+                   "needs the wasm32 standard library, Node and a "
+                   "wasm-bindgen at the version Cargo.lock holds, which a "
+                   "push hook cannot assume.",
+        "cost_s": 128,
+        "summary": "Rust engine built for wasm32, every shared scenario replayed",
     },
     # The other half of the main tree's ctest partition, and the half nothing
     # ran. Measured 2026-08-12 with a logging shim in place of `ctest` during a

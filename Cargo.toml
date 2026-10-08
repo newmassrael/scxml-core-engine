@@ -20,6 +20,7 @@ members = [
     "backends/rust/forge-conformance",
     "backends/rust/link-runtime",
     "backends/rust/mesh",
+    "backends/rust/scenarios",
     "app-core",
 ]
 # The application links a GUI toolkit and is a workspace of its own (see

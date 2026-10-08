@@ -439,6 +439,20 @@ const LANES: &[(&str, f64, u32, u32, u32)] = &[
     // `false` protects the run that started, and under a saturated runner pool
     // there is none to protect.
     ("w3c-tests.yml", 70.0, 14, 9, 2),
+    // STAND-IN, borrowed when the lane landed: it has no run of its own that
+    // has finished, so the median below is `clippy-check.yml`'s (7.7) and not
+    // an observation. The nearest lane: a cached cargo build of the Rust
+    // workspace's crates with warnings denied, then a short run.
+    //
+    // The residue, stated rather than hidden: a run that misses both caches
+    // also compiles `wasm-bindgen-cli` (`cargo install`, a few minutes) and
+    // the engine with 44 generated machines in release, so a COLD hosted run
+    // may run several times the borrowed figure. It would have to pass 17.6
+    // to change the classification, and the lane already declares `false`
+    // like every other, so the cost of being wrong is a row filed under the
+    // wrong population, not a missing guard. Replace it after 25 runs of its
+    // own, and delete this paragraph when the number is its own.
+    ("wasm32-scenarios.yml", 7.7, 0, 0, 0),
 ];
 
 fn repo_root() -> PathBuf {

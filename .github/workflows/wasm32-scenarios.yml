@@ -1,0 +1,109 @@
+name: Rust engine on wasm32
+
+# The Rust engine, built as the module a browser loads and run under Node on the
+# scenarios every backend replays.
+#
+# No other lane can say whether the engine starts on this target. A
+# `wasm32-unknown-unknown` module is handed no clock, no threads and no files by
+# its target, and the failures that follow compile: the engine once read the
+# wall clock at its first `initialize()`, which builds for the target and traps
+# when the module runs. Every native build and every native test passed while no
+# machine could start in a browser, and nothing in the repository could have said
+# so.
+#
+# The check is `scripts/gate wasm32-scenarios`; this file only provides what that
+# gate needs and does not hold on a push: the target's standard library, Node,
+# and a `wasm-bindgen` command-line tool at exactly the version `Cargo.lock`
+# holds for the library (the glue and the module are only compatible at one).
+#
+# The triggers are what the module is made of: the engine, the forge runtime it
+# checks integers with, the replay crate, the committed machines it replays and
+# the scenario files they are held to.
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'backends/rust/runtime/**'
+      - 'backends/rust/forge-runtime/**'
+      - 'backends/rust/scenarios/**'
+      - 'backends/rust/tests/src/integration/static_datamodel/**'
+      - 'sce-build/tests/fixtures/static_datamodel/scenarios/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'scripts/gates/wasm32-scenarios.sh'
+      - '.github/workflows/wasm32-scenarios.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'backends/rust/runtime/**'
+      - 'backends/rust/forge-runtime/**'
+      - 'backends/rust/scenarios/**'
+      - 'backends/rust/tests/src/integration/static_datamodel/**'
+      - 'sce-build/tests/fixtures/static_datamodel/scenarios/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'scripts/gates/wasm32-scenarios.sh'
+      - '.github/workflows/wasm32-scenarios.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  wasm32-scenarios:
+    name: Scenarios replayed in the wasm32 module
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v6
+
+    - name: Install Rust Toolchain (with the wasm32 standard library)
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
+        targets: wasm32-unknown-unknown
+        components: clippy
+
+    - name: Setup Node
+      uses: actions/setup-node@v5
+      with:
+        node-version: '22'
+
+    - name: Cache Cargo
+      uses: actions/cache@v5
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-wasm32-${{ hashFiles('Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-wasm32-
+
+    # The version is read from the lock and not written here, so the tool follows
+    # the library when `Cargo.lock` moves. The gate refuses a tool at any other
+    # version, which is why this step cannot be left to whatever is installed.
+    - name: Read the wasm-bindgen version Cargo.lock holds
+      id: bindgen
+      run: |
+        version="$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock | sed -n 's/^version = "\(.*\)"$/\1/p')"
+        test -n "$version"
+        echo "version=$version" >> "$GITHUB_OUTPUT"
+
+    - name: Cache wasm-bindgen
+      id: bindgen-cache
+      uses: actions/cache@v5
+      with:
+        path: ~/.cargo/bin/wasm-bindgen
+        key: ${{ runner.os }}-wasm-bindgen-${{ steps.bindgen.outputs.version }}
+
+    - name: Install wasm-bindgen at that version
+      if: steps.bindgen-cache.outputs.cache-hit != 'true'
+      run: cargo install wasm-bindgen-cli --version "${{ steps.bindgen.outputs.version }}" --locked
+
+    - name: Build the module and replay every scenario in it
+      run: scripts/gate wasm32-scenarios

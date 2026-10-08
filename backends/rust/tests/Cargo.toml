@@ -39,6 +39,8 @@ env_logger = "0.11"
 # `<invoke type="sce:mesh-rpc">` through the router a host actually
 # registers rather than a stand-in (SCE_MESH.md §mesh-9.5, §mesh-19).
 sce-rust-mesh = { path = "../mesh" }
+# The scenario replay of the Rust arm, shared with the wasm32 build of it.
+sce-rust-scenarios = { path = "../scenarios" }
 
 [lints]
 workspace = true
