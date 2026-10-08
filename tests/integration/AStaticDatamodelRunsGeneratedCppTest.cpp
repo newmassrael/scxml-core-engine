@@ -47,6 +47,7 @@
 #include "static_invoke_params_sm.h"
 #include "static_invoke_sm.h"
 #include "static_invoke_string_sm.h"
+#include "static_list_index_sm.h"
 #include "static_list_sm.h"
 #include "static_overflow_sm.h"
 #include "static_payload_bytes_sm.h"
@@ -489,6 +490,24 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, AListIsFilledToItsBoundAndEmptied) {
         {"count", [](const Machine &m) { return json(m.count()); }},
     });
     replay("static_list", driver);
+}
+
+// An element is read by its index like any number; an index below zero or not
+// below the length reads nothing and raises error.execution.
+TEST(AStaticDatamodelRunsGeneratedCppTest, AListElementIsReadByItsIndex) {
+    using Machine = G::static_list_index::static_list_index;
+    Driver<Machine> driver({
+        {"picked", [](const Machine &m) { return json(m.picked()); }},
+        {"cursor", [](const Machine &m) { return json(m.cursor()); }},
+        {"under", [](const Machine &m) { return json(m.under()); }},
+        {"first", [](const Machine &m) { return json(m.first()); }},
+        {"last", [](const Machine &m) { return json(m.last()); }},
+        {"ordered", [](const Machine &m) { return json(m.ordered()); }},
+        {"room", [](const Machine &m) { return json(m.room()); }},
+        {"count", [](const Machine &m) { return json(m.count()); }},
+        {"refusals", [](const Machine &m) { return json(m.refusals()); }},
+    });
+    replay("static_list_index", driver);
 }
 
 // A `<foreach>` walks the list as it was when the loop began, binds its item

@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15): an element of a
+  list variable read by its index. A calendar screen keeps a cursor into the
+  days it has picked and reads `picked[cursor]`; an element is a number like
+  any other, so it stands in an assignment, in an arithmetic or comparison
+  operand and in a guard.
+
+  The read is checked as an integer operation is (SCE_FORGE.md §3.4.1): an
+  index below zero, or not below the length, is a failure. The statement it
+  stands in is skipped, a guard it stands in is false, and error.execution
+  says so — no backend reads past the end, and none reads from the other end
+  as a negative index does in Python.
+
+  `read` takes the first element and `readlast` the last (`len(picked) - 1`),
+  which an empty list holds none of. `next` reads under the cursor and moves it
+  on; `back` reads before it
+  and moves it back, from an `int32` that can be negative. `compare` is
+  guarded by a comparison of two elements, which a list of one cannot give.
+  A length is a `uint32`: `shrink` takes one off it, which an empty list cannot
+  give — the subtraction is checked, not wrapped — and `more` compares it with
+  the `int32` cursor.
+  `refusals` counts the error.execution events the document answers.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="reading" datamodel="sce-static" name="static_list_index">
+  <sce:import kind="event-schema" src="schema_day.scxml" as="Day"/>
+  <datamodel>
+    <data id="picked" sce:type="list&lt;uint8&gt;" sce:capacity="3" sce:direction="out"/>
+    <data id="cursor" sce:type="int32" expr="0" sce:direction="out"/>
+    <data id="under" sce:type="uint8" expr="0" sce:direction="out"/>
+    <data id="first" sce:type="uint8" expr="0" sce:direction="out"/>
+    <data id="last" sce:type="uint8" expr="0" sce:direction="out"/>
+    <data id="ordered" sce:type="bool" expr="false" sce:direction="out"/>
+    <data id="room" sce:type="bool" expr="false" sce:direction="out"/>
+    <data id="count" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="reading">
+    <transition event="day.picked" type="internal">
+      <sce:append target="picked" expr="_event.data.dayOfMonth"/>
+    </transition>
+    <transition event="read" type="internal">
+      <assign location="first" expr="picked[0]"/>
+    </transition>
+    <transition event="readlast" type="internal">
+      <assign location="last" expr="picked[len(picked) - 1]"/>
+    </transition>
+    <transition event="shrink" type="internal">
+      <assign location="count" expr="len(picked) - 1"/>
+    </transition>
+    <transition event="more" type="internal">
+      <assign location="room" expr="cursor &lt; len(picked)"/>
+    </transition>
+    <transition event="next" type="internal">
+      <assign location="under" expr="picked[cursor]"/>
+      <assign location="cursor" expr="cursor + 1"/>
+    </transition>
+    <transition event="back" type="internal">
+      <assign location="under" expr="picked[cursor - 1]"/>
+      <assign location="cursor" expr="cursor - 1"/>
+    </transition>
+    <transition event="compare" cond="picked[0] &lt; picked[1]" type="internal">
+      <assign location="ordered" expr="true"/>
+    </transition>
+    <transition event="compare" type="internal">
+      <assign location="ordered" expr="false"/>
+    </transition>
+    <transition event="reset" type="internal">
+      <sce:clear target="picked"/>
+    </transition>
+    <transition event="error.execution" type="internal">
+      <assign location="refusals" expr="refusals + 1"/>
+    </transition>
+  </state>
+</scxml>

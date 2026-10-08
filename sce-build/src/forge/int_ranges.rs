@@ -1631,7 +1631,15 @@ mod tests {
     ) -> Vec<(String, HazardKind)> {
         let mut ctx = TypeCtx::new();
         for (n, t) in params.iter().chain(locals) {
-            ctx.insert_var(n, InferredType::from_sce_type(t));
+            if arrays.iter().any(|(array, _)| array == n) {
+                // A build-time array's name is no value, as the algorithm
+                // renderer registers it: only an element read through an
+                // index has a type, and it is the table's.
+                ctx.insert_var(n, InferredType::Unknown);
+                ctx.insert_array_elem(n, InferredType::from_sce_type(t));
+            } else {
+                ctx.insert_var(n, InferredType::from_sce_type(t));
+            }
         }
         let params: Vec<(String, AlgorithmValueType)> = params
             .iter()

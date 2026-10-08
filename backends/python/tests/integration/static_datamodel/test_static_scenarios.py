@@ -259,6 +259,11 @@ def test_a_list_is_filled_to_its_bound_and_emptied() -> None:
     replay("static_list")
 
 
+# An element is read by its index, and an index outside the list is a failure.
+def test_a_list_element_is_read_by_its_index() -> None:
+    replay("static_list_index")
+
+
 # A `<foreach>` walks a list variable.
 def test_a_foreach_walks_a_list_variable() -> None:
     replay("static_foreach")

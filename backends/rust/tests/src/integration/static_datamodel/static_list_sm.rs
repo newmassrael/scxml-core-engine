@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 8831cdf9a24d5319be675dfb105f20981ee799a3ff543da9abd5bce677e481a1
+// source-hash: 03f33ab72ac50915eef240c1f7562d70fd5e2c42e7c03d534fb8af4e5283d3ee
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -743,7 +743,7 @@ impl StatePolicy for StaticListPolicy {
                     }
                 }
                 if event == StaticListEvent::Full {
-                    if (self.picked).len() == 3 {
+                    if (self.picked).len() as u32 == 3 {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
                             targets: &[::sce_rust_runtime::EntryTarget::State(

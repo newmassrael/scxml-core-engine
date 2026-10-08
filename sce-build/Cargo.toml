@@ -1154,5 +1154,13 @@ name = "a_codec_can_read_and_write_one_content_line_component"
 path = "tests/a_codec_can_read_and_write_one_content_line_component.rs"
 required-features = ["cli"]
 
+# An element of a list variable read by its index is judged and lowered by the
+# binary (docs/SCE_ACCEPTED_SUBSET.md §2.15), so the target spawns
+# `sce-codegen` and carries the `cli` gate.
+[[test]]
+name = "a_list_element_is_read_by_its_index"
+path = "tests/a_list_element_is_read_by_its_index.rs"
+required-features = ["cli"]
+
 [lints]
 workspace = true

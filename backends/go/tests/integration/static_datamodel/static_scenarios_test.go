@@ -52,6 +52,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_invoke_params"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_invoke_string"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_list"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_list_index"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_overflow"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_payload"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_payload_bytes"
@@ -565,6 +566,24 @@ func TestAListIsFilledToItsBoundAndEmptied(t *testing.T) {
 		"picked":   func() any { return policy.Picked() },
 		"refusals": func() any { return policy.Refusals() },
 		"count":    func() any { return policy.Count() },
+	}))
+}
+
+// An element is read by its index like any number, and an index below zero or
+// not below the length is a failure: nothing is read and error.execution says so.
+func TestAListElementIsReadByItsIndex(t *testing.T) {
+	policy := static_list_index.NewStaticListIndexPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_list_index", drive[static_list_index.StaticListIndexState, static_list_index.StaticListIndexEvent](&policy, map[string]func() any{
+		"picked":   func() any { return policy.Picked() },
+		"cursor":   func() any { return policy.Cursor() },
+		"under":    func() any { return policy.Under() },
+		"first":    func() any { return policy.First() },
+		"last":     func() any { return policy.Last() },
+		"ordered":  func() any { return policy.Ordered() },
+		"room":     func() any { return policy.Room() },
+		"count":    func() any { return policy.Count() },
+		"refusals": func() any { return policy.Refusals() },
 	}))
 }
 

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 8831cdf9a24d5319be675dfb105f20981ee799a3ff543da9abd5bce677e481a1
+// source-hash: 03f33ab72ac50915eef240c1f7562d70fd5e2c42e7c03d534fb8af4e5283d3ee
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_list.scxml
@@ -348,7 +348,7 @@ class StaticListStateMachine(
     ): EnabledTransition<StaticListState, HistoryId>? = when (state) {
         is StaticListState.Collecting -> when {
             event is StaticListEvent.Day.Picked -> transitionCollectingAt0
-            event is StaticListEvent.Full && (picked).size == 3 -> transitionCollectingAt1
+            event is StaticListEvent.Full && (picked).size.toUInt() == 3.toUInt() -> transitionCollectingAt1
             event is StaticListEvent.Reset -> transitionCollectingAt2
             event is StaticListEvent.Error.Execution -> transitionCollectingAt3
             else -> null

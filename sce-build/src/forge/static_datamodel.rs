@@ -1511,6 +1511,16 @@ impl<'a> Judge<'a> {
                     ));
                 }
                 // The location is a declared variable; its type is the slot.
+                // Typing it reads it as an expression, which an index read
+                // is, so its shape is held first: a variable, or a field of
+                // one — an element of a list is never written.
+                crate::forge::expr::judge_lvalue_shape(&action.location).map_err(|refusal| {
+                    Located::in_file(
+                        ExpressionSite::new(&action.location, action.spellings.get("location"))
+                            .place(refusal),
+                        self.diag_label,
+                    )
+                })?;
                 let slot = self.expr(
                     ctx,
                     &action.location,

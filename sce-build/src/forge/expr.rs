@@ -640,11 +640,72 @@ fn resolve_names(ast: &mut TypedExpr, ctx: &TypeCtx<'_>, source: &str) -> Result
     reject_unknown_callees(ast, ctx)?;
     reject_unknown_names(ast, ctx)?;
     reject_unnamed_record_elements(ast, source)?;
+    reject_misdirected_indexing(ast, source)?;
     reject_records_as_operands(ast, source, RecordPlace::Whole)?;
     reject_buffers_as_values(ast, source)?;
     reject_call_argument_mismatches(ast, ctx, source)?;
     lower_bytes_eq(ast, ctx);
     Ok(())
+}
+
+/// Refuse an index read whose object is a value that holds no elements, or
+/// whose index is not a whole number. Only a list, a byte string or a
+/// `<sce:const>` table is indexed, and what is indexed by is an integer;
+/// every other value reached the emitters typed `Unknown` under an index and
+/// was left to each target's compiler to refuse in its own words — or not to
+/// (`total[0]` over a `uint32` is a bit read in one language and a type error
+/// in the next).
+///
+/// A type the lattice cannot name — an enum, a table's name — is `Unknown`
+/// and is let through: the name checks and the target's compiler own it.
+fn reject_misdirected_indexing(expr: &TypedExpr, source: &str) -> Result<(), Refusal> {
+    let observed = || {
+        expr.span
+            .clone()
+            .and_then(|span| source.get(span))
+            .map(str::to_string)
+    };
+    if let ExprKind::Index { object, index } = &expr.kind {
+        let holds_nothing = matches!(
+            object.ty.strip_quantity(),
+            InferredType::Int { .. }
+                | InferredType::UntypedInt
+                | InferredType::Float { .. }
+                | InferredType::UntypedFloat
+                | InferredType::Bool
+                | InferredType::Str
+                | InferredType::Null
+                | InferredType::Record(_)
+        );
+        if holds_nothing {
+            return Err(ExprError::UnsupportedConstruct {
+                construct: format!(
+                    "an index read of {} (only a list, a byte string or a constant table is \
+                     indexed)",
+                    object.ty.describe()
+                ),
+                observed: observed(),
+            }
+            .at(expr.span.clone()));
+        }
+        let whole = matches!(
+            index.ty.strip_quantity(),
+            InferredType::Int { .. } | InferredType::UntypedInt | InferredType::Unknown
+        );
+        if !whole {
+            return Err(ExprError::UnsupportedConstruct {
+                construct: format!(
+                    "an index of {} (an index is a whole number)",
+                    index.ty.describe()
+                ),
+                observed: observed(),
+            }
+            .at(expr.span.clone()));
+        }
+    }
+    expr.children()
+        .into_iter()
+        .try_for_each(|child| reject_misdirected_indexing(child, source))
 }
 
 /// Refuse an element of a list of records read by index. A record is read
@@ -1535,6 +1596,18 @@ pub(crate) fn references_event_data_lexically(expr: &str) -> bool {
     })
 }
 
+/// Whether `location` is the shape of an assignment target — a variable, or
+/// a field of one — before any type is asked of it
+/// ([`transpile_lvalue`] holds a location to the same rule when it lowers
+/// one). A judge that reads a location as an expression to type it needs this
+/// first: an index read is an expression, and an element of a list is read by
+/// its index and never written.
+pub fn judge_lvalue_shape(location: &str) -> Result<(), Refusal> {
+    let trimmed = location.trim();
+    let ast = parse_to_ast(trimmed)?;
+    validate_lvalue_shape(&ast.kind, trimmed).map_err(|refusal| refusal.at(ast.span.clone()))
+}
+
 /// Validate that a parsed expression's shape is a legal assignment target.
 /// See [`transpile_lvalue`] for the full rule set.
 fn validate_lvalue_shape(kind: &ExprKind, location: &str) -> Result<(), ExprError> {
@@ -2138,16 +2211,24 @@ pub fn read_identifiers(raw_expr: &str) -> Result<Vec<String>, Refusal> {
     Ok(names)
 }
 
-/// [`read_identifiers`] less the names only measured: an identifier that is
-/// the sole argument of the `len(…)` builtin is asked for its length, not
-/// read as a value. What a `sce-static` list variable may appear as
-/// (SCE Accepted Subset §2.15) — anywhere else, it is a value it is not.
+/// [`read_identifiers`] less the names only measured or indexed: an
+/// identifier that is the sole argument of the `len(…)` builtin is asked for
+/// its length, and one that is the object of an index is asked for one
+/// element (the index itself is still walked) — neither reads it as a value.
+/// What a `sce-static` list variable may appear as (SCE Accepted Subset
+/// §2.15) — anywhere else, it is a value it is not.
 pub fn identifiers_read_as_values(raw_expr: &str) -> Result<Vec<String>, Refusal> {
     fn walk(node: &TypedExpr, names: &mut Vec<String>) {
         if let ExprKind::Call { callee, args, .. } = &node.kind {
             let is_len =
                 matches!(&callee.kind, ExprKind::Ident(n) | ExprKind::Raw(n) if n == "len");
             if is_len && args.len() == 1 && matches!(args[0].kind, ExprKind::Ident(_)) {
+                return;
+            }
+        }
+        if let ExprKind::Index { object, index } = &node.kind {
+            if matches!(object.kind, ExprKind::Ident(_)) {
+                walk(index, names);
                 return;
             }
         }
@@ -3810,6 +3891,12 @@ pub(crate) fn infer_types(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
                 // of being poisoned to `Unknown`, so a context like
                 // `i < len(a)` (`i: u32`) can width-coerce the always-wider
                 // host length type (`usize` / `size_t`) at emit time.
+                None if is_len_builtin(callee, args) && ctx.lengths_are_uint32 => {
+                    InferredType::Int {
+                        signed: false,
+                        bits: 32,
+                    }
+                }
                 None if is_len_builtin(callee, args) => InferredType::UntypedInt,
                 // `round` and `floor` both yield a whole number, and the
                 // notation they lower from says so outright: with no digit
@@ -5195,10 +5282,16 @@ fn cpp_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             fails,
         } => {
             if is_len_builtin(callee, args) {
-                return Ok(format!(
-                    "({}).size()",
-                    emit_cpp(&args[0], InferredType::Unknown)?
-                ));
+                let size = format!("({}).size()", emit_cpp(&args[0], InferredType::Unknown)?);
+                // A length typed as an integer width (`TypeCtx::lengths_are_uint32`)
+                // is that width: the cast is spelled here, where `size_t` meets it.
+                return Ok(match expr.ty {
+                    InferredType::Int { signed, bits } => format!(
+                        "static_cast<std::{}int{bits}_t>({size})",
+                        if signed { "" } else { "u" }
+                    ),
+                    _ => size,
+                });
             }
             if let Some(op) = real_to_int_builtin(callee, args) {
                 // `std::llround` is half away from zero and returns an
@@ -5356,7 +5449,34 @@ fn cpp_coerce(raw: String, from: InferredType, to: InferredType, node: &TypedExp
             return format!("{raw}f");
         }
     }
+    // An unsigned operand where the join of the two is signed.
+    if let Some(bits) = c_family_unsigned_to_signed(from, to) {
+        return format!("static_cast<std::int{bits}_t>({raw})");
+    }
     raw
+}
+
+/// The width of the signed type an unsigned operand is converted to where the join
+/// of it and another operand is signed (`join_arith`), or `None` when `from` and
+/// `to` are not that pair. The usual arithmetic conversions of C and C++ would do
+/// the opposite — turn the signed operand unsigned, so `cursor < len` with a
+/// negative `cursor` compares as a huge number — and `-Wsign-compare` refuses the
+/// mix outright; the language's rule is the join's, so the cast is spelled.
+///
+/// Only where the unsigned operand is at least as wide as the signed type: a
+/// narrower one (`uint8` into an `int32`) is promoted to it by C itself, and a
+/// cast there would only change what an algorithm's output already says.
+fn c_family_unsigned_to_signed(from: InferredType, to: InferredType) -> Option<u8> {
+    match (from, to) {
+        (
+            InferredType::Int {
+                signed: false,
+                bits: from_bits,
+            },
+            InferredType::Int { signed: true, bits },
+        ) if from_bits >= bits => Some(bits),
+        _ => None,
+    }
 }
 
 /// The suffix of a C-family real literal of `bits` bits: `f` for a single.
@@ -5815,10 +5935,20 @@ fn kotlin_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             fails,
         } => {
             if is_len_builtin(callee, args) {
-                return Ok(format!(
-                    "({}).size",
-                    emit_kotlin(&args[0], InferredType::Unknown)?
-                ));
+                let size = format!("({}).size", emit_kotlin(&args[0], InferredType::Unknown)?);
+                // `Int` is Kotlin's length; one typed as an integer width
+                // (`TypeCtx::lengths_are_uint32`) is that width.
+                return Ok(match expr.ty {
+                    InferredType::Int { signed, bits } => format!(
+                        "{size}.{}()",
+                        if signed {
+                            kotlin_signed_ctor(bits)
+                        } else {
+                            kotlin_unsigned_ctor(bits)
+                        }
+                    ),
+                    _ => size,
+                });
             }
             if let Some(op) = real_to_int_builtin(callee, args) {
                 // ⚠ NOT `kotlin.math.round`, which is half to EVEN. `floor(x
@@ -8389,10 +8519,15 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             fails,
         } => {
             if is_len_builtin(callee, args) {
-                return Ok(format!(
-                    "({}).len",
-                    emit_c(&args[0], InferredType::Unknown)?
-                ));
+                let len = format!("({}).len", emit_c(&args[0], InferredType::Unknown)?);
+                // A length typed as an integer width (`TypeCtx::lengths_are_uint32`)
+                // is that width: the cast is spelled here, where `size_t` meets it.
+                return Ok(match expr.ty {
+                    InferredType::Int { signed, bits } => {
+                        format!("({}int{bits}_t){len}", if signed { "" } else { "u" })
+                    }
+                    _ => len,
+                });
             }
             if let Some(op) = real_to_int_builtin(callee, args) {
                 // C99 `llround` is half away from zero, same as C++. C99
@@ -8529,6 +8664,10 @@ fn c_coerce(raw: String, from: InferredType, to: InferredType, node: &TypedExpr)
         if matches!(node.kind, ExprKind::NumberLit(_)) {
             return format!("{raw}f");
         }
+    }
+    // An unsigned operand where the join of the two is signed, as in C++.
+    if let Some(bits) = c_family_unsigned_to_signed(from, to) {
+        return format!("(int{bits}_t)({raw})");
     }
     raw
 }

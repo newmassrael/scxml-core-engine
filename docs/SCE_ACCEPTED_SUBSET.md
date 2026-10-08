@@ -3962,12 +3962,44 @@ checked integer operation fails, and an `<if>` or `<elseif>` whose condition
 cannot be evaluated once its chain has run. `scenarios/static_block_ends*.json`
 hold this on every engine that runs the model. An expression
 measures a list with the `len(…)` builtin — `len(picked) === 3` in a guard,
-`len(picked)` assigned to a count — and reads it no other way: a list read as
+`len(picked)` assigned to a count — and reads one element of it by its index
+(below), and reads it no other way: a list read as
 a value (in an expression or a host action's argument) and a whole-list
 assignment are both `expression/unsupported-construct`. A list is walked with
 `<foreach>`, below, and read by the host through the snapshot.
 A `target` that names no list is `scxml/static-datamodel-rule`, naming the
 lists there are, and so is either statement under any other data model.
+
+**Reading an element.** `picked[i]` is the element at position `i` of a list of
+numbers or of `bool`s, typed as the list holds it, so it stands wherever a number
+of that type does — an assignment's value, an operand, a comparison, a guard,
+another index (`picked[picked[0]]`) — and `picked[len(picked) - 1]` is the last
+one. The index is a whole number of any integer type (a `bool`, a string or a
+real is `expression/unsupported-construct`), and only a list is indexed: a number
+is not, and an element is not a list, so `picked[0][0]` is refused. An element is
+read and never written: `<assign location="picked[0]">` is refused, as a whole
+list is, and so is the index of a list of records, whose elements are read
+through a `<foreach>` item.
+
+The read is checked as an integer operation is (SCE_FORGE.md §3.4.1): an index
+below zero, or not below the length, is a failure — the element is not read, the
+statement it stands in is skipped (a guard it stands in is false), the block ends
+and `error.execution` says so. No backend reads past the end, and none reads
+from the other end as a negative index does in Python. An empty list therefore
+has no first element.
+
+A length is a `uint32` (`len(x)` of a list, a string or a byte string), so
+arithmetic over it is checked like any integer operation: `len(picked) - 1` of
+an empty list is an unsigned underflow — a failure, as the index it would have
+made is — and not the host's own length type wrapped (`usize`, `size_t`) or
+read as `-1`. Beside a signed operand it is joined as any unsigned number is:
+`cursor < len(picked)` with an `int32` cursor compares as signed numbers, a
+negative cursor below every length, and a length stored into a narrower variable
+(`small = len(picked)`, a `uint8`) is the checked narrowing every store has.
+Under any other data model a length
+keeps the untyped width it has, which takes that of what it meets.
+`scenarios/static_list_index.json` holds all of this on every engine that runs
+the model.
 
 **A list of records.** `sce:type="list&lt;record:Day&gt;"` holds records of an
 imported event-schema, declared as a record variable is (a type of the

@@ -326,4 +326,8 @@ public object SceChecked {
     public fun at(xs: FloatArray, i: Long): Float = xs[inside(i, xs.size)]
     public fun at(xs: DoubleArray, i: Long): Double = xs[inside(i, xs.size)]
     public fun at(xs: BooleanArray, i: Long): Boolean = xs[inside(i, xs.size)]
+
+    // A `list<T>` variable of a `sce-static` machine is an immutable `List`, which
+    // reads the same way: below 0 or not below the size is the same failure.
+    public fun <T> at(xs: List<T>, i: Long): T = xs[inside(i, xs.size)]
 }

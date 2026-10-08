@@ -734,6 +734,9 @@ fn static_statechart<'a>(
     // event name, an id, a request's source — so a buffer sized for that one
     // evaluation is all it needs.
     ctx.joins_into_buffers = true;
+    // A length is a `uint32` (SCE Accepted Subset §2.15), so arithmetic over
+    // one is checked like any other integer operation.
+    ctx.lengths_are_uint32 = true;
     for var in variables {
         let Some(value_type) = var.value_type.as_ref() else {
             ctx.insert_var(var.id.as_str(), InferredType::Unknown);
@@ -746,10 +749,16 @@ fn static_statechart<'a>(
             continue;
         }
         if let Some(elem) = value_type.list_elem() {
-            // Typed as a list so `len(…)` measures it; the static data
+            // Typed as a list so `len(…)` measures it and `xs[i]` reads one
+            // element, as a number of the element's own type; the static data
             // model's judge refuses it anywhere it would be read as a value.
-            if let Some(elem) = crate::forge::types::ListElem::of_list(elem) {
-                ctx.insert_var(var.id.as_str(), InferredType::List(elem));
+            // A list of records has no operand element — `xs[i]` is refused
+            // ([`crate::forge::expr`]'s unnamed-record-element rule).
+            if let Some(list_elem) = crate::forge::types::ListElem::of_list(elem) {
+                ctx.insert_var(var.id.as_str(), InferredType::List(list_elem));
+            }
+            if let Some(scalar) = elem.scalar() {
+                ctx.insert_array_elem(var.id.as_str(), InferredType::from_sce_type(scalar));
             }
             continue;
         }

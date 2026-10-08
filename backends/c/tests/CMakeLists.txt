@@ -2487,6 +2487,13 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_list.scxml"
         STAGE_ALSO schema_day.scxml
     )
+    # An element of that list read by its index, which the library's checked
+    # index reads against the view's length.
+    sce_generate_static_integration_c_test(static_list_index
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_list_index.scxml"
+        STAGE_ALSO schema_day.scxml
+    )
     # A record is a struct of its schema's fields, declared in the machine's own
     # header; the schema is the document the machine imports it from.
     foreach(_STATIC_RECORD_MACHINE static_record_fields static_record_list)
@@ -2675,6 +2682,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_invoke_params_SOURCES}
         ${INTEGRATION_C_TEST_static_invoke_string_SOURCES}
         ${INTEGRATION_C_TEST_static_list_SOURCES}
+        ${INTEGRATION_C_TEST_static_list_index_SOURCES}
         ${INTEGRATION_C_TEST_static_record_fields_SOURCES}
         ${INTEGRATION_C_TEST_static_record_real_SOURCES}
         ${INTEGRATION_C_TEST_static_record_real32_SOURCES}

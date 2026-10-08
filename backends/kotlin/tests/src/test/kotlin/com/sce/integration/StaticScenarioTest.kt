@@ -40,6 +40,7 @@ import com.sce.integration.static_invoke.StaticInvokeStateMachine
 import com.sce.integration.static_invoke_params.StaticInvokeParamsStateMachine
 import com.sce.integration.static_invoke_string.StaticInvokeStringStateMachine
 import com.sce.integration.static_list.StaticListStateMachine
+import com.sce.integration.static_list_index.StaticListIndexStateMachine
 import com.sce.integration.static_overflow.StaticOverflowStateMachine
 import com.sce.integration.static_payload.StaticPayloadStateMachine
 import com.sce.integration.static_payload_bytes.StaticPayloadBytesStateMachine
@@ -505,6 +506,23 @@ class StaticScenarioTest {
         try {
             replay(
                 scenario("static_list"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    @Test
+    fun staticListIndexReadsAnElementAndRefusesOneThatIsNotThere() {
+        val sm = StaticListIndexStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_list_index"),
                 send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
                 tick = { sm.tick() },
                 save = { sm.save() },

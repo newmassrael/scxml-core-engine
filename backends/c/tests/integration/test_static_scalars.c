@@ -49,6 +49,9 @@
 //     past the bound appends nothing and raises `error.execution` — emptied by
 //     `<sce:clear>`, measured by `len()`, and published as the library's view of
 //     its elements.
+//   * `static_list_index`: an element is read by its index in an assignment, an
+//     operand and a guard; an index below zero or not below the length reads
+//     nothing and raises `error.execution`, as a checked integer operation does.
 //   * `static_foreach`: a loop walks a copy of the list as it began, so a body
 //     that appends to the list it walks neither lengthens the walk nor reads what
 //     it has just written; the item, its position and a loop in a loop are native.
@@ -110,6 +113,7 @@
 #include "static_invoke_params_sm.h"
 #include "static_invoke_sm.h"
 #include "static_invoke_string_sm.h"
+#include "static_list_index_sm.h"
 #include "static_list_sm.h"
 #include "static_overflow_sm.h"
 #include "static_payload_bytes_sm.h"
@@ -941,6 +945,31 @@ static const variable_t list_variables[] = {
 static const list_variable_t list_lists[] = {{"picked", static_list_read_list_picked}, {NULL, NULL}};
 STATIC_SCENARIO(static_list, list_states, list_variables, NULL, list_lists, no_records)
 
+// static_list_index: an element read by its index — the first and the last, one
+// under a cursor that moves both ways, and two compared in a guard. An index below
+// zero or not below the length reads nothing and raises `error.execution`, and a
+// length is a `uint32`, so one taken from an empty list fails as well.
+VARIABLE_READER(static_list_index, cursor)
+VARIABLE_READER(static_list_index, under)
+VARIABLE_READER(static_list_index, first)
+VARIABLE_READER(static_list_index, last)
+VARIABLE_READER(static_list_index, ordered)
+VARIABLE_READER(static_list_index, room)
+VARIABLE_READER(static_list_index, count)
+VARIABLE_READER(static_list_index, refusals)
+LIST_READER(static_list_index, picked, sce_forge_uint8_view_t)
+static const name_value_t list_index_states[] = {
+    {"reading", STATIC_LIST_INDEX_STATE_READING},
+};
+static const variable_t list_index_variables[] = {
+    {"cursor", static_list_index_read_cursor},   {"under", static_list_index_read_under},
+    {"first", static_list_index_read_first},     {"last", static_list_index_read_last},
+    {"ordered", static_list_index_read_ordered}, {"room", static_list_index_read_room},
+    {"count", static_list_index_read_count},     {"refusals", static_list_index_read_refusals},
+};
+static const list_variable_t list_index_lists[] = {{"picked", static_list_index_read_list_picked}, {NULL, NULL}};
+STATIC_SCENARIO(static_list_index, list_index_states, list_index_variables, NULL, list_index_lists, no_records)
+
 // static_foreach: a loop over a copy of the list as it began — the item alone, the
 // item and its position, a loop in a loop, and a body that appends to the list it
 // walks.
@@ -1765,6 +1794,7 @@ int main(void) {
     bad |= static_overflow_scenario("static_overflow", 5);
     bad |= static_block_ends_scenario("static_block_ends", 5);
     bad |= static_list_scenario("static_list", 11);
+    bad |= static_list_index_scenario("static_list_index", 24);
     bad |= static_foreach_scenario("static_foreach", 13);
     bad |= static_real_scenario("static_real", 13);
     bad |= static_real32_scenario("static_real32", 11);

@@ -1,0 +1,66 @@
+{
+  "machine": "static_list_index",
+  "about": "An element of a list variable read by its index, in an assignment, an arithmetic operand and a guard, and a length that is a uint32. A read is checked: an index below zero, or not below the length, skips the statement it stands in (or makes the guard false) and raises error.execution, which the document counts in `refusals`; no backend reads past the end or, with a negative index, from the other end. A length taken from is checked too: `len(picked) - 1` of an empty list is an unsigned underflow, not a wrapped number. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "expect": { "state": "reading", "variables": { "picked": [], "cursor": 0, "under": 0, "first": 0, "last": 0, "ordered": false, "room": false, "count": 0, "refusals": 0 } } },
+
+    { "note": "an empty list holds no first element",
+      "event": "read",
+      "expect": { "variables": { "first": 0, "refusals": 1 } } },
+    { "note": "nor a last one: len(picked) - 1 is an unsigned underflow, and no backend reads from the other end",
+      "event": "readlast",
+      "expect": { "variables": { "last": 0, "refusals": 2 } } },
+    { "note": "a length is a uint32, so taking one off an empty list is a failure and `count` keeps what it held",
+      "event": "shrink",
+      "expect": { "variables": { "count": 0, "refusals": 3 } } },
+    { "note": "0 < len(picked) is false, and no failure: a length compared with a signed cursor is a number",
+      "event": "more",
+      "expect": { "variables": { "room": false, "refusals": 3 } } },
+
+    { "event": "day.picked", "data": { "year": 2026, "month": 9, "dayOfMonth": 9 },
+      "expect": { "variables": { "picked": [9], "refusals": 3 } } },
+    { "note": "the guard compares picked[0] with picked[1], which a list of one does not have: it is false and says so, and the unguarded `compare` answers instead",
+      "event": "compare",
+      "expect": { "variables": { "ordered": false, "refusals": 4 } } },
+
+    { "event": "day.picked", "data": { "year": 2026, "month": 9, "dayOfMonth": 10 },
+      "expect": { "variables": { "picked": [9, 10] } } },
+    { "event": "day.picked", "data": { "year": 2026, "month": 9, "dayOfMonth": 11 },
+      "expect": { "variables": { "picked": [9, 10, 11], "refusals": 4 } } },
+    { "note": "9 < 10 holds, so the guarded `compare` is taken",
+      "event": "compare",
+      "expect": { "variables": { "ordered": true, "refusals": 4 } } },
+
+    { "event": "read",
+      "expect": { "variables": { "first": 9, "refusals": 4 } } },
+    { "note": "the last element, by an index computed from the length",
+      "event": "readlast",
+      "expect": { "variables": { "last": 11, "refusals": 4 } } },
+    { "event": "shrink",
+      "expect": { "variables": { "count": 2, "refusals": 4 } } },
+    { "event": "more",
+      "expect": { "variables": { "room": true, "refusals": 4 } } },
+
+    { "note": "picked[cursor - 1] with the cursor at 0 is index -1: the statement is skipped and the cursor does not move",
+      "event": "back",
+      "expect": { "variables": { "under": 0, "cursor": 0, "refusals": 5 } } },
+
+    { "event": "next", "expect": { "variables": { "under": 9, "cursor": 1, "refusals": 5 } } },
+    { "event": "next", "expect": { "variables": { "under": 10, "cursor": 2 } } },
+    { "event": "next", "expect": { "variables": { "under": 11, "cursor": 3 } } },
+    { "note": "the cursor has reached the length",
+      "event": "more",
+      "expect": { "variables": { "room": false, "refusals": 5 } } },
+    { "note": "index 3 is not below the length 3: nothing is read, and the cursor stays where it was",
+      "event": "next",
+      "expect": { "variables": { "under": 11, "cursor": 3, "refusals": 6 } } },
+
+    { "event": "back", "expect": { "variables": { "under": 11, "cursor": 2, "refusals": 6 } } },
+    { "event": "back", "expect": { "variables": { "under": 10, "cursor": 1 } } },
+
+    { "note": "emptied, the list has nothing at the cursor",
+      "event": "reset", "expect": { "variables": { "picked": [], "cursor": 1, "under": 10, "refusals": 6 } } },
+    { "event": "next",
+      "expect": { "variables": { "under": 10, "cursor": 1, "refusals": 7 } } }
+  ]
+}

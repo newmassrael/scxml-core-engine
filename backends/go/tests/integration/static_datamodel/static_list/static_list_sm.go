@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 8831cdf9a24d5319be675dfb105f20981ee799a3ff543da9abd5bce677e481a1
+// source-hash: 03f33ab72ac50915eef240c1f7562d70fd5e2c42e7c03d534fb8af4e5283d3ee
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -621,7 +621,7 @@ func (p *StaticListPolicy) FirstEnabledTransition(state StaticListState, event S
 			// NL→IR Item C1 Path A: native typed `_event.data` guard — cond
 			// "len(picked) === 3" lowered to a tag-checked field comparison on
 			// the lifted `pending<Event>Payload` (no script engine).
-			if len(p.vPicked) == 3 {
+			if uint32(len(p.vPicked)) == 3 {
 				return sce.EnabledTransition[StaticListState, sce.HistoryID]{
 					Source:          state,
 					Targets:         transitionTargetsOfStaticList[state][1],

@@ -974,6 +974,14 @@ pub struct TypeCtx<'a> {
     ///
     /// [`ExprKind::Checked`]: crate::forge::expr::ExprKind::Checked
     pub receives_failures: bool,
+    /// Whether `len(x)` is a `uint32` here rather than an untyped integer that
+    /// takes the width of what it meets. Set for a `sce-static` statechart,
+    /// whose accepted subset says a length is a `uint32` (docs/SCE_ACCEPTED_SUBSET.md
+    /// §2.15): `len(picked) - 1` is then a checked unsigned subtraction that
+    /// fails on an empty list on every backend, where an untyped one is
+    /// computed in each host's own length type (`usize`, `Int`, `size_t`) and
+    /// wraps, panics or refuses to compile as that host does.
+    pub lengths_are_uint32: bool,
     /// Whether an integer expression of this context may be a value an
     /// ECMAScript Number cannot hold — the body of an algorithm lowered for the
     /// Interpreter, where it is computed exactly as a BigInt
@@ -1105,6 +1113,7 @@ impl<'a> TypeCtx<'a> {
             array_elems: HashMap::new(),
             project_str_args_as_bytes_view: false,
             receives_failures: false,
+            lengths_are_uint32: false,
             exact_integers: false,
             reject_unknown_callees: false,
             reject_unknown_identifiers: false,
