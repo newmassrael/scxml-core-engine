@@ -853,6 +853,12 @@ def field_version_compare(a: dict, b: dict):
     return ("ok", (ka > kb) - (ka < kb))
 
 
+def value_of(write: dict) -> tuple:
+    """The stamp that names the value a write sets: the stamp of the write that
+    first carried it, as three numbers. All zero is no value."""
+    return (write["valueWallTime"], write["valueCounter"], write["valueNodeId"])
+
+
 def undo_field_plan(versions: list, batch: int, floor: int):
     """sce:std/merge/undo_field_plan — one step for each field the batch wrote.
 
@@ -860,9 +866,10 @@ def undo_field_plan(versions: list, batch: int, floor: int):
     field's winner is its latest write by stamp, the first of them in list order if
     two tie. 3: that earliest write arrived at or before `floor`. 2: the winner is
     an undo of this batch. 0: the winner is a write of this batch, and the value to
-    restore is the one the latest write earlier than the earliest batch write held
-    (0 if there is none). 1: anyone else's write is the winner, and its stamp is
-    reported. Steps come in the order the earliest writes appear in `versions`."""
+    restore is the one the latest write earlier than the earliest batch write held:
+    that write's value stamp, copied (all zero if there is none). 1: anyone else's
+    write is the winner, and its stamp is reported. Steps come in the order the
+    earliest writes appear in `versions`."""
     if batch == 0:
         return ("fails", "precondition")
     if sum(1 for write in versions if write["batchId"] == batch) > UNDO_PLAN_MAX:
@@ -892,12 +899,15 @@ def undo_field_plan(versions: list, batch: int, floor: int):
             verdict = 0
         else:
             verdict = 1
+        restore = value_of(base) if verdict == 0 and base is not None else (0, 0, 0)
         steps.append(
             {
                 "entityId": first["entityId"],
                 "fieldId": first["fieldId"],
                 "verdict": verdict,
-                "restoreRef": base["valueRef"] if verdict == 0 and base is not None else 0,
+                "restoreWallTime": restore[0],
+                "restoreCounter": restore[1],
+                "restoreNodeId": restore[2],
                 "winnerWallTime": winner["wallTime"] if verdict == 1 else 0,
                 "winnerCounter": winner["counter"] if verdict == 1 else 0,
                 "winnerNodeId": winner["nodeId"] if verdict == 1 else 0,
@@ -1849,10 +1859,12 @@ def element_args(rng: SplitMix64):
 UNDO_BATCHES = [1, 2, 5, 2**32, 2**63, U64_MAX - 1, U64_MAX]
 UNDO_ENTITIES = [0, 1, 2, 7, 2**32, U64_MAX]
 UNDO_FIELDS = [0, 1, 2, 3, U32_MAX]
-REF_EDGES = [0, 1, 2, 2**32, 2**63, U64_MAX]
+ARRIVAL_EDGES = [0, 1, 2, 2**32, 2**63, U64_MAX]
 
 
-def field_write(entity, field, stamp, arrival, batch, origin, reverts, ref) -> dict:
+def field_write(entity, field, stamp, arrival, batch, origin, reverts, value) -> dict:
+    """One write. `value` is the stamp that names the value it sets (the stamp of
+    the write that first carried it), spelled out as the record spells it."""
     return {
         "entityId": entity,
         "fieldId": field,
@@ -1863,8 +1875,23 @@ def field_write(entity, field, stamp, arrival, batch, origin, reverts, ref) -> d
         "batchId": batch,
         "origin": origin,
         "revertsBatch": reverts,
-        "valueRef": ref,
+        "valueWallTime": value["wallTime"],
+        "valueCounter": value["counter"],
+        "valueNodeId": value["nodeId"],
     }
+
+
+def value_stamp(rng: SplitMix64, own: dict) -> dict:
+    """The stamp naming the value a write sets: none (all zero), the write's own
+    (a value it introduces), or one drawn apart from it (an undo writing an earlier
+    value back). The drawn ones sit at the edges of each field, so a copy that
+    crosses two fields — the wall time into the counter — changes the answer."""
+    roll = rng.below(10)
+    if roll < 2:
+        return hlc(0, 0, 0)
+    if roll < 6:
+        return dict(own)
+    return stamp_value(rng)
 
 
 def history_for(rng: SplitMix64, batch: int):
@@ -1895,8 +1922,8 @@ def history_for(rng: SplitMix64, batch: int):
                 origin, reverts = 2, (batch if rng.below(2) else other)
             else:
                 origin, reverts = (1 if owner else rng.pick([0, 0, 1])), 0
-            ref = rng.pick(REF_EDGES) if rng.below(3) == 0 else rng.between(0, 9)
-            versions.append(field_write(entity, field, stamp, min(arrival, U64_MAX), owner, origin, reverts, ref))
+            value = value_stamp(rng, stamp)
+            versions.append(field_write(entity, field, stamp, min(arrival, U64_MAX), owner, origin, reverts, value))
             arrival += 1
     if rng.below(2):
         versions = shuffled(rng, versions)
@@ -1909,9 +1936,10 @@ def plan_args(rng: SplitMix64):
     if rng.below(120) == 0:
         count = rng.pick([256, 257])
         batch = rng.pick(UNDO_BATCHES)
+        stamps = [hlc(REALISTIC_WALL + index, 0, 1) for index in range(count)]
         versions = [
-            field_write(1, index, hlc(REALISTIC_WALL + index, 0, 1), index + 1, batch, 1, 0, index)
-            for index in range(count)
+            field_write(1, index, stamp, index + 1, batch, 1, 0, stamp)
+            for index, stamp in enumerate(stamps)
         ]
         return [versions, batch, rng.pick([0, 1, count + 1])]
     batch = rng.pick(UNDO_BATCHES) if rng.below(40) else 0
@@ -1934,7 +1962,7 @@ def plan_args(rng: SplitMix64):
                         pick["entityId"], pick["fieldId"], stamp,
                         min(max(w["arrival"] for w in versions) + 1, U64_MAX),
                         rng.pick([candidate for candidate in UNDO_BATCHES if candidate != batch]),
-                        2, batch, rng.between(0, 9),
+                        2, batch, value_stamp(rng, stamp),
                     )
                 )
                 if rng.below(2):
@@ -1978,11 +2006,11 @@ def version_compare_args(rng: SplitMix64):
             rng.pick(UNDO_ENTITIES),
             rng.pick(UNDO_FIELDS),
             stamp,
-            rng.pick(REF_EDGES),
+            rng.pick(ARRIVAL_EDGES),
             rng.pick(UNDO_BATCHES + [0]),
             rng.pick([0, 1, 2]),
             rng.pick(UNDO_BATCHES + [0]),
-            rng.pick(REF_EDGES),
+            value_stamp(rng, stamp),
         )
 
     return [write(first), write(second)]
@@ -2887,10 +2915,13 @@ def validate_undo_laws() -> None:
             batch_writes = [w for w in field if w["batchId"] == batch]
             earliest = min(batch_writes, key=hlc_key)
             earlier = [w for w in field if hlc_key(w) < hlc_key(earliest)]
-            before = max(earlier, key=hlc_key)["valueRef"] if earlier else 0
+            before = value_of(max(earlier, key=hlc_key)) if earlier else (0, 0, 0)
+            restore = hlc(step["restoreWallTime"], step["restoreCounter"], step["restoreNodeId"])
 
             if step["verdict"] == 0:
-                value_law.holds(step["restoreRef"] == before, [inputs, step])
+                value_law.holds(value_of(
+                    {"valueWallTime": restore["wallTime"], "valueCounter": restore["counter"],
+                     "valueNodeId": restore["nodeId"]}) == before, [inputs, step])
                 safe_law.holds(latest["batchId"] == batch, [inputs, step])
                 stamp = after_stamp(hlc(latest["wallTime"], latest["counter"], latest["nodeId"]))
                 if stamp is None:
@@ -2901,7 +2932,7 @@ def validate_undo_laws() -> None:
                             step["entityId"], step["fieldId"], stamp,
                             min(max(w["arrival"] for w in versions) + 1, U64_MAX),
                             batch + 1 if batch < U64_MAX else batch - 1,
-                            2, batch, step["restoreRef"],
+                            2, batch, restore,
                         )
                     )
             elif step["verdict"] == 1:
@@ -2910,9 +2941,18 @@ def validate_undo_laws() -> None:
                 safe_law.holds(step["verdict"] in (2, 3), [inputs, step])
         if room and any(step["verdict"] == 0 for step in plan):
             again = answer_of(undo_field_plan(applied, batch, floor))
-            expected = [dict(step, verdict=2 if step["verdict"] == 0 else step["verdict"],
-                             restoreRef=0 if step["verdict"] == 0 else step["restoreRef"])
-                        for step in plan]
+            expected = [
+                dict(
+                    step,
+                    verdict=2 if step["verdict"] == 0 else step["verdict"],
+                    **(
+                        {"restoreWallTime": 0, "restoreCounter": 0, "restoreNodeId": 0}
+                        if step["verdict"] == 0
+                        else {}
+                    ),
+                )
+                for step in plan
+            ]
             again_law.holds(by_field(again) == by_field(expected), [inputs, applied])
 
     for _ in range(LAW_RUNS):

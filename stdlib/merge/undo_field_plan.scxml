@@ -22,9 +22,11 @@
     3, outside the window: the first write arrived at or before `floor`;
     2, already undone: the winner is an undo of this batch;
     0, undo it: the winner is this batch's own write, so nothing has been written
-       since. `restoreRef` is the value the field held just before the batch's
-       FIRST write to it (0 if the batch created the field); the host writes it
-       back under a clock reading of its own;
+       since. The restore stamp names the value the field held just before the
+       batch's FIRST write to it: it is that write's own value stamp, copied, so a
+       value an earlier undo wrote back keeps naming the write that first carried
+       it (all 0 if the batch created the field); the host writes the value back
+       under a clock reading of its own;
     1, conflict: someone else wrote the field after the batch. The step carries
        the winner's stamp so the host can say who, and the field is left alone —
        an undo that wrote through would erase what a person typed since.
@@ -36,11 +38,14 @@
   A batch of more than 256 writes fails `precondition`, so no plan outgrows the
   buffer it is returned in; a host splits it by entity.
 
-  versions {title@100 person v1, title@200 batch 5 v2}, batch 5, floor 0 →
-  [title: 0, restore v1] · a person writes title@250 → [title: 1, winner 250] ·
-  the host writes the undo title@300 (origin 2, reverts 5) → [title: 2] · the
-  batch's write arrived at or before `floor` → [title: 3] · the batch created the
-  field (nothing before it) → [title: 0, restore 0].
+  versions {title@100 person, title@200 batch 5}, each naming the value it set by
+  its own stamp, batch 5, floor 0 → [title: 0, restore the value stamped 100] ·
+  a person writes title@250 → [title: 1, winner 250] · the host writes the undo
+  title@300 (origin 2, reverts 5, value stamped 100) → [title: 2] · the batch's
+  write arrived at or before `floor` → [title: 3] · the batch created the field
+  (nothing before it) → [title: 0, restore stamp 0 0 0] · batch 8 writes the title
+  at 400 and the undo at 300 stands under it → [title: 0, restore the value
+  stamped 100, not 300: the copy keeps naming the write that first carried it].
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -87,7 +92,9 @@
             <sce:set name="batchId" expr="0"/>
             <sce:set name="origin" expr="0"/>
             <sce:set name="revertsBatch" expr="0"/>
-            <sce:set name="valueRef" expr="0"/>
+            <sce:set name="valueWallTime" expr="0"/>
+            <sce:set name="valueCounter" expr="0"/>
+            <sce:set name="valueNodeId" expr="0"/>
           </sce:var>
           <sce:var name="hasBase" type="bool" init="false"/>
           <sce:var name="base" type="record:Version">
@@ -100,7 +107,9 @@
             <sce:set name="batchId" expr="0"/>
             <sce:set name="origin" expr="0"/>
             <sce:set name="revertsBatch" expr="0"/>
-            <sce:set name="valueRef" expr="0"/>
+            <sce:set name="valueWallTime" expr="0"/>
+            <sce:set name="valueCounter" expr="0"/>
+            <sce:set name="valueNodeId" expr="0"/>
           </sce:var>
           <sce:foreach item="w" in="versions">
             <sce:if cond="w.entityId === v.entityId &amp;&amp; w.fieldId === v.fieldId">
@@ -127,14 +136,18 @@
                   <sce:assign target="base.wallTime" expr="w.wallTime"/>
                   <sce:assign target="base.counter" expr="w.counter"/>
                   <sce:assign target="base.nodeId" expr="w.nodeId"/>
-                  <sce:assign target="base.valueRef" expr="w.valueRef"/>
+                  <sce:assign target="base.valueWallTime" expr="w.valueWallTime"/>
+                  <sce:assign target="base.valueCounter" expr="w.valueCounter"/>
+                  <sce:assign target="base.valueNodeId" expr="w.valueNodeId"/>
                   <sce:assign target="hasBase" expr="true"/>
                 </sce:if>
               </sce:if>
             </sce:if>
           </sce:foreach>
           <sce:var name="code" type="uint8" init="1"/>
-          <sce:var name="restore" type="uint64" init="0"/>
+          <sce:var name="restoreWall" type="int64" init="0"/>
+          <sce:var name="restoreCount" type="uint32" init="0"/>
+          <sce:var name="restoreNode" type="uint64" init="0"/>
           <sce:if cond="v.arrival &lt;= floor">
             <sce:assign target="code" expr="3"/>
           <sce:else>
@@ -144,7 +157,9 @@
               <sce:if cond="winner.batchId === batch">
                 <sce:assign target="code" expr="0"/>
                 <sce:if cond="hasBase">
-                  <sce:assign target="restore" expr="base.valueRef"/>
+                  <sce:assign target="restoreWall" expr="base.valueWallTime"/>
+                  <sce:assign target="restoreCount" expr="base.valueCounter"/>
+                  <sce:assign target="restoreNode" expr="base.valueNodeId"/>
                 </sce:if>
               </sce:if>
             </sce:else>
@@ -155,7 +170,9 @@
             <sce:set name="entityId" expr="v.entityId"/>
             <sce:set name="fieldId" expr="v.fieldId"/>
             <sce:set name="verdict" expr="code"/>
-            <sce:set name="restoreRef" expr="restore"/>
+            <sce:set name="restoreWallTime" expr="restoreWall"/>
+            <sce:set name="restoreCounter" expr="restoreCount"/>
+            <sce:set name="restoreNodeId" expr="restoreNode"/>
             <sce:set name="winnerWallTime" expr="code === 1 ? winner.wallTime : 0"/>
             <sce:set name="winnerCounter" expr="code === 1 ? winner.counter : 0"/>
             <sce:set name="winnerNodeId" expr="code === 1 ? winner.nodeId : 0"/>

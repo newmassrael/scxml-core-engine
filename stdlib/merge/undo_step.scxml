@@ -5,12 +5,13 @@
   sce:std/merge/undo_step.scxml — what undoing a batch does to one field, as
   undo_field_plan answers it.
 
-  `verdict` is 0 to undo the write (restore `restoreRef`, the handle of the
-  value the field held before the batch, 0 for none), 1 a conflict (a later
-  write by someone else holds the field; `winnerWallTime`, `winnerCounter` and
-  `winnerNodeId` stamp it), 2 already undone, 3 outside the window the host
-  keeps history for. `restoreRef` and the winner's stamp are 0 where the
-  verdict does not use them.
+  `verdict` is 0 to undo the write (restore the value `restoreWallTime`,
+  `restoreCounter` and `restoreNodeId` name: the stamp of the write that first
+  carried the value the field held before the batch, all 0 for none), 1 a
+  conflict (a later write by someone else holds the field; `winnerWallTime`,
+  `winnerCounter` and `winnerNodeId` stamp it), 2 already undone, 3 outside the
+  window the host keeps history for. The restore stamp and the winner's stamp
+  are 0 where the verdict does not use them.
 
   The host stamps the undo with a new clock reading of its own; the plan holds
   no time.
@@ -25,7 +26,9 @@
     <data id="entityId" sce:type="uint64" sce:direction="in"/>
     <data id="fieldId" sce:type="uint32" sce:direction="in"/>
     <data id="verdict" sce:type="uint8" sce:direction="in"/>
-    <data id="restoreRef" sce:type="uint64" sce:direction="in"/>
+    <data id="restoreWallTime" sce:type="int64" sce:direction="in"/>
+    <data id="restoreCounter" sce:type="uint32" sce:direction="in"/>
+    <data id="restoreNodeId" sce:type="uint64" sce:direction="in"/>
     <data id="winnerWallTime" sce:type="int64" sce:direction="in"/>
     <data id="winnerCounter" sce:type="uint32" sce:direction="in"/>
     <data id="winnerNodeId" sce:type="uint64" sce:direction="in"/>

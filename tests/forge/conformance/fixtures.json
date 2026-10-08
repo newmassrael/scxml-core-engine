@@ -2910,7 +2910,9 @@
         { "name": "batchId", "value": 5, "sce_type": "uint64" },
         { "name": "origin", "value": 1, "sce_type": "uint8" },
         { "name": "revertsBatch", "value": 0, "sce_type": "uint64" },
-        { "name": "valueRef", "value": 99, "sce_type": "uint64" }
+        { "name": "valueWallTime", "value": 1727000000100, "sce_type": "int64" },
+        { "name": "valueCounter", "value": 1, "sce_type": "uint32" },
+        { "name": "valueNodeId", "value": 5, "sce_type": "uint64" }
       ]
     },
     {
@@ -2923,7 +2925,9 @@
         { "name": "entityId", "value": 42, "sce_type": "uint64" },
         { "name": "fieldId", "value": 3, "sce_type": "uint32" },
         { "name": "verdict", "value": 1, "sce_type": "uint8" },
-        { "name": "restoreRef", "value": 99, "sce_type": "uint64" },
+        { "name": "restoreWallTime", "value": 1727000000100, "sce_type": "int64" },
+        { "name": "restoreCounter", "value": 1, "sce_type": "uint32" },
+        { "name": "restoreNodeId", "value": 5, "sce_type": "uint64" },
         { "name": "winnerWallTime", "value": 1727000000400, "sce_type": "int64" },
         { "name": "winnerCounter", "value": 3, "sce_type": "uint32" },
         { "name": "winnerNodeId", "value": 7, "sce_type": "uint64" }

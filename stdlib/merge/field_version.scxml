@@ -15,9 +15,15 @@
   program, 2 an undo. An undo is an ordinary write that restores an earlier
   value, and `revertsBatch` names the batch it undoes (0 otherwise).
 
-  `valueRef` is a handle to the value written, 0 for a field with no value. The
-  value itself stays with the host: a record cannot hold a string, and an undo
-  only has to say WHICH earlier write to restore, never what it said.
+  `valueWallTime`, `valueCounter` and `valueNodeId` name the value the write sets
+  the field to. They are the stamp of the write that FIRST carried that value: a
+  write that sets a value of its own repeats its own stamp, and an undo, which
+  writes back an earlier value, repeats the stamp of the write that first carried
+  it. All three 0 is a field with no value. No handle is issued, because a clock
+  issues no stamp twice (hlc_send): the uniqueness the writes already rely on is
+  the uniqueness of the name, and nothing reuses it. The value itself stays with
+  the host, keyed by the stamp: a record cannot hold a string, and an undo only
+  has to say WHICH earlier value to restore, never what it said.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -35,6 +41,8 @@
     <data id="batchId" sce:type="uint64" sce:direction="in"/>
     <data id="origin" sce:type="uint8" sce:direction="in"/>
     <data id="revertsBatch" sce:type="uint64" sce:direction="in"/>
-    <data id="valueRef" sce:type="uint64" sce:direction="in"/>
+    <data id="valueWallTime" sce:type="int64" sce:direction="in"/>
+    <data id="valueCounter" sce:type="uint32" sce:direction="in"/>
+    <data id="valueNodeId" sce:type="uint64" sce:direction="in"/>
   </datamodel>
 </scxml>
