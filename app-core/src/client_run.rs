@@ -103,8 +103,14 @@ pub(crate) fn draft_from(answer: &Value) -> Result<Draft, String> {
     let sidecar = answer["requirements"]["sidecar_text"]
         .as_str()
         .map(str::to_string);
+    let lineage = answer["requirements"]["lineage_text"]
+        .as_str()
+        .map(str::to_string);
     let requirements = Requirements::new(manifest, sidecar)
-        .map_err(|e| format!("the requirement list is not usable: its manifest or sidecar: {e}"))?;
+        .and_then(|list| list.with_lineage(lineage))
+        .map_err(|e| {
+            format!("the requirement list is not usable: its manifest, sidecar or lineage: {e}")
+        })?;
     Ok(Draft {
         model,
         requirements,
@@ -452,6 +458,46 @@ mod tests {
             },
             "requirements": {"manifest_text": "{}\n", "sidecar_text": null},
         })
+    }
+
+    /// The form a client answers in does not ask for a lineage: that form and the task beside it
+    /// are what a Codex version is verified against, and a change to either is a new execution
+    /// contract that has to be verified again with the real client. The draft reads a lineage when
+    /// an answer has one, which the local path's tool call gives it (`local::Listed`), and a draft
+    /// without one is a list without one, as every list was before lineages.
+    #[test]
+    fn a_lineage_in_the_answer_is_the_drafts_and_its_absence_is_a_list_without_one() {
+        let lineage = "{\"lineage\":\"sce-requirement-lineage\",\"v\":1,\"doc_id\":\"d\",\
+                       \"next\":2,\"revisions\":[],\"requirements\":[]}\n";
+        let doc = || {
+            vec![(
+                "m.scxml",
+                format!(r#"<scxml {SCXML} initial="a"><state id="a"/></scxml>"#),
+            )]
+        };
+        let mut said = answer_of(&doc(), None);
+        said["requirements"]["lineage_text"] = json!(lineage);
+        assert_eq!(
+            draft_from(&said).unwrap().requirements.lineage.as_deref(),
+            Some(lineage)
+        );
+        // An answer that has none, as every answer of the form a client is given has none, and
+        // one that says `null`, are a list without one.
+        assert_eq!(
+            draft_from(&answer_of(&doc(), None))
+                .unwrap()
+                .requirements
+                .lineage,
+            None
+        );
+        let mut nulled = answer_of(&doc(), None);
+        nulled["requirements"]["lineage_text"] = json!(null);
+        assert_eq!(draft_from(&nulled).unwrap().requirements.lineage, None);
+        // What is not a lineage is not a draft.
+        let mut wrong = answer_of(&doc(), None);
+        wrong["requirements"]["lineage_text"] = json!("not a lineage");
+        let said = draft_from(&wrong).unwrap_err();
+        assert!(said.contains("manifest, sidecar or lineage"), "{said}");
     }
 
     #[test]

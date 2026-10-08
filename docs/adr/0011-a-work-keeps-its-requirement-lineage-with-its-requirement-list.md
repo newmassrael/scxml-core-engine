@@ -159,7 +159,8 @@ Criteria set before code. Each stage ends with a push; none needs the next.
    work that hands the client back only what `works_read` gave keep their ids with no
    `lineage_text` passed by hand, and the measurement above gives `R4`, not `R3`; a save whose
    lineage does not extend the head's is refused with the reason; `extends` has a refusal for each
-   rule of decision 4 and a break that removes it.
+   rule of decision 4 and a break that removes it. **Done** for the tools: see "What stage 2
+   measured"; the application's own generation is "Stage 2b" there, and is not done.
 3. **The derived delta and a check by work.** `between`, and a `works_revision_check` that joins
    it with the product's evidence over the staged work (`app-core/src/acceptance.rs` already
    stages a work for the product, `Snapshot::stage`). Done when: the check of a work agrees with
@@ -167,6 +168,71 @@ Criteria set before code. Each stage ends with a push; none needs the next.
    composition. The join's home is D1.
 4. **The workbench report.** The screen shows the revision report of a work whose acceptance
    lapsed because its text was revised. Depends on D1 and on the screen; not specified here.
+
+## What stage 2 measured
+
+Implemented in `tools/authoring`: `requirement_lineage.extends` and `belongs_to_manifest` (the two
+judgements the core leaves to this package), `works.read_requirements` and `works.save_requirements`
+(the lineage in and out), and `mcp._lineage_refusal` with `works_save_requirements` taking
+`lineage_text` on both its paths, the direct save and a generation's candidate, and `works_read`
+giving it back. Held by `tests/test_a_lineage_is_only_ever_appended_to.py` (22 tests, no binary
+needed) and `tests/test_a_work_keeps_the_ids_of_its_requirements_across_its_revisions.py` (11
+tests, against the real `sce-work` and generator):
+
+1. **Met.** Three revisions of a work, each built from what `works_read` gave with nothing handed
+   over by hand, keep `R1` and `R2` and issue the new requirement `R4`; the dropped sentence's `R3`
+   is not issued again. The control, built from the manifest and the sidecar alone, gives `R3`:
+   the measurement of the Context, now reproduced through the tools and kept as a test so that the
+   lineage cannot stop mattering unnoticed.
+2. **Met.** A list that had no lineage is adopted when the next one is built from its manifest and
+   sidecar, the lineage is saved with the next list, and the revision after it is built from the
+   lineage alone and keeps the ids.
+3. **Met.** A list without the lineage the work holds is refused `lineage-dropped` and the work
+   keeps its list; a generation's list without it is told at once, with nothing written, and is
+   written again with it. A lineage that is another list's (the digest of the manifest differs), or
+   of another history though well formed (a fresh start for the same text), is refused with the
+   reason. A save from a stale base is a conflict first, not a complaint about the lineage.
+4. **Met.** The same flow through a generation, the application's own path, publishes the lineage
+   with the list and reads back the same ids.
+5. **Met.** `extends` has a refusal for each rule of decision 4, and a case that is accepted for
+   each thing it must allow (a step after a step, a step after one that is not the last, the same
+   text read into another list, a requirement re-quoted within the last revision).
+
+Twenty-three ways of breaking it (each rule of `extends` and of `belongs_to_manifest` switched off,
+the tool not asking either question, the tool judging a stale base, a generation not told, the
+lineage not passed on by either save path, `works_read` not giving it back, the works layer not
+sending it) were put to those tests and each was caught.
+
+### Stage 2b: the application's own generation
+
+The application asks a client to write a model and a list (`client_run`, `runner`), and a list
+that arrives without the lineage a work holds is refused at publication (`lineage-dropped`), so
+the gap is loud and a lineage cannot be lost silently. What is done and what is not:
+
+- **Done, and held by tests.** The draft reads a `lineage_text` when an answer has one
+  (`client_run::draft_from`), and the local model path takes the lineage from the very call of
+  `scxml_requirement_set` that gave the manifest (`local::Listed`), so a model is never asked to
+  copy one and one from another call is never stored beside this list. The client is told what to
+  do by the tools' own words (`works_read`'s `next`), which are not part of the application's
+  instructions. Three breaks (the draft not reading the lineage, the tool's answer not read for
+  one, the list not written back with it) were each caught by the tests meant for them.
+- **Not done, and why.** The form a Claude Code or Codex client answers in, and the task beside
+  it, do not ask for a lineage yet. Changing either is a new execution contract for Codex:
+  `tests/codex_support.rs` holds that the verification the application ships names the current
+  contract, because Codex has no switch that turns its built-in tools off and a version is run
+  only when a person verified it, with the real client, against a specification written to attack
+  it (`tests/codex_live.rs`: a signed-in Codex, minutes and money). Changing the shared task and
+  form without that run would either leave Codex refused until it is done, or, by editing the
+  recorded contract to make the test pass, claim a verification nobody made. So the form is left as
+  it was, and a generation started from the application with Claude Code or Codex on a work that
+  already holds a lineage ends in `lineage-dropped`, with the request failed and the reason said.
+  A work holds a lineage only once a client has saved one with the tools above; the application
+  alone never makes one.
+- **What closes it.** The task and the form gain the lineage (tried once and put back: of
+  `app-core`'s tests it moved exactly two, the schema's list of required properties in
+  `tests/claude_code.rs` and the Codex contract), the Codex verification is repeated with
+  `codex_live`, and the shipped support is updated to the new contract. That run is the owner's
+  to approve.
 
 ## What stage 1 measured
 

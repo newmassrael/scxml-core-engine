@@ -624,11 +624,14 @@ fn content_of(message: &Value) -> String {
 /// The requirement list that the tool which builds it gave: what the application uses as the
 /// draft's `requirements`, so that a list of some thousands of characters is not copied out by a
 /// model whose copy can be wrong. Taken from what the tool's own answer says it returns
-/// (`manifest_text` and `sidecar_text`, in the tool's description).
+/// (`manifest_text`, `sidecar_text` and `lineage_text`, in the tool's description). The lineage is
+/// the one of THAT call, beside the manifest it names: a model that copied one from another call
+/// would store a lineage whose last revision is not the list beside it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Listed {
     manifest: String,
     sidecar: Option<String>,
+    lineage: Option<String>,
 }
 
 /// The authoring server's tool that builds the requirement list.
@@ -642,6 +645,7 @@ impl Listed {
         Some(Listed {
             manifest: manifest.to_string(),
             sidecar: answer["sidecar_text"].as_str().map(str::to_string),
+            lineage: answer["lineage_text"].as_str().map(str::to_string),
         })
     }
 
@@ -650,6 +654,9 @@ impl Listed {
         let mut requirements = json!({"manifest_text": self.manifest});
         if let Some(sidecar) = &self.sidecar {
             requirements["sidecar_text"] = json!(sidecar);
+        }
+        if let Some(lineage) = &self.lineage {
+            requirements["lineage_text"] = json!(lineage);
         }
         answer["requirements"] = requirements;
     }
@@ -1000,14 +1007,18 @@ mod tests {
 
     #[test]
     fn the_requirement_list_is_the_one_the_tool_gave_whatever_the_model_wrote_of_it() {
+        let lineage = "{\"lineage\":\"sce-requirement-lineage\",\"v\":1,\"doc_id\":\"from-tool\",\
+                       \"next\":2,\"revisions\":[],\"requirements\":[]}\n";
         let listed = Listed {
             manifest: "{\"doc_id\":\"from-tool\"}\n".to_string(),
             sidecar: Some("{\"R1\":\"the door closes\"}".to_string()),
+            lineage: Some(lineage.to_string()),
         };
         let without = json!({"model": {"documents": [{"name": "m.scxml", "text": "<scxml/>"}]}});
         let retyped = json!({
             "model": {"documents": [{"name": "m.scxml", "text": "<scxml/>"}]},
-            "requirements": {"manifest_text": "a copy with a mistake in it"},
+            "requirements": {"manifest_text": "a copy with a mistake in it",
+                             "lineage_text": "a lineage of another call"},
         });
 
         for said in [without, retyped] {
@@ -1018,6 +1029,9 @@ mod tests {
                 made.requirements.sidecar.as_deref(),
                 Some("{\"R1\":\"the door closes\"}")
             );
+            // The lineage is the one of the call that gave the manifest, never one the model
+            // wrote: a list is stored beside the lineage it was built against.
+            assert_eq!(made.requirements.lineage.as_deref(), Some(lineage));
         }
     }
 
@@ -1035,6 +1049,7 @@ mod tests {
         let gave = json!({
             "manifest_text": "{\"doc_id\":\"d\"}\n",
             "sidecar_text": "s",
+            "lineage_text": "l",
             "unclaimed_sentences": [],
         })
         .to_string();
@@ -1044,7 +1059,13 @@ mod tests {
             Some(Listed {
                 manifest: "{\"doc_id\":\"d\"}\n".to_string(),
                 sidecar: Some("s".to_string()),
+                lineage: Some("l".to_string()),
             })
+        );
+        // A tool that gave no lineage (an older server) gives a list without one.
+        assert_eq!(
+            Listed::in_words("{\"manifest_text\": \"{}\"}").map(|l| l.lineage),
+            Some(None)
         );
         assert_eq!(Listed::in_words("ok:scxml_requirement_set"), None);
         assert_eq!(Listed::in_words("{\"manifest_text\": \"\"}"), None);
