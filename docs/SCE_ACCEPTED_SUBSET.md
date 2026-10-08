@@ -4103,8 +4103,7 @@ starts — as a host-served `<send>`'s are, which carry the same two renderings.
 `statechart_static_host_params` and holds the value on the wire and the pair a
 failed computation leaves out. A hybrid `<invoke>` (§2.13) reads the stem of the
 string its `srcexpr` computes (`SCE::documentStem`) and starts the candidate it
-names, handing it the values it keeps and evaluating the rest. A bytes variable
-is not lowered yet. A mesh `<invoke>` (§2.6) is lowered through the router the build
+names, handing it the values it keeps and evaluating the rest. A mesh `<invoke>` (§2.6) is lowered through the router the build
 generates for the deployment (docs/adr/0005, decision 5): each `<param>` is
 computed into a `ScriptValue` from the machine's own fields when the invocation
 starts, and the router is handed the text of each beside the typed value; a value
@@ -4179,8 +4178,7 @@ whose arguments are typed expressions of the machine's variables.
 on the wire for both the send and the invoke, and the pair a failed computation
 leaves out. A hybrid `<invoke>` (§2.13) reads the stem of the string its
 `srcexpr` computes (`sce.DocumentStem`) and starts the candidate it names,
-generated into the parent's package, handing it the values it keeps. Bytes is not
-lowered yet. A mesh `<invoke>` (§2.6) reaches the host's Mesh router as an
+generated into the parent's package, handing it the values it keeps. A mesh `<invoke>` (§2.6) reaches the host's Mesh router as an
 `<invoke>` the host serves, its `<param>`s and its `srcexpr` lowered as that one's are
 (docs/adr/0005, decisions 5 and 7). Each variable is
 a field of the generated policy, `v<PascalCase id>`, initialised in the
@@ -4277,8 +4275,7 @@ rendered as text) and `event_data` (its JSON), a value that failed left out and
 reported (5.7.1); `test_static_host_params.py` drives `statechart_static_host_params`
 and holds the value on the wire. A hybrid `<invoke>` (§2.13) reads the stem of the
 string its `srcexpr` computes (`document_stem`) and starts the candidate it names,
-a module beside its parent, handing it the values it keeps. `bytes` is not lowered
-yet. A mesh `<invoke>` (§2.6) reaches the host's Mesh router as an `<invoke>` the
+a module beside its parent, handing it the values it keeps. A mesh `<invoke>` (§2.6) reaches the host's Mesh router as an `<invoke>` the
 host serves, its `<param>`s and its `srcexpr` lowered as that one's are
 (docs/adr/0005, decisions 5 and 7). Each variable is an attribute of
 the generated policy, `v_<snake_case id>`, set in its constructor from the
@@ -4340,14 +4337,10 @@ which reaches the host's Mesh router as one of those, its `srcexpr` too (docs/ad
 whose candidates are `sce-static` documents (§2.13): the machine reads the stem of
 the string its `srcexpr` computes (`sce_document_stem`) and starts the candidate it
 names as a static child is started — begun, handed the values it keeps, entered,
-driven — evaluating the arguments it keeps no variable for. Bytes, an `<invoke>` or a
-`<send>` of a
-type the host was not declared to serve, a `namelist` name that a `<param>` of
-the same `<send>` or `<invoke>` or an earlier name of the `namelist` already names
-and a
-transition on an event whose payload carries a bytes field are refused
-until their spellings are written: bytes need a capacity the C11 contract does
-not carry yet.
+driven — evaluating the arguments it keeps no variable for. An `<invoke>` or a
+`<send>` of a type the host was not declared to serve, and a `namelist` name that a
+`<param>` of the same `<send>` or `<invoke>` or an earlier name of the `namelist`
+already names, are refused by name.
 A `<param>` whose value is a 32-bit real is not refused:
 the contract fixes the 64-bit form only, so it is written as the `double` it
 widens to, exactly, as Rust and Kotlin write it. The pairs of a `<donedata>` or of a `<send>` are written as the JSON object
