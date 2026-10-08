@@ -1243,25 +1243,95 @@ of its `<datamodel>` that names a property:
 |---|---|
 | `sce:component` (root) | The name between `BEGIN:` and `END:`. Letters, digits and hyphens. |
 | `sce:property` | The property the entry reads and writes. Matched case-insensitively on decode, written as declared. Letters, digits and hyphens. |
-| `sce:type` | `string`, an integer (`uint8`–`uint64`, `int8`–`int64`), `bool` (`TRUE`/`FALSE`) or `enum:<alias>` (the declared name of a variant). A parameter is a `string` or an `enum:<alias>`. |
+| `sce:type` | `string`, an integer (`uint8`–`uint64`, `int8`–`int64`) or `bool` (`TRUE`/`FALSE`). A parameter is a `string`. An `enum:<alias>` entry waits on a codec that names variants (`docs/adr/0010`, *Not now*) and is refused. |
 | `sce:value="text"` | On a `string` value: an RFC 5545 TEXT, so `\\`, `\;`, `\,` and `\n` are escapes on both sides. Without it the value is carried as written — a date-time, an `RRULE` and a URI are not TEXT. |
 | `sce:param` | The entry is the named parameter of the property `sce:property` names, not its value. It follows the entry of that property. |
-| `sce:required="true"` | A decode of a component without the property (or the parameter) is refused. An entry that is not required is optional in every language. |
+| `sce:required="true"` | A decode of a component without the property, or whose property lacks the parameter, is refused. A required parameter belongs to a required property. An entry that is not required is optional in every language. |
 | `sce:max-size` | Required on every `string`: the most bytes it holds, after unescaping. |
 | `sce:max-count` | On a `string` value, at least 2: the most lines of the property a component holds. The entry is then a bounded list of values in line order. |
 
-**Wire rules.** Encode writes `BEGIN:<component>`, the entries present in
-declaration order — a property's parameters after its name in declaration
-order, then `:` and the value — and `END:<component>`, each line ending in CRLF.
-A parameter value that holds `:`, `;` or `,` is written between double quotes.
-A line longer than 75 octets is folded: CRLF and one space, at a place that does
-not split a UTF-8 sequence. Decode unfolds, takes the first `BEGIN:<component>`
-to its `END:<component>` (a `VCALENDAR` around it is no concern of the codec's),
-reads the properties it declares, and skips a property it does not declare and any
-nested component (`VALARM`) whole. It refuses a malformed line, a property that
-repeats where the entry holds one value, a list past its `sce:max-count`, a value
-past its `sce:max-size`, a bad escape in a TEXT, an integer, `bool` or enum value
-the entry cannot hold, and a required property that is absent.
+**Wire rules.** These are written once, here, and every backend's runtime
+implements exactly them; the conformance corpus holds each to the same bytes.
+
+*Encode.* The codec writes `BEGIN:<component>`, then the entries that are present
+in declaration order, then `END:<component>`, every line ending in CRLF. An entry
+that is not present is not written (an optional entry that is absent, a list with
+no value); a list writes one line per value, in order. A property's line is its
+name, each present parameter as `;<name>=<value>` in declaration order, `:` and
+the value. A parameter that is present while its property is not has no line to
+stand on and is refused (`line-required-missing`).
+
+- *Values.* A `bool` is `TRUE` or `FALSE`; an integer is its decimal digits with a
+  leading `-` when negative and no `+`; a `string` is written as it is, or, for
+  `sce:value="text"`, with `\` written `\\`, `;` as `\;`, `,` as `\,` and a line
+  feed as `\n`. A value longer than its `sce:max-size` is refused
+  (`line-too-long`) before it is written; a list longer than its `sce:max-count`
+  is refused (`line-too-many`).
+- *No control character.* A value holds no control character — U+0000–U+0008,
+  U+000A–U+001F and U+007F — except that a TEXT writes its line feed as `\n`; a
+  string that held a line break would write a second property, so it is refused
+  (`line-bad-value`). A parameter value holds no `"` for the same reason: it is
+  refused (`line-bad-value`) rather than written between quotes it would end.
+- *Parameters.* A parameter value that holds `:`, `;` or `,` is written between
+  double quotes; any other is written as it is.
+- *Folding.* A physical line is at most 75 octets. The writer cuts a line before
+  the *unit* that would take it past 75 octets, and writes CRLF and one space
+  there; the space counts toward the next line's 75. A unit is one UTF-8
+  character, or the two octets a TEXT escape writes for one, so a cut never
+  splits a character or an escape.
+
+*Decode.* A line ends in CRLF or LF. A line that starts with a space or a tab
+continues the line before it: the line break and that one character are removed
+(unfolded) wherever the sender cut. Decode skips lines up to the first
+`BEGIN:<component>` (the name and the component are compared without regard to
+case), so a `VCALENDAR` around it is no concern of the codec's, and reads to the
+matching `END:<component>`. The cursor ends after that line.
+
+- *A line* is a name of letters, digits and hyphens, then `;` and parameters or
+  `:` and the value. A line of the component with no name, or no `;` or `:` after
+  it, is refused (`line-malformed`). Properties are matched to entries without
+  regard to case.
+- *Nested components.* A `BEGIN:` line opens a component the codec does not read
+  (`VALARM`); its lines are skipped, unread, through its `END:`. An `END:` that is
+  not this component's, at the top level, is refused (`line-malformed`).
+- *Truncation.* An input that ends before the `END:<component>` line, or before
+  `BEGIN:<component>`, is `need-more-bytes`. A last line with no line break counts
+  only if it is that `END:` line; any other is cut short.
+- *Properties the codec does not declare* are skipped after their name and are not
+  judged any further.
+- *Parameters of a declared property.* Each is `;<name>=<value>`: a value is a
+  quoted string (no `"` inside) or text up to `;`, `:`, `,` or `"`; anything else
+  — no `=`, an unterminated quote, text after the closing quote — is
+  `line-malformed`. A parameter an entry declares holds one value: a second,
+  after a `,`, is `line-bad-value`; the same parameter twice in one line is
+  `line-too-many`. A parameter no entry declares is skipped.
+- *Values.* A `string` is the unfolded text to the end of the line, unescaped
+  for `sce:value="text"` — `\\`, `\;`, `\,`, `\n` and `\N` are the escapes, and
+  an unescaped `;` or `,` is read as itself. A value holds no control character
+  but a tab (`line-bad-value`), is valid UTF-8 once unescaped (`line-bad-value`),
+  and is at most `sce:max-size` octets then (`line-too-long`). A `\` followed by
+  any other character, or ending the value, is `line-bad-escape`. A `bool` is
+  `TRUE` or `FALSE` in either case; an integer is an optional `+` or `-` and
+  digits, in the range of its type, a `-` only on a signed type
+  (`line-bad-value` otherwise).
+- *Counts.* A property of a single-valued entry that occurs twice, and a list past
+  its `sce:max-count`, are `line-too-many`. The check is made on the property's
+  line before its parameters and its value are read.
+- *Required.* After `END:<component>`, a required property that never appeared, or
+  a required parameter of a property that did, is `line-required-missing`.
+
+Decode raises the first failure in line order; an input that breaks two rules is
+refused for the one met first.
+
+| Failure | Wire name | Raised for |
+|---|---|---|
+| `NeedMoreBytes` | `need-more-bytes` | the input ends before the component does |
+| `LineMalformed` | `line-malformed` | a line, a parameter or an `END:` the grammar above does not admit |
+| `LineRequiredMissing` | `line-required-missing` | a required property or parameter absent; on encode, a parameter given without its property |
+| `LineTooMany` | `line-too-many` | a repeated single-valued property or parameter, or a list past `sce:max-count` |
+| `LineTooLong` | `line-too-long` | a value past `sce:max-size` |
+| `LineBadEscape` | `line-bad-escape` | a TEXT escape other than `\\`, `\;`, `\,`, `\n`, `\N` |
+| `LineBadValue` | `line-bad-value` | a control character, invalid UTF-8, an integer or `bool` the entry cannot hold, a parameter of more values than one, a `"` in a parameter value |
 
 A component decoded and encoded again does not carry the properties the codec
 does not declare: `.ics` here is an import and export format, not a store.

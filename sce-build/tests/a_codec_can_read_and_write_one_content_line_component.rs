@@ -265,6 +265,65 @@ fn a_kind_a_line_does_not_carry_is_refused() {
     assert!(why.contains("uint8") && why.contains("parameter"), "{why}");
 }
 
+/// An `enum:<alias>` entry maps a property's text to a variant's declared name, which
+/// no backend's enum import offers a codec yet. It is read as the type it is, so an
+/// alias that names no import is reported as that, and one that names an import is
+/// refused as what it waits on.
+#[test]
+fn an_enum_entry_waits_on_a_codec_that_names_variants() {
+    let with_import = |entry: &str| {
+        document("", entry).replace(
+            "<datamodel>",
+            r#"<sce:import src="mode.scxml" kind="enum" as="mode"/>
+  <datamodel>"#,
+        )
+    };
+    let why = refusal(&with_import(
+        r#"    <data id="m" sce:type="enum:mode" sce:property="STATUS"/>"#,
+    ));
+    assert!(
+        why.contains("enum:mode") && why.contains("waits on a codec that names variants"),
+        "{why}"
+    );
+
+    let why = refusal(&with_import(
+        r#"    <data id="v" sce:type="string" sce:property="P" sce:max-size="8"/>
+    <data id="q" sce:type="enum:mode" sce:property="P" sce:param="Q"/>"#,
+    ));
+    assert!(
+        why.contains("enum:mode") && why.contains("parameter"),
+        "{why}"
+    );
+
+    let why = refusal(&document(
+        "",
+        r#"    <data id="m" sce:type="enum:nope" sce:property="STATUS"/>"#,
+    ));
+    assert!(why.contains("nope"), "{why}");
+}
+
+/// A parameter is missing only from a property that is there to be missing it from.
+#[test]
+fn a_required_parameter_needs_a_required_property() {
+    let why = refusal(&document(
+        "",
+        r#"    <data id="v" sce:type="string" sce:property="DTSTART" sce:max-size="8"/>
+    <data id="p" sce:type="string" sce:property="DTSTART" sce:param="TZID" sce:required="true" sce:max-size="8"/>"#,
+    ));
+    assert!(
+        why.contains("sce:required") && why.contains("DTSTART"),
+        "{why}"
+    );
+
+    let model = codec(&document(
+        "",
+        r#"    <data id="v" sce:type="string" sce:property="DTSTART" sce:required="true" sce:max-size="8"/>
+    <data id="p" sce:type="string" sce:property="DTSTART" sce:param="TZID" sce:required="true" sce:max-size="8"/>"#,
+    ));
+    let entries = &model.content_line.expect("a content-line codec").entries;
+    assert!(entries.iter().all(|e| e.required));
+}
+
 #[test]
 fn a_bound_and_a_text_mark_are_held_to_the_kind_they_qualify() {
     // A string names its bound.

@@ -50,10 +50,10 @@ An entry is a `<data>` of the codec's `<datamodel>`:
 | Attribute | Meaning |
 |---|---|
 | `sce:property` | The property name the entry reads and writes (`SUMMARY`). Matched case-insensitively on decode, written as declared. |
-| `sce:type` | `string`, an integer (`uint8`–`uint64`, `int8`–`int64`), `bool` (`TRUE`/`FALSE`) or `enum:<alias>` (the declared name of a variant). |
+| `sce:type` | `string`, an integer (`uint8`–`uint64`, `int8`–`int64`) or `bool` (`TRUE`/`FALSE`). A parameter is a `string`. |
 | `sce:value="text"` | On `string`: the value is an RFC 5545 TEXT, so `\\`, `\;`, `\,` and `\n` are escapes on both sides. Without it the value is carried as written. Only TEXT escapes; a date-time, an `RRULE` and a URI are not TEXT. |
-| `sce:param` | The entry is the named parameter of the property `sce:property` names, not its value (`TZID` of `DTSTART`). `string` or `enum`. A parameter value that holds `:`, `;` or `,` is written between double quotes and read back without them. |
-| `sce:required="true"` | A decode of a component without the property is refused. Optional otherwise, in every language. |
+| `sce:param` | The entry is the named parameter of the property `sce:property` names, not its value (`TZID` of `DTSTART`). A parameter value that holds `:`, `;` or `,` is written between double quotes and read back without them. |
+| `sce:required="true"` | A decode of a component without the property is refused, and one whose property lacks a required parameter. A required parameter belongs to a required property. Optional otherwise, in every language. |
 | `sce:max-size` | Required on every `string`: the most bytes it holds, after unescaping. A text is as long as its sender wrote it, so the bound is the codec's to state, and every backend then holds a value in storage it can size. |
 | `sce:max-count` | On a value entry, the most lines of the property a component holds, at least 2; the entry is then a bounded list of values in line order. |
 
@@ -66,8 +66,9 @@ that does not split a UTF-8 sequence. Decode unfolds, takes the first `BEGIN:<co
 `END:<component>` (so a `VCALENDAR` around it is no concern of the codec's), reads the properties
 it declares, skips a property it does not declare and any nested component (`VALARM`) whole, and
 refuses a malformed line, a property that repeats where the entry holds one value, a list past its
-`sce:max-count`, a value past `sce:max-size`, a bad escape in a TEXT, an integer, `bool` or enum
-value its entry cannot hold, and a required property that is absent.
+`sce:max-count`, a value past `sce:max-size`, a bad escape in a TEXT, an integer or `bool` value its
+entry cannot hold, and a required property that is absent. The rules are written out once, in
+`SCE_FORGE.md` §4.6.4, which is the page a backend generates from.
 
 What is not promised: a component decoded and encoded again does not carry the properties the codec
 does not declare. A calendar's merge works on recurrence rules and not on text, and `.ics` is an
@@ -104,6 +105,12 @@ backend generates it, each against the same conformance vectors.
 
 ## Not now
 
+- *An `enum:<alias>` entry.* The decision above first admitted one, as a property or a parameter
+  whose text is a variant's declared name. Writing the generation found what it needs and nothing
+  offers: a codec generator reaches an enum import's carrier (`from_underlying`), not the name of a
+  variant, and a name-to-variant table would be six new lookups in six enum spellings for a calendar
+  consumer that reads `STATUS`, `PARTSTAT` and `FREQ` as text its algorithm compares. The entry is
+  refused by name until a codec that names variants is built, and a `string` carries the text.
 - *A parameter on a repeated property.* `ATTENDEE;CN=Kim;PARTSTAT=ACCEPTED:mailto:…` needs each
   line to be a record of a value and its parameters, so a bounded list of records and a record the
   codec embeds. That is new to every backend's codec generator, and a calendar consumer's first

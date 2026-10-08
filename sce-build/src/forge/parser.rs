@@ -1923,7 +1923,7 @@ fn parse_content_line_codec(
                 element: "Codec".into(),
                 attr: "sce:component".into(),
                 value: component,
-                rule: "an RFC 5545 name: letters, digits and hyphens".into(),
+                rule: "a content-line name: letters, digits and hyphens".into(),
             },
         ));
     }
@@ -2058,7 +2058,7 @@ fn parse_content_line_entry(
             element,
             attr: "sce:property".into(),
             value: property,
-            rule: "an RFC 5545 name: letters, digits and hyphens".into(),
+            rule: "a content-line name: letters, digits and hyphens".into(),
         }));
     }
     let param = sce_attr(node, "param");
@@ -2068,7 +2068,7 @@ fn parse_content_line_entry(
                 element,
                 attr: "sce:param".into(),
                 value: name.clone(),
-                rule: "an RFC 5545 name: letters, digits and hyphens".into(),
+                rule: "a content-line name: letters, digits and hyphens".into(),
             }));
         }
     }
@@ -2087,12 +2087,16 @@ fn parse_content_line_entry(
         "sce:type",
         &type_text,
     )?;
+    // ⚠ An `enum:<alias>` entry is read by the grammar above, so an alias that
+    // names no enum import is reported as that, and refused here as what it is:
+    // a codec that maps a property's text to a variant's declared name is not
+    // built yet (docs/adr/0010, Not now).
     let admitted = if param.is_some() {
-        matches!(sce_type, SceType::String | SceType::Enum(_))
+        sce_type == SceType::String
     } else {
         sce_type.is_unsigned()
             || sce_type.is_signed()
-            || matches!(sce_type, SceType::Bool | SceType::String | SceType::Enum(_))
+            || matches!(sce_type, SceType::Bool | SceType::String)
     };
     if !admitted {
         return Err(refuse(ValidationError::AttributeRuleViolated {
@@ -2100,10 +2104,11 @@ fn parse_content_line_entry(
             attr: "sce:type".into(),
             value: type_text,
             rule: if param.is_some() {
-                "string or enum:<alias> — what a parameter of a content line holds"
+                "string — what a parameter of a content line holds"
             } else {
-                "string, an integer, bool or enum:<alias> — the kinds a \
-                 sce:encoding=\"content-line\" codec writes"
+                "string, an integer or bool — the kinds a sce:encoding=\"content-line\" \
+                 codec writes; an enum:<alias> entry waits on a codec that names variants \
+                 (docs/adr/0010, Not now)"
             }
             .into(),
         }));
@@ -2126,7 +2131,7 @@ fn parse_content_line_entry(
             element,
             attr: "sce:value".into(),
             value: "text".into(),
-            rule: "an RFC 5545 TEXT value on a string property entry only".into(),
+            rule: "a TEXT value (backslash escapes) on a string property entry only".into(),
         }));
     }
     let required = match sce_attr(node, "required").as_deref() {
@@ -2215,6 +2220,17 @@ fn parse_content_line_entry(
             }));
         }
         (Some(name), Some(owner)) => {
+            if required && !owner.required {
+                return Err(refuse(ValidationError::AttributeRuleViolated {
+                    element,
+                    attr: "sce:required".into(),
+                    value: "true".into(),
+                    rule: format!(
+                        "a required parameter needs a required property: `{property}` is \
+                         optional, so a component without it has no parameter to be missing"
+                    ),
+                }));
+            }
             if owner.max_count.is_some() {
                 return Err(refuse(ValidationError::AttributeRuleViolated {
                     element,
