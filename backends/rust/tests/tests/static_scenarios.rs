@@ -59,6 +59,9 @@ use sce_rust_tests::integration::static_datamodel::static_event_wildcard_sm::{
 use sce_rust_tests::integration::static_datamodel::static_foreach_sm::{
     StaticForeachPersist, StaticForeachPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_history_sm::{
+    StaticHistoryPersist, StaticHistoryPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_list_sm::{
     StaticListPersist, StaticListPolicy,
 };
@@ -456,6 +459,21 @@ fn static_record_list_appends_a_record_whole_and_walks_it_by_field() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_record_list.json"
+        ),
+    );
+}
+
+// A <history> remembers what its parent held when it was left, and entering it
+// brings that back: the shallow one the child that was active, the deep one the
+// atomic states below, and a deep one of a <parallel> both regions at once. The
+// scenario states the whole active configuration of each step.
+#[test]
+fn static_history_brings_back_what_its_parent_held() {
+    replay(
+        Engine::new(StaticHistoryPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_history.json"
         ),
     );
 }

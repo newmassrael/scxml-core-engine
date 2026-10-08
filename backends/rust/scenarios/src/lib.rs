@@ -6,8 +6,9 @@
 //!
 //! A scenario (`sce-build/tests/fixtures/static_datamodel/scenarios/*.json`) is
 //! data: a list of steps, each an external event with its payload and what the
-//! machine must hold after it runs to quiescence — its current state and any of
-//! its variables. What the machine holds is read from its saved state, the text
+//! machine must hold after it runs to quiescence — its current state, the set of
+//! its active states (`configuration`) and any of its variables. What the
+//! machine holds is read from its saved state, the text
 //! every backend saves byte for byte, so one scenario judges every backend by the
 //! same answer and needs no per-type glue.
 
@@ -94,6 +95,16 @@ pub fn replay<P: StatePolicy>(
                 "step {n} ({note}): the current state"
             );
         }
+        // Every active state, a compound or a parallel one with the atomic ones
+        // below it. A set: the order the machine lists them in is not part of the
+        // answer.
+        if let Some(want) = expect.get("configuration") {
+            assert_eq!(
+                id_set(&saved["configuration"]),
+                id_set(want),
+                "step {n} ({note}): the active states"
+            );
+        }
         if let Some(variables) = expect.get("variables").and_then(Value::as_object) {
             for (name, want) in variables {
                 let got = &saved["variables"][name];
@@ -104,6 +115,15 @@ pub fn replay<P: StatePolicy>(
             }
         }
     }
+}
+
+/// The state ids of a JSON array, as a set.
+fn id_set(ids: &Value) -> std::collections::BTreeSet<&str> {
+    ids.as_array()
+        .expect("a configuration is an array of state ids")
+        .iter()
+        .map(|id| id.as_str().expect("a state id is text"))
+        .collect()
 }
 
 /// Whether a saved value is the scenario's. The saved state writes a 64-bit

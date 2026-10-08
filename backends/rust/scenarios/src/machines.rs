@@ -76,6 +76,7 @@ scenarios! {
     "static_event_arrival" => static_event_arrival_sm::{StaticEventArrivalPolicy, StaticEventArrivalPersist};
     "static_event_wildcard" => static_event_wildcard_sm::{StaticEventWildcardPolicy, StaticEventWildcardPersist};
     "static_foreach" => static_foreach_sm::{StaticForeachPolicy, StaticForeachPersist};
+    "static_history" => static_history_sm::{StaticHistoryPolicy, StaticHistoryPersist};
     "static_list" => static_list_sm::{StaticListPolicy, StaticListPersist};
     "static_overflow" => static_overflow_sm::{StaticOverflowPolicy, StaticOverflowPersist};
     "static_payload" => static_payload_sm::{StaticPayloadPolicy, StaticPayloadPersist};

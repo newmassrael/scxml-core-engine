@@ -39,6 +39,7 @@
 #include "static_event_arrival_sm.h"
 #include "static_event_wildcard_sm.h"
 #include "static_foreach_sm.h"
+#include "static_history_sm.h"
 #include "static_host_call_arguments_sm.h"
 #include "static_host_call_sm.h"
 #include "static_invoke_hybrid_saved_sm.h"
@@ -83,6 +84,7 @@
 #include <gtest/gtest.h>
 #include <map>
 #include <nlohmann/json.hpp>
+#include <set>
 #include <sstream>
 #include <string>
 #include <type_traits>
@@ -163,6 +165,16 @@ public:
         return Machine::PolicyType::getStateName(machine_.getCurrentState());
     }
 
+    /// Every active state, a compound or a parallel one with the atomic ones below
+    /// it, by the id the document gives it.
+    std::set<std::string> configuration() const {
+        std::set<std::string> ids;
+        for (const auto &active : machine_.getActiveStates()) {
+            ids.insert(Machine::PolicyType::getStateName(active));
+        }
+        return ids;
+    }
+
     bool ended() const {
         return machine_.isInFinalState();
     }
@@ -218,6 +230,12 @@ template <typename Machine> void replay(const std::string &machine, Driver<Machi
         }
         if (expect.contains("state")) {
             EXPECT_EQ(driver.state(), expect["state"].get<std::string>());
+        }
+        // A set: the order a machine lists its active states in is not part of
+        // the answer.
+        if (expect.contains("configuration")) {
+            const auto want = expect["configuration"].get<std::set<std::string>>();
+            EXPECT_EQ(driver.configuration(), want) << "the active states";
         }
         if (expect.contains("variables")) {
             for (const auto &[name, value] : expect["variables"].items()) {
@@ -772,6 +790,18 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, ACancelRemovesTheSendItsIdNames) {
         {"refusals", [](const Machine &m) { return json(m.refusals()); }},
     });
     replay("static_cancel_expr", driver);
+}
+
+// A `<history>` remembers what its parent held when it was left, and entering it
+// brings that back: the shallow one the child that was active, the deep one the
+// atomic states below, and a deep one of a `<parallel>` both regions at once. The
+// scenario states the whole active configuration of each step.
+TEST(AStaticDatamodelRunsGeneratedCppTest, AHistoryBringsBackWhatItsParentHeld) {
+    using Machine = G::static_history::static_history;
+    Driver<Machine> driver({
+        {"resumed", [](const Machine &m) { return json(m.resumed()); }},
+    });
+    replay("static_history", driver);
 }
 
 // Four delayed sends armed on entering a state are delivered when each is due, two

@@ -101,6 +101,11 @@ typedef struct {
     // step, and a driver whose machine waits on no clock may leave this unset: a
     // step that asks for it then fails.
     bool (*advance)(void *sm, int64_t ms);
+    // How many states are active, a compound or a parallel one counted with the
+    // atomic ones below it. A scenario states the set of them as `configuration`,
+    // each named state active and no other, and a driver whose machine does not
+    // count them may leave this unset: a step that asks for it then fails.
+    size_t (*active_count)(void *sm);
 } sce_scenario_driver_t;
 
 // `index` of a record that is a variable of its own, not an element of a list.
@@ -617,6 +622,42 @@ static int sce_scenario_expect(sce_scenario_cursor_t *c, const sce_scenario_driv
             if (active != 1) {
                 (void)snprintf(message, sizeof(message), "state `%s` is %s", state,
                                active < 0 ? "not one of this machine's states" : "not active");
+                bad |= sce_scenario_fail(d, step, message);
+            }
+        } else if (strcmp(key, "configuration") == 0) {
+            // Every active state, a compound or a parallel one with the atomic
+            // ones below it, as a set: each named state is active and no other is.
+            // The order the scenario lists them in is not part of the answer.
+            size_t listed = 0;
+            if (!sce_scenario_take(c, '[')) {
+                return sce_scenario_fail(d, step, "`configuration` is not an array");
+            }
+            if (!sce_scenario_take(c, ']')) {
+                for (;;) {
+                    char state[64];
+                    if (!sce_scenario_string(c, state, sizeof(state))) {
+                        return sce_scenario_fail(d, step, "`configuration` holds something that is no state id");
+                    }
+                    ++listed;
+                    const int active = d->in_state(d->sm, state);
+                    if (active != 1) {
+                        (void)snprintf(message, sizeof(message), "state `%s` is %s", state,
+                                       active < 0 ? "not one of this machine's states" : "not active");
+                        bad |= sce_scenario_fail(d, step, message);
+                    }
+                    if (sce_scenario_take(c, ']')) {
+                        break;
+                    }
+                    if (!sce_scenario_take(c, ',')) {
+                        return sce_scenario_fail(d, step, "`configuration` is not well formed");
+                    }
+                }
+            }
+            if (d->active_count == NULL) {
+                bad |= sce_scenario_fail(d, step, "this driver counts no active states, so it cannot hold a set");
+            } else if (d->active_count(d->sm) != listed) {
+                (void)snprintf(message, sizeof(message), "%zu state(s) are active, `configuration` names %zu",
+                               d->active_count(d->sm), listed);
                 bad |= sce_scenario_fail(d, step, message);
             }
         } else if (strcmp(key, "donedata") == 0) {

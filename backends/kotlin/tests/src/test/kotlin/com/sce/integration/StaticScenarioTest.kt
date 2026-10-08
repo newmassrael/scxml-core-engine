@@ -33,6 +33,7 @@ import com.sce.integration.static_enum.StaticEnumStateMachine
 import com.sce.integration.static_event_arrival.StaticEventArrivalStateMachine
 import com.sce.integration.static_event_wildcard.StaticEventWildcardStateMachine
 import com.sce.integration.static_foreach.StaticForeachStateMachine
+import com.sce.integration.static_history.StaticHistoryStateMachine
 import com.sce.integration.static_list.StaticListStateMachine
 import com.sce.integration.static_overflow.StaticOverflowStateMachine
 import com.sce.integration.static_payload.StaticPayloadStateMachine
@@ -174,6 +175,16 @@ class StaticScenarioTest {
             val saved = Json.parseToJsonElement(save().toJson()).jsonObject
             expect["state"]?.let { state ->
                 assertEquals(state, saved["current"], "step $n ($note): the current state")
+            }
+            // Every active state, a compound or a parallel one with the atomic
+            // ones below it. A set: the order the machine lists them in is not
+            // part of the answer.
+            expect["configuration"]?.let { want ->
+                assertEquals(
+                    want.jsonArray.map { it.jsonPrimitive.content }.toSet(),
+                    saved.getValue("configuration").jsonArray.map { it.jsonPrimitive.content }.toSet(),
+                    "step $n ($note): the active states",
+                )
             }
             expect["variables"]?.jsonObject?.forEach { (name, want) ->
                 val got = saved.getValue("variables").jsonObject[name]
@@ -599,6 +610,27 @@ class StaticScenarioTest {
         try {
             replay(
                 scenario("static_foreach"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // A <history> remembers what its parent held when it was left, and entering
+    // it brings that back: the shallow one the child that was active, the deep
+    // one the atomic states below, and a deep one of a <parallel> both regions at
+    // once. The scenario states the whole active configuration of each step.
+    @Test
+    fun staticHistoryBringsBackWhatItsParentHeld() {
+        val sm = StaticHistoryStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_history"),
                 send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
                 tick = { sm.tick() },
                 save = { sm.save() },

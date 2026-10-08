@@ -24,6 +24,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"testing"
 
 	sce "github.com/newmassrael/sce-go-runtime"
@@ -44,6 +45,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_event_arrival"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_event_wildcard"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_foreach"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_history"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_host_call"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_host_call_arguments"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_list"
@@ -180,11 +182,14 @@ type machine struct {
 	resolves func(name string) bool
 	// advance moves the machine's time on by `ms` and runs what that made due:
 	// the machine runs on a manual clock, so a wait is the one a step names.
-	advance   func(ms int64)
-	state     func() string
-	ended     func() bool
-	donedata  func() string
-	variables map[string]func() any
+	advance func(ms int64)
+	state   func() string
+	// configuration is every active state, a compound or a parallel one with the
+	// atomic ones below it, by the id the document gives it.
+	configuration func() []string
+	ended         func() bool
+	donedata      func() string
+	variables     map[string]func() any
 }
 
 // drive starts `policy` and returns it as a machine.
@@ -218,6 +223,13 @@ func drive[S interface {
 				return fmt.Sprintf("<%d active atomic states>", len(atomic))
 			}
 			return atomic[0].String()
+		},
+		configuration: func() []string {
+			var ids []string
+			for _, state := range engine.GetActiveStates() {
+				ids = append(ids, state.String())
+			}
+			return ids
 		},
 		ended:     engine.IsInFinalState,
 		donedata:  engine.DonedataAtFinal,
@@ -271,11 +283,12 @@ func replay(t *testing.T, name string, m machine) {
 			AdvanceMs *int64          `json:"advance_ms"`
 			Dropped   bool            `json:"dropped"`
 			Data      json.RawMessage `json:"data"`
-			Expect  struct {
-				State     *string        `json:"state"`
-				Ended     bool           `json:"ended"`
-				Donedata  any            `json:"donedata"`
-				Variables map[string]any `json:"variables"`
+			Expect    struct {
+				State         *string        `json:"state"`
+				Configuration []string       `json:"configuration"`
+				Ended         bool           `json:"ended"`
+				Donedata      any            `json:"donedata"`
+				Variables     map[string]any `json:"variables"`
 			} `json:"expect"`
 		} `json:"steps"`
 	}
@@ -320,6 +333,17 @@ func replay(t *testing.T, name string, m machine) {
 		if step.Expect.State != nil {
 			if got := m.state(); got != *step.Expect.State {
 				t.Errorf("%s: the current state is %q, not %q", where(), got, *step.Expect.State)
+			}
+		}
+		// The configuration is a set: the order the machine lists its active
+		// states in is not part of the answer.
+		if step.Expect.Configuration != nil {
+			got := append([]string(nil), m.configuration()...)
+			want := append([]string(nil), step.Expect.Configuration...)
+			sort.Strings(got)
+			sort.Strings(want)
+			if !reflect.DeepEqual(got, want) {
+				t.Errorf("%s: the active states are %v, not %v", where(), got, want)
 			}
 		}
 		for variable, want := range step.Expect.Variables {
@@ -913,6 +937,18 @@ func TestACancelRemovesTheSendItsIdNames(t *testing.T) {
 		"a_fired":  func() any { return policy.AFired() },
 		"b_fired":  func() any { return policy.BFired() },
 		"refusals": func() any { return policy.Refusals() },
+	}))
+}
+
+// A <history> remembers what its parent held when it was left, and entering it
+// brings that back: the shallow one the child that was active, the deep one the
+// atomic states below, and a deep one of a <parallel> both regions at once. The
+// scenario states the whole active configuration of each step.
+func TestAHistoryBringsBackWhatItsParentHeld(t *testing.T) {
+	policy := static_history.NewStaticHistoryPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_history", drive[static_history.StaticHistoryState, static_history.StaticHistoryEvent](&policy, map[string]func() any{
+		"resumed": func() any { return policy.Resumed() },
 	}))
 }
 

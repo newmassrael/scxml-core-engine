@@ -130,6 +130,15 @@ def replay(name: str, machine: str | None = None) -> None:
             continue
         if "state" in expect:
             assert _atomic_state(engine) == expect["state"], where
+        # Every active state, a compound or a parallel one with the atomic ones
+        # below it. A set: the order a machine lists them in is not part of the
+        # answer.
+        if "configuration" in expect:
+            got = {str(state) for state in engine.active_configuration()}
+            assert got == set(expect["configuration"]), (
+                f"{where}: the active states are {sorted(got)!r}, "
+                f"not {sorted(expect['configuration'])!r}"
+            )
         for variable, want in expect.get("variables", {}).items():
             got = _as_json(_read(policy, readers, variable))
             assert got == want, f"{where}: variable {variable!r} is {got!r}, not {want!r}"
@@ -383,6 +392,14 @@ def test_a_sends_delay_is_computed_when_it_runs() -> None:
 # `advance_ms` steps move the engine's time on.
 def test_a_cancel_removes_the_send_its_id_names() -> None:
     replay("static_cancel_expr")
+
+
+# A `<history>` remembers what its parent held when it was left, and entering it
+# brings that back: the shallow one the child that was active, the deep one the
+# atomic states below, and a deep one of a `<parallel>` both regions at once. The
+# scenario states the whole active configuration of each step.
+def test_a_history_brings_back_what_its_parent_held() -> None:
+    replay("static_history")
 
 
 # Four delayed sends armed on entering a state are delivered when each is due, two

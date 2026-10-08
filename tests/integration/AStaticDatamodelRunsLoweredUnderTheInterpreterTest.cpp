@@ -45,6 +45,7 @@
 #include <memory>
 #include <mutex>
 #include <nlohmann/json.hpp>
+#include <set>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -287,6 +288,15 @@ protected:
             }
             if (expect.contains("state")) {
                 EXPECT_EQ(expect.at("state").get<std::string>(), machine->getCurrentState()) << "the current state";
+            }
+            // Every active state, a compound or a parallel one with the atomic
+            // ones below it. A set: the order a machine lists them in is not part
+            // of the answer.
+            if (expect.contains("configuration")) {
+                const auto active = machine->getActiveStates();
+                EXPECT_EQ(expect.at("configuration").get<std::set<std::string>>(),
+                          std::set<std::string>(active.begin(), active.end()))
+                    << "the active states";
             }
             if (expect.contains("variables")) {
                 for (const auto &[name, want] : expect.at("variables").items()) {

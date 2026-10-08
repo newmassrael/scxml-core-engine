@@ -2618,6 +2618,13 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_timers.scxml"
     )
 
+    # A machine with a `<history>` and a `<parallel>`: what its history brought
+    # back is read from the machine's whole active configuration.
+    sce_generate_static_integration_c_test(static_history
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_history.scxml"
+    )
+
     add_executable(sce_c_integration_static_scalars
         integration/test_static_scalars.c
         ${INTEGRATION_C_TEST_static_counter_SOURCES}
@@ -2644,6 +2651,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_cancel_expr_SOURCES}
         ${INTEGRATION_C_TEST_static_send_idlocation_SOURCES}
         ${INTEGRATION_C_TEST_static_timers_SOURCES}
+        ${INTEGRATION_C_TEST_static_history_SOURCES}
         ${INTEGRATION_C_TEST_static_list_SOURCES}
         ${INTEGRATION_C_TEST_static_record_fields_SOURCES}
         ${INTEGRATION_C_TEST_static_record_real_SOURCES}

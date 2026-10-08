@@ -105,6 +105,7 @@
 #include "static_event_arrival_sm.h"
 #include "static_event_wildcard_sm.h"
 #include "static_foreach_sm.h"
+#include "static_history_sm.h"
 #include "static_list_sm.h"
 #include "static_overflow_sm.h"
 #include "static_payload_bytes_sm.h"
@@ -342,6 +343,15 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
     static bool M##_run_ended(void *sm) {                                                                              \
         return M##_is_in_final_state((const M##_t *)sm);                                                               \
     }                                                                                                                  \
+    static size_t M##_active_count(void *sm) {                                                                         \
+        /* The bitmap of the active configuration holds a bit for each active state. */                                \
+        uint32_t bits = M##_active_states((const M##_t *)sm);                                                          \
+        size_t count = 0;                                                                                              \
+        for (; bits != 0u; bits >>= 1u) {                                                                              \
+            count += bits & 1u;                                                                                        \
+        }                                                                                                              \
+        return count;                                                                                                  \
+    }                                                                                                                  \
     static bool M##_read_variable(void *sm, const char *name, int64_t *out) {                                          \
         for (size_t i = 0; i < COUNT_OF(VARIABLES); ++i) {                                                             \
             if (strcmp(VARIABLES[i].name, name) == 0) {                                                                \
@@ -369,7 +379,8 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
                                               REAL,                                                                    \
                                               REAL_LIST,                                                               \
                                               RECORD_REAL,                                                             \
-                                              ADVANCE};                                                                \
+                                              ADVANCE,                                                                 \
+                                              M##_active_count};                                                       \
         char path[512];                                                                                                \
         (void)snprintf(path, sizeof(path), "%s/%s.json", SCE_STATIC_SCENARIO_DIR, scenario);                           \
         int replayed = 0;                                                                                              \
@@ -1465,6 +1476,28 @@ static const variable_t idlocation_variables[] = {
 };
 STATIC_SCENARIO_TIMED(static_send_idlocation, idlocation_states, idlocation_variables, NULL, no_lists, no_records)
 
+// static_history: a `<history>` remembers what its parent held when it was left,
+// and entering it brings that back -- the shallow one the child that was active,
+// the deep one the atomic states below, and a deep one of a `<parallel>` both
+// regions at once. The scenario states the whole active configuration of each
+// step, so every state of the machine is named here, a compound or a parallel one
+// with the atomic ones.
+VARIABLE_READER(static_history, resumed)
+
+static const name_value_t history_states[] = {
+    {"running", STATIC_HISTORY_STATE_RUNNING}, {"slow", STATIC_HISTORY_STATE_SLOW},
+    {"fast", STATIC_HISTORY_STATE_FAST},       {"cruise", STATIC_HISTORY_STATE_CRUISE},
+    {"burst", STATIC_HISTORY_STATE_BURST},     {"working", STATIC_HISTORY_STATE_WORKING},
+    {"crew", STATIC_HISTORY_STATE_CREW},       {"left", STATIC_HISTORY_STATE_LEFT},
+    {"l1", STATIC_HISTORY_STATE_L1},           {"l2", STATIC_HISTORY_STATE_L2},
+    {"right", STATIC_HISTORY_STATE_RIGHT},     {"r1", STATIC_HISTORY_STATE_R1},
+    {"r2", STATIC_HISTORY_STATE_R2},           {"paused", STATIC_HISTORY_STATE_PAUSED},
+};
+static const variable_t history_variables[] = {
+    {"resumed", static_history_read_resumed},
+};
+STATIC_SCENARIO(static_history, history_states, history_variables, NULL, no_lists, no_records)
+
 // static_timers: four delayed sends armed on entering a state are delivered when
 // each is due, two due the same moment in the order they were sent, and the last
 // takes the machine to its final state; a `<cancel>` by the id of the longest
@@ -1652,6 +1685,7 @@ int main(void) {
     bad |= static_send_delay_scenario("static_send_delay", 12);
     bad |= static_cancel_expr_scenario("static_cancel_expr", 16);
     bad |= static_send_idlocation_scenario("static_send_idlocation", 13);
+    bad |= static_history_scenario("static_history", 17);
     bad |= static_timers_scenario("static_timers", 6);
     bad |= static_timers_scenario("static_timers_stop", 5);
     bad |= sync_client_scenario("sync_client", 30);

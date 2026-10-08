@@ -1,0 +1,72 @@
+{
+  "machine": "static_history",
+  "about": "A <history> records what its parent held when the parent was left, and entering it brings that back. `running` has a shallow history `last` and a deep one `deepest`; `working` has a deep one `crew_all` over a <parallel> of two regions. Resumed through `last` the machine enters `fast` and takes its initial child `cruise`, through `deepest` it lands in the atomic state it left, and through `crew_all` it stands in both regions at once. A step's `configuration` is the set of every active state, a compound or a parallel one with the atomic ones below it, by the id the document gives it; the order is not part of the answer. The history is recorded again each time its parent is left, so the second `deepest` resume lands where the machine was the second time. A plain entry of `working` ignores the history and starts at the initial children. Expected values are derived from the document and the history rules, not observed from a backend.",
+  "steps": [
+    { "note": "started: `running` and its initial child",
+      "expect": { "configuration": ["running", "slow"], "variables": { "resumed": 0 } } },
+
+    { "note": "`fast` is entered with its initial child",
+      "event": "faster",
+      "expect": { "configuration": ["running", "fast", "cruise"] } },
+
+    { "note": "deeper still",
+      "event": "boost",
+      "expect": { "configuration": ["running", "fast", "burst"] } },
+
+    { "note": "`running` is left: `last` records [fast] and `deepest` records [burst]",
+      "event": "pause",
+      "expect": { "state": "paused", "configuration": ["paused"] } },
+
+    { "note": "the deep history brings back the atomic state it left, below `fast`",
+      "event": "resume_deep",
+      "expect": { "configuration": ["running", "fast", "burst"] } },
+
+    { "note": "`running` is left again from `burst`",
+      "event": "pause",
+      "expect": { "state": "paused", "configuration": ["paused"] } },
+
+    { "note": "the shallow history brings back only the child that was active, `fast`, which takes its initial child: `cruise` and not `burst`; the transition counted the resume",
+      "event": "resume_last",
+      "expect": { "configuration": ["running", "fast", "cruise"], "variables": { "resumed": 1 } } },
+
+    { "note": "`running` is left from `cruise`: `last` records [fast] again and `deepest` now records [cruise]",
+      "event": "pause",
+      "expect": { "state": "paused", "configuration": ["paused"] } },
+
+    { "note": "the deep history was recorded again by that exit, so it lands in `cruise` this time",
+      "event": "resume_deep",
+      "expect": { "configuration": ["running", "fast", "cruise"] } },
+
+    { "note": "`running` is left; nothing of it is held now",
+      "event": "pause",
+      "expect": { "state": "paused", "configuration": ["paused"] } },
+
+    { "note": "`working` is entered through its initial child, a <parallel> that starts every region in its first child",
+      "event": "work",
+      "expect": { "configuration": ["working", "crew", "left", "l1", "right", "r1"] } },
+
+    { "note": "one region moves on",
+      "event": "left_next",
+      "expect": { "configuration": ["working", "crew", "left", "l2", "right", "r1"] } },
+
+    { "note": "and the other",
+      "event": "right_next",
+      "expect": { "configuration": ["working", "crew", "left", "l2", "right", "r2"] } },
+
+    { "note": "`working` is left: `crew_all` records the atomic state of each region, [l2, r2]",
+      "event": "break",
+      "expect": { "state": "paused", "configuration": ["paused"] } },
+
+    { "note": "the deep history of a <parallel> brings both regions back at once",
+      "event": "resume_crew",
+      "expect": { "configuration": ["working", "crew", "left", "l2", "right", "r2"] } },
+
+    { "note": "`working` is left again",
+      "event": "break",
+      "expect": { "state": "paused", "configuration": ["paused"] } },
+
+    { "note": "a plain entry of `working` does not consult its history: both regions start over",
+      "event": "work",
+      "expect": { "configuration": ["working", "crew", "left", "l1", "right", "r1"] } }
+  ]
+}
