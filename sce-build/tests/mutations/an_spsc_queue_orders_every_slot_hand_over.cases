@@ -14,6 +14,14 @@
 # four weaken one ordering to Relaxed, one folds the two laps into one, and
 # one drops the queue without dropping what it holds.
 #
+# The first and the fourth, which weaken the producer-to-consumer hand-over,
+# do not fail a model the way the others do: loom reports the unordered read,
+# the unwinding drops the queue, and the queue's `Drop` touches the cell loom
+# still holds in that read, which is a panic in a destructor. The test binary
+# aborts (`signal 6`) instead of printing a result. The runner reads a binary
+# that dies without a result as caught, and says how it died; read as a count
+# of failed tests it had been `SURVIVED (0/2 red)` for exactly these two.
+#
 # The models build only under `--cfg loom`. The selector passes it as a
 # cargo `--config` rather than through RUSTFLAGS, so the casefile carries the
 # whole command, and gives the build a target directory of its own so that

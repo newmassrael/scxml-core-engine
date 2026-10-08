@@ -198,6 +198,23 @@ mutation_failures_from_cargo() {
     sed -n 's/^test \(.*\) \.\.\. FAILED$/\1/p'
 }
 
+# What a test binary's exit status says it did, as a clause: the argument is
+# the status, the output is `killed by signal 6 (ABRT)` or `exited with status
+# 3`. A shell reports death by signal N as 128 + N, so anything above 128 is
+# read that way.
+#
+# For a binary that ended without a `test result:` line, where the status is
+# the only account there is.
+mutation_exit_account() {
+    local status="$1" signal
+    if (( status > 128 )); then
+        signal=$(( status - 128 ))
+        printf 'killed by signal %s (%s)' "$signal" "$(kill -l "$signal" 2>/dev/null || printf '?')"
+    else
+        printf 'exited with status %s' "$status"
+    fi
+}
+
 # The captured output libtest replays for each test it failed.
 #
 # libtest holds a test's stdout and its panic message and prints them after the

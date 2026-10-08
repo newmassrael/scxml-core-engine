@@ -1107,6 +1107,43 @@ mutation_cargo_run() {
         read -r run failed <<<"$(printf '%s\n' "$out" | mutation_counts_from_cargo)"
         printf '%s\n' "$out" | mutation_failures_from_cargo >> "$MUTATION_FAILING"
         printf '%s\n' "$out" | mutation_detail_from_cargo >> "$MUTATION_FAILURE_DETAIL"
+        # A binary that exits non-zero with no failed test counted did not
+        # come back to report: it died, and both numbers above are the ones it
+        # printed before it did. `run` is the worse of the two, because
+        # libtest prints `running N tests` BEFORE the first test starts, so a
+        # binary that aborts in the middle still reports the baseline's N and
+        # the run-count guard below cannot tell it from a complete run.
+        #
+        # Measured 2026-10-08. A loom model that finds a causality violation
+        # panics, and the unwinding drops the queue, whose `Drop` touches the
+        # cell loom is still holding in a read: a panic in a destructor, so
+        # the process aborts (`signal: 6, SIGABRT`) with no `test result:`
+        # line. Two mutations of the one-producer queue's orderings read
+        # `SURVIVED (0/2 red)` and held the mutation-rounds lane red, when the
+        # models had caught them in the strongest way a test can.
+        #
+        # Red, the way a binary that never finishes is: the baseline ran this
+        # executable to completion and the mutant did not. Except when
+        # something OUTSIDE the run ended it (SIGKILL from an out-of-memory
+        # killer, SIGTERM from a supervisor): that says nothing about the
+        # mutation, so it is reported as a run with no reading rather than as
+        # a verdict either way.
+        if [[ "$rc" != "0" && "${failed:-0}" == "0" ]]; then
+            case "$rc" in
+                137|143)
+                    printf '%s was %s, which says nothing about the code it ran\n' \
+                        "$(basename "$exe")" "$(mutation_exit_account "$rc")" \
+                        >> "$MUTATION_UNREADABLE"
+                    ;;
+                *)
+                    printf '%s (%s before it reported a result)\n' \
+                        "$(basename "$exe")" "$(mutation_exit_account "$rc")" \
+                        >> "$MUTATION_FAILING"
+                    printf '%s\n' "$out" | tail -n 40 >> "$MUTATION_FAILURE_DETAIL"
+                    failed=1
+                    ;;
+            esac
+        fi
         total_run=$((total_run + ${run:-0}))
         total_failed=$((total_failed + ${failed:-0}))
     done
