@@ -957,9 +957,14 @@ until the pattern-realization session lands.
 ### §2.6 Mesh-RPC invoke — `<invoke type="sce:mesh-rpc">`
 
 Explicit extension for RPC-style cross-machine invokes under
-`--deploy`. Documented in `SCE_MESH.md` §9.5. At HEAD this extension is
-recognised by the parser but end-to-end realization is in progress —
-see `next_session_task6_mesh_rpc_invoke.md` for the current state.
+`--deploy`. Documented in `SCE_MESH.md` §9.5. It is realized end to end by
+the router the build generates for the deployment on C++, and on every other
+generated backend by the router the host registers (§9.5, "Backend coverage —
+two routes, one per backend"); the Interpreter has no Mesh route and answers
+`error.execution`, as it does for any invoke type it does not run. Under
+`datamodel="sce-static"` the request's `<param>`s and its `srcexpr` are typed
+expressions over the machine's fields (§2.15, "Params"; docs/adr/0005,
+decisions 5 and 7).
 Acceptance is conditional on the deploy topology resolving both ends
 of the RPC pair (`mesh/topology-receiver-not-declared`,
 `mesh/topology-unresolved-targets`).
