@@ -108,11 +108,15 @@ impl<const N: usize, const R: usize> Subject for Scq<Tracked, N, R> {
     }
 
     fn push(&mut self, element: Tracked) -> Result<(), PushError<Tracked>> {
-        self.producer().try_push(element)
+        self.producer()
+            .expect("a scenario holds one handle at a time")
+            .try_push(element)
     }
 
     fn pop(&mut self) -> Option<Tracked> {
-        self.consumer().try_pop()
+        self.consumer()
+            .expect("a scenario holds one handle at a time")
+            .try_pop()
     }
 }
 
@@ -587,7 +591,7 @@ fn record_scq_run<const N: usize, const R: usize>(
         let mut threads = Vec::new();
         for who in 0..producers {
             threads.push(scope.spawn(move || {
-                let producer = queue.producer();
+                let producer = queue.producer().expect("a place for every producer");
                 let mut ops = Vec::new();
                 for k in 1..=values_per_producer {
                     let value = who as u64 * values_per_producer + k;
@@ -616,7 +620,7 @@ fn record_scq_run<const N: usize, const R: usize>(
         }
         for _ in 0..consumers {
             threads.push(scope.spawn(move || {
-                let consumer = queue.consumer();
+                let consumer = queue.consumer().expect("a place for every consumer");
                 let mut ops = Vec::new();
                 while delivered.load(Ordering::SeqCst) < total {
                     let invoked = tick();
@@ -739,10 +743,12 @@ const RECORDINGS_PER_SHAPE: usize = 150;
 #[test]
 fn recorded_scq_runs_are_linearizable() {
     for _ in 0..RECORDINGS_PER_SHAPE {
-        assert_scq_run_is_linearizable::<1, 1>(2, 2, 150);
+        // A ring is at least as large as the number of participants working
+        // it, so the small capacities ride on rings sized for their threads.
+        assert_scq_run_is_linearizable::<1, 2>(2, 2, 150);
         assert_scq_run_is_linearizable::<3, 4>(2, 2, 150);
         assert_scq_run_is_linearizable::<8, 8>(2, 2, 150);
-        assert_scq_run_is_linearizable::<2, 2>(3, 1, 120);
+        assert_scq_run_is_linearizable::<2, 4>(3, 1, 120);
         assert_scq_run_is_linearizable::<4, 4>(1, 3, 120);
         assert_scq_run_is_linearizable::<5, 8>(2, 2, 150);
     }

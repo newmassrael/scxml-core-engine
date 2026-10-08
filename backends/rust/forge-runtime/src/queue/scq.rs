@@ -26,13 +26,26 @@
 //! pointer: it is position-independent, which is what lets a mesh channel
 //! place it in shared memory.
 //!
-//! **Capacity is exact at rest.** The rings are rounded up to a power of two
-//! (`R == N.next_power_of_two()`, checked when the queue is built), but only
-//! `N` indices ever circulate, so never more than `N` elements fit, and a
-//! queue nothing is running on refuses a push exactly when it holds `N`. Both
-//! are parameters because Rust cannot size an array from an expression of
-//! another parameter; the generator states both, and [`Scq::LAYOUT`] refuses
-//! a pair that disagrees.
+//! **Capacity is exact at rest.** The rings have `R` slots, a power of two at
+//! least `N` (checked when the queue is built), but only `N` indices ever
+//! circulate, so never more than `N` elements fit, and a queue nothing is
+//! running on refuses a push exactly when it holds `N`. Both are parameters
+//! because Rust cannot size an array from an expression of another parameter;
+//! the generator states both, and [`Scq::LAYOUT`] refuses a pair that cannot
+//! run.
+//!
+//! **A ring needs at least as many slots as it has participants.** The
+//! algorithm's empty test, the `threshold`, is justified for at most `R`
+//! enqueuers and at most `R` dequeuers working one ring at once ("the number
+//! of concurrent enqueuers or dequeuers never exceeds n", Nikolaev 2019,
+//! section 5.1). Beyond that a completed push can leave the threshold at -1
+//! with its element in the ring, and every pop then reports the queue empty
+//! until another push completes. Measured 2026-10-09 with loom, one pusher
+//! and a lap already run: two poppers on `R = 1` and three on `R = 2` lose
+//! the element, two poppers on `R = 2` and on `R = 4` do not (up to five
+//! preemptions). So a queue hands out at most `R` producer handles and at
+//! most `R` consumer handles at a time, and the generator sizes `R` as the
+//! capacity or the declared participants, whichever is larger.
 //!
 //! **A push may be refused while others hold slots.** A slot's index goes
 //! back to the free ring only after the pop that took the element has read
@@ -67,8 +80,9 @@
 //! which takes more operations than three preemptions of two or three
 //! threads give). Weaken one and the models stay green. Measured
 //! 2026-10-09 for the last two (the head check removed; the unsafe marking
-//! removed): the recorded histories and the thread test stay green too, so
-//! nothing run in this tree defends them. Miri and ThreadSanitizer look for
+//! removed): the recorded histories, the thread test and the lapped loom
+//! models (a lap already run, up to two participants a side on rings of two
+//! and four) stay green too, so nothing run in this tree defends them. Miri and ThreadSanitizer look for
 //! undefined behaviour and data races, not lost elements, and were not run on
 //! mutants of these four. They are the reference implementation's, kept as
 //! written, and a change to one needs a targeted schedule written for it
@@ -84,7 +98,7 @@
 
 use core::mem::MaybeUninit;
 
-use super::sync::{AtomicI64, AtomicU64, Ordering, UnsafeCell};
+use super::sync::{AtomicI64, AtomicU64, AtomicUsize, Ordering, UnsafeCell};
 use super::{Padded, PushError};
 
 /// How many operations a participant may be delayed between reading an entry
@@ -373,17 +387,23 @@ impl<const R: usize> Ring<R> {
 /// any number of consumers, lock-free. Exactly `N` fit when nothing else is
 /// running.
 ///
-/// `R` is `N` rounded up to a power of two; [`Scq::LAYOUT`] checks it. The
-/// queue owns its storage and allocates nothing, so it may be a `static`.
-/// Elements still queued when the queue is dropped are dropped with it.
+/// `R` is the ring size: a power of two, at least `N`, and at least the most
+/// producers or consumers that will work the queue at once; [`Scq::LAYOUT`]
+/// checks the first two and [`Scq::producer`] and [`Scq::consumer`] hold the
+/// queue to the third. The queue owns its storage and allocates nothing, so it
+/// may be a `static`. Elements still queued when the queue is dropped are
+/// dropped with it.
 ///
-/// Use it through [`Producer`] and [`Consumer`] handles, as many of each as
-/// the document declared, all from `&Scq`.
+/// Use it through [`Producer`] and [`Consumer`] handles, all from `&Scq`.
 pub struct Scq<T, const N: usize, const R: usize> {
     /// The indices of the slots that hold an element, oldest first.
     allocated: Ring<R>,
     /// The indices of the slots nobody is using.
     free: Ring<R>,
+    /// How many producer handles are alive.
+    producers: AtomicUsize,
+    /// How many consumer handles are alive.
+    consumers: AtomicUsize,
     slots: [UnsafeCell<MaybeUninit<T>>; N],
 }
 
@@ -409,9 +429,10 @@ impl<T, const N: usize, const R: usize> Scq<T, N, R> {
     /// error rather than a runtime one.
     pub const LAYOUT: () = {
         assert!(N > 0, "a queue's capacity must be at least one element");
+        assert!(R.is_power_of_two(), "the ring size must be a power of two");
         assert!(
-            R == N.next_power_of_two(),
-            "the ring size must be the capacity rounded up to a power of two"
+            R >= N,
+            "the ring must have at least as many slots as the capacity"
         );
         assert!(
             R <= 1 << 30,
@@ -426,6 +447,8 @@ impl<T, const N: usize, const R: usize> Scq<T, N, R> {
         Self {
             allocated: Ring::new(0),
             free: Ring::new(N),
+            producers: AtomicUsize::new(0),
+            consumers: AtomicUsize::new(0),
             slots: [const { UnsafeCell::new(MaybeUninit::uninit()) }; N],
         }
     }
@@ -438,6 +461,8 @@ impl<T, const N: usize, const R: usize> Scq<T, N, R> {
         Self {
             allocated: Ring::new(0),
             free: Ring::new(N),
+            producers: AtomicUsize::new(0),
+            consumers: AtomicUsize::new(0),
             slots: core::array::from_fn(|_| UnsafeCell::new(MaybeUninit::uninit())),
         }
     }
@@ -447,16 +472,35 @@ impl<T, const N: usize, const R: usize> Scq<T, N, R> {
         N
     }
 
-    /// A producer handle. Any number may exist, on any number of execution
-    /// contexts, at once.
-    pub fn producer(&self) -> Producer<'_, T, N, R> {
-        Producer { queue: self }
+    /// A producer handle, or `None` when `R` producer handles are already
+    /// alive: the ring cannot be shared by more enqueuers than it has slots
+    /// (module documentation). Dropping a handle gives its place back.
+    pub fn producer(&self) -> Option<Producer<'_, T, N, R>> {
+        // `then`, not `then_some`: a handle built for a refused request would
+        // be dropped at once, and dropping one gives a place back.
+        Self::take_place(&self.producers).then(|| Producer { queue: self })
     }
 
-    /// A consumer handle. Any number may exist, on any number of execution
-    /// contexts, at once.
-    pub fn consumer(&self) -> Consumer<'_, T, N, R> {
-        Consumer { queue: self }
+    /// A consumer handle, or `None` when `R` consumer handles are already
+    /// alive. Dropping a handle gives its place back.
+    pub fn consumer(&self) -> Option<Consumer<'_, T, N, R>> {
+        Self::take_place(&self.consumers).then(|| Consumer { queue: self })
+    }
+
+    /// Take one of the `R` places of a side, if one is free. A compare-and-swap
+    /// loop and not a `fetch_add`, so a refused request leaves the count as it
+    /// was and no concurrent request can be refused on account of it.
+    fn take_place(alive: &AtomicUsize) -> bool {
+        let mut seen = alive.load(Ordering::Relaxed);
+        loop {
+            if seen >= R {
+                return false;
+            }
+            match alive.compare_exchange_weak(seen, seen + 1, Ordering::AcqRel, Ordering::Relaxed) {
+                Ok(_) => return true,
+                Err(now) => seen = now,
+            }
+        }
     }
 }
 
@@ -479,20 +523,25 @@ impl<T, const N: usize, const R: usize> Drop for Scq<T, N, R> {
     }
 }
 
-/// A producing side of an [`Scq`]. Copy it freely.
+/// A producing side of an [`Scq`]. It holds one of the queue's `R` producer
+/// places until it is dropped.
 pub struct Producer<'a, T, const N: usize, const R: usize> {
     queue: &'a Scq<T, N, R>,
 }
 
-impl<T, const N: usize, const R: usize> Clone for Producer<'_, T, N, R> {
-    fn clone(&self) -> Self {
-        *self
+impl<T, const N: usize, const R: usize> Drop for Producer<'_, T, N, R> {
+    fn drop(&mut self) {
+        self.queue.producers.fetch_sub(1, Ordering::Release);
     }
 }
 
-impl<T, const N: usize, const R: usize> Copy for Producer<'_, T, N, R> {}
-
 impl<T, const N: usize, const R: usize> Producer<'_, T, N, R> {
+    /// Another producer of the same queue, or `None` when all `R` places are
+    /// taken.
+    pub fn try_clone(&self) -> Option<Self> {
+        self.queue.producer()
+    }
+
     /// Push `value`, or hand it back in [`PushError::Full`] when the queue
     /// holds its capacity, or while other participants' operations hold the
     /// slots it is short of (module documentation). Lock-free: some operation
@@ -516,20 +565,25 @@ impl<T, const N: usize, const R: usize> Producer<'_, T, N, R> {
     }
 }
 
-/// A consuming side of an [`Scq`]. Copy it freely.
+/// A consuming side of an [`Scq`]. It holds one of the queue's `R` consumer
+/// places until it is dropped.
 pub struct Consumer<'a, T, const N: usize, const R: usize> {
     queue: &'a Scq<T, N, R>,
 }
 
-impl<T, const N: usize, const R: usize> Clone for Consumer<'_, T, N, R> {
-    fn clone(&self) -> Self {
-        *self
+impl<T, const N: usize, const R: usize> Drop for Consumer<'_, T, N, R> {
+    fn drop(&mut self) {
+        self.queue.consumers.fetch_sub(1, Ordering::Release);
     }
 }
 
-impl<T, const N: usize, const R: usize> Copy for Consumer<'_, T, N, R> {}
-
 impl<T, const N: usize, const R: usize> Consumer<'_, T, N, R> {
+    /// Another consumer of the same queue, or `None` when all `R` places are
+    /// taken.
+    pub fn try_clone(&self) -> Option<Self> {
+        self.queue.consumer()
+    }
+
     /// Pop the oldest element, or `None` when the queue is empty. Lock-free.
     pub fn try_pop(&self) -> Option<T> {
         let queue = self.queue;
@@ -581,7 +635,7 @@ mod tests {
     /// ring's cycles have moved many times.
     fn fills_and_drains<const N: usize, const R: usize>(rounds: usize) {
         let queue = Scq::<u64, N, R>::new();
-        let (producer, consumer) = (queue.producer(), queue.consumer());
+        let (producer, consumer) = (queue.producer().unwrap(), queue.consumer().unwrap());
         let mut next = 0u64;
         let mut expected = 0u64;
         for _ in 0..rounds {
@@ -620,7 +674,7 @@ mod tests {
     #[test]
     fn an_element_pushed_after_many_empty_pops_is_seen() {
         let queue = Scq::<u64, 3, 4>::new();
-        let (producer, consumer) = (queue.producer(), queue.consumer());
+        let (producer, consumer) = (queue.producer().unwrap(), queue.consumer().unwrap());
         for _ in 0..ROUNDS * 2 / 3 {
             assert_eq!(consumer.try_pop(), None);
         }
@@ -636,7 +690,16 @@ mod tests {
     #[test]
     fn a_queue_may_be_a_static() {
         static QUEUE: Scq<u8, 3, 4> = Scq::new();
-        assert!(QUEUE.producer().try_push(7).is_ok());
-        assert_eq!(QUEUE.consumer().try_pop(), Some(7));
+        assert!(QUEUE.producer().unwrap().try_push(7).is_ok());
+        assert_eq!(QUEUE.consumer().unwrap().try_pop(), Some(7));
+    }
+
+    /// A ring larger than the capacity, for participants the capacity alone
+    /// would not allow, still holds exactly the capacity.
+    #[test]
+    fn a_ring_larger_than_the_capacity_still_holds_exactly_the_capacity() {
+        fills_and_drains::<1, 4>(ROUNDS);
+        fills_and_drains::<3, 8>(ROUNDS);
+        fills_and_drains::<5, 16>(ROUNDS);
     }
 }

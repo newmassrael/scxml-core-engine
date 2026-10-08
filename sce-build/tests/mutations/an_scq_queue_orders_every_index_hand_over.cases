@@ -117,8 +117,12 @@ PY
 mutation_case "the free ring starts one index short" <<'PY'
 edit("backends/rust/forge-runtime/src/queue/scq.rs",
      r'''            free: Ring::new(N),
+            producers: AtomicUsize::new(0),
+            consumers: AtomicUsize::new(0),
             slots: core::array::from_fn''',
      r'''            free: Ring::new(N - 1),
+            producers: AtomicUsize::new(0),
+            consumers: AtomicUsize::new(0),
             slots: core::array::from_fn''')
 PY
 

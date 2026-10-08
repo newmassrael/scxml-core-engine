@@ -5085,6 +5085,10 @@
         {
           "file": "backends/rust/forge-runtime/tests/queue_threads.rs",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/mutations/an_scq_queue_holds_no_more_participants_than_its_ring_has_slots.cases",
+          "kind": "references"
         }
       ]
     },

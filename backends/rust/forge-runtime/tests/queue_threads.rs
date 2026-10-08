@@ -87,7 +87,7 @@ fn scq_delivers_every_value_once<const N: usize, const R: usize>(producers: u64,
     let seen: Vec<Vec<u64>> = thread::scope(|scope| {
         for who in 0..producers {
             scope.spawn(move || {
-                let producer = queue.producer();
+                let producer = queue.producer().unwrap();
                 for k in 0..PER_PRODUCER {
                     let mut value = who * PER_PRODUCER + k;
                     loop {
@@ -108,7 +108,7 @@ fn scq_delivers_every_value_once<const N: usize, const R: usize>(producers: u64,
         let takers: Vec<_> = (0..consumers)
             .map(|_| {
                 scope.spawn(move || {
-                    let consumer = queue.consumer();
+                    let consumer = queue.consumer().unwrap();
                     let mut mine = Vec::new();
                     while delivered.load(Ordering::SeqCst) < total as usize {
                         match consumer.try_pop() {
@@ -151,7 +151,10 @@ fn scq_delivers_every_value_once<const N: usize, const R: usize>(producers: u64,
 #[test]
 fn scq_delivers_every_value_once_to_several_consumers() {
     scq_delivers_every_value_once::<3, 4>(2, 2);
-    scq_delivers_every_value_once::<1, 1>(2, 2);
+    // A ring of two for two producers and two consumers: a ring has to be at
+    // least as large as the number of participants working it, so the
+    // capacity of one rides on a ring of two.
+    scq_delivers_every_value_once::<1, 2>(2, 2);
     scq_delivers_every_value_once::<5, 8>(3, 2);
 }
 
@@ -192,7 +195,7 @@ fn scq_destroys_each_element_exactly_once_whether_popped_or_left() {
             thread::scope(|scope| {
                 for _ in 0..2 {
                     scope.spawn(move || {
-                        let producer = queue.producer();
+                        let producer = queue.producer().unwrap();
                         for _ in 0..PER_PRODUCER.min(40) {
                             // A refused push hands its element back, and the
                             // result is dropped here, destroying it.
@@ -204,7 +207,7 @@ fn scq_destroys_each_element_exactly_once_whether_popped_or_left() {
                     });
                 }
                 scope.spawn(move || {
-                    let consumer = queue.consumer();
+                    let consumer = queue.consumer().unwrap();
                     for _ in 0..PER_PRODUCER.min(30) {
                         if consumer.try_pop().is_some() {
                             popped.fetch_add(1, Ordering::SeqCst);
@@ -227,4 +230,54 @@ fn scq_destroys_each_element_exactly_once_whether_popped_or_left() {
             "dropping the queue destroys exactly what was left: every element once"
         );
     }
+}
+
+/// A ring of `R` slots hands out `R` producer places and `R` consumer places,
+/// the `R + 1`th request of either is refused, a clone takes a place too, and
+/// a place comes back when its handle is dropped. The two sides count
+/// separately. The algorithm's empty test is justified for no more
+/// participants on a side than the ring has slots, and loses a pushed element
+/// beyond that (`scq.rs`), so the queue is what keeps the count.
+#[test]
+fn scq_hands_out_no_more_places_than_its_ring_has_slots() {
+    let queue = Scq::<u8, 3, 4>::new();
+    let mut producers: Vec<_> = (0..4).map(|_| queue.producer()).collect();
+    assert!(
+        producers.iter().all(Option::is_some),
+        "four places on a ring of four"
+    );
+    assert!(
+        queue.producer().is_none(),
+        "a fifth producer on a ring of four"
+    );
+    assert!(
+        producers[0].as_ref().unwrap().try_clone().is_none(),
+        "a clone takes a place too"
+    );
+    let mut consumers: Vec<_> = (0..4).map(|_| queue.consumer()).collect();
+    assert!(consumers.iter().all(Option::is_some));
+    assert!(
+        queue.consumer().is_none(),
+        "a fifth consumer on a ring of four"
+    );
+
+    // A refused request leaves the count as it was: asking again and again
+    // does not use up a place that was never given.
+    for _ in 0..10 {
+        assert!(queue.producer().is_none());
+        assert!(queue.consumer().is_none());
+    }
+
+    producers.pop();
+    assert!(
+        queue.producer().is_some(),
+        "a dropped handle gives its place back"
+    );
+    assert!(
+        queue.consumer().is_none(),
+        "the consumer side is unaffected by the producer side"
+    );
+    consumers.clear();
+    assert!(queue.consumer().is_some());
+    assert_eq!(producers.len(), 3);
 }

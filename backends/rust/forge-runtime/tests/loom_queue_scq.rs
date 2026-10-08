@@ -84,8 +84,8 @@ mod models {
     /// one that starts from this does.
     fn warmed_up_queue_of_one() -> Arc<Scq<usize, 1, 1>> {
         let queue = Arc::new(Scq::<usize, 1, 1>::new());
-        assert!(queue.producer().try_push(0).is_ok());
-        assert_eq!(queue.consumer().try_pop(), Some(0));
+        assert!(queue.producer().unwrap().try_push(0).is_ok());
+        assert_eq!(queue.consumer().unwrap().try_pop(), Some(0));
         queue
     }
 
@@ -98,9 +98,9 @@ mod models {
         model(|| {
             let queue = warmed_up_queue_of_one();
             let far = queue.clone();
-            let pushing = thread::spawn(move || far.producer().try_push(7).is_ok());
+            let pushing = thread::spawn(move || far.producer().unwrap().try_push(7).is_ok());
 
-            let consumer = queue.consumer();
+            let consumer = queue.consumer().unwrap();
             let popped = consumer.try_pop();
             assert!(pushing.join().unwrap(), "a push to an empty queue succeeds");
 
@@ -118,9 +118,9 @@ mod models {
     fn a_popped_slot_is_reused_by_a_push() {
         model(|| {
             let queue = warmed_up_queue_of_one();
-            assert!(queue.producer().try_push(1).is_ok());
+            assert!(queue.producer().unwrap().try_push(1).is_ok());
             let far = queue.clone();
-            let pushing = thread::spawn(move || match far.producer().try_push(2) {
+            let pushing = thread::spawn(move || match far.producer().unwrap().try_push(2) {
                 Ok(()) => true,
                 Err(PushError::Full(back)) => {
                     assert_eq!(back, 2, "a refused push hands back its own element");
@@ -129,7 +129,7 @@ mod models {
                 Err(PushError::OutOfMemory(_)) => panic!("a bounded queue ran out of memory"),
             });
 
-            let consumer = queue.consumer();
+            let consumer = queue.consumer().unwrap();
             let popped = consumer.try_pop();
             assert_eq!(popped, Some(1), "an element pushed before the pop is found");
             let pushed = pushing.join().unwrap();
@@ -151,14 +151,14 @@ mod models {
             let queue = Arc::new(Scq::<usize, 2, 2>::new());
             let first = {
                 let far = queue.clone();
-                thread::spawn(move || far.producer().try_push(1).is_ok())
+                thread::spawn(move || far.producer().unwrap().try_push(1).is_ok())
             };
             let second = {
                 let far = queue.clone();
-                thread::spawn(move || far.producer().try_push(2).is_ok())
+                thread::spawn(move || far.producer().unwrap().try_push(2).is_ok())
             };
 
-            let consumer = queue.consumer();
+            let consumer = queue.consumer().unwrap();
             let mut seen: Vec<usize> = consumer.try_pop().into_iter().collect();
             assert!(first.join().unwrap(), "the queue holds both elements");
             assert!(second.join().unwrap(), "the queue holds both elements");
@@ -178,7 +178,7 @@ mod models {
             let queue = Arc::new(Scq::<usize, 2, 2>::new());
             let far = queue.clone();
             let pushing = thread::spawn(move || {
-                let producer = far.producer();
+                let producer = far.producer().unwrap();
                 let first = producer.try_push(1).is_ok();
                 let second = producer.try_push(2).is_ok();
                 first && second
@@ -187,13 +187,13 @@ mod models {
             let other = {
                 let far = queue.clone();
                 thread::spawn(move || {
-                    let consumer = far.consumer();
+                    let consumer = far.consumer().unwrap();
                     let mut seen: Vec<usize> = consumer.try_pop().into_iter().collect();
                     seen.extend(consumer.try_pop());
                     seen
                 })
             };
-            let consumer = queue.consumer();
+            let consumer = queue.consumer().unwrap();
             let mut mine: Vec<usize> = consumer.try_pop().into_iter().collect();
             mine.extend(consumer.try_pop());
             let theirs = other.join().unwrap();
@@ -219,19 +219,21 @@ mod models {
     #[test]
     fn a_queue_of_one_takes_exactly_one_of_two_racing_pushes() {
         model(|| {
-            let queue = Arc::new(Scq::<usize, 1, 1>::new());
+            // Two producers, so a ring of two: a ring has to be at least as
+            // large as the number of participants working it (`scq.rs`).
+            let queue = Arc::new(Scq::<usize, 1, 2>::new());
             let rival = {
                 let far = queue.clone();
-                thread::spawn(move || far.producer().try_push(2).is_ok())
+                thread::spawn(move || far.producer().unwrap().try_push(2).is_ok())
             };
-            let mine = queue.producer().try_push(1).is_ok();
+            let mine = queue.producer().unwrap().try_push(1).is_ok();
             let theirs = rival.join().unwrap();
             assert!(
                 mine != theirs,
                 "exactly one push takes the only slot (mine: {mine}, theirs: {theirs})"
             );
 
-            let consumer = queue.consumer();
+            let consumer = queue.consumer().unwrap();
             assert_eq!(
                 drain(&consumer),
                 [if mine { 1 } else { 2 }],
@@ -261,7 +263,7 @@ mod models {
             let far = queue.clone();
             let far_dropped = dropped.clone();
             let pushing = thread::spawn(move || {
-                let producer = far.producer();
+                let producer = far.producer().unwrap();
                 let first = producer.try_push(Counted(far_dropped.clone())).is_ok();
                 let second = producer.try_push(Counted(far_dropped)).is_ok();
                 first && second
@@ -269,7 +271,7 @@ mod models {
 
             // A pop that finds an element drops it here; one that finds the
             // queue empty drops nothing.
-            let popped = usize::from(queue.consumer().try_pop().is_some());
+            let popped = usize::from(queue.consumer().unwrap().try_pop().is_some());
             assert!(pushing.join().unwrap(), "the queue holds both elements");
             assert_eq!(
                 dropped.load(Ordering::Relaxed),
@@ -286,5 +288,129 @@ mod models {
                 "the elements still queued are dropped with the queue, and only once"
             );
         });
+    }
+
+    /// What one participant of a lapped model does, once.
+    #[derive(Clone, Copy)]
+    enum Role {
+        Push(usize),
+        Pop,
+    }
+
+    /// What it got: a push says whether the queue took the element, a pop
+    /// what it found.
+    enum Got {
+        Pushed(usize, bool),
+        Popped(Option<usize>),
+    }
+
+    fn play<const N: usize, const R: usize>(queue: &Scq<usize, N, R>, role: Role) -> Got {
+        match role {
+            Role::Push(value) => {
+                Got::Pushed(value, queue.producer().unwrap().try_push(value).is_ok())
+            }
+            Role::Pop => Got::Popped(queue.consumer().unwrap().try_pop()),
+        }
+    }
+
+    /// A queue that has already been through `laps` rounds of one push and one
+    /// pop, so both of its rings have advanced their cycles and carry the marks
+    /// earlier cycles left, then `held` elements pushed and kept, then
+    /// `pushers` participants that each push one element and `poppers` that
+    /// each pop once, all at the same time.
+    ///
+    /// The fresh queues above reach a ring's first cycle only. The states the
+    /// algorithm's cycle rules exist for are the ones where an entry holds
+    /// something from an earlier cycle, or a ticket's holder was overtaken by
+    /// a whole lap of others, and those need a lap to have happened and more
+    /// than one participant working one ring: two pushers are two dequeues of
+    /// the free ring, two poppers two of the allocated ring.
+    ///
+    /// Safety only, as above: every element that went in and was not refused
+    /// comes out exactly once, whoever took it, whether in a pop or in the
+    /// drain after the threads have joined.
+    fn lapped<const N: usize, const R: usize>(
+        laps: usize,
+        held: usize,
+        pushers: usize,
+        poppers: usize,
+    ) {
+        // The precondition of the algorithm (`scq.rs`): no more enqueuers or
+        // dequeuers on a ring than it has slots. A shape that breaks it is
+        // not a model of this queue, and the queue would refuse the handles.
+        assert!(
+            pushers <= R && poppers <= R,
+            "{pushers} pushers and {poppers} poppers on a ring of {R}"
+        );
+        let queue = Arc::new(Scq::<usize, N, R>::new());
+        for _ in 0..laps {
+            assert!(queue.producer().unwrap().try_push(7_000).is_ok());
+            assert_eq!(queue.consumer().unwrap().try_pop(), Some(7_000));
+        }
+        let mut expected: Vec<usize> = (0..held).map(|k| 1_000 + k).collect();
+        for value in &expected {
+            assert!(queue.producer().unwrap().try_push(*value).is_ok());
+        }
+
+        let mut roles: Vec<Role> = (0..pushers).map(|k| Role::Push(2_000 + k)).collect();
+        roles.extend((0..poppers).map(|_| Role::Pop));
+        let mine = roles.pop().expect("a model has a participant");
+        let spawned: Vec<_> = roles
+            .into_iter()
+            .map(|role| {
+                let far = queue.clone();
+                thread::spawn(move || play(&far, role))
+            })
+            .collect();
+        let mut gots = vec![play(&queue, mine)];
+        gots.extend(spawned.into_iter().map(|t| t.join().unwrap()));
+
+        let mut seen = Vec::new();
+        for got in gots {
+            match got {
+                Got::Pushed(value, true) => expected.push(value),
+                Got::Pushed(_, false) => {}
+                Got::Popped(found) => seen.extend(found),
+            }
+        }
+        seen.extend(drain(&queue.consumer().unwrap()));
+        seen.sort_unstable();
+        expected.sort_unstable();
+        assert_eq!(
+            seen, expected,
+            "what went in and was not refused comes out once each, and nothing else does"
+        );
+    }
+
+    /// One `#[test]` per shape: `laps` rounds first, `held` elements kept,
+    /// `push` pushers and `pop` poppers.
+    macro_rules! lapped_models {
+        ($($name:ident: $n:literal, $r:literal, laps $laps:literal, held $held:literal,
+           push $push:literal, pop $pop:literal;)*) => {$(
+            #[test]
+            fn $name() {
+                model(|| lapped::<$n, $r>($laps, $held, $push, $pop));
+            }
+        )*};
+    }
+
+    // Every shape keeps its pushers and its poppers within its ring, which
+    // `lapped` asserts. Three poppers on a ring of two, and two on a ring of
+    // one, are the shapes where the element is lost (`scq.rs`, measured
+    // 2026-10-09); the queue refuses the handles to build them.
+    lapped_models! {
+        lapped_n1_r1_laps1_held0_push1_pop1: 1, 1, laps 1, held 0, push 1, pop 1;
+        lapped_n1_r1_laps3_held0_push1_pop1: 1, 1, laps 3, held 0, push 1, pop 1;
+        lapped_n1_r1_laps2_held1_push1_pop1: 1, 1, laps 2, held 1, push 1, pop 1;
+        lapped_n1_r2_laps1_held0_push2_pop1: 1, 2, laps 1, held 0, push 2, pop 1;
+        lapped_n1_r2_laps2_held0_push1_pop2: 1, 2, laps 2, held 0, push 1, pop 2;
+        lapped_n1_r2_laps2_held1_push2_pop1: 1, 2, laps 2, held 1, push 2, pop 1;
+        lapped_n2_r2_laps1_held1_push2_pop1: 2, 2, laps 1, held 1, push 2, pop 1;
+        lapped_n2_r2_laps2_held1_push2_pop1: 2, 2, laps 2, held 1, push 2, pop 1;
+        lapped_n2_r2_laps2_held2_push1_pop2: 2, 2, laps 2, held 2, push 1, pop 2;
+        lapped_n2_r2_laps1_held0_push1_pop2: 2, 2, laps 1, held 0, push 1, pop 2;
+        lapped_n2_r2_laps2_held0_push1_pop2: 2, 2, laps 2, held 0, push 1, pop 2;
+        lapped_n2_r2_laps3_held0_push1_pop2: 2, 2, laps 3, held 0, push 1, pop 2;
+        lapped_n4_r4_laps2_held0_push1_pop2: 4, 4, laps 2, held 0, push 1, pop 2;
     }
 }

@@ -3439,7 +3439,7 @@ memory the caller owns.
   <!-- <sce:segmented segment="64" allocator-progress="lock-free"/> -->
   <!-- <sce:intrusive link-field="next"/> -->
 
-  <!-- required only when the selected algorithm needs a reclamation domain -->
+  <!-- required when the algorithm is SCQ or needs a reclamation domain -->
   <sce:participants const="4"/>
 </scxml>
 ```
@@ -3448,17 +3448,17 @@ memory the caller owns.
 - `<sce:producers>`, `<sce:consumers>` and `<sce:progress>` are
   required and have no default. Each selects the algorithm, so a
   default would choose one the author never saw.
-- `<sce:participants>` is the number of contexts that hold a handle
-  at the same time. It sizes a reclamation domain statically and
-  takes the §5.L `CapacitySource` forms (`const`, or `source="deploy"`
-  with a key).
+- `<sce:participants>` is the most contexts that hold a handle on one
+  side at the same time. It sets a ring's size, which an SCQ row needs
+  (below), and sizes a reclamation domain statically. It takes the
+  §5.L `CapacitySource` forms (`const`, or `source="deploy"` + key).
 
 **Capacity is exact at rest.** `<sce:bounded capacity="N">` never holds
 more than N elements and, with no operation in flight, refuses a push
-exactly when it holds N. A Lamport ring is N slots; an SCQ ring rounds
-up to a power of two and keeps two index rings, as the algorithm
-requires (Nikolaev 2019). The storage cost that results is emitted as
-`STORAGE_BYTES`, so that a no-alloc target can budget it.
+exactly when it holds N. A Lamport ring is N slots; an SCQ ring has a
+power of two of them, at least N and `participants`: its empty test is
+justified for that many enqueuers or dequeuers only (Nikolaev 2019
+§5.1). `STORAGE_BYTES` states the cost for a no-alloc budget.
 
 **Storage modes.**
 
@@ -3639,8 +3639,8 @@ capacity() -> usize                                       // bounded only; a com
   global default allocator or domain (C2).
 - A `one` side yields exactly one handle. In Rust that handle is not
   `Clone`; the other backends check ownership in debug builds. A
-  `many` side's handles can be cloned, and where a domain exists
-  each clone takes one of its `participants` slots.
+  `many` side's handles can be cloned; each takes one of `participants`
+  places and a request past them is refused (an SCQ loses elements).
 - A full bounded queue rejects the push. The SCQ rows may also reject
   it while other participants' operations hold slots, at most one per
   participant: a pop returns its slot only after reading its element.
@@ -3720,7 +3720,7 @@ pub enum QueueStorage {
 - `queue/progress-unreachable` — no selection row meets the declared progress for this storage, cardinality and backend
 - `queue/segmented-needs-alloc` — `segmented` on the no-alloc profile
 - `queue/allocator-progress-missing` — `<sce:segmented>` without `allocator-progress`
-- `queue/participants-unresolved` — the selected algorithm needs a domain and `<sce:participants>` is absent or its deploy key is missing
+- `queue/participants-unresolved` — an SCQ row or a domain needs `<sce:participants>` and it is absent or its deploy key is missing
 - `queue/progress-insufficient-for-isr` — an ISR-side operation below `lock-free`
 - `queue/alloc-in-isr` — an ISR producer on a `segmented` queue
 - `queue/atomic-width-unstated` — an SCQ row generated for C11 without `platform.atomic_rmw_width`

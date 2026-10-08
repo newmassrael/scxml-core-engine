@@ -1,0 +1,65 @@
+# Mutation cases for "an SCQ queue holds no more participants than its ring has
+# slots".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/an_scq_queue_holds_no_more_participants_than_its_ring_has_slots.cases`.
+#
+# The SCQ data queue of SCE Protocol-Synthesis RFC §synth-5-P is correct only
+# while at most `R` enqueuers and at most `R` dequeuers work one ring of `R`
+# slots at once (Nikolaev 2019, section 5.1). One more and a completed push can
+# be invisible to every pop: measured 2026-10-09, two poppers on a ring of one
+# and three on a ring of two lose the element in a loom model. The queue keeps
+# the count itself, by handing out `R` producer places and `R` consumer places
+# and no more, so this is a property of the code and not of the callers. The
+# oracle is `backends/rust/forge-runtime/tests/queue_threads.rs`, which asks
+# for one place too many and for a place back.
+#
+# Each case takes one part of that away: the limit itself, a refusal that
+# still costs a place, a drop that does not give its place back, and the same
+# for the consumer side. The refusal case is a defect that existed, found by
+# this test the first time it ran: `bool::then_some` builds its argument
+# whether or not the condition holds, so a handle made for a refused request
+# was dropped at once and gave back a place that was never taken.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-forge-runtime --test queue_threads
+mutation_targets backends/rust/forge-runtime/src/queue/scq.rs
+mutation_oracles backends/rust/forge-runtime/tests/queue_threads.rs
+
+mutation_case "a ring hands out one place more than it has slots" <<'PY'
+edit("backends/rust/forge-runtime/src/queue/scq.rs",
+     r'''            if seen >= R {''',
+     r'''            if seen > R {''')
+PY
+
+mutation_case "a refused producer request still builds, and so drops, a handle" <<'PY'
+edit("backends/rust/forge-runtime/src/queue/scq.rs",
+     r'''        Self::take_place(&self.producers).then(|| Producer { queue: self })''',
+     r'''        Self::take_place(&self.producers).then_some(Producer { queue: self })''')
+PY
+
+mutation_case "a refused consumer request still builds, and so drops, a handle" <<'PY'
+edit("backends/rust/forge-runtime/src/queue/scq.rs",
+     r'''        Self::take_place(&self.consumers).then(|| Consumer { queue: self })''',
+     r'''        Self::take_place(&self.consumers).then_some(Consumer { queue: self })''')
+PY
+
+mutation_case "a dropped producer keeps its place" <<'PY'
+edit("backends/rust/forge-runtime/src/queue/scq.rs",
+     r'''        self.queue.producers.fetch_sub(1, Ordering::Release);''',
+     r'''        self.queue.producers.fetch_add(0, Ordering::Release);''')
+PY
+
+mutation_case "a dropped consumer keeps its place" <<'PY'
+edit("backends/rust/forge-runtime/src/queue/scq.rs",
+     r'''        self.queue.consumers.fetch_sub(1, Ordering::Release);''',
+     r'''        self.queue.consumers.fetch_add(0, Ordering::Release);''')
+PY
+
+mutation_case "the two sides share one count" <<'PY'
+edit("backends/rust/forge-runtime/src/queue/scq.rs",
+     r'''        Self::take_place(&self.consumers).then(|| Consumer { queue: self })''',
+     r'''        Self::take_place(&self.producers).then(|| Consumer { queue: self })''')
+PY
