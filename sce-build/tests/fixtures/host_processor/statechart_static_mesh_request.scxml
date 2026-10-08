@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Params";
+  docs/adr/0005, decisions 5 and 7): an `<invoke type="sce:mesh-rpc">` whose
+  `<param>`s and peer are typed expressions over the machine's own fields, read
+  when the invocation starts.
+
+  The build lowers a Mesh request to a host-served invoke of the same type on
+  every backend but C++, whose generated router takes it itself, so the router
+  the host registers is started with the request when `asking` is entered. The
+  document says nothing of that: it declares no host type (the build names
+  `sce:mesh-rpc` on its own), and this fixture is the twin of
+  `integration_resources/a_mesh_request_reaches_the_router`, which holds the same
+  request under a script data model.
+
+  The run `bump`, `go` changes `load` and `label` before the request reads them,
+  so a copy taken at start-up (`load` 3, `label` "idle") is told from the value
+  the fields hold now (`load` 4, `label` "busy"):
+
+    type        sce:mesh-rpc
+    src         #motor, the string `peer` holds, computed when the request starts
+    params      _mesh_event = service.request.force   (the envelope type)
+                _mesh_deadline_ms = 250                (the router's deadline)
+                force = 8, speed = busy                (the author's payload)
+    event data  {"force":8,"speed":"busy"} — the author's pairs alone, typed as
+                the data model holds them: `force` was computed, so it is a
+                number, and `speed` is a string. The two envelope fields are
+                not in it (SCE_MESH.md §mesh-9.5).
+
+  `ghost` makes `peer` a name the router has no binding for, which is the
+  pre-envelope tier of SCE_MESH.md §9.5: `error.execution`, with nothing sent.
+
+  The router answers through the runtime's completion or failure call, and
+  each ends the run in `done`:
+
+    answered  1 — done.invoke.ask arrived.
+    failed    1 — error.invoke.ask arrived.
+    refused   1 — no router was registered, or the router has no binding for the
+                  peer: error.execution (W3C SCXML 6.4.1).
+
+  Generated with NO host declaration (scripts/regen_host_processor.sh).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static"
+       name="statechart_static_mesh_request">
+  <datamodel>
+    <data id="load" sce:type="uint32" expr="3"/>
+    <data id="label" sce:type="string" sce:capacity="16" expr="'idle'"/>
+    <data id="peer" sce:type="string" sce:capacity="16" expr="'#motor'"/>
+    <data id="answered" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="failed" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="refused" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+
+  <state id="idle">
+    <transition event="bump">
+      <assign location="load" expr="load + 1"/>
+      <assign location="label" expr="'busy'"/>
+    </transition>
+    <transition event="ghost">
+      <assign location="peer" expr="'#ghost'"/>
+    </transition>
+    <transition event="go" target="asking"/>
+  </state>
+
+  <state id="asking">
+    <invoke id="ask" type="sce:mesh-rpc" srcexpr="peer">
+      <param name="_mesh_event" expr="'service.request.force'"/>
+      <param name="_mesh_deadline_ms" expr="250"/>
+      <param name="force" expr="load * 2"/>
+      <param name="speed" expr="label"/>
+    </invoke>
+
+    <transition event="done.invoke.ask" target="done">
+      <assign location="answered" expr="answered + 1"/>
+    </transition>
+    <transition event="error.invoke.ask" target="done">
+      <assign location="failed" expr="failed + 1"/>
+    </transition>
+    <transition event="error.execution" target="done">
+      <assign location="refused" expr="refused + 1"/>
+    </transition>
+  </state>
+
+  <final id="done"/>
+</scxml>

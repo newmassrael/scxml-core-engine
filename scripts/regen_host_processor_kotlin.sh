@@ -173,9 +173,31 @@ for src in "$STATIC_DELAYED_SEND_TMP"/*Sm.kt; do
     cp "$src" "$STATIC_DELAYED_SEND_DIR/"
 done
 
+# The Mesh request: a `datamodel="sce-static"` machine whose `<invoke
+# type="sce:mesh-rpc">` names its peer and writes its params from the machine's
+# fields (docs/adr/0005, decisions 5 and 7). No host declaration: the build names
+# the type itself. Its own package for the reason the others have theirs.
+STATIC_MESH_REQUEST_FIXTURE="sce-build/tests/fixtures/host_processor/statechart_static_mesh_request.scxml"
+STATIC_MESH_REQUEST_DIR="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/integration/statechart_static_mesh_request"
+STATIC_MESH_REQUEST_TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP" "$DELAYED_TMP" "$INVOKER_TMP" "$STATIC_PARAMS_TMP" "$STATIC_INVOKE_TMP" "$STATIC_DELAYED_SEND_TMP" "$STATIC_MESH_REQUEST_TMP"' EXIT
+
+"$CODEGEN" generate "$STATIC_MESH_REQUEST_FIXTURE" -l kotlin -o "$STATIC_MESH_REQUEST_TMP/" \
+    --input-root "$INPUT_ROOT" \
+    --kotlin-package-prefix "$PACKAGE_PREFIX"
+
+mkdir -p "$STATIC_MESH_REQUEST_DIR"
+find "$STATIC_MESH_REQUEST_DIR" -maxdepth 1 -name '*Sm.kt' -delete
+for src in "$STATIC_MESH_REQUEST_TMP"/*Sm.kt; do
+    [[ -f "$src" ]] || continue
+    sed -i "s|// Source: ${STATIC_MESH_REQUEST_TMP}/|// Source: ${INPUT_ROOT}/|g" "$src"
+    cp "$src" "$STATIC_MESH_REQUEST_DIR/"
+done
+
 echo "Regenerated: $GENERATED_DIR/ from $FIXTURE (--host-processor $HOST_PROCESSOR)"
 echo "Regenerated: $DELAYED_DIR/ from $DELAYED_FIXTURE (--host-processor $HOST_PROCESSOR)"
 echo "Regenerated: $INVOKER_DIR/ from $INVOKER_FIXTURE (--host-invoker $HOST_PROCESSOR)"
 echo "Regenerated: $STATIC_PARAMS_DIR/ from $STATIC_PARAMS_FIXTURE (--host-processor and --host-invoker $HOST_PROCESSOR)"
 echo "Regenerated: $STATIC_INVOKE_DIR/ from $STATIC_INVOKE_FIXTURE (--host-invoker $HOST_PROCESSOR)"
 echo "Regenerated: $STATIC_DELAYED_SEND_DIR/ from $STATIC_DELAYED_SEND_FIXTURE (--host-processor $HOST_PROCESSOR)"
+echo "Regenerated: $STATIC_MESH_REQUEST_DIR/ from $STATIC_MESH_REQUEST_FIXTURE (no host declaration)"

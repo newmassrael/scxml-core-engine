@@ -199,11 +199,17 @@ lowers the `<param>`s of one (`SCE_ACCEPTED_SUBSET.md` §2.12, "Types the host r
 
 This decision first read the mesh as a runtime the five lacked, to be lowered one
 backend at a time as each gained it, and read the Interpreter as C++ and so as lowering
-it with C++. Both were wrong, and the tree says so: the five serve a static mesh request
-today with no change, which `a_static_datamodel_holds_every_variable_to_a_type` holds
-for each of them, and the Interpreter is an engine of its own that has no mesh route to
-lower into. What was left was C++, the one backend where the request reaches the
-lowering as itself, and which refused it by name.
+it with C++. Both were wrong, and the tree says so: the five accept and lower a static
+mesh request with no change to the lowering, which
+`a_static_datamodel_holds_every_variable_to_a_type` holds for each of them, and what it
+becomes is the host-served invoke. `statechart_static_mesh_request`, the twin of
+`a_mesh_request_reaches_the_router` under a static data model, runs that on every one of
+the five, and through the host core itself on Rust and Kotlin. Running it found one
+defect, in the Kotlin runtime and not in the lowering: a completion that names its
+origin, as a Mesh router's does, asked a machine with no script engine for one before
+asking whether a `<finalize>` was waiting. The Interpreter is an engine of its own that
+has no mesh route to lower into. What was left was C++, the one backend where the request
+reaches the lowering as itself, and which refused it by name.
 
 As landed, C++ computes each `<param>` of a mesh request from the machine's own fields
 when the invocation starts, as it does a host-served `<invoke>`'s, and hands the router

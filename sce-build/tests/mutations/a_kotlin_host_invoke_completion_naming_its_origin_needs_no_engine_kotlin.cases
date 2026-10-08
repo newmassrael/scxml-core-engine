@@ -1,0 +1,34 @@
+# Mutation cases for "a completion or a failure that names where it came from needs no
+# script engine when no `<finalize>` is waiting for it" under the Kotlin runtime
+# (SCE Accepted Subset §2.15; docs/adr/0005, decisions 5 and 7).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_kotlin_host_invoke_completion_naming_its_origin_needs_no_engine_kotlin.cases`.
+#
+# An invocation the host serves reports how it ended naming its origin: a Mesh router
+# names the peer that answered (SCE_MESH.md §9.5). The engine takes such an event for
+# one from an invoked child and looks for the `<finalize>` that child's invoke
+# declared, which is script text, and so asked for a script engine before it asked
+# whether there was anything to run. A machine of `datamodel="sce-static"` has no
+# engine and no `<finalize>`, so the first answer a real router gave it threw
+# "scriptEngine is required ... codegen invariant" out of `tick()`. Nothing had
+# reported one before: every other static host-served test completes an invocation
+# with no origin, and a completion with none is not looked at.
+#
+# `statechart_static_mesh_request` is that machine, and `AStaticMeshRequestReachesTheRouterTest`
+# fails the request with an origin (`mesh://motor`) and answers it through the Kotlin
+# host core, which names `motor` the same way. The one mutant puts the engine back in
+# front of the question, and each of those two tests turns red.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_gradle . :sce-kotlin-tests:test --tests 'com.sce.integration.AStaticMeshRequestReachesTheRouterTest'
+mutation_targets backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt
+mutation_oracles backends/kotlin/tests/src/test/kotlin/com/sce/integration/AStaticMeshRequestReachesTheRouterTest.kt sce-build/tests/fixtures/host_processor/statechart_static_mesh_request.scxml
+
+mutation_case "an event naming its origin asks for an engine before asking for a finalize" <<'PY'
+edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+     "        if (activeInvokes.values.none { it.finalizeScript.isNotEmpty() }) return\n",
+     "        if (false && activeInvokes.values.none { it.finalizeScript.isNotEmpty() }) return\n")
+PY

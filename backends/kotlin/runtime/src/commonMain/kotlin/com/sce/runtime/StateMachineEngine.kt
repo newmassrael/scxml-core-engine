@@ -4528,6 +4528,14 @@ abstract class StateMachineEngine<S : State, E : Event>(
     private fun executeFinalizeForChildEvent(event: E) {
         val metadata = currentEventMetadata
         if (metadata.origin.isEmpty()) return
+        // A `<finalize>` is script text, so a run of it needs an engine and nothing
+        // else does. An invocation the host serves reports its completion or its
+        // failure naming where it came from (a Mesh router names the peer that
+        // answered, SCE_MESH.md §9.5), and a machine of `datamodel="sce-static"`
+        // has no engine and no `<finalize>` (SCE Accepted Subset §2.15): such an
+        // event names an origin and has nothing to run, which is not a broken
+        // codegen invariant.
+        if (activeInvokes.values.none { it.finalizeScript.isNotEmpty() }) return
 
         val engine = scriptEngine ?: error("scriptEngine is required for executeFinalizeForChildEvent (codegen invariant: state machine has active invokes ⇒ needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")

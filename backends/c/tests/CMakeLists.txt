@@ -3103,6 +3103,40 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # SCE_MESH.md §9.5 under `datamodel="sce-static"` (docs/adr/0005, decisions 5 and
+    # 7): a Mesh request whose peer and `<param>`s are typed expressions over the
+    # machine's own fields reaches the router the host registers through the
+    # mesh-rpc door. Generated with NO host declaration, because the build names the
+    # request's type itself, and linked WITHOUT `sce_c_scripting` and `lua54`: the
+    # machine has no script engine, so the link is the proof.
+    sce_generate_static_integration_c_test(statechart_static_mesh_request
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/host_processor/statechart_static_mesh_request.scxml"
+    )
+    add_executable(sce_c_integration_static_mesh_request
+        integration/test_static_mesh_request.c
+        ${INTEGRATION_C_TEST_statechart_static_mesh_request_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_static_mesh_request PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base
+    )
+    target_include_directories(sce_c_integration_static_mesh_request PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
+    )
+    set_target_properties(sce_c_integration_static_mesh_request PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_static_mesh_request
+        COMMAND sce_c_integration_static_mesh_request
+    )
+    set_tests_properties(c11_integration_static_mesh_request PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # SCE Accepted Subset §2.15: a `<param>` name that repeats is one array in the
     # event's data, in document order, in a send the host serves, in an invoke the
     # host serves and in a final's `<donedata>`. A document of this channel alone,

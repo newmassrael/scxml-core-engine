@@ -86,6 +86,14 @@ STATIC_INVOKE_FIXTURE="sce-build/tests/fixtures/host_processor/statechart_static
 # restore must each give back.
 STATIC_DELAYED_SEND_FIXTURE="sce-build/tests/fixtures/host_processor/statechart_static_delayed_host_send.scxml"
 
+# The Mesh request: a `datamodel="sce-static"` machine whose `<invoke
+# type="sce:mesh-rpc">` names its peer and writes its params from the machine's
+# fields (docs/adr/0005, decisions 5 and 7). NO host declaration: the build
+# lowers the request to a host-served invoke of its own type, so the router the
+# host registers through the mesh-rpc door is what it starts. A document of its
+# own because the type is the build's and not the host's.
+STATIC_MESH_REQUEST_FIXTURE="sce-build/tests/fixtures/host_processor/statechart_static_mesh_request.scxml"
+
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -96,6 +104,7 @@ trap 'rm -rf "$TMP"' EXIT
     --host-processor "$HOST_PROCESSOR" --host-invoker "$HOST_INVOKER"
 "$CODEGEN" generate "$STATIC_INVOKE_FIXTURE" -l rust -o "$TMP/" --host-invoker "$HOST_INVOKER"
 "$CODEGEN" generate "$STATIC_DELAYED_SEND_FIXTURE" -l rust -o "$TMP/" --host-processor "$HOST_PROCESSOR"
+"$CODEGEN" generate "$STATIC_MESH_REQUEST_FIXTURE" -l rust -o "$TMP/"
 
 mkdir -p "$GENERATED_DIR"
 find "$GENERATED_DIR" -maxdepth 1 -name '*_sm.rs' -delete
@@ -111,12 +120,14 @@ MODRS="$GENERATED_DIR/mod.rs"
     echo "mod statechart_static_delayed_host_send_sm;"
     echo "mod statechart_static_host_invoke_sm;"
     echo "mod statechart_static_host_params_sm;"
+    echo "mod statechart_static_mesh_request_sm;"
     echo "pub use statechart_delayed_host_send_sm::*;"
     echo "pub use statechart_host_invoker_sm::*;"
     echo "pub use statechart_host_processor_sm::*;"
     echo "pub use statechart_static_delayed_host_send_sm::*;"
     echo "pub use statechart_static_host_invoke_sm::*;"
     echo "pub use statechart_static_host_params_sm::*;"
+    echo "pub use statechart_static_mesh_request_sm::*;"
 } > "$MODRS"
 
 source "$REPO_ROOT/scripts/lib/sce_rustfmt.sh"
@@ -199,6 +210,22 @@ for src in "$GO_STATIC_PARAMS_TMP"/*_sm.go; do
 done
 cp "$GO_STATIC_PARAMS_TMP"/*_sm.go "$GO_STATIC_PARAMS_DIR/"
 
+# The Mesh request document, with no host declaration (the build names its type).
+# Its own Go directory for the package-name reason above.
+GO_STATIC_MESH_DIR="backends/go/tests/integration/statechart_static_mesh_request"
+GO_STATIC_MESH_TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP" "$GO_TMP" "$GO_DELAYED_TMP" "$GO_INVOKER_TMP" "$GO_STATIC_PARAMS_TMP" "$GO_STATIC_MESH_TMP"' EXIT
+
+"$CODEGEN" generate "$STATIC_MESH_REQUEST_FIXTURE" -l go -o "$GO_STATIC_MESH_TMP/"
+
+mkdir -p "$GO_STATIC_MESH_DIR"
+find "$GO_STATIC_MESH_DIR" -maxdepth 1 -name '*_sm.go' -delete
+for src in "$GO_STATIC_MESH_TMP"/*_sm.go; do
+    [[ -f "$src" ]] || continue
+    sed -i "s|// From: ${GO_STATIC_MESH_TMP}/|// From: $(dirname "$STATIC_MESH_REQUEST_FIXTURE")/|g" "$src"
+done
+cp "$GO_STATIC_MESH_TMP"/*_sm.go "$GO_STATIC_MESH_DIR/"
+
 echo "Regenerated: $GENERATED_DIR/ from"
 echo "  $FIXTURE (--host-processor $HOST_PROCESSOR)"
 echo "  $INVOKER_FIXTURE (--host-invoker $HOST_INVOKER)"
@@ -211,3 +238,5 @@ echo "Regenerated: $GO_INVOKER_DIR/ from"
 echo "  $INVOKER_FIXTURE (--host-invoker $HOST_INVOKER)"
 echo "Regenerated: $GO_STATIC_PARAMS_DIR/ from"
 echo "  $STATIC_PARAMS_FIXTURE (--host-processor $HOST_PROCESSOR --host-invoker $HOST_INVOKER)"
+echo "Regenerated: $GO_STATIC_MESH_DIR/ from"
+echo "  $STATIC_MESH_REQUEST_FIXTURE (no host declaration)"

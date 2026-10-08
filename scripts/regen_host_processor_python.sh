@@ -79,6 +79,15 @@ STATIC_LITERAL_FIXTURE="sce-build/tests/fixtures/host_processor/statechart_stati
 "$CODEGEN" generate "$STATIC_LITERAL_FIXTURE" -l python -o "$TMP/" \
     --input-root "$INPUT_ROOT" --host-processor "$HOST_PROCESSOR"
 
+# docs/adr/0005, decisions 5 and 7: a Mesh request of a `datamodel="sce-static"`
+# machine, its peer and its `<param>`s typed expressions over the machine's own
+# attributes. NO host declaration: the build lowers the request to a host-served
+# invoke of its own type, and the router the host registers through the mesh-rpc
+# door is what it starts.
+STATIC_MESH_REQUEST_FIXTURE="sce-build/tests/fixtures/host_processor/statechart_static_mesh_request.scxml"
+"$CODEGEN" generate "$STATIC_MESH_REQUEST_FIXTURE" -l python -o "$TMP/" \
+    --input-root "$INPUT_ROOT"
+
 mkdir -p "$GENERATED_DIR"
 find "$GENERATED_DIR" -maxdepth 1 -name '*_sm.py' -delete
 for src in "$TMP"/*_sm.py; do
@@ -93,3 +102,4 @@ echo "  $DELAYED_FIXTURE (--host-processor $HOST_PROCESSOR)"
 echo "  $INVOKER_FIXTURE (--host-invoker $HOST_INVOKER)"
 echo "  $STATIC_PARAMS_FIXTURE (--host-processor $HOST_PROCESSOR --host-invoker $HOST_INVOKER)"
 echo "  $STATIC_LITERAL_FIXTURE (--host-processor $HOST_PROCESSOR)"
+echo "  $STATIC_MESH_REQUEST_FIXTURE (no host declaration)"
