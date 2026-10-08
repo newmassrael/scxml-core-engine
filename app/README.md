@@ -791,6 +791,16 @@ such names resolve against (`xml:base`), declares a document type, or cannot be 
 `scxml_requirements`. The tools it advertises are the ones the application approves
 (`AUTHOR_TOOLS`), and a test holds the two lists equal.
 
+`client_scope_live` holds this against the real server, with no model and no account: it starts
+the server with the configuration Claude Code is given for a run, and with the one a model server's
+client is given, and makes the calls a hostile specification would ask for (another work, a template
+named by its path, a tool that saves). They are refused, and the same calls to a server not told its
+work read the other work and the file, which is how the check is shown to tell the two apart. A
+real Claude Code given a specification that asked for all three tried none of them
+(`claude_code_live`), which is a fact about that model and that run and not a guarantee. A model
+server of the person's own was held with a script in place of the model only: none was available to
+run the whole chain with.
+
 That check refuses early, in words the model can act on, but a list of attributes is only what
 somebody thought of: `template` was missing from it when `<sce:use template="...">` made the
 generator read a file. What holds is the generator itself. Where `SCE_FILE_ROOT` names a folder,
