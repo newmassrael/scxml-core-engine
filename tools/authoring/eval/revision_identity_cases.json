@@ -23,6 +23,7 @@
         {"id": "delete", "ops": [{"op": "delete", "sentence": "A product button selects a product."}]},
         {"id": "reword-a-number", "ops": [{"op": "replace", "old": "30 seconds", "new": "45 seconds"}]},
         {"id": "swap-two-sentences", "ops": [{"op": "swap", "a": "A product button selects a product.", "b": "Pressing cancel returns the whole credit and the controller goes back to idle."}]},
+        {"id": "replace-a-sentence-unrelated", "ops": [{"op": "rewrite", "sentence": "A product button selects a product.", "with": "A coin return lever refunds all coins.", "requirement": {"quote": "A coin return lever refunds all coins.", "statement": "coin return lever"}}]},
         {"id": "reflow", "ops": [{"op": "reflow", "width": 40}]}
       ]
     },
@@ -41,6 +42,7 @@
         {"id": "insert-early", "ops": [{"op": "insert_after", "after": "The door controller keeps the door in one of four conditions: closed, opening, open and closing.", "sentence": "A closed door stays closed until it is asked to open.", "requirement": {"quote": "A closed door stays closed until it is asked to open.", "statement": "closed stays closed", "modality": "shall_not"}}]},
         {"id": "delete", "ops": [{"op": "delete", "sentence": "An open request while closing reverses it to opening."}]},
         {"id": "reword-a-number", "ops": [{"op": "replace", "old": "20 seconds", "new": "30 seconds"}]},
+        {"id": "replace-a-sentence-similar-wording", "ops": [{"op": "rewrite", "sentence": "When the fully-closed sensor reports, the door is closed.", "with": "When the fully-closed sensor reports, the door is locked.", "requirement": {"quote": "When the fully-closed sensor reports, the door is locked.", "statement": "door locks when fully closed"}}]},
         {"id": "reflow", "ops": [{"op": "reflow", "width": 40}]}
       ]
     },
@@ -57,6 +59,7 @@
       "edits": [
         {"id": "insert-early", "ops": [{"op": "insert_after", "after": "The connection keeper starts disconnected and immediately tries to connect.", "sentence": "Each attempt is logged.", "requirement": {"quote": "Each attempt is logged.", "statement": "attempts are logged"}}]},
         {"id": "reword-a-number", "ops": [{"op": "replace", "old": "5 seconds", "new": "10 seconds"}]},
+        {"id": "replace-a-sentence-unrelated", "ops": [{"op": "rewrite", "sentence": "A shutdown request in any condition stops it for good.", "with": "The keeper reports its condition once a minute.", "requirement": {"quote": "The keeper reports its condition once a minute.", "statement": "periodic report"}}]},
         {"id": "reflow", "ops": [{"op": "reflow", "width": 40}]}
       ]
     }

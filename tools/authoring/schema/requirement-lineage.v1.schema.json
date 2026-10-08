@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sce.dev/schemas/authoring/requirement-lineage.v1.schema.json",
+  "title": "Requirement lineage",
+  "description": "Which id was issued for which requirement of a specification, across the revisions of that specification, kept beside the requirement manifest. It holds digests and numbers and never a word of the specification: the manifest is committed, a requirement sentence is often someone else's document, and the sentences live in a sidecar that is not. A later list is built against it so a requirement keeps its id; an id that no requirement carries is retired and never issued again (docs/adr/0006-a-requirement-keeps-its-id-across-a-revision.md).",
+  "type": "object",
+  "required": ["lineage", "v", "doc_id", "next", "revisions", "requirements"],
+  "additionalProperties": false,
+  "properties": {
+    "lineage": {"const": "sce-requirement-lineage"},
+    "v": {"const": 1},
+    "doc_id": {"type": "string", "minLength": 1},
+    "next": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "The number the next new id is issued from (`R<next>`). Past every id the lineage has issued, retired ones included."
+    },
+    "revisions": {
+      "type": "array",
+      "minItems": 1,
+      "description": "One row per revision of the specification, oldest first. A revision exists when the normalised text's digest differs from the last row's.",
+      "items": {
+        "type": "object",
+        "required": ["rev", "spec_sha256", "sentence_sha256"],
+        "additionalProperties": false,
+        "properties": {
+          "rev": {"type": "string", "minLength": 1},
+          "spec_sha256": {
+            "type": ["string", "null"],
+            "description": "Over the normalised specification text. Null for a revision adopted from a list that predates lineages, whose text was never digested."
+          },
+          "sentence_sha256": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "One digest per sentence of the revision, in reading order (empty when adopted). What lets two revisions be compared sentence by sentence without either text."
+          }
+        }
+      }
+    },
+    "requirements": {
+      "type": "array",
+      "description": "Every id ever issued, live and retired. An id appears once.",
+      "items": {
+        "type": "object",
+        "required": ["id", "first_rev", "retired_rev", "quotes"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "first_rev": {"type": "string"},
+          "retired_rev": {
+            "type": ["string", "null"],
+            "description": "The revision in which no requirement carried this id any longer. Null while it is live. A retired id is never issued again."
+          },
+          "quotes": {
+            "type": "array",
+            "minItems": 1,
+            "description": "The digest of the requirement's normalised quote, appended in the revision in which it changed.",
+            "items": {
+              "type": "object",
+              "required": ["rev", "sha256"],
+              "additionalProperties": false,
+              "properties": {
+                "rev": {"type": "string"},
+                "sha256": {"type": "string"}
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

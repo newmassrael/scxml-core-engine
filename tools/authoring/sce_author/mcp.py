@@ -1002,11 +1002,27 @@ TOOLS = [
             "that is not in the specification word for word, or that appears "
             "more than once in it, is refused, and nothing is offered until "
             "every quote is: a partial list is a wrong denominator. The ids "
-            "(R1, R2, ...) are assigned here from where each quote sits in the "
-            "specification, not from the order you listed them. Returns "
+            "(R1, R2, ...) are assigned here, not by you: for a specification's "
+            "first list from where each quote sits in it, and for a REVISION of "
+            "the specification so that a requirement keeps the id it had. To "
+            "build a revision give the `lineage` (or `lineage_text`) a previous "
+            "call returned, and the `previous_sidecar` it returned with it: "
+            "with the words behind the ids, a requirement whose wording changed "
+            "slightly keeps its id and comes back with status `changed`; "
+            "without them only unchanged words keep an id and the rest get new "
+            "ids. A list made before lineages existed can be revised by giving "
+            "its `previous_manifest` and `previous_sidecar` instead. If you are "
+            "sure a requirement of this list continues one of the previous list "
+            "whose words changed too much to be recognised, say so in "
+            "`continues` ({quote: id}); the tool refuses one that does not fit "
+            "and never invents one. An id that no requirement of the revision "
+            "carries is closed and never issued again. Returns "
             "`manifest_text` and `sidecar_text` -- pass them as "
             "`manifest_text` and `sidecar_text` to scxml_requirements and "
-            "scxml_acceptance_report -- and `unclaimed_sentences`, the "
+            "scxml_acceptance_report -- the `lineage_text` to keep beside them "
+            "(it holds hashes and no words), `rev`, for a revision the "
+            "`delta` (which ids are carried, changed, new or retired, and which "
+            "sentences were added or removed), and `unclaimed_sentences`, the "
             "sentences of the specification that no requirement quotes: tell "
             "the owner each. The list is `synthesized`: this specification "
             "names no requirements of its own, so nothing in it audits which "
@@ -1032,6 +1048,17 @@ TOOLS = [
                 },
                 "doc_id": {"type": "string", "description":
                            "A short name for the specification; default `spec`."},
+                **_file_input("lineage", "the requirement lineage a previous call returned"),
+                **_file_input("previous_sidecar", "the sidecar that call returned with it"),
+                **_file_input("previous_manifest", "the manifest of a list that has no lineage"),
+                "continues": {
+                    "type": "object",
+                    "description": (
+                        "For a revision: a quote of this list mapped to the id of the previous "
+                        "list's requirement it continues, when its words changed too much to be "
+                        "recognised. Only ones you are sure of."),
+                    "additionalProperties": {"type": "string"},
+                },
             },
         },
     },
@@ -2626,8 +2653,15 @@ def _requirement_set_tool(args: dict, staging: _Staging) -> dict:
         text = located.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as error:
         raise ToolArgumentError(f"the specification cannot be read as text: {error}") from error
+    earlier = {key: _staged_text(staging, staging.file(args, key, what, f"{key}.json", required=False), what)
+               for key, what in (("lineage", "the lineage"), ("previous_sidecar", "the previous sidecar"),
+                                 ("previous_manifest", "the previous manifest"))}
     try:
-        built = requirement_set.build(text, args.get("requirements"), doc_id=doc_id)
+        built = requirement_set.build(text, args.get("requirements"), doc_id=doc_id,
+                                      lineage_text=earlier["lineage"],
+                                      previous_manifest_text=earlier["previous_manifest"],
+                                      previous_sidecar_text=earlier["previous_sidecar"],
+                                      continues=args.get("continues"))
     except requirement_set.RequirementSetError as error:
         raise ToolArgumentError(str(error)) from error
     reply = requirement_set.answer(built)

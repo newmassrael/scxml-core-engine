@@ -1,9 +1,11 @@
 # ADR 0006 — A requirement keeps its id across a revision of its specification
 
-- Status: Proposed
+- Status: Accepted for step 1 (implemented and measured, see "What step 1 measured"); steps 2 to 5
+  are named, not decided
 - Date: 2026-10-08
-- Scope: `tools/authoring` (`sce_author/requirement_set.py` and the MCP tools that call it);
-  later steps reach `sce-build` (`acceptance_record.rs`, `acceptance_report.rs`)
+- Scope: `tools/authoring` (`sce_author/requirement_lineage.py`, `requirement_set.py` and the MCP
+  tool `scxml_requirement_set`); later steps reach `sce-build` (`acceptance_record.rs`,
+  `acceptance_report.rs`)
 - Related: `SCE_WIRE_CONTRACTS.md` (acceptance-record row), `sce-build/src/requirement_manifest.rs`,
   `sce-build/src/acceptance_record.rs`, `tools/authoring/README.md` ("When the same
   specification is drafted more than once"), `tools/authoring/eval/revision_identity.py`
@@ -37,19 +39,21 @@ revisions. It does not:
 
 `tools/authoring/eval/revision_identity.py` applies an owner's edit to a specification and to
 its requirement list by rule, so what each requirement became is known by construction and no
-model is in the figure. Three specifications, 13 edits, 105 requirement ids, the scheme as it
-is today:
+model is in the figure. Three specifications, 16 edits, 127 requirement ids, the scheme as it
+was before this ADR (the second list built with no lineage):
 
 | Edit | Ids | Hold | Silent wrong | Lost (loud) |
 |---|---|---|---|---|
 | sentence inserted after the first | 11 + 6 + 5 | 3 | 19 | 0 |
 | sentence deleted | 11 + 6 | 7 | 8 | 2 |
 | two sentences swap places | 11 | 9 | 2 | 0 |
+| a sentence replaced by another | 11 + 6 + 5 | 3 x (n-1) | 3 | 0 |
 | sentence appended / a number reworded / text reflowed (control) | 11 .. 5 | all | 0 | 0 |
 
-29 of the 105 ids name a different requirement in the second revision and nothing flags it;
-2 more are lost. Every one of the 29 is an edit an owner makes in the ordinary course. The
-control (`reflow`, no word changes) holds every id, so the measurement can read stability.
+32 of the 127 ids name a different requirement in the second revision and nothing flags it;
+2 more are lost. Every one of the 32 is an edit an owner makes in the ordinary course. The
+control (`reflow`, no word changes) holds every id, so the measurement can read stability. (The
+first version of this table, taken before the replacement edits were added, said 29 of 105.)
 
 ### Two constraints the code already states
 
@@ -68,14 +72,19 @@ control (`reflow`, no word changes) holds every id, so the measurement can read 
 **A requirement's id is issued once and follows the requirement through revisions. Identity
 and sameness are two facts, kept apart.**
 
-1. **A ledger beside the specification.** `requirements.ledger.json`, committed, no words:
-   `doc_id`; one row per revision (`rev`, sha256 of the normalised specification, sha256 of
-   the list); one row per id ever issued (`id`, the revision it first appeared in, the
-   revision it was retired in or null, the sha256 of its normalised quote in each revision it
-   lived); and `next`, the counter ids are issued from. A retired id is never issued again.
+1. **A lineage beside the specification.** `requirements.lineage.json`, committed, no words:
+   `doc_id`; one row per revision (`rev`, sha256 of the normalised specification, and the
+   sha256 of each of its sentences, which is what lets two revisions be compared sentence by
+   sentence without either text); one row per id ever issued (`id`, the revision it first
+   appeared in, the revision it was retired in or null, the sha256 of its normalised quote in
+   each revision it lived); and `next`, the counter ids are issued from. A retired id is never
+   issued again. Its shape is `tools/authoring/schema/requirement-lineage.v1.schema.json`.
 2. **The first revision is today's list.** Ids in reading order `R1..Rn`, so a specification
-   built once produces byte-identical output, and an existing manifest with its sidecar can be
-   adopted as revision 1 without renumbering.
+   built once produces byte-identical output. A list made before lineages existed is adopted
+   from its manifest and sidecar (`previous_manifest`, `previous_sidecar`): its ids are kept
+   without renumbering and its `rev` is the lineage's last. The digest of the text it was
+   built from was never kept, so the next revision is always a new one and no sentence delta
+   is given for it.
 3. **A later revision carries ids by rule, in this order, and says which rule:**
    a. a quote whose normalised sha256 equals a live id's latest quote keeps that id
       (`carried`, and the requirement is **same**);
@@ -83,7 +92,12 @@ and sameness are two facts, kept apart.**
       keeps that id (`carried-with-edit`, and the requirement is **changed**: its words are
       not its predecessor's). Unambiguous means one counterpart above the similarity
       threshold and a margin to the next; the threshold is a starting value that the harness
-      decides, not a number to trust before it has measured false pairings;
+      decides, not a number to trust before it has measured false pairings. ⚠ The words of
+      the id's last quote are not in the lineage, so this needs them: the caller gives the
+      previous sidecar (`previous_sidecar`), each text is used only if its sha256 is the one
+      the lineage last saw for that id, and without them 3b does nothing and the requirement
+      is issued afresh, which is loud and never wrong. (The first draft of this ADR missed
+      that a lineage of hashes cannot compare wordings.)
    c. a client that read both revisions may state a continuation it is sure of
       (`continues: {quote -> id}`). The tool validates it (the id is live and claimed once)
       and records its source as the client's; it never invents one;
@@ -97,28 +111,31 @@ and sameness are two facts, kept apart.**
 5. **`rev` follows the specification.** A new revision exists exactly when the normalised
    text's sha256 differs from the last row's; its `rev` is the next integer. The product's
    staleness note then fires for a design cited against `spec@1` when the manifest is `spec@2`.
-6. **The tool stays pure.** `scxml_requirement_set` takes the previous ledger as text
-   (`ledger_text`), returns the new one beside `manifest_text` and `sidecar_text`, and returns
-   a delta in the vocabulary above plus the sentence-level change (added / removed / kept, by
-   sha256). It writes nothing, as it writes nothing today. For a work in the application the
-   ledger would be kept with the requirement list under the same compare-and-swap; whether
-   `sce-work`'s folder format takes a third file is the application's to say and is checked
-   when that part is built, not assumed here.
+6. **The tool stays pure.** `scxml_requirement_set` takes the previous lineage (`lineage` or
+   `lineage_text`), the previous sidecar and `continues`, returns the new lineage beside
+   `manifest_text` and `sidecar_text`, and returns a delta in the vocabulary above plus the
+   sentence-level change (added / removed, by position and digest). It writes nothing, as it
+   writes nothing today. ⚠ Not built in this step: keeping the lineage with a work in the
+   application. `works_save_requirements` stores a manifest and a sidecar under a
+   compare-and-swap, and whether `sce-work`'s folder format takes a third file is the
+   application's to say. Until it does, a revision of a work is built by adoption: `works_read`
+   returns the saved manifest and sidecar, and they are enough to keep the ids (not to tell
+   an unchanged text from a changed one).
 7. **Sections stay revision-local.** `S<n>` remains a positional label inside one revision,
    the way a page number is. Identity across revisions is the requirement's; for sentences it
    is their hash.
 8. **No product wire surface changes in this step.** The manifest's ids are strings and `rev`
-   is a string already. The ledger is an authoring-side artifact; its schema goes beside the
+   is a string already. The lineage is an authoring-side artifact; its schema goes beside the
    others in `tools/authoring/schema`, which is not listed in `SCE_WIRE_CONTRACTS.md`.
 
 ## Alternatives considered
 
 - **Content-hash ids** (an id is a hash of the quote). Measured with the same harness by
-  replacing the id function: silent wrong falls from 29 to 0, and every requirement whose words
-  an edit changes loses its id (4 of the 4 reworded requirements in the corpus; the 2 deleted
-  ones go too, rightly). Stable under insertion and reordering, blind to succession, and an
-  unreadable `sce:req="Q3fa91c07"` in a design. The hash stays, as the key the ledger matches
-  on; it is not the id.
+  replacing the id function: silent wrong falls from 32 to 0, and every requirement whose words
+  an edit changes loses its id (all 4 reworded requirements of the corpus, the same 118 holds,
+  4 lost and 5 retired as a lineage given no words). Stable under insertion and reordering,
+  blind to succession, and an unreadable `sce:req="Q3fa91c07"` in a design. The hash stays, as
+  the key the lineage matches on; it is not the id.
 - **Ids written by the owner in the prose** (`Ids::Native`). The best identity there is, and
   already supported by the manifest: when the source names its own requirements nothing in this
   ADR applies. It asks the owner to number their sentences, which a prose specification does
@@ -150,24 +167,47 @@ acceptance.
 
 ## Consequences
 
-- **A ledger is one more file an owner keeps.** Without it the tool can only start a list over,
-  which is today's behaviour and today's silent re-pointing. The tool says, when it builds
-  without a ledger, that nothing connects the list to an earlier one.
+- **A lineage is one more file an owner keeps.** Without it the tool can only start a list over,
+  which is the old behaviour and the old silent re-pointing. A call that gets no lineage cannot
+  know whether the specification was built before, so the answer says it is the first list as
+  far as it can tell and what to give if it is not.
 - **Similarity is a judgement made by a formula.** Its failure is the safe one by the fourth
-  point, but a wrong succession pollutes an id's history. Measure it before trusting it:
-  the corpus needs meaning-changing edits beside the rewording ones, and the figure to report
-  is the share of replaced requirements that were carried.
-- **Positional behaviour in the tests moves.** `test_a_requirement_set_is_built_from_quoted_words`
-  asserts reading-order ids for a first list, which stays true; the new revision measurement
-  test pins the baseline above and changes in the commit that changes the scheme.
+  point, but a wrong succession pollutes an id's history. Measured below, on a corpus too small
+  to tune a threshold against: `SIMILARITY` 0.8 and `MARGIN` 0.1 are starting values.
+- **The baseline moves.** The reading-order scheme is now what a call with no lineage does, so
+  `test_the_revision_measurement_reads_what_became_of_each_id` still reads it as the baseline;
+  a first list is byte-identical to what it was.
 
-## Acceptance of this step
+## What step 1 measured
 
-Measured with `revision_identity.py`, extended with the new scheme in the same table:
+`revision_identity.py` over the same 16 edits and 127 ids, three schemes. The lineage schemes
+build the second list against the first list's lineage; "words given" also passes the first
+list's sidecar.
 
-1. Silent wrong is **0** on every edit of the corpus, and the `reflow` control holds every id.
-2. Insert, append, delete and swap hold every id of a requirement that is still there.
-3. A reworded requirement keeps its id and is reported `changed`, not `same`.
-4. On a second corpus of edits that replace a requirement with an unrelated one, the share
-   carried by 3b is reported with the threshold that produced it.
-5. `rev` differs between any two revisions whose text differs.
+| Scheme | Hold | Silent wrong | Miscarried (flagged changed) | Lost (loud) | Retired (right) |
+|---|---|---|---|---|---|
+| reading-order ids (no lineage) | 93 | **32** | 0 | 2 | 0 |
+| lineage, hashes only | 118 | **0** | 0 | 4 | 5 |
+| lineage, words given | 122 | **0** | 1 | 0 | 4 |
+
+Against the criteria this ADR set:
+
+1. **Met.** Silent wrong is 0 on every edit under both lineage schemes; the `reflow` control holds
+   every id under all three.
+2. **Met.** Insert, append, delete and swap hold every id of a requirement that is still there.
+3. **Met with the words.** All 4 reworded requirements keep their ids and are listed `changed`.
+   Without the previous sidecar they lose them (4 lost), loudly.
+4. **Reported, not a pass mark.** Of 3 requirements the owner replaced, 2 (unrelated sentences)
+   were not carried and 1 was: "the door is closed" became "the door is locked", 8 of 9 words
+   alike, so the near match took it as the same requirement reworded and listed it `changed`. That
+   is the price of carrying an id through a rewording: wording cannot tell an edit from a
+   replacement, and what keeps it safe is that "same" needs equal words. One case in three is
+   not a rate.
+5. **Met.** `rev` is 2 for every edit that changes a word and stays 1 for the reflow.
+
+Tests of the tool hold the rest: the first list is the list it always was, an id of a closed
+requirement is never issued again, an ambiguous near match carries nothing, a continuation that
+does not fit is refused, the lineage holds no word of the specification, and a lineage that is
+another specification's, malformed, or would issue an id twice is refused. Twelve ways of
+breaking the lineage's rules were put to those tests and all twelve were caught (one was not,
+at first: a continuation claiming an id twice, which the tests did not exercise and now do).

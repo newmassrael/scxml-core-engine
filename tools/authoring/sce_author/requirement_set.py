@@ -10,8 +10,11 @@ decided without trusting the client is decided here:
   cannot be invented;
 * a quote that points at more than one place in the source is refused, so it
   cannot be anchored to the wrong one;
-* the ids come from WHERE the words are in the source, in reading order, never
-  from the client's numbering or the order it listed them in;
+* the ids of a first list come from WHERE the words are in the source, in
+  reading order, never from the client's numbering or the order it listed them
+  in; a later revision of the specification keeps the id of every requirement
+  it still has (`requirement_lineage`), so an id means the same requirement in
+  both revisions or is closed and never issued again;
 * every sentence of the source is a section, so a sentence no requirement quotes
   shows as an empty one, which is the only way a requirement list is checked for
   completeness by something that is not the list's author.
@@ -42,6 +45,7 @@ import json
 import re
 from dataclasses import dataclass, field
 
+from . import requirement_lineage as rl
 from .errors import AuthoringError
 
 # `sce-build` reads the requirement's modality from the manifest. A requirement
@@ -61,6 +65,7 @@ class Requirement:
     statement: str
     sentence: str
     modality: str
+    status: str = "new"
 
 
 @dataclass
@@ -82,6 +87,10 @@ class Built:
     sidecar: dict | None = None
     unclaimed_sentences: list[tuple[str, str]] = field(default_factory=list)
     unclaimed_words: list[tuple[str, str]] = field(default_factory=list)
+    rev: str = "1"
+    lineage: dict | None = None
+    delta: dict | None = None
+    notes: list[str] = field(default_factory=list)
 
 
 def normalise(text: str) -> str:
@@ -107,9 +116,20 @@ def sentences(text: str) -> list[tuple[int, int]]:
 
 
 def build(specification: str, items: object, *, doc_id: str = "spec",
-          rev: str = "1") -> Built:
+          rev: str = "1", lineage_text: str | None = None,
+          previous_manifest_text: str | None = None,
+          previous_sidecar_text: str | None = None,
+          continues: object = None) -> Built:
     """The manifest and sidecar for `items`, a list of `{quote, statement}`
-    (and optionally `modality`), or the refusals that stand in the way."""
+    (and optionally `modality`), or the refusals that stand in the way.
+
+    With no lineage the list is the first of its specification: ids in reading
+    order, `rev` as given. With `lineage_text` (what a previous call returned), or
+    with the previous manifest and sidecar of a list that predates lineages, it is
+    a revision: each requirement keeps the id it had, and `rev` follows the
+    specification. `previous_sidecar_text` gives the words behind the ids, which
+    is what lets a reworded requirement keep its id; `continues` maps a quote to
+    the id it continues, for a rewording too large to recognise."""
     if not isinstance(items, list) or not items:
         raise RequirementSetError(
             "'requirements' has to be a non-empty list of objects with a "
@@ -163,12 +183,23 @@ def build(specification: str, items: object, *, doc_id: str = "spec",
                 return number
         return len(spans)
 
-    for number, (start, end, item, quote) in enumerate(located, 1):
+    spec = rl.Spec(rl.sha256_text(source),
+                   [rl.sha256_text(source[a:b].strip()) for a, b in spans])
+    quotes = [quote for _, _, _, quote in located]
+    try:
+        step = _identify(doc_id, rev, spec, quotes, lineage_text, previous_manifest_text,
+                         previous_sidecar_text, continues)
+    except rl.LineageError as error:
+        raise RequirementSetError(str(error)) from error
+    built.rev, built.lineage, built.delta, built.notes = step.rev, step.lineage, step.delta, step.notes
+
+    for number, (start, end, item, quote) in enumerate(located):
         built.requirements.append(Requirement(
-            id=f"R{number}", quote=quote,
+            id=step.ids[number], quote=quote,
             statement=str(item.get("statement", "")).strip(),
             sentence=f"S{sentence_of(start)}",
-            modality=item.get("modality", "shall")))
+            modality=item.get("modality", "shall"),
+            status=step.statuses[number]))
 
     entries = []
     for requirement in built.requirements:
@@ -177,7 +208,7 @@ def build(specification: str, items: object, *, doc_id: str = "spec",
             entry["modality"] = requirement.modality
         entries.append(entry)
     built.manifest = {
-        "doc_id": doc_id, "rev": rev,
+        "doc_id": doc_id, "rev": built.rev,
         "extraction": {"ids": "synthesized", "trace": "none",
                        "modality_convention": "english-modal-verbs",
                        "method": "ai-pass-1"},
@@ -185,7 +216,7 @@ def build(specification: str, items: object, *, doc_id: str = "spec",
                      for n in range(1, len(spans) + 1)],
         "requirements": entries,
     }
-    built.sidecar = {"doc_id": doc_id, "rev": rev,
+    built.sidecar = {"doc_id": doc_id, "rev": built.rev,
                      "text": {r.id: r.quote for r in built.requirements}}
 
     covered = [False] * len(source)
@@ -210,9 +241,53 @@ def build(specification: str, items: object, *, doc_id: str = "spec",
     return built
 
 
+def _json(text: str, what: str) -> dict:
+    try:
+        data = json.loads(text)
+    except ValueError as error:
+        raise RequirementSetError(f"{what} is not JSON: {error}") from error
+    if not isinstance(data, dict):
+        raise RequirementSetError(f"{what} is not a JSON object")
+    return data
+
+
+def _identify(doc_id: str, rev: str, spec: rl.Spec, quotes: list[str], lineage_text: str | None,
+              manifest_text: str | None, sidecar_text: str | None, continues: object) -> rl.Advance:
+    """The ids of `quotes`: a first list's, or a revision's against a lineage (or against
+    the manifest and sidecar of a list that predates lineages, which are adopted as one)."""
+    if lineage_text is not None and manifest_text is not None:
+        raise RequirementSetError("give the lineage or the previous manifest, not both: the lineage already "
+                                  "holds what the manifest would be adopted for")
+    if lineage_text is None and manifest_text is None:
+        if sidecar_text is not None or continues:
+            raise RequirementSetError("'previous_sidecar' and 'continues' belong to a revision: give the "
+                                      "lineage a previous call returned (or the previous manifest) as well")
+        return rl.first(doc_id, spec, quotes, rev)
+    if continues is not None and (not isinstance(continues, dict) or not all(
+            isinstance(k, str) and isinstance(v, str) for k, v in continues.items())):
+        raise RequirementSetError("'continues' has to map a quote of this list to the id it continues")
+    texts = None
+    if sidecar_text is not None:
+        sidecar = _json(sidecar_text, "the previous sidecar")
+        words = sidecar.get("text")
+        if sidecar.get("doc_id") != doc_id or not isinstance(words, dict):
+            raise RequirementSetError(f"the previous sidecar is not the sidecar of '{doc_id}'")
+        texts = {id_: normalise(words_) for id_, words_ in words.items() if isinstance(words_, str)}
+    if lineage_text is not None:
+        previous = rl.parse(lineage_text)
+    else:
+        if texts is None:
+            raise RequirementSetError("the previous manifest needs its sidecar: the words behind its ids "
+                                      "are not in the manifest")
+        previous = rl.adopt(doc_id, _json(manifest_text, "the previous manifest"), texts)
+    return rl.advance(previous, doc_id, spec, quotes, texts=texts,
+                      continues={normalise(k): v for k, v in (continues or {}).items()})
+
+
 def answer(built: Built) -> dict:
     """The JSON a tool returns. `manifest_text` and `sidecar_text` are the two
-    files a later call takes as `manifest_text` and `sidecar_text`."""
+    files a later call takes as `manifest_text` and `sidecar_text`; `lineage_text`
+    is the third, which the next revision of the specification is built against."""
     if built.refused:
         return {
             "verdict": "refused",
@@ -222,10 +297,13 @@ def answer(built: Built) -> dict:
                      "anchored: a partial list is a wrong denominator. Fix every "
                      "item listed and call again."),
         }
-    return {
+    revised = built.delta is not None
+    reply = {
         "verdict": "built",
+        "rev": built.rev,
         "requirements": [{"id": r.id, "sentence": r.sentence, "quote": r.quote,
-                          "statement": r.statement, "modality": r.modality}
+                          "statement": r.statement, "modality": r.modality,
+                          **({"status": r.status} if revised else {})}
                          for r in built.requirements],
         "unclaimed_sentences": [{"sentence": s, "text": t}
                                 for s, t in built.unclaimed_sentences],
@@ -233,14 +311,19 @@ def answer(built: Built) -> dict:
                             for s, t in built.unclaimed_words],
         "manifest_text": json.dumps(built.manifest, indent=2) + "\n",
         "sidecar_text": json.dumps(built.sidecar, indent=2, ensure_ascii=False) + "\n",
+        "lineage_text": rl.render(built.lineage),
         "basis": ("synthesized: this prose specification names no requirements of "
                   "its own, so the list is the client's reading of it and nothing "
                   "in the source audits which sentences were counted"),
-        "next": ("save manifest_text as requirements.manifest.json and sidecar_text "
-                 "as requirements.sidecar.json beside the specification, exactly as "
-                 "returned (the ids in the design mean what these two files say, and "
-                 "the sidecar holds the quoted sentences: tell the owner where they "
-                 "are, or give both texts in your reply when you cannot write files); "
+        "next": ("save manifest_text as requirements.manifest.json, sidecar_text "
+                 "as requirements.sidecar.json and lineage_text as "
+                 "requirements.lineage.json beside the specification, exactly as "
+                 "returned (the ids in the design mean what the manifest and sidecar "
+                 "say, and the sidecar holds the quoted sentences: tell the owner "
+                 "where they are, or give the texts in your reply when you cannot "
+                 "write files; the lineage holds no words and is the one the next "
+                 "revision of the specification is built against, with the sidecar "
+                 "as `previous_sidecar`); "
                  "put each id on the state or transition that carries it "
                  "(sce:req=\"R3\"); check the design with validate_scxml, or "
                  "validate_scxml_set when it imports other documents, passing "
@@ -248,3 +331,15 @@ def answer(built: Built) -> dict:
                  "the owner the sentences in unclaimed_sentences that no requirement "
                  "quotes"),
     }
+    if revised:
+        reply["delta"] = built.delta
+        reply["next"] += ("; this is a revision: tell the owner what `delta` says moved, and that a "
+                          "requirement with status `changed` has other words than its id had")
+    else:
+        reply["next"] += ("; this is the first list of this specification as far as this call can tell: "
+                          "if it was built before, give that call's `lineage_text` (and its sidecar as "
+                          "`previous_sidecar`) and build it again, or the ids will not follow the "
+                          "requirements it already named")
+    if built.notes:
+        reply["notes"] = built.notes
+    return reply

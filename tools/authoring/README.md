@@ -291,17 +291,32 @@ before the drafts, so this is not a blind test.
 
 A revised specification lapses an acceptance, and the next draft is written
 afresh. Saying which requirements the revision touched needs an id to mean the
-same requirement in both revisions, and today it does not: `scxml_requirement_set`
-numbers the quoted requirements in reading order and leaves `rev` at `1`.
+same requirement in both revisions. It used to not: `scxml_requirement_set`
+numbered the quoted requirements in reading order and left `rev` at `1`, so a
+sentence inserted anywhere but the end renumbered everything after it.
 `eval/revision_identity.py` measures that without a model: it applies an owner's
 edit to a specification and to its requirement list by rule and reports what
-became of every id. Over three specifications and 13 edits, 29 of 105 ids named
-a different requirement in the second revision with nothing to flag it (a sentence
-inserted anywhere but the end, a sentence deleted, two swapped); an appended
-sentence, a reworded number and a reflow moved none. The figures, the constraints
-behind the proposal and the steps it opens are in
-`docs/adr/0006-a-requirement-keeps-its-id-across-a-revision.md`, which is
-`Proposed`: nothing in the tools has changed yet.
+became of every id. Over three specifications and 16 edits, 32 of 127 ids named
+a different requirement in the second revision with nothing to flag it.
+
+The tool now hands back a **lineage** (`lineage_text`, kept beside the manifest and
+the sidecar as `requirements.lineage.json`): which id was issued for which
+requirement, by digest, with no word of the specification in it. Build a revision
+by giving it back (`lineage`, or `lineage_text`) and the sidecar that came with it
+(`previous_sidecar`): a requirement whose words are unchanged keeps its id, one
+whose wording changed slightly keeps it too and is listed `changed`, one the
+revision lost is retired and its id is never issued again, and `rev` follows the
+text (a reflow is not a revision). A rewording too large to recognise can be
+stated (`continues`, `{quote: id}`); a list made before lineages existed is
+revised from its `previous_manifest` and `previous_sidecar`. The answer's `delta`
+says which ids were carried, changed, new or retired and which sentences were
+added or removed. On the same 16 edits that is 0 ids naming another requirement
+unnoticed; the one thing it cannot do is tell a reworded requirement from a
+replaced one when the new sentence is nearly the old, and then it lists it
+`changed` so a person reads it. The figures, the constraints behind the design
+and the steps it opens are in
+`docs/adr/0006-a-requirement-keeps-its-id-across-a-revision.md`. Not done: keeping
+the lineage with a work in the application.
 
 #### Examples a design is played against
 
