@@ -12,7 +12,10 @@
 //! * [`extends`]: does it continue the one a work holds? An id is issued once and a retired one
 //!   never lives again, so a lineage that took anything back is refused;
 //! * [`belongs_to_list`]: is it the lineage of THIS list, its manifest and its sidecar?
-//! * [`between`]: what became of each requirement's words between two states of one lineage.
+//! * [`between`]: what became of each requirement's words between two states of one lineage;
+//! * [`belongs_to`]: is a words delta the one of the revision an acceptance was taken against?
+//! * [`join`] and [`render`]: the words of each requirement joined with what the design's
+//!   evidence did, and the page an owner reads of it.
 //!
 //! The Python in `tools/authoring/sce_author/requirement_lineage.py` is the reference, and this is
 //! held to it by the cases it writes (`sce-build/tests/fixtures/revision_judgment/cases.json`,
@@ -28,6 +31,12 @@ use std::fmt;
 
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+
+mod join;
+mod revision;
+
+pub use join::{join, render, SHARED};
+pub use revision::belongs_to;
 
 /// What a lineage says it is.
 pub const LINEAGE_KIND: &str = "sce-requirement-lineage";
@@ -75,9 +84,9 @@ impl fmt::Display for LineageError {
 
 impl std::error::Error for LineageError {}
 
-type Judgment<T> = Result<T, LineageError>;
+pub(crate) type Judgment<T> = Result<T, LineageError>;
 
-fn refuse<T>(message: impl Into<String>) -> Judgment<T> {
+pub(crate) fn refuse<T>(message: impl Into<String>) -> Judgment<T> {
     Err(LineageError::new(message))
 }
 
@@ -90,7 +99,7 @@ pub fn sha256_text(text: &str) -> String {
 
 /// A value as the sentences write it with `{}`: a text as itself, nothing as `None`, a truth
 /// value as `True` or `False`.
-fn show(value: &Value) -> String {
+pub(crate) fn show(value: &Value) -> String {
     match value {
         Value::String(text) => text.clone(),
         Value::Null => "None".to_string(),

@@ -132,7 +132,10 @@ def _words_of(delta: object) -> dict[str, str]:
 
     def put(id_: object, status: str) -> None:
         if not isinstance(id_, str) or not id_:
-            raise RevisionError(f"the words delta names a requirement that is not an id: {id_!r}")
+            # No value in the sentence: it would be written in Python's own notation, and the
+            # sentence is a case another implementation has to say in the same words.
+            raise RevisionError("the words delta names a requirement that is not an id (an id is a "
+                                "text and not empty)")
         if id_ in words:
             raise RevisionError(f"the words delta names {id_} twice ({words[id_]} and {status})")
         words[id_] = status
@@ -157,11 +160,12 @@ def _evidence_of(delta: object) -> tuple[dict[str, dict], dict]:
         raise RevisionError("the evidence delta has to be the object scxml_acceptance_delta returned: "
                             "it has no `requirements` list")
     lines: dict[str, dict] = {}
-    for line in delta["requirements"]:
+    for position, line in enumerate(delta["requirements"], 1):
         id_ = line.get("requirement") if isinstance(line, dict) else None
         if not isinstance(id_, str) or line.get("evidence") not in EVIDENCE:
-            raise RevisionError(f"an evidence line is not {{requirement, evidence}} with evidence one of "
-                                f"{', '.join(EVIDENCE)}: {line!r}")
+            # The position and not the line: a line written out is Python's notation again.
+            raise RevisionError(f"evidence line {position} is not {{requirement, evidence}} with "
+                                f"evidence one of {', '.join(EVIDENCE)}")
         if id_ in lines:
             raise RevisionError(f"the evidence delta names {id_} twice")
         lines[id_] = line

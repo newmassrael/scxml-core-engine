@@ -18,7 +18,7 @@
 # the anchor quoted, never as a pass.
 
 mutation_tests -p sce-revision --test the_cases_the_python_gives
-mutation_targets sce-revision/src/lib.rs
+mutation_targets sce-revision/src/lib.rs sce-revision/src/revision.rs sce-revision/src/join.rs
 mutation_oracles sce-revision/tests/the_cases_the_python_gives.rs
 
 mutation_case "extends: a lineage of another specification continues" <<'PY'
@@ -97,4 +97,76 @@ mutation_case "between: words that changed are carried" <<'PY'
 edit("sce-revision/src/lib.rs",
      "                if last_quote(was)[\"sha256\"] == last_quote(row)[\"sha256\"] {",
      "                if true || last_quote(was)[\"sha256\"] == last_quote(row)[\"sha256\"] {")
+PY
+
+mutation_case "belongs_to: a delta of another specification belongs" <<'PY'
+edit("sce-revision/src/revision.rs",
+     "    if doc_id != pinned_doc {",
+     "    if false && doc_id != pinned_doc {")
+PY
+
+mutation_case "belongs_to: a delta of another step belongs" <<'PY'
+edit("sce-revision/src/revision.rs",
+     "    if from_rev != pinned_rev {",
+     "    if false && from_rev != pinned_rev {")
+PY
+
+mutation_case "belongs_to: a delta of another list of the same name and revision belongs" <<'PY'
+edit("sce-revision/src/revision.rs",
+     "    if from_manifest != pinned_manifest {",
+     "    if false && from_manifest != pinned_manifest {")
+PY
+
+mutation_case "belongs_to: a delta of the same shape over other words belongs" <<'PY'
+edit("sce-revision/src/revision.rs",
+     "    if from_sidecar != pinned_sidecar {",
+     "    if false && from_sidecar != pinned_sidecar {")
+PY
+
+mutation_case "belongs_to: a record taken without the words is not told so" <<'PY'
+edit("sce-revision/src/revision.rs",
+     "    if !manifest[\"sidecar_sha256\"].is_string() {",
+     "    if false && !manifest[\"sidecar_sha256\"].is_string() {")
+PY
+
+mutation_case "join: a carried requirement whose evidence moved is not a violation" <<'PY'
+edit("sce-revision/src/join.rs",
+     "        (\"carried\", Some(\"changed\" | \"dropped\")) => (\"moved-without-reason\", VIOLATION),",
+     "        (\"carried\", Some(\"changed\" | \"dropped\")) => (\"moved-without-reason\", OK),")
+PY
+
+mutation_case "join: a retired requirement the design still cites is not a violation" <<'PY'
+edit("sce-revision/src/join.rs",
+     "        (\"retired\", Some(\"unchanged\" | \"changed\" | \"new\")) => (\"retired-still-cited\", VIOLATION),",
+     "        (\"retired\", Some(\"unchanged\" | \"changed\" | \"new\")) => (\"retired-still-cited\", LOOK),")
+PY
+
+mutation_case "join: a requirement no node cites is carried over" <<'PY'
+edit("sce-revision/src/join.rs",
+     "        (\"carried\", None) => (\"uncited\", UNCOVERED),",
+     "        (\"carried\", None) => (\"carries-over\", OK),")
+PY
+
+mutation_case "join: a carried neighbour explains a move" <<'PY'
+edit("sce-revision/src/join.rs",
+     "        if matches!(words, \"changed\" | \"new\") && matches!(evidence, \"changed\" | \"new\") {",
+     "        if matches!(evidence, \"changed\" | \"new\") {")
+PY
+
+mutation_case "join: more rows gone than places moved is explained all the same" <<'PY'
+edit("sce-revision/src/join.rs",
+     "        if places.is_empty() || gone > places.len() as i64 {",
+     "        if places.is_empty() {")
+PY
+
+mutation_case "join: a move is explained when only one of its places is the neighbour's" <<'PY'
+edit("sce-revision/src/join.rs",
+     "        if places.iter().all(|place| covered.contains(place)) {",
+     "        if places.iter().any(|place| covered.contains(place)) {")
+PY
+
+mutation_case "render: a check that saw nothing does not say so" <<'PY'
+edit("sce-revision/src/join.rs",
+     "    if requirements != 0 && summary[\"seen\"].as_i64().unwrap_or(0) == 0 {",
+     "    if false && requirements != 0 && summary[\"seen\"].as_i64().unwrap_or(0) == 0 {")
 PY

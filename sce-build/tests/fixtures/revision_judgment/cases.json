@@ -4000,7 +4000,7 @@
     "version": 1
    },
    "expect": {
-    "refused": "the words delta names a requirement that is not an id: ''"
+    "refused": "the words delta names a requirement that is not an id (an id is a text and not empty)"
    },
    "name": "refused words delta: an empty id",
    "words": {
@@ -4025,7 +4025,7 @@
     "version": 1
    },
    "expect": {
-    "refused": "the words delta names a requirement that is not an id: 1"
+    "refused": "the words delta names a requirement that is not an id (an id is a text and not empty)"
    },
    "name": "refused words delta: an id that is not text",
    "words": {
@@ -4101,7 +4101,7 @@
     ]
    },
    "expect": {
-    "refused": "an evidence line is not {requirement, evidence} with evidence one of unchanged, changed, new, dropped: {'requirement': 'R1'}"
+    "refused": "evidence line 1 is not {requirement, evidence} with evidence one of unchanged, changed, new, dropped"
    },
    "name": "refused evidence delta: a line with no evidence",
    "words": {
@@ -4125,7 +4125,7 @@
     ]
    },
    "expect": {
-    "refused": "an evidence line is not {requirement, evidence} with evidence one of unchanged, changed, new, dropped: {'requirement': 'R1', 'evidence': 'gone'}"
+    "refused": "evidence line 1 is not {requirement, evidence} with evidence one of unchanged, changed, new, dropped"
    },
    "name": "refused evidence delta: a line with an unknown evidence",
    "words": {

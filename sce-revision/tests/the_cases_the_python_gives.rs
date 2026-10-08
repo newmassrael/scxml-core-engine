@@ -10,7 +10,9 @@
 //! result, or the same refusal in the same words, for every case. A refusal in other words has
 //! changed what a person is told, so the sentence is compared and not only the fact of a refusal.
 
-use sce_revision::{belongs_to_list, between, extends, parse, LineageError};
+use sce_revision::{
+    belongs_to, belongs_to_list, between, extends, join, parse, render, LineageError,
+};
 use serde_json::{json, Value};
 
 const CASES: &str = include_str!("../../sce-build/tests/fixtures/revision_judgment/cases.json");
@@ -94,6 +96,32 @@ fn a_lineage_is_the_lineage_of_its_list_or_is_refused_in_the_pythons_words() {
             lineage(case, "lineage", table),
             case["manifest_text"].as_str().expect("a manifest text"),
             case["sidecar_text"].as_str(),
+        ))
+    });
+}
+
+#[test]
+fn a_delta_belongs_to_the_record_of_its_revision_or_is_refused_in_the_pythons_words() {
+    held_to_the_python("belongs_to", |case, _| {
+        verdict(belongs_to(&case["delta"], &case["record"]))
+    });
+}
+
+#[test]
+fn the_words_joined_with_the_evidence_are_the_pythons_row_for_row() {
+    held_to_the_python("join", |case, _| {
+        outcome(join(&case["words"], &case["evidence"]))
+    });
+}
+
+#[test]
+fn the_page_an_owner_reads_is_the_pythons_character_for_character() {
+    held_to_the_python("render", |case, _| {
+        let sentences = Some(&case["sentences"]).filter(|sentences| !sentences.is_null());
+        json!(render(
+            &case["result"],
+            sentences,
+            case["title"].as_str().unwrap_or_default()
         ))
     });
 }
