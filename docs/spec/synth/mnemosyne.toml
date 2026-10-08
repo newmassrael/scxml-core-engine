@@ -165,6 +165,9 @@ scan_exclusions = [
     # over its 23 Rust sources: no `§` citation of any ledger.
     "app-core/",
     "app/",
+    # The judgment of a revision of a requirement list (`sce-revision/`). Measured
+    # 2026-10-09 over its 4 Rust sources: no `§` citation of any ledger.
+    "sce-revision/",
 ]
 severity_missing = "reject"
 # Path B curated: all 2590 §synth- citations are bound to a

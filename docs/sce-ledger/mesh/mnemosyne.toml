@@ -201,6 +201,9 @@ scan_exclusions = [
     # 2026-10-03 over its 23 Rust sources, no `§` citation of any ledger.
     "app-core/",
     "app/",
+    # The judgment of a revision of a requirement list (`sce-revision/`): no Mesh code and,
+    # measured 2026-10-09 over its 4 Rust sources, no `§` citation of any ledger.
+    "sce-revision/",
 ]
 severity_missing = "reject"
 # Path B curated: every §mesh-<n> cite is bound to a ratified

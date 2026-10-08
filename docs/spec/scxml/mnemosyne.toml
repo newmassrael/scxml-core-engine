@@ -213,6 +213,14 @@ scan_exclusions = [
     # in `paths`, which is what the existence axis would force anyway.
     "app-core/",
     "app/",
+    # The judgment of a revision of a requirement list (`sce-revision/`), which the
+    # workbench's store and the generator both ask. It implements no clause of the
+    # W3C SCXML Recommendation: it reads lineages (hashes and numbers) and says
+    # whether one continues another. Measured 2026-10-09 over all 4 Rust sources:
+    # not one carries a `§` citation, in this workspace's namespace or any other,
+    # so excluding them swallows no section from this gate. If one ever cites a
+    # clause it has to leave this list and be enrolled in `paths`.
+    "sce-revision/",
 ]
 severity_missing = "reject"
 # Path B curated: every §scxml-<id> cite is bound to a ratified
