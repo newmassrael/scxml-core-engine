@@ -139,7 +139,20 @@ template <typename Machine> class Driver {
 public:
     using Reader = std::function<json(const Machine &)>;
 
+    /// What the machine asked of its host since this was last called, oldest first,
+    /// each as a scenario's `host_calls` writes it: `{"action": …, "args": […]}`,
+    /// the name the document gives the action and its arguments in the order the
+    /// document gives them.
+    using HostCalls = std::function<json()>;
+
     explicit Driver(std::map<std::string, Reader> variables) : variables_(std::move(variables)) {}
+
+    /// A machine with `<sce:action>`s takes the host that performs them as it is
+    /// built, because its first entry can already call it; `hostCalls` reads what
+    /// that host recorded.
+    template <typename Host>
+    Driver(std::map<std::string, Reader> variables, Host &host, HostCalls hostCalls)
+        : machine_(host), variables_(std::move(variables)), hostCalls_(std::move(hostCalls)) {}
 
     /// The machine runs on a manual clock, so a delayed send waits exactly the
     /// time a step names (`advance`) and not the time the test happened to take.
@@ -203,6 +216,17 @@ public:
         return found == variables_.end() ? json() : found->second(machine_);
     }
 
+    /// Whether the machine's host is one that records what it is asked.
+    bool recordsHostCalls() const {
+        return static_cast<bool>(hostCalls_);
+    }
+
+    /// What the machine asked of its host since this was last called. Null for a
+    /// machine whose host is not one that records.
+    json hostCalls() {
+        return hostCalls_ ? hostCalls_() : json();
+    }
+
 private:
     /// The rounds the machine needs before it is read back. The generated policy
     /// says which call it needs: `step` drains the queues and nothing else, and a
@@ -222,6 +246,7 @@ private:
 
     Machine machine_;
     std::map<std::string, Reader> variables_;
+    HostCalls hostCalls_;
 };
 
 /// Replay `machine`'s scenario file against `driver`. Every step names an event
@@ -246,6 +271,15 @@ template <typename Machine> void replay(const std::string &machine, Driver<Machi
             driver.send(event, step.contains("data") ? step["data"].dump() : "");
         }
         const auto &expect = step["expect"];
+        // What the machine asked of its host in this step. Read on every step so
+        // that a step which states nothing does not hand its calls to the next, and
+        // a step that states some needs a driver that records them.
+        const json asked = driver.hostCalls();
+        if (expect.contains("host_calls")) {
+            EXPECT_TRUE(driver.recordsHostCalls())
+                << "this driver records no host calls, so it cannot hold a step to them";
+            EXPECT_EQ(asked, expect["host_calls"]) << "what the machine asked of its host";
+        }
         if (expect.value("ended", false)) {
             EXPECT_TRUE(driver.ended());
             // Compared as a value, so the order the pairs were written in is
@@ -818,6 +852,32 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, ACancelRemovesTheSendItsIdNames) {
         {"refusals", [](const Machine &m) { return json(m.refusals()); }},
     });
     replay("static_cancel_expr", driver);
+}
+
+// A native host action takes the machine's variables as typed arguments, each
+// read when the call is made, and the host the scenario's `host_calls` are read
+// from records them: one call per entry of `idle`, with the datamodel as it stood.
+TEST(AStaticDatamodelRunsGeneratedCppTest, AHostActionTellsItsHostWhatTheDatamodelHeld) {
+    namespace Hc = G::static_host_call;
+    using Machine = Hc::static_host_call;
+
+    struct Host : Hc::StaticHostCallActions {
+        json calls = json::array();
+
+        void showAttempts(uint32_t count, bool exhausted) override {
+            calls.push_back({{"action", "showAttempts"}, {"args", json::array({count, exhausted})}});
+        }
+
+        /// The calls made since this was last called, and forgets them.
+        json take() {
+            json taken = std::move(calls);
+            calls = json::array();
+            return taken;
+        }
+    } host;
+
+    Driver<Machine> driver({}, host, [&host] { return host.take(); });
+    replay("static_host_call", driver);
 }
 
 // A child session an `<invoke>` started is driven through its parent by

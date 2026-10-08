@@ -34,6 +34,8 @@ import com.sce.integration.static_event_arrival.StaticEventArrivalStateMachine
 import com.sce.integration.static_event_wildcard.StaticEventWildcardStateMachine
 import com.sce.integration.static_foreach.StaticForeachStateMachine
 import com.sce.integration.static_history.StaticHistoryStateMachine
+import com.sce.integration.static_host_call.RecordingStaticHostCallActions
+import com.sce.integration.static_host_call.StaticHostCallStateMachine
 import com.sce.integration.static_invoke.StaticInvokeStateMachine
 import com.sce.integration.static_invoke_params.StaticInvokeParamsStateMachine
 import com.sce.integration.static_invoke_string.StaticInvokeStringStateMachine
@@ -75,9 +77,11 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.DisplayName
@@ -137,8 +141,29 @@ class StaticScenarioTest {
     }
 
     /**
+     * What `static_host_call` asked of its host since this was last called, oldest
+     * first, each as a scenario's `host_calls` writes it: the name the document
+     * gives the action and its arguments in the order the document gives them.
+     */
+    private fun staticHostCallCalls(host: RecordingStaticHostCallActions): () -> List<JsonElement> = {
+        val fresh =
+            host.calls.map { call ->
+                when (call) {
+                    is RecordingStaticHostCallActions.Call.ShowAttempts ->
+                        buildJsonObject {
+                            put("action", "showAttempts")
+                            put("args", JsonArray(listOf(JsonPrimitive(call.count.toLong()), JsonPrimitive(call.exhausted))))
+                        }
+                }
+            }
+        host.clear()
+        fresh
+    }
+
+    /**
      * Replay [scenario] against a machine driven by [send] and [tick], read
-     * back with [save] after every step, and asked whether it has [ended].
+     * back with [save] after every step, and asked whether it has [ended]. A
+     * machine with a host that records its `<sce:action>`s gives [hostCalls].
      */
     private fun replay(
         scenario: JsonObject,
@@ -148,6 +173,7 @@ class StaticScenarioTest {
         ended: () -> Boolean,
         donedata: () -> String = { "" },
         advance: (Long) -> Unit = { error("this machine runs on no manual clock to advance") },
+        hostCalls: (() -> List<JsonElement>)? = null,
     ) {
         val steps = scenario.getValue("steps").jsonArray
         assertTrue(steps.isNotEmpty(), "a scenario with no steps judges nothing")
@@ -167,6 +193,17 @@ class StaticScenarioTest {
                 tick()
             }
             val expect = step.getValue("expect").jsonObject
+            // What the machine asked of its host in this step. Read on every step
+            // so that a step which states nothing does not hand its calls to the
+            // next, and a step that states some needs a driver that records them.
+            val asked = hostCalls?.invoke()
+            expect["host_calls"]?.let { want ->
+                assertTrue(
+                    asked != null,
+                    "step $n ($note): this driver records no host calls, so it cannot hold a step to them",
+                )
+                assertEquals(want, JsonArray(asked!!), "step $n ($note): what the machine asked of its host")
+            }
             // A machine that ended in a top-level <final> has no saved state to
             // read — the save refuses one — so what a scenario can say of it is
             // that it ended, and that is the whole of the step.
@@ -630,6 +667,29 @@ class StaticScenarioTest {
                 tick = { sm.tick() },
                 save = { sm.save() },
                 ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // A native host action takes the machine's variables as typed arguments, each
+    // read when the call is made, and the generated recording host is what the
+    // scenario's `host_calls` are read from: one call per entry of `idle`, with the
+    // datamodel as it stood.
+    @Test
+    fun staticHostCallTellsItsHostWhatTheDatamodelHeld() {
+        val host = RecordingStaticHostCallActions()
+        val sm = StaticHostCallStateMachine(host)
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_host_call"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+                hostCalls = staticHostCallCalls(host),
             )
         } finally {
             sm.cleanup()

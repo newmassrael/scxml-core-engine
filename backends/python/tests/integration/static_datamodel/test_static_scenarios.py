@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import dataclasses
 import importlib
+import inspect
 import json
 import re
 import sys
@@ -83,6 +84,23 @@ def _as_json(value):
     return value
 
 
+class _ScenarioHost:
+    """What a machine asked of its host, as a scenario's ``host_calls`` writes it:
+    the name the document gives the action, and its arguments in the order the
+    document gives them."""
+
+    def __init__(self) -> None:
+        self._calls: list[dict] = []
+
+    def show_attempts(self, count: int, exhausted: bool) -> None:
+        self._calls.append({"action": "showAttempts", "args": [count, exhausted]})
+
+    def take(self) -> list[dict]:
+        """The calls made since this was last called, oldest first."""
+        taken, self._calls = self._calls, []
+        return taken
+
+
 def replay(name: str, machine: str | None = None) -> None:
     """Run scenario ``name`` against the machine it names. Every step names an
     event (or none, for the machine as started) and what it must hold
@@ -96,7 +114,10 @@ def replay(name: str, machine: str | None = None) -> None:
     module = importlib.import_module(
         f"integration.static_datamodel.{machine or scenario['machine']}_sm"
     )
-    engine = module.create_engine()
+    # A machine with `<sce:action>`s is built with the host that performs them, and
+    # the generated engine says so by taking it: that host is the one that records.
+    host = _ScenarioHost() if "actions" in inspect.signature(module.create_engine).parameters else None
+    engine = module.create_engine() if host is None else module.create_engine(host)
     engine.initialize()
     policy = engine.policy
     readers = module.SCE_HOST_NAMES["readers"]
@@ -118,6 +139,17 @@ def replay(name: str, machine: str | None = None) -> None:
                 data = json.dumps(step["data"]) if "data" in step else ""
                 engine.send_event(event, EventMetadata(data=data))
         expect = step["expect"]
+        # What the machine asked of its host in this step. Read on every step so
+        # that a step which states nothing does not hand its calls to the next, and
+        # a step that states some needs a driver that records them.
+        asked = host.take() if host is not None else None
+        if "host_calls" in expect:
+            assert asked is not None, (
+                f"{where}: this driver records no host calls, so it cannot hold a step to them"
+            )
+            assert asked == expect["host_calls"], (
+                f"{where}: the machine asked its host {asked!r}, not {expect['host_calls']!r}"
+            )
         if expect.get("ended"):
             assert engine.reached_final, f"{where}: the machine ended in a top-level <final>"
             if "donedata" in expect:
@@ -392,6 +424,13 @@ def test_a_sends_delay_is_computed_when_it_runs() -> None:
 # `advance_ms` steps move the engine's time on.
 def test_a_cancel_removes_the_send_its_id_names() -> None:
     replay("static_cancel_expr")
+
+
+# A native host action takes the machine's variables as typed arguments, each
+# read when the call is made, and the host the scenario's `host_calls` are read
+# from records them: one call per entry of `idle`, with the datamodel as it stood.
+def test_a_host_action_tells_its_host_what_the_datamodel_held() -> None:
+    replay("static_host_call")
 
 
 # A child session an `<invoke>` started is driven through its parent by

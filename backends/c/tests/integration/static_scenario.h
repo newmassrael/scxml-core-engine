@@ -106,6 +106,15 @@ typedef struct {
     // each named state active and no other, and a driver whose machine does not
     // count them may leave this unset: a step that asks for it then fails.
     size_t (*active_count)(void *sm);
+    // What the machine asked of its host since this was last called, as the compact
+    // JSON array a scenario's `host_calls` is: each call `{"action":"<name>",
+    // "args":[…]}` — the name the document gives the action, and its arguments in
+    // the order the document gives them — oldest first, and `[]` for none. Called
+    // once per step, so a step is judged on the calls of that step alone. A
+    // scenario states its calls with the members in that order, which is what lets
+    // the two be compared as text. NULL for a machine whose host is not one that
+    // records: a step that states `host_calls` then fails.
+    const char *(*host_calls)(void *sm);
 } sce_scenario_driver_t;
 
 // `index` of a record that is a variable of its own, not an element of a list.
@@ -599,7 +608,9 @@ static int sce_scenario_expect_record(sce_scenario_cursor_t *c, const sce_scenar
 }
 
 // What a step expects, read from its `expect` object — the object `c` is at.
-static int sce_scenario_expect(sce_scenario_cursor_t *c, const sce_scenario_driver_t *d, int step) {
+// `asked` is what the machine told its host in this step, or NULL for a driver
+// that records none.
+static int sce_scenario_expect(sce_scenario_cursor_t *c, const sce_scenario_driver_t *d, int step, const char *asked) {
     int bad = 0;
     char key[64];
     char message[256];
@@ -658,6 +669,22 @@ static int sce_scenario_expect(sce_scenario_cursor_t *c, const sce_scenario_driv
             } else if (d->active_count(d->sm) != listed) {
                 (void)snprintf(message, sizeof(message), "%zu state(s) are active, `configuration` names %zu",
                                d->active_count(d->sm), listed);
+                bad |= sce_scenario_fail(d, step, message);
+            }
+        } else if (strcmp(key, "host_calls") == 0) {
+            // The calls the machine made of its host in this step, as the compact
+            // text the driver writes them in.
+            char want[1024];
+            sce_scenario_space(c);
+            const char *from = c->at;
+            if (!sce_scenario_skip_value(c) || !sce_scenario_compact(from, c->at, want, sizeof(want))) {
+                return sce_scenario_fail(d, step, "`host_calls` is not well formed, or is longer than the buffer");
+            }
+            if (asked == NULL) {
+                bad |=
+                    sce_scenario_fail(d, step, "this driver records no host calls, so it cannot hold a step to them");
+            } else if (strcmp(asked, want) != 0) {
+                (void)snprintf(message, sizeof(message), "the machine asked its host %.100s, not %.100s", asked, want);
                 bad |= sce_scenario_fail(d, step, message);
             }
         } else if (strcmp(key, "donedata") == 0) {
@@ -1014,7 +1041,10 @@ static int sce_scenario_step(sce_scenario_cursor_t *c, const sce_scenario_driver
             return sce_scenario_fail(d, step, "the machine's clock could not be moved");
         }
     }
-    return expect.at == NULL ? 0 : sce_scenario_expect(&expect, d, step);
+    // What the machine asked of its host in this step. Read on every step, so that
+    // a step which states nothing does not hand its calls to the next.
+    const char *asked = d->host_calls == NULL ? NULL : d->host_calls(d->sm);
+    return expect.at == NULL ? 0 : sce_scenario_expect(&expect, d, step, asked);
 }
 
 // Replay the scenario at `path` against `d`: the number of steps that failed,

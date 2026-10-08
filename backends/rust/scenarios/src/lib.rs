@@ -7,11 +7,13 @@
 //! A scenario (`sce-build/tests/fixtures/static_datamodel/scenarios/*.json`) is
 //! data: a list of steps, each an external event with its payload and what the
 //! machine must hold after it runs to quiescence — its current state, the set of
-//! its active states (`configuration`) and any of its variables. What the
+//! its active states (`configuration`), any of its variables and what it asked of
+//! its host (`host_calls`). What the
 //! machine holds is read from its saved state, the text
 //! every backend saves byte for byte, so one scenario judges every backend by the
 //! same answer and needs no per-type glue.
 
+pub mod hosts;
 pub mod integration;
 pub mod machines;
 #[cfg(target_arch = "wasm32")]
@@ -55,8 +57,37 @@ fn settle<P: StatePolicy>(engine: &mut Engine<P>) {
 /// A mismatch panics with the step and what differed: a test fails on it, and
 /// on a target where a panic stops the module the message is what says why.
 pub fn replay<P: StatePolicy>(
+    engine: Engine<P>,
+    save: impl Fn(&Engine<P>) -> SavedState,
+    scenario: &str,
+) {
+    replay_recording(engine, save, None, scenario);
+}
+
+/// [`replay`] for a machine whose `<sce:action>`s go to a host that records them.
+///
+/// `host_calls` answers what the machine asked of its host since the last time
+/// it was asked, oldest first, each as the scenario writes it
+/// (`{"action": "showAttempts", "args": [0, false]}`, the arguments in the order
+/// the document gives them). A step's `expect.host_calls` holds the calls made in
+/// THAT step, the machine's start included in the first, and a step that states
+/// none is not judged on them: they are not carried into the next step.
+pub fn replay_with_host<P: StatePolicy>(
+    engine: Engine<P>,
+    save: impl Fn(&Engine<P>) -> SavedState,
+    mut host_calls: impl FnMut(&Engine<P>) -> Vec<Value>,
+    scenario: &str,
+) {
+    replay_recording(engine, save, Some(&mut host_calls), scenario);
+}
+
+/// What a driver offers to read what the machine asked of its host.
+type HostCalls<'a, P> = Option<&'a mut dyn FnMut(&Engine<P>) -> Vec<Value>>;
+
+fn replay_recording<P: StatePolicy>(
     mut engine: Engine<P>,
     save: impl Fn(&Engine<P>) -> SavedState,
+    mut host_calls: HostCalls<'_, P>,
     scenario: &str,
 ) {
     let scenario: Value = serde_json::from_str(scenario).expect("a scenario is JSON");
@@ -90,6 +121,20 @@ pub fn replay<P: StatePolicy>(
         }
         let expect = &step["expect"];
         let note = step.get("note").and_then(Value::as_str).unwrap_or("");
+        // What the machine asked of its host in this step. Read on every step so
+        // that a step which states nothing does not hand its calls to the next.
+        let asked = host_calls.as_mut().map(|read| read(&engine));
+        match (expect.get("host_calls"), asked) {
+            (Some(want), Some(got)) => assert_eq!(
+                &Value::Array(got),
+                want,
+                "step {n} ({note}): what the machine asked of its host"
+            ),
+            (Some(_), None) => panic!(
+                "step {n} ({note}): this driver records no host calls, so it cannot hold a step to them"
+            ),
+            (None, _) => {}
+        }
         // A machine that ended in a top-level <final> has no saved state to
         // read — the save refuses one — so what a scenario can say of it is
         // that it ended, and that is the whole of the step.

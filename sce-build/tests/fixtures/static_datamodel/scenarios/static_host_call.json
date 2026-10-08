@@ -1,0 +1,28 @@
+{
+  "machine": "static_host_call",
+  "about": "A native host action whose arguments are typed datamodel expressions, called from <onentry>, where no triggering event is in scope: `idle` calls `showAttempts` with `attempts` and `attempts >= 3` each time it is entered, and `retry` re-enters it, adding one, while `attempts < 3`. `attempts` is the machine's own, not published, so what the machine holds is read from what it told its host: a step's `host_calls` are the calls made in that step, in order, each by the name the document gives the action and its arguments in the order the document gives them. The fourth `retry` finds the guard false and re-enters nothing, so the host hears nothing. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "note": "started: `idle` was entered once, with nothing tried yet",
+      "expect": { "state": "idle",
+                  "host_calls": [ { "action": "showAttempts", "args": [0, false] } ] } },
+
+    { "note": "the first retry re-enters `idle` with one attempt",
+      "event": "retry",
+      "expect": { "state": "idle",
+                  "host_calls": [ { "action": "showAttempts", "args": [1, false] } ] } },
+
+    { "note": "the second",
+      "event": "retry",
+      "expect": { "state": "idle",
+                  "host_calls": [ { "action": "showAttempts", "args": [2, false] } ] } },
+
+    { "note": "the third reaches the limit, and the second argument is the comparison over it",
+      "event": "retry",
+      "expect": { "state": "idle",
+                  "host_calls": [ { "action": "showAttempts", "args": [3, true] } ] } },
+
+    { "note": "the fourth finds `attempts < 3` false: no transition, no entry, no call",
+      "event": "retry",
+      "expect": { "state": "idle", "host_calls": [] } }
+  ]
+}

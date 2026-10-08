@@ -164,6 +164,56 @@ bool holds(const nlohmann::json &got, const nlohmann::json &want) {
     return got == want;
 }
 
+/// A host that performs every operation and records each call as the JSON of
+/// its arguments. A child session performs its actions on a thread of its own
+/// once it has been started, so the calls are read under the lock they are
+/// written under.
+class RecordingHost : public INativeActionHost {
+public:
+    bool performNativeAction(const std::string &name, const std::vector<ScriptValue> &args) override {
+        nlohmann::json values = nlohmann::json::array();
+        for (const auto &arg : args) {
+            if (const auto *flag = std::get_if<bool>(&arg)) {
+                values.push_back(*flag);
+            } else if (const auto *whole = std::get_if<int64_t>(&arg)) {
+                values.push_back(*whole);
+            } else if (const auto *real = std::get_if<double>(&arg)) {
+                values.push_back(*real);
+            } else if (const auto *text = std::get_if<std::string>(&arg)) {
+                values.push_back(*text);
+            } else {
+                values.push_back(nullptr);
+            }
+        }
+        std::lock_guard<std::mutex> lock(mutex_);
+        calls_.push_back({name, values});
+        return true;
+    }
+
+    std::vector<std::pair<std::string, nlohmann::json>> calls() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return calls_;
+    }
+
+    /// The calls made since this was last called, oldest first, each as a
+    /// scenario's `host_calls` writes it: `{"action": …, "args": […]}`, the name
+    /// the document gives the action and its arguments in the order the document
+    /// gives them.
+    nlohmann::json take() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        nlohmann::json taken = nlohmann::json::array();
+        for (; taken_ < calls_.size(); ++taken_) {
+            taken.push_back({{"action", calls_[taken_].first}, {"args", calls_[taken_].second}});
+        }
+        return taken;
+    }
+
+private:
+    mutable std::mutex mutex_;
+    std::vector<std::pair<std::string, nlohmann::json>> calls_;
+    std::size_t taken_ = 0;
+};
+
 }  // namespace
 
 class AStaticDatamodelRunsLoweredUnderTheInterpreterTest : public ::testing::Test {
@@ -236,6 +286,10 @@ protected:
     /// once lowered.
     void replay(const std::string &document, const nlohmann::json &scenario) {
         const auto machine = std::make_shared<StateMachine>(*engine_);
+        // The host a machine's `<sce:action>`s go to, which records them: what a
+        // step's `host_calls` is read from. A machine with no action never asks it.
+        const auto host = std::make_shared<RecordingHost>();
+        machine->setNativeActionHost(host);
         const auto eventRaiser = wire(*machine);
         ASSERT_TRUE(machine->loadSCXMLFromString(document)) << "the Interpreter does not load the lowered document";
         ASSERT_TRUE(machine->start());
@@ -261,6 +315,13 @@ protected:
                 eventRaiser->processQueuedEvents();
             }
             const auto &expect = step.at("expect");
+            // What the machine asked of its host in this step. Read on every step
+            // so that a step which states nothing does not hand its calls to the
+            // next.
+            const auto asked = host->take();
+            if (expect.contains("host_calls")) {
+                EXPECT_EQ(asked, expect.at("host_calls")) << "what the machine asked of its host";
+            }
             // A machine that ended in a top-level <final> has no saved state
             // to read on the generated backends — the save refuses one — so
             // what a scenario says of it is that it ended, and that is the
@@ -368,42 +429,6 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheInterpreterDoesWha
 
 namespace {
 
-/// A host that performs every operation and records each call as the JSON of
-/// its arguments. A child session performs its actions on a thread of its own
-/// once it has been started, so the calls are read under the lock they are
-/// written under.
-class RecordingHost : public INativeActionHost {
-public:
-    bool performNativeAction(const std::string &name, const std::vector<ScriptValue> &args) override {
-        nlohmann::json values = nlohmann::json::array();
-        for (const auto &arg : args) {
-            if (const auto *flag = std::get_if<bool>(&arg)) {
-                values.push_back(*flag);
-            } else if (const auto *whole = std::get_if<int64_t>(&arg)) {
-                values.push_back(*whole);
-            } else if (const auto *real = std::get_if<double>(&arg)) {
-                values.push_back(*real);
-            } else if (const auto *text = std::get_if<std::string>(&arg)) {
-                values.push_back(*text);
-            } else {
-                values.push_back(nullptr);
-            }
-        }
-        std::lock_guard<std::mutex> lock(mutex_);
-        calls_.push_back({name, values});
-        return true;
-    }
-
-    std::vector<std::pair<std::string, nlohmann::json>> calls() const {
-        std::lock_guard<std::mutex> lock(mutex_);
-        return calls_;
-    }
-
-private:
-    mutable std::mutex mutex_;
-    std::vector<std::pair<std::string, nlohmann::json>> calls_;
-};
-
 /// A host that performs no operation of its own and answers each child its own
 /// `RecordingHost`, keeping what it was asked and what it answered.
 class ParentHost : public INativeActionHost {
@@ -439,12 +464,12 @@ private:
 
 }  // namespace
 
-// `static_host_call` is the one fixture with no scenario: its host operation is
-// the host's, so what it holds is the calls the host was given. The generated
-// backends hold the same calls in their own tests (a generated recording host
-// on Rust and Kotlin); here the Interpreter performs the action through the host
-// installed on the machine, with the arguments its engine computes from the
-// lowered expressions — a variable, and a comparison over it.
+// `static_host_call`'s host operation is the host's, so what the machine holds is
+// the calls the host was given, which its scenario states as `host_calls` and
+// every backend, this one included, is held to. This is the same machine driven by
+// hand: the Interpreter performs the action through the host installed on the
+// machine, with the arguments its engine computes from the lowered expressions —
+// a variable, and a comparison over it.
 TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, AHostActionIsPerformedWithTheValuesItsArgumentsComputeTo) {
     const Lowered lowered = lower(kFixtures / "static_host_call.scxml");
     ASSERT_TRUE(lowered.ok) << "`<sce:action>` is lowered for the Interpreter now: " << lowered.refusal.dump();

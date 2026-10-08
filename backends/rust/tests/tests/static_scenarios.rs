@@ -19,7 +19,7 @@
 // too; this file is what picks each machine and its scenario.
 
 use sce_rust_runtime::{Engine, SceClock};
-use sce_rust_scenarios::replay;
+use sce_rust_scenarios::{hosts, replay, replay_with_host};
 use sce_rust_tests::integration::static_datamodel::static_block_ends_list_sm::{
     StaticBlockEndsListPersist, StaticBlockEndsListPolicy,
 };
@@ -468,6 +468,33 @@ fn static_record_list_appends_a_record_whole_and_walks_it_by_field() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_record_list.json"
+        ),
+    );
+}
+
+// A native host action takes the machine's variables as typed arguments, each
+// read when the call is made, and the generated recording host is what the
+// scenario's `host_calls` are read from: one call per entry of `idle`, with the
+// datamodel as it stood.
+//
+// The machine is the replay crate's own copy of the committed one, not this
+// crate's: the function that turns what its host recorded into scenario calls
+// is written over that copy's types, and the two are different types though
+// they are one file.
+#[test]
+fn static_host_call_tells_its_host_what_the_datamodel_held() {
+    use sce_rust_scenarios::integration::static_datamodel::static_host_call_sm::{
+        RecordingStaticHostCallActions, StaticHostCallPersist, StaticHostCallPolicy,
+    };
+    let mut seen = 0usize;
+    replay_with_host(
+        Engine::new(StaticHostCallPolicy::new(
+            RecordingStaticHostCallActions::default(),
+        )),
+        |engine| engine.save().expect("saves"),
+        |engine| hosts::static_host_call(engine, &mut seen),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_host_call.json"
         ),
     );
 }

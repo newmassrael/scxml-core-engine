@@ -106,6 +106,7 @@
 #include "static_event_wildcard_sm.h"
 #include "static_foreach_sm.h"
 #include "static_history_sm.h"
+#include "static_host_call_sm.h"
 #include "static_invoke_params_sm.h"
 #include "static_invoke_sm.h"
 #include "static_invoke_string_sm.h"
@@ -283,7 +284,7 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
 // that has one. INIT starts the machine in `sm`, and ADVANCE moves the clock of a
 // machine that waits on one, or is NULL for a machine that does not.
 #define STATIC_SCENARIO_CORE(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, DONE, REAL, REAL_LIST, RECORD_REAL, INIT,     \
-                             ADVANCE)                                                                                  \
+                             ADVANCE, HOST_CALLS)                                                                      \
     static bool M##_read_record_field(void *sm, const char *name, size_t index, const char *field, int64_t *out) {     \
         for (size_t i = 0; RECORDS[i].name != NULL; ++i) {                                                             \
             if (strcmp(RECORDS[i].name, name) == 0) {                                                                  \
@@ -383,7 +384,8 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
                                               REAL_LIST,                                                               \
                                               RECORD_REAL,                                                             \
                                               ADVANCE,                                                                 \
-                                              M##_active_count};                                                       \
+                                              M##_active_count,                                                        \
+                                              HOST_CALLS};                                                             \
         char path[512];                                                                                                \
         (void)snprintf(path, sizeof(path), "%s/%s.json", SCE_STATIC_SCENARIO_DIR, scenario);                           \
         int replayed = 0;                                                                                              \
@@ -400,7 +402,14 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
 // A machine that waits on no clock, started as `_init` starts it.
 #define STATIC_SCENARIO_FULL(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, DONE, REAL, REAL_LIST, RECORD_REAL)           \
     STATIC_SCENARIO_CORE(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, DONE, REAL, REAL_LIST, RECORD_REAL,               \
-                         M##_init(&sm), NULL)
+                         M##_init(&sm), NULL, NULL)
+
+// A machine whose `<sce:action>`s go to a host that records them: INIT starts it
+// with that host installed, which it must be before the first entry runs, and
+// HOST_CALLS answers what the host heard since it was last asked.
+#define STATIC_SCENARIO_HOSTED(M, STATES, VARIABLES, INIT, HOST_CALLS)                                                 \
+    STATIC_SCENARIO_CORE(M, STATES, VARIABLES, NULL, no_lists, no_records, NULL, NULL, NULL, NULL, INIT, NULL,         \
+                         HOST_CALLS)
 
 // A machine whose delayed sends wait on a clock the scenario owns: it is started
 // on a manual one, and an `advance_ms` step moves it on and runs what came due.
@@ -411,7 +420,7 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
         return true;                                                                                                   \
     }                                                                                                                  \
     STATIC_SCENARIO_CORE(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, NULL, NULL, NULL, NULL,                           \
-                         M##_init_with_clock(&sm, sce_clock_manual(0u)), M##_advance_clock)
+                         M##_init_with_clock(&sm, sce_clock_manual(0u)), M##_advance_clock, NULL)
 
 // A machine that publishes no real: DONE as above, and REAL, REAL_LIST and
 // RECORD_REAL — the readers of a real variable, of a list of reals and of a real
@@ -1501,6 +1510,67 @@ static const variable_t history_variables[] = {
 };
 STATIC_SCENARIO(static_history, history_states, history_variables, NULL, no_lists, no_records)
 
+// static_host_call: a native host action takes the machine's variables as typed
+// arguments, each read when the call is made. The machine publishes no variable,
+// so what it holds is read from what it told its host: the host installed here
+// writes each call as the compact JSON a scenario's `host_calls` states, `action`
+// first and then `args`, and hands back what it heard since it was last asked.
+static struct {
+    char text[1024];
+    size_t len;
+} host_heard;
+
+static void host_hears(const char *call) {
+    const size_t size = strlen(call);
+    /* A call that does not fit is left out, which the comparison then reports. */
+    if (host_heard.len + size + 2u >= sizeof(host_heard.text)) {
+        return;
+    }
+    if (host_heard.len > 0u) {
+        host_heard.text[host_heard.len++] = ',';
+    }
+    memcpy(host_heard.text + host_heard.len, call, size + 1u);
+    host_heard.len += size;
+}
+
+static void host_hears_show_attempts(void *user_data, uint32_t count, bool exhausted) {
+    (void)user_data;
+    char call[96];
+    (void)snprintf(call, sizeof(call), "{\"action\":\"showAttempts\",\"args\":[%u,%s]}", (unsigned)count,
+                   exhausted ? "true" : "false");
+    host_hears(call);
+}
+
+static const char *host_call_heard(void *sm) {
+    static char taken[sizeof(host_heard.text) + 2u];
+    (void)sm;
+    (void)snprintf(taken, sizeof(taken), "[%s]", host_heard.text);
+    host_heard.len = 0u;
+    host_heard.text[0] = '\0';
+    return taken;
+}
+
+/* The host is installed with the machine, before its first entry calls it. */
+static void host_call_start(static_host_call_t *sm) {
+    static_host_call_actions_t host;
+    memset(&host, 0, sizeof(host));
+    host.show_attempts = host_hears_show_attempts;
+    host_heard.len = 0u;
+    host_heard.text[0] = '\0';
+    if (!static_host_call_init_with_actions(sm, &host)) {
+        (void)fprintf(stderr, "static_host_call: FAIL - a complete vtable was refused\n");
+    }
+}
+
+static const name_value_t host_call_states[] = {
+    {"idle", STATIC_HOST_CALL_STATE_IDLE},
+};
+/* No variable is published; the empty name matches no scenario's. */
+static const variable_t host_call_variables[] = {
+    {"", NULL},
+};
+STATIC_SCENARIO_HOSTED(static_host_call, host_call_states, host_call_variables, host_call_start(&sm), host_call_heard)
+
 // static_invoke: a child session an `<invoke>` started is driven through its
 // parent by autoforward, takes the events it waits for in order, and its end
 // reaches the parent as `done.invoke`, which the parent counts. Leaving the state
@@ -1733,6 +1803,7 @@ int main(void) {
     bad |= static_cancel_expr_scenario("static_cancel_expr", 16);
     bad |= static_send_idlocation_scenario("static_send_idlocation", 13);
     bad |= static_history_scenario("static_history", 17);
+    bad |= static_host_call_scenario("static_host_call", 5);
     bad |= static_invoke_scenario("static_invoke", 6);
     bad |= static_invoke_scenario("static_invoke_abort", 4);
     bad |= static_invoke_params_scenario("static_invoke_params", 2);

@@ -4,8 +4,35 @@
 //! The table that says which committed machine ([`crate::integration`]) replays
 //! which scenario.
 
-use crate::replay;
+use crate::{hosts, replay, replay_with_host};
 use sce_rust_runtime::{Engine, SceClock};
+
+/// The machine's policy as a row builds it: a machine with `<sce:action>`s takes
+/// the host that records them.
+macro_rules! policy {
+    ($policy:ident) => {
+        $policy::new()
+    };
+    ($policy:ident, $host:ident) => {
+        $policy::new($host::default())
+    };
+}
+
+/// A row's replay: with the reader of what its host recorded, or without.
+macro_rules! replay_row {
+    ($engine:ident, $text:expr) => {
+        replay($engine, |engine| engine.save_at(0).expect("saves"), $text)
+    };
+    ($engine:ident, $text:expr, $calls:ident) => {{
+        let mut seen = 0usize;
+        replay_with_host(
+            $engine,
+            |engine| engine.save_at(0).expect("saves"),
+            |engine| hosts::$calls(engine, &mut seen),
+            $text,
+        )
+    }};
+}
 
 /// One row per scenario: the file it is read from, and the machine that replays
 /// it. A machine may serve several scenarios (`static_counter_bound` replays the
@@ -18,8 +45,12 @@ use sce_rust_runtime::{Engine, SceClock};
 /// keeps the clock the engine starts on, and that is the point of leaving it
 /// alone: on `wasm32-unknown-unknown` the engine's own default is host-owned
 /// time, and a replay that set a clock for every engine would never use it.
+///
+/// A row marked `+ <Host> => <reader>` is a machine with `<sce:action>`s: it takes
+/// the host of that name, which records what it is asked, and `hosts::<reader>`
+/// turns that into the calls a scenario's `host_calls` states.
 macro_rules! scenarios {
-    ($($name:literal => $module:ident::{$policy:ident, $persist:ident} $(@ $manual:ident)?;)*) => {
+    ($($name:literal => $module:ident::{$policy:ident, $persist:ident} $(@ $manual:ident)? $(+ $host:ident => $calls:ident)?;)*) => {
         /// The scenarios this crate can replay, by file name.
         pub const NAMES: &[&str] = &[$($name),*];
 
@@ -42,14 +73,14 @@ macro_rules! scenarios {
         pub fn run(name: &str) {
             match name {
                 $($name => {
-                    use crate::integration::static_datamodel::$module::{$persist, $policy};
+                    use crate::integration::static_datamodel::$module::{$persist, $policy $(, $host)?};
                     #[allow(unused_mut)]
-                    let mut engine = Engine::new($policy::new());
+                    let mut engine = Engine::new(policy!($policy $(, $host)?));
                     $(engine.set_clock(SceClock::$manual(0));)?
-                    replay(
+                    replay_row!(
                         engine,
-                        |engine| engine.save_at(0).expect("saves"),
-                        scenario_text($name).expect("the table names its own scenario"),
+                        scenario_text($name).expect("the table names its own scenario")
+                        $(, $calls)?
                     );
                 })*
                 other => panic!("`{other}` is not a scenario of this table"),
@@ -77,6 +108,7 @@ scenarios! {
     "static_event_wildcard" => static_event_wildcard_sm::{StaticEventWildcardPolicy, StaticEventWildcardPersist};
     "static_foreach" => static_foreach_sm::{StaticForeachPolicy, StaticForeachPersist};
     "static_history" => static_history_sm::{StaticHistoryPolicy, StaticHistoryPersist};
+    "static_host_call" => static_host_call_sm::{StaticHostCallPolicy, StaticHostCallPersist} + RecordingStaticHostCallActions => static_host_call;
     "static_invoke" => static_invoke_sm::{StaticInvokePolicy, StaticInvokePersist};
     "static_invoke_abort" => static_invoke_sm::{StaticInvokePolicy, StaticInvokePersist};
     "static_invoke_params" => static_invoke_params_sm::{StaticInvokeParamsPolicy, StaticInvokeParamsPersist};

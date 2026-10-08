@@ -2628,6 +2628,14 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         )
     endforeach()
 
+    # The host-action machine of `static_host_call` is generated once and used by
+    # two executables: the scenarios below, which read what it told its host, and
+    # the host-action cases further down.
+    sce_generate_static_integration_c_test(static_host_call
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_host_call.scxml"
+    )
+
     # A machine with a `<history>` and a `<parallel>`: what its history brought
     # back is read from the machine's whole active configuration.
     sce_generate_static_integration_c_test(static_history
@@ -2662,6 +2670,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_send_idlocation_SOURCES}
         ${INTEGRATION_C_TEST_static_timers_SOURCES}
         ${INTEGRATION_C_TEST_static_history_SOURCES}
+        ${INTEGRATION_C_TEST_static_host_call_SOURCES}
         ${INTEGRATION_C_TEST_static_invoke_SOURCES}
         ${INTEGRATION_C_TEST_static_invoke_params_SOURCES}
         ${INTEGRATION_C_TEST_static_invoke_string_SOURCES}
@@ -2713,10 +2722,6 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # variables, from the two documents the C++ suite drives. The second sits
     # beside that suite, for the reason `test_thermostat.scxml` sits beside its
     # test: the recorder is the interface the generator emits.
-    sce_generate_static_integration_c_test(static_host_call
-        "${SCE_C_INTEGRATION_GENERATED_DIR}"
-        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_host_call.scxml"
-    )
     sce_generate_static_integration_c_test(static_host_call_arguments
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
         SCXML_FILE "${CMAKE_SOURCE_DIR}/tests/integration/static_host_call_arguments.scxml"

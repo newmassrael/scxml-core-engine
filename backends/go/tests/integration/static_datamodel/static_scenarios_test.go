@@ -193,6 +193,11 @@ type machine struct {
 	ended         func() bool
 	donedata      func() string
 	variables     map[string]func() any
+	// hostCalls is what the machine asked of its host since it was last asked,
+	// oldest first, each as a scenario's `host_calls` writes it: the name the
+	// document gives the action and its arguments in the order the document gives
+	// them. Nil for a machine whose host is not one that records.
+	hostCalls func() []any
 }
 
 // settleTicks is how many rounds a host gives a machine that needs `Tick` after
@@ -320,6 +325,7 @@ func replay(t *testing.T, name string, m machine) {
 				Ended         bool           `json:"ended"`
 				Donedata      any            `json:"donedata"`
 				Variables     map[string]any `json:"variables"`
+				HostCalls     *[]any         `json:"host_calls"`
 			} `json:"expect"`
 		} `json:"steps"`
 	}
@@ -343,6 +349,20 @@ func replay(t *testing.T, name string, m machine) {
 				data = string(step.Data)
 			}
 			m.send(*step.Event, data)
+		}
+		// What the machine asked of its host in this step. Read on every step so
+		// that a step which states nothing does not hand its calls to the next, and
+		// a step that states some needs a driver that records them.
+		var asked any
+		if m.hostCalls != nil {
+			asked = asJSON(t, m.hostCalls())
+		}
+		if step.Expect.HostCalls != nil {
+			if m.hostCalls == nil {
+				t.Errorf("%s: this driver records no host calls, so it cannot hold a step to them", where())
+			} else if !reflect.DeepEqual(asked, any(*step.Expect.HostCalls)) {
+				t.Errorf("%s: the machine asked its host %v, not %v", where(), asked, *step.Expect.HostCalls)
+			}
 		}
 		if step.Expect.Ended {
 			if !m.ended() {
@@ -1200,6 +1220,38 @@ func TestAnErrorEndsTheBlockItStandsIn(t *testing.T) {
 		"afterOk":     func() any { return policy.AfterOk() },
 		"errors":      func() any { return policy.Errors() },
 	}))
+}
+
+// scenarioHost keeps what a machine asked of its host as a scenario writes it:
+// the name the document gives the action, and its arguments in the order the
+// document gives them.
+type scenarioHost struct{ calls []any }
+
+func (h *scenarioHost) ShowAttempts(count uint32, exhausted bool) {
+	h.calls = append(h.calls, map[string]any{"action": "showAttempts", "args": []any{count, exhausted}})
+}
+
+// take is the calls made since it was last called, oldest first, and forgets them.
+func (h *scenarioHost) take() []any {
+	taken := h.calls
+	h.calls = nil
+	if taken == nil {
+		return []any{}
+	}
+	return taken
+}
+
+// A native host action takes the machine's variables as typed arguments, each
+// read when the call is made, and the host the scenario's `host_calls` are read
+// from records them: one call per entry of `idle`, with the datamodel as it
+// stood.
+func TestAHostActionTellsItsHostWhatTheDatamodelHeld(t *testing.T) {
+	host := &scenarioHost{}
+	policy := static_host_call.NewStaticHostCallPolicy(host)
+	policy.SessionID = sce.GenerateSessionID()
+	m := drive[static_host_call.StaticHostCallState, static_host_call.StaticHostCallEvent](&policy, map[string]func() any{})
+	m.hostCalls = host.take
+	replay(t, "static_host_call", m)
 }
 
 // recordingHost keeps what a machine asked of its host, as `(value…)` text.
