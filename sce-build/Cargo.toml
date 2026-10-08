@@ -808,6 +808,13 @@ name = "cli_acceptance_record_wire"
 path = "tests/cli_acceptance_record_wire.rs"
 required-features = ["cli"]
 
+# `accept --sidecar`, through the binary: the record pins the digest of the words behind the
+# manifest's ids, and a sidecar that is not the manifest's own is refused.
+[[test]]
+name = "an_acceptance_pins_the_words_behind_the_manifest"
+path = "tests/an_acceptance_pins_the_words_behind_the_manifest.rs"
+required-features = ["cli"]
+
 # `acceptance-delta`, through the binary: a record's evidence against a design now, per
 # requirement, and the lines it prints against the ones the library computes.
 [[test]]
