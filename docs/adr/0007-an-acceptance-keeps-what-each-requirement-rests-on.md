@@ -140,8 +140,17 @@ state's `<onentry>` runs again (§scxml-3.13). A review of the revision tools fo
 
 - **The cell.** The `to` cell of a transition now ends in `type=internal` (or whatever the
   attribute says) when it is not the default `external`. The default is left out, so no row of a
-  document that never wrote the attribute changes and no record already taken is disturbed;
-  spelling the default out moves nothing.
+  document that never wrote the attribute changes; spelling the default out moves nothing.
+- **⚠ A record already taken IS affected, in one direction, and the first version of this
+  section said otherwise.** The digests an earlier build wrote for a design with an `internal`
+  transition are the ones `external` has now, so such a record compared with the same design
+  changed to `external` reads `unchanged`: the defect again, through the record. A review found
+  it the same day. The record now names the rule its digests were made under
+  (`evidence_rule`, 2 from this change; absent means 1), and `acceptance-delta` refuses a record
+  of any other rule and says to take the acceptance again. `acceptance-check`, which lapses by
+  bytes, is untouched, and a record that states no evidence stays byte-identical (it has no
+  rule to name). The rule moves whenever what a digest covers moves, as a column added to a row
+  would.
 - **The proof is a sweep, not a list.** `an_attribute_that_changes_a_transition_changes_its_row`
   moves every attribute of every transition of a fixture, one at a time, and requires the row to
   move whenever the parsed model of the transition does. Before the cell changed it found exactly

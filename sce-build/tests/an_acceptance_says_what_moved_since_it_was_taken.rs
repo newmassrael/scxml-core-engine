@@ -31,7 +31,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 use sce_build::acceptance_record::{
-    AcceptanceRecord, EvidenceDelta, RecordError, RequirementChange,
+    AcceptanceRecord, EvidenceDelta, RecordError, RequirementChange, EVIDENCE_RULE,
 };
 
 const CODEGEN: &str = env!("CARGO_BIN_EXE_sce-codegen");
@@ -123,9 +123,11 @@ impl Tree {
     }
 
     fn delta(&self, record: &AcceptanceRecord) -> EvidenceDelta {
-        record
-            .evidence_delta(&self.root().join("design.scxml"))
-            .expect("the design is compared")
+        self.delta_result(record).expect("the design is compared")
+    }
+
+    fn delta_result(&self, record: &AcceptanceRecord) -> Result<EvidenceDelta, RecordError> {
+        record.evidence_delta(&self.root().join("design.scxml"))
     }
 }
 
@@ -189,6 +191,64 @@ fn retiming_the_delay_reports_what_depends_on_it_and_nothing_else() {
         delta.unclaimed_added
     );
     assert_eq!(delta.unclaimed_gone, 1);
+}
+
+/// What a build that had not named its evidence rule wrote: the same record without it.
+fn as_made_before_the_rule_was_named(record: &AcceptanceRecord) -> AcceptanceRecord {
+    let mut wire: serde_json::Value =
+        serde_json::from_str(&record.to_json()).expect("a record is JSON");
+    wire.as_object_mut()
+        .expect("a record is an object")
+        .remove("evidence_rule")
+        .expect("a record that states evidence names its rule");
+    AcceptanceRecord::from_json(&wire.to_string()).expect("a record without the rule loads")
+}
+
+#[test]
+fn a_record_names_the_rule_its_evidence_was_made_under() {
+    let record = Tree::new(REENTRY).take();
+    assert_eq!(record.evidence_rule, Some(EVIDENCE_RULE));
+    assert!(
+        record.to_json().contains("\"evidence_rule\": 2"),
+        "{}",
+        record.to_json()
+    );
+}
+
+#[test]
+fn a_record_made_before_the_rule_was_named_is_not_compared_and_says_why() {
+    // The first rule left a transition's `type` out of its row, so the digests it wrote for a
+    // design with an `internal` transition are the ones `external` has now. Compared, a
+    // change from one to the other reads `unchanged`. This is that record: the digests of the
+    // `external` design, without a rule, held up against the `external` design.
+    let tree = Tree::new(REENTRY);
+    let old = as_made_before_the_rule_was_named(&tree.take());
+    match tree.delta_result(&old) {
+        Err(RecordError::Format { detail }) => {
+            assert!(detail.contains("rule 1"), "{detail}");
+            assert!(
+                detail.contains(&format!("rule {EVIDENCE_RULE}")),
+                "{detail}"
+            );
+            assert!(detail.contains("take the acceptance again"), "{detail}");
+        }
+        other => panic!("a record of the first rule was compared: {other:?}"),
+    }
+}
+
+#[test]
+fn a_record_of_another_rule_is_refused_whatever_number_it_names() {
+    let tree = Tree::new(REENTRY);
+    let record = tree.take();
+    for rule in [1, EVIDENCE_RULE + 1] {
+        let mut wire: serde_json::Value = serde_json::from_str(&record.to_json()).unwrap();
+        wire["evidence_rule"] = rule.into();
+        let other = AcceptanceRecord::from_json(&wire.to_string()).expect("loads");
+        assert!(
+            matches!(tree.delta_result(&other), Err(RecordError::Format { .. })),
+            "a record of rule {rule} was compared"
+        );
+    }
 }
 
 #[test]
@@ -357,8 +417,9 @@ fn what_cannot_be_compared_is_refused_and_not_read_as_everything_new() {
     let tree = Tree::new(ALARM);
     // A record from before records kept evidence: no evidence, nothing unclaimed.
     let mut old = serde_json::from_str::<serde_json::Value>(&tree.take().to_json()).expect("JSON");
-    old.as_object_mut().expect("an object").remove("evidence");
-    old.as_object_mut().expect("an object").remove("unclaimed");
+    for stated in ["evidence", "unclaimed", "evidence_rule"] {
+        old.as_object_mut().expect("an object").remove(stated);
+    }
     let old = AcceptanceRecord::from_json(&old.to_string()).expect("an old record loads");
     let refused = old.evidence_delta(&tree.root().join("design.scxml"));
     assert!(
@@ -515,6 +576,32 @@ mod through_the_binary {
         assert_eq!(out.status.code(), Some(20), "{out:?}");
         let stderr = String::from_utf8_lossy(&out.stderr);
         assert!(stderr.contains("cli/closure-input-unusable"), "{stderr}");
+    }
+
+    #[test]
+    fn a_record_of_another_evidence_rule_exits_with_the_unusable_input_code_and_says_which() {
+        let tree = Tree::new(REENTRY);
+        let record = accepted(&tree);
+        let mut wire: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&record).expect("read")).expect("JSON");
+        wire.as_object_mut()
+            .expect("an object")
+            .remove("evidence_rule")
+            .expect("the binary names the rule");
+        fs::write(&record, wire.to_string()).expect("write");
+        let out = run(
+            &[
+                "acceptance-delta",
+                &record.display().to_string(),
+                "--root",
+                &tree.root().display().to_string(),
+            ],
+            tree.root(),
+        );
+        assert_eq!(out.status.code(), Some(20), "{out:?}");
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(stderr.contains("cli/closure-input-unusable"), "{stderr}");
+        assert!(stderr.contains("rule 1"), "{stderr}");
     }
 
     #[test]

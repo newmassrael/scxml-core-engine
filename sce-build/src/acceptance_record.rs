@@ -157,6 +157,9 @@
 //!   unclaimed   the digests of the rows that      the `(none)` block; an unannotated
 //!               carry no requirement id           row a cited node depends on is here
 //!               themselves                        too, and in the fragment that reaches it
+//!   evidence_rule  the rule the digests above     two digests made differently are two
+//!               were made under (`EVIDENCE_RULE`) numbers; `acceptance-delta` refuses
+//!                                                 a record made under another rule
 //!   succeeds    the record this one replaced,     a chain of acceptances an auditor
 //!               by path and sha256                can walk
 //! ```
@@ -442,11 +445,31 @@ pub struct AcceptanceRecord {
     pub evidence: BTreeMap<String, Vec<String>>,
     /// The sorted digests of the rows that claim no requirement.
     pub unclaimed: Vec<String>,
+    /// The rule `evidence` and `unclaimed` were made under ([`EVIDENCE_RULE`]), when
+    /// they state anything. `None` for a record taken before the rule was named, which
+    /// is rule 1; and for one that states no evidence, which has no rule to name.
+    ///
+    /// ⚠ A digest is only comparable with a digest made the same way. The first rule
+    /// left a transition's `type` out of its row, so a record of an `internal`
+    /// transition holds the digest an `external` one has now: compared with the rule
+    /// of today it would call a change from one to the other `unchanged`
+    /// ([`AcceptanceRecord::evidence_delta`] refuses it instead).
+    pub evidence_rule: Option<u32>,
     /// The record this one replaced, when the caller said.
     pub succeeds: Option<PredecessorPin>,
     /// Which surface stated the acceptance, when it said. See the module docs.
     pub channel: Option<Channel>,
 }
+
+/// The rule the digests of `evidence` and `unclaimed` are made under.
+///
+/// Moves whenever what a digest covers moves: a row gaining a column or a cell
+/// gaining a value (rule 2: a transition's `type` is in its `to` cell when it is
+/// not the default). A record made under another rule is not compared by
+/// `acceptance-delta`, because two digests made differently are two numbers and
+/// their equality says nothing; the acceptance itself still holds or lapses by
+/// its bytes, as it always did.
+pub const EVIDENCE_RULE: u32 = 2;
 
 /// The record exactly as JSON spells it. Private — see the module docs.
 #[derive(Serialize, Deserialize)]
@@ -468,6 +491,8 @@ struct RecordWire {
     evidence: BTreeMap<String, Vec<String>>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     unclaimed: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    evidence_rule: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     succeeds: Option<PredecessorPin>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -770,6 +795,8 @@ impl AcceptanceRecord {
         let applied_rules = applied_rules_of(&house_rules, &reading.cited);
         let open_at_acceptance = reading.open;
         let (evidence, unclaimed) = reading.evidence.digests();
+        let evidence_rule =
+            (!evidence.is_empty() || !unclaimed.is_empty()).then_some(EVIDENCE_RULE);
         let mut authored_from = Vec::with_capacity(sources.len());
         for (role, path) in sources {
             authored_from.push(SourcePin {
@@ -790,6 +817,7 @@ impl AcceptanceRecord {
             open_at_acceptance,
             evidence,
             unclaimed,
+            evidence_rule,
             succeeds: None,
             channel: None,
         })
@@ -853,6 +881,21 @@ impl AcceptanceRecord {
                 detail: "the record states no evidence (it was taken before records kept it), so \
                          there is nothing to compare the design with; take the acceptance again"
                     .to_string(),
+            });
+        }
+        // A record that states evidence made it under some rule, and a digest is only
+        // comparable with one made the same way: an absent rule is rule 1.
+        let stated = !self.evidence.is_empty() || !self.unclaimed.is_empty();
+        let made_under = self.evidence_rule.unwrap_or(1);
+        if stated && made_under != EVIDENCE_RULE {
+            return Err(RecordError::Format {
+                detail: format!(
+                    "the record's evidence was made under rule {made_under} and this build \
+                     compares rule {EVIDENCE_RULE} (a transition's `type` is part of its row \
+                     now), so equal digests would not mean an unchanged row; take the \
+                     acceptance again. Whether the acceptance still holds is a different \
+                     question and `acceptance-check` still answers it"
+                ),
             });
         }
         let mut requirements = BTreeMap::new();
@@ -1100,6 +1143,7 @@ impl AcceptanceRecord {
             open_at_acceptance: self.open_at_acceptance.clone(),
             evidence: self.evidence.clone(),
             unclaimed: self.unclaimed.clone(),
+            evidence_rule: self.evidence_rule,
             succeeds: self.succeeds.clone(),
             channel: self.channel,
         };
@@ -1142,6 +1186,10 @@ impl AcceptanceRecord {
             check_sha256(digest)?;
         }
         check_evidence(&wire.evidence, &wire.unclaimed)?;
+        check_evidence_rule(
+            wire.evidence_rule,
+            !wire.evidence.is_empty() || !wire.unclaimed.is_empty(),
+        )?;
         let mut authored_from = wire.authored_from;
         authored_from.sort();
         check_sources(&authored_from).map_err(|e| RecordError::Format {
@@ -1204,6 +1252,7 @@ impl AcceptanceRecord {
             open_at_acceptance: wire.open_at_acceptance,
             evidence: wire.evidence,
             unclaimed: wire.unclaimed,
+            evidence_rule: wire.evidence_rule,
             succeeds: wire.succeeds,
             channel: wire.channel,
         })
@@ -1494,6 +1543,21 @@ fn compare_rows(recorded: &[String], now: &[EvidenceRow]) -> (Vec<String>, usize
     (moved, left.values().sum())
 }
 
+/// The rule a record names its evidence under, as read back: a positive number,
+/// and only where the record states evidence, as `take` writes it. Refuses what
+/// `take` would not write.
+fn check_evidence_rule(rule: Option<u32>, stated: bool) -> Result<(), RecordError> {
+    match rule {
+        Some(0) => Err(RecordError::Format {
+            detail: "the evidence rule is 0; rules are numbered from 1".to_string(),
+        }),
+        Some(_) if !stated => Err(RecordError::Format {
+            detail: "the record names an evidence rule and states no evidence".to_string(),
+        }),
+        _ => Ok(()),
+    }
+}
+
 /// A record's evidence as read back: every key a name, every digest a sha256,
 /// every list in order. Refuses what `take` would not write.
 fn check_evidence(
@@ -1740,6 +1804,32 @@ mod tests {
     }
 
     #[test]
+    fn the_rule_the_evidence_was_made_under_is_kept_and_a_record_without_one_is_rule_one() {
+        let with_rule = AcceptanceRecord::from_json(&wire(|v| {
+            v["evidence"] = serde_json::json!({"R1": [SHA]});
+            v["evidence_rule"] = EVIDENCE_RULE.into();
+        }))
+        .expect("loads");
+        assert_eq!(with_rule.evidence_rule, Some(EVIDENCE_RULE));
+        assert_eq!(
+            AcceptanceRecord::from_json(&with_rule.to_json()).expect("round-trips"),
+            with_rule
+        );
+        // A record made before the rule was named has evidence and no rule, and writes
+        // back as it was: nothing is added to it by reading it.
+        let before = AcceptanceRecord::from_json(&wire(|v| {
+            v["evidence"] = serde_json::json!({"R1": [SHA]});
+        }))
+        .expect("loads");
+        assert_eq!(before.evidence_rule, None);
+        assert!(
+            !before.to_json().contains("evidence_rule"),
+            "{}",
+            before.to_json()
+        );
+    }
+
+    #[test]
     fn bytes_this_module_would_not_write_are_refused() {
         let cases: Vec<(&str, String)> = vec![
             ("an unknown field", wire(|v| v["note"] = "x".into())),
@@ -1780,6 +1870,24 @@ mod tests {
                         {"path": "machine.scxml", "sha256": SHA},
                         {"path": "machine.scxml", "sha256": SHA},
                     ])
+                }),
+            ),
+            (
+                "an evidence rule of 0",
+                wire(|v| {
+                    v["evidence"] = serde_json::json!({"R1": [SHA]});
+                    v["evidence_rule"] = 0.into();
+                }),
+            ),
+            (
+                "an evidence rule where no evidence is stated",
+                wire(|v| v["evidence_rule"] = EVIDENCE_RULE.into()),
+            ),
+            (
+                "an evidence rule that is not a number",
+                wire(|v| {
+                    v["evidence"] = serde_json::json!({"R1": [SHA]});
+                    v["evidence_rule"] = "2".into();
                 }),
             ),
         ];
