@@ -224,6 +224,158 @@ fn a_file_outside_the_folder_is_answered_as_a_file_that_is_not_there_in_every_pl
     }
 }
 
+/// What `generate` wrote under `out`, as one text.
+fn written_under(out: &Path) -> String {
+    let mut all = String::new();
+    let mut pending = vec![out.to_path_buf()];
+    while let Some(folder) = pending.pop() {
+        let Ok(entries) = fs::read_dir(&folder) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                pending.push(path);
+            } else if let Ok(bytes) = fs::read(&path) {
+                all.push_str(&String::from_utf8_lossy(&bytes));
+            }
+        }
+    }
+    all
+}
+
+/// `generate` of `document` for `language` into `out`, run in `work`, confined to `confined_to`
+/// when that is given: what it said and what it wrote.
+fn generate(
+    document: &Path,
+    language: &str,
+    out: &Path,
+    work: &Path,
+    confined_to: Option<&Path>,
+    folders: &[&Path],
+) -> (Answer, String) {
+    let _ = fs::remove_dir_all(out);
+    let mut command = Command::new(codegen());
+    command
+        .current_dir(work)
+        .env_remove("SCE_FILE_ROOT")
+        .arg("generate")
+        .arg(document)
+        .args(["-o"])
+        .arg(out)
+        .args(["-l", language]);
+    if let Some(root) = confined_to {
+        command.env("SCE_FILE_ROOT", root);
+    }
+    let output = command.output().expect("the generator runs");
+    let mut said = format!(
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    for folder in folders {
+        said = said.replace(&folder.display().to_string(), "<folder>");
+    }
+    (
+        Answer {
+            code: output.status.code(),
+            said,
+        },
+        written_under(out),
+    )
+}
+
+/// A place `generate` opens a file that `check` does not: what a document names to be copied into,
+/// or read into, what is written.
+fn written_places() -> Vec<(Place, &'static str)> {
+    vec![
+        (
+            Place {
+                name: "an invoke candidate",
+                file: "outside.child.scxml",
+                body: r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s">
+  <state id="s"><transition event="CANARY-CANDIDATE-KAPPA" target="s"/></state>
+</scxml>
+"#,
+                marker: "CANARY-CANDIDATE-KAPPA",
+                document: |path| {
+                    format!(
+                        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml {SCXML} version="1.0" name="host" initial="a" datamodel="ecmascript">
+  <datamodel><data id="which" expr="'x'"/></datamodel>
+  <state id="a"><invoke type="http://www.w3.org/TR/scxml/" srcexpr="which" sce:candidates="{path}"/></state>
+</scxml>
+"#
+                    )
+                },
+            },
+            "cpp",
+        ),
+        (
+            Place {
+                name: "a data source",
+                file: "outside.data.txt",
+                body: "CANARY-DATA-LAMBDA",
+                marker: "CANARY-DATA-LAMBDA",
+                document: |path| {
+                    format!(
+                        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml {SCXML} version="1.0" name="host" initial="a" datamodel="ecmascript">
+  <datamodel><data id="x" src="{path}"/></datamodel>
+  <state id="a"/>
+</scxml>
+"#
+                    )
+                },
+            },
+            "python",
+        ),
+    ]
+}
+
+#[test]
+fn a_file_outside_the_folder_is_not_carried_into_what_generate_writes() {
+    for (place, language) in written_places() {
+        let Folders { work, outside } = folders();
+        let named = outside.path().join(place.file);
+        let document = work.path().join("host.scxml");
+        fs::write(&document, (place.document)(&named.display().to_string())).unwrap();
+        let out = work.path().join("out");
+        let both = [work.path(), outside.path()];
+        let confined = Some(work.path());
+
+        fs::write(&named, place.body).unwrap();
+        let (_, free_there) = generate(&document, language, &out, work.path(), None, &both);
+        let (there, written_there) =
+            generate(&document, language, &out, work.path(), confined, &both);
+        fs::remove_file(&named).unwrap();
+        let (gone, written_gone) =
+            generate(&document, language, &out, work.path(), confined, &both);
+
+        // The control: without the folder the file reaches what is written, so this document does
+        // make the generator open it.
+        assert!(
+            free_there.contains(place.marker),
+            "{}: the document does not make `generate` carry the file, so this holds nothing",
+            place.name
+        );
+        // With the folder it does not, and the file's being there is not said.
+        assert!(
+            !written_there.contains(place.marker) && !there.said.contains(place.marker),
+            "{}: a word that is only in the file is in what was written or said:\n{}",
+            place.name,
+            there.said
+        );
+        assert_eq!(
+            there.said, gone.said,
+            "{}: the file's being there is said",
+            place.name
+        );
+        assert_eq!(there.code, gone.code, "{}", place.name);
+        assert_eq!(written_there, written_gone, "{}", place.name);
+    }
+}
+
 #[test]
 fn a_file_inside_the_folder_is_opened_as_it_was() {
     // The boundary is not a refusal of every file: what a document names beside it is read.

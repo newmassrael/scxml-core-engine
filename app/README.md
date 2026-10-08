@@ -804,14 +804,21 @@ run the whole chain with.
 That check refuses early, in words the model can act on, but a list of attributes is only what
 somebody thought of: `template` was missing from it when `<sce:use template="...">` made the
 generator read a file. What holds is the generator itself. Where `SCE_FILE_ROOT` names a folder,
-`sce-build` opens a file a document names (an import, an include, a script, a
-template, a driver header, a child document) only inside that folder, and answers a path outside
+`sce-build` opens a file a document names (an import, an include, a script, a template, a
+driver header, a child document, a data source, an invoke candidate) only inside that folder, and
+answers a path outside
 it, or a link that leads out of it, as a file that is not there, so the answer does not tell
 whether the file exists. The application sets it to the folder it runs the generator in, and the
 authoring server sets it to its working folder when `SCE_AUTHOR_WORK` is set. Left unset, nothing
-is confined; set to a folder that cannot be used, nothing may be opened. A test lists every place
-`sce-build` opens a file a document names and fails on one that does not go through
-`confine`.
+is confined; set to a folder that cannot be used, nothing may be opened. A refused file is
+answered in the words the file system uses for one that is not there, so that a message which
+prints the error says the same of both. A test reads every source of `sce-build` and fails on a
+place that opens a file and does not go through `confine`, unless that place is listed with its
+function, how many opens it has and why its file is not one a document names (the operator's
+argument, the output, the installation, the checkout). A source nobody listed is held to the
+rule, which is the other way round from a list of the modules that read documents: that list was
+short by two (`<data src>` read by a template filter, and the copy of an `sce:candidates`
+document into the output) when it was first held against all the sources.
 
 After building `sce-codegen`, reproduce the shipped configuration with a signed-in Codex:
 

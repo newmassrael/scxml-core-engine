@@ -6242,7 +6242,7 @@ fn copy_static_invoke_children(
                 source_dir.join(&candidate.path),
             ]
             .into_iter()
-            .find(|p| p.exists());
+            .find(|p| sce_build::confine::exists(p));
             match src {
                 Some(src) => {
                     if let Err(e) = stage_child_document(&src, &dest) {
@@ -6268,7 +6268,7 @@ fn copy_static_invoke_children(
         let src = source_dir.join(&child_scxml);
         let dest = output_dir.join(&child_scxml);
 
-        if src.exists() {
+        if sce_build::confine::exists(&src) {
             if let Err(e) = stage_child_document(&src, &dest) {
                 eprintln!(
                     "Warning: Cannot copy static invoke child {} to output: {e}",
@@ -6288,7 +6288,9 @@ fn copy_static_invoke_children(
 /// writing it. Where the build staged the child into the output directory
 /// already, `src` is `dest` and nothing moves.
 fn stage_child_document(src: &Path, dest: &Path) -> std::io::Result<()> {
-    let bytes = fs::read(src)?;
+    // `src` is a path the document names (`sce:candidates`), and what is copied is written to the
+    // output: the one place a file outside could leave the machine's folder by being copied.
+    let bytes = sce_build::confine::read(src)?;
     try_emit_generated(dest, &bytes, WritePolicy::IfChanged)
 }
 
@@ -7178,7 +7180,7 @@ fn generate_child_sms(
             }
             ChildSource::Disk(source_dir) => {
                 let child_path = source_dir.join(format!("{child_name}.scxml"));
-                if !child_path.exists() {
+                if !sce_build::confine::exists(&child_path) {
                     backend.process_child_failure(test_id, child_name, test_mod_dir, drift_ctx);
                     continue;
                 }

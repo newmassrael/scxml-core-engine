@@ -374,7 +374,9 @@ fn read_data_src(src: String, base_path: String) -> Result<String, minijinja::Er
             .map(|c| c.join(&candidate))
             .unwrap_or(candidate)
     };
-    std::fs::read_to_string(&resolved).map_err(|e| {
+    // The path is the document's own (`<data src>`), so it is opened where a caller confined the
+    // generator to a folder allows and not elsewhere (`SCE_FILE_ROOT`).
+    crate::confine::read_to_string(&resolved).map_err(|e| {
         minijinja::Error::new(
             minijinja::ErrorKind::InvalidOperation,
             format!(

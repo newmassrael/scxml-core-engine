@@ -108,13 +108,32 @@ pub fn exists(path: &Path) -> bool {
     permits(path) && path.exists()
 }
 
+/// What a file that may not be opened is answered with: the error the file system gives for one
+/// that is not there, in the same words. Error number 2 is that on Unix (`ENOENT`) and on Windows
+/// (`ERROR_FILE_NOT_FOUND`), and a place that prints the error it got (`{e}`) then says the same
+/// of a file it was refused as of one that is not there; `ErrorKind::NotFound` alone prints
+/// another sentence.
+fn not_there() -> io::Error {
+    io::Error::from_raw_os_error(2)
+}
+
 /// The text of the file a document names. A file that may not be opened is answered as one that
 /// is not there.
 pub fn read_to_string(path: &Path) -> io::Result<String> {
     if permits(path) {
         fs::read_to_string(path)
     } else {
-        Err(io::Error::from(io::ErrorKind::NotFound))
+        Err(not_there())
+    }
+}
+
+/// The bytes of the file a document names, for a place that copies it and does not read it as
+/// text. A file that may not be opened is answered as one that is not there.
+pub fn read(path: &Path) -> io::Result<Vec<u8>> {
+    if permits(path) {
+        fs::read(path)
+    } else {
+        Err(not_there())
     }
 }
 
@@ -220,6 +239,43 @@ mod tests {
                 read_to_string(&inside.path().join("here.xml")).unwrap(),
                 "inside"
             );
+        });
+    }
+
+    #[test]
+    fn a_refusal_reads_in_words_as_the_file_system_says_a_file_is_not_there() {
+        // A place that prints the error it got (`{e}`) would otherwise say "entity not found" for
+        // a file it was refused and "No such file or directory" for one that is not there.
+        let (inside, outside) = two_folders();
+
+        within_for_test(within(inside.path()), || {
+            let really_absent = inside.path().join("absent.xml");
+            let missing_text = fs::read_to_string(&really_absent).unwrap_err().to_string();
+
+            let refused_text = read_to_string(&outside.path().join("there.xml"))
+                .unwrap_err()
+                .to_string();
+            let refused_bytes = read(&outside.path().join("there.xml"))
+                .unwrap_err()
+                .to_string();
+
+            assert_eq!(refused_text, missing_text);
+            assert_eq!(refused_bytes, missing_text);
+        });
+    }
+
+    #[test]
+    fn the_bytes_of_a_file_outside_are_answered_as_a_file_that_is_not_there() {
+        let (inside, outside) = two_folders();
+        let there = outside.path().join("there.xml");
+        let absent = outside.path().join("absent.xml");
+
+        within_for_test(within(inside.path()), || {
+            let refused = read(&there).unwrap_err().kind();
+            let missing = read(&absent).unwrap_err().kind();
+            assert_eq!(refused, io::ErrorKind::NotFound);
+            assert_eq!(refused, missing);
+            assert_eq!(read(&inside.path().join("here.xml")).unwrap(), b"inside");
         });
     }
 
