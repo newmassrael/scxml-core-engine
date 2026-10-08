@@ -49,6 +49,8 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_host_call"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_host_call_arguments"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_invoke"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_invoke_params"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_invoke_string"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_list"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_overflow"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_payload"
@@ -209,19 +211,30 @@ func drive[S interface {
 	engine := sce.NewEngine[S, E](policy)
 	engine.SetClock(sce.NewManualClock(0))
 	engine.Initialize()
+	// The generated policy says which call the machine needs: `Step` drains the
+	// queues and nothing else, and a machine with a delayed send or a child
+	// session is driven by `Tick`, which also runs those.
+	scheduled, needsScheduler := any(policy).(interface{ NeedsEventScheduler() bool })
+	needsScheduler = needsScheduler && scheduled.NeedsEventScheduler()
+	settle := func() {
+		if !needsScheduler {
+			engine.Step()
+			return
+		}
+		for i := 0; i < settleTicks; i++ {
+			engine.Tick()
+		}
+	}
+	// A machine that starts a child session in its first state has that child
+	// running, and maybe ended, before any event arrives; it is read as the
+	// events leave it, after the rounds that take.
+	if needsScheduler {
+		settle()
+	}
 	return machine{
 		send: func(name, data string) {
 			engine.RaiseExternalByName(name, data)
-			// The generated policy says which call the machine needs: `Step`
-			// drains the queues and nothing else, and a machine with a delayed
-			// send or a child session is driven by `Tick`, which also runs those.
-			if scheduled, ok := any(policy).(interface{ NeedsEventScheduler() bool }); ok && scheduled.NeedsEventScheduler() {
-				for i := 0; i < settleTicks; i++ {
-					engine.Tick()
-				}
-			} else {
-				engine.Step()
-			}
+			settle()
 		},
 		advance: engine.AdvanceTimeMs,
 		resolves: func(name string) bool {
@@ -966,6 +979,28 @@ func TestAnInvokedChildIsDrivenAndCounted(t *testing.T) {
 	policy.SessionID = sce.GenerateSessionID()
 	replay(t, "static_invoke", drive[static_invoke.StaticInvokeState, static_invoke.StaticInvokeEvent](&policy, map[string]func() any{
 		"completed": func() any { return policy.Completed() },
+	}))
+}
+
+// An <invoke> hands its child the values its <param>s and `namelist` name, as
+// they stand when the invoke executes, after the entry actions, and once.
+func TestAnInvokeHandsItsChildItsValuesOnce(t *testing.T) {
+	policy := static_invoke_params.NewStaticInvokeParamsPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_invoke_params", drive[static_invoke_params.StaticInvokeParamsState, static_invoke_params.StaticInvokeParamsEvent](&policy, map[string]func() any{
+		"completed": func() any { return policy.Completed() },
+	}))
+}
+
+// A string an <invoke> hands its child is held to the bound the child declared,
+// in bytes: a value past it is left out and raises `error.execution`, and the
+// child still starts.
+func TestAStringHandedToAChildIsHeldToItsBoundInBytes(t *testing.T) {
+	policy := static_invoke_string.NewStaticInvokeStringPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_invoke_string", drive[static_invoke_string.StaticInvokeStringState, static_invoke_string.StaticInvokeStringEvent](&policy, map[string]func() any{
+		"completed": func() any { return policy.Completed() },
+		"errors":    func() any { return policy.Errors() },
 	}))
 }
 

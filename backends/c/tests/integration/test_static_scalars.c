@@ -106,7 +106,9 @@
 #include "static_event_wildcard_sm.h"
 #include "static_foreach_sm.h"
 #include "static_history_sm.h"
+#include "static_invoke_params_sm.h"
 #include "static_invoke_sm.h"
+#include "static_invoke_string_sm.h"
 #include "static_list_sm.h"
 #include "static_overflow_sm.h"
 #include "static_payload_bytes_sm.h"
@@ -1514,6 +1516,35 @@ static const variable_t invoke_variables[] = {
 };
 STATIC_SCENARIO(static_invoke, invoke_states, invoke_variables, NULL, no_lists, no_records)
 
+// static_invoke_params: an `<invoke>` hands its child the values its `<param>`s and
+// `namelist` name, as they stand when the invoke executes, after the entry
+// actions, and once.
+VARIABLE_READER(static_invoke_params, completed)
+
+static const name_value_t invoke_params_states[] = {
+    {"working", STATIC_INVOKE_PARAMS_STATE_WORKING},
+    {"plain", STATIC_INVOKE_PARAMS_STATE_PLAIN},
+};
+static const variable_t invoke_params_variables[] = {
+    {"completed", static_invoke_params_read_completed},
+};
+STATIC_SCENARIO(static_invoke_params, invoke_params_states, invoke_params_variables, NULL, no_lists, no_records)
+
+// static_invoke_string: a string an `<invoke>` hands its child is held to the bound
+// the child declared, in bytes: a value past it is left out and raises
+// `error.execution`, and the child still starts.
+VARIABLE_READER(static_invoke_string, completed)
+VARIABLE_READER(static_invoke_string, errors)
+
+static const name_value_t invoke_string_states[] = {
+    {"running", STATIC_INVOKE_STRING_STATE_RUNNING},
+};
+static const variable_t invoke_string_variables[] = {
+    {"completed", static_invoke_string_read_completed},
+    {"errors", static_invoke_string_read_errors},
+};
+STATIC_SCENARIO(static_invoke_string, invoke_string_states, invoke_string_variables, NULL, no_lists, no_records)
+
 // static_timers: four delayed sends armed on entering a state are delivered when
 // each is due, two due the same moment in the order they were sent, and the last
 // takes the machine to its final state; a `<cancel>` by the id of the longest
@@ -1704,6 +1735,8 @@ int main(void) {
     bad |= static_history_scenario("static_history", 17);
     bad |= static_invoke_scenario("static_invoke", 6);
     bad |= static_invoke_scenario("static_invoke_abort", 4);
+    bad |= static_invoke_params_scenario("static_invoke_params", 2);
+    bad |= static_invoke_string_scenario("static_invoke_string", 1);
     bad |= static_timers_scenario("static_timers", 6);
     bad |= static_timers_scenario("static_timers_stop", 5);
     bad |= sync_client_scenario("sync_client", 30);

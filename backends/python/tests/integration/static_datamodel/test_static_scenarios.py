@@ -401,6 +401,19 @@ def test_an_invoked_child_is_driven_and_counted() -> None:
     replay("static_invoke")
 
 
+# An `<invoke>` hands its child the values its `<param>`s and `namelist` name, as
+# they stand when the invoke executes, after the entry actions, and once.
+def test_an_invoke_hands_its_child_its_values_once() -> None:
+    replay("static_invoke_params")
+
+
+# A string an `<invoke>` hands its child is held to the bound the child declared,
+# in bytes: a value past it is left out and raises `error.execution`, and the
+# child still starts.
+def test_a_string_handed_to_a_child_is_held_to_its_bound_in_bytes() -> None:
+    replay("static_invoke_string")
+
+
 # Leaving the state that holds an `<invoke>` cancels the child, which then ends
 # nothing and counts nothing.
 def test_leaving_the_state_of_an_invoke_cancels_the_child() -> None:

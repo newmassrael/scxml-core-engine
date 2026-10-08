@@ -62,8 +62,14 @@ use sce_rust_tests::integration::static_datamodel::static_foreach_sm::{
 use sce_rust_tests::integration::static_datamodel::static_history_sm::{
     StaticHistoryPersist, StaticHistoryPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_invoke_params_sm::{
+    StaticInvokeParamsPersist, StaticInvokeParamsPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_invoke_sm::{
     StaticInvokePersist, StaticInvokePolicy,
+};
+use sce_rust_tests::integration::static_datamodel::static_invoke_string_sm::{
+    StaticInvokeStringPersist, StaticInvokeStringPolicy,
 };
 use sce_rust_tests::integration::static_datamodel::static_list_sm::{
     StaticListPersist, StaticListPolicy,
@@ -476,6 +482,33 @@ fn static_invoke_counts_the_run_of_the_child_it_drives() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_invoke.json"
+        ),
+    );
+}
+
+// An <invoke> hands its child the values its <param>s and `namelist` name, as
+// they stand when the invoke executes, after the entry actions, and once.
+#[test]
+fn static_invoke_params_hands_the_child_its_values_once() {
+    replay(
+        Engine::new(StaticInvokeParamsPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_invoke_params.json"
+        ),
+    );
+}
+
+// A string an <invoke> hands its child is held to the bound the child declared,
+// in bytes: a value past it is left out and raises `error.execution`, and the
+// child still starts.
+#[test]
+fn static_invoke_string_holds_a_handed_string_to_the_childs_bound() {
+    replay(
+        Engine::new(StaticInvokeStringPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_invoke_string.json"
         ),
     );
 }

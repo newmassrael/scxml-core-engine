@@ -35,6 +35,8 @@ import com.sce.integration.static_event_wildcard.StaticEventWildcardStateMachine
 import com.sce.integration.static_foreach.StaticForeachStateMachine
 import com.sce.integration.static_history.StaticHistoryStateMachine
 import com.sce.integration.static_invoke.StaticInvokeStateMachine
+import com.sce.integration.static_invoke_params.StaticInvokeParamsStateMachine
+import com.sce.integration.static_invoke_string.StaticInvokeStringStateMachine
 import com.sce.integration.static_list.StaticListStateMachine
 import com.sce.integration.static_overflow.StaticOverflowStateMachine
 import com.sce.integration.static_payload.StaticPayloadStateMachine
@@ -149,6 +151,10 @@ class StaticScenarioTest {
     ) {
         val steps = scenario.getValue("steps").jsonArray
         assertTrue(steps.isNotEmpty(), "a scenario with no steps judges nothing")
+        // A machine that starts a child session in its first state has that child
+        // running, and maybe ended, before any event arrives; it is read as the
+        // events leave it, after the rounds that take.
+        tick()
         steps.forEachIndexed { n, element ->
             val step = element.jsonObject
             val note = step["note"]?.jsonPrimitive?.content ?: ""
@@ -642,6 +648,45 @@ class StaticScenarioTest {
         try {
             replay(
                 scenario("static_invoke"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { repeat(SETTLE_TICKS) { sm.tick() } },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // An <invoke> hands its child the values its <param>s and `namelist` name, as
+    // they stand when the invoke executes, after the entry actions, and once.
+    @Test
+    fun staticInvokeParamsHandsTheChildItsValuesOnce() {
+        val sm = StaticInvokeParamsStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_invoke_params"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { repeat(SETTLE_TICKS) { sm.tick() } },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // A string an <invoke> hands its child is held to the bound the child declared,
+    // in bytes: a value past it is left out and raises `error.execution`, and the
+    // child still starts.
+    @Test
+    fun staticInvokeStringHoldsAHandedStringToTheChildsBound() {
+        val sm = StaticInvokeStringStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_invoke_string"),
                 send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
                 tick = { repeat(SETTLE_TICKS) { sm.tick() } },
                 save = { sm.save() },

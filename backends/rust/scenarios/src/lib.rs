@@ -29,6 +29,20 @@ use serde_json::Value;
 /// machine, and a round that finds nothing to do changes nothing.
 const SETTLE_TICKS: usize = 5;
 
+/// Give the machine the rounds it needs before it is read back. The generator
+/// says which call a machine needs: `step` drains the queues and nothing else,
+/// and a machine with a delayed send or a child session is driven by `tick`,
+/// which also runs those.
+fn settle<P: StatePolicy>(engine: &mut Engine<P>) {
+    if P::NEEDS_EVENT_SCHEDULER {
+        for _ in 0..SETTLE_TICKS {
+            engine.tick();
+        }
+    } else {
+        engine.step();
+    }
+}
+
 /// Replay `scenario` against `engine`, reading the machine back with
 /// `save` after every step. An event name no event of the machine matches
 /// fails the replay: the engine drops one silently, which would otherwise
@@ -49,6 +63,12 @@ pub fn replay<P: StatePolicy>(
     let steps = scenario["steps"].as_array().expect("steps");
     assert!(!steps.is_empty(), "a scenario with no steps judges nothing");
     engine.initialize();
+    // A machine that starts a child session in its first state has that child
+    // running, and maybe ended, before any event arrives; it is read as the
+    // events leave it, after the rounds that take.
+    if P::NEEDS_EVENT_SCHEDULER {
+        settle(&mut engine);
+    }
     for (n, step) in steps.iter().enumerate() {
         // A step that moves the machine's time on, for a scenario of a delayed
         // send: the engine is handed a manual clock by its caller, so the wait
@@ -66,16 +86,7 @@ pub fn replay<P: StatePolicy>(
             );
             let data = step.get("data").map(Value::to_string).unwrap_or_default();
             engine.raise_external_by_name(event, &data);
-            // The generator says which call a machine needs: `step` drains the
-            // queues and nothing else, and a machine with a delayed send or a
-            // child session is driven by `tick`, which also runs those.
-            if P::NEEDS_EVENT_SCHEDULER {
-                for _ in 0..SETTLE_TICKS {
-                    engine.tick();
-                }
-            } else {
-                engine.step();
-            }
+            settle(&mut engine);
         }
         let expect = &step["expect"];
         let note = step.get("note").and_then(Value::as_str).unwrap_or("");

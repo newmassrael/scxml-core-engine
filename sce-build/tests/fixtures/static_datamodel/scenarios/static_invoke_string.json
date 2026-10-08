@@ -1,0 +1,8 @@
+{
+  "machine": "static_invoke_string",
+  "about": "A string an <invoke type=\"scxml\"> hands its child is held to the bound the child declared for that variable, in UTF-8 bytes, as an <assign> to it would be. A value past it is the evaluation that failed: `error.execution` is raised, that one value is left out, and the child still starts, holding the one its <data> gave it. Three children, each with `title` bounded to 4 bytes: `fits` is handed 'wxyz' (4 bytes) and ends only if it holds exactly that; `over` is handed `lengthy`, which holds 'abcdefgh' (8 bytes), left out, so `title` is the 'ab' its <data> gave it, which it ends on; `wide` is handed 'é€', two characters and five bytes, past the bound, so a bound counted in characters would let it through, left out as well. `done.invoke.<id>` counts each child that ended in `completed` (1, 10 and 100), and each value left out raises an `error.execution`, counted in `errors`. A child handed a value past its bound that took it anyway would hold 'abcdefgh' and never end. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "note": "started and settled: all three children ended, and two values were left out",
+      "expect": { "state": "running", "variables": { "completed": 111, "errors": 2 } } }
+  ]
+}

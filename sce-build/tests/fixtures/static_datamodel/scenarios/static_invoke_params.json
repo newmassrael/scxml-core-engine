@@ -1,0 +1,12 @@
+{
+  "machine": "static_invoke_params",
+  "about": "An <invoke type=\"scxml\"> hands its child the values its <param>s and `namelist` name, each to the child's variable of the same name. `working` adds 3 to `base` (4) when it is entered and invokes `worker` with `start = base` and `enabled` by `namelist`: the value that arrives is the one the machine holds when the invoke EXECUTES, after the entry action, which is 7, and `worker` ends the moment it holds `start = 7` and `enabled`. A child handed less (4, or nothing) would stay waiting and the parent would stay in `working`. `worker` ending moves the parent on to `plain` and counts itself in `completed`. `plain` invokes `control`, handed nothing, which keeps its declared `start = 0` and `enabled = false` and never ends, and `watcher`, handed `start = base` (7), which ends only at 8. `bump` raises `base` to 8 while `watcher` runs, and `watcher` does not see it: a child is handed its values once, when it starts. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "note": "started and settled: `worker` was handed 7 and `true`, ended, and took the parent to `plain`; `control` and `watcher` are running and have ended nothing",
+      "expect": { "state": "plain", "variables": { "completed": 1 } } },
+
+    { "note": "`bump` raises `base` to 8, and `watcher` was handed 7 when it started, so it is not told and does not end",
+      "event": "bump",
+      "expect": { "state": "plain", "variables": { "completed": 1 } } }
+  ]
+}

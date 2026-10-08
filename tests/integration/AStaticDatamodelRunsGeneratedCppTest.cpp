@@ -146,6 +146,12 @@ public:
     void start() {
         machine_.setClock(std::make_shared<SCE::ManualClock>(0));
         machine_.initialize();
+        // A machine that starts a child session in its first state has that child
+        // running, and maybe ended, before any event arrives; it is read as the
+        // events leave it, after the rounds that take.
+        if constexpr (::SCE::Core::NeedsEventScheduler<typename Machine::PolicyType>) {
+            settle();
+        }
     }
 
     /// The machine's time moves on by `ms`, and what that made due runs.
@@ -158,19 +164,7 @@ public:
     /// fields its schema names.
     void send(const std::string &name, const std::string &data = "") {
         machine_.raiseExternal(name, data);
-        // The generated policy says which call the machine needs: `step` drains
-        // the queues and nothing else, and a machine with a delayed send or a
-        // child session is driven by `tick`, which also runs those. The engine
-        // reports no point at which it has settled, so a host runs rounds: a child
-        // takes an event the parent forwarded in one round and its end reaches the
-        // parent in the next.
-        if constexpr (::SCE::Core::NeedsEventScheduler<typename Machine::PolicyType>) {
-            for (int round = 0; round < kSettleTicks; ++round) {
-                machine_.tick();
-            }
-        } else {
-            machine_.step();
-        }
+        settle();
     }
 
     /// Whether an event arriving under `name` reaches the machine at all, as the
@@ -210,6 +204,22 @@ public:
     }
 
 private:
+    /// The rounds the machine needs before it is read back. The generated policy
+    /// says which call it needs: `step` drains the queues and nothing else, and a
+    /// machine with a delayed send or a child session is driven by `tick`, which
+    /// also runs those. The engine reports no point at which it has settled, so a
+    /// host runs rounds: a child takes an event the parent forwarded in one round
+    /// and its end reaches the parent in the next.
+    void settle() {
+        if constexpr (::SCE::Core::NeedsEventScheduler<typename Machine::PolicyType>) {
+            for (int round = 0; round < kSettleTicks; ++round) {
+                machine_.tick();
+            }
+        } else {
+            machine_.step();
+        }
+    }
+
     Machine machine_;
     std::map<std::string, Reader> variables_;
 };
@@ -819,6 +829,28 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, AnInvokedChildIsDrivenAndCounted) {
         {"completed", [](const Machine &m) { return json(m.completed()); }},
     });
     replay("static_invoke", driver);
+}
+
+// An `<invoke>` hands its child the values its `<param>`s and `namelist` name, as
+// they stand when the invoke executes, after the entry actions, and once.
+TEST(AStaticDatamodelRunsGeneratedCppTest, AnInvokeHandsItsChildItsValuesOnce) {
+    using Machine = G::static_invoke_params::static_invoke_params;
+    Driver<Machine> driver({
+        {"completed", [](const Machine &m) { return json(m.completed()); }},
+    });
+    replay("static_invoke_params", driver);
+}
+
+// A string an `<invoke>` hands its child is held to the bound the child declared,
+// in bytes: a value past it is left out and raises `error.execution`, and the
+// child still starts.
+TEST(AStaticDatamodelRunsGeneratedCppTest, AStringHandedToAChildIsHeldToItsBoundInBytes) {
+    using Machine = G::static_invoke_string::static_invoke_string;
+    Driver<Machine> driver({
+        {"completed", [](const Machine &m) { return json(m.completed()); }},
+        {"errors", [](const Machine &m) { return json(m.errors()); }},
+    });
+    replay("static_invoke_string", driver);
 }
 
 // Leaving the state that holds an `<invoke>` cancels the child, which then ends
