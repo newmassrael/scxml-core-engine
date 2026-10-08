@@ -1158,6 +1158,46 @@ impl<C: Clock> WorkStore<C> {
         self.save_text_locked(&dir, id, artifact, text, base, written_for)
     }
 
+    /// Refuse a requirement list that would lose the lineage the work's current one holds.
+    ///
+    /// The lineage is what makes an id mean one requirement for ever: it remembers which ids
+    /// were issued and retired, so that a retired id is never issued again. A list saved
+    /// without it onto one that has it starts that memory over, and the next revision would
+    /// issue a retired id to a new requirement with nothing to say so (measured: the third
+    /// revision of a three-sentence specification gave the dropped sentence's `R3` to the new
+    /// one). There is no override: a specification written again from nothing is a new work.
+    ///
+    /// Only judged when both texts are lists this build reads: the store keeps text, and a
+    /// text it cannot read as a list is not one this refusal can speak of. The caller holds the
+    /// work's lock, so the head it reads is the head the save replaces.
+    pub(crate) fn refuse_a_dropped_lineage(
+        &self,
+        id: &WorkId,
+        next: &str,
+    ) -> Result<(), StoreError> {
+        let Some((revision, held)) = self
+            .read_claimed(Artifact::Requirements, id, None)?
+            .map(|(revision, _, text)| (revision, text))
+        else {
+            return Ok(());
+        };
+        let had = crate::requirements::stored_has_lineage(&held).unwrap_or(false);
+        let has = crate::requirements::stored_has_lineage(next).unwrap_or(true);
+        if had && !has {
+            return Err(StoreError::refused(
+                "lineage-dropped",
+                format!(
+                    "work `{id}` keeps a requirement lineage and this list has none: saving it \
+                     would let an id that was retired be issued again, to another requirement. \
+                     Build the list against the lineage `read_requirements` returns and give the \
+                     lineage that build returns"
+                ),
+                serde_json::json!({ "revision": revision }),
+            ));
+        }
+        Ok(())
+    }
+
     /// [`Self::save_text`] for a caller that already holds the work's lock: the publication
     /// of a bundle moves a pointer in the same step as it ends the request that made it.
     fn save_text_locked(
@@ -1207,6 +1247,9 @@ impl<C: Clock> WorkStore<C> {
                 base: base.cloned(),
                 current,
             });
+        }
+        if artifact == Artifact::Requirements {
+            self.refuse_a_dropped_lineage(id, text)?;
         }
         let revision = Revision::of(text.as_bytes());
         if current.as_ref() == Some(&revision) {

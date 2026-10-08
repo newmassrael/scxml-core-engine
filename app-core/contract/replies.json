@@ -110,7 +110,7 @@
       "deleted": "main"
     },
     "describe": {
-      "command_set_version": 18,
+      "command_set_version": 19,
       "commands": [
         "describe",
         "list_works",
@@ -169,7 +169,7 @@
       "writes_settings": false
     },
     "describe_desktop": {
-      "command_set_version": 18,
+      "command_set_version": 19,
       "commands": [
         "describe",
         "list_works",
@@ -1625,6 +1625,17 @@
       "source_head": "00277e3a4c223a2ec90dd8eebf4d691b8d266dac58f270f25f5201e314803d44",
       "standing": "current"
     },
+    "read_requirements_lineage": {
+      "requirements": {
+        "lineage": "{\"lineage\":\"sce-requirement-lineage\",\"v\":1,\"doc_id\":\"blind\",\"next\":3,\"revisions\":[],\"requirements\":[]}\n",
+        "manifest": "{\"doc_id\":\"blind\",\"rev\":\"1\",\"requirements\":[{\"id\":\"R1\"},{\"id\":\"R2\"}]}\n",
+        "revision": "61de1530a6ff794c9925ffb57c42a4d7bc4d4b5052659d2a9854fc7ed672d4b8",
+        "sidecar": null,
+        "written_for": "6f2b3e246b6b5f39a4714e3972d0d21825256f8892c7c17a6354d7601e20b8f4"
+      },
+      "source_head": "6f2b3e246b6b5f39a4714e3972d0d21825256f8892c7c17a6354d7601e20b8f4",
+      "standing": "current"
+    },
     "read_requirements_none": {
       "requirements": null,
       "source_head": "00277e3a4c223a2ec90dd8eebf4d691b8d266dac58f270f25f5201e314803d44",
@@ -2210,6 +2221,11 @@
       "parent": null,
       "revision": "4d86ca1649ee720dca5c51bc7817f96f64c1b8dc23e0b528b7b82715b0fd2a6d"
     },
+    "save_requirements_lineage": {
+      "outcome": "saved",
+      "parent": null,
+      "revision": "61de1530a6ff794c9925ffb57c42a4d7bc4d4b5052659d2a9854fc7ed672d4b8"
+    },
     "save_requirements_unchanged": {
       "outcome": "unchanged",
       "revision": "4d86ca1649ee720dca5c51bc7817f96f64c1b8dc23e0b528b7b82715b0fd2a6d"
@@ -2232,7 +2248,7 @@
       "default": "main"
     }
   },
-  "command_set_version": 18,
+  "command_set_version": 19,
   "refusals": {
     "active-request": {
       "detail": {
@@ -2342,6 +2358,13 @@
       },
       "kind": "key-reused",
       "message": "the key was used for another request (<request-id>), about other revisions"
+    },
+    "lineage-dropped": {
+      "detail": {
+        "revision": "61de1530a6ff794c9925ffb57c42a4d7bc4d4b5052659d2a9854fc7ed672d4b8"
+      },
+      "kind": "lineage-dropped",
+      "message": "work `<lineage-work-id>` keeps a requirement lineage and this list has none: saving it would let an id that was retired be issued again, to another requirement. Build the list against the lineage `read_requirements` returns and give the lineage that build returns"
     },
     "model-conflict": {
       "detail": {

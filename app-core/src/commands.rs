@@ -234,7 +234,15 @@ const SETTINGS_WRITE: &[&str] = &[
 /// and a program the application did not find is refused. A person who chose another program
 /// is told who is signed in to that one, and not to the one that was kept; a core of 17 would
 /// refuse the argument as one it does not know.
-pub const COMMAND_SET_VERSION: u32 = 18;
+///
+/// 19: a requirement list can keep the lineage it was built against (`lineage` of
+/// `save_requirements` and of `save_request_candidate`; `lineage` in the list `read_requirements`
+/// and the snapshot give back, present only for a list that has one), so that an id is issued once
+/// across the revisions of a work's text. A list saved without one onto a work that holds one is
+/// refused as `lineage-dropped`, and so is a candidate published that way. A screen written for
+/// 18 would not know the argument or the refusal, and a core of 18 would refuse the argument as
+/// one it does not know.
+pub const COMMAND_SET_VERSION: u32 = 19;
 
 /// A command that did not do what was asked, in a shape every shell can pass on.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -433,6 +441,11 @@ struct SaveRequirements {
     /// The sidecar of quoted sentences, when the list came with one.
     #[serde(default)]
     sidecar: Option<String>,
+    /// The requirement lineage the list was built against and extends, as the authoring
+    /// package returned it, byte for byte. A list that follows a revision of its text gives
+    /// it (a work that holds one refuses a list without: `lineage-dropped`).
+    #[serde(default)]
+    lineage: Option<String>,
     /// Absent or `null` means "this is the work's first requirement list".
     #[serde(default)]
     base: Option<Revision>,
@@ -557,6 +570,9 @@ struct SaveCandidate {
     manifest: Option<String>,
     #[serde(default)]
     sidecar: Option<String>,
+    /// The lineage of the list, as `save_requirements` takes it. Belongs to a `manifest`.
+    #[serde(default)]
+    lineage: Option<String>,
     /// The version of the working instructions the executor was given, in its own words
     /// (`claude-code/0123456789ab`); a bundle records it.
     #[serde(default)]
@@ -843,15 +859,21 @@ fn answers_json(saved: &AnswersText) -> Result<Value, CommandError> {
 }
 
 /// A saved requirement list as the screens read it: its revision, the source it was
-/// written for, the manifest and the sidecar of quoted sentences.
+/// written for, the manifest and the sidecar of quoted sentences, and the lineage it was built
+/// against when it has one. `lineage` is absent, and not `null`, for a list without one, so
+/// the reply of every list that never had one is the reply it always was.
 fn requirements_json(saved: &RequirementsText) -> Result<Value, CommandError> {
     let list = Requirements::parse(&saved.text)?;
-    Ok(json!({
+    let mut reply = json!({
         "revision": saved.revision,
         "written_for": saved.written_for,
         "manifest": list.manifest,
         "sidecar": list.sidecar,
-    }))
+    });
+    if let Some(lineage) = list.lineage {
+        reply["lineage"] = Value::String(lineage);
+    }
+    Ok(reply)
 }
 
 /// An acceptance as the screens read it, without the product's word on whether it still
@@ -1825,10 +1847,11 @@ fn call_works<C: Clock>(
                 id,
                 manifest,
                 sidecar,
+                lineage,
                 base,
                 written_for,
             } = arguments(args)?;
-            let list = Requirements::new(manifest, sidecar)?;
+            let list = Requirements::new(manifest, sidecar)?.with_lineage(lineage)?;
             answer(&store.save_requirements(
                 &work_id(&id)?,
                 &list.stored_text(),
@@ -2114,23 +2137,26 @@ fn call_works<C: Clock>(
                 entry,
                 manifest,
                 sidecar,
+                lineage,
                 instructions,
             } = arguments(args)?;
             let model = match (&text, &documents, &entry) {
                 (None, None, None) => None,
                 _ => Some(model_files_of(text, documents, entry)?.stored_text()),
             };
-            let requirements = match (manifest, sidecar) {
-                (None, None) => None,
-                (Some(manifest), sidecar) => {
-                    Some(Requirements::new(manifest, sidecar)?.stored_text())
-                }
-                (None, Some(_)) => {
-                    return Err(CommandError::bad_request(
-                        "a `sidecar` belongs to a `manifest`: give both, or neither",
-                    ))
-                }
-            };
+            let requirements =
+                match (manifest, sidecar, lineage) {
+                    (None, None, None) => None,
+                    (Some(manifest), sidecar, lineage) => Some(
+                        Requirements::new(manifest, sidecar)?
+                            .with_lineage(lineage)?
+                            .stored_text(),
+                    ),
+                    (None, _, _) => return Err(CommandError::bad_request(
+                        "a `sidecar` and a `lineage` belong to a `manifest`: give them with one, \
+                         or none of them",
+                    )),
+                };
             let id = work_id(&id)?;
             let view = store.save_candidate(
                 &id,

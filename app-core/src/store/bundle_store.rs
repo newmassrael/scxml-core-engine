@@ -391,6 +391,14 @@ impl<C: Clock> WorkStore<C> {
                 json!({ "request": current.id, "checks": refused }),
             ));
         }
+        // A list published as the work's is the work's list like any other: it may not lose
+        // the lineage the one it replaces holds. The request stays the executor's, which can
+        // write the list again with it.
+        if let Some(named) = &candidate.requirements {
+            let (_, text) =
+                self.read_revision(&dir, Artifact::Requirements, id, named.clone(), true)?;
+            self.refuse_a_dropped_lineage(id, &text)?;
+        }
 
         // What the request was asked about is what the work has: a save that moved it ended
         // the request in the same step, and this is for the save that could not.

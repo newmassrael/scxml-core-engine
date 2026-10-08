@@ -1306,6 +1306,46 @@ fn replies() -> Value {
         ),
     );
 
+    // A requirement list that keeps the lineage it was built against, and the refusal of one
+    // that would lose it. Last, in a work of its own, so that no earlier reply moves.
+    let lineage_work = answer(
+        &store,
+        "create_work",
+        json!({"title": "Window blind lineage"}),
+    );
+    let lineage_id = lineage_work["id"].as_str().unwrap().to_string();
+    let lineage_source = answer(
+        &store,
+        "save_source",
+        json!({"id": lineage_id, "text": "The blind rises. The blind stops at the top."}),
+    );
+    let lineage_head = lineage_source["revision"].as_str().unwrap().to_string();
+    let lineage_manifest = "{\"doc_id\":\"blind\",\"rev\":\"1\",\
+                            \"requirements\":[{\"id\":\"R1\"},{\"id\":\"R2\"}]}\n";
+    let lineage_text = "{\"lineage\":\"sce-requirement-lineage\",\"v\":1,\"doc_id\":\"blind\",\
+                        \"next\":3,\"revisions\":[],\"requirements\":[]}\n";
+    let held = answer(
+        &store,
+        "save_requirements",
+        json!({"id": lineage_id, "manifest": lineage_manifest, "lineage": lineage_text,
+               "written_for": lineage_head}),
+    );
+    let held_revision = held["revision"].as_str().unwrap().to_string();
+    answers.insert("save_requirements_lineage".into(), held);
+    answers.insert(
+        "read_requirements_lineage".into(),
+        answer(&store, "read_requirements", json!({"id": lineage_id})),
+    );
+    refusals.insert(
+        "lineage-dropped".into(),
+        refusal(
+            &store,
+            "save_requirements",
+            json!({"id": lineage_id, "manifest": lineage_manifest, "base": held_revision,
+                   "written_for": lineage_head}),
+        ),
+    );
+
     // A command without a written-down reply is a command the screen's test
     // cannot hold to account.
     for command in COMMANDS {
@@ -1327,6 +1367,7 @@ fn replies() -> Value {
     name_the_unstable(&mut document, &id, "<work-id>");
     name_the_unstable(&mut document, &other_id, "<removed-work-id>");
     name_the_unstable(&mut document, &accepted_id, "<accepted-work-id>");
+    name_the_unstable(&mut document, &lineage_id, "<lineage-work-id>");
     name_the_unstable(&mut document, &request_id, "<request-id>");
     name_the_unstable(&mut document, &failed_id, "<failed-request-id>");
     name_the_unstable(&mut document, &cancelled_id, "<cancelled-request-id>");

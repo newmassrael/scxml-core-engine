@@ -1,7 +1,7 @@
 # ADR 0011 — A work keeps its requirement lineage with its requirement list
 
-- Status: Proposed (design only; nothing below is implemented, and two decisions are the
-  owner's: see "Open decisions")
+- Status: Proposed. Stage 1 is implemented and tested (see "What stage 1 measured"); stages 2 to 4
+  are not, and two decisions are the owner's: see "Open decisions"
 - Date: 2026-10-08
 - Scope: `app-core` (the requirement list's record, `save_requirements`, `read_requirements`,
   `save_request_candidate`, bundles), the `sce-work` command layer, the authoring MCP's
@@ -154,7 +154,7 @@ Criteria set before code. Each stage ends with a push; none needs the next.
    the lineage and `complete_request` publishes it with the list; a core that predates the field
    refuses a `v: 2` record and does not read it as a list without one; the command layer's
    version has moved; the breaks (the field not written, not read, not carried by the candidate,
-   the drop not refused) are each caught.
+   the drop not refused) are each caught. **Done**: see "What stage 1 measured".
 2. **The tools (`tools/authoring`).** Done when: through the real `sce-work`, three revisions of a
    work that hands the client back only what `works_read` gave keep their ids with no
    `lineage_text` passed by hand, and the measurement above gives `R4`, not `R3`; a save whose
@@ -167,3 +167,51 @@ Criteria set before code. Each stage ends with a push; none needs the next.
    composition. The join's home is D1.
 4. **The workbench report.** The screen shows the revision report of a work whose acceptance
    lapsed because its text was revised. Depends on D1 and on the screen; not specified here.
+
+## What stage 1 measured
+
+Implemented in `app-core/src/requirements.rs` (the record), `app-core/src/store.rs` and
+`store/bundle_store.rs` (`refuse_a_dropped_lineage`, called by a direct save and by a bundle's
+publication, under the work's lock), and `app-core/src/commands.rs` (`lineage` of
+`save_requirements` and `save_request_candidate`, `lineage` in what `read_requirements` and the
+snapshot return, `COMMAND_SET_VERSION` 19 with the screen's `SUPPORTED_COMMAND_SET_VERSION` and
+`contract/replies.json` moved with it). Held by
+`app-core/tests/a_work_keeps_the_lineage_of_its_requirement_list.rs` (12 tests), the record's own
+unit tests (10) and `tests/contract.rs`:
+
+1. **Met.** A list with a lineage reads back with it byte for byte as a `v` 2 record, and a list
+   without one is the bytes it was before lineages: the test writes those bytes out field by
+   field instead of comparing the code with itself (the first version of that test did, and held
+   nothing).
+2. **Met.** A save without a lineage onto a list that has one is refused `lineage-dropped`, with
+   the revision it would have replaced, and nothing is written. It is judged after the stale-base
+   check, so a writer that has not read the list is told to read again first. A first list, a
+   list onto one without a lineage, and a list with another lineage are saved as ever.
+3. **Met.** A candidate that loses the lineage is not published, the request stays the
+   executor's, and the same request is published once the list is written again with a lineage.
+   A work whose lists never had one publishes as ever.
+4. **Met, emulated.** A build that predates lineages refuses a `v` 2 list (the older shape is
+   written out in the test, strict about unknown fields as the reader was; it is not run) and
+   so does not read it as a list without one.
+5. **Met.** What is not a lineage (not JSON, not an object, not saying it is a
+   `sce-requirement-lineage`) is refused as an invalid list, and a lineage given without a
+   manifest is a bad request.
+6. **Met.** `lineage` is absent from the reply for a list that has none, and not `null`, so the
+   reply of every list that never had one is the reply it always was. The contract file gained
+   three entries and a refusal (`save_requirements_lineage`, `read_requirements_lineage`,
+   `lineage-dropped`) and its version; it is byte-identical to what the test regenerates.
+
+Seven ways of breaking it were put to those tests and each was caught by the test meant for it:
+the refusal removed from a direct save, the refusal removed from a publication, the reply
+carrying a `null` lineage, the lineage's kind not checked, the save command ignoring `lineage`,
+the candidate command ignoring it, and the record always written as `v` 1. The screen's tests
+(17 files, 546 tests) pass with the new version, run with node 22 as CI does; `app-core`'s tests
+pass and clippy with warnings denied is clean. One test of the MCP client
+(`a_server_that_closes_its_input_and_lives_on_is_said_to_be_gone_and_not_waited_for`) timed out
+once in the whole-crate run on a loaded build machine and passes alone; it does not touch lists.
+
+Not done in this stage, by design: nothing in `tools/authoring` gives or reads a lineage through
+`works_*` yet (stage 2), and the in-application generation (`client_run`, `runner`) does not hand
+a client the previous list's lineage, so a generation in the application still builds its ids
+without one. That is the larger half of the main path and is named here so that stage 2 is not
+read as closing it.
