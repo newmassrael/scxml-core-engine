@@ -28,6 +28,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -86,6 +87,14 @@ func historyDir(t *testing.T) (string, bool) {
 func writeHistory(t *testing.T, dir, name string, document historyDocument) {
 	t.Helper()
 	document.Version = 1
+	// A participant that made no attempt (a consumer that started after the
+	// others had taken every element) is an empty list in the history, not
+	// `null`: Go marshals a nil slice as null, which the format refuses.
+	for i := range document.Participants {
+		if document.Participants[i] == nil {
+			document.Participants[i] = []historyOperation{}
+		}
+	}
 	text, err := json.Marshal(document)
 	if err != nil {
 		t.Fatalf("%s: %v", name, err)
@@ -157,6 +166,35 @@ func recordSpscRun(t *testing.T, capacity int) historyDocument {
 	}()
 	wg.Wait()
 	return historyDocument{Capacity: capacity, Refusal: refusalAtCapacity, Participants: [][]historyOperation{pushes, pops}}
+}
+
+// A consumer that started after the others had taken every element made no
+// attempt, and its log is a nil slice, which encoding/json writes as null. The
+// history format refuses null, so the writer must turn it into the empty list.
+// Run-dependent in the stress tests (one history in a hundred and sixty-two did
+// it), so it is pinned here without a run.
+func TestAParticipantThatMadeNoAttemptIsWrittenAsAnEmptyListNotNull(t *testing.T) {
+	dir := t.TempDir()
+	document := historyDocument{
+		Capacity: 2,
+		Refusal:  refusalWhileSlotsAreHeld,
+		Participants: [][]historyOperation{
+			{{"push", valueOf(1), "pushed", 1, 2}},
+			nil,
+			{{"pop", valueOf(1), "popped", 3, 4}},
+		},
+	}
+	writeHistory(t, dir, "no_attempt", document)
+	text, err := os.ReadFile(filepath.Join(dir, "no_attempt.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(text), "null") {
+		t.Fatalf("a participant with no attempt was written as null: %s", text)
+	}
+	if !strings.Contains(string(text), `"participants":[[{`) || !strings.Contains(string(text), `}],[],[{`) {
+		t.Fatalf("the middle participant is not the empty list: %s", text)
+	}
 }
 
 func TestTheLamportRingRunsAreWrittenAsHistories(t *testing.T) {

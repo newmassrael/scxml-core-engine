@@ -64,6 +64,11 @@ fn expectation(name: &str) -> Option<&'static str> {
         Some("not a queue history")
     } else if name == "not_a_history_push_without_a_value.json" {
         Some("participants[0][0]: a push names the value it pushed")
+    } else if name == "not_a_history_a_participant_that_is_null.json" {
+        // A participant that made no attempt is an empty list. `null` is what a
+        // nil slice becomes in a language that has one, and the format refuses
+        // it rather than guessing it meant the empty list.
+        Some("not a queue history")
     } else if name.starts_with("not_a_history_") {
         panic!("{name} states no phrase its refusal must carry")
     } else if name == "records_no_operation.json" {
