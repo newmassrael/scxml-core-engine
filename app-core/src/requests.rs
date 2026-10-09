@@ -282,7 +282,6 @@ impl Request {
         origin: String,
         inputs: Inputs,
         pin: Option<Pin>,
-        fresh_ids: bool,
         now: &Moment,
     ) -> Self {
         Request {
@@ -300,8 +299,15 @@ impl Request {
             candidate: None,
             outcome: None,
             pin,
-            fresh_ids,
+            fresh_ids: false,
         }
+    }
+
+    /// The same request, the owner asking for every requirement of the list it makes to be
+    /// issued a new id (ADR 0012). Said apart from [`Request::queued`], which already takes what
+    /// a request is made of, so that what an owner may ask for can grow without it growing.
+    pub fn asking_for_fresh_ids(self, fresh_ids: bool) -> Self {
+        Request { fresh_ids, ..self }
     }
 
     /// The state as it is at `now`: what is written, except that a running request whose
@@ -576,7 +582,6 @@ mod tests {
                 answers: None,
             },
             None,
-            false,
             &at(T0),
         )
     }

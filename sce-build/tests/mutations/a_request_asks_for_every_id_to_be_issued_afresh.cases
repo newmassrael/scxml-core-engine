@@ -35,8 +35,8 @@ PY
 
 mutation_case "a request does not keep what the owner asked" <<'PY'
 edit("app-core/src/requests.rs",
-     "            pin,\n            fresh_ids,\n        }",
-     "            pin,\n            fresh_ids: fresh_ids && false,\n        }")
+     "        Request { fresh_ids, ..self }",
+     "        Request { fresh_ids: fresh_ids && false, ..self }")
 PY
 
 mutation_case "a request that asked for nothing writes the ask all the same" <<'PY'

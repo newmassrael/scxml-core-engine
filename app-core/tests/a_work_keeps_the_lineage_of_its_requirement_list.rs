@@ -263,13 +263,16 @@ fn a_stale_base_is_a_conflict_before_it_is_a_lost_lineage() {
 
 /// What the store says of each lineage the shared cases refuse to continue. The store judges a
 /// lineage in the order a person would want to be told: is it a lineage at all, is it THIS
-/// list's, does it continue the work's. So two of the cases are not told as "not continued":
-/// `fewer revisions` and `a next that is behind` are not lineages (a requirement names a revision
-/// that is gone; `next` is below an id that was issued), and `another specification` names
-/// another document than the list's. The rest are the list's own and do not continue the work's.
+/// list's, does it continue the work's. So three of the cases are not told as "not continued":
+/// `fewer revisions`, `a next that is behind` and a lineage that started every id over and put the
+/// numbering back to R1 are not lineages (a requirement names a revision that is gone; `next` is
+/// below an id that was issued), and `another specification` names another document than the
+/// list's. The rest are the list's own and do not continue the work's.
 fn refused_as(name: &str) -> &'static str {
     match name {
-        "fewer revisions" | "a next that is behind" => "lineage-unusable",
+        "fewer revisions"
+        | "a next that is behind"
+        | "every id started over and the numbering put back to R1" => "lineage-unusable",
         "another specification" => "lineage-of-another-list",
         _ => "lineage-not-continued",
     }

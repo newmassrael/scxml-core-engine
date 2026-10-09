@@ -549,9 +549,9 @@ impl<C: Clock> WorkStore<C> {
             registration.origin.to_string(),
             registration.expect,
             pin,
-            fresh_ids,
             &now,
-        );
+        )
+        .asking_for_fresh_ids(fresh_ids);
         persist(&dir, None, &request, &now)?;
         Ok(Registered {
             state: State::Queued,

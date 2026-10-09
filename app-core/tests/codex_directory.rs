@@ -121,6 +121,7 @@ fn job() -> Job {
         answers: Default::default(),
         previous: None,
         refusal: None,
+        fresh_ids: false,
     }
 }
 
