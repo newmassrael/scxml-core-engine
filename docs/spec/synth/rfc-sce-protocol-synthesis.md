@@ -1716,8 +1716,8 @@ matches C11 `<stdatomic.h>` / Rust `core::sync::atomic::Ordering`.
 
 *Atomics (per-width: u8, u16, u32, u64, usize):*
 ```
-sce_atomic_load_{acquire,relaxed}
-sce_atomic_store_{release,relaxed}
+sce_atomic_load_{acquire,relaxed,seq_cst}
+sce_atomic_store_{release,relaxed,seq_cst}
 sce_atomic_cas_weak_{acq_rel,release,relaxed}    # returns old value
 sce_atomic_cas_strong_{acq_rel,release,relaxed}
 sce_atomic_fetch_add_{acq_rel,relaxed}

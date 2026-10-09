@@ -170,8 +170,8 @@ fn reject_ordering_unspecified() {
                 base, candidates, ..
             } => {
                 assert_eq!(base, "sce_atomic_load");
-                // 2 orderings (acquire, relaxed) × 5 widths = 10 completions.
-                assert_eq!(candidates.len(), 10);
+                // 3 orderings (acquire, relaxed, seq_cst) × 5 widths = 15 completions.
+                assert_eq!(candidates.len(), 15);
                 assert!(candidates.contains(&"sce_atomic_load_acquire_u32".to_string()));
             }
             other => panic!("expected ExternOrderingUnspecified, got {other:?}"),

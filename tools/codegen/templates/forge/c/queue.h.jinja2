@@ -1,0 +1,181 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{{ sce_map.source_marker(source_location, "c", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+/* SCE Forge: Auto-generated from Extended SCXML (sce:kind="queue") */
+/* Runtime: {{ runtime_dep }} */
+/* Do not edit — regenerate from the source SCXML file. */
+/*
+ * SCE Protocol-Synthesis RFC §synth-5-P queue — a first-in first-out queue that
+ * hands elements from one thread, core or interrupt handler to another. The
+ * document states the contract (element type `{{ element_snake }}_t`,
+ * {{ producers }} producer(s), {{ consumers }} consumer(s), `{{ declared_progress }}`) and
+ * names no algorithm; the algorithm below is what the selection table gives that
+ * contract on this target.
+ *
+ * Selected: {{ algorithm }}. Push is {{ push_progress }}, pop is {{ pop_progress }}.
+{% if entry_bits %}
+ *
+ * The ring's entries are {{ entry_bits }}-bit words, the widest read-modify-write atomic
+ * the deploy says the target has (`platform.atomic_rmw_width`), so the wrap bound
+ * is {{ wrap_bound_ops }} operations (2^{{ entry_bits - 2 }}): a participant delayed between
+ * reading an entry and acting on it can be misled only after that many operations
+ * by the others. See SCE Protocol-Synthesis RFC §synth-5-P, Counter width.
+{% elif runtime_type == "irq" %}
+ *
+ * The deploy says the target has no read-modify-write atomic
+ * (`platform.atomic_rmw_width` 0), so every operation runs in an
+ * `sce_irq_save` / `sce_irq_restore` critical section, and the queue is for one
+ * core. The platform's header that defines `irq_state_t` must be included before
+ * this one.
+{% endif %}
+ *
+ * The queue is `{{ snake }}_t`: its control block, the storage of its slots and (for
+ * an SCQ row) the entries of its two index rings, all static in the object, so
+ * nothing allocates. Build it with `{{ snake }}_init` before another participant
+ * can reach it. A producer takes a place with `{{ snake }}_producer_acquire` and
+ * a consumer with `{{ snake }}_consumer_acquire`; both give it back with the
+ * matching `_release`.
+ *
+ * Operations:
+ *   {{ snake }}_try_push(q, &element)   SCE_QUEUE_PUSH_OK takes the element;
+ *                                       SCE_QUEUE_PUSH_FULL does not
+ *   {{ snake }}_try_pop(q, &out)        nonzero when it took an element
+ */
+
+#ifndef {{ guard }}
+#define {{ guard }}
+
+#include <stddef.h>
+#include <stdint.h>
+
+/* `SCE_STATIC_ASSERT` for the drift guards below. This header opens
+ * `extern "C"`, so a C++ consumer compiles it as C++, where `_Static_assert` is
+ * not a keyword. */
+#include <sce/portability.h>
+
+#include <sce/forge/queue.h>
+{% if runtime_type == "irq" %}
+#include <sce/forge/queue_irq.h>
+{% endif %}
+
+#include "{{ element_snake }}.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* The most elements the queue holds (`<sce:bounded>`). */
+#define {{ upper_name }}_CAPACITY ((uint32_t){{ capacity }})
+{% if participants %}
+
+/* The most participants that hold a place on one side at the same time
+ * (`<sce:participants>`). */
+#define {{ upper_name }}_PARTICIPANTS ((uint32_t){{ participants }})
+{% endif %}
+{% if ring_slots %}
+
+/* The size of each of the queue's two index rings: a power of two, at least the
+ * capacity and at least the participants. The algorithm's empty test is justified
+ * only for as many producers or consumers as the ring has slots (Nikolaev 2019
+ * §5.1), so the ring is sized by both. */
+#define {{ upper_name }}_RING_SLOTS ((uint32_t){{ ring_slots }})
+
+/* How many operations a participant may be delayed between reading a ring entry
+ * and acting on it before it could be misled (RFC §synth-5-P, Counter width). */
+#define {{ upper_name }}_WRAP_BOUND_OPS ((uint64_t){{ wrap_bound_ops }}u)
+{% endif %}
+
+/* What the document requires of push and pop (`<sce:progress>`), what the
+ * selected algorithm gives each, and the algorithm. */
+#define {{ upper_name }}_DECLARED_PROGRESS "{{ declared_progress }}"
+#define {{ upper_name }}_PUSH_PROGRESS "{{ push_progress }}"
+#define {{ upper_name }}_POP_PROGRESS "{{ pop_progress }}"
+#define {{ upper_name }}_ALGORITHM "{{ algorithm }}"
+{% if runtime_type == "spsc" %}
+
+/* The lap indices run over twice the capacity in 32 bits (RFC §synth-5-P,
+ * Counter width). */
+SCE_STATIC_ASSERT({{ capacity }}u <= 0x7FFFFFFFu,
+    "{{ snake }}: a Lamport ring's lap-index space (2N) must fit in 32 bits");
+{% elif ring_slots %}
+
+/* A ring of this many slots leaves an entry of {{ entry_bits }} bits enough of them for
+ * its cycle. */
+SCE_STATIC_ASSERT({{ ring_slots }}u <= {{ "(1u << 30)" if entry_bits == 64 else "(1u << 15)" }},
+    "{{ snake }}: the ring is larger than a {{ entry_bits }}-bit entry can number");
+{% endif %}
+
+typedef struct {{ snake }} {
+{% if runtime_type == "spsc" %}
+    sce_queue_spsc_t core;
+{% elif runtime_type == "irq" %}
+    sce_queue_irq_t core;
+{% else %}
+    sce_queue_{{ runtime_type }}_t core;
+    uint{{ entry_bits }}_t allocated_entries[2u * {{ upper_name }}_RING_SLOTS];
+    uint{{ entry_bits }}_t free_entries[2u * {{ upper_name }}_RING_SLOTS];
+{% endif %}
+    {{ element_snake }}_t slots[{{ upper_name }}_CAPACITY];
+} {{ snake }}_t;
+
+/* Builds an empty queue. Returns zero, and builds nothing, for a shape the
+ * runtime refuses; the constants above are checked at compile time, so for
+ * a generated queue it returns nonzero. Not safe against a concurrent
+ * user: hand the queue to the other participants after it returns. */
+static inline int {{ snake }}_init({{ snake }}_t *q)
+{
+{% if runtime_type == "spsc" %}
+    return sce_queue_spsc_init(&q->core, {{ upper_name }}_CAPACITY);
+{% elif runtime_type == "irq" %}
+    return sce_queue_irq_init(&q->core, {{ upper_name }}_CAPACITY, {{ "1u" if producers == "one" else upper_name ~ "_PARTICIPANTS" }},
+                              {{ "1u" if consumers == "one" else upper_name ~ "_PARTICIPANTS" }});
+{% else %}
+    return sce_queue_{{ runtime_type }}_init(&q->core, {{ upper_name }}_CAPACITY, {{ upper_name }}_RING_SLOTS,
+                                             q->allocated_entries, q->free_entries);
+{% endif %}
+}
+
+/* Takes a producer place, or returns zero when every one is taken. */
+static inline int {{ snake }}_producer_acquire({{ snake }}_t *q)
+{
+    return sce_queue_{{ runtime_type }}_producer_acquire(&q->core);
+}
+
+/* Gives a producer place back. */
+static inline void {{ snake }}_producer_release({{ snake }}_t *q)
+{
+    sce_queue_{{ runtime_type }}_producer_release(&q->core);
+}
+
+/* Takes a consumer place, or returns zero when every one is taken. */
+static inline int {{ snake }}_consumer_acquire({{ snake }}_t *q)
+{
+    return sce_queue_{{ runtime_type }}_consumer_acquire(&q->core);
+}
+
+/* Gives a consumer place back. */
+static inline void {{ snake }}_consumer_release({{ snake }}_t *q)
+{
+    sce_queue_{{ runtime_type }}_consumer_release(&q->core);
+}
+
+/* Takes a copy of `*element` into the queue, or reports full. */
+static inline sce_queue_push_status_t {{ snake }}_try_push({{ snake }}_t *q, const {{ element_snake }}_t *element)
+{
+    return sce_queue_{{ runtime_type }}_try_push(&q->core, (unsigned char *)q->slots, sizeof(q->slots[0]), element);
+}
+
+/* Takes the oldest element into `*out`, or returns zero when the queue is empty. */
+static inline int {{ snake }}_try_pop({{ snake }}_t *q, {{ element_snake }}_t *out)
+{
+    return sce_queue_{{ runtime_type }}_try_pop(&q->core, (unsigned char *)q->slots, sizeof(q->slots[0]), out);
+}
+
+#ifdef __cplusplus
+}  /* extern "C" */
+#endif
+
+#endif /* {{ guard }} */

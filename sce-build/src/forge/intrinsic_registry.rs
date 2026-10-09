@@ -5,12 +5,12 @@
 // (lines 1691-1924). Closed table that mirrors the spec's
 // concrete v1 whitelist (lines 1717-1750):
 //
-//   - Atomics, per-width × per-ordering — 90 entries
+//   - Atomics, per-width × per-ordering — 100 entries
 //   - Fences (acquire/release/acq_rel/seq_cst + compiler_barrier + dma_fence) — 6 entries
 //   - Cache maintenance (clean / invalidate / clean_invalidate by addr) — 3 entries
 //   - Interrupt control (irq_save / irq_restore) — 2 entries
 //
-// 101 baseline symbols. Plugin-extension symbols (deploy.yaml
+// 111 baseline symbols. Plugin-extension symbols (deploy.yaml
 // `extern_symbols.target_plugin: <path>`) are out of scope here —
 // the target-plugin loader composes the plugin file's additions on
 // top of this baseline. `pub const` Rust slice over YAML data,
@@ -275,7 +275,7 @@ const fn irq(name: &'static str, sig: &'static str, purpose: &'static str) -> Sy
 use MemoryOrdering::*;
 use Width::*;
 
-/// Baseline whitelist — 101 symbols. Source of truth: SCE Protocol-Synthesis
+/// Baseline whitelist — 111 symbols. Source of truth: SCE Protocol-Synthesis
 /// RFC §synth-5-I lines 1717-1750. Per-width × per-ordering combinations
 /// expanded inline so each row matches its spec line one-to-one.
 ///
@@ -343,6 +343,40 @@ pub const BASELINE_SYMBOLS: &[Symbol] = &[
         Relaxed,
         USize,
     ),
+    // ── seq_cst loads (the queue kind's SCQ emptiness counter):
+    //    the one location whose access the Rust and C++ runtimes make
+    //    sequentially consistent, so the C11 runtime needs the same ordering
+    //    and not a fence stood in front of a weaker access.
+    atomic_load(
+        "sce_atomic_load_seq_cst_u8",
+        "(*const u8) -> u8",
+        SeqCst,
+        U8,
+    ),
+    atomic_load(
+        "sce_atomic_load_seq_cst_u16",
+        "(*const u16) -> u16",
+        SeqCst,
+        U16,
+    ),
+    atomic_load(
+        "sce_atomic_load_seq_cst_u32",
+        "(*const u32) -> u32",
+        SeqCst,
+        U32,
+    ),
+    atomic_load(
+        "sce_atomic_load_seq_cst_u64",
+        "(*const u64) -> u64",
+        SeqCst,
+        U64,
+    ),
+    atomic_load(
+        "sce_atomic_load_seq_cst_usize",
+        "(*const usize) -> usize",
+        SeqCst,
+        USize,
+    ),
     // ── Atomic store (line 1720): per-{release, relaxed} × 5 widths ──
     atomic_store("sce_atomic_store_release_u8", "(*mut u8, u8)", Release, U8),
     atomic_store(
@@ -392,6 +426,31 @@ pub const BASELINE_SYMBOLS: &[Symbol] = &[
         "sce_atomic_store_relaxed_usize",
         "(*mut usize, usize)",
         Relaxed,
+        USize,
+    ),
+    atomic_store("sce_atomic_store_seq_cst_u8", "(*mut u8, u8)", SeqCst, U8),
+    atomic_store(
+        "sce_atomic_store_seq_cst_u16",
+        "(*mut u16, u16)",
+        SeqCst,
+        U16,
+    ),
+    atomic_store(
+        "sce_atomic_store_seq_cst_u32",
+        "(*mut u32, u32)",
+        SeqCst,
+        U32,
+    ),
+    atomic_store(
+        "sce_atomic_store_seq_cst_u64",
+        "(*mut u64, u64)",
+        SeqCst,
+        U64,
+    ),
+    atomic_store(
+        "sce_atomic_store_seq_cst_usize",
+        "(*mut usize, usize)",
+        SeqCst,
         USize,
     ),
     // ── CAS-weak (line 1721): per-{acq_rel, release, relaxed} × 5 widths ──
@@ -1013,15 +1072,15 @@ mod tests {
     use super::*;
     use std::collections::BTreeSet;
 
-    /// Spec-verbatim entry count. 90 atomic + 6 fence + 3 cache + 2
-    /// IRQ = 101. Drift here = a future spec edit reshaped the
+    /// Spec-verbatim entry count. 100 atomic + 6 fence + 3 cache + 2
+    /// IRQ = 111. Drift here = a future spec edit reshaped the
     /// baseline; cross-check `BASELINE_SYMBOLS` against §synth-5-I lines
     /// 1717-1750 before bumping the count.
     #[test]
     fn baseline_symbol_count_matches_spec() {
         assert_eq!(
             BASELINE_SYMBOLS.len(),
-            101,
+            111,
             "BASELINE_SYMBOLS drifted from spec §5.I lines 1717-1750"
         );
     }
@@ -1073,8 +1132,8 @@ mod tests {
     fn ordering_suffix_completions_lists_all_load_widths() {
         let hits = ordering_suffix_completions("sce_atomic_load")
             .expect("`sce_atomic_load` is an atomic-family base");
-        // 2 orderings × 5 widths = 10 hits.
-        assert_eq!(hits.len(), 10, "got {hits:?}");
+        // 3 orderings (acquire, relaxed, seq_cst) × 5 widths = 15 hits.
+        assert_eq!(hits.len(), 15, "got {hits:?}");
     }
 
     #[test]

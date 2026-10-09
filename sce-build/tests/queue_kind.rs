@@ -1058,6 +1058,369 @@ fn a_progress_the_python_backend_cannot_give_is_refused_by_name_at_the_row_that_
     }
 }
 
+// ─── C11 emit ───
+
+/// The options `compile_forge_with_deploy` builds from a deploy that states
+/// these facts about the target machine, for the queue named `name`.
+fn c_options(
+    name: &str,
+    atomic_rmw_width: Option<u32>,
+    core_count: Option<u32>,
+    min_wrap_ops: Option<u64>,
+) -> ForgeCompileOptions {
+    ForgeCompileOptions {
+        queue_resolutions: Some(std::collections::HashMap::from([(
+            name.to_string(),
+            sce_build::QueueResolution {
+                atomic_rmw_width,
+                core_count,
+                min_wrap_ops,
+                ..sce_build::QueueResolution::default()
+            },
+        )])),
+        ..ForgeCompileOptions::default()
+    }
+}
+
+fn c_compile(
+    options: &ForgeCompileOptions,
+    xml: &str,
+    basename: &str,
+) -> Result<String, Located<ForgeError>> {
+    compile_files(Language::C11, options, xml, basename).map(|files| {
+        files
+            .into_iter()
+            .find(|(name, _)| name == &basename.replace(".scxml", ".h"))
+            .unwrap_or_else(|| panic!("no header for {basename}"))
+            .1
+    })
+}
+
+fn generate_error(located: Located<ForgeError>) -> GenerateError {
+    match located.error {
+        ForgeError::Generate(boxed) => *boxed,
+        other => panic!("expected a generate error, got {other:?}"),
+    }
+}
+
+fn scq_doc(name: &str, progress: &str) -> String {
+    queue_doc(
+        name,
+        "many",
+        "many",
+        progress,
+        r#"<sce:bounded capacity="6"/><sce:participants const="5"/>"#,
+    )
+}
+
+#[test]
+fn a_lamport_ring_emits_a_c_header_over_the_spsc_runtime_with_no_deploy() {
+    let xml = queue_doc(
+        "frame_queue",
+        "one",
+        "one",
+        "wait-free",
+        r#"<sce:bounded capacity="8"/>"#,
+    );
+    let code = c_compile(&ForgeCompileOptions::default(), &xml, "frame_queue.scxml")
+        .expect("a Lamport ring needs no statement about the target");
+    assert!(code.contains("#include <sce/forge/queue.h>"), "{code}");
+    assert!(code.contains("#include \"rx_event.h\""), "{code}");
+    assert!(
+        code.contains("#define FRAME_QUEUE_CAPACITY ((uint32_t)8)"),
+        "{code}"
+    );
+    assert!(code.contains("sce_queue_spsc_t core;"), "{code}");
+    assert!(
+        code.contains("rx_event_t slots[FRAME_QUEUE_CAPACITY];"),
+        "{code}"
+    );
+    assert!(
+        code.contains("sce_queue_spsc_init(&q->core, FRAME_QUEUE_CAPACITY)"),
+        "{code}"
+    );
+    assert!(
+        code.contains("#define FRAME_QUEUE_PUSH_PROGRESS \"wait-free\""),
+        "{code}"
+    );
+    assert!(
+        !code.contains("RING_SLOTS") && !code.contains("queue_irq.h"),
+        "{code}"
+    );
+}
+
+#[test]
+fn an_scq_row_on_c11_needs_the_target_to_state_its_atomic_width() {
+    let xml = scq_doc("work_queue", "lock-free");
+    let located = c_compile(&ForgeCompileOptions::default(), &xml, "work_queue.scxml")
+        .expect_err("the generator does not guess what sce_atomic_* is");
+    let row = row_text(&located, &xml).to_string();
+    assert!(
+        row.contains("<sce:bounded"),
+        "placed on the storage row: {row}"
+    );
+    match generate_error(located) {
+        GenerateError::QueueAtomicWidthUnstated {
+            queue_name,
+            algorithm,
+        } => {
+            assert_eq!(queue_name, "work_queue");
+            assert!(algorithm.contains("SCQ"), "{algorithm}");
+        }
+        other => panic!("expected QueueAtomicWidthUnstated, got {other:?}"),
+    }
+    // The deploy naming a different queue states nothing about this one.
+    let elsewhere = c_options("another_queue", Some(64), None, None);
+    c_compile(&elsewhere, &xml, "work_queue.scxml")
+        .expect_err("a statement about another queue is not one about this");
+}
+
+#[test]
+fn a_64_bit_target_gets_scq_over_64_bit_entries_and_the_2_62_wrap_bound() {
+    let xml = scq_doc("work_queue", "lock-free");
+    let options = c_options("work_queue", Some(64), Some(4), None);
+    let code = c_compile(&options, &xml, "work_queue.scxml").expect("64-bit atomics build SCQ");
+    assert!(code.contains("sce_queue_scq64_t core;"), "{code}");
+    assert!(
+        code.contains("uint64_t allocated_entries[2u * WORK_QUEUE_RING_SLOTS];")
+            && code.contains("uint64_t free_entries[2u * WORK_QUEUE_RING_SLOTS];"),
+        "{code}"
+    );
+    assert!(
+        code.contains("#define WORK_QUEUE_RING_SLOTS ((uint32_t)8)"),
+        "capacity 6 and 5 participants: the next power of two at or above both:\n{code}"
+    );
+    assert!(
+        code.contains("#define WORK_QUEUE_WRAP_BOUND_OPS ((uint64_t)4611686018427387904u)"),
+        "2^62:\n{code}"
+    );
+    assert!(code.contains("sce_queue_scq64_init(&q->core"), "{code}");
+    assert!(
+        code.contains("#define WORK_QUEUE_PUSH_PROGRESS \"lock-free\""),
+        "{code}"
+    );
+}
+
+#[test]
+fn a_32_bit_target_must_state_the_delay_the_design_relies_on() {
+    let xml = scq_doc("work_queue", "lock-free");
+
+    // Nothing stated: the 2^30 bound cannot be judged against anything.
+    let located = c_compile(
+        &c_options("work_queue", Some(32), None, None),
+        &xml,
+        "work_queue.scxml",
+    )
+    .expect_err("a 32-bit bound needs min_wrap_ops");
+    match generate_error(located) {
+        GenerateError::QueueWrapBoundUnstated { queue_name, bound } => {
+            assert_eq!(queue_name, "work_queue");
+            assert_eq!(bound, 1 << 30);
+        }
+        other => panic!("expected QueueWrapBoundUnstated, got {other:?}"),
+    }
+
+    // More than the ring can promise.
+    let located = c_compile(
+        &c_options("work_queue", Some(32), None, Some((1 << 30) + 1)),
+        &xml,
+        "work_queue.scxml",
+    )
+    .expect_err("a delay above 2^30 operations can mislead a participant");
+    match generate_error(located) {
+        GenerateError::QueueWrapBoundBelowDeployMinimum {
+            bound,
+            min_wrap_ops,
+            ..
+        } => {
+            assert_eq!(bound, 1 << 30);
+            assert_eq!(min_wrap_ops, (1 << 30) + 1);
+        }
+        other => panic!("expected QueueWrapBoundBelowDeployMinimum, got {other:?}"),
+    }
+
+    // Within the bound, and exactly at it.
+    for min_wrap_ops in [1_000_000u64, 1 << 30] {
+        let code = c_compile(
+            &c_options("work_queue", Some(32), None, Some(min_wrap_ops)),
+            &xml,
+            "work_queue.scxml",
+        )
+        .expect("a delay within the bound is judged safe");
+        assert!(code.contains("sce_queue_scq32_t core;"), "{code}");
+        assert!(
+            code.contains("uint32_t allocated_entries[2u * WORK_QUEUE_RING_SLOTS];"),
+            "{code}"
+        );
+        assert!(
+            code.contains("#define WORK_QUEUE_WRAP_BOUND_OPS ((uint64_t)1073741824u)"),
+            "2^30:\n{code}"
+        );
+    }
+
+    // A Lamport ring has no entries to wrap.
+    let lamport = queue_doc(
+        "frame_queue",
+        "one",
+        "one",
+        "wait-free",
+        r#"<sce:bounded capacity="8"/>"#,
+    );
+    let code = c_compile(
+        &c_options("frame_queue", Some(32), None, None),
+        &lamport,
+        "frame_queue.scxml",
+    )
+    .expect("a Lamport ring is not an SCQ row");
+    assert!(
+        code.contains("sce_queue_spsc_t core;") && !code.contains("WRAP_BOUND"),
+        "{code}"
+    );
+}
+
+#[test]
+fn a_target_with_no_read_modify_write_atomic_gets_the_interrupt_masked_ring() {
+    for (producers, consumers, extra, places) in [
+        ("one", "one", "", "1u, 1u"),
+        (
+            "many",
+            "many",
+            r#"<sce:participants const="5"/>"#,
+            "WORK_QUEUE_PARTICIPANTS, WORK_QUEUE_PARTICIPANTS",
+        ),
+    ] {
+        let xml = queue_doc(
+            "work_queue",
+            producers,
+            consumers,
+            "blocking",
+            &format!(r#"<sce:bounded capacity="6"/>{extra}"#),
+        );
+        let options = c_options("work_queue", Some(0), Some(1), None);
+        let code = c_compile(&options, &xml, "work_queue.scxml")
+            .unwrap_or_else(|e| panic!("{producers}/{consumers} blocking queue emits: {e:?}"));
+        assert!(code.contains("#include <sce/forge/queue_irq.h>"), "{code}");
+        assert!(code.contains("sce_queue_irq_t core;"), "{code}");
+        let flat = code.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(
+            flat.contains(&format!("WORK_QUEUE_CAPACITY, {places})")),
+            "{places}:\n{code}"
+        );
+        assert!(
+            code.contains("#define WORK_QUEUE_PUSH_PROGRESS \"blocking\"")
+                && code.contains("#define WORK_QUEUE_POP_PROGRESS \"blocking\""),
+            "{code}"
+        );
+        assert!(
+            !code.contains("RING_SLOTS") && !code.contains("WRAP_BOUND"),
+            "{code}"
+        );
+    }
+}
+
+#[test]
+fn a_progress_the_interrupt_masked_ring_cannot_give_is_refused_for_the_target_not_the_backend() {
+    let xml = queue_doc(
+        "frame_queue",
+        "one",
+        "one",
+        "wait-free",
+        r#"<sce:bounded capacity="8"/>"#,
+    );
+    let located = c_compile(
+        &c_options("frame_queue", Some(0), Some(1), None),
+        &xml,
+        "frame_queue.scxml",
+    )
+    .expect_err("every row is blocking on a target with no read-modify-write atomic");
+    assert!(
+        row_text(&located, &xml).contains("<sce:progress>"),
+        "placed on the progress row"
+    );
+    match generate_error(located) {
+        GenerateError::QueueProgressUnreachableOnBackend {
+            declared,
+            reachable,
+            language,
+            because,
+            ..
+        } => {
+            assert_eq!(declared, "wait-free");
+            assert_eq!(reachable, "blocking");
+            assert_eq!(language, "c11");
+            assert!(
+                because.contains("platform.atomic_rmw_width is 0"),
+                "{because}"
+            );
+        }
+        other => panic!("expected QueueProgressUnreachableOnBackend, got {other:?}"),
+    }
+    // The same document is fine where the target has the atomics.
+    c_compile(
+        &c_options("frame_queue", Some(64), Some(1), None),
+        &xml,
+        "frame_queue.scxml",
+    )
+    .expect("a 64-bit target keeps wait-free");
+}
+
+#[test]
+fn masking_interrupts_excludes_nothing_on_another_core() {
+    let xml = queue_doc(
+        "frame_queue",
+        "one",
+        "one",
+        "blocking",
+        r#"<sce:bounded capacity="8"/>"#,
+    );
+    for core_count in [2u32, 4] {
+        let located = c_compile(
+            &c_options("frame_queue", Some(0), Some(core_count), None),
+            &xml,
+            "frame_queue.scxml",
+        )
+        .expect_err("no atomics across cores");
+        match generate_error(located) {
+            GenerateError::QueueNoAtomicsAcrossCores {
+                queue_name,
+                core_count: got,
+            } => {
+                assert_eq!(queue_name, "frame_queue");
+                assert_eq!(got, core_count);
+            }
+            other => panic!("expected QueueNoAtomicsAcrossCores, got {other:?}"),
+        }
+    }
+    // One core, or none stated, is the supported case.
+    for core_count in [Some(1u32), None] {
+        c_compile(
+            &c_options("frame_queue", Some(0), core_count, None),
+            &xml,
+            "frame_queue.scxml",
+        )
+        .expect("a single core is what the interrupt-masked ring is for");
+    }
+}
+
+#[test]
+fn a_storage_the_c11_runtime_lacks_is_refused_by_name() {
+    let located = c_compile(
+        &ForgeCompileOptions::default(),
+        &resource("queue_intrusive_mpsc.scxml"),
+        "queue_intrusive_mpsc.scxml",
+    )
+    .expect_err("a storage without a runtime is refused");
+    match generate_error(located) {
+        GenerateError::QueueStorageRuntimeMissing {
+            language, storage, ..
+        } => {
+            assert_eq!(language, "c11");
+            assert_eq!(storage, "intrusive");
+        }
+        other => panic!("expected QueueStorageRuntimeMissing, got {other:?}"),
+    }
+}
+
 // ─── Cross-document resolution ───
 
 /// The row a refusal points at, and that row's text.

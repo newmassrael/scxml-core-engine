@@ -437,6 +437,17 @@ const GENERATE_FLAGS: &[FlagFacts] = &[
         "turns an `<sce:unresolved>` placeholder into a refusal",
     ),
     f(
+        "--target-machine",
+        Reach::Verdict,
+        None,
+        "rust",
+        "the machine of `--deploy` a queue document is resolved against: its \
+         deploy keys and the target's atomics (`platform.atomic_rmw_width`), \
+         which decide whether the C11 backend can build the queue at all; \
+         present on `check` and `orchestrate`, on whose document-set route the \
+         same resolution runs",
+    ),
+    f(
         "--transport-only",
         Reach::DeployRoute,
         None,

@@ -2635,7 +2635,7 @@ pub enum ValidationError {
     /// (spec line 1847): `<sce:extern name="...">` references a
     /// symbol absent from the §synth-5-I baseline registry. `candidates`
     /// rides `Fix::ReplaceOneOf` so authors see closest-match
-    /// suggestions without paging through 101 baseline entries.
+    /// suggestions without paging through 111 baseline entries.
     /// Parse-time rejection; closed-set membership
     /// follows the `LinkLinkClassUnknown` precedent.
     #[error(
@@ -5381,26 +5381,101 @@ pub enum GenerateError {
 
     /// SCE Protocol-Synthesis RFC §synth-5-P
     /// (`queue/progress-unreachable-on-backend`) — the declared
-    /// `<sce:progress>` is stronger than the most the target language's
-    /// runtime can give any queue. `queue/progress-unreachable` judges the
-    /// document alone against the selection table; this is the same judgement
-    /// against the backend, because Python has no compare-and-swap primitive
-    /// and its queue is one ring under one lock. Refused rather than weakened,
-    /// for the reason that code gives.
+    /// `<sce:progress>` is stronger than the most the target can give any
+    /// queue. `queue/progress-unreachable` judges the document alone against
+    /// the selection table; this is the same judgement against the target:
+    /// Python has no compare-and-swap primitive and its queue is one ring under
+    /// one lock, and a C11 target whose `platform.atomic_rmw_width` is 0 runs
+    /// every row in an interrupt-masked critical section. Refused rather than
+    /// weakened, for the reason that code gives.
     #[error(
-        "queue '{queue_name}': <sce:progress>{declared}</sce:progress> cannot be met on the {language} backend: its runtime gives {reachable} at most. \
+        "queue '{queue_name}': <sce:progress>{declared}</sce:progress> cannot be met on the {language} backend: {because}, so its queue gives {reachable} at most. \
          SCE Protocol-Synthesis RFC §5.P: progress is declared, checked, and never silently weakened. \
-         Repair: declare {reachable}, or generate for a backend whose runtime gives {declared}."
+         Repair: declare {reachable}, or generate for a target that gives {declared}."
     )]
     QueueProgressUnreachableOnBackend {
         /// Queue name from `<scxml sce:kind="queue" name="...">`.
         queue_name: String,
         /// The progress the document declares.
         declared: String,
-        /// The strongest progress the target language's runtime gives.
+        /// The strongest progress the target gives.
         reachable: String,
         /// The target language's wire name.
         language: String,
+        /// Why the target gives no more, in a clause that follows "on the
+        /// {language} backend: ".
+        because: String,
+    },
+
+    /// SCE Protocol-Synthesis RFC §synth-5-P (`queue/atomic-width-unstated`) —
+    /// an SCQ row generated for C11 and the deploy states no
+    /// `platform.atomic_rmw_width`. C11 cannot assert what its atomics are: they
+    /// are the `sce_atomic_*` extern symbols of the intrinsics whitelist, whose implementation the
+    /// compiler never sees, so the generator needs the platform to say whether
+    /// the target has 64-bit, 32-bit or no read-modify-write atomics and does not
+    /// guess.
+    #[error(
+        "queue '{queue_name}': the {algorithm} that its cardinality selects is built on read-modify-write atomics, and the C11 backend cannot see what the target's `sce_atomic_*` symbols are. \
+         SCE Protocol-Synthesis RFC §5.P: an SCQ row on C11 requires platform.atomic_rmw_width. \
+         Repair: state platform.atomic_rmw_width (64, 32, or 0 for a target with none) for this machine in deploy.yaml and generate with it."
+    )]
+    QueueAtomicWidthUnstated {
+        /// Queue name from `<scxml sce:kind="queue" name="...">`.
+        queue_name: String,
+        /// The selected algorithm, as the RFC names it.
+        algorithm: String,
+    },
+
+    /// SCE Protocol-Synthesis RFC §synth-5-P (`queue/no-atomics-across-cores`)
+    /// — `platform.atomic_rmw_width` is 0 and `platform.core_count` is above one.
+    /// Masking interrupts excludes nothing on another core, so the ring under an
+    /// interrupt-masked critical section that a target with no read-modify-write
+    /// atomics gets is correct on one core only.
+    #[error(
+        "queue '{queue_name}': platform.atomic_rmw_width is 0 and platform.core_count is {core_count}. \
+         SCE Protocol-Synthesis RFC §5.P: a target with no read-modify-write atomics runs its queue under an interrupt-masked critical section, which excludes nothing on another core. \
+         Repair: use a target with read-modify-write atomics (platform.atomic_rmw_width 32 or 64), or run the queue's participants on one core (platform.core_count 1)."
+    )]
+    QueueNoAtomicsAcrossCores {
+        /// Queue name from `<scxml sce:kind="queue" name="...">`.
+        queue_name: String,
+        /// The `platform.core_count` the deploy states.
+        core_count: u32,
+    },
+
+    /// SCE Protocol-Synthesis RFC §synth-5-P (`queue/wrap-bound-unstated`) — an
+    /// SCQ row over 32-bit entries, whose wrap bound is 2^30 operations (about a
+    /// billion, which a busy queue reaches in minutes), and the deploy does not
+    /// state `queues.<q>.min_wrap_ops`, the longest delay the design relies on.
+    /// Without it the bound cannot be judged against anything.
+    #[error(
+        "queue '{queue_name}': platform.atomic_rmw_width is 32, so the SCQ ring's entries leave its cycle too few bits for a wrap bound beyond {bound} operations, and the deploy states no machines.<machine>.queues.{queue_name}.min_wrap_ops to judge it against. \
+         SCE Protocol-Synthesis RFC §5.P (Counter width). \
+         Repair: state machines.<machine>.queues.{queue_name}.min_wrap_ops, the longest delay in operations the design relies on, or use a target with 64-bit atomics (a bound of 2^62)."
+    )]
+    QueueWrapBoundUnstated {
+        /// Queue name from `<scxml sce:kind="queue" name="...">`.
+        queue_name: String,
+        /// The queue's wrap bound in operations.
+        bound: u64,
+    },
+
+    /// SCE Protocol-Synthesis RFC §synth-5-P
+    /// (`queue/wrap-bound-below-deploy-minimum`) — the deploy states a
+    /// `min_wrap_ops` above the queue's wrap bound, so a delay the design relies
+    /// on is long enough to mislead a participant.
+    #[error(
+        "queue '{queue_name}': the SCQ ring's wrap bound is {bound} operations, below the {min_wrap_ops} that machines.<machine>.queues.{queue_name}.min_wrap_ops says the design relies on. \
+         SCE Protocol-Synthesis RFC §5.P (Counter width). \
+         Repair: use a target with 64-bit atomics (a bound of 2^62), or lower min_wrap_ops to a delay the design can bound."
+    )]
+    QueueWrapBoundBelowDeployMinimum {
+        /// Queue name from `<scxml sce:kind="queue" name="...">`.
+        queue_name: String,
+        /// The queue's wrap bound in operations.
+        bound: u64,
+        /// The `min_wrap_ops` the deploy states.
+        min_wrap_ops: u64,
     },
 
     /// `deploy.yaml`'s

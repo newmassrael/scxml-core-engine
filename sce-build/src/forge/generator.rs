@@ -18325,8 +18325,15 @@ struct QueueRenderInputs {
     /// The size of each of an SCQ row's two index rings; `None` for a Lamport
     /// ring, which has none.
     ring_slots: Option<u32>,
-    /// The runtime's name for the selected queue: `Spsc` or `Scq`.
+    /// The runtime's name for the selected queue: `Spsc` or `Scq` (`Queue` for
+    /// Python's lock; for C11 the runtime's lower-case infix: `spsc`, `scq64`,
+    /// `scq32` or `irq`).
     runtime_type: &'static str,
+    /// The entry word of a C11 SCQ row, in bits: 64 or 32. `None` elsewhere.
+    entry_bits: Option<u32>,
+    /// The wrap bound of a C11 SCQ row in operations, 2^(entry_bits - 2).
+    /// `None` elsewhere, whose templates state their own constant.
+    wrap_bound_ops: Option<u64>,
     algorithm: &'static str,
     producers: &'static str,
     consumers: &'static str,
@@ -18401,11 +18408,44 @@ fn resolve_queue_render_inputs(
         .map(|p| constant("participants", p, resolution.and_then(|r| r.participants)))
         .transpose()?;
 
+    let selection = m.selection();
+    let is_c11 = language == crate::generator::Language::C11;
+
+    // What the deploy says about the target, read only by the C11 backend: its
+    // atomics are the platform's own `sce_atomic_*` symbols, whose
+    // implementation the generated code cannot see, so the generator asks the
+    // platform and does not guess (RFC §synth-5-P, Counter width).
+    let atomic_rmw_width = if is_c11 {
+        resolution.and_then(|r| r.atomic_rmw_width)
+    } else {
+        None
+    };
+    if is_c11 {
+        if selection.algorithm == QueueAlgorithm::Scq && atomic_rmw_width.is_none() {
+            return Err(ForgeError::from(GenerateError::QueueAtomicWidthUnstated {
+                queue_name: m.name.clone(),
+                algorithm: selection.algorithm.name().to_string(),
+            })
+            .at_line(m.storage_line));
+        }
+        // Masking interrupts excludes nothing on another core.
+        if atomic_rmw_width == Some(0) {
+            if let Some(core_count) = resolution.and_then(|r| r.core_count).filter(|&c| c > 1) {
+                return Err(ForgeError::from(GenerateError::QueueNoAtomicsAcrossCores {
+                    queue_name: m.name.clone(),
+                    core_count,
+                })
+                .at_line(m.storage_line));
+            }
+        }
+    }
+
     // The document alone was judged against the selection table when it was
-    // parsed; here it is judged against the platform. A backend whose runtime
-    // cannot build a non-blocking queue refuses a document that asks for one,
-    // for the reason `queue/progress-unreachable` gives.
-    let ceiling = crate::forge::codegen_matrix::queue_progress_ceiling(language);
+    // parsed; here it is judged against the platform. A target that cannot
+    // build a non-blocking queue refuses a document that asks for one, for the
+    // reason `queue/progress-unreachable` gives.
+    let (ceiling, because) =
+        crate::forge::codegen_matrix::queue_progress_ceiling(language, atomic_rmw_width);
     if m.progress > ceiling {
         let word = |p: QueueProgress| match p {
             QueueProgress::WaitFree => "wait-free",
@@ -18418,32 +18458,74 @@ fn resolve_queue_render_inputs(
                 declared: word(m.progress).to_string(),
                 reachable: word(ceiling).to_string(),
                 language: crate::forge::codegen_matrix::language_wire_name(language).to_string(),
+                because: because.to_string(),
             })
             .at_line(m.progress_line),
         );
     }
 
-    let selection = m.selection();
+    // How the backend builds this row. The selection table's algorithm is the
+    // default; Python's lock and a C11 target with no read-modify-write
+    // atomics build one ring under mutual exclusion for every row, which has no
+    // index rings and gives `blocking` whatever the table would give.
+    let single_ring = language == crate::generator::Language::Python || atomic_rmw_width == Some(0);
     // The ring of an SCQ row is a power of two of slots, at least the
     // capacity and at least the participants: its empty test is justified
     // only for as many enqueuers or dequeuers as it has slots. The parser has
-    // already refused an SCQ row without participants. Python's queue has no
-    // index rings: it is one ring under one lock for every row.
-    let single_lock = language == crate::generator::Language::Python;
+    // already refused an SCQ row without participants.
     let ring_slots = match selection.algorithm {
-        QueueAlgorithm::Scq if !single_lock => {
+        QueueAlgorithm::Scq if !single_ring => {
             Some(capacity.max(participants.unwrap_or(1)).next_power_of_two())
         }
         _ => None,
     };
-    let runtime_type = match selection.algorithm {
-        _ if single_lock => "Queue",
-        QueueAlgorithm::LamportRing => "Spsc",
-        QueueAlgorithm::Scq => "Scq",
+    // The entry word of a C11 SCQ row is the target's widest read-modify-write
+    // atomic, and the wrap bound follows from it: 2^(w-2) operations.
+    let c11_entry_bits = match (is_c11, selection.algorithm, atomic_rmw_width) {
+        (true, QueueAlgorithm::Scq, Some(32)) => Some(32u32),
+        (true, QueueAlgorithm::Scq, Some(64)) => Some(64u32),
+        _ => None,
+    };
+    let wrap_bound_ops = c11_entry_bits.map(|bits| 1u64 << (bits - 2));
+    if let (Some(32), Some(bound)) = (c11_entry_bits, wrap_bound_ops) {
+        // 2^30 operations is about a billion, which a busy queue reaches in
+        // minutes: the deploy states the delay it designed for, and the bound
+        // is judged against it. A 64-bit bound (2^62) is 146 years at 10^9
+        // operations a second, and nothing is checked.
+        let min_wrap_ops = resolution.and_then(|r| r.min_wrap_ops);
+        match min_wrap_ops {
+            None => {
+                return Err(ForgeError::from(GenerateError::QueueWrapBoundUnstated {
+                    queue_name: m.name.clone(),
+                    bound,
+                })
+                .at_line(m.storage_line));
+            }
+            Some(min_wrap_ops) if min_wrap_ops > bound => {
+                return Err(
+                    ForgeError::from(GenerateError::QueueWrapBoundBelowDeployMinimum {
+                        queue_name: m.name.clone(),
+                        bound,
+                        min_wrap_ops,
+                    })
+                    .at_line(m.storage_line),
+                );
+            }
+            Some(_) => {}
+        }
+    }
+    let runtime_type = match (language, selection.algorithm, c11_entry_bits) {
+        (crate::generator::Language::Python, _, _) => "Queue",
+        (crate::generator::Language::C11, _, _) if single_ring => "irq",
+        (crate::generator::Language::C11, QueueAlgorithm::LamportRing, _) => "spsc",
+        (crate::generator::Language::C11, QueueAlgorithm::Scq, Some(32)) => "scq32",
+        (crate::generator::Language::C11, QueueAlgorithm::Scq, _) => "scq64",
+        (_, QueueAlgorithm::LamportRing, _) => "Spsc",
+        (_, QueueAlgorithm::Scq, _) => "Scq",
         // The selection table gives `bounded` storage the Lamport ring or SCQ
         // and nothing else (`QueueModel::selection`), and any other storage
         // was refused above.
-        other => unreachable!("bounded queue selected {other:?}"),
+        (_, other, _) => unreachable!("bounded queue selected {other:?}"),
     };
     let cardinality = |c: QueueCardinality| match c {
         QueueCardinality::One => "one",
@@ -18459,21 +18541,24 @@ fn resolve_queue_render_inputs(
         participants,
         ring_slots,
         runtime_type,
-        algorithm: if single_lock {
-            "a single ring under one lock"
-        } else {
-            selection.algorithm.name()
+        entry_bits: c11_entry_bits,
+        wrap_bound_ops,
+        algorithm: match (single_ring, language) {
+            (true, crate::generator::Language::Python) => "a single ring under one lock",
+            (true, _) => "a single ring under an interrupt-masked critical section",
+            (false, _) => selection.algorithm.name(),
         },
         producers: cardinality(m.producers),
         consumers: cardinality(m.consumers),
         declared_progress: progress(m.progress),
-        // One lock makes every row `blocking`, whatever the table would give.
-        push_progress: progress(if single_lock {
+        // Mutual exclusion makes every row `blocking`, whatever the table would
+        // give.
+        push_progress: progress(if single_ring {
             QueueProgress::Blocking
         } else {
             selection.push
         }),
-        pop_progress: progress(if single_lock {
+        pop_progress: progress(if single_ring {
             QueueProgress::Blocking
         } else {
             selection.pop
@@ -18799,6 +18884,55 @@ fn render_bounded_collection_kotlin(
     tmpl.render(ctx).map_err(|e| {
         ForgeError::from(GenerateError::TemplateRender(format!(
             "bounded_collection.kt.jinja2 (kotlin): {e}"
+        )))
+    })
+}
+
+/// Render a `<sce:kind="queue">` document for the C11 backend (SCE
+/// Protocol-Synthesis RFC §synth-5-P): a header that lays out the queue's
+/// control block, slots and ring entries statically and wraps the runtime
+/// functions of `sce/forge/queue.h` (or `queue_irq.h`) for the element
+/// document's struct. Which runtime queue it wraps depends on the deploy
+/// (`platform.atomic_rmw_width`, see [`resolve_queue_render_inputs`]): the
+/// Lamport ring for one producer and one consumer, SCQ over 64-bit or 32-bit
+/// entries for any other cardinality, and one ring under an interrupt-masked
+/// critical section where the target has no read-modify-write atomic.
+fn render_queue_c(
+    env: &minijinja::Environment<'_>,
+    m: &crate::forge::model::QueueModel,
+    _imports: &[ImportContext],
+    options: &crate::ForgeCompileOptions,
+) -> Result<String, ForgeError> {
+    let inputs = resolve_queue_render_inputs(m, options, crate::generator::Language::C11)?;
+    let tmpl = env.get_template("queue.h.jinja2").map_err(|e| {
+        ForgeError::from(GenerateError::TemplateLoad(format!(
+            "queue.h.jinja2 (c11): {e}"
+        )))
+    })?;
+    let snake = filters::to_snake_case(m.name.clone());
+    let ctx = minijinja::context! {
+        name => &m.name,
+        snake => &snake,
+        upper_name => to_upper_snake(&m.name),
+        guard => format!("SCE_FORGE_{}_H", to_upper_snake(&m.name)),
+        element_snake => filters::to_snake_case(m.element_type.clone()),
+        capacity => inputs.capacity,
+        participants => inputs.participants,
+        ring_slots => inputs.ring_slots,
+        runtime_type => inputs.runtime_type,
+        entry_bits => inputs.entry_bits,
+        wrap_bound_ops => inputs.wrap_bound_ops,
+        algorithm => inputs.algorithm,
+        producers => inputs.producers,
+        consumers => inputs.consumers,
+        declared_progress => inputs.declared_progress,
+        push_progress => inputs.push_progress,
+        pop_progress => inputs.pop_progress,
+        runtime_dep => "sce/forge/queue.h",
+    };
+    tmpl.render(ctx).map_err(|e| {
+        ForgeError::from(GenerateError::TemplateRender(format!(
+            "queue.h.jinja2 (c11): {e}"
         )))
     })
 }
@@ -20280,9 +20414,7 @@ pub fn generate_c11_with_imports_and_externs(
             render_event_schema(&env, m, imports, crate::generator::Language::C11)?
         }
         // Queue kind: see cpp dispatch.
-        ForgeDocument::Queue(_) => {
-            unreachable!("ForgeDocument::Queue rejected by codegen_matrix::check on c11")
-        }
+        ForgeDocument::Queue(m) => render_queue_c(&env, m, imports, options)?,
     };
 
     let filename = format!("{}.h", filters::to_snake_case(doc.name().to_string()));

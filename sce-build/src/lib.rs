@@ -2665,6 +2665,16 @@ pub struct ForgeCompileOptions {
     /// the render layer raises [`forge::error::GenerateError::InvalidConfig`]
     /// naming the queue and the key rather than guessing a number.
     pub queue_resolutions: Option<std::collections::HashMap<String, QueueResolution>>,
+    /// SCE Protocol-Synthesis RFC §synth-5-P — the machine of the deploy a
+    /// document set is generated for. A document-set compile that is given a
+    /// deploy and this name resolves every queue document in the set against
+    /// that machine (its `limits:`, `platform.atomic_rmw_width`,
+    /// `platform.core_count` and `queues.<q>.min_wrap_ops`) into
+    /// `queue_resolutions` before it renders; without it a set resolves no
+    /// queue, as before. Single-document callers resolve one queue
+    /// themselves ([`compile_forge_with_deploy`], the command line's
+    /// `generate --deploy --target-machine`) and leave this `None`.
+    pub target_machine: Option<String>,
     /// SCE Protocol-Synthesis RFC §synth-5-C lines 802-833 + §synth-5-M lines 2771-2828
     /// (item C10) — sorted set of `<sce:link>` doc names whose
     /// orchestrator-resolved (deploy `domain_attrs.trust_class:
@@ -2803,6 +2813,17 @@ pub struct QueueResolution {
     pub capacity: Option<u32>,
     /// `<sce:participants>` count.
     pub participants: Option<u32>,
+    /// `platform.atomic_rmw_width` of the target machine, in bits (0, 32 or 64).
+    /// `None` when the deploy states none. Consumed by the C11 backend, whose
+    /// atomics are the platform's own and cannot be asserted about by the
+    /// generated code (RFC §synth-5-P, Counter width).
+    pub atomic_rmw_width: Option<u32>,
+    /// `platform.core_count` of the target machine. With an
+    /// `atomic_rmw_width` of 0 only one core is supported.
+    pub core_count: Option<u32>,
+    /// `machines.<m>.queues.<q>.min_wrap_ops`: the longest delay, in
+    /// operations, the design relies on.
+    pub min_wrap_ops: Option<u64>,
 }
 
 /// Compile a forge SCXML with cross-file import resolution, validation,
@@ -3903,14 +3924,35 @@ fn compile_document_set(
     // compile" (the latter must not synthesize siblings — silent-skip).
     let listener_links_override: Option<std::collections::BTreeSet<String>> =
         deploy.map(|_| listener_links.clone());
+    // SCE Protocol-Synthesis RFC §synth-5-P: every queue in the set resolves
+    // against the machine the set is generated for, so what the deploy says of
+    // the target's atomics reaches a document-set compile the way it reaches
+    // `compile_forge_with_deploy`.
+    let queue_resolutions_override = match (deploy, options.target_machine.as_deref()) {
+        (Some(cfg), Some(machine)) if !queues_for_xref.is_empty() => {
+            let mut resolved = std::collections::HashMap::new();
+            for (label, queue) in &queues_for_xref {
+                resolved.insert(
+                    queue.name.clone(),
+                    resolve_queue_deploy_limits(queue, cfg, machine, label)?,
+                );
+            }
+            Some(resolved)
+        }
+        _ => None,
+    };
     let needs_override = !bc_resolutions.is_empty()
         || listener_links_override.is_some()
         || !element_type_field_schemas.is_empty()
-        || !element_type_owned_mirrors.is_empty();
+        || !element_type_owned_mirrors.is_empty()
+        || queue_resolutions_override.is_some();
     let bc_options_override = if !needs_override {
         None
     } else {
         let mut overridden = options.clone();
+        if let Some(resolved) = queue_resolutions_override {
+            overridden.queue_resolutions = Some(resolved);
+        }
         if !bc_resolutions.is_empty() {
             overridden.bounded_collection_resolutions = Some(bc_resolutions);
         }
@@ -5346,7 +5388,13 @@ fn parse_bounded_collection_deploy_key(key: &str) -> Option<(&str, &str)> {
 /// written for another machine and its own compile resolves it. A key that
 /// names this machine and a limit it does not declare is
 /// `queue/deploy-limit-unresolved`, with the declared limits as candidates.
-fn resolve_queue_deploy_limits(
+///
+/// It also carries what the deploy says about the machine's atomics
+/// (`platform.atomic_rmw_width`, `platform.core_count`) and the queue's
+/// `min_wrap_ops`, which the C11 backend judges. Public because two callers
+/// resolve a queue against a deploy: [`compile_forge_with_deploy`], and the
+/// command line's `generate --deploy --target-machine`.
+pub fn resolve_queue_deploy_limits(
     queue: &forge::model::QueueModel,
     cfg: &mesh::deploy::DeployConfig,
     machine_name: &str,
@@ -5405,9 +5453,20 @@ fn resolve_queue_deploy_limits(
         .map(|source| resolve("participants", source))
         .transpose()?
         .flatten();
+    let machine = cfg
+        .device_for_machine(machine_name)
+        .and_then(|device| device.machines.get(machine_name));
+    let platform = machine.and_then(|machine| machine.platform.as_ref());
     Ok(QueueResolution {
         capacity,
         participants,
+        atomic_rmw_width: platform
+            .and_then(|platform| platform.atomic_rmw_width)
+            .map(mesh::deploy::AtomicRmwWidth::bits),
+        core_count: platform.and_then(|platform| platform.core_count),
+        min_wrap_ops: machine
+            .and_then(|machine| machine.queues.get(&queue.name))
+            .and_then(|queue| queue.min_wrap_ops),
     })
 }
 

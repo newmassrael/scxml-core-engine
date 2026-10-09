@@ -552,6 +552,44 @@ impl PlatformClass {
     }
 }
 
+/// What a target has for read-modify-write atomics: the value of
+/// `platform.atomic_rmw_width` (SCE Protocol-Synthesis RFC §synth-5-P). A closed
+/// set of three, read from a YAML integer, so a width the RFC has no queue for
+/// (16, 128) is refused where the deploy is read and not guessed at later.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AtomicRmwWidth {
+    /// No read-modify-write atomic at all.
+    None,
+    /// Up to 32 bits.
+    Bits32,
+    /// Up to 64 bits.
+    Bits64,
+}
+
+impl AtomicRmwWidth {
+    /// The number of bits, as the deploy writes it.
+    pub fn bits(self) -> u32 {
+        match self {
+            AtomicRmwWidth::None => 0,
+            AtomicRmwWidth::Bits32 => 32,
+            AtomicRmwWidth::Bits64 => 64,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for AtomicRmwWidth {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        match u32::deserialize(deserializer)? {
+            0 => Ok(AtomicRmwWidth::None),
+            32 => Ok(AtomicRmwWidth::Bits32),
+            64 => Ok(AtomicRmwWidth::Bits64),
+            other => Err(serde::de::Error::custom(format!(
+                "platform.atomic_rmw_width must be 0, 32 or 64, not {other}"
+            ))),
+        }
+    }
+}
+
 /// Per-machine platform descriptor (SCE Mesh §mesh-14, SCE Protocol-Synthesis RFC
 /// §synth-5-K). Captures the target's class/OS plus cache and core-count
 /// invariants the codegen-matrix walker (RFC §synth-5-J-4 / §synth-5-J-5) and the
@@ -596,6 +634,20 @@ pub struct PlatformConfig {
     /// phases. Optional at parse time.
     #[serde(default)]
     pub core_count: Option<u32>,
+    /// Width in bits of the widest read-modify-write atomic the target has
+    /// (SCE Protocol-Synthesis RFC §synth-5-P, Backends and Counter width): 64,
+    /// 32, or 0 for a target with none at all (ARMv6-M, for instance). It
+    /// decides which queue a C11 backend lowers a `sce:kind="queue"` document
+    /// to: a 64-bit one gets the SCQ ring over 64-bit entries, a 32-bit one the
+    /// same over 32-bit entries (whose wrap bound is 2^30 operations, so the
+    /// deploy must state `queues.<q>.min_wrap_ops`), and 0 gets the ring under
+    /// an interrupt-masked critical section, which gives `blocking` and is
+    /// supported only with `core_count` 1. Optional at parse time; an SCQ row on
+    /// the C11 backend requires it (`queue/atomic-width-unstated`), because the
+    /// `sce_atomic_*` symbols it is built on are implemented by the platform
+    /// where the generator cannot see them.
+    #[serde(default)]
+    pub atomic_rmw_width: Option<AtomicRmwWidth>,
     /// Core clock frequency in MHz (SCE Protocol-Synthesis RFC §synth-5-K line 2185).
     /// Drives the stage-copy WCET formula (`expected_p99_bytes ×
     /// memcpy_cycles_per_byte / clock_freq_mhz`) gated by
@@ -1361,6 +1413,24 @@ pub struct WorkerDeployConfig {
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub struct TimerDeployConfig {}
+
+/// Per-machine descriptor of one `sce:kind="queue"` document (SCE
+/// Protocol-Synthesis RFC §synth-5-P, Counter width).
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct QueueDeployConfig {
+    /// The longest delay, in operations, the design relies on between a
+    /// participant reading a ring entry and acting on it: the number of queue
+    /// operations other participants may complete in that time. An SCQ ring over
+    /// 32-bit entries is only correct while that delay stays under its wrap
+    /// bound (2^30), which a busy queue reaches in minutes, so the deploy states
+    /// the figure it designed for and the generator refuses a bound below it.
+    /// Required for an SCQ row on a target whose `platform.atomic_rmw_width` is
+    /// 32 (`queue/wrap-bound-unstated`); ignored on one with 64-bit atomics,
+    /// whose bound is 2^62.
+    #[serde(default)]
+    pub min_wrap_ops: Option<u64>,
+}
 
 /// SRAM region descriptor (SCE Mesh §mesh-14, SCE Protocol-Synthesis RFC §synth-5-K).
 /// Region attributes ride as raw strings at parse time so the schema
@@ -2727,6 +2797,24 @@ pub struct MachineConfig {
     /// `timer/slot-overflow`).
     #[serde(default)]
     pub timers: HashMap<String, TimerDeployConfig>,
+
+    /// Per-machine facts about the `sce:kind="queue"` documents bound to it
+    /// (SCE Protocol-Synthesis RFC §synth-5-P). Keyed by queue name (matches
+    /// `<scxml sce:kind="queue" name="...">`). Absent ⇒ the machine states
+    /// nothing about its queues, which is all an SCQ row needs on a target with
+    /// 64-bit atomics.
+    ///
+    /// ```yaml
+    /// machines:
+    ///   mcu_node:
+    ///     platform:
+    ///       atomic_rmw_width: 32
+    ///     queues:
+    ///       rx_events:
+    ///         min_wrap_ops: 100000000
+    /// ```
+    #[serde(default)]
+    pub queues: HashMap<String, QueueDeployConfig>,
 
     /// Per-machine dynamic-state capacity ceilings (SCE Protocol-Synthesis RFC
     /// §synth-5-L lines 2570-2585 + 2649). Keyed by limit name —

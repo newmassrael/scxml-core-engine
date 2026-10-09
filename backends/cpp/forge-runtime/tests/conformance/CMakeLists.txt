@@ -386,7 +386,7 @@ add_test(NAME queue_history_check
             "-DCODEGEN=${SCE_CODEGEN}"
             "-DDIR=${QUEUE_HISTORIES_DIR}"
             -DMINIMUM=162
-            -P "${CMAKE_CURRENT_SOURCE_DIR}/check_queue_histories.cmake")
+            -P "${REPO_ROOT}/tests/forge/conformance/check_queue_histories.cmake")
 set_tests_properties(queue_history_check PROPERTIES FIXTURES_REQUIRED queue_histories)
 
 # The same script over the corpus of histories sce-build keeps, which holds
@@ -397,6 +397,6 @@ add_test(NAME queue_history_check_refuses
             "-DCODEGEN=${SCE_CODEGEN}"
             "-DDIR=${REPO_ROOT}/sce-build/tests/fixtures/queue_histories"
             -DMINIMUM=1
-            -P "${CMAKE_CURRENT_SOURCE_DIR}/check_queue_histories.cmake")
+            -P "${REPO_ROOT}/tests/forge/conformance/check_queue_histories.cmake")
 set_tests_properties(queue_history_check_refuses PROPERTIES
     PASS_REGULAR_EXPRESSION "queue histories refused")

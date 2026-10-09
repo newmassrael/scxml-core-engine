@@ -6906,6 +6906,10 @@ Codes that the author can avoid by writing a better SCXML /
 | `queue/intrusive-link-field-missing` | Validation |
 | `queue/storage-runtime-missing` | Generate |
 | `queue/progress-unreachable-on-backend` | Generate |
+| `queue/atomic-width-unstated` | Generate |
+| `queue/no-atomics-across-cores` | Generate |
+| `queue/wrap-bound-unstated` | Generate |
+| `queue/wrap-bound-below-deploy-minimum` | Generate |
 | `timer/period-below-tick-rate` | Validation |
 | `timer/slot-overflow` | Mesh Deploy |
 | `extern/symbol-not-in-whitelist` | Validation |

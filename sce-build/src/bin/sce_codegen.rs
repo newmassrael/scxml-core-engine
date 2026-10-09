@@ -1501,6 +1501,16 @@ struct GenerateArgs {
     /// rationale moot.
     #[arg(long, requires = "deploy")]
     transport_only: bool,
+    /// The machine of `--deploy` this forge document is generated for.
+    /// A `sce:kind="queue"` document resolves its `source="deploy"` capacity
+    /// and participants against that machine's `limits:`, and the C11 backend
+    /// reads the machine's `platform.atomic_rmw_width`, `platform.core_count`
+    /// and `queues.<q>.min_wrap_ops` (SCE Protocol-Synthesis RFC §synth-5-P).
+    /// Without it a document with a `deploy` key is refused rather than
+    /// guessed, and an SCQ row on C11 is refused with
+    /// `queue/atomic-width-unstated`. Ignored for a statechart.
+    #[arg(long, requires = "deploy")]
+    target_machine: Option<String>,
     /// Partition identity for `<parallel>` rule-12 role assignment
     /// (SCE_MESH.md §14 rule 12, §16.5). When supplied together
     /// with `--deploy`, the generated SM code branches per
@@ -1991,6 +2001,12 @@ struct CheckArgs {
     /// silent-skip. Omit to keep the run deploy-unaware.
     #[arg(long = "deploy", value_name = "PATH")]
     deploy: Option<String>,
+    /// The machine of `--deploy` the documents are generated for, mirroring
+    /// `generate` and `orchestrate`: every `sce:kind="queue"` document in the
+    /// set resolves its deploy keys and what the deploy says of the target's
+    /// atomics against that machine (SCE Protocol-Synthesis RFC §synth-5-P).
+    #[arg(long, requires = "deploy")]
+    target_machine: Option<String>,
     #[arg(
         short,
         long = "language",
@@ -3173,6 +3189,12 @@ struct OrchestrateArgs {
     /// semantics).
     #[arg(long)]
     deploy: Option<String>,
+    /// The machine of `--deploy` the documents are generated for: every
+    /// `sce:kind="queue"` document in the set resolves its deploy keys and
+    /// what the deploy says of the target's atomics against that machine (SCE
+    /// Protocol-Synthesis RFC §synth-5-P).
+    #[arg(long, requires = "deploy")]
+    target_machine: Option<String>,
     /// Directory to write per-doc AST envelopes into. One
     /// `<doc_stem>.ast.json` is emitted per `--forge` input AND
     /// per `--scxml` input — the v1 envelope's `oneOf` arm covers
@@ -3658,6 +3680,7 @@ fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
         language: language_arg,
         output_dir: output_dir_arg,
         deploy,
+        target_machine,
         emit_ast_dir: emit_ast_dir_arg,
         go_module_prefix,
         const_fold_budget,
@@ -3739,6 +3762,7 @@ fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
         include_dirs: include_dirs.clone(),
         host_processor_types: host_processor,
         host_invoker_types: host_invoker,
+        target_machine,
         ..Default::default()
     };
 
@@ -4526,6 +4550,7 @@ fn cmd_check_document_set(args: CheckArgs, error_format: ErrorFormat) {
         forge,
         document,
         deploy,
+        target_machine,
         language,
         // The document-set route renders every backend it was given; the
         // single-document route below is where a selection is resolved and
@@ -4612,6 +4637,10 @@ fn cmd_check_document_set(args: CheckArgs, error_format: ErrorFormat) {
         // flags single-document-only in the first place.
         host_processor_types: host_processor,
         host_invoker_types: host_invoker,
+        // The machine `orchestrate` was given, for the same reason: a queue
+        // refused against that machine's atomics is a verdict this check has
+        // to reach too.
+        target_machine,
         ..Default::default()
     };
 
@@ -4679,6 +4708,7 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
         forge: _,
         document: _,
         deploy: _,
+        target_machine: _,
         language,
         script_engine,
         include_dir,
@@ -5083,6 +5113,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
         no_format,
         deploy,
         transport_only,
+        target_machine,
         partition,
         const_fold_budget,
         no_std,
@@ -5215,7 +5246,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
             let base_dir = Path::new(scxml_path)
                 .parent()
                 .unwrap_or_else(|| Path::new("."));
-            let forge_opts = sce_build::ForgeCompileOptions {
+            let mut forge_opts = sce_build::ForgeCompileOptions {
                 go_module_prefix: go_module_prefix.map(str::to_owned),
                 const_fold_budget,
                 owned_origin,
@@ -5306,6 +5337,33 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
                         },
                         "",
                     );
+                }
+            }
+
+            // SCE Protocol-Synthesis RFC §synth-5-P: a queue's `source="deploy"`
+            // numbers, and what the deploy says of the target's atomics, are
+            // resolved here where the deploy and the machine are in hand, by
+            // the function `compile_forge_with_deploy` resolves them with.
+            if let (
+                sce_build::forge::model::ForgeDocument::Queue(queue),
+                Some(deploy_file),
+                Some(machine),
+            ) = (&parsed.document, deploy_path, target_machine.as_deref())
+            {
+                let cfg = load_deploy_config(deploy_file, error_format);
+                match sce_build::resolve_queue_deploy_limits(
+                    queue,
+                    &cfg,
+                    machine,
+                    doc_label.diagnostic_label,
+                ) {
+                    Ok(resolution) => {
+                        forge_opts.queue_resolutions = Some(std::collections::HashMap::from([(
+                            queue.name.clone(),
+                            resolution,
+                        )]));
+                    }
+                    Err(e) => error_format.emit_forge_and_exit(&positions.authored(e)),
                 }
             }
 

@@ -244,3 +244,126 @@ fn a_deploy_key_without_a_deploy_file_is_refused_not_defaulted() {
         other => panic!("expected a generate error, got {other:?}"),
     }
 }
+
+// ─── What the deploy says of the target's atomics (C11) ───
+
+/// A deploy for the machine `mcu_node` with a `platform:` block and, when
+/// `queue_block` is not empty, a `queues:` block under it.
+fn platform_deploy_yaml(platform_extra: &str, queue_block: &str) -> String {
+    format!(
+        r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      mcu_node:
+        source: mcu_node.scxml
+        platform:
+          class: mcu
+          os: bare_metal
+{platform_extra}
+{queue_block}
+"##
+    )
+}
+
+/// The C11 header for the queue, or why the compile refused.
+fn compile_c(scxml: &str, yaml: &str) -> Result<String, Located<ForgeError>> {
+    let deploy = parse_deploy_str(yaml).expect("deploy parses");
+    let output = compile_forge_with_deploy(
+        scxml,
+        DocumentLabel::symmetric("rx_events"),
+        Language::C11,
+        Some(&deploy),
+        Some("mcu_node"),
+    )?;
+    Ok(output
+        .files
+        .iter()
+        .map(|(_, content)| content.as_str())
+        .collect::<Vec<_>>()
+        .join("\n"))
+}
+
+fn scq_queue() -> String {
+    queue_doc(
+        "many",
+        "many",
+        "lock-free",
+        r#"<sce:bounded capacity="6"/><sce:participants const="3"/>"#,
+    )
+}
+
+#[test]
+fn the_platforms_atomic_width_chooses_the_ring_a_c11_queue_is_built_on() {
+    let scxml = scq_queue();
+
+    let wide = platform_deploy_yaml("          atomic_rmw_width: 64", "");
+    let code = compile_c(&scxml, &wide).expect("64-bit atomics build SCQ");
+    assert!(code.contains("sce_queue_scq64_t core;"), "{code}");
+
+    let narrow = platform_deploy_yaml(
+        "          atomic_rmw_width: 32",
+        "        queues:\n          rx_events:\n            min_wrap_ops: 1000000",
+    );
+    let code = compile_c(&scxml, &narrow).expect("32-bit atomics build SCQ with a stated delay");
+    assert!(code.contains("sce_queue_scq32_t core;"), "{code}");
+
+    let none = platform_deploy_yaml("          atomic_rmw_width: 0\n          core_count: 1", "");
+    let blocking = queue_doc(
+        "many",
+        "many",
+        "blocking",
+        r#"<sce:bounded capacity="6"/><sce:participants const="3"/>"#,
+    );
+    let code =
+        compile_c(&blocking, &none).expect("a single core with no atomics gets the irq ring");
+    assert!(code.contains("sce_queue_irq_t core;"), "{code}");
+}
+
+#[test]
+fn a_deploy_that_states_no_atomic_width_leaves_an_scq_row_on_c11_refused() {
+    let yaml = platform_deploy_yaml("          core_count: 4", "");
+    let err = compile_c(&scq_queue(), &yaml).expect_err("the generator does not guess");
+    match err.error {
+        ForgeError::Generate(boxed) => match *boxed {
+            GenerateError::QueueAtomicWidthUnstated { queue_name, .. } => {
+                assert_eq!(queue_name, "rx_events");
+            }
+            other => panic!("expected QueueAtomicWidthUnstated, got {other:?}"),
+        },
+        other => panic!("expected a generate error, got {other:?}"),
+    }
+}
+
+#[test]
+fn the_deploy_refuses_a_width_the_rfc_has_no_queue_for() {
+    for width in ["16", "128", "8"] {
+        let yaml = platform_deploy_yaml(&format!("          atomic_rmw_width: {width}"), "");
+        let message = match parse_deploy_str(&yaml) {
+            Ok(_) => panic!("atomic_rmw_width {width} must be refused where the deploy is read"),
+            Err(e) => e.to_string(),
+        };
+        assert!(
+            message.contains("atomic_rmw_width must be 0, 32 or 64"),
+            "{width}: {message}"
+        );
+    }
+}
+
+#[test]
+fn a_queue_the_deploy_names_only_in_another_machine_states_nothing_about_this_one() {
+    let yaml = platform_deploy_yaml(
+        "          atomic_rmw_width: 32",
+        "        queues:\n          another_queue:\n            min_wrap_ops: 1000",
+    );
+    let err = compile_c(&scq_queue(), &yaml)
+        .expect_err("min_wrap_ops of another queue is not this one's");
+    match err.error {
+        ForgeError::Generate(boxed) => assert!(
+            matches!(*boxed, GenerateError::QueueWrapBoundUnstated { .. }),
+            "{boxed:?}"
+        ),
+        other => panic!("expected a generate error, got {other:?}"),
+    }
+}

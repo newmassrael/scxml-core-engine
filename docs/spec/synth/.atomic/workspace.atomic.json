@@ -3151,6 +3151,30 @@
           "file": "sce-build/src/lib.rs",
           "symbol": "compile_document_set",
           "kind": "implements"
+        },
+        {
+          "file": "backends/c/forge-runtime/include/sce/forge/atomics.h",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/c/forge-runtime/include/sce/forge/queue.h",
+          "kind": "references"
+        },
+        {
+          "file": "backends/c/forge-runtime/include/sce/forge/queue_irq.h",
+          "kind": "references"
+        },
+        {
+          "file": "backends/c/forge-runtime/tests/conformance/host_irq.h",
+          "kind": "references"
+        },
+        {
+          "file": "backends/c/forge-runtime/tests/conformance/sce_atomic_host.c",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/c/forge-runtime/tests/conformance/sce_irq_host.c",
+          "kind": "implements"
         }
       ]
     },
@@ -5233,10 +5257,6 @@
           "kind": "references"
         },
         {
-          "file": "backends/cpp/forge-runtime/tests/conformance/check_queue_histories.cmake",
-          "kind": "references"
-        },
-        {
           "file": "backends/cpp/forge-runtime/tests/conformance/queue_history_recorder.cpp",
           "kind": "references"
         },
@@ -5310,6 +5330,50 @@
         },
         {
           "file": "scripts/gates/forge-python.sh",
+          "kind": "references"
+        },
+        {
+          "file": "backends/c/forge-runtime/include/sce/forge/queue.h",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/c/forge-runtime/include/sce/forge/queue_irq.h",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/c/forge-runtime/include/sce/forge/queue_scq_width.inc",
+          "kind": "implements"
+        },
+        {
+          "file": "tools/codegen/templates/forge/c/queue.h.jinja2",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/conformance/check_queue_histories.cmake",
+          "kind": "references"
+        },
+        {
+          "file": "backends/c/forge-runtime/tests/conformance/CMakeLists.txt",
+          "kind": "references"
+        },
+        {
+          "file": "backends/c/forge-runtime/tests/conformance/queue_runtime_test.c",
+          "kind": "references"
+        },
+        {
+          "file": "backends/c/forge-runtime/tests/conformance/queue_history_recorder.c",
+          "kind": "references"
+        },
+        {
+          "file": "backends/c/forge-runtime/tests/conformance/queue_generated_test.c",
+          "kind": "references"
+        },
+        {
+          "file": "backends/c/forge-runtime/tests/conformance/queue_generated_cxx_test.cpp",
           "kind": "references"
         }
       ]
@@ -6066,6 +6130,12 @@
       "target_kind": "section",
       "target_id": "synth-5-P",
       "reason": "the checker moved to sce-build/src/queue_history.rs so sce-codegen check-queue-history can judge every backend"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-P",
+      "reason": "moved to tests/forge/conformance/check_queue_histories.cmake, shared by the C++ and C11 arms"
     }
   ],
   "frames": {},

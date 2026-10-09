@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
-# Judge the histories the C++ arm's stress runs wrote (SCE Protocol-Synthesis
-# RFC §synth-5-P, verification layer 2) with the command every backend's
-# histories are judged by.
+# Judge the histories an arm's stress runs wrote (SCE Protocol-Synthesis RFC
+# §synth-5-P, verification layer 2) with the command every backend's histories
+# are judged by. Shared by the arms whose build is CMake (C++ and C11), so the
+# two read one script and not two copies of it.
 #
 #   cmake -DCODEGEN=<sce-codegen> -DDIR=<histories> -DMINIMUM=<count> \
 #         -P check_queue_histories.cmake

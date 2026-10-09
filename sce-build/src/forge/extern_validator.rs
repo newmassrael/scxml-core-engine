@@ -290,7 +290,7 @@ mod tests {
         match err {
             ExternFailure::OrderingUnspecified { base, candidates } => {
                 assert_eq!(base, "sce_atomic_load");
-                assert_eq!(candidates.len(), 10);
+                assert_eq!(candidates.len(), 15);
                 assert!(candidates.contains(&"sce_atomic_load_acquire_u32"));
             }
             other => panic!("expected OrderingUnspecified, got {other:?}"),

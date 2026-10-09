@@ -1257,6 +1257,24 @@ pub enum DiagnosticCode {
     /// backend gives and `actual` what the document declared.
     #[serde(rename = "queue/progress-unreachable-on-backend")]
     QueueProgressUnreachableOnBackend,
+    /// An SCQ row generated for C11 and the deploy states no
+    /// `platform.atomic_rmw_width`. `expected` carries the three widths the
+    /// platform can state.
+    #[serde(rename = "queue/atomic-width-unstated")]
+    QueueAtomicWidthUnstated,
+    /// `platform.atomic_rmw_width` is 0 and `platform.core_count` is above one.
+    /// `expected` carries the one core count that is supported, `actual` the
+    /// count the deploy states.
+    #[serde(rename = "queue/no-atomics-across-cores")]
+    QueueNoAtomicsAcrossCores,
+    /// An SCQ row over 32-bit entries and the deploy states no
+    /// `queues.<q>.min_wrap_ops`. `expected` carries the queue's wrap bound.
+    #[serde(rename = "queue/wrap-bound-unstated")]
+    QueueWrapBoundUnstated,
+    /// The deploy's `min_wrap_ops` is above the queue's wrap bound. `expected`
+    /// carries the bound, `actual` the figure the deploy states.
+    #[serde(rename = "queue/wrap-bound-below-deploy-minimum")]
+    QueueWrapBoundBelowDeployMinimum,
 
     // ── §synth-5-J-2 Rust no_std variant rejection (item C3).
     //    Producer: `cmd_generate` walks the parsed SCXML model when
@@ -3504,6 +3522,10 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         QueueIntrusiveLinkFieldMissing,
         QueueStorageRuntimeMissing,
         QueueProgressUnreachableOnBackend,
+        QueueAtomicWidthUnstated,
+        QueueNoAtomicsAcrossCores,
+        QueueWrapBoundUnstated,
+        QueueWrapBoundBelowDeployMinimum,
         // Codegen Rust no_std variant rejection (SCE Protocol-Synthesis RFC §synth-5-J-2,
         // item C3)
         CodegenNoStdScriptNotSupported,
@@ -4275,7 +4297,11 @@ impl DiagnosticCode {
             | QueueElementTypeNotAKind
             | QueueIntrusiveLinkFieldMissing
             | QueueStorageRuntimeMissing
-            | QueueProgressUnreachableOnBackend => Some("SCE Protocol-Synthesis RFC §5.P"),
+            | QueueProgressUnreachableOnBackend
+            | QueueAtomicWidthUnstated
+            | QueueNoAtomicsAcrossCores
+            | QueueWrapBoundUnstated
+            | QueueWrapBoundBelowDeployMinimum => Some("SCE Protocol-Synthesis RFC §5.P"),
 
             // ── §synth-5-M Fragment-reassembly variant parse-time structure
             //    validators (SCE Protocol-Synthesis RFC §synth-5-M lines 2944-2945,
@@ -5047,6 +5073,10 @@ impl DiagnosticCode {
             QueueIntrusiveLinkFieldMissing => "queue/intrusive-link-field-missing",
             QueueStorageRuntimeMissing => "queue/storage-runtime-missing",
             QueueProgressUnreachableOnBackend => "queue/progress-unreachable-on-backend",
+            QueueAtomicWidthUnstated => "queue/atomic-width-unstated",
+            QueueNoAtomicsAcrossCores => "queue/no-atomics-across-cores",
+            QueueWrapBoundUnstated => "queue/wrap-bound-unstated",
+            QueueWrapBoundBelowDeployMinimum => "queue/wrap-bound-below-deploy-minimum",
             TimerPeriodBelowTickRate => "timer/period-below-tick-rate",
             TimerSlotOverflow => "timer/slot-overflow",
             ExternSymbolNotInWhitelist => "extern/symbol-not-in-whitelist",
@@ -9821,11 +9851,60 @@ fn generate_fields(e: &GenerateError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![queue_name.clone(), storage.clone(), language.clone()],
         },
+        GenerateError::QueueAtomicWidthUnstated {
+            queue_name,
+            algorithm,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::QueueAtomicWidthUnstated,
+            stage: Stage::Generate,
+            // The three widths a platform can state; which one the target has
+            // is the author's to say, so it is metadata and not a `Fix`.
+            expected: Some(vec!["0".into(), "32".into(), "64".into()]),
+            actual: None,
+            fix: None,
+            key_fragments: vec![queue_name.clone(), algorithm.clone()],
+        },
+        GenerateError::QueueNoAtomicsAcrossCores {
+            queue_name,
+            core_count,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::QueueNoAtomicsAcrossCores,
+            stage: Stage::Generate,
+            expected: Some(vec!["1".into()]),
+            actual: Some(core_count.to_string()),
+            fix: None,
+            key_fragments: vec![queue_name.clone(), core_count.to_string()],
+        },
+        GenerateError::QueueWrapBoundUnstated { queue_name, bound } => DiagnosticPayload {
+            code: DiagnosticCode::QueueWrapBoundUnstated,
+            stage: Stage::Generate,
+            expected: Some(vec![bound.to_string()]),
+            actual: None,
+            fix: None,
+            key_fragments: vec![queue_name.clone(), bound.to_string()],
+        },
+        GenerateError::QueueWrapBoundBelowDeployMinimum {
+            queue_name,
+            bound,
+            min_wrap_ops,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::QueueWrapBoundBelowDeployMinimum,
+            stage: Stage::Generate,
+            expected: Some(vec![bound.to_string()]),
+            actual: Some(min_wrap_ops.to_string()),
+            fix: None,
+            key_fragments: vec![
+                queue_name.clone(),
+                bound.to_string(),
+                min_wrap_ops.to_string(),
+            ],
+        },
         GenerateError::QueueProgressUnreachableOnBackend {
             queue_name,
             declared,
             reachable,
             language,
+            because: _,
         } => DiagnosticPayload {
             code: DiagnosticCode::QueueProgressUnreachableOnBackend,
             stage: Stage::Generate,
@@ -13160,9 +13239,47 @@ mod tests {
                     declared: "lock-free".into(),
                     reachable: "blocking".into(),
                     language: "python".into(),
+                    because: "it has no compare-and-swap primitive".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:fdf677359c170d3a","code":"queue/progress-unreachable-on-backend","stage":"generate","spec":"SCE Protocol-Synthesis RFC §5.P","message":"queue 'rx_events': <sce:progress>lock-free</sce:progress> cannot be met on the python backend: its runtime gives blocking at most. SCE Protocol-Synthesis RFC §5.P: progress is declared, checked, and never silently weakened. Repair: declare blocking, or generate for a backend whose runtime gives lock-free.","expected":["blocking"],"actual":"lock-free"}"#,
+                r#"{"v":1,"id":"fnv1a:fdf677359c170d3a","code":"queue/progress-unreachable-on-backend","stage":"generate","spec":"SCE Protocol-Synthesis RFC §5.P","message":"queue 'rx_events': <sce:progress>lock-free</sce:progress> cannot be met on the python backend: it has no compare-and-swap primitive, so its queue gives blocking at most. SCE Protocol-Synthesis RFC §5.P: progress is declared, checked, and never silently weakened. Repair: declare blocking, or generate for a target that gives lock-free.","expected":["blocking"],"actual":"lock-free"}"#,
+            ),
+            (
+                "forge/queue-atomic-width-unstated",
+                GenerateError::QueueAtomicWidthUnstated {
+                    queue_name: "rx_events".into(),
+                    algorithm: "SCQ".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:14c8a67ee355d89a","code":"queue/atomic-width-unstated","stage":"generate","spec":"SCE Protocol-Synthesis RFC §5.P","message":"queue 'rx_events': the SCQ that its cardinality selects is built on read-modify-write atomics, and the C11 backend cannot see what the target's `sce_atomic_*` symbols are. SCE Protocol-Synthesis RFC §5.P: an SCQ row on C11 requires platform.atomic_rmw_width. Repair: state platform.atomic_rmw_width (64, 32, or 0 for a target with none) for this machine in deploy.yaml and generate with it.","expected":["0","32","64"]}"#,
+            ),
+            (
+                "forge/queue-no-atomics-across-cores",
+                GenerateError::QueueNoAtomicsAcrossCores {
+                    queue_name: "rx_events".into(),
+                    core_count: 2,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:5740a75d248b9939","code":"queue/no-atomics-across-cores","stage":"generate","spec":"SCE Protocol-Synthesis RFC §5.P","message":"queue 'rx_events': platform.atomic_rmw_width is 0 and platform.core_count is 2. SCE Protocol-Synthesis RFC §5.P: a target with no read-modify-write atomics runs its queue under an interrupt-masked critical section, which excludes nothing on another core. Repair: use a target with read-modify-write atomics (platform.atomic_rmw_width 32 or 64), or run the queue's participants on one core (platform.core_count 1).","expected":["1"],"actual":"2"}"#,
+            ),
+            (
+                "forge/queue-wrap-bound-unstated",
+                GenerateError::QueueWrapBoundUnstated {
+                    queue_name: "rx_events".into(),
+                    bound: 1 << 30,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:ed975037194f99eb","code":"queue/wrap-bound-unstated","stage":"generate","spec":"SCE Protocol-Synthesis RFC §5.P","message":"queue 'rx_events': platform.atomic_rmw_width is 32, so the SCQ ring's entries leave its cycle too few bits for a wrap bound beyond 1073741824 operations, and the deploy states no machines.<machine>.queues.rx_events.min_wrap_ops to judge it against. SCE Protocol-Synthesis RFC §5.P (Counter width). Repair: state machines.<machine>.queues.rx_events.min_wrap_ops, the longest delay in operations the design relies on, or use a target with 64-bit atomics (a bound of 2^62).","expected":["1073741824"]}"#,
+            ),
+            (
+                "forge/queue-wrap-bound-below-deploy-minimum",
+                GenerateError::QueueWrapBoundBelowDeployMinimum {
+                    queue_name: "rx_events".into(),
+                    bound: 1 << 30,
+                    min_wrap_ops: 4_000_000_000,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:9d9cc95474ba3ec2","code":"queue/wrap-bound-below-deploy-minimum","stage":"generate","spec":"SCE Protocol-Synthesis RFC §5.P","message":"queue 'rx_events': the SCQ ring's wrap bound is 1073741824 operations, below the 4000000000 that machines.<machine>.queues.rx_events.min_wrap_ops says the design relies on. SCE Protocol-Synthesis RFC §5.P (Counter width). Repair: use a target with 64-bit atomics (a bound of 2^62), or lower min_wrap_ops to a delay the design can bound.","expected":["1073741824"],"actual":"4000000000"}"#,
             ),
             // ── SCE Protocol-Synthesis RFC §synth-5-J-2 Rust no_std variant rejections
             //    (item C3). Author-side `--no-std` gate on
@@ -16431,6 +16548,10 @@ mod tests {
             // a list to choose from, so neither is a `Fix`.
             | QueueProgressUnreachable
             | QueueProgressUnreachableOnBackend
+            | QueueAtomicWidthUnstated
+            | QueueNoAtomicsAcrossCores
+            | QueueWrapBoundUnstated
+            | QueueWrapBoundBelowDeployMinimum
             | QueueStorageRuntimeMissing => ExpectedIsMetadata,
 
             // ── Deterministic fix or no fix; expected=None ────
@@ -17540,6 +17661,10 @@ mod tests {
                 | QueueIntrusiveLinkFieldMissing
                 | QueueStorageRuntimeMissing
                 | QueueProgressUnreachableOnBackend
+                | QueueAtomicWidthUnstated
+                | QueueNoAtomicsAcrossCores
+                | QueueWrapBoundUnstated
+                | QueueWrapBoundBelowDeployMinimum
                 | MemReassemblyPoolVariantMissingMaxFragments
                 | MemReassemblyPoolVariantMissingTimeout
                 | MemReassemblySlotSizeBelowDeclaredMtu
@@ -17735,9 +17860,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            425,
+            429,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 425 distinct variants to match the DiagnosticCode \
+             expected 429 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -18516,6 +18641,10 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | QueueIntrusiveLinkFieldMissing
             | QueueStorageRuntimeMissing
             | QueueProgressUnreachableOnBackend
+            | QueueAtomicWidthUnstated
+            | QueueNoAtomicsAcrossCores
+            | QueueWrapBoundUnstated
+            | QueueWrapBoundBelowDeployMinimum
             | MemReassemblyPoolVariantMissingMaxFragments
             | MemReassemblyPoolVariantMissingTimeout
             | MemReassemblySlotSizeBelowDeclaredMtu

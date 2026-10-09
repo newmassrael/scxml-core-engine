@@ -229,14 +229,17 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
         // C++'s (`sce/forge/queue.h`: the same two), Go's
         // (`sce-forge-runtime/queue`: the same two) and Kotlin's
         // (`com.sce.forge.runtime.queue`: the same two) and Python's
-        // (`sce_forge_runtime.queue`: one ring under one lock, `blocking`);
-        // C11 is the RFC's last, flipped here with its template and its
-        // conformance arm.
+        // (`sce_forge_runtime.queue`: one ring under one lock, `blocking`) and
+        // C11's (`sce/forge/queue.h`: the Lamport ring and SCQ over 64-bit and
+        // 32-bit entries, and `queue_irq.h` for a target with no
+        // read-modify-write atomic). Every backend has one.
         ForgeKind::Queue => match lang {
-            Language::Rust | Language::Cpp | Language::Go | Language::Kotlin | Language::Python => {
-                true
-            }
-            Language::C11 => false,
+            Language::Rust
+            | Language::Cpp
+            | Language::Go
+            | Language::Kotlin
+            | Language::Python
+            | Language::C11 => true,
         },
     }
 }
@@ -381,17 +384,39 @@ pub const fn language_wire_name(lang: Language) -> &'static str {
     }
 }
 
-/// The strongest progress a backend's runtime can give any `queue` document
-/// (SCE Protocol-Synthesis RFC §synth-5-P, Backends). The selection table
-/// judges a document against the algorithm its storage and cardinality pick
+/// The strongest progress a target can give any `queue` document (SCE
+/// Protocol-Synthesis RFC §synth-5-P, Backends), and why it gives no more when it
+/// gives less than the selection table's strongest. The selection table judges a
+/// document against the algorithm its storage and cardinality pick
 /// (`queue/progress-unreachable`); this is the judgement against the platform,
-/// which no choice of storage can lift. Python has no compare-and-swap
-/// primitive, so its queue is one ring under one lock and gives `blocking`.
-pub const fn queue_progress_ceiling(lang: Language) -> QueueProgress {
+/// which no choice of storage can lift:
+///
+/// - Python has no compare-and-swap primitive, so its queue is one ring under one
+///   lock and gives `blocking`.
+/// - A C11 target whose `platform.atomic_rmw_width` is 0 has no read-modify-write
+///   atomic, so every row runs in an interrupt-masked critical section and gives
+///   `blocking`.
+///
+/// `atomic_rmw_width` is the deploy's `platform.atomic_rmw_width` in bits, `None`
+/// when the deploy states none (or there is no deploy), and is read only for C11.
+pub const fn queue_progress_ceiling(
+    lang: Language,
+    atomic_rmw_width: Option<u32>,
+) -> (QueueProgress, &'static str) {
     match lang {
-        Language::Python => QueueProgress::Blocking,
-        Language::Rust | Language::Cpp | Language::Kotlin | Language::Go | Language::C11 => {
-            QueueProgress::WaitFree
+        Language::Python => (
+            QueueProgress::Blocking,
+            "it has no compare-and-swap primitive",
+        ),
+        Language::C11 => match atomic_rmw_width {
+            Some(0) => (
+                QueueProgress::Blocking,
+                "platform.atomic_rmw_width is 0, so every row runs in an interrupt-masked critical section",
+            ),
+            _ => (QueueProgress::WaitFree, ""),
+        },
+        Language::Rust | Language::Cpp | Language::Kotlin | Language::Go => {
+            (QueueProgress::WaitFree, "")
         }
     }
 }
