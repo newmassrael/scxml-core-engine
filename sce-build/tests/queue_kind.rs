@@ -530,7 +530,9 @@ fn an_scq_ring_is_sized_by_the_larger_of_capacity_and_participants() {
 
 #[test]
 fn a_storage_the_rust_runtime_lacks_is_refused_by_name() {
-    for (fixture, storage) in [("queue_segmented_lscq.scxml", "segmented")] {
+    // `segmented` is the one storage mode left without a Rust runtime.
+    {
+        let (fixture, storage) = ("queue_segmented_lscq.scxml", "segmented");
         let located = compile(&resource(fixture), fixture)
             .expect_err("a storage without a runtime is refused");
         // The refusal is placed on the storage element, so the mode it
@@ -667,7 +669,9 @@ fn an_scq_ring_is_sized_the_same_way_in_cpp() {
 
 #[test]
 fn a_storage_the_cpp_runtime_lacks_is_refused_by_name() {
-    for (fixture, storage) in [("queue_segmented_lscq.scxml", "segmented")] {
+    // `segmented` is the one storage mode left without a C++ runtime.
+    {
+        let (fixture, storage) = ("queue_segmented_lscq.scxml", "segmented");
         let located = compile_for(Language::Cpp, &resource(fixture), fixture)
             .expect_err("a storage without a runtime is refused");
         let text = resource(fixture);
