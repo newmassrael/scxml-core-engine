@@ -287,13 +287,24 @@ pub struct StructField {
     /// time, like `has_test_vectors`; fixtures.json never states it.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub optional: bool,
-    /// The field is a list of values — a property of an
-    /// `sce:encoding="content-line"` codec that declares `sce:max-count`
-    /// (SCE_FORGE.md §4.6.4), which each language carries as its bounded list.
-    /// A round-trip case writes it as a JSON array, and an empty one is an
-    /// absent property. Derived from the document, like `optional`.
+    /// The field is a list — a property of an `sce:encoding="content-line"`
+    /// codec that declares `sce:max-count` (a list of lines) or
+    /// `sce:separator` (a list of the values of one line), which each language
+    /// carries as its bounded list (SCE_FORGE.md §4.6.4). A round-trip case
+    /// writes it as a JSON array, and an empty one is an absent property.
+    /// Derived from the document, like `optional`.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub list: bool,
+    /// The members of one record of a list of line records — a repeated
+    /// property that declares a parameter or a separator (docs/adr/0014),
+    /// which each language carries as a record type. The parameters come in
+    /// declaration order, optional unless `sce:required`, and then the line's
+    /// value as `value`, or as the list `values` when the entry has a
+    /// separator. A round-trip case writes each record as a JSON object keyed
+    /// by these names. Empty for every field that is not a list of records.
+    /// Derived from the document, like `optional`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub members: Vec<StructField>,
 }
 
 /// One `<sce:variant name="..." value="..."/>` of an `sce:kind="enum"`.
@@ -1332,8 +1343,18 @@ impl Manifest {
                     if let Some(field) = fields.iter().find(|field| field.list) {
                         return Err(format!(
                             "fixture {}: field `{}` states `list`, which is \
-                             derived from the SCXML (sce:max-count on a \
-                             content-line entry); remove it from fixtures.json",
+                             derived from the SCXML (sce:max-count or \
+                             sce:separator on a content-line entry); remove it \
+                             from fixtures.json",
+                            f.name, field.name
+                        ));
+                    }
+                    if let Some(field) = fields.iter().find(|field| !field.members.is_empty()) {
+                        return Err(format!(
+                            "fixture {}: field `{}` states `members`, which are \
+                             derived from the SCXML (the sce:param entries of a \
+                             repeated content-line property); remove it from \
+                             fixtures.json",
                             f.name, field.name
                         ));
                     }
@@ -2187,14 +2208,64 @@ fn derive_codec_shape(
         }
     }
     if let Some(lines) = model.content_line.as_ref().filter(|_| *content_line) {
+        let entries = &lines.entries;
+        // A parameter of a repeated property that reads its lines as records is a
+        // member of each record, not a member of the codec's struct, so it is never
+        // a listed field (docs/adr/0014).
+        let record_member_of = |entry: &crate::forge::model::ContentLineEntry| {
+            entry.param.as_ref()?;
+            entries.iter().find(|o| {
+                o.param.is_none()
+                    && o.property.eq_ignore_ascii_case(&entry.property)
+                    && o.max_count.is_some()
+            })
+        };
         for field in fields.iter_mut() {
-            let entry = lines
-                .entries
+            let entry = entries
                 .iter()
                 .find(|e| e.id == field.name)
                 .ok_or_else(|| missing(field, "content-line"))?;
-            field.list = entry.max_count.is_some();
+            if let Some(owner) = record_member_of(entry) {
+                return Err(format!(
+                    "fixture {fixture_name}: field `{}` is a parameter of the lines of \
+                     `{}`, a member of each of its records and not a field of the codec \
+                     (docs/adr/0014); remove it from fixtures.json",
+                    field.name, owner.id
+                ));
+            }
+            field.list = entry.max_count.is_some() || entry.separator.is_some();
             field.optional = !entry.required && !field.list;
+            field.members = if entry.max_count.is_some()
+                && (entry.separator.is_some()
+                    || entries
+                        .iter()
+                        .any(|p| record_member_of(p).is_some_and(|o| o.id == entry.id)))
+            {
+                let mut members: Vec<StructField> = entries
+                    .iter()
+                    .filter(|p| record_member_of(p).is_some_and(|o| o.id == entry.id))
+                    .map(|p| StructField {
+                        name: p.id.clone(),
+                        ty: CanonicalType::String,
+                        compare: CompareMode::Equality,
+                        optional: !p.required,
+                        list: false,
+                        members: Vec::new(),
+                    })
+                    .collect();
+                let has_list = entry.separator.is_some();
+                members.push(StructField {
+                    name: if has_list { "values" } else { "value" }.to_owned(),
+                    ty: CanonicalType::String,
+                    compare: CompareMode::Equality,
+                    optional: false,
+                    list: has_list,
+                    members: Vec::new(),
+                });
+                members
+            } else {
+                Vec::new()
+            };
         }
     }
     Ok(())
@@ -3070,6 +3141,102 @@ pub fn render_harness(
 mod tests {
     use super::*;
 
+    fn derived_fields(fixture: &str) -> Vec<StructField> {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        let manifest = Manifest::load(&root.join("tests/forge/conformance/fixtures.json"))
+            .expect("manifest must load and validate");
+        let found = manifest
+            .fixtures
+            .iter()
+            .find(|f| f.name == fixture)
+            .expect("the fixture is registered");
+        let FixtureSpec::Codec { fields, .. } = &found.spec else {
+            panic!("{fixture} is a codec");
+        };
+        let mut fields = fields.clone();
+        let (mut cbor, mut content_line) = (false, false);
+        derive_codec_shape(
+            &found.document_path(&root.join("tests/forge/resources")),
+            fixture,
+            &mut fields,
+            &mut cbor,
+            &mut content_line,
+        )
+        .expect("the shape derives");
+        assert!(content_line && !cbor);
+        fields
+    }
+
+    /// A repeated property that declares a parameter or a separator is a list of
+    /// records whose members the document names, and one that does not is the list
+    /// of values it always was (docs/adr/0014).
+    #[test]
+    fn a_line_record_list_derives_its_members_from_the_document() {
+        let records = derived_fields("codec_content_line_records");
+        let field = |name: &str| records.iter().find(|f| f.name == name).expect("a field");
+        let names = |f: &StructField| -> Vec<(String, bool, bool)> {
+            f.members
+                .iter()
+                .map(|m| (m.name.clone(), m.optional, m.list))
+                .collect()
+        };
+        // Parameters in declaration order, optional unless required, then the value.
+        assert_eq!(
+            names(field("attendee")),
+            [
+                ("attendeeCn".to_owned(), true, false),
+                ("attendeeRole".to_owned(), false, false),
+                ("value".to_owned(), false, false),
+            ]
+        );
+        assert_eq!(
+            names(field("exdate")),
+            [
+                ("exdateTzid".to_owned(), true, false),
+                ("values".to_owned(), false, true),
+            ]
+        );
+        // A single-line list has values and no records; a plain property has neither.
+        for (name, list) in [("categories", true), ("geo", true), ("uid", false)] {
+            assert_eq!(field(name).list, list, "{name}");
+            assert!(field(name).members.is_empty(), "{name}");
+        }
+        assert!(field("attendee").list && field("exdate").list);
+
+        // The event fixture's repeated property declares neither, so it is unchanged.
+        let event = derived_fields("codec_content_line_event");
+        let exdate = event.iter().find(|f| f.name == "exdate").expect("a field");
+        assert!(exdate.list && exdate.members.is_empty());
+    }
+
+    /// A parameter of a record's lines is a member of each record; listing it as a
+    /// field of the codec would assert a struct member that does not exist.
+    #[test]
+    fn a_record_parameter_is_refused_as_a_field_of_the_codec() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        let mut fields = vec![StructField {
+            name: "attendeeCn".to_owned(),
+            ty: CanonicalType::String,
+            compare: CompareMode::Equality,
+            optional: false,
+            list: false,
+            members: Vec::new(),
+        }];
+        let (mut cbor, mut content_line) = (false, false);
+        let refusal = derive_codec_shape(
+            &root.join("tests/forge/resources/codec_content_line_records.scxml"),
+            "codec_content_line_records",
+            &mut fields,
+            &mut cbor,
+            &mut content_line,
+        )
+        .expect_err("a record parameter is not a field");
+        assert!(
+            refusal.contains("member of each of its records"),
+            "{refusal}"
+        );
+    }
+
     #[test]
     fn loads_real_manifest() {
         let path =
@@ -3387,6 +3554,17 @@ mod tests {
 
         // Gate 1: per-fixture generated Rust code
         for fixture in &manifest.fixtures {
+            // A fixture the language refuses by name is not scheduled for it, so the
+            // harness never asks for its code: the same predicate the harness reads
+            // (a codec whose lines are records waits on each backend, docs/adr/0014).
+            match lang_supports_fixture(fixture, Language::Rust, &resource_dir) {
+                Ok(true) => {}
+                Ok(false) => continue,
+                Err(e) => {
+                    failures.push(format!("{}: schedule: {e}", fixture.name));
+                    continue;
+                }
+            }
             let scxml_path = fixture.document_path(&resource_dir);
             let base_dir = scxml_path
                 .parent()

@@ -77,6 +77,10 @@ class Entry:
     required: bool
     max_size: int | None
     max_count: int | None
+    #: `sce:separator` and `sce:max-values` (docs/adr/0014): the value of one line
+    #: is a list cut at the separator.
+    separator: str | None = None
+    max_values: int | None = None
 
 
 def load(path: Path = RESOURCE):
@@ -89,6 +93,7 @@ def load(path: Path = RESOURCE):
             continue
         size = data.attrib.get(SCE + "max-size")
         count = data.attrib.get(SCE + "max-count")
+        values = data.attrib.get(SCE + "max-values")
         entries.append(
             Entry(
                 id=data.attrib["id"],
@@ -99,6 +104,8 @@ def load(path: Path = RESOURCE):
                 required=data.attrib.get(SCE + "required") == "true",
                 max_size=int(size) if size else None,
                 max_count=int(count) if count else None,
+                separator=data.attrib.get(SCE + "separator"),
+                max_values=int(values) if values else None,
             )
         )
     return component, entries
@@ -182,6 +189,48 @@ def read_bool(raw: bytes):
     return fails("line-bad-value")
 
 
+def split_values(raw: bytes, separator: int, text: bool):
+    """The raw parts of a line's value cut at `separator`, before any is
+    unescaped. In a TEXT a backslash takes the next byte with it, so a separator
+    it precedes is part of the value (docs/adr/0014); in any other value there is
+    no escape and every separator cuts. A backslash that ends the value stays on
+    its part, where reading the part refuses it."""
+    parts = []
+    current = bytearray()
+    i = 0
+    while i < len(raw):
+        c = raw[i]
+        if text and c == 0x5C and i + 1 < len(raw):
+            current += raw[i : i + 2]
+            i += 2
+        elif c == separator:
+            parts.append(bytes(current))
+            current = bytearray()
+            i += 1
+        else:
+            current.append(c)
+            i += 1
+    parts.append(bytes(current))
+    return parts
+
+
+def read_values(raw: bytes, entry: "Entry"):
+    """A line's list of values, judged left to right: the first failure is the
+    line's. A part past `sce:max-values` is too many, an empty one is a bad value,
+    any other is unescaped and held to `sce:max-size`."""
+    values = []
+    for index, part in enumerate(split_values(raw, ord(entry.separator), entry.text)):
+        if index >= entry.max_values:
+            return fails("line-too-many")
+        if part == b"":
+            return fails("line-bad-value")
+        read = read_text(part, entry.text, entry.max_size)
+        if read[0] == "fails":
+            return read
+        values.append(read[1])
+    return ("ok", values)
+
+
 def scan_param_values(body: bytes, i: int):
     """The values of one parameter from `i`: ([bytes], index of the `;` or `:`
     that follows), or None when the line does not admit it."""
@@ -223,6 +272,19 @@ class Model:
             ]
             for v in self.values
         }
+        #: A repeated property that declares a parameter, or whose line holds a
+        #: list of values, reads each line into a record (docs/adr/0014).
+        self.records = {
+            v.id for v in self.values if v.max_count and (self.params_of[v.id] or v.separator)
+        }
+        #: The entries a decoded object names at its top: a record's parameters are
+        #: members of its records and not entries of the object.
+        in_record = {p.id for v in self.values if v.id in self.records for p in self.params_of[v.id]}
+        self.top = [e for e in entries if e.id not in in_record]
+
+    def initial(self, entry: Entry):
+        """What a decoded object holds for `entry` when no line gave it a value."""
+        return [] if (entry.max_count or entry.separator) else None
 
     # -- decode --------------------------------------------------------
 
@@ -245,7 +307,8 @@ class Model:
                 and body[head[2] :].upper() == self.component.upper()
             ):
                 break
-        got = {e.id: ([] if e.max_count else None) for e in self.entries}
+        got = {e.id: self.initial(e) for e in self.top}
+        appeared = set()
         depth = 0
         while True:
             if i >= n:
@@ -277,19 +340,24 @@ class Model:
             entry = next((v for v in self.values if v.prop.upper().encode() == name), None)
             if entry is None:
                 continue
-            failure = self.read_line(entry, body, head, got)
+            failure = self.read_line(entry, body, head, got, appeared)
             if failure:
                 return failure
-        for e in self.entries:
-            if e.required and got[e.id] is None:
+        for e in self.top:
+            if not e.required:
+                continue
+            # A property is missing when no line of it appeared; a parameter of a
+            # single-valued property, when it never took a value.
+            missing = e.id not in appeared if e.param is None else got[e.id] is None
+            if missing:
                 return fails("line-required-missing")
         return ("ok", got)
 
-    def read_line(self, entry: Entry, body: bytes, head, got):
+    def read_line(self, entry: Entry, body: bytes, head, got, appeared):
         if entry.max_count:
             if len(got[entry.id]) >= entry.max_count:
                 return fails("line-too-many")
-        elif got[entry.id] is not None:
+        elif entry.id in appeared:
             return fails("line-too-many")
         declared = {p.param.upper().encode(): p for p in self.params_of[entry.id]}
         i = head[2]
@@ -320,8 +388,16 @@ class Model:
             if len(values) > 1:
                 return fails("line-bad-value")
             seen[param.id] = read[1]
+        # A line of a record is judged for its required parameters once they are
+        # read, and before its value is looked at (docs/adr/0014).
+        if entry.id in self.records:
+            for p in self.params_of[entry.id]:
+                if p.required and p.id not in seen:
+                    return fails("line-required-missing")
         raw = body[i:]
-        if entry.type == "string":
+        if entry.separator:
+            read = read_values(raw, entry)
+        elif entry.type == "string":
             read = read_text(raw, entry.text, entry.max_size)
         elif entry.type == "bool":
             read = read_bool(raw)
@@ -329,11 +405,16 @@ class Model:
             read = read_number(raw, entry.type)
         if read[0] == "fails":
             return read
-        if entry.max_count:
+        appeared.add(entry.id)
+        if entry.id in self.records:
+            record = {p.id: seen.get(p.id) for p in self.params_of[entry.id]}
+            record["values" if entry.separator else "value"] = read[1]
+            got[entry.id].append(record)
+        elif entry.max_count:
             got[entry.id].append(read[1])
         else:
             got[entry.id] = read[1]
-        got.update(seen)
+            got.update(seen)
         return None
 
     # -- encode --------------------------------------------------------
@@ -342,6 +423,19 @@ class Model:
         out = bytearray(b"BEGIN:" + self.component + b"\r\n")
         for entry in self.values:
             params = self.params_of[entry.id]
+            if entry.id in self.records:
+                records = decoded.get(entry.id) or []
+                if len(records) > entry.max_count:
+                    return fails("line-too-many")
+                if entry.required and not records:
+                    return fails("line-required-missing")
+                for record in records:
+                    member = "values" if entry.separator else "value"
+                    line = self.line(entry, params, record, record.get(member))
+                    if line[0] == "fails":
+                        return line
+                    out += line[1]
+                continue
             if entry.max_count:
                 values = decoded.get(entry.id) or []
                 if len(values) > entry.max_count:
@@ -353,6 +447,8 @@ class Model:
                     out += line[1]
                 continue
             value = decoded.get(entry.id)
+            if not value and entry.separator:
+                value = None
             if value is None:
                 if entry.required:
                     return fails("line-required-missing")
@@ -387,17 +483,23 @@ class Model:
             if quoted:
                 units.append(b'"')
         units.append(b":")
-        if entry.type == "string":
-            raw = value.encode("utf-8")
-            if len(raw) > entry.max_size:
-                return fails("line-too-long")
-            if any(is_control(b) and not (entry.text and b == 0x0A) for b in raw):
-                return fails("line-bad-value")
-            for c in value:
-                if entry.text and c in "\\;,\n":
-                    units.append(b"\\" + {"\\": b"\\", ";": b";", ",": b",", "\n": b"n"}[c])
-                else:
-                    units.append(c.encode("utf-8"))
+        if entry.separator:
+            if not value:
+                return fails("line-required-missing")
+            if len(value) > entry.max_values:
+                return fails("line-too-many")
+            for index, item in enumerate(value):
+                if index:
+                    units.append(entry.separator.encode())
+                written = self.string_units(entry, item, in_list=True)
+                if written[0] == "fails":
+                    return written
+                units += written[1]
+        elif entry.type == "string":
+            written = self.string_units(entry, value, in_list=False)
+            if written[0] == "fails":
+                return written
+            units += written[1]
         elif entry.type == "bool":
             units += [bytes([b]) for b in (b"TRUE" if value else b"FALSE")]
         else:
@@ -406,6 +508,26 @@ class Model:
                 return fails("line-bad-value")
             units += [bytes([b]) for b in str(value).encode()]
         return ("ok", fold(units) + b"\r\n")
+
+    def string_units(self, entry: Entry, value: str, in_list: bool):
+        """The units a string value is written as, or the failure that refuses it.
+        In a list a value that is empty is refused, and so is one that is not a
+        TEXT and holds the separator: either would be read back as other than it
+        was (docs/adr/0014)."""
+        raw = value.encode("utf-8")
+        if len(raw) > entry.max_size:
+            return fails("line-too-long")
+        if any(is_control(b) and not (entry.text and b == 0x0A) for b in raw):
+            return fails("line-bad-value")
+        if in_list and (not raw or (not entry.text and entry.separator.encode() in raw)):
+            return fails("line-bad-value")
+        units = []
+        for c in value:
+            if entry.text and c in "\\;,\n":
+                units.append(b"\\" + {"\\": b"\\", ";": b";", ",": b",", "\n": b"n"}[c])
+            else:
+                units.append(c.encode("utf-8"))
+        return ("ok", units)
 
 
 def fold(units: list[bytes]) -> bytes:
@@ -898,11 +1020,300 @@ class Written:
             self.reject("fuzz: " + why, data, failure)
 
 
+# ── The records fixture (docs/adr/0014) ─────────────────────────────────
+
+RECORDS_FIXTURE = "codec_content_line_records"
+RECORDS_RESOURCE = Path("tests/forge/resources/codec_content_line_records.scxml")
+RECORDS_SEED = 0xE116_0002
+
+
+def attendee(value, role, cn=None):
+    """A line record of ATTENDEE: its two parameters and its one value."""
+    return {"attendeeCn": cn, "attendeeRole": role, "value": value}
+
+
+def exdate(values, tzid=None):
+    """A line record of EXDATE: its parameter and its list of values."""
+    return {"exdateTzid": tzid, "values": values}
+
+
+def records_of(**fields):
+    """A full `decoded` object of the records fixture: every entry named, an
+    absent list as `[]`."""
+    out = {"uid": "u", "attendee": [], "exdate": [], "categories": [], "geo": []}
+    out.update(fields)
+    return out
+
+
+RECORDS_BASE = b"UID:u\r\n"
+
+
+def rcomponent(*lines: bytes, base: bytes = RECORDS_BASE) -> bytes:
+    return COMPONENT_HEAD + base + b"".join(lines) + COMPONENT_TAIL
+
+
+LONG_CN = "n" * 24
+
+#: (note, decoded) — each is written by the model and read back.
+RECORDS_CASES = [
+    ("the smallest component: the required UID, every list empty", records_of()),
+    (
+        "each line of a repeated property carries the parameters it has",
+        records_of(
+            attendee=[
+                attendee("mailto:kim@example.org", "REQ-PARTICIPANT", "Kim"),
+                attendee("mailto:lee@example.org", "CHAIR"),
+            ]
+        ),
+    ),
+    (
+        "a parameter holding a comma is written between quotes on a record's line",
+        records_of(attendee=[attendee("mailto:k@example.org", "R", "Kim, Lee")]),
+    ),
+    (
+        "the list is full: as many lines as it holds",
+        records_of(
+            attendee=[attendee("a", "R"), attendee("b", "R", "B"), attendee("c", "R", "C")]
+        ),
+    ),
+    (
+        "an empty value and an empty parameter are values like another",
+        records_of(attendee=[attendee("", "R", "")]),
+    ),
+    (
+        "a line of a repeated property past 75 octets is folded",
+        records_of(
+            attendee=[attendee("mailto:" + "a" * 20 + "@example.org", "REQ-PARTICIPANT", LONG_CN)]
+        ),
+    ),
+    (
+        "a line holds a list of values, and its zone is the line's",
+        records_of(exdate=[exdate(["20261015T090000", "20261022T090000"], "Asia/Seoul")]),
+    ),
+    (
+        "a line without its optional parameter, beside one with it and the most values",
+        records_of(
+            exdate=[
+                exdate(["20261001T000000"]),
+                exdate(["20261002T000000", "20261003T000000", "20261004T000000"], "Z"),
+            ]
+        ),
+    ),
+    (
+        "the list of EXDATE lines is full, each line with its own zone or none",
+        records_of(
+            exdate=[exdate(["1", "2"], "A"), exdate(["3"]), exdate(["4", "5", "6"], "B")]
+        ),
+    ),
+    (
+        "a TEXT list writes a comma, a semicolon and a backslash of a value as escapes, and they are not cuts",
+        records_of(categories=["a,b", "c;d", "e\\f"]),
+    ),
+    (
+        "a TEXT list holds the most values, each at its bound",
+        records_of(categories=["x" * 12] * 4),
+    ),
+    (
+        "a TEXT list of characters of more than one octet",
+        records_of(categories=[chr(0xD55C) + chr(0xAE00), chr(0xE9) + chr(0x20AC)]),
+    ),
+    (
+        "a list cut at a semicolon has no escape: a backslash in it is a byte",
+        records_of(geo=["a\\b", "c"]),
+    ),
+    (
+        "a list cut at a semicolon",
+        records_of(geo=["37.386013", "-122.082932"]),
+    ),
+    (
+        "every entry present at once",
+        records_of(
+            attendee=[attendee("mailto:k@example.org", "R", "Kim")],
+            exdate=[exdate(["1", "2"], "Z")],
+            categories=["a", "b"],
+            geo=["1", "2"],
+        ),
+    ),
+]
+
+RECORDS_CANON = records_of(
+    attendee=[attendee("mailto:k@example.org", "R", "Kim")],
+    exdate=[exdate(["20261015T090000", "20261022T090000"], "Z")],
+    categories=["a", "b"],
+    geo=["1", "2"],
+)
+
+#: (note, decoded, input) — inputs that decode to `decoded` and are not what the
+#: encoder writes for it.
+RECORDS_ACCEPTS = [
+    (
+        "a comma list on one EXDATE line is one record of values, with the line's zone",
+        records_of(exdate=[exdate(["20261008T093000", "20261015T093000"], "Asia/Seoul")]),
+        rcomponent(b"EXDATE;TZID=Asia/Seoul:20261008T093000,20261015T093000\r\n"),
+    ),
+    (
+        "two lines of EXDATE keep a zone each",
+        records_of(exdate=[exdate(["1"], "A"), exdate(["2", "3"], "B")]),
+        rcomponent(b"EXDATE;TZID=A:1\r\n", b"EXDATE;TZID=B:2,3\r\n"),
+    ),
+    (
+        "a line may hold fewer values than the bound, and one",
+        records_of(exdate=[exdate(["1"])]),
+        rcomponent(b"EXDATE:1\r\n"),
+    ),
+    (
+        "a TEXT list reads an escaped comma as part of a value, and N as a line feed",
+        records_of(categories=["a,b", "c\nd"]),
+        rcomponent(b"CATEGORIES:a\\,b,c\\Nd\r\n"),
+    ),
+    (
+        "an unescaped semicolon in a TEXT list is part of a value",
+        records_of(categories=["a;b", "c"]),
+        rcomponent(b"CATEGORIES:a;b,c\r\n"),
+    ),
+    (
+        "a part keeps its spaces",
+        records_of(categories=[" a ", " b"]),
+        rcomponent(b"CATEGORIES: a , b\r\n"),
+    ),
+    (
+        "a list line cut by a fold is read whole, a cut inside a part included",
+        records_of(categories=["a", "bc"]),
+        rcomponent(b"CATEGORIES:a,b\r\n c\r\n"),
+    ),
+    (
+        "a list that is not a TEXT cuts at every separator and has no escape",
+        records_of(geo=["a\\b", "c"]),
+        rcomponent(b"GEO:a\\b;c\r\n"),
+    ),
+    (
+        "parameters come in any order; one nobody declares is skipped; a quoted value holds a comma",
+        records_of(attendee=[attendee("mailto:k", "REQ", "Kim, Lee")]),
+        rcomponent(b'ATTENDEE;RSVP=TRUE;ROLE=REQ;CN="Kim, Lee";X-Y=1:mailto:k\r\n'),
+    ),
+    (
+        "lower-case names and LF line ends are read",
+        records_of(attendee=[attendee("v", "R")]),
+        b"begin:vevent\nuid:u\nattendee;role=R:v\nend:vevent\n",
+    ),
+]
+
+#: (why, input, failure) — single faults in an otherwise valid component.
+RECORDS_REJECTS = [
+    ("a list line with no value", rcomponent(b"CATEGORIES:\r\n"), "line-bad-value"),
+    ("an empty part between two separators", rcomponent(b"CATEGORIES:a,,b\r\n"), "line-bad-value"),
+    ("an empty part at the start", rcomponent(b"CATEGORIES:,a\r\n"), "line-bad-value"),
+    ("an empty part at the end", rcomponent(b"CATEGORIES:a,\r\n"), "line-bad-value"),
+    ("an empty part in a list cut at a semicolon", rcomponent(b"GEO:1;\r\n"), "line-bad-value"),
+    ("a fifth value past the four", rcomponent(b"CATEGORIES:a,b,c,d,e\r\n"), "line-too-many"),
+    ("an empty part past the bound is still past it", rcomponent(b"CATEGORIES:a,b,c,d,\r\n"), "line-too-many"),
+    ("a fourth value of an EXDATE line past three", rcomponent(b"EXDATE:1,2,3,4\r\n"), "line-too-many"),
+    ("a third value of a GEO line past two", rcomponent(b"GEO:1;2;3\r\n"), "line-too-many"),
+    ("a part of 13 octets past its 12", rcomponent(b"CATEGORIES:a," + b"x" * 13 + b"\r\n"), "line-too-long"),
+    ("the first failure in order: a long part before an empty one", rcomponent(b"CATEGORIES:" + b"x" * 13 + b",,\r\n"), "line-too-long"),
+    ("the first failure in order: an empty part before a long one", rcomponent(b"CATEGORIES:,,"+ b"x" * 13 + b"\r\n"), "line-bad-value"),
+    ("a bad escape in a later part", rcomponent(b"CATEGORIES:a,b\\x\r\n"), "line-bad-escape"),
+    ("a backslash that ends the last part", rcomponent(b"CATEGORIES:a,b\\\r\n"), "line-bad-escape"),
+    ("a value of an EXDATE line of 21 octets past its 20", rcomponent(b"EXDATE:" + b"d" * 21 + b"\r\n"), "line-too-long"),
+    ("a line of ATTENDEE without its required ROLE", rcomponent(b"ATTENDEE:mailto:x\r\n"), "line-required-missing"),
+    ("the second line lacks the role the first has", rcomponent(b"ATTENDEE;ROLE=R:a\r\n", b"ATTENDEE;CN=K:b\r\n"), "line-required-missing"),
+    ("the required parameter is judged before the value: a value past its bound and no role", rcomponent(b"ATTENDEE:" + b"v" * 41 + b"\r\n"), "line-required-missing"),
+    ("a fourth ATTENDEE line past three", rcomponent(b"ATTENDEE;ROLE=R:a\r\n", b"ATTENDEE;ROLE=R:b\r\n", b"ATTENDEE;ROLE=R:c\r\n", b"ATTENDEE;ROLE=R:d\r\n"), "line-too-many"),
+    ("the count is judged on the line before its parameters are read", rcomponent(b"ATTENDEE;ROLE=R:a\r\n", b"ATTENDEE;ROLE=R:b\r\n", b"ATTENDEE;ROLE=R:c\r\n", b"ATTENDEE;ROLE:d\r\n"), "line-too-many"),
+    ("a fourth EXDATE line past three", rcomponent(b"EXDATE:1\r\n", b"EXDATE:2\r\n", b"EXDATE:3\r\n", b"EXDATE:4\r\n"), "line-too-many"),
+    ("ROLE given twice in one line", rcomponent(b"ATTENDEE;ROLE=A;ROLE=B:v\r\n"), "line-too-many"),
+    ("two values for ROLE, which holds one", rcomponent(b"ATTENDEE;ROLE=A,B:v\r\n"), "line-bad-value"),
+    ("two values for TZID, which holds one", rcomponent(b"EXDATE;TZID=a,b:1\r\n"), "line-bad-value"),
+    ("a CN of 25 octets past its 24", rcomponent(b"ATTENDEE;ROLE=R;CN=" + b"c" * 25 + b":v\r\n"), "line-too-long"),
+    ("a value of ATTENDEE of 41 octets past its 40", rcomponent(b"ATTENDEE;ROLE=R:" + b"v" * 41 + b"\r\n"), "line-too-long"),
+    ("a parameter of a record's line with no equals sign", rcomponent(b"ATTENDEE;ROLE:v\r\n"), "line-malformed"),
+    ("the required UID is absent", COMPONENT_HEAD + b"GEO:1;2\r\n" + COMPONENT_TAIL, "line-required-missing"),
+    ("UID occurs twice", rcomponent(b"UID:v\r\n"), "line-too-many"),
+    ("the END line is missing", COMPONENT_HEAD + RECORDS_BASE + b"CATEGORIES:a,b\r\n", "need-more-bytes"),
+]
+
+
+def draw_nonempty(rng: SplitMix64, limit: int, alphabet) -> str:
+    text = draw_text(rng, limit, alphabet)
+    return text if text else rng.pick(alphabet)
+
+
+def draw_records(rng: SplitMix64) -> dict:
+    """A drawn `decoded` of the records fixture that the codec writes."""
+    out = records_of(uid=draw_text(rng, 24))
+    no_comma = [c for c in VALUE if c != ","]
+    no_semicolon = [c for c in VALUE if c != ";"]
+    for _ in range(rng.between(0, 3)):
+        cn = draw_text(rng, 24, PARAM) if rng.below(2) else None
+        out["attendee"].append(attendee(draw_text(rng, 40), draw_text(rng, 16, PARAM), cn))
+    for _ in range(rng.between(0, 3)):
+        values = [draw_nonempty(rng, 20, no_comma) for _ in range(rng.between(1, 3))]
+        tzid = draw_text(rng, 24, PARAM) if rng.below(2) else None
+        out["exdate"].append(exdate(values, tzid))
+    out["categories"] = [draw_nonempty(rng, 12, TEXT) for _ in range(rng.between(0, 4))]
+    if rng.below(2):
+        out["geo"] = [draw_nonempty(rng, 16, no_semicolon) for _ in range(2)]
+    return out
+
+
+def fault_records(rng: SplitMix64, base: bytes):
+    """(why, input, failure) with one fault put into the canonical component."""
+    lines = base.split(b"\r\n")[:-1]
+    kind = rng.below(8)
+    at = rng.between(1, len(lines) - 2)
+    if kind == 0:
+        return "a property line repeated", b"\r\n".join(lines[: at + 1] + [lines[1]] + lines[at + 1 :]) + b"\r\n", "line-too-many"
+    if kind == 1:
+        return "the END line dropped", b"\r\n".join(lines[:-1]) + b"\r\n", "need-more-bytes"
+    if kind == 2:
+        return "a control character put into the UID", base.replace(b"UID:", b"UID:\x07", 1), "line-bad-value"
+    if kind == 3:
+        return "the UID removed", b"\r\n".join(lines[:1] + lines[2:]) + b"\r\n", "line-required-missing"
+    if kind == 4:
+        return "an empty part put into the categories", base.replace(b"CATEGORIES:a,b", b"CATEGORIES:a,,b", 1), "line-bad-value"
+    if kind == 5:
+        return "the role taken from the attendee", base.replace(b";ROLE=R", b"", 1), "line-required-missing"
+    if kind == 6:
+        return "a fifth category", base.replace(b"CATEGORIES:a,b", b"CATEGORIES:a,b,c,d,e", 1), "line-too-many"
+    return "an empty line put among the properties", b"\r\n".join(lines[:at] + [b""] + lines[at:]) + b"\r\n", "line-malformed"
+
+
+class RecordsWritten(Written):
+    """The records fixture's cases and rejects, each held to the model."""
+
+    def __init__(self, path: Path = RECORDS_RESOURCE):
+        super().__init__(path)
+
+    def build(self):
+        for note, decoded in RECORDS_CASES:
+            self.round_trip(note, decoded)
+        for note, decoded, data in RECORDS_ACCEPTS:
+            self.accept(note, decoded, data)
+        for why, data, failure in RECORDS_REJECTS:
+            self.reject(why, data, failure)
+        rng = SplitMix64(RECORDS_SEED)
+        for _ in range(40):
+            self.round_trip("fuzz: a drawn value written and read back", draw_records(rng))
+        canonical = self.model.encode(RECORDS_CANON)[1]
+        for _ in range(30):
+            decoded = draw_records(rng)
+            written = self.model.encode(decoded)[1]
+            self.accept("fuzz: the same component read from a reshaped input", decoded, reshape(rng, written))
+        for _ in range(30):
+            why, data, failure = fault_records(rng, canonical)
+            self.reject("fuzz: " + why, data, failure)
+
+
 # ── Splicing into numerical_reference.json ──────────────────────────────
 
 
 def case_text(case: dict) -> str:
     return "        " + json.dumps(case, ensure_ascii=True)
+
+
+#: Each fixture of this module: its name in numerical_reference.json and the
+#: writer that holds its cases to the model.
+WRITERS = ((FIXTURE, Written), (RECORDS_FIXTURE, RecordsWritten))
 
 
 def span(text: str, fixture: str, key: str):
@@ -915,13 +1326,15 @@ def span(text: str, fixture: str, key: str):
 
 def regenerate(text: str) -> tuple[str, str]:
     """`text` with the fixture's cases and rejects written, and a one-line report."""
-    written = Written()
-    for key, items in (("rejects", written.rejects), ("cases", written.cases)):
-        start, end = span(text, FIXTURE, key)
-        body = "\n" + ",\n".join(case_text(item) for item in items)
-        text = text[:start] + body + text[end:]
-    report = (
-        f"{FIXTURE}: {len(written.cases)} cases ({written.accepts} read only), "
-        f"{len(written.rejects)} rejects; the model holds each"
-    )
-    return text, report
+    reports = []
+    for fixture, writer in WRITERS:
+        written = writer()
+        for key, items in (("rejects", written.rejects), ("cases", written.cases)):
+            start, end = span(text, fixture, key)
+            body = "\n" + ",\n".join(case_text(item) for item in items)
+            text = text[:start] + body + text[end:]
+        reports.append(
+            f"{fixture}: {len(written.cases)} cases ({written.accepts} read only), "
+            f"{len(written.rejects)} rejects; the model holds each"
+        )
+    return text, "\n".join(reports)

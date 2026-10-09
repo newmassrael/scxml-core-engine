@@ -2286,6 +2286,18 @@
       ]
     },
     {
+      "name": "codec_content_line_records",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "fields": [
+        { "name": "uid", "type": "string", "compare": "equality" },
+        { "name": "attendee", "type": "string", "compare": "equality" },
+        { "name": "exdate", "type": "string", "compare": "equality" },
+        { "name": "categories", "type": "string", "compare": "equality" },
+        { "name": "geo", "type": "string", "compare": "equality" }
+      ]
+    },
+    {
       "name": "codec_flags_basic",
       "kind": "codec",
       "ref_section": "codecs",

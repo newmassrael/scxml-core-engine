@@ -803,8 +803,15 @@
           "$ref": "#/definitions/CompareMode"
         },
         "list": {
-          "description": "The field is a list of values — a property of an `sce:encoding=\"content-line\"` codec that declares `sce:max-count` (SCE_FORGE.md §4.6.4), which each language carries as its bounded list. A round-trip case writes it as a JSON array, and an empty one is an absent property. Derived from the document, like `optional`.",
+          "description": "The field is a list — a property of an `sce:encoding=\"content-line\"` codec that declares `sce:max-count` (a list of lines) or `sce:separator` (a list of the values of one line), which each language carries as its bounded list (SCE_FORGE.md §4.6.4). A round-trip case writes it as a JSON array, and an empty one is an absent property. Derived from the document, like `optional`.",
           "type": "boolean"
+        },
+        "members": {
+          "description": "The members of one record of a list of line records — a repeated property that declares a parameter or a separator (docs/adr/0014), which each language carries as a record type. The parameters come in declaration order, optional unless `sce:required`, and then the line's value as `value`, or as the list `values` when the entry has a separator. A round-trip case writes each record as a JSON object keyed by these names. Empty for every field that is not a list of records. Derived from the document, like `optional`.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/StructField"
+          }
         },
         "name": {
           "type": "string"
