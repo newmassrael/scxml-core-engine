@@ -113,7 +113,7 @@
       "deleted": "main"
     },
     "describe": {
-      "command_set_version": 23,
+      "command_set_version": 24,
       "commands": [
         "describe",
         "list_works",
@@ -174,7 +174,7 @@
       "writes_settings": false
     },
     "describe_desktop": {
-      "command_set_version": 23,
+      "command_set_version": 24,
       "commands": [
         "describe",
         "list_works",
@@ -2505,7 +2505,7 @@
       "default": "main"
     }
   },
-  "command_set_version": 23,
+  "command_set_version": 24,
   "refusals": {
     "active-request": {
       "detail": {
@@ -2621,7 +2621,7 @@
         "revision": "113a2b40e00b0c88b1bea0180971045e6fd3db134ce4dd8bab9c09341a048e44"
       },
       "kind": "lineage-dropped",
-      "message": "work `<lineage-work-id>` keeps a requirement lineage and this list has none: saving it would let an id that was retired be issued again, to another requirement. Build the list against the lineage `read_requirements` returns and give the lineage that build returns"
+      "message": "work `<lineage-work-id>` keeps a requirement lineage (a list made before lineages stands on the one adopting it makes) and this list has none: saving it would let an id that was retired be issued again, to another requirement. Build the list against the lineage `read_requirements` returns and give the lineage that build returns"
     },
     "lineage-not-continued": {
       "detail": {

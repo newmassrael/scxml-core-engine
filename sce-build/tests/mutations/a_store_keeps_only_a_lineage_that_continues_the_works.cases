@@ -19,13 +19,13 @@
 # the anchor quoted, never as a pass.
 
 mutation_tests -p sce-app-core --test a_work_keeps_the_lineage_of_its_requirement_list
-mutation_targets app-core/src/store.rs app-core/src/store/bundle_store.rs
+mutation_targets app-core/src/store.rs app-core/src/store/bundle_store.rs app-core/src/commands.rs app-core/src/requirements.rs
 mutation_oracles app-core/tests/a_work_keeps_the_lineage_of_its_requirement_list.rs
 
 mutation_case "a list that loses the lineage is saved" <<'PY'
 edit("app-core/src/store.rs",
-     "            if held.is_some() {\n                return Err(StoreError::refused(\n                    \"lineage-dropped\",",
-     "            if held.is_some() && false {\n                return Err(StoreError::refused(\n                    \"lineage-dropped\",")
+     "            if held.is_some() || (adopted.is_some() && !the_same_list) {\n                return Err(StoreError::refused(\n                    \"lineage-dropped\",",
+     "            if (held.is_some() || (adopted.is_some() && !the_same_list)) && false {\n                return Err(StoreError::refused(\n                    \"lineage-dropped\",")
 PY
 
 mutation_case "what names itself a lineage and is not one is kept" <<'PY'
@@ -114,4 +114,37 @@ mutation_case "the ids carried are named in the order a text sorts them" <<'PY'
 edit("app-core/src/store.rs",
      "        carried.sort_by_key(|id| {\n            id.trim_start_matches('R')\n                .parse::<u64>()\n                .unwrap_or(u64::MAX)\n        });",
      "        carried.sort();")
+PY
+
+# A list made before lineages keeps none and stands on the one adopting it makes (ADR 0012): the
+# core derives it, gives it with the list, and holds the next list to it as to a kept one.
+
+mutation_case "a lineage is not continued from the one adopting a list made before lineages makes" <<'PY'
+edit("app-core/src/store.rs",
+     "                if let Some(previous) = &adopted {",
+     "                if let Some(previous) = &adopted.clone().filter(|_| false) {")
+PY
+
+mutation_case "a list made before lineages may lose the lineage it stands on" <<'PY'
+edit("app-core/src/store.rs",
+     "            if held.is_some() || (adopted.is_some() && !the_same_list) {",
+     "            if held.is_some() || (false && adopted.is_some() && !the_same_list) {")
+PY
+
+mutation_case "the same list made before lineages saved again is refused as dropped" <<'PY'
+edit("app-core/src/store.rs",
+     "            if held.is_some() || (adopted.is_some() && !the_same_list) {",
+     "            if held.is_some() || (adopted.is_some() && !(the_same_list && false)) {")
+PY
+
+mutation_case "a list made before lineages is read without the lineage it stands on" <<'PY'
+edit("app-core/src/commands.rs",
+     "    } else if let Some(adopted) = list.adopted_lineage() {",
+     "    } else if let Some(adopted) = list.adopted_lineage().filter(|_| false) {")
+PY
+
+mutation_case "the lineage a list stands on is not said to be derived" <<'PY'
+edit("app-core/src/commands.rs",
+     "        reply[\"lineage_adopted\"] = Value::Bool(true);",
+     "        reply[\"lineage_adopted\"] = Value::Bool(false);")
 PY

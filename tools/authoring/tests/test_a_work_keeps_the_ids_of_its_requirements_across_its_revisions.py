@@ -137,10 +137,16 @@ class AWorkKeepsTheIdsOfItsRequirements(unittest.TestCase):
         self.assertEqual(built["lineage_text"], read["requirements"]["lineage_text"])
         self.assertEqual(built["manifest_text"], read["requirements"]["manifest_text"])
 
-    def test_a_list_saved_without_a_lineage_reads_back_without_one(self):
+    def test_a_list_saved_without_a_lineage_reads_back_with_the_one_adopting_it_makes(self):
+        # A list made before lineages stands on the lineage adopting it makes (ADR 0012): the core
+        # derives it from the manifest and the sidecar, hands it over as `lineage_text` and says it
+        # was derived, so a client that is told only to build against `lineage_text` adopts the
+        # list without being told to. Nothing of it is kept beside the list.
         built = self.build(LAMP, [ON, SWITCH, FUSE])
         self.assertFalse(self.save(built, None, self.source, lineage=False).get("isError"))
-        self.assertNotIn("lineage_text", self.read()["requirements"])
+        read = self.read()["requirements"]
+        self.assertIn("lineage_text", read)
+        self.assertTrue(read.get("lineage_adopted"), read)
 
     # -- the measurement -------------------------------------------------------------------
     def test_the_third_revision_keeps_every_id_and_issues_the_new_one_from_where_the_last_left_off(self):
@@ -169,7 +175,10 @@ class AWorkKeepsTheIdsOfItsRequirements(unittest.TestCase):
         self.assertFalse(self.save(first, None, self.source, lineage=False).get("isError"))
         second_source = self.write_text(DROPPED, self.source)
         read = self.read()
-        self.assertNotIn("lineage_text", read["requirements"])
+        # The core hands the client the lineage adopting the list makes, so the client builds
+        # against it as against a kept one and keeps every id.
+        self.assertIn("lineage_text", read["requirements"])
+        self.assertTrue(read["requirements"].get("lineage_adopted"))
         second = self.build(DROPPED, [ON, SWITCH], read)
         saved = self.save(second, read, second_source)
         self.assertFalse(saved.get("isError"), body(saved))

@@ -122,6 +122,29 @@ impl Requirements {
         Ok(self)
     }
 
+    /// The lineage a list made before lineages stands on: the one adopting it makes (its ids,
+    /// the words behind them from its sidecar, the revision its manifest says), which is what a
+    /// later list is built against in the first place (ADR 0011 item 7). The core derives it, and
+    /// the client is not left to: a client that is not told renumbers the list from a first-list
+    /// build, and the first lineage of a work was then judged on its own (review of 2026-10-09).
+    ///
+    /// Derived and never stored: the same bytes of a manifest and a sidecar are the same lineage,
+    /// and the list is left as it was, so that an acceptance that pins it still does. `None` for
+    /// a list that keeps a lineage, and for one that cannot be adopted (it keeps no sidecar, so
+    /// the words behind its ids are not known, or its ids are the source's own): the weaker
+    /// guarantee ADR 0011 names remains for those, and nothing is said that is not known.
+    pub fn adopted_lineage(&self) -> Option<serde_json::Value> {
+        if self.lineage.is_some() {
+            return None;
+        }
+        let sidecar = self.sidecar.as_deref()?;
+        sce_revision::of_list(
+            &serde_json::json!({ "manifest_text": self.manifest, "sidecar_text": sidecar }),
+            "the work keeps",
+        )
+        .ok()
+    }
+
     /// What a stored text holds: a list without a lineage (`v` 1) or with one (`v` 2).
     pub fn parse(text: &str) -> Result<Requirements, RequirementsError> {
         let stored: Stored =

@@ -89,9 +89,8 @@ The ids are read from the manifests and not from a lineage. A first version comp
 lineages (`between`) and let a work with none through "because what cannot be judged is not
 refused"; the review of 2026-10-09 measured the hole: a work whose list was made before lineages
 holds no lineage but its manifest lists R1, R2, R3, so a model that ignored the ask and handed the
-numbering back was published as having done it. For such a work the client gives the tool the
-previous manifest and sidecar (`previous_manifest_text`, `previous_sidecar_text`), which it adopts
-as a lineage, and `fresh` retires the ids it had; the task text says so for a request that asked.
+numbering back was published as having done it. For such a work the core hands the client the
+lineage adopting the list makes (below), and `fresh` retires the ids it had.
 
 The task text says it only for a request that asked. What every run is told is what a Codex version
 is verified against (`codex_support.json`), and `tests/codex_support.rs` held: the execution contract
@@ -128,35 +127,47 @@ It is closed in two parts that need each other:
   (`detail.floor`, and the message names `next_at_least`), so the client rebuilds once and the work
   is not stranded.
 
-Not done, and why: a work that never had a lineage at all is not held to the ids of its lists. With
-no lineage held, nothing says which of those ids were retired or live, so the first lineage is judged
-on its own (the weaker guarantee ADR 0011 names), and a test pins that boundary. A file that cannot
-be read as a list is not counted: it is damage that a read names, not something this save refuses
-for.
+### A list made before lineages stands on the lineage adopting it makes (2026-10-09)
 
-### The boundary, measured and left (2026-10-09)
+This used to be a boundary left on purpose: a work that never had a lineage was not held to the
+ids of its lists, and the first lineage was judged on its own (the weaker guarantee ADR 0011
+named). Measured, it let a lineage through that issued a retired id again: a work whose list was
+made before lineages (`third`, ids R1-R4 and R6) was given a lineage built without it (`reworded`,
+which numbers from R6 and has R5 live), and the store published it. The adopted lineage of the
+first is not continued by the second (`extends` says so).
 
-Measured with a test that was not kept: a work whose list was made before lineages (`third`, ids
-R1-R4 and R6) was given a lineage built without it (`reworded`, which numbers from R6 and has R5
-live). The adopted lineage of the first is not continued by the second (`extends` says so), and the
-store published it. That is the weaker guarantee, not a defect of the judgment.
+The cause was not the judgment but who adopts. ADR 0011 item 7 had the CLIENT adopt: the first
+build against such a work passes the manifest and the sidecar as the previous list. The task every
+run is given never says so (it names `requirements.lineage_text` only), so a client that is not told
+renumbers the list from a first-list build, and the store, knowing no lineage, took it.
 
-Closing it in the store was tried and not kept. Judging the first lineage against the one adopting
-the held list (`of_list`, then `extends`) refuses what the weaker guarantee exists to allow: the
-same list gaining its lineage, and a first lineage over a list whose ids were reworded in between.
-Two tests that pin the boundary (`a_lineage_can_be_gained_and_then_continued`,
-`a_work_that_never_had_a_lineage_is_not_held_to_the_ids_of_its_lists`) went red, and the adopted
-lineage's first revision has no specification digest, so a lineage built the ordinary way cannot
-extend it. A rule that tells that case from a reissue would be a new judgment in `sce-revision` and
-its Python reference, with its own shared cases.
+Teaching the client was weighed and left: a model is the one party that cannot be relied on to do
+what it was not told, and the task text is what a Codex version is verified against, so it would
+owe one paid verification with the real client every time it changed. A tolerant `extends` was
+weighed and left too: a second judgment next to adoption, in `sce-revision` and its Python
+reference. What was done is the core adopting, and the client no longer having to:
 
-What decides whether it is worth doing is not in the store. ADR 0011 item 7 has the CLIENT adopt:
-the first build against a work with no lineage passes the manifest and the sidecar as the previous
-list. The task every run is given does not say so (it names `requirements.lineage_text` only), so
-a client that is not told renumbers the list from a first-list build. The task text is what a
-Codex version is verified against, so teaching it is one verification with the real client, owed
-to the owner's go-ahead. Until either is done a work that predates lineages is revised under the
-weaker guarantee; a request for fresh ids is not affected (it is judged in the manifests, above).
+* `Requirements::adopted_lineage` derives, from a list's manifest and sidecar, the lineage
+  adopting it makes (`sce_revision::of_list`, the judgment `read_revision_report` already used).
+  It is derived and stored nowhere: the same bytes are the same lineage, and the list stays as it
+  was, so an acceptance that pins it still does.
+* `read_requirements` (and so `works_read`) gives it as the list's `lineage` with
+  `lineage_adopted` set to `true` (command set 24). The task text is unchanged: "when works_read
+  gave `requirements.lineage_text`, build against it" now holds for such a work too, and the Codex
+  record needs no new verification.
+* The store holds the next list to it as to a kept one: a list without a lineage is refused
+  (`lineage-dropped`), and a lineage that does not continue it is refused
+  (`lineage-not-continued`, in the words that name `read_requirements`). The two tests that pinned
+  the weaker guarantee are turned over, and a first lineage that merely gains the list's own is no
+  longer accepted: it is a first-list build, and the client builds against the adopted one.
+* A list the core cannot adopt (no sidecar, so the words behind its ids are not known; ids that
+  are the source's own) keeps the weaker guarantee, and says nothing that is not known.
+
+What this does not show is that a model builds against the lineage it is now handed: that is the
+live test `a_model_on_a_real_server_keeps_the_ids_of_a_revision_and_issues_them_afresh_when_asked`
+(a local model, so no cost), run against a work with a lineage. A work made before lineages is
+measured by the cases the Python reference gives (`second, from a list made before lineages`,
+`fresh, from a list made before lineages`), which the Rust judgment passes as well.
 
 ## What was measured
 

@@ -106,11 +106,15 @@ same compare-and-swap.**
      refused and steps are not composed) does not bind a work;
    - the lineage of ONE state plus a revision number would not do: a specification that did not
      change can still be re-quoted, and two quotes of one id then carry the same `rev`.
-7. **Works that already have a list.** The first build against a work whose head has no lineage
-   passes its manifest and sidecar as the previous list (adoption), and the lineage it makes is
-   saved with the list. Ids are kept; the previous specification's digest and the sentence delta
-   of that one step are unknown, as ADR 0006 says. From the next revision on the guarantee is
-   the full one.
+7. **Works that already have a list.** A list with no lineage and a sidecar stands on the lineage
+   adopting it makes. The first design had the CLIENT adopt it, passing the manifest and the
+   sidecar as the previous list, and judged the first lineage on its own; the review of 2026-10-09
+   showed a client that is not told does not, and that the store then took a lineage that issued a
+   retired id again. The CORE derives it now, hands it to the client with the list and holds the
+   next list to it like a kept one (ADR 0012, "A list made before lineages stands on the lineage
+   adopting it makes"). Ids are kept; the previous specification's digest and the sentence delta
+   of that one step are unknown, as ADR 0006 says. A list with no sidecar cannot be adopted and
+   keeps the weaker guarantee.
 
 ## Open decisions (the owner's)
 

@@ -218,30 +218,87 @@ fn a_list_without_a_lineage_cannot_replace_one_with_it() {
 }
 
 #[test]
-fn a_lineage_can_be_gained_and_then_continued() {
+fn a_list_made_before_lineages_gains_one_from_a_list_built_against_the_one_adopting_it_makes() {
     let (store, id) = work("lineage-gained-then-continued");
     let source = store.head(&id).unwrap();
-    // A first list needs none, and a list without one can be replaced by another.
+    // A first list needs none, and a list made before lineages stands on the one adopting it
+    // makes (ADR 0012): the core derives it, and the next list is built against it.
     let first = saved_revision(
         store
             .save_requirements(&id, &bare_of("first"), None, source.as_ref())
             .unwrap(),
     );
-    // A lineage can be gained: it is judged on its own, as the list's.
-    let second = saved_revision(
+    let saved = store
+        .save_requirements(
+            &id,
+            &held("second, from a list made before lineages"),
+            Some(&first),
+            source.as_ref(),
+        )
+        .expect("a list built against the adopted lineage continues it");
+    assert!(
+        matches!(saved, sce_app_core::Saved::Saved { .. }),
+        "{saved:?}"
+    );
+    let now = store.read_requirements(&id, None).unwrap().unwrap();
+    assert_eq!(
+        Requirements::parse(&now.text).unwrap().lineage.as_deref(),
+        Some(
+            three("second, from a list made before lineages")
+                .lineage
+                .as_str()
+        )
+    );
+}
+
+#[test]
+fn the_same_list_made_before_lineages_saved_again_without_one_is_not_refused() {
+    // Nothing changes by it, so no id can be issued twice; the refusal is for a list that is
+    // another list (and for one that kept a lineage, whatever it is saved as).
+    let (store, id) = work("lineage-same-list-again");
+    let source = store.head(&id).unwrap();
+    let first = saved_revision(
+        store
+            .save_requirements(&id, &bare_of("first"), None, source.as_ref())
+            .unwrap(),
+    );
+    let again = store
+        .save_requirements(&id, &bare_of("first"), Some(&first), source.as_ref())
+        .expect("the same list again");
+    assert!(
+        matches!(again, sce_app_core::Saved::Unchanged { .. }),
+        "{again:?}"
+    );
+    // Another list without a lineage is refused, as one that kept a lineage would be.
+    let (kind, _) = kind_of(
+        store
+            .save_requirements(&id, &bare_of("second"), Some(&first), source.as_ref())
+            .unwrap_err(),
+    );
+    assert_eq!(kind, "lineage-dropped");
+}
+
+#[test]
+fn a_lineage_built_without_the_one_adopting_a_list_made_before_lineages_is_refused() {
+    // Before ADR 0012 the first lineage of such a work was judged on its own, so that the list
+    // gaining its lineage was not refused; it also let a lineage that issued a retired id again
+    // through. A client is now given the adopted lineage with the list and builds against it.
+    let (store, id) = work("lineage-built-without-the-adopted");
+    let source = store.head(&id).unwrap();
+    let first = saved_revision(
+        store
+            .save_requirements(&id, &bare_of("first"), None, source.as_ref())
+            .unwrap(),
+    );
+    let (kind, detail) = kind_of(
         store
             .save_requirements(&id, &held("first"), Some(&first), source.as_ref())
-            .unwrap(),
+            .unwrap_err(),
     );
-    // And continued, step by step.
-    let third = saved_revision(
-        store
-            .save_requirements(&id, &held("second"), Some(&second), source.as_ref())
-            .unwrap(),
-    );
-    store
-        .save_requirements(&id, &held("third"), Some(&third), source.as_ref())
-        .unwrap();
+    assert_eq!(kind, "lineage-not-continued");
+    assert_eq!(detail["revision"], json!(first));
+    let now = store.read_requirements(&id, None).unwrap().unwrap();
+    assert_eq!(now.revision, first, "the work kept the list it had");
 }
 
 #[test]
@@ -693,7 +750,11 @@ fn a_candidate_that_carries_an_id_of_a_list_made_before_lineages_is_not_publishe
     g.publish(&first).expect("a list made before lineages");
 
     let second = g.running_fresh("press-2");
-    g.write(&second, "two", held("second"));
+    g.write(
+        &second,
+        "two",
+        held("second, from a list made before lineages"),
+    );
     let (kind, detail) = kind_of(g.publish(&second).unwrap_err());
     assert_eq!(kind, "fresh-ids-not-issued");
     assert_eq!(
@@ -708,20 +769,82 @@ fn a_candidate_that_carries_an_id_of_a_list_made_before_lineages_is_not_publishe
         "the work kept the list it had"
     );
 
-    // Without a lineage the old numbering is no more what was asked for.
-    g.write(&second, "two", bare_of("second"));
-    let (kind, detail) = kind_of(g.publish(&second).unwrap_err());
-    assert_eq!(kind, "fresh-ids-not-issued");
-    assert_eq!(
-        detail["carried"],
-        json!(["R1", "R2", "R3", "R4"]),
-        "{detail}"
-    );
-
     // A list numbered on from where the old one left off is what was asked for.
-    g.write(&second, "two", held("fresh"));
+    g.write(
+        &second,
+        "two",
+        held("fresh, from a list made before lineages"),
+    );
     g.publish(&second)
         .expect("a list that issued every id afresh is what was asked for");
+}
+
+#[test]
+fn a_candidate_without_the_lineage_a_list_made_before_lineages_stands_on_is_not_published() {
+    // The lineage the core derives for such a list is as much the work's as a kept one: a list
+    // without one would let the next revision issue a retired id again, to another requirement.
+    let g = generation("lineage-dropped-before-lineages");
+    let first = g.running("press-1");
+    g.write(&first, "one", bare_of("first"));
+    g.publish(&first).expect("a list made before lineages");
+    let second = g.running("press-2");
+    g.write(&second, "two", bare_of("second"));
+    let (kind, _) = kind_of(g.publish(&second).unwrap_err());
+    assert_eq!(kind, "lineage-dropped");
+    g.write(
+        &second,
+        "two",
+        held("second, from a list made before lineages"),
+    );
+    g.publish(&second)
+        .expect("with the lineage built against the adopted one it is published");
+}
+
+#[test]
+fn a_lineage_that_reissues_an_id_of_a_list_made_before_lineages_is_not_published() {
+    // Measured on 2026-10-09 (and published, before ADR 0012): `third` has R6 and no R5;
+    // `reworded` is a lineage that numbers its next id from R6 and has R5 live, so it would issue
+    // R6 again and bring R5 back. The adopted lineage of the first is not continued by it.
+    let held_list = three("third");
+    let adopted = Requirements::new(held_list.manifest.clone(), Some(held_list.sidecar.clone()))
+        .unwrap()
+        .adopted_lineage()
+        .expect("a list made before lineages is adopted as one");
+    let given = sce_revision::parse(&three("reworded").lineage).unwrap();
+    assert!(
+        sce_revision::extends(&adopted, &given).is_err(),
+        "the premise: the adopted lineage is not continued by this one"
+    );
+
+    let g = generation("lineage-reissues-an-id-before-lineages");
+    let first = g.running("press-1");
+    g.write(&first, "one", bare_of("third"));
+    g.publish(&first).expect("a list made before lineages");
+    let second = g.running("press-2");
+    g.write(&second, "two", held("reworded"));
+    let (kind, detail) = kind_of(g.publish(&second).unwrap_err());
+    assert_eq!(kind, "lineage-not-continued");
+    let list = g.store.read_requirements(&g.id, None).unwrap().unwrap();
+    assert_eq!(
+        Requirements::parse(&list.text).unwrap().manifest,
+        three("third").manifest,
+        "the work kept the list it had"
+    );
+    assert!(detail["revision"].is_string(), "{detail}");
+}
+
+#[test]
+fn a_list_made_before_lineages_that_cannot_be_adopted_is_not_held_to_a_lineage() {
+    // A manifest with no sidecar does not say the words behind its ids, so there is no lineage to
+    // derive and nothing to judge the new one against: it is published, as it always was.
+    let g = generation("lineage-no-sidecar-before-lineages");
+    let first = g.running("press-1");
+    g.write(&first, "one", bare());
+    g.publish(&first).expect("a manifest alone");
+    let second = g.running("press-2");
+    g.write(&second, "two", held("reworded"));
+    g.publish(&second)
+        .expect("what cannot be adopted cannot be judged");
 }
 
 #[test]
@@ -756,7 +879,11 @@ fn a_candidate_that_keeps_the_ids_of_a_list_made_before_lineages_is_published_wh
     g.write(&first, "one", bare_of("first"));
     g.publish(&first).unwrap();
     let second = g.running("press-2");
-    g.write(&second, "two", held("second"));
+    g.write(
+        &second,
+        "two",
+        held("second, from a list made before lineages"),
+    );
     g.publish(&second)
         .expect("carrying an id is what a revision does unless the owner asked otherwise");
 }
@@ -832,6 +959,57 @@ fn a_list_that_has_no_lineage_says_nothing_of_one() {
     .unwrap();
     let read = command(&store, "read_requirements", json!({"id": id})).unwrap();
     assert!(read["requirements"].get("lineage").is_none(), "{read}");
+    assert!(
+        read["requirements"].get("lineage_adopted").is_none(),
+        "{read}"
+    );
+}
+
+#[test]
+fn a_list_made_before_lineages_is_read_with_the_lineage_adopting_it_makes() {
+    // Command set 24: the core derives it from the manifest and the sidecar, so a client that is
+    // told only to build against `lineage_text` adopts the list without being told to, and
+    // `lineage_adopted` says it was derived and kept nowhere.
+    let (store, id) = work("lineage-reply-adopted");
+    let source = store.head(&id).unwrap().unwrap();
+    let first = three("first");
+    let saved = command(
+        &store,
+        "save_requirements",
+        json!({"id": id, "manifest": first.manifest, "sidecar": first.sidecar,
+               "written_for": source}),
+    )
+    .unwrap();
+    let read = command(&store, "read_requirements", json!({"id": id})).unwrap();
+    assert_eq!(
+        read["requirements"]["lineage_adopted"],
+        json!(true),
+        "{read}"
+    );
+    let text = read["requirements"]["lineage"].as_str().expect("a lineage");
+    let given = sce_revision::parse(text).expect("a lineage the product reads");
+    // The list was left as it was: the same revision, and nothing is kept beside it.
+    assert_eq!(read["requirements"]["revision"], saved["revision"]);
+    let kept = store.read_requirements(&id, None).unwrap().unwrap();
+    assert!(Requirements::parse(&kept.text).unwrap().lineage.is_none());
+    // It is what the next list continues: the list built against it is saved.
+    let following = three("second, from a list made before lineages");
+    command(
+        &store,
+        "save_requirements",
+        json!({"id": id, "manifest": following.manifest, "sidecar": following.sidecar,
+               "lineage": following.lineage, "base": saved["revision"], "written_for": source}),
+    )
+    .expect("a list built against the adopted lineage is saved");
+    let followed = sce_revision::parse(&following.lineage).unwrap();
+    sce_revision::extends(&given, &followed).expect("it continues the one the core gave");
+
+    // A list that keeps its own lineage is read with it, and says nothing of adoption.
+    let read = command(&store, "read_requirements", json!({"id": id})).unwrap();
+    assert!(
+        read["requirements"].get("lineage_adopted").is_none(),
+        "{read}"
+    );
 }
 
 #[test]
@@ -1001,9 +1179,10 @@ fn a_lineage_that_numbers_past_every_id_the_work_issued_is_kept_though_the_held_
 }
 
 #[test]
-fn a_work_that_never_had_a_lineage_is_not_held_to_the_ids_of_its_lists() {
-    // The weaker guarantee ADR 0011 names and ADR 0012 keeps: with no lineage held, what the lists
-    // used before cannot be said to be retired or live, so the first lineage is judged on its own.
+fn a_work_that_never_had_a_lineage_is_held_to_the_ids_of_its_list() {
+    // The weaker guarantee ADR 0011 named for the first lineage of such a work is gone (ADR
+    // 0012): its list stands on the lineage adopting it makes, so a first-list build over it, which
+    // numbers again from R1 and brings R4 back reworded, is refused and not judged on its own.
     let (store, id) = work("lineage-never-had");
     let source = store.head(&id).unwrap();
     let first = saved_revision(
@@ -1011,11 +1190,10 @@ fn a_work_that_never_had_a_lineage_is_not_held_to_the_ids_of_its_lists() {
             .save_requirements(&id, &bare_of("reworded then added"), None, source.as_ref())
             .unwrap(),
     );
-    let saved = store
-        .save_requirements(&id, &held("first"), Some(&first), source.as_ref())
-        .unwrap();
-    assert!(
-        matches!(saved, sce_app_core::Saved::Saved { .. }),
-        "{saved:?}"
+    let (kind, _) = kind_of(
+        store
+            .save_requirements(&id, &held("first"), Some(&first), source.as_ref())
+            .unwrap_err(),
     );
+    assert_eq!(kind, "lineage-not-continued");
 }

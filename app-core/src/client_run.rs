@@ -225,9 +225,6 @@ pub(crate) fn prompt(job: &Job) -> String {
              scxml_requirement_set `fresh` set to true beside the `lineage_text` and \
              `previous_sidecar_text` it takes: nothing is carried, every id the work had is \
              retired, and the new ids number on from where the lineage left off, never from R1. \
-             When works_read gave `requirements.manifest_text` but no `requirements.lineage_text`, \
-             the list was made before lineages: give that manifest as `previous_manifest_text` \
-             instead of the lineage, and the ids it has are the ones retired. \
              The design has to cite the new ids, not the old ones. A list that still carries an \
              old id is refused.\n",
         );
@@ -635,15 +632,7 @@ mod tests {
             said.starts_with(&plain[..plain.len() - 1]),
             "the base task changed: {said}"
         );
-        for name in [
-            "`fresh`",
-            "scxml_requirement_set",
-            "`lineage_text`",
-            "R1",
-            // A work whose list was made before lineages holds no lineage to give: the ask is
-            // answered with the manifest it has, which the tool adopts as one.
-            "`previous_manifest_text`",
-        ] {
+        for name in ["`fresh`", "scxml_requirement_set", "`lineage_text`", "R1"] {
             assert!(said.contains(name), "the task does not say {name}: {said}");
         }
     }

@@ -277,7 +277,14 @@ const SETTINGS_WRITE: &[&str] = &[
 /// `fresh_ids`), and a list that carries an id is then refused (`fresh-ids-not-issued`) before it
 /// is published. A screen written for 22 neither sends it nor reads it, and a core of 22 would
 /// refuse the argument as `bad-request`.
-pub const COMMAND_SET_VERSION: u32 = 23;
+///
+/// 24: a requirement list made before lineages is read with the lineage adopting it makes
+/// (`read_requirements`' `lineage`, with `lineage_adopted` set to `true`: derived from the manifest
+/// and the sidecar, stored nowhere), and the store holds the next list to it as to a kept one
+/// (`lineage-dropped`, `lineage-not-continued`), so that the first lineage of a work is judged like
+/// every other. A client of 23 was handed no lineage for such a list and built its next list as a
+/// first one, which a core of 24 refuses; a core of 23 would keep it.
+pub const COMMAND_SET_VERSION: u32 = 24;
 
 /// A command that did not do what was asked, in a shape every shell can pass on.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -944,8 +951,13 @@ fn answers_json(saved: &AnswersText) -> Result<Value, CommandError> {
 
 /// A saved requirement list as the screens read it: its revision, the source it was
 /// written for, the manifest and the sidecar of quoted sentences, and the lineage it was built
-/// against when it has one. `lineage` is absent, and not `null`, for a list without one, so
-/// the reply of every list that never had one is the reply it always was.
+/// against when it has one. `lineage` is absent, and not `null`, for a list without one that
+/// cannot be adopted (it keeps no sidecar).
+///
+/// A list made before lineages is given the lineage adopting it makes, with `lineage_adopted`
+/// set to `true` (command set 24): it is derived from the manifest and the sidecar and stored
+/// nowhere, and it is what the next list is built against and what the store holds it to
+/// (ADR 0012). A client is not left to adopt it, which none was told to.
 fn requirements_json(saved: &RequirementsText) -> Result<Value, CommandError> {
     let list = Requirements::parse(&saved.text)?;
     let mut reply = json!({
@@ -954,8 +966,11 @@ fn requirements_json(saved: &RequirementsText) -> Result<Value, CommandError> {
         "manifest": list.manifest,
         "sidecar": list.sidecar,
     });
-    if let Some(lineage) = list.lineage {
-        reply["lineage"] = Value::String(lineage);
+    if let Some(lineage) = &list.lineage {
+        reply["lineage"] = Value::String(lineage.clone());
+    } else if let Some(adopted) = list.adopted_lineage() {
+        reply["lineage"] = Value::String(format!("{adopted:#}\n"));
+        reply["lineage_adopted"] = Value::Bool(true);
     }
     Ok(reply)
 }

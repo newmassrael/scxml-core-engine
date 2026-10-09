@@ -364,11 +364,29 @@ def list_cases():
     """Lists a caller saves, each as the three texts one call of `scxml_requirement_set` gives:
     the manifest, the sidecar and the lineage that names them by their digests. What a store that
     judges a lineage is tested with, in any language: a lineage and a list that do not belong
-    together are refused, so a test cannot make up one from hand-typed hashes."""
-    return {name: {"manifest_text": rs.render_manifest(built.manifest),
-                   "sidecar_text": rs.render_sidecar(built.sidecar),
-                   "lineage_text": rl.render(built.lineage)}
-            for name, built in histories().items()}
+    together are refused, so a test cannot make up one from hand-typed hashes.
+
+    The two `from a list made before lineages` are built against the first list as a work that
+    kept no lineage holds it: the manifest and the sidecar given as the previous list, which the
+    tool adopts as a lineage (`second` as a revision, `fresh` with every id issued afresh). The
+    lineage the core derives for such a list is that one, and a list built against it continues
+    it, which a list built against the first list's own lineage does not (its first revision
+    carries the specification's digest, the adopted one cannot)."""
+    built = histories()
+    first = built["first"]
+    previous = {"previous_manifest_text": rs.render_manifest(first.manifest),
+                "previous_sidecar_text": rs.render_sidecar(first.sidecar)}
+    for name, prose, quotes, extra in (
+            ("second, from a list made before lineages",
+             LAMP.replace(" Nothing else changes it.", ""), QUOTES[:4], {}),
+            ("fresh, from a list made before lineages", LAMP, QUOTES, {"fresh": True})):
+        one = rs.build(prose, items(quotes), doc_id="lamp", **previous, **extra)
+        assert not one.refused, one.refused
+        built[name] = one
+    return {name: {"manifest_text": rs.render_manifest(one.manifest),
+                   "sidecar_text": rs.render_sidecar(one.sidecar),
+                   "lineage_text": rl.render(one.lineage)}
+            for name, one in built.items()}
 
 
 def of_list_cases():

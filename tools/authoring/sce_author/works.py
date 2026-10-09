@@ -213,11 +213,14 @@ def _requirements_of(held: dict | None, standing: str | None,
             "manifest_text": held["manifest"]}
     if held["sidecar"] is not None:
         read["sidecar_text"] = held["sidecar"]
-    # Present only for a list that has one (a list made before lineages, or by a client that
-    # did not give one, has none). What the next revision of the text is built against, so that
-    # an id is issued once: give it back as `lineage` to scxml_requirement_set.
+    # Present for a list that has one, and for one made before lineages that can be adopted: the
+    # core derives the lineage adopting it makes (`lineage_adopted`) and stores it nowhere. What
+    # the next revision of the text is built against, so that an id is issued once: give it back as
+    # `lineage` to scxml_requirement_set. A list with no sidecar cannot be adopted and has none.
     if held.get("lineage") is not None:
         read["lineage_text"] = held["lineage"]
+        if held.get("lineage_adopted"):
+            read["lineage_adopted"] = True
     return read
 
 

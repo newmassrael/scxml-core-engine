@@ -1198,18 +1198,32 @@ impl<C: Clock> WorkStore<C> {
         let Ok(list) = crate::requirements::Requirements::parse(next) else {
             return Ok(());
         };
-        let held = head
+        let head_list = head
             .as_ref()
-            .and_then(|(_, text)| crate::requirements::Requirements::parse(text).ok())
-            .and_then(|held| held.lineage);
+            .and_then(|(_, text)| crate::requirements::Requirements::parse(text).ok());
+        let held = head_list.as_ref().and_then(|held| held.lineage.clone());
+        // A list made before lineages keeps none, and stands on the one adopting it makes: the
+        // core derives it and gives it to the client with the list (`read_requirements`), so the
+        // client builds against it as against a kept one, and the store holds the next list to it
+        // the same way (ADR 0012). Nothing of it is stored.
+        let adopted = head_list
+            .as_ref()
+            .and_then(crate::requirements::Requirements::adopted_lineage);
         let detail = serde_json::json!({ "revision": head.as_ref().map(|(revision, _)| revision) });
+        // The very list the work holds, saved again without a lineage it never had: nothing is
+        // lost by it and no id can be issued twice, so a list made before lineages is not refused
+        // for being what it already was. A list that kept a lineage is, whatever it is saved as.
+        let the_same_list = head_list
+            .as_ref()
+            .is_some_and(|held| held.manifest == list.manifest && held.sidecar == list.sidecar);
         let Some(text) = list.lineage.as_deref() else {
-            if held.is_some() {
+            if held.is_some() || (adopted.is_some() && !the_same_list) {
                 return Err(StoreError::refused(
                     "lineage-dropped",
                     format!(
-                        "work `{id}` keeps a requirement lineage and this list has none: saving \
-                         it would let an id that was retired be issued again, to another \
+                        "work `{id}` keeps a requirement lineage (a list made before lineages \
+                         stands on the one adopting it makes) and this list has none: saving it \
+                         would let an id that was retired be issued again, to another \
                          requirement. Build the list against the lineage `read_requirements` \
                          returns and give the lineage that build returns"
                     ),
@@ -1238,7 +1252,27 @@ impl<C: Clock> WorkStore<C> {
             },
         )?;
         match held.as_deref().map(sce_revision::parse) {
-            None => {}
+            // No lineage kept: a first list has nothing to continue, and a list made before
+            // lineages is continued from the lineage adopting it makes. One that cannot be
+            // adopted (no sidecar, so the words behind its ids are not known) cannot be judged.
+            None => {
+                if let Some(previous) = &adopted {
+                    sce_revision::extends(previous, &lineage).map_err(|why| {
+                        StoreError::refused(
+                            "lineage-not-continued",
+                            format!(
+                                "work `{id}` keeps a requirement list made before lineages, and \
+                                 the lineage given does not continue the one adopting it makes: \
+                                 {why}. Build the list against the lineage `read_requirements` \
+                                 returns (it is the one adopting that list makes), so that every \
+                                 id keeps the requirement it was issued for and a retired id is \
+                                 never issued again"
+                            ),
+                            detail.clone(),
+                        )
+                    })?;
+                }
+            }
             Some(Ok(previous)) => {
                 sce_revision::extends(&previous, &lineage).map_err(|why| {
                     StoreError::refused(
@@ -1305,10 +1339,8 @@ impl<C: Clock> WorkStore<C> {
             format!(
                 "the owner asked for every requirement of work `{id}` to be issued a new id, and \
                  this list carries {}: build it again with scxml_requirement_set giving `fresh` \
-                 set to true beside the lineage (a list made before lineages has none: beside \
-                 its manifest as `previous_manifest_text` and its sidecar as \
-                 `previous_sidecar_text`), so that every id the work had is retired and the new \
-                 ones number on from where it left off",
+                 set to true beside the lineage, so that every id the work had is retired and \
+                 the new ones number on from where it left off",
                 carried.join(", ")
             ),
             serde_json::json!({ "request": request, "carried": carried }),
