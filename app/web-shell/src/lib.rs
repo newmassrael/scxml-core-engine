@@ -135,6 +135,7 @@ fn status_of(kind: &str) -> u16 {
         | "invalid-requirements"
         | "bad-candidate"
         | "check-refused"
+        | "fresh-ids-not-issued"
         | "model-for-an-unknown-text"
         | "lineage-unusable"
         | "lineage-of-another-list"
@@ -302,6 +303,7 @@ mod tests {
         ("bundled-work", 409),
         ("candidate-moved", 409),
         ("check-refused", 422),
+        ("fresh-ids-not-issued", 422),
         ("conflict", 409),
         ("connection-conflict", 409),
         ("connection-moved", 409),

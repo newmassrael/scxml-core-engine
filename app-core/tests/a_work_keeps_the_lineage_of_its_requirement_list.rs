@@ -491,6 +491,32 @@ impl Generation {
         made.request.id
     }
 
+    /// A request the owner made asking for every id to be issued afresh, taken by the executor.
+    fn running_fresh(&self, key: &str) -> String {
+        let source = self.store.head(&self.id).unwrap().expect("a text");
+        let made = self
+            .store
+            .register_request_with(
+                &self.id,
+                Registration {
+                    key,
+                    origin: "gui",
+                    expect: Inputs {
+                        source,
+                        answers: None,
+                    },
+                    supersede: false,
+                },
+                None,
+                true,
+            )
+            .unwrap();
+        self.store
+            .claim_request(&self.id, &made.request.id, "adapter-a", None, false)
+            .unwrap();
+        made.request.id
+    }
+
     fn write(&self, request: &str, tag: &str, list: String) {
         self.store
             .save_candidate(
@@ -584,6 +610,71 @@ fn a_candidate_with_the_lineage_of_another_list_is_not_published() {
     g.write(&first, "one", held("second"));
     g.publish(&first)
         .expect("the list with its own lineage is published");
+}
+
+#[test]
+fn a_candidate_that_carries_an_id_the_owner_asked_to_issue_afresh_is_not_published() {
+    // The owner asked for every id to be issued afresh and the executor built the list as it
+    // always does: ids carried. Publishing it would say the ask was kept and it was not, so it
+    // is refused in the ids it carried, and the request stays the executor's to write again.
+    let g = generation("fresh-ids-carried");
+    let first = g.running("press-1");
+    g.write(&first, "one", held("first"));
+    g.publish(&first).unwrap();
+
+    let second = g.running_fresh("press-2");
+    g.write(&second, "two", held("second"));
+    let (kind, detail) = kind_of(g.publish(&second).unwrap_err());
+    assert_eq!(kind, "fresh-ids-not-issued");
+    assert_eq!(
+        detail["carried"],
+        json!(["R1", "R2", "R3", "R4"]),
+        "{detail}"
+    );
+    let list = g.store.read_requirements(&g.id, None).unwrap().unwrap();
+    assert_eq!(
+        Requirements::parse(&list.text).unwrap().lineage.as_deref(),
+        Some(three("first").lineage.as_str()),
+        "the work kept the list it had"
+    );
+
+    g.write(&second, "two", held("fresh"));
+    g.publish(&second)
+        .expect("a list that issued every id afresh is what was asked for");
+    let list = g.store.read_requirements(&g.id, None).unwrap().unwrap();
+    assert_eq!(
+        Requirements::parse(&list.text).unwrap().lineage.as_deref(),
+        Some(three("fresh").lineage.as_str())
+    );
+}
+
+#[test]
+fn a_candidate_that_only_rewords_what_the_owner_asked_to_issue_afresh_is_not_published() {
+    // An id whose words changed is carried too: it keeps the number the owner asked to retire.
+    let g = generation("fresh-ids-reworded");
+    let first = g.running("press-1");
+    g.write(&first, "one", held("first"));
+    g.publish(&first).unwrap();
+
+    let second = g.running_fresh("press-2");
+    g.write(&second, "two", held("reworded"));
+    let (kind, detail) = kind_of(g.publish(&second).unwrap_err());
+    assert_eq!(kind, "fresh-ids-not-issued");
+    // The ids in the order they were issued: the one that was reworded among the ones that were not.
+    assert_eq!(
+        detail["carried"],
+        json!(["R1", "R2", "R3", "R4", "R5"]),
+        "{detail}"
+    );
+}
+
+#[test]
+fn asking_for_fresh_ids_of_a_work_with_no_list_yet_asks_nothing_of_its_first_list() {
+    let g = generation("fresh-ids-first-list");
+    let first = g.running_fresh("press-1");
+    g.write(&first, "one", held("first"));
+    g.publish(&first)
+        .expect("there is no id to renumber in a first list");
 }
 
 #[test]

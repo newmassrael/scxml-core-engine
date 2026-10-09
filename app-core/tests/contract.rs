@@ -1299,6 +1299,26 @@ fn replies() -> Value {
         .expect("a request id")
         .to_string();
     answers.insert("request_generation_pinned".into(), pinned);
+    // A request the owner made asking for every requirement of the list to be issued a new id.
+    let fresh_work = ask("create_work", json!({ "title": "Renumbered" }));
+    let fresh_work_id = fresh_work["id"].as_str().expect("a work id").to_string();
+    let fresh_source = ask(
+        "save_source",
+        json!({ "id": fresh_work_id, "text": "The lock opens when the code matches." }),
+    );
+    let fresh = ask(
+        "request_generation",
+        json!({
+            "id": fresh_work_id, "key": "press-fresh", "origin": "gui",
+            "expect": { "source": fresh_source["revision"], "answers": null },
+            "fresh_ids": true,
+        }),
+    );
+    let fresh_request_id = fresh["request"]["id"]
+        .as_str()
+        .expect("a request id")
+        .to_string();
+    answers.insert("request_generation_fresh".into(), fresh);
     refusals.insert(
         "wrong-connection".into(),
         refuse(
@@ -1503,6 +1523,8 @@ fn replies() -> Value {
     name_the_unstable(&mut document, &cancelled_id, "<cancelled-request-id>");
     name_the_unstable(&mut document, &pinned_request, "<pinned-request-id>");
     name_the_unstable(&mut document, &pinned_id, "<pinned-work-id>");
+    name_the_unstable(&mut document, &fresh_request_id, "<fresh-request-id>");
+    name_the_unstable(&mut document, &fresh_work_id, "<fresh-work-id>");
     // A revision stays the shape of one, so that the screen's guard reads the file as it
     // would read the core.
     name_the_unstable(&mut document, &bundle_revision, &"b".repeat(64));

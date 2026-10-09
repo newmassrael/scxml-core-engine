@@ -1,13 +1,16 @@
 # ADR 0012 — The ids are started over by retiring them, not by resetting them
 
-- Status: Accepted (`fresh`, `next_at_least` and the store's `lineage-numbers-reused`, implemented
-  and tested); the owner's way to ask for fresh ids from the application is not done (see "What this
-  does not do")
+- Status: Accepted (`fresh`, `next_at_least`, the store's `lineage-numbers-reused`, and the owner's
+  ask through the application, `fresh_ids`, implemented and tested). What the live run of a real
+  client did and did not measure is under "What was not measured"
 - Date: 2026-10-09
 - Scope: `tools/authoring/sce_author/requirement_lineage.py` (`advance`, `first`),
-  `requirement_set.py` (`build`), the `scxml_requirement_set` tool, and `app-core/src/store.rs`
+  `requirement_set.py` (`build`), the `scxml_requirement_set` tool, `app-core/src/store.rs`
   (`refuse_a_lineage_not_kept`: one refusal for a lineage the work holds and this build cannot
-  read). No change to the lineage's format or schema, or to the judgment in `sce-revision`
+  read; `refuse_a_carried_id`: a list that carries an id the owner asked to retire), the request
+  (`Request.fresh_ids`, `request_generation`, command set 23), the task text, and the screen's
+  generation controls. No change to the lineage's format or schema, or to the judgment in
+  `sce-revision`
 - Related: `docs/adr/0006-a-requirement-keeps-its-id-across-a-revision.md`,
   `docs/adr/0011-a-work-keeps-its-requirement-lineage-with-its-requirement-list.md` (D2)
 
@@ -65,14 +68,37 @@ sidecar of a list that predates lineages). Then:
 - Nothing about the stored form changes: a lineage made with `fresh` is an ordinary lineage that
   continues the one it was made from, and `app-core` judges and keeps it as it judges and keeps any.
 
-## What this does not do
+## The owner's ask, through the application
 
-- **The owner cannot ask for it from the application.** A list is made by an authoring client,
-  so the owner asks the client. Carrying a "fresh ids" request through the application's
-  generation (the request, the task text, the form and with them the Codex execution contract,
-  which needs a verification with the real client) is a stage of its own.
-- **How often a lineage is built wrongly is not known.** This exists so that the work has a way out
-  when it is, not because it was seen often.
+The screen offers "Issue every requirement a new id" beside the generation button for a work that
+already has a requirement list, and the tick is one press's: it is put away when the request is made
+and it is only of the work it was ticked on. The request carries it (`Request.fresh_ids`, said back
+as `fresh_ids`; `request_generation` takes it, and it is an input of the key, so a press that asked
+is not the press that did not), the runner hands it to the generator in the job, and the task text
+tells the client to give `fresh` to `scxml_requirement_set`.
+
+The ask is enforced and not only passed on. A client may ignore it (a model that builds the list as
+it always has), and publishing that list would say the ask was kept when it was not. Before a
+candidate is published, `refuse_a_carried_id` compares the lineage the work holds with the one given
+(`between`, the judgment the report uses) and refuses a list that carries an id, or carries one with
+other words, as `fresh-ids-not-issued`, naming the ids. The request stays the executor's, which
+writes the list again; the runner gives the refusal back to the client as it does every refusal. A
+work with no lineage (a first list, or one this build cannot read) has no id to retire, and what
+cannot be judged is not refused.
+
+The task text says it only for a request that asked. What every run is told is what a Codex version
+is verified against (`codex_support.json`), and `tests/codex_support.rs` held: the execution contract
+did not change, so no new verification with the real client was owed. That is a measured fact of the
+base task and the same sentence is not claimed for the added one: see below.
+
+## What was not measured
+
+- **A real client building a revision against a held lineage, with and without `fresh`.** The live
+  run of a real Codex (2026-10-09) used a synthetic specification and a work that holds no lineage.
+  Nothing here shows that a model reads the added sentence and gives `fresh`; what is held is that
+  the core refuses the list when it does not, so a client that ignores the ask cannot publish.
+- **How often a lineage is built wrongly.** This exists so that the work has a way out when it is,
+  not because it was seen often.
 
 ## A lineage the store cannot read
 

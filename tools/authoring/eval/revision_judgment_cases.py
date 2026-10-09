@@ -310,11 +310,11 @@ def items(quotes, statement="s"):
     return [{"quote": q, "statement": statement} for q in quotes]
 
 
-def build(prose, quotes, previous=None, statement="s"):
+def build(prose, quotes, previous=None, statement="s", fresh=False):
     kw = {}
     if previous is not None:
         kw = {"lineage_text": rl.render(previous.lineage),
-              "previous_sidecar_text": json.dumps(previous.sidecar)}
+              "previous_sidecar_text": json.dumps(previous.sidecar), "fresh": fresh}
     built = rs.build(prose, items(quotes, statement), doc_id="lamp", **kw)
     assert not built.refused, built.refused
     return built
@@ -332,8 +332,11 @@ def histories():
         LAMP.replace("30 seconds", "45 seconds").replace(
             "Nothing else changes it.", "Nothing else changes it. " + RESET),
         QUOTES[:3] + ["After 45 seconds on, it turns itself off.", QUOTES[4], RESET], reworded)
+    # The first list's words again, every id issued afresh (`fresh`): nothing carried, every id
+    # the first had retired, the numbering gone on from R6.
+    fresh = build(LAMP, QUOTES, first, fresh=True)
     return {"first": first, "second": second, "third": third, "reworded": reworded, "back": back,
-            "again": again, "reworded then added": reworded_then_added}
+            "again": again, "reworded then added": reworded_then_added, "fresh": fresh}
 
 
 class Lineages:
@@ -531,6 +534,8 @@ def between_cases(table: Lineages):
         case("words that changed keep their id and are changed", named["first"], named["reworded"]),
         case("words reworded and reworded back are carried", named["first"], named["back"]),
         case("the same text read into another list", named["first"], named["again"]),
+        case("every id started over: the old ones retired and none carried", named["first"],
+             named["fresh"]),
         case("a lineage that goes back in time", named["third"], named["first"]),
         case("a lineage of another specification", named["first"], other),
         case("a lineage whose next is behind", named["third"], behind),
@@ -586,6 +591,10 @@ def extends_cases(table: Lineages):
         lineage["requirements"].append({"id": "R0", "first_rev": "3", "retired_rev": None,
                                         "quotes": [{"rev": "3", "sha256": "0" * 64}]})
 
+    def numbering_reset(lineage):
+        # What a reset would look like: every id retired, and the numbering put back to the start.
+        lineage["next"] = 1
+
     def variant(name, base, edit):
         return table.add(name, broken(h[base], edit))
 
@@ -596,6 +605,10 @@ def extends_cases(table: Lineages):
         case("a step after one that is not the last", named["first"], named["third"]),
         case("a lineage extends itself", named["second"], named["second"]),
         case("the same text read into another list", named["first"], named["again"]),
+        case("every id started over, numbered on from the work's next", named["first"],
+             named["fresh"]),
+        case("every id started over and the numbering put back to R1", named["first"],
+             variant("fresh, numbered from R1 again", "fresh", numbering_reset)),
         case("another specification", named["first"],
              variant("second, of another specification", "second", lambda l: l.update(doc_id="other"))),
         case("fewer revisions", named["third"],

@@ -260,6 +260,12 @@ pub struct Request {
     /// connection takes; and for every request written before connections existed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pin: Option<Pin>,
+    /// The owner asked for every requirement to be issued a new id (ADR 0012), so the list the
+    /// request makes is held to it before it is published. Absent from the record of every
+    /// request that did not ask, so a record written before this existed reads and writes as it
+    /// did.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub fresh_ids: bool,
 }
 
 /// Whether `seconds` is a lease a claim may ask for.
@@ -276,6 +282,7 @@ impl Request {
         origin: String,
         inputs: Inputs,
         pin: Option<Pin>,
+        fresh_ids: bool,
         now: &Moment,
     ) -> Self {
         Request {
@@ -293,6 +300,7 @@ impl Request {
             candidate: None,
             outcome: None,
             pin,
+            fresh_ids,
         }
     }
 
@@ -568,6 +576,7 @@ mod tests {
                 answers: None,
             },
             None,
+            false,
             &at(T0),
         )
     }

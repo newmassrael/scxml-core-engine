@@ -180,6 +180,7 @@ pub(crate) fn blank_job() -> Job {
         answers: Default::default(),
         previous: None,
         refusal: None,
+        fresh_ids: false,
     }
 }
 
@@ -216,6 +217,18 @@ pub(crate) fn prompt(job: &Job) -> String {
         request = job.request,
         attempt = job.attempt,
     );
+    // Said only when the owner asked: the task every run is given is what a Codex version is
+    // verified against, and this is part of what one request is, not of what every run is told.
+    if job.fresh_ids {
+        text.push_str(
+            "\nThe owner asked for every requirement to be issued a new id. In step 3 give \
+             scxml_requirement_set `fresh` set to true beside the `lineage_text` and \
+             `previous_sidecar_text` it takes: nothing is carried, every id the work had is \
+             retired, and the new ids number on from where the lineage left off, never from R1. \
+             The design has to cite the new ids, not the old ones. A list that still carries an \
+             old id is refused.\n",
+        );
+    }
     if let Some(refusal) = &job.refusal {
         text.push_str(&format!(
             "\nYour last draft was refused. What was said of it:\n{refusal}\n\
@@ -601,6 +614,26 @@ mod tests {
             "`previous_sidecar_text`",
         ] {
             assert!(said.contains(name), "the task does not name {name}: {said}");
+        }
+    }
+
+    /// The owner's ask to issue every id afresh is said to the client only when it was made, and
+    /// in the name the tool takes it by. What every run is told is what a Codex version is
+    /// verified against, so the base task (the one `blank_job` names) must not carry it.
+    #[test]
+    fn the_task_says_to_issue_every_id_afresh_only_when_the_owner_asked() {
+        let plain = prompt(&blank_job());
+        assert!(!plain.contains("fresh"), "{plain}");
+
+        let mut asked = blank_job();
+        asked.fresh_ids = true;
+        let said = prompt(&asked);
+        assert!(
+            said.starts_with(&plain[..plain.len() - 1]),
+            "the base task changed: {said}"
+        );
+        for name in ["`fresh`", "scxml_requirement_set", "`lineage_text`", "R1"] {
+            assert!(said.contains(name), "the task does not say {name}: {said}");
         }
     }
 

@@ -398,6 +398,11 @@ impl<C: Clock> WorkStore<C> {
             let (_, text) =
                 self.read_revision(&dir, Artifact::Requirements, id, named.clone(), true)?;
             self.refuse_a_lineage_not_kept(id, &text)?;
+            // The owner asked for every id to be issued afresh: a list that carries one did not
+            // do what was asked, and says so by being refused, not by being published.
+            if current.fresh_ids {
+                self.refuse_a_carried_id(id, &current.id, &text)?;
+            }
         }
 
         // What the request was asked about is what the work has: a save that moved it ended

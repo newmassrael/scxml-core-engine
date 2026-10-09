@@ -1261,6 +1261,70 @@ impl<C: Clock> WorkStore<C> {
         Ok(())
     }
 
+    /// `fresh-ids-not-issued`: the owner asked for every requirement to be issued a new id
+    /// (ADR 0012) and the list carries one the work's list had, or changed the words of one.
+    ///
+    /// Judged as the owner's report judges any two lists of the work: `between` the lineage the
+    /// work holds and the one given, which `refuse_a_lineage_not_kept` has already held to
+    /// continue it. A work with no lineage (a first list, or one this build cannot read) has no
+    /// id to issue afresh, and what cannot be judged is not refused.
+    pub(crate) fn refuse_a_carried_id(
+        &self,
+        id: &WorkId,
+        request: &str,
+        next: &str,
+    ) -> Result<(), StoreError> {
+        let lineage_of = |text: &str| {
+            crate::requirements::Requirements::parse(text)
+                .ok()
+                .and_then(|list| list.lineage)
+                .and_then(|lineage| sce_revision::parse(&lineage).ok())
+        };
+        let held = self
+            .read_claimed(Artifact::Requirements, id, None)?
+            .and_then(|(_, _, text)| lineage_of(&text));
+        let (Some(held), Some(given)) = (held, lineage_of(next)) else {
+            return Ok(());
+        };
+        let Ok(said) = sce_revision::between(&held, &given) else {
+            return Ok(());
+        };
+        let moved = &said["requirements"];
+        let mut carried: Vec<String> = moved["carried"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|id| id.as_str().map(str::to_string))
+            .collect();
+        carried.extend(
+            moved["changed"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|row| row["id"].as_str().map(str::to_string)),
+        );
+        if carried.is_empty() {
+            return Ok(());
+        }
+        // In the order the ids were issued, whichever of the two lists they came from.
+        carried.sort_by_key(|id| {
+            id.trim_start_matches('R')
+                .parse::<u64>()
+                .unwrap_or(u64::MAX)
+        });
+        Err(StoreError::refused(
+            "fresh-ids-not-issued",
+            format!(
+                "the owner asked for every requirement of work `{id}` to be issued a new id, and \
+                 this list carries {}: build it again with scxml_requirement_set giving `fresh` \
+                 set to true beside the lineage, so that every id the work had is retired and \
+                 the new ones number on from where it left off",
+                carried.join(", ")
+            ),
+            serde_json::json!({ "request": request, "carried": carried }),
+        ))
+    }
+
     /// `lineage-numbers-reused`: the lineage given numbers its next id from one a list of this
     /// work has already carried. Asked only when the lineage the work holds cannot be read, so
     /// that nothing says which of those ids were retired; an id that was is never issued again,

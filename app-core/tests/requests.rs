@@ -186,6 +186,70 @@ fn a_key_used_for_other_inputs_is_refused_and_nothing_is_registered() {
 }
 
 #[test]
+fn a_request_can_ask_for_every_id_to_be_issued_afresh_and_keeps_asking() {
+    let f = fixture("requests-fresh");
+    let made = f
+        .store
+        .register_request_with(&f.id, f.registration("press-1"), None, true)
+        .unwrap();
+
+    assert!(made.request.fresh_ids);
+    // It is kept with the request, so the executor that takes it later is told.
+    let read = f.store.read_request(&f.id, &made.request.id).unwrap();
+    assert!(read.request.fresh_ids);
+}
+
+#[test]
+fn a_request_that_asks_for_nothing_of_the_kind_is_the_bytes_it_always_was() {
+    // A request written before fresh ids existed has no such key, and one that does not ask has
+    // none either: the record of every request that never asked reads and writes as it did.
+    let f = fixture("requests-not-fresh");
+    let id = f.register("press-1");
+    let read = f.store.read_request(&f.id, &id).unwrap();
+
+    assert!(!read.request.fresh_ids);
+    let written = serde_json::to_value(&read.request).unwrap();
+    assert!(written.get("fresh_ids").is_none(), "{written}");
+}
+
+#[test]
+fn a_key_that_asked_for_fresh_ids_is_not_the_same_press_without_them_nor_the_reverse() {
+    let f = fixture("requests-fresh-key");
+    f.store
+        .register_request_with(&f.id, f.registration("press-1"), None, true)
+        .unwrap();
+    // The same press sent again is the request it made.
+    let again = f
+        .store
+        .register_request_with(&f.id, f.registration("press-1"), None, true)
+        .unwrap();
+    assert!(!again.created);
+    // Another way to number is another request, not the first one answered under a new name.
+    let (kind, _) = refused(
+        f.store
+            .register_request_with(&f.id, f.registration("press-1"), None, false)
+            .unwrap_err(),
+    );
+    assert_eq!(kind, "key-reused");
+    assert_eq!(f.store.list_requests(&f.id).unwrap().len(), 1);
+}
+
+#[test]
+fn a_key_that_did_not_ask_for_fresh_ids_is_not_the_same_press_with_them() {
+    let f = fixture("requests-fresh-key-reverse");
+    f.register("press-1");
+
+    let (kind, _) = refused(
+        f.store
+            .register_request_with(&f.id, f.registration("press-1"), None, true)
+            .unwrap_err(),
+    );
+
+    assert_eq!(kind, "key-reused");
+    assert_eq!(f.store.list_requests(&f.id).unwrap().len(), 1);
+}
+
+#[test]
 fn a_request_asked_about_a_text_that_has_moved_is_refused_and_says_what_moved() {
     let f = fixture("requests-moved");
     let stale = f.inputs();

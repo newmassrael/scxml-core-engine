@@ -90,6 +90,9 @@ pub struct Job {
     /// What the core said of the last draft it refused, in the product's words: set from the
     /// second try, and what the draft has to answer.
     pub refusal: Option<String>,
+    /// The owner asked for every requirement of the list to be issued a new id (ADR 0012): the
+    /// list is built with `fresh`, and one that carries an id is refused before it is published.
+    pub fresh_ids: bool,
 }
 
 /// The model and the requirement list a work had before the request.
@@ -565,7 +568,13 @@ where
                         bundle: published.bundle,
                     })
                 }
-                Err(refused) if refused.kind == "check-refused" => {
+                // What the core refused the draft for, and the draft can be written again from:
+                // a model SCE refused, and a list that carries an id the owner asked to retire.
+                // Any other refusal is the work's, not the draft's, and fails the request.
+                Err(refused)
+                    if refused.kind == "check-refused"
+                        || refused.kind == "fresh-ids-not-issued" =>
+                {
                     last_refusal = refusal_text(&refused);
                     job.refusal = Some(last_refusal.clone());
                 }
@@ -584,7 +593,7 @@ where
             request,
             attempt,
             format!(
-                "no draft SCE accepted in {} try(ies); the last thing said of it was: {last_refusal}",
+                "no draft the core accepted in {} try(ies); the last thing said of it was: {last_refusal}",
                 self.config.repairs + 1
             ),
         )
@@ -644,6 +653,7 @@ where
             answers,
             previous,
             refusal: None,
+            fresh_ids: view.request.fresh_ids,
         })
     }
 

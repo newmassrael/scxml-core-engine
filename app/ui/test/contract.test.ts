@@ -608,6 +608,18 @@ describe("the replies the core gives", () => {
     expect(parseDefaultConnection(replies.answers["set_default_connection"])).toBe("main");
   });
 
+  it("carry whether the owner asked for every id to be issued afresh, and read a core that does not say as not asked", () => {
+    const fresh = parseRegisteredRequest(replies.answers["request_generation_fresh"]).request;
+    expect(fresh.fresh_ids).toBe(true);
+    expect(parseRegisteredRequest(replies.answers["request_generation"]).request.fresh_ids).toBe(false);
+
+    const plain = (replies.answers["request_generation"] as { request: Record<string, unknown> }).request;
+    const { fresh_ids: _said, ...earlier } = plain;
+    expect(parseGenerationRequest(earlier).fresh_ids).toBe(false);
+    // What is not true or false is a broken contract, not a request that did not ask.
+    expect(() => parseGenerationRequest({ ...plain, fresh_ids: "yes" })).toThrow(/fresh_ids/);
+  });
+
   it("carry the connection a request was made for, and refuse an executor it is not for", () => {
     const pinned = parseRegisteredRequest(replies.answers["request_generation_pinned"]).request;
     expect(pinned.pin).toMatchObject({ connection: "main", adapter: "claude-code", model: "sonnet" });

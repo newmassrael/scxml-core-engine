@@ -21,6 +21,7 @@
         "candidate": null,
         "created_at": "2026-10-03T09:00:00Z",
         "ended_at": "2026-10-03T09:00:00Z",
+        "fresh_ids": false,
         "id": "<cancelled-request-id>",
         "inputs": {
           "answers": "fe78ae31e60c4750bb9ab0be5bff11d8d148b9579fd7fce42c46bcb61beae745",
@@ -44,6 +45,7 @@
         "candidate": null,
         "created_at": "2026-10-03T09:00:00Z",
         "ended_at": null,
+        "fresh_ids": false,
         "id": "<request-id>",
         "inputs": {
           "answers": "fe78ae31e60c4750bb9ab0be5bff11d8d148b9579fd7fce42c46bcb61beae745",
@@ -77,6 +79,7 @@
         },
         "created_at": "2026-10-03T09:00:00Z",
         "ended_at": "2026-10-03T09:00:00Z",
+        "fresh_ids": false,
         "id": "<request-id>",
         "inputs": {
           "answers": "fe78ae31e60c4750bb9ab0be5bff11d8d148b9579fd7fce42c46bcb61beae745",
@@ -110,7 +113,7 @@
       "deleted": "main"
     },
     "describe": {
-      "command_set_version": 22,
+      "command_set_version": 23,
       "commands": [
         "describe",
         "list_works",
@@ -171,7 +174,7 @@
       "writes_settings": false
     },
     "describe_desktop": {
-      "command_set_version": 22,
+      "command_set_version": 23,
       "commands": [
         "describe",
         "list_works",
@@ -241,6 +244,7 @@
         },
         "created_at": "2026-10-03T09:00:00Z",
         "ended_at": "2026-10-03T09:00:00Z",
+        "fresh_ids": false,
         "id": "<failed-request-id>",
         "inputs": {
           "answers": "fe78ae31e60c4750bb9ab0be5bff11d8d148b9579fd7fce42c46bcb61beae745",
@@ -313,6 +317,7 @@
         "candidate": null,
         "created_at": "2026-10-03T09:00:00Z",
         "ended_at": null,
+        "fresh_ids": false,
         "id": "<request-id>",
         "inputs": {
           "answers": "fe78ae31e60c4750bb9ab0be5bff11d8d148b9579fd7fce42c46bcb61beae745",
@@ -387,6 +392,7 @@
           "candidate": null,
           "created_at": "2026-10-03T09:00:00Z",
           "ended_at": null,
+          "fresh_ids": false,
           "id": "<request-id>",
           "inputs": {
             "answers": "fe78ae31e60c4750bb9ab0be5bff11d8d148b9579fd7fce42c46bcb61beae745",
@@ -412,6 +418,7 @@
           "candidate": null,
           "created_at": "2026-10-03T09:00:00Z",
           "ended_at": "2026-10-03T09:00:00Z",
+          "fresh_ids": false,
           "id": "<cancelled-request-id>",
           "inputs": {
             "answers": "fe78ae31e60c4750bb9ab0be5bff11d8d148b9579fd7fce42c46bcb61beae745",
@@ -437,6 +444,7 @@
           },
           "created_at": "2026-10-03T09:00:00Z",
           "ended_at": "2026-10-03T09:00:00Z",
+          "fresh_ids": false,
           "id": "<failed-request-id>",
           "inputs": {
             "answers": "fe78ae31e60c4750bb9ab0be5bff11d8d148b9579fd7fce42c46bcb61beae745",
@@ -467,6 +475,7 @@
           },
           "created_at": "2026-10-03T09:00:00Z",
           "ended_at": "2026-10-03T09:00:00Z",
+          "fresh_ids": false,
           "id": "<request-id>",
           "inputs": {
             "answers": "fe78ae31e60c4750bb9ab0be5bff11d8d148b9579fd7fce42c46bcb61beae745",
@@ -1719,6 +1728,7 @@
         "candidate": null,
         "created_at": "2026-10-03T09:00:00Z",
         "ended_at": null,
+        "fresh_ids": false,
         "id": "<request-id>",
         "inputs": {
           "answers": "fe78ae31e60c4750bb9ab0be5bff11d8d148b9579fd7fce42c46bcb61beae745",
@@ -2143,6 +2153,7 @@
         "candidate": null,
         "created_at": "2026-10-03T09:00:00Z",
         "ended_at": null,
+        "fresh_ids": false,
         "id": "<request-id>",
         "inputs": {
           "answers": "fe78ae31e60c4750bb9ab0be5bff11d8d148b9579fd7fce42c46bcb61beae745",
@@ -2167,6 +2178,7 @@
         "candidate": null,
         "created_at": "2026-10-03T09:00:00Z",
         "ended_at": null,
+        "fresh_ids": false,
         "id": "<request-id>",
         "inputs": {
           "answers": "fe78ae31e60c4750bb9ab0be5bff11d8d148b9579fd7fce42c46bcb61beae745",
@@ -2184,6 +2196,31 @@
         "work": "<work-id>"
       }
     },
+    "request_generation_fresh": {
+      "created": true,
+      "request": {
+        "attempt": 0,
+        "candidate": null,
+        "created_at": "2026-10-03T09:00:00Z",
+        "ended_at": null,
+        "fresh_ids": true,
+        "id": "<fresh-request-id>",
+        "inputs": {
+          "answers": null,
+          "source": "06e8bce08f5a905f2b94bdf2c9aef34ac42a4f59885f7f040872c7f73a98c0dc"
+        },
+        "key": "press-fresh",
+        "lease": null,
+        "note": null,
+        "origin": "gui",
+        "outcome": null,
+        "pin": null,
+        "seq": 1,
+        "state": "queued",
+        "stored_state": "queued",
+        "work": "<fresh-work-id>"
+      }
+    },
     "request_generation_pinned": {
       "created": true,
       "request": {
@@ -2191,6 +2228,7 @@
         "candidate": null,
         "created_at": "2026-10-03T09:00:00Z",
         "ended_at": null,
+        "fresh_ids": false,
         "id": "<pinned-request-id>",
         "inputs": {
           "answers": null,
@@ -2412,6 +2450,7 @@
         },
         "created_at": "2026-10-03T09:00:00Z",
         "ended_at": null,
+        "fresh_ids": false,
         "id": "<request-id>",
         "inputs": {
           "answers": "fe78ae31e60c4750bb9ab0be5bff11d8d148b9579fd7fce42c46bcb61beae745",
@@ -2466,7 +2505,7 @@
       "default": "main"
     }
   },
-  "command_set_version": 22,
+  "command_set_version": 23,
   "refusals": {
     "active-request": {
       "detail": {
@@ -2575,7 +2614,7 @@
         "request": "<request-id>"
       },
       "kind": "key-reused",
-      "message": "the key was used for another request (<request-id>), about other revisions"
+      "message": "the key was used for another request (<request-id>), about other revisions or asking another way to number the ids"
     },
     "lineage-dropped": {
       "detail": {

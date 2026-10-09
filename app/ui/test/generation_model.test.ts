@@ -52,6 +52,7 @@ const detail = (over: Partial<GenerationRequest> = {}): GenerationRequest => ({
   candidate: null,
   outcome: null,
   pin: null,
+  fresh_ids: false,
   ended_at: null,
   note: null,
   ...over,

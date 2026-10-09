@@ -1,0 +1,64 @@
+# Mutation cases for "a request asks for every id to be issued afresh".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_request_asks_for_every_id_to_be_issued_afresh.cases`.
+#
+# The owner can ask, with a request, for every requirement of the list it makes to be issued a new
+# id (`request_generation`'s `fresh_ids`, ADR 0012). The ask travels: the registration keeps it on
+# the request (and it is an input of the key, so a press that asked is not the press that did not),
+# the request says it in its record only when it was made, the runner hands it to the generator in
+# the job, and the command both takes it and says it back. Each case below takes one of those away
+# and must make a test of `app-core/tests/{requests,runner,request_commands}.rs` red.
+#
+# ⚠ A mutated tree is built under `-D warnings`, so every case keeps each binding it had in
+# use: a mutation that stops reading one is an unused-variable ERROR, the tree does not
+# compile, and the verdict is INCONCLUSIVE.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported INCONCLUSIVE with
+# the anchor quoted, never as a pass.
+
+mutation_tests -p sce-app-core --features cli --test requests --test runner --test request_commands
+mutation_targets app-core/src/store/request_store.rs app-core/src/requests.rs app-core/src/runner.rs app-core/src/commands.rs
+mutation_oracles app-core/tests/requests.rs app-core/tests/runner.rs app-core/tests/request_commands.rs
+
+mutation_case "a press that asked is taken for the press that did not" <<'PY'
+edit("app-core/src/store/request_store.rs",
+     "            if same.inputs != registration.expect || same.fresh_ids != fresh_ids {",
+     "            if same.inputs != registration.expect {")
+PY
+
+mutation_case "a list that carries an id the owner asked to retire fails the request" <<'PY'
+edit("app-core/src/runner.rs",
+     "                    if refused.kind == \"check-refused\"\n                        || refused.kind == \"fresh-ids-not-issued\" =>",
+     "                    if refused.kind == \"check-refused\" =>")
+PY
+
+mutation_case "a request does not keep what the owner asked" <<'PY'
+edit("app-core/src/requests.rs",
+     "            pin,\n            fresh_ids,\n        }",
+     "            pin,\n            fresh_ids: fresh_ids && false,\n        }")
+PY
+
+mutation_case "a request that asked for nothing writes the ask all the same" <<'PY'
+edit("app-core/src/requests.rs",
+     "    #[serde(default, skip_serializing_if = \"std::ops::Not::not\")]\n    pub fresh_ids: bool,",
+     "    #[serde(default)]\n    pub fresh_ids: bool,")
+PY
+
+mutation_case "the generator is not told what the owner asked" <<'PY'
+edit("app-core/src/runner.rs",
+     "            fresh_ids: view.request.fresh_ids,",
+     "            fresh_ids: false,")
+PY
+
+mutation_case "the command does not pass the ask on to the registration" <<'PY'
+edit("app-core/src/commands.rs",
+     "        pin,\n        fresh_ids,\n    )?;",
+     "        pin,\n        false && fresh_ids,\n    )?;")
+PY
+
+mutation_case "the request is said without what was asked" <<'PY'
+edit("app-core/src/commands.rs",
+     "        \"fresh_ids\": request.fresh_ids,",
+     "        \"fresh_ids\": false,")
+PY

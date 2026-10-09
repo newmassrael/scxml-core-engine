@@ -120,6 +120,45 @@ fn a_request_is_said_in_the_words_a_caller_branches_on() {
     assert_eq!(request["lease"], Value::Null);
     assert_eq!(request["ended_at"], Value::Null);
     assert_eq!(request["note"], Value::Null);
+    // A request that asked for nothing of the kind says so, in a word a screen can read.
+    assert_eq!(request["fresh_ids"], json!(false));
+}
+
+#[test]
+fn a_request_can_ask_for_every_id_to_be_issued_afresh_through_the_command() {
+    let f = fixture("request-commands-fresh");
+
+    let made = f.run(
+        "request_generation",
+        json!({
+            "id": f.work,
+            "key": "press-1",
+            "origin": "gui",
+            "expect": {"source": f.source},
+            "fresh_ids": true,
+        }),
+    );
+
+    assert_eq!(made["request"]["fresh_ids"], json!(true));
+    // The press sent again is the request it made; the same key without the ask is another.
+    let again = f.run(
+        "request_generation",
+        json!({"id": f.work, "key": "press-1", "origin": "gui",
+               "expect": {"source": f.source}, "fresh_ids": true}),
+    );
+    assert_eq!(again["created"], json!(false));
+    let other = f.refuse(
+        "request_generation",
+        json!({"id": f.work, "key": "press-1", "origin": "gui", "expect": {"source": f.source}}),
+    );
+    assert_eq!(other.kind, "key-reused");
+    // What is not true or false is not asked.
+    let bad = f.refuse(
+        "request_generation",
+        json!({"id": f.work, "key": "press-2", "origin": "gui",
+               "expect": {"source": f.source}, "fresh_ids": "yes"}),
+    );
+    assert_eq!(bad.kind, "bad-request");
 }
 
 #[test]

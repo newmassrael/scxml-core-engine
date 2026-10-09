@@ -109,6 +109,9 @@ class EveryRefusalOfALineageCheckHasACaseThatReachesItForThatReason(unittest.Tes
         "a new id numbered below the work's next": "would be issued twice",
         "a new id that was already issued by number": "would be issued twice",
         "a next that is behind": "is behind the work's",
+        # Starting the ids over retires every id and numbers on; putting the numbering back is
+        # the reset it must not be, and is refused as any next that is behind is.
+        "every id started over and the numbering put back to R1": "is behind the work's",
     }
     LIST = {
         "the manifest of another revision": "last revision is",
@@ -210,7 +213,7 @@ class EveryRefusalOfALineageCheckHasACaseThatReachesItForThatReason(unittest.Tes
         self.reasons("belongs_to", self.BELONGS)
 
     def test_what_is_meant_to_be_accepted_is_accepted(self):
-        accepted = {"extends": 6, "belongs_to": 1, "belongs_to_list": 1, "parse": 1}
+        accepted = {"extends": 7, "belongs_to": 1, "belongs_to_list": 1, "parse": 1}
         for section, count in accepted.items():
             ok = [c for c in held()[section] if c["expect"] == "ok"]
             self.assertEqual(count, len(ok), section)

@@ -378,6 +378,9 @@ const en = {
   answerStateIgnored:
     "The model shown was made after you answered and still asks this question. Read what it did, or generate again.",
   answersRegenerate: "Generate again from these answers",
+  freshIdsLabel: "Issue every requirement a new id",
+  freshIdsHint:
+    "Every id the work has is retired and the new ones number on from where it left off, never from R1. The design will cite the new ids.",
   groundRelated: "The text this is about (requirement {id}):",
   groundShow: "Show in the text",
   groundNotInText:
@@ -772,6 +775,9 @@ const ko: Record<Key, string> = {
   answerStateIgnored:
     "지금 보이는 모델은 답한 뒤에 만들었는데도 이 질문을 여전히 합니다. 모델이 한 일을 읽거나 다시 생성하세요.",
   answersRegenerate: "이 답으로 다시 생성",
+  freshIdsLabel: "모든 요구사항에 새 번호 발급",
+  freshIdsHint:
+    "작업이 가진 번호를 전부 은퇴시키고, 새 번호는 이어서 매깁니다(R1부터 다시 시작하지 않습니다). 설계는 새 번호를 인용하게 됩니다.",
   groundRelated: "이 질문이 다루는 원문 (요구사항 {id}):",
   groundShow: "원문에서 보기",
   groundNotInText:

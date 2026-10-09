@@ -163,6 +163,7 @@ export interface Api {
     expect: { readonly source: Revision; readonly answers: Revision | null },
     supersede?: boolean,
     connection?: ConnectionRef,
+    freshIds?: boolean,
   ): Promise<RegisteredRequest>;
   /** One request of the work, as the clock reads it now. */
   readRequest(id: string, request: string): Promise<GenerationRequest>;
@@ -328,7 +329,7 @@ export function apiOver(transport: Transport): Api {
     async readWorkHeads(id) {
       return parseWorkHeads(await transport.call("read_work_heads", { id }));
     },
-    async requestGeneration(id, key, expect, supersede = false, connection) {
+    async requestGeneration(id, key, expect, supersede = false, connection, freshIds = false) {
       const args = {
         id,
         key,
@@ -336,6 +337,8 @@ export function apiOver(transport: Transport): Api {
         expect,
         supersede,
         ...(connection === undefined ? {} : { connection }),
+        // Said only when asked, so a core of an earlier version is not sent what it refuses.
+        ...(freshIds ? { fresh_ids: true } : {}),
       };
       return parseRegisteredRequest(await transport.call("request_generation", args));
     },

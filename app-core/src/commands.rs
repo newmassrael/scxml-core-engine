@@ -271,7 +271,13 @@ const SETTINGS_WRITE: &[&str] = &[
 /// text was changed and before the model or the list was written again for it is refused as
 /// `revision-not-current` (as is `read_acceptance_delta`), naming which is behind (a refusal kind a screen shows in its words
 /// and does not branch on, so it is no new version).
-pub const COMMAND_SET_VERSION: u32 = 22;
+///
+/// 23: the owner can ask for every requirement of the list a request makes to be issued a new id
+/// (`request_generation`'s `fresh_ids`, kept on the request and said in its reply as
+/// `fresh_ids`), and a list that carries an id is then refused (`fresh-ids-not-issued`) before it
+/// is published. A screen written for 22 neither sends it nor reads it, and a core of 22 would
+/// refuse the argument as `bad-request`.
+pub const COMMAND_SET_VERSION: u32 = 23;
 
 /// A command that did not do what was asked, in a shape every shell can pass on.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -550,6 +556,10 @@ struct RequestGeneration {
     /// run needs of it from the settings; the screen does not say what that is.
     #[serde(default)]
     connection: Option<ConnectionRef>,
+    /// The owner asks for every requirement of the list the request makes to be issued a new id
+    /// (ADR 0012). Absent is not asked.
+    #[serde(default)]
+    fresh_ids: bool,
 }
 
 #[derive(Deserialize)]
@@ -707,6 +717,7 @@ fn request_json(work: &WorkId, view: &RequestView) -> Value {
         "candidate": request.candidate,
         "outcome": request.outcome,
         "pin": request.pin,
+        "fresh_ids": request.fresh_ids,
         "ended_at": request.ended_at,
         "note": request.note,
     })
@@ -1348,6 +1359,7 @@ fn request_generation<C: Clock>(
         expect,
         supersede,
         connection,
+        fresh_ids,
     } = arguments(args)?;
     let id = work_id(&id)?;
     // A press sent again is the request it made, whatever has become of the connection since:
@@ -1361,7 +1373,7 @@ fn request_generation<C: Clock>(
         (Some(wanted), false) => Some(pin_for(context.connections, wanted)?),
         _ => None,
     };
-    let made = context.works.register_request_for(
+    let made = context.works.register_request_with(
         &id,
         Registration {
             key: &key,
@@ -1373,6 +1385,7 @@ fn request_generation<C: Clock>(
             supersede,
         },
         pin,
+        fresh_ids,
     )?;
     let view = RequestView {
         request: made.request,

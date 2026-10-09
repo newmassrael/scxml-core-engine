@@ -78,3 +78,24 @@ edit("app-core/src/store.rs",
      "        if next > floor {\n            return Ok(());",
      "        if next > floor && false {\n            return Ok(());")
 PY
+
+# When the owner asked for every id to be issued afresh (`fresh-ids-not-issued`), a list that
+# carries one is not published. Each case below takes one part of that away.
+
+mutation_case "a list that carries an id the owner asked to retire is published" <<'PY'
+edit("app-core/src/store/bundle_store.rs",
+     "            if current.fresh_ids {",
+     "            if current.fresh_ids && false {")
+PY
+
+mutation_case "an id carried with its words is not counted as carried" <<'PY'
+edit("app-core/src/store.rs",
+     "        let mut carried: Vec<String> = moved[\"carried\"]",
+     "        let mut carried: Vec<String> = moved[\"carried-none\"]")
+PY
+
+mutation_case "an id carried with other words is not counted as carried" <<'PY'
+edit("app-core/src/store.rs",
+     "            moved[\"changed\"]",
+     "            moved[\"changed-none\"]")
+PY

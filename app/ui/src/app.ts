@@ -239,6 +239,12 @@ export class App {
   /** The newest request for the acceptance; an older one that answers later is dropped. */
   private acceptanceTicket = 0;
   /**
+   * The work the owner ticked "issue every requirement a new id" for. The tick is one press's
+   * and not a setting: it is put away when the request is made, and it is only of the work it was
+   * ticked on, so another work is never asked to retire its ids by what was ticked here.
+   */
+  private freshIdsFor: string | null = null;
+  /**
    * What the revision did since the owner accepted, beside the acceptance; `null` for a work
    * nobody accepted. It is asked with the acceptance and dropped with it (`acceptanceTicket`).
    */
@@ -532,6 +538,7 @@ export class App {
       return;
     }
     const session = this.session;
+    const fresh = this.freshIdsFor === work.id;
     this.requestBusy = "making";
     this.requestNotice = null;
     this.offerReplace = false;
@@ -551,8 +558,10 @@ export class App {
         { source: editor.base, answers: this.answers?.base ?? null },
         replace,
         this.ai?.connectionForRequest() ?? undefined,
+        fresh,
       );
       if (session !== this.session) return;
+      this.freshIdsFor = null;
       this.requestHead = {
         id: registered.request.id,
         state: registered.request.state,
@@ -2020,6 +2029,7 @@ export class App {
         busyWords ?? this.generationWords(status, modelHere),
       ),
       this.ai === null ? null : h("p", { id: "generation-target", class: "muted" }, this.ai.targetLine()),
+      controls.canGenerate ? this.freshIdsOption() : null,
       this.requestNotice === null
         ? null
         : h(
@@ -2897,6 +2907,33 @@ export class App {
       textarea.focus();
       textarea.setSelectionRange(textarea.value.length, textarea.value.length);
     }
+  }
+
+  /**
+   * "Issue every requirement a new id": offered when the work already has a requirement list, for
+   * there is no id to retire in a first one. It is one press's: ticking it asks the next request
+   * to retire every id the work has and number the new ones on, never from R1, and the tick is put
+   * away when that request is made. What happens to a list that does not do it is the core's.
+   */
+  private freshIdsOption(): HTMLElement | null {
+    const work = this.selected;
+    const listed = this.acceptance !== null && this.acceptance.phase === "read";
+    if (work === null || !listed) return null;
+    return h(
+      "label",
+      { id: "fresh-ids-option", class: "fresh-ids" },
+      h("input", {
+        id: "fresh-ids",
+        type: "checkbox",
+        checked: this.freshIdsFor === work.id,
+        onchange: (event: Event) => {
+          this.freshIdsFor = (event.target as HTMLInputElement).checked ? work.id : null;
+        },
+      }),
+      " ",
+      this.t("freshIdsLabel"),
+      h("span", { class: "muted" }, ` ${this.t("freshIdsHint")}`),
+    );
   }
 
   /**

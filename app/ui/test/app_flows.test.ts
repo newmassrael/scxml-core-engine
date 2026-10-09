@@ -41,6 +41,8 @@ interface FakeRequest {
   note: string | null;
   /** The connection it was made for, as the core would copy it, or none. */
   pin: { connection: string; revision: string; model: string | null } | null;
+  /** The owner asked for every requirement to be issued a new id. */
+  freshIds: boolean;
 }
 
 interface Gate {
@@ -261,6 +263,7 @@ class FakeCore implements Transport {
               model: request.pin.model,
               limits: { turns: null, seconds: null },
             },
+      fresh_ids: request.freshIds,
       ended_at: null,
       note: request.note,
     };
@@ -516,6 +519,7 @@ class FakeCore implements Transport {
                   revision: named.revision,
                   model: this.connectionList.find((c) => c.id === named.id)?.model ?? null,
                 },
+          freshIds: args["fresh_ids"] === true,
         };
         this.requestsOf.set(id, [...(this.requestsOf.get(id) ?? []), request]);
         return { request: this.requestJson(id, request), created: true };
@@ -2123,6 +2127,68 @@ describe("accepting the design", () => {
     expect(lines(".acceptance .tally li")).toEqual(["1 implemented: a node of the design carries it", "1 waived"]);
     expect(lines(".acceptance .tally li.unsettled")).toEqual([]);
     expect(acceptanceText()).not.toContain("leaves unsettled");
+  });
+
+  describe("asking for every requirement to be issued a new id", () => {
+    const tick = (): HTMLInputElement | null => root.querySelector<HTMLInputElement>("#fresh-ids");
+    const pressGenerate = async (): Promise<void> => {
+      (root.querySelector("#generate") as HTMLButtonElement).click();
+      await settle();
+    };
+    const asked = (): Record<string, unknown> | undefined => core.callsOf("request_generation").at(-1);
+
+    it("is offered when the work has a requirement list, and is not ticked", async () => {
+      await click("Alpha");
+
+      expect(tick()).not.toBeNull();
+      expect(tick()?.checked).toBe(false);
+      expect(root.querySelector("#fresh-ids-option")?.textContent).toContain("Issue every requirement a new id");
+    });
+
+    it("is not offered where there is no list to renumber", async () => {
+      core.setModel("beta", "<scxml/>", headOf("beta"));
+      await click("Beta");
+
+      expect(root.querySelector(".acceptance")).not.toBeNull();
+      expect(tick()).toBeNull();
+    });
+
+    it("asks nothing of the kind when it was not ticked", async () => {
+      await click("Alpha");
+      await pressGenerate();
+
+      expect(asked()).toBeDefined();
+      expect(asked()).not.toHaveProperty("fresh_ids");
+    });
+
+    it("asks for it, once, when it was ticked", async () => {
+      await click("Alpha");
+      const box = tick() as HTMLInputElement;
+      box.checked = true;
+      box.dispatchEvent(new Event("change"));
+      await pressGenerate();
+
+      expect(asked()?.["fresh_ids"]).toBe(true);
+      // The tick was one press's: it is put away when the request is made.
+      expect(core.latestRequest("alpha")?.freshIds).toBe(true);
+      await click("Cancel the request");
+      expect(tick()?.checked).toBe(false);
+    });
+
+    it("is of the work it was ticked on, not of the next one the owner opens", async () => {
+      core.setModel("beta", "<scxml/>", headOf("beta"));
+      core.setRequirements("beta", headOf("beta"));
+      await click("Alpha");
+      const box = tick() as HTMLInputElement;
+      box.checked = true;
+      box.dispatchEvent(new Event("change"));
+
+      await click("Beta");
+      expect(tick()?.checked).toBe(false);
+      await pressGenerate();
+
+      expect(asked()).not.toHaveProperty("fresh_ids");
+    });
   });
 
   it("tells the owner of the gaps before they accept, and still lets them accept", async () => {

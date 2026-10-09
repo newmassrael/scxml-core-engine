@@ -138,6 +138,33 @@ impl Fixture {
             .id
     }
 
+    /// The same, the owner asking for every id to be issued afresh.
+    fn ask_fresh(&self, key: &str) -> String {
+        let answers = self
+            .store
+            .read_answers(&self.id, None)
+            .unwrap()
+            .map(|a| a.revision);
+        self.store
+            .register_request_with(
+                &self.id,
+                Registration {
+                    key,
+                    origin: "gui",
+                    expect: Inputs {
+                        source: self.store.head(&self.id).unwrap().unwrap(),
+                        answers,
+                    },
+                    supersede: false,
+                },
+                None,
+                true,
+            )
+            .unwrap()
+            .request
+            .id
+    }
+
     fn config(&self) -> RunnerConfig {
         let mut config = RunnerConfig::named("desktop");
         // A heartbeat and a poll that a test can wait for.
@@ -249,6 +276,70 @@ fn the_generator_is_asked_about_the_text_and_the_answers_the_request_was_made_ab
     let previous = job.previous.as_ref().expect("the work had a model");
     assert!(previous.model.entry_text().contains("earlier"));
     assert!(job.refusal.is_none(), "nothing was refused yet");
+    assert!(!job.fresh_ids, "the owner asked for nothing of the kind");
+}
+
+#[test]
+fn the_generator_is_told_when_the_owner_asked_for_every_id_to_be_issued_afresh() {
+    let f = fixture("runner-job-fresh");
+    f.ask_fresh("press-1");
+    let generator = Scripted::new(|_, _, _| Ok(draft("one")));
+    let runner = f.runner(&generator, f.config());
+
+    runner.run_once().unwrap();
+
+    let jobs = generator.asked();
+    assert_eq!(jobs.len(), 1);
+    assert!(jobs[0].fresh_ids, "the job does not say what was asked");
+}
+
+/// A draft whose list is the shared list `name` (`sce-build/tests/fixtures/revision_judgment`):
+/// the lineage a real build of it made, so that a store that judges a lineage reads it.
+fn listed(name: &str, tag: &str) -> Draft {
+    let all: serde_json::Value = serde_json::from_str(include_str!(
+        "../../sce-build/tests/fixtures/revision_judgment/cases.json"
+    ))
+    .expect("the cases are JSON");
+    let list = &all["lists"][name];
+    let text = |key: &str| list[key].as_str().expect("a text").to_string();
+    Draft {
+        model: ModelFiles::single(format!("<scxml><!-- {tag} --></scxml>")),
+        requirements: Requirements::new(text("manifest_text"), Some(text("sidecar_text")))
+            .and_then(|list| list.with_lineage(Some(text("lineage_text"))))
+            .expect("a list the product's stand-in reads"),
+    }
+}
+
+#[test]
+fn a_list_that_carries_an_id_the_owner_asked_to_retire_is_written_again_from_the_refusal() {
+    // The owner asked for every id to be issued afresh and the first draft carries them, as a
+    // model that did not read the ask would write it. The request is not failed for that: what the
+    // core said is given back and the draft is written again, as it is for a model SCE refused.
+    let f = fixture("runner-fresh-repair");
+    f.ask("press-1");
+    let first = Scripted::new(|_, _, _| Ok(listed("first", "one")));
+    f.runner(&first, f.config()).run_once().unwrap();
+
+    let request = f.ask_fresh("press-2");
+    let generator = Scripted::new(|n, _, _| {
+        Ok(if n == 0 {
+            listed("second", "carries")
+        } else {
+            listed("fresh", "afresh")
+        })
+    });
+    let outcome = f.runner(&generator, f.config()).run_once().unwrap();
+
+    assert!(matches!(outcome, Outcome::Completed { .. }), "{outcome:?}");
+    assert_eq!(f.state_of(&request), State::Completed);
+    let jobs = generator.asked();
+    assert_eq!(jobs.len(), 2, "the draft was written again, once");
+    assert!(jobs[0].refusal.is_none());
+    let said = jobs[1]
+        .refusal
+        .as_deref()
+        .expect("the second try is told what was wrong");
+    assert!(said.contains("R1") && said.contains("fresh"), "{said}");
 }
 
 #[test]

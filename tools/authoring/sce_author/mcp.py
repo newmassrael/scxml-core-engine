@@ -3404,6 +3404,13 @@ _WORKS_REFUSED_NEXT = {
         "`requirements.lineage_text` as `lineage_text` and `requirements.sidecar_text` as "
         "`previous_sidecar_text`, and save the manifest_text, sidecar_text and lineage_text it "
         "returns together"),
+    "fresh-ids-not-issued": (
+        "the owner asked for every requirement of this request to be issued a new id, and the "
+        "list you saved carries an id the work already had: build the list again with "
+        "scxml_requirement_set giving `fresh` set to true beside `requirements.lineage_text` "
+        "and `requirements.sidecar_text` as `previous_sidecar_text`, save the manifest_text, "
+        "sidecar_text and lineage_text it returns together, and say works_finish_generation "
+        "again"),
     "lineage-numbers-reused": (
         "the lineage this work keeps cannot be read by this build, and the one you gave numbers "
         "its next id from one a list of this work has already carried: build the list again "

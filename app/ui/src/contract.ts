@@ -10,7 +10,7 @@
 // later core may add some); missing or mistyped ones are not.
 
 /** The command set this screen was written for (`COMMAND_SET_VERSION` in the core). */
-export const SUPPORTED_COMMAND_SET_VERSION = 22;
+export const SUPPORTED_COMMAND_SET_VERSION = 23;
 
 /** A revision: the SHA-256 of a saved text, as 64 lowercase hex digits. */
 export type Revision = string;
@@ -625,6 +625,12 @@ export interface GenerationRequest {
    * run may spend, and nothing of where a server is or what the person calls it.
    */
   readonly pin: RequestPin | null;
+  /**
+   * The owner asked for every requirement of the list it makes to be issued a new id: a list that
+   * still carries an id is refused before it is published. `false` for a request that did not ask,
+   * and for every request made before the ask existed.
+   */
+  readonly fresh_ids: boolean;
   readonly ended_at: string | null;
   /** Why it ended or was let go of, in words. */
   readonly note: string | null;
@@ -1337,9 +1343,18 @@ export function parseGenerationRequest(value: unknown, where = "request"): Gener
         ? null
         : { bundle: revision(record(outcome, `${where}.outcome`)["bundle"], `${where}.outcome.bundle`) },
     pin: r["pin"] === null || r["pin"] === undefined ? null : parseRequestPin(r["pin"], `${where}.pin`),
+    fresh_ids: optionalFlag(r, "fresh_ids", where),
     ended_at: nullableText(r, "ended_at", where),
     note: nullableText(r, "note", where),
   };
+}
+
+/** A flag a core of an earlier version does not say: absent is `false`, and what is not a boolean is refused. */
+function optionalFlag(r: Record<string, unknown>, key: string, where: string): boolean {
+  const value = r[key];
+  if (value === undefined || value === false) return false;
+  if (value === true) return true;
+  throw new ContractError(`${where}.${key}`, "true or false");
 }
 
 function parseRequestPin(value: unknown, where: string): RequestPin {

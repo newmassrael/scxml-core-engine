@@ -435,6 +435,22 @@ impl<C: Clock> WorkStore<C> {
         registration: Registration<'_>,
         pin: Option<Pin>,
     ) -> Result<Registered, StoreError> {
+        self.register_request_with(id, registration, pin, false)
+    }
+
+    /// The same, asking too for every requirement of the list the request makes to be issued a
+    /// new id (`fresh_ids`, ADR 0012). The list is held to it before it is published.
+    ///
+    /// Unlike the connection, it is an input of the key: a press that asked for fresh ids is not
+    /// the press that did not, and the first answered under the second's name would say the ask
+    /// was made when it was not.
+    pub fn register_request_with(
+        &self,
+        id: &WorkId,
+        registration: Registration<'_>,
+        pin: Option<Pin>,
+        fresh_ids: bool,
+    ) -> Result<Registered, StoreError> {
         if registration.key.is_empty() || registration.key.len() > KEY_MAX {
             return Err(bad(
                 "bad-key",
@@ -462,11 +478,12 @@ impl<C: Clock> WorkStore<C> {
         }
 
         if let Some(same) = requests.iter().find(|r| r.key == registration.key) {
-            if same.inputs != registration.expect {
+            if same.inputs != registration.expect || same.fresh_ids != fresh_ids {
                 return Err(StoreError::refused(
                     "key-reused",
                     format!(
-                        "the key was used for another request ({}), about other revisions",
+                        "the key was used for another request ({}), about other revisions or \
+                         asking another way to number the ids",
                         same.id
                     ),
                     json!({ "request": same.id }),
@@ -532,6 +549,7 @@ impl<C: Clock> WorkStore<C> {
             registration.origin.to_string(),
             registration.expect,
             pin,
+            fresh_ids,
             &now,
         );
         persist(&dir, None, &request, &now)?;
