@@ -2340,6 +2340,8 @@ fn parse_content_line_codec(head: &Line<'_>, body: &[&Line<'_>]) -> Result<Codec
             required: false,
             max_size: None,
             max_count: None,
+            separator: None,
+            max_values: None,
         };
         let mut rest = lw[5..].iter();
         while let Some(word) = rest.next() {
@@ -2353,6 +2355,13 @@ fn parse_content_line_codec(head: &Line<'_>, body: &[&Line<'_>]) -> Result<Codec
                 "required" => entry.required = true,
                 "max-size" => entry.max_size = Some(number("max-size")?),
                 "max-count" => entry.max_count = Some(number("max-count")?),
+                "max-values" => entry.max_values = Some(number("max-values")?),
+                "separator" => {
+                    let separator = rest
+                        .next()
+                        .ok_or_else(|| fail("`separator` needs a character".to_string()))?;
+                    entry.separator = Some((*separator).to_string());
+                }
                 "param" => {
                     let name = rest
                         .next()

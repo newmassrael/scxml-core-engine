@@ -2848,6 +2848,32 @@ pub struct ContentLineEntry {
     /// (at least 2); the entry is then a bounded list of values.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_count: Option<u32>,
+    /// `sce:separator` (`,` or `;`): the value of one line is a list of values
+    /// cut at it (docs/adr/0014). Requires [`Self::max_values`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub separator: Option<String>,
+    /// `sce:max-values` (at least 2): the most values one line holds when it
+    /// has a [`Self::separator`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_values: Option<u32>,
+}
+
+impl ContentLineModel {
+    /// Whether the codec has an entry whose lines are records — a repeated
+    /// property that declares a parameter, or any entry whose line holds a list of
+    /// values — the shape a content-line generator must give a unit of its own
+    /// (docs/adr/0014). One answer, read by the generator's refusal and by every
+    /// backend that learns the shape.
+    pub fn uses_line_records(&self) -> bool {
+        self.entries.iter().any(|entry| {
+            entry.param.is_none()
+                && (entry.separator.is_some()
+                    || (entry.max_count.is_some()
+                        && self.entries.iter().any(|p| {
+                            p.param.is_some() && p.property.eq_ignore_ascii_case(&entry.property)
+                        })))
+        })
+    }
 }
 
 impl CodecModel {

@@ -234,13 +234,6 @@ fn a_property_is_one_entry_and_a_parameter_follows_the_entry_of_its_property() {
 
     let why = refusal(&document(
         "",
-        r#"    <data id="v" sce:type="string" sce:property="ATTENDEE" sce:max-count="4" sce:max-size="8"/>
-    <data id="p" sce:type="string" sce:property="ATTENDEE" sce:param="CN" sce:max-size="8"/>"#,
-    ));
-    assert!(why.contains("repeated property"), "{why}");
-
-    let why = refusal(&document(
-        "",
         r#"    <data id="a" sce:type="uint8" sce:property="N"/>
     <data id="a" sce:type="uint8" sce:property="M"/>"#,
     ));
@@ -371,6 +364,126 @@ fn a_bound_and_a_text_mark_are_held_to_the_kind_they_qualify() {
 fn a_codec_with_no_property_is_refused() {
     let why = refusal(&document("", ""));
     assert!(why.contains("sce:property"), "{why}");
+}
+
+/// A repeated property declares the parameters its lines carry, and `sce:separator`
+/// with `sce:max-values` makes the value of a line a list (docs/adr/0014).
+const RECORDS: &str = r#"    <data id="exdate" sce:type="string" sce:property="EXDATE" sce:max-count="64" sce:max-size="32" sce:separator="," sce:max-values="8"/>
+    <data id="exdateTzid" sce:type="string" sce:property="EXDATE" sce:param="TZID" sce:max-size="64"/>
+    <data id="attendee" sce:type="string" sce:property="ATTENDEE" sce:max-count="100" sce:max-size="256"/>
+    <data id="attendeeCn" sce:type="string" sce:property="ATTENDEE" sce:param="CN" sce:max-size="64"/>
+    <data id="categories" sce:type="string" sce:property="CATEGORIES" sce:value="text" sce:max-size="32" sce:separator="," sce:max-values="4"/>"#;
+
+#[test]
+fn a_repeated_property_takes_parameters_and_a_line_may_hold_a_list_of_values() {
+    let m = codec(&document(
+        "",
+        &format!(
+            "    <data id=\"uid\" sce:type=\"string\" sce:property=\"UID\" sce:max-size=\"8\"/>\n{RECORDS}"
+        ),
+    ));
+    let content = m.content_line.as_ref().expect("a content-line codec");
+    let exdate = content.entries.iter().find(|e| e.id == "exdate").unwrap();
+    assert_eq!(exdate.max_count, Some(64));
+    assert_eq!(exdate.separator.as_deref(), Some(","));
+    assert_eq!(exdate.max_values, Some(8));
+    let tzid = content
+        .entries
+        .iter()
+        .find(|e| e.id == "exdateTzid")
+        .unwrap();
+    assert_eq!(tzid.param.as_deref(), Some("TZID"));
+    let categories = content
+        .entries
+        .iter()
+        .find(|e| e.id == "categories")
+        .unwrap();
+    assert!(categories.text && categories.max_count.is_none());
+    assert!(content.uses_line_records());
+
+    // Neither shape is read for a codec without them: the one that has a repeated
+    // property and nothing else keeps its present form.
+    let plain = codec(&document("", EVENT));
+    assert!(!plain.content_line.as_ref().unwrap().uses_line_records());
+
+    // The page shows them and reads them back.
+    let doc = ForgeDocument::Codec(m);
+    let page = pseudo::render(&doc).expect("a content-line codec renders");
+    assert!(
+        page.contains("separator , max-values 8") && page.contains("separator , max-values 4"),
+        "{page}"
+    );
+    let back = unpseudo::parse(&page).expect("the page reads back");
+    assert_eq!(
+        unpseudo::ir_for_comparison(&back).expect("serializes"),
+        unpseudo::ir_for_comparison(&doc).expect("serializes"),
+        "the round trip changed the codec:\n{page}"
+    );
+}
+
+#[test]
+fn a_separator_and_its_bound_are_held_to_the_entry_they_qualify() {
+    let one = |extra: &str| {
+        refusal(&document(
+            "",
+            &format!(
+                r#"    <data id="v" sce:type="string" sce:property="V" sce:max-size="8"{extra}/>"#
+            ),
+        ))
+    };
+    // Not a separator this encoding has.
+    assert!(
+        one(r#" sce:separator=":" sce:max-values="4""#).contains("sce:separator"),
+        "a colon ends the property name"
+    );
+    // The two stand together.
+    assert!(one(r#" sce:separator="," "#).contains("sce:max-values"));
+    assert!(one(r#" sce:max-values="4""#).contains("sce:separator"));
+    // A list has two members at least.
+    assert!(one(r#" sce:separator="," sce:max-values="1""#).contains("at least 2"));
+    // On a string value entry only.
+    let why = refusal(&document(
+        "",
+        r#"    <data id="n" sce:type="uint8" sce:property="N" sce:separator="," sce:max-values="4"/>"#,
+    ));
+    assert!(why.contains("sce:separator"), "{why}");
+    let why = refusal(&document(
+        "",
+        r#"    <data id="v" sce:type="string" sce:property="V" sce:max-size="8"/>
+    <data id="p" sce:type="string" sce:property="V" sce:param="P" sce:max-size="8" sce:separator="," sce:max-values="4"/>"#,
+    ));
+    assert!(
+        why.contains("sce:separator") && why.contains("parameter"),
+        "{why}"
+    );
+}
+
+/// The shapes the decision adds are declared and checked, and no backend generates
+/// them yet, so each refuses them by name; the codec that uses neither is still
+/// generated everywhere.
+#[test]
+fn a_line_record_is_refused_by_name_until_a_backend_generates_it() {
+    let m = codec(&document(
+        "",
+        &format!(
+            "    <data id=\"uid\" sce:type=\"string\" sce:property=\"UID\" sce:max-size=\"8\"/>\n{RECORDS}"
+        ),
+    ));
+    for lang in [
+        Language::Rust,
+        Language::Kotlin,
+        Language::Cpp,
+        Language::Go,
+        Language::Python,
+        Language::C11,
+    ] {
+        assert!(!content_line_codec::lowers_line_records(lang), "{lang:?}");
+        let why = content_line_codec::refusal(lang, &m).expect("refused by name");
+        assert!(
+            why.contains("record") && why.contains("docs/adr/0014"),
+            "{lang:?}: {why}"
+        );
+    }
 }
 
 /// Every backend generates a content-line codec, and the generator's refusal and

@@ -2165,6 +2165,59 @@ fn parse_content_line_entry(
     };
     let max_size = positive("max-size")?;
     let max_count = positive("max-count")?;
+    let max_values = positive("max-values")?;
+    // `sce:separator` makes the value of one line a list (docs/adr/0014). The
+    // two attributes stand together: a list with no bound has no storage a backend
+    // can size, and a bound with no separator has nothing to bound.
+    let separator = match sce_attr(node, "separator").as_deref() {
+        None => None,
+        Some(one @ ("," | ";")) => Some(one.to_string()),
+        Some(other) => {
+            return Err(refuse(ValidationError::InvalidAttribute {
+                element,
+                attr: "sce:separator".into(),
+                value: other.to_string(),
+                allowed: vec![",".into(), ";".into()],
+            }))
+        }
+    };
+    if separator.is_some() && (param.is_some() || sce_type != SceType::String) {
+        return Err(refuse(ValidationError::AttributeRuleViolated {
+            element,
+            attr: "sce:separator".into(),
+            value: separator.clone().unwrap_or_default(),
+            rule: "a list of values on a string property entry only: a parameter holds one \
+                   value, and an integer or bool is not a list"
+                .into(),
+        }));
+    }
+    match (&separator, max_values) {
+        (Some(_), None) => {
+            return Err(refuse(ValidationError::MissingAttribute {
+                element,
+                attr: "sce:max-values".into(),
+            }))
+        }
+        (None, Some(count)) => {
+            return Err(refuse(ValidationError::AttributeRuleViolated {
+                element,
+                attr: "sce:max-values".into(),
+                value: count.to_string(),
+                rule: "a bound on the values of a line, which needs the sce:separator that \
+                       cuts the line into them"
+                    .into(),
+            }))
+        }
+        (Some(_), Some(count)) if count < 2 => {
+            return Err(refuse(ValidationError::AttributeRuleViolated {
+                element,
+                attr: "sce:max-values".into(),
+                value: count.to_string(),
+                rule: "at least 2: a line of one value is not a list".into(),
+            }))
+        }
+        _ => {}
+    }
     if max_size.is_some() && sce_type != SceType::String {
         return Err(refuse(ValidationError::AttributeRuleViolated {
             element,
@@ -2196,8 +2249,8 @@ fn parse_content_line_entry(
     }
 
     // The property's value entry is one entry; a parameter names one declared
-    // before it; neither repeats, and a repeated property takes no parameter
-    // (docs/adr/0010, decision 4).
+    // before it; neither repeats. A repeated property takes parameters: each of
+    // its lines is then a record that holds them (docs/adr/0014).
     let owner = before
         .iter()
         .find(|e| e.param.is_none() && e.property.eq_ignore_ascii_case(&property));
@@ -2232,16 +2285,6 @@ fn parse_content_line_entry(
                     ),
                 }));
             }
-            if owner.max_count.is_some() {
-                return Err(refuse(ValidationError::AttributeRuleViolated {
-                    element,
-                    attr: "sce:param".into(),
-                    value: name.clone(),
-                    rule: "no parameter on a repeated property: each of its lines would need \
-                           its own, which is a list of records"
-                        .into(),
-                }));
-            }
             if before.iter().any(|e| {
                 e.property.eq_ignore_ascii_case(&property)
                     && e.param
@@ -2268,6 +2311,8 @@ fn parse_content_line_entry(
         required,
         max_size,
         max_count,
+        separator,
+        max_values,
     })
 }
 
@@ -11466,6 +11511,9 @@ const KNOWN_SCE_ATTRS: &[&str] = &[
     "max-delta",
     "max-iter",
     "max-size",
+    // The most values one line of a content-line codec entry holds, when it has a
+    // `sce:separator` (docs/adr/0014).
+    "max-values",
     "monitor",
     "offset",
     "on-enter",
@@ -11495,6 +11543,9 @@ const KNOWN_SCE_ATTRS: &[&str] = &[
     "returns-max-size",
     "sample-interval",
     "scale",
+    // The character that cuts the value of one line of a content-line codec entry
+    // into a list (docs/adr/0014).
+    "separator",
     "service",
     "strict-variants",
     "subfunc",

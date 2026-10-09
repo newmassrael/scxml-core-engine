@@ -3241,6 +3241,12 @@ fn render_content_line_codec(m: &CodecModel) -> Vec<Node> {
             if let Some(n) = e.max_count {
                 let _ = write!(line, " max-count {n}");
             }
+            if let Some(separator) = &e.separator {
+                let _ = write!(line, " separator {separator}");
+            }
+            if let Some(n) = e.max_values {
+                let _ = write!(line, " max-values {n}");
+            }
             out.line(&line);
         }
     });

@@ -1450,6 +1450,15 @@
             "null"
           ]
         },
+        "max_values": {
+          "description": "`sce:max-values` (at least 2): the most values one line holds when it has a [`Self::separator`].",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "param": {
           "description": "`sce:param`: when set, this entry is the named parameter of [`Self::property`] and not its value.",
           "type": [
@@ -1472,6 +1481,13 @@
             }
           ],
           "description": "`string`, an integer, `bool` or `enum:<alias>`; a parameter is a `string` or an `enum:<alias>`."
+        },
+        "separator": {
+          "description": "`sce:separator` (`,` or `;`): the value of one line is a list of values cut at it (docs/adr/0014). Requires [`Self::max_values`].",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "text": {
           "description": "`sce:value=\"text\"` on a `string` value: an RFC 5545 TEXT, so `\\\\`, `\\;`, `\\,` and `\\n` are escapes on both sides.",

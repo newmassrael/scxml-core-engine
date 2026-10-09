@@ -1245,10 +1245,12 @@ of its `<datamodel>` that names a property:
 | `sce:property` | The property the entry reads and writes. Matched case-insensitively on decode, written as declared. Letters, digits and hyphens. |
 | `sce:type` | `string`, an integer (`uint8`–`uint64`, `int8`–`int64`) or `bool` (`TRUE`/`FALSE`). A parameter is a `string`. An `enum:<alias>` entry waits on a codec that names variants (`docs/adr/0010`, *Not now*) and is refused. |
 | `sce:value="text"` | On a `string` value: an RFC 5545 TEXT, so `\\`, `\;`, `\,` and `\n` are escapes on both sides. Without it the value is carried as written — a date-time, an `RRULE` and a URI are not TEXT. |
-| `sce:param` | The entry is the named parameter of the property `sce:property` names, not its value. It follows the entry of that property. |
+| `sce:param` | The entry is the named parameter of the property `sce:property` names, not its value. It follows the entry of that property. On a property with `sce:max-count` it is a field of the record each line becomes, optional or required per line (`docs/adr/0014`). |
 | `sce:required="true"` | A decode of a component without the property, or whose property lacks the parameter, is refused. A required parameter belongs to a required property. An entry that is not required is optional in every language. |
 | `sce:max-size` | Required on every `string`: the most bytes it holds, after unescaping. |
-| `sce:max-count` | On a `string` value, at least 2: the most lines of the property a component holds. The entry is then a bounded list of values in line order. |
+| `sce:max-count` | On a `string` value, at least 2: the most lines of the property a component holds. The entry is then a bounded list of values in line order, or of line records when the property declares a parameter (`docs/adr/0014`). |
+| `sce:separator` | On a `string` value: `,` or `;`, the character that cuts the value of one line into a list of values. Requires `sce:max-values`. Not on a parameter, an integer or a `bool`. (`docs/adr/0014`) |
+| `sce:max-values` | With `sce:separator`, at least 2: the most values one line holds. `sce:max-count` counts lines and this counts the values of one; neither stands for the other. |
 
 **Wire rules.** These are written once, here, and every backend's runtime
 implements exactly them; the conformance corpus holds each to the same bytes.
@@ -1323,6 +1325,26 @@ matching `END:<component>`. The cursor ends after that line.
 Decode raises the first failure in line order; an input that breaks two rules is
 refused for the one met first.
 
+*Line records and lists of values (`docs/adr/0014`).* A repeated property that
+declares a parameter reads each of its lines into a record of that line, holding
+the parameters the line carries and its value; a parameter is optional or
+required per line, and a line that lacks a required one is
+`line-required-missing`, raised at that line. A parameter is read as a
+single-valued property's is: a declared one is kept, an undeclared one is skipped,
+a declared one holds one value and appears once. With `sce:separator` the value of
+a line is a list: it is cut at the separator **before** it is unescaped, and for a
+TEXT a separator preceded by `\` is part of the value (`a\,b,c` is the two values
+`a,b` and `c`), while any other value has no escape and every separator cuts.
+Each part is then unescaped and held to `sce:max-size`. An empty part (`a,,b`,
+`,a`, `a,`) is `line-bad-value`, and more parts than `sce:max-values` is
+`line-too-many`, raised when the line is read. Encode writes a record's present
+parameters in declaration order, then `:` and its values joined by the separator
+with no space; a TEXT value writes its escapes as it always does, so a value that
+holds the separator is escaped and is still one value on the way back. A record
+with no value, and a required list with none, is `line-required-missing`. An
+entry with no parameter declared and no separator keeps the shape it had, a list
+of values.
+
 | Failure | Wire name | Raised for |
 |---|---|---|
 | `NeedMoreBytes` | `need-more-bytes` | the input ends before the component does |
@@ -1343,8 +1365,9 @@ encoding: `sce:byte`, `sce:bit-offset`, `sce:bit-size`, `sce:endian`,
 `<sce:flags>`, `<sce:repeat>`, `<sce:tlv-chain>`, `<sce:embed>`, `<sce:variant>`,
 `<sce:flag-inputs>` and `<sce:test-vector>` elements. Two entries of one property,
 two parameters of one name on a property, a parameter with no entry of its property
-before it, and a parameter on a property that has `sce:max-count` (each of its lines
-would need its own parameters, which is a list of records this encoding does not have).
+before it, a `sce:separator` other than `,` or `;`, one without `sce:max-values`
+or `sce:max-values` without it, a `sce:max-values` below 2, and a `sce:separator`
+on a parameter, an integer or a `bool`.
 
 **Generation.** Rust generates a content-line codec: a struct whose string values
 are `heapless::String<N>` of their `sce:max-size`, whose optional entries are
@@ -1389,6 +1412,12 @@ refused (`SCE_FORGE_CODEC_LINE_MALFORMED`, `_REQUIRED_MISSING`, `_TOO_MANY`,
 `_TOO_LONG`, `_BAD_ESCAPE`, `_BAD_VALUE`, or `_NEED_MORE_BYTES`) and leaves the
 cursor where it was. `<NAME>_MAX_BYTES` is the most a component encodes to, folds
 and escapes included, so a buffer of that size never overflows.
+
+A codec that gives a line a record or a list of values (a repeated property that
+declares a parameter, or a `sce:separator`) is declared, checked and described by
+every backend's input, and generated by none yet: each refuses it by name
+(`content_line_codec::lowers_line_records`) until its own commit generates it
+against the same vectors (`docs/adr/0014`, decision 5).
 
 Every backend generates it, and the generator's refusal and the conformance
 harness's schedule read one answer (`content_line_codec::refusal`). The vectors
