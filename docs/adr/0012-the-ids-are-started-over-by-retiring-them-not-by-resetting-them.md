@@ -134,6 +134,30 @@ on its own (the weaker guarantee ADR 0011 names), and a test pins that boundary.
 be read as a list is not counted: it is damage that a read names, not something this save refuses
 for.
 
+### The boundary, measured and left (2026-10-09)
+
+Measured with a test that was not kept: a work whose list was made before lineages (`third`, ids
+R1-R4 and R6) was given a lineage built without it (`reworded`, which numbers from R6 and has R5
+live). The adopted lineage of the first is not continued by the second (`extends` says so), and the
+store published it. That is the weaker guarantee, not a defect of the judgment.
+
+Closing it in the store was tried and not kept. Judging the first lineage against the one adopting
+the held list (`of_list`, then `extends`) refuses what the weaker guarantee exists to allow: the
+same list gaining its lineage, and a first lineage over a list whose ids were reworded in between.
+Two tests that pin the boundary (`a_lineage_can_be_gained_and_then_continued`,
+`a_work_that_never_had_a_lineage_is_not_held_to_the_ids_of_its_lists`) went red, and the adopted
+lineage's first revision has no specification digest, so a lineage built the ordinary way cannot
+extend it. A rule that tells that case from a reissue would be a new judgment in `sce-revision` and
+its Python reference, with its own shared cases.
+
+What decides whether it is worth doing is not in the store. ADR 0011 item 7 has the CLIENT adopt:
+the first build against a work with no lineage passes the manifest and the sidecar as the previous
+list. The task every run is given does not say so (it names `requirements.lineage_text` only), so
+a client that is not told renumbers the list from a first-list build. The task text is what a
+Codex version is verified against, so teaching it is one verification with the real client, owed
+to the owner's go-ahead. Until either is done a work that predates lineages is revised under the
+weaker guarantee; a request for fresh ids is not affected (it is judged in the manifests, above).
+
 ## What was measured
 
 `tools/authoring/tests/test_a_requirement_keeps_its_id_when_its_specification_is_revised.py`,
