@@ -2956,9 +2956,16 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * waiting send and performs it itself ([awaitNextExternalEvent]), so the
      * host is owed no wake-up at all. The two modes disagree about who owns the
      * clock, and this answers for whichever one this engine is in.
+     *
+     * A restore that re-armed a host-run invocation owes the machine a tick
+     * before any clock does: the invocation is started at the top of the first
+     * macrostep and the deadline it keeps is armed there, so until that tick no
+     * send is waiting and a host asleep on the answer would never drive the
+     * machine at all. That is `0`, now.
      */
     fun timeUntilNextScheduledMs(): Long? {
         if (!syncMode) return null
+        if (restoredHostInvokes.isNotEmpty()) return 0L
         val own = scheduledSends.firstOrNull()?.fireTimeMs
             ?.let { maxOf(0L, it - engineElapsedMs()) }
 

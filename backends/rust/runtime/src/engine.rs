@@ -3202,7 +3202,17 @@ impl<P: StatePolicy> Engine<P> {
     /// two. Counting only the parent's own made a host that walked time by it
     /// step over a timer its child had armed — or, for a parent that arms
     /// nothing itself, be told there was nothing to wait for at all.
+    ///
+    /// A restore that re-armed a host-run invocation owes the machine a tick
+    /// before any clock does: the invocation is started at the top of the first
+    /// macrostep, and the deadline it keeps is armed there, so until that tick
+    /// the scheduler holds nothing to wait for and a host asleep on the answer
+    /// would never drive the machine at all. That is "now", `Some(0)`.
     pub fn time_until_next_scheduled_ms(&self) -> Option<u64> {
+        #[cfg(not(feature = "no_std"))]
+        if !self.restored_host_invokes.is_empty() {
+            return Some(0);
+        }
         let own = self
             .scheduler
             .next_ready_at()

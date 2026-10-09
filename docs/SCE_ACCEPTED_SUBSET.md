@@ -4797,6 +4797,13 @@ right reading. An invoker that is not registered by then is the `error.execution
 a document's own start gets, and a state that leaves before the restart began
 cancels it without telling the host anything: the engine never started it.
 
+Until that macrostep nothing is armed, but the machine is not idle: the start is
+owed now. The wake-up query a host sleeps on (`Engine::time_until_next_scheduled_ms`
+in Rust, `timeUntilNextScheduledMs()` in Kotlin's synchronous mode) answers `0`
+for a restored machine that holds a start it has not made, so a host that drives
+the machine by that answer drives it at once and does not wait for a clock that
+has nothing to say yet.
+
 `hostinvoketoken` carries the token the next start receives, and a restore carries
 on from it. A token is distinct for every start within one engine (§scxml-6.4: a
 cancelled process's late reply is ignored), and a restored process that counted

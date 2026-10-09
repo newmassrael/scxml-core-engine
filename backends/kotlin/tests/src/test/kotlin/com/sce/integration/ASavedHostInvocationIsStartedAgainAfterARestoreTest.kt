@@ -201,6 +201,27 @@ class ASavedHostInvocationIsStartedAgainAfterARestoreTest {
         }
     }
 
+    /**
+     * A host drives a machine by asking when it next needs a tick and sleeping that
+     * long. A restored invocation owes the machine a tick before anything else: it is
+     * started in the first macrostep, and the deadline it keeps is armed there. A
+     * machine that answered "nothing" would be left asleep for good, holding an
+     * invocation no one had started.
+     */
+    @Test
+    fun aRestoredMachineOwingAStartSaysItNeedsATickNow() {
+        for (elapsedMs in listOf(1000L, 6000L)) {
+            withRestored(shared, elapsedMs) { sm, _ ->
+                assertEquals(
+                    0L,
+                    sm.timeUntilNextScheduledMs(),
+                    "$elapsedMs ms after the save, before any tick",
+                )
+                sm.tick()
+            }
+        }
+    }
+
     @Test
     fun whatTheFirstRunHandedAHostCannotAnswerForTheSecond() {
         // Token 0 belonged to the process that saved the machine. A late reply

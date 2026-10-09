@@ -215,6 +215,24 @@ fn a_deadline_that_passed_while_the_machine_was_away_ends_the_invocation_unstart
     assert_eq!(standing_in(&engine), [State::Failed]);
 }
 
+/// A host drives a machine by asking when it next needs a tick and sleeping that long
+/// (`Engine::time_until_next_scheduled_ms`). A restored invocation owes the machine a tick
+/// before anything else: it is started in the first macrostep, and the deadline it keeps
+/// is armed there. A machine that answered "nothing" would be left asleep for good, holding
+/// an invocation no one had started.
+#[test]
+fn a_restored_machine_owing_a_start_says_it_needs_a_tick_now() {
+    for elapsed_ms in [1000, 6000] {
+        let (mut engine, _log) = restored(SHARED_RUNNING, elapsed_ms);
+        assert_eq!(
+            engine.time_until_next_scheduled_ms(),
+            Some(0),
+            "{elapsed_ms} ms after the save, before any tick"
+        );
+        engine.tick();
+    }
+}
+
 #[test]
 fn what_the_first_run_handed_a_host_cannot_answer_for_the_second() {
     // Token 0 belonged to the process that saved the machine. A late reply
