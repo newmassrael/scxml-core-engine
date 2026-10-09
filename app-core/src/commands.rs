@@ -269,7 +269,7 @@ const SETTINGS_WRITE: &[&str] = &[
 /// `unknown-command`. A list the product cannot say anything of the words of is refused as
 /// `revision-not-judged`, in the sentence a person is told, and a report asked for after the
 /// text was changed and before the model or the list was written again for it is refused as
-/// `revision-not-current`, naming which is behind (a refusal kind a screen shows in its words
+/// `revision-not-current` (as is `read_acceptance_delta`), naming which is behind (a refusal kind a screen shows in its words
 /// and does not branch on, so it is no new version).
 pub const COMMAND_SET_VERSION: u32 = 22;
 
@@ -873,10 +873,11 @@ fn now_of(
     })
 }
 
-/// A report of what a revision did is about the model and the list written for the text the
-/// work has now. When the text was changed and one of them was not written again, the list the
-/// work holds is the list the owner accepted (or an earlier one) and comparing the two would
-/// call it "all carried over" for a revision nobody made. Only a part known to be written for
+/// What a revision did (`read_revision_report`) and what moved since the owner accepted
+/// (`read_acceptance_delta`) are about the model and the list written for the text the work has
+/// now. When the text was changed and one of them was not written again, the list the work
+/// holds is the list the owner accepted (or an earlier one) and comparing the two would call it
+/// "all carried over" or "unchanged" for a revision nobody made. Only a part known to be written for
 /// an earlier text is held back: one that cannot say what it was written for is judged as it
 /// always was (an acceptance is never taken of one, so it is one saved after).
 fn refuse_what_is_behind_the_text(now: &WorkNow) -> Result<(), CommandError> {
@@ -2087,6 +2088,7 @@ fn call_works<C: Clock>(
                 .requirements
                 .ok_or_else(|| none_saved("a requirement list", &id))?;
             let now = now_of(source, model, requirements, state.answers)?;
+            refuse_what_is_behind_the_text(&now)?;
             let lines = renderer.delta_acceptance(&now.snapshot, &acceptance.record)?;
             // The manifest the record pinned (its document, revision and digest), so a caller
             // that holds a words-side comparison can say it is about THIS list and not another

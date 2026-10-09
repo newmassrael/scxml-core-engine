@@ -185,7 +185,9 @@ def read_acceptance_delta(work: str) -> dict:
     list: document, revision and digest) and `lines` (the product's own, `None` for a work
     nobody accepted). A report and not a verdict: the acceptance lapses by its bytes
     (`read_acceptance`), and `unchanged` is the product's closure of what a requirement depends
-    on reading the same. A record the product cannot compare is refused in its words."""
+    on reading the same. A record the product cannot compare is refused in its words, and a
+    work whose text was changed after its design or list was written for it is held back
+    (`revision-not-current`): what they say "has not moved" would be of the earlier text."""
     return call_work("read_acceptance_delta", {"id": work})
 
 

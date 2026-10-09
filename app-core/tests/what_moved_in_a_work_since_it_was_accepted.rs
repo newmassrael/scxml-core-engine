@@ -16,6 +16,8 @@
 //!   requirement `unchanged`;
 //! * a design that moved says `changed` for what depends on it, and the answer carries the
 //!   acceptance, the manifest it pinned and the revisions the comparison was made at;
+//! * a text changed after the design and the list were written for it holds the answer back
+//!   (`revision-not-current`), as it does for the revision report;
 //! * the product not answering is the command's refusal, and nothing is invented. A record the
 //!   real product cannot compare (made before it kept the rows, or under another rule) is
 //!   refused in its words, which only the real product can be asked for: that is held in
@@ -200,4 +202,23 @@ fn the_product_not_answering_is_the_commands_refusal_and_nothing_is_invented() {
     )
     .expect_err("the product did not answer");
     assert_eq!(refused.kind, "sce-timeout", "{refused:?}");
+}
+
+#[test]
+fn a_text_changed_after_the_design_was_written_holds_the_answer_back() {
+    // The design and the list the work holds answer the text the owner accepted, so "nothing
+    // moved" would be true of them and say nothing of the text as it is now.
+    let (store, id, source) = accepted("delta-behind");
+    command(
+        &store,
+        "save_source",
+        json!({"id": id, "text": "The door opens for a card.", "base": source}),
+    )
+    .unwrap();
+
+    let refused = command(&store, "read_acceptance_delta", json!({"id": id})).unwrap_err();
+
+    assert_eq!(refused.kind, "revision-not-current", "{refused:?}");
+    assert_eq!(refused.detail["requirements"], "behind", "{refused:?}");
+    assert_eq!(refused.detail["model"], "behind", "{refused:?}");
 }
