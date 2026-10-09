@@ -47,8 +47,8 @@ pub fn lowers(lang: Language) -> bool {
 /// would be the silent loss the decision exists to end.
 pub fn lowers_line_records(lang: Language) -> bool {
     match lang {
-        Language::Python | Language::Go | Language::Kotlin | Language::Rust => true,
-        Language::Cpp | Language::C11 => false,
+        Language::Python | Language::Go | Language::Kotlin | Language::Rust | Language::Cpp => true,
+        Language::C11 => false,
     }
 }
 

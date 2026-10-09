@@ -17,10 +17,22 @@ out.{{ e.name }}.push_back({{ expr }});
     grammar — unfolding, TEXT escapes, quoting — is the runtime's
     (`SCE::Forge::ContentLine`); this spells none of it. #}
 {% macro read_value(e) %}
-{% if e.kind == "string" %}
+{% if e.separator %}
+                auto v = line->read_strings('{{ e.separator }}', {{ e.max_values }}, {{ e.max_size }}, {{ "true" if e.text else "false" }});
+                if (!v) return std::nullopt;
+{% if e.is_records %}
+                rec.{{ e.value_member }} = std::move(*v);
+{% else %}
+                {{ store(e, "std::move(*v)") }}
+{% endif %}
+{% elif e.kind == "string" %}
                 auto v = line->read_string({{ e.max_size }}, {{ "true" if e.text else "false" }});
                 if (!v) return std::nullopt;
+{% if e.is_records %}
+                rec.{{ e.value_member }} = std::move(*v);
+{% else %}
                 {{ store(e, "std::move(*v)") }}
+{% endif %}
 {% elif e.kind == "bool" %}
                 const auto v = line->read_bool();
                 if (!v) return std::nullopt;
@@ -39,7 +51,9 @@ out.{{ e.name }}.push_back({{ expr }});
 {#- The write of one property's value `v`, its name and parameters already
     written. #}
 {% macro write_value(e) %}
-{% if e.kind == "string" %}
+{% if e.separator %}
+            if (auto e = out.strings(v, '{{ e.separator }}', {{ "true" if e.text else "false" }}, {{ e.max_size }}, {{ e.max_values }})) return e;
+{% elif e.kind == "string" %}
             if (auto e = out.string(v, {{ "true" if e.text else "false" }}, {{ e.max_size }})) return e;
 {% elif e.kind == "bool" %}
             if (auto e = out.boolean(v)) return e;
@@ -49,14 +63,15 @@ out.{{ e.name }}.push_back({{ expr }});
             if (auto e = out.integer(static_cast<std::int64_t>(v))) return e;
 {% endif %}
 {% endmacro %}
-{#- The parameters of a property, each written when present. #}
-{% macro write_params(e) %}
+{#- The parameters of a property, each written when present, read from `holder`
+    ("" for the codec itself, "rec." for the record of one line). #}
+{% macro write_params(e, holder) %}
 {% for p in e.params %}
 {% if p.required %}
-            if (auto e = out.param("{{ p.param }}", {{ p.name }}, {{ p.max_size }})) return e;
+            if (auto e = out.param("{{ p.param }}", {{ holder }}{{ p.name }}, {{ p.max_size }})) return e;
 {% else %}
-            if ({{ p.name }}.has_value()) {
-                if (auto e = out.param("{{ p.param }}", *{{ p.name }}, {{ p.max_size }})) return e;
+            if ({{ holder }}{{ p.name }}.has_value()) {
+                if (auto e = out.param("{{ p.param }}", *{{ holder }}{{ p.name }}, {{ p.max_size }})) return e;
             }
 {% endif %}
 {% endfor %}
@@ -88,20 +103,41 @@ out.{{ e.name }}.push_back({{ expr }});
 
 namespace SCE::Generated::{{ namespace }} {
 
+{% for e in entries if e.is_records %}
+/// One line of `{{ e.property }}` (docs/adr/0014): the parameters it carries and
+/// its {% if e.separator %}list of values, cut at `{{ e.separator }}`{% else %}value{% endif %}. A parameter that may be absent is `std::nullopt`.
+struct {{ e.record_type }} {
+{% for p in e.params %}
+    /// Parameter `{{ p.param }}`{% if p.required %}, required{% endif %}.
+    {{ p.field_type }} {{ p.name }}{};
+{% endfor %}
+{% if e.separator %}
+    /// The values of the line, at most {{ e.max_values }}.
+    std::vector<std::string> {{ e.value_member }}{};
+{% else %}
+    /// The value of the line.
+    std::string {{ e.value_member }}{};
+{% endif %}
+};
+
+{% endfor %}
 /// One `{{ component }}` component of content lines (SCE_FORGE.md §4.6.4).
 /// Decode reads the properties this codec declares in any order and skips the
 /// rest; encode writes the entries present in declaration order, folded at 75
 /// octets. A required entry starts at its type's default and an optional one
 /// absent, so `{{ struct_name }}{}` is the infallible constructor every codec
-/// offers.
+/// offers. A repeated property that declares a parameter, or whose line holds a
+/// list of values, is a list of line records.
 struct {{ struct_name }} {
 {% for e in entries %}
-    /// Property `{{ e.property }}`{% if e.is_list %}, up to {{ e.max_count }} lines{% elif e.required %}, required{% endif %}.
+    /// Property `{{ e.property }}`{% if e.is_records %}, up to {{ e.max_count }} lines, each a record{% elif e.is_list %}, up to {{ e.max_count }} lines{% elif e.is_values %}, a list of at most {{ e.max_values }} values{% endif %}{% if e.required %}, required{% endif %}.
     {{ e.field_type }} {{ e.name }}{};
+{% if not e.is_records %}
 {% for p in e.params %}
     /// Parameter `{{ p.param }}` of `{{ e.property }}`{% if p.required %}, required{% endif %}.
     {{ p.field_type }} {{ p.name }}{};
 {% endfor %}
+{% endif %}
 {% endfor %}
 
     /// Decode one component from `cursor`. On success the cursor advances past
@@ -124,8 +160,20 @@ struct {{ struct_name }} {
         cl::Writer out(w, "{{ component }}");
         if (auto e = out.begin()) return e;
 {% for e in entries %}
-{% if e.is_list %}
+{% if e.is_records %}
         if ({{ e.name }}.size() > {{ e.max_count }}) return ::SCE::Forge::CodecError::LineTooMany;
+{% if e.required %}
+        if ({{ e.name }}.empty()) return ::SCE::Forge::CodecError::LineRequiredMissing;
+{% endif %}
+        for (const auto &rec : {{ e.name }}) {
+            const auto &v = rec.{{ e.value_member }};
+            if (auto e = out.property("{{ e.property }}")) return e;
+{{ write_params(e, "rec.") }}{{ write_value(e) }}        }
+{% elif e.is_list %}
+        if ({{ e.name }}.size() > {{ e.max_count }}) return ::SCE::Forge::CodecError::LineTooMany;
+{% if e.required %}
+        if ({{ e.name }}.empty()) return ::SCE::Forge::CodecError::LineRequiredMissing;
+{% endif %}
         for (const auto &v : {{ e.name }}) {
             if (auto e = out.property("{{ e.property }}")) return e;
 {{ write_value(e) }}        }
@@ -133,12 +181,12 @@ struct {{ struct_name }} {
         {
             const auto &v = {{ e.name }};
             if (auto e = out.property("{{ e.property }}")) return e;
-{{ write_params(e) }}{{ write_value(e) }}        }
+{{ write_params(e, "") }}{{ write_value(e) }}        }
 {% else %}
-        if ({{ e.name }}.has_value()) {
-            const auto &v = *{{ e.name }};
+        if ({{ ("!" ~ e.name ~ ".empty()") if e.is_values else (e.name ~ ".has_value()") }}) {
+            const auto &v = {{ e.name if e.is_values else "*" ~ e.name }};
             if (auto e = out.property("{{ e.property }}")) return e;
-{{ write_params(e) }}{{ write_value(e) }}        }{% if e.optional_params %} else if ({% for p in e.optional_params %}{% if not loop.first %} || {% endif %}{{ p.name }}.has_value(){% endfor %}) {
+{{ write_params(e, "") }}{{ write_value(e) }}        }{% if e.optional_params %} else if ({% for p in e.optional_params %}{% if not loop.first %} || {% endif %}{{ p.name }}.has_value(){% endfor %}) {
             // A parameter with no value of its property has no line to stand on.
             return ::SCE::Forge::CodecError::LineRequiredMissing;
         }{% endif %}
@@ -165,12 +213,14 @@ private:
         if (!reader) return std::nullopt;
         {{ struct_name }} out;
 {% for e in entries %}
-{% if not e.is_list %}
+{% if not (e.is_list or e.is_records) %}
         bool {{ e.name }}_present = false;
 {% endif %}
+{% if not e.is_records %}
 {% for p in e.params %}
         bool {{ p.name }}_present = false;
 {% endfor %}
+{% endif %}
 {% endfor %}
         for (;;) {
             auto line = reader->next();
@@ -180,10 +230,18 @@ private:
             }
 {% for e in entries %}
             {% if not loop.first %}else {% endif %}if (line->is("{{ e.property }}")) {
-{% if e.is_list %}
+{% if e.is_list or e.is_records %}
                 if (out.{{ e.name }}.size() >= {{ e.max_count }}) return std::nullopt;
 {% else %}
                 if ({{ e.name }}_present) return std::nullopt;
+{% endif %}
+{% if e.is_records %}
+{#- The parameters of this line live in the record of the line, and the line is
+    judged on them before its value is read. #}
+                {{ e.record_type }} rec;
+{% for p in e.params %}
+                bool {{ p.name }}_present = false;
+{% endfor %}
 {% endif %}
 {% if e.params %}
                 for (;;) {
@@ -196,21 +254,33 @@ private:
                         auto pv = line->read_param_string({{ p.max_size }});
                         if (!pv) return std::nullopt;
                         {{ p.name }}_present = true;
-                        out.{{ p.name }} = std::move(*pv);
+                        {{ "rec" if e.is_records else "out" }}.{{ p.name }} = std::move(*pv);
                     }
 {% endfor %}
                 }
 {% endif %}
-{{ read_value(e) }}            }
+{% if e.is_records %}
+{% for p in e.params if p.required %}
+                if (!{{ p.name }}_present) return std::nullopt;
+{% endfor %}
+{% endif %}
+{{ read_value(e) }}{% if e.is_records %}                out.{{ e.name }}.push_back(std::move(rec));
+{% endif %}            }
 {% endfor %}
         }
 {% for e in entries %}
 {% if e.required %}
+{% if e.is_list or e.is_records %}
+        if (out.{{ e.name }}.empty()) return std::nullopt;
+{% else %}
         if (!{{ e.name }}_present) return std::nullopt;
 {% endif %}
+{% endif %}
+{% if not e.is_records %}
 {% for p in e.params if p.required %}
         if (!{{ p.name }}_present) return std::nullopt;
 {% endfor %}
+{% endif %}
 {% endfor %}
         // Only a component that decoded whole moves the cursor.
         if (!c.advance(reader->consumed())) return std::nullopt;

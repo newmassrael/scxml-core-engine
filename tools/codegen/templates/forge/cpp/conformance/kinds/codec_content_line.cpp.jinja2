@@ -29,7 +29,25 @@
         CHECK(round_tripped.has_value(), "{{ f.name }} case %d decode returned nullopt", i);
         if (round_tripped.has_value()) {
 {% for field in f.fields %}
-{% if field.list %}
+{% if field.members %}
+            // A list of line records (docs/adr/0014), as the vector writes each: an
+            // object keyed by the parameter ids, then `value` or `values`.
+            {
+                auto got = nlohmann::json::array();
+                for (const auto &r : round_tripped->{{ field.name }}) {
+                    nlohmann::json o = nlohmann::json::object();
+{% for m in field.members %}
+{% if m.optional %}
+                    o["{{ m.name }}"] = r.{{ m.name }}.has_value() ? nlohmann::json(*r.{{ m.name }}) : nlohmann::json(nullptr);
+{% else %}
+                    o["{{ m.name }}"] = r.{{ m.name }};
+{% endif %}
+{% endfor %}
+                    got.push_back(std::move(o));
+                }
+                CHECK(got == decoded_json["{{ field.name }}"], "{{ f.name }} case %d decode {{ field.name }}", i);
+            }
+{% elif field.list %}
             CHECK(round_tripped->{{ field.name }} == decoded_json["{{ field.name }}"].get<std::vector<{{ field.type | cpp_type }}>>(),
                   "{{ f.name }} case %d decode {{ field.name }}", i);
 {% elif field.optional %}
@@ -50,7 +68,23 @@
         if (!decode_only) {
             SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.name | to_pascal_case }} _codec_val{};
 {% for field in f.fields %}
-{% if field.list %}
+{% if field.members %}
+            for (const auto &r : decoded_json["{{ field.name }}"]) {
+                SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.name | to_pascal_case }}{{ field.name | to_pascal_case }}Line rec;
+{% for m in field.members %}
+{% if m.list %}
+                rec.{{ m.name }} = r["{{ m.name }}"].get<std::vector<std::string>>();
+{% elif m.optional %}
+                if (!r["{{ m.name }}"].is_null()) {
+                    rec.{{ m.name }} = r["{{ m.name }}"].get<std::string>();
+                }
+{% else %}
+                rec.{{ m.name }} = r["{{ m.name }}"].get<std::string>();
+{% endif %}
+{% endfor %}
+                _codec_val.{{ field.name }}.push_back(std::move(rec));
+            }
+{% elif field.list %}
             _codec_val.{{ field.name }} = decoded_json["{{ field.name }}"].get<std::vector<{{ field.type | cpp_type }}>>();
 {% elif field.optional %}
             if (!decoded_json["{{ field.name }}"].is_null()) {

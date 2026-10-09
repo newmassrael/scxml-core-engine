@@ -405,6 +405,98 @@ void what_is_written_is_read_back() {
     }
 }
 
+// A line holding a list of values (docs/adr/0014).
+
+/// The values of line `V:<value>` read as a list, or the rule that refused it.
+struct ListOutcome {
+    std::optional<std::vector<std::string>> values;
+    std::optional<CodecError> error;
+};
+
+ListOutcome list_of(const std::string &value, char separator, std::size_t max_values, std::size_t max_size, bool text) {
+    const std::string text_in = "BEGIN:VEVENT\r\nV:" + value + "\r\nEND:VEVENT\r\n";
+    const Bytes in = bytes_of(text_in);
+    auto reader = cl::Reader::begin(in.data(), in.size(), "VEVENT");
+    auto line = reader->next();
+    ListOutcome out;
+    out.values = line->read_strings(separator, max_values, max_size, text);
+    if (!out.values) {
+        out.error = line->error();
+    }
+    return out;
+}
+
+void a_list_is_cut_at_the_separator_before_it_is_unescaped() {
+    using List = std::vector<std::string>;
+    CHECK(list_of("a,b,c", ',', 4, 8, false).values == List({"a", "b", "c"}), "a plain list");
+    CHECK(list_of("a\\,b,c", ',', 4, 8, true).values == List({"a,b", "c"}), "an escaped comma is a value's");
+    // Without TEXT there is no escape: a backslash is a byte and every separator cuts.
+    CHECK(list_of("a\\,b", ',', 4, 8, false).values == List({"a\\", "b"}), "no escape without TEXT");
+    CHECK(list_of("a;b,c", ',', 4, 8, true).values == List({"a;b", "c"}), "a semicolon is a value's");
+    CHECK(list_of("1;2", ';', 2, 8, false).values == List({"1", "2"}), "a list cut at a semicolon");
+    CHECK(list_of("a,b\r\n c", ',', 4, 8, false).values == List({"a", "bc"}), "a fold inside a part");
+}
+
+void a_list_is_refused_at_its_first_failing_part() {
+    const auto refused = [](const std::string &value, CodecError why) {
+        const auto got = list_of(value, ',', 3, 8, true);
+        CHECK(!got.values && got.error == why, value.c_str());
+    };
+    refused("", CodecError::LineBadValue);
+    refused("a,,b", CodecError::LineBadValue);
+    refused(",a", CodecError::LineBadValue);
+    refused("a,", CodecError::LineBadValue);
+    refused("a,b,c,d", CodecError::LineTooMany);
+    // A part past the bound is too many, whatever the part is.
+    refused("a,b,c,", CodecError::LineTooMany);
+    refused("a,b,c,xxxxxxxxxxxxxxx", CodecError::LineTooMany);
+    refused("xxxxxxxxxxxxxxx,,", CodecError::LineTooLong);
+    refused(",,xxxxxxxxxxxxxxx", CodecError::LineBadValue);
+    refused("a,b\\x", CodecError::LineBadEscape);
+    refused("a,b\\", CodecError::LineBadEscape);
+}
+
+void a_list_is_written_with_its_separator_and_held_before_it_is_written() {
+    const std::string text = written([](cl::Writer &w) {
+        CHECK(!w.property("C"), "name");
+        CHECK(!w.strings({"a,b", "c;d", "e\\f"}, ',', true, 8, 4), "a TEXT list");
+        CHECK(!w.property("G"), "name");
+        CHECK(!w.strings({"1", "2"}, ';', false, 8, 2), "a list cut at a semicolon");
+    });
+    CHECK(text == "BEGIN:VEVENT\r\nC:a\\,b,c\\;d,e\\\\f\r\nG:1;2\r\nEND:VEVENT\r\n", "the written lists");
+
+    Bytes out;
+    VectorSink sink(out);
+    cl::Writer w(sink, "VEVENT");
+    CHECK(!w.begin(), "begin");
+    CHECK(!w.property("C"), "name");
+    const auto before = out.size();
+    CHECK(w.strings({}, ',', false, 8, 4) == CodecError::LineRequiredMissing, "no values");
+    CHECK(w.strings({"a", "b", "c"}, ',', false, 8, 2) == CodecError::LineTooMany, "past the count");
+    CHECK(w.strings({"a", "abcdefghi"}, ',', false, 8, 4) == CodecError::LineTooLong, "past the size");
+    CHECK(w.strings({"a", ""}, ',', false, 8, 4) == CodecError::LineBadValue, "an empty value");
+    // Not a TEXT, so a separator in a value could not be told from a cut.
+    CHECK(w.strings({"a,b"}, ',', false, 8, 4) == CodecError::LineBadValue, "the separator in a value");
+    CHECK(w.strings({"a\nb"}, ',', false, 8, 4) == CodecError::LineBadValue, "a line feed outside a TEXT");
+    CHECK(out.size() == before, "something of a refused list reached the sink");
+}
+
+void a_text_list_is_read_back_as_written() {
+    const std::vector<std::vector<std::string>> lists = {
+        {"a"}, {"a,b", "c"}, {std::string(8, 'x'), "\xc3\xa9"}, {"a;b"}};
+    for (const auto &values : lists) {
+        const std::string text = written([&](cl::Writer &w) {
+            CHECK(!w.property("V"), "name");
+            CHECK(!w.strings(values, ',', true, 8, 4), "the list");
+        });
+        const Bytes in = bytes_of(text);
+        auto reader = cl::Reader::begin(in.data(), in.size(), "VEVENT");
+        auto line = reader->next();
+        const auto back = line->read_strings(',', 4, 8, true);
+        CHECK(back && *back == values, "the list read back");
+    }
+}
+
 }  // namespace
 
 int main() {
@@ -426,6 +518,10 @@ int main() {
     a_value_a_line_could_not_carry_is_refused_before_it_is_written();
     a_full_sink_is_reported_as_the_sink_reports_it();
     what_is_written_is_read_back();
+    a_list_is_cut_at_the_separator_before_it_is_unescaped();
+    a_list_is_refused_at_its_first_failing_part();
+    a_list_is_written_with_its_separator_and_held_before_it_is_written();
+    a_text_list_is_read_back_as_written();
     if (failures != 0) {
         std::fprintf(stderr, "%d check(s) failed\n", failures);
         return 1;

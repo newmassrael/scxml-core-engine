@@ -26,6 +26,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 namespace SCE::Forge::ContentLine {
 
@@ -298,6 +299,70 @@ public:
             buf.push_back(static_cast<char>(byte));
         }
         return utf8(std::move(buf));
+    }
+
+    /// Read the value as a list of `string` cut at `separator`, at most
+    /// `max_values` of them and each at most `max_size` bytes (docs/adr/0014). The
+    /// value is cut before it is unescaped: with `text` a separator that a
+    /// backslash precedes is part of the value, and with anything else every
+    /// separator cuts. The parts are judged left to right and the first failure is
+    /// the line's: a part past `max_values` is `LineTooMany`, even one that is
+    /// empty or too long; an empty part is `LineBadValue`.
+    [[nodiscard]] std::optional<std::vector<std::string>> read_strings(char separator, std::size_t max_values,
+                                                                       std::size_t max_size, bool text) {
+        if (!begin_value()) {
+            return std::nullopt;
+        }
+        std::vector<std::string> values;
+        std::string buf;
+        for (;;) {
+            const int b = scan_.bump();
+            if (b < 0 || b == static_cast<unsigned char>(separator)) {
+                if (buf.empty()) {
+                    return refuse<std::vector<std::string>>(CodecError::LineBadValue);
+                }
+                auto part = utf8(std::move(buf));
+                if (!part) {
+                    return std::nullopt;
+                }
+                values.push_back(std::move(*part));
+                buf = std::string();
+                if (b < 0) {
+                    return values;
+                }
+                // A separator opens another part, which may not pass the bound.
+                if (values.size() >= max_values) {
+                    return refuse<std::vector<std::string>>(CodecError::LineTooMany);
+                }
+                continue;
+            }
+            int byte = b;
+            if (text && b == '\\') {
+                switch (scan_.bump()) {
+                case '\\':
+                    byte = '\\';
+                    break;
+                case ';':
+                    byte = ';';
+                    break;
+                case ',':
+                    byte = ',';
+                    break;
+                case 'n':
+                case 'N':
+                    byte = 0x0A;
+                    break;
+                default:
+                    return refuse<std::vector<std::string>>(CodecError::LineBadEscape);
+                }
+            } else if (detail::is_control(b)) {
+                return refuse<std::vector<std::string>>(CodecError::LineBadValue);
+            }
+            if (buf.size() == max_size) {
+                return refuse<std::vector<std::string>>(CodecError::LineTooLong);
+            }
+            buf.push_back(static_cast<char>(byte));
+        }
     }
 
     /// Read the value as an unsigned integer of at most `max`.
@@ -739,6 +804,57 @@ public:
         }
         if (auto e = value_units(value, text)) {
             return e;
+        }
+        return end_line();
+    }
+
+    /// Write `:<value>{separator}<value>...` and end the line (docs/adr/0014). No
+    /// values is `LineRequiredMissing` and more than `max_values` is
+    /// `LineTooMany`. A value past `max_size` is `LineTooLong`; one with a control
+    /// character (but a TEXT's line feed), invalid UTF-8, an empty one, and one
+    /// that is not a TEXT and holds the separator are `LineBadValue`, because a
+    /// reader would cut or refuse them. Every value is held before any of the line
+    /// is written.
+    [[nodiscard]] std::optional<CodecError> strings(const std::vector<std::string> &values, char separator, bool text,
+                                                    std::size_t max_size, std::size_t max_values) {
+        if (values.empty()) {
+            return CodecError::LineRequiredMissing;
+        }
+        if (values.size() > max_values) {
+            return CodecError::LineTooMany;
+        }
+        for (const auto &value : values) {
+            if (value.size() > max_size) {
+                return CodecError::LineTooLong;
+            }
+            if (value.empty()) {
+                return CodecError::LineBadValue;
+            }
+            for (const char c : value) {
+                const int b = static_cast<unsigned char>(c);
+                if (detail::is_control(b) && !(text && b == detail::kLf)) {
+                    return CodecError::LineBadValue;
+                }
+                if (!text && c == separator) {
+                    return CodecError::LineBadValue;
+                }
+            }
+            if (!is_valid_utf8(reinterpret_cast<const std::uint8_t *>(value.data()), value.size())) {
+                return CodecError::LineBadValue;
+            }
+        }
+        if (auto e = unit_char(':')) {
+            return e;
+        }
+        for (std::size_t i = 0; i < values.size(); ++i) {
+            if (i > 0) {
+                if (auto e = unit_char(separator)) {
+                    return e;
+                }
+            }
+            if (auto e = value_units(values[i], text)) {
+                return e;
+            }
         }
         return end_line();
     }
