@@ -7,7 +7,9 @@
 # report an invented value — text no row of the document holds. Each case
 # puts part of the repair back: the one-too-many attribute not reported, the
 # first form reported in place of the second, `until-eof="false"` read as a
-# count, or the incomplete deploy form of `<sce:capacity>` let through. The
+# count, or the incomplete deploy form of a capacity source let through (the
+# one reader `<sce:capacity>` and a queue's `<sce:bounded>` and
+# `<sce:participants>` share). The
 # integration tests in `an_exactly_one_attribute_rule_reports_what_is_written.rs`
 # refuse them.
 #
@@ -40,10 +42,10 @@ mutation_case "a deploy form without its key is let through" <<'PY'
 edit("sce-build/src/forge/parser.rs",
      r'''                (Some(_), None) => {
                     return Err(located(
-                        &capacity_node,
-                        label.diagnostic_label,
+                        node,
+                        doc_name,
                         ValidationError::MissingAttribute {
-                            element: "<sce:capacity>".into(),
+                            element: element.into(),
                             attr: "key".into(),
                         },
                     ));
