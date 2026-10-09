@@ -29,6 +29,7 @@ import { apiOver, type Api } from "./api";
 import { answerState, type AnswerState } from "./answer_states";
 import { comparePages, previousOf, type ChangePanel } from "./change_model";
 import {
+  comparedNothing,
   countOf,
   panelOfFailure,
   panelOfRead,
@@ -2395,7 +2396,11 @@ export class App {
       case "read": {
         const report = panel.report;
         const verdict = verdictOf(report);
+        // A report that compared nothing is not a revision that stayed within reach, whatever its
+        // verdict word: the product says so in its own page, and the screen says no more than it.
+        const calm = verdict === "within-reach" && !comparedNothing(report);
         const total = countOf(report.summary, "requirements");
+        const seen = countOf(report.summary, "seen");
         const outside = countOf(report.summary, "violations");
         const look = countOf(report.summary, "look");
         return h(
@@ -2404,20 +2409,23 @@ export class App {
           heading,
           h(
             "p",
-            { class: verdict === "within-reach" ? "banner" : "banner banner-warn", role: "status" },
-            verdict === "within-reach"
-              ? this.t("revisionWithinReach")
-              : verdict === "outside-reach"
-                ? this.t("revisionOutsideReach")
-                : report.verdict,
+            { class: calm ? "banner" : "banner banner-warn", role: "status" },
+            comparedNothing(report)
+              ? this.t("revisionNothingCompared")
+              : verdict === "within-reach"
+                ? this.t("revisionWithinReach")
+                : verdict === "outside-reach"
+                  ? this.t("revisionOutsideReach")
+                  : report.verdict,
           ),
-          total === null || outside === null || look === null
+          total === null || seen === null || outside === null || look === null
             ? null
             : h(
                 "p",
                 {},
                 this.t("revisionCounts", {
                   count: String(total),
+                  seen: String(seen),
                   outside: String(outside),
                   look: String(look),
                 }),

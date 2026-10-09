@@ -78,7 +78,11 @@ fn status_of(kind: &str) -> u16 {
         "invalid-id" | "invalid-title" | "bad-request" | "bad-connection" => 400,
         // This shell is not where that is done: the desktop application is.
         "not-allowed-here" => 403,
-        "conflict" => 409,
+        // The work is not in a state the question can be answered in: the model or the list was
+        // written for an earlier text, so nothing is compared until it is written again.
+        "conflict" | "revision-not-current" => 409,
+        // The request was understood and the list it asks about says nothing of its words.
+        "revision-not-judged" => 422,
         "too-large" => 413,
         "busy" | "sce-unavailable" => 503,
         // SCE answered and said no to this model: the request was understood.
@@ -219,5 +223,22 @@ impl Shell {
             },
             Err(error) => Reply::command_error(status_of(&error.kind), &error),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::status_of;
+
+    /// A refusal the screen shows in the core's own sentence is not a server fault: a work whose
+    /// model or list was not written again for its text, and a list that says nothing of its
+    /// words, travel as the client's situation and not as a 500 that a monitor would count.
+    #[test]
+    fn a_revision_that_cannot_be_compared_travels_as_a_request_not_a_fault() {
+        assert_eq!(status_of("revision-not-current"), 409);
+        assert_eq!(status_of("revision-not-judged"), 422);
+        // What was already a conflict still is, and a kind nobody mapped is still a fault.
+        assert_eq!(status_of("conflict"), 409);
+        assert_eq!(status_of("a-kind-nobody-mapped"), 500);
     }
 }

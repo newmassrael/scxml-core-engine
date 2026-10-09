@@ -13,6 +13,7 @@ import { describe, expect, it } from "vitest";
 import { asCommandError, parseReadRevisionReport, type Basis, type RevisionReport } from "../src/contract";
 import { CommandFailure } from "../src/ipc";
 import {
+  comparedNothing,
   countOf,
   panelOfFailure,
   panelOfRead,
@@ -81,6 +82,14 @@ describe("the revision panel", () => {
     expect(stillShown(null, shown)).toBeNull();
     const held: RevisionPanel = { phase: "held", kind: "revision-not-current", message: "m" };
     expect(stillShown(held, shown)).toBe(held);
+  });
+
+  it("says a report compared nothing only when the product's own count of what it saw is zero", () => {
+    expect(comparedNothing(report())).toBe(false);
+    expect(comparedNothing({ ...report(), summary: { ...report().summary, seen: 0 } })).toBe(true);
+    // A count the product did not give is not a zero: nothing is guessed from its absence.
+    const { seen: _seen, ...without } = report().summary as Record<string, unknown>;
+    expect(comparedNothing({ ...report(), summary: without })).toBe(false);
   });
 
   it("reads only the numbers the product gave, and a verdict only in its two words", () => {

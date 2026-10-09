@@ -144,7 +144,9 @@ const en = {
   revisionFailed: "What the revision did since you accepted could not be read: {detail}",
   revisionWithinReach: "The revision stayed within the reach of what changed: the design moved only where the words did.",
   revisionOutsideReach: "The design moved where the words did not. Look at the report below.",
-  revisionCounts: "{count} requirements: {outside} outside the reach, {look} to look at again.",
+  revisionNothingCompared:
+    "Nothing was compared: no part of the design cites a requirement, so this report says nothing about the design. Read the report below.",
+  revisionCounts: "{count} requirements, {seen} compared: {outside} outside the reach, {look} to look at again.",
   revisionPage: "The report SCE wrote",
   requirementsCount: "SCE measured the design against {count} requirements ({denominator}).",
   requirementsCountUnstated: "SCE measured the design against {count} requirements.",
@@ -539,7 +541,9 @@ const ko: Record<Key, string> = {
   revisionFailed: "수락한 뒤 개정이 무엇을 했는지 읽지 못했습니다: {detail}",
   revisionWithinReach: "개정이 바뀐 것의 범위 안에 머물렀습니다. 설계는 문장이 바뀐 곳만 움직였습니다.",
   revisionOutsideReach: "설계가 문장이 바뀌지 않은 곳에서도 움직였습니다. 아래 보고서를 확인하세요.",
-  revisionCounts: "요구사항 {count}개 중 범위 밖 {outside}개, 다시 볼 곳 {look}개.",
+  revisionNothingCompared:
+    "비교한 것이 없습니다: 설계의 어느 부분도 요구사항을 인용하지 않아, 이 보고서는 설계에 대해 아무것도 말하지 않습니다. 아래 보고서를 읽으세요.",
+  revisionCounts: "요구사항 {count}개 중 {seen}개를 비교: 범위 밖 {outside}개, 다시 볼 곳 {look}개.",
   revisionPage: "SCE가 쓴 보고서",
   requirementsCount: "SCE가 설계를 요구사항 {count}개({denominator})에 대해 쟀습니다.",
   requirementsCountUnstated: "SCE가 설계를 요구사항 {count}개에 대해 쟀습니다.",

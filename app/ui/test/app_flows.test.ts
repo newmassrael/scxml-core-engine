@@ -279,6 +279,8 @@ class FakeCore implements Transport {
 
   /** What the revision report says the revision stayed within the reach of, when it compares at all. */
   revisionVerdict: "within-reach" | "outside-reach" = "within-reach";
+  /** Whether the report compared anything: a design that cites no requirement gives it nothing to compare. */
+  revisionCompares = true;
 
   /** What the owner accepted, as the core keeps it: the work as it stands now, stated on `channel`. */
   setAcceptance(id: string, channel = "direct"): void {
@@ -953,6 +955,8 @@ class FakeCore implements Transport {
             verdict: this.revisionVerdict,
             summary: {
               requirements: ids.length,
+              // What the product actually compared: nothing, when no node of the design cites one.
+              seen: this.revisionCompares ? ids.length : 0,
               violations: this.revisionVerdict === "outside-reach" ? 1 : 0,
               look: 0,
               ok: ids.length,
@@ -2324,7 +2328,7 @@ describe("accepting the design", () => {
 
     expect(revisionText()).toContain("What changed since you accepted");
     expect(revisionText()).toContain("The revision stayed within the reach of what changed");
-    expect(revisionText()).toContain("2 requirements: 0 outside the reach, 0 to look at again.");
+    expect(revisionText()).toContain("2 requirements, 2 compared: 0 outside the reach, 0 to look at again.");
     // The page is the product's, exactly as it wrote it.
     expect(root.querySelector(".acceptance .revision .page pre")?.textContent).toBe("REVISION REPORT\n  2 requirements\n");
   });
@@ -2337,6 +2341,21 @@ describe("accepting the design", () => {
     expect(revisionText()).toContain("The design moved where the words did not.");
     expect(root.querySelector(".acceptance .revision .banner-warn")).not.toBeNull();
     expect(revisionText()).toContain("1 outside the reach");
+  });
+
+  it("does not call a revision within reach when the product compared nothing, as its own page says", async () => {
+    // The product says "within-reach" with a warning that it saw no evidence for any requirement;
+    // the screen must not say more than the product does.
+    core.revisionCompares = false;
+    core.setAcceptance("alpha");
+    await click("Alpha");
+
+    expect(revisionText()).toContain("Nothing was compared");
+    expect(revisionText()).not.toContain("stayed within the reach");
+    expect(revisionText()).toContain("2 requirements, 0 compared");
+    expect(root.querySelector(".acceptance .revision .banner-warn")).not.toBeNull();
+    // The product's page is still there to read.
+    expect(root.querySelector(".acceptance .revision .page pre")).not.toBeNull();
   });
 
   it("has nothing to say of a revision for a work nobody accepted, and does not ask", async () => {

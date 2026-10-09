@@ -67,6 +67,16 @@ export function countOf(summary: Readonly<Record<string, unknown>>, key: string)
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+/**
+ * Whether the product compared nothing: a report that saw no evidence for any requirement (no
+ * node of the design cites one) says nothing of the design, whatever its verdict word, and the
+ * product says so in its own page. The screen must not say more than the product does, so a
+ * report that compared nothing is never shown as a revision that stayed within reach.
+ */
+export function comparedNothing(report: RevisionReport): boolean {
+  return countOf(report.summary, "seen") === 0;
+}
+
 /** The verdicts the product gives; any other word is shown as it was said. */
 export type Verdict = "within-reach" | "outside-reach";
 
