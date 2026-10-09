@@ -403,6 +403,17 @@ impl StaticTarget for JsTarget {
     fn bounded_bytes(&self, value: &str, capacity: u32) -> String {
         format!("{RUNTIME_GLOBAL}.boundedBytes({value}, {capacity})")
     }
+    // The list an algorithm returned is the array the variable holds, which the
+    // library holds to the variable's bound and throws past it, as it does a string.
+    fn list_within(
+        &self,
+        value: &str,
+        capacity: u32,
+        _symbol: &str,
+        _elem: &crate::forge::model::SceType,
+    ) -> String {
+        format!("{RUNTIME_GLOBAL}.within({value}, {capacity})")
+    }
     fn assign(&self, _target: &str, _value: &str) -> String {
         String::new()
     }

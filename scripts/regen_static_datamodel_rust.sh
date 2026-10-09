@@ -72,7 +72,7 @@ fi
 # algorithm_days_in_month: called from static_record's guard. algorithm_day_run:
 # its list is what static_list_assign takes whole. A machine's import names
 # each as `super::<name>`, so it is generated beside the machines.
-ALGORITHMS=(days_in_month day_run)
+ALGORITHMS=(days_in_month day_run day_repeat)
 # The standard algorithms sync_client imports, by their library names; each
 # is generated beside the machines under its own name, as a local one is.
 STD_ALGORITHMS=(sync/sync_failure sync/sync_retry_at sync/sync_delete_outcome sync/sync_upload_outcome)

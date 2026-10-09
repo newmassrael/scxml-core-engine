@@ -1,5 +1,6 @@
 // GENERATED -- DO NOT EDIT (scripts/regen_static_datamodel_rust.sh)
 
+pub mod day_repeat;
 pub mod day_run;
 pub mod days_in_month;
 pub mod static_block_ends_list_sm;

@@ -500,7 +500,9 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, AListTakesWhatAnAlgorithmReturnsWhole
     using Machine = G::static_list_assign::static_list_assign;
     Driver<Machine> driver({
         {"shown", [](const Machine &m) { return json(m.shown()); }},
+        {"few", [](const Machine &m) { return json(m.few()); }},
         {"first", [](const Machine &m) { return json(m.first()); }},
+        {"count", [](const Machine &m) { return json(m.count()); }},
         {"size", [](const Machine &m) { return json(m.size()); }},
         {"refusals", [](const Machine &m) { return json(m.refusals()); }},
     });

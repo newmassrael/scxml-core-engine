@@ -664,12 +664,20 @@ pub trait StaticTarget {
     /// `target = value`.
     fn assign(&self, target: &str, value: &str) -> String;
     /// `target = <the list value holds>` for the list variable `target`, `value`
-    /// being what an imported algorithm returns as a list with its failure
-    /// already passed on. The assignment by default, which is right where the
-    /// returned list is the list variable's own kind of value.
+    /// being [`Self::list_within`] of what an imported algorithm returns. The
+    /// assignment by default, which is right where that is the list variable's own
+    /// kind of value.
     fn assign_list(&self, target: &str, value: &str, _elem: &SceType) -> String {
         self.assign(target, value)
     }
+    /// What an imported algorithm returned as a list — `value`, its failure
+    /// already passed on — as the list variable of `capacity` elements holds it, or
+    /// the capacity failure recorded where every checked operation records one. An
+    /// algorithm's list may hold more than the bound it declared on a backend whose
+    /// lists grow, and a machine holds the same list wherever it runs, so the list it
+    /// takes is held to the variable's own bound. `symbol` is the callee as the
+    /// target calls it, for a target whose helper is the algorithm's own.
+    fn list_within(&self, value: &str, capacity: u32, symbol: &str, elem: &SceType) -> String;
     /// The annotation the machine's file begins with when it takes a list an
     /// algorithm returns: the opt-in to a type the call's result is held in, for a
     /// target whose language gates it. `None` for the others.
@@ -1150,9 +1158,9 @@ impl StaticTarget for KotlinTarget {
         format!("{target} = {value}")
     }
     // An algorithm's list is an array of its element; the machine's own is the
-    // immutable `List` of it.
-    fn assign_list(&self, target: &str, value: &str, _elem: &SceType) -> String {
-        format!("{target} = ({value}).toList()")
+    // immutable `List` of it, which a failure past the bound is thrown from.
+    fn list_within(&self, value: &str, capacity: u32, _symbol: &str, _elem: &SceType) -> String {
+        format!("com.sce.forge.runtime.SceChecked.within(({value}).toList(), {capacity})")
     }
     // The unsigned arrays an algorithm returns its list in are still
     // experimental in the standard library, and the machine holds one for the
@@ -1564,9 +1572,9 @@ impl StaticTarget for RustTarget {
         format!("{target} = {value};")
     }
     // An algorithm's list is a fixed-capacity owned list; the machine's own is a
-    // `Vec` of its elements.
-    fn assign_list(&self, target: &str, value: &str, _elem: &SceType) -> String {
-        format!("{target} = ({value}).as_slice().to_vec();")
+    // `Vec` of its elements, which a failure past the bound is returned from.
+    fn list_within(&self, value: &str, capacity: u32, _symbol: &str, _elem: &SceType) -> String {
+        format!("sce_forge_runtime::algorithm::within(({value}).as_slice(), {capacity})?.to_vec()")
     }
     fn assign_field(&self, target: &str, field: &str, value: &str) -> String {
         format!("{target}.{field} = {value};")
@@ -3296,6 +3304,11 @@ impl StaticTarget for CppTarget {
     fn assign(&self, target: &str, value: &str) -> String {
         format!("{target} = {value};")
     }
+    // An algorithm's list is the `std::vector` the machine's own is, counted by
+    // its `size()` as a byte string is.
+    fn list_within(&self, value: &str, capacity: u32, _symbol: &str, _elem: &SceType) -> String {
+        format!("SCE::Forge::Checked::bounded(sce_failure_, {value}, {capacity}u)")
+    }
     // The count is the engine's the action is handed.
     fn fresh_send_id(&self) -> String {
         "engine.nextAutoSendId()".to_string()
@@ -3877,6 +3890,10 @@ impl StaticTarget for GoTarget<'_> {
     fn assign(&self, target: &str, value: &str) -> String {
         format!("{target} = {value}")
     }
+    // An algorithm's list is the slice the machine's own is.
+    fn list_within(&self, value: &str, capacity: u32, _symbol: &str, _elem: &SceType) -> String {
+        format!("scealgorithm.Within(&sceFailure, {value}, {capacity})")
+    }
     // The count is the engine's the action is handed.
     fn fresh_send_id(&self) -> String {
         "engine.NextAutoSendID()".to_string()
@@ -4369,9 +4386,10 @@ impl StaticTarget for PythonTarget {
     fn assign(&self, target: &str, value: &str) -> String {
         format!("{target} = {value}")
     }
-    // The machine's list is its own: a copy of the one the algorithm returned.
-    fn assign_list(&self, target: &str, value: &str, _elem: &SceType) -> String {
-        format!("{target} = list({value})")
+    // The machine's list is its own: a copy of the one the algorithm returned,
+    // which a failure past the bound is raised from.
+    fn list_within(&self, value: &str, capacity: u32, _symbol: &str, _elem: &SceType) -> String {
+        format!("sce_algorithm.bounded(list({value}), {capacity})")
     }
     // The count is the engine's the action is handed, which spells the id
     // `_auto_send_` and the number, as every backend does.
@@ -5287,7 +5305,10 @@ impl StaticTarget for CTarget {
     }
     // The list an algorithm returned is its result struct, read from `items` and
     // `len`; the machine's own list is the library's `{len, data[bound]}`, which the
-    // judge has held to at least as many as the algorithm may return.
+    // algorithm's own `_within` has held to the variable's bound.
+    fn list_within(&self, value: &str, capacity: u32, symbol: &str, _elem: &SceType) -> String {
+        format!("{symbol}_within(&sce_failure_, {value}, {capacity}u)")
+    }
     fn assign_list(&self, target: &str, value: &str, _elem: &SceType) -> String {
         format!(
             "memcpy({target}.data, {value}.items, {value}.len * sizeof({target}.data[0])); \
@@ -6116,16 +6137,27 @@ fn lower_action(
                     let returned_list = rewrites
                         .lists
                         .get(location)
-                        .and_then(|(elem, _)| match elem {
-                            crate::forge::model::ListElemType::Scalar(elem) => Some(elem.clone()),
+                        .and_then(|(elem, capacity)| match elem {
+                            crate::forge::model::ListElemType::Scalar(elem) => {
+                                Some((elem.clone(), *capacity))
+                            }
                             crate::forge::model::ListElemType::Record { .. } => None,
                         })
-                        .and_then(|elem| {
+                        .and_then(|(elem, capacity)| {
                             let (whole, _) = crate::forge::expr::called_names(&action.expr).ok()?;
-                            Some((elem, whole?))
+                            Some((elem, capacity, whole?))
                         });
+                    // The list is taken as the variable holds it: held to the
+                    // variable's own bound, whatever the algorithm did past its own.
+                    if let Some((elem, capacity, alias)) = &returned_list {
+                        let symbol = renames.get(alias.as_str()).copied().unwrap_or(alias);
+                        value = Receiving {
+                            text: target.list_within(&value.text, *capacity, symbol, elem),
+                            can_fail: true,
+                        };
+                    }
                     let write = |v: &str| {
-                        if let Some((elem, _)) = &returned_list {
+                        if let Some((elem, _, _)) = &returned_list {
                             target.assign_list(name, v, elem)
                         } else if is_string {
                             target.assign_string(name, v)
@@ -6137,7 +6169,7 @@ fn lower_action(
                     };
                     // A target that names the type of the local the returned list
                     // is held in while it is computed.
-                    let held_list = returned_list.as_ref().and_then(|(_, alias)| {
+                    let held_list = returned_list.as_ref().and_then(|(_, _, alias)| {
                         target.list_result_type(renames.get(alias.as_str()).copied()?)
                     });
                     match &whole_record {

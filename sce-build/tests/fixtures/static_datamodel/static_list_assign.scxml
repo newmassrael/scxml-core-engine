@@ -11,14 +11,22 @@
   `shown` is declared to hold. A call that fails — `first + i` overflows a
   uint8 past 255 — leaves the list as it was, skips the statement it stands in,
   ends the block and raises error.execution, as every failing statement does.
+
+  `Repeat` holds at most four, and a call for five goes past it: the algorithm's
+  own list fails there on some backends and grows on others. `few` holds the four,
+  and the machine's list is held to that bound on every backend, so a list of five
+  is the same failure wherever it runs.
   `refusals` counts the error.execution events the document answers.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="showing" datamodel="sce-static" name="static_list_assign">
   <sce:import kind="algorithm" src="algorithm_day_run.scxml" as="Range"/>
+  <sce:import kind="algorithm" src="algorithm_day_repeat.scxml" as="Repeat"/>
   <datamodel>
     <data id="shown" sce:type="list&lt;uint8&gt;" sce:capacity="8" sce:direction="out"/>
     <data id="first" sce:type="uint8" expr="10" sce:direction="out"/>
+    <data id="few" sce:type="list&lt;uint8&gt;" sce:capacity="4" sce:direction="out"/>
+    <data id="count" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="size" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>
   </datamodel>
@@ -34,6 +42,14 @@
     <transition event="empty" type="internal">
       <assign location="shown" expr="Range(first, 0)"/>
       <assign location="size" expr="len(shown)"/>
+    </transition>
+    <transition event="repeat" type="internal">
+      <assign location="few" expr="Repeat(first, 3)"/>
+      <assign location="count" expr="len(few)"/>
+    </transition>
+    <transition event="overrun" type="internal">
+      <assign location="few" expr="Repeat(first, 5)"/>
+      <assign location="count" expr="len(few)"/>
     </transition>
     <transition event="late" type="internal">
       <assign location="first" expr="253"/>

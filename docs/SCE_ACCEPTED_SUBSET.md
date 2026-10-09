@@ -4098,10 +4098,19 @@ the same list wherever it runs and a bound that could be passed would be an over
 later. The element types agree or the assignment is refused naming both. A call
 that fails is a failed statement like any other: the list is left as it was, the
 statement and the rest of its block do not run, and `error.execution` says so
-(W3C SCXML 4.9). `scenarios/static_list_assign.json` holds this on every engine
-that runs the model, and Rust, Kotlin, C++, Go, Python and C each hold the
-returned list in the form their algorithm returns it before the variable takes a
-copy — the machine's own list is never the algorithm's.
+(W3C SCXML 4.9).
+
+The bound is held at run time as well, because an algorithm's list does not hold
+it the same way everywhere: past its own capacity it fails on Rust and C11 and
+grows on the backends whose lists are heap-backed (SCE_FORGE.md §4.12). A list
+the machine would take that holds more than the variable's `sce:capacity` is that
+same capacity failure on every backend — the list is not held, and `error.execution`
+says so — so the machine's list is never longer than its declaration, whatever the
+algorithm did. The list is taken as a copy in the machine's own form (Rust a `Vec`,
+Kotlin an immutable `List`, C a `{len, data[bound]}` the library's view reads), never
+the algorithm's own. `scenarios/static_list_assign.json` holds all of this on every
+engine that runs the model, the Interpreter included, which holds the same bound
+through the library its lowered document installs.
 
 **Code generation.** A backend lowers the model once its templates hold
 the variables as fields and route every expression through the forge

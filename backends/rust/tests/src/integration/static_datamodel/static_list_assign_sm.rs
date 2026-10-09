@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 596ac4b1afa5b66720218d6a44ed9e9093342daa23116ea6b40585ea85ed56ab
+// source-hash: ee37533f857b01b43223ccdf57f0449c0b326ab00d940ee5b3e09fb6a557b07f
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -72,9 +72,10 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
-#![doc = "SCE-MAP: static_list_assign.scxml:16 :: _machine"]
-// SCE-MAP: static_list_assign.scxml:16 :: _machine
+#![doc = "SCE-MAP: static_list_assign.scxml:21 :: _machine"]
+// SCE-MAP: static_list_assign.scxml:21 :: _machine
 
+use super::day_repeat;
 use super::day_run;
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -100,6 +101,8 @@ pub enum StaticListAssignEvent {
     Empty,
     ErrorExecution,
     Late,
+    Overrun,
+    Repeat,
     Show,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
@@ -125,6 +128,8 @@ impl StaticListAssignEvent {
         StaticListAssignEvent::All,
         StaticListAssignEvent::Empty,
         StaticListAssignEvent::Late,
+        StaticListAssignEvent::Overrun,
+        StaticListAssignEvent::Repeat,
         StaticListAssignEvent::Show,
     ];
 }
@@ -138,6 +143,8 @@ impl StaticListAssignEvent {
 pub struct StaticListAssignData {
     pub shown: Vec<u8>,
     pub first: u8,
+    pub few: Vec<u8>,
+    pub count: u32,
     pub size: u32,
     pub refusals: u32,
 }
@@ -171,6 +178,8 @@ impl StaticListAssignObserve for Engine<StaticListAssignPolicy> {
             data: StaticListAssignData {
                 shown: policy.shown.clone(),
                 first: policy.first,
+                few: policy.few.clone(),
+                count: policy.count,
                 size: policy.size,
                 refusals: policy.refusals,
             },
@@ -265,7 +274,7 @@ pub trait StaticListAssignPersist: Sized {
 impl StaticListAssignPersist for Engine<StaticListAssignPolicy> {
     type Policy = StaticListAssignPolicy;
 
-    const SHAPE: &'static str = "dc459b0d58d7fbf8dc7bed7a1601a72dedee5848ae2dce1e9e650ef14e73ff74";
+    const SHAPE: &'static str = "704ea29d83b5e4780aa3cc7bc865bc34003021157288ecd831acb8e6099dc5cd";
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<
         ::sce_rust_runtime::NoHistory,
@@ -290,6 +299,14 @@ impl StaticListAssignPersist for Engine<StaticListAssignPolicy> {
                 (
                     "first".to_string(),
                     ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.first),
+                ),
+                (
+                    "few".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.few),
+                ),
+                (
+                    "count".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.count),
                 ),
                 (
                     "size".to_string(),
@@ -325,6 +342,11 @@ impl StaticListAssignPersist for Engine<StaticListAssignPolicy> {
             saved.variable("first")?,
             "first",
         )?;
+        policy.few = ::sce_rust_runtime::saved_state::bounded(saved.variable("few")?, "few", 4)?;
+        policy.count = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("count")?,
+            "count",
+        )?;
         policy.size = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("size")?,
             "size",
@@ -343,6 +365,7 @@ impl StaticListAssignPersist for Engine<StaticListAssignPolicy> {
 #[derive(Default)]
 pub struct StaticListAssignInvokeParams {
     pub first: Option<u8>,
+    pub count: Option<u32>,
     pub size: Option<u32>,
     pub refusals: Option<u32>,
 }
@@ -356,6 +379,10 @@ pub struct StaticListAssignPolicy {
     shown: Vec<u8>,
     /// W3C SCXML 5.2: the `first` datamodel variable, published (`sce:direction="out"`).
     first: u8,
+    /// W3C SCXML 5.2: the `few` datamodel variable, published (`sce:direction="out"`).
+    few: Vec<u8>,
+    /// W3C SCXML 5.2: the `count` datamodel variable, published (`sce:direction="out"`).
+    count: u32,
     /// W3C SCXML 5.2: the `size` datamodel variable, published (`sce:direction="out"`).
     size: u32,
     /// W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`).
@@ -386,11 +413,15 @@ impl StaticListAssignPolicy {
     pub fn new() -> Self {
         let shown: Vec<u8> = Vec::new();
         let first: u8 = 10;
+        let few: Vec<u8> = Vec::new();
+        let count: u32 = 0;
         let size: u32 = 0;
         let refusals: u32 = 0;
         Self {
             shown,
             first,
+            few,
+            count,
             size,
             refusals,
             session_id: None,
@@ -405,6 +436,9 @@ impl StaticListAssignPolicy {
     pub fn accept_params(&mut self, params: StaticListAssignInvokeParams) {
         if let Some(value) = params.first {
             self.first = value;
+        }
+        if let Some(value) = params.count {
+            self.count = value;
         }
         if let Some(value) = params.size {
             self.size = value;
@@ -424,6 +458,18 @@ impl StaticListAssignPolicy {
     /// holds now. Only the machine writes it.
     pub fn first(&self) -> u8 {
         self.first
+    }
+
+    /// W3C SCXML 5.2: what the published `few` datamodel variable
+    /// holds now. Only the machine writes it.
+    pub fn few(&self) -> &[u8] {
+        &self.few
+    }
+
+    /// W3C SCXML 5.2: what the published `count` datamodel variable
+    /// holds now. Only the machine writes it.
+    pub fn count(&self) -> u32 {
+        self.count
     }
 
     /// W3C SCXML 5.2: what the published `size` datamodel variable
@@ -576,6 +622,8 @@ impl StatePolicy for StaticListAssignPolicy {
             StaticListAssignEvent::Empty => "empty",
             StaticListAssignEvent::ErrorExecution => "error.execution",
             StaticListAssignEvent::Late => "late",
+            StaticListAssignEvent::Overrun => "overrun",
+            StaticListAssignEvent::Repeat => "repeat",
             StaticListAssignEvent::Show => "show",
             StaticListAssignEvent::Null => "",
         }
@@ -587,6 +635,8 @@ impl StatePolicy for StaticListAssignPolicy {
             "empty" => Some(StaticListAssignEvent::Empty),
             "error.execution" => Some(StaticListAssignEvent::ErrorExecution),
             "late" => Some(StaticListAssignEvent::Late),
+            "overrun" => Some(StaticListAssignEvent::Overrun),
+            "repeat" => Some(StaticListAssignEvent::Repeat),
             "show" => Some(StaticListAssignEvent::Show),
             _ => None,
         }
@@ -627,8 +677,8 @@ impl StatePolicy for StaticListAssignPolicy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: static_list_assign.scxml:16 :: _machine"]
-    // SCE-MAP: static_list_assign.scxml:16 :: _machine
+    #[doc = "SCE-MAP: static_list_assign.scxml:21 :: _machine"]
+    // SCE-MAP: static_list_assign.scxml:21 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -644,8 +694,8 @@ impl StatePolicy for StaticListAssignPolicy {
     // recorded runs nothing.
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: static_list_assign.scxml:16 :: _machine"]
-    // SCE-MAP: static_list_assign.scxml:16 :: _machine
+    #[doc = "SCE-MAP: static_list_assign.scxml:21 :: _machine"]
+    // SCE-MAP: static_list_assign.scxml:21 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -661,8 +711,8 @@ impl StatePolicy for StaticListAssignPolicy {
     // the first of `state`'s own transitions, in document order, that `event`
     // enables. The engine walks the atomic states and their ancestors and
     // keeps the ordered set. `Event::Null` asks for eventless transitions.
-    #[doc = "SCE-MAP: static_list_assign.scxml:16 :: _machine"]
-    // SCE-MAP: static_list_assign.scxml:16 :: _machine
+    #[doc = "SCE-MAP: static_list_assign.scxml:21 :: _machine"]
+    // SCE-MAP: static_list_assign.scxml:21 :: _machine
     fn first_enabled_transition(
         &mut self,
         state: Self::State,
@@ -704,7 +754,7 @@ impl StatePolicy for StaticListAssignPolicy {
                         });
                     }
                 }
-                if event == StaticListAssignEvent::Late {
+                if event == StaticListAssignEvent::Repeat {
                     {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
@@ -715,12 +765,34 @@ impl StatePolicy for StaticListAssignPolicy {
                         });
                     }
                 }
-                if event == StaticListAssignEvent::ErrorExecution {
+                if event == StaticListAssignEvent::Overrun {
                     {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
                             targets: &[],
                             transition_index: 4,
+                            has_actions: true,
+                            is_internal: true,
+                        });
+                    }
+                }
+                if event == StaticListAssignEvent::Late {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[],
+                            transition_index: 5,
+                            has_actions: true,
+                            is_internal: true,
+                        });
+                    }
+                }
+                if event == StaticListAssignEvent::ErrorExecution {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[],
+                            transition_index: 6,
                             has_actions: true,
                             is_internal: true,
                         });
@@ -734,8 +806,8 @@ impl StatePolicy for StaticListAssignPolicy {
 
     // W3C SCXML 3.13: a transition's executable content, run by the engine
     // between the microstep's exits and its entries.
-    #[doc = "SCE-MAP: static_list_assign.scxml:16 :: _machine"]
-    // SCE-MAP: static_list_assign.scxml:16 :: _machine
+    #[doc = "SCE-MAP: static_list_assign.scxml:21 :: _machine"]
+    // SCE-MAP: static_list_assign.scxml:21 :: _machine
     fn execute_transition_content(
         &mut self,
         source: Self::State,
@@ -746,13 +818,13 @@ impl StatePolicy for StaticListAssignPolicy {
             StaticListAssignState::Showing => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: static_list_assign.scxml:26 :: showing :: _transition_0
+                        // SCE-MAP: static_list_assign.scxml:34 :: showing :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             // W3C SCXML 5.3: <assign location="shown">
                             let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.shown = (day_run::day_run(self.first, 3)?).as_slice().to_vec();
+    self.shown = sce_forge_runtime::algorithm::within((day_run::day_run(self.first, 3)?).as_slice(), 8)?.to_vec();
     Ok(())
 })() {
     Ok(()) => false,
@@ -770,13 +842,13 @@ impl StatePolicy for StaticListAssignPolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: static_list_assign.scxml:30 :: showing :: _transition_1
+                        // SCE-MAP: static_list_assign.scxml:38 :: showing :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             // W3C SCXML 5.3: <assign location="shown">
                             let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.shown = (day_run::day_run(self.first, 8)?).as_slice().to_vec();
+    self.shown = sce_forge_runtime::algorithm::within((day_run::day_run(self.first, 8)?).as_slice(), 8)?.to_vec();
     Ok(())
 })() {
     Ok(()) => false,
@@ -794,13 +866,13 @@ impl StatePolicy for StaticListAssignPolicy {
                         }
                     }
                     2 => {
-                        // SCE-MAP: static_list_assign.scxml:34 :: showing :: _transition_2
+                        // SCE-MAP: static_list_assign.scxml:42 :: showing :: _transition_2
                         // W3C SCXML 3.13: Transition 2 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             // W3C SCXML 5.3: <assign location="shown">
                             let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.shown = (day_run::day_run(self.first, 0)?).as_slice().to_vec();
+    self.shown = sce_forge_runtime::algorithm::within((day_run::day_run(self.first, 0)?).as_slice(), 8)?.to_vec();
     Ok(())
 })() {
     Ok(()) => false,
@@ -818,17 +890,65 @@ impl StatePolicy for StaticListAssignPolicy {
                         }
                     }
                     3 => {
-                        // SCE-MAP: static_list_assign.scxml:38 :: showing :: _transition_3
+                        // SCE-MAP: static_list_assign.scxml:46 :: showing :: _transition_3
                         // W3C SCXML 3.13: Transition 3 actions
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // W3C SCXML 5.3: <assign location="few">
+                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.few = sce_forge_runtime::algorithm::within((day_repeat::day_repeat(self.first, 3)?).as_slice(), 4)?.to_vec();
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticListAssignEvent::ErrorExecution, "<assign location='few'>: an integer operation overflowed or failed"));
+        true
+    }
+};
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                            }
+
+                            // W3C SCXML 5.3: <assign location="count">
+                            self.count = (self.few).len() as u32;
+                        }
+                    }
+                    4 => {
+                        // SCE-MAP: static_list_assign.scxml:50 :: showing :: _transition_4
+                        // W3C SCXML 3.13: Transition 4 actions
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // W3C SCXML 5.3: <assign location="few">
+                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.few = sce_forge_runtime::algorithm::within((day_repeat::day_repeat(self.first, 5)?).as_slice(), 4)?.to_vec();
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticListAssignEvent::ErrorExecution, "<assign location='few'>: an integer operation overflowed or failed"));
+        true
+    }
+};
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                            }
+
+                            // W3C SCXML 5.3: <assign location="count">
+                            self.count = (self.few).len() as u32;
+                        }
+                    }
+                    5 => {
+                        // SCE-MAP: static_list_assign.scxml:54 :: showing :: _transition_5
+                        // W3C SCXML 3.13: Transition 5 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             // W3C SCXML 5.3: <assign location="first">
                             self.first = 253;
                         }
                     }
-                    4 => {
-                        // SCE-MAP: static_list_assign.scxml:41 :: showing :: _transition_4
-                        // W3C SCXML 3.13: Transition 4 actions
+                    6 => {
+                        // SCE-MAP: static_list_assign.scxml:57 :: showing :: _transition_6
+                        // W3C SCXML 3.13: Transition 6 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             // W3C SCXML 5.3: <assign location="refusals">

@@ -118,6 +118,18 @@ public object SceChecked {
         return value.copyOf()
     }
 
+    /**
+     * [items] when it holds no more than [capacity] elements — the bound a list
+     * variable of a `sce-static` machine declares — and a capacity failure
+     * otherwise. A list an algorithm returns may hold more than the bound it
+     * declared on a backend whose lists grow, and a machine holds the same list
+     * wherever it runs, so the list it takes is held to its own.
+     */
+    public fun <T> within(items: List<T>, capacity: Int): List<T> {
+        if (items.size > capacity) fail(AlgorithmError.CapacityExceeded)
+        return items
+    }
+
     /** `v` when it lies in `[lo, hi]`; an overflow otherwise. */
     private fun fit(v: Long, lo: Long, hi: Long): Long =
         if (v < lo || v > hi) fail(AlgorithmError.Overflow) else v

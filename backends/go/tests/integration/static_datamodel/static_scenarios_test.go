@@ -578,7 +578,9 @@ func TestAListTakesWhatAnAlgorithmReturnsWhole(t *testing.T) {
 	policy.SessionID = sce.GenerateSessionID()
 	replay(t, "static_list_assign", drive[static_list_assign.StaticListAssignState, static_list_assign.StaticListAssignEvent](&policy, map[string]func() any{
 		"shown":    func() any { return policy.Shown() },
+		"few":      func() any { return policy.Few() },
 		"first":    func() any { return policy.First() },
+		"count":    func() any { return policy.Count() },
 		"size":     func() any { return policy.Size() },
 		"refusals": func() any { return policy.Refusals() },
 	}))

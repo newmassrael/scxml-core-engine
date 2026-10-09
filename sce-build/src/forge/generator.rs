@@ -26688,11 +26688,23 @@ fn c11_take(value_type: &str, primary_symbol: &str) -> String {
 /// in the caller's `sce_failure_` and a zero one the statement around it never
 /// uses.
 fn c11_take_whole(primary_symbol: &str) -> String {
+    let why = "result.why";
     format!(
         "static inline {primary_symbol}_result_t {primary_symbol}_take(\
          sce_forge_algorithm_failure_t *failure, {primary_symbol}_result_t result) {{\n\
          \x20   if (!result.ok) {{\n\
-         \x20       sce_forge_algorithm_fail(failure, result.why);\n\
+         \x20       sce_forge_algorithm_fail(failure, {why});\n\
+         \x20       return ({primary_symbol}_result_t){{0}};\n\
+         \x20   }}\n\
+         \x20   return result;\n\
+         }}\n\n\
+         /* The list a caller takes into a list variable of `capacity` elements: this\n\
+         \x20* result, or the capacity failure recorded in the caller's `sce_failure_`. */\n\
+         static inline {primary_symbol}_result_t {primary_symbol}_within(\
+         sce_forge_algorithm_failure_t *failure, {primary_symbol}_result_t result, \
+         uint32_t capacity) {{\n\
+         \x20   if (result.len > capacity) {{\n\
+         \x20       sce_forge_algorithm_fail(failure, SCE_FORGE_ALGORITHM_CAPACITY_EXCEEDED);\n\
          \x20       return ({primary_symbol}_result_t){{0}};\n\
          \x20   }}\n\
          \x20   return result;\n\

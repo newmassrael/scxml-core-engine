@@ -135,6 +135,19 @@ func BoundedBytes(f *Failure, value []byte, capacity uint32) []byte {
 	return append([]byte{}, value...)
 }
 
+// Within is `items` when it holds no more than capacity elements — the bound a
+// list variable of a sce-static machine declares — and nil with a capacity
+// failure recorded in f otherwise. A list an algorithm returns may hold more
+// than the bound it declared on a backend whose lists grow, and a machine holds
+// the same list wherever it runs, so the list it takes is held to its own.
+func Within[T any](f *Failure, items []T, capacity uint32) []T {
+	if uint64(len(items)) > uint64(capacity) {
+		f.Fail(CapacityExceeded)
+		return nil
+	}
+	return items
+}
+
 // Take passes a call to another may-fail algorithm through the calling
 // body's f: `Take[uint32](&sceFailure)(tick(n))` is the call's value, or 0
 // with its failure recorded in f, which the statement around it returns.

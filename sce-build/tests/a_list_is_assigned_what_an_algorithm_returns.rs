@@ -32,11 +32,25 @@ fn repo_root() -> PathBuf {
 /// beside the algorithm it imports.
 fn machine(capacity: u32, body: &str) -> (TempDir, PathBuf) {
     let dir = tempdir().expect("tempdir");
-    std::fs::copy(
-        repo_root().join("sce-build/tests/fixtures/static_datamodel/algorithm_day_run.scxml"),
-        dir.path().join("algorithm_day_run.scxml"),
-    )
-    .expect("the day run algorithm");
+    for algorithm in ["algorithm_day_run.scxml", "algorithm_day_repeat.scxml"] {
+        std::fs::copy(
+            repo_root()
+                .join("sce-build/tests/fixtures/static_datamodel")
+                .join(algorithm),
+            dir.path().join(algorithm),
+        )
+        .expect("an algorithm of the fixtures");
+    }
+    // A statechart keeps no import it does not call, so each is imported by the
+    // body that calls it.
+    let imports: String = [
+        ("Range", "algorithm_day_run.scxml"),
+        ("Repeat", "algorithm_day_repeat.scxml"),
+    ]
+    .iter()
+    .filter(|(alias, _)| body.contains(&format!("{alias}(")))
+    .map(|(alias, src)| format!("<sce:import kind=\"algorithm\" src=\"{src}\" as=\"{alias}\"/>"))
+    .collect();
     let path = dir.path().join("probe.scxml");
     std::fs::write(
         &path,
@@ -44,7 +58,7 @@ fn machine(capacity: u32, body: &str) -> (TempDir, PathBuf) {
             r##"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="s" datamodel="sce-static">
-  <sce:import kind="algorithm" src="algorithm_day_run.scxml" as="Range"/>
+  {imports}
   <datamodel>
     <data id="shown" sce:type="list&lt;uint8&gt;" sce:capacity="{capacity}"/>
     <data id="wide" sce:type="list&lt;uint16&gt;" sce:capacity="8"/>
@@ -100,6 +114,44 @@ fn a_list_is_assigned_what_an_algorithm_returns_in_every_language() {
         let (ok, out) = run(args, 8, body);
         assert!(ok, "{args:?}: a list assigned from an algorithm:\n{out}");
     }
+}
+
+#[test]
+fn another_algorithm_is_taken_by_the_bound_it_declares() {
+    // `Repeat` holds four: a list of eight takes it, one of three cannot.
+    let body = r#"<assign location="shown" expr="Repeat(n, 2)"/>"#;
+    let (ok, out) = run(&["check"], 8, body);
+    assert!(ok, "a list that can hold four:\n{out}");
+    let (ok, out) = run(&["check"], 3, body);
+    assert!(!ok, "expected a refusal, got:\n{out}");
+    assert!(out.contains("at most 4"), "the refusal must say 4:\n{out}");
+}
+
+#[test]
+fn only_an_algorithm_that_declares_may_fail_is_taken() {
+    // The same algorithm with `may-fail` taken off returns a plain list on the
+    // backends whose lists grow and a fallible one on the rest, so a statechart has
+    // no one shape to receive it in: it stays a host's to call.
+    let body = r#"<assign location="shown" expr="Repeat(n, 2)"/>"#;
+    let (dir, path) = machine(8, body);
+    let algorithm = dir.path().join("algorithm_day_repeat.scxml");
+    let text = std::fs::read_to_string(&algorithm).expect("the algorithm");
+    assert!(
+        text.contains(" may-fail=\"true\""),
+        "the fixture declares it"
+    );
+    std::fs::write(&algorithm, text.replace(" may-fail=\"true\"", "")).expect("rewrite");
+    let out = Command::new(sce_codegen_bin())
+        .arg("--workspace-root")
+        .arg(repo_root())
+        .arg("--error-format=json")
+        .args(["check"])
+        .arg(&path)
+        .output()
+        .expect("invoke sce-codegen");
+    let said =
+        String::from_utf8_lossy(&out.stderr).into_owned() + &String::from_utf8_lossy(&out.stdout);
+    assert!(!out.status.success(), "expected a refusal, got:\n{said}");
 }
 
 #[test]

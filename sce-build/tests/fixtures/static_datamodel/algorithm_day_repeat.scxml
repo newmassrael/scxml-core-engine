@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  `count` copies of `value`, as a list, which static_list_assign.scxml imports
+  beside algorithm_day_run.scxml (docs/SCE_ACCEPTED_SUBSET.md §2.15). The most it
+  holds is four, and asking for more appends past that: an algorithm's list fails
+  there on some backends and grows on others, and the machine that takes it holds
+  its own variable's bound on every one of them.
+
+  It declares may-fail although no arithmetic in it can fail, because that is what
+  a list a statechart takes is returned as everywhere: the one fallible shape every
+  backend has. An algorithm that does not declare it stays a host's to call.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm"
+       name="day_repeat"
+       version="1.0">
+  <sce:signature>
+    <sce:param name="value" type="uint8"/>
+    <sce:param name="count" type="uint8"/>
+    <sce:return type="list&lt;uint8&gt;" returns-max-size="4" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="out" type="list&lt;uint8&gt;" capacity="4"/>
+    <sce:var name="i" type="uint8" init="0"/>
+    <sce:while cond="i &lt; count" max-iter="8">
+      <sce:append target="out" expr="value"/>
+      <sce:assign target="i" expr="i + 1"/>
+    </sce:while>
+    <sce:return expr="out"/>
+  </sce:body>
+</scxml>

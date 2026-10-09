@@ -425,6 +425,12 @@ sce_add_algorithm(
     SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/algorithm_day_run.scxml
     HEADER day_run.h
 )
+# ... and one that does not declare may-fail, which fails only by its capacity.
+sce_add_algorithm(
+    TARGET static_datamodel_generated_cpp_test
+    SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/algorithm_day_repeat.scxml
+    HEADER day_repeat.h
+)
 foreach(_STD_SYNC_RULE sync_failure sync_retry_at sync_delete_outcome sync_upload_outcome)
     sce_add_algorithm(
         TARGET static_datamodel_generated_cpp_test

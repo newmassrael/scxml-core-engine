@@ -308,6 +308,15 @@
       }
       return value;
     },
+    within: function (list, capacity) {
+      if (!Array.isArray(list)) {
+        fail('expected a list, read ' + String(list));
+      }
+      if (list.length > capacity) {
+        fail('the list holds ' + String(list.length) + ', past its capacity of ' + String(capacity), 'capacity-exceeded');
+      }
+      return list;
+    },
     extend: function (list, capacity, values) {
       if (!Array.isArray(list) || !Array.isArray(values)) {
         fail('expected two lists, read ' + String(list) + ' and ' + String(values));

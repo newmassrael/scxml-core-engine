@@ -784,7 +784,10 @@ impl StaticScope {
                     ctx.insert_func(
                         callee.alias.as_str(),
                         FuncSig {
-                            may_fail: callee.may_fail,
+                            // Only an algorithm that declares `may-fail` is taken
+                            // ([`StatelessSignature::list_return`]), so the call hands
+                            // its caller a failure to receive.
+                            may_fail: true,
                             ..FuncSig::new(
                                 returned
                                     .params

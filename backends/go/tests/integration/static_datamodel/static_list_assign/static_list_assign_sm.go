@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 596ac4b1afa5b66720218d6a44ed9e9093342daa23116ea6b40585ea85ed56ab
+// source-hash: ee37533f857b01b43223ccdf57f0449c0b326ab00d940ee5b3e09fb6a557b07f
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -20,7 +20,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: static_list_assign.scxml:16 :: _machine
+// SCE-MAP: static_list_assign.scxml:21 :: _machine
 
 package static_list_assign
 
@@ -32,6 +32,7 @@ import (
 
 	sce "github.com/newmassrael/sce-go-runtime"
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
+	sce_day_repeat "github.com/newmassrael/sce-go-tests/integration/static_datamodel/day_repeat"
 	sce_day_run "github.com/newmassrael/sce-go-tests/integration/static_datamodel/day_run"
 )
 
@@ -141,9 +142,11 @@ const (
 	StaticListAssignEventEmpty StaticListAssignEvent = 1
 	StaticListAssignEventErrorExecution StaticListAssignEvent = 2
 	StaticListAssignEventLate StaticListAssignEvent = 3
-	StaticListAssignEventShow StaticListAssignEvent = 4
+	StaticListAssignEventOverrun StaticListAssignEvent = 4
+	StaticListAssignEventRepeat StaticListAssignEvent = 5
+	StaticListAssignEventShow StaticListAssignEvent = 6
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	StaticListAssignEventNull StaticListAssignEvent = 5
+	StaticListAssignEventNull StaticListAssignEvent = 7
 )
 
 func (e StaticListAssignEvent) String() string {
@@ -156,6 +159,10 @@ func (e StaticListAssignEvent) String() string {
 		return "error.execution"
 	case StaticListAssignEventLate:
 		return "late"
+	case StaticListAssignEventOverrun:
+		return "overrun"
+	case StaticListAssignEventRepeat:
+		return "repeat"
 	case StaticListAssignEventShow:
 		return "show"
 	case StaticListAssignEventNull:
@@ -176,6 +183,10 @@ type StaticListAssignPolicy struct {
 	vShown []uint8
 	// W3C SCXML 5.2: the `first` datamodel variable, published (`sce:direction="out"`).
 	vFirst uint8
+	// W3C SCXML 5.2: the `few` datamodel variable, published (`sce:direction="out"`).
+	vFew []uint8
+	// W3C SCXML 5.2: the `count` datamodel variable, published (`sce:direction="out"`).
+	vCount uint32
 	// W3C SCXML 5.2: the `size` datamodel variable, published (`sce:direction="out"`).
 	vSize uint32
 	// W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`).
@@ -194,6 +205,8 @@ func NewStaticListAssignPolicy() StaticListAssignPolicy {
 	return StaticListAssignPolicy{
 		vShown: nil,
 		vFirst: 10,
+		vFew: nil,
+		vCount: 0,
 		vSize: 0,
 		vRefusals: 0,
 	}
@@ -210,6 +223,19 @@ func (p *StaticListAssignPolicy) Shown() []uint8 {
 // variable holds now (W3C SCXML 5.2). Only the machine writes it.
 func (p *StaticListAssignPolicy) First() uint8 {
 	return p.vFirst
+}
+
+// Few reports what the published `few` datamodel
+// variable holds now (W3C SCXML 5.2). Only the machine writes it.
+func (p *StaticListAssignPolicy) Few() []uint8 {
+	// A copy, so a host cannot write through the slice into what the machine holds.
+	return append([]uint8{}, p.vFew...)
+}
+
+// Count reports what the published `count` datamodel
+// variable holds now (W3C SCXML 5.2). Only the machine writes it.
+func (p *StaticListAssignPolicy) Count() uint32 {
+	return p.vCount
 }
 
 // Size reports what the published `size` datamodel
@@ -229,6 +255,7 @@ func (p *StaticListAssignPolicy) Refusals() uint32 {
 // variable left nil keeps the value its `<data>` gave it.
 type StaticListAssignInvokeParams struct {
 	VFirst *uint8
+	VCount *uint32
 	VSize *uint32
 	VRefusals *uint32
 }
@@ -238,6 +265,9 @@ type StaticListAssignInvokeParams struct {
 func (p *StaticListAssignPolicy) AcceptParams(params StaticListAssignInvokeParams) {
 	if params.VFirst != nil {
 		p.vFirst = *params.VFirst
+	}
+	if params.VCount != nil {
+		p.vCount = *params.VCount
 	}
 	if params.VSize != nil {
 		p.vSize = *params.VSize
@@ -371,6 +401,10 @@ func (p *StaticListAssignPolicy) GetEventFromName(name string) (StaticListAssign
 		return StaticListAssignEventErrorExecution, true
 	case "late":
 		return StaticListAssignEventLate, true
+	case "overrun":
+		return StaticListAssignEventOverrun, true
+	case "repeat":
+		return StaticListAssignEventRepeat, true
 	case "show":
 		return StaticListAssignEventShow, true
 	}
@@ -472,7 +506,7 @@ func (p *StaticListAssignPolicy) ClearEventMetadata() {
 // ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
 // configuration, runs its <onentry>, and its <initial> transition's content when
 // its initial state is entered by default.
-//line static_list_assign.scxml:16
+//line static_list_assign.scxml:21
 func (p *StaticListAssignPolicy) ExecuteEntryActions(state StaticListAssignState, engine *sce.Engine[StaticListAssignState, StaticListAssignEvent], isDefaultEntry bool) {
 	switch state {
 	default:
@@ -485,7 +519,7 @@ func (p *StaticListAssignPolicy) ExecuteEntryActions(state StaticListAssignState
 // <initial> content) when the history was taken with nothing recorded. The
 // engine asks for it by the entry set's defaultHistoryContent answer; a history
 // that restored what it recorded runs nothing.
-//line static_list_assign.scxml:16
+//line static_list_assign.scxml:21
 func (p *StaticListAssignPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[StaticListAssignState, StaticListAssignEvent]) {
 	// W3C SCXML 3.10.2: no <history> in this document has default content.
 }
@@ -493,7 +527,7 @@ func (p *StaticListAssignPolicy) ExecuteHistoryDefaultContent(history sce.Histor
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
 // runs its <onexit>, cancels its invocations and removes it from the
 // configuration — §scxml-D-exitStates's order.
-//line static_list_assign.scxml:16
+//line static_list_assign.scxml:21
 func (p *StaticListAssignPolicy) ExecuteExitActions(state StaticListAssignState, engine *sce.Engine[StaticListAssignState, StaticListAssignEvent], configurationBeforeExit []StaticListAssignState) {
 	// §scxml-D-exitStates orders one state's exit as onexit, then
 	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
@@ -510,7 +544,7 @@ func (p *StaticListAssignPolicy) ExecuteExitActions(state StaticListAssignState,
 // BindCurrentEvent binds the event whose transitions are about to be selected as
 // the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
 // and not for an eventless selection, which has no event of its own.
-//line static_list_assign.scxml:16
+//line static_list_assign.scxml:21
 func (p *StaticListAssignPolicy) BindCurrentEvent(event StaticListAssignEvent, engine *sce.Engine[StaticListAssignState, StaticListAssignEvent]) {
 	// This document's guards never read _event, so there is nothing to bind.
 }
@@ -520,7 +554,7 @@ func (p *StaticListAssignPolicy) BindCurrentEvent(event StaticListAssignEvent, e
 // that event enables and whose guard holds. The engine walks the atomic states
 // and their ancestors and keeps the ordered set; the null event asks for
 // eventless transitions.
-//line static_list_assign.scxml:16
+//line static_list_assign.scxml:21
 func (p *StaticListAssignPolicy) FirstEnabledTransition(state StaticListAssignState, event StaticListAssignEvent, engine *sce.Engine[StaticListAssignState, StaticListAssignEvent]) (sce.EnabledTransition[StaticListAssignState, sce.HistoryID], bool) {
 	switch state {
 	case StaticListAssignStateShowing:
@@ -554,7 +588,7 @@ func (p *StaticListAssignPolicy) FirstEnabledTransition(state StaticListAssignSt
 				}, true
 			}
 		}
-		if event == StaticListAssignEventLate {
+		if event == StaticListAssignEventRepeat {
 			{
 				return sce.EnabledTransition[StaticListAssignState, sce.HistoryID]{
 					Source:          state,
@@ -564,11 +598,31 @@ func (p *StaticListAssignPolicy) FirstEnabledTransition(state StaticListAssignSt
 				}, true
 			}
 		}
-		if event == StaticListAssignEventErrorExecution {
+		if event == StaticListAssignEventOverrun {
 			{
 				return sce.EnabledTransition[StaticListAssignState, sce.HistoryID]{
 					Source:          state,
 					TransitionIndex: 4,
+					HasActions:      true,
+					IsInternal:      true,
+				}, true
+			}
+		}
+		if event == StaticListAssignEventLate {
+			{
+				return sce.EnabledTransition[StaticListAssignState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 5,
+					HasActions:      true,
+					IsInternal:      true,
+				}, true
+			}
+		}
+		if event == StaticListAssignEventErrorExecution {
+			{
+				return sce.EnabledTransition[StaticListAssignState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 6,
 					HasActions:      true,
 					IsInternal:      true,
 				}, true
@@ -580,18 +634,18 @@ func (p *StaticListAssignPolicy) FirstEnabledTransition(state StaticListAssignSt
 
 // ExecuteTransitionContent runs one transition's executable content (W3C SCXML
 // 3.13), between the microstep's exits and its entries.
-//line static_list_assign.scxml:16
+//line static_list_assign.scxml:21
 func (p *StaticListAssignPolicy) ExecuteTransitionContent(source StaticListAssignState, transitionIndex int, engine *sce.Engine[StaticListAssignState, StaticListAssignEvent]) {
 	switch source {
 	case StaticListAssignStateShowing:
 		switch transitionIndex {
 		case 0:
-			//line static_list_assign.scxml:26
+			//line static_list_assign.scxml:34
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Take[[]uint8](&sceFailure)(sce_day_run.DayRun(p.vFirst, 3)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticListAssignEventErrorExecution, "<assign location='shown'>: an integer operation overflowed or failed")); return true }; p.vShown = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.Take[[]uint8](&sceFailure)(sce_day_run.DayRun(p.vFirst, 3)), 8); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticListAssignEventErrorExecution, "<assign location='shown'>: an integer operation overflowed or failed")); return true }; p.vShown = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -601,12 +655,12 @@ func (p *StaticListAssignPolicy) ExecuteTransitionContent(source StaticListAssig
 
 			}()
 		case 1:
-			//line static_list_assign.scxml:30
+			//line static_list_assign.scxml:38
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Take[[]uint8](&sceFailure)(sce_day_run.DayRun(p.vFirst, 8)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticListAssignEventErrorExecution, "<assign location='shown'>: an integer operation overflowed or failed")); return true }; p.vShown = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.Take[[]uint8](&sceFailure)(sce_day_run.DayRun(p.vFirst, 8)), 8); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticListAssignEventErrorExecution, "<assign location='shown'>: an integer operation overflowed or failed")); return true }; p.vShown = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -616,12 +670,12 @@ func (p *StaticListAssignPolicy) ExecuteTransitionContent(source StaticListAssig
 
 			}()
 		case 2:
-			//line static_list_assign.scxml:34
+			//line static_list_assign.scxml:42
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Take[[]uint8](&sceFailure)(sce_day_run.DayRun(p.vFirst, 0)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticListAssignEventErrorExecution, "<assign location='shown'>: an integer operation overflowed or failed")); return true }; p.vShown = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.Take[[]uint8](&sceFailure)(sce_day_run.DayRun(p.vFirst, 0)), 8); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticListAssignEventErrorExecution, "<assign location='shown'>: an integer operation overflowed or failed")); return true }; p.vShown = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -631,7 +685,37 @@ func (p *StaticListAssignPolicy) ExecuteTransitionContent(source StaticListAssig
 
 			}()
 		case 3:
-			//line static_list_assign.scxml:38
+			//line static_list_assign.scxml:46
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
+
+
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.Take[[]uint8](&sceFailure)(sce_day_repeat.DayRepeat(p.vFirst, 3)), 4); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticListAssignEventErrorExecution, "<assign location='few'>: an integer operation overflowed or failed")); return true }; p.vFew = sceValue; return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+
+
+	p.vCount = uint32(len(p.vFew))
+
+			}()
+		case 4:
+			//line static_list_assign.scxml:50
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
+
+
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.Take[[]uint8](&sceFailure)(sce_day_repeat.DayRepeat(p.vFirst, 5)), 4); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticListAssignEventErrorExecution, "<assign location='few'>: an integer operation overflowed or failed")); return true }; p.vFew = sceValue; return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+
+
+	p.vCount = uint32(len(p.vFew))
+
+			}()
+		case 5:
+			//line static_list_assign.scxml:54
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -639,8 +723,8 @@ func (p *StaticListAssignPolicy) ExecuteTransitionContent(source StaticListAssig
 	p.vFirst = 253
 
 			}()
-		case 4:
-			//line static_list_assign.scxml:41
+		case 6:
+			//line static_list_assign.scxml:57
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

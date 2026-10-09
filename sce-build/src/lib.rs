@@ -5966,9 +5966,11 @@ pub(crate) fn discover_stateless_signature(
             // in `record_slots`), and that call passes the failure on.
             if let Some(reason) = host_only {
                 // Scalar slots in and a list of scalars out: the shape a
-                // statechart takes whole into a list variable.
-                // It declares `may-fail`: an algorithm that does not can still fail
-                // by capacity, which only a `may-fail` caller receives.
+                // statechart takes whole into a list variable. It declares
+                // `may-fail`: only then is the list returned in the one fallible
+                // shape every backend has (a `Result`, an `AlgorithmResult`, an
+                // error beside the slice, a result struct), where one that does
+                // not is a plain list on the backends whose lists grow.
                 let list_return = m
                     .signature
                     .params

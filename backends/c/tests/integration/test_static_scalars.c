@@ -976,18 +976,22 @@ STATIC_SCENARIO(static_list_index, list_index_states, list_index_variables, NULL
 // list — longer, shorter, empty — and a call that fails leaves it as it was and
 // raises `error.execution`.
 VARIABLE_READER(static_list_assign, first)
+VARIABLE_READER(static_list_assign, count)
 VARIABLE_READER(static_list_assign, size)
 VARIABLE_READER(static_list_assign, refusals)
 LIST_READER(static_list_assign, shown, sce_forge_uint8_view_t)
+LIST_READER(static_list_assign, few, sce_forge_uint8_view_t)
 static const name_value_t list_assign_states[] = {
     {"showing", STATIC_LIST_ASSIGN_STATE_SHOWING},
 };
 static const variable_t list_assign_variables[] = {
     {"first", static_list_assign_read_first},
+    {"count", static_list_assign_read_count},
     {"size", static_list_assign_read_size},
     {"refusals", static_list_assign_read_refusals},
 };
-static const list_variable_t list_assign_lists[] = {{"shown", static_list_assign_read_list_shown}, {NULL, NULL}};
+static const list_variable_t list_assign_lists[] = {
+    {"shown", static_list_assign_read_list_shown}, {"few", static_list_assign_read_list_few}, {NULL, NULL}};
 STATIC_SCENARIO(static_list_assign, list_assign_states, list_assign_variables, NULL, list_assign_lists, no_records)
 
 // static_foreach: a loop over a copy of the list as it began — the item alone, the
@@ -1835,7 +1839,7 @@ int main(void) {
     bad |= static_block_ends_scenario("static_block_ends", 5);
     bad |= static_list_scenario("static_list", 11);
     bad |= static_list_index_scenario("static_list_index", 24);
-    bad |= static_list_assign_scenario("static_list_assign", 9);
+    bad |= static_list_assign_scenario("static_list_assign", 11);
     bad |= static_foreach_scenario("static_foreach", 13);
     bad |= static_real_scenario("static_real", 13);
     bad |= static_real32_scenario("static_real32", 11);

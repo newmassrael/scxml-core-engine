@@ -2509,10 +2509,24 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         COMMENT "Generating C11 algorithm: day_run.h"
         VERBATIM
     )
+    # ... and one that does not declare may-fail, which fails only by its capacity.
+    set(_DAY_REPEAT_HEADER "${SCE_C_INTEGRATION_GENERATED_DIR}/day_repeat.h")
+    set(_DAY_REPEAT_SOURCE
+        "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/algorithm_day_repeat.scxml")
+    add_custom_command(
+        OUTPUT "${_DAY_REPEAT_HEADER}"
+        COMMAND "${SCE_CODEGEN}" generate "${_DAY_REPEAT_SOURCE}"
+                -l c11 -o "${SCE_C_INTEGRATION_GENERATED_DIR}"
+                --write-deps "${_DAY_REPEAT_HEADER}.d"
+        DEPENDS "${_DAY_REPEAT_SOURCE}" "${SCE_CODEGEN}"
+        DEPFILE "${_DAY_REPEAT_HEADER}.d"
+        COMMENT "Generating C11 algorithm: day_repeat.h"
+        VERBATIM
+    )
     sce_generate_static_integration_c_test(static_list_assign
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_list_assign.scxml"
-        STAGE_ALSO algorithm_day_run.scxml
+        STAGE_ALSO algorithm_day_run.scxml algorithm_day_repeat.scxml
     )
     # A record is a struct of its schema's fields, declared in the machine's own
     # header; the schema is the document the machine imports it from.
@@ -2705,6 +2719,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_list_index_SOURCES}
         ${INTEGRATION_C_TEST_static_list_assign_SOURCES}
         ${_DAY_RUN_HEADER}
+        ${_DAY_REPEAT_HEADER}
         ${INTEGRATION_C_TEST_static_record_fields_SOURCES}
         ${INTEGRATION_C_TEST_static_record_real_SOURCES}
         ${INTEGRATION_C_TEST_static_record_real32_SOURCES}

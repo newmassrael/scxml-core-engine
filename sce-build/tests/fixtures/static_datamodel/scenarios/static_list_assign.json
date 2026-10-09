@@ -25,6 +25,13 @@
       "expect": { "variables": { "shown": [253, 254, 255], "size": 3, "refusals": 1 } } },
     { "note": "a call that does not reach 256 is not affected by the failure before it",
       "event": "empty",
-      "expect": { "variables": { "shown": [], "size": 0, "refusals": 1 } } }
+      "expect": { "variables": { "shown": [], "size": 0, "refusals": 1 } } },
+
+    { "note": "an algorithm that does not declare may-fail returns its list the same way",
+      "event": "repeat",
+      "expect": { "variables": { "few": [253, 253, 253], "count": 3, "refusals": 1 } } },
+    { "note": "five is more than the four `few` holds: the list is not held, `few` is left as it was and error.execution says so — whether the algorithm failed by its own capacity or returned five, the machine's list is never longer than its bound",
+      "event": "overrun",
+      "expect": { "variables": { "few": [253, 253, 253], "count": 3, "refusals": 2 } } }
   ]
 }
