@@ -1,6 +1,6 @@
 # ADR 0014 — A repeated content-line property is a list of line records
 
-- Status: Accepted
+- Status: Accepted, implemented in all six backends (2026-10-09)
 - Date: 2026-10-09
 - Scope: the `codec` kind's `sce:encoding="content-line"` (`SCE_FORGE.md` §4.6.4), `sce-build`
   (`forge/parser.rs`, `forge/model.rs`, `forge/content_line_codec.rs`), the runtime and the generator
@@ -119,6 +119,19 @@ generation of it by name, so no backend lags the contract.
    TZID and comma-list case above, a list of records with and without separators, every refusal.
    The model is written from this page, so no backend's output is its own oracle.
 3. Generate it for Rust, Kotlin, C++, Go, Python and C11, one commit each, against the same vectors.
+
+All three steps are done. Two things were settled while doing them that the text above did not say:
+
+- *A required entry of any list shape needs a line.* `sce:required="true"` on a repeated property,
+  on a property that holds a list, or on a line record's property means at least one line: a decode
+  without it is `line-required-missing`, and so is an encode of an empty list. Before this, no
+  backend enforced it for a plain repeated property either. A third fixture,
+  `codec_content_line_required_lists`, pins it for the three shapes.
+- *A required parameter of a repeated property needs no required property.* It is required of each
+  line that exists, so the property itself may have none; the parser's rule that a required
+  parameter belongs to a required property holds for a single-valued property only.
+
+With the last backend the by-name refusal of step 1 has nothing left to refuse, and it is removed.
 
 ## Not now
 
