@@ -30,7 +30,7 @@
 //! this crate, and not in a backend's tests, because that command is the one
 //! binary every backend's job already has.
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use serde::{Deserialize, Serialize};
 
@@ -92,6 +92,28 @@ pub enum Refusal {
     WhileSlotsAreHeld,
 }
 
+/// When a queue may answer a pop with "empty".
+///
+/// The sequential queue answers empty exactly when it holds nothing. The Vyukov
+/// intrusive list does not keep that (SCE Protocol-Synthesis RFC §synth-5-P,
+/// Algorithm selection): a producer swaps itself into the tail and only then
+/// links its predecessor to itself, and until that second step every element
+/// pushed after it is unreachable from the head, so a pop that begins in the
+/// window answers empty while elements whose pushes have completed sit behind
+/// the stalled one. That is why the row's pop is `blocking`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum EmptyPops {
+    /// A pop answers empty only when the queue holds nothing.
+    #[default]
+    Exact,
+    /// A pop is also excused for answering empty when it overlaps a push: a
+    /// push whose interval has not ended before the pop began is a producer that
+    /// may be stalled between its two steps, and what it hides is exactly what a
+    /// completed push behind it left unreachable. An empty answer that no
+    /// overlapping push could explain is still a violation.
+    WhileAPushIsInFlight,
+}
+
 /// Everything one run observed.
 #[derive(Debug, Clone)]
 pub struct History {
@@ -99,6 +121,8 @@ pub struct History {
     pub capacity: usize,
     /// When a push may be refused.
     pub refusal: Refusal,
+    /// When a pop may answer empty.
+    pub empty_pops: EmptyPops,
     /// One list per participant, in that participant's program order.
     pub participants: Vec<Vec<Operation>>,
 }
@@ -126,8 +150,18 @@ pub fn check(history: &History) -> Verdict {
         return Verdict::Malformed(why);
     }
 
-    let participants = &history.participants;
-    let held = slots_other_participants_may_hold(history);
+    // An empty answer the history's `EmptyPops` excuses constrains nothing, so
+    // it is taken out before the search; the others are judged as written.
+    let excused;
+    let participants = match history.empty_pops {
+        EmptyPops::Exact => &history.participants,
+        EmptyPops::WhileAPushIsInFlight => {
+            excused = without_excused_empty_pops(&history.participants);
+            &excused
+        }
+    };
+    let held = slots_other_participants_may_hold(participants, history.refusal);
+    let required = pushes_each_push_must_follow(participants);
     let start = State {
         frontier: vec![0; participants.len()],
         queue: VecDeque::new(),
@@ -159,6 +193,13 @@ pub fn check(history: &History) -> Verdict {
                 continue;
             };
             if !may_come_next(participants, &frame.state.frontier, who, op) {
+                continue;
+            }
+            if !required[who][frame.state.frontier[who]]
+                .iter()
+                .zip(&frame.state.frontier)
+                .all(|(needed, placed)| placed >= needed)
+            {
                 continue;
             }
             let slack = held[who][frame.state.frontier[who]];
@@ -237,20 +278,20 @@ fn may_come_next(
 /// [`Refusal::WhileSlotsAreHeld`] it is, for a push observed refused, the
 /// number of other participants with any operation overlapping it, and zero
 /// for every other operation: only a refusal has a count to explain.
-fn slots_other_participants_may_hold(history: &History) -> Vec<Vec<usize>> {
-    history
-        .participants
+fn slots_other_participants_may_hold(
+    participants: &[Vec<Operation>],
+    refusal: Refusal,
+) -> Vec<Vec<usize>> {
+    participants
         .iter()
         .enumerate()
         .map(|(who, ops)| {
             ops.iter()
                 .map(|op| {
-                    if history.refusal != Refusal::WhileSlotsAreHeld || op.outcome != Outcome::Full
-                    {
+                    if refusal != Refusal::WhileSlotsAreHeld || op.outcome != Outcome::Full {
                         return 0;
                     }
-                    history
-                        .participants
+                    participants
                         .iter()
                         .enumerate()
                         .filter(|(other, others)| {
@@ -260,6 +301,99 @@ fn slots_other_participants_may_hold(history: &History) -> Vec<Vec<usize>> {
                                     .any(|o| o.invoked < op.returned && op.invoked < o.returned)
                         })
                         .count()
+                })
+                .collect()
+        })
+        .collect()
+}
+
+/// For each push, how many of each participant's operations must already be
+/// placed before it may be: the pushes of every value whose pop returned before
+/// the pop of this push's value was invoked.
+///
+/// A sequential queue returns values in the order it took them, so when one pop
+/// returned before another was invoked the first pop's value was pushed before
+/// the second's, whatever the real-time order of the two pushes. The search would
+/// otherwise place overlapping pushes in either order and learn that it chose
+/// wrongly only when the pops are reached, and a queue whose capacity does not
+/// bound its contents (the intrusive list) lets it choose wrongly exponentially
+/// many times. Only a value pushed once and popped once is used: with a repeated
+/// value the pop does not say which push it took, and the rule would be a guess.
+/// Every entry is zero for an operation that is not such a push.
+fn pushes_each_push_must_follow(participants: &[Vec<Operation>]) -> Vec<Vec<Vec<usize>>> {
+    let mut pushes: HashMap<u64, Option<(usize, usize)>> = HashMap::new();
+    let mut pops: HashMap<u64, Option<(u64, u64)>> = HashMap::new();
+    for (who, ops) in participants.iter().enumerate() {
+        for (at, op) in ops.iter().enumerate() {
+            match (op.call, op.outcome) {
+                (Call::Push(value), Outcome::Pushed) => {
+                    let entry = pushes.entry(value).or_insert(Some((who, at)));
+                    if *entry != Some((who, at)) {
+                        *entry = None;
+                    }
+                }
+                (Call::Pop, Outcome::Popped(value)) => {
+                    let seen = pops.contains_key(&value);
+                    pops.insert(
+                        value,
+                        if seen {
+                            None
+                        } else {
+                            Some((op.invoked, op.returned))
+                        },
+                    );
+                }
+                _ => {}
+            }
+        }
+    }
+    // A popped value and where it was pushed, for the values the rule can use.
+    let usable: Vec<(u64, u64, u64, (usize, usize))> = pops
+        .iter()
+        .filter_map(|(value, pop)| match (pop, pushes.get(value)) {
+            (Some((invoked, returned)), Some(Some(at))) => Some((*value, *invoked, *returned, *at)),
+            _ => None,
+        })
+        .collect();
+    participants
+        .iter()
+        .map(|ops| {
+            ops.iter()
+                .map(|op| {
+                    let mut needed = vec![0; participants.len()];
+                    if let (Call::Push(value), Outcome::Pushed) = (op.call, op.outcome) {
+                        if let Some((_, invoked, _, _)) = usable.iter().find(|u| u.0 == value) {
+                            for (_, _, returned, (who, at)) in &usable {
+                                if returned < invoked {
+                                    needed[*who] = needed[*who].max(at + 1);
+                                }
+                            }
+                        }
+                    }
+                    needed
+                })
+                .collect()
+        })
+        .collect()
+}
+
+/// `participants` without the pops that answered empty and overlap a push
+/// ([`EmptyPops::WhileAPushIsInFlight`]): a push whose interval does not end
+/// before the pop began and does not begin after the pop ended. Each
+/// participant's other operations keep their order.
+fn without_excused_empty_pops(participants: &[Vec<Operation>]) -> Vec<Vec<Operation>> {
+    participants
+        .iter()
+        .map(|ops| {
+            ops.iter()
+                .copied()
+                .filter(|op| {
+                    !(op.outcome == Outcome::Empty
+                        && participants.iter().flatten().any(|other| {
+                            matches!(other.call, Call::Push(_))
+                                && other.invoked < op.returned
+                                && op.invoked < other.returned
+                        }))
                 })
                 .collect()
         })
@@ -355,7 +489,26 @@ struct HistoryDocument {
     version: u64,
     capacity: usize,
     refusal: RefusalWire,
+    /// When a pop may answer empty. Absent means `exact`, the sequential
+    /// queue's rule, so a document written before the field existed reads the
+    /// same.
+    #[serde(default, skip_serializing_if = "EmptyPopsWire::is_exact")]
+    empty_pops: EmptyPopsWire,
     participants: Vec<Vec<OperationWire>>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Default)]
+#[serde(rename_all = "kebab-case")]
+enum EmptyPopsWire {
+    #[default]
+    Exact,
+    WhileAPushIsInFlight,
+}
+
+impl EmptyPopsWire {
+    fn is_exact(&self) -> bool {
+        matches!(self, EmptyPopsWire::Exact)
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy)]
@@ -427,6 +580,10 @@ impl History {
                 RefusalWire::AtCapacity => Refusal::AtCapacity,
                 RefusalWire::WhileSlotsAreHeld => Refusal::WhileSlotsAreHeld,
             },
+            empty_pops: match document.empty_pops {
+                EmptyPopsWire::Exact => EmptyPops::Exact,
+                EmptyPopsWire::WhileAPushIsInFlight => EmptyPops::WhileAPushIsInFlight,
+            },
             participants,
         })
     }
@@ -439,6 +596,10 @@ impl History {
             refusal: match self.refusal {
                 Refusal::AtCapacity => RefusalWire::AtCapacity,
                 Refusal::WhileSlotsAreHeld => RefusalWire::WhileSlotsAreHeld,
+            },
+            empty_pops: match self.empty_pops {
+                EmptyPops::Exact => EmptyPopsWire::Exact,
+                EmptyPops::WhileAPushIsInFlight => EmptyPopsWire::WhileAPushIsInFlight,
             },
             participants: self
                 .participants

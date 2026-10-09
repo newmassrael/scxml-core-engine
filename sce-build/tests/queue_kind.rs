@@ -424,9 +424,26 @@ fn compile_files(
     queue_xml: &str,
     queue_basename: &str,
 ) -> Result<Vec<(String, String)>, Located<ForgeError>> {
+    compile_files_over(
+        language,
+        options,
+        &codec_doc("rx_event"),
+        queue_xml,
+        queue_basename,
+    )
+}
+
+/// The same over an element document the test writes.
+fn compile_files_over(
+    language: Language,
+    options: &ForgeCompileOptions,
+    element_xml: &str,
+    queue_xml: &str,
+    queue_basename: &str,
+) -> Result<Vec<(String, String)>, Located<ForgeError>> {
     let dir = tempdir().expect("tempdir");
     let codec_path = dir.path().join("rx_event.scxml");
-    fs::write(&codec_path, codec_doc("rx_event")).expect("write codec");
+    fs::write(&codec_path, element_xml).expect("write codec");
     let queue_path = dir.path().join(queue_basename);
     fs::write(&queue_path, queue_xml).expect("write queue");
     let outputs = compile_scxml_with_imports(
@@ -513,10 +530,7 @@ fn an_scq_ring_is_sized_by_the_larger_of_capacity_and_participants() {
 
 #[test]
 fn a_storage_the_rust_runtime_lacks_is_refused_by_name() {
-    for (fixture, storage) in [
-        ("queue_segmented_lscq.scxml", "segmented"),
-        ("queue_intrusive_mpsc.scxml", "intrusive"),
-    ] {
+    for (fixture, storage) in [("queue_segmented_lscq.scxml", "segmented")] {
         let located = compile(&resource(fixture), fixture)
             .expect_err("a storage without a runtime is refused");
         // The refusal is placed on the storage element, so the mode it
@@ -555,7 +569,7 @@ fn a_storage_the_rust_runtime_lacks_is_refused_by_name() {
                 } => {
                     assert_eq!(got, storage);
                     assert_eq!(language, "rust");
-                    assert_eq!(implemented, "bounded");
+                    assert_eq!(implemented, "bounded, intrusive");
                 }
                 other => panic!("expected QueueStorageRuntimeMissing, got {other:?}"),
             },
@@ -653,10 +667,7 @@ fn an_scq_ring_is_sized_the_same_way_in_cpp() {
 
 #[test]
 fn a_storage_the_cpp_runtime_lacks_is_refused_by_name() {
-    for (fixture, storage) in [
-        ("queue_segmented_lscq.scxml", "segmented"),
-        ("queue_intrusive_mpsc.scxml", "intrusive"),
-    ] {
+    for (fixture, storage) in [("queue_segmented_lscq.scxml", "segmented")] {
         let located = compile_for(Language::Cpp, &resource(fixture), fixture)
             .expect_err("a storage without a runtime is refused");
         let text = resource(fixture);
@@ -679,7 +690,7 @@ fn a_storage_the_cpp_runtime_lacks_is_refused_by_name() {
                 } => {
                     assert_eq!(got, storage);
                     assert_eq!(language, "cpp");
-                    assert_eq!(implemented, "bounded");
+                    assert_eq!(implemented, "bounded, intrusive");
                 }
                 other => panic!("expected QueueStorageRuntimeMissing, got {other:?}"),
             },
@@ -1406,8 +1417,8 @@ fn masking_interrupts_excludes_nothing_on_another_core() {
 fn a_storage_the_c11_runtime_lacks_is_refused_by_name() {
     let located = c_compile(
         &ForgeCompileOptions::default(),
-        &resource("queue_intrusive_mpsc.scxml"),
-        "queue_intrusive_mpsc.scxml",
+        &resource("queue_segmented_lscq.scxml"),
+        "queue_segmented_lscq.scxml",
     )
     .expect_err("a storage without a runtime is refused");
     match generate_error(located) {
@@ -1415,7 +1426,7 @@ fn a_storage_the_c11_runtime_lacks_is_refused_by_name() {
             language, storage, ..
         } => {
             assert_eq!(language, "c11");
-            assert_eq!(storage, "intrusive");
+            assert_eq!(storage, "segmented");
         }
         other => panic!("expected QueueStorageRuntimeMissing, got {other:?}"),
     }
@@ -1502,6 +1513,154 @@ fn an_intrusive_link_field_the_element_lacks_is_refused_with_its_fields() {
                 );
             }
             other => panic!("expected QueueIntrusiveLinkFieldMissing, got {other:?}"),
+        },
+        other => panic!("expected a validation error, got {other:?}"),
+    }
+}
+
+fn intrusive_doc(name: &str, consumers: &str) -> String {
+    queue_doc(
+        name,
+        "many",
+        consumers,
+        "blocking",
+        r#"<sce:intrusive link-field="next"/>"#,
+    )
+}
+
+#[test]
+fn an_intrusive_queue_emits_the_mpsc_list_over_the_link_the_document_names() {
+    for (consumers, flag) in [("one", "false"), ("many", "true")] {
+        let xml = intrusive_doc("frame_queue", consumers);
+        let code = compile(&xml, "frame_queue.scxml")
+            .unwrap_or_else(|e| panic!("many/{consumers} intrusive queue emits: {e:?}"));
+        assert_parses(consumers, &code);
+        assert!(
+            code.contains("use sce_forge_runtime::queue::intrusive::{Link, Mpsc};"),
+            "{code}"
+        );
+        assert!(
+            code.contains("const OFFSET: usize = core::mem::offset_of!(RxEvent, next);"),
+            "the link is the field the document names:\n{code}"
+        );
+        assert!(
+            code.contains(&format!("pub const MANY_CONSUMERS: bool = {flag};")),
+            "{code}"
+        );
+        assert!(
+            code.contains("pub type FrameQueue = Mpsc<RxEvent, FrameQueueLink, MANY_CONSUMERS>;"),
+            "{code}"
+        );
+        assert!(
+            code.contains("PUSH_PROGRESS: &str = \"wait-free\"")
+                && code.contains("POP_PROGRESS: &str = \"blocking\""),
+            "{code}"
+        );
+        assert!(
+            !code.contains("CAPACITY") && !code.contains("RING_SLOTS"),
+            "an intrusive queue has no capacity:\n{code}"
+        );
+    }
+}
+
+#[test]
+fn an_intrusive_queue_emits_the_mpsc_list_in_cpp() {
+    let xml = intrusive_doc("frame_queue", "one");
+    let code =
+        compile_for(Language::Cpp, &xml, "frame_queue.scxml").expect("intrusive queue emits");
+    assert!(
+        code.contains(
+            "::SCE::Forge::Queue::IntrusiveMpsc<RxEventType, &RxEventType::next, MANY_CONSUMERS>"
+        ),
+        "{code}"
+    );
+    assert!(
+        code.contains("inline constexpr bool MANY_CONSUMERS = false;"),
+        "{code}"
+    );
+    assert!(!code.contains("CAPACITY"), "{code}");
+}
+
+#[test]
+fn an_intrusive_queue_emits_the_list_for_the_target_c11_runs_on() {
+    let xml = intrusive_doc("frame_queue", "many");
+    // With a read-modify-write atomic, the exchange list; without, the same list
+    // under the interrupt-masked critical section.
+    let atomic = c_compile(
+        &c_options("frame_queue", Some(32), Some(2), None),
+        &xml,
+        "frame_queue.scxml",
+    )
+    .expect("an intrusive queue emits on a target with an exchange");
+    assert!(atomic.contains("sce_queue_intrusive_t core;"), "{atomic}");
+    assert!(
+        atomic.contains("#define FRAME_QUEUE_MANY_CONSUMERS 1"),
+        "{atomic}"
+    );
+    assert!(
+        atomic.contains("offsetof(rx_event_t, next)"),
+        "the link is the field the document names:\n{atomic}"
+    );
+    assert!(
+        atomic.contains("#define FRAME_QUEUE_PUSH_PROGRESS \"wait-free\""),
+        "{atomic}"
+    );
+    let masked = c_compile(
+        &c_options("frame_queue", Some(0), Some(1), None),
+        &xml,
+        "frame_queue.scxml",
+    )
+    .expect("an intrusive queue emits on a target with no atomic");
+    assert!(
+        masked.contains("sce_queue_intrusive_irq_t core;")
+            && masked.contains("#include <sce/forge/queue_irq.h>"),
+        "{masked}"
+    );
+    assert!(
+        masked.contains("#define FRAME_QUEUE_PUSH_PROGRESS \"blocking\""),
+        "{masked}"
+    );
+    // The exchange is the target's to state, as it is for an SCQ row.
+    let unstated = c_compile(&ForgeCompileOptions::default(), &xml, "frame_queue.scxml")
+        .expect_err("an exchange list needs the target's atomic width");
+    assert!(matches!(
+        generate_error(unstated),
+        GenerateError::QueueAtomicWidthUnstated { .. }
+    ));
+}
+
+#[test]
+fn an_intrusive_link_field_that_is_not_a_u32_is_refused_with_the_fields_that_are() {
+    let element = codec_doc("rx_event").replace(
+        r#"<sce:field id="next" sce:type="uint32" sce:byte="4" sce:bit-size="32"/>"#,
+        r#"<sce:field id="next" sce:type="uint16" sce:byte="4" sce:bit-size="16"/>"#,
+    );
+    let xml = intrusive_doc("frame_queue", "one");
+    let located = compile_files_over(
+        Language::Rust,
+        &ForgeCompileOptions::default(),
+        &element,
+        &xml,
+        "frame_queue.scxml",
+    )
+    .expect_err("a 16-bit link cannot name a node");
+    assert!(
+        row_text(&located, &xml).contains("link-field=\"next\""),
+        "the refusal is placed on the storage row"
+    );
+    match located.error {
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::QueueIntrusiveLinkFieldNotU32 {
+                link_field,
+                actual,
+                candidates,
+                ..
+            } => {
+                assert_eq!(link_field, "next");
+                assert_eq!(actual, "uint16");
+                assert_eq!(candidates, ["sensor"]);
+            }
+            other => panic!("expected QueueIntrusiveLinkFieldNotU32, got {other:?}"),
         },
         other => panic!("expected a validation error, got {other:?}"),
     }

@@ -26,10 +26,16 @@
  *   cas     strong, acq_rel         returns the old value; it took the swap
  *                                   exactly when that equals `expected`
  *   fetch   add, sub, or, acq_rel   return the old value
+ *   xchg    acq_rel                 returns the old value; u32 only
+ *   load    relaxed                 u32 only
+ *   store   relaxed                 u32 only
  *
  * for the two widths the queue uses: u32 (the Lamport row's indices, the
  * place counters, and the entries of an SCQ ring on a 32-bit target) and u64
- * (the entries of an SCQ ring on a 64-bit one).
+ * (the entries of an SCQ ring on a 64-bit one). The exchange and the relaxed
+ * pair belong to the intrusive queue (Vyukov), whose links are u32 node
+ * indices: a producer exchanges its node onto the tail, and a link is read
+ * and written relaxed because the exchange and the acquire load order it.
  */
 
 #ifndef SCE_FORGE_ATOMICS_H
@@ -42,6 +48,9 @@ extern "C" {
 #endif
 
 extern uint32_t sce_atomic_load_acquire_u32(const uint32_t *p0);
+extern uint32_t sce_atomic_load_relaxed_u32(const uint32_t *p0);
+extern void sce_atomic_store_relaxed_u32(uint32_t *p0, uint32_t p1);
+extern uint32_t sce_atomic_xchg_acq_rel_u32(uint32_t *p0, uint32_t p1);
 extern uint32_t sce_atomic_load_seq_cst_u32(const uint32_t *p0);
 extern void sce_atomic_store_release_u32(uint32_t *p0, uint32_t p1);
 extern void sce_atomic_store_seq_cst_u32(uint32_t *p0, uint32_t p1);

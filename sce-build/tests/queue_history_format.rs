@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 use sce_build::queue_history::{
-    check, Call, History, Operation, Outcome, Refusal, Verdict, HISTORY_FORMAT_VERSION,
+    check, Call, EmptyPops, History, Operation, Outcome, Refusal, Verdict, HISTORY_FORMAT_VERSION,
 };
 
 fn repo_root() -> PathBuf {
@@ -193,6 +193,7 @@ fn a_written_history_reads_back_the_same() {
     let history = History {
         capacity: 3,
         refusal: Refusal::WhileSlotsAreHeld,
+        empty_pops: EmptyPops::WhileAPushIsInFlight,
         participants: vec![
             vec![
                 op(Call::Push(big), Outcome::Pushed, 1, 2),
@@ -213,6 +214,7 @@ fn a_written_history_reads_back_the_same() {
     );
     assert_eq!(read.capacity, 3);
     assert_eq!(read.refusal, Refusal::WhileSlotsAreHeld);
+    assert_eq!(read.empty_pops, EmptyPops::WhileAPushIsInFlight);
     assert_eq!(read.participants[0][0].call, Call::Push(big));
     assert_eq!(read.participants[1][0].outcome, Outcome::Popped(big));
     assert_eq!(check(&read), check(&history));
@@ -281,6 +283,7 @@ fn the_checker_judges_a_hand_built_history_as_before() {
     let ok = History {
         capacity: 1,
         refusal: Refusal::AtCapacity,
+        empty_pops: EmptyPops::Exact,
         participants: vec![vec![
             op(Call::Push(1), Outcome::Pushed, 1, 2),
             op(Call::Pop, Outcome::Popped(1), 3, 4),
@@ -290,10 +293,111 @@ fn the_checker_judges_a_hand_built_history_as_before() {
     let lost = History {
         capacity: 1,
         refusal: Refusal::AtCapacity,
+        empty_pops: EmptyPops::Exact,
         participants: vec![vec![
             op(Call::Push(1), Outcome::Pushed, 1, 2),
             op(Call::Pop, Outcome::Empty, 3, 4),
         ]],
     };
     assert!(matches!(check(&lost), Verdict::NotLinearizable { .. }));
+}
+
+/// A pop that answers empty while a push is in flight is the Vyukov list's
+/// blocking window, and only the history that says so excuses it: under the
+/// sequential queue's rule the same observations are a violation.
+#[test]
+fn an_empty_pop_a_push_in_flight_explains_is_excused_only_when_the_history_says_so() {
+    let observed = |empty_pops| History {
+        capacity: 4,
+        refusal: Refusal::AtCapacity,
+        empty_pops,
+        participants: vec![
+            // Stalled between its two steps: still in flight when the others ran.
+            vec![op(Call::Push(1), Outcome::Pushed, 1, 10)],
+            // Completed, and hidden behind the stalled one.
+            vec![op(Call::Push(2), Outcome::Pushed, 2, 3)],
+            vec![
+                op(Call::Pop, Outcome::Empty, 4, 5),
+                op(Call::Pop, Outcome::Popped(1), 11, 12),
+                op(Call::Pop, Outcome::Popped(2), 13, 14),
+            ],
+        ],
+    };
+    // Push 2 completed before the pop began, so an exact queue held it.
+    assert!(matches!(
+        check(&observed(EmptyPops::Exact)),
+        Verdict::NotLinearizable { .. }
+    ));
+    assert_eq!(
+        check(&observed(EmptyPops::WhileAPushIsInFlight)),
+        Verdict::Linearizable
+    );
+    // The excuse is a push in flight, not any empty answer: with every push done
+    // before the pop began there is nothing to blame.
+    let nothing_in_flight = History {
+        capacity: 4,
+        refusal: Refusal::AtCapacity,
+        empty_pops: EmptyPops::WhileAPushIsInFlight,
+        participants: vec![vec![
+            op(Call::Push(1), Outcome::Pushed, 1, 2),
+            op(Call::Pop, Outcome::Empty, 3, 4),
+        ]],
+    };
+    assert!(matches!(
+        check(&nothing_in_flight),
+        Verdict::NotLinearizable { .. }
+    ));
+}
+
+/// Two producers whose pushes overlap their neighbours' all along, popped after
+/// the last push in one order. The queue's capacity bounds nothing here (the
+/// intrusive list's histories name the node count), so a search that places
+/// overlapping pushes in either order and learns the order only when the pops are
+/// reached has about 2^30 queues to try. The pops fix the order of the pushes,
+/// because a pop that returned before another began took the earlier value, and
+/// a search that uses that finishes at once.
+#[test]
+fn pops_that_return_in_order_fix_the_order_of_overlapping_pushes() {
+    const PER_PRODUCER: u64 = 30;
+    let mut a = Vec::new();
+    let mut b = Vec::new();
+    let mut pops = Vec::new();
+    for i in 0..PER_PRODUCER {
+        a.push(op(
+            Call::Push(2 * i),
+            Outcome::Pushed,
+            10 * i + 1,
+            10 * i + 9,
+        ));
+        b.push(op(
+            Call::Push(2 * i + 1),
+            Outcome::Pushed,
+            10 * i + 6,
+            10 * i + 14,
+        ));
+    }
+    let after = 10 * PER_PRODUCER + 20;
+    for value in 0..2 * PER_PRODUCER {
+        pops.push(op(
+            Call::Pop,
+            Outcome::Popped(value),
+            after + 4 * value,
+            after + 4 * value + 2,
+        ));
+    }
+    let history = History {
+        capacity: 2 * PER_PRODUCER as usize,
+        refusal: Refusal::AtCapacity,
+        empty_pops: EmptyPops::Exact,
+        participants: vec![a, b, pops],
+    };
+    assert_eq!(check(&history), Verdict::Linearizable);
+
+    // Two values swapped across pushes that do not overlap (10 returned before 14
+    // was invoked) are still refused.
+    let mut swapped = history;
+    let pops = &mut swapped.participants[2];
+    pops[10].outcome = Outcome::Popped(14);
+    pops[14].outcome = Outcome::Popped(10);
+    assert!(matches!(check(&swapped), Verdict::NotLinearizable { .. }));
 }

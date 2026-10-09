@@ -149,6 +149,13 @@ class QueueContractTest {
             val storage = scenario.getValue("storage").jsonPrimitive.content
             val producers = scenario.getValue("producers").jsonPrimitive.content
             val consumers = scenario.getValue("consumers").jsonPrimitive.content
+            if (storage == "intrusive") {
+                // A collected language has no element to link in place, and the
+                // allocation an intrusive list exists to avoid is the collector's.
+                // The generator refuses the row for Kotlin by name
+                // (queue/storage-runtime-missing), so there is no runtime to run.
+                continue
+            }
             val capacity = scenario.getValue("capacity").jsonPrimitive.int
             val subject: Subject = when {
                 storage == "bounded" && producers == "one" && consumers == "one" -> SpscSubject(Spsc(capacity))

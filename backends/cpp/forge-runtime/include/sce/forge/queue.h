@@ -54,6 +54,7 @@
 #pragma once
 
 #include <atomic>
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -761,6 +762,154 @@ private:
     /// How many consumer handles are alive.
     std::atomic<std::size_t> consumers_{0};
     detail::Slot<T> slots_[N];
+};
+
+// ───────────────────────── Vyukov intrusive list ─────────────────────────
+
+/// The value of a link that names no node.
+inline constexpr std::uint32_t kNil = UINT32_MAX;
+
+/// The `intrusive` storage mode (RFC §synth-5-P): Vyukov's MPSC list, in which
+/// each element carries its own link, the caller owns every element, and a push
+/// cannot fail.
+///
+/// **The link is an index.** `Link` names a `std::uint32_t` member of `T`, which
+/// the queue uses in place as the index of the node that follows; the nodes are
+/// an array the caller owns, and a node is named by its position in it. An index
+/// fits the member on a 64-bit target where a pointer would not, and means the
+/// same in every process that maps the array.
+///
+/// **The algorithm.** `tail_` names the newest node. A push exchanges itself
+/// onto `tail_` and then stores its own index into the old tail's link; a pop
+/// walks from the oldest node. The caller gets back the very node it pushed and
+/// may reuse it at once, which a queue with a dummy node cannot give; the list
+/// keeps a *stub* node for it, and the pop of the last node puts the stub behind
+/// it through the producers' own exchange, so that it has a successor and can be
+/// returned. The stub is a node of the caller's array, set aside at
+/// construction and never pushed by the caller.
+///
+/// **Progress.** Push is wait-free: one exchange and one store. Pop is
+/// `blocking`: a producer stopped between its exchange and its store hides every
+/// node pushed after it, and in that window `try_pop` returns empty while pushes
+/// that completed sit behind it. With `ManyConsumers`, a test-and-set flag
+/// serialises the pops, and a consumer that finds it taken waits for the holder.
+///
+/// Memory order: a push writes its node, exchanges with acq_rel and stores the
+/// predecessor's link with release; a pop reads a link with acquire, so a node's
+/// contents written before its push happen-before the pop that returns it.
+template <typename T, std::uint32_t T::*Link, bool ManyConsumers> class IntrusiveMpsc {
+    static_assert(std::atomic<std::uint32_t>::is_always_lock_free,
+                  "the link is a 32-bit atomic, which the target must make lock-free");
+    static_assert(sizeof(std::atomic<std::uint32_t>) == sizeof(std::uint32_t) &&
+                      alignof(std::atomic<std::uint32_t>) == alignof(std::uint32_t),
+                  "an atomic<uint32_t> has the layout of the member it is used in place of");
+
+public:
+    /// An empty list over `len` nodes at `nodes`, with node `stub` set aside.
+    /// `nodes` must stay valid for the queue's life and a node must not be
+    /// touched, but through the queue, while it is queued; `stub < len < kNil`.
+    IntrusiveMpsc(T *nodes, std::uint32_t len, std::uint32_t stub) noexcept
+        : tail_(stub), head_(stub), busy_(0), stub_(stub), nodes_(nodes), len_(len) {
+        assert(stub < len && len < kNil);
+        link(stub).store(kNil, std::memory_order_relaxed);
+    }
+
+    IntrusiveMpsc(const IntrusiveMpsc &) = delete;
+    IntrusiveMpsc &operator=(const IntrusiveMpsc &) = delete;
+
+    /// The number of nodes in the array, the stub included.
+    constexpr std::uint32_t nodes() const noexcept {
+        return len_;
+    }
+
+    /// The node that is the stub.
+    constexpr std::uint32_t stub() const noexcept {
+        return stub_;
+    }
+
+    /// Put node `index` on the queue. Wait-free; it cannot fail. `index` names a
+    /// node that is not the stub and is not in the queue, and the caller has
+    /// finished writing it: its contents are published to the consumer here.
+    void push(std::uint32_t index) noexcept {
+        assert(index != stub_);
+        append(index);
+    }
+
+    /// Take the oldest node, or `std::nullopt` when the queue holds none the
+    /// consumer can reach, which is also the answer while a producer is between
+    /// its two steps. With many consumers the call first takes the flag; with one,
+    /// only that consumer may call it.
+    std::optional<std::uint32_t> try_pop() noexcept {
+        if constexpr (ManyConsumers) {
+            while (busy_.value.exchange(1, std::memory_order_acquire) != 0) {
+            }
+            const std::optional<std::uint32_t> popped = pop();
+            busy_.value.store(0, std::memory_order_release);
+            return popped;
+        } else {
+            return pop();
+        }
+    }
+
+private:
+    /// The link of node `index`, used in place.
+    std::atomic<std::uint32_t> &link(std::uint32_t index) noexcept {
+        assert(index < len_);
+        return *reinterpret_cast<std::atomic<std::uint32_t> *>(&(nodes_[index].*Link));
+    }
+
+    /// Link `index` behind the newest node.
+    void append(std::uint32_t index) noexcept {
+        link(index).store(kNil, std::memory_order_relaxed);
+        // After this exchange `index` is the newest node and `previous` is behind
+        // it, whatever the other producers do. Until the store below the consumer
+        // cannot reach `index`.
+        const std::uint32_t previous = tail_.value.exchange(index, std::memory_order_acq_rel);
+        link(previous).store(index, std::memory_order_release);
+    }
+
+    /// The walk, run by one consumer at a time.
+    std::optional<std::uint32_t> pop() noexcept {
+        std::uint32_t head = head_.value.load(std::memory_order_relaxed);
+        std::uint32_t next = link(head).load(std::memory_order_acquire);
+        if (head == stub_) {
+            if (next == kNil) {
+                return std::nullopt;
+            }
+            head_.value.store(next, std::memory_order_relaxed);
+            head = next;
+            next = link(head).load(std::memory_order_acquire);
+        }
+        if (next != kNil) {
+            head_.value.store(next, std::memory_order_relaxed);
+            return head;
+        }
+        // `head` has no successor: it is the newest node, or a producer is between
+        // its exchange and its store.
+        if (head != tail_.value.load(std::memory_order_acquire)) {
+            return std::nullopt;
+        }
+        // It is the newest node. Put the stub behind it so that it has a
+        // successor and can be returned.
+        append(stub_);
+        next = link(head).load(std::memory_order_acquire);
+        if (next != kNil) {
+            head_.value.store(next, std::memory_order_relaxed);
+            return head;
+        }
+        return std::nullopt;
+    }
+
+    /// The newest node. Exchanged by every push and by the stub's.
+    detail::Padded<std::atomic<std::uint32_t>> tail_;
+    /// The oldest node not yet returned. Private to the one consumer, or to the
+    /// holder of `busy_`.
+    detail::Padded<std::atomic<std::uint32_t>> head_;
+    /// The test-and-set flag that serialises many consumers. Unused with one.
+    detail::Padded<std::atomic<std::uint32_t>> busy_;
+    std::uint32_t stub_;
+    T *nodes_;
+    std::uint32_t len_;
 };
 
 }  // namespace SCE::Forge::Queue

@@ -19,6 +19,10 @@
       "description": "When the queue under test may refuse a push. `at-capacity`: only when it holds `capacity` elements (the Lamport ring, whose slot is handed back by the store that retires the element). `while-slots-are-held`: also while operations of other participants that overlap the push hold the slots it is short of, at most one per other participant (the SCQ queue, whose pop returns its slot only after reading its element, and whose push holds the slot it took until it has published). Capacity is exact at rest under both, and a refusal that no overlapping operation could explain is a violation under both.",
       "enum": ["at-capacity", "while-slots-are-held"]
     },
+    "empty_pops": {
+      "description": "When the queue under test may answer a pop with `empty`. Absent means `exact`: only when it holds nothing, the sequential queue's rule. `while-a-push-is-in-flight`: also when the pop overlaps a push, which is the Vyukov intrusive list, whose producer swaps itself into the tail and only then links its predecessor, so that every element pushed after a stalled producer is unreachable from the head until it resumes (the row's pop is `blocking`). An empty answer that no overlapping push could explain is a violation under both.",
+      "enum": ["exact", "while-a-push-is-in-flight"]
+    },
     "participants": {
       "description": "One list per participant, in that participant's program order.",
       "type": "array",

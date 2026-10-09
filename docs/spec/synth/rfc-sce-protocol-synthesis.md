@@ -1723,7 +1723,7 @@ sce_atomic_cas_strong_{acq_rel,release,relaxed}
 sce_atomic_fetch_add_{acq_rel,relaxed}
 sce_atomic_fetch_sub_{acq_rel,relaxed}
 sce_atomic_fetch_or_{acq_rel,relaxed}
-sce_atomic_fetch_and_{acq_rel,relaxed}
+sce_atomic_fetch_and_{acq_rel,relaxed}   # and sce_atomic_xchg_acq_rel (returns old)
 ```
 
 *Fences:*
@@ -3483,7 +3483,7 @@ least the declared progress.
 | `bounded` | any other | | SCQ data queue: an allocated-index ring and a free-index ring over a data array | lock-free | lock-free |
 | `segmented` | one | one | Linked Lamport rings | wait-free, bounded by the allocator | wait-free |
 | `segmented` | any other | | LSCQ: a list of SCQ rings | lock-free, bounded by the allocator | lock-free |
-| `intrusive` | one | one | Vyukov intrusive list, single producer | wait-free | wait-free |
+| `intrusive` | one | one | Vyukov intrusive MPSC (one producer gains nothing: the consumer puts the stub on the tail through the producers' own exchange) | wait-free | blocking |
 | `intrusive` | many | one | Vyukov intrusive MPSC | wait-free | blocking |
 | `intrusive` | any | many | Vyukov intrusive list; consumers serialised by a test-and-set flag | wait-free | blocking |
 
@@ -3501,7 +3501,11 @@ least the declared progress.
   on the tail and its store of the link hides every later element
   from the consumer until it resumes, and in that window `try_pop`
   returns empty. That is why its pop row is `blocking`, and why a
-  `lock-free` declaration with that cardinality is refused.
+  `lock-free` declaration with that cardinality is refused. One producer is
+  no exception: the consumer returns the last node by swapping a stub onto the
+  tail through the producers' own exchange, so the window is the same, and
+  `wait-free` is refused for `one`/`one` too. The histories of this row are
+  judged with `empty_pops` `while-a-push-is-in-flight`.
 - *Intrusive pop is never lock-free when either side is `many`, and
   that is final.* The intrusive contract is that the caller gets back
   the very node it pushed and may reuse it at once. Michael-Scott's

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "description": "Contract scenarios for sce:kind=\"queue\" (SCE Protocol-Synthesis RFC section 5.P, verification layer 1). Each scenario is a single-threaded sequence of operations on one queue and the result each must give; every language arm runs every scenario whose storage row it implements and refuses, by name, a row it does not. Steps: {\"op\":\"push\",\"value\":N,\"expect\":\"ok\"|\"full\"} (a refused push hands back the same value), {\"op\":\"pop\",\"expect\":N|\"empty\"}, {\"op\":\"capacity\",\"expect\":N}, and {\"op\":\"destroy\",\"expect\":[N,...]} (the queue is destroyed and exactly the listed elements are destroyed with it, in any order; nothing may follow it).",
+  "description": "Contract scenarios for sce:kind=\"queue\" (SCE Protocol-Synthesis RFC section 5.P, verification layer 1). Each scenario is a single-threaded sequence of operations on one queue and the result each must give; every language arm runs every scenario whose storage row it implements and refuses, by name, a row it does not. Steps: {\"op\":\"push\",\"value\":N,\"expect\":\"ok\"|\"full\"} (a refused push hands back the same value), {\"op\":\"pop\",\"expect\":N|\"empty\"}, {\"op\":\"capacity\",\"expect\":N}, and {\"op\":\"destroy\",\"expect\":[N,...]} (the queue is destroyed and exactly the listed elements are destroyed with it, in any order; nothing may follow it). A scenario of storage `intrusive` has `nodes` in place of `capacity`: the caller owns an array of that many nodes and the queue sets one more aside as its stub; a push's `value` and a pop's `expect` are node indices, a push is always `ok`, and `capacity` and `destroy` do not apply to it.",
   "scenarios": [
     {
       "id": "bounded_spsc_capacity_is_exact",
@@ -284,6 +284,69 @@
         { "op": "pop", "expect": 1 },
         { "op": "pop", "expect": 2 },
         { "op": "pop", "expect": 3 },
+        { "op": "pop", "expect": "empty" }
+      ]
+    },
+    {
+      "id": "intrusive_fifo_and_the_last_node_comes_back_at_once",
+      "summary": "Nodes come back in the order they were pushed, the last one included, and a returned node can be pushed again at once. `value` and `expect` are node indices of an array of `nodes` nodes the caller owns; the queue keeps one more as its stub.",
+      "storage": "intrusive",
+      "producers": "one",
+      "consumers": "one",
+      "nodes": 4,
+      "steps": [
+        { "op": "pop", "expect": "empty" },
+        { "op": "push", "value": 0, "expect": "ok" },
+        { "op": "push", "value": 1, "expect": "ok" },
+        { "op": "push", "value": 2, "expect": "ok" },
+        { "op": "pop", "expect": 0 },
+        { "op": "pop", "expect": 1 },
+        { "op": "pop", "expect": 2 },
+        { "op": "pop", "expect": "empty" },
+        { "op": "push", "value": 2, "expect": "ok" },
+        { "op": "pop", "expect": 2 },
+        { "op": "pop", "expect": "empty" }
+      ]
+    },
+    {
+      "id": "intrusive_many_producers_one_consumer_interleaved",
+      "summary": "Pushes and pops interleaved on a queue with many producers and one consumer keep first in first out, and a push never fails whatever the number of nodes in the queue",
+      "storage": "intrusive",
+      "producers": "many",
+      "consumers": "one",
+      "nodes": 5,
+      "steps": [
+        { "op": "push", "value": 3, "expect": "ok" },
+        { "op": "push", "value": 1, "expect": "ok" },
+        { "op": "pop", "expect": 3 },
+        { "op": "push", "value": 4, "expect": "ok" },
+        { "op": "push", "value": 0, "expect": "ok" },
+        { "op": "push", "value": 2, "expect": "ok" },
+        { "op": "pop", "expect": 1 },
+        { "op": "pop", "expect": 4 },
+        { "op": "pop", "expect": 0 },
+        { "op": "push", "value": 3, "expect": "ok" },
+        { "op": "pop", "expect": 2 },
+        { "op": "pop", "expect": 3 },
+        { "op": "pop", "expect": "empty" }
+      ]
+    },
+    {
+      "id": "intrusive_many_producers_many_consumers_serialised",
+      "summary": "With many consumers the pops are serialised by a flag and give the same sequence as with one",
+      "storage": "intrusive",
+      "producers": "many",
+      "consumers": "many",
+      "nodes": 3,
+      "steps": [
+        { "op": "push", "value": 0, "expect": "ok" },
+        { "op": "push", "value": 1, "expect": "ok" },
+        { "op": "push", "value": 2, "expect": "ok" },
+        { "op": "pop", "expect": 0 },
+        { "op": "pop", "expect": 1 },
+        { "op": "push", "value": 0, "expect": "ok" },
+        { "op": "pop", "expect": 2 },
+        { "op": "pop", "expect": 0 },
         { "op": "pop", "expect": "empty" }
       ]
     }

@@ -34,6 +34,20 @@ mod queue_modules {
     pub mod queue_conformance_scq {
         include!(concat!(env!("OUT_DIR"), "/queue_conformance_scq.rs"));
     }
+    pub mod queue_conformance_node {
+        include!(concat!(env!("OUT_DIR"), "/queue_conformance_node.rs"));
+    }
+    #[allow(clippy::all, unused_imports, dead_code)]
+    pub mod queue_conformance_intrusive {
+        include!(concat!(env!("OUT_DIR"), "/queue_conformance_intrusive.rs"));
+    }
+    #[allow(clippy::all, unused_imports, dead_code)]
+    pub mod queue_conformance_intrusive_many {
+        include!(concat!(
+            env!("OUT_DIR"),
+            "/queue_conformance_intrusive_many.rs"
+        ));
+    }
 }
 
 use std::collections::BTreeMap;
@@ -42,6 +56,9 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use queue_modules::queue_conformance_event::QueueConformanceEvent;
+use queue_modules::queue_conformance_intrusive as intrusive;
+use queue_modules::queue_conformance_intrusive_many as intrusive_many;
+use queue_modules::queue_conformance_node::QueueConformanceNode;
 use queue_modules::queue_conformance_scq as scq;
 use queue_modules::queue_conformance_spsc as spsc;
 
@@ -273,4 +290,80 @@ fn the_scq_queue_loses_nothing_between_threads() {
             "sensor {sensor}: every element exactly once"
         );
     }
+}
+
+#[test]
+fn the_intrusive_modules_state_what_the_document_required_and_what_it_gives() {
+    assert!(!intrusive::MANY_CONSUMERS, "one consumer needs no flag");
+    assert!(
+        intrusive_many::MANY_CONSUMERS,
+        "many consumers are serialised"
+    );
+    assert_eq!(intrusive::DECLARED_PROGRESS, "blocking");
+    assert_eq!(intrusive::PUSH_PROGRESS, "wait-free");
+    assert_eq!(intrusive::POP_PROGRESS, "blocking");
+    assert!(
+        intrusive::ALGORITHM.contains("Vyukov"),
+        "{}",
+        intrusive::ALGORITHM
+    );
+    assert_eq!(intrusive_many::POP_PROGRESS, "blocking");
+}
+
+fn nodes() -> Vec<QueueConformanceNode> {
+    (0..4u8)
+        .map(|i| QueueConformanceNode {
+            sensor_id: i + 1,
+            value: u16::from(i) * 9,
+            next: 0xDEAD_BEEF,
+        })
+        .collect()
+}
+
+/// The generated queue links through the field the document names, in the
+/// caller's array of the generated struct: nodes come back in the order pushed,
+/// the last one included and at once, and nothing but the link is written.
+fn an_intrusive_queue_hands_nodes_back_in_order<Q>(
+    new: unsafe fn(*mut QueueConformanceNode, u32, u32) -> Q,
+    push: impl Fn(&Q, u32),
+    try_pop: impl Fn(&Q) -> Option<u32>,
+) {
+    let mut array = nodes();
+    // SAFETY: `array` outlives the queue and only the queue touches a link;
+    // node 3 is the stub and is never pushed.
+    let queue = unsafe { new(array.as_mut_ptr(), 4, 3) };
+    assert_eq!(try_pop(&queue), None, "a new queue is empty");
+    push(&queue, 2);
+    push(&queue, 0);
+    push(&queue, 1);
+    assert_eq!(try_pop(&queue), Some(2));
+    assert_eq!(try_pop(&queue), Some(0));
+    push(&queue, 2);
+    assert_eq!(try_pop(&queue), Some(1));
+    assert_eq!(try_pop(&queue), Some(2), "the last node comes back at once");
+    assert_eq!(try_pop(&queue), None, "drained");
+    drop(queue);
+    for (i, node) in array.iter().enumerate() {
+        assert_eq!(
+            (node.sensor_id, node.value),
+            (i as u8 + 1, i as u16 * 9),
+            "the queue touched more than the link of node {i}"
+        );
+    }
+}
+
+#[test]
+fn the_generated_intrusive_queues_hand_nodes_back_in_order() {
+    // SAFETY (both): the callers of `push` pass nodes of the array that are not
+    // the stub and not in the queue.
+    an_intrusive_queue_hands_nodes_back_in_order(
+        intrusive::QueueConformanceIntrusive::new,
+        |q, index| unsafe { q.push(index) },
+        |q| q.try_pop(),
+    );
+    an_intrusive_queue_hands_nodes_back_in_order(
+        intrusive_many::QueueConformanceIntrusiveMany::new,
+        |q, index| unsafe { q.push(index) },
+        |q| q.try_pop(),
+    );
 }

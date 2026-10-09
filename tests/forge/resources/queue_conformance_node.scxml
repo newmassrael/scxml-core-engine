@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SCE Protocol-Synthesis RFC §synth-5-P (queue kind, intrusive storage): the
+  node the intrusive queue conformance fixtures link. `next` is the link the
+  queue uses in place, the index of the node that follows; the document that
+  declares the queue names it (`<sce:intrusive link-field="next"/>`). A node of
+  the caller's array is named by its index, so the link is a 32-bit unsigned
+  member and nothing else.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="little" name="queue_conformance_node">
+  <datamodel>
+    <data id="sensor_id" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <data id="value" sce:type="uint16" sce:byte="1" sce:bit-size="16"/>
+    <data id="next" sce:type="uint32" sce:byte="3" sce:bit-size="32"/>
+  </datamodel>
+</scxml>

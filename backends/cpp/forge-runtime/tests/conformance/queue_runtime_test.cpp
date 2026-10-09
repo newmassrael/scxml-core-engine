@@ -209,6 +209,57 @@ void dispatch_bounded_scq(const std::string &id, std::uint64_t capacity, const j
     }
 }
 
+/// A node of the caller's array: a payload the queue must leave alone, and the
+/// link it uses in place.
+struct Node {
+    std::uint64_t payload;
+    std::uint32_t link;
+    std::uint32_t tag;
+};
+
+constexpr std::uint32_t kNodeTag = 0xA5A5A5A5u;
+
+std::uint64_t node_payload(std::uint32_t index) {
+    return static_cast<std::uint64_t>(index) * 40503u + 7u;
+}
+
+/// An intrusive scenario: `value` and `expect` are indices among `nodes` nodes
+/// the caller owns; the queue is given one more as its stub.
+template <bool ManyConsumers>
+void run_intrusive_scenario(const std::string &id, std::uint32_t nodes, const json &steps) {
+    std::vector<Node> array(nodes + 1u);
+    for (std::uint32_t i = 0; i < array.size(); ++i) {
+        array[i] = Node{node_payload(i), 0xDEADBEEFu, kNodeTag};
+    }
+    queue::IntrusiveMpsc<Node, &Node::link, ManyConsumers> list(array.data(), nodes + 1u, nodes);
+    CHECK(list.nodes() == nodes + 1u && list.stub() == nodes, "the stub is the node set aside");
+    std::size_t index = 0;
+    for (const json &step : steps) {
+        const std::string context = "scenario " + id + " step " + std::to_string(index++);
+        const std::string op = step.at("op").get<std::string>();
+        if (op == "push") {
+            list.push(step.at("value").get<std::uint32_t>());
+        } else if (op == "pop") {
+            const json &expect = step.at("expect");
+            const std::optional<std::uint32_t> got = list.try_pop();
+            if (expect.is_string()) {
+                CHECK(!got.has_value(), (context + ": expected the queue to be empty").c_str());
+            } else {
+                CHECK(got.has_value() && *got == expect.get<std::uint32_t>(),
+                      (context + ": popped " + (got ? std::to_string(*got) : "nothing") + ", want node " +
+                       std::to_string(expect.get<std::uint32_t>()))
+                          .c_str());
+            }
+        } else {
+            CHECK(false, (context + ": an intrusive scenario has no step " + op).c_str());
+        }
+    }
+    for (std::uint32_t i = 0; i < array.size(); ++i) {
+        CHECK(array[i].payload == node_payload(i) && array[i].tag == kNodeTag,
+              ("scenario " + id + ": the queue wrote outside the link of node " + std::to_string(i)).c_str());
+    }
+}
+
 void every_contract_scenario_holds() {
     std::ifstream in(QUEUE_CONTRACT_JSON_PATH);
     CHECK(in.good(), "the contract file opens");
@@ -222,8 +273,18 @@ void every_contract_scenario_holds() {
         const std::string storage = scenario.at("storage").get<std::string>();
         const std::string producers = scenario.at("producers").get<std::string>();
         const std::string consumers = scenario.at("consumers").get<std::string>();
-        const std::uint64_t capacity = scenario.at("capacity").get<std::uint64_t>();
         const json &steps = scenario.at("steps");
+        if (storage == "intrusive") {
+            // An intrusive scenario names the nodes the caller owns, not a capacity.
+            const std::uint32_t nodes = scenario.at("nodes").get<std::uint32_t>();
+            if (consumers == "one") {
+                run_intrusive_scenario<false>(id, nodes, steps);
+            } else {
+                run_intrusive_scenario<true>(id, nodes, steps);
+            }
+            continue;
+        }
+        const std::uint64_t capacity = scenario.at("capacity").get<std::uint64_t>();
         if (storage == "bounded" && producers == "one" && consumers == "one") {
             dispatch_bounded_spsc(id, capacity, steps);
         } else if (storage == "bounded") {

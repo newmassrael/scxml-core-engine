@@ -18,6 +18,9 @@
 // conformance fixtures.
 
 #include "queue_conformance_event.h"
+#include "queue_conformance_intrusive.h"
+#include "queue_conformance_intrusive_many.h"
+#include "queue_conformance_node.h"
 #include "queue_conformance_scq.h"
 #include "queue_conformance_spsc.h"
 
@@ -49,6 +52,11 @@ namespace queue = ::SCE::Forge::Queue;
 namespace element_ns = ::SCE::Generated::QueueConformanceEvent;
 namespace spsc = ::SCE::Generated::QueueConformanceSpsc;
 namespace scq = ::SCE::Generated::QueueConformanceScq;
+namespace node_ns = ::SCE::Generated::QueueConformanceNode;
+namespace intrusive = ::SCE::Generated::QueueConformanceIntrusive;
+namespace intrusive_many = ::SCE::Generated::QueueConformanceIntrusiveMany;
+
+using Node = node_ns::QueueConformanceNode;
 
 using Event = element_ns::QueueConformanceEvent;
 
@@ -230,6 +238,44 @@ void the_scq_queue_loses_nothing_between_threads() {
     }
 }
 
+// ─── The intrusive list ───
+
+void the_intrusive_modules_state_what_the_document_required_and_what_it_gives() {
+    CHECK(!intrusive::MANY_CONSUMERS, "one consumer needs no flag");
+    CHECK(intrusive_many::MANY_CONSUMERS, "many consumers are serialised by a flag");
+    CHECK(intrusive::DECLARED_PROGRESS == "blocking", "declared progress");
+    CHECK(intrusive::PUSH_PROGRESS == "wait-free", "a push is one exchange and one store");
+    CHECK(intrusive::POP_PROGRESS == "blocking", "a pop can wait behind a producer");
+    CHECK(contains(intrusive::ALGORITHM, "Vyukov"), "many producers select Vyukov's list");
+    CHECK(intrusive_many::POP_PROGRESS == "blocking", "a pop can also wait for the flag");
+}
+
+/// One queue of either shape over the caller's array of generated nodes: the
+/// nodes come back in the order pushed, the last one included and at once, and
+/// the queue leaves every field but the link alone.
+template <typename Queue> void an_intrusive_queue_hands_nodes_back_in_order() {
+    Node nodes[4];
+    for (std::uint8_t i = 0; i < 4; ++i) {
+        nodes[i] = Node{.sensor_id = static_cast<std::uint8_t>(i + 1),
+                        .value = static_cast<std::uint16_t>(i * 9),
+                        .next = 0xDEADBEEFu};
+    }
+    Queue q(nodes, 4, 3);
+    CHECK(!q.try_pop().has_value(), "a new queue is empty");
+    q.push(2);
+    q.push(0);
+    q.push(1);
+    CHECK(q.try_pop() == std::optional<std::uint32_t>(2), "first in, first out");
+    CHECK(q.try_pop() == std::optional<std::uint32_t>(0), "first in, first out");
+    q.push(2);
+    CHECK(q.try_pop() == std::optional<std::uint32_t>(1), "first in, first out");
+    CHECK(q.try_pop() == std::optional<std::uint32_t>(2), "the last node comes back at once, and can be pushed again");
+    CHECK(!q.try_pop().has_value(), "drained");
+    for (std::uint8_t i = 0; i < 4; ++i) {
+        CHECK(nodes[i].sensor_id == i + 1 && nodes[i].value == i * 9, "the queue touched more than the link");
+    }
+}
+
 }  // namespace
 
 int main() {
@@ -240,6 +286,9 @@ int main() {
     the_scq_queue_hands_out_no_more_handles_than_its_ring_has_slots();
     the_scq_queue_can_be_a_static();
     the_scq_queue_loses_nothing_between_threads();
+    the_intrusive_modules_state_what_the_document_required_and_what_it_gives();
+    an_intrusive_queue_hands_nodes_back_in_order<intrusive::QueueConformanceIntrusive>();
+    an_intrusive_queue_hands_nodes_back_in_order<intrusive_many::QueueConformanceIntrusiveMany>();
 
     if (failures != 0) {
         std::fprintf(stderr, "%d check(s) failed\n", failures);

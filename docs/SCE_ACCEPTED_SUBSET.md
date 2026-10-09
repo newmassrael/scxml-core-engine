@@ -6904,6 +6904,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `queue/deploy-limit-unresolved` | Validation |
 | `queue/element-type-not-a-kind` | Validation |
 | `queue/intrusive-link-field-missing` | Validation |
+| `queue/intrusive-link-field-not-u32` | Validation |
 | `queue/storage-runtime-missing` | Generate |
 | `queue/progress-unreachable-on-backend` | Generate |
 | `queue/atomic-width-unstated` | Generate |

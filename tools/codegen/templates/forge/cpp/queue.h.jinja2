@@ -17,6 +17,18 @@
 //
 // Selected: {{ algorithm }}. Push is {{ push_progress }}, pop is {{ pop_progress }}.
 //
+{% if intrusive %}
+// The queue is intrusive (`<sce:intrusive link-field="{{ link_field }}"/>`): the elements are
+// nodes of an array the caller owns, linked through their own `{{ link_field }}` member, a
+// `std::uint32_t`. A node is named by its index in that array.
+//
+// Operations (from `SCE::Forge::Queue::IntrusiveMpsc`):
+//   {{ pascal }}(nodes, len, stub)   the array, and the node set aside as the stub
+//   push(index)                      wait-free; it cannot fail
+//   try_pop() -> std::optional<std::uint32_t>
+//                                    the index of the oldest node; empty while a push is
+//                                    in flight or when the queue holds none
+{% else %}
 // Operations (from `SCE::Forge::Queue`):
 //   producer() / consumer()      a handle, or std::nullopt when every place of
 //                                that side is taken; a handle gives its place
@@ -25,6 +37,7 @@
 //                                argument as it was
 //   try_pop() -> std::optional<T>
 //   capacity()                   a compile-time constant
+{% endif %}
 
 #pragma once
 #ifndef {{ guard }}
@@ -43,6 +56,26 @@
 namespace SCE::Generated::{{ namespace }} {
 
 using {{ element_pascal }}Type = ::SCE::Generated::{{ element_pascal }}::{{ element_pascal }};
+{% if intrusive %}
+
+/// Whether many consumers pop: their pops are serialised by a test-and-set
+/// flag. With one, the consumer must be a single thread.
+inline constexpr bool MANY_CONSUMERS = {{ "true" if many_consumers else "false" }};
+
+/// What the document requires of push and pop (`<sce:progress>`).
+inline constexpr std::string_view DECLARED_PROGRESS = "{{ declared_progress }}";
+/// What the selected algorithm gives push.
+inline constexpr std::string_view PUSH_PROGRESS = "{{ push_progress }}";
+/// What the selected algorithm gives pop. A pop answers empty while a producer
+/// is between its two steps, so the queue's histories are judged with that excuse.
+inline constexpr std::string_view POP_PROGRESS = "{{ pop_progress }}";
+/// The algorithm the selection table gave this contract.
+inline constexpr std::string_view ALGORITHM = "{{ algorithm }}";
+
+/// The queue. It owns no storage: the nodes are the caller's, and the queue
+/// allocates nothing.
+using {{ pascal }} = ::SCE::Forge::Queue::IntrusiveMpsc<{{ element_pascal }}Type, &{{ element_pascal }}Type::{{ link_field }}, MANY_CONSUMERS>;
+{% else %}
 
 /// The most elements the queue holds (`<sce:bounded>`).
 inline constexpr std::size_t CAPACITY = {{ capacity }};
@@ -90,6 +123,7 @@ using {{ pascal }} = ::SCE::Forge::Queue::{{ runtime_type }}<{{ element_pascal }
 
 /// The bytes of storage the queue occupies, for a target that budgets them.
 inline constexpr std::size_t STORAGE_BYTES = sizeof({{ pascal }});
+{% endif %}
 
 }  // namespace SCE::Generated::{{ namespace }}
 

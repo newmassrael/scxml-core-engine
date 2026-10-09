@@ -176,6 +176,12 @@ func TestEveryContractScenarioHolds(t *testing.T) {
 					t.Skipf("the SCQ row is absent on this GOARCH (scq.go's build constraint); refused by name: %s", scenario.ID)
 				}
 				runScenario(t, newScqSubject(scenario.Capacity), scenario)
+			case scenario.Storage == "intrusive":
+				// A collected language has no element to link in place, and the
+				// allocation an intrusive list exists to avoid is the collector's.
+				// The generator refuses the row for Go by name
+				// (queue/storage-runtime-missing), so there is no runtime to run.
+				t.Skipf("the intrusive row is not lowered to Go, and the generator refuses it by name: %s", scenario.ID)
 			default:
 				t.Fatalf("the Go arm has no runtime for the row %s/%s/%s", scenario.Storage, scenario.Producers, scenario.Consumers)
 			}

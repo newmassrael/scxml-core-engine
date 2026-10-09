@@ -190,6 +190,7 @@
         "queue/deploy-limit-unresolved",
         "queue/element-type-not-a-kind",
         "queue/intrusive-link-field-missing",
+        "queue/intrusive-link-field-not-u32",
         "queue/storage-runtime-missing",
         "queue/progress-unreachable-on-backend",
         "queue/atomic-width-unstated",

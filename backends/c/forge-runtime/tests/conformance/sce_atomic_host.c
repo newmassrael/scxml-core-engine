@@ -47,3 +47,17 @@
 
 SCE_HOST_ATOMICS(u32, uint32_t)
 SCE_HOST_ATOMICS(u64, uint64_t)
+
+/* The intrusive queue's links are u32 node indices (sce/forge/atomics.h): an
+ * exchange onto the tail, and relaxed reads and writes of a link. */
+uint32_t sce_atomic_xchg_acq_rel_u32(uint32_t *p0, uint32_t p1) {
+    return __atomic_exchange_n(p0, p1, __ATOMIC_ACQ_REL);
+}
+
+uint32_t sce_atomic_load_relaxed_u32(const uint32_t *p0) {
+    return __atomic_load_n(p0, __ATOMIC_RELAXED);
+}
+
+void sce_atomic_store_relaxed_u32(uint32_t *p0, uint32_t p1) {
+    __atomic_store_n(p0, p1, __ATOMIC_RELAXED);
+}

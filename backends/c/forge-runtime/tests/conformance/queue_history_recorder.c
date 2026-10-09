@@ -402,8 +402,8 @@ static void *consume(void *arg) {
 }
 
 /* Writes `<dir>/<name>.json`. */
-static void write_history(const char *dir, const char *name, uint32_t capacity, const char *refusal, const log_t *logs,
-                          unsigned participants) {
+static void write_history(const char *dir, const char *name, uint32_t capacity, const char *refusal,
+                          const char *empty_pops, const log_t *logs, unsigned participants) {
     char path[1024];
     FILE *file;
     unsigned who;
@@ -413,8 +413,11 @@ static void write_history(const char *dir, const char *name, uint32_t capacity, 
         (void)fprintf(stderr, "cannot write %s\n", path);
         exit(2);
     }
-    (void)fprintf(file, "{\"version\":1,\"capacity\":%u,\"refusal\":\"%s\",\"participants\":[", (unsigned)capacity,
-                  refusal);
+    (void)fprintf(file, "{\"version\":1,\"capacity\":%u,\"refusal\":\"%s\",", (unsigned)capacity, refusal);
+    if (empty_pops != NULL) {
+        (void)fprintf(file, "\"empty_pops\":\"%s\",", empty_pops);
+    }
+    (void)fputs("\"participants\":[", file);
     for (who = 0; who < participants; who++) {
         size_t at;
         (void)fputs(who == 0u ? "[" : ",[", file);
@@ -468,13 +471,160 @@ static void record_run(const char *dir, const char *name, kind_t kind, uint32_t 
         (void)fprintf(stderr, "%s: the elements did not all arrive before the deadline\n", name);
         exit(1);
     }
-    write_history(dir, name, capacity, refusal, run.logs, participants);
+    write_history(dir, name, capacity, refusal, NULL, run.logs, participants);
     for (i = 0; i < participants; i++) {
         free(run.logs[i].ops);
     }
     free(run.logs);
     free(actors);
     subject_free(&o);
+}
+
+/* ---- The intrusive list ---- */
+
+/* A node of the caller's array: a payload, and the link the queue uses. */
+typedef struct node {
+    uint64_t payload;
+    uint32_t link;
+    uint32_t pad;
+} node_t;
+
+typedef enum list_kind { LIST_ATOMIC, LIST_IRQ } list_kind_t;
+
+typedef struct list_run {
+    list_kind_t kind;
+    sce_queue_intrusive_t atomic;
+    sce_queue_intrusive_irq_t irq;
+    node_t *nodes;
+    uint64_t clock;
+    uint64_t delivered;
+    uint64_t total;
+    uint64_t per_producer;
+    unsigned producers;
+    uint32_t failed;
+    log_t *logs;
+} list_run_t;
+
+typedef struct list_actor {
+    list_run_t *run;
+    unsigned index;
+    pthread_t thread;
+} list_actor_t;
+
+static uint64_t list_tick(list_run_t *run) {
+    return sce_atomic_fetch_add_acq_rel_u64(&run->clock, 1u) + 1u;
+}
+
+static void list_push(list_run_t *run, uint32_t index) {
+    if (run->kind == LIST_ATOMIC) {
+        sce_queue_intrusive_push(&run->atomic, index);
+    } else {
+        sce_queue_intrusive_irq_push(&run->irq, index);
+    }
+}
+
+static int list_pop(list_run_t *run, uint32_t *index) {
+    return run->kind == LIST_ATOMIC ? sce_queue_intrusive_try_pop(&run->atomic, index)
+                                    : sce_queue_intrusive_irq_try_pop(&run->irq, index);
+}
+
+static void *list_produce(void *arg) {
+    list_actor_t *a = (list_actor_t *)arg;
+    list_run_t *run = a->run;
+    log_t *log = &run->logs[a->index];
+    uint64_t k;
+    for (k = 0; k < run->per_producer; k++) {
+        const uint64_t index = (uint64_t)a->index * run->per_producer + k;
+        const uint64_t payload = index + 1u;
+        uint64_t invoked;
+        uint64_t returned;
+        run->nodes[index].payload = payload;
+        invoked = list_tick(run);
+        list_push(run, (uint32_t)index);
+        returned = list_tick(run);
+        log_add(log, 1, 1, payload, "pushed", invoked, returned);
+    }
+    return NULL;
+}
+
+static void *list_consume(void *arg) {
+    list_actor_t *a = (list_actor_t *)arg;
+    list_run_t *run = a->run;
+    log_t *log = &run->logs[run->producers + a->index];
+    uint64_t spins = 0;
+    while (sce_atomic_load_acquire_u64(&run->delivered) < run->total) {
+        uint32_t index = 0;
+        const uint64_t invoked = list_tick(run);
+        const int popped = list_pop(run, &index);
+        const uint64_t returned = list_tick(run);
+        if (popped) {
+            spins = 0;
+            log_add(log, 0, 1, run->nodes[index].payload, "popped", invoked, returned);
+            (void)sce_atomic_fetch_add_acq_rel_u64(&run->delivered, 1u);
+        } else {
+            log_add(log, 0, 0, 0, "empty", invoked, returned);
+            if (++spins > DEADLINE_SPINS) {
+                (void)sce_atomic_fetch_add_acq_rel_u32(&run->failed, 1u);
+                break;
+            }
+            (void)sched_yield();
+        }
+    }
+    return NULL;
+}
+
+/* One run of `producers` and `consumers` on the intrusive list `kind`, over
+ * `producers * per_producer` nodes and the stub, written as `<dir>/<name>.json`.
+ * The list over atomics may answer empty while a push is in flight, so its
+ * histories say so; the one under the critical section never does. */
+static void record_list_run(const char *dir, const char *name, list_kind_t kind, unsigned producers, unsigned consumers,
+                            uint64_t per_producer) {
+    list_run_t run;
+    const uint64_t total = (uint64_t)producers * per_producer;
+    const unsigned participants = producers + consumers;
+    list_actor_t *actors = (list_actor_t *)calloc(participants, sizeof(list_actor_t));
+    unsigned i;
+    memset(&run, 0, sizeof run);
+    run.kind = kind;
+    run.nodes = (node_t *)calloc((size_t)total + 1u, sizeof(node_t));
+    run.total = total;
+    run.per_producer = per_producer;
+    run.producers = producers;
+    run.logs = (log_t *)calloc(participants, sizeof(log_t));
+    if (kind == LIST_ATOMIC) {
+        if (!sce_queue_intrusive_init(&run.atomic, run.nodes, (uint32_t)total + 1u, sizeof(node_t),
+                                      offsetof(node_t, link), (uint32_t)total, consumers > 1u)) {
+            die("the intrusive list refused its shape");
+        }
+    } else if (!sce_queue_intrusive_irq_init(&run.irq, run.nodes, (uint32_t)total + 1u, sizeof(node_t),
+                                             offsetof(node_t, link), (uint32_t)total, consumers > 1u)) {
+        die("the interrupt-masked list refused its shape");
+    }
+    for (i = 0; i < producers; i++) {
+        actors[i].run = &run;
+        actors[i].index = i;
+        (void)pthread_create(&actors[i].thread, NULL, list_produce, &actors[i]);
+    }
+    for (i = 0; i < consumers; i++) {
+        actors[producers + i].run = &run;
+        actors[producers + i].index = i;
+        (void)pthread_create(&actors[producers + i].thread, NULL, list_consume, &actors[producers + i]);
+    }
+    for (i = 0; i < participants; i++) {
+        (void)pthread_join(actors[i].thread, NULL);
+    }
+    if (run.failed != 0u) {
+        (void)fprintf(stderr, "%s: the nodes did not all arrive before the deadline\n", name);
+        exit(1);
+    }
+    write_history(dir, name, (uint32_t)total, "at-capacity", kind == LIST_ATOMIC ? "while-a-push-is-in-flight" : NULL,
+                  run.logs, participants);
+    for (i = 0; i < participants; i++) {
+        free(run.logs[i].ops);
+    }
+    free(run.logs);
+    free(run.nodes);
+    free(actors);
 }
 
 int main(int argc, char **argv) {
@@ -519,6 +669,23 @@ int main(int argc, char **argv) {
                                (unsigned)shape->ring_slots, shape->producers, shape->consumers, run);
                 record_run(dir, name, many[m].kind, shape->capacity, shape->ring_slots, shape->producers,
                            shape->consumers, shape->per_producer, many[m].refusal);
+            }
+        }
+    }
+    for (m = 0; m < 2; m++) {
+        static const struct {
+            unsigned producers;
+            unsigned consumers;
+            uint64_t per_producer;
+        } list_shapes[] = {{1, 1, 150}, {2, 1, 120}, {3, 1, 100}, {2, 2, 100}, {3, 2, 80}};
+
+        const list_kind_t kind = m == 0u ? LIST_ATOMIC : LIST_IRQ;
+        for (s = 0; s < sizeof list_shapes / sizeof list_shapes[0]; s++) {
+            for (run = 0; run < RUNS_PER_SHAPE; run++) {
+                (void)snprintf(name, sizeof name, "c11_%s_p%u_c%u_%d", m == 0u ? "intrusive" : "intrusive_irq",
+                               list_shapes[s].producers, list_shapes[s].consumers, run);
+                record_list_run(dir, name, kind, list_shapes[s].producers, list_shapes[s].consumers,
+                                list_shapes[s].per_producer);
             }
         }
     }

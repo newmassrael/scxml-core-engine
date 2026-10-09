@@ -15,6 +15,8 @@
 
 #include "host_irq.h"
 
+#include "queue_c_intrusive.h"
+#include "queue_c_intrusive_irq.h"
 #include "queue_c_irq_many.h"
 #include "queue_c_irq_one.h"
 #include "queue_c_scq32.h"
@@ -41,6 +43,24 @@ int roundTrip(Queue &queue, TryPush tryPush, TryPop tryPop, Acquire acquireProdu
     return tryPop(&queue, &out) ? 1 : 0;
 }
 
+// The intrusive queues name nodes by index in an array the caller owns.
+template <typename Queue, typename Init, typename Push, typename TryPop>
+int nodeRoundTrip(Queue &queue, Init init, Push push, TryPop tryPop) {
+    queue_conformance_node_t nodes[3]{};
+    std::uint32_t index = 0;
+    if (!init(&queue, nodes, 3u, 2u)) {
+        return 1;
+    }
+    push(&queue, 1u);
+    push(&queue, 0u);
+    if (!tryPop(&queue, &index) || index != 1u || !tryPop(&queue, &index) || index != 0u) {
+        return 1;
+    }
+    return tryPop(&queue, &index) ? 1 : 0;
+}
+
+queue_c_intrusive_t g_intrusive;
+queue_c_intrusive_irq_t g_intrusive_irq;
 queue_c_spsc_t g_spsc;
 queue_c_scq64_t g_scq64;
 queue_c_scq32_t g_scq32;
@@ -65,6 +85,9 @@ int main() {
                           queue_c_irq_one_producer_acquire, queue_c_irq_one_consumer_acquire);
     failures += roundTrip(g_irq_many, queue_c_irq_many_try_push, queue_c_irq_many_try_pop,
                           queue_c_irq_many_producer_acquire, queue_c_irq_many_consumer_acquire);
+    failures += nodeRoundTrip(g_intrusive, queue_c_intrusive_init, queue_c_intrusive_push, queue_c_intrusive_try_pop);
+    failures += nodeRoundTrip(g_intrusive_irq, queue_c_intrusive_irq_init, queue_c_intrusive_irq_push,
+                              queue_c_intrusive_irq_try_pop);
     std::printf("generated queues (C11 headers as C++): %d failure(s)\n", failures);
     return failures == 0 ? 0 : 1;
 }

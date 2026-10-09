@@ -5304,9 +5304,11 @@ pub enum QueueAlgorithm {
     LinkedLamportRings,
     /// LSCQ: a list of SCQ rings. `segmented`, any other cardinality.
     Lscq,
-    /// Vyukov intrusive list, single producer. `intrusive`, one and one.
-    VyukovSpsc,
-    /// Vyukov intrusive MPSC. `intrusive`, many producers, one consumer.
+    /// Vyukov intrusive MPSC. `intrusive`, one consumer and any producers. A
+    /// single producer is the case of one: the consumer returns the last node
+    /// by putting a stub on the tail through the producers' own exchange, so
+    /// the producer cannot run without it, and the window in which a pop
+    /// answers empty is the same one.
     VyukovMpsc,
     /// Vyukov intrusive list, consumers serialised by a test-and-set flag.
     /// `intrusive`, any producers, many consumers.
@@ -5321,7 +5323,6 @@ impl QueueAlgorithm {
             Self::Scq => "SCQ data queue",
             Self::LinkedLamportRings => "linked Lamport rings",
             Self::Lscq => "LSCQ (a list of SCQ rings)",
-            Self::VyukovSpsc => "Vyukov intrusive list (single producer)",
             Self::VyukovMpsc => "Vyukov intrusive MPSC",
             Self::VyukovListWithConsumerFlag => {
                 "Vyukov intrusive list with a consumer test-and-set flag"
@@ -5382,8 +5383,10 @@ impl QueueModel {
                 _,
                 _,
             ) => (A::Lscq, LockFree.min(*allocator_progress), LockFree),
-            (QueueStorage::Intrusive { .. }, One, One) => (A::VyukovSpsc, WaitFree, WaitFree),
-            (QueueStorage::Intrusive { .. }, Many, One) => (A::VyukovMpsc, WaitFree, Blocking),
+            // One producer is no cheaper than many: the consumer returns the
+            // last node by swapping a stub onto the tail, which is the
+            // producers' own exchange, so the pop's window is the same.
+            (QueueStorage::Intrusive { .. }, _, One) => (A::VyukovMpsc, WaitFree, Blocking),
             (QueueStorage::Intrusive { .. }, _, Many) => {
                 (A::VyukovListWithConsumerFlag, WaitFree, Blocking)
             }

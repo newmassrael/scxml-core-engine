@@ -33,6 +33,8 @@
 
 #include "host_irq.h"
 
+#include "queue_c_intrusive.h"
+#include "queue_c_intrusive_irq.h"
 #include "queue_c_irq_many.h"
 #include "queue_c_irq_one.h"
 #include "queue_c_scq32.h"
@@ -135,6 +137,61 @@ static void each_header_states_what_the_document_required_and_what_it_gives(void
           QUEUE_C_IRQ_MANY_ALGORITHM);
 }
 
+/* One intrusive queue of either lowering, through the generated functions: the
+ * nodes are the caller's array of the generated element, the last one the stub. */
+#define EXERCISE_INTRUSIVE(PREFIX, TYPE)                                                                               \
+    static void exercise_##PREFIX(void) {                                                                              \
+        static TYPE q;                                                                                                 \
+        static queue_conformance_node_t nodes[5];                                                                      \
+        uint32_t index = 0;                                                                                            \
+        unsigned i;                                                                                                    \
+        for (i = 0; i < 5u; i++) {                                                                                     \
+            memset(&nodes[i], 0, sizeof nodes[i]);                                                                     \
+            nodes[i].sensor_id = (uint8_t)(i + 1u);                                                                    \
+            nodes[i].value = (uint16_t)(i * 3u);                                                                       \
+        }                                                                                                              \
+        CHECK(!PREFIX##_init(&q, nodes, 5u, 5u), #PREFIX ": a stub outside the array is refused");                     \
+        CHECK(PREFIX##_init(&q, nodes, 5u, 4u), #PREFIX ": the shape the document states is refused");                 \
+        CHECK(!PREFIX##_try_pop(&q, &index), #PREFIX ": a new queue is empty");                                        \
+        PREFIX##_push(&q, 2u);                                                                                         \
+        PREFIX##_push(&q, 0u);                                                                                         \
+        PREFIX##_push(&q, 3u);                                                                                         \
+        CHECK(PREFIX##_try_pop(&q, &index) && index == 2u, #PREFIX ": first in, first out: 2");                        \
+        CHECK(PREFIX##_try_pop(&q, &index) && index == 0u, #PREFIX ": first in, first out: 0");                        \
+        PREFIX##_push(&q, 2u);                                                                                         \
+        CHECK(PREFIX##_try_pop(&q, &index) && index == 3u, #PREFIX ": first in, first out: 3");                        \
+        CHECK(PREFIX##_try_pop(&q, &index) && index == 2u, #PREFIX ": the node comes back at once and can be reused"); \
+        CHECK(!PREFIX##_try_pop(&q, &index), #PREFIX ": drained");                                                     \
+        for (i = 0; i < 5u; i++) {                                                                                     \
+            CHECK(nodes[i].sensor_id == (uint8_t)(i + 1u) && nodes[i].value == (uint16_t)(i * 3u),                     \
+                  #PREFIX ": the queue wrote outside the link of node %u", i);                                         \
+        }                                                                                                              \
+    }
+
+EXERCISE_INTRUSIVE(queue_c_intrusive, queue_c_intrusive_t)
+EXERCISE_INTRUSIVE(queue_c_intrusive_irq, queue_c_intrusive_irq_t)
+
+static void the_intrusive_headers_state_what_the_document_required_and_what_it_gives(void) {
+    /* Many producers, one consumer over atomics: push is wait-free, and the
+     * document could declare no more than blocking because pop is. */
+    CHECK(QUEUE_C_INTRUSIVE_MANY_CONSUMERS == 0, "one consumer needs no flag");
+    CHECK(strcmp(QUEUE_C_INTRUSIVE_DECLARED_PROGRESS, "blocking") == 0 &&
+              strcmp(QUEUE_C_INTRUSIVE_PUSH_PROGRESS, "wait-free") == 0 &&
+              strcmp(QUEUE_C_INTRUSIVE_POP_PROGRESS, "blocking") == 0,
+          "Vyukov's list: wait-free push, blocking pop");
+    CHECK(strstr(QUEUE_C_INTRUSIVE_ALGORITHM, "Vyukov") != NULL, "the algorithm is named: %s",
+          QUEUE_C_INTRUSIVE_ALGORITHM);
+
+    /* The same document shape on the target with no atomics runs under the
+     * critical section, and everything is blocking there. */
+    CHECK(QUEUE_C_INTRUSIVE_IRQ_MANY_CONSUMERS == 1, "many consumers are said");
+    CHECK(strcmp(QUEUE_C_INTRUSIVE_IRQ_PUSH_PROGRESS, "blocking") == 0 &&
+              strcmp(QUEUE_C_INTRUSIVE_IRQ_POP_PROGRESS, "blocking") == 0,
+          "the critical-section list gives blocking");
+    CHECK(strstr(QUEUE_C_INTRUSIVE_IRQ_ALGORITHM, "interrupt-masked") != NULL, "the algorithm says why: %s",
+          QUEUE_C_INTRUSIVE_IRQ_ALGORITHM);
+}
+
 static void a_many_side_has_the_documents_participants_as_its_places(void) {
     static queue_c_scq64_t scq;
     static queue_c_irq_many_t irq;
@@ -158,6 +215,9 @@ int main(void) {
     exercise_queue_c_scq32();
     exercise_queue_c_irq_one();
     exercise_queue_c_irq_many();
+    exercise_queue_c_intrusive();
+    exercise_queue_c_intrusive_irq();
+    the_intrusive_headers_state_what_the_document_required_and_what_it_gives();
     each_header_states_what_the_document_required_and_what_it_gives();
     a_many_side_has_the_documents_participants_as_its_places();
     (void)printf("generated queues (C11): %u check(s), %u failure(s)\n", g_checks, g_failures);

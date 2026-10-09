@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "capacity": 4,
+  "refusal": "at-capacity",
+  "empty_pops": "while-a-push-is-in-flight",
+  "participants": [
+    [
+      { "call": "push", "value": 1, "outcome": "pushed", "invoked": 1, "returned": 10 }
+    ],
+    [
+      { "call": "push", "value": 2, "outcome": "pushed", "invoked": 2, "returned": 3 }
+    ],
+    [
+      { "call": "pop", "outcome": "empty", "invoked": 4, "returned": 5 },
+      { "call": "pop", "value": 1, "outcome": "popped", "invoked": 11, "returned": 12 },
+      { "call": "pop", "value": 2, "outcome": "popped", "invoked": 13, "returned": 14 }
+    ]
+  ]
+}

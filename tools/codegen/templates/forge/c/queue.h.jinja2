@@ -23,7 +23,7 @@
  * is {{ wrap_bound_ops }} operations (2^{{ entry_bits - 2 }}): a participant delayed between
  * reading an entry and acting on it can be misled only after that many operations
  * by the others. See SCE Protocol-Synthesis RFC §synth-5-P, Counter width.
-{% elif runtime_type == "irq" %}
+{% elif runtime_type == "irq" or runtime_type == "intrusive_irq" %}
  *
  * The deploy says the target has no read-modify-write atomic
  * (`platform.atomic_rmw_width` 0), so every operation runs in an
@@ -32,6 +32,21 @@
  * defines SCE_IRQ_STATE_T_DEFINED before this header is included.
 {% endif %}
  *
+{% if intrusive %}
+ * The queue is intrusive (`<sce:intrusive link-field="{{ link_field }}"/>`): the elements are
+ * nodes of an array the caller owns, linked through their own `{{ link_field }}` member, a
+ * `uint32_t`, and a node is named by its index in that array. The queue is
+ * `{{ snake }}_t`, a control block alone. Build it with `{{ snake }}_init` before
+ * another participant can reach it.
+ *
+ * Operations:
+ *   {{ snake }}_push(q, index)          wait-free where the target has an exchange;
+ *                                       it cannot fail
+ *   {{ snake }}_try_pop(q, &index)      nonzero when it took the oldest node; zero
+ *                                       when the queue holds none, or while a push
+ *                                       is in flight
+ */
+{% else %}
  * The queue is `{{ snake }}_t`: its control block, the storage of its slots and (for
  * an SCQ row) the entries of its two index rings, all static in the object, so
  * nothing allocates. Build it with `{{ snake }}_init` before another participant
@@ -44,6 +59,7 @@
  *                                       SCE_QUEUE_PUSH_FULL does not
  *   {{ snake }}_try_pop(q, &out)        nonzero when it took an element
  */
+{% endif %}
 
 #ifndef {{ guard }}
 #define {{ guard }}
@@ -57,7 +73,7 @@
 #include <sce/portability.h>
 
 #include <sce/forge/queue.h>
-{% if runtime_type == "irq" %}
+{% if runtime_type == "irq" or runtime_type == "intrusive_irq" %}
 #include <sce/forge/queue_irq.h>
 {% endif %}
 
@@ -67,6 +83,60 @@
 extern "C" {
 #endif
 
+{% if intrusive %}
+/* Whether many consumers pop: their pops are serialised by a test-and-set flag
+ * (nonzero), or exactly one thread does (zero). */
+#define {{ upper_name }}_MANY_CONSUMERS {{ "1" if many_consumers else "0" }}
+
+/* What the document requires of push and pop (`<sce:progress>`), what the
+ * selected algorithm gives each, and the algorithm. A pop answers empty while a
+ * producer is between its two steps, so the queue's histories are judged with
+ * that excuse. */
+#define {{ upper_name }}_DECLARED_PROGRESS "{{ declared_progress }}"
+#define {{ upper_name }}_PUSH_PROGRESS "{{ push_progress }}"
+#define {{ upper_name }}_POP_PROGRESS "{{ pop_progress }}"
+#define {{ upper_name }}_ALGORITHM "{{ algorithm }}"
+
+/* The link is a `uint32_t` member of the element, aligned for one, which the
+ * queue uses in place as the index of the node that follows. */
+SCE_STATIC_ASSERT(sizeof((({{ element_snake }}_t *)0)->{{ link_field }}) == sizeof(uint32_t),
+    "{{ snake }}: the link field '{{ link_field }}' must be a 32-bit unsigned member");
+SCE_STATIC_ASSERT(offsetof({{ element_snake }}_t, {{ link_field }}) % sizeof(uint32_t) == 0u,
+    "{{ snake }}: the link field '{{ link_field }}' must be aligned for a 32-bit word");
+
+/* The queue. It owns no storage: the nodes are the caller's array of
+ * `{{ element_snake }}_t`, a node is named by its index in it, and nothing
+ * allocates. One node of the array is set aside as the stub and never pushed. */
+typedef struct {{ snake }} {
+    sce_queue_{{ runtime_type }}_t core;
+} {{ snake }}_t;
+
+/* Builds an empty queue over the `len` nodes at `nodes`, with node `stub` set
+ * aside. Returns zero, and builds nothing, when `stub` is not a node of the array,
+ * when `len` reaches the value that means "none", or when the link does not fit
+ * the node. Not safe against a concurrent user: hand the queue to the other
+ * participants after it returns. */
+static inline int {{ snake }}_init({{ snake }}_t *q, {{ element_snake }}_t *nodes, uint32_t len, uint32_t stub)
+{
+    return sce_queue_{{ runtime_type }}_init(&q->core, nodes, len, sizeof(nodes[0]),
+                                             offsetof({{ element_snake }}_t, {{ link_field }}), stub,
+                                             {{ upper_name }}_MANY_CONSUMERS);
+}
+
+/* Puts node `index` on the queue: not the stub, and not already in the queue,
+ * with its contents written. Cannot fail. */
+static inline void {{ snake }}_push({{ snake }}_t *q, uint32_t index)
+{
+    sce_queue_{{ runtime_type }}_push(&q->core, index);
+}
+
+/* Takes the oldest node's index into `*index`, or returns zero when the queue
+ * holds none the consumer can reach. */
+static inline int {{ snake }}_try_pop({{ snake }}_t *q, uint32_t *index)
+{
+    return sce_queue_{{ runtime_type }}_try_pop(&q->core, index);
+}
+{% else %}
 /* The most elements the queue holds (`<sce:bounded>`). */
 #define {{ upper_name }}_CAPACITY ((uint32_t){{ capacity }})
 {% if participants %}
@@ -173,6 +243,7 @@ static inline int {{ snake }}_try_pop({{ snake }}_t *q, {{ element_snake }}_t *o
 {
     return sce_queue_{{ runtime_type }}_try_pop(&q->core, (unsigned char *)q->slots, sizeof(q->slots[0]), out);
 }
+{% endif %}
 
 #ifdef __cplusplus
 }  /* extern "C" */

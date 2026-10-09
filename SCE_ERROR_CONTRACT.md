@@ -856,6 +856,7 @@ references against a real document and drift silently.
 | `queue/deploy-limit-unresolved` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.P |
 | `queue/element-type-not-a-kind` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.P |
 | `queue/intrusive-link-field-missing` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.P |
+| `queue/intrusive-link-field-not-u32` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.P |
 | `queue/no-atomics-across-cores` | `generate` | no | SCE Protocol-Synthesis RFC §5.P |
 | `queue/participants-unresolved` | `validation` | no | SCE Protocol-Synthesis RFC §5.P |
 | `queue/progress-insufficient-for-isr` | `generate` | no | SCE Protocol-Synthesis RFC §5.P |

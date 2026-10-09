@@ -5375,6 +5375,26 @@
         {
           "file": "backends/c/forge-runtime/tests/conformance/queue_generated_cxx_test.cpp",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/forge-runtime/src/queue/intrusive.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/intrinsic_registry.rs",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/queue_conformance_intrusive.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/queue_conformance_intrusive_many.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/queue_conformance_node.scxml",
+          "kind": "references"
         }
       ]
     },

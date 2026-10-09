@@ -302,7 +302,8 @@ typedef struct scenario {
     const char *id;
     int producers_one;
     int consumers_one;
-    uint32_t capacity;
+    int intrusive;
+    uint32_t capacity; /* an intrusive scenario: the nodes the caller owns, the stub besides */
     const step_t *steps;
     unsigned step_count;
 } scenario_t;
@@ -354,6 +355,9 @@ static void every_contract_scenario_holds(void) {
         kind_t kinds[4];
         unsigned kind_count = 0;
         unsigned k;
+        if (scenario->intrusive) {
+            continue; /* every_intrusive_scenario_holds */
+        }
         if (scenario->producers_one && scenario->consumers_one) {
             kinds[kind_count++] = KIND_SPSC;
         }
@@ -371,6 +375,131 @@ static void every_contract_scenario_holds(void) {
             subject_free(&o);
         }
     }
+}
+
+/* ---- The intrusive list ---- */
+
+/* A node: more than the link, so a queue that wrote past it or moved the
+ * payload is seen. */
+typedef struct node {
+    uint64_t payload;
+    uint32_t link;
+    uint32_t tag;
+} node_t;
+
+#define NODE_PAYLOAD(index) ((uint64_t)(index) * 40503u + 7u)
+
+typedef enum list_kind { LIST_ATOMIC, LIST_IRQ } list_kind_t;
+
+static const char *list_name(list_kind_t kind) {
+    return kind == LIST_ATOMIC ? "intrusive" : "intrusive_irq";
+}
+
+/* The list over `nodes` nodes and one more for the stub, `many_consumers` as the
+ * scenario states. Returns zero when the shape is refused. */
+typedef struct list {
+    list_kind_t kind;
+    sce_queue_intrusive_t atomic;
+    sce_queue_intrusive_irq_t irq;
+} list_t;
+
+static int list_build(list_t *l, list_kind_t kind, node_t *nodes, uint32_t len, int many_consumers) {
+    l->kind = kind;
+    if (kind == LIST_ATOMIC) {
+        return sce_queue_intrusive_init(&l->atomic, nodes, len, sizeof(node_t), offsetof(node_t, link), len - 1u,
+                                        many_consumers);
+    }
+    return sce_queue_intrusive_irq_init(&l->irq, nodes, len, sizeof(node_t), offsetof(node_t, link), len - 1u,
+                                        many_consumers);
+}
+
+static void list_push(list_t *l, uint32_t index) {
+    if (l->kind == LIST_ATOMIC) {
+        sce_queue_intrusive_push(&l->atomic, index);
+    } else {
+        sce_queue_intrusive_irq_push(&l->irq, index);
+    }
+}
+
+static int list_pop(list_t *l, uint32_t *index) {
+    return l->kind == LIST_ATOMIC ? sce_queue_intrusive_try_pop(&l->atomic, index)
+                                  : sce_queue_intrusive_irq_try_pop(&l->irq, index);
+}
+
+static void run_intrusive_scenario(list_t *l, const scenario_t *scenario) {
+    unsigned i;
+    for (i = 0; i < scenario->step_count; i++) {
+        const step_t *step = &scenario->steps[i];
+        switch (step->op) {
+        case OP_PUSH:
+            list_push(l, (uint32_t)step->value);
+            break;
+        case OP_POP: {
+            uint32_t index = 0;
+            const int popped = list_pop(l, &index);
+            if (step->expect < 0) {
+                CHECK(!popped, "%s/%s step %u: expected the queue to be empty, popped node %u", list_name(l->kind),
+                      scenario->id, i, (unsigned)index);
+            } else {
+                CHECK(popped && index == (uint32_t)step->expect, "%s/%s step %u: popped (%d, node %u), want node %lld",
+                      list_name(l->kind), scenario->id, i, popped, (unsigned)index, (long long)step->expect);
+            }
+            break;
+        }
+        case OP_CAPACITY: /* an intrusive queue has no capacity */
+        case OP_DESTROY:
+            return;
+        }
+    }
+}
+
+static void every_intrusive_scenario_holds(void) {
+    size_t i;
+    unsigned ran = 0;
+    for (i = 0; i < g_scenario_count; i++) {
+        const scenario_t *scenario = &g_scenarios[i];
+        list_kind_t kind;
+        if (!scenario->intrusive) {
+            continue;
+        }
+        for (kind = LIST_ATOMIC; kind <= LIST_IRQ; kind++) {
+            node_t nodes[16];
+            list_t l;
+            uint32_t n;
+            const uint32_t len = scenario->capacity + 1u; /* the nodes, and the stub */
+            CHECK(len <= 16u, "%s: more nodes than the test array", scenario->id);
+            for (n = 0; n < len; n++) {
+                nodes[n].payload = NODE_PAYLOAD(n);
+                nodes[n].link = 0xDEADBEEFu;
+                nodes[n].tag = 0xA5A5A5A5u;
+            }
+            CHECK(list_build(&l, kind, nodes, len, !scenario->consumers_one), "%s/%s: the shape is refused",
+                  list_name(kind), scenario->id);
+            run_intrusive_scenario(&l, scenario);
+            for (n = 0; n < len; n++) {
+                CHECK(nodes[n].payload == NODE_PAYLOAD(n) && nodes[n].tag == 0xA5A5A5A5u,
+                      "%s/%s: the queue wrote outside the link of node %u", list_name(kind), scenario->id, (unsigned)n);
+            }
+            ran++;
+        }
+    }
+    CHECK(ran > 0u, "a contract with no intrusive scenario checks nothing of the intrusive list");
+}
+
+static void an_intrusive_queue_refuses_a_shape_it_cannot_run(void) {
+    node_t nodes[4];
+    sce_queue_intrusive_t q;
+    sce_queue_intrusive_irq_t irq;
+    CHECK(!sce_queue_intrusive_init(&q, nodes, 4, sizeof(node_t), offsetof(node_t, link), 4, 0),
+          "a stub outside the array is refused");
+    CHECK(!sce_queue_intrusive_init(&q, nodes, SCE_QUEUE_NIL, sizeof(node_t), offsetof(node_t, link), 0, 0),
+          "a length that reaches the value for none is refused");
+    CHECK(!sce_queue_intrusive_init(&q, nodes, 4, sizeof(node_t), sizeof(node_t) - 2u, 3, 0),
+          "a link that does not fit its node is refused");
+    CHECK(!sce_queue_intrusive_init(&q, nodes, 4, sizeof(node_t), offsetof(node_t, link) + 1u, 3, 0),
+          "a link not aligned for a 32-bit word is refused");
+    CHECK(!sce_queue_intrusive_irq_init(&irq, nodes, 4, sizeof(node_t), offsetof(node_t, link), 4, 0),
+          "the critical-section list refuses a stub outside the array too");
 }
 
 /* ---- Properties ---- */
@@ -669,6 +798,8 @@ static void real_threads_lose_nothing_and_reorder_nothing(void) {
 
 int main(void) {
     every_contract_scenario_holds();
+    every_intrusive_scenario_holds();
+    an_intrusive_queue_refuses_a_shape_it_cannot_run();
     order_holds_across_many_laps();
     exactly_the_capacity_fits_when_nothing_else_runs();
     a_side_hands_out_no_more_places_than_it_has();

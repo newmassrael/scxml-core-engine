@@ -110,9 +110,15 @@ const char *outcome_word(Outcome outcome) {
 }
 
 /// The history in its JSON form. A value is an unsigned integer, written whole.
-std::string to_json(std::size_t capacity, const char *refusal, const std::vector<Participant> &participants) {
-    std::string out = "{\"version\":1,\"capacity\":" + std::to_string(capacity) + ",\"refusal\":\"" + refusal +
-                      "\",\"participants\":[";
+std::string to_json(std::size_t capacity, const char *refusal, const char *empty_pops,
+                    const std::vector<Participant> &participants) {
+    std::string out = "{\"version\":1,\"capacity\":" + std::to_string(capacity) + ",\"refusal\":\"" + refusal + "\",";
+    // The default reading of an empty pop is the strict one, so it is written
+    // only for a queue that excuses one.
+    if (empty_pops != nullptr) {
+        out += std::string("\"empty_pops\":\"") + empty_pops + "\",";
+    }
+    out += "\"participants\":[";
     for (std::size_t who = 0; who < participants.size(); ++who) {
         out += who == 0 ? "[" : ",[";
         for (std::size_t at = 0; at < participants[who].size(); ++at) {
@@ -134,9 +140,9 @@ std::string to_json(std::size_t capacity, const char *refusal, const std::vector
 }
 
 bool write_history(const std::filesystem::path &dir, const std::string &name, std::size_t capacity, const char *refusal,
-                   const std::vector<Participant> &participants) {
+                   const std::vector<Participant> &participants, const char *empty_pops = nullptr) {
     std::ofstream file(dir / (name + ".json"), std::ios::binary | std::ios::trunc);
-    file << to_json(capacity, refusal, participants) << '\n';
+    file << to_json(capacity, refusal, empty_pops, participants) << '\n';
     return file.good();
 }
 
@@ -275,6 +281,88 @@ bool record_scq_run(const std::filesystem::path &dir, const std::string &name, s
     return write_history(dir, name, N, "while-slots-are-held", participants);
 }
 
+/// A node of the caller's array: a payload, and the link the queue uses.
+struct Node {
+    std::uint64_t payload;
+    std::uint32_t link;
+};
+
+/// `producers` producers and `consumers` consumers on real threads through the
+/// intrusive list, over `producers * per_producer` nodes and the stub. A push
+/// cannot fail. A pop may answer empty while a push is in flight, so the
+/// history says so (`empty_pops`).
+template <bool ManyConsumers>
+bool record_intrusive_run(const std::filesystem::path &dir, const std::string &name, std::size_t producers,
+                          std::size_t consumers, std::uint64_t per_producer) {
+    const std::uint64_t total = producers * per_producer;
+    std::vector<Node> array(total + 1);
+    queue::IntrusiveMpsc<Node, &Node::link, ManyConsumers> list(array.data(), static_cast<std::uint32_t>(total + 1),
+                                                                static_cast<std::uint32_t>(total));
+    Clock clock;
+    Deadline deadline;
+    std::atomic<std::uint64_t> delivered{0};
+    std::atomic<bool> timed_out{false};
+    std::vector<Participant> participants(producers + consumers);
+
+    std::vector<std::thread> threads;
+    for (std::size_t p = 0; p < producers; ++p) {
+        threads.emplace_back([&, p] {
+            Participant &ops = participants[p];
+            for (std::uint64_t i = 0; i < per_producer; ++i) {
+                const std::uint64_t index = static_cast<std::uint64_t>(p) * per_producer + i;
+                const std::uint64_t value = index + 1;
+                array[index].payload = value;
+                const std::uint64_t invoked = clock.tick();
+                list.push(static_cast<std::uint32_t>(index));
+                const std::uint64_t returned = clock.tick();
+                ops.push_back({Call::Push, Outcome::Pushed, value, invoked, returned});
+            }
+        });
+    }
+    for (std::size_t c = 0; c < consumers; ++c) {
+        threads.emplace_back([&, c] {
+            Participant &ops = participants[producers + c];
+            while (delivered.load(std::memory_order_acquire) < total) {
+                if (deadline.passed()) {
+                    timed_out = true;
+                    return;
+                }
+                const std::uint64_t invoked = clock.tick();
+                const std::optional<std::uint32_t> got = list.try_pop();
+                const std::uint64_t returned = clock.tick();
+                if (got) {
+                    ops.push_back({Call::Pop, Outcome::Popped, array[*got].payload, invoked, returned});
+                    delivered.fetch_add(1, std::memory_order_acq_rel);
+                } else {
+                    ops.push_back({Call::Pop, Outcome::Empty, 0, invoked, returned});
+                    std::this_thread::yield();
+                }
+            }
+        });
+    }
+    for (std::thread &t : threads) {
+        t.join();
+    }
+    if (timed_out) {
+        std::fprintf(stderr, "%s: the nodes did not all arrive before the deadline\n", name.c_str());
+        return false;
+    }
+    return write_history(dir, name, total, "at-capacity", participants, "while-a-push-is-in-flight");
+}
+
+template <bool ManyConsumers>
+bool record_intrusive_runs(const std::filesystem::path &dir, std::size_t producers, std::size_t consumers,
+                           std::uint64_t per_producer) {
+    bool ok = true;
+    for (int run = 0; run < kRunsPerScqShape; ++run) {
+        ok &= record_intrusive_run<ManyConsumers>(dir,
+                                                  "cpp_intrusive_p" + std::to_string(producers) + "_c" +
+                                                      std::to_string(consumers) + "_" + std::to_string(run),
+                                                  producers, consumers, per_producer);
+    }
+    return ok;
+}
+
 template <std::size_t N> bool record_spsc_runs(const std::filesystem::path &dir) {
     bool ok = true;
     for (int run = 0; run < kRunsPerSpscCapacity; ++run) {
@@ -324,6 +412,11 @@ int main(int argc, char **argv) {
     ok &= record_scq_runs<2, 4>(dir, 3, 1, 120);
     ok &= record_scq_runs<4, 4>(dir, 1, 3, 120);
     ok &= record_scq_runs<5, 8>(dir, 2, 2, 150);
+    ok &= record_intrusive_runs<false>(dir, 1, 1, 150);
+    ok &= record_intrusive_runs<false>(dir, 2, 1, 120);
+    ok &= record_intrusive_runs<false>(dir, 3, 1, 100);
+    ok &= record_intrusive_runs<true>(dir, 2, 2, 100);
+    ok &= record_intrusive_runs<true>(dir, 3, 2, 80);
 
     std::size_t written = 0;
     for (const auto &entry : std::filesystem::directory_iterator(dir)) {

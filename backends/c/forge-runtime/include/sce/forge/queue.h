@@ -276,6 +276,144 @@ static inline int sce_queue_spsc_try_pop(sce_queue_spsc_t *q, unsigned char *slo
 #define SCE_QSCQ_FETCH_OR sce_atomic_fetch_or_acq_rel_u32
 #include <sce/forge/queue_scq_width.inc>
 
+/* ------------------------------------------------------------------------ */
+/* The intrusive list: Vyukov's MPSC, over a node array the caller owns.      */
+/* ------------------------------------------------------------------------ */
+
+/* The value of a link that names no node. */
+#define SCE_QUEUE_NIL UINT32_MAX
+
+/* An intrusive queue over `len` nodes of `stride` bytes at `nodes`. Each node
+ * carries its own link, a `uint32_t` at byte `link_offset`, which the queue uses
+ * in place as the index of the node that follows; a node is named by its index
+ * in the array, and the queue allocates nothing. One node is set aside as the
+ * stub and is never pushed by a caller: the pop of the last node puts it behind
+ * that node, through the exchange the producers use, so the last node has a
+ * successor and can be handed back whole.
+ *
+ * Push is wait-free: one exchange and one store. Pop is blocking: a producer
+ * stopped between its two steps hides every node pushed after it, and in that
+ * window pop answers empty (the queue's histories are judged with
+ * `empty_pops: while-a-push-is-in-flight`). Many consumers are serialised by a
+ * test-and-set flag, and a consumer that finds it taken waits for the holder.
+ *
+ * Ordering. A push writes its node, exchanges (acquire-release), and stores the
+ * predecessor's link (release); a pop reads a link (acquire), so what the
+ * producer wrote before its push happens-before the pop that returns the node.
+ * The consumer's own position is private to it, or to the holder of the flag,
+ * whose acquire/release pair orders it. */
+typedef struct sce_queue_intrusive {
+    /* The newest node. Exchanged by every push and by the stub's. */
+    uint32_t tail;
+    /* The oldest node not yet returned. Private to the one consumer, or to the
+     * holder of `busy`. */
+    uint32_t head;
+    /* The test-and-set flag that serialises many consumers. Unused with one. */
+    uint32_t busy;
+    uint32_t stub;
+    uint32_t len;
+    uint32_t many_consumers;
+    size_t stride;
+    size_t link_offset;
+    unsigned char *nodes;
+} sce_queue_intrusive_t;
+
+/* The link of node `index`. */
+static inline uint32_t *sce_queue_intrusive_link(const sce_queue_intrusive_t *q, uint32_t index) {
+    return (uint32_t *)(q->nodes + (size_t)index * q->stride + q->link_offset);
+}
+
+/* Links `index` behind the newest node. */
+static inline void sce_queue_intrusive_append(sce_queue_intrusive_t *q, uint32_t index) {
+    sce_atomic_store_relaxed_u32(sce_queue_intrusive_link(q, index), SCE_QUEUE_NIL);
+    /* After this exchange `index` is the newest node and `previous` is behind it,
+     * whatever the other producers do. Until the store below the consumer cannot
+     * reach `index`. */
+    const uint32_t previous = sce_atomic_xchg_acq_rel_u32(&q->tail, index);
+    sce_atomic_store_release_u32(sce_queue_intrusive_link(q, previous), index);
+}
+
+/* Builds an empty queue over `len` nodes at `nodes`, with node `stub` set aside.
+ * `link_offset` is the byte offset, within a node of `stride` bytes, of the
+ * node's `uint32_t` link, which must be aligned for one. Returns zero, and builds
+ * nothing, when `stub` is not a node of the array, when `len` is not below the
+ * value that means "none", or when the link does not fit its node. */
+static inline int sce_queue_intrusive_init(sce_queue_intrusive_t *q, void *nodes, uint32_t len, size_t stride,
+                                           size_t link_offset, uint32_t stub, int many_consumers) {
+    if (nodes == NULL || stub >= len || len >= SCE_QUEUE_NIL || link_offset + sizeof(uint32_t) > stride ||
+        link_offset % sizeof(uint32_t) != 0u || stride % sizeof(uint32_t) != 0u) {
+        return 0;
+    }
+    q->tail = stub;
+    q->head = stub;
+    q->busy = 0;
+    q->stub = stub;
+    q->len = len;
+    q->many_consumers = many_consumers ? 1u : 0u;
+    q->stride = stride;
+    q->link_offset = link_offset;
+    q->nodes = (unsigned char *)nodes;
+    sce_atomic_store_relaxed_u32(sce_queue_intrusive_link(q, stub), SCE_QUEUE_NIL);
+    return 1;
+}
+
+/* Puts node `index` on the queue. It names a node of the array that is not the
+ * stub and is not in the queue, whose contents the caller has finished writing.
+ * Wait-free; it cannot fail. */
+static inline void sce_queue_intrusive_push(sce_queue_intrusive_t *q, uint32_t index) {
+    sce_queue_intrusive_append(q, index);
+}
+
+/* The walk, run by one consumer at a time. */
+static inline int sce_queue_intrusive_walk(sce_queue_intrusive_t *q, uint32_t *index) {
+    uint32_t head = q->head;
+    uint32_t next = sce_atomic_load_acquire_u32(sce_queue_intrusive_link(q, head));
+    if (head == q->stub) {
+        if (next == SCE_QUEUE_NIL) {
+            return 0;
+        }
+        q->head = next;
+        head = next;
+        next = sce_atomic_load_acquire_u32(sce_queue_intrusive_link(q, head));
+    }
+    if (next != SCE_QUEUE_NIL) {
+        q->head = next;
+        *index = head;
+        return 1;
+    }
+    /* `head` has no successor: it is the newest node, or a producer is between
+     * its exchange and its store. */
+    if (head != sce_atomic_load_acquire_u32(&q->tail)) {
+        return 0;
+    }
+    /* It is the newest node. Put the stub behind it so that it has a successor
+     * and can be returned. */
+    sce_queue_intrusive_append(q, q->stub);
+    next = sce_atomic_load_acquire_u32(sce_queue_intrusive_link(q, head));
+    if (next != SCE_QUEUE_NIL) {
+        q->head = next;
+        *index = head;
+        return 1;
+    }
+    return 0;
+}
+
+/* Takes the oldest node into `*index`. Returns zero, and leaves `*index` alone,
+ * when the queue holds no node the consumer can reach; that is also the answer
+ * while a producer is between its two steps. With many consumers the call first
+ * takes the flag and waits for its holder; with one, only that consumer may
+ * call it. */
+static inline int sce_queue_intrusive_try_pop(sce_queue_intrusive_t *q, uint32_t *index) {
+    if (!q->many_consumers) {
+        return sce_queue_intrusive_walk(q, index);
+    }
+    while (sce_atomic_xchg_acq_rel_u32(&q->busy, 1u) != 0u) {
+    }
+    const int popped = sce_queue_intrusive_walk(q, index);
+    sce_atomic_store_release_u32(&q->busy, 0u);
+    return popped;
+}
+
 #ifdef __cplusplus
 } /* extern "C" */
 #endif

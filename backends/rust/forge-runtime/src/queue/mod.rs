@@ -20,10 +20,15 @@
 //! - [`scq`] — the `bounded` row for any other cardinality: Nikolaev's SCQ
 //!   data queue, lock-free on both sides. It is absent on a target without
 //!   64-bit atomics, which is the target the RFC refuses that row for.
+//! - [`intrusive`] — the `intrusive` storage mode: Vyukov's MPSC list over
+//!   a node array the caller owns, linked through a `u32` field of the
+//!   element. Push is wait-free and cannot fail; pop is `blocking`, and may
+//!   answer "empty" while a push is in flight. It needs only 32-bit atomics.
 //!
 //! No allocation, no global state, no threads (SCE_FORGE.md §2.1, C1/C2):
 //! a queue owns its storage, and where it lives is the caller's choice.
 
+pub mod intrusive;
 #[cfg(target_has_atomic = "64")]
 pub mod scq;
 pub mod spsc;

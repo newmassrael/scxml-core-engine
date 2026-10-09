@@ -24,7 +24,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use sce_build::queue_history::{check, Call, History, Operation, Outcome, Refusal, Verdict};
+use sce_build::queue_history::{
+    check, Call, EmptyPops, History, Operation, Outcome, Refusal, Verdict,
+};
+use sce_forge_runtime::queue::intrusive::{Link, Mpsc};
 use sce_forge_runtime::queue::scq::Scq;
 use sce_forge_runtime::queue::spsc::Spsc;
 use sce_forge_runtime::queue::PushError;
@@ -219,6 +222,68 @@ fn dispatch_bounded_scq(id: &str, capacity: u64, steps: &[Value]) {
     }
 }
 
+/// A node of an intrusive queue: the element, and the `u32` field the queue
+/// links through. The generator writes a `Link` marker for the element
+/// document's own struct; this is its shape by hand.
+#[repr(C)]
+struct IntrusiveNode {
+    payload: u64,
+    next: u32,
+}
+
+struct NextLink;
+
+// SAFETY: `next` is an aligned `u32` field, and the queue is its only user.
+unsafe impl Link<IntrusiveNode> for NextLink {
+    const OFFSET: usize = core::mem::offset_of!(IntrusiveNode, next);
+}
+
+/// One scenario on an intrusive queue over `nodes` nodes the test owns, plus
+/// the stub the queue sets aside. A push's value and a pop's expectation are
+/// node indices.
+fn run_intrusive_scenario<const MANY_CONSUMERS: bool>(id: &str, nodes: u64, steps: &[Value]) {
+    let mut array: Vec<IntrusiveNode> = (0..=nodes)
+        .map(|_| IntrusiveNode {
+            payload: 0,
+            next: 0,
+        })
+        .collect();
+    // SAFETY: the array outlives the queue, is not touched by anything but the
+    // queue while a node is queued, and the stub is its last node.
+    let queue = unsafe {
+        Mpsc::<IntrusiveNode, NextLink, MANY_CONSUMERS>::new(
+            array.as_mut_ptr(),
+            nodes as u32 + 1,
+            nodes as u32,
+        )
+    };
+    for (index, step) in steps.iter().enumerate() {
+        let context = format!("scenario {id} step {index}");
+        let expect = field(step, "expect", &context);
+        match field(step, "op", &context).as_str() {
+            Some("push") => {
+                let node = field(step, "value", &context)
+                    .as_u64()
+                    .unwrap_or_else(|| panic!("{context}: \"value\" is not a node index"));
+                assert_eq!(expect.as_str(), Some("ok"), "{context}: a push never fails");
+                // SAFETY: a node of the array, not the stub, not in the queue.
+                unsafe { queue.push(node as u32) };
+            }
+            Some("pop") => {
+                let popped = queue.try_pop().map(u64::from);
+                match expect {
+                    Value::String(s) if s == "empty" => {
+                        assert_eq!(popped, None, "{context}: expected the queue to be empty")
+                    }
+                    Value::Number(n) => assert_eq!(popped, n.as_u64(), "{context}"),
+                    other => panic!("{context}: a pop cannot expect {other}"),
+                }
+            }
+            other => panic!("{context}: an intrusive scenario has no op {other:?}"),
+        }
+    }
+}
+
 #[test]
 fn every_contract_scenario_holds() {
     let contract = contract();
@@ -246,6 +311,22 @@ fn every_contract_scenario_holds() {
         let steps = field(scenario, "steps", id)
             .as_array()
             .expect("\"steps\" is a list");
+        // An intrusive scenario has `nodes` where a bounded one has `capacity`.
+        if row.0 == Some("intrusive") {
+            let nodes = field(scenario, "nodes", id)
+                .as_u64()
+                .expect("\"nodes\" is an integer");
+            match row {
+                (_, Some("one" | "many"), Some("one")) => {
+                    run_intrusive_scenario::<false>(id, nodes, steps)
+                }
+                (_, Some("one" | "many"), Some("many")) => {
+                    run_intrusive_scenario::<true>(id, nodes, steps)
+                }
+                other => panic!("scenario {id}: no intrusive row for {other:?}"),
+            }
+            continue;
+        }
         let capacity = field(scenario, "capacity", id)
             .as_u64()
             .expect("\"capacity\" is an integer");
@@ -294,6 +375,7 @@ fn verdict_under(refusal: Refusal, capacity: usize, participants: Vec<Vec<Operat
     check(&History {
         capacity,
         refusal,
+        empty_pops: EmptyPops::Exact,
         participants,
     })
 }
@@ -521,6 +603,7 @@ fn record_spsc_run<const N: usize>() -> History {
     History {
         capacity: N,
         refusal: Refusal::AtCapacity,
+        empty_pops: EmptyPops::Exact,
         participants: vec![pushes, pops],
     }
 }
@@ -676,6 +759,7 @@ fn record_scq_run<const N: usize, const R: usize>(
     History {
         capacity: N,
         refusal: Refusal::WhileSlotsAreHeld,
+        empty_pops: EmptyPops::Exact,
         participants,
     }
 }
@@ -780,6 +864,156 @@ fn recorded_scq_runs_are_linearizable() {
         assert_scq_run_is_linearizable::<2, 4>(3, 1, 120);
         assert_scq_run_is_linearizable::<4, 4>(1, 3, 120);
         assert_scq_run_is_linearizable::<5, 8>(2, 2, 150);
+    }
+}
+
+// The intrusive row's runs. Its pop may answer empty while a push is in
+// flight, so its histories are judged with `EmptyPops::WhileAPushIsInFlight`:
+// the excuse the Vyukov list needs and no other.
+
+/// A pointer to the node array that the producer and consumer threads share.
+/// Each node is written by the one thread that owns it until it is pushed, and
+/// read by the consumer after it is popped; the queue's Release/Acquire pair on
+/// the link orders the two.
+#[derive(Clone, Copy)]
+struct NodeArray(*mut IntrusiveNode);
+
+// SAFETY: see the type's documentation.
+unsafe impl Send for NodeArray {}
+unsafe impl Sync for NodeArray {}
+
+impl NodeArray {
+    fn at(self, index: u64) -> *mut IntrusiveNode {
+        // SAFETY: the callers only name nodes of the array.
+        unsafe { self.0.add(index as usize) }
+    }
+}
+
+/// `producers` producer threads and `consumers` consumer threads on one
+/// intrusive queue, each producer pushing `per_producer` nodes of its own and
+/// every node carrying a unique payload (`index + 1`), which is what the
+/// history's value is: the checker tells pushes apart by it. Every attempt is
+/// recorded, the empty pops included, because those are results the checker
+/// must account for.
+fn record_intrusive_run<const MANY_CONSUMERS: bool>(
+    producers: usize,
+    consumers: usize,
+    per_producer: u64,
+) -> History {
+    let total = producers as u64 * per_producer;
+    let mut array: Vec<IntrusiveNode> = (0..=total)
+        .map(|_| IntrusiveNode {
+            payload: 0,
+            next: 0,
+        })
+        .collect();
+    let nodes = NodeArray(array.as_mut_ptr());
+    // SAFETY: `array` outlives the queue; the stub is its last node; nothing
+    // but the queue touches a node's link.
+    let queue = unsafe {
+        Mpsc::<IntrusiveNode, NextLink, MANY_CONSUMERS>::new(
+            nodes.0,
+            total as u32 + 1,
+            total as u32,
+        )
+    };
+    let clock = AtomicU64::new(1);
+    let delivered = AtomicU64::new(0);
+    let started = Instant::now();
+    let (queue, clock, delivered) = (&queue, &clock, &delivered);
+    let tick = move || clock.fetch_add(1, Ordering::SeqCst);
+
+    let participants = thread::scope(|scope| {
+        let mut threads = Vec::new();
+        for who in 0..producers {
+            threads.push(scope.spawn(move || {
+                let mut ops = Vec::new();
+                for k in 0..per_producer {
+                    let index = who as u64 * per_producer + k;
+                    let payload = index + 1;
+                    // SAFETY: this thread owns the node until it is pushed.
+                    unsafe { (*nodes.at(index)).payload = payload };
+                    let invoked = tick();
+                    // SAFETY: a node of the array, not the stub, pushed once.
+                    unsafe { queue.push(index as u32) };
+                    let returned = tick();
+                    ops.push(push(payload, Outcome::Pushed, invoked, returned));
+                }
+                ops
+            }));
+        }
+        for _ in 0..consumers {
+            threads.push(scope.spawn(move || {
+                let mut ops = Vec::new();
+                while delivered.load(Ordering::SeqCst) < total {
+                    let invoked = tick();
+                    let result = queue.try_pop();
+                    let returned = tick();
+                    match result {
+                        Some(index) => {
+                            // SAFETY: popped, so the consumer owns the node.
+                            let payload = unsafe { (*nodes.at(u64::from(index))).payload };
+                            delivered.fetch_add(1, Ordering::SeqCst);
+                            ops.push(pop(Outcome::Popped(payload), invoked, returned));
+                        }
+                        None => {
+                            ops.push(pop(Outcome::Empty, invoked, returned));
+                            assert!(started.elapsed() < STUCK_AFTER, "a consumer is stuck");
+                            thread::yield_now();
+                        }
+                    }
+                }
+                ops
+            }));
+        }
+        threads
+            .into_iter()
+            .map(|handle| handle.join().unwrap())
+            .collect::<Vec<_>>()
+    });
+
+    History {
+        capacity: total as usize,
+        refusal: Refusal::AtCapacity,
+        empty_pops: EmptyPops::WhileAPushIsInFlight,
+        participants,
+    }
+}
+
+fn assert_intrusive_run_is_linearizable<const MANY_CONSUMERS: bool>(
+    producers: usize,
+    consumers: usize,
+    per_producer: u64,
+) {
+    let history = through_the_wire(
+        record_intrusive_run::<MANY_CONSUMERS>(producers, consumers, per_producer),
+        &format!("rust_intrusive_p{producers}_c{consumers}"),
+    );
+    let shape =
+        format!("{producers} producer(s), {consumers} consumer(s), {per_producer} nodes each");
+    let mut popped = every_popped_value(&history);
+    popped.sort_unstable();
+    assert_eq!(
+        popped,
+        (1..=producers as u64 * per_producer).collect::<Vec<_>>(),
+        "{shape}: every node comes out exactly once"
+    );
+    let verdict = check(&history);
+    assert!(
+        verdict == Verdict::Linearizable,
+        "{shape}: {verdict:?}\n{}",
+        describe_stall(&history, &verdict)
+    );
+}
+
+#[test]
+fn recorded_intrusive_runs_are_linearizable() {
+    for _ in 0..RECORDINGS_PER_SHAPE {
+        assert_intrusive_run_is_linearizable::<false>(1, 1, 150);
+        assert_intrusive_run_is_linearizable::<false>(2, 1, 120);
+        assert_intrusive_run_is_linearizable::<false>(3, 1, 100);
+        assert_intrusive_run_is_linearizable::<true>(2, 2, 100);
+        assert_intrusive_run_is_linearizable::<true>(3, 2, 80);
     }
 }
 

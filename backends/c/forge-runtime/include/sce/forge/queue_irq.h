@@ -140,6 +140,75 @@ static inline int sce_queue_irq_try_pop(sce_queue_irq_t *q, unsigned char *slots
     return popped;
 }
 
+/* The intrusive list (sce/forge/queue.h, sce_queue_intrusive_*) for the same
+ * target: a plain singly linked list whose every operation runs in the critical
+ * section. The links are the same `uint32_t` node indices, in the same place, so
+ * the generated type does not change with the target. The critical section
+ * excludes every other participant, so nothing can be caught between two steps:
+ * a pop never answers empty while a node is queued, the stub is not needed and
+ * stays out of the list, and the consumers need no flag. */
+typedef struct sce_queue_intrusive_irq {
+    uint32_t head;
+    uint32_t tail;
+    uint32_t len;
+    size_t stride;
+    size_t link_offset;
+    unsigned char *nodes;
+} sce_queue_intrusive_irq_t;
+
+static inline uint32_t *sce_queue_intrusive_irq_link(const sce_queue_intrusive_irq_t *q, uint32_t index) {
+    return (uint32_t *)(q->nodes + (size_t)index * q->stride + q->link_offset);
+}
+
+/* Builds an empty list over `len` nodes at `nodes`; takes what
+ * sce_queue_intrusive_init takes, and refuses what it refuses. `stub` is checked
+ * and otherwise unused, and `many_consumers` is not needed. */
+static inline int sce_queue_intrusive_irq_init(sce_queue_intrusive_irq_t *q, void *nodes, uint32_t len, size_t stride,
+                                               size_t link_offset, uint32_t stub, int many_consumers) {
+    (void)many_consumers;
+    if (nodes == NULL || stub >= len || len >= SCE_QUEUE_NIL || link_offset + sizeof(uint32_t) > stride ||
+        link_offset % sizeof(uint32_t) != 0u || stride % sizeof(uint32_t) != 0u) {
+        return 0;
+    }
+    q->head = SCE_QUEUE_NIL;
+    q->tail = SCE_QUEUE_NIL;
+    q->len = len;
+    q->stride = stride;
+    q->link_offset = link_offset;
+    q->nodes = (unsigned char *)nodes;
+    return 1;
+}
+
+/* Puts node `index` on the list. Blocking: the critical section. */
+static inline void sce_queue_intrusive_irq_push(sce_queue_intrusive_irq_t *q, uint32_t index) {
+    *sce_queue_intrusive_irq_link(q, index) = SCE_QUEUE_NIL;
+    const irq_state_t state = sce_irq_save();
+    if (q->tail == SCE_QUEUE_NIL) {
+        q->head = index;
+    } else {
+        *sce_queue_intrusive_irq_link(q, q->tail) = index;
+    }
+    q->tail = index;
+    sce_irq_restore(state);
+}
+
+/* Takes the oldest node into `*index`, or returns zero when the list is empty.
+ * Blocking: the critical section. */
+static inline int sce_queue_intrusive_irq_try_pop(sce_queue_intrusive_irq_t *q, uint32_t *index) {
+    int popped = 0;
+    const irq_state_t state = sce_irq_save();
+    if (q->head != SCE_QUEUE_NIL) {
+        *index = q->head;
+        q->head = *sce_queue_intrusive_irq_link(q, q->head);
+        if (q->head == SCE_QUEUE_NIL) {
+            q->tail = SCE_QUEUE_NIL;
+        }
+        popped = 1;
+    }
+    sce_irq_restore(state);
+    return popped;
+}
+
 #ifdef __cplusplus
 } /* extern "C" */
 #endif

@@ -2635,7 +2635,7 @@ pub enum ValidationError {
     /// (spec line 1847): `<sce:extern name="...">` references a
     /// symbol absent from the §synth-5-I baseline registry. `candidates`
     /// rides `Fix::ReplaceOneOf` so authors see closest-match
-    /// suggestions without paging through 111 baseline entries.
+    /// suggestions without paging through 116 baseline entries.
     /// Parse-time rejection; closed-set membership
     /// follows the `LinkLinkClassUnknown` precedent.
     #[error(
@@ -3197,6 +3197,32 @@ pub enum ValidationError {
         /// `codec` or `procedure`.
         element_kind: String,
         /// Sorted declared field names of the element document.
+        candidates: Vec<String>,
+    },
+
+    /// SCE Protocol-Synthesis RFC §synth-5-P
+    /// (`queue/intrusive-link-field-not-u32`) — `<sce:intrusive link-field>`
+    /// names a field that exists and is not a `uint32`. The queue uses the field
+    /// in place as the index of the next node of an array the caller owns: an
+    /// index is 32 bits, and a pointer would not fit the field on a 64-bit
+    /// target nor mean the same in another process that maps the array. The
+    /// candidates are the element document's `uint32` fields.
+    #[error(
+        "queue '{queue_name}': <sce:intrusive link-field=\"{link_field}\"/> names a field of element-type '{element_type}' whose type is {actual}, not uint32. \
+         SCE Protocol-Synthesis RFC §5.P: an intrusive queue links its nodes through a uint32 field, the index of the next node of an array the caller owns. \
+         Replace `link-field=\"{link_field}\"` with one of the {element_type}'s uint32 fields: {}.",
+        crate::forge::error::joined_or_none(.candidates)
+    )]
+    QueueIntrusiveLinkFieldNotU32 {
+        /// Queue name from `<scxml sce:kind="queue" name="...">`.
+        queue_name: String,
+        /// `link-field` value as authored.
+        link_field: String,
+        /// Element-type name, already resolved to a codec or procedure.
+        element_type: String,
+        /// The field's type as the SCE spelling gives it (`uint8`, `string`).
+        actual: String,
+        /// Sorted names of the element document's `uint32` fields.
         candidates: Vec<String>,
     },
 
@@ -5363,8 +5389,7 @@ pub enum GenerateError {
     /// one a backend cannot lower yet. Refused by name rather than lowered to
     /// a weaker queue.
     #[error(
-        "queue '{queue_name}': {storage} storage is not implemented by the {language} forge runtime yet. \
-         SCE Protocol-Synthesis RFC §5.P specifies it, and the runtimes land in the RFC's order; this document is valid and is refused rather than lowered to a queue that gives less. \
+        "queue '{queue_name}': {storage} storage is not implemented by the {language} forge runtime{status}. \
          Repair: use a storage mode the {language} runtime has ({implemented}), or generate for a backend that has {storage}."
     )]
     QueueStorageRuntimeMissing {
@@ -5377,6 +5402,12 @@ pub enum GenerateError {
         /// The storage modes that language's runtime implements, for the
         /// repair to name.
         implemented: String,
+        /// What follows "is not implemented by the {language} forge runtime":
+        /// either that it is not implemented *yet* (the runtimes land in the
+        /// RFC's order, and the document is valid), or that it will not be, and
+        /// why (a garbage-collected backend has no in-place atomic link for an
+        /// intrusive list). Begins with the punctuation that joins it.
+        status: String,
     },
 
     /// SCE Protocol-Synthesis RFC §synth-5-P

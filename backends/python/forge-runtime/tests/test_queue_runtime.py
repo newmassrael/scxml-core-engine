@@ -49,6 +49,12 @@ class TestContractScenarios(unittest.TestCase):
         self.assertTrue(contract["scenarios"], "a contract with no scenarios checks nothing")
         for scenario in contract["scenarios"]:
             with self.subTest(scenario=scenario["id"]):
+                if scenario["storage"] == "intrusive":
+                    # A collected language has no element to link in place, and the
+                    # allocation an intrusive list exists to avoid is the collector's.
+                    # The generator refuses the row for Python by name
+                    # (queue/storage-runtime-missing), so there is no runtime to run.
+                    continue
                 self.assertEqual(
                     "bounded",
                     scenario["storage"],

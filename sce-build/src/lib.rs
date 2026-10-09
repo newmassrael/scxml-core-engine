@@ -5978,6 +5978,36 @@ fn validate_queue_cross_refs(
         let Some(fields) = element.record_fields() else {
             continue;
         };
+        // The queue uses the link in place as the index of the next node, so
+        // the field is a `uint32`; the other `uint32` fields are what a repair
+        // can name.
+        let link_type = fields
+            .iter()
+            .find(|(name, _)| name == link_field)
+            .map(|(_, ty)| ty.clone());
+        if let Some(ty) = &link_type {
+            if *ty != forge::model::SceType::Uint32 {
+                let mut candidates: Vec<String> = fields
+                    .iter()
+                    .filter(|(_, ty)| *ty == forge::model::SceType::Uint32)
+                    .map(|(name, _)| name.clone())
+                    .collect();
+                candidates.sort();
+                return Err(Located::new(
+                    ValidationError::QueueIntrusiveLinkFieldNotU32 {
+                        queue_name: queue.name.clone(),
+                        link_field: link_field.clone(),
+                        element_type: queue.element_type.clone(),
+                        actual: format!("{ty:?}").to_lowercase(),
+                        candidates,
+                    }
+                    .into(),
+                    diag_label.clone(),
+                    queue.storage_line,
+                    None,
+                ));
+            }
+        }
         let mut candidates: Vec<String> = fields.into_iter().map(|(name, _)| name).collect();
         if !candidates.iter().any(|name| name == link_field) {
             candidates.sort();

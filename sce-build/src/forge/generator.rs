@@ -18254,8 +18254,18 @@ fn render_queue_rust(
         ring_slots => inputs.ring_slots,
         participants => inputs.participants,
         // The runtime module is the lower-case of its type: `Spsc` in
-        // `queue::spsc`, `Scq` in `queue::scq`.
-        runtime_module => inputs.runtime_type.to_lowercase(),
+        // `queue::spsc`, `Scq` in `queue::scq`. The intrusive list is `Mpsc`
+        // in `queue::intrusive`.
+        runtime_module => if inputs.link_field.is_some() {
+            "intrusive".to_string()
+        } else {
+            inputs.runtime_type.to_lowercase()
+        },
+        intrusive => inputs.link_field.is_some(),
+        // The element's Rust field is the snake case of the id the document
+        // names, as the codec writes it.
+        link_field => inputs.link_field.as_deref().map(|f| filters::to_snake_case(f.to_string())),
+        many_consumers => inputs.consumers == "many",
         runtime_type => inputs.runtime_type,
         algorithm => inputs.algorithm,
         producers => inputs.producers,
@@ -18300,7 +18310,12 @@ fn render_queue_cpp(
         capacity => inputs.capacity,
         ring_slots => inputs.ring_slots,
         participants => inputs.participants,
-        runtime_type => inputs.runtime_type,
+        runtime_type => if inputs.link_field.is_some() { "IntrusiveMpsc" } else { inputs.runtime_type },
+        intrusive => inputs.link_field.is_some(),
+        // The element's C++ member is the id the document names, as the codec
+        // writes it.
+        link_field => inputs.link_field.clone(),
+        many_consumers => inputs.consumers == "many",
         algorithm => inputs.algorithm,
         producers => inputs.producers,
         consumers => inputs.consumers,
@@ -18329,6 +18344,9 @@ struct QueueRenderInputs {
     /// Python's lock; for C11 the runtime's lower-case infix: `spsc`, `scq64`,
     /// `scq32` or `irq`).
     runtime_type: &'static str,
+    /// The field of the element document an `intrusive` queue links through,
+    /// as the document spells it. `None` for `bounded` storage.
+    link_field: Option<String>,
     /// The entry word of a C11 SCQ row, in bits: 64 or 32. `None` elsewhere.
     entry_bits: Option<u32>,
     /// The wrap bound of a C11 SCQ row in operations, 2^(entry_bits - 2).
@@ -18403,21 +18421,52 @@ fn resolve_queue_render_inputs(
         }
     }
 
-    let QueueStorage::Bounded { capacity } = &m.storage else {
-        let storage = match &m.storage {
-            QueueStorage::Bounded { .. } => "bounded",
-            QueueStorage::Segmented { .. } => "segmented",
-            QueueStorage::Intrusive { .. } => "intrusive",
-        };
-        // Placed on the storage element: the refusal's `actual` is the mode
-        // that element spells, and the document names it elsewhere too.
-        return Err(ForgeError::from(GenerateError::QueueStorageRuntimeMissing {
-            queue_name: m.name.clone(),
-            storage: storage.to_string(),
-            language: crate::forge::codegen_matrix::language_wire_name(language).to_string(),
-            implemented: "bounded".to_string(),
-        })
-        .at_line(m.storage_line));
+    // The storage modes this backend's runtime has. `bounded` everywhere.
+    // `intrusive` where a node's link can be used in place with atomic
+    // accesses — Rust, C++ and C11, which address memory. A garbage-collected
+    // backend (Kotlin, Go, Python) has no such field: a generated record there
+    // is a plain object whose property cannot be made an atomic in place, and
+    // the allocation an intrusive list exists to avoid is the collector's
+    // business. That is not a runtime that has yet to land.
+    let offers_intrusive = matches!(
+        language,
+        crate::generator::Language::Rust
+            | crate::generator::Language::Cpp
+            | crate::generator::Language::C11
+    );
+    let (bounded_capacity, link_field) = match &m.storage {
+        QueueStorage::Bounded { capacity } => (Some(capacity), None),
+        QueueStorage::Intrusive { link_field } if offers_intrusive => {
+            (None, Some(link_field.clone()))
+        }
+        refused => {
+            let (storage, status) = match refused {
+                QueueStorage::Bounded { .. } => unreachable!("bounded is offered everywhere"),
+                QueueStorage::Segmented { .. } => (
+                    "segmented",
+                    " yet. SCE Protocol-Synthesis RFC §5.P specifies it, and the runtimes land in the RFC's order; this document is valid and is refused rather than lowered to a queue that gives less",
+                ),
+                QueueStorage::Intrusive { .. } => (
+                    "intrusive",
+                    ", and will not be: a node of a garbage-collected backend is a plain object whose property cannot be an atomic in place, so there is no link for the list to use. SCE Protocol-Synthesis RFC §5.P specifies the mode for the backends that address memory (Rust, C++, C11); this document is valid and is refused rather than lowered to a queue that gives less",
+                ),
+            };
+            let implemented = if offers_intrusive {
+                "bounded, intrusive"
+            } else {
+                "bounded"
+            };
+            // Placed on the storage element: the refusal's `actual` is the mode
+            // that element spells, and the document names it elsewhere too.
+            return Err(ForgeError::from(GenerateError::QueueStorageRuntimeMissing {
+                queue_name: m.name.clone(),
+                storage: storage.to_string(),
+                language: crate::forge::codegen_matrix::language_wire_name(language).to_string(),
+                implemented: implemented.to_string(),
+                status: status.to_string(),
+            })
+            .at_line(m.storage_line));
+        }
     };
     // A constant is carried through; a deploy key takes the number resolved
     // above, and is refused without one.
@@ -18442,7 +18491,12 @@ fn resolve_queue_render_inputs(
             }
         }
     };
-    let capacity = constant("bounded", capacity, resolution.and_then(|r| r.capacity))?;
+    // An intrusive queue has no capacity: the caller owns the nodes, and how
+    // many there are is the caller's.
+    let capacity = match bounded_capacity {
+        Some(source) => constant("bounded", source, resolution.and_then(|r| r.capacity))?,
+        None => 0,
+    };
     let participants = m
         .participants
         .as_ref()
@@ -18462,7 +18516,16 @@ fn resolve_queue_render_inputs(
         None
     };
     if is_c11 {
-        if selection.algorithm == QueueAlgorithm::Scq && atomic_rmw_width.is_none() {
+        // The algorithms built on a read-modify-write atomic: SCQ's
+        // fetch-and-add, and the Vyukov list's exchange. The Lamport ring needs
+        // only loads and stores.
+        let needs_read_modify_write = matches!(
+            selection.algorithm,
+            QueueAlgorithm::Scq
+                | QueueAlgorithm::VyukovMpsc
+                | QueueAlgorithm::VyukovListWithConsumerFlag
+        );
+        if needs_read_modify_write && atomic_rmw_width.is_none() {
             return Err(ForgeError::from(GenerateError::QueueAtomicWidthUnstated {
                 queue_name: m.name.clone(),
                 algorithm: selection.algorithm.name().to_string(),
@@ -18557,6 +18620,21 @@ fn resolve_queue_render_inputs(
     }
     let runtime_type = match (language, selection.algorithm, c11_entry_bits) {
         (crate::generator::Language::Python, _, _) => "Queue",
+        // The intrusive list: the Rust and C++ runtimes name it `Mpsc` and
+        // `IntrusiveMpsc` (the flag for many consumers is a parameter of the
+        // type); C11's functions are `sce_queue_intrusive_*`, and with no
+        // read-modify-write atomic the same list runs in a critical section.
+        (
+            crate::generator::Language::C11,
+            QueueAlgorithm::VyukovMpsc | QueueAlgorithm::VyukovListWithConsumerFlag,
+            _,
+        ) if single_ring => "intrusive_irq",
+        (
+            crate::generator::Language::C11,
+            QueueAlgorithm::VyukovMpsc | QueueAlgorithm::VyukovListWithConsumerFlag,
+            _,
+        ) => "intrusive",
+        (_, QueueAlgorithm::VyukovMpsc | QueueAlgorithm::VyukovListWithConsumerFlag, _) => "Mpsc",
         (crate::generator::Language::C11, _, _) if single_ring => "irq",
         (crate::generator::Language::C11, QueueAlgorithm::LamportRing, _) => "spsc",
         (crate::generator::Language::C11, QueueAlgorithm::Scq, Some(32)) => "scq32",
@@ -18580,10 +18658,11 @@ fn resolve_queue_render_inputs(
     } else {
         selection.pop
     };
-    let algorithm = match (single_ring, language) {
-        (true, crate::generator::Language::Python) => "a single ring under one lock",
-        (true, _) => "a single ring under an interrupt-masked critical section",
-        (false, _) => selection.algorithm.name(),
+    let algorithm = match (single_ring, language, link_field.is_some()) {
+        (true, crate::generator::Language::Python, _) => "a single ring under one lock",
+        (true, _, true) => "a single list under an interrupt-masked critical section",
+        (true, _, false) => "a single ring under an interrupt-masked critical section",
+        (false, _, _) => selection.algorithm.name(),
     };
     let progress = |p: QueueProgress| match p {
         QueueProgress::WaitFree => "wait-free",
@@ -18624,6 +18703,7 @@ fn resolve_queue_render_inputs(
         participants,
         ring_slots,
         runtime_type,
+        link_field,
         entry_bits: c11_entry_bits,
         wrap_bound_ops,
         algorithm,
@@ -18991,6 +19071,11 @@ fn render_queue_c(
         runtime_type => inputs.runtime_type,
         entry_bits => inputs.entry_bits,
         wrap_bound_ops => inputs.wrap_bound_ops,
+        intrusive => inputs.link_field.is_some(),
+        // The element's C member is the id the document names, as the codec
+        // writes it.
+        link_field => inputs.link_field.clone(),
+        many_consumers => inputs.consumers == "many",
         algorithm => inputs.algorithm,
         producers => inputs.producers,
         consumers => inputs.consumers,

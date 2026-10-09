@@ -5,12 +5,12 @@
 // (lines 1691-1924). Closed table that mirrors the spec's
 // concrete v1 whitelist (lines 1717-1750):
 //
-//   - Atomics, per-width × per-ordering — 100 entries
+//   - Atomics, per-width × per-ordering — 105 entries
 //   - Fences (acquire/release/acq_rel/seq_cst + compiler_barrier + dma_fence) — 6 entries
 //   - Cache maintenance (clean / invalidate / clean_invalidate by addr) — 3 entries
 //   - Interrupt control (irq_save / irq_restore) — 2 entries
 //
-// 111 baseline symbols. Plugin-extension symbols (deploy.yaml
+// 116 baseline symbols. Plugin-extension symbols (deploy.yaml
 // `extern_symbols.target_plugin: <path>`) are out of scope here —
 // the target-plugin loader composes the plugin file's additions on
 // top of this baseline. `pub const` Rust slice over YAML data,
@@ -275,7 +275,7 @@ const fn irq(name: &'static str, sig: &'static str, purpose: &'static str) -> Sy
 use MemoryOrdering::*;
 use Width::*;
 
-/// Baseline whitelist — 111 symbols. Source of truth: SCE Protocol-Synthesis
+/// Baseline whitelist — 116 symbols. Source of truth: SCE Protocol-Synthesis
 /// RFC §synth-5-I lines 1717-1750. Per-width × per-ordering combinations
 /// expanded inline so each row matches its spec line one-to-one.
 ///
@@ -950,6 +950,45 @@ pub const BASELINE_SYMBOLS: &[Symbol] = &[
         USize,
         "atomic-fetch-and",
     ),
+    // ── Exchange (the queue kind's intrusive list, §synth-5-P): stores a value
+    //    and returns the old one in one step, which the list's push needs to be
+    //    wait-free — a compare-and-swap loop would make it lock-free. Only the
+    //    acq_rel form is in the whitelist, the one the list uses.
+    atomic_fetch(
+        "sce_atomic_xchg_acq_rel_u8",
+        "(*mut u8, u8) -> u8",
+        AcqRel,
+        U8,
+        "atomic-xchg",
+    ),
+    atomic_fetch(
+        "sce_atomic_xchg_acq_rel_u16",
+        "(*mut u16, u16) -> u16",
+        AcqRel,
+        U16,
+        "atomic-xchg",
+    ),
+    atomic_fetch(
+        "sce_atomic_xchg_acq_rel_u32",
+        "(*mut u32, u32) -> u32",
+        AcqRel,
+        U32,
+        "atomic-xchg",
+    ),
+    atomic_fetch(
+        "sce_atomic_xchg_acq_rel_u64",
+        "(*mut u64, u64) -> u64",
+        AcqRel,
+        U64,
+        "atomic-xchg",
+    ),
+    atomic_fetch(
+        "sce_atomic_xchg_acq_rel_usize",
+        "(*mut usize, usize) -> usize",
+        AcqRel,
+        USize,
+        "atomic-xchg",
+    ),
     // ── Fences (lines 1729-1733): 4 atomic-fence × ord + compiler_barrier + dma_fence ──
     fence(
         "sce_atomic_fence_acquire",
@@ -1072,15 +1111,15 @@ mod tests {
     use super::*;
     use std::collections::BTreeSet;
 
-    /// Spec-verbatim entry count. 100 atomic + 6 fence + 3 cache + 2
-    /// IRQ = 111. Drift here = a future spec edit reshaped the
+    /// Spec-verbatim entry count. 105 atomic + 6 fence + 3 cache + 2
+    /// IRQ = 116. Drift here = a future spec edit reshaped the
     /// baseline; cross-check `BASELINE_SYMBOLS` against §synth-5-I lines
     /// 1717-1750 before bumping the count.
     #[test]
     fn baseline_symbol_count_matches_spec() {
         assert_eq!(
             BASELINE_SYMBOLS.len(),
-            111,
+            116,
             "BASELINE_SYMBOLS drifted from spec §5.I lines 1717-1750"
         );
     }

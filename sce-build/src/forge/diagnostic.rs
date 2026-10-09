@@ -1247,6 +1247,10 @@ pub enum DiagnosticCode {
     /// not declare. Carries a `Fix::ReplaceOneOf` over the fields it does.
     #[serde(rename = "queue/intrusive-link-field-missing")]
     QueueIntrusiveLinkFieldMissing,
+    /// `<sce:intrusive link-field>` names a field that is not a `uint32`.
+    /// Carries a `Fix::ReplaceOneOf` over the element's `uint32` fields.
+    #[serde(rename = "queue/intrusive-link-field-not-u32")]
+    QueueIntrusiveLinkFieldNotU32,
     /// The document is valid and the target language's runtime does not
     /// implement its storage mode yet. `expected` carries the modes it does.
     #[serde(rename = "queue/storage-runtime-missing")]
@@ -3535,6 +3539,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         QueueDeployLimitUnresolved,
         QueueElementTypeNotAKind,
         QueueIntrusiveLinkFieldMissing,
+        QueueIntrusiveLinkFieldNotU32,
         QueueStorageRuntimeMissing,
         QueueProgressUnreachableOnBackend,
         QueueAtomicWidthUnstated,
@@ -4314,6 +4319,7 @@ impl DiagnosticCode {
             | QueueDeployLimitUnresolved
             | QueueElementTypeNotAKind
             | QueueIntrusiveLinkFieldMissing
+            | QueueIntrusiveLinkFieldNotU32
             | QueueStorageRuntimeMissing
             | QueueProgressUnreachableOnBackend
             | QueueAtomicWidthUnstated
@@ -5092,6 +5098,7 @@ impl DiagnosticCode {
             QueueDeployLimitUnresolved => "queue/deploy-limit-unresolved",
             QueueElementTypeNotAKind => "queue/element-type-not-a-kind",
             QueueIntrusiveLinkFieldMissing => "queue/intrusive-link-field-missing",
+            QueueIntrusiveLinkFieldNotU32 => "queue/intrusive-link-field-not-u32",
             QueueStorageRuntimeMissing => "queue/storage-runtime-missing",
             QueueProgressUnreachableOnBackend => "queue/progress-unreachable-on-backend",
             QueueAtomicWidthUnstated => "queue/atomic-width-unstated",
@@ -8937,6 +8944,24 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             }),
             key_fragments: vec![queue_name.clone(), element_type.clone()],
         },
+        ValidationError::QueueIntrusiveLinkFieldNotU32 {
+            queue_name,
+            link_field,
+            element_type,
+            actual: _,
+            candidates,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::QueueIntrusiveLinkFieldNotU32,
+            stage: Stage::Validation,
+            // `actual` is the link field as authored; the element's uint32
+            // fields ride `Fix::ReplaceOneOf`.
+            expected: None,
+            actual: Some(link_field.clone()),
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: candidates.clone(),
+            }),
+            key_fragments: vec![queue_name.clone(), element_type.clone(), link_field.clone()],
+        },
         ValidationError::QueueIntrusiveLinkFieldMissing {
             queue_name,
             link_field,
@@ -9865,6 +9890,7 @@ fn generate_fields(e: &GenerateError) -> DiagnosticPayload {
             storage,
             language,
             implemented,
+            status: _,
         } => DiagnosticPayload {
             code: DiagnosticCode::QueueStorageRuntimeMissing,
             stage: Stage::Generate,
@@ -13284,12 +13310,25 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:c6bb0f4bc4505bc3","code":"queue/intrusive-link-field-missing","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.P","message":"queue 'rx_events': <sce:intrusive link-field=\"nxt\"/> names a field that does not exist on element-type 'rx_event' (codec kind). SCE Protocol-Synthesis RFC §5.P: an intrusive queue links its elements through a field each one carries, so the field must be one the element document declares. Replace `link-field=\"nxt\"` with one of the rx_event's declared fields: next, sensor.","actual":"nxt","fix":{"kind":"replace_one_of","candidates":["next","sensor"]}}"#,
             ),
             (
+                "forge/queue-intrusive-link-field-not-u32",
+                ValidationError::QueueIntrusiveLinkFieldNotU32 {
+                    queue_name: "rx_events".into(),
+                    link_field: "label".into(),
+                    element_type: "rx_event".into(),
+                    actual: "string".into(),
+                    candidates: vec!["next".into()],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:0fed461a26c534c0","code":"queue/intrusive-link-field-not-u32","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.P","message":"queue 'rx_events': <sce:intrusive link-field=\"label\"/> names a field of element-type 'rx_event' whose type is string, not uint32. SCE Protocol-Synthesis RFC §5.P: an intrusive queue links its nodes through a uint32 field, the index of the next node of an array the caller owns. Replace `link-field=\"label\"` with one of the rx_event's uint32 fields: next.","actual":"label","fix":{"kind":"replace_one_of","candidates":["next"]}}"#,
+            ),
+            (
                 "forge/queue-storage-runtime-missing",
                 GenerateError::QueueStorageRuntimeMissing {
                     queue_name: "rx_events".into(),
                     storage: "intrusive".into(),
                     language: "rust".into(),
                     implemented: "bounded".into(),
+                    status: " yet. SCE Protocol-Synthesis RFC §5.P specifies it, and the runtimes land in the RFC's order; this document is valid and is refused rather than lowered to a queue that gives less".into(),
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:c20d84b540bc7c3f","code":"queue/storage-runtime-missing","stage":"generate","spec":"SCE Protocol-Synthesis RFC §5.P","message":"queue 'rx_events': intrusive storage is not implemented by the rust forge runtime yet. SCE Protocol-Synthesis RFC §5.P specifies it, and the runtimes land in the RFC's order; this document is valid and is refused rather than lowered to a queue that gives less. Repair: use a storage mode the rust runtime has (bounded), or generate for a backend that has intrusive.","expected":["bounded"],"actual":"intrusive"}"#,
@@ -16425,6 +16464,7 @@ mod tests {
             // names for the intrusive link field.
             | QueueElementTypeNotAKind
             | QueueIntrusiveLinkFieldMissing
+            | QueueIntrusiveLinkFieldNotU32
             // C7-lowering algorithm-over-BC dispatch (RFC §synth-5-A line 311
             // + §synth-5-L line 2611-2618 + 2642-2647). Two of the six
             // codes carry a closed candidate set:
@@ -17753,6 +17793,7 @@ mod tests {
                 | QueueDeployLimitUnresolved
                 | QueueElementTypeNotAKind
                 | QueueIntrusiveLinkFieldMissing
+                | QueueIntrusiveLinkFieldNotU32
                 | QueueStorageRuntimeMissing
                 | QueueProgressUnreachableOnBackend
                 | QueueAtomicWidthUnstated
@@ -17957,9 +17998,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            432,
+            433,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 432 distinct variants to match the DiagnosticCode \
+             expected 433 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -18736,6 +18777,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | QueueDeployLimitUnresolved
             | QueueElementTypeNotAKind
             | QueueIntrusiveLinkFieldMissing
+            | QueueIntrusiveLinkFieldNotU32
             | QueueStorageRuntimeMissing
             | QueueProgressUnreachableOnBackend
             | QueueAtomicWidthUnstated

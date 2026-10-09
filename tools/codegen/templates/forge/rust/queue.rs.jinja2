@@ -17,15 +17,60 @@
 //
 // Selected: {{ algorithm }}. Push is {{ push_progress }}, pop is {{ pop_progress }}.
 //
+{% if intrusive %}
+// The queue is intrusive (`<sce:intrusive link-field="{{ link_field }}"/>`): the elements are
+// nodes of an array the caller owns, linked through their own `{{ link_field }}` field, which
+// must be a `u32`. A node is named by its index in that array.
+//
+// Operations (from `sce_forge_runtime::queue::intrusive`):
+//   unsafe new(nodes, len, stub) -> Self   the array, and the node set aside as the stub
+//   unsafe push(index)                     wait-free; it cannot fail
+//   try_pop() -> Option<u32>               the index of the oldest node; None while a push
+//                                          is in flight or when the queue holds none
+{% else %}
 // Operations (from `sce_forge_runtime::queue`):
 //   try_push(&producer, element) -> Result<(), PushError<T>>
 //   try_pop(&consumer)           -> Option<T>
 //   capacity()                   -> usize
 // A full queue rejects the push and hands the element back.
+{% endif %}
 
 #![allow(clippy::all)]
 #![allow(unused_imports)]
 
+{% if intrusive %}
+use sce_forge_runtime::queue::intrusive::{Link, Mpsc};
+use super::{{ element_snake }}::{{ element_import }};
+
+/// The link this queue uses: the `{{ link_field }}` field of `{{ element_stored }}`. A marker of
+/// the queue's own, so another queue over the same element type may link through the same
+/// field or another without the two meeting.
+pub struct {{ pascal }}Link;
+
+// SAFETY: `{{ link_field }}` is an aligned `u32` field of `{{ element_stored }}`, checked when
+// the document was generated, and the queue is its only user while a node is queued.
+unsafe impl Link<{{ element_stored }}> for {{ pascal }}Link {
+    const OFFSET: usize = core::mem::offset_of!({{ element_stored }}, {{ link_field }});
+}
+
+/// Whether many consumers pop: their pops are serialised by a test-and-set
+/// flag. With one, the consumer must be a single thread.
+pub const MANY_CONSUMERS: bool = {{ "true" if many_consumers else "false" }};
+
+/// What the document requires of push and pop (`<sce:progress>`).
+pub const DECLARED_PROGRESS: &str = "{{ declared_progress }}";
+/// What the selected algorithm gives push.
+pub const PUSH_PROGRESS: &str = "{{ push_progress }}";
+/// What the selected algorithm gives pop. A pop answers `None` while a producer is
+/// between its two steps, so the queue's histories are judged with that excuse.
+pub const POP_PROGRESS: &str = "{{ pop_progress }}";
+/// The algorithm the selection table gave this contract.
+pub const ALGORITHM: &str = "{{ algorithm }}";
+
+/// The queue. It owns no storage: the nodes are the caller's, and the queue
+/// allocates nothing.
+pub type {{ pascal }} = Mpsc<{{ element_stored }}, {{ pascal }}Link, MANY_CONSUMERS>;
+{% else %}
 use sce_forge_runtime::queue::{{ runtime_module }}::{{ runtime_type }};
 use super::{{ element_snake }}::{{ element_import }};
 
@@ -75,3 +120,4 @@ pub type {{ pascal }} = {{ runtime_type }}<{{ element_stored }}, CAPACITY>;
 
 /// The bytes of storage the queue occupies, for a target that budgets them.
 pub const STORAGE_BYTES: usize = core::mem::size_of::<{{ pascal }}>();
+{% endif %}

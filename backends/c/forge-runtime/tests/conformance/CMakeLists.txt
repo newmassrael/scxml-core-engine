@@ -302,8 +302,15 @@ foreach(_s RANGE ${_scenario_last})
     string(JSON _storage GET "${_queue_contract}" scenarios ${_s} storage)
     string(JSON _producers GET "${_queue_contract}" scenarios ${_s} producers)
     string(JSON _consumers GET "${_queue_contract}" scenarios ${_s} consumers)
-    string(JSON _capacity GET "${_queue_contract}" scenarios ${_s} capacity)
-    if(NOT _storage STREQUAL "bounded")
+    if(_storage STREQUAL "bounded")
+        string(JSON _capacity GET "${_queue_contract}" scenarios ${_s} capacity)
+        set(_intrusive 0)
+    elseif(_storage STREQUAL "intrusive")
+        # An intrusive scenario has no capacity: it names the nodes the caller
+        # owns, and `value` and `expect` are indices among them.
+        string(JSON _capacity GET "${_queue_contract}" scenarios ${_s} nodes)
+        set(_intrusive 1)
+    else()
         message(FATAL_ERROR "the C11 arm has no runtime for the row ${_storage} (scenario ${_id})")
     endif()
     string(JSON _step_count LENGTH "${_queue_contract}" scenarios ${_s} steps)
@@ -355,7 +362,7 @@ foreach(_s RANGE ${_scenario_last})
         set(_c1 0)
     endif()
     string(APPEND _queue_scenario_table
-        "    {\"${_id}\", ${_p1}, ${_c1}, ${_capacity}u, g_steps_${_s}, ${_step_count}u},\n")
+        "    {\"${_id}\", ${_p1}, ${_c1}, ${_intrusive}, ${_capacity}u, g_steps_${_s}, ${_step_count}u},\n")
 endforeach()
 string(APPEND _queue_scenarios_c
     "static const scenario_t g_scenarios[] = {\n${_queue_scenario_table}};\n\n"
@@ -383,7 +390,7 @@ add_test(NAME queue_history_check_c
     COMMAND "${CMAKE_COMMAND}"
             "-DCODEGEN=${SCE_CODEGEN}"
             "-DDIR=${QUEUE_HISTORIES_DIR}"
-            -DMINIMUM=462
+            -DMINIMUM=712
             -P "${REPO_ROOT}/tests/forge/conformance/check_queue_histories.cmake")
 set_tests_properties(queue_history_check_c PROPERTIES FIXTURES_REQUIRED queue_histories_c)
 
@@ -463,22 +470,30 @@ sce_queue_variant(queue_conformance_scq queue_c_scq64 "")
 sce_queue_variant(queue_conformance_scq queue_c_scq32 "")
 sce_queue_variant(queue_conformance_spsc queue_c_irq_one "blocking")
 sce_queue_variant(queue_conformance_scq queue_c_irq_many "blocking")
+# The intrusive lists: over atomics (many producers, one consumer) and under the
+# critical section of the target with none (many, many).
+sce_queue_variant(queue_conformance_intrusive queue_c_intrusive "")
+sce_queue_variant(queue_conformance_intrusive_many queue_c_intrusive_irq "")
 
-# The element every queue holds, then each queue for the machine whose atomics it
-# is built for.
-set(QUEUE_C_HEADERS "${QUEUE_C_GENERATED_DIR}/queue_conformance_event.h")
-add_custom_command(
-    OUTPUT "${QUEUE_C_GENERATED_DIR}/queue_conformance_event.h"
-    COMMAND "${SCE_CODEGEN}" generate "${RESOURCE_DIR}/queue_conformance_event.scxml"
-            --language c11 --output-dir "${QUEUE_C_GENERATED_DIR}"
-            --write-deps "${QUEUE_C_GENERATED_DIR}/queue_conformance_event.h.d"
-    DEPENDS "${RESOURCE_DIR}/queue_conformance_event.scxml" "${SCE_CODEGEN}"
-    DEPFILE "${QUEUE_C_GENERATED_DIR}/queue_conformance_event.h.d"
-    COMMENT "Generating C11 queue element queue_conformance_event.h"
-    VERBATIM)
+# The elements every queue holds, then each queue for the machine whose atomics it
+# is built for. The intrusive queues hold a node that carries its own link.
+set(QUEUE_C_HEADERS "")
+foreach(_element queue_conformance_event queue_conformance_node)
+    add_custom_command(
+        OUTPUT "${QUEUE_C_GENERATED_DIR}/${_element}.h"
+        COMMAND "${SCE_CODEGEN}" generate "${RESOURCE_DIR}/${_element}.scxml"
+                --language c11 --output-dir "${QUEUE_C_GENERATED_DIR}"
+                --write-deps "${QUEUE_C_GENERATED_DIR}/${_element}.h.d"
+        DEPENDS "${RESOURCE_DIR}/${_element}.scxml" "${SCE_CODEGEN}"
+        DEPFILE "${QUEUE_C_GENERATED_DIR}/${_element}.h.d"
+        COMMENT "Generating C11 queue element ${_element}.h"
+        VERBATIM)
+    list(APPEND QUEUE_C_HEADERS "${QUEUE_C_GENERATED_DIR}/${_element}.h")
+endforeach()
 foreach(_pair
         "queue_c_spsc:mcu64" "queue_c_scq64:mcu64" "queue_c_scq32:mcu32"
-        "queue_c_irq_one:mcu0" "queue_c_irq_many:mcu0")
+        "queue_c_irq_one:mcu0" "queue_c_irq_many:mcu0"
+        "queue_c_intrusive:mcu64" "queue_c_intrusive_irq:mcu0")
     string(REPLACE ":" ";" _parts "${_pair}")
     list(GET _parts 0 _queue)
     list(GET _parts 1 _machine)
