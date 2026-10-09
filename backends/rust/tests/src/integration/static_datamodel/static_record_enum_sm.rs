@@ -903,13 +903,12 @@ impl StatePolicy for StaticRecordEnumPolicy {
                     }
                 }
                 if event == StaticRecordEnumEvent::Lead {
-                    if match (|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> {
+                    if (|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> {
                         Ok(sce_forge_runtime::algorithm::at_ref(&self.seen, 0)?.layout
                             == StaticRecordEnumViewModeEnum::Week)
-                    })() {
-                        Ok(sce_value) => sce_value,
-                        Err(_) => false,
-                    } {
+                    })()
+                    .unwrap_or_default()
+                    {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
                             targets: &[],

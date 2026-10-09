@@ -1707,6 +1707,16 @@ impl StaticTarget for RustTarget {
         }
     }
     fn receiving_condition(&self, value: &str, failed: &str, flag: &str) -> String {
+        // A guard with nothing to raise and no flag to set (a transition's `cond`) is false when
+        // it cannot be evaluated and that is all: `unwrap_or_default` says it, where a `match`
+        // whose one failing arm is `false` is the shape `clippy::manual_unwrap_or_default` asks
+        // to be written that way.
+        if failed.is_empty() && flag.is_empty() {
+            return format!(
+                "(|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> {{ Ok({value}) }})()\
+                 .unwrap_or_default()"
+            );
+        }
         Self::lines(&[
             "match (|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> {".to_string(),
             format!("    Ok({value})"),
