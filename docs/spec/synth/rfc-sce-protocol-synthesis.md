@@ -3720,7 +3720,7 @@ pub enum QueueStorage {
 - `queue/progress-unreachable` — no selection row meets the declared progress for this storage, cardinality and backend
 - `queue/segmented-needs-alloc` — `segmented` on the no-alloc profile; and `queue/storage-runtime-missing` (generate stage) — a valid document whose storage mode the target backend's runtime does not implement yet, refused by name rather than lowered to a queue that gives less
 - `queue/allocator-progress-missing` — `<sce:segmented>` without `allocator-progress`
-- `queue/participants-unresolved` — an SCQ row or a domain needs `<sce:participants>` and it is absent or its deploy key is missing
+- `queue/participants-unresolved` — an SCQ row or a domain needs `<sce:participants>` and it is absent; a `source="deploy"` capacity or participants key naming an undeclared limit is `queue/deploy-limit-unresolved`, with the declared limits as its fix candidates
 - `queue/progress-insufficient-for-isr` — an ISR-side operation below `lock-free`
 - `queue/alloc-in-isr` — an ISR producer on a `segmented` queue
 - `queue/atomic-width-unstated` — an SCQ row generated for C11 without `platform.atomic_rmw_width`

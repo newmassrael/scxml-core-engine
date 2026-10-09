@@ -1234,6 +1234,11 @@ pub enum DiagnosticCode {
     /// document writes none.
     #[serde(rename = "queue/participants-unresolved")]
     QueueParticipantsUnresolved,
+    /// A `source="deploy"` capacity or participants key names a limit the
+    /// deploy file does not declare. Unlike the codes above it carries a
+    /// `Fix::ReplaceOneOf` over the limits the machine does declare.
+    #[serde(rename = "queue/deploy-limit-unresolved")]
+    QueueDeployLimitUnresolved,
     /// The document is valid and the target language's runtime does not
     /// implement its storage mode yet. `expected` carries the modes it does.
     #[serde(rename = "queue/storage-runtime-missing")]
@@ -3480,6 +3485,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         QueueAllocatorProgressMissing,
         QueueProgressUnreachable,
         QueueParticipantsUnresolved,
+        QueueDeployLimitUnresolved,
         QueueStorageRuntimeMissing,
         // Codegen Rust no_std variant rejection (SCE Protocol-Synthesis RFC §synth-5-J-2,
         // item C3)
@@ -4248,6 +4254,7 @@ impl DiagnosticCode {
             | QueueAllocatorProgressMissing
             | QueueProgressUnreachable
             | QueueParticipantsUnresolved
+            | QueueDeployLimitUnresolved
             | QueueStorageRuntimeMissing => Some("SCE Protocol-Synthesis RFC §5.P"),
 
             // ── §synth-5-M Fragment-reassembly variant parse-time structure
@@ -5015,6 +5022,7 @@ impl DiagnosticCode {
             QueueAllocatorProgressMissing => "queue/allocator-progress-missing",
             QueueProgressUnreachable => "queue/progress-unreachable",
             QueueParticipantsUnresolved => "queue/participants-unresolved",
+            QueueDeployLimitUnresolved => "queue/deploy-limit-unresolved",
             QueueStorageRuntimeMissing => "queue/storage-runtime-missing",
             TimerPeriodBelowTickRate => "timer/period-below-tick-rate",
             TimerSlotOverflow => "timer/slot-overflow",
@@ -8807,6 +8815,32 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 storage.clone(),
                 producers.clone(),
                 consumers.clone(),
+            ],
+        },
+        ValidationError::QueueDeployLimitUnresolved {
+            queue_name,
+            element,
+            key,
+            machine,
+            limit,
+            candidates,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::QueueDeployLimitUnresolved,
+            stage: Stage::Validation,
+            // `actual` carries the key as authored; the machine and limit
+            // segments ride `key_fragments` with the element that named it,
+            // as `collection/capacity-unresolved` does. The candidates are
+            // the sorted limit names the machine declares.
+            expected: None,
+            actual: Some(key.clone()),
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: candidates.clone(),
+            }),
+            key_fragments: vec![
+                queue_name.clone(),
+                element.clone(),
+                machine.clone(),
+                limit.clone(),
             ],
         },
         ValidationError::TimerPeriodBelowTickRate {
@@ -12995,6 +13029,19 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:58825f42f565e471","code":"queue/participants-unresolved","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.P","message":"queue 'rx_events': the SCQ data queue that bounded storage selects (producers many, consumers one) needs <sce:participants>, and the document writes none. SCE Protocol-Synthesis RFC §5.P: its ring is correct only for as many contexts per side as it has slots (Nikolaev 2019 §5.1), so the ring is sized from the participants. Repair: add <sce:participants const=\"N\"/> (or source=\"deploy\" key=\"...\"), N being the most contexts that hold a handle on one side at once."}"#,
             ),
             (
+                "forge/queue-deploy-limit-unresolved",
+                ValidationError::QueueDeployLimitUnresolved {
+                    queue_name: "rx_events".into(),
+                    element: "bounded".into(),
+                    key: "machines.mcu_node.limits.rx_capacity".into(),
+                    machine: "mcu_node".into(),
+                    limit: "rx_capacity".into(),
+                    candidates: vec!["alpha".into(), "tx_capacity".into()],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:d57d7bac7528712b","code":"queue/deploy-limit-unresolved","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.P","message":"queue 'rx_events': <sce:bounded source=\"deploy\" key=\"machines.mcu_node.limits.rx_capacity\"/> references limit 'rx_capacity' on machine 'mcu_node', but deploy.yaml does not declare `machines.mcu_node.limits.rx_capacity`. SCE Protocol-Synthesis RFC §5.P: a queue's capacity and participants take the §5.L capacity forms and resolve at codegen time to a constant from `machines.<machine>.limits.<limit>:`; an unresolved limit blocks emission. Repair: declare `rx_capacity: <count>` under `machines.mcu_node.limits:` in deploy.yaml (declared limits today: alpha, tx_capacity), or write the element with `const=\"N\"`.","actual":"machines.mcu_node.limits.rx_capacity","fix":{"kind":"replace_one_of","candidates":["alpha","tx_capacity"]}}"#,
+            ),
+            (
                 "forge/queue-storage-runtime-missing",
                 GenerateError::QueueStorageRuntimeMissing {
                     queue_name: "rx_events".into(),
@@ -16050,6 +16097,9 @@ mod tests {
             // `BufferPoolSectionConflict` precedent for sorted-
             // declared-name candidate sets.
             | CollectionCapacityUnresolved
+            // Queue deploy-time capacity and participants: the same sorted
+            // declared-limit candidate set, on the queue's own code.
+            | QueueDeployLimitUnresolved
             // C7-lowering algorithm-over-BC dispatch (RFC §synth-5-A line 311
             // + §synth-5-L line 2611-2618 + 2642-2647). Two of the six
             // codes carry a closed candidate set:
@@ -17367,6 +17417,7 @@ mod tests {
                 | QueueAllocatorProgressMissing
                 | QueueProgressUnreachable
                 | QueueParticipantsUnresolved
+                | QueueDeployLimitUnresolved
                 | QueueStorageRuntimeMissing
                 | MemReassemblyPoolVariantMissingMaxFragments
                 | MemReassemblyPoolVariantMissingTimeout
@@ -17563,9 +17614,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            421,
+            422,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 421 distinct variants to match the DiagnosticCode \
+             expected 422 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -18339,6 +18390,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | QueueAllocatorProgressMissing
             | QueueProgressUnreachable
             | QueueParticipantsUnresolved
+            | QueueDeployLimitUnresolved
             | QueueStorageRuntimeMissing
             | MemReassemblyPoolVariantMissingMaxFragments
             | MemReassemblyPoolVariantMissingTimeout

@@ -2298,10 +2298,28 @@ pub fn compile_forge_with_deploy(
         Some(map)
     })();
 
+    // SCE Protocol-Synthesis RFC §synth-5-P: a queue's `source="deploy"`
+    // capacity and participants resolve here, where the deploy file and the
+    // target machine are in hand, and a key naming an undeclared limit is
+    // refused before anything is emitted. Single-document path, so the map
+    // carries at most one entry.
+    let queue_resolutions = match (&doc, deploy, target_machine) {
+        (forge::model::ForgeDocument::Queue(queue), Some(cfg), Some(machine_name)) => {
+            let resolution =
+                resolve_queue_deploy_limits(queue, cfg, machine_name, label.diagnostic_label)?;
+            Some(std::collections::HashMap::from([(
+                queue.name.clone(),
+                resolution,
+            )]))
+        }
+        _ => None,
+    };
+
     let options = ForgeCompileOptions {
         cache_platform,
         worker_placement,
         bounded_collection_resolutions,
+        queue_resolutions,
         ..Default::default()
     };
 
@@ -2634,6 +2652,14 @@ pub struct ForgeCompileOptions {
     /// the codegen boundary rather than silently emitting placeholders.
     pub bounded_collection_resolutions:
         Option<std::collections::HashMap<String, BoundedCollectionResolution>>,
+    /// SCE Protocol-Synthesis RFC §synth-5-P — the constants a queue's
+    /// `source="deploy"` capacity and participants resolved to, keyed by
+    /// queue name. Populated only by [`compile_forge_with_deploy`], which
+    /// has the deploy file and the target machine; `None` on every
+    /// deploy-unaware path. When `None` and the queue writes a deploy key,
+    /// the render layer raises [`forge::error::GenerateError::InvalidConfig`]
+    /// naming the queue and the key rather than guessing a number.
+    pub queue_resolutions: Option<std::collections::HashMap<String, QueueResolution>>,
     /// SCE Protocol-Synthesis RFC §synth-5-C lines 802-833 + §synth-5-M lines 2771-2828
     /// (item C10) — sorted set of `<sce:link>` doc names whose
     /// orchestrator-resolved (deploy `domain_attrs.trust_class:
@@ -2758,6 +2784,20 @@ pub struct BoundedCollectionResolution {
     /// Imports resolving the index field in its declaring element document.
     /// These belong to the element namespace, not the collection namespace.
     pub index_by_imports: Vec<forge::generator::ImportContext>,
+}
+
+/// SCE Protocol-Synthesis RFC §synth-5-P — what a queue's two
+/// [`forge::model::CapacitySource`] elements resolved to for the target
+/// machine. `None` for an element the document does not write, or whose
+/// deploy key names another machine than the one being compiled (the
+/// document was designed for that machine; its own compile resolves it).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct QueueResolution {
+    /// `<sce:bounded>` capacity. `None` for `segmented` and `intrusive`
+    /// storage, which have none.
+    pub capacity: Option<u32>,
+    /// `<sce:participants>` count.
+    pub participants: Option<u32>,
 }
 
 /// Compile a forge SCXML with cross-file import resolution, validation,
@@ -5281,6 +5321,81 @@ fn parse_bounded_collection_deploy_key(key: &str) -> Option<(&str, &str)> {
         return None;
     }
     Some((machine_segment, limit_name))
+}
+
+/// SCE Protocol-Synthesis RFC §synth-5-P — resolve a queue's `<sce:bounded>`
+/// capacity and `<sce:participants>` count for `machine_name`.
+///
+/// Both take the bounded collection's `CapacitySource` forms: a constant is carried
+/// through, and a deploy key `machines.<machine>.limits.<limit>` is read from
+/// that machine's `limits:`. A key that does not have that shape, or whose
+/// machine segment is another machine, resolves to `None` — the document was
+/// written for another machine and its own compile resolves it. A key that
+/// names this machine and a limit it does not declare is
+/// `queue/deploy-limit-unresolved`, with the declared limits as candidates.
+fn resolve_queue_deploy_limits(
+    queue: &forge::model::QueueModel,
+    cfg: &mesh::deploy::DeployConfig,
+    machine_name: &str,
+    diagnostic_label: &str,
+) -> Result<QueueResolution, forge::error::Located<forge::error::ForgeError>> {
+    use forge::error::{Located, ValidationError};
+    use forge::model::CapacitySource;
+
+    let resolve = |element: &str, source: &CapacitySource| -> Result<Option<u32>, _> {
+        let key = match source {
+            CapacitySource::CompileConst { value } => return Ok(Some(*value)),
+            CapacitySource::DeployKey { key } => key,
+        };
+        let Some((machine_segment, limit)) = parse_bounded_collection_deploy_key(key) else {
+            return Ok(None);
+        };
+        if machine_segment != machine_name {
+            return Ok(None);
+        }
+        let Some(machine) = cfg
+            .device_for_machine(machine_name)
+            .and_then(|device| device.machines.get(machine_name))
+        else {
+            return Ok(None);
+        };
+        match machine.limits.get(limit) {
+            Some(value) => Ok(Some(*value)),
+            None => {
+                let mut candidates: Vec<String> = machine.limits.keys().cloned().collect();
+                candidates.sort();
+                Err(Located::new(
+                    ValidationError::QueueDeployLimitUnresolved {
+                        queue_name: queue.name.clone(),
+                        element: element.to_string(),
+                        key: key.clone(),
+                        machine: machine_name.to_string(),
+                        limit: limit.to_string(),
+                        candidates,
+                    }
+                    .into(),
+                    diagnostic_label,
+                    None,
+                    None,
+                ))
+            }
+        }
+    };
+
+    let capacity = match &queue.storage {
+        forge::model::QueueStorage::Bounded { capacity } => resolve("bounded", capacity)?,
+        _ => None,
+    };
+    let participants = queue
+        .participants
+        .as_ref()
+        .map(|source| resolve("participants", source))
+        .transpose()?
+        .flatten();
+    Ok(QueueResolution {
+        capacity,
+        participants,
+    })
 }
 
 /// SCE Protocol-Synthesis RFC §synth-5-L — look up `field` on the

@@ -18258,22 +18258,40 @@ fn render_queue_rust(
         }
         .into());
     };
-    let constant = |what: &str, source: &CapacitySource| -> Result<u32, ForgeError> {
-        match source {
-            CapacitySource::CompileConst { value } => Ok(*value),
-            CapacitySource::DeployKey { key } => Err(GenerateError::unsupported(format!(
-                "queue '{}': {what} from deploy.yaml (`{key}`) is not resolved yet; \
-                 write it as a constant",
-                m.name
-            ))
-            .into()),
+    // A constant is carried through. A deploy key needs the resolution
+    // `compile_forge_with_deploy` made from the deploy file; without one the
+    // build has no deploy context, or the key names another machine, and a
+    // number is not guessed.
+    let resolution = options
+        .queue_resolutions
+        .as_ref()
+        .and_then(|resolutions| resolutions.get(&m.name));
+    let constant = |element: &str,
+                    source: &CapacitySource,
+                    resolved: Option<u32>|
+     -> Result<u32, ForgeError> {
+        match (source, resolved) {
+            (CapacitySource::CompileConst { value }, _) => Ok(*value),
+            (CapacitySource::DeployKey { .. }, Some(value)) => Ok(value),
+            (CapacitySource::DeployKey { key }, None) => {
+                Err(GenerateError::InvalidConfig(format!(
+                    "queue '{name}': <sce:{element} source=\"deploy\" key=\"{key}\"/> \
+                     resolution missing — a compile without a deploy.yaml and a target \
+                     machine cannot resolve it, and neither can one whose key names \
+                     another machine. Route through compile_forge_with_deploy (or supply \
+                     ForgeCompileOptions::queue_resolutions manually in tests) to pin \
+                     the number.",
+                    name = m.name,
+                ))
+                .into())
+            }
         }
     };
-    let capacity = constant("<sce:bounded> capacity", capacity)?;
+    let capacity = constant("bounded", capacity, resolution.and_then(|r| r.capacity))?;
     let participants = m
         .participants
         .as_ref()
-        .map(|p| constant("<sce:participants>", p))
+        .map(|p| constant("participants", p, resolution.and_then(|r| r.participants)))
         .transpose()?;
 
     let selection = m.selection();

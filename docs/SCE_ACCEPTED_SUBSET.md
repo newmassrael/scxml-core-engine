@@ -6846,6 +6846,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `queue/allocator-progress-missing` | Validation |
 | `queue/progress-unreachable` | Validation |
 | `queue/participants-unresolved` | Validation |
+| `queue/deploy-limit-unresolved` | Validation |
 | `queue/storage-runtime-missing` | Generate |
 | `timer/period-below-tick-rate` | Validation |
 | `timer/slot-overflow` | Mesh Deploy |

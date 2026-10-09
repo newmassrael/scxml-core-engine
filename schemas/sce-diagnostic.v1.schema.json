@@ -187,6 +187,7 @@
         "queue/allocator-progress-missing",
         "queue/progress-unreachable",
         "queue/participants-unresolved",
+        "queue/deploy-limit-unresolved",
         "queue/storage-runtime-missing",
         "codegen/no-std-script-not-supported",
         "codegen/no-std-http-not-supported",

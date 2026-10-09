@@ -5175,6 +5175,10 @@
         {
           "file": "tests/forge/resources/queue_conformance_spsc.scxml",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/queue_deploy_limits.rs",
+          "kind": "references"
         }
       ]
     },

@@ -3114,6 +3114,39 @@ pub enum ValidationError {
         consumers: String,
     },
 
+    /// SCE Protocol-Synthesis RFC §synth-5-P (`queue/deploy-limit-unresolved`)
+    /// — `<sce:bounded source="deploy" key="...">` or `<sce:participants
+    /// source="deploy" key="...">` names a `machines.<machine>.limits.<limit>`
+    /// whose `<limit>` is not declared in deploy.yaml. Both take the §synth-5-L
+    /// `CapacitySource` forms and both lower to a compile-time constant (the
+    /// ring is sized from them), so an unresolved key blocks emission.
+    ///
+    /// Fires only on the [`crate::compile_forge_with_deploy`] path, and
+    /// silent-skips a key whose machine segment is not the target machine, as
+    /// `collection/capacity-unresolved` does. The closed candidate list rides
+    /// `Fix::ReplaceOneOf` with the sorted limit names declared under
+    /// `machines.<machine>.limits:`.
+    #[error(
+        "queue '{queue_name}': <sce:{element} source=\"deploy\" key=\"{key}\"/> references limit '{limit}' on machine '{machine}', but deploy.yaml does not declare `machines.{machine}.limits.{limit}`. \
+         SCE Protocol-Synthesis RFC §5.P: a queue's capacity and participants take the §5.L capacity forms and resolve at codegen time to a constant from `machines.<machine>.limits.<limit>:`; an unresolved limit blocks emission. \
+         Repair: declare `{limit}: <count>` under `machines.{machine}.limits:` in deploy.yaml (declared limits today: {}), or write the element with `const=\"N\"`.",
+        crate::forge::error::joined_or_none(.candidates)
+    )]
+    QueueDeployLimitUnresolved {
+        /// Queue name from `<scxml sce:kind="queue" name="...">`.
+        queue_name: String,
+        /// The element that named the key: `bounded` or `participants`.
+        element: String,
+        /// The key as authored (`machines.<machine>.limits.<limit>`).
+        key: String,
+        /// Target machine (the key's middle segment).
+        machine: String,
+        /// Limit name (the key's final segment).
+        limit: String,
+        /// Sorted limit names declared under `machines.<machine>.limits:`.
+        candidates: Vec<String>,
+    },
+
     /// SCE Protocol-Synthesis RFC §synth-5-L line 2655
     /// (`collection/overflow-policy-oldest-wins-requires-ordering-insertion`)
     /// — `<sce:on-overflow>oldest-wins</sce:on-overflow>` declared
