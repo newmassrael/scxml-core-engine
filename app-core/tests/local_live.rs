@@ -74,6 +74,15 @@ fn allowed() -> Duration {
     Duration::from_secs(minutes * 60)
 }
 
+/// The model's context in tokens, when `SCE_LOCAL_CONTEXT_TOKENS` says it: with it the run begins
+/// a conversation again as it fills (the connection's `context_tokens`), and without it only the
+/// server's own refusal does.
+fn context_tokens() -> Option<u32> {
+    std::env::var("SCE_LOCAL_CONTEXT_TOKENS")
+        .ok()
+        .and_then(|text| text.trim().parse::<u32>().ok())
+}
+
 fn required(name: &str) -> String {
     std::env::var(name).unwrap_or_else(|_| panic!("{name} names the server and is required"))
 }
@@ -150,6 +159,7 @@ impl Setup {
         };
         let config = LocalConfig {
             timeout: allowed(),
+            context_tokens: context_tokens(),
             ..LocalConfig::for_model(self.model.clone())
         };
         let began = Instant::now();

@@ -79,6 +79,9 @@ could pass a design it had not put right were found in a review of the first ver
   child, and a client runner starts programs. One of them wrote to the design after the gate had said
   the round was over. The reviser is now started in a session of its own (`process.run`,
   `own_group`) and, on a timeout, the whole group is killed while its leader is still uncollected.
+  Stopping a group is a POSIX call (`os.killpg`); on a host without it the reviser is not started
+  and the round fails saying why (found by a review, 2026-10-09), rather than failing on its first
+  timeout with an `AttributeError`. A Windows tree-kill is not claimed: it could not be run here.
 
 ## What this does not claim
 
