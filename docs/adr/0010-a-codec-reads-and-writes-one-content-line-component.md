@@ -115,10 +115,12 @@ backend generates it, each against the same conformance vectors.
   line to be a record of a value and its parameters, so a bounded list of records and a record the
   codec embeds. That is new to every backend's codec generator, and a calendar consumer's first
   stage reads an attendee's address and nothing else (the entry above keeps the address and drops
-  the parameters, which is the stated limit of decision 2).
+  the parameters, which is the stated limit of decision 2). **Decided in ADR 0014**, which also found
+  that the limit loses a `TZID` silently.
 - *A property whose value is a list on one line* (`EXDATE:…,…`, `CATEGORIES:a,b`). The value is a
   `string` the algorithm kind cuts at the comma once the algorithm kind has the means; a
-  `sce:separator` that splits it in the codec is the next addition, not this one.
+  `sce:separator` that splits it in the codec is the next addition, not this one. **Decided in
+  ADR 0014**, together with the line record above.
 - *Base64 `BINARY` values.* An attachment is out of a calendar consumer's first stages.
 
 ## Rejected
