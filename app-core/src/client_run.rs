@@ -148,10 +148,11 @@ pub(crate) fn schema() -> Value {
             "requirements": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["manifest_text", "sidecar_text"],
+                "required": ["manifest_text", "sidecar_text", "lineage_text"],
                 "properties": {
                     "manifest_text": {"type": "string"},
                     "sidecar_text": {"type": ["string", "null"]},
+                    "lineage_text": {"type": ["string", "null"]},
                 },
             },
         },
@@ -198,13 +199,17 @@ pub(crate) fn prompt(job: &Job) -> String {
             and cite it as sce:assumed=\"<id>\"; never leave an answered question \
             sce:unresolved.\n\
          3. Build the requirement list from `source.text` with scxml_requirement_set, and check \
-            the design against it with scxml_requirements. Hand documents over as text. For \
-            a tool that takes document_text, also provide companions_text for every imported \
-            SCXML document, under the exact file name used by its import. Call decisions only \
-            when works_read provided a decisions_text record.\n\
+            the design against it with scxml_requirements. When works_read gave \
+            `requirements.lineage_text`, the work already holds a list: build this one against \
+            it, giving that as `lineage_text` and `requirements.sidecar_text` as \
+            `previous_sidecar_text`, so that every requirement keeps the id it had and a retired \
+            id is not issued again. Hand documents over as text. For a tool that takes \
+            document_text, also provide companions_text for every imported SCXML document, under \
+            the exact file name used by its import. Call decisions only when works_read provided \
+            a decisions_text record.\n\
          4. Do not call any tool that saves, takes a request or accepts: you have none. Your \
             last message is the draft in the form asked for: the model's documents exactly as \
-            you checked them, and `manifest_text` and `sidecar_text` exactly as \
+            you checked them, and `manifest_text`, `sidecar_text` and `lineage_text` exactly as \
             scxml_requirement_set returned them.\n",
         work = job.work.as_str(),
         title = job.title,
@@ -460,10 +465,10 @@ mod tests {
         })
     }
 
-    /// The form a client answers in does not ask for a lineage: that form and the task beside it
-    /// are what a Codex version is verified against, and a change to either is a new execution
-    /// contract that has to be verified again with the real client. The draft reads a lineage when
-    /// an answer has one, which the local path's tool call gives it (`local::Listed`), and a draft
+    /// The form a client answers in asks for a lineage and the task tells it to build the list
+    /// against the one the work holds. That form and the task beside it are what a Codex version
+    /// is verified against, so asking for it is a new execution contract, to be verified again
+    /// with the real client before a Codex version is listed for it. The draft reads a lineage when an answer has one, and a draft
     /// without one is a list without one, as every list was before lineages.
     #[test]
     fn a_lineage_in_the_answer_is_the_drafts_and_its_absence_is_a_list_without_one() {
@@ -574,6 +579,29 @@ mod tests {
             answer["properties"]["requirements"]["properties"]["sidecar_text"]["type"],
             json!(["string", "null"])
         );
+        // A list may have no lineage (a first list of a client that was not given one), and a
+        // strict form lists every property as required, so the lineage is one that may be null.
+        assert_eq!(
+            answer["properties"]["requirements"]["properties"]["lineage_text"]["type"],
+            json!(["string", "null"])
+        );
+    }
+
+    /// What the task tells a client about a lineage is the names the authoring server gives the
+    /// pieces: it reads `requirements.lineage_text` from works_read and gives it back to
+    /// scxml_requirement_set as `lineage_text` beside `previous_sidecar_text`. A wording that
+    /// drifts from either name sends the client to an argument the tool does not have.
+    #[test]
+    fn the_task_names_the_lineage_by_the_names_the_server_uses() {
+        let said = prompt(&blank_job());
+        for name in [
+            "requirements.lineage_text",
+            "`lineage_text`",
+            "requirements.sidecar_text",
+            "`previous_sidecar_text`",
+        ] {
+            assert!(said.contains(name), "the task does not name {name}: {said}");
+        }
     }
 
     #[test]

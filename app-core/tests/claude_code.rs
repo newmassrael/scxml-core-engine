@@ -228,7 +228,7 @@ fn what_the_client_must_answer_is_a_schema_and_the_application_is_what_saves() {
     assert_eq!(schema["required"], json!(["model", "requirements"]));
     assert_eq!(
         schema["properties"]["requirements"]["required"],
-        json!(["manifest_text", "sidecar_text"])
+        json!(["manifest_text", "sidecar_text", "lineage_text"])
     );
     assert_eq!(
         schema["properties"]["model"]["properties"]["documents"]["minItems"],

@@ -296,23 +296,24 @@ the gap is loud and a lineage cannot be lost silently. What is done and what is 
   do by the tools' own words (`works_read`'s `next`), which are not part of the application's
   instructions. Three breaks (the draft not reading the lineage, the tool's answer not read for
   one, the list not written back with it) were each caught by the tests meant for them.
-- **Not done, and why.** The form a Claude Code or Codex client answers in, and the task beside
-  it, do not ask for a lineage yet. Changing either is a new execution contract for Codex:
-  `tests/codex_support.rs` holds that the verification the application ships names the current
-  contract, because Codex has no switch that turns its built-in tools off and a version is run
-  only when a person verified it, with the real client, against a specification written to attack
-  it (`tests/codex_live.rs`: a signed-in Codex, minutes and money). Changing the shared task and
-  form without that run would either leave Codex refused until it is done, or, by editing the
-  recorded contract to make the test pass, claim a verification nobody made. So the form is left as
-  it was, and a generation started from the application with Claude Code or Codex on a work that
-  already holds a lineage ends in `lineage-dropped`, with the request failed and the reason said.
-  A work holds a lineage only once a client has saved one with the tools above; the application
-  alone never makes one.
-- **What closes it.** The task and the form gain the lineage (tried once and put back: of
-  `app-core`'s tests it moved exactly two, the schema's list of required properties in
-  `tests/claude_code.rs` and the Codex contract), the Codex verification is repeated with
-  `codex_live`, and the shipped support is updated to the new contract. That run is the owner's
-  to approve.
+- **Closed.** The form a Claude Code or Codex client answers in asks for `lineage_text` (a string
+  or null, as a strict form lists every property as required), and the task tells the client
+  to build the list against `requirements.lineage_text` and `requirements.sidecar_text` that
+  `works_read` gave, and to answer with the `lineage_text` the tool returned. A generation on a
+  work that holds a lineage therefore no longer ends in `lineage-dropped` for want of one.
+- **Why the Codex entry changed.** Changing the shared task or form is a new execution contract
+  for Codex: `tests/codex_support.rs` holds that the verification the application ships names
+  the current contract, because Codex has no switch that turns its built-in tools off and a
+  version is run only when a person verified it, with the real client, against a specification
+  written to attack it (`tests/codex_live.rs`). With the owner's approval both live tests (the
+  plain run and the attack run) were run with `SCE_CODEX_VERIFY=1` against Codex 0.159.0 on
+  2026-10-09 and passed, and the shipped entry names the new contract, `codex/7465c0fb9357`.
+  Of `app-core`'s tests the change moved exactly two: the schema's list of required properties
+  in `tests/claude_code.rs` and the Codex contract.
+- **What the live run did not measure.** It used the synthetic indicator specification, a
+  work that holds no lineage, so it verifies the sandbox, the tools and the answer form under
+  the new wording, not that a model builds a revision against a held lineage. That is a run of
+  its own, with a work that holds one.
 
 ## What stage 1 measured
 
