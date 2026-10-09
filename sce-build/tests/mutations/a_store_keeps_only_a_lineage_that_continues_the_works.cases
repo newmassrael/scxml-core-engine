@@ -51,3 +51,30 @@ edit("app-core/src/store/bundle_store.rs",
      "            self.refuse_a_lineage_not_kept(id, &text)?;",
      "            let _ = (id, &text);")
 PY
+
+# When the lineage the work holds cannot be read, the new one is held to the ids the work's lists
+# carried (`lineage-numbers-reused`). Each case below takes one part of that away.
+
+mutation_case "a lineage the work cannot read is not compared with the lists it kept" <<'PY'
+edit("app-core/src/store.rs",
+     "            Some(Err(_)) => self.refuse_numbers_already_issued(id, &lineage, &detail)?,",
+     "            Some(Err(_)) => {\n                let _ = self.refuse_numbers_already_issued(id, &lineage, &detail);\n            }")
+PY
+
+mutation_case "a lineage numbered from the very id the work carried is kept" <<'PY'
+edit("app-core/src/store.rs",
+     "        if next > floor {\n            return Ok(());",
+     "        if next >= floor {\n            return Ok(());")
+PY
+
+mutation_case "no list the work kept is counted" <<'PY'
+edit("app-core/src/store.rs",
+     "        for file in files {",
+     "        for file in files.take(0) {")
+PY
+
+mutation_case "a lineage numbered past the lists is refused all the same" <<'PY'
+edit("app-core/src/store.rs",
+     "        if next > floor {\n            return Ok(());",
+     "        if next > floor && false {\n            return Ok(());")
+PY

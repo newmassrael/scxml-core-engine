@@ -120,7 +120,8 @@ def build(specification: str, items: object, *, doc_id: str = "spec",
           rev: str = "1", lineage_text: str | None = None,
           previous_manifest_text: str | None = None,
           previous_sidecar_text: str | None = None,
-          continues: object = None, fresh: bool = False) -> Built:
+          continues: object = None, fresh: bool = False,
+          next_at_least: object = None) -> Built:
     """The manifest and sidecar for `items`, a list of `{quote, statement}`
     (and optionally `modality`), or the refusals that stand in the way.
 
@@ -132,7 +133,14 @@ def build(specification: str, items: object, *, doc_id: str = "spec",
     is what lets a reworded requirement keep its id; `continues` maps a quote to
     the id it continues, for a rewording too large to recognise. `fresh` carries no id: every id
     the lineage had live is retired and every requirement is issued a new one from where the
-    numbering left off (never from R1: a retired id is never issued again)."""
+    numbering left off (never from R1: a retired id is never issued again). `next_at_least` is
+    where new ids start when that is past where the lineage's own numbering would: a work whose
+    lineage this build cannot read says it (`lineage-numbers-reused`) when a list would issue an
+    id its lists already carried."""
+    if next_at_least is not None and (
+            not isinstance(next_at_least, int) or isinstance(next_at_least, bool) or next_at_least < 1):
+        raise RequirementSetError("'next_at_least' has to be a whole number of 1 or more: the number "
+                                  "new ids start from")
     if not isinstance(items, list) or not items:
         raise RequirementSetError(
             "'requirements' has to be a non-empty list of objects with a "
@@ -191,7 +199,7 @@ def build(specification: str, items: object, *, doc_id: str = "spec",
     quotes = [quote for _, _, _, quote in located]
     try:
         step = _identify(doc_id, rev, spec, quotes, lineage_text, previous_manifest_text,
-                         previous_sidecar_text, continues, fresh)
+                         previous_sidecar_text, continues, fresh, next_at_least)
     except rl.LineageError as error:
         raise RequirementSetError(str(error)) from error
     built.rev, built.lineage, built.delta, built.notes = step.rev, step.lineage, step.delta, step.notes
@@ -272,7 +280,7 @@ def _json(text: str, what: str) -> dict:
 
 def _identify(doc_id: str, rev: str, spec: rl.Spec, quotes: list[str], lineage_text: str | None,
               manifest_text: str | None, sidecar_text: str | None, continues: object,
-              fresh: bool = False) -> rl.Advance:
+              fresh: bool = False, next_at_least: int | None = None) -> rl.Advance:
     """The ids of `quotes`: a first list's, or a revision's against a lineage (or against
     the manifest and sidecar of a list that predates lineages, which are adopted as one)."""
     if lineage_text is not None and manifest_text is not None:
@@ -286,7 +294,7 @@ def _identify(doc_id: str, rev: str, spec: rl.Spec, quotes: list[str], lineage_t
         if sidecar_text is not None or continues:
             raise RequirementSetError("'previous_sidecar' and 'continues' belong to a revision: give the "
                                       "lineage a previous call returned (or the previous manifest) as well")
-        return rl.first(doc_id, spec, quotes, rev)
+        return rl.first(doc_id, spec, quotes, rev, start=max(1, next_at_least or 1))
     if continues is not None and (not isinstance(continues, dict) or not all(
             isinstance(k, str) and isinstance(v, str) for k, v in continues.items())):
         raise RequirementSetError("'continues' has to map a quote of this list to the id it continues")
@@ -307,7 +315,8 @@ def _identify(doc_id: str, rev: str, spec: rl.Spec, quotes: list[str], lineage_t
                             manifest_sha256=rl.sha256_text(manifest_text),
                             sidecar_sha256=rl.sha256_text(sidecar_text))
     return rl.advance(previous, doc_id, spec, quotes, texts=texts,
-                      continues={normalise(k): v for k, v in (continues or {}).items()}, fresh=fresh)
+                      continues={normalise(k): v for k, v in (continues or {}).items()}, fresh=fresh,
+                      next_at_least=next_at_least)
 
 
 def answer(built: Built) -> dict:

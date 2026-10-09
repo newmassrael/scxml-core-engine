@@ -1,11 +1,13 @@
 # ADR 0012 — The ids are started over by retiring them, not by resetting them
 
-- Status: Accepted for the authoring tool (`fresh`, implemented and tested); the owner's way to ask
-  for it from the application is not done (see "What this does not do")
+- Status: Accepted (`fresh`, `next_at_least` and the store's `lineage-numbers-reused`, implemented
+  and tested); the owner's way to ask for fresh ids from the application is not done (see "What this
+  does not do")
 - Date: 2026-10-09
-- Scope: `tools/authoring/sce_author/requirement_lineage.py` (`advance`), `requirement_set.py`
-  (`build`), the `scxml_requirement_set` tool. No change to the lineage's format, its schema, the
-  judgment in `sce-revision` or the store
+- Scope: `tools/authoring/sce_author/requirement_lineage.py` (`advance`, `first`),
+  `requirement_set.py` (`build`), the `scxml_requirement_set` tool, and `app-core/src/store.rs`
+  (`refuse_a_lineage_not_kept`: one refusal for a lineage the work holds and this build cannot
+  read). No change to the lineage's format or schema, or to the judgment in `sce-revision`
 - Related: `docs/adr/0006-a-requirement-keeps-its-id-across-a-revision.md`,
   `docs/adr/0011-a-work-keeps-its-requirement-lineage-with-its-requirement-list.md` (D2)
 
@@ -69,17 +71,35 @@ sidecar of a list that predates lineages). Then:
   so the owner asks the client. Carrying a "fresh ids" request through the application's
   generation (the request, the task text, the form and with them the Codex execution contract,
   which needs a verification with the real client) is a stage of its own.
-- **A lineage the store cannot read.** `refuse_a_lineage_not_kept` judges a new lineage on its own
-  when the one the work holds is unreadable to this build (a newer version, or damage), so that
-  such a work can be saved at all. A lineage given then can number from R1 and reissue an id an
-  earlier list of the work carried. Refusing it by comparing with the ids of the kept list
-  revisions was considered and not done: a client cannot choose where the numbering starts
-  (`next` comes from the lineage it builds against, and there is none it can read), so the work
-  would be stranded where it is merely unsafe. The honest repair is a lineage that carries its
-  own floor, which is a change of the format and is not made here. Measured: the only way found
-  to be in this state is a lineage this build's `check` rejects.
 - **How often a lineage is built wrongly is not known.** This exists so that the work has a way out
   when it is, not because it was seen often.
+
+## A lineage the store cannot read
+
+`refuse_a_lineage_not_kept` judges a new lineage on its own when the one the work holds is unreadable
+to this build (a newer version, or damage), so that such a work can be saved at all. A lineage given
+then could number from R1 and reissue an id an earlier list of the work carried. This was first left
+open: refusing it would strand a work, because a client cannot choose where the numbering starts
+(`next` comes from the lineage it builds against, and there is none it can read).
+
+It is closed in two parts that need each other:
+
+- **The tool can be told where to start.** `scxml_requirement_set` takes `next_at_least`: new ids
+  start from it when it is past where the lineage's own numbering would. It never moves an id that
+  is carried, and a floor at or below `next` changes nothing. It goes with `fresh` and with a first
+  list.
+- **The store refuses a lineage that numbers from an id the work already carried**
+  (`lineage-numbers-reused`), only when the held lineage cannot be read. The highest id is read from
+  every list revision the work kept (they are the files of one folder, whichever chain or bundle
+  kept them: the manifest's ids, and the lineage's ids and `next`). The refusal says the number
+  (`detail.floor`, and the message names `next_at_least`), so the client rebuilds once and the work
+  is not stranded.
+
+Not done, and why: a work that never had a lineage at all is not held to the ids of its lists. With
+no lineage held, nothing says which of those ids were retired or live, so the first lineage is judged
+on its own (the weaker guarantee ADR 0011 names), and a test pins that boundary. A file that cannot
+be read as a list is not counted: it is damage that a read names, not something this save refuses
+for.
 
 ## What was measured
 

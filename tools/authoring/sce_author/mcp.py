@@ -1094,6 +1094,15 @@ TOOLS = [
                         "numbering left off and retire every id that was live, instead of "
                         "carrying any. The ids are never reused. Not with `continues`."),
                 },
+                "next_at_least": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": (
+                        "The number new ids start from, when it is past where the lineage's own "
+                        "numbering would. Give it when a save was refused as "
+                        "`lineage-numbers-reused`: the refusal says the number. It never moves "
+                        "an id that is carried."),
+                },
             },
         },
     },
@@ -2914,7 +2923,8 @@ def _requirement_set_tool(args: dict, staging: _Staging) -> dict:
                                       lineage_text=earlier["lineage"],
                                       previous_manifest_text=earlier["previous_manifest"],
                                       previous_sidecar_text=earlier["previous_sidecar"],
-                                      continues=args.get("continues"), fresh=fresh)
+                                      continues=args.get("continues"), fresh=fresh,
+                                      next_at_least=args.get("next_at_least"))
     except requirement_set.RequirementSetError as error:
         raise ToolArgumentError(str(error)) from error
     reply = requirement_set.answer(built)
@@ -3394,6 +3404,12 @@ _WORKS_REFUSED_NEXT = {
         "`requirements.lineage_text` as `lineage_text` and `requirements.sidecar_text` as "
         "`previous_sidecar_text`, and save the manifest_text, sidecar_text and lineage_text it "
         "returns together"),
+    "lineage-numbers-reused": (
+        "the lineage this work keeps cannot be read by this build, and the one you gave numbers "
+        "its next id from one a list of this work has already carried: build the list again "
+        "with scxml_requirement_set giving `next_at_least` the number the message says "
+        "(`detail.floor` plus one), and save the manifest_text, sidecar_text and lineage_text "
+        "it returns together"),
 }
 
 

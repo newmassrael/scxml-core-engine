@@ -1161,12 +1161,12 @@ impl<C: Clock> WorkStore<C> {
     /// Refuse a requirement list whose lineage the work cannot keep.
     ///
     /// The lineage is what makes an id mean one requirement for ever: it remembers which ids
-    /// were issued and retired, so that a retired id is never issued again. Four ways of saving
+    /// were issued and retired, so that a retired id is never issued again. Five ways of saving
     /// a list would start that memory over or put another's in its place, and the next revision
     /// would issue a retired id to a new requirement with nothing to say so (measured: the third
     /// revision of a three-sentence specification gave the dropped sentence's `R3` to the new
-    /// one). Each is refused, and there is no override: a specification written again from
-    /// nothing is a new work.
+    /// one). Each is refused, and there is no override that reuses a number: the ids are started
+    /// over by retiring every one and numbering on (ADR 0012), never by resetting.
     ///
     /// * `lineage-dropped`: the work's list has a lineage and this one has none;
     /// * `lineage-unusable`: what this list calls its lineage is not one;
@@ -1175,7 +1175,11 @@ impl<C: Clock> WorkStore<C> {
     /// * `lineage-not-continued`: it is the list's own, but not the continuation of the work's:
     ///   it takes back an id, lets a retired one live, rewrites a revision or numbers an id that
     ///   was issued already (a model that built its list without the lineage it was given gets a
-    ///   fresh one, which starts at `R1` again).
+    ///   fresh one, which starts at `R1` again);
+    /// * `lineage-numbers-reused`: the lineage the work holds cannot be read by this build, so
+    ///   the one given is not compared with it, and it numbers its next id from one a list of
+    ///   this work has already carried (the highest id of every list revision the work kept).
+    ///   The message says where to number from (`next_at_least`).
     ///
     /// The judgment is the product's (`sce-revision`), the same words as the authoring tools
     /// give. Only judged when the list is one this build reads: the store keeps text, and a text
@@ -1233,24 +1237,98 @@ impl<C: Clock> WorkStore<C> {
                 )
             },
         )?;
-        if let Some(previous) = held
-            .as_deref()
-            .and_then(|held| sce_revision::parse(held).ok())
-        {
-            sce_revision::extends(&previous, &lineage).map_err(|why| {
-                StoreError::refused(
-                    "lineage-not-continued",
-                    format!(
-                        "work `{id}` keeps a requirement lineage and the one given does not \
-                         continue it: {why}. Build the list against the lineage \
-                         `read_requirements` returns, so that every id keeps the requirement it \
-                         was issued for and a retired id is never issued again"
-                    ),
-                    detail.clone(),
-                )
-            })?;
+        match held.as_deref().map(sce_revision::parse) {
+            None => {}
+            Some(Ok(previous)) => {
+                sce_revision::extends(&previous, &lineage).map_err(|why| {
+                    StoreError::refused(
+                        "lineage-not-continued",
+                        format!(
+                            "work `{id}` keeps a requirement lineage and the one given does not \
+                             continue it: {why}. Build the list against the lineage \
+                             `read_requirements` returns, so that every id keeps the requirement \
+                             it was issued for and a retired id is never issued again"
+                        ),
+                        detail.clone(),
+                    )
+                })?;
+            }
+            // The lineage the work holds cannot be read by this build, so the new one is not
+            // compared with it: a work a newer build wrote would otherwise never be saved by
+            // this one. What it can still be held to is what the lists the work kept used.
+            Some(Err(_)) => self.refuse_numbers_already_issued(id, &lineage, &detail)?,
         }
         Ok(())
+    }
+
+    /// `lineage-numbers-reused`: the lineage given numbers its next id from one a list of this
+    /// work has already carried. Asked only when the lineage the work holds cannot be read, so
+    /// that nothing says which of those ids were retired; an id that was is never issued again,
+    /// and one that was not belongs to a requirement the new list may mean otherwise.
+    fn refuse_numbers_already_issued(
+        &self,
+        id: &WorkId,
+        lineage: &serde_json::Value,
+        detail: &serde_json::Value,
+    ) -> Result<(), StoreError> {
+        let next = lineage["next"].as_u64().unwrap_or(0);
+        let floor = self.highest_id_issued(id)?;
+        if next > floor {
+            return Ok(());
+        }
+        let mut detail = detail.clone();
+        detail["floor"] = serde_json::json!(floor);
+        detail["next"] = serde_json::json!(next);
+        Err(StoreError::refused(
+            "lineage-numbers-reused",
+            format!(
+                "work `{id}` keeps a requirement lineage this build cannot read, and the lineage \
+                 given numbers its next id from R{next} while a list of this work has already \
+                 carried R{floor}: an id would be issued again. Build the list again with \
+                 `next_at_least` {}, so that its ids start past every id the work has used",
+                floor + 1
+            ),
+            detail,
+        ))
+    }
+
+    /// The highest number among the ids (`R<number>`) that any requirement list the work kept
+    /// carried, in its manifest or its lineage, whichever chain or bundle it was kept by: every
+    /// list revision is a file of the one folder. A file that cannot be read as a list is not
+    /// counted, and is damage that a read of it names, not something this save refuses for.
+    fn highest_id_issued(&self, id: &WorkId) -> Result<u64, StoreError> {
+        let dir = self.existing(id)?;
+        let folder = dir.join(Artifact::Requirements.dir());
+        let files = match fs::read_dir(&folder) {
+            Ok(files) => files,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(0),
+            Err(e) => return Err(StoreError::io(&folder, e)),
+        };
+        let mut highest = 0;
+        for file in files {
+            let path = file.map_err(|e| StoreError::io(&folder, e))?.path();
+            if path.extension().and_then(|e| e.to_str()) != Some(Artifact::Requirements.extension())
+            {
+                continue;
+            }
+            let Ok(text) = fs::read_to_string(&path) else {
+                continue;
+            };
+            let Ok(list) = crate::requirements::Requirements::parse(&text) else {
+                continue;
+            };
+            highest = highest.max(highest_number(&list.manifest, "requirements"));
+            if let Some(lineage) = &list.lineage {
+                highest = highest.max(highest_number(lineage, "requirements"));
+                highest = highest.max(
+                    serde_json::from_str::<serde_json::Value>(lineage)
+                        .ok()
+                        .and_then(|value| value["next"].as_u64())
+                        .map_or(0, |next| next.saturating_sub(1)),
+                );
+            }
+        }
+        Ok(highest)
     }
 
     /// [`Self::save_text`] for a caller that already holds the work's lock: the publication
@@ -1421,6 +1499,25 @@ impl<C: Clock> WorkStore<C> {
 /// Whether the work folder `dir` carries a removal marker.
 fn is_removed(dir: &Path) -> bool {
     dir.join(REMOVED_FILE).is_file()
+}
+
+/// The highest number among the ids (`R<number>`) of the objects in the array `key` of a JSON
+/// text, `0` for a text that is not one, has no such array or names an id another way.
+fn highest_number(text: &str, key: &str) -> u64 {
+    serde_json::from_str::<serde_json::Value>(text)
+        .ok()
+        .and_then(|value| value.get(key).and_then(|items| items.as_array()).cloned())
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|item| {
+            item.get("id")?
+                .as_str()?
+                .strip_prefix('R')?
+                .parse::<u64>()
+                .ok()
+        })
+        .max()
+        .unwrap_or(0)
 }
 
 fn removed_work(id: &WorkId) -> StoreError {

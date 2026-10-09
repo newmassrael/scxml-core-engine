@@ -709,3 +709,138 @@ fn command_by(
 ) -> Result<Value, CommandError> {
     call(store, &FakeRenderer, name, args)
 }
+
+// -- a lineage the store cannot read ---------------------------------------
+
+/// A work whose requirement list was saved twice: first the list `reworded then added`, which
+/// used the ids R1 to R6, and then a list whose lineage this build cannot read (a newer version,
+/// or damage), which names only R1 to R5. A save cannot make that state (the store judges a
+/// lineage at the door), so it is written the way a store written by another build is: the
+/// text under its own digest, its line in the log, and the pointer that makes it current.
+/// Returns the store, the work, the source revision and the revision the work now holds.
+fn work_whose_lineage_cannot_be_read(
+    label: &str,
+) -> (WorkStore<FixedClock>, WorkId, Revision, Revision) {
+    let root = common::scratch(label);
+    let store = WorkStore::with_clock(&root, FixedClock("2026-10-08T09:00:00Z".to_string()));
+    let id = store.create_work("Window blind").unwrap().id;
+    let source = saved_revision(
+        store
+            .save_source(&id, "The blind rises. The blind stops at the top.", None)
+            .unwrap(),
+    );
+    let used = saved_revision(
+        store
+            .save_requirements(&id, &held("reworded then added"), None, Some(&source))
+            .unwrap(),
+    );
+    let unreadable = {
+        let list = three("first");
+        Requirements::new(list.manifest, Some(list.sidecar))
+            .unwrap()
+            .with_lineage(Some(LINEAGE.to_string()))
+            .unwrap()
+            .stored_text()
+    };
+    let head = Revision::of(unreadable.as_bytes());
+    let dir = root.join(id.as_str());
+    std::fs::write(
+        dir.join("requirements").join(format!("{head}.json")),
+        &unreadable,
+    )
+    .unwrap();
+    let line = json!({"revision": head, "parent": used, "saved_at": "2026-10-08T09:00:00Z",
+                      "parent_at": 0});
+    let log = dir.join("requirements.log");
+    let mut text = std::fs::read_to_string(&log).unwrap();
+    text.push_str(&format!("{line}\n"));
+    std::fs::write(&log, text).unwrap();
+    std::fs::write(dir.join("requirements.head"), format!("{head}\nlog 1\n")).unwrap();
+    (store, id, source, head)
+}
+
+#[test]
+fn the_planted_state_is_the_one_the_tests_below_mean() {
+    // Without this the refusals below could be passing for a state that is not the one named: the
+    // work holds the unreadable lineage, and the list it replaced is still kept.
+    let (store, id, _, head) = work_whose_lineage_cannot_be_read("lineage-unreadable-planted");
+    let (revision, text) = store
+        .read_requirements(&id, None)
+        .unwrap()
+        .map(|read| (read.revision, read.text))
+        .expect("the work has a list");
+    assert_eq!(revision, head);
+    let list = Requirements::parse(&text).unwrap();
+    assert_eq!(list.lineage.as_deref(), Some(LINEAGE));
+    assert!(
+        sce_revision::parse(LINEAGE).is_err(),
+        "the lineage is one this build reads"
+    );
+}
+
+#[test]
+fn a_lineage_that_numbers_from_an_id_the_work_already_issued_is_refused() {
+    let (store, id, source, head) = work_whose_lineage_cannot_be_read("lineage-unreadable-reuse");
+    // The first revision's lineage numbers on from R6, and the work's lists have used R6. The held
+    // lineage cannot be read, so the new one is not compared with it, but it can be compared with
+    // what the lists the work kept used.
+    let error = store
+        .save_requirements(&id, &held("first"), Some(&head), Some(&source))
+        .unwrap_err();
+    match error {
+        StoreError::Refused {
+            kind,
+            message,
+            detail,
+        } => {
+            assert_eq!(kind, "lineage-numbers-reused");
+            assert_eq!(detail["floor"], json!(6), "{detail}");
+            assert_eq!(detail["next"], json!(6), "{detail}");
+            // It says what to do: a client cannot choose where the numbering starts any other way.
+            assert!(message.contains("next_at_least"), "{message}");
+            assert!(message.contains("7"), "{message}");
+        }
+        other => panic!("{other:?}"),
+    }
+    // Nothing was saved: the work still holds what it held.
+    let held_now = store
+        .read_requirements(&id, None)
+        .unwrap()
+        .unwrap()
+        .revision;
+    assert_eq!(held_now, head);
+}
+
+#[test]
+fn a_lineage_that_numbers_past_every_id_the_work_issued_is_kept_though_the_held_one_is_unreadable()
+{
+    // Otherwise a work whose lineage a newer build wrote could never be saved by this one.
+    let (store, id, source, head) = work_whose_lineage_cannot_be_read("lineage-unreadable-past");
+    let saved = store
+        .save_requirements(&id, &held("third"), Some(&head), Some(&source))
+        .unwrap();
+    assert!(
+        matches!(saved, sce_app_core::Saved::Saved { .. }),
+        "{saved:?}"
+    );
+}
+
+#[test]
+fn a_work_that_never_had_a_lineage_is_not_held_to_the_ids_of_its_lists() {
+    // The weaker guarantee ADR 0011 names and ADR 0012 keeps: with no lineage held, what the lists
+    // used before cannot be said to be retired or live, so the first lineage is judged on its own.
+    let (store, id) = work("lineage-never-had");
+    let source = store.head(&id).unwrap();
+    let first = saved_revision(
+        store
+            .save_requirements(&id, &bare_of("reworded then added"), None, source.as_ref())
+            .unwrap(),
+    );
+    let saved = store
+        .save_requirements(&id, &held("first"), Some(&first), source.as_ref())
+        .unwrap();
+    assert!(
+        matches!(saved, sce_app_core::Saved::Saved { .. }),
+        "{saved:?}"
+    );
+}

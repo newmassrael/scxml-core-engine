@@ -124,13 +124,15 @@ class Advance:
     notes: list[str] = field(default_factory=list)
 
 
-def first(doc_id: str, spec: Spec, quotes: list[str], rev: str = "1") -> Advance:
+def first(doc_id: str, spec: Spec, quotes: list[str], rev: str = "1", start: int = 1) -> Advance:
     """The first list of a specification: ids in reading order, as the tool has
-    always given them, so a list built once is the list it always was."""
-    ids = [f"R{n}" for n in range(1, len(quotes) + 1)]
+    always given them, so a list built once is the list it always was. `start` is the number
+    the first id is issued from (`R<start>`): `1` unless the work has already used numbers
+    past it (`next_at_least`)."""
+    ids = [f"R{n}" for n in range(start, start + len(quotes))]
     lineage = _checked({
         "lineage": LINEAGE_KIND, "v": LINEAGE_VERSION, "doc_id": doc_id,
-        "next": len(quotes) + 1,
+        "next": start + len(quotes),
         "revisions": [_revision_row(rev, spec)],
         "requirements": [
             {"id": id_, "first_rev": rev, "retired_rev": None,
@@ -207,7 +209,7 @@ def of_list(held: dict, what: str) -> dict:
 def advance(prev: dict, doc_id: str, spec: Spec, quotes: list[str], *,
             texts: dict[str, str] | None = None,
             continues: dict[str, str] | None = None,
-            fresh: bool = False) -> Advance:
+            fresh: bool = False, next_at_least: int | None = None) -> Advance:
     """The list of a revision of the specification, built against its lineage.
 
     `quotes` are the located quotes in reading order, already normalised. `texts`
@@ -221,7 +223,12 @@ def advance(prev: dict, doc_id: str, spec: Spec, quotes: list[str], *,
     requirement the owner once accepted under another meaning, so it is closed and the numbering
     goes on. It is a revision of its own even when the text is the same: the old ids are retired
     IN a revision and the new ones issued in it, and one row on which an id is both issued and
-    retired would say nothing about when either happened."""
+    retired would say nothing about when either happened.
+
+    `next_at_least` moves where NEW ids start when it is past the lineage's own `next`: a work
+    whose held lineage this build cannot read is refused a list that numbers from an id its lists
+    already carried, and a client has no other way to choose where the numbering starts. It never
+    moves a carried id, and a floor at or below `next` changes nothing."""
     if prev["doc_id"] != doc_id:
         raise LineageError(f"the lineage is for '{prev['doc_id']}', not '{doc_id}': one lineage follows "
                            "one specification")
@@ -283,7 +290,7 @@ def advance(prev: dict, doc_id: str, spec: Spec, quotes: list[str], *,
         notes.append(f"{', '.join(unseen)} ended without a successor and their words were not given "
                      "(`previous_sidecar`), so no near match could be tried for them")
 
-    counter = prev["next"]
+    counter = max(prev["next"], next_at_least or 0)
     ids, statuses = [], []
     new_rows = []
     for n in range(len(quotes)):

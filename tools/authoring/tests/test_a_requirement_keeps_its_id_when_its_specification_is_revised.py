@@ -513,7 +513,73 @@ class EveryIdCanBeIssuedAfreshWhenTheOwnerAsks(unittest.TestCase):
         self.assertEqual(["R6", "R7", "R8", "R9", "R10"], [r.id for r in again.requirements])
 
 
+class TheNumberingCanBeToldWhereToStart(unittest.TestCase):
+    """`next_at_least`: a work that holds a lineage this build cannot read refuses a list that
+    numbers from an id its lists already carried (`lineage-numbers-reused`), and says from where to
+    number. A client cannot choose that any other way: `next` comes from the lineage it builds
+    against, and there is none it can read."""
+
+    def test_a_first_list_numbers_from_the_floor(self):
+        built = build(LAMP, LAMP_QUOTES, next_at_least=9)
+        self.assertEqual(["R9", "R10", "R11", "R12", "R13"], [r.id for r in built.requirements])
+        self.assertEqual(14, built.lineage["next"])
+
+    def test_a_revision_issues_its_new_ids_from_the_floor_when_it_is_past_next(self):
+        first = build(LAMP, LAMP_QUOTES)
+        prose = LAMP.replace("The lamp starts off.", "The lamp starts off. The lamp has a green cover.")
+        again = revise(first, prose, ["The lamp has a green cover."] + LAMP_QUOTES, next_at_least=20)
+        self.assertEqual("R20", id_of(again, "The lamp has a green cover."))
+        # What was carried keeps its id: a floor decides where NEW ids start, not which exist.
+        self.assertEqual(["R1", "R2", "R3", "R4", "R5"], [id_of(again, q) for q in LAMP_QUOTES])
+        self.assertEqual(21, again.lineage["next"])
+
+    def test_a_floor_below_next_changes_nothing(self):
+        first = build(LAMP, LAMP_QUOTES)
+        prose = LAMP.replace("The lamp starts off.", "The lamp starts off. The lamp has a green cover.")
+        again = revise(first, prose, ["The lamp has a green cover."] + LAMP_QUOTES, next_at_least=2)
+        self.assertEqual("R6", id_of(again, "The lamp has a green cover."))
+
+    def test_it_goes_with_fresh_so_that_the_ids_started_over_start_past_the_floor(self):
+        first = build(LAMP, LAMP_QUOTES)
+        again = revise(first, LAMP, LAMP_QUOTES, fresh=True, next_at_least=30)
+        self.assertEqual(["R30", "R31", "R32", "R33", "R34"], [r.id for r in again.requirements])
+        rl.extends(first.lineage, again.lineage)
+
+    def test_what_it_makes_continues_the_lineage_it_was_made_from(self):
+        first = build(LAMP, LAMP_QUOTES)
+        again = revise(first, LAMP.replace("30 seconds", "45 seconds"),
+                       [q.replace("30 seconds", "45 seconds") for q in LAMP_QUOTES], next_at_least=40)
+        rl.extends(first.lineage, again.lineage)
+        jsonschema.validate(again.lineage, json.loads(SCHEMA.read_text(encoding="utf-8")))
+
+    def test_what_is_not_a_whole_number_of_one_or_more_is_refused(self):
+        for bad in (0, -3, 2.5, "9", True):
+            with self.subTest(bad=bad):
+                with self.assertRaises(rs.RequirementSetError) as raised:
+                    build(LAMP, LAMP_QUOTES, next_at_least=bad)
+                self.assertIn("'next_at_least'", str(raised.exception))
+
+
 class TheToolHandsTheLineageBackAndTakesItAgain(unittest.TestCase):
+    def test_the_tool_offers_next_at_least_as_a_whole_number(self):
+        tool = next(t for t in mcp.TOOLS if t["name"] == "scxml_requirement_set")
+        property_ = tool["inputSchema"]["properties"]["next_at_least"]
+        self.assertEqual("integer", property_["type"])
+        self.assertEqual(1, property_["minimum"])
+
+    def test_a_list_numbered_from_a_floor_through_the_tool(self):
+        result = call("scxml_requirement_set", specification_text=LAMP, requirements=items(LAMP_QUOTES),
+                      doc_id="lamp", next_at_least=7)
+        self.assertFalse(result.get("isError"), result["content"][0]["text"])
+        answer = json.loads(result["content"][0]["text"])
+        self.assertEqual(["R10", "R11", "R7", "R8", "R9"], sorted(r["id"] for r in answer["requirements"]))
+
+    def test_a_floor_that_is_not_a_number_is_an_argument_error_the_client_can_read(self):
+        result = call("scxml_requirement_set", specification_text=LAMP, requirements=items(LAMP_QUOTES),
+                      next_at_least="seven")
+        self.assertTrue(result.get("isError"))
+        self.assertIn("next_at_least", result["content"][0]["text"])
+
     def test_a_fresh_revision_through_the_tool(self):
         first = call("scxml_requirement_set", specification_text=LAMP, requirements=items(LAMP_QUOTES),
                      doc_id="lamp")

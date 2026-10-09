@@ -123,7 +123,8 @@ fn status_of(kind: &str) -> u16 {
         | "no-core-check"
         | "bundled-work"
         | "lineage-dropped"
-        | "lineage-not-continued" => 409,
+        | "lineage-not-continued"
+        | "lineage-numbers-reused" => 409,
         "too-large" => 413,
         // The request was understood and what it carries is refused on its content: a model, a
         // list, answers or a candidate that are not one, a reference to a text there is not, a
@@ -315,6 +316,7 @@ mod tests {
         ("key-reused", 409),
         ("lineage-dropped", 409),
         ("lineage-not-continued", 409),
+        ("lineage-numbers-reused", 409),
         ("lineage-of-another-list", 422),
         ("lineage-unusable", 422),
         ("model-conflict", 409),

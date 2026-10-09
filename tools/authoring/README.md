@@ -312,6 +312,9 @@ revised from its `previous_manifest` and `previous_sidecar`. The ids can be star
 over with `fresh: true`: nothing is carried, every id that was live is retired in a
 revision of its own, and each requirement is issued a new id from where the numbering
 left off, never from R1 (`docs/adr/0012-the-ids-are-started-over-by-retiring-them-not-by-resetting-them.md`).
+`next_at_least` says where new ids start when that is past where the lineage's own numbering
+would: a work whose lineage the store cannot read refuses a list that would issue an id its
+lists already carried (`lineage-numbers-reused`) and names the number to give.
 The answer's `delta`
 says which ids were carried, changed, new or retired and which sentences were
 added or removed. On the same 16 edits that is 0 ids naming another requirement
