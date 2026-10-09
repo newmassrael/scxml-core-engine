@@ -18520,6 +18520,27 @@ pub const QUEUE_SCQ_GO_ARCHITECTURES: &[&str] = &[
     "wasm",
 ];
 
+/// The `os.arch` values of the processors whose 64-bit atomics the JVM runs
+/// without a lock, which is where an SCQ row can be built on the JVM (RFC
+/// §synth-5-P, Counter width). The JVM promises the semantics of `AtomicLong`
+/// and not that it is lock-free, so the generated Kotlin checks `os.arch`
+/// against this list when the queue is constructed and fails outside it. The
+/// spelling is the JVM's, not Go's: the same processor is `amd64` here and
+/// `x86_64` on some platforms, `aarch64` here and `arm64` on others.
+pub const QUEUE_SCQ_JVM_ARCHITECTURES: &[&str] = &[
+    "amd64",
+    "x86_64",
+    "aarch64",
+    "arm64",
+    "ppc64",
+    "ppc64le",
+    "riscv64",
+    "s390x",
+    "loongarch64",
+    "mips64",
+    "mips64el",
+];
+
 /// Render a `<sce:kind="queue">` document for the Go backend (SCE
 /// Protocol-Synthesis RFC §synth-5-P): a package that names the queue type the
 /// selection table picks from `sce-forge-runtime/queue`, over the element
@@ -18855,6 +18876,7 @@ fn render_queue_kotlin(
         ring_slots => inputs.ring_slots,
         participants => inputs.participants,
         runtime_type => inputs.runtime_type,
+        scq_architectures => QUEUE_SCQ_JVM_ARCHITECTURES,
         algorithm => inputs.algorithm,
         producers => inputs.producers,
         consumers => inputs.consumers,

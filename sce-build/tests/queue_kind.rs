@@ -29,7 +29,7 @@ use tempfile::tempdir;
 use sce_build::compile_scxml_with_imports;
 use sce_build::forge::diagnostic::{DiagnosticCode, ToDiagnostics};
 use sce_build::forge::error::{ForgeError, GenerateError, Located, ValidationError};
-use sce_build::forge::generator::QUEUE_SCQ_GO_ARCHITECTURES;
+use sce_build::forge::generator::{QUEUE_SCQ_GO_ARCHITECTURES, QUEUE_SCQ_JVM_ARCHITECTURES};
 use sce_build::forge::model::{
     CapacitySource, ForgeDocument, QueueAlgorithm, QueueCardinality, QueueModel, QueueProgress,
     QueueStorage,
@@ -884,6 +884,10 @@ fn a_lamport_ring_emits_a_kotlin_file_over_the_spsc_runtime_and_no_ring_constant
     );
     assert!(code.contains("Spsc(CAPACITY)"), "{code}");
     assert!(
+        !code.contains("os.arch") && !code.contains("SCQ_ARCHITECTURES"),
+        "a Lamport ring has no 64-bit entries to check for:\n{code}"
+    );
+    assert!(
         code.contains("const val DECLARED_PROGRESS: String = \"wait-free\""),
         "{code}"
     );
@@ -911,6 +915,22 @@ fn an_scq_ring_is_sized_the_same_way_in_kotlin() {
         "{code}"
     );
     assert!(code.contains("Scq(CAPACITY, RING_SLOTS)"), "{code}");
+    for architecture in QUEUE_SCQ_JVM_ARCHITECTURES {
+        assert!(
+            code.contains(&format!("\"{architecture}\",")),
+            "SCQ_ARCHITECTURES lists {architecture}:\n{code}"
+        );
+    }
+    let constructor = code
+        .split("fun newWorkQueue()")
+        .nth(1)
+        .unwrap_or_else(|| panic!("the factory is emitted:\n{code}"));
+    assert!(
+        constructor.contains("requireLockFree64BitAtomics()")
+            && constructor.find("requireLockFree64BitAtomics()")
+                < constructor.find("Scq(CAPACITY, RING_SLOTS)"),
+        "construction checks the processor before it builds the ring:\n{code}"
+    );
     assert!(
         code.contains("const val WRAP_BOUND_OPS: Long = RUNTIME_WRAP_BOUND_OPS"),
         "{code}"

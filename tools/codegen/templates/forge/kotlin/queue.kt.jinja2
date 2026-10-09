@@ -24,11 +24,12 @@
 //   capacity
 {% if ring_slots %}
 //
-// The ring's 64-bit entries are `kotlin.concurrent.atomics.AtomicLong`, which
-// the JVM makes lock-free where the processor has a 64-bit compare-and-swap.
-// A JVM on a processor without one would run them under a lock and give the
-// row the progress `blocking`; that is the platform's to state, and the
-// runtime cannot see it.
+// The ring's 64-bit entries are `kotlin.concurrent.atomics.AtomicLong`. The JVM
+// promises their semantics and not that they are lock-free: on a processor
+// without a 64-bit compare-and-swap they run under a lock, and the row would
+// give `blocking` where the document asked for more. So construction checks
+// `os.arch` against the processors that have one (`SCQ_ARCHITECTURES`) and
+// fails outside them, naming the reason (RFC §synth-5-P, Counter width).
 {% endif %}
 
 @file:Suppress(
@@ -74,6 +75,29 @@ const val PARTICIPANTS: Int = {{ participants }}
  * Counter width).
  */
 const val WRAP_BOUND_OPS: Long = RUNTIME_WRAP_BOUND_OPS
+
+/**
+ * The `os.arch` values of the processors whose 64-bit atomics the JVM runs
+ * without a lock. The JVM promises the semantics of `AtomicLong` and not that
+ * it is lock-free, so a ring built on lock-free entries is built only on these.
+ */
+val SCQ_ARCHITECTURES: List<String> = listOf(
+{% for architecture in scq_architectures %}
+    "{{ architecture }}",
+{% endfor %}
+)
+
+/**
+ * Fails unless [arch] is one of [SCQ_ARCHITECTURES], naming the reason. The
+ * queue's constructor calls it with the running JVM's `os.arch`; the parameter
+ * is what lets a test hand it another.
+ */
+fun requireLockFree64BitAtomics(arch: String = System.getProperty("os.arch") ?: "") {
+    check(arch in SCQ_ARCHITECTURES) {
+        "the SCQ queue '{{ name }}' needs lock-free 64-bit atomics, which the JVM does not promise on " +
+            "os.arch '$arch'; it is built only on $SCQ_ARCHITECTURES (RFC §synth-5-P, Counter width)"
+    }
+}
 {% endif %}
 
 /** What the document requires of push and pop (`<sce:progress>`). */
@@ -94,10 +118,17 @@ const val ALGORITHM: String = "{{ algorithm }}"
  */
 typealias {{ pascal }} = {{ runtime_type }}<{{ element_pascal }}>
 
-/** An empty queue of [CAPACITY] elements. */
-fun new{{ pascal }}(): {{ pascal }} =
+/**
+ * An empty queue of [CAPACITY] elements.
 {% if ring_slots %}
-    {{ runtime_type }}(CAPACITY, RING_SLOTS)
-{% else %}
-    {{ runtime_type }}(CAPACITY)
+ * Fails on a processor [SCQ_ARCHITECTURES] does not list.
 {% endif %}
+ */
+fun new{{ pascal }}(): {{ pascal }} {
+{% if ring_slots %}
+    requireLockFree64BitAtomics()
+    return {{ runtime_type }}(CAPACITY, RING_SLOTS)
+{% else %}
+    return {{ runtime_type }}(CAPACITY)
+{% endif %}
+}

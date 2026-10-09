@@ -27,6 +27,8 @@ import com.sce.generated.queue_conformance_scq.POP_PROGRESS as SCQ_POP_PROGRESS
 import com.sce.generated.queue_conformance_scq.PUSH_PROGRESS as SCQ_PUSH_PROGRESS
 import com.sce.generated.queue_conformance_scq.QueueConformanceScq
 import com.sce.generated.queue_conformance_scq.RING_SLOTS
+import com.sce.generated.queue_conformance_scq.SCQ_ARCHITECTURES
+import com.sce.generated.queue_conformance_scq.requireLockFree64BitAtomics
 import com.sce.generated.queue_conformance_scq.WRAP_BOUND_OPS as SCQ_WRAP_BOUND_OPS
 import com.sce.generated.queue_conformance_scq.newQueueConformanceScq
 import com.sce.generated.queue_conformance_spsc.ALGORITHM as SPSC_ALGORITHM
@@ -38,6 +40,7 @@ import com.sce.generated.queue_conformance_spsc.QueueConformanceSpsc
 import com.sce.generated.queue_conformance_spsc.newQueueConformanceSpsc
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -94,6 +97,24 @@ class QueueGeneratedTest {
         val queue = runtimeQueue(newQueueConformanceScq())
         assertEquals(SCQ_CAPACITY, queue.capacity)
         assertEquals(RING_SLOTS, queue.ringSlots)
+    }
+
+    @Test
+    fun theScqFileFailsConstructionOnAProcessorWithNoLockFree64BitAtomics() {
+        // The running JVM is one the list names, or this test run could not
+        // build the queue its other tests use.
+        requireLockFree64BitAtomics()
+        for (arch in listOf("amd64", "aarch64", "riscv64")) {
+            assertTrue(arch in SCQ_ARCHITECTURES, arch)
+            requireLockFree64BitAtomics(arch)
+        }
+        for (arch in listOf("x86", "arm", "mips", "ppc", "")) {
+            val failure = assertFailsWith<IllegalStateException>("os.arch '$arch'") {
+                requireLockFree64BitAtomics(arch)
+            }
+            assertTrue(failure.message!!.contains("lock-free 64-bit atomics"), failure.message)
+            assertTrue(failure.message!!.contains("'$arch'"), "the message names the architecture: ${failure.message}")
+        }
     }
 
     @Test

@@ -29,8 +29,11 @@
  * `kotlin.concurrent.atomics`, which on the JVM are `java.util.concurrent`'s:
  * every operation is sequentially consistent, which is stronger than either
  * algorithm requires and still correct (RFC §synth-5-P, Backends). The forge
- * runtime's only target is `jvm()`, where a `Long` is 64 bits and the
- * architecture is no concern of the queue's.
+ * runtime's only target is `jvm()`, where a `Long` is 64 bits. The JVM promises
+ * the semantics of `AtomicLong` and not that it is lock-free, which is the
+ * generated file's to check (it fails construction of an SCQ row on an
+ * `os.arch` that has no 64-bit compare-and-swap), because the runtime has the
+ * semantics on every processor and the progress on some.
  *
  * What differs from the languages with destructors and constant generics:
  *
