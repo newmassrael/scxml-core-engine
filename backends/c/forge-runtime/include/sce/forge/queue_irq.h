@@ -16,10 +16,13 @@
  * never preempt inside the section, which is why the ISR checks are met here
  * although the row is `blocking`.
  *
- * `irq_state_t` is the platform's type for the saved interrupt state. It is a
- * vendor type the RFC leaves to the target (`sce_irq_save() -> irq_state_t`), so
- * this header does not define it: the platform's header, included before this
- * one, does. The two externs are declared here with that type.
+ * `irq_state_t` is the type of the saved interrupt state. The RFC leaves it to
+ * the target (`sce_irq_save() -> irq_state_t`), and this header has to be
+ * consumable on its own, so it carries a default: `uint32_t`, which holds the
+ * interrupt mask of a Cortex-M (PRIMASK) and of most 32-bit cores. A target
+ * whose saved state is another type defines its own `irq_state_t` and
+ * SCE_IRQ_STATE_T_DEFINED before this header is included, and the default is
+ * then not declared.
  */
 
 #ifndef SCE_FORGE_QUEUE_IRQ_H
@@ -30,6 +33,10 @@
 #include <string.h>
 
 #include <sce/forge/queue.h>
+
+#ifndef SCE_IRQ_STATE_T_DEFINED
+typedef uint32_t irq_state_t;
+#endif
 
 #ifdef __cplusplus
 extern "C" {

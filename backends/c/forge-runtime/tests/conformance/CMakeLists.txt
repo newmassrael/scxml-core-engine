@@ -471,7 +471,9 @@ add_custom_command(
     OUTPUT "${QUEUE_C_GENERATED_DIR}/queue_conformance_event.h"
     COMMAND "${SCE_CODEGEN}" generate "${RESOURCE_DIR}/queue_conformance_event.scxml"
             --language c11 --output-dir "${QUEUE_C_GENERATED_DIR}"
+            --write-deps "${QUEUE_C_GENERATED_DIR}/queue_conformance_event.h.d"
     DEPENDS "${RESOURCE_DIR}/queue_conformance_event.scxml" "${SCE_CODEGEN}"
+    DEPFILE "${QUEUE_C_GENERATED_DIR}/queue_conformance_event.h.d"
     COMMENT "Generating C11 queue element queue_conformance_event.h"
     VERBATIM)
 foreach(_pair
@@ -485,7 +487,9 @@ foreach(_pair
         COMMAND "${SCE_CODEGEN}" generate "${QUEUE_C_DOCS_DIR}/${_queue}.scxml"
                 --language c11 --output-dir "${QUEUE_C_GENERATED_DIR}"
                 --deploy "${QUEUE_C_DEPLOY}" --target-machine ${_machine}
+                --write-deps "${QUEUE_C_GENERATED_DIR}/${_queue}.h.d"
         DEPENDS "${QUEUE_C_DOCS_DIR}/${_queue}.scxml" "${QUEUE_C_DEPLOY}" "${SCE_CODEGEN}"
+        DEPFILE "${QUEUE_C_GENERATED_DIR}/${_queue}.h.d"
         COMMENT "Generating C11 queue ${_queue}.h for ${_machine}"
         VERBATIM)
     list(APPEND QUEUE_C_HEADERS "${QUEUE_C_GENERATED_DIR}/${_queue}.h")

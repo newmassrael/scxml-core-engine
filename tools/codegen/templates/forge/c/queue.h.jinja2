@@ -28,8 +28,8 @@
  * The deploy says the target has no read-modify-write atomic
  * (`platform.atomic_rmw_width` 0), so every operation runs in an
  * `sce_irq_save` / `sce_irq_restore` critical section, and the queue is for one
- * core. The platform's header that defines `irq_state_t` must be included before
- * this one.
+ * core. `irq_state_t` is `uint32_t` unless the platform declares its own and
+ * defines SCE_IRQ_STATE_T_DEFINED before this header is included.
 {% endif %}
  *
  * The queue is `{{ snake }}_t`: its control block, the storage of its slots and (for
