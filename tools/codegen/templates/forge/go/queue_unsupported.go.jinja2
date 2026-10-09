@@ -1,0 +1,22 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{{ sce_map.source_marker(source_location, "go", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+// SCE Forge: Auto-generated companion of the queue `{{ name }}`.
+// Do not edit — regenerate from the source SCXML file.
+//
+// SCE Protocol-Synthesis RFC §synth-5-P queue — this queue's ring is built on
+// 64-bit atomics, which Go implements natively only on the architectures the
+// build constraint of the queue's own file lists. On any other (`mips`,
+// `mipsle`, `386`, `arm`) it may implement them with a spinlock, which a ring
+// built on lock-free entries cannot be built on. Under the negated constraint
+// this file refers to an identifier that does not exist, spelled as the reason,
+// so the build fails saying why instead of saying a type is missing.
+
+//go:build !({{ build_constraint }})
+
+package {{ package }}
+
+var _ = THE_SCQ_QUEUE_NEEDS_NATIVE_64_BIT_ATOMICS_WHICH_THIS_GOARCH_DOES_NOT_HAVE

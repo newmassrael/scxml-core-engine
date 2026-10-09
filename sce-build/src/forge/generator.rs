@@ -18443,6 +18443,135 @@ fn resolve_queue_render_inputs(
     })
 }
 
+/// The Go import statement for the package that holds an element document.
+///
+/// Cross-package element-type access requires `go_module_prefix` (Go has no
+/// relative-package imports). A missing prefix is refused with the same shape
+/// as `validate_options` gives the `<sce:import>` path, so the messages agree.
+/// `kind` and `document` name the document that asked, for that message.
+fn go_element_import_statement(
+    kind: &str,
+    document: &str,
+    element_type: &str,
+    element_snake: &str,
+    options: &crate::ForgeCompileOptions,
+) -> Result<String, ForgeError> {
+    match normalized_go_prefix(options) {
+        Some(prefix) if !prefix.is_empty() => Ok(format!("\t\"{prefix}/{element_snake}\"")),
+        _ => Err(ForgeError::from(GenerateError::InvalidConfig(format!(
+            "{kind} '{document}': <sce:element-type \
+             name=\"{element_type}\"/> on the Go backend requires \
+             ForgeCompileOptions.go_module_prefix so the \
+             cross-package import resolves at compile time. \
+             Set the prefix to the go.mod module path that \
+             hosts the generated packages (e.g. \
+             \"github.com/acme/project/generated\")."
+        )))),
+    }
+}
+
+/// The architectures whose 64-bit atomics Go implements natively, which is
+/// where an SCQ row can be built (RFC §synth-5-P, Counter width). On a 32-bit
+/// architecture Go may implement them with a spinlock (`mips`, `mipsle`), which
+/// a ring built on lock-free entries cannot be built on.
+///
+/// The Go runtime's `queue/scq.go` carries the same list in its own build
+/// constraint; a test holds the two equal.
+pub const QUEUE_SCQ_GO_ARCHITECTURES: &[&str] = &[
+    "amd64", "arm64", "loong64", "mips64", "mips64le", "ppc64", "ppc64le", "riscv64", "s390x",
+    "wasm",
+];
+
+/// Render a `<sce:kind="queue">` document for the Go backend (SCE
+/// Protocol-Synthesis RFC §synth-5-P): a package that names the queue type the
+/// selection table picks from `sce-forge-runtime/queue`, over the element
+/// document's package, with the contract and what the algorithm gives as
+/// constants. Bounded storage only, for the reason `render_queue_rust` gives.
+///
+/// An SCQ row's file carries a `//go:build` line listing the architectures it
+/// can be built on, and [`render_queue_go_unsupported`] writes the companion
+/// that does not compile anywhere else.
+fn render_queue_go(
+    env: &minijinja::Environment<'_>,
+    m: &crate::forge::model::QueueModel,
+    _imports: &[ImportContext],
+    options: &crate::ForgeCompileOptions,
+) -> Result<String, ForgeError> {
+    let inputs = resolve_queue_render_inputs(m, options, crate::generator::Language::Go)?;
+    let tmpl = env.get_template("queue.go.jinja2").map_err(|e| {
+        ForgeError::from(GenerateError::TemplateLoad(format!(
+            "queue.go.jinja2 (go): {e}"
+        )))
+    })?;
+    let element_snake = filters::to_snake_case(m.element_type.clone());
+    let element_import_stmt =
+        go_element_import_statement("queue", &m.name, &m.element_type, &element_snake, options)?;
+    let ctx = minijinja::context! {
+        name => &m.name,
+        pascal => filters::to_pascal_case(m.name.clone()),
+        package => filters::to_snake_case(m.name.clone()),
+        element_import_stmt => element_import_stmt,
+        element_qualified => format!(
+            "{element_snake}.{}",
+            filters::to_pascal_case(m.element_type.clone())
+        ),
+        capacity => inputs.capacity,
+        ring_slots => inputs.ring_slots,
+        participants => inputs.participants,
+        runtime_type => inputs.runtime_type,
+        build_constraint => (inputs.ring_slots.is_some())
+            .then(|| QUEUE_SCQ_GO_ARCHITECTURES.join(" || ")),
+        algorithm => inputs.algorithm,
+        producers => inputs.producers,
+        consumers => inputs.consumers,
+        declared_progress => inputs.declared_progress,
+        push_progress => inputs.push_progress,
+        pop_progress => inputs.pop_progress,
+        runtime_dep => "github.com/newmassrael/sce-forge-runtime/queue",
+    };
+    tmpl.render(ctx).map_err(|e| {
+        ForgeError::from(GenerateError::TemplateRender(format!(
+            "queue.go.jinja2 (go): {e}"
+        )))
+    })
+}
+
+/// The companion file of an SCQ row's Go package, or `None` for a row that has
+/// no build constraint: under the negated constraint it holds a reference to an
+/// identifier that does not exist, spelled as the reason, so building the
+/// package on an architecture without native 64-bit atomics fails with that
+/// reason in the error instead of with a missing type (RFC §synth-5-P, Counter
+/// width).
+fn render_queue_go_unsupported(
+    env: &minijinja::Environment<'_>,
+    m: &crate::forge::model::QueueModel,
+    options: &crate::ForgeCompileOptions,
+) -> Result<Option<(String, String)>, ForgeError> {
+    let inputs = resolve_queue_render_inputs(m, options, crate::generator::Language::Go)?;
+    if inputs.ring_slots.is_none() {
+        return Ok(None);
+    }
+    let tmpl = env
+        .get_template("queue_unsupported.go.jinja2")
+        .map_err(|e| {
+            ForgeError::from(GenerateError::TemplateLoad(format!(
+                "queue_unsupported.go.jinja2 (go): {e}"
+            )))
+        })?;
+    let snake = filters::to_snake_case(m.name.clone());
+    let ctx = minijinja::context! {
+        name => &m.name,
+        package => &snake,
+        build_constraint => QUEUE_SCQ_GO_ARCHITECTURES.join(" || "),
+    };
+    let code = tmpl.render(ctx).map_err(|e| {
+        ForgeError::from(GenerateError::TemplateRender(format!(
+            "queue_unsupported.go.jinja2 (go): {e}"
+        )))
+    })?;
+    Ok(Some((format!("{snake}_unsupported.go"), code)))
+}
+
 /// Render a `<sce:kind="bounded-collection">` document for the Rust
 /// backend (SCE Protocol-Synthesis RFC §synth-5-L, item C6). Emits a slot table over
 /// `Vec<Option<T>>` (std) or `heapless::Vec<Option<T>, N>` (no_std)
@@ -18723,27 +18852,13 @@ fn render_bounded_collection_go(
     // (Go has no relative-package imports). Missing prefix surfaces
     // the same InvalidConfig shape as `validate_options` for the
     // `<sce:import>` path so error messages are consistent.
-    let element_import_stmt = match normalized_go_prefix(options) {
-        Some(prefix) if !prefix.is_empty() => {
-            format!("\t\"{prefix}/{element_snake}\"")
-        }
-        _ => {
-            return Err(ForgeError::from(GenerateError::InvalidConfig(
-                format!(
-                    "bounded-collection '{name}': <sce:element-type \
-                     name=\"{element}\"/> on the Go backend requires \
-                     ForgeCompileOptions.go_module_prefix so the \
-                     cross-package import resolves at compile time. \
-                     Set the prefix to the go.mod module path that \
-                     hosts the generated packages (e.g. \
-                     \"github.com/acme/project/generated\").",
-                    name = m.name,
-                    element = m.element_type,
-                )
-                .to_string(),
-            )));
-        }
-    };
+    let element_import_stmt = go_element_import_statement(
+        "bounded-collection",
+        &m.name,
+        &m.element_type,
+        &element_snake,
+        options,
+    )?;
 
     // Element-type is qualified via the package name (snake_case): the element
     // is a codec, a STATEFUL import, which keeps the package's own name
@@ -19568,14 +19683,20 @@ pub fn generate_go_with_imports(
         ForgeDocument::EventSchema(m) => {
             render_event_schema(&env, m, imports, crate::generator::Language::Go)?
         }
-        // Queue kind: see cpp dispatch.
-        ForgeDocument::Queue(_) => {
-            unreachable!("ForgeDocument::Queue rejected by codegen_matrix::check on go")
-        }
+        // Queue kind: see cpp dispatch. Go's runtime has the same two rows
+        // (`sce-forge-runtime/queue`).
+        ForgeDocument::Queue(m) => render_queue_go(&env, m, imports, options)?,
     };
 
     let filename = format!("{}.go", filters::to_snake_case(doc.name().to_string()));
     let mut files = vec![(filename, code)];
+    // An SCQ row is built only where Go's 64-bit atomics are native; the
+    // companion makes the package refuse to compile anywhere else, naming why.
+    if let ForgeDocument::Queue(m) = doc {
+        if let Some(companion) = render_queue_go_unsupported(&env, m, options)? {
+            files.push(companion);
+        }
+    }
     // RFC §synth-5-B item B2 test-vector: sidecar `<snake>_test.go` emits
     // alongside the algorithm `.go` into the same per-fixture
     // package directory whenever `<sce:test-vector>` rows are

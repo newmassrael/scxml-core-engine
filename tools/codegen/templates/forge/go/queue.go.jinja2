@@ -1,0 +1,82 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{{ sce_map.source_marker(source_location, "go", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="queue")
+// Runtime: {{ runtime_dep }}
+// Do not edit — regenerate from the source SCXML file.
+//
+// SCE Protocol-Synthesis RFC §synth-5-P queue — a first-in first-out queue
+// that hands elements from one goroutine to another. The document states the
+// contract (element type, {{ producers }} producer(s), {{ consumers }} consumer(s),
+// `{{ declared_progress }}`) and names no algorithm; the algorithm below is what
+// the selection table gives that contract.
+//
+// Selected: {{ algorithm }}. Push is {{ push_progress }}, pop is {{ pop_progress }}.
+//
+// Operations (from `queue`):
+//   Producer() / Consumer()  a handle, or false when every place of that side
+//                            is taken; Release gives the place back
+//   TryPush(v) PushStatus    PushOK takes the element; PushFull does not
+//   TryPop() (T, bool)
+//   Capacity()
+{% if build_constraint %}
+
+//go:build {{ build_constraint }}
+{% endif %}
+
+package {{ package }}
+
+import (
+	"github.com/newmassrael/sce-forge-runtime/queue"
+{{ element_import_stmt }}
+)
+
+// Capacity is the most elements the queue holds (`<sce:bounded>`).
+const Capacity = {{ capacity }}
+{% if ring_slots %}
+
+// RingSlots is the size of each of the queue's two index rings: a power of two,
+// at least Capacity and at least Participants. The algorithm's empty test is
+// justified only for as many producers or consumers as the ring has slots
+// (Nikolaev 2019 §5.1), so the ring is sized by both.
+const RingSlots = {{ ring_slots }}
+
+// Participants is the most goroutines that hold a handle on one side at the
+// same time (`<sce:participants>`). The queue hands out no more handles than
+// RingSlots on either side.
+const Participants = {{ participants }}
+
+// WrapBoundOps is how many operations a participant may be delayed between
+// reading a ring entry and acting on it before it could be misled: 2^62 for the
+// 64-bit entries this ring keeps, which at 10^9 operations a second is 146
+// years (RFC §synth-5-P, Counter width).
+const WrapBoundOps = queue.WrapBoundOps
+{% endif %}
+
+const (
+	// DeclaredProgress is what the document requires of push and pop
+	// (`<sce:progress>`).
+	DeclaredProgress = "{{ declared_progress }}"
+	// PushProgress is what the selected algorithm gives push.
+	PushProgress = "{{ push_progress }}"
+	// PopProgress is what the selected algorithm gives pop.
+	PopProgress = "{{ pop_progress }}"
+	// Algorithm is the algorithm the selection table gave this contract.
+	Algorithm = "{{ algorithm }}"
+)
+
+// {{ pascal }} is the queue. Its storage is one slice, allocated when the queue
+// is built and never again; an element that has left it is not referenced by it.
+type {{ pascal }} = queue.{{ runtime_type }}[{{ element_qualified }}]
+
+// New{{ pascal }} returns an empty queue of Capacity elements.
+func New{{ pascal }}() *{{ pascal }} {
+{% if ring_slots %}
+	return queue.New{{ runtime_type }}[{{ element_qualified }}](Capacity, RingSlots)
+{% else %}
+	return queue.New{{ runtime_type }}[{{ element_qualified }}](Capacity)
+{% endif %}
+}

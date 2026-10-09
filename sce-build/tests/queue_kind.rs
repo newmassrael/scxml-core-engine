@@ -29,6 +29,7 @@ use tempfile::tempdir;
 use sce_build::compile_scxml_with_imports;
 use sce_build::forge::diagnostic::{DiagnosticCode, ToDiagnostics};
 use sce_build::forge::error::{ForgeError, GenerateError, Located, ValidationError};
+use sce_build::forge::generator::QUEUE_SCQ_GO_ARCHITECTURES;
 use sce_build::forge::model::{
     CapacitySource, ForgeDocument, QueueAlgorithm, QueueCardinality, QueueModel, QueueProgress,
     QueueStorage,
@@ -403,6 +404,26 @@ fn compile_for(
     queue_xml: &str,
     queue_basename: &str,
 ) -> Result<String, Located<ForgeError>> {
+    let files = compile_files(
+        language,
+        &ForgeCompileOptions::default(),
+        queue_xml,
+        queue_basename,
+    )?;
+    Ok(files
+        .into_iter()
+        .map(|(_, content)| content)
+        .collect::<Vec<_>>()
+        .join("\n\n"))
+}
+
+/// Every file the queue's compile writes for `language`, by name.
+fn compile_files(
+    language: Language,
+    options: &ForgeCompileOptions,
+    queue_xml: &str,
+    queue_basename: &str,
+) -> Result<Vec<(String, String)>, Located<ForgeError>> {
     let dir = tempdir().expect("tempdir");
     let codec_path = dir.path().join("rx_event.scxml");
     fs::write(&codec_path, codec_doc("rx_event")).expect("write codec");
@@ -413,20 +434,14 @@ fn compile_for(
         &[codec_path.as_path(), queue_path.as_path()],
         &template_dir(language),
         language,
-        &ForgeCompileOptions::default(),
+        options,
         None,
     )?;
     let output = outputs
         .iter()
         .find(|(name, _)| name == queue_basename)
         .unwrap_or_else(|| panic!("no output for {queue_basename}"));
-    Ok(output
-        .1
-        .files
-        .iter()
-        .map(|(_, content)| content.clone())
-        .collect::<Vec<_>>()
-        .join("\n\n"))
+    Ok(output.1.files.clone())
 }
 
 fn assert_parses(label: &str, code: &str) {
@@ -670,6 +685,171 @@ fn a_storage_the_cpp_runtime_lacks_is_refused_by_name() {
             },
             other => panic!("expected a generate error, got {other:?}"),
         }
+    }
+}
+
+// ─── Go emit ───
+
+const GO_PREFIX: &str = "github.com/acme/project/generated";
+
+fn go_options() -> ForgeCompileOptions {
+    ForgeCompileOptions {
+        go_module_prefix: Some(GO_PREFIX.to_string()),
+        ..ForgeCompileOptions::default()
+    }
+}
+
+#[test]
+fn a_lamport_ring_emits_a_go_package_over_the_spsc_runtime_and_no_companion() {
+    let xml = queue_doc(
+        "frame_queue",
+        "one",
+        "one",
+        "wait-free",
+        r#"<sce:bounded capacity="8"/>"#,
+    );
+    let files = compile_files(Language::Go, &go_options(), &xml, "frame_queue.scxml")
+        .expect("spsc queue emits");
+    let names: Vec<&str> = files.iter().map(|(name, _)| name.as_str()).collect();
+    assert_eq!(names, ["frame_queue.go"], "a Lamport row has no companion");
+    let code = &files[0].1;
+    assert!(code.contains("package frame_queue\n"), "{code}");
+    assert!(
+        code.contains("\t\"github.com/newmassrael/sce-forge-runtime/queue\"\n"),
+        "{code}"
+    );
+    assert!(
+        code.contains(&format!("\t\"{GO_PREFIX}/rx_event\"\n")),
+        "{code}"
+    );
+    assert!(code.contains("const Capacity = 8\n"), "{code}");
+    assert!(
+        code.contains("type FrameQueue = queue.Spsc[rx_event.RxEvent]\n"),
+        "{code}"
+    );
+    assert!(
+        code.contains("queue.NewSpsc[rx_event.RxEvent](Capacity)"),
+        "{code}"
+    );
+    assert!(
+        !code.contains("//go:build") && !code.contains("RingSlots"),
+        "a Lamport ring has no build constraint and no index rings:\n{code}"
+    );
+}
+
+#[test]
+fn an_scq_row_is_constrained_to_the_architectures_the_runtime_lists_and_has_a_companion() {
+    let xml = queue_doc(
+        "work_queue",
+        "many",
+        "many",
+        "lock-free",
+        r#"<sce:bounded capacity="6"/><sce:participants const="5"/>"#,
+    );
+    let files = compile_files(Language::Go, &go_options(), &xml, "work_queue.scxml")
+        .expect("scq queue emits");
+    let names: Vec<&str> = files.iter().map(|(name, _)| name.as_str()).collect();
+    assert_eq!(names, ["work_queue.go", "work_queue_unsupported.go"]);
+
+    let constraint = QUEUE_SCQ_GO_ARCHITECTURES.join(" || ");
+    let (code, companion) = (&files[0].1, &files[1].1);
+    assert!(
+        code.contains(&format!(
+            "\n//go:build {constraint}\n\npackage work_queue\n"
+        )),
+        "the SCQ file names the architectures it can be built on:\n{code}"
+    );
+    assert!(code.contains("const RingSlots = 8\n"), "{code}");
+    assert!(code.contains("const Participants = 5\n"), "{code}");
+    assert!(
+        code.contains("type WorkQueue = queue.Scq[rx_event.RxEvent]\n"),
+        "{code}"
+    );
+    assert!(
+        code.contains("queue.NewScq[rx_event.RxEvent](Capacity, RingSlots)"),
+        "{code}"
+    );
+    assert!(
+        companion.contains(&format!(
+            "\n//go:build !({constraint})\n\npackage work_queue\n"
+        )),
+        "the companion holds the negated constraint:\n{companion}"
+    );
+    assert!(
+        companion.contains(
+            "var _ = THE_SCQ_QUEUE_NEEDS_NATIVE_64_BIT_ATOMICS_WHICH_THIS_GOARCH_DOES_NOT_HAVE"
+        ),
+        "the companion fails to compile and names the reason:\n{companion}"
+    );
+}
+
+/// The generator and the runtime state the architectures an SCQ row can be
+/// built on in two places, and this holds them equal: a row the generator
+/// writes for an architecture the runtime has no SCQ for would fail to compile
+/// with a missing type, the failure the companion exists to prevent.
+#[test]
+fn the_generators_scq_architectures_are_the_runtimes() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("backends/go/forge-runtime/queue/scq.go");
+    let source =
+        fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    let constraint: Vec<&str> = source
+        .lines()
+        .filter_map(|line| line.strip_prefix("//go:build "))
+        .collect();
+    assert_eq!(
+        constraint,
+        [QUEUE_SCQ_GO_ARCHITECTURES.join(" || ")],
+        "scq.go carries one build constraint, the generator's list"
+    );
+}
+
+#[test]
+fn a_go_queue_without_a_module_prefix_is_refused_not_guessed() {
+    let xml = queue_doc(
+        "frame_queue",
+        "one",
+        "one",
+        "wait-free",
+        r#"<sce:bounded capacity="8"/>"#,
+    );
+    let located = compile_for(Language::Go, &xml, "frame_queue.scxml")
+        .expect_err("the element's package cannot be imported without a prefix");
+    match located.error {
+        ForgeError::Generate(boxed) => match *boxed {
+            GenerateError::InvalidConfig(message) => {
+                assert!(
+                    message.contains("queue 'frame_queue'") && message.contains("go_module_prefix"),
+                    "{message}"
+                );
+            }
+            other => panic!("expected InvalidConfig, got {other:?}"),
+        },
+        other => panic!("expected a generate error, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_storage_the_go_runtime_lacks_is_refused_by_name() {
+    let located = compile_files(
+        Language::Go,
+        &go_options(),
+        &resource("queue_segmented_lscq.scxml"),
+        "queue_segmented_lscq.scxml",
+    )
+    .expect_err("a storage without a runtime is refused");
+    match located.error {
+        ForgeError::Generate(boxed) => match *boxed {
+            GenerateError::QueueStorageRuntimeMissing {
+                language, storage, ..
+            } => {
+                assert_eq!(language, "go");
+                assert_eq!(storage, "segmented");
+            }
+            other => panic!("expected QueueStorageRuntimeMissing, got {other:?}"),
+        },
+        other => panic!("expected a generate error, got {other:?}"),
     }
 }
 

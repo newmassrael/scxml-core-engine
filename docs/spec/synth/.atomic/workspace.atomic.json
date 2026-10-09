@@ -5215,6 +5215,14 @@
         {
           "file": "backends/go/forge-runtime/queue/contract_test.go",
           "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/go/queue.go.jinja2",
+          "kind": "implements"
+        },
+        {
+          "file": "tools/codegen/templates/forge/go/queue_unsupported.go.jinja2",
+          "kind": "implements"
         }
       ]
     },
