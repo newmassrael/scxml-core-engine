@@ -49,14 +49,28 @@ project(":sce-kotlin-benchmark").projectDir = file("backends/kotlin/benchmark")
 include(":sce-spring-boot-starter")
 project(":sce-spring-boot-starter").projectDir = file("backends/kotlin/spring-boot-starter")
 
-// Android module — requires ANDROID_HOME or sdk.dir in local.properties
+// Android module — an opt-in, and it needs an SDK: ANDROID_HOME, ANDROID_SDK_ROOT
+// or sdk.dir in local.properties.
+//
+// The SDK being present is not a request to build the app. A GitHub-hosted runner
+// always has one (ANDROID_HOME is set in its image), so including the module
+// whenever an SDK is found made every Gradle invocation on a runner — the W3C
+// suite, the forge runtime, the lowered ECMA-262 gate, none of which touches the
+// app — configure it, and configuring it makes the Android Gradle plugin download
+// the NDK (about a gigabyte) on a fresh machine each time. One truncated download
+// ("Error on ZipFile unknown archive") failed a gate that had nothing to do with
+// Android, and every run paid for the download whether it failed or not.
+//
+// Ask for the app with `-Psce.androidApp=true`, or `sce.androidApp=true` in
+// ~/.gradle/gradle.properties to keep it on a machine that builds it.
+val androidAppRequested = providers.gradleProperty("sce.androidApp").orNull == "true"
 val androidHome = System.getenv("ANDROID_HOME")
     ?: System.getenv("ANDROID_SDK_ROOT")
     ?: file("local.properties").takeIf { it.exists() }?.let { f ->
         java.util.Properties().apply { f.inputStream().use { load(it) } }
             .getProperty("sdk.dir")
     }
-if (androidHome != null) {
+if (androidAppRequested && androidHome != null) {
     include(":sce-android-app")
     project(":sce-android-app").projectDir = file("backends/kotlin/android-app")
 }
