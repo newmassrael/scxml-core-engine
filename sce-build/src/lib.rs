@@ -6057,6 +6057,10 @@ pub(crate) struct StatelessSignature {
     /// refuses every other caller; `params` stay empty and say nothing, so
     /// the scalar slots are [`Self::list_return`]'s to carry.
     pub(crate) list_return: Option<ListReturn>,
+    /// Why a statechart does not take the list this algorithm returns whole,
+    /// when it returns one and [`Self::list_return`] is `None`: the first
+    /// condition it fails, worded for the author of the statechart that calls it.
+    pub(crate) list_refusal: Option<String>,
 }
 
 /// A list an algorithm returns, as a `sce-static` statechart takes it
@@ -6186,10 +6190,51 @@ pub(crate) fn discover_stateless_signature(
                             max_size: m.signature.returns_max_size?,
                         })
                     });
+                // Said once, here, where every condition is known: a statechart that
+                // calls an algorithm returning a list and is refused is told which of
+                // them it fails, not that "an imported algorithm may return a list".
+                let list_refusal = if list_return.is_some() {
+                    None
+                } else {
+                    m.signature
+                        .return_type
+                        .as_ref()
+                        .and_then(|t| t.list_elem())
+                        .map(|elem| {
+                            if let Some(slot) = m
+                                .signature
+                                .params
+                                .iter()
+                                .find(|p| p.sce_type.scalar().is_none())
+                            {
+                                format!(
+                                    "it takes {} `{}`, and a statechart hands an algorithm \
+                                     scalars only",
+                                    slot.sce_type.as_attr(),
+                                    slot.name
+                                )
+                            } else if matches!(elem, forge::model::ListElemType::Record { .. }) {
+                                "it returns a list of records, and a statechart takes a list of \
+                                 numbers or bools only"
+                                    .to_string()
+                            } else if !m.signature.may_fail {
+                                "it does not declare may-fail on its <sce:return>, which is how a \
+                                 statechart receives the failure of a list that cannot be built \
+                                 (a capacity it would pass, an overflow in its body): declare \
+                                 may-fail=\"true\" there, or call it from a host"
+                                    .to_string()
+                            } else {
+                                "it declares no returns-max-size, and the list variable it is \
+                                 assigned to must be able to hold all the algorithm may return"
+                                    .to_string()
+                            }
+                        })
+                };
                 return StatelessSignature {
                     host_only: Some(reason),
                     may_fail: m.signature.may_fail,
                     list_return,
+                    list_refusal,
                     ..StatelessSignature::default()
                 };
             }
@@ -6208,6 +6253,7 @@ pub(crate) fn discover_stateless_signature(
                 host_only: None,
                 may_fail: m.signature.may_fail,
                 list_return: None,
+                list_refusal: None,
             }
         }
         _ => StatelessSignature::default(),

@@ -1664,15 +1664,26 @@ impl<'a> Judge<'a> {
                     if let Some(callee) = self.scope.whole_list_call(&action.expr) {
                         return self.list_from_call(ctx, action, list, callee);
                     }
+                    // A call of an algorithm that does return a list, refused for a
+                    // reason the author can act on: say which, rather than that a list
+                    // "takes what an imported algorithm returns" when this one does not.
+                    let construct = match self.scope.refused_list_call(&action.expr) {
+                        Some((callee, reason)) => format!(
+                            "an assignment to the whole list `{location}` from the algorithm \
+                             `{}`, which a statechart cannot take a list from: {reason}",
+                            callee.alias
+                        ),
+                        None => format!(
+                            "an assignment to the whole list `{location}` (a list \
+                             is filled by <sce:append> and emptied by <sce:clear>, \
+                             or takes what an imported algorithm returns as a list)"
+                        ),
+                    };
                     return Err(Located::in_file(
                         ExpressionSite::new(&action.location, action.spellings.get("location"))
                             .place(
                                 crate::forge::error::ExprError::UnsupportedConstruct {
-                                    construct: format!(
-                                        "an assignment to the whole list `{location}` (a list \
-                                         is filled by <sce:append> and emptied by <sce:clear>, \
-                                         or takes what an imported algorithm returns as a list)"
-                                    ),
+                                    construct,
                                     observed: Some(location.to_string()),
                                 }
                                 .at(None),

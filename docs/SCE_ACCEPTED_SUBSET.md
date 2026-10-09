@@ -4118,7 +4118,15 @@ value of a scalar variable — and each of those is `expression/unsupported-cons
 The algorithm takes scalars only and declares `may-fail`, which is how a
 statechart receives the failure of a list that cannot be built (an arithmetic
 overflow in its body, a capacity it would pass); any other list-returning
-algorithm stays a host's to call.
+algorithm stays a host's to call. That is not widened to an algorithm that
+declares no `may-fail`: its body is not proved against an append past its
+capacity or an overflow (a `max-iter` above the capacity, a product that does not
+fit its slot are accepted as written), so a statechart that took its list would
+take a result whose failure nobody declared. The refusal names the algorithm and
+the first condition it fails — a scalar-only signature, a list of numbers or
+bools, `may-fail`, `returns-max-size` — so the author is told what to declare
+instead of that a list "takes what an imported algorithm returns" when this call
+is exactly that.
 
 The variable must be able to hold all the algorithm may return: `returns-max-size`
 above the variable's `sce:capacity` is refused when the document is built

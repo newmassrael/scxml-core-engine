@@ -152,6 +152,14 @@ fn only_an_algorithm_that_declares_may_fail_is_taken() {
     let said =
         String::from_utf8_lossy(&out.stderr).into_owned() + &String::from_utf8_lossy(&out.stdout);
     assert!(!out.status.success(), "expected a refusal, got:\n{said}");
+    // The refusal says which algorithm and which condition it fails: not that a list
+    // "takes what an imported algorithm returns" when this call is exactly that.
+    for needed in ["`Repeat`", "may-fail"] {
+        assert!(
+            said.contains(needed),
+            "the refusal must name {needed:?}:\n{said}"
+        );
+    }
 }
 
 #[test]

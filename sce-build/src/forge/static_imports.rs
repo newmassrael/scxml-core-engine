@@ -96,6 +96,7 @@ pub(crate) fn resolve(
                     max_size: returned.max_size,
                 }
             }),
+            list_refusal: signature.list_refusal,
             line: import.line,
         });
     }

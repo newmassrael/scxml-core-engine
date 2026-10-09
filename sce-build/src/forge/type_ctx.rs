@@ -144,6 +144,9 @@ pub struct StaticCallee {
     /// scalars only: the list a statechart may take, whole, into a list
     /// variable of its own, and nothing else a statechart may do with it.
     pub list_return: Option<StaticListReturn>,
+    /// Why a statechart does not take the list it returns whole, when it returns
+    /// one and `list_return` is `None`: what a refusal of the assignment says.
+    pub list_refusal: Option<String>,
 }
 
 /// A list an imported algorithm returns, as a `sce-static` statechart takes it
@@ -776,6 +779,17 @@ impl StaticScope {
         self.callees
             .iter()
             .find(|c| c.alias == whole && c.list_return.is_some())
+    }
+
+    /// The imported callee `expr` is, taken whole, a call of that returns a list a
+    /// statechart does not take — and why not, as [`StaticCallee::list_refusal`] words it.
+    pub fn refused_list_call(&self, expr: &str) -> Option<(&StaticCallee, &str)> {
+        let (whole, _) = crate::forge::expr::called_names(expr).ok()?;
+        let whole = whole?;
+        self.callees
+            .iter()
+            .find(|c| c.alias == whole)
+            .and_then(|c| c.list_refusal.as_deref().map(|reason| (c, reason)))
     }
 
     /// The alias of a callee that returns a list when `expr` calls one anywhere
