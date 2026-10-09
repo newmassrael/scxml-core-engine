@@ -811,6 +811,7 @@ GATES: dict[str, dict] = {
         "workflows": ["forge-conformance.yml"],
         "runner_workflow": True,
         "extra": ["backends/rust/**"],
+        "deps": ["codegen-build"],
         # Warm reads as 0; the release profile it needs is a separate build
         # tree from every other gate, so a cold run pays that once.
         "ci_only": "96s, a release build of the Rust forge arm, and about "
