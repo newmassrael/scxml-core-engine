@@ -440,6 +440,8 @@ class Model:
                 values = decoded.get(entry.id) or []
                 if len(values) > entry.max_count:
                     return fails("line-too-many")
+                if entry.required and not values:
+                    return fails("line-required-missing")
                 for value in values:
                     line = self.line(entry, [], decoded, value)
                     if line[0] == "fails":
@@ -1304,6 +1306,119 @@ class RecordsWritten(Written):
             self.reject("fuzz: " + why, data, failure)
 
 
+# ── The required-lists fixture (docs/adr/0014) ──────────────────────────
+
+REQUIRED_FIXTURE = "codec_content_line_required_lists"
+REQUIRED_RESOURCE = Path("tests/forge/resources/codec_content_line_required_lists.scxml")
+REQUIRED_SEED = 0xE116_0003
+
+
+def rec(value, kind=None):
+    """A line record of REC: its one parameter and its one value."""
+    return {"recKind": kind, "value": value}
+
+
+def required_of(**fields):
+    """A full `decoded` object of the required-lists fixture, each list a valid
+    one unless a field says otherwise."""
+    out = {"uid": "u", "tag": ["a"], "cats": ["x"], "rec": [rec("v")]}
+    out.update(fields)
+    return out
+
+
+def lcomponent(*lines: bytes) -> bytes:
+    return COMPONENT_HEAD + b"".join(lines) + COMPONENT_TAIL
+
+
+#: The three lists, each present once: the smallest valid component.
+_TAG = b"TAG:a\r\n"
+_CATS = b"CATS:x\r\n"
+_REC = b"REC:v\r\n"
+_UID = b"UID:u\r\n"
+
+REQUIRED_CASES = [
+    ("each required list holds one value", required_of()),
+    (
+        "each required list holds as much as it may",
+        required_of(
+            tag=["t" * 8, "u"],
+            cats=["a" * 8, "b", "c"],
+            rec=[rec("r" * 8, "k" * 8), rec("s", "Z")],
+        ),
+    ),
+    (
+        "a TEXT list holds an escaped comma and a record holds a quoted parameter",
+        required_of(cats=["a,b"], rec=[rec("v", "x:y")]),
+    ),
+]
+
+REQUIRED_ACCEPTS = [
+    (
+        "the lists are read in any order, with names in any case",
+        required_of(tag=["a", "b"], cats=["x", "y"], rec=[rec("v", "k"), rec("w")]),
+        lcomponent(
+            b"rec;kind=k:v\r\n", b"cats:x,y\r\n", b"TAG:a\r\n", b"uid:u\r\n", b"REC:w\r\n", b"Tag:b\r\n"
+        ),
+    ),
+]
+
+REQUIRED_REJECTS = [
+    ("the repeated property absent", lcomponent(_UID, _CATS, _REC), "line-required-missing"),
+    ("the TEXT list absent", lcomponent(_UID, _TAG, _REC), "line-required-missing"),
+    ("the record list absent", lcomponent(_UID, _TAG, _CATS), "line-required-missing"),
+    ("every list absent", lcomponent(_UID), "line-required-missing"),
+    ("only the UID absent", lcomponent(_TAG, _CATS, _REC), "line-required-missing"),
+    ("a third TAG line past two", lcomponent(_UID, _TAG, _TAG, _TAG, _CATS, _REC), "line-too-many"),
+    ("a third REC line past two", lcomponent(_UID, _TAG, _CATS, _REC, _REC, _REC), "line-too-many"),
+    ("the CATS line twice", lcomponent(_UID, _TAG, _CATS, _CATS, _REC), "line-too-many"),
+    ("a fourth CATS value past three", lcomponent(_UID, _TAG, b"CATS:a,b,c,d\r\n", _REC), "line-too-many"),
+    ("an empty CATS part", lcomponent(_UID, _TAG, b"CATS:a,,b\r\n", _REC), "line-bad-value"),
+    ("a CATS value of 9 octets past 8", lcomponent(_UID, _TAG, b"CATS:" + b"c" * 9 + b"\r\n", _REC), "line-too-long"),
+    ("a TAG value of 9 octets past 8", lcomponent(_UID, b"TAG:" + b"t" * 9 + b"\r\n", _CATS, _REC), "line-too-long"),
+    ("a stray backslash in CATS", lcomponent(_UID, _TAG, b"CATS:a\\q\r\n", _REC), "line-bad-escape"),
+    ("an empty line among the properties", lcomponent(_UID, _TAG, b"\r\n", _CATS, _REC), "line-malformed"),
+    ("the END line missing", COMPONENT_HEAD + _UID + _TAG + _CATS + _REC, "need-more-bytes"),
+]
+
+
+def draw_required(rng: SplitMix64) -> dict:
+    """A drawn `decoded` of the required-lists fixture that the codec writes."""
+    return {
+        "uid": draw_text(rng, 16),
+        "tag": [draw_text(rng, 8) for _ in range(rng.between(1, 2))],
+        "cats": [draw_nonempty(rng, 8, TEXT) for _ in range(rng.between(1, 3))],
+        "rec": [
+            rec(draw_text(rng, 8), draw_text(rng, 8, PARAM) if rng.below(2) else None)
+            for _ in range(rng.between(1, 2))
+        ],
+    }
+
+
+class RequiredWritten(Written):
+    """The required-lists fixture's cases and rejects, each held to the model."""
+
+    def __init__(self, path: Path = REQUIRED_RESOURCE):
+        super().__init__(path)
+
+    def build(self):
+        for note, decoded in REQUIRED_CASES:
+            self.round_trip(note, decoded)
+        for note, decoded, data in REQUIRED_ACCEPTS:
+            self.accept(note, decoded, data)
+        for why, data, failure in REQUIRED_REJECTS:
+            self.reject(why, data, failure)
+        rng = SplitMix64(REQUIRED_SEED)
+        canonical = self.model.encode(required_of())[1]
+        for _ in range(30):
+            self.round_trip("fuzz: a drawn value written and read back", draw_required(rng))
+        for _ in range(20):
+            decoded = draw_required(rng)
+            written = self.model.encode(decoded)[1]
+            self.accept("fuzz: the same component read from a reshaped input", decoded, reshape(rng, written))
+        for line, why in ((b"TAG:a\r\n", "the TAG line"), (b"CATS:x\r\n", "the CATS line"), (b"REC:v\r\n", "the REC line")):
+            self.reject("fuzz: " + why + " removed", canonical.replace(line, b"", 1), "line-required-missing")
+
+
 # ── Splicing into numerical_reference.json ──────────────────────────────
 
 
@@ -1313,7 +1428,11 @@ def case_text(case: dict) -> str:
 
 #: Each fixture of this module: its name in numerical_reference.json and the
 #: writer that holds its cases to the model.
-WRITERS = ((FIXTURE, Written), (RECORDS_FIXTURE, RecordsWritten))
+WRITERS = (
+    (FIXTURE, Written),
+    (RECORDS_FIXTURE, RecordsWritten),
+    (REQUIRED_FIXTURE, RequiredWritten),
+)
 
 
 def span(text: str, fixture: str, key: str):

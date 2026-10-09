@@ -2298,6 +2298,17 @@
       ]
     },
     {
+      "name": "codec_content_line_required_lists",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "fields": [
+        { "name": "uid", "type": "string", "compare": "equality" },
+        { "name": "tag", "type": "string", "compare": "equality" },
+        { "name": "cats", "type": "string", "compare": "equality" },
+        { "name": "rec", "type": "string", "compare": "equality" }
+      ]
+    },
+    {
       "name": "codec_flags_basic",
       "kind": "codec",
       "ref_section": "codecs",

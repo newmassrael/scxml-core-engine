@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Conformance fixture: a repeated or listed content-line entry that is required
+  (SCE_FORGE.md §4.6.4, docs/adr/0014).
+
+  `sce:required="true"` on an entry whose property occurs on several lines, or
+  whose line holds a list, means the component has at least one such line: a
+  decode without it is `line-required-missing`, and so is an encode of an empty
+  list. Each of the three shapes a list takes is here once, because each is read
+  by its own path:
+
+    tag   a repeated property, one value a line
+    cats  one line holding a TEXT list of values
+    rec   a repeated property whose lines carry a parameter (a line record)
+
+  The bounds are small on purpose. The same document is the model's input
+  (content_line_model.py), so a change to it moves the vectors with it.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="codec" sce:encoding="content-line" sce:component="VEVENT"
+       name="codec_content_line_required_lists">
+  <datamodel>
+    <data id="raw" sce:type="bytes" sce:direction="in"/>
+    <data id="uid" sce:type="string" sce:property="UID" sce:required="true" sce:max-size="16"/>
+    <data id="tag" sce:type="string" sce:property="TAG" sce:required="true" sce:max-count="2" sce:max-size="8"/>
+    <data id="cats" sce:type="string" sce:property="CATS" sce:required="true" sce:value="text" sce:max-size="8" sce:separator="," sce:max-values="3"/>
+    <data id="rec" sce:type="string" sce:property="REC" sce:required="true" sce:max-count="2" sce:max-size="8"/>
+    <data id="recKind" sce:type="string" sce:property="REC" sce:param="KIND" sce:max-size="8"/>
+  </datamodel>
+</scxml>

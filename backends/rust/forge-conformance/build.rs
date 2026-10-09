@@ -69,6 +69,15 @@ fn main() {
     // Step 2: generate each fixture's Rust code into OUT_DIR.
     let options = ForgeCompileOptions::default();
     for fixture in &manifest.fixtures {
+        // A fixture Rust refuses by name is not scheduled for it, and the harness
+        // rendered in Step 3 does not ask for its code: the one answer the
+        // harness and every other language's build read (a codec whose lines are
+        // records waits on each backend, docs/adr/0014).
+        if !conformance::lang_supports_fixture(fixture, Language::Rust, &resource_dir)
+            .unwrap_or_else(|e| panic!("schedule {}: {e}", fixture.name))
+        {
+            continue;
+        }
         // Where the manifest says — `<name>.scxml` here, or a standard
         // document it names by `sce:std/...` — asked of the one answer
         // every language's build uses.
