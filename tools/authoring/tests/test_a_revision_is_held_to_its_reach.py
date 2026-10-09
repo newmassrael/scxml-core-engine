@@ -13,6 +13,7 @@ generator, with the command line a client runner would be started by.
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import shlex
 import shutil
@@ -234,6 +235,20 @@ class ACommandIsAReviser(unittest.TestCase):
         time.sleep(3.5)
         self.assertEqual("before\n", self.design.read_text(encoding="utf-8"),
                          "a process the reviser started went on running after the timeout")
+
+    def test_a_host_that_cannot_stop_a_group_does_not_start_the_command_and_says_so(self):
+        # Windows has no `os.killpg`. A command started there could not be stopped with what it
+        # started, and its first timeout would be an AttributeError in place of the round's failure
+        # (a review of the gate, 2026-10-09). The marker proves nothing was started.
+        marker = self.design.parent / "started"
+        code = f"import pathlib; pathlib.Path({str(marker)!r}).write_text('started')"
+        self.addCleanup(setattr, os, "killpg", os.killpg)
+        del os.killpg
+        with self.assertRaises(ReviserError) as caught:
+            command_reviser(self.command(code), self.design)("x")
+        self.assertIn("could not be started", str(caught.exception))
+        self.assertIn("process group", str(caught.exception))
+        self.assertFalse(marker.exists(), "the command ran on a host that cannot stop its group")
 
     def test_a_command_that_finishes_is_read_as_before_when_it_has_a_session_of_its_own(self):
         code = "import sys; print('said'); print('and', file=sys.stderr); sys.exit(0)"

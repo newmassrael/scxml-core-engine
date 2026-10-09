@@ -210,7 +210,11 @@ class ARevisionOfAWork(unittest.TestCase):
 
     def test_an_acceptance_of_a_list_that_had_no_lineage_is_compared_by_adopting_it(self):
         self.accepted_lamp(lineage=False)
-        self.assertNotIn("lineage_text", self.read()["requirements"])
+        # None was saved, and the core hands a client the one it derives from the manifest and
+        # the sidecar, saying it is derived (it is never stored: ADR 0011).
+        read = self.read()["requirements"]
+        self.assertIn("lineage_text", read)
+        self.assertIs(True, read.get("lineage_adopted"), read)
         self.revise(SECOND, [ON, SWITCH], design())
         result = self.check()
         self.assertEqual("within-reach", result["verdict"], result)

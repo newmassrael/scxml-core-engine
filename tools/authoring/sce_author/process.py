@@ -119,7 +119,16 @@ def run(argv: list, *, cwd=None, timeout: float | None = None,
 def _run_in_own_group(argv: list, cwd, timeout: float | None, stdin_text: str | None,
                       environment: dict | None) -> subprocess.CompletedProcess:
     """`run` for a program started in a session of its own, whose whole group is stopped when it
-    runs past its clock or this call is interrupted."""
+    runs past its clock or this call is interrupted.
+
+    ⚠ Stopping a group is a POSIX call (`os.killpg`, `signal.SIGKILL`), and a session of its own is
+    a POSIX argument that Windows ignores. Where there is no such call the program is not started:
+    one started with no way to stop what it starts would fail on its first timeout with an
+    `AttributeError`, and the gate would not say that the round ran past its clock. The caller
+    reads the refusal as a program that could not be started."""
+    if not hasattr(os, "killpg"):
+        raise OSError(f"a program cannot be run in a group of its own on {sys.platform}: stopping "
+                      "everything it started needs a process group, which only POSIX has")
     child = subprocess.Popen(argv, stdin=subprocess.PIPE if stdin_text is not None else None,
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                              encoding="utf-8", cwd=cwd, env=environment, start_new_session=True)
