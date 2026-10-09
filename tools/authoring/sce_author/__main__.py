@@ -12,6 +12,7 @@ import collections
 import json
 import pathlib
 import sys
+import tempfile
 
 from .brief import write as write_brief
 from .check import check
@@ -32,7 +33,7 @@ from .pseudo import render as render_pseudo
 from .questions import ask
 from .review import review as run_review
 from .revision_gate import (DEFAULT_ROUNDS, MAX_ROUNDS, OUTSIDE_REACH, REVISER_TIMEOUT_S, STALLED,
-                            GateError, command_reviser)
+                            GateError, command_reviser, guarded, keep_baseline)
 from .revision_gate import hold as hold_revision
 from .revision_gate import judge as judge_revision
 from .scaffold import KINDS
@@ -420,10 +421,14 @@ def cmd_revise_gate(args) -> int:
     record, root = pathlib.Path(args.record).resolve(), pathlib.Path(args.root).resolve()
     design = pathlib.Path(args.design).resolve()
     codegen = pathlib.Path(args.codegen) if args.codegen else None
-    outcome = hold_revision(
-        lambda: judge_revision(delta, record, root, design, codegen=codegen),
-        command_reviser(args.reviser, design, timeout_s=args.reviser_timeout),
-        rounds=args.rounds)
+    # The record is read once and every judgment is of the copy: a reviser that is told where the
+    # record lies must not be able to move what the design is judged against.
+    with tempfile.TemporaryDirectory() as directory:
+        baseline = keep_baseline(record, pathlib.Path(directory))
+        outcome = hold_revision(
+            lambda: judge_revision(delta, baseline.copy, root, design, codegen=codegen),
+            guarded(command_reviser(args.reviser, design, timeout_s=args.reviser_timeout), baseline),
+            rounds=args.rounds)
     for held in outcome.rounds:
         listed = ", ".join(f"{id_} ({kind})" for id_, kind, _places in held.violations) or "none"
         print(f"round {held.number}: {held.verdict}; violations: {listed}")

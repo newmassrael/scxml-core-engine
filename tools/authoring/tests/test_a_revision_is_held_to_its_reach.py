@@ -18,13 +18,14 @@ import shlex
 import shutil
 import sys
 import tempfile
+import time
 import unittest
 
 from sce_author import revision, revision_gate
 from sce_author.__main__ import main
 from sce_author.mcp import call_tool
-from sce_author.revision_gate import (GateError, Outcome, ReviserError, command_reviser, hold,
-                                      judge)
+from sce_author.revision_gate import (GateError, Outcome, ReviserError, command_reviser, guarded,
+                                      hold, judge, keep_baseline)
 from sce_author.verify import _default_codegen
 from tests.test_a_revised_design_is_checked_against_what_the_specification_changed import (
     DOCUMENT, EVENT, FIXTURES, MANIFEST, PROSE, body, fixture_sidecar_text, words)
@@ -220,6 +221,24 @@ class ACommandIsAReviser(unittest.TestCase):
             command_reviser(self.command("import time; time.sleep(30)"), self.design, timeout_s=1)("x")
         self.assertIn("ran past 1 seconds", str(caught.exception))
 
+    def test_a_timeout_stops_what_the_command_started_and_not_only_the_command(self):
+        # A client runner starts programs. `subprocess.run` kills the command on a timeout and
+        # leaves what it started running, and one of those wrote to the design after the gate had
+        # said the round was over (a review of the gate, 2026-10-09).
+        late = ("import os, pathlib, time; time.sleep(2); "
+                "pathlib.Path(os.environ['SCE_REVISION_DESIGN']).write_text('written after the timeout')")
+        code = ("import subprocess, sys, time; "
+                f"subprocess.Popen([sys.executable, '-c', {late!r}]); time.sleep(60)")
+        with self.assertRaises(ReviserError):
+            command_reviser(self.command(code), self.design, timeout_s=1)("x")
+        time.sleep(3.5)
+        self.assertEqual("before\n", self.design.read_text(encoding="utf-8"),
+                         "a process the reviser started went on running after the timeout")
+
+    def test_a_command_that_finishes_is_read_as_before_when_it_has_a_session_of_its_own(self):
+        code = "import sys; print('said'); print('and', file=sys.stderr); sys.exit(0)"
+        command_reviser(self.command(code), self.design)("x")   # no error: exit 0 is a finished round
+
     def test_an_empty_command_is_refused_before_anything_runs(self):
         for command in ("", "   "):
             with self.subTest(command=command), self.assertRaises(GateError):
@@ -285,6 +304,65 @@ class ARevisedCommittedDesignIsHeldToItsReach(unittest.TestCase):
             judge(other, self.record, self.root, self.design)
         self.assertIn("not the same list", str(caught.exception))
 
+    def forged_record(self) -> pathlib.Path:
+        """The acceptance record of the design as it is NOW (broken): a baseline a reviser would
+        like the gate to judge against, because against it the broken design has not moved."""
+        forged = self.accepted_copy.parent / "forged-acceptance.json"
+        made = call_tool("scxml_accept", {
+            "document": str(self.design), "manifest": str(self.root / "spec" / MANIFEST),
+            "sidecar": str(self.root / "spec" / "requirements.sidecar.json"), "variant": "base",
+            "root": str(self.root), "out": str(forged),
+            "sources": [str(self.root / "spec" / "prose.md")]})
+        self.assertFalse(made.get("isError"), made)
+        return forged
+
+    def kept(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        return keep_baseline(self.record, pathlib.Path(directory.name))
+
+    def test_the_baseline_is_a_private_read_only_copy_of_the_bytes_that_were_hashed(self):
+        baseline = self.kept()
+        self.assertEqual(self.record.read_bytes(), baseline.copy.read_bytes())
+        self.assertNotEqual(self.record, baseline.copy)
+        self.assertFalse(baseline.copy.stat().st_mode & 0o222, "the copy can be written to")
+        self.assertEqual("", baseline.moved())
+
+    def test_a_reviser_that_replaces_the_record_has_failed_its_round_and_no_design_passes(self):
+        # Before the fix the gate said `within-reach` here: the design was left as broken as it was
+        # and the record it is judged against was replaced by the record of that broken design.
+        forged, baseline = self.forged_record(), self.kept()
+
+        def replaces_the_baseline(request: str) -> None:
+            shutil.copy(forged, self.record)
+
+        outcome = hold(lambda: judge(self.delta, baseline.copy, self.root, self.design),
+                       guarded(replaces_the_baseline, baseline))
+        self.assertEqual(revision_gate.REVISER_FAILED, outcome.status)
+        self.assertFalse(outcome.within_reach)
+        self.assertIn("changed the acceptance record", outcome.reason)
+        self.assertIn(str(self.record), outcome.reason)
+
+    def test_a_record_replaced_after_it_was_read_is_not_what_is_judged_against(self):
+        # Without the guard at all: the judgment reads the copy, so replacing the source moves
+        # nothing, and the broken design is still outside its reach.
+        forged, baseline = self.forged_record(), self.kept()
+        shutil.copy(forged, self.record)
+        result, refusal = judge(self.delta, baseline.copy, self.root, self.design)
+        self.assertEqual(("", "outside-reach"), (refusal, result["verdict"]))
+        self.assertNotEqual("", baseline.moved())
+
+    def test_a_record_the_reviser_removed_is_a_record_that_moved(self):
+        baseline = self.kept()
+        self.record.unlink()
+        self.assertIn("cannot be read after the reviser ran", baseline.moved())
+
+    def test_a_reviser_that_leaves_the_record_alone_is_not_failed_for_it(self):
+        baseline = self.kept()
+        outcome = hold(lambda: judge(self.delta, baseline.copy, self.root, self.design),
+                       guarded(self.restoring, baseline))
+        self.assertEqual(revision_gate.WITHIN_REACH, outcome.status)
+
     def test_a_design_put_back_by_the_reviser_is_within_reach_after_one_revision(self):
         requests: list[str] = []
 
@@ -329,6 +407,14 @@ class ARevisedCommittedDesignIsHeldToItsReach(unittest.TestCase):
     def test_the_command_line_exits_one_for_a_revision_that_stays_out_of_reach(self):
         code, shown = self.run_cli(shlex.join([sys.executable, "-c", "pass"]))
         self.assertEqual((1, "stalled", False), (code, shown["status"], shown["within_reach"]))
+
+    def test_the_command_line_fails_a_reviser_that_replaces_the_record_it_is_judged_against(self):
+        forged = self.forged_record()
+        replace = ("import pathlib, shutil, sys; shutil.copy(sys.argv[1], sys.argv[2])")
+        code, shown = self.run_cli(shlex.join([sys.executable, "-c", replace, str(forged),
+                                               str(self.record)]))
+        self.assertEqual((2, "reviser-failed", False), (code, shown["status"], shown["within_reach"]))
+        self.assertIn("changed the acceptance record", shown["reason"])
 
     def test_the_command_line_exits_two_for_a_reviser_that_fails(self):
         code, shown = self.run_cli(shlex.join([sys.executable, "-c", "raise SystemExit(7)"]))

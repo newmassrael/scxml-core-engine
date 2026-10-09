@@ -70,12 +70,22 @@ class ProcessTimeout(Exception):
 
 
 def run(argv: list, *, cwd=None, timeout: float | None = None,
-        stdin_text: str | None = None, env: dict | None = None) -> subprocess.CompletedProcess:
+        stdin_text: str | None = None, env: dict | None = None,
+        own_group: bool = False) -> subprocess.CompletedProcess:
     """Run a program this tree trusts to end, and read what it printed as text.
 
     `env` is what is added to this process's environment for the program (a caller that tells
     the program of a file by a variable, as `revision_gate.command_reviser` does); nothing is
     removed, and left out the program is started with the environment as it is.
+
+    `own_group` starts the program in a session of its own and, when it runs past `timeout`,
+    stops everything it started and not only the program itself. A caller whose program is a
+    client that starts programs in turn needs it: `subprocess.run` kills the direct child on a
+    timeout, and what that child started goes on running, and writing, after the caller has said
+    it stopped (a reviser that outlived its timeout edited the design the gate was judging). The
+    group is signalled while the program is still uncollected, so its number is still its own;
+    what a program leaves running after it EXITS is not stopped, because by then its number
+    belongs to nobody.
 
     A clock is the only protection: the product's generator is code this
     repository builds, and what it is handed is a document, not a program.
@@ -95,13 +105,49 @@ def run(argv: list, *, cwd=None, timeout: float | None = None,
     added = dict(env or {})
     if os.environ.get("SCE_AUTHOR_WORK") and cwd is not None:
         added["SCE_FILE_ROOT"] = str(cwd)
+    environment = {**os.environ, **added} if added else None
+    if own_group:
+        return _run_in_own_group(argv, cwd, timeout, stdin_text, environment)
     try:
         return subprocess.run(argv, capture_output=True, text=True, encoding="utf-8",
-                              cwd=cwd, timeout=timeout, input=stdin_text,
-                              env={**os.environ, **added} if added else None)
+                              cwd=cwd, timeout=timeout, input=stdin_text, env=environment)
     except subprocess.TimeoutExpired as exc:
         raise ProcessTimeout(
             f"{os.path.basename(str(argv[0]))} had not finished after {timeout:.0f} s") from exc
+
+
+def _run_in_own_group(argv: list, cwd, timeout: float | None, stdin_text: str | None,
+                      environment: dict | None) -> subprocess.CompletedProcess:
+    """`run` for a program started in a session of its own, whose whole group is stopped when it
+    runs past its clock or this call is interrupted."""
+    child = subprocess.Popen(argv, stdin=subprocess.PIPE if stdin_text is not None else None,
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                             encoding="utf-8", cwd=cwd, env=environment, start_new_session=True)
+    try:
+        out, err = child.communicate(input=stdin_text, timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        _end_group(child)
+        raise ProcessTimeout(
+            f"{os.path.basename(str(argv[0]))} had not finished after {timeout:.0f} s") from exc
+    except BaseException:
+        _end_group(child)
+        raise
+    return subprocess.CompletedProcess(argv, child.returncode, out, err)
+
+
+def _end_group(child: subprocess.Popen) -> None:
+    """Stop everything the program started, collect it and close its pipes. Only while the program
+    is still uncollected: once it is collected its number belongs to nobody, and a signal to it
+    could reach a stranger."""
+    if child.returncode is None:
+        try:
+            os.killpg(child.pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+    for pipe in (child.stdin, child.stdout, child.stderr):
+        if pipe is not None:
+            pipe.close()
+    child.wait()
 
 
 @dataclass(frozen=True)

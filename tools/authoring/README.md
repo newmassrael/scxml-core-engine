@@ -384,10 +384,14 @@ naming the design and `SCE_REVISION_REQUEST` a file that says, per requirement, 
 what to do about it, then the page the owner reads; and it judges again, up to `--rounds` times
 (3 by default, 10 at most). It exits 0 only when the design as it stands is within reach (1: not,
 the rounds used up or a revision that left the violations as they were; 2: nothing could be judged,
-or the reviser failed), and `--out` writes how it ended. Three things it never does: pass a
+or the reviser failed), and `--out` writes how it ended. Four things it never does: pass a
 judgment that saw no evidence (`summary.seen` 0: `not-judged`), pass because the reviser said it
-was done (only the judgment after the last revision decides), or ask again when the answer would
-be the same (`stalled`). It cannot stop a client editing more than it was told to inside one round:
+was done (only the judgment after the last revision decides), pass against a baseline the reviser
+moved (the record is read once and judged as a private copy, and a round after which the record on
+disk is not the bytes it was has failed: `reviser-failed`), or ask again when the answer would
+be the same (`stalled`). The reviser runs in a session of its own, and a timeout stops everything it
+started and not only the command; what it leaves running after it exits is not stopped. The gate
+cannot stop a client editing more than it was told to inside one round:
 that is found after it is made and asked to be put back. `within-reach` is still not "right"
 (`docs/adr/0013-a-revision-is-held-to-its-reach-by-a-loop-its-caller-runs.md`).
 

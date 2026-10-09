@@ -64,6 +64,22 @@ so a caller gives a copy; the accepted design is never touched.
 evidence are joined into a judgment; the tools read it through that, so the loop and the report
 cannot disagree about what was judged.
 
+**The baseline is held, and what a timeout stops is the reviser's whole group.** Two ways a reviser
+could pass a design it had not put right were found in a review of the first version
+(2026-10-09, each reproduced before it was fixed):
+
+- *The record is the baseline, and a reviser that can write to it chooses it.* A reviser told where
+  the acceptance record lies replaced it with the record of the design it had left broken, and the
+  gate answered `within-reach`. The record is now read once (`keep_baseline`), every judgment reads
+  a private read-only copy of those bytes, and `guarded` fails a round after which the record on
+  disk (or its absence) is not the bytes that were hashed (`reviser-failed`, in the words of what
+  moved). Reading the copy also ends a smaller defect: one judgment read the record twice, so a swap
+  between the two reads joined the evidence of one record with the manifest of another.
+- *A timeout that stops the command and not what it started.* `subprocess.run` kills the direct
+  child, and a client runner starts programs. One of them wrote to the design after the gate had said
+  the round was over. The reviser is now started in a session of its own (`process.run`,
+  `own_group`) and, on a timeout, the whole group is killed while its leader is still uncollected.
+
 ## What this does not claim
 
 - **It is not an enforcement inside the client.** A model that edits more than it was told to within
@@ -78,6 +94,16 @@ cannot disagree about what was judged.
   work holds, so a client that finishes a generation is judged after, not before. Judging the draft
   would be a command of the application's core and is not part of this.
 - **The rounds cost what a call to a model costs.** The bound exists so the tenth is not paid for.
+- **It is not a sandbox for the reviser.** The reviser runs with the caller's own rights. The record
+  it was told of is guarded, and the copy the judgment reads is read-only, but a reviser that went
+  looking for that copy in a temporary folder and changed its mode could still move the baseline: no
+  gate run with the reviser's own privileges can stop that, and none is claimed. The design the
+  reviser is told to edit is the one thing it may change.
+- **A program the reviser leaves running after it EXITS is not stopped.** Only a timeout ends a
+  group, because only then is the leader still uncollected and its number still its own; after it
+  has been collected the number belongs to nobody, and a signal to it could reach a stranger
+  (`process.Session.end` says the same). A design edited by such a program after the gate's last
+  judgment is not the design that was judged.
 
 ## What was measured
 
@@ -92,6 +118,15 @@ requirement cites while every requirement's words are carried (a violation):
 4. **Met.** The command line exits 0 for a reviser that puts the design back, 1 for one that
    changes nothing and 2 for one that exits non-zero; `--out` carries how it ended.
 5. **Met.** The judgment `judge` returns is the one `scxml_revision_check` answers.
+6. **Met.** A reviser that replaces the acceptance record with the record of the design it left broken
+   fails its round, through the guard and through the command line (exit 2), and the judgment of the
+   private copy is unmoved by a replaced source. A record the reviser removed is a record that moved.
+7. **Met.** A program the reviser started is gone after a timeout and writes nothing to the design;
+   a command that finishes is read as before.
+
+Each of the fixes in 6 and 7 was put to the tests by breaking it (the session left to the caller's,
+the group kill reduced to a kill of the command, the guard left out of the command line, the
+moved-record check made blind, the private copy left writable) and each was caught.
 
 On judgments made by `revision.join`: every way of ending above is reached on purpose (already within
 reach, one revision, several revisions with fewer places each time, nothing changed, the rounds used

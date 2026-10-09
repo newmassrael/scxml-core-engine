@@ -8,13 +8,17 @@ specification is drafted more than once"): asking it to change only what the del
 request, and a request can be ignored. What can be held is the RESULT. This is the loop a caller
 runs around its client, and it never calls a revision within reach when the judgment did not.
 
-⚠ Three ways a loop of this kind lies, each closed here:
+⚠ Four ways a loop of this kind lies, each closed here:
 
   - success on a verdict that saw nothing. `summary.seen` 0 means no requirement was compared
     (no node cites one, or the kind of document has nowhere to), so `within-reach` says nothing
     about the design: the outcome is `not-judged`, never a pass;
   - success because the reviser said it was done. Only the judgment of the design as it stands,
     made again after every revision, decides; what the reviser reports is not read;
+  - success against a baseline the reviser moved. The acceptance record is what the design is
+    judged against, and a reviser that can write to it can make any design pass by replacing it
+    with the record of that design. `keep_baseline` reads the record once and the judgment is of a
+    private copy; `guarded` fails a round after which the record on disk is not the bytes it was;
   - going on without end or without progress. The rounds are bounded, and a revision that leaves the
     violations exactly as they were stops the loop (`stalled`): the same request would be answered
     the same way.
@@ -28,6 +32,7 @@ judged.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import pathlib
 import shlex
@@ -127,6 +132,59 @@ def judge(delta: object, record: pathlib.Path, root: pathlib.Path,
     return revision.join(delta, json.loads(report)), ""
 
 
+@dataclass(frozen=True)
+class Baseline:
+    """The acceptance record as the gate found it: what the design is judged against.
+
+    A judgment reads the record twice (the product reads the evidence in it, and the words delta is
+    held to the manifest and the sidecar it pins), so a record that is replaced between rounds is
+    not one baseline but a different one each time. The bytes are read ONCE, and `copy`, a private
+    read-only file, is what every judgment reads; `source` is the file the owner keeps, which a
+    reviser may be told of and must not change (`moved`)."""
+    source: pathlib.Path
+    copy: pathlib.Path
+    sha256: str
+
+    def moved(self) -> str:
+        """An empty string while the source is the bytes it was, else the sentence that says it
+        is not (a record that cannot be read is a record that moved)."""
+        try:
+            now = hashlib.sha256(self.source.read_bytes()).hexdigest()
+        except OSError as error:
+            return (f"the acceptance record {self.source} cannot be read after the reviser ran "
+                    f"({error}): the design is judged against the record as it was at the start, "
+                    "and a reviser that touches the baseline has not revised the design")
+        if now == self.sha256:
+            return ""
+        return (f"the reviser changed the acceptance record {self.source}: the design is judged "
+                "against the record as it was at the start, and a reviser that replaces the "
+                "baseline has not revised the design")
+
+
+def keep_baseline(record: pathlib.Path, directory: pathlib.Path) -> Baseline:
+    """Read the acceptance record once and hold a private, read-only copy of it in `directory`.
+
+    The copy is made from the bytes that were hashed, so the hash is of what is judged. The record
+    names its files relative to the root the judgment is given, not to where it lies, so a copy
+    elsewhere is judged the same."""
+    data = record.read_bytes()
+    copy = directory / "acceptance-record.json"
+    copy.write_bytes(data)
+    copy.chmod(0o400)
+    return Baseline(record, copy, hashlib.sha256(data).hexdigest())
+
+
+def guarded(revise: Callable[[str], None], baseline: Baseline) -> Callable[[str], None]:
+    """A reviser that has failed its round if, after it ran, the baseline is not the bytes it was."""
+    def revise_and_check(request: str) -> None:
+        revise(request)
+        moved = baseline.moved()
+        if moved:
+            raise ReviserError(moved)
+
+    return revise_and_check
+
+
 # What a reviser is told to do about each kind of violation. The WHY of a kind is the page's
 # (`revision.render`), which is handed on beside it; these are the directions the page does not give.
 _DIRECTION = {
@@ -223,7 +281,12 @@ def command_reviser(command: str, design: pathlib.Path, *,
     `SCE_REVISION_REQUEST` naming that file and `SCE_REVISION_DESIGN` the design to edit in place.
     A command that exits non-zero, cannot be started or runs past the timeout has failed its round.
     Its own output is kept for the sentence that says so, and is otherwise not read: whether it
-    worked is the judgment's to say."""
+    worked is the judgment's to say.
+
+    ⚠ It runs in a session of its own, and a timeout stops everything it started, not only the
+    command: a client runner starts programs, and one left running would go on editing the design
+    after the gate said the round was over. What a command leaves running after it EXITS is not
+    stopped (`process.run`, `own_group`)."""
     argv = shlex.split(command)
     if not argv:
         raise GateError("the reviser command is empty")
@@ -233,7 +296,7 @@ def command_reviser(command: str, design: pathlib.Path, *,
             asked = pathlib.Path(directory) / "revision-request.md"
             asked.write_text(request, encoding="utf-8")
             try:
-                done = process.run(argv, timeout=timeout_s,
+                done = process.run(argv, timeout=timeout_s, own_group=True,
                                    env={"SCE_REVISION_REQUEST": str(asked),
                                         "SCE_REVISION_DESIGN": str(design)})
             except OSError as error:
