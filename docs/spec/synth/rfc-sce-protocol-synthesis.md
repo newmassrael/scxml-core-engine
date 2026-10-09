@@ -3498,14 +3498,10 @@ least the declared progress.
   so its progress is the lesser of the ring's and the injected
   allocator's, which the document declares (below).
 - *Vyukov intrusive MPSC*: a producer preempted between its exchange
-  on the tail and its store of the link hides every later element
-  from the consumer until it resumes, and in that window `try_pop`
-  returns empty. That is why its pop row is `blocking`, and why a
-  `lock-free` declaration with that cardinality is refused. One producer is
-  no exception: the consumer returns the last node by swapping a stub onto the
-  tail through the producers' own exchange, so the window is the same, and
-  `wait-free` is refused for `one`/`one` too. The histories of this row are
-  judged with `empty_pops` `while-a-push-is-in-flight`.
+  on the tail and its store of the link hides every later element from
+  the consumer, and `try_pop` returns empty then, with one producer too
+  (the stub goes on through the same exchange). So its pop is `blocking`,
+  `lock-free` and `wait-free` are refused; histories use `empty_pops`.
 - *Intrusive pop is never lock-free when either side is `many`, and
   that is final.* The intrusive contract is that the caller gets back
   the very node it pushed and may reuse it at once. Michael-Scott's
