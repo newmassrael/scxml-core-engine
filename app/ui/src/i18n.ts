@@ -357,6 +357,17 @@ const en = {
   aiServerNotAModelList:
     "Something answered, but not as a model server. The address is usually the server's OpenAI-compatible root, such as http://127.0.0.1:11434/v1.",
   aiServerModelPlaceholder: "choose or type a model id",
+  aiServerContext: "Context (tokens)",
+  aiServerContextNote:
+    "How many tokens the model's context holds, if you know it (4096 to 4000000). With it a long conversation is begun again from where it stood before the server has to refuse it; without it, only the server's own refusal does.",
+  aiServerPercent: "Begin again at (%)",
+  aiServerPercentNote:
+    "How full of that context a conversation may be before it is begun again (10 to 95). Empty is 80. It does nothing without the context.",
+  aiServerHandoffs: "Times begun again",
+  aiServerHandoffsNote:
+    "How many times one request may begin its conversation again (0 to 10; 0 gives up at the first). Empty is 2.",
+  aiServerLimitDefault: "default",
+  aiServerLimitNotCount: "This is not a whole number. Type digits only, or leave it empty for the default.",
   aiServerSentTo: "The specification text and your answers are sent to this server when you generate.",
   aiServerThisComputer:
     "The address is on this computer, so what is sent stays here, unless it is a tunnel to another computer.",
@@ -754,6 +765,17 @@ const ko: Record<Key, string> = {
   aiServerNotAModelList:
     "무언가 응답했지만 모델 서버의 응답이 아닙니다. 주소는 보통 서버의 OpenAI 호환 루트이며, 예를 들면 http://127.0.0.1:11434/v1 입니다.",
   aiServerModelPlaceholder: "모델 ID를 고르거나 입력",
+  aiServerContext: "컨텍스트(토큰)",
+  aiServerContextNote:
+    "모델의 컨텍스트가 몇 토큰인지 아는 경우 입력하세요(4096~4000000). 입력하면 긴 대화가 서버에 거절당하기 전에 지금까지의 상태에서 새로 시작합니다. 비워 두면 서버가 직접 거절할 때만 새로 시작합니다.",
+  aiServerPercent: "새로 시작하는 비율(%)",
+  aiServerPercentNote:
+    "컨텍스트가 얼마나 차면 대화를 새로 시작할지입니다(10~95). 비우면 80입니다. 컨텍스트를 입력하지 않으면 아무 효과가 없습니다.",
+  aiServerHandoffs: "새로 시작하는 횟수",
+  aiServerHandoffsNote:
+    "한 요청에서 대화를 새로 시작할 수 있는 최대 횟수입니다(0~10, 0이면 처음 넘칠 때 포기). 비우면 2입니다.",
+  aiServerLimitDefault: "기본값",
+  aiServerLimitNotCount: "정수가 아닙니다. 숫자만 입력하거나, 기본값을 쓰려면 비워 두세요.",
   aiServerSentTo: "생성하면 사양 텍스트와 답변이 이 서버로 전송됩니다.",
   aiServerThisComputer:
     "이 컴퓨터의 주소입니다. 다른 컴퓨터로 가는 터널이 아니라면 전송한 내용은 이 컴퓨터를 벗어나지 않습니다.",

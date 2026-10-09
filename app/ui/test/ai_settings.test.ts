@@ -27,6 +27,7 @@ import type {
   ServerStatus,
 } from "../src/contract";
 import { CommandFailure } from "../src/ipc";
+import { typedCount } from "../src/server_settings";
 import { translate } from "../src/i18n";
 
 const REVISION_1 = "1".repeat(64);
@@ -1555,6 +1556,67 @@ describe("a model server of the person's", () => {
     expect(r.root.textContent).toContain("from the next generation");
     expect(r.settings.connectionForRequest()).toEqual({ id: LOCAL_CONNECTION_ID, revision: REVISION_2 });
     expect(r.settings.targetLine()).toBe("Will ask: office GPU box (qwen3-coder:30b)");
+  });
+
+  it("is saved with the context, the percent and the times it may begin again when they are typed", async () => {
+    const r = await chooseServer({ servers: [[OLLAMA, listed(OLLAMA, ["m"])]] });
+    typeInto(r.root, "#ai-server-name", "box");
+    click(r.root, `[data-address="${OLLAMA}"]`);
+    await settle();
+    typeInto(r.root, "#ai-server-model", "m");
+    typeInto(r.root, "#ai-server-context-tokens", " 40000 ");
+    typeInto(r.root, "#ai-server-handoff-percent", "70");
+    typeInto(r.root, "#ai-server-handoffs", "4");
+
+    click(r.root, "#ai-save");
+    await settle();
+
+    const saved = r.core.asked("save_connection")[0] as { connection: { limits: unknown } };
+    expect(saved.connection.limits).toEqual({
+      ...NO_LIMITS,
+      context_tokens: 40000,
+      handoff_percent: 70,
+      handoffs: 4,
+    });
+  });
+
+  it("shows the limits that are kept, and an empty field is the default and not a zero", async () => {
+    const kept = serverConnection({ limits: { ...NO_LIMITS, turns: 12, context_tokens: 131072, handoffs: 0 } });
+    const r = await chooseServer({
+      listing: { ...KEPT_SERVER, connections: [{ connection: kept, revision: REVISION_1 }] },
+    });
+    const field = (id: string) => r.root.querySelector<HTMLInputElement>(`#${id}`)!.value;
+
+    expect(field("ai-server-context-tokens")).toBe("131072");
+    expect(field("ai-server-handoffs")).toBe("0");
+    expect(field("ai-server-handoff-percent")).toBe("");
+
+    typeInto(r.root, "#ai-server-context-tokens", "");
+    click(r.root, "#ai-save");
+    await settle();
+
+    const saved = r.core.asked("save_connection")[0] as { connection: { limits: unknown } };
+    // Emptied is the default; what is not on this screen (the turns) and what was not touched stay.
+    expect(saved.connection.limits).toEqual({ ...NO_LIMITS, turns: 12, handoffs: 0 });
+  });
+
+  it("is not saved while a limit is typed as something that is not a whole number, and says so", async () => {
+    const r = await chooseServer();
+    typeInto(r.root, "#ai-server-name", "box");
+    typeInto(r.root, "#ai-server-address", OLLAMA);
+    typeInto(r.root, "#ai-server-model", "m");
+    const save = () => r.root.querySelector<HTMLButtonElement>("#ai-save")!;
+    expect(save().disabled).toBe(false);
+
+    for (const typed of ["40k", "-1", "1.5", "1e3"]) {
+      typeInto(r.root, "#ai-server-context-tokens", typed);
+      expect(save().disabled, typed).toBe(true);
+    }
+    typeInto(r.root, "#ai-server-context-tokens", "8192");
+    expect(save().disabled).toBe(false);
+    expect(typedCount("")).toBeNull();
+    expect(typedCount("  12 ")).toBe(12);
+    expect(typedCount("12a")).toBeUndefined();
   });
 
   it("is not saved until it has a name, an address and a model, and typing them is what allows it", async () => {

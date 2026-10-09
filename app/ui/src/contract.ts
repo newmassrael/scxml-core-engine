@@ -323,8 +323,9 @@ export interface Connection {
  * What one generation may spend, as a connection says it; `null` is the application's default. The
  * last three are for a model server: how many times its conversation is begun again when the
  * model's context is full, the model's context in tokens when a person knows it, and how full (in
- * percent) a conversation may be before it is begun again. The screen has no field for them yet,
- * and carries them through a save, so that editing another setting does not lose them.
+ * percent) a conversation may be before it is begun again. The server section has a field for each
+ * of those three; the turns and the seconds have none, and every screen carries what it has no
+ * field for through a save, so that editing another setting does not lose them.
  */
 export interface Limits {
   readonly turns: number | null;

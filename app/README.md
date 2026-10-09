@@ -875,7 +875,10 @@ thousand characters of one and was refused), before the server has to refuse the
 without it only the server's own refusal of a
 prompt longer than the context does, which is the one thing every server can be relied on to say.
 The store refuses a context outside 4096 to 4000000 tokens, a percent outside 10 to 95 and more
-than 10 hand-overs. The screen carries these limits through a save but has no field for them yet.
+than 10 hand-overs. The model server's section of the settings has a field for each of the three
+(empty is the default; what is not a whole number is not saved, and a number outside the ranges is
+refused by the store in its own words); the turns and the seconds have none yet, and a save keeps
+what a screen has no field for.
 
 **A draft need not write the design out a second time.** A model's last message is its draft, and a
 design of tens of thousands of characters written out again is a second chance to drop a brace or a

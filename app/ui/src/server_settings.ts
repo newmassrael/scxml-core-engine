@@ -49,6 +49,27 @@ const PRESETS: readonly { readonly name: string; readonly address: string }[] = 
 /** The id of what the server said, which a screen can bring into view. */
 const STATUS_ID = "ai-server-status";
 
+/** The limits of a connection that are the model server's own to describe, in the order they are drawn. */
+type ServerLimit = "context_tokens" | "handoff_percent" | "handoffs";
+
+/** What each is called and explained as, by the words the screen has for them. */
+const SERVER_LIMITS: readonly { readonly key: ServerLimit; readonly label: Key; readonly note: Key }[] = [
+  { key: "context_tokens", label: "aiServerContext", note: "aiServerContextNote" },
+  { key: "handoff_percent", label: "aiServerPercent", note: "aiServerPercentNote" },
+  { key: "handoffs", label: "aiServerHandoffs", note: "aiServerHandoffsNote" },
+];
+
+/**
+ * A count typed in a field: `null` when it is empty (the application's default), `undefined` when
+ * what is typed is not a count. Whether the count is one the core accepts is the core's to say; the
+ * screen shows its words when it refuses.
+ */
+export function typedCount(text: string): number | null | undefined {
+  const typed = text.trim();
+  if (typed === "") return null;
+  return /^\d{1,9}$/.test(typed) ? Number(typed) : undefined;
+}
+
 export class ServerSection {
   private asked: Asked<ServerStatus> = { phase: "idle" };
   /** The name typed and not yet saved; `undefined` is the one that is kept. */
@@ -57,6 +78,8 @@ export class ServerSection {
   private draftAddress: string | undefined = undefined;
   /** The model typed or chosen and not yet saved; `undefined` is the one that is kept. */
   private draftModel: string | undefined = undefined;
+  /** What was typed in the limit fields and not yet saved; a key that is absent is the one that is kept. */
+  private draftLimits: Partial<Record<ServerLimit, string>> = {};
   /** The buttons as drawn, so that typing can enable them without drawing the fields again. */
   private saveButton: HTMLButtonElement | null = null;
   private checkButtonDrawn: HTMLButtonElement | null = null;
@@ -103,8 +126,9 @@ export class ServerSection {
       // A server that wants a key cannot be used by this build, so none is asked for.
       auth: "none",
       server_url: this.address(),
-      // What a person set outside this screen is theirs: saving a model does not drop it.
-      limits: kept?.connection.limits ?? NO_LIMITS,
+      // What a person set outside this screen is theirs: saving a model does not drop it. The
+      // three the screen has fields for are what is typed over what is kept.
+      limits: this.limits(kept?.connection.limits ?? NO_LIMITS),
     };
   }
 
@@ -113,6 +137,30 @@ export class ServerSection {
     this.draftName = undefined;
     this.draftAddress = undefined;
     this.draftModel = undefined;
+    this.draftLimits = {};
+  }
+
+  /** `kept`, with the fields of this screen as typed. A field that is not a count leaves what is kept. */
+  private limits(kept: Connection["limits"]): Connection["limits"] {
+    const typed = (key: ServerLimit): number | null => {
+      const count = typedCount(this.limitText(key, kept));
+      return count === undefined ? kept[key] : count;
+    };
+    return {
+      ...kept,
+      context_tokens: typed("context_tokens"),
+      handoff_percent: typed("handoff_percent"),
+      handoffs: typed("handoffs"),
+    };
+  }
+
+  /** What a limit field shows: what was typed, else the count that is kept, else nothing. */
+  private limitText(key: ServerLimit, kept: Connection["limits"]): string {
+    return this.draftLimits[key] ?? (kept[key] === null ? "" : String(kept[key]));
+  }
+
+  private keptLimits(): Connection["limits"] {
+    return localConnection(this.env.listing())?.connection.limits ?? NO_LIMITS;
   }
 
   private name(): string {
@@ -133,6 +181,8 @@ export class ServerSection {
   /** Whether what is typed is enough to keep, and is not known to be a server this build cannot use. */
   private canSave(): boolean {
     if (this.name() === "" || this.address() === "" || this.model() === "") return false;
+    const kept = this.keptLimits();
+    if (SERVER_LIMITS.some(({ key }) => typedCount(this.limitText(key, kept)) === undefined)) return false;
     const said = this.status();
     return said === null || (said.state !== "needs-key" && said.state !== "certificate");
   }
@@ -156,6 +206,10 @@ export class ServerSection {
         h("dd", { id: STATUS_ID }, this.checkButton(), ...this.statusLines()),
         h("dt", {}, t("aiModel")),
         h("dd", {}, this.modelField()),
+        ...SERVER_LIMITS.flatMap((limit) => [
+          h("dt", {}, t(limit.label)),
+          h("dd", {}, this.limitField(limit.key, limit.label, limit.note)),
+        ]),
       ),
       h("p", { class: "muted" }, t("aiServerSentTo")),
       ...this.warnings(),
@@ -325,6 +379,37 @@ export class ServerSection {
       ...listed.map((model) => h("option", { value: model })),
     );
     return h("div", {}, field, options);
+  }
+
+  /** A limit of the model: a count, or nothing for the application's own. */
+  private limitField(key: ServerLimit, label: Key, note: Key): HTMLElement {
+    const t = this.env.t;
+    const kept = this.keptLimits();
+    const field = h("input", {
+      id: `ai-server-${key.replace(/_/g, "-")}`,
+      type: "text",
+      inputmode: "numeric",
+      maxlength: "9",
+      autocomplete: "off",
+      "aria-label": t(label),
+      placeholder: t("aiServerLimitDefault"),
+      oninput: (event) => {
+        this.draftLimits[key] = (event.target as HTMLInputElement).value;
+        this.refreshSave();
+      },
+      // Said once the person has left the field, not at each key, which would take the cursor out.
+      onchange: () => this.env.redraw(),
+    });
+    const text = this.limitText(key, kept);
+    field.value = text;
+    const notCount = typedCount(text) === undefined;
+    return h(
+      "div",
+      {},
+      field,
+      h("div", { class: "muted" }, t(note)),
+      notCount ? h("div", { class: "banner banner-warn", role: "status" }, t("aiServerLimitNotCount")) : null,
+    );
   }
 
   /** Where the specification goes, as loudly as it deserves. */
