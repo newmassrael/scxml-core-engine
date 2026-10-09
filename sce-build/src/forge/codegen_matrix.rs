@@ -225,14 +225,13 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
         // RFC §synth-5-P Queue: the algorithms live once per language in
         // that language's forge runtime (SCE_FORGE.md §2.1), so a backend
         // can emit a queue only once its runtime has them. Rust's has
-        // (`sce_forge_runtime::queue`: the Lamport ring and SCQ); the other
-        // five are the RFC's landing order, one runtime at a time, and each
-        // is flipped here with its template and its conformance arm.
+        // (`sce_forge_runtime::queue`: the Lamport ring and SCQ) and so has
+        // C++'s (`sce/forge/queue.h`: the same two); the other four are the
+        // RFC's landing order, one runtime at a time, and each is flipped
+        // here with its template and its conformance arm.
         ForgeKind::Queue => match lang {
-            Language::Rust => true,
-            Language::Cpp | Language::Kotlin | Language::Go | Language::Python | Language::C11 => {
-                false
-            }
+            Language::Rust | Language::Cpp => true,
+            Language::Kotlin | Language::Go | Language::Python | Language::C11 => false,
         },
     }
 }

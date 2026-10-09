@@ -1240,12 +1240,10 @@ pub fn generate_cpp_with_imports_and_externs(
             render_event_schema(&env, m, imports, crate::generator::Language::Cpp)?
         }
         // RFC §synth-5-P: a Queue is lowered on a language once that
-        // language's forge runtime has the algorithms; until
-        // `codegen_matrix::template_ships(Queue, Cpp)` is flipped,
-        // `check()` above has already refused it.
-        ForgeDocument::Queue(_) => {
-            unreachable!("ForgeDocument::Queue rejected by codegen_matrix::check on cpp")
-        }
+        // language's forge runtime has the algorithms. C++'s has the Lamport
+        // ring and SCQ (`sce/forge/queue.h`); the bounded storage mode is
+        // lowered and the others are refused by name inside the render.
+        ForgeDocument::Queue(m) => render_queue_cpp(&env, m, imports, options)?,
     };
 
     let filename = format!("{}.h", filters::to_snake_case(doc.name().to_string()));
@@ -18241,6 +18239,115 @@ fn render_queue_rust(
     _imports: &[ImportContext],
     options: &crate::ForgeCompileOptions,
 ) -> Result<String, ForgeError> {
+    let inputs = resolve_queue_render_inputs(m, options, crate::generator::Language::Rust)?;
+    let tmpl = env.get_template("queue.rs.jinja2").map_err(|e| {
+        ForgeError::from(GenerateError::TemplateLoad(format!(
+            "queue.rs.jinja2 (rust): {e}"
+        )))
+    })?;
+    let element = rust_stored_element(&m.element_type, options);
+    let ctx = minijinja::context! {
+        name => &m.name,
+        pascal => filters::to_pascal_case(m.name.clone()),
+        element_snake => element.snake,
+        element_import => element.import,
+        element_stored => element.stored,
+        capacity => inputs.capacity,
+        ring_slots => inputs.ring_slots,
+        participants => inputs.participants,
+        // The runtime module is the lower-case of its type: `Spsc` in
+        // `queue::spsc`, `Scq` in `queue::scq`.
+        runtime_module => inputs.runtime_type.to_lowercase(),
+        runtime_type => inputs.runtime_type,
+        algorithm => inputs.algorithm,
+        producers => inputs.producers,
+        consumers => inputs.consumers,
+        declared_progress => inputs.declared_progress,
+        push_progress => inputs.push_progress,
+        pop_progress => inputs.pop_progress,
+        runtime_dep => "sce_forge_runtime::queue",
+    };
+    tmpl.render(ctx).map_err(|e| {
+        ForgeError::from(GenerateError::TemplateRender(format!(
+            "queue.rs.jinja2 (rust): {e}"
+        )))
+    })
+}
+
+/// Render a `<sce:kind="queue">` document for the C++ backend (SCE
+/// Protocol-Synthesis RFC §synth-5-P). The generated header names the queue
+/// type the selection table picks from `sce/forge/queue.h`, over the element
+/// document's generated type, and states the contract and what the algorithm
+/// gives as constants, exactly as the Rust module does. Bounded storage only,
+/// for the reason `render_queue_rust` gives.
+fn render_queue_cpp(
+    env: &minijinja::Environment<'_>,
+    m: &crate::forge::model::QueueModel,
+    _imports: &[ImportContext],
+    options: &crate::ForgeCompileOptions,
+) -> Result<String, ForgeError> {
+    let inputs = resolve_queue_render_inputs(m, options, crate::generator::Language::Cpp)?;
+    let tmpl = env.get_template("queue.h.jinja2").map_err(|e| {
+        ForgeError::from(GenerateError::TemplateLoad(format!(
+            "queue.h.jinja2 (cpp): {e}"
+        )))
+    })?;
+    let ctx = minijinja::context! {
+        name => &m.name,
+        pascal => filters::to_pascal_case(m.name.clone()),
+        namespace => filters::to_pascal_case(m.name.clone()),
+        guard => format!("SCE_FORGE_{}_H", to_upper_snake(&m.name)),
+        element_pascal => filters::to_pascal_case(m.element_type.clone()),
+        element_snake => filters::to_snake_case(m.element_type.clone()),
+        capacity => inputs.capacity,
+        ring_slots => inputs.ring_slots,
+        participants => inputs.participants,
+        runtime_type => inputs.runtime_type,
+        algorithm => inputs.algorithm,
+        producers => inputs.producers,
+        consumers => inputs.consumers,
+        declared_progress => inputs.declared_progress,
+        push_progress => inputs.push_progress,
+        pop_progress => inputs.pop_progress,
+        runtime_dep => "sce/forge/queue.h",
+    };
+    tmpl.render(ctx).map_err(|e| {
+        ForgeError::from(GenerateError::TemplateRender(format!(
+            "queue.h.jinja2 (cpp): {e}"
+        )))
+    })
+}
+
+/// What a bounded queue's render needs whatever the language: the numbers
+/// resolved, the algorithm the selection table gave, and the words stating the
+/// contract and what it gives. Resolved once so no language re-derives them.
+struct QueueRenderInputs {
+    capacity: u32,
+    participants: Option<u32>,
+    /// The size of each of an SCQ row's two index rings; `None` for a Lamport
+    /// ring, which has none.
+    ring_slots: Option<u32>,
+    /// The runtime's name for the selected queue: `Spsc` or `Scq`.
+    runtime_type: &'static str,
+    algorithm: &'static str,
+    producers: &'static str,
+    consumers: &'static str,
+    declared_progress: &'static str,
+    push_progress: &'static str,
+    pop_progress: &'static str,
+}
+
+/// Resolve a queue document for a language whose runtime has the `bounded`
+/// storage mode, or refuse it by name: `segmented` and `intrusive` are valid
+/// documents that are refused (`queue/storage-runtime-missing`) until their
+/// algorithms land in that language's runtime. Capacity and participants take
+/// their constant, or the number `compile_forge_with_deploy` resolved from the
+/// deploy file; a deploy key without one is refused rather than guessed.
+fn resolve_queue_render_inputs(
+    m: &crate::forge::model::QueueModel,
+    options: &crate::ForgeCompileOptions,
+    language: crate::generator::Language,
+) -> Result<QueueRenderInputs, ForgeError> {
     use crate::forge::model::{
         CapacitySource, QueueAlgorithm, QueueCardinality, QueueProgress, QueueStorage,
     };
@@ -18255,7 +18362,7 @@ fn render_queue_rust(
         return Err(ForgeError::from(GenerateError::QueueStorageRuntimeMissing {
             queue_name: m.name.clone(),
             storage: storage.to_string(),
-            language: "rust".to_string(),
+            language: crate::forge::codegen_matrix::language_wire_name(language).to_string(),
             implemented: "bounded".to_string(),
         })
         .at_line(m.storage_line));
@@ -18305,9 +18412,9 @@ fn render_queue_rust(
         QueueAlgorithm::Scq => Some(capacity.max(participants.unwrap_or(1)).next_power_of_two()),
         _ => None,
     };
-    let (runtime_module, runtime_type) = match selection.algorithm {
-        QueueAlgorithm::LamportRing => ("spsc", "Spsc"),
-        QueueAlgorithm::Scq => ("scq", "Scq"),
+    let runtime_type = match selection.algorithm {
+        QueueAlgorithm::LamportRing => "Spsc",
+        QueueAlgorithm::Scq => "Scq",
         // The selection table gives `bounded` storage the Lamport ring or SCQ
         // and nothing else (`QueueModel::selection`), and any other storage
         // was refused above.
@@ -18322,36 +18429,17 @@ fn render_queue_rust(
         QueueProgress::LockFree => "lock-free",
         QueueProgress::Blocking => "blocking",
     };
-
-    let tmpl = env.get_template("queue.rs.jinja2").map_err(|e| {
-        ForgeError::from(GenerateError::TemplateLoad(format!(
-            "queue.rs.jinja2 (rust): {e}"
-        )))
-    })?;
-    let element = rust_stored_element(&m.element_type, options);
-    let ctx = minijinja::context! {
-        name => &m.name,
-        pascal => filters::to_pascal_case(m.name.clone()),
-        element_snake => element.snake,
-        element_import => element.import,
-        element_stored => element.stored,
-        capacity => capacity,
-        ring_slots => ring_slots,
-        participants => participants,
-        runtime_module => runtime_module,
-        runtime_type => runtime_type,
-        algorithm => selection.algorithm.name(),
-        producers => cardinality(m.producers),
-        consumers => cardinality(m.consumers),
-        declared_progress => progress(m.progress),
-        push_progress => progress(selection.push),
-        pop_progress => progress(selection.pop),
-        runtime_dep => "sce_forge_runtime::queue",
-    };
-    tmpl.render(ctx).map_err(|e| {
-        ForgeError::from(GenerateError::TemplateRender(format!(
-            "queue.rs.jinja2 (rust): {e}"
-        )))
+    Ok(QueueRenderInputs {
+        capacity,
+        participants,
+        ring_slots,
+        runtime_type,
+        algorithm: selection.algorithm.name(),
+        producers: cardinality(m.producers),
+        consumers: cardinality(m.consumers),
+        declared_progress: progress(m.progress),
+        push_progress: progress(selection.push),
+        pop_progress: progress(selection.pop),
     })
 }
 

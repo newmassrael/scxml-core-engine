@@ -1,0 +1,96 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{{ sce_map.source_marker(source_location, "cpp", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="queue")
+// Runtime: {{ runtime_dep }}
+// Do not edit — regenerate from the source SCXML file.
+//
+// SCE Protocol-Synthesis RFC §synth-5-P queue — a first-in first-out queue
+// that hands elements from one execution context to another. The document
+// states the contract (element type, {{ producers }} producer(s), {{ consumers }}
+// consumer(s), `{{ declared_progress }}`) and names no algorithm; the algorithm
+// below is what the selection table gives that contract, and the memory
+// ordering is part of it, not a choice.
+//
+// Selected: {{ algorithm }}. Push is {{ push_progress }}, pop is {{ pop_progress }}.
+//
+// Operations (from `SCE::Forge::Queue`):
+//   producer() / consumer()      a handle, or std::nullopt when every place of
+//                                that side is taken; a handle gives its place
+//                                back when it is destroyed
+//   try_push(T&&) -> PushStatus  Ok moves the element in; Full leaves the
+//                                argument as it was
+//   try_pop() -> std::optional<T>
+//   capacity()                   a compile-time constant
+
+#pragma once
+#ifndef {{ guard }}
+#define {{ guard }}
+
+{% if ring_slots %}
+#include <atomic>
+{% endif %}
+#include <cstddef>
+#include <cstdint>
+#include <string_view>
+
+#include "sce/forge/queue.h"
+#include "{{ element_snake }}.h"
+
+namespace SCE::Generated::{{ namespace }} {
+
+using {{ element_pascal }}Type = ::SCE::Generated::{{ element_pascal }}::{{ element_pascal }};
+
+/// The most elements the queue holds (`<sce:bounded>`).
+inline constexpr std::size_t CAPACITY = {{ capacity }};
+{% if ring_slots %}
+
+/// Slots in each of the queue's two index rings: a power of two, at least
+/// `CAPACITY` and at least `PARTICIPANTS`. The algorithm's empty test is
+/// justified only for as many producers or consumers as the ring has slots
+/// (Nikolaev 2019 §5.1), so the ring is sized by both.
+inline constexpr std::size_t RING_SLOTS = {{ ring_slots }};
+
+/// The most execution contexts that hold a handle on one side at the same
+/// time (`<sce:participants>`). The queue hands out no more handles than
+/// `RING_SLOTS` on either side.
+inline constexpr std::size_t PARTICIPANTS = {{ participants }};
+
+/// How many operations a participant may be delayed between reading a ring
+/// entry and acting on it before it could be misled: 2^62 for the 64-bit
+/// entries this ring keeps, which at 10^9 operations a second is 146 years
+/// (RFC §synth-5-P, *Counter width*).
+inline constexpr std::uint64_t WRAP_BOUND_OPS = ::SCE::Forge::Queue::kWrapBoundOps;
+
+// The ring's entries are 64-bit atomics. A target without lock-free ones
+// cannot build this queue, and says so here instead of deep in the runtime.
+static_assert(std::atomic<std::uint64_t>::is_always_lock_free,
+              "this queue's ring needs lock-free 64-bit atomics, which the target does not have");
+{% endif %}
+
+/// What the document requires of push and pop (`<sce:progress>`).
+inline constexpr std::string_view DECLARED_PROGRESS = "{{ declared_progress }}";
+/// What the selected algorithm gives push.
+inline constexpr std::string_view PUSH_PROGRESS = "{{ push_progress }}";
+/// What the selected algorithm gives pop.
+inline constexpr std::string_view POP_PROGRESS = "{{ pop_progress }}";
+/// The algorithm the selection table gave this contract.
+inline constexpr std::string_view ALGORITHM = "{{ algorithm }}";
+
+/// The queue. It owns its storage and allocates nothing, so it may be a
+/// static; elements still in it when it is destroyed are destroyed with it.
+{% if ring_slots %}
+using {{ pascal }} = ::SCE::Forge::Queue::{{ runtime_type }}<{{ element_pascal }}Type, CAPACITY, RING_SLOTS>;
+{% else %}
+using {{ pascal }} = ::SCE::Forge::Queue::{{ runtime_type }}<{{ element_pascal }}Type, CAPACITY>;
+{% endif %}
+
+/// The bytes of storage the queue occupies, for a target that budgets them.
+inline constexpr std::size_t STORAGE_BYTES = sizeof({{ pascal }});
+
+}  // namespace SCE::Generated::{{ namespace }}
+
+#endif  // {{ guard }}

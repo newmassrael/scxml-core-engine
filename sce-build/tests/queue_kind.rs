@@ -371,8 +371,8 @@ fn an_unknown_cardinality_word_is_refused() {
 
 // ─── Rust emit ───
 
-fn template_dir() -> PathBuf {
-    sce_build::find_template_dir_for(Language::Rust)
+fn template_dir(language: Language) -> PathBuf {
+    sce_build::find_template_dir_for(language)
 }
 
 /// The element document: a `sensor` value and a `next` field, the one an
@@ -391,8 +391,18 @@ fn codec_doc(name: &str) -> String {
     )
 }
 
-/// Compile the queue with its element codec; the queue's single file body.
+/// Compile the queue with its element codec for Rust; the queue's single file
+/// body.
 fn compile(queue_xml: &str, queue_basename: &str) -> Result<String, Located<ForgeError>> {
+    compile_for(Language::Rust, queue_xml, queue_basename)
+}
+
+/// The same for `language`.
+fn compile_for(
+    language: Language,
+    queue_xml: &str,
+    queue_basename: &str,
+) -> Result<String, Located<ForgeError>> {
     let dir = tempdir().expect("tempdir");
     let codec_path = dir.path().join("rx_event.scxml");
     fs::write(&codec_path, codec_doc("rx_event")).expect("write codec");
@@ -401,8 +411,8 @@ fn compile(queue_xml: &str, queue_basename: &str) -> Result<String, Located<Forg
     let outputs = compile_scxml_with_imports(
         &[],
         &[codec_path.as_path(), queue_path.as_path()],
-        &template_dir(),
-        Language::Rust,
+        &template_dir(language),
+        language,
         &ForgeCompileOptions::default(),
         None,
     )?;
@@ -553,6 +563,114 @@ fn a_deploy_key_capacity_is_not_lowered_as_if_it_were_a_constant() {
         err.error.to_string().contains("machines.m.limits.frames"),
         "the refusal names the key: {err}"
     );
+}
+
+// ─── C++ emit ───
+
+#[test]
+fn a_lamport_ring_emits_the_cpp_runtime_type_and_no_ring_constants() {
+    let xml = queue_doc(
+        "frame_queue",
+        "one",
+        "one",
+        "wait-free",
+        r#"<sce:bounded capacity="8"/>"#,
+    );
+    let code = compile_for(Language::Cpp, &xml, "frame_queue.scxml").expect("spsc queue emits");
+    assert!(
+        code.contains("namespace SCE::Generated::FrameQueue {"),
+        "{code}"
+    );
+    assert!(code.contains("#include \"sce/forge/queue.h\""), "{code}");
+    assert!(code.contains("#include \"rx_event.h\""), "{code}");
+    assert!(
+        code.contains("inline constexpr std::size_t CAPACITY = 8;"),
+        "{code}"
+    );
+    assert!(
+        code.contains("using FrameQueue = ::SCE::Forge::Queue::Spsc<RxEventType, CAPACITY>;"),
+        "{code}"
+    );
+    assert!(
+        code.contains("DECLARED_PROGRESS = \"wait-free\";"),
+        "{code}"
+    );
+    assert!(
+        !code.contains("RING_SLOTS") && !code.contains("<atomic>"),
+        "a Lamport ring has no index rings:\n{code}"
+    );
+}
+
+#[test]
+fn an_scq_ring_is_sized_the_same_way_in_cpp() {
+    // Capacity 6 and 5 participants: the next power of two at or above both.
+    let xml = queue_doc(
+        "work_queue",
+        "many",
+        "many",
+        "lock-free",
+        r#"<sce:bounded capacity="6"/><sce:participants const="5"/>"#,
+    );
+    let code = compile_for(Language::Cpp, &xml, "work_queue.scxml").expect("scq queue emits");
+    assert!(
+        code.contains("inline constexpr std::size_t RING_SLOTS = 8;"),
+        "{code}"
+    );
+    assert!(
+        code.contains("inline constexpr std::size_t PARTICIPANTS = 5;"),
+        "{code}"
+    );
+    assert!(
+        code.contains(
+            "using WorkQueue = ::SCE::Forge::Queue::Scq<RxEventType, CAPACITY, RING_SLOTS>;"
+        ),
+        "{code}"
+    );
+    assert!(
+        code.contains("std::atomic<std::uint64_t>::is_always_lock_free"),
+        "the row asserts the atomics it needs:\n{code}"
+    );
+    assert!(
+        code.contains("WRAP_BOUND_OPS = ::SCE::Forge::Queue::kWrapBoundOps;"),
+        "{code}"
+    );
+}
+
+#[test]
+fn a_storage_the_cpp_runtime_lacks_is_refused_by_name() {
+    for (fixture, storage) in [
+        ("queue_segmented_lscq.scxml", "segmented"),
+        ("queue_intrusive_mpsc.scxml", "intrusive"),
+    ] {
+        let located = compile_for(Language::Cpp, &resource(fixture), fixture)
+            .expect_err("a storage without a runtime is refused");
+        let text = resource(fixture);
+        let row = located
+            .location
+            .line
+            .expect("the refusal carries the storage element's row");
+        let line = text.lines().nth(row as usize - 1).expect("the row exists");
+        assert!(
+            line.contains(&format!("<sce:{storage}")),
+            "{fixture}: row {row} is not the storage element: {line}"
+        );
+        match located.error {
+            ForgeError::Generate(boxed) => match *boxed {
+                GenerateError::QueueStorageRuntimeMissing {
+                    storage: got,
+                    language,
+                    implemented,
+                    ..
+                } => {
+                    assert_eq!(got, storage);
+                    assert_eq!(language, "cpp");
+                    assert_eq!(implemented, "bounded");
+                }
+                other => panic!("expected QueueStorageRuntimeMissing, got {other:?}"),
+            },
+            other => panic!("expected a generate error, got {other:?}"),
+        }
+    }
 }
 
 // ─── Cross-document resolution ───
