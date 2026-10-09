@@ -421,7 +421,11 @@ changed, and each is a case of a judgment that was made in one place and not in 
    and the answer is the verdict, the rows, the revisions the two states are about and the page,
    or `revision-not-judged` in the sentence a person is told (a list that keeps no lineage and
    no sidecar says nothing of its words; an acceptance that pinned another manifest than the
-   list it was taken of is not about it). `works_revision_check` and `works_revision_report` are
+   list it was taken of is not about it), or `revision-not-current` when the text was changed
+   after the model or the list was written for it (the list the work holds is then the accepted
+   one, and comparing it with itself would call a revision nobody made "all carried over"; only
+   a part known to be written for an earlier text is held back, and the refusal names which).
+   `works_revision_check` and `works_revision_report` are
    now that command and nothing more, so the screen and the tools judge a revision with one
    implementation. The Python `revision.py` and `requirement_lineage.py` stay as the reference
    the cases are written from, and as the judgment of the tools that are handed a delta and a

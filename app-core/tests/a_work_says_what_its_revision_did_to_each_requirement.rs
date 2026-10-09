@@ -15,7 +15,10 @@
 //! * a revision that drops a sentence retires its id cleanly, and the design moving where the
 //!   words did not is outside the reach of the revision;
 //! * a list that keeps no lineage and no sidecar is refused in the sentence a person is told,
-//!   and the specification's sentences are on the page only when asked for.
+//!   and the specification's sentences are on the page only when asked for;
+//! * a text changed after the model and the list were written for it holds the report back
+//!   (`revision-not-current`), because the list the work has is then the one the owner accepted
+//!   and comparing it with itself would call a revision nobody made "all carried over".
 
 mod common;
 
@@ -138,6 +141,87 @@ fn an_accepted_work_that_was_not_touched_carries_every_requirement_over() {
     let page = report["page"].as_str().unwrap();
     assert!(page.contains("Verdict: within-reach"), "{page}");
     assert!(page.contains("## Carries over (5)"), "{page}");
+}
+
+/// The text of the work changed to `text`, with nothing written again for it.
+fn text_changed(store: &WorkStore<FixedClock>, id: &str, source: &Value, text: &str) -> Value {
+    command(
+        store,
+        "save_source",
+        json!({"id": id, "text": text, "base": source}),
+    )
+    .unwrap()["revision"]
+        .clone()
+}
+
+#[test]
+fn a_text_changed_after_the_list_was_written_holds_the_report_back() {
+    let (store, id, source, _) = accepted("report-behind", list("first"));
+    text_changed(&store, &id, &source, "The lamp starts on.");
+
+    let refused = command(&store, "read_revision_report", json!({"id": id})).unwrap_err();
+
+    assert_eq!(refused.kind, "revision-not-current", "{refused:?}");
+    // It says what is behind and what to do, in the words a person is told.
+    for part in ["requirement list", "model", "generate"] {
+        assert!(refused.message.contains(part), "{refused:?}");
+    }
+    assert_eq!(refused.detail["requirements"], "behind", "{refused:?}");
+    assert_eq!(refused.detail["model"], "behind", "{refused:?}");
+}
+
+#[test]
+fn a_list_written_for_the_new_text_is_not_held_back_by_a_model_that_was_not() {
+    let (store, id, source, held) = accepted("report-model-behind", list("first"));
+    let changed = text_changed(&store, &id, &source, "The lamp starts on.");
+    revised_to(&store, &id, &changed, &held, "second");
+
+    let refused = command(&store, "read_revision_report", json!({"id": id})).unwrap_err();
+
+    // The list is current and the model is not: what is held back is named, and what is not
+    // is not blamed.
+    assert_eq!(refused.kind, "revision-not-current", "{refused:?}");
+    assert_eq!(refused.detail["requirements"], "current", "{refused:?}");
+    assert_eq!(refused.detail["model"], "behind", "{refused:?}");
+}
+
+#[test]
+fn a_model_and_a_list_written_again_for_the_new_text_are_judged_again() {
+    let (store, id, source, held) = accepted("report-written-again", list("first"));
+    let changed = text_changed(&store, &id, &source, "The lamp starts on.");
+    let snapshot = command(&store, "read_work_snapshot", json!({"id": id})).unwrap();
+    command(
+        &store,
+        "save_model",
+        json!({"id": id, "text": "<scxml><state id=\"b\"/></scxml>",
+               "base": snapshot["model"]["revision"], "written_for": changed}),
+    )
+    .unwrap();
+    revised_to(&store, &id, &changed, &held, "second");
+
+    let answer = command(&store, "read_revision_report", json!({"id": id})).unwrap();
+
+    assert!(answer["report"]["verdict"].is_string(), "{answer}");
+}
+
+#[test]
+fn a_model_that_says_nothing_of_its_text_is_not_known_to_be_behind() {
+    // Only a state known to be behind is held back; one that cannot say what it was written
+    // for is judged as it was before the report asked. (An acceptance is never taken of one,
+    // so it comes about by a model saved again after it.)
+    let (store, id, _, _) = accepted("report-unstated", list("first"));
+    let snapshot = command(&store, "read_work_snapshot", json!({"id": id})).unwrap();
+    command(
+        &store,
+        "save_model",
+        json!({"id": id, "text": "<scxml><state id=\"b\"/></scxml>",
+               "base": snapshot["model"]["revision"]}),
+    )
+    .unwrap();
+
+    let answer = command(&store, "read_revision_report", json!({"id": id})).unwrap();
+
+    assert!(answer["report"]["verdict"].is_string(), "{answer}");
 }
 
 #[test]

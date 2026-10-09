@@ -448,6 +448,13 @@ fn replies() -> Value {
     let held = answer(&store, "read_acceptance", json!({"id": accepted_id}));
     let acceptance_revision = held["acceptance"]["revision"].clone();
     answers.insert("read_acceptance".into(), held);
+    // A list that keeps no lineage and no sidecar of its words says nothing of its words. Asked
+    // while the work is as it was accepted: a work moved under its acceptance is held back
+    // first (`revision-not-current`, below).
+    refusals.insert(
+        "revision-not-judged".into(),
+        refusal(&store, "read_revision_report", json!({"id": accepted_id})),
+    );
     // What moved since the owner accepted: nothing yet.
     answers.insert(
         "read_acceptance_delta".into(),
@@ -1455,10 +1462,17 @@ fn replies() -> Value {
         "read_revision_report_none".into(),
         answer(&store, "read_revision_report", json!({"id": id})),
     );
-    // A list that keeps no lineage and no sidecar says nothing of its words.
+    // A text changed after the model and the list were written for it: nothing to compare yet.
+    answer(
+        &store,
+        "save_source",
+        json!({"id": revision_id,
+               "text": "The blind rises. The blind stops at the top. The blind locks there.",
+               "base": revision_head}),
+    );
     refusals.insert(
-        "revision-not-judged".into(),
-        refusal(&store, "read_revision_report", json!({"id": accepted_id})),
+        "revision-not-current".into(),
+        refusal(&store, "read_revision_report", json!({"id": revision_id})),
     );
 
     // A command without a written-down reply is a command the screen's test

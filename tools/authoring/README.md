@@ -1104,7 +1104,10 @@ application opens (`SCE_WORKS_DIR`, else the per-user data directory).
   counted apart and `summary.seen` saying how many were actually compared). A list made
   before lineages is adopted from its manifest and sidecar; one with neither is refused in
   words (`revision-not-judged`), and so is an acceptance that pinned another manifest or
-  another sidecar than the list it was taken of. `works_revision_report` is the page the owner
+  another sidecar than the list it was taken of. A text changed after the model or the list was
+  written for it is held back (`revision-not-current`, naming which is behind): the list the
+  work holds is then the accepted one, and comparing it with itself would call a revision
+  nobody made "all carried over". `works_revision_report` is the page the owner
   reads, with a requirement's sentence printed only with `sentences: true`. Nothing is accepted
   by either, and both are for local servers.
 - **A model can be asked for, and written for the request.** The owner asks for a

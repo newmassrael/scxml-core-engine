@@ -267,7 +267,10 @@ const SETTINGS_WRITE: &[&str] = &[
 /// and the page an owner reads, judged by the product and not by the client that revises. A
 /// screen written for 21 does not ask for it, and a core of 21 would refuse it as
 /// `unknown-command`. A list the product cannot say anything of the words of is refused as
-/// `revision-not-judged`, in the sentence a person is told.
+/// `revision-not-judged`, in the sentence a person is told, and a report asked for after the
+/// text was changed and before the model or the list was written again for it is refused as
+/// `revision-not-current`, naming which is behind (a refusal kind a screen shows in its words
+/// and does not branch on, so it is no new version).
 pub const COMMAND_SET_VERSION: u32 = 22;
 
 /// A command that did not do what was asked, in a shape every shell can pass on.
@@ -868,6 +871,40 @@ fn now_of(
         model_written_for: model.written_for,
         requirements_written_for: requirements.written_for,
     })
+}
+
+/// A report of what a revision did is about the model and the list written for the text the
+/// work has now. When the text was changed and one of them was not written again, the list the
+/// work holds is the list the owner accepted (or an earlier one) and comparing the two would
+/// call it "all carried over" for a revision nobody made. Only a part known to be written for
+/// an earlier text is held back: one that cannot say what it was written for is judged as it
+/// always was (an acceptance is never taken of one, so it is one saved after).
+fn refuse_what_is_behind_the_text(now: &WorkNow) -> Result<(), CommandError> {
+    let head = &now.basis.source;
+    let requirements = standing(now.requirements_written_for.as_ref(), Some(head));
+    let model = standing(now.model_written_for.as_ref(), Some(head));
+    let behind: Vec<&str> = [("requirement list", requirements), ("model", model)]
+        .into_iter()
+        .filter(|(_, standing)| *standing == "behind")
+        .map(|(name, _)| name)
+        .collect();
+    if behind.is_empty() {
+        return Ok(());
+    }
+    let (names, verb) = (
+        behind.join(" and the "),
+        if behind.len() == 1 { "was" } else { "were" },
+    );
+    Err(CommandError::from(StoreError::refused(
+        "revision-not-current",
+        format!(
+            "the specification was changed after the {names} {verb} written for it, so a report \
+             would compare the list the owner accepted with one that does not answer the text \
+             as it is now, and call that a revision. Ask for the report again after you \
+             generate the {names} for the text as it is now"
+        ),
+        json!({ "requirements": requirements, "model": model, "source_head": head }),
+    )))
 }
 
 /// A saved model as the screens read it: its revision and what it was written for,
@@ -2081,6 +2118,7 @@ fn call_works<C: Clock>(
                 .requirements
                 .ok_or_else(|| none_saved("a requirement list", &id))?;
             let now = now_of(source, model, requirements, state.answers)?;
+            refuse_what_is_behind_the_text(&now)?;
             let lines = renderer.delta_acceptance(&now.snapshot, &acceptance.record)?;
             // The list the owner accepted is the work's own, read at the revision the
             // acceptance names: the words side is derived from two states of one chain.

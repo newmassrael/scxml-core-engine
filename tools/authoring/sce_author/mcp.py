@@ -3674,7 +3674,7 @@ def _work_revision_report(work: str, sentences: bool) -> tuple[dict | None, dict
     try:
         read = works.read_revision_report(work, sentences)
     except works.WorksError as exc:
-        if exc.kind == "revision-not-judged":
+        if exc.kind in ("revision-not-judged", "revision-not-current"):
             # The sentence a person is told, as the judgment gave it.
             return None, _failure(str(exc))
         return None, _works_refused(exc)

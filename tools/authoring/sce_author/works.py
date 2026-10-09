@@ -195,8 +195,9 @@ def read_revision_report(work: str, sentences: bool = False) -> dict:
     what the design's evidence did, whether the revision stayed within the reach of what
     changed, and the page an owner reads (`report.page`; with `sentences`, carrying the
     specification's sentences). `report` is `None` for a work nobody accepted. A list the product
-    can say nothing of the words of is refused as `revision-not-judged`, in the sentence a person
-    is told."""
+    can say nothing of the words of is refused as `revision-not-judged`, and a work whose text was
+    changed after its model or list was written for it as `revision-not-current` (there is
+    nothing to compare yet), each in the sentence a person is told."""
     return call_work("read_revision_report", {"id": work, "sentences": sentences})
 
 

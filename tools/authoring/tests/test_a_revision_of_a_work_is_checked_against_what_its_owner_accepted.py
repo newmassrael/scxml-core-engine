@@ -225,6 +225,24 @@ class ARevisionOfAWork(unittest.TestCase):
         self.assertTrue(refused.get("isError"), body(refused))
         self.assertIn("nothing was accepted", body(refused))
 
+    def test_a_text_changed_before_the_list_and_design_were_written_again_is_held_back(self):
+        # The owner revised the text and the client has not written for it yet: the list the
+        # work holds is the one that was accepted, and comparing it with itself would report a
+        # revision nobody made as every requirement carried over.
+        self.accepted_lamp()
+        self.write_text(SECOND)
+        for tool in ("works_revision_check", "works_revision_report"):
+            with self.subTest(tool):
+                refused = call(tool, work=self.work)
+                self.assertTrue(refused.get("isError"), body(refused))
+                self.assertIn("generate the requirement list and the model", body(refused))
+        # Written again for the text as it is, the same work is judged.
+        source = self.write_text(SECOND)
+        self.save_list(self.build(SECOND, [ON, SWITCH]), source)
+        self.save_design(design(), source)
+        judged = call("works_revision_check", work=self.work)
+        self.assertFalse(judged.get("isError"), body(judged))
+
     def test_a_list_with_no_lineage_and_no_sidecar_cannot_be_compared_and_says_why(self):
         # The accepted list was saved as a client that knew of neither might save it: a manifest
         # alone. No lineage is kept and none can be made (the words behind its ids are in the

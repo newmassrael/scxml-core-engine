@@ -2734,6 +2734,15 @@
       "kind": "request-held",
       "message": "the request <request-id> is held by `adapter-a` until 2026-10-03T09:01:00Z; the one that holds it renews"
     },
+    "revision-not-current": {
+      "detail": {
+        "model": "behind",
+        "requirements": "behind",
+        "source_head": "7c213113e02e6ccb798c375bdeeeb6dfadf4449900ff66a44f68ff4987c4a546"
+      },
+      "kind": "revision-not-current",
+      "message": "the specification was changed after the requirement list and the model were written for it, so a report would compare the list the owner accepted with one that does not answer the text as it is now, and call that a revision. Ask for the report again after you generate the requirement list and the model for the text as it is now"
+    },
     "revision-not-judged": {
       "detail": {},
       "kind": "revision-not-judged",
