@@ -100,6 +100,22 @@ for i in "${!FIXTURES[@]}"; do
         --go-module-prefix "$GO_MODULE_PREFIX" >/dev/null
 done
 
+# The queue kind's fixtures (RFC §synth-5-P). They assert no numerical oracle
+# value, so the catalog does not list them; the queue's package imports its
+# element's package by the same prefix, so they are generated into the same
+# tree. queue_generated_test.go compiles them against the runtime and uses the
+# queues.
+QUEUE_FIXTURES=(queue_conformance_event queue_conformance_spsc queue_conformance_scq)
+for fixture in "${QUEUE_FIXTURES[@]}"; do
+    pkg_dir="$OUT_DIR/$fixture"
+    mkdir -p "$pkg_dir"
+    "$SCE_CODEGEN" generate \
+        "$RESOURCE_DIR/$fixture.scxml" \
+        --language go \
+        --output-dir "$pkg_dir/" \
+        --go-module-prefix "$GO_MODULE_PREFIX" >/dev/null
+done
+
 # Render the test harness itself from the shared template.
 "$SCE_CODEGEN" generate-conformance \
     --language go \
