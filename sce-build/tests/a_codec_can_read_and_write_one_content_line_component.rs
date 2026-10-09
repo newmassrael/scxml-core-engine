@@ -421,6 +421,34 @@ fn a_repeated_property_takes_parameters_and_a_line_may_hold_a_list_of_values() {
     );
 }
 
+/// A parameter that is required is required of each line that exists, so on a
+/// repeated property it needs no required property to be missing from; on a
+/// single-valued property it still does (docs/adr/0014).
+#[test]
+fn a_required_parameter_of_a_repeated_property_is_required_of_each_line() {
+    let repeated = |required: &str| {
+        document(
+            "",
+            &format!(
+                r#"    <data id="a" sce:type="string" sce:property="A" sce:max-count="3" sce:max-size="8"{required}/>
+    <data id="aRole" sce:type="string" sce:property="A" sce:param="ROLE" sce:max-size="8" sce:required="true"/>"#
+            ),
+        )
+    };
+    let m = codec(&repeated(""));
+    let content = m.content_line.as_ref().expect("a content-line codec");
+    let role = content.entries.iter().find(|e| e.id == "aRole").unwrap();
+    assert!(role.required);
+    assert!(content.uses_line_records());
+
+    let single = refusal(&document(
+        "",
+        r#"    <data id="a" sce:type="string" sce:property="A" sce:max-size="8"/>
+    <data id="aRole" sce:type="string" sce:property="A" sce:param="ROLE" sce:max-size="8" sce:required="true"/>"#,
+    ));
+    assert!(single.contains("required"), "{single}");
+}
+
 #[test]
 fn a_separator_and_its_bound_are_held_to_the_entry_they_qualify() {
     let one = |extra: &str| {

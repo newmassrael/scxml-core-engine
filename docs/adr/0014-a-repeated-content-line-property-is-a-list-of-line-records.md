@@ -55,6 +55,8 @@ line, in line order, holding the parameters that line carries and its value.
 
 `exdate` is a list of at most 64 records, each `{ tzid, value }`. A parameter is optional or
 required **per line** (`sce:required="true"` on it means every line of the property carries it).
+A required parameter of a repeated property needs no required property, as one of a single-valued
+property does: it is required of each line that exists, and the property itself may have none.
 An entry with no parameter declared keeps its present shape, a list of values; the record exists
 only where there is something for it to hold, so no codec that compiles today changes.
 
@@ -80,16 +82,19 @@ required parameter is `line-required-missing`, raised at that line.
 The value is cut at the separator **before** it is unescaped. For a TEXT (`sce:value="text"`) a
 separator that a `\` precedes is part of the value and a `\` also escapes the next character, so
 `a\,b,c` is the two values `a,b` and `c`; for any other value there is no escape and every separator
-cuts. Each part is then unescaped and held to `sce:max-size`. A part that is empty (`a,,b`, `,a`,
-`a,`) is `line-bad-value`: RFC 5545 has no empty member of a list. More parts than `sce:max-values`
-is `line-too-many`, raised when the line is read.
+cuts. The parts are judged left to right and the first failure is the line's: a part past
+`sce:max-values` is `line-too-many`, one that is empty (`a,,b`, `,a`, `a,`, a value of nothing) is
+`line-bad-value` because RFC 5545 has no empty member of a list, and any other is unescaped and held
+to `sce:max-size`. A line's parameters are read before its value, and a required one that the line
+lacks is `line-required-missing` before the value is looked at.
 
 *Encode.* A record writes its present parameters in declaration order, then `:` and its values
 joined by the separator, with no space. A TEXT value writes the escapes it always does, and the
 separator between values is written as it is; a value that holds the separator is therefore escaped
-and still one value on the way back. A record with no value, or a required list with none, is
-`line-required-missing`; a line count past `sce:max-count` and a value count past `sce:max-values`
-are `line-too-many`.
+and still one value on the way back. A value that is not a TEXT has no escape, so one that holds the
+separator, and any empty value of a list, is `line-bad-value` on encode: it would be read back as
+other than it was. A record with no value, or a required list with none, is `line-required-missing`;
+a line count past `sce:max-count` and a value count past `sce:max-values` are `line-too-many`.
 
 Folding, the control-character rule, the quoting of a parameter and every other rule of
 `SCE_FORGE.md` §4.6.4 stand as written.

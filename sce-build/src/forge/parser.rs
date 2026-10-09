@@ -2274,7 +2274,10 @@ fn parse_content_line_entry(
             }));
         }
         (Some(name), Some(owner)) => {
-            if required && !owner.required {
+            // A required parameter of a repeated property is required of each line
+            // that exists, whether or not the property is (docs/adr/0014), so it needs
+            // no required property to be missing from.
+            if required && !owner.required && owner.max_count.is_none() {
                 return Err(refuse(ValidationError::AttributeRuleViolated {
                     element,
                     attr: "sce:required".into(),

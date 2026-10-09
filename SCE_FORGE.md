@@ -1246,7 +1246,7 @@ of its `<datamodel>` that names a property:
 | `sce:type` | `string`, an integer (`uint8`–`uint64`, `int8`–`int64`) or `bool` (`TRUE`/`FALSE`). A parameter is a `string`. An `enum:<alias>` entry waits on a codec that names variants (`docs/adr/0010`, *Not now*) and is refused. |
 | `sce:value="text"` | On a `string` value: an RFC 5545 TEXT, so `\\`, `\;`, `\,` and `\n` are escapes on both sides. Without it the value is carried as written — a date-time, an `RRULE` and a URI are not TEXT. |
 | `sce:param` | The entry is the named parameter of the property `sce:property` names, not its value. It follows the entry of that property. On a property with `sce:max-count` it is a field of the record each line becomes, optional or required per line (`docs/adr/0014`). |
-| `sce:required="true"` | A decode of a component without the property, or whose property lacks the parameter, is refused. A required parameter belongs to a required property. An entry that is not required is optional in every language. |
+| `sce:required="true"` | A decode of a component without the property, or whose property lacks the parameter, is refused. A required parameter belongs to a required property — except on a repeated property, where it is required of each line that exists. An entry that is not required is optional in every language. |
 | `sce:max-size` | Required on every `string`: the most bytes it holds, after unescaping. |
 | `sce:max-count` | On a `string` value, at least 2: the most lines of the property a component holds. The entry is then a bounded list of values in line order, or of line records when the property declares a parameter (`docs/adr/0014`). |
 | `sce:separator` | On a `string` value: `,` or `;`, the character that cuts the value of one line into a list of values. Requires `sce:max-values`. Not on a parameter, an integer or a `bool`. (`docs/adr/0014`) |
@@ -1328,22 +1328,26 @@ refused for the one met first.
 *Line records and lists of values (`docs/adr/0014`).* A repeated property that
 declares a parameter reads each of its lines into a record of that line, holding
 the parameters the line carries and its value; a parameter is optional or
-required per line, and a line that lacks a required one is
-`line-required-missing`, raised at that line. A parameter is read as a
-single-valued property's is: a declared one is kept, an undeclared one is skipped,
-a declared one holds one value and appears once. With `sce:separator` the value of
-a line is a list: it is cut at the separator **before** it is unescaped, and for a
-TEXT a separator preceded by `\` is part of the value (`a\,b,c` is the two values
-`a,b` and `c`), while any other value has no escape and every separator cuts.
-Each part is then unescaped and held to `sce:max-size`. An empty part (`a,,b`,
-`,a`, `a,`) is `line-bad-value`, and more parts than `sce:max-values` is
-`line-too-many`, raised when the line is read. Encode writes a record's present
-parameters in declaration order, then `:` and its values joined by the separator
-with no space; a TEXT value writes its escapes as it always does, so a value that
-holds the separator is escaped and is still one value on the way back. A record
-with no value, and a required list with none, is `line-required-missing`. An
-entry with no parameter declared and no separator keeps the shape it had, a list
-of values.
+required per line (a required parameter of a repeated property needs no required
+property: it is required of each line that exists), and a line that lacks a
+required one is `line-required-missing`, raised at that line once its parameters
+are read and before its value is. A parameter is read as a single-valued
+property's is: a declared one is kept, an undeclared one is skipped, a declared
+one holds one value and appears once. With `sce:separator` the value of a line is
+a list: it is cut at the separator **before** it is unescaped, and for a TEXT a
+separator preceded by `\` is part of the value (`a\,b,c` is the two values `a,b`
+and `c`), while any other value has no escape and every separator cuts. The parts
+are judged left to right and the first failure is the line's: a part past
+`sce:max-values` is `line-too-many`, an empty one (`a,,b`, `,a`, `a,`, a value of
+nothing) is `line-bad-value`, and any other is unescaped and held to
+`sce:max-size`. Encode writes a record's present parameters in declaration order,
+then `:` and its values joined by the separator with no space; a TEXT value writes
+its escapes as it always does, so a value that holds the separator is escaped and
+is still one value on the way back, while a value that is not a TEXT has no
+escape, so one that holds the separator, and any empty value of a list, is
+`line-bad-value`. A record with no value, and a required list with none, is
+`line-required-missing`. An entry with no parameter declared and no separator
+keeps the shape it had, a list of values.
 
 | Failure | Wire name | Raised for |
 |---|---|---|
