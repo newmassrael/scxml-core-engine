@@ -12,7 +12,14 @@
 {% for field in f.fields %}
 		{# An absent entry is JSON `null`, which unmarshals to a nil pointer —
 		   the generated struct's own spelling of an absent optional entry. #}
+{% if field.members %}
+		{# A list of line records (docs/adr/0014) is read into the generated record
+		   type itself: encoding/json matches `attendeeCn`, `value` and `values` to
+		   the fields by name, an absent parameter is a nil pointer. #}
+		{{ field.name | to_pascal_case }} []{{ f.name }}.{{ f.name | to_pascal_case }}{{ field.name | to_pascal_case }}Line `json:"{{ field.name }}"`
+{% else %}
 		{{ field.name | to_pascal_case }} {% if field.list %}[]{% elif field.optional %}*{% endif %}{{ field.type | go_type }} `json:"{{ field.name }}"`
+{% endif %}
 {% endfor %}
 	}
 	for i, c := range cases {
@@ -34,7 +41,13 @@
 		}
 {% for field in f.fields %}
 {% set fp = field.name | to_pascal_case %}
-{% if field.list %}
+{% if field.members %}
+		// An empty list and an absent one are the same thing; a list of records is
+		// otherwise compared as the JSON it is written as.
+		if len(roundTripped.{{ fp }}) != len(d.{{ fp }}) || (len(d.{{ fp }}) > 0 && !reflect.DeepEqual(roundTripped.{{ fp }}, d.{{ fp }})) {
+			t.Errorf("{{ f.name }} case %d decode {{ field.name }}: actual=%+v expected=%+v", i, roundTripped.{{ fp }}, d.{{ fp }})
+		}
+{% elif field.list %}
 		if len(roundTripped.{{ fp }}) != len(d.{{ fp }}) {
 			t.Errorf("{{ f.name }} case %d decode {{ field.name }}: count actual=%d expected=%d", i, len(roundTripped.{{ fp }}), len(d.{{ fp }}))
 		} else {

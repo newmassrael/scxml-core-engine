@@ -438,6 +438,121 @@ func TestContentLineAFullSinkIsReportedAsTheSinkReportsIt(t *testing.T) {
 	}
 }
 
+// A line holding a list of values (docs/adr/0014).
+
+func clValues(value string, separator byte, maxValues, maxSize int, text bool) ([]string, error) {
+	reader, err := NewContentLineReader([]byte("BEGIN:VEVENT\r\nV:"+value+"\r\nEND:VEVENT\r\n"), "VEVENT")
+	if err != nil {
+		return nil, err
+	}
+	line, err := reader.Next()
+	if err != nil {
+		return nil, err
+	}
+	return line.ReadStrings(separator, maxValues, maxSize, text)
+}
+
+func TestContentLineAListIsCutAtTheSeparatorBeforeItIsUnescaped(t *testing.T) {
+	for _, c := range []struct {
+		value     string
+		separator byte
+		max       int
+		text      bool
+		want      []string
+	}{
+		{"a,b,c", ',', 4, false, []string{"a", "b", "c"}},
+		{"a\\,b,c", ',', 4, true, []string{"a,b", "c"}},
+		// Without TEXT there is no escape: a backslash is a byte and every separator cuts.
+		{"a\\,b", ',', 4, false, []string{"a\\", "b"}},
+		{"a;b,c", ',', 4, true, []string{"a;b", "c"}},
+		{"1;2", ';', 2, false, []string{"1", "2"}},
+		{"a,b\r\n c", ',', 4, false, []string{"a", "bc"}},
+	} {
+		got, err := clValues(c.value, c.separator, c.max, 8, c.text)
+		if err != nil || strings.Join(got, "|") != strings.Join(c.want, "|") || len(got) != len(c.want) {
+			t.Errorf("%q read as %q %v, want %q", c.value, got, err, c.want)
+		}
+	}
+}
+
+func TestContentLineAListIsRefusedAtItsFirstFailingPart(t *testing.T) {
+	for _, c := range []struct {
+		value string
+		want  error
+	}{
+		{"", ErrLineBadValue},
+		{"a,,b", ErrLineBadValue},
+		{",a", ErrLineBadValue},
+		{"a,", ErrLineBadValue},
+		{"a,b,c,d", ErrLineTooMany},
+		// A part past the bound is too many, whatever the part is.
+		{"a,b,c,", ErrLineTooMany},
+		{"a,b,c,xxxxxxxxxxxxxxx", ErrLineTooMany},
+		{"xxxxxxxxxxxxxxx,,", ErrLineTooLong},
+		{",,xxxxxxxxxxxxxxx", ErrLineBadValue},
+		{"a,b\\x", ErrLineBadEscape},
+		{"a,b\\", ErrLineBadEscape},
+	} {
+		if got, err := clValues(c.value, ',', 3, 8, true); err != c.want {
+			t.Errorf("%q read as %q %v, want %v", c.value, got, err, c.want)
+		}
+	}
+}
+
+func TestContentLineAListIsWrittenWithItsSeparatorAndHeldBeforeItIsWritten(t *testing.T) {
+	text := clWritten(t, func(w *ContentLineWriter) {
+		clMust(t, w.Property("C"))
+		clMust(t, w.Strings([]string{"a,b", "c;d", "e\\f"}, ',', true, 8, 4))
+		clMust(t, w.Property("G"))
+		clMust(t, w.Strings([]string{"1", "2"}, ';', false, 8, 2))
+	})
+	if want := "BEGIN:VEVENT\r\nC:a\\,b,c\\;d,e\\\\f\r\nG:1;2\r\nEND:VEVENT\r\n"; text != want {
+		t.Errorf("written %q, want %q", text, want)
+	}
+
+	var out []byte
+	w := NewContentLineWriter(NewBytesSink(&out), "VEVENT")
+	clMust(t, w.Begin())
+	clMust(t, w.Property("C"))
+	before := len(out)
+	for _, c := range []struct {
+		values []string
+		text   bool
+		max    int
+		want   error
+	}{
+		{nil, false, 4, ErrLineRequiredMissing},
+		{[]string{"a", "b", "c"}, false, 2, ErrLineTooMany},
+		{[]string{"a", "abcdefghi"}, false, 4, ErrLineTooLong},
+		{[]string{"a", ""}, false, 4, ErrLineBadValue},
+		// Not a TEXT, so a separator in a value could not be told from a cut.
+		{[]string{"a,b"}, false, 4, ErrLineBadValue},
+		{[]string{"a\nb"}, false, 4, ErrLineBadValue},
+	} {
+		if err := w.Strings(c.values, ',', c.text, 8, c.max); err != c.want {
+			t.Errorf("%q: %v, want %v", c.values, err, c.want)
+		}
+	}
+	if len(out) != before {
+		t.Errorf("something of a refused list reached the sink: %q", out[before:])
+	}
+}
+
+func TestContentLineATextListIsReadBackAsWritten(t *testing.T) {
+	for _, values := range [][]string{{"a"}, {"a,b", "c"}, {strings.Repeat("x", 8), "é"}, {"a;b"}} {
+		text := clWritten(t, func(w *ContentLineWriter) {
+			clMust(t, w.Property("V"))
+			clMust(t, w.Strings(values, ',', true, 8, 4))
+		})
+		reader, _ := NewContentLineReader([]byte(text), "VEVENT")
+		line, _ := reader.Next()
+		got, err := line.ReadStrings(',', 4, 8, true)
+		if err != nil || strings.Join(got, "|") != strings.Join(values, "|") || len(got) != len(values) {
+			t.Errorf("%q read back as %q %v", values, got, err)
+		}
+	}
+}
+
 func TestContentLineWhatIsWrittenIsReadBack(t *testing.T) {
 	for _, value := range []string{"", "plain", "a;b,c\\d\ne", "caf\u00e9 \U0001F600", strings.Repeat("y", 150)} {
 		text := clWritten(t, func(w *ContentLineWriter) {

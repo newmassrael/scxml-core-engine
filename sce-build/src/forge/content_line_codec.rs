@@ -47,8 +47,8 @@ pub fn lowers(lang: Language) -> bool {
 /// would be the silent loss the decision exists to end.
 pub fn lowers_line_records(lang: Language) -> bool {
     match lang {
-        Language::Python => true,
-        Language::Rust | Language::Kotlin | Language::Cpp | Language::Go | Language::C11 => false,
+        Language::Python | Language::Go => true,
+        Language::Rust | Language::Kotlin | Language::Cpp | Language::C11 => false,
     }
 }
 
@@ -207,7 +207,7 @@ fn entries_context(
                     "{struct_name}{}Line",
                     crate::filters::to_pascal_case(e.id.clone())
                 )),
-                "value_member": if e.separator.is_some() { "values" } else { "value" },
+                "value_member": l.codec_field_id(if e.separator.is_some() { "values" } else { "value" }),
                 "value_type": value_type(e),
                 "bits": int_bits(&e.sce_type),
                 "min": int_range(&e.sce_type).map(|r| r.0),

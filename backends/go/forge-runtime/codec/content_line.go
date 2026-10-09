@@ -513,6 +513,64 @@ func (p *ContentLineProperty) ReadString(maxSize int, text bool) (string, error)
 	return lineUTF8(buf)
 }
 
+// ReadStrings reads the value as a list of `string` cut at separator, at most
+// maxValues of them and each at most maxSize bytes (docs/adr/0014). The value is
+// cut before it is unescaped: with text a separator that a backslash precedes is
+// part of the value, and with anything else every separator cuts. The parts are
+// judged left to right and the first failure is the line's: a part past
+// maxValues is ErrLineTooMany, even one that is empty or too long; an empty part
+// is ErrLineBadValue.
+func (p *ContentLineProperty) ReadStrings(separator byte, maxValues, maxSize int, text bool) ([]string, error) {
+	if err := p.beginValue(); err != nil {
+		return nil, err
+	}
+	values := make([]string, 0, maxValues)
+	buf := make([]byte, 0, 16)
+	for {
+		b := p.scan.bump()
+		if b < 0 || b == int(separator) {
+			if len(buf) == 0 {
+				return nil, ErrLineBadValue
+			}
+			value, err := lineUTF8(buf)
+			if err != nil {
+				return nil, err
+			}
+			values = append(values, value)
+			if b < 0 {
+				return values, nil
+			}
+			buf = buf[:0]
+			// A separator opens another part, which may not pass the bound.
+			if len(values) >= maxValues {
+				return nil, ErrLineTooMany
+			}
+			continue
+		}
+		byteValue := b
+		if text && b == '\\' {
+			switch p.scan.bump() {
+			case '\\':
+				byteValue = '\\'
+			case ';':
+				byteValue = ';'
+			case ',':
+				byteValue = ','
+			case 'n', 'N':
+				byteValue = 0x0A
+			default:
+				return nil, ErrLineBadEscape
+			}
+		} else if lineIsControl(b) {
+			return nil, ErrLineBadValue
+		}
+		if len(buf) == maxSize {
+			return nil, ErrLineTooLong
+		}
+		buf = append(buf, byte(byteValue))
+	}
+}
+
 // readDecimal is the decimal the rest of the value is — an optional sign,
 // digits — as (negative, magnitude). A `-` is read only when allowMinus, so an
 // unsigned type refuses `-0` as well.
@@ -774,6 +832,56 @@ func (w *ContentLineWriter) String(value string, text bool, maxSize int) error {
 	}
 	if err := w.valueUnits(value, text); err != nil {
 		return err
+	}
+	return w.endLine()
+}
+
+// Strings writes `:<value>{separator}<value>…` and ends the line
+// (docs/adr/0014). No values is ErrLineRequiredMissing and more than maxValues
+// is ErrLineTooMany. A value past maxSize is ErrLineTooLong; one with a control
+// character (but a TEXT's line feed), invalid UTF-8, an empty one, and one that
+// is not a TEXT and holds the separator are ErrLineBadValue, because a reader
+// would cut or refuse them. Every value is held before any of the line is
+// written.
+func (w *ContentLineWriter) Strings(values []string, separator byte, text bool, maxSize, maxValues int) error {
+	if len(values) == 0 {
+		return ErrLineRequiredMissing
+	}
+	if len(values) > maxValues {
+		return ErrLineTooMany
+	}
+	for _, value := range values {
+		if len(value) > maxSize {
+			return ErrLineTooLong
+		}
+		if value == "" {
+			return ErrLineBadValue
+		}
+		for i := 0; i < len(value); i++ {
+			b := int(value[i])
+			if lineIsControl(b) && !(text && b == '\n') {
+				return ErrLineBadValue
+			}
+			if !text && value[i] == separator {
+				return ErrLineBadValue
+			}
+		}
+		if !utf8.ValidString(value) {
+			return ErrLineBadValue
+		}
+	}
+	if err := w.unit([]byte{':'}); err != nil {
+		return err
+	}
+	for i, value := range values {
+		if i > 0 {
+			if err := w.unit([]byte{separator}); err != nil {
+				return err
+			}
+		}
+		if err := w.valueUnits(value, text); err != nil {
+			return err
+		}
 	}
 	return w.endLine()
 }

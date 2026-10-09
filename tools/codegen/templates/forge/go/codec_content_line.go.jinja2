@@ -7,7 +7,12 @@
     line grammar — unfolding, TEXT escapes, quoting — is the runtime's
     (`codec.ContentLine*`); this spells none of it. #}
 {% macro read_value(e) %}
-{% if e.kind == "string" %}
+{% if e.separator %}
+			v, err := line.ReadStrings('{{ e.separator }}', {{ e.max_values }}, {{ e.max_size }}, {{ "true" if e.text else "false" }})
+			if err != nil {
+				return nil, err
+			}
+{% elif e.kind == "string" %}
 			v, err := line.ReadString({{ e.max_size }}, {{ "true" if e.text else "false" }})
 			if err != nil {
 				return nil, err
@@ -34,7 +39,13 @@
 {#- Where a read value goes: a list takes one more value, an optional entry is
     a pointer, a required one is the value itself. #}
 {% macro store(e) %}
-{% if e.is_list %}
+{% if e.is_records %}
+			rec.{{ e.value_member }} = v
+			out.{{ e.name }} = append(out.{{ e.name }}, rec)
+{% elif e.is_values %}
+			out.{{ e.name }} = v
+			{{ e.name | lower }}Seen = true
+{% elif e.is_list %}
 			out.{{ e.name }} = append(out.{{ e.name }}, v)
 {% elif e.required %}
 			out.{{ e.name }} = v
@@ -47,7 +58,11 @@
 {#- The write of one property's value `v`, its name and parameters already
     written. #}
 {% macro write_value(e) %}
-{% if e.kind == "string" %}
+{% if e.separator %}
+		if err := out.Strings(v, '{{ e.separator }}', {{ "true" if e.text else "false" }}, {{ e.max_size }}, {{ e.max_values }}); err != nil {
+			return err
+		}
+{% elif e.kind == "string" %}
 		if err := out.String(v, {{ "true" if e.text else "false" }}, {{ e.max_size }}); err != nil {
 			return err
 		}
@@ -65,16 +80,17 @@
 		}
 {% endif %}
 {% endmacro %}
-{#- The parameters of a property, each written when present. #}
-{% macro write_params(e) %}
+{#- The parameters of a property, each written when present, read from `holder`:
+    the codec itself, or the record of one line. #}
+{% macro write_params(e, holder) %}
 {% for p in e.params %}
 {% if p.required %}
-		if err := out.Param("{{ p.param }}", s.{{ p.name }}, {{ p.max_size }}); err != nil {
+		if err := out.Param("{{ p.param }}", {{ holder }}.{{ p.name }}, {{ p.max_size }}); err != nil {
 			return err
 		}
 {% else %}
-		if s.{{ p.name }} != nil {
-			if err := out.Param("{{ p.param }}", *s.{{ p.name }}, {{ p.max_size }}); err != nil {
+		if {{ holder }}.{{ p.name }} != nil {
+			if err := out.Param("{{ p.param }}", *{{ holder }}.{{ p.name }}, {{ p.max_size }}); err != nil {
 				return err
 			}
 		}
@@ -102,18 +118,41 @@ import (
 {% endfor %}
 )
 
+{% for e in entries if e.is_records %}
+// {{ e.record_type }} is one line of `{{ e.property }}` (docs/adr/0014): the
+// parameters it carries and its {% if e.separator %}list of values, cut at `{{ e.separator }}`{% else %}value{% endif %}. A parameter that
+// may be absent is a pointer, nil when absent.
+type {{ e.record_type }} struct {
+{% for p in e.params %}
+	// {{ p.name }} is parameter `{{ p.param }}`{% if p.required %}, required{% endif %}.
+	{{ p.name }} {{ p.field_type }}
+{% endfor %}
+{% if e.separator %}
+	// {{ e.value_member }} are the values of the line, at most {{ e.max_values }}.
+	{{ e.value_member }} []string
+{% else %}
+	// {{ e.value_member }} is the value of the line.
+	{{ e.value_member }} string
+{% endif %}
+}
+
+{% endfor %}
 // {{ struct_name }} is one `{{ component }}` component of content lines
 // (SCE_FORGE.md §4.6.4). Decode reads the properties this codec declares in any
 // order and skips the rest; encode writes the entries present in declaration
-// order, folded at 75 octets. An optional entry is a pointer, nil when absent.
+// order, folded at 75 octets. An optional entry is a pointer, nil when absent. A
+// repeated property that declares a parameter, or whose line holds a list of
+// values, is a list of line records.
 type {{ struct_name }} struct {
 {% for e in entries %}
-	// {{ e.name }} is property `{{ e.property }}`{% if e.is_list %}, up to {{ e.max_count }} lines{% elif e.required %}, required{% endif %}.
+	// {{ e.name }} is property `{{ e.property }}`{% if e.is_records %}, up to {{ e.max_count }} lines, each a record{% elif e.is_list %}, up to {{ e.max_count }} lines{% elif e.is_values %}, a list of at most {{ e.max_values }} values{% endif %}{% if e.required %}, required{% endif %}.
 	{{ e.name }} {{ e.field_type }}
+{% if not e.is_records %}
 {% for p in e.params %}
 	// {{ p.name }} is parameter `{{ p.param }}` of `{{ e.property }}`{% if p.required %}, required{% endif %}.
 	{{ p.name }} {{ p.field_type }}
 {% endfor %}
+{% endif %}
 {% endfor %}
 }
 
@@ -147,12 +186,14 @@ func decode{{ struct_name }}At(c *codec.SceCursor) (*{{ struct_name }}, error) {
 	}
 	out := &{{ struct_name }}{}
 {% for e in entries %}
-{% if not e.is_list %}
+{% if not (e.is_list or e.is_records) %}
 	{{ e.name | lower }}Seen := false
 {% endif %}
+{% if not e.is_records %}
 {% for p in e.params %}
 	{{ p.name | lower }}Seen := false
 {% endfor %}
+{% endif %}
 {% endfor %}
 	for {
 		line, err := reader.Next()
@@ -165,7 +206,7 @@ func decode{{ struct_name }}At(c *codec.SceCursor) (*{{ struct_name }}, error) {
 		switch {
 {% for e in entries %}
 		case line.Is("{{ e.property }}"):
-{% if e.is_list %}
+{% if e.is_list or e.is_records %}
 			if len(out.{{ e.name }}) >= {{ e.max_count }} {
 				return nil, codec.ErrLineTooMany
 			}
@@ -173,6 +214,14 @@ func decode{{ struct_name }}At(c *codec.SceCursor) (*{{ struct_name }}, error) {
 			if {{ e.name | lower }}Seen {
 				return nil, codec.ErrLineTooMany
 			}
+{% endif %}
+{% if e.is_records %}
+{#- The parameters of this line live in the record of the line, and the line is
+    judged on them before its value is looked at. #}
+			rec := {{ e.record_type }}{}
+{% for p in e.params %}
+			{{ p.name | lower }}Seen := false
+{% endfor %}
 {% endif %}
 {% if e.params %}
 			for {
@@ -194,29 +243,42 @@ func decode{{ struct_name }}At(c *codec.SceCursor) (*{{ struct_name }}, error) {
 						return nil, err
 					}
 {% if p.required %}
-					out.{{ p.name }} = pv
+					{{ "rec" if e.is_records else "out" }}.{{ p.name }} = pv
 {% else %}
-					out.{{ p.name }} = &pv
+					{{ "rec" if e.is_records else "out" }}.{{ p.name }} = &pv
 {% endif %}
 					{{ p.name | lower }}Seen = true
 {% endfor %}
 				}
 			}
 {% endif %}
+{% if e.is_records %}
+{% for p in e.params if p.required %}
+			if !{{ p.name | lower }}Seen {
+				return nil, codec.ErrLineRequiredMissing
+			}
+{% endfor %}
+{% endif %}
 {{ read_value(e) }}{{ store(e) }}{% endfor %}
 		}
 	}
 {% for e in entries %}
 {% if e.required %}
+{% if e.is_list or e.is_records %}
+	if len(out.{{ e.name }}) == 0 {
+{% else %}
 	if !{{ e.name | lower }}Seen {
+{% endif %}
 		return nil, codec.ErrLineRequiredMissing
 	}
 {% endif %}
+{% if not e.is_records %}
 {% for p in e.params if p.required %}
 	if !{{ p.name | lower }}Seen {
 		return nil, codec.ErrLineRequiredMissing
 	}
 {% endfor %}
+{% endif %}
 {% endfor %}
 	// Only a component that decoded whole moves the cursor.
 	if err := c.Advance(reader.Consumed()); err != nil {
@@ -234,10 +296,30 @@ func (s *{{ struct_name }}) Encode(w codec.SceSink) error {
 		return err
 	}
 {% for e in entries %}
-{% if e.is_list %}
+{% if e.is_records %}
 	if len(s.{{ e.name }}) > {{ e.max_count }} {
 		return codec.ErrLineTooMany
 	}
+{% if e.required %}
+	if len(s.{{ e.name }}) == 0 {
+		return codec.ErrLineRequiredMissing
+	}
+{% endif %}
+	for _, rec := range s.{{ e.name }} {
+		if err := out.Property("{{ e.property }}"); err != nil {
+			return err
+		}
+{{ write_params(e, "rec") }}		v := rec.{{ e.value_member }}
+{{ write_value(e) }}	}
+{% elif e.is_list %}
+	if len(s.{{ e.name }}) > {{ e.max_count }} {
+		return codec.ErrLineTooMany
+	}
+{% if e.required %}
+	if len(s.{{ e.name }}) == 0 {
+		return codec.ErrLineRequiredMissing
+	}
+{% endif %}
 	for _, v := range s.{{ e.name }} {
 		if err := out.Property("{{ e.property }}"); err != nil {
 			return err
@@ -249,14 +331,14 @@ func (s *{{ struct_name }}) Encode(w codec.SceSink) error {
 		if err := out.Property("{{ e.property }}"); err != nil {
 			return err
 		}
-{{ write_params(e) }}{{ write_value(e) }}	}
+{{ write_params(e, "s") }}{{ write_value(e) }}	}
 {% else %}
-	if s.{{ e.name }} != nil {
-		v := *s.{{ e.name }}
+	if {{ ("len(s." ~ e.name ~ ") > 0") if e.is_values else ("s." ~ e.name ~ " != nil") }} {
+		v := {{ "s." ~ e.name if e.is_values else "*s." ~ e.name }}
 		if err := out.Property("{{ e.property }}"); err != nil {
 			return err
 		}
-{{ write_params(e) }}{{ write_value(e) }}	}{% if e.optional_params %} else if {% for p in e.optional_params %}{% if not loop.first %} || {% endif %}s.{{ p.name }} != nil{% endfor %} {
+{{ write_params(e, "s") }}{{ write_value(e) }}	}{% if e.optional_params %} else if {% for p in e.optional_params %}{% if not loop.first %} || {% endif %}s.{{ p.name }} != nil{% endfor %} {
 		// A parameter with no value of its property has no line to stand on.
 		return codec.ErrLineRequiredMissing
 	}{% endif %}
