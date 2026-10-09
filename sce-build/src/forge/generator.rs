@@ -1239,6 +1239,13 @@ pub fn generate_cpp_with_imports_and_externs(
         ForgeDocument::EventSchema(m) => {
             render_event_schema(&env, m, imports, crate::generator::Language::Cpp)?
         }
+        // RFC §synth-5-P: a Queue is lowered on a language once that
+        // language's forge runtime has the algorithms; until
+        // `codegen_matrix::template_ships(Queue, Cpp)` is flipped,
+        // `check()` above has already refused it.
+        ForgeDocument::Queue(_) => {
+            unreachable!("ForgeDocument::Queue rejected by codegen_matrix::check on cpp")
+        }
     };
 
     let filename = format!("{}.h", filters::to_snake_case(doc.name().to_string()));
@@ -17147,6 +17154,10 @@ pub fn generate_kotlin_with_imports(
         ForgeDocument::EventSchema(m) => {
             render_event_schema(&env, m, imports, crate::generator::Language::Kotlin)?
         }
+        // Queue kind: see cpp dispatch.
+        ForgeDocument::Queue(_) => {
+            unreachable!("ForgeDocument::Queue rejected by codegen_matrix::check on kotlin")
+        }
     };
 
     let filename = format!("{}.kt", filters::to_pascal_case(doc.name().to_string()));
@@ -17327,6 +17338,9 @@ pub fn generate_rust_with_imports_and_externs(
         ForgeDocument::EventSchema(m) => {
             render_event_schema(&env, m, imports, crate::generator::Language::Rust)?
         }
+        // RFC §synth-5-P: the generated type names a queue of
+        // `sce_forge_runtime::queue`, which has the bounded storage mode.
+        ForgeDocument::Queue(m) => render_queue_rust(&env, m, imports, options)?,
     };
 
     let filename = format!("{}.rs", filters::to_snake_case(doc.name().to_string()));
@@ -18135,6 +18149,192 @@ fn resolve_bounded_collection_inputs(
     })
 }
 
+/// How a Rust container stores the element document it names: the names to
+/// bring into scope and the type to write at every storage site.
+struct RustStoredElement {
+    pascal: String,
+    snake: String,
+    /// The name brought into scope (a `use` path cannot carry generic
+    /// arguments).
+    import: String,
+    /// The type written at every storage site — spelled apart from `import`
+    /// so the profile appears in the type and never in the import.
+    stored: String,
+    /// Whether the element is stored as its codec's owned mirror.
+    borrowed: bool,
+}
+
+/// The stored form of the element document `element_type` names, for a
+/// container that owns what it holds: a bounded collection (RFC §synth-5-L)
+/// and a queue (RFC §synth-5-P).
+///
+/// RFC c7-wildcard W3: such a container is owned and self-contained, so it
+/// stores the element codec's owned mirror — not the borrowed zero-copy view
+/// (whose `&'a str` / `&'a [u8]` would infect the whole container with the
+/// decode buffer's lifetime). A lifetime-free element (scalars only, e.g. an
+/// interned `uint32` id) is already its own owned form and is stored
+/// directly.
+///
+/// Whether a mirror exists is read from the orchestrator-resolved
+/// `element_type_owned_mirrors`, which runs the SAME predicate as the
+/// codec's `emit_owned` gate, so the referenced type always exists. It cannot
+/// be re-derived from the element's field list here: a `<sce:repeat>` /
+/// `<sce:embed>` field carries a `bytes` sentinel whose real type is the body
+/// codec, so a list of fixed-width bodies would read as borrowed (naming a
+/// mirror that is never emitted) while a codec borrowed only through a
+/// variant arm would read as plain (naming a type that carries a lifetime).
+/// Both shapes are admissible elements.
+///
+/// The mirror is stored at the NON-ALLOCATING profile, which is what makes
+/// the container's own contract true: it promises fixed capacity and no
+/// allocation, and storing default-profile elements would honour that for
+/// the slot table while every element still reached the heap on an `alloc`
+/// build. Pinning `Inline` also means an element may be composite — embedded
+/// bodies and bounded lists included — because the profile resolves those to
+/// inline storage too.
+fn rust_stored_element(
+    element_type: &str,
+    options: &crate::ForgeCompileOptions,
+) -> RustStoredElement {
+    let pascal = filters::to_pascal_case(element_type.to_string());
+    let snake = filters::to_snake_case(element_type.to_string());
+    let borrowed = options
+        .element_type_owned_mirrors
+        .as_ref()
+        .and_then(|mirrors| mirrors.get(&snake))
+        .copied()
+        .unwrap_or(false);
+    let import = if borrowed {
+        format!("{pascal}Owned")
+    } else {
+        pascal.clone()
+    };
+    let stored = if borrowed {
+        format!("{import}<{RUNTIME_CODEC}::Inline>")
+    } else {
+        pascal.clone()
+    };
+    RustStoredElement {
+        pascal,
+        snake,
+        import,
+        stored,
+        borrowed,
+    }
+}
+
+/// Render a `<sce:kind="queue">` document for the Rust backend (SCE
+/// Protocol-Synthesis RFC §synth-5-P). The generated module names the queue
+/// type the selection table picks from `sce_forge_runtime::queue`, over the
+/// element document's owned form, and states what the document required and
+/// what the algorithm gives as constants — so a reader of the generated code
+/// can see the contract without finding the document.
+///
+/// Only `bounded` storage is lowered: that is the storage the Rust runtime
+/// has. `segmented` and `intrusive` are valid documents that are refused by
+/// name (`queue/storage-runtime-missing`) until their algorithms land.
+/// Capacity and participants are read from `const` forms; the `deploy.yaml`
+/// forms are refused as unsupported until their resolution is wired.
+fn render_queue_rust(
+    env: &minijinja::Environment<'_>,
+    m: &crate::forge::model::QueueModel,
+    _imports: &[ImportContext],
+    options: &crate::ForgeCompileOptions,
+) -> Result<String, ForgeError> {
+    use crate::forge::model::{
+        CapacitySource, QueueAlgorithm, QueueCardinality, QueueProgress, QueueStorage,
+    };
+    let QueueStorage::Bounded { capacity } = &m.storage else {
+        let storage = match &m.storage {
+            QueueStorage::Bounded { .. } => "bounded",
+            QueueStorage::Segmented { .. } => "segmented",
+            QueueStorage::Intrusive { .. } => "intrusive",
+        };
+        return Err(GenerateError::QueueStorageRuntimeMissing {
+            queue_name: m.name.clone(),
+            storage: storage.to_string(),
+            language: "rust".to_string(),
+            implemented: "bounded".to_string(),
+        }
+        .into());
+    };
+    let constant = |what: &str, source: &CapacitySource| -> Result<u32, ForgeError> {
+        match source {
+            CapacitySource::CompileConst { value } => Ok(*value),
+            CapacitySource::DeployKey { key } => Err(GenerateError::unsupported(format!(
+                "queue '{}': {what} from deploy.yaml (`{key}`) is not resolved yet; \
+                 write it as a constant",
+                m.name
+            ))
+            .into()),
+        }
+    };
+    let capacity = constant("<sce:bounded> capacity", capacity)?;
+    let participants = m
+        .participants
+        .as_ref()
+        .map(|p| constant("<sce:participants>", p))
+        .transpose()?;
+
+    let selection = m.selection();
+    // The ring of an SCQ row is a power of two of slots, at least the
+    // capacity and at least the participants: its empty test is justified
+    // only for as many enqueuers or dequeuers as it has slots. The parser has
+    // already refused an SCQ row without participants.
+    let ring_slots = match selection.algorithm {
+        QueueAlgorithm::Scq => Some(capacity.max(participants.unwrap_or(1)).next_power_of_two()),
+        _ => None,
+    };
+    let (runtime_module, runtime_type) = match selection.algorithm {
+        QueueAlgorithm::LamportRing => ("spsc", "Spsc"),
+        QueueAlgorithm::Scq => ("scq", "Scq"),
+        // The selection table gives `bounded` storage the Lamport ring or SCQ
+        // and nothing else (`QueueModel::selection`), and any other storage
+        // was refused above.
+        other => unreachable!("bounded queue selected {other:?}"),
+    };
+    let cardinality = |c: QueueCardinality| match c {
+        QueueCardinality::One => "one",
+        QueueCardinality::Many => "many",
+    };
+    let progress = |p: QueueProgress| match p {
+        QueueProgress::WaitFree => "wait-free",
+        QueueProgress::LockFree => "lock-free",
+        QueueProgress::Blocking => "blocking",
+    };
+
+    let tmpl = env.get_template("queue.rs.jinja2").map_err(|e| {
+        ForgeError::from(GenerateError::TemplateLoad(format!(
+            "queue.rs.jinja2 (rust): {e}"
+        )))
+    })?;
+    let element = rust_stored_element(&m.element_type, options);
+    let ctx = minijinja::context! {
+        name => &m.name,
+        pascal => filters::to_pascal_case(m.name.clone()),
+        element_snake => element.snake,
+        element_import => element.import,
+        element_stored => element.stored,
+        capacity => capacity,
+        ring_slots => ring_slots,
+        participants => participants,
+        runtime_module => runtime_module,
+        runtime_type => runtime_type,
+        algorithm => selection.algorithm.name(),
+        producers => cardinality(m.producers),
+        consumers => cardinality(m.consumers),
+        declared_progress => progress(m.progress),
+        push_progress => progress(selection.push),
+        pop_progress => progress(selection.pop),
+        runtime_dep => "sce_forge_runtime::queue",
+    };
+    tmpl.render(ctx).map_err(|e| {
+        ForgeError::from(GenerateError::TemplateRender(format!(
+            "queue.rs.jinja2 (rust): {e}"
+        )))
+    })
+}
+
 /// Render a `<sce:kind="bounded-collection">` document for the Rust
 /// backend (SCE Protocol-Synthesis RFC §synth-5-L, item C6). Emits a slot table over
 /// `Vec<Option<T>>` (std) or `heapless::Vec<Option<T>, N>` (no_std)
@@ -18161,52 +18361,13 @@ fn render_bounded_collection_rust(
 
     let pascal = filters::to_pascal_case(m.name.clone());
     let snake = filters::to_snake_case(m.name.clone());
-    let element_pascal = filters::to_pascal_case(m.element_type.clone());
-    let element_snake = filters::to_snake_case(m.element_type.clone());
-
-    // RFC c7-wildcard W3: a bounded-collection is an owned, self-contained,
-    // no-alloc container, so it stores the element codec's owned mirror —
-    // not the borrowed zero-copy view (whose `&'a str` / `&'a [u8]` would
-    // infect the whole collection with the decode buffer's lifetime). A
-    // lifetime-free element (scalars only, e.g. an interned `uint32` id) is
-    // already its own owned form and is stored directly.
-    //
-    // Whether a mirror exists is read from the orchestrator-resolved
-    // `element_type_owned_mirrors`, which runs the SAME predicate as the
-    // codec's `emit_owned` gate, so the referenced type always exists. It
-    // cannot be re-derived from the element's field list here: a
-    // `<sce:repeat>` / `<sce:embed>` field carries a `bytes` sentinel whose
-    // real type is the body codec, so a list of fixed-width bodies would read
-    // as borrowed (naming a mirror that is never emitted) while a codec
-    // borrowed only through a variant arm would read as plain (naming a type
-    // that carries a lifetime). Both shapes are admissible elements.
-    //
-    // The mirror is stored at the NON-ALLOCATING profile, which is what makes
-    // the container's own contract true: a bounded collection promises fixed
-    // capacity and no allocation, and storing default-profile elements would
-    // honour that for the slot table while every element still reached the
-    // heap on an `alloc` build. Pinning `Inline` also means an element may be
-    // composite — embedded bodies and bounded lists included — because the
-    // profile resolves those to inline storage too.
-    let element_borrowed = options
-        .element_type_owned_mirrors
-        .as_ref()
-        .and_then(|mirrors| mirrors.get(&element_snake))
-        .copied()
-        .unwrap_or(false);
-    // The name brought into scope (a `use` path cannot carry generic
-    // arguments) and the type written at every storage site — spelled apart
-    // so the profile appears in the type and never in the import.
-    let element_import = if element_borrowed {
-        format!("{element_pascal}Owned")
-    } else {
-        element_pascal.clone()
-    };
-    let element_stored = if element_borrowed {
-        format!("{element_import}<{RUNTIME_CODEC}::Inline>")
-    } else {
-        element_pascal.clone()
-    };
+    let RustStoredElement {
+        pascal: element_pascal,
+        snake: element_snake,
+        import: element_import,
+        stored: element_stored,
+        borrowed: element_borrowed,
+    } = rust_stored_element(&m.element_type, options);
 
     let ctx = minijinja::context! {
         name => &m.name,
@@ -19299,6 +19460,10 @@ pub fn generate_go_with_imports(
         ForgeDocument::EventSchema(m) => {
             render_event_schema(&env, m, imports, crate::generator::Language::Go)?
         }
+        // Queue kind: see cpp dispatch.
+        ForgeDocument::Queue(_) => {
+            unreachable!("ForgeDocument::Queue rejected by codegen_matrix::check on go")
+        }
     };
 
     let filename = format!("{}.go", filters::to_snake_case(doc.name().to_string()));
@@ -19501,6 +19666,10 @@ pub fn generate_python_with_imports(
         // EventSchema kind: see cpp dispatch.
         ForgeDocument::EventSchema(m) => {
             render_event_schema(&env, m, imports, crate::generator::Language::Python)?
+        }
+        // Queue kind: see cpp dispatch.
+        ForgeDocument::Queue(_) => {
+            unreachable!("ForgeDocument::Queue rejected by codegen_matrix::check on python")
         }
     };
     let code = import_the_single_rounding(code);
@@ -19734,6 +19903,10 @@ pub fn generate_c11_with_imports_and_externs(
         // EventSchema kind: see cpp dispatch.
         ForgeDocument::EventSchema(m) => {
             render_event_schema(&env, m, imports, crate::generator::Language::C11)?
+        }
+        // Queue kind: see cpp dispatch.
+        ForgeDocument::Queue(_) => {
+            unreachable!("ForgeDocument::Queue rejected by codegen_matrix::check on c11")
         }
     };
 

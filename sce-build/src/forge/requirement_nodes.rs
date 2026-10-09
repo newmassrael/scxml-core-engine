@@ -200,6 +200,7 @@ pub fn requirement_nodes(doc: &ForgeDocument) -> ReviewScope {
         ForgeDocument::EventSchema(_) => ReviewScope::NoAnnotationSite {
             kind: "event-schema",
         },
+        ForgeDocument::Queue(_) => ReviewScope::NoAnnotationSite { kind: "queue" },
     }
 }
 

@@ -44,6 +44,10 @@ const PICTURES: &[(&str, &[&str])] = &[
     ("observer", &["thresholds.svg"]),
     // A procedure is the statechart figure of its states.
     ("procedure", &["document.svg"]),
+    // A queue is a contract and not a shape: its reading is the pseudocode
+    // page, where the storage, the cardinalities and the progress are each
+    // a word, and the field table.
+    ("queue", &[]),
     ("timer", &["timeline.svg"]),
     ("transform", &["dataflow.svg"]),
     ("validator", &["dataflow.svg"]),

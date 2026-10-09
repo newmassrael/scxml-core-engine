@@ -4312,6 +4312,11 @@
           "file": "sce-build/src/lib.rs",
           "symbol": "compile_document_set",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "rust_stored_element",
+          "kind": "implements"
         }
       ]
     },
@@ -5017,6 +5022,11 @@
           "file": "sce-build/src/forge/sourcemap.rs",
           "symbol": "to_json",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "QueueModel",
+          "kind": "implements"
         }
       ]
     },
@@ -5088,6 +5098,62 @@
         },
         {
           "file": "sce-build/tests/mutations/an_scq_queue_holds_no_more_participants_than_its_ring_has_slots.cases",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/parser.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "tools/codegen/templates/forge/rust/queue.rs.jinja2",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/error.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/codegen_matrix.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/forge_ast_export.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/queue_kind.rs",
+          "kind": "references"
+        },
+        {
+          "file": "schemas/sce-forge-ext.xsd",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/queue_ast_export_min.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/queue_intrusive_mpsc.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/queue_segmented_lscq.scxml",
           "kind": "references"
         }
       ]

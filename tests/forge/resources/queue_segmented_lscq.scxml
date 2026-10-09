@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SCE Protocol-Synthesis RFC §synth-5-P (queue kind, segmented storage): many
+  producers and many consumers over a list of fixed-size segments. The
+  selection table gives this LSCQ, a list of SCQ rings, whose push is no
+  stronger than the allocator the segments come from; both are lock-free
+  here. Each segment is an SCQ ring, so the participants size the ring. The
+  element document is named and not resolved here.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://sce.dev/ext sce-forge.xsd"
+       sce:kind="queue"
+       name="queue_segmented_lscq"
+       version="1.0">
+  <sce:element-type>rx_event</sce:element-type>
+  <sce:producers>many</sce:producers>
+  <sce:consumers>many</sce:consumers>
+  <sce:progress>lock-free</sce:progress>
+  <sce:segmented segment="64" allocator-progress="lock-free"/>
+  <sce:participants const="4"/>
+</scxml>

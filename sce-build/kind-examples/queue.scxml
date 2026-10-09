@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- queue: elements handed from one execution context to another, first in
+     first out. Received frames pass from up to two receive tasks to one
+     consumer, up to sixty-four waiting, without any task ever waiting on
+     another. The ring is sized for the two producers. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="queue" name="rx_events" version="1.0">
+  <sce:element-type>rx_event</sce:element-type>
+  <sce:producers>many</sce:producers>
+  <sce:consumers>one</sce:consumers>
+  <sce:progress>lock-free</sce:progress>
+  <sce:bounded capacity="64"/>
+  <sce:participants const="2"/>
+</scxml>

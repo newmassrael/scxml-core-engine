@@ -3718,7 +3718,7 @@ pub enum QueueStorage {
 - `queue/element-type-not-a-kind` — as `collection/element-type-not-a-kind`
 - `queue/intrusive-link-field-missing` — `link-field` is not a field of the element type
 - `queue/progress-unreachable` — no selection row meets the declared progress for this storage, cardinality and backend
-- `queue/segmented-needs-alloc` — `segmented` on the no-alloc profile
+- `queue/segmented-needs-alloc` — `segmented` on the no-alloc profile; and `queue/storage-runtime-missing` (generate stage) — a valid document whose storage mode the target backend's runtime does not implement yet, refused by name rather than lowered to a queue that gives less
 - `queue/allocator-progress-missing` — `<sce:segmented>` without `allocator-progress`
 - `queue/participants-unresolved` — an SCQ row or a domain needs `<sce:participants>` and it is absent or its deploy key is missing
 - `queue/progress-insufficient-for-isr` — an ISR-side operation below `lock-free`

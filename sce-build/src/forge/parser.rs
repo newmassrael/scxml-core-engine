@@ -911,6 +911,7 @@ fn parse_forge_from_node(
         }
         ForgeKind::Enum => parse_enum(root, label).map(ForgeDocument::Enum),
         ForgeKind::EventSchema => parse_event_schema(root, label).map(ForgeDocument::EventSchema),
+        ForgeKind::Queue => parse_queue(root, label).map(ForgeDocument::Queue),
         ForgeKind::Statechart => Err(located(
             root,
             label.diagnostic_label,
@@ -10080,7 +10081,7 @@ fn parse_bounded_collection(
     label: DocumentLabel<'_>,
 ) -> Result<BoundedCollectionModel, Located<ForgeError>> {
     use crate::forge::model::{
-        BoundedCollectionModel, CapacitySource, CollectionOrdering, ConcurrencyMode, OverflowPolicy,
+        BoundedCollectionModel, CollectionOrdering, ConcurrencyMode, OverflowPolicy,
     };
 
     let doc_name = label.identifier;
@@ -10093,29 +10094,8 @@ fn parse_bounded_collection(
     // codec/procedure kind per spec lines 2566-2567) is enforced by
     // the orchestrator cross-doc pass behind
     // `collection/element-type-not-a-kind`.
-    let element_type_node = find_sce_child(root, "element-type").ok_or_else(|| {
-        located(
-            root,
-            label.diagnostic_label,
-            ValidationError::MissingElement {
-                kind: ForgeKind::BoundedCollection,
-                element: "sce:element-type".into(),
-            },
-        )
-    })?;
-    let element_type = element_type_node.text().unwrap_or("").trim().to_string();
-    if element_type.is_empty() {
-        return Err(located(
-            &element_type_node,
-            label.diagnostic_label,
-            ValidationError::AttributeRuleViolated {
-                element: "<sce:element-type>".into(),
-                attr: "<body>".into(),
-                value: String::new(),
-                rule: "non-empty kind name (codec or procedure)".into(),
-            },
-        ));
-    }
+    let element_type =
+        read_element_type(root, label.diagnostic_label, ForgeKind::BoundedCollection)?;
 
     // ── Required: <sce:capacity .../> (one of source="deploy" key=... OR const=...) ──
     let capacity_node = find_sce_child(root, "capacity").ok_or_else(|| {
@@ -10128,104 +10108,12 @@ fn parse_bounded_collection(
             },
         )
     })?;
-    // One of two forms: `source="deploy" key="…"`, or `const="…"`.
-    if let Some(refusal) = exactly_one_form(
+    let capacity = read_capacity_source(
         &capacity_node,
         label.diagnostic_label,
-        "<sce:capacity>".into(),
-        &[&["source", "key"], &["const"]],
-        |_| true,
-    ) {
-        return Err(refusal);
-    }
-    // Exactly one form is written, so `const` decides which. The deploy form,
-    // incomplete or naming a source other than `deploy`, is refused for what
-    // it lacks or holds rather than as a choice of form.
-    let capacity = match capacity_node.attribute("const") {
-        // `<sce:capacity source="deploy" key="machines.X.limits.Y"/>` — spec lines 2553-2554.
-        None => {
-            let key = match (
-                capacity_node.attribute("source"),
-                capacity_node.attribute("key"),
-            ) {
-                (None, _) => {
-                    return Err(located(
-                        &capacity_node,
-                        label.diagnostic_label,
-                        ValidationError::MissingAttribute {
-                            element: "<sce:capacity>".into(),
-                            attr: "source".into(),
-                        },
-                    ));
-                }
-                (Some(source), _) if source != "deploy" => {
-                    return Err(located(
-                        &capacity_node,
-                        label.diagnostic_label,
-                        ValidationError::InvalidAttribute {
-                            element: "<sce:capacity>".into(),
-                            attr: "source".into(),
-                            value: source.to_string(),
-                            allowed: vec!["deploy".into()],
-                        },
-                    ));
-                }
-                (Some(_), None) => {
-                    return Err(located(
-                        &capacity_node,
-                        label.diagnostic_label,
-                        ValidationError::MissingAttribute {
-                            element: "<sce:capacity>".into(),
-                            attr: "key".into(),
-                        },
-                    ));
-                }
-                (Some(_), Some(key)) => key,
-            };
-            let key = key.trim().to_string();
-            if key.is_empty() {
-                return Err(located(
-                    &capacity_node,
-                    label.diagnostic_label,
-                    ValidationError::AttributeRuleViolated {
-                        element: "<sce:capacity>".into(),
-                        attr: "key".into(),
-                        value: String::new(),
-                        rule: "non-empty dotted key path (e.g. \"machines.X.limits.Y\")".into(),
-                    },
-                ));
-            }
-            CapacitySource::DeployKey { key }
-        }
-        // `<sce:capacity const="N"/>` — spec line 2602.
-        Some(c) => {
-            let value: u32 = c.parse().map_err(|_| {
-                located(
-                    &capacity_node,
-                    label.diagnostic_label,
-                    ValidationError::AttributeRuleViolated {
-                        element: "<sce:capacity>".into(),
-                        attr: "const".into(),
-                        value: c.to_string(),
-                        rule: "positive u32 (build-time slot count)".into(),
-                    },
-                )
-            })?;
-            if value == 0 {
-                return Err(located(
-                    &capacity_node,
-                    label.diagnostic_label,
-                    ValidationError::AttributeRuleViolated {
-                        element: "<sce:capacity>".into(),
-                        attr: "const".into(),
-                        value: c.to_string(),
-                        rule: "positive non-zero u32".into(),
-                    },
-                ));
-            }
-            CapacitySource::CompileConst { value }
-        }
-    };
+        "<sce:capacity>",
+        "const",
+    )?;
 
     // ── Optional: <sce:index-by field="..."/> ──
     let index_by = find_sce_child(root, "index-by")
@@ -10361,6 +10249,405 @@ fn parse_bounded_collection(
         concurrency,
         source_location: forge_source_location_of(root, label.diagnostic_label),
     })
+}
+
+/// The required `<sce:element-type>NAME</sce:element-type>` of a kind that
+/// holds elements: a bounded collection (RFC §synth-5-L) and a queue (RFC
+/// §synth-5-P). The body is kept as an opaque name; whether it resolves, and
+/// to a kind that can be an element, is the cross-document pass's question.
+fn read_element_type(
+    root: &roxmltree::Node,
+    doc_name: &str,
+    kind: ForgeKind,
+) -> Result<String, Located<ForgeError>> {
+    let node = find_sce_child(root, "element-type").ok_or_else(|| {
+        located(
+            root,
+            doc_name,
+            ValidationError::MissingElement {
+                kind,
+                element: "sce:element-type".into(),
+            },
+        )
+    })?;
+    let element_type = node.text().unwrap_or("").trim().to_string();
+    if element_type.is_empty() {
+        return Err(located(
+            &node,
+            doc_name,
+            ValidationError::AttributeRuleViolated {
+                element: "<sce:element-type>".into(),
+                attr: "<body>".into(),
+                value: String::new(),
+                rule: "non-empty kind name (codec or procedure)".into(),
+            },
+        ));
+    }
+    Ok(element_type)
+}
+
+/// A required child whose body is one of a closed set of words — the
+/// `<sce:producers>`, `<sce:consumers>` and `<sce:progress>` of a queue. It
+/// has no default, so a document that omits it is refused as missing, not
+/// read as the first word.
+fn read_required_word<'a>(
+    root: &roxmltree::Node,
+    doc_name: &str,
+    kind: ForgeKind,
+    local: &str,
+    allowed: &[&'a str],
+) -> Result<&'a str, Located<ForgeError>> {
+    let node = find_sce_child(root, local).ok_or_else(|| {
+        located(
+            root,
+            doc_name,
+            ValidationError::MissingElement {
+                kind,
+                element: format!("sce:{local}"),
+            },
+        )
+    })?;
+    let body = node.text().unwrap_or("").trim();
+    allowed
+        .iter()
+        .copied()
+        .find(|word| *word == body)
+        .ok_or_else(|| {
+            located(
+                &node,
+                doc_name,
+                ValidationError::InvalidAttribute {
+                    element: format!("<sce:{local}>"),
+                    attr: "<body>".into(),
+                    value: body.to_string(),
+                    allowed: allowed.iter().map(|w| (*w).to_string()).collect(),
+                },
+            )
+        })
+}
+
+/// Parse `<scxml sce:kind="queue">…</scxml>` into a [`QueueModel`] — RFC
+/// §synth-5-P.
+///
+/// **Required:** `<sce:element-type>`, `<sce:producers>`, `<sce:consumers>`,
+/// `<sce:progress>` (no defaults: each selects the algorithm), and exactly
+/// one of `<sce:bounded>`, `<sce:segmented>`, `<sce:intrusive>`.
+/// **Optional:** `<sce:participants>`, which the selected algorithm may
+/// require. **Refused here, once the document is read:** a declared progress
+/// the selected algorithm cannot give (`queue/progress-unreachable`), and an
+/// algorithm that sizes its ring from the participants with none written
+/// (`queue/participants-unresolved`). What needs another document or the
+/// deploy file (the element's kind, the link field, a deploy key) is judged
+/// where those are in hand.
+fn parse_queue(
+    root: &roxmltree::Node,
+    label: DocumentLabel<'_>,
+) -> Result<QueueModel, Located<ForgeError>> {
+    let doc_name = label.identifier;
+    let diag = label.diagnostic_label;
+
+    let element_type = read_element_type(root, diag, ForgeKind::Queue)?;
+    let cardinality = |word: &str| match word {
+        "one" => QueueCardinality::One,
+        _ => QueueCardinality::Many,
+    };
+    let producers = cardinality(read_required_word(
+        root,
+        diag,
+        ForgeKind::Queue,
+        "producers",
+        &["one", "many"],
+    )?);
+    let consumers = cardinality(read_required_word(
+        root,
+        diag,
+        ForgeKind::Queue,
+        "consumers",
+        &["one", "many"],
+    )?);
+    let progress = match read_required_word(
+        root,
+        diag,
+        ForgeKind::Queue,
+        "progress",
+        &["wait-free", "lock-free", "blocking"],
+    )? {
+        "wait-free" => QueueProgress::WaitFree,
+        "lock-free" => QueueProgress::LockFree,
+        _ => QueueProgress::Blocking,
+    };
+
+    // ── Storage: exactly one of three ──
+    let bounded = find_sce_child(root, "bounded");
+    let segmented = find_sce_child(root, "segmented");
+    let intrusive = find_sce_child(root, "intrusive");
+    let mut written: Vec<(u32, &str)> = [
+        (bounded, "<sce:bounded>"),
+        (segmented, "<sce:segmented>"),
+        (intrusive, "<sce:intrusive>"),
+    ]
+    .iter()
+    .filter_map(|(node, name)| node.map(|n| (n.range().start as u32, *name)))
+    .collect();
+    written.sort_unstable();
+    if written.len() != 1 {
+        return Err(located(
+            root,
+            diag,
+            ValidationError::QueueStorageNotExactlyOne {
+                queue_name: doc_name.to_string(),
+                written: written
+                    .iter()
+                    .map(|(_, name)| (*name).to_string())
+                    .collect(),
+            },
+        ));
+    }
+    let storage = if let Some(node) = bounded {
+        QueueStorage::Bounded {
+            capacity: read_capacity_source(&node, diag, "<sce:bounded>", "capacity")?,
+        }
+    } else if let Some(node) = segmented {
+        let raw = node.attribute("segment").ok_or_else(|| {
+            located(
+                &node,
+                diag,
+                ValidationError::MissingAttribute {
+                    element: "<sce:segmented>".into(),
+                    attr: "segment".into(),
+                },
+            )
+        })?;
+        let segment: u32 = raw.trim().parse().ok().filter(|n| *n > 0).ok_or_else(|| {
+            located(
+                &node,
+                diag,
+                ValidationError::AttributeRuleViolated {
+                    element: "<sce:segmented>".into(),
+                    attr: "segment".into(),
+                    value: raw.to_string(),
+                    rule: "positive u32 (slots per segment)".into(),
+                },
+            )
+        })?;
+        let allocator_progress = match node.attribute("allocator-progress").map(str::trim) {
+            None => {
+                return Err(located(
+                    &node,
+                    diag,
+                    ValidationError::QueueAllocatorProgressMissing {
+                        queue_name: doc_name.to_string(),
+                    },
+                ))
+            }
+            Some("wait-free") => QueueProgress::WaitFree,
+            Some("lock-free") => QueueProgress::LockFree,
+            Some("blocking") => QueueProgress::Blocking,
+            Some(other) => {
+                return Err(located(
+                    &node,
+                    diag,
+                    ValidationError::InvalidAttribute {
+                        element: "<sce:segmented>".into(),
+                        attr: "allocator-progress".into(),
+                        value: other.to_string(),
+                        allowed: vec!["wait-free".into(), "lock-free".into(), "blocking".into()],
+                    },
+                ))
+            }
+        };
+        QueueStorage::Segmented {
+            segment,
+            allocator_progress,
+        }
+    } else {
+        let node = intrusive.expect("one storage element was written, and it is not the others");
+        let link_field = require_attr(&node, "link-field", "<sce:intrusive>", diag)?
+            .trim()
+            .to_string();
+        if link_field.is_empty() {
+            return Err(located(
+                &node,
+                diag,
+                ValidationError::AttributeRuleViolated {
+                    element: "<sce:intrusive>".into(),
+                    attr: "link-field".into(),
+                    value: String::new(),
+                    rule: "non-empty field name of the element type".into(),
+                },
+            ));
+        }
+        QueueStorage::Intrusive { link_field }
+    };
+
+    let participants = find_sce_child(root, "participants")
+        .map(|node| read_capacity_source(&node, diag, "<sce:participants>", "const"))
+        .transpose()?;
+
+    let model = QueueModel {
+        name: doc_name.to_string(),
+        element_type,
+        producers,
+        consumers,
+        progress,
+        storage,
+        participants,
+        source_location: forge_source_location_of(root, diag),
+    };
+
+    // ── Judged on the document alone: the selection table ──
+    let selection = model.selection();
+    let storage_word = match &model.storage {
+        QueueStorage::Bounded { .. } => "bounded",
+        QueueStorage::Segmented { .. } => "segmented",
+        QueueStorage::Intrusive { .. } => "intrusive",
+    };
+    let cardinality_word = |c: QueueCardinality| match c {
+        QueueCardinality::One => "one",
+        QueueCardinality::Many => "many",
+    };
+    let progress_word = |p: QueueProgress| match p {
+        QueueProgress::WaitFree => "wait-free",
+        QueueProgress::LockFree => "lock-free",
+        QueueProgress::Blocking => "blocking",
+    };
+    if model.progress > selection.reachable() {
+        return Err(located(
+            root,
+            diag,
+            ValidationError::QueueProgressUnreachable {
+                queue_name: doc_name.to_string(),
+                declared: progress_word(model.progress).into(),
+                reachable: progress_word(selection.reachable()).into(),
+                algorithm: selection.algorithm.name().into(),
+                storage: storage_word.into(),
+                producers: cardinality_word(model.producers).into(),
+                consumers: cardinality_word(model.consumers).into(),
+            },
+        ));
+    }
+    if selection.algorithm.needs_ring_sized_by_participants() && model.participants.is_none() {
+        return Err(located(
+            root,
+            diag,
+            ValidationError::QueueParticipantsUnresolved {
+                queue_name: doc_name.to_string(),
+                algorithm: selection.algorithm.name().into(),
+                storage: storage_word.into(),
+                producers: cardinality_word(model.producers).into(),
+                consumers: cardinality_word(model.consumers).into(),
+            },
+        ));
+    }
+    Ok(model)
+}
+
+/// A [`CapacitySource`] from an element that writes it as one of two forms —
+/// `source="deploy" key="…"`, or `<const_attr>="N"` — and refuses an element
+/// that writes neither or both.
+///
+/// `<sce:capacity const="N">` of a bounded collection (RFC §synth-5-L),
+/// `<sce:bounded capacity="N">` and `<sce:participants const="N">` of a
+/// queue (RFC §synth-5-P) are the same choice spelled with the element and
+/// the constant's attribute their documents give them, so the rules for it
+/// live here once. `element` is the element as an author writes it, for the
+/// refusal to quote.
+fn read_capacity_source(
+    node: &roxmltree::Node,
+    doc_name: &str,
+    element: &str,
+    const_attr: &str,
+) -> Result<CapacitySource, Located<ForgeError>> {
+    // One of two forms: `source="deploy" key="…"`, or the constant.
+    let forms: [&[&str]; 2] = [&["source", "key"], &[const_attr]];
+    if let Some(refusal) = exactly_one_form(node, doc_name, element.into(), &forms, |_| true) {
+        return Err(refusal);
+    }
+    // Exactly one form is written, so the constant decides which. The deploy
+    // form, incomplete or naming a source other than `deploy`, is refused for
+    // what it lacks or holds rather than as a choice of form.
+    match node.attribute(const_attr) {
+        // `source="deploy" key="machines.X.limits.Y"` — spec lines 2553-2554.
+        None => {
+            let key = match (node.attribute("source"), node.attribute("key")) {
+                (None, _) => {
+                    return Err(located(
+                        node,
+                        doc_name,
+                        ValidationError::MissingAttribute {
+                            element: element.into(),
+                            attr: "source".into(),
+                        },
+                    ));
+                }
+                (Some(source), _) if source != "deploy" => {
+                    return Err(located(
+                        node,
+                        doc_name,
+                        ValidationError::InvalidAttribute {
+                            element: element.into(),
+                            attr: "source".into(),
+                            value: source.to_string(),
+                            allowed: vec!["deploy".into()],
+                        },
+                    ));
+                }
+                (Some(_), None) => {
+                    return Err(located(
+                        node,
+                        doc_name,
+                        ValidationError::MissingAttribute {
+                            element: element.into(),
+                            attr: "key".into(),
+                        },
+                    ));
+                }
+                (Some(_), Some(key)) => key,
+            };
+            let key = key.trim().to_string();
+            if key.is_empty() {
+                return Err(located(
+                    node,
+                    doc_name,
+                    ValidationError::AttributeRuleViolated {
+                        element: element.into(),
+                        attr: "key".into(),
+                        value: String::new(),
+                        rule: "non-empty dotted key path (e.g. \"machines.X.limits.Y\")".into(),
+                    },
+                ));
+            }
+            Ok(CapacitySource::DeployKey { key })
+        }
+        // The constant — spec line 2602.
+        Some(c) => {
+            let value: u32 = c.parse().map_err(|_| {
+                located(
+                    node,
+                    doc_name,
+                    ValidationError::AttributeRuleViolated {
+                        element: element.into(),
+                        attr: const_attr.into(),
+                        value: c.to_string(),
+                        rule: "positive u32 (build-time slot count)".into(),
+                    },
+                )
+            })?;
+            if value == 0 {
+                return Err(located(
+                    node,
+                    doc_name,
+                    ValidationError::AttributeRuleViolated {
+                        element: element.into(),
+                        attr: const_attr.into(),
+                        value: c.to_string(),
+                        rule: "positive non-zero u32".into(),
+                    },
+                ));
+            }
+            Ok(CapacitySource::CompileConst { value })
+        }
+    }
 }
 
 // ── Event-schema kind parser ──────────────────────────────────

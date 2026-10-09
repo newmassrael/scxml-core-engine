@@ -206,7 +206,8 @@ fn declarations(parsed: &ParsedForge) -> Vec<(&str, Declared)> {
         }
         // No expression reads a name these declare: a timer fires an event,
         // a link and a worker wire channels, a buffer pool and a bounded
-        // collection size storage, an enum lists values (their uniqueness is
+        // collection size storage, a queue names a storage mode and the
+        // contexts around it, an enum lists values (their uniqueness is
         // the enum parser's), and a statechart's names are the ECMAScript
         // datamodel's, resolved by `crate::ecmascript::scope`.
         ForgeDocument::Timer(_)
@@ -214,6 +215,7 @@ fn declarations(parsed: &ParsedForge) -> Vec<(&str, Declared)> {
         | ForgeDocument::BufferPool(_)
         | ForgeDocument::Worker(_)
         | ForgeDocument::BoundedCollection(_)
+        | ForgeDocument::Queue(_)
         | ForgeDocument::Enum(_)
         | ForgeDocument::Statechart(_) => {}
     }

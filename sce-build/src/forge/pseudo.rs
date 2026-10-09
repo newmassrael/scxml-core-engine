@@ -331,9 +331,10 @@ use crate::forge::model::{
     EnumModel, EventSchemaModel, FilterModel, FilterType, FlagDef, FoldBody, ForgeDocument,
     ForgeField, InboxOrdering, InterpolationMethod, InterpolationModel, LinkClass, LinkModel,
     LookupModel, MissPolicy, ObserverModel, OutOfBounds, OverflowPolicy, PresentIfPredicate,
-    PresentIfScope, ProcedureHelper, ProcedureModel, ProcedureState, ProcedureTransition, SceType,
-    TestVector, TestVectorValue, TimerModel, TlvOverflowPolicy, TlvTerminateStrategy,
-    TransformModel, ValidatorModel, WorkerModel,
+    PresentIfScope, ProcedureHelper, ProcedureModel, ProcedureState, ProcedureTransition,
+    QueueCardinality, QueueModel, QueueProgress, QueueStorage, SceType, TestVector,
+    TestVectorValue, TimerModel, TlvOverflowPolicy, TlvTerminateStrategy, TransformModel,
+    ValidatorModel, WorkerModel,
 };
 use crate::forge::page::{Indent, Node, Part, Shape, Word, EN};
 use crate::model::BlockRole;
@@ -559,6 +560,7 @@ pub fn render_nodes(
         ForgeDocument::Observer(m) => Ok(render_observer(m)),
         ForgeDocument::Interpolation(m) => Ok(render_interpolation(m)),
         ForgeDocument::BoundedCollection(m) => Ok(render_bounded_collection(m)),
+        ForgeDocument::Queue(m) => Ok(render_queue(m)),
         ForgeDocument::Worker(m) => Ok(render_worker(m)),
         ForgeDocument::BufferPool(m) => Ok(render_buffer_pool(m)),
         ForgeDocument::Link(m) => Ok(render_link(m)),
@@ -1873,6 +1875,52 @@ fn render_bounded_collection(m: &BoundedCollectionModel) -> Vec<Node> {
     let _ = write!(head, " ordering {ordering} concurrency {concurrency}");
     if let Some(ix) = &m.index_by {
         let _ = write!(head, " index-by {}", text(ix));
+    }
+    out.line(&head);
+    out.nodes
+}
+
+/// A queue is one head line, as a bounded collection is: what it carries,
+/// who works its two sides, the progress it promises, and where it keeps its
+/// elements.
+fn render_queue(m: &QueueModel) -> Vec<Node> {
+    let mut out = Out::new();
+    let cardinality = |c: QueueCardinality| match c {
+        QueueCardinality::One => "one",
+        QueueCardinality::Many => "many",
+    };
+    let progress = |p: QueueProgress| match p {
+        QueueProgress::WaitFree => "wait-free",
+        QueueProgress::LockFree => "lock-free",
+        QueueProgress::Blocking => "blocking",
+    };
+    let source = |c: &CapacitySource| match c {
+        CapacitySource::DeployKey { key } => format!("deploy-key {}", text(key)),
+        CapacitySource::CompileConst { value } => format!("const {value}"),
+    };
+    let storage = match &m.storage {
+        QueueStorage::Bounded { capacity } => format!("bounded capacity {}", source(capacity)),
+        QueueStorage::Segmented {
+            segment,
+            allocator_progress,
+        } => format!(
+            "segmented segment {segment} allocator-progress {}",
+            progress(*allocator_progress)
+        ),
+        QueueStorage::Intrusive { link_field } => {
+            format!("intrusive link-field {}", text(link_field))
+        }
+    };
+    let mut head = format!(
+        "queue {} of {} producers {} consumers {} progress {} {storage}",
+        text(&m.name),
+        text(&m.element_type),
+        cardinality(m.producers),
+        cardinality(m.consumers),
+        progress(m.progress),
+    );
+    if let Some(participants) = &m.participants {
+        let _ = write!(head, " participants {}", source(participants));
     }
     out.line(&head);
     out.nodes

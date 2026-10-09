@@ -112,6 +112,11 @@
       "prose": "Keep a table of at most 16 active sessions. An entry is added when a session opens and removed when it closes. Memory for the table must be fixed when the program is built; nothing may be allocated while it runs."
     },
     {
+      "id": "frame-hand-off",
+      "kind": "queue",
+      "prose": "Two receive tasks pass the frames they receive to one processing task, which takes them in the order they were put in. Up to 64 frames may be waiting. A receive task must never be held up by the processing task being slow or stopped, and nothing may be allocated while the program runs."
+    },
+    {
       "id": "udp-endpoint",
       "kind": "link",
       "prose": "Frames arrive and leave over UDP. Each frame is delimited by the frame codec. When frames arrive faster than they can be staged in the receive buffer pool, the newest frames are dropped."

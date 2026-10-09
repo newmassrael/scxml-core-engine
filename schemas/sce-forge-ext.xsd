@@ -76,6 +76,11 @@
            mesh DL-7'; `_event.data.<field>` reads lower natively
            on every backend. -->
       <xs:enumeration value="event-schema"/>
+      <!-- SCE Protocol-Synthesis RFC §synth-5-P — FIFO handed from one
+           execution context to another. The document states the contract
+           (element type, producers, consumers, progress, one storage) and
+           names no algorithm. -->
+      <xs:enumeration value="queue"/>
     </xs:restriction>
   </xs:simpleType>
 
@@ -2154,6 +2159,70 @@
       <xs:simpleContent>
         <xs:extension base="xs:string"/>
       </xs:simpleContent>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- Queue kind (RFC §synth-5-P). `producers`, `consumers` and `progress`
+       are words in the element's text; the parser refuses a word outside
+       the closed set and names the allowed ones, which a grammar
+       enumeration would only report as a pattern failure. Every attribute
+       below is optional for the reason `capacity` above is: the parser
+       decides which are required, per storage mode, and a grammar narrower
+       than the parser removes a form the parser accepts. -->
+  <xs:element name="producers">
+    <xs:complexType>
+      <xs:simpleContent>
+        <xs:extension base="xs:string"/>
+      </xs:simpleContent>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="consumers">
+    <xs:complexType>
+      <xs:simpleContent>
+        <xs:extension base="xs:string"/>
+      </xs:simpleContent>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="progress">
+    <xs:complexType>
+      <xs:simpleContent>
+        <xs:extension base="xs:string"/>
+      </xs:simpleContent>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- Storage: exactly one of the three. `<sce:bounded>` writes its
+       capacity as `capacity="N"` or as `source="deploy" key="..."`. -->
+  <xs:element name="bounded">
+    <xs:complexType>
+      <xs:attribute name="capacity" type="xs:string"/>
+      <xs:attribute name="source" type="xs:string"/>
+      <xs:attribute name="key" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="segmented">
+    <xs:complexType>
+      <xs:attribute name="segment" type="xs:string"/>
+      <xs:attribute name="allocator-progress" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="intrusive">
+    <xs:complexType>
+      <xs:attribute name="link-field" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- The most contexts that hold a handle on one side at once: a count
+       like a capacity, written the same two ways. -->
+  <xs:element name="participants">
+    <xs:complexType>
+      <xs:attribute name="const" type="xs:string"/>
+      <xs:attribute name="source" type="xs:string"/>
+      <xs:attribute name="key" type="xs:string"/>
     </xs:complexType>
   </xs:element>
 

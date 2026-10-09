@@ -86,6 +86,9 @@ pub fn pictures(
         // ([`figures`]); an algorithm is steps in order, read from the
         // pseudocode page and the field table.
         ForgeDocument::Procedure(_) | ForgeDocument::Algorithm(_) => Ok(Vec::new()),
+        // A queue has no picture of its own yet: the pseudocode page and the
+        // field table carry it.
+        ForgeDocument::Queue(_) => Ok(Vec::new()),
     }
 }
 

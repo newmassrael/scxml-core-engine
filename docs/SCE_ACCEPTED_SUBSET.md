@@ -450,7 +450,7 @@ producer side really holds is that it says when it did not validate.
 
 The `sce:kind` attribute on the root `<scxml>` element selects the
 forge kind the document compiles to. The closed value set is the
-eighteen variants of `ForgeKind`, written in the `sce:kind` attribute
+nineteen variants of `ForgeKind`, written in the `sce:kind` attribute
 as the kebab-case tokens below (source of truth:
 `sce-build/src/forge/model.rs` `ForgeKind::from_attr`; see
 `forge_kinds_catalog.md` for the stateful/stateless/inline-eligible
@@ -461,6 +461,7 @@ statechart   procedure   transform   lookup       condition
 codec        validator   filter      interpolation
 timer        observer    algorithm   link         worker
 buffer-pool  bounded-collection      enum         event-schema
+queue
 ```
 
 Omitting `sce:kind` defaults to `Statechart`. Values outside this set
@@ -6837,6 +6838,11 @@ Codes that the author can avoid by writing a better SCXML /
 | `collection/index-by-field-missing` | Validation |
 | `collection/multi-writer-without-atomics` | Validation |
 | `collection/capacity-unresolved` | Validation |
+| `queue/storage-not-exactly-one` | Validation |
+| `queue/allocator-progress-missing` | Validation |
+| `queue/progress-unreachable` | Validation |
+| `queue/participants-unresolved` | Validation |
+| `queue/storage-runtime-missing` | Generate |
 | `timer/period-below-tick-rate` | Validation |
 | `timer/slot-overflow` | Mesh Deploy |
 | `extern/symbol-not-in-whitelist` | Validation |

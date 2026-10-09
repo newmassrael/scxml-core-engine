@@ -44,7 +44,7 @@
         "name": {
           "description": "The sce:kind spelling of the kind the run compiled. The enumeration is ForgeKind::ALL_ATTR_NAMES, which a test holds this list to.",
           "type": "string",
-          "enum": ["statechart", "transform", "lookup", "condition", "codec", "procedure", "validator", "filter", "interpolation", "timer", "observer", "algorithm", "link", "buffer-pool", "worker", "bounded-collection", "enum", "event-schema"]
+          "enum": ["statechart", "transform", "lookup", "condition", "codec", "procedure", "validator", "filter", "interpolation", "timer", "observer", "algorithm", "link", "buffer-pool", "worker", "bounded-collection", "enum", "event-schema", "queue"]
         },
         "declared": {
           "description": "false exactly when the root carries no sce:kind and the document was read as a statechart by default.",

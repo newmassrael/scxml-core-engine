@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SCE Protocol-Synthesis RFC §synth-5-P (queue kind, intrusive storage): many
+  producers and one consumer, each element carrying its own link. The
+  selection table gives this the Vyukov MPSC list, whose push is wait-free
+  and whose pop can block while a producer is between its two steps, so the
+  strongest progress this document can declare is blocking. The element
+  document and its link field are named and not resolved here.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://sce.dev/ext sce-forge.xsd"
+       sce:kind="queue"
+       name="queue_intrusive_mpsc"
+       version="1.0">
+  <sce:element-type>rx_event</sce:element-type>
+  <sce:producers>many</sce:producers>
+  <sce:consumers>one</sce:consumers>
+  <sce:progress>blocking</sce:progress>
+  <sce:intrusive link-field="next"/>
+</scxml>

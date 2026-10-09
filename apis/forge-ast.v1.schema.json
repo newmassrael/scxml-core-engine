@@ -3890,6 +3890,68 @@
             "name"
           ],
           "type": "object"
+        },
+        {
+          "description": "FIFO handed between execution contexts. See [`QueueModel`].",
+          "properties": {
+            "consumers": {
+              "$ref": "#/definitions/QueueCardinality"
+            },
+            "element_type": {
+              "description": "`<sce:element-type>` body text — references another forge kind by name. Opaque `String` at parse time; resolved cross-doc as for a bounded collection.",
+              "type": "string"
+            },
+            "kind": {
+              "enum": [
+                "queue"
+              ],
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "participants": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/CapacitySource"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "`<sce:participants .../>` — the most contexts that hold a handle on one side at the same time. It sets an SCQ ring's size and sizes a reclamation domain; same forms as a capacity."
+            },
+            "producers": {
+              "$ref": "#/definitions/QueueCardinality"
+            },
+            "progress": {
+              "$ref": "#/definitions/QueueProgress"
+            },
+            "source_location": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SourceLocation"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Post-preprocessor source position of the `<scxml sce:kind=\"queue\">` root element (RFC §synth-5-O), for the SCE-MAP marker."
+            },
+            "storage": {
+              "$ref": "#/definitions/QueueStorage"
+            }
+          },
+          "required": [
+            "consumers",
+            "element_type",
+            "kind",
+            "name",
+            "producers",
+            "progress",
+            "storage"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -4132,6 +4194,13 @@
           "description": "Typed contract for `_event.data` of a named SCXML event (the 18th forge kind). Maps an event name (`job.completed`, `task.failed`, …) to a list of typed `<data>` declarations so the receive-side typecheck can validate `_event.data.<field>` expressions in transition `cond` attributes at parse time. Send-side payload validation (`<send>/<param name=\"F\">`) and mesh cross-machine validation ride the same shape. Schemaless fallback: events without an imported EventSchema retain dynamic `_event.data` behavior. W3C built-in events (`error.*`, `done.invoke.*`, `done.state.*`) are explicitly excluded — declaring a schema for these raises `validation/event-schema-on-builtin-event`. Per-backend payload struct codegen emits a typed record per backend that references imported Enum kinds by qualified name via `LangCtx::type_name`; the Enum kind owns its emitted type, so EventSchema never re-emits enum variants (the Enum document is the single source of truth).",
           "enum": [
             "event_schema"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "FIFO that hands elements from one execution context to another — SCE Protocol-Synthesis RFC §synth-5-P. The document states the contract (element type, how many producers and consumers, the progress guarantee, and one of three storage modes) and names no algorithm; the algorithms live once per language in `sce_forge_runtime::queue`. Distinct from [`Self::BoundedCollection`] (a table addressed by position, not a FIFO handed between contexts) and from [`Self::Worker`] (an execution context that owns one inbox). Emits on Rust only until the other five runtimes land.",
+          "enum": [
+            "queue"
           ],
           "type": "string"
         }
@@ -5569,6 +5638,119 @@
         "unit"
       ],
       "type": "object"
+    },
+    "QueueCardinality": {
+      "description": "How many execution contexts work one side of a [`QueueModel`] — `<sce:producers>` and `<sce:consumers>`, RFC §synth-5-P. Required and without a default: each one selects the algorithm, so a default would choose one the author never saw.",
+      "oneOf": [
+        {
+          "description": "`<sce:producers>one</sce:producers>` — exactly one context.",
+          "enum": [
+            "one"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "`<sce:producers>many</sce:producers>` — any number.",
+          "enum": [
+            "many"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "QueueProgress": {
+      "description": "The progress guarantee a [`QueueModel`] requires of its push and pop — `<sce:progress>`, RFC §synth-5-P. Declared, checked against the selection table, and never silently weakened: a declaration the selected algorithm cannot meet on the selected backend is refused.",
+      "oneOf": [
+        {
+          "description": "Some participant is blocked by a stalled one. The weakest guarantee, and the one a lock gives.",
+          "enum": [
+            "blocking"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Some operation completes in a bounded number of steps whatever the other participants do.",
+          "enum": [
+            "lock-free"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Every operation completes in a bounded number of steps. The strongest guarantee; declaring it asks the most of the algorithm.",
+          "enum": [
+            "wait-free"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "QueueStorage": {
+      "description": "Where a [`QueueModel`] keeps its elements — exactly one of `<sce:bounded>`, `<sce:segmented>`, `<sce:intrusive>`, RFC §synth-5-P.",
+      "oneOf": [
+        {
+          "description": "`<sce:bounded capacity=\"N\"/>` — the declared capacity bounds occupancy and the instance owns a fixed array.",
+          "properties": {
+            "capacity": {
+              "$ref": "#/definitions/CapacitySource"
+            },
+            "storage": {
+              "enum": [
+                "bounded"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "capacity",
+            "storage"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`<sce:segmented segment=\"N\" allocator-progress=\"…\"/>` — the injected allocator bounds occupancy. Refused on the no-alloc profile.",
+          "properties": {
+            "allocator_progress": {
+              "$ref": "#/definitions/QueueProgress"
+            },
+            "segment": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "storage": {
+              "enum": [
+                "segmented"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "allocator_progress",
+            "segment",
+            "storage"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`<sce:intrusive link-field=\"…\"/>` — each element carries its own link field and the caller owns every node, so push cannot fail.",
+          "properties": {
+            "link_field": {
+              "type": "string"
+            },
+            "storage": {
+              "enum": [
+                "intrusive"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "link_field",
+            "storage"
+          ],
+          "type": "object"
+        }
+      ]
     },
     "RangeRule": {
       "description": "Range check: field value must be within [min, max].",

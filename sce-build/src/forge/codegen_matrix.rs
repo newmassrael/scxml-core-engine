@@ -90,7 +90,11 @@ pub const fn kind_class(kind: ForgeKind) -> KindClass {
         // typed-Enum fields resolve through the Enum kind's emitted
         // type via the import context. No MCU-specific hardware
         // constraint; Generic class matches Enum's stance.
-        | ForgeKind::EventSchema => KindClass::Generic,
+        | ForgeKind::EventSchema
+        // RFC §synth-5-P: a Queue is specified for all six backends (Python
+        // at `blocking` only). It is Generic, so a backend whose runtime has
+        // not landed yet is `codegen/generic-kind-backend-emit-missing`.
+        | ForgeKind::Queue => KindClass::Generic,
         // RFC §synth-5-C / §synth-5-J-4: Link is the first MCU-class kind.
         // Authoring it on cpp/kotlin/go/python raises
         // `codegen/mcu-class-kind-on-non-mcu-language`. The (rust, *)
@@ -218,6 +222,18 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
         // lets every `(EventSchema, lang)`
         // pair through to the per-language render arm.
         ForgeKind::EventSchema => true,
+        // RFC §synth-5-P Queue: the algorithms live once per language in
+        // that language's forge runtime (SCE_FORGE.md §2.1), so a backend
+        // can emit a queue only once its runtime has them. Rust's has
+        // (`sce_forge_runtime::queue`: the Lamport ring and SCQ); the other
+        // five are the RFC's landing order, one runtime at a time, and each
+        // is flipped here with its template and its conformance arm.
+        ForgeKind::Queue => match lang {
+            Language::Rust => true,
+            Language::Cpp | Language::Kotlin | Language::Go | Language::Python | Language::C11 => {
+                false
+            }
+        },
     }
 }
 

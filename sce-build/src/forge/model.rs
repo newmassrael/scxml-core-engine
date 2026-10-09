@@ -169,6 +169,16 @@ pub enum ForgeKind {
     /// its emitted type, so EventSchema never re-emits enum variants
     /// (the Enum document is the single source of truth).
     EventSchema,
+    /// FIFO that hands elements from one execution context to another —
+    /// SCE Protocol-Synthesis RFC §synth-5-P. The document states the
+    /// contract (element type, how many producers and consumers, the
+    /// progress guarantee, and one of three storage modes) and names no
+    /// algorithm; the algorithms live once per language in
+    /// `sce_forge_runtime::queue`. Distinct from [`Self::BoundedCollection`]
+    /// (a table addressed by position, not a FIFO handed between contexts)
+    /// and from [`Self::Worker`] (an execution context that owns one inbox).
+    /// Emits on Rust only until the other five runtimes land.
+    Queue,
 }
 
 impl ForgeKind {
@@ -195,6 +205,7 @@ impl ForgeKind {
         "bounded-collection",
         "enum",
         "event-schema",
+        "queue",
     ];
 
     /// This kind's `sce:kind` attribute value — the inverse of
@@ -228,6 +239,7 @@ impl ForgeKind {
             Self::BoundedCollection => "bounded-collection",
             Self::Enum => "enum",
             Self::EventSchema => "event-schema",
+            Self::Queue => "queue",
         }
     }
 
@@ -252,6 +264,7 @@ impl ForgeKind {
             "bounded-collection" => Some(Self::BoundedCollection),
             "enum" => Some(Self::Enum),
             "event-schema" => Some(Self::EventSchema),
+            "queue" => Some(Self::Queue),
             _ => None,
         }
     }
@@ -319,6 +332,10 @@ impl ForgeKind {
             // construct or destructure at the `<send>/<param>` site;
             // the schema document itself carries no runtime instance.
             Self::EventSchema => false,
+            // RFC §synth-5-P: a Queue is the storage and the two handles
+            // that reach it, owned by whoever constructs it, so it has
+            // instance state.
+            Self::Queue => true,
         }
     }
 
@@ -381,6 +398,10 @@ impl ForgeKind {
             // the Enum kind's emitted type by qualified name; no
             // shared runtime). Tier `None` matches Enum's stance.
             Self::EventSchema => RuntimeDep::None,
+            // RFC §synth-5-P: the algorithms live once per language in
+            // `sce_forge_runtime::queue` (SCE_FORGE.md §2.1), so the
+            // generated type names a runtime type.
+            Self::Queue => RuntimeDep::ForgeRuntime,
         }
     }
 
@@ -406,6 +427,7 @@ impl ForgeKind {
                 | Self::BoundedCollection
                 | Self::Enum
                 | Self::EventSchema
+                | Self::Queue
         )
     }
 }
@@ -431,6 +453,7 @@ impl std::fmt::Display for ForgeKind {
             Self::BoundedCollection => write!(f, "bounded-collection"),
             Self::Enum => write!(f, "enum"),
             Self::EventSchema => write!(f, "event-schema"),
+            Self::Queue => write!(f, "queue"),
         }
     }
 }
@@ -5121,6 +5144,196 @@ pub struct BoundedCollectionModel {
     pub source_location: Option<SourceLocation>,
 }
 
+/// How many execution contexts work one side of a [`QueueModel`] —
+/// `<sce:producers>` and `<sce:consumers>`, RFC §synth-5-P. Required and
+/// without a default: each one selects the algorithm, so a default would
+/// choose one the author never saw.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(rename_all = "kebab-case")]
+pub enum QueueCardinality {
+    /// `<sce:producers>one</sce:producers>` — exactly one context.
+    One,
+    /// `<sce:producers>many</sce:producers>` — any number.
+    Many,
+}
+
+/// The progress guarantee a [`QueueModel`] requires of its push and pop —
+/// `<sce:progress>`, RFC §synth-5-P. Declared, checked against the
+/// selection table, and never silently weakened: a declaration the selected
+/// algorithm cannot meet on the selected backend is refused.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(rename_all = "kebab-case")]
+pub enum QueueProgress {
+    /// Some participant is blocked by a stalled one. The weakest guarantee,
+    /// and the one a lock gives.
+    Blocking,
+    /// Some operation completes in a bounded number of steps whatever the
+    /// other participants do.
+    LockFree,
+    /// Every operation completes in a bounded number of steps. The
+    /// strongest guarantee; declaring it asks the most of the algorithm.
+    WaitFree,
+}
+
+/// Where a [`QueueModel`] keeps its elements — exactly one of
+/// `<sce:bounded>`, `<sce:segmented>`, `<sce:intrusive>`, RFC §synth-5-P.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(tag = "storage", rename_all = "snake_case")]
+pub enum QueueStorage {
+    /// `<sce:bounded capacity="N"/>` — the declared capacity bounds
+    /// occupancy and the instance owns a fixed array.
+    Bounded { capacity: CapacitySource },
+    /// `<sce:segmented segment="N" allocator-progress="…"/>` — the injected
+    /// allocator bounds occupancy. Refused on the no-alloc profile.
+    Segmented {
+        segment: u32,
+        allocator_progress: QueueProgress,
+    },
+    /// `<sce:intrusive link-field="…"/>` — each element carries its own
+    /// link field and the caller owns every node, so push cannot fail.
+    Intrusive { link_field: String },
+}
+
+/// Queue document — RFC §synth-5-P FIFO handed from one execution context
+/// to another.
+///
+/// Schema (per `<scxml sce:kind="queue">` body): `<sce:element-type>`,
+/// `<sce:producers>`, `<sce:consumers>` and `<sce:progress>` are required
+/// and have no default; exactly one storage element; `<sce:participants>`
+/// when the selected algorithm needs a ring size or a reclamation domain.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct QueueModel {
+    pub name: String,
+    /// `<sce:element-type>` body text — references another forge kind by
+    /// name. Opaque `String` at parse time; resolved cross-doc as for a
+    /// bounded collection.
+    pub element_type: String,
+    pub producers: QueueCardinality,
+    pub consumers: QueueCardinality,
+    pub progress: QueueProgress,
+    pub storage: QueueStorage,
+    /// `<sce:participants .../>` — the most contexts that hold a handle on
+    /// one side at the same time. It sets an SCQ ring's size and sizes a
+    /// reclamation domain; same forms as a capacity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub participants: Option<CapacitySource>,
+    /// Post-preprocessor source position of the `<scxml sce:kind="queue">`
+    /// root element (RFC §synth-5-O), for the SCE-MAP marker.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_location: Option<SourceLocation>,
+}
+
+/// The algorithm a queue document selects — one row of the RFC §synth-5-P
+/// selection table. The document names none; this is what the generator
+/// picks from the storage mode and the two cardinalities.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(rename_all = "kebab-case")]
+pub enum QueueAlgorithm {
+    /// Lamport ring, indices over two laps. `bounded`, one producer, one consumer.
+    LamportRing,
+    /// SCQ data queue (Nikolaev, DISC 2019). `bounded`, any other cardinality.
+    Scq,
+    /// Linked Lamport rings. `segmented`, one producer, one consumer.
+    LinkedLamportRings,
+    /// LSCQ: a list of SCQ rings. `segmented`, any other cardinality.
+    Lscq,
+    /// Vyukov intrusive list, single producer. `intrusive`, one and one.
+    VyukovSpsc,
+    /// Vyukov intrusive MPSC. `intrusive`, many producers, one consumer.
+    VyukovMpsc,
+    /// Vyukov intrusive list, consumers serialised by a test-and-set flag.
+    /// `intrusive`, any producers, many consumers.
+    VyukovListWithConsumerFlag,
+}
+
+impl QueueAlgorithm {
+    /// The algorithm as the RFC names it, for a diagnostic to quote.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::LamportRing => "Lamport ring",
+            Self::Scq => "SCQ data queue",
+            Self::LinkedLamportRings => "linked Lamport rings",
+            Self::Lscq => "LSCQ (a list of SCQ rings)",
+            Self::VyukovSpsc => "Vyukov intrusive list (single producer)",
+            Self::VyukovMpsc => "Vyukov intrusive MPSC",
+            Self::VyukovListWithConsumerFlag => {
+                "Vyukov intrusive list with a consumer test-and-set flag"
+            }
+        }
+    }
+
+    /// Whether its correctness depends on a ring that has at least as many
+    /// slots as there are participants on a side (Nikolaev 2019 §5.1), so
+    /// the ring is sized from `<sce:participants>`.
+    pub fn needs_ring_sized_by_participants(self) -> bool {
+        matches!(self, Self::Scq | Self::Lscq)
+    }
+}
+
+/// The algorithm a queue selects and the progress it gives each operation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct QueueSelection {
+    pub algorithm: QueueAlgorithm,
+    pub push: QueueProgress,
+    pub pop: QueueProgress,
+}
+
+impl QueueSelection {
+    /// The strongest progress that both push and pop give: what a
+    /// `<sce:progress>` declaration is checked against.
+    pub fn reachable(self) -> QueueProgress {
+        self.push.min(self.pop)
+    }
+}
+
+impl QueueModel {
+    /// The RFC §synth-5-P selection table: the first row that matches the
+    /// storage mode and the cardinalities. A segmented queue's push is no
+    /// stronger than the allocator it is injected with.
+    pub fn selection(&self) -> QueueSelection {
+        use QueueAlgorithm as A;
+        use QueueCardinality::{Many, One};
+        use QueueProgress::{Blocking, LockFree, WaitFree};
+        let (algorithm, push, pop) = match (&self.storage, self.producers, self.consumers) {
+            (QueueStorage::Bounded { .. }, One, One) => (A::LamportRing, WaitFree, WaitFree),
+            (QueueStorage::Bounded { .. }, _, _) => (A::Scq, LockFree, LockFree),
+            (
+                QueueStorage::Segmented {
+                    allocator_progress, ..
+                },
+                One,
+                One,
+            ) => (
+                A::LinkedLamportRings,
+                WaitFree.min(*allocator_progress),
+                WaitFree,
+            ),
+            (
+                QueueStorage::Segmented {
+                    allocator_progress, ..
+                },
+                _,
+                _,
+            ) => (A::Lscq, LockFree.min(*allocator_progress), LockFree),
+            (QueueStorage::Intrusive { .. }, One, One) => (A::VyukovSpsc, WaitFree, WaitFree),
+            (QueueStorage::Intrusive { .. }, Many, One) => (A::VyukovMpsc, WaitFree, Blocking),
+            (QueueStorage::Intrusive { .. }, _, Many) => {
+                (A::VyukovListWithConsumerFlag, WaitFree, Blocking)
+            }
+        };
+        QueueSelection {
+            algorithm,
+            push,
+            pop,
+        }
+    }
+}
+
 /// Worker document — RFC §synth-5-D concurrent execution context driven
 /// by a `<sce:link-rx>` source.
 ///
@@ -5229,6 +5442,9 @@ pub enum ForgeDocument {
     /// codegen. See [`EventSchemaModel`].
     #[serde(rename = "event-schema")]
     EventSchema(EventSchemaModel),
+    /// FIFO handed between execution contexts. See [`QueueModel`].
+    #[serde(rename = "queue")]
+    Queue(QueueModel),
 }
 
 impl ForgeDocument {
@@ -5252,6 +5468,7 @@ impl ForgeDocument {
             Self::BoundedCollection(m) => &m.name,
             Self::Enum(m) => &m.name,
             Self::EventSchema(m) => &m.name,
+            Self::Queue(m) => &m.name,
         }
     }
 
@@ -5275,6 +5492,7 @@ impl ForgeDocument {
             Self::BoundedCollection(_) => ForgeKind::BoundedCollection,
             Self::Enum(_) => ForgeKind::Enum,
             Self::EventSchema(_) => ForgeKind::EventSchema,
+            Self::Queue(_) => ForgeKind::Queue,
         }
     }
 
@@ -5328,6 +5546,9 @@ impl ForgeDocument {
             // Method-only stateful kinds: their state is reached through
             // methods emitted at codegen time.
             Self::Timer(_) | Self::Link(_) | Self::BufferPool(_) | Self::Worker(_) => return None,
+            // A queue is reached through its handles' methods, not through
+            // fields of a record.
+            Self::Queue(_) => return None,
             // Stateless kinds are called as `alias(…)`.
             Self::Statechart(_)
             | Self::Transform(_)
@@ -5414,6 +5635,8 @@ impl ForgeDocument {
             // type by qualified name). No SCE-side runtime helper —
             // matches Enum's stance.
             Self::EventSchema(_) => RuntimeDep::None,
+            // The queue types live in `sce_forge_runtime::queue`.
+            Self::Queue(_) => RuntimeDep::ForgeRuntime,
         }
     }
 }
@@ -5506,7 +5729,7 @@ mod tests {
     fn forge_kind_attr_names_round_trip() {
         assert_eq!(
             ForgeKind::ALL_ATTR_NAMES.len(),
-            18,
+            19,
             "the kind vocabulary changed size — every arm below counts it"
         );
         let mut seen: BTreeSet<&'static str> = BTreeSet::new();

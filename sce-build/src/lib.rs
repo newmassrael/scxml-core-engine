@@ -6073,7 +6073,10 @@ fn discover_stateful_member_methods(
         // emitted by the bounded-collection codegen. Until the first
         // `<sce:call alias.insert(...)>` consumer surfaces, member
         // method discovery returns empty.
-        | ForgeDocument::BoundedCollection(_) => Vec::new(),
+        | ForgeDocument::BoundedCollection(_)
+        // RFC §synth-5-P Queue: try_push/try_pop/capacity are reached
+        // through the producer and consumer handles, not on the alias.
+        | ForgeDocument::Queue(_) => Vec::new(),
         // Stateless kinds: caller filters via `is_stateful` before reaching
         // here. Listed so the match stays exhaustive — adding a new
         // ForgeDocument variant forces a decision at this site.
@@ -6165,6 +6168,8 @@ fn discover_primary_function(
         // etc. (spec lines 2609-2619). No callsite-visible primary
         // free function name.
         | forge::model::ForgeDocument::BoundedCollection(_)
+        // RFC §synth-5-P: stateful — reached through its handles.
+        | forge::model::ForgeDocument::Queue(_)
         // Enum emits a type declaration, not
         // a callable. Authors reference variants as `<EnumName>.<v>`,
         // resolved through the cross-kind binding pass; no primary

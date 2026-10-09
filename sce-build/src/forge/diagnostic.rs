@@ -1212,6 +1212,33 @@ pub enum DiagnosticCode {
     #[serde(rename = "codegen/generic-kind-backend-emit-missing")]
     CodegenGenericKindBackendEmitMissing,
 
+    // ── §synth-5-P Queue (the `queue` kind). Four document-level codes the
+    //    selection table decides, and one codegen refusal for a storage mode a
+    //    language's runtime does not implement yet. None carries a `Fix`:
+    //    the repair is a choice among documents the table allows. ──
+    /// None, or more than one, of `<sce:bounded>`, `<sce:segmented>` and
+    /// `<sce:intrusive>` is written. The storage mode selects the algorithm.
+    #[serde(rename = "queue/storage-not-exactly-one")]
+    QueueStorageNotExactlyOne,
+    /// `<sce:segmented>` without `allocator-progress`: the build-time
+    /// progress check needs the allocator's guarantee and the allocator
+    /// arrives only at run time.
+    #[serde(rename = "queue/allocator-progress-missing")]
+    QueueAllocatorProgressMissing,
+    /// The declared `<sce:progress>` is stronger than the algorithm the
+    /// storage mode and cardinalities select can give. `expected` carries the
+    /// strongest it gives; refused rather than weakened.
+    #[serde(rename = "queue/progress-unreachable")]
+    QueueProgressUnreachable,
+    /// The selected algorithm sizes a ring from `<sce:participants>` and the
+    /// document writes none.
+    #[serde(rename = "queue/participants-unresolved")]
+    QueueParticipantsUnresolved,
+    /// The document is valid and the target language's runtime does not
+    /// implement its storage mode yet. `expected` carries the modes it does.
+    #[serde(rename = "queue/storage-runtime-missing")]
+    QueueStorageRuntimeMissing,
+
     // ── §synth-5-J-2 Rust no_std variant rejection (item C3).
     //    Producer: `cmd_generate` walks the parsed SCXML model when
     //    `--no-std` is passed to `sce-codegen generate -l rust` and
@@ -3448,6 +3475,12 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         // Codegen matrix shells (SCE Protocol-Synthesis RFC §synth-5-J-4 / §synth-5-J-5)
         CodegenMcuClassKindOnNonMcuLanguage,
         CodegenGenericKindBackendEmitMissing,
+        // Queue kind (SCE Protocol-Synthesis RFC §synth-5-P)
+        QueueStorageNotExactlyOne,
+        QueueAllocatorProgressMissing,
+        QueueProgressUnreachable,
+        QueueParticipantsUnresolved,
+        QueueStorageRuntimeMissing,
         // Codegen Rust no_std variant rejection (SCE Protocol-Synthesis RFC §synth-5-J-2,
         // item C3)
         CodegenNoStdScriptNotSupported,
@@ -4210,6 +4243,12 @@ impl DiagnosticCode {
             | CollectionCapacityUnresolved => {
                 Some("SCE Protocol-Synthesis RFC §5.L")
             }
+            // Queue kind (item P): every code sits on §synth-5-P.
+            QueueStorageNotExactlyOne
+            | QueueAllocatorProgressMissing
+            | QueueProgressUnreachable
+            | QueueParticipantsUnresolved
+            | QueueStorageRuntimeMissing => Some("SCE Protocol-Synthesis RFC §5.P"),
 
             // ── §synth-5-M Fragment-reassembly variant parse-time structure
             //    validators (SCE Protocol-Synthesis RFC §synth-5-M lines 2944-2945,
@@ -4972,6 +5011,11 @@ impl DiagnosticCode {
             CollectionIndexByFieldMissing => "collection/index-by-field-missing",
             CollectionMultiWriterWithoutAtomics => "collection/multi-writer-without-atomics",
             CollectionCapacityUnresolved => "collection/capacity-unresolved",
+            QueueStorageNotExactlyOne => "queue/storage-not-exactly-one",
+            QueueAllocatorProgressMissing => "queue/allocator-progress-missing",
+            QueueProgressUnreachable => "queue/progress-unreachable",
+            QueueParticipantsUnresolved => "queue/participants-unresolved",
+            QueueStorageRuntimeMissing => "queue/storage-runtime-missing",
             TimerPeriodBelowTickRate => "timer/period-below-tick-rate",
             TimerSlotOverflow => "timer/slot-overflow",
             ExternSymbolNotInWhitelist => "extern/symbol-not-in-whitelist",
@@ -8697,6 +8741,74 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             }),
             key_fragments: vec![collection_name.clone(), machine.clone(), limit.clone()],
         },
+        // ── §synth-5-P Queue: document-level checks (the selection table) ──
+        //    No closed candidate set: the repair is the author's choice among
+        //    documents the table allows, so none carries a `Fix`.
+        ValidationError::QueueStorageNotExactlyOne {
+            queue_name,
+            written,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::QueueStorageNotExactlyOne,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(written.join(", ")),
+            fix: None,
+            key_fragments: vec![queue_name.clone(), written.join(",")],
+        },
+        ValidationError::QueueAllocatorProgressMissing { queue_name } => DiagnosticPayload {
+            code: DiagnosticCode::QueueAllocatorProgressMissing,
+            stage: Stage::Validation,
+            expected: None,
+            actual: None,
+            fix: None,
+            key_fragments: vec![queue_name.clone()],
+        },
+        ValidationError::QueueProgressUnreachable {
+            queue_name,
+            declared,
+            reachable,
+            algorithm,
+            storage,
+            producers,
+            consumers,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::QueueProgressUnreachable,
+            stage: Stage::Validation,
+            // The strongest progress the selected algorithm gives is the
+            // one thing the table says; the repair that keeps the other
+            // choices (storage, cardinality) is to declare it.
+            expected: Some(vec![reachable.clone()]),
+            actual: Some(declared.clone()),
+            fix: None,
+            key_fragments: vec![
+                queue_name.clone(),
+                declared.clone(),
+                algorithm.clone(),
+                storage.clone(),
+                producers.clone(),
+                consumers.clone(),
+            ],
+        },
+        ValidationError::QueueParticipantsUnresolved {
+            queue_name,
+            algorithm,
+            storage,
+            producers,
+            consumers,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::QueueParticipantsUnresolved,
+            stage: Stage::Validation,
+            expected: None,
+            actual: None,
+            fix: None,
+            key_fragments: vec![
+                queue_name.clone(),
+                algorithm.clone(),
+                storage.clone(),
+                producers.clone(),
+                consumers.clone(),
+            ],
+        },
         ValidationError::TimerPeriodBelowTickRate {
             timer_name,
             machine,
@@ -9597,6 +9709,21 @@ fn generate_fields(e: &GenerateError) -> DiagnosticPayload {
                 key_fragments: vec![kind.clone(), language.clone()],
             }
         }
+        GenerateError::QueueStorageRuntimeMissing {
+            queue_name,
+            storage,
+            language,
+            implemented,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::QueueStorageRuntimeMissing,
+            stage: Stage::Generate,
+            // What the language's runtime does have is a closed fact the
+            // repair names; which of them the author wants is theirs.
+            expected: Some(vec![implemented.clone()]),
+            actual: Some(storage.clone()),
+            fix: None,
+            key_fragments: vec![queue_name.clone(), storage.clone(), language.clone()],
+        },
         // ── Non-MCU backend refuses `platform.c11_section_attribute`
         //    (SCE Protocol-Synthesis RFC §5.2).
         //    `actual` carries the offending backend name (`cpp` /
@@ -10918,7 +11045,7 @@ mod tests {
             (
                 "forge/unsupported-kind",
                 ValidationError::UnsupportedKind("bogus".into()).into(),
-                r#"{"v":1,"id":"fnv1a:812898e1a23fda4d","code":"validation/unsupported-kind","stage":"validation","spec":"SCE Forge §3.2","message":"unsupported sce:kind value: 'bogus'","actual":"bogus","fix":{"kind":"replace_one_of","candidates":["statechart","transform","lookup","condition","codec","procedure","validator","filter","interpolation","timer","observer","algorithm","link","buffer-pool","worker","bounded-collection","enum","event-schema"]}}"#,
+                r#"{"v":1,"id":"fnv1a:812898e1a23fda4d","code":"validation/unsupported-kind","stage":"validation","spec":"SCE Forge §3.2","message":"unsupported sce:kind value: 'bogus'","actual":"bogus","fix":{"kind":"replace_one_of","candidates":["statechart","transform","lookup","condition","codec","procedure","validator","filter","interpolation","timer","observer","algorithm","link","buffer-pool","worker","bounded-collection","enum","event-schema","queue"]}}"#,
             ),
             (
                 "forge/duplicate-id",
@@ -12822,6 +12949,61 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:d54c90195c019259","code":"codegen/generic-kind-backend-emit-missing","stage":"generate","message":"generic-class kind 'algorithm': template missing for language 'python' (SCE Protocol-Synthesis RFC §5.J.4 expects all six backends to emit)"}"#,
+            ),
+            // ── §synth-5-P Queue kind ──
+            (
+                "forge/queue-storage-not-exactly-one",
+                ValidationError::QueueStorageNotExactlyOne {
+                    queue_name: "rx_events".into(),
+                    written: vec!["<sce:bounded>".into(), "<sce:intrusive>".into()],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:bb40ee1cae5afe5d","code":"queue/storage-not-exactly-one","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.P","message":"queue 'rx_events': 2 of <sce:bounded>, <sce:segmented>, <sce:intrusive> written (<sce:bounded>, <sce:intrusive>); exactly one is required. SCE Protocol-Synthesis RFC §5.P: the storage mode selects the algorithm, so a default would choose one the author never saw. Repair: keep the one storage element the queue should use and remove the others.","actual":"<sce:bounded>, <sce:intrusive>"}"#,
+            ),
+            (
+                "forge/queue-allocator-progress-missing",
+                ValidationError::QueueAllocatorProgressMissing {
+                    queue_name: "rx_events".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:02a9b04b7950ce6b","code":"queue/allocator-progress-missing","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.P","message":"queue 'rx_events': <sce:segmented> has no allocator-progress attribute. SCE Protocol-Synthesis RFC §5.P: a segmented push allocates when the tail segment is full, so its progress is the lesser of the ring's and the allocator's, and the build-time check needs the allocator's. Repair: add allocator-progress=\"wait-free\", \"lock-free\" or \"blocking\", whichever the injected allocator guarantees."}"#,
+            ),
+            (
+                "forge/queue-progress-unreachable",
+                ValidationError::QueueProgressUnreachable {
+                    queue_name: "rx_events".into(),
+                    declared: "wait-free".into(),
+                    reachable: "lock-free".into(),
+                    algorithm: "SCQ data queue".into(),
+                    storage: "bounded".into(),
+                    producers: "many".into(),
+                    consumers: "one".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:f90506624b3244a4","code":"queue/progress-unreachable","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.P","message":"queue 'rx_events': <sce:progress>wait-free</sce:progress> cannot be met: the SCQ data queue that bounded storage selects (producers many, consumers one) gives lock-free. SCE Protocol-Synthesis RFC §5.P: progress is declared, checked, and never silently weakened. Repair: declare lock-free, or change the cardinality or the storage mode to one whose algorithm gives wait-free.","expected":["lock-free"],"actual":"wait-free"}"#,
+            ),
+            (
+                "forge/queue-participants-unresolved",
+                ValidationError::QueueParticipantsUnresolved {
+                    queue_name: "rx_events".into(),
+                    algorithm: "SCQ data queue".into(),
+                    storage: "bounded".into(),
+                    producers: "many".into(),
+                    consumers: "one".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:58825f42f565e471","code":"queue/participants-unresolved","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.P","message":"queue 'rx_events': the SCQ data queue that bounded storage selects (producers many, consumers one) needs <sce:participants>, and the document writes none. SCE Protocol-Synthesis RFC §5.P: its ring is correct only for as many contexts per side as it has slots (Nikolaev 2019 §5.1), so the ring is sized from the participants. Repair: add <sce:participants const=\"N\"/> (or source=\"deploy\" key=\"...\"), N being the most contexts that hold a handle on one side at once."}"#,
+            ),
+            (
+                "forge/queue-storage-runtime-missing",
+                GenerateError::QueueStorageRuntimeMissing {
+                    queue_name: "rx_events".into(),
+                    storage: "intrusive".into(),
+                    language: "rust".into(),
+                    implemented: "bounded".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:c20d84b540bc7c3f","code":"queue/storage-runtime-missing","stage":"generate","spec":"SCE Protocol-Synthesis RFC §5.P","message":"queue 'rx_events': intrusive storage is not implemented by the rust forge runtime yet. SCE Protocol-Synthesis RFC §5.P specifies it, and the runtimes land in the RFC's order; this document is valid and is refused rather than lowered to a queue that gives less. Repair: use a storage mode the rust runtime has (bounded), or generate for a backend that has intrusive.","expected":["bounded"],"actual":"intrusive"}"#,
             ),
             // ── SCE Protocol-Synthesis RFC §synth-5-J-2 Rust no_std variant rejections
             //    (item C3). Author-side `--no-std` gate on
@@ -16073,7 +16255,15 @@ mod tests {
             | ExpressionTypeMismatch
             | ExpressionArgumentCountMismatch
             | ExpressionLiteralOutOfRange
-            | AlgorithmAppendTypeMismatch => ExpectedIsMetadata,
+            | AlgorithmAppendTypeMismatch
+            // `queue/progress-unreachable`: `expected` is the strongest
+            // progress the selected algorithm gives; `queue/storage-runtime-
+            // missing`: the storage modes the language's runtime has.
+            // Declaring the first is one repair among several (the other is
+            // to change the cardinality or the storage), and the second is
+            // a list to choose from, so neither is a `Fix`.
+            | QueueProgressUnreachable
+            | QueueStorageRuntimeMissing => ExpectedIsMetadata,
 
             // ── Deterministic fix or no fix; expected=None ────
             XmlParse
@@ -16351,6 +16541,17 @@ mod tests {
             | GenerateUnsupportedFeature
             | CodegenMcuClassKindOnNonMcuLanguage
             | CodegenGenericKindBackendEmitMissing
+            // Queue (RFC §synth-5-P) document-level checks: the repair is
+            // the author's choice among documents the selection table
+            // allows (a storage element, an allocator's progress, a
+            // participants count), which is a word or an open number and
+            // never a `Fix`; `expected` stays absent. The two that report
+            // what the table gives (`queue/progress-unreachable`) or what a
+            // runtime has (`queue/storage-runtime-missing`) are metadata
+            // and sit in `ExpectedIsMetadata`.
+            | QueueStorageNotExactlyOne
+            | QueueAllocatorProgressMissing
+            | QueueParticipantsUnresolved
             // Item C3 no_std rejections: author repair is
             // "drop --no-std" or "remove the offending construct"
             // (`<script>` / HTTP send / `<data src>` / `<invoke>`).
@@ -17162,6 +17363,11 @@ mod tests {
                 | CollectionIndexByFieldMissing
                 | CollectionMultiWriterWithoutAtomics
                 | CollectionCapacityUnresolved
+                | QueueStorageNotExactlyOne
+                | QueueAllocatorProgressMissing
+                | QueueProgressUnreachable
+                | QueueParticipantsUnresolved
+                | QueueStorageRuntimeMissing
                 | MemReassemblyPoolVariantMissingMaxFragments
                 | MemReassemblyPoolVariantMissingTimeout
                 | MemReassemblySlotSizeBelowDeclaredMtu
@@ -17357,9 +17563,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            416,
+            421,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 416 distinct variants to match the DiagnosticCode \
+             expected 421 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -18129,6 +18335,11 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | CollectionIndexByFieldMissing
             | CollectionMultiWriterWithoutAtomics
             | CollectionCapacityUnresolved
+            | QueueStorageNotExactlyOne
+            | QueueAllocatorProgressMissing
+            | QueueProgressUnreachable
+            | QueueParticipantsUnresolved
+            | QueueStorageRuntimeMissing
             | MemReassemblyPoolVariantMissingMaxFragments
             | MemReassemblyPoolVariantMissingTimeout
             | MemReassemblySlotSizeBelowDeclaredMtu

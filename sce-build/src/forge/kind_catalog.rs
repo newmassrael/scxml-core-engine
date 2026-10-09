@@ -523,6 +523,48 @@ pub const fn guide(kind: ForgeKind) -> KindGuide {
                 "../../kind-examples/bounded-collection.scxml"
             )),
         },
+        K::Queue => KindGuide {
+            role: KindRole::PlatformResource,
+            summary: "A first-in first-out queue that hands elements from one execution \
+                      context to another (a task, an interrupt handler, a thread) with a \
+                      stated guarantee that no context waits on another.",
+            choose_when: &[
+                "the text specifies elements passed between tasks, threads or an interrupt \
+                 handler and a task, in the order they were produced",
+                "the text says how many contexts produce and how many consume, or that one \
+                 side must never be held up by the other",
+                "the text asks for a queue that does not allocate, or for one with no limit \
+                 on how many elements it holds",
+            ],
+            distinct_from: &[
+                apart!(
+                    K::BoundedCollection,
+                    "a bounded-collection is a table whose entries are added, looked up and \
+                     removed by position or key; a queue only ever gives back the oldest \
+                     element",
+                ),
+                apart!(
+                    K::Worker,
+                    "a worker is the execution context that reads one inbox; a queue is the \
+                     hand-over between contexts and says nothing about what runs",
+                ),
+                apart!(
+                    K::BufferPool,
+                    "buffer-pool slots are raw byte regions lent out for DMA, not elements \
+                     delivered in order",
+                ),
+            ],
+            notes: &[
+                "names its element type by reference; the element is declared elsewhere",
+                "states how many producers and consumers, and the progress it must give \
+                 (wait-free, lock-free or blocking); a combination no algorithm can keep is \
+                 refused, not weakened",
+                "the document names no algorithm and no memory ordering",
+                "exactly one storage: bounded (a fixed capacity), segmented (grows from an \
+                 allocator) or intrusive (the caller owns every node)",
+            ],
+            example: Example::Document(include_str!("../../kind-examples/queue.scxml")),
+        },
         K::Enum => KindGuide {
             role: KindRole::DataFormat,
             summary: "A closed set of named values, each with its own fixed wire number.",

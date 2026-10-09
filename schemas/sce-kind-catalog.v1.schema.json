@@ -52,7 +52,7 @@
     "kindName": {
       "description": "An sce:kind value the parser accepts. The enumeration is ForgeKind::ALL_ATTR_NAMES, in its order, which a test holds this list to.",
       "type": "string",
-      "enum": ["statechart", "transform", "lookup", "condition", "codec", "procedure", "validator", "filter", "interpolation", "timer", "observer", "algorithm", "link", "buffer-pool", "worker", "bounded-collection", "enum", "event-schema"]
+      "enum": ["statechart", "transform", "lookup", "condition", "codec", "procedure", "validator", "filter", "interpolation", "timer", "observer", "algorithm", "link", "buffer-pool", "worker", "bounded-collection", "enum", "event-schema", "queue"]
     },
     "kind": {
       "type": "object",

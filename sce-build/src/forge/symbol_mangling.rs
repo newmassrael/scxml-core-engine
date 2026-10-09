@@ -407,6 +407,7 @@ fn forge_doc_name(doc: &ForgeDocument) -> &str {
         // diagnostics; the payload-struct codegen reads it as the
         // Pascal-cased struct identifier root.
         ForgeDocument::EventSchema(m) => &m.name,
+        ForgeDocument::Queue(m) => &m.name,
     }
 }
 

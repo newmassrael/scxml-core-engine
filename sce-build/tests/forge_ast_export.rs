@@ -347,6 +347,9 @@ const FIXTURE_PER_KIND: &[(&str, &str)] = &[
     // richness. The `ast.export.min` event name is generic and
     // non-reserved so the parse-time built-in-event guard accepts.
     ("event-schema", "event_schema_ast_export_min.scxml"),
+    // SCE Protocol-Synthesis RFC §synth-5-P: Queue kind. One producer, one
+    // consumer, wait-free, bounded — the shape that needs no participants.
+    ("queue", "queue_ast_export_min.scxml"),
 ];
 
 #[test]

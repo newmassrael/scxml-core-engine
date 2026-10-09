@@ -242,7 +242,7 @@ A kind declared IN PLACE, on a `<data>` element inside a `sce:kind="statechart"`
 <data id="temperature" sce:kind="transform">...</data>
 
 <!-- NOT inline-eligible: procedure, filter, validator, timer, observer,
-     algorithm, link, worker, buffer-pool, bounded-collection, enum,
+     algorithm, link, worker, buffer-pool, bounded-collection, queue, enum,
      event-schema → declared as their own documents and imported. -->
 ```
 

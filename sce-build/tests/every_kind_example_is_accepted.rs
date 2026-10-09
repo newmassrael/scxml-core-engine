@@ -99,12 +99,12 @@ fn every_example_checks_as_its_kind_and_renders() {
         );
         checked += 1;
     }
-    // The catalog covers eighteen kinds, and every one has an example
+    // The catalog covers nineteen kinds, and every one has an example
     // today (worker's own check follows the link it imports, which
     // imports the codec and buffer pool it names, from one file). A walk
     // that checked far fewer found the catalog shrunk, not the examples
     // sound.
-    assert_eq!(checked, 18, "only {checked} examples checked");
+    assert_eq!(checked, 19, "only {checked} examples checked");
 }
 
 /// Every file in the example directory is the example of the kind it is

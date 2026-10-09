@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SCE Protocol-Synthesis RFC §synth-5-P (queue kind): the minimal queue the
+  forge-AST export round-trips. One producer, one consumer, wait-free, a
+  bounded storage of eight: the selection table gives this the Lamport ring,
+  which needs no participants. The element document is named and not
+  resolved here, as for the bounded-collection fixture.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://sce.dev/ext sce-forge.xsd"
+       sce:kind="queue"
+       name="queue_ast_export_min"
+       version="1.0">
+  <sce:element-type>rx_event</sce:element-type>
+  <sce:producers>one</sce:producers>
+  <sce:consumers>one</sce:consumers>
+  <sce:progress>wait-free</sce:progress>
+  <sce:bounded capacity="8"/>
+</scxml>

@@ -379,6 +379,12 @@ impl Names {
                 self.name(&m.element_type);
                 Ok(())
             }
+            // A queue names the document its elements are, as a bounded
+            // collection does.
+            ForgeDocument::Queue(m) => {
+                self.name(&m.element_type);
+                Ok(())
+            }
             ForgeDocument::EventSchema(m) => self.fields(&m.fields),
             // A timer names events, a buffer pool sizes storage and an enum
             // lists values: none of them reads another document.

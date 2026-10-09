@@ -208,8 +208,9 @@ The closed enum, in declaration order:
 | `buffer-pool` | `BufferPoolModel` | SRAM-placed DMA-aligned slot table (MCU-class). |
 | `worker` | `WorkerModel` | Concurrent execution context driven by a `<sce:link-rx>` source. |
 | `bounded-collection` | `BoundedCollectionModel` | Build-time capacity container with runtime occupancy. |
+| `queue` | `QueueModel` | First-in first-out hand-over between execution contexts; the document states the contract and the generator selects the algorithm. |
 
-The 16 kinds cover SCE's full IR surface: the 15 forge kinds plus
+The kinds cover SCE's full IR surface: the forge kinds plus
 the W3C SCXML statechart arm. `imports` and `externs` are always
 empty for `statechart` documents — W3C SCXML carries no
 `<sce:import>` or `<sce:extern>` declarations of its own — so the

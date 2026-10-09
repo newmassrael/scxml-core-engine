@@ -3031,6 +3031,89 @@ pub enum ValidationError {
         collection_name: String,
     },
 
+    /// SCE Protocol-Synthesis RFC §synth-5-P (`queue/storage-not-exactly-one`)
+    /// — a queue document that writes none, or more than one, of
+    /// `<sce:bounded>`, `<sce:segmented>` and `<sce:intrusive>`. The storage
+    /// mode selects the algorithm, the memory profile it can run on and the
+    /// reclamation it needs, so there is no default to fall back on.
+    #[error(
+        "queue '{queue_name}': {} of <sce:bounded>, <sce:segmented>, <sce:intrusive> written ({}); exactly one is required. \
+         SCE Protocol-Synthesis RFC §5.P: the storage mode selects the algorithm, so a default would choose one the author never saw. \
+         Repair: keep the one storage element the queue should use and remove the others.",
+        .written.len(),
+        .written.join(", ")
+    )]
+    QueueStorageNotExactlyOne {
+        /// Queue name from `<scxml sce:kind="queue" name="...">`.
+        queue_name: String,
+        /// The storage elements the document writes, in document order.
+        written: Vec<String>,
+    },
+
+    /// SCE Protocol-Synthesis RFC §synth-5-P (`queue/allocator-progress-missing`)
+    /// — `<sce:segmented>` without `allocator-progress`. The progress check
+    /// runs at build time and the allocator arrives only at run time, so the
+    /// document has to state what it relies on.
+    #[error(
+        "queue '{queue_name}': <sce:segmented> has no allocator-progress attribute. \
+         SCE Protocol-Synthesis RFC §5.P: a segmented push allocates when the tail segment is full, so its progress is the lesser of the ring's and the allocator's, and the build-time check needs the allocator's. \
+         Repair: add allocator-progress=\"wait-free\", \"lock-free\" or \"blocking\", whichever the injected allocator guarantees."
+    )]
+    QueueAllocatorProgressMissing {
+        /// Queue name from `<scxml sce:kind="queue" name="...">`.
+        queue_name: String,
+    },
+
+    /// SCE Protocol-Synthesis RFC §synth-5-P (`queue/progress-unreachable`) —
+    /// the declared `<sce:progress>` is stronger than the algorithm the
+    /// selection table gives this storage mode and cardinality. Refused rather
+    /// than weakened: a declaration the queue cannot keep is a contract the
+    /// author would rely on.
+    #[error(
+        "queue '{queue_name}': <sce:progress>{declared}</sce:progress> cannot be met: the {algorithm} that {storage} storage selects (producers {producers}, consumers {consumers}) gives {reachable}. \
+         SCE Protocol-Synthesis RFC §5.P: progress is declared, checked, and never silently weakened. \
+         Repair: declare {reachable}, or change the cardinality or the storage mode to one whose algorithm gives {declared}."
+    )]
+    QueueProgressUnreachable {
+        /// Queue name from `<scxml sce:kind="queue" name="...">`.
+        queue_name: String,
+        /// The progress the document declares.
+        declared: String,
+        /// The strongest progress the selected algorithm gives both push and pop.
+        reachable: String,
+        /// The selected algorithm, as the RFC names it.
+        algorithm: String,
+        /// The storage mode (`bounded`, `segmented` or `intrusive`).
+        storage: String,
+        /// `one` or `many`.
+        producers: String,
+        /// `one` or `many`.
+        consumers: String,
+    },
+
+    /// SCE Protocol-Synthesis RFC §synth-5-P (`queue/participants-unresolved`)
+    /// — the selected algorithm needs a ring size or a reclamation domain
+    /// sized by `<sce:participants>`, and the document writes none. An SCQ
+    /// ring is correct only for as many enqueuers and dequeuers as it has
+    /// slots, so the generator cannot choose the ring without the number.
+    #[error(
+        "queue '{queue_name}': the {algorithm} that {storage} storage selects (producers {producers}, consumers {consumers}) needs <sce:participants>, and the document writes none. \
+         SCE Protocol-Synthesis RFC §5.P: its ring is correct only for as many contexts per side as it has slots (Nikolaev 2019 §5.1), so the ring is sized from the participants. \
+         Repair: add <sce:participants const=\"N\"/> (or source=\"deploy\" key=\"...\"), N being the most contexts that hold a handle on one side at once."
+    )]
+    QueueParticipantsUnresolved {
+        /// Queue name from `<scxml sce:kind="queue" name="...">`.
+        queue_name: String,
+        /// The selected algorithm, as the RFC names it.
+        algorithm: String,
+        /// The storage mode (`bounded` or `segmented`).
+        storage: String,
+        /// `one` or `many`.
+        producers: String,
+        /// `one` or `many`.
+        consumers: String,
+    },
+
     /// SCE Protocol-Synthesis RFC §synth-5-L line 2655
     /// (`collection/overflow-policy-oldest-wins-requires-ordering-insertion`)
     /// — `<sce:on-overflow>oldest-wins</sce:on-overflow>` declared
@@ -5185,6 +5268,30 @@ pub enum GenerateError {
          (SCE Protocol-Synthesis RFC §5.J.4 expects all six backends to emit)"
     )]
     CodegenGenericKindBackendEmitMissing { kind: String, language: String },
+
+    /// SCE Protocol-Synthesis RFC §synth-5-P (`queue/storage-runtime-missing`)
+    /// — a queue document whose storage mode the target language's forge
+    /// runtime does not implement yet. The kind is specified for three
+    /// storage modes on six backends and the runtimes land one algorithm at a
+    /// time (RFC §synth-5-P landing order), so a document that is valid can still be
+    /// one a backend cannot lower yet. Refused by name rather than lowered to
+    /// a weaker queue.
+    #[error(
+        "queue '{queue_name}': {storage} storage is not implemented by the {language} forge runtime yet. \
+         SCE Protocol-Synthesis RFC §5.P specifies it, and the runtimes land in the RFC's order; this document is valid and is refused rather than lowered to a queue that gives less. \
+         Repair: use a storage mode the {language} runtime has ({implemented}), or generate for a backend that has {storage}."
+    )]
+    QueueStorageRuntimeMissing {
+        /// Queue name from `<scxml sce:kind="queue" name="...">`.
+        queue_name: String,
+        /// The storage mode the document selects.
+        storage: String,
+        /// The target language's wire name.
+        language: String,
+        /// The storage modes that language's runtime implements, for the
+        /// repair to name.
+        implemented: String,
+    },
 
     /// `deploy.yaml`'s
     /// `platform.c11_section_attribute` is present but the codegen
