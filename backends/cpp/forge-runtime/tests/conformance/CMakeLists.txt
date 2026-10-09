@@ -327,3 +327,43 @@ target_compile_definitions(queue_runtime_test PRIVATE
 target_compile_options(queue_runtime_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
 target_link_libraries(queue_runtime_test PRIVATE Threads::Threads)
 add_test(NAME queue_runtime COMMAND queue_runtime_test)
+
+# What the generator writes for a queue, compiled against that runtime. The
+# element codec and one queue per bounded algorithm row come from fixtures the
+# numerical catalog does not list (they assert no numerical oracle value), and
+# are generated into the same directory the catalog's headers are, so the
+# queues' `#include "queue_conformance_event.h"` resolves. Each fixture states
+# its prerequisites through a DEPFILE, as every other generation step does.
+set(QUEUE_GENERATED_FIXTURES
+    queue_conformance_event
+    queue_conformance_spsc
+    queue_conformance_scq
+)
+set(QUEUE_GENERATED_HEADERS "")
+foreach(_queue_fixture IN LISTS QUEUE_GENERATED_FIXTURES)
+    set(_queue_header "${GENERATED_DIR}/${_queue_fixture}.h")
+    set(_queue_document "${RESOURCE_DIR}/${_queue_fixture}.scxml")
+    add_custom_command(
+        OUTPUT "${_queue_header}"
+        COMMAND "${SCE_CODEGEN}" generate "${_queue_document}"
+                --language cpp
+                --output-dir "${GENERATED_DIR}"
+                --write-deps "${_queue_header}.d"
+        DEPENDS "${_queue_document}" "${SCE_CODEGEN}"
+        DEPFILE "${_queue_header}.d"
+        COMMENT "Generating C++ queue fixture ${_queue_fixture}.h"
+        VERBATIM
+    )
+    list(APPEND QUEUE_GENERATED_HEADERS "${_queue_header}")
+endforeach()
+add_custom_target(generate_queue_fixtures_cpp DEPENDS ${QUEUE_GENERATED_HEADERS})
+
+add_executable(queue_generated_test "${CMAKE_CURRENT_SOURCE_DIR}/queue_generated_test.cpp")
+add_dependencies(queue_generated_test generate_queue_fixtures_cpp)
+target_include_directories(queue_generated_test PRIVATE
+    "${RUNTIME_INCLUDE_DIR}"
+    "${GENERATED_DIR}"
+)
+target_compile_options(queue_generated_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+target_link_libraries(queue_generated_test PRIVATE Threads::Threads)
+add_test(NAME queue_generated COMMAND queue_generated_test)

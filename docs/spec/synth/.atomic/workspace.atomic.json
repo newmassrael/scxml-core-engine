@@ -5195,6 +5195,10 @@
         {
           "file": "tools/codegen/templates/forge/cpp/queue.h.jinja2",
           "kind": "implements"
+        },
+        {
+          "file": "backends/cpp/forge-runtime/tests/conformance/queue_generated_test.cpp",
+          "kind": "references"
         }
       ]
     },
