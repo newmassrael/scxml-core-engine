@@ -31,6 +31,10 @@ from .prose import load_prose
 from .pseudo import render as render_pseudo
 from .questions import ask
 from .review import review as run_review
+from .revision_gate import (DEFAULT_ROUNDS, MAX_ROUNDS, OUTSIDE_REACH, REVISER_TIMEOUT_S, STALLED,
+                            GateError, command_reviser)
+from .revision_gate import hold as hold_revision
+from .revision_gate import judge as judge_revision
 from .scaffold import KINDS
 from .scaffold import write as write_scaffold
 from .verify import verify as run_verify
@@ -401,6 +405,37 @@ def cmd_compare(args) -> int:
     return 0
 
 
+def cmd_revise_gate(args) -> int:
+    """A revision held to the reach of what changed, by a reviser the caller names.
+
+    The design is judged, and while it is outside the reach of what the specification changed the
+    reviser command is run to put it right, up to `--rounds` times; the design is edited IN PLACE,
+    so give a copy. Exit 0 only when the design as it stands is within reach; 1 when it is not (the
+    rounds used up, or a revision that left the violations as they were); 2 when nothing could be
+    judged, or the reviser failed its round."""
+    try:
+        delta = json.loads(pathlib.Path(args.delta).read_text(encoding="utf-8"))
+    except ValueError as error:
+        raise GateError(f"--delta is not JSON: {error}") from error
+    record, root = pathlib.Path(args.record).resolve(), pathlib.Path(args.root).resolve()
+    design = pathlib.Path(args.design).resolve()
+    codegen = pathlib.Path(args.codegen) if args.codegen else None
+    outcome = hold_revision(
+        lambda: judge_revision(delta, record, root, design, codegen=codegen),
+        command_reviser(args.reviser, design, timeout_s=args.reviser_timeout),
+        rounds=args.rounds)
+    for held in outcome.rounds:
+        listed = ", ".join(f"{id_} ({kind})" for id_, kind, _places in held.violations) or "none"
+        print(f"round {held.number}: {held.verdict}; violations: {listed}")
+    print(f"{outcome.status}: {outcome.reason}")
+    if args.out:
+        pathlib.Path(args.out).write_text(
+            json.dumps(outcome.as_json(), indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    if outcome.within_reach:
+        return 0
+    return 1 if outcome.status in (OUTSIDE_REACH, STALLED) else 2
+
+
 def cmd_decisions(args) -> int:
     """A draft held to the owner's decision record.
 
@@ -499,6 +534,31 @@ def main(argv=None) -> int:
                    help="the product's code generator (default: the one in this tree)")
     d.add_argument("--out", help="write the whole report as JSON as well")
     d.set_defaults(fn=cmd_decisions)
+
+    # ⚠ No `--pack` either, and no default for the reviser: which client revises, and with what
+    # words, is the caller's. The command is run without a shell and told of the design and of the
+    # request by environment (`SCE_REVISION_DESIGN`, `SCE_REVISION_REQUEST`).
+    g = sub.add_parser(
+        "revise-gate",
+        help="hold a revised design to the reach of what the specification changed, revising it "
+             "again until it is within reach or the rounds are used up")
+    g.add_argument("--record", required=True, help="the acceptance record scxml_accept wrote")
+    g.add_argument("--root", required=True, help="the directory the record's paths are relative to")
+    g.add_argument("--delta", required=True,
+                   help="the `delta` of the revised requirement list, as JSON")
+    g.add_argument("--design", required=True,
+                   help="the revised draft; the reviser edits it in place, so give a copy")
+    g.add_argument("--reviser", required=True,
+                   help="the command that revises the design it is told of")
+    g.add_argument("--rounds", type=int, default=DEFAULT_ROUNDS,
+                   help=f"how many times the reviser may be asked (default {DEFAULT_ROUNDS}, "
+                        f"at most {MAX_ROUNDS})")
+    g.add_argument("--reviser-timeout", type=int, default=REVISER_TIMEOUT_S,
+                   help=f"seconds one round may take (default {REVISER_TIMEOUT_S})")
+    g.add_argument("--codegen",
+                   help="the product's code generator (default: the one in this tree)")
+    g.add_argument("--out", help="write how the gate ended, as JSON as well")
+    g.set_defaults(fn=cmd_revise_gate)
 
     c = with_pack(sub.add_parser("check", help="judge a written document against the model"))
     c.add_argument("--binding", required=True, help="the binding file, which names its own document")

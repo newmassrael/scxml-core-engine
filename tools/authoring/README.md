@@ -368,6 +368,29 @@ product's closure of what a requirement depends on, and the scenarios of an unch
 requirement are still played with `scxml_scenarios`. Local servers only
 (`docs/adr/0009-a-revision-stays-within-the-reach-of-what-changed.md`).
 
+**Holding a revision to its reach.** The check is a report: nothing refuses a design for it,
+and the model that revises runs in the owner's client, which SCE does not control, so "change
+only what the delta says moved" is a request and a request can be ignored. What a caller can
+hold is the RESULT, with **revise-gate** (`python3 -m sce_author revise-gate`, or
+`revision_gate.hold` from code). It is on the command line only: over MCP the client is the
+caller, and a tool the client chooses to call is the failure this closes.
+Give it the acceptance record (`--record`, `--root`), the `delta` of the revised list
+(`--delta`), a COPY of the revised design (`--design`: it is edited in place) and a command that
+revises it (`--reviser`, run without a shell, each round for at most `--reviser-timeout` seconds,
+3600 by default). It judges the design (`--codegen` names the product's generator, this tree's by
+default); while a requirement moved where its words did not,
+or is cited though the specification dropped it, it runs the command with `SCE_REVISION_DESIGN`
+naming the design and `SCE_REVISION_REQUEST` a file that says, per requirement, where it moved and
+what to do about it, then the page the owner reads; and it judges again, up to `--rounds` times
+(3 by default, 10 at most). It exits 0 only when the design as it stands is within reach (1: not,
+the rounds used up or a revision that left the violations as they were; 2: nothing could be judged,
+or the reviser failed), and `--out` writes how it ended. Three things it never does: pass a
+judgment that saw no evidence (`summary.seen` 0: `not-judged`), pass because the reviser said it
+was done (only the judgment after the last revision decides), or ask again when the answer would
+be the same (`stalled`). It cannot stop a client editing more than it was told to inside one round:
+that is found after it is made and asked to be put back. `within-reach` is still not "right"
+(`docs/adr/0013-a-revision-is-held-to-its-reach-by-a-loop-its-caller-runs.md`).
+
 #### Examples a design is played against
 
 A requirement met by something NOT happening ("nothing is sent after the

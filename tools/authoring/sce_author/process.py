@@ -70,8 +70,12 @@ class ProcessTimeout(Exception):
 
 
 def run(argv: list, *, cwd=None, timeout: float | None = None,
-        stdin_text: str | None = None) -> subprocess.CompletedProcess:
+        stdin_text: str | None = None, env: dict | None = None) -> subprocess.CompletedProcess:
     """Run a program this tree trusts to end, and read what it printed as text.
+
+    `env` is what is added to this process's environment for the program (a caller that tells
+    the program of a file by a variable, as `revision_gate.command_reviser` does); nothing is
+    removed, and left out the program is started with the environment as it is.
 
     A clock is the only protection: the product's generator is code this
     repository builds, and what it is handed is a document, not a program.
@@ -88,12 +92,13 @@ def run(argv: list, *, cwd=None, timeout: float | None = None,
     written by a model, and a document that names a file elsewhere (an import, a template, an
     include) is a way to ask the machine about its files. The generator holds that where it opens
     a file, so it holds for a place nobody listed; the staged folder is the one this is run in."""
-    env = None
+    added = dict(env or {})
     if os.environ.get("SCE_AUTHOR_WORK") and cwd is not None:
-        env = {**os.environ, "SCE_FILE_ROOT": str(cwd)}
+        added["SCE_FILE_ROOT"] = str(cwd)
     try:
         return subprocess.run(argv, capture_output=True, text=True, encoding="utf-8",
-                              cwd=cwd, timeout=timeout, input=stdin_text, env=env)
+                              cwd=cwd, timeout=timeout, input=stdin_text,
+                              env={**os.environ, **added} if added else None)
     except subprocess.TimeoutExpired as exc:
         raise ProcessTimeout(
             f"{os.path.basename(str(argv[0]))} had not finished after {timeout:.0f} s") from exc

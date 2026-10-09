@@ -206,7 +206,13 @@ class TheServerSpeaksTheProtocol(unittest.TestCase):
                     "scxml_acceptance_report", "scxml_acceptance_impact",
                     "scxml_acceptance_delta", "scxml_revision_check", "scxml_revision_report",
                     "scxml_accept", "scxml_acceptance_check", "scxml_accepted_for"}
-        self.assertEqual(commands, {t["name"] for t in mcp.TOOLS} - mcp_only)
+        # The other direction: a command with no tool. `revise-gate` is the loop a caller runs
+        # AROUND its client (judge, hand the violations back, judge again), so over MCP, where the
+        # client is the caller, it would be a tool the client may decline to call, which is the
+        # failure it exists to close. A name listed here has to be a command that exists.
+        cli_only = {"revise-gate"}
+        self.assertLessEqual(cli_only, commands, "a command-line-only name that is not a command")
+        self.assertEqual(commands - cli_only, {t["name"] for t in mcp.TOOLS} - mcp_only)
 
     def test_a_notification_is_answered_with_silence(self):
         """Replying to a notification is a protocol error, and the client that

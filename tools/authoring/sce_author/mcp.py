@@ -97,7 +97,7 @@ from .gaps import ORDER as GAP_ORDER
 from .gaps import report as gap_report
 from .pack import check_pack, load_pack
 from .pseudo import render as render_pseudo
-from . import house_rule, requirement_lineage, requirement_set, revision, works
+from . import house_rule, requirement_lineage, requirement_set, revision, revision_gate, works
 from .scenario_driver import answer as scenario_answer
 from .scenario_driver import read_set as read_scenario_set
 from .scenario_driver import run as run_scenarios
@@ -3249,19 +3249,12 @@ def _revision_join(args: dict, staging: _Staging):
     root = _path_arg(args, "root", "the directory the record's paths are relative to")
     design = (_path_arg(args, "design", "the revised draft").resolve()
               if args.get("design") is not None else None)
-    report, refusal = acceptance_delta(record.resolve(), root.resolve(), design=design,
-                                       cwd=staging.dir)
-    if refusal:
-        return None, _failure(refusal)
     try:
-        held = json.loads(record.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as error:
-        raise ToolArgumentError(f"'record' cannot be read as an acceptance record: {error}") from error
-    try:
-        revision.belongs_to(delta, held)
-        return revision.join(delta, json.loads(report)), None
+        result, refusal = revision_gate.judge(delta, record.resolve(), root.resolve(), design,
+                                              cwd=staging.dir)
     except revision.RevisionError as error:
         raise ToolArgumentError(str(error)) from error
+    return (None, _failure(refusal)) if refusal else (result, None)
 
 
 def _revision_check_tool(args: dict, staging: _Staging) -> dict:
