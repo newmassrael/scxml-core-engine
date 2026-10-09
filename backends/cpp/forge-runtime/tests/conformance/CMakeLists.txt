@@ -305,3 +305,25 @@ add_executable(content_line_runtime_test "${CMAKE_CURRENT_SOURCE_DIR}/content_li
 target_include_directories(content_line_runtime_test PRIVATE "${RUNTIME_INCLUDE_DIR}")
 target_compile_options(content_line_runtime_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
 add_test(NAME content_line_runtime COMMAND content_line_runtime_test)
+
+# The runtime's queues on their own (sce/forge/queue.h, RFC §synth-5-P), under
+# the same blanket -Werror: the contract scenarios the Rust arm runs
+# (tests/forge/conformance/queue_contract.json), the properties those do not
+# reach, and real threads. The library itself starts none; the test does, so it
+# links the platform's thread library.
+find_package(Threads REQUIRED)
+set(QUEUE_CONTRACT_JSON "${REPO_ROOT}/tests/forge/conformance/queue_contract.json")
+if(NOT EXISTS "${QUEUE_CONTRACT_JSON}")
+    message(FATAL_ERROR "queue contract not found at ${QUEUE_CONTRACT_JSON}")
+endif()
+add_executable(queue_runtime_test "${CMAKE_CURRENT_SOURCE_DIR}/queue_runtime_test.cpp")
+target_include_directories(queue_runtime_test PRIVATE
+    "${RUNTIME_INCLUDE_DIR}"
+    "${NLOHMANN_JSON_INCLUDE_DIR}"
+)
+target_compile_definitions(queue_runtime_test PRIVATE
+    "QUEUE_CONTRACT_JSON_PATH=\"${QUEUE_CONTRACT_JSON}\""
+)
+target_compile_options(queue_runtime_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+target_link_libraries(queue_runtime_test PRIVATE Threads::Threads)
+add_test(NAME queue_runtime COMMAND queue_runtime_test)
