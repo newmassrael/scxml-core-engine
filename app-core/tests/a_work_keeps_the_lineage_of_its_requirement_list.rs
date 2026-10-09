@@ -681,6 +681,87 @@ fn asking_for_fresh_ids_of_a_work_with_no_list_yet_asks_nothing_of_its_first_lis
 }
 
 #[test]
+fn a_candidate_that_carries_an_id_of_a_list_made_before_lineages_is_not_published_when_asked_afresh(
+) {
+    // Review of 2026-10-09: the check read the ids of the lineage the work held, and a work whose
+    // list was made before lineages holds none, so a model that ignored the ask and handed back
+    // the old numbering was published as having done it. The ids are in the list's manifest
+    // whether or not a lineage was kept beside them, and that is what the ask is about.
+    let g = generation("fresh-ids-carried-before-lineages");
+    let first = g.running("press-1");
+    g.write(&first, "one", bare_of("first"));
+    g.publish(&first).expect("a list made before lineages");
+
+    let second = g.running_fresh("press-2");
+    g.write(&second, "two", held("second"));
+    let (kind, detail) = kind_of(g.publish(&second).unwrap_err());
+    assert_eq!(kind, "fresh-ids-not-issued");
+    assert_eq!(
+        detail["carried"],
+        json!(["R1", "R2", "R3", "R4"]),
+        "{detail}"
+    );
+    let list = g.store.read_requirements(&g.id, None).unwrap().unwrap();
+    assert_eq!(
+        Requirements::parse(&list.text).unwrap().manifest,
+        three("first").manifest,
+        "the work kept the list it had"
+    );
+
+    // Without a lineage the old numbering is no more what was asked for.
+    g.write(&second, "two", bare_of("second"));
+    let (kind, detail) = kind_of(g.publish(&second).unwrap_err());
+    assert_eq!(kind, "fresh-ids-not-issued");
+    assert_eq!(
+        detail["carried"],
+        json!(["R1", "R2", "R3", "R4"]),
+        "{detail}"
+    );
+
+    // A list numbered on from where the old one left off is what was asked for.
+    g.write(&second, "two", held("fresh"));
+    g.publish(&second)
+        .expect("a list that issued every id afresh is what was asked for");
+}
+
+#[test]
+fn the_ids_a_list_carried_are_named_in_the_order_they_were_issued_past_nine() {
+    // R10 is issued after R9, though a text sort puts it before R6: the owner reads the ids in the
+    // order the list was made.
+    let g = generation("fresh-ids-numeric-order");
+    let first = g.running("press-1");
+    g.write(&first, "one", held("first"));
+    g.publish(&first).unwrap();
+    let second = g.running_fresh("press-2");
+    g.write(&second, "two", held("fresh"));
+    g.publish(&second).expect("the ids were issued afresh");
+
+    let third = g.running_fresh("press-3");
+    g.write(&third, "three", held("fresh"));
+    let (kind, detail) = kind_of(g.publish(&third).unwrap_err());
+    assert_eq!(kind, "fresh-ids-not-issued");
+    assert_eq!(
+        detail["carried"],
+        json!(["R6", "R7", "R8", "R9", "R10"]),
+        "{detail}"
+    );
+}
+
+#[test]
+fn a_candidate_that_keeps_the_ids_of_a_list_made_before_lineages_is_published_when_nothing_was_asked(
+) {
+    // The ask is the owner's: without it the ids of the list the work had are carried, as ever.
+    let g = generation("fresh-ids-not-asked-before-lineages");
+    let first = g.running("press-1");
+    g.write(&first, "one", bare_of("first"));
+    g.publish(&first).unwrap();
+    let second = g.running("press-2");
+    g.write(&second, "two", held("second"));
+    g.publish(&second)
+        .expect("carrying an id is what a revision does unless the owner asked otherwise");
+}
+
+#[test]
 fn a_work_whose_lists_never_had_a_lineage_publishes_as_ever() {
     let g = generation("lineage-never-had-one");
     let first = g.running("press-1");

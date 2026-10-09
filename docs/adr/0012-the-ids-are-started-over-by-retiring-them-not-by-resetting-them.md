@@ -79,12 +79,19 @@ tells the client to give `fresh` to `scxml_requirement_set`.
 
 The ask is enforced and not only passed on. A client may ignore it (a model that builds the list as
 it always has), and publishing that list would say the ask was kept when it was not. Before a
-candidate is published, `refuse_a_carried_id` compares the lineage the work holds with the one given
-(`between`, the judgment the report uses) and refuses a list that carries an id, or carries one with
-other words, as `fresh-ids-not-issued`, naming the ids. The request stays the executor's, which
-writes the list again; the runner gives the refusal back to the client as it does every refusal. A
-work with no lineage (a first list, or one this build cannot read) has no id to retire, and what
-cannot be judged is not refused.
+candidate is published, `refuse_a_carried_id` compares the ids of the manifest of the list the work
+holds with those of the list given and refuses a list that carries one of them, with its words or
+with other words, as `fresh-ids-not-issued`, naming the ids. The request stays the executor's, which
+writes the list again; the runner gives the refusal back to the client as it does every refusal. Only
+a work with no list yet has no id to retire.
+
+The ids are read from the manifests and not from a lineage. A first version compared the two
+lineages (`between`) and let a work with none through "because what cannot be judged is not
+refused"; the review of 2026-10-09 measured the hole: a work whose list was made before lineages
+holds no lineage but its manifest lists R1, R2, R3, so a model that ignored the ask and handed the
+numbering back was published as having done it. For such a work the client gives the tool the
+previous manifest and sidecar (`previous_manifest_text`, `previous_sidecar_text`), which it adopts
+as a lineage, and `fresh` retires the ids it had; the task text says so for a request that asked.
 
 The task text says it only for a request that asked. What every run is told is what a Codex version
 is verified against (`codex_support.json`), and `tests/codex_support.rs` held: the execution contract

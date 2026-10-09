@@ -88,14 +88,30 @@ edit("app-core/src/store/bundle_store.rs",
      "            if current.fresh_ids && false {")
 PY
 
-mutation_case "an id carried with its words is not counted as carried" <<'PY'
+# The ids are judged in the manifests of the two lists, not in a lineage: a work whose list was made
+# before lineages keeps none, and the check passed a list that ignored the ask there (review of
+# 2026-10-09).
+
+mutation_case "the ids of a list made before lineages are not the work's to retire" <<'PY'
 edit("app-core/src/store.rs",
-     "        let mut carried: Vec<String> = moved[\"carried\"]",
-     "        let mut carried: Vec<String> = moved[\"carried-none\"]")
+     "                .ok()\n                .map(|list| manifest_ids(&list.manifest, \"requirements\"))",
+     "                .ok()\n                .and_then(|list| list.lineage.map(|_| manifest_ids(&list.manifest, \"requirements\")))")
 PY
 
-mutation_case "an id carried with other words is not counted as carried" <<'PY'
+mutation_case "a list given without a lineage is not held to the ask" <<'PY'
 edit("app-core/src/store.rs",
-     "            moved[\"changed\"]",
-     "            moved[\"changed-none\"]")
+     "        let Some(given) = ids_of(next) else {",
+     "        let Some(given) = ids_of(next).filter(|_| crate::requirements::Requirements::parse(next).is_ok_and(|list| list.lineage.is_some())) else {")
+PY
+
+mutation_case "an id only one of the lists has is counted as carried" <<'PY'
+edit("app-core/src/store.rs",
+     "held.intersection(&given).cloned().collect();",
+     "held.union(&given).cloned().collect();")
+PY
+
+mutation_case "the ids carried are named in the order a text sorts them" <<'PY'
+edit("app-core/src/store.rs",
+     "        carried.sort_by_key(|id| {\n            id.trim_start_matches('R')\n                .parse::<u64>()\n                .unwrap_or(u64::MAX)\n        });",
+     "        carried.sort();")
 PY

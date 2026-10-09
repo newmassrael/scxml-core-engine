@@ -1262,47 +1262,35 @@ impl<C: Clock> WorkStore<C> {
     }
 
     /// `fresh-ids-not-issued`: the owner asked for every requirement to be issued a new id
-    /// (ADR 0012) and the list carries one the work's list had, or changed the words of one.
+    /// (ADR 0012) and the list carries an id the work's list had, whether its words changed or
+    /// not.
     ///
-    /// Judged as the owner's report judges any two lists of the work: `between` the lineage the
-    /// work holds and the one given, which `refuse_a_lineage_not_kept` has already held to
-    /// continue it. A work with no lineage (a first list, or one this build cannot read) has no
-    /// id to issue afresh, and what cannot be judged is not refused.
+    /// Judged in the ids of the two manifests, which are what the list is made of: the work's
+    /// list has them whether or not a lineage was kept beside it, and a work whose list was made
+    /// before lineages holds none (review of 2026-10-09: reading the ids out of the lineage, the
+    /// check passed a list that ignored the ask there). Only a work with no list yet has no id to
+    /// issue afresh, and a list that cannot be read as one is not one this refusal can speak of.
     pub(crate) fn refuse_a_carried_id(
         &self,
         id: &WorkId,
         request: &str,
         next: &str,
     ) -> Result<(), StoreError> {
-        let lineage_of = |text: &str| {
+        let ids_of = |text: &str| {
             crate::requirements::Requirements::parse(text)
                 .ok()
-                .and_then(|list| list.lineage)
-                .and_then(|lineage| sce_revision::parse(&lineage).ok())
+                .map(|list| manifest_ids(&list.manifest, "requirements"))
         };
-        let held = self
+        let Some(held) = self
             .read_claimed(Artifact::Requirements, id, None)?
-            .and_then(|(_, _, text)| lineage_of(&text));
-        let (Some(held), Some(given)) = (held, lineage_of(next)) else {
+            .and_then(|(_, _, text)| ids_of(&text))
+        else {
             return Ok(());
         };
-        let Ok(said) = sce_revision::between(&held, &given) else {
+        let Some(given) = ids_of(next) else {
             return Ok(());
         };
-        let moved = &said["requirements"];
-        let mut carried: Vec<String> = moved["carried"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter_map(|id| id.as_str().map(str::to_string))
-            .collect();
-        carried.extend(
-            moved["changed"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .filter_map(|row| row["id"].as_str().map(str::to_string)),
-        );
+        let mut carried: Vec<String> = held.intersection(&given).cloned().collect();
         if carried.is_empty() {
             return Ok(());
         }
@@ -1317,8 +1305,10 @@ impl<C: Clock> WorkStore<C> {
             format!(
                 "the owner asked for every requirement of work `{id}` to be issued a new id, and \
                  this list carries {}: build it again with scxml_requirement_set giving `fresh` \
-                 set to true beside the lineage, so that every id the work had is retired and \
-                 the new ones number on from where it left off",
+                 set to true beside the lineage (a list made before lineages has none: beside \
+                 its manifest as `previous_manifest_text` and its sidecar as \
+                 `previous_sidecar_text`), so that every id the work had is retired and the new \
+                 ones number on from where it left off",
                 carried.join(", ")
             ),
             serde_json::json!({ "request": request, "carried": carried }),
@@ -1567,6 +1557,18 @@ fn is_removed(dir: &Path) -> bool {
 
 /// The highest number among the ids (`R<number>`) of the objects in the array `key` of a JSON
 /// text, `0` for a text that is not one, has no such array or names an id another way.
+/// The ids (`id` of each entry under `key`) a manifest, or a lineage, lists. Nothing when the text
+/// is not JSON or has no such list.
+fn manifest_ids(text: &str, key: &str) -> std::collections::BTreeSet<String> {
+    serde_json::from_str::<serde_json::Value>(text)
+        .ok()
+        .and_then(|value| value.get(key).and_then(|items| items.as_array()).cloned())
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|item| item.get("id")?.as_str().map(str::to_string))
+        .collect()
+}
+
 fn highest_number(text: &str, key: &str) -> u64 {
     serde_json::from_str::<serde_json::Value>(text)
         .ok()
