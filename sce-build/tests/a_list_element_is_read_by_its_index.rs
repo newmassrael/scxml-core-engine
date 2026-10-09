@@ -100,15 +100,7 @@ fn an_element_is_read_by_an_index_in_every_place_a_number_stands() {
       <foreach array="picked" item="v" index="i">
         <assign location="total" expr="total + picked[i] + v"/>
       </foreach>"#;
-    for args in [
-        &["check"][..],
-        &["check", "-l", "rust"],
-        &["check", "-l", "kotlin"],
-        &["check", "-l", "cpp"],
-        &["check", "-l", "go"],
-        &["check", "-l", "python"],
-        &["check", "-l", "c11"],
-    ] {
+    for args in EVERY_TARGET {
         let (ok, out) = run(args, &machine(body));
         assert!(ok, "{args:?}: an element read by its index:\n{out}");
     }
@@ -159,16 +151,26 @@ fn a_list_is_still_no_value_and_an_element_is_still_no_place() {
     refused(r#"<assign location="picked[0]" expr="1"/>"#, "picked[0]");
 }
 
-/// A statechart with a `list<record:Day>` `days`, a `record:Day` `draft`, a
-/// `uint32` `total`, a `uint8` `small` and the given `body` in one transition,
-/// beside the schema it imports.
-fn record_machine(body: &str) -> (tempfile::TempDir, PathBuf) {
+/// A one-transition statechart over a list of records, beside the files it imports:
+/// `files` are the schemas (and enums) copied from the fixtures next to the probe,
+/// `imports` and `data` are the document's own lines for them, and `body` is the
+/// transition's content.
+fn list_machine(
+    files: &[&str],
+    imports: &str,
+    data: &str,
+    body: &str,
+) -> (tempfile::TempDir, PathBuf) {
     let dir = tempdir().expect("tempdir");
-    std::fs::copy(
-        repo_root().join("sce-build/tests/fixtures/static_datamodel/schema_day.scxml"),
-        dir.path().join("schema_day.scxml"),
-    )
-    .expect("the Day schema");
+    for file in files {
+        std::fs::copy(
+            repo_root()
+                .join("sce-build/tests/fixtures/static_datamodel")
+                .join(file),
+            dir.path().join(file),
+        )
+        .unwrap_or_else(|e| panic!("the fixture {file}: {e}"));
+    }
     let path = dir.path().join("probe.scxml");
     std::fs::write(
         &path,
@@ -176,16 +178,9 @@ fn record_machine(body: &str) -> (tempfile::TempDir, PathBuf) {
             r##"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="s" datamodel="sce-static">
-  <sce:import kind="event-schema" src="schema_day.scxml" as="Day"/>
+  {imports}
   <datamodel>
-    <data id="days" sce:type="list&lt;record:Day&gt;" sce:capacity="3"/>
-    <data id="draft" sce:type="record:Day">
-      <sce:set name="year" expr="2026"/>
-      <sce:set name="month" expr="1"/>
-      <sce:set name="dayOfMonth" expr="1"/>
-    </data>
-    <data id="total" sce:type="uint32" expr="0"/>
-    <data id="small" sce:type="uint8" expr="0"/>
+    {data}
   </datamodel>
   <state id="s">
     <transition event="go" type="internal">
@@ -200,20 +195,54 @@ fn record_machine(body: &str) -> (tempfile::TempDir, PathBuf) {
     (dir, path)
 }
 
-fn check_records(args: &[&str], body: &str) -> (bool, String) {
-    let (_dir, path) = record_machine(body);
+/// `sce-codegen <args…>` over a probe `list_machine` wrote, as `(succeeded, output)`.
+fn check_machine(args: &[&str], machine: &(tempfile::TempDir, PathBuf)) -> (bool, String) {
     let out = Command::new(sce_codegen_bin())
         .arg("--workspace-root")
         .arg(repo_root())
         .arg("--error-format=json")
         .args(args)
-        .arg(&path)
+        .arg(&machine.1)
         .output()
         .expect("invoke sce-codegen");
     (
         out.status.success(),
         String::from_utf8_lossy(&out.stderr).into_owned() + &String::from_utf8_lossy(&out.stdout),
     )
+}
+
+/// Every target a `sce-static` document is checked for, the Interpreter's own check first.
+const EVERY_TARGET: [&[&str]; 7] = [
+    &["check"],
+    &["check", "-l", "rust"],
+    &["check", "-l", "kotlin"],
+    &["check", "-l", "cpp"],
+    &["check", "-l", "go"],
+    &["check", "-l", "python"],
+    &["check", "-l", "c11"],
+];
+
+/// A statechart with a `list<record:Day>` `days`, a `record:Day` `draft`, a
+/// `uint32` `total`, a `uint8` `small` and the given `body` in one transition,
+/// beside the schema it imports.
+fn record_machine(body: &str) -> (tempfile::TempDir, PathBuf) {
+    list_machine(
+        &["schema_day.scxml"],
+        r#"<sce:import kind="event-schema" src="schema_day.scxml" as="Day"/>"#,
+        r#"<data id="days" sce:type="list&lt;record:Day&gt;" sce:capacity="3"/>
+    <data id="draft" sce:type="record:Day">
+      <sce:set name="year" expr="2026"/>
+      <sce:set name="month" expr="1"/>
+      <sce:set name="dayOfMonth" expr="1"/>
+    </data>
+    <data id="total" sce:type="uint32" expr="0"/>
+    <data id="small" sce:type="uint8" expr="0"/>"#,
+        body,
+    )
+}
+
+fn check_records(args: &[&str], body: &str) -> (bool, String) {
+    check_machine(args, &record_machine(body))
 }
 
 #[test]
@@ -224,15 +253,7 @@ fn a_field_of_an_element_is_read_by_the_elements_index() {
       <if cond="days[0].dayOfMonth &lt; days[1].dayOfMonth">
         <assign location="small" expr="1"/>
       </if>"#;
-    for args in [
-        &["check"][..],
-        &["check", "-l", "rust"],
-        &["check", "-l", "kotlin"],
-        &["check", "-l", "cpp"],
-        &["check", "-l", "go"],
-        &["check", "-l", "python"],
-        &["check", "-l", "c11"],
-    ] {
+    for args in EVERY_TARGET {
         let (ok, out) = check_records(args, body);
         assert!(ok, "{args:?}: a field of an indexed element:\n{out}");
     }
@@ -242,52 +263,14 @@ fn a_field_of_an_element_is_read_by_the_elements_index() {
 /// field of at most eight bytes — a `string` `note` of sixteen, a `bool` `same` and
 /// the given `body` in one transition, beside the schema it imports.
 fn labelled_machine(body: &str) -> (tempfile::TempDir, PathBuf) {
-    let dir = tempdir().expect("tempdir");
-    std::fs::copy(
-        repo_root().join("sce-build/tests/fixtures/static_datamodel/schema_labelled.scxml"),
-        dir.path().join("schema_labelled.scxml"),
-    )
-    .expect("the Labelled schema");
-    let path = dir.path().join("probe.scxml");
-    std::fs::write(
-        &path,
-        format!(
-            r##"<?xml version="1.0"?>
-<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-       version="1.0" initial="s" datamodel="sce-static">
-  <sce:import kind="event-schema" src="schema_labelled.scxml" as="Labelled"/>
-  <datamodel>
-    <data id="labels" sce:type="list&lt;record:Labelled&gt;" sce:capacity="3"/>
+    list_machine(
+        &["schema_labelled.scxml"],
+        r#"<sce:import kind="event-schema" src="schema_labelled.scxml" as="Labelled"/>"#,
+        r#"<data id="labels" sce:type="list&lt;record:Labelled&gt;" sce:capacity="3"/>
     <data id="note" sce:type="string" sce:capacity="16" expr="'hello'"/>
     <data id="same" sce:type="bool" expr="false"/>
-    <data id="small" sce:type="uint8" expr="0"/>
-  </datamodel>
-  <state id="s">
-    <transition event="go" type="internal">
-      {body}
-    </transition>
-  </state>
-</scxml>
-"##
-        ),
-    )
-    .expect("write probe");
-    (dir, path)
-}
-
-fn check_labelled(args: &[&str], body: &str) -> (bool, String) {
-    let (_dir, path) = labelled_machine(body);
-    let out = Command::new(sce_codegen_bin())
-        .arg("--workspace-root")
-        .arg(repo_root())
-        .arg("--error-format=json")
-        .args(args)
-        .arg(&path)
-        .output()
-        .expect("invoke sce-codegen");
-    (
-        out.status.success(),
-        String::from_utf8_lossy(&out.stderr).into_owned() + &String::from_utf8_lossy(&out.stdout),
+    <data id="small" sce:type="uint8" expr="0"/>"#,
+        body,
     )
 }
 
@@ -300,17 +283,106 @@ fn a_string_field_of_an_element_is_read_by_the_elements_index() {
       <if cond="labels[small].label === 'a'">
         <assign location="small" expr="labels[0].sensor"/>
       </if>"#;
-    for args in [
-        &["check"][..],
-        &["check", "-l", "rust"],
-        &["check", "-l", "kotlin"],
-        &["check", "-l", "cpp"],
-        &["check", "-l", "go"],
-        &["check", "-l", "python"],
-        &["check", "-l", "c11"],
-    ] {
-        let (ok, out) = check_labelled(args, body);
+    for args in EVERY_TARGET {
+        let (ok, out) = check_machine(args, &labelled_machine(body));
         assert!(ok, "{args:?}: a string field of an indexed element:\n{out}");
+    }
+}
+
+/// A statechart with a `list<record:Framed>` `frames` — a record with a byte string
+/// field of at most eight bytes — a `bytes` `spare` of sixteen, a `uint32` `size`, a
+/// `bool` `same`, a `uint8` `small` and the given `body` in one transition.
+fn framed_machine(body: &str) -> (tempfile::TempDir, PathBuf) {
+    list_machine(
+        &["schema_framed.scxml"],
+        r#"<sce:import kind="event-schema" src="schema_framed.scxml" as="Framed"/>"#,
+        r#"<data id="frames" sce:type="list&lt;record:Framed&gt;" sce:capacity="3"/>
+    <data id="spare" sce:type="bytes" sce:capacity="16" expr="'hello'"/>
+    <data id="size" sce:type="uint32" expr="0"/>
+    <data id="same" sce:type="bool" expr="false"/>
+    <data id="small" sce:type="uint8" expr="0"/>"#,
+        body,
+    )
+}
+
+#[test]
+fn a_byte_string_field_of_an_element_is_read_by_the_elements_index() {
+    let body = r#"
+      <assign location="spare" expr="frames[0].frame"/>
+      <assign location="size" expr="len(frames[len(frames) - 1].frame)"/>
+      <assign location="same" expr="frames[0].frame === frames[1].frame"/>
+      <if cond="frames[small].frame === 'ab'">
+        <assign location="small" expr="frames[0].sensor"/>
+      </if>"#;
+    for args in EVERY_TARGET {
+        let (ok, out) = check_machine(args, &framed_machine(body));
+        assert!(
+            ok,
+            "{args:?}: a byte string field of an indexed element:\n{out}"
+        );
+    }
+}
+
+/// A statechart with a `list<record:View>` `seen` — a record with an enum field —
+/// a `record:View` `shown`, a `uint32` `leads`, a `uint8` `small` and the given
+/// `body` in one transition.
+fn viewed_machine(body: &str) -> (tempfile::TempDir, PathBuf) {
+    list_machine(
+        &["schema_view.scxml", "enum_view_mode.scxml"],
+        r#"<sce:import kind="event-schema" src="schema_view.scxml" as="View"/>
+  <sce:import kind="enum" src="enum_view_mode.scxml" as="ViewMode"/>"#,
+        r#"<data id="seen" sce:type="list&lt;record:View&gt;" sce:capacity="3"/>
+    <data id="shown" sce:type="record:View">
+      <sce:set name="layout" expr="ViewMode.month"/>
+      <sce:set name="zoom" expr="1"/>
+    </data>
+    <data id="leads" sce:type="uint32" expr="0"/>
+    <data id="small" sce:type="uint8" expr="0"/>"#,
+        body,
+    )
+}
+
+#[test]
+fn an_enum_field_of_an_element_is_read_by_the_elements_index() {
+    let body = r#"
+      <assign location="shown.layout" expr="seen[0].layout"/>
+      <assign location="shown.layout" expr="seen[len(seen) - 1].layout"/>
+      <if cond="seen[small].layout === ViewMode.week">
+        <assign location="leads" expr="leads + 1"/>
+      </if>
+      <if cond="seen[0].layout !== seen[1].layout">
+        <assign location="small" expr="seen[0].zoom"/>
+      </if>"#;
+    for args in EVERY_TARGET {
+        let (ok, out) = check_machine(args, &viewed_machine(body));
+        assert!(ok, "{args:?}: an enum field of an indexed element:\n{out}");
+    }
+}
+
+#[test]
+fn an_enum_value_taken_from_an_element_is_used_as_an_enum_value_is() {
+    // The same rule as for any enum value: stored in a variable of its own enum, logged,
+    // or compared with a value of that enum; no arithmetic, no index, no number.
+    for (body, because) in [
+        (
+            r#"<assign location="small" expr="seen[0].layout"/>"#,
+            "seen[0].layout",
+        ),
+        (
+            r#"<if cond="seen[0].layout === 1"><assign location="small" expr="1"/></if>"#,
+            "a comparison of an enum value with anything but a value of the same enum",
+        ),
+        (
+            r#"<assign location="shown.layout" expr="seen[seen[0].layout].layout"/>"#,
+            "an enum value as an index",
+        ),
+    ] {
+        let (ok, out) = check_machine(&["check"], &viewed_machine(body));
+        assert!(!ok, "expected a refusal ({because}), got:\n{out}");
+        assert!(
+            out.contains(because),
+            "the refusal must say {because:?}:\n{out}"
+        );
     }
 }
 

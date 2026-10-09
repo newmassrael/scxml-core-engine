@@ -650,11 +650,11 @@ fn resolve_names(ast: &mut TypedExpr, ctx: &TypeCtx<'_>, source: &str) -> Result
 }
 
 /// Refuse a field of the element a list of records is indexed at that is not a
-/// number, a `bool`, a string or an enum the schema declares: the scope
-/// registers `<list>[].<field>` for exactly those — an enum untyped, as the
+/// number, a `bool`, a string, a byte string or an enum the schema declares: the
+/// scope registers `<list>[].<field>` for exactly those — an enum untyped, as the
 /// lattice names no type for one — so any other field, one the schema does not
-/// have or a byte string, which a `<foreach>` item reads, is absent from it and
-/// would reach every backend as an operand of no type.
+/// have, is absent from it and would reach every backend as an operand of no
+/// type.
 fn reject_unreadable_element_fields(
     expr: &TypedExpr,
     ctx: &TypeCtx<'_>,
@@ -669,9 +669,9 @@ fn reject_unreadable_element_fields(
             if expr.ty == InferredType::Unknown && !ctx.declares(&path) {
                 return Err(ExprError::UnsupportedConstruct {
                     construct: format!(
-                        "`{list}[…].{property}`, which is no number, bool, string or enum field \
-                         of the element (a field of another type is read through a <foreach> \
-                         item)"
+                        "`{list}[…].{property}`, which is no number, bool, string, byte string \
+                         or enum field of the element (a field the schema does not declare is \
+                         read nowhere)"
                     ),
                     observed: expr
                         .span
@@ -8491,19 +8491,31 @@ fn emit_c(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError>
     Ok(c_coerce(raw, expr.ty, expected, expr))
 }
 
+/// What a checked index read in C gives when it records a failure. The statement that
+/// holds the read is skipped on a failure, so the value is never used; it only has to be
+/// something the conditional's two arms can share and a callee can be handed.
+#[derive(Clone, Copy)]
+enum CFailedRead {
+    /// 0: a number, a `bool`, an enum.
+    Zero,
+    /// The empty string: a function that takes a string must never be handed a null pointer.
+    Text,
+    /// A zeroed value of the field's own type: a byte string is a struct, and a conditional
+    /// whose arms are a struct and 0 does not compile.
+    Aggregate,
+}
+
 /// A checked index read in C (SCE_FORGE.md §3.4.1), with `field` — empty, or
 /// `.name` — read from the element inside the same conditional: the failure is
-/// recorded and the read gives 0 when the index is outside the collection, and
+/// recorded and the read gives `failed` when the index is outside the collection, and
 /// an index that is outside is never read, the collection's emptiness included.
 /// A `bytes` view and a `list<T>` view carry their length; a build-time array's is
-/// its `sizeof`. `failed` is what the read gives when it records a failure: 0, or
-/// the empty string for a field that is text, which a function that takes a string
-/// must never be handed as a null pointer.
+/// its `sizeof`.
 fn c_checked_index(
     left: &TypedExpr,
     index: &TypedExpr,
     field: &str,
-    failed: &str,
+    failed: CFailedRead,
 ) -> Result<String, ExprError> {
     let object = wrap_postfix(left, emit_c(left, InferredType::Unknown)?);
     let idx = emit_c(index, InferredType::Unknown)?;
@@ -8517,9 +8529,16 @@ fn c_checked_index(
         InferredType::Int { signed: false, .. } => "u",
         _ => "i",
     };
+    let read = format!("{object}{accessor}[{idx}]{field}");
+    let failed = match failed {
+        CFailedRead::Zero => "0".to_string(),
+        CFailedRead::Text => "\"\"".to_string(),
+        // A designated initializer: `{0}` over a struct whose first member is an array is
+        // `-Wmissing-braces`, and the rest of the value is zeroed all the same.
+        CFailedRead::Aggregate => format!("(__typeof__({read})){{ .len = 0 }}"),
+    };
     Ok(format!(
-        "(sce_forge_checked_index_from_{from}(&sce_failure_, {idx}, {len}) \
-         ? {object}{accessor}[{idx}]{field} : {failed})"
+        "(sce_forge_checked_index_from_{from}(&sce_failure_, {idx}, {len}) ? {read} : {failed})"
     ))
 }
 
@@ -8697,10 +8716,10 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             else {
                 unreachable!("guarded by the match above")
             };
-            let failed = if expr.ty == InferredType::Str {
-                "\"\""
-            } else {
-                "0"
+            let failed = match expr.ty {
+                InferredType::Str => CFailedRead::Text,
+                InferredType::Bytes => CFailedRead::Aggregate,
+                _ => CFailedRead::Zero,
             };
             c_checked_index(left, index, &format!(".{property}"), failed)?
         }
@@ -8791,7 +8810,7 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             op: CheckedOp::Index,
             left,
             right: Some(index),
-        } => c_checked_index(left, index, "", "0")?,
+        } => c_checked_index(left, index, "", CFailedRead::Zero)?,
         // SCE_FORGE.md §3.4.1: the runtime's helper for the operation's own
         // width, which records a failure in the body's `sce_failure_` and
         // yields 0; the statement around it returns that failure. C has no

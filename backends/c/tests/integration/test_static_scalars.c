@@ -727,6 +727,7 @@ STATIC_SCENARIO(static_bytes, bytes_states, bytes_variables, static_bytes_text, 
 VARIABLE_READER(static_record_bytes, size)
 VARIABLE_READER(static_record_bytes, matches)
 VARIABLE_READER(static_record_bytes, misses)
+VARIABLE_READER(static_record_bytes, leads)
 VARIABLE_READER(static_record_bytes, errors)
 
 static const char *static_record_bytes_frame_text(sce_static_bytes_8_t frame) {
@@ -750,9 +751,8 @@ static const name_value_t record_bytes_states[] = {
     {"idle", STATIC_RECORD_BYTES_STATE_IDLE},
 };
 static const variable_t record_bytes_variables[] = {
-    {"size", static_record_bytes_read_size},
-    {"matches", static_record_bytes_read_matches},
-    {"misses", static_record_bytes_read_misses},
+    {"size", static_record_bytes_read_size},     {"matches", static_record_bytes_read_matches},
+    {"misses", static_record_bytes_read_misses}, {"leads", static_record_bytes_read_leads},
     {"errors", static_record_bytes_read_errors},
 };
 static const record_variable_t record_bytes_records[] = {
@@ -1862,7 +1862,7 @@ int main(void) {
     bad |= static_payload_relay_scenario("static_payload_relay", 5);
     bad |= static_string_capacity_scenario("static_string_capacity", 11);
     bad |= static_bytes_scenario("static_bytes", 12);
-    bad |= static_record_bytes_scenario("static_record_bytes", 22);
+    bad |= static_record_bytes_scenario("static_record_bytes", 32);
     bad |= static_payload_bytes_scenario("static_payload_bytes", 15);
     bad |= static_bytes_wire_scenario("static_bytes_wire", 8);
     bad |= static_donedata_scenario("static_donedata", 6);

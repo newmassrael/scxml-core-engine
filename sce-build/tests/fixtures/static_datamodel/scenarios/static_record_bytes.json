@@ -65,7 +65,37 @@
     { "note": "a full list takes no more: the list is left as it was and error.execution is raised",
       "event": "keep", "expect": { "variables": { "frames": [ { "sensor": 1, "frame": "hello" }, { "sensor": 1, "frame": "ab" }, { "sensor": 1, "frame": "ab" } ], "errors": 3 } } },
 
+    { "note": "the byte field of the record at an index is read as a loop's is: the first, five bytes, into a variable of sixteen",
+      "event": "peek", "expect": { "variables": { "spare": "hello", "errors": 3 } } },
+
+    { "note": "a guard comparing the first with `ab` is false for `hello`, and raises nothing",
+      "event": "lead", "expect": { "variables": { "leads": 0, "errors": 3 } } },
+
+    { "note": "the length of the last, by an index computed from the length of the list",
+      "event": "width", "expect": { "variables": { "size": 2, "errors": 3 } } },
+
     { "note": "emptied",
-      "event": "forget", "expect": { "variables": { "frames": [], "errors": 3 } } }
+      "event": "forget", "expect": { "variables": { "frames": [], "errors": 3 } } },
+
+    { "note": "one record again, whose bytes are `ab`",
+      "event": "keep", "expect": { "variables": { "frames": [ { "sensor": 1, "frame": "ab" } ] } } },
+
+    { "note": "the guard holds for the first now",
+      "event": "lead", "expect": { "variables": { "leads": 1, "errors": 3 } } },
+
+    { "note": "the first, two bytes, into the variable",
+      "event": "peek", "expect": { "variables": { "spare": "ab", "errors": 3 } } },
+
+    { "note": "emptied again",
+      "event": "forget", "expect": { "variables": { "frames": [], "errors": 3 } } },
+
+    { "note": "the list has no record at index 0: nothing is read, the variable is left as it was and error.execution is raised",
+      "event": "peek", "expect": { "variables": { "spare": "ab", "errors": 4 } } },
+
+    { "note": "the guard cannot be evaluated: it is false, and error.execution says so",
+      "event": "lead", "expect": { "variables": { "leads": 1, "errors": 5 } } },
+
+    { "note": "no last record to measure: the length is left as it was and error.execution is raised",
+      "event": "width", "expect": { "variables": { "size": 2, "errors": 6 } } }
   ]
 }

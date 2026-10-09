@@ -36,6 +36,7 @@
     <data id="size" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="matches" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="misses" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="leads" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="errors" sce:type="uint32" expr="0" sce:direction="out"/>
   </datamodel>
   <state id="idle">
@@ -79,6 +80,20 @@
       <foreach array="frames" item="f">
         <assign location="spare" expr="f.frame"/>
       </foreach>
+    </transition>
+    <!-- The byte field of the record at an index is read as a loop's is: `peek` takes
+         the first into the variable, `width` reads the length of the last by an index
+         computed from the list's length, and `lead` is guarded by a comparison of the
+         first with a literal. An index outside the list reads nothing and raises
+         error.execution, a guard that cannot be evaluated is false. -->
+    <transition event="peek" type="internal">
+      <assign location="spare" expr="frames[0].frame"/>
+    </transition>
+    <transition event="width" type="internal">
+      <assign location="size" expr="len(frames[len(frames) - 1].frame)"/>
+    </transition>
+    <transition event="lead" cond="frames[0].frame === 'ab'" type="internal">
+      <assign location="leads" expr="leads + 1"/>
     </transition>
     <transition event="forget" type="internal">
       <sce:clear target="frames"/>

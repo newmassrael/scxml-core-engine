@@ -635,6 +635,7 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, ARecordHoldsABytesFieldWithinTheBound
         {"size", [](const Machine &m) { return json(m.size()); }},
         {"matches", [](const Machine &m) { return json(m.matches()); }},
         {"misses", [](const Machine &m) { return json(m.misses()); }},
+        {"leads", [](const Machine &m) { return json(m.leads()); }},
         {"errors", [](const Machine &m) { return json(m.errors()); }},
     });
     replay("static_record_bytes", driver);

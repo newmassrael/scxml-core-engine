@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 552d5eb22ef933056085dce88fe5367b344dcf477c9ae66190ff1867ab30429e
+// source-hash: cb41954d893211ff980559eb7566d5cfca26a8d312a941a8b0426661b4fb8dcd
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -101,13 +101,16 @@ pub enum StaticRecordBytesEvent {
     Forget,
     FromSpare,
     Keep,
+    Lead,
     LongSpare,
     Measure,
     Other,
+    Peek,
     Reset,
     Tally,
     ToSpare,
     Toowide,
+    Width,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
 }
@@ -134,13 +137,16 @@ impl StaticRecordBytesEvent {
         StaticRecordBytesEvent::Forget,
         StaticRecordBytesEvent::FromSpare,
         StaticRecordBytesEvent::Keep,
+        StaticRecordBytesEvent::Lead,
         StaticRecordBytesEvent::LongSpare,
         StaticRecordBytesEvent::Measure,
         StaticRecordBytesEvent::Other,
+        StaticRecordBytesEvent::Peek,
         StaticRecordBytesEvent::Reset,
         StaticRecordBytesEvent::Tally,
         StaticRecordBytesEvent::ToSpare,
         StaticRecordBytesEvent::Toowide,
+        StaticRecordBytesEvent::Width,
     ];
 }
 
@@ -166,6 +172,7 @@ pub struct StaticRecordBytesData {
     pub size: u32,
     pub matches: u32,
     pub misses: u32,
+    pub leads: u32,
     pub errors: u32,
 }
 
@@ -202,6 +209,7 @@ impl StaticRecordBytesObserve for Engine<StaticRecordBytesPolicy> {
                 size: policy.size,
                 matches: policy.matches,
                 misses: policy.misses,
+                leads: policy.leads,
                 errors: policy.errors,
             },
             truncated: self.last_macrostep_truncated(),
@@ -320,7 +328,7 @@ pub trait StaticRecordBytesPersist: Sized {
 impl StaticRecordBytesPersist for Engine<StaticRecordBytesPolicy> {
     type Policy = StaticRecordBytesPolicy;
 
-    const SHAPE: &'static str = "cf66066c80f79ed42005f12b38f1f7251402eed89cea7d67589a685067fa3915";
+    const SHAPE: &'static str = "0f24f88f0f95e9cba72cf2c8194a035f79adde795a2ee38234a238dd2ed59cb8";
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<
         ::sce_rust_runtime::NoHistory,
@@ -361,6 +369,10 @@ impl StaticRecordBytesPersist for Engine<StaticRecordBytesPolicy> {
                 (
                     "misses".to_string(),
                     ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.misses),
+                ),
+                (
+                    "leads".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.leads),
                 ),
                 (
                     "errors".to_string(),
@@ -406,6 +418,10 @@ impl StaticRecordBytesPersist for Engine<StaticRecordBytesPolicy> {
             saved.variable("misses")?,
             "misses",
         )?;
+        policy.leads = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("leads")?,
+            "leads",
+        )?;
         policy.errors = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("errors")?,
             "errors",
@@ -422,6 +438,7 @@ pub struct StaticRecordBytesInvokeParams {
     pub size: Option<u32>,
     pub matches: Option<u32>,
     pub misses: Option<u32>,
+    pub leads: Option<u32>,
     pub errors: Option<u32>,
 }
 
@@ -442,6 +459,8 @@ pub struct StaticRecordBytesPolicy {
     matches: u32,
     /// W3C SCXML 5.2: the `misses` datamodel variable, published (`sce:direction="out"`).
     misses: u32,
+    /// W3C SCXML 5.2: the `leads` datamodel variable, published (`sce:direction="out"`).
+    leads: u32,
     /// W3C SCXML 5.2: the `errors` datamodel variable, published (`sce:direction="out"`).
     errors: u32,
     // W3C SCXML 5.10: Session ID (script engine + invoke tracking).
@@ -477,6 +496,7 @@ impl StaticRecordBytesPolicy {
         let size: u32 = 0;
         let matches: u32 = 0;
         let misses: u32 = 0;
+        let leads: u32 = 0;
         let errors: u32 = 0;
         Self {
             last,
@@ -485,6 +505,7 @@ impl StaticRecordBytesPolicy {
             size,
             matches,
             misses,
+            leads,
             errors,
             session_id: None,
             parent_external_queue: None,
@@ -504,6 +525,9 @@ impl StaticRecordBytesPolicy {
         }
         if let Some(value) = params.misses {
             self.misses = value;
+        }
+        if let Some(value) = params.leads {
+            self.leads = value;
         }
         if let Some(value) = params.errors {
             self.errors = value;
@@ -544,6 +568,12 @@ impl StaticRecordBytesPolicy {
     /// holds now. Only the machine writes it.
     pub fn misses(&self) -> u32 {
         self.misses
+    }
+
+    /// W3C SCXML 5.2: what the published `leads` datamodel variable
+    /// holds now. Only the machine writes it.
+    pub fn leads(&self) -> u32 {
+        self.leads
     }
 
     /// W3C SCXML 5.2: what the published `errors` datamodel variable
@@ -692,13 +722,16 @@ impl StatePolicy for StaticRecordBytesPolicy {
             StaticRecordBytesEvent::Forget => "forget",
             StaticRecordBytesEvent::FromSpare => "from_spare",
             StaticRecordBytesEvent::Keep => "keep",
+            StaticRecordBytesEvent::Lead => "lead",
             StaticRecordBytesEvent::LongSpare => "long_spare",
             StaticRecordBytesEvent::Measure => "measure",
             StaticRecordBytesEvent::Other => "other",
+            StaticRecordBytesEvent::Peek => "peek",
             StaticRecordBytesEvent::Reset => "reset",
             StaticRecordBytesEvent::Tally => "tally",
             StaticRecordBytesEvent::ToSpare => "to_spare",
             StaticRecordBytesEvent::Toowide => "toowide",
+            StaticRecordBytesEvent::Width => "width",
             StaticRecordBytesEvent::Null => "",
         }
     }
@@ -711,13 +744,16 @@ impl StatePolicy for StaticRecordBytesPolicy {
             "forget" => Some(StaticRecordBytesEvent::Forget),
             "from_spare" => Some(StaticRecordBytesEvent::FromSpare),
             "keep" => Some(StaticRecordBytesEvent::Keep),
+            "lead" => Some(StaticRecordBytesEvent::Lead),
             "long_spare" => Some(StaticRecordBytesEvent::LongSpare),
             "measure" => Some(StaticRecordBytesEvent::Measure),
             "other" => Some(StaticRecordBytesEvent::Other),
+            "peek" => Some(StaticRecordBytesEvent::Peek),
             "reset" => Some(StaticRecordBytesEvent::Reset),
             "tally" => Some(StaticRecordBytesEvent::Tally),
             "to_spare" => Some(StaticRecordBytesEvent::ToSpare),
             "toowide" => Some(StaticRecordBytesEvent::Toowide),
+            "width" => Some(StaticRecordBytesEvent::Width),
             _ => None,
         }
     }
@@ -933,7 +969,7 @@ impl StatePolicy for StaticRecordBytesPolicy {
                         });
                     }
                 }
-                if event == StaticRecordBytesEvent::Forget {
+                if event == StaticRecordBytesEvent::Peek {
                     {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
@@ -944,12 +980,53 @@ impl StatePolicy for StaticRecordBytesPolicy {
                         });
                     }
                 }
-                if event == StaticRecordBytesEvent::ErrorExecution {
+                if event == StaticRecordBytesEvent::Width {
                     {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
                             targets: &[],
                             transition_index: 13,
+                            has_actions: true,
+                            is_internal: true,
+                        });
+                    }
+                }
+                if event == StaticRecordBytesEvent::Lead {
+                    if match (|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> {
+                        Ok(sce_forge_runtime::algorithm::at_ref(&self.frames, 0)?.frame == b"ab")
+                    })() {
+                        Ok(sce_value) => sce_value,
+                        Err(_) => {
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordBytesEvent::ErrorExecution, "<transition cond='frames[0].frame === 'ab''>: an integer operation overflowed or failed"));
+                            false
+                        }
+                    } {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[],
+                            transition_index: 14,
+                            has_actions: true,
+                            is_internal: true,
+                        });
+                    }
+                }
+                if event == StaticRecordBytesEvent::Forget {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[],
+                            transition_index: 15,
+                            has_actions: true,
+                            is_internal: true,
+                        });
+                    }
+                }
+                if event == StaticRecordBytesEvent::ErrorExecution {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[],
+                            transition_index: 16,
                             has_actions: true,
                             is_internal: true,
                         });
@@ -975,7 +1052,7 @@ impl StatePolicy for StaticRecordBytesPolicy {
             StaticRecordBytesState::Idle => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: static_record_bytes.scxml:42 :: idle :: _transition_0
+                        // SCE-MAP: static_record_bytes.scxml:43 :: idle :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -996,7 +1073,7 @@ impl StatePolicy for StaticRecordBytesPolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: static_record_bytes.scxml:45 :: idle :: _transition_1
+                        // SCE-MAP: static_record_bytes.scxml:46 :: idle :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1017,7 +1094,7 @@ impl StatePolicy for StaticRecordBytesPolicy {
                         }
                     }
                     2 => {
-                        // SCE-MAP: static_record_bytes.scxml:48 :: idle :: _transition_2
+                        // SCE-MAP: static_record_bytes.scxml:49 :: idle :: _transition_2
                         // W3C SCXML 3.13: Transition 2 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1038,7 +1115,7 @@ impl StatePolicy for StaticRecordBytesPolicy {
                         }
                     }
                     3 => {
-                        // SCE-MAP: static_record_bytes.scxml:51 :: idle :: _transition_3
+                        // SCE-MAP: static_record_bytes.scxml:52 :: idle :: _transition_3
                         // W3C SCXML 3.13: Transition 3 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1059,7 +1136,7 @@ impl StatePolicy for StaticRecordBytesPolicy {
                         }
                     }
                     4 => {
-                        // SCE-MAP: static_record_bytes.scxml:54 :: idle :: _transition_4
+                        // SCE-MAP: static_record_bytes.scxml:55 :: idle :: _transition_4
                         // W3C SCXML 3.13: Transition 4 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1080,7 +1157,7 @@ impl StatePolicy for StaticRecordBytesPolicy {
                         }
                     }
                     5 => {
-                        // SCE-MAP: static_record_bytes.scxml:57 :: idle :: _transition_5
+                        // SCE-MAP: static_record_bytes.scxml:58 :: idle :: _transition_5
                         // W3C SCXML 3.13: Transition 5 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1101,7 +1178,7 @@ impl StatePolicy for StaticRecordBytesPolicy {
                         }
                     }
                     6 => {
-                        // SCE-MAP: static_record_bytes.scxml:60 :: idle :: _transition_6
+                        // SCE-MAP: static_record_bytes.scxml:61 :: idle :: _transition_6
                         // W3C SCXML 3.13: Transition 6 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1122,7 +1199,7 @@ impl StatePolicy for StaticRecordBytesPolicy {
                         }
                     }
                     7 => {
-                        // SCE-MAP: static_record_bytes.scxml:63 :: idle :: _transition_7
+                        // SCE-MAP: static_record_bytes.scxml:64 :: idle :: _transition_7
                         // W3C SCXML 3.13: Transition 7 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1143,7 +1220,7 @@ impl StatePolicy for StaticRecordBytesPolicy {
                         }
                     }
                     8 => {
-                        // SCE-MAP: static_record_bytes.scxml:66 :: idle :: _transition_8
+                        // SCE-MAP: static_record_bytes.scxml:67 :: idle :: _transition_8
                         // W3C SCXML 3.13: Transition 8 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1164,7 +1241,7 @@ impl StatePolicy for StaticRecordBytesPolicy {
                         }
                     }
                     9 => {
-                        // SCE-MAP: static_record_bytes.scxml:69 :: idle :: _transition_9
+                        // SCE-MAP: static_record_bytes.scxml:70 :: idle :: _transition_9
                         // W3C SCXML 3.13: Transition 9 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1173,7 +1250,7 @@ impl StatePolicy for StaticRecordBytesPolicy {
                         }
                     }
                     10 => {
-                        // SCE-MAP: static_record_bytes.scxml:75 :: idle :: _transition_10
+                        // SCE-MAP: static_record_bytes.scxml:76 :: idle :: _transition_10
                         // W3C SCXML 3.13: Transition 10 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1191,7 +1268,7 @@ impl StatePolicy for StaticRecordBytesPolicy {
                         }
                     }
                     11 => {
-                        // SCE-MAP: static_record_bytes.scxml:78 :: idle :: _transition_11
+                        // SCE-MAP: static_record_bytes.scxml:79 :: idle :: _transition_11
                         // W3C SCXML 3.13: Transition 11 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1216,17 +1293,80 @@ impl StatePolicy for StaticRecordBytesPolicy {
                         }
                     }
                     12 => {
-                        // SCE-MAP: static_record_bytes.scxml:83 :: idle :: _transition_12
+                        // SCE-MAP: static_record_bytes.scxml:89 :: idle :: _transition_12
                         // W3C SCXML 3.13: Transition 12 actions
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // W3C SCXML 5.3: <assign location="spare">
+                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.spare = sce_forge_runtime::algorithm::bounded(sce_forge_runtime::algorithm::at_ref(&self.frames, 0)?.frame.to_vec(), 16)?;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordBytesEvent::ErrorExecution, "<assign location='spare'>: an integer operation overflowed or failed"));
+        true
+    }
+};
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                            }
+                        }
+                    }
+                    13 => {
+                        // SCE-MAP: static_record_bytes.scxml:92 :: idle :: _transition_13
+                        // W3C SCXML 3.13: Transition 13 actions
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // W3C SCXML 5.3: <assign location="size">
+                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.size = (sce_forge_runtime::algorithm::at_ref(&self.frames, sce_forge_runtime::algorithm::sub::<u32>((self.frames).len() as u32, 1)?)?.frame).len() as u32;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordBytesEvent::ErrorExecution, "<assign location='size'>: an integer operation overflowed or failed"));
+        true
+    }
+};
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                            }
+                        }
+                    }
+                    14 => {
+                        // SCE-MAP: static_record_bytes.scxml:95 :: idle :: _transition_14
+                        // W3C SCXML 3.13: Transition 14 actions
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // W3C SCXML 5.3: <assign location="leads">
+                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.leads = sce_forge_runtime::algorithm::add::<u32>(self.leads, 1)?;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordBytesEvent::ErrorExecution, "<assign location='leads'>: an integer operation overflowed or failed"));
+        true
+    }
+};
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                            }
+                        }
+                    }
+                    15 => {
+                        // SCE-MAP: static_record_bytes.scxml:98 :: idle :: _transition_15
+                        // W3C SCXML 3.13: Transition 15 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             // SCE Accepted Subset §2.15: <sce:clear target="frames">
                             self.frames.clear();
                         }
                     }
-                    13 => {
-                        // SCE-MAP: static_record_bytes.scxml:86 :: idle :: _transition_13
-                        // W3C SCXML 3.13: Transition 13 actions
+                    16 => {
+                        // SCE-MAP: static_record_bytes.scxml:101 :: idle :: _transition_16
+                        // W3C SCXML 3.13: Transition 16 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             // W3C SCXML 5.3: <assign location="errors">

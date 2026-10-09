@@ -471,11 +471,10 @@ fn static_record_paths<'v>(
     for var in variables {
         // An element of a `list<record:<alias>>` read by its index, `xs[i].f`, is
         // read through `<id>[].<field>`: the index is a value and the path is
-        // not, and only a number, a bool, a string or an enum is a value an
-        // expression holds (a byte string field is read through a `<foreach>`
-        // item). An enum field is registered untyped, as a record variable's is:
-        // the lattice names no type for an enum, and [`crate::forge::static_enum`]
-        // answers which enum the path holds.
+        // not, and a number, a bool, a string, a byte string or an enum is what
+        // the element's fields can be read as. An enum field is registered untyped,
+        // as a record variable's is: the lattice names no type for an enum, and
+        // [`crate::forge::static_enum`] answers which enum the path holds.
         if let Some(ListElemType::Record { alias }) = var
             .value_type
             .as_ref()
@@ -490,6 +489,7 @@ fn static_record_paths<'v>(
                             | InferredType::Float { .. }
                             | InferredType::Bool
                             | InferredType::Str
+                            | InferredType::Bytes
                     ) || matches!(field.sce_type, SceType::Enum(_))
                     {
                         paths.push((format!("{}{INDEXED_ELEMENT}{}", var.id, field.id), ty));

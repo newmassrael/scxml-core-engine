@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 552d5eb22ef933056085dce88fe5367b344dcf477c9ae66190ff1867ab30429e
+// source-hash: cb41954d893211ff980559eb7566d5cfca26a8d312a941a8b0426661b4fb8dcd
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -142,15 +142,18 @@ const (
 	StaticRecordBytesEventForget StaticRecordBytesEvent = 3
 	StaticRecordBytesEventFromSpare StaticRecordBytesEvent = 4
 	StaticRecordBytesEventKeep StaticRecordBytesEvent = 5
-	StaticRecordBytesEventLongSpare StaticRecordBytesEvent = 6
-	StaticRecordBytesEventMeasure StaticRecordBytesEvent = 7
-	StaticRecordBytesEventOther StaticRecordBytesEvent = 8
-	StaticRecordBytesEventReset StaticRecordBytesEvent = 9
-	StaticRecordBytesEventTally StaticRecordBytesEvent = 10
-	StaticRecordBytesEventToSpare StaticRecordBytesEvent = 11
-	StaticRecordBytesEventToowide StaticRecordBytesEvent = 12
+	StaticRecordBytesEventLead StaticRecordBytesEvent = 6
+	StaticRecordBytesEventLongSpare StaticRecordBytesEvent = 7
+	StaticRecordBytesEventMeasure StaticRecordBytesEvent = 8
+	StaticRecordBytesEventOther StaticRecordBytesEvent = 9
+	StaticRecordBytesEventPeek StaticRecordBytesEvent = 10
+	StaticRecordBytesEventReset StaticRecordBytesEvent = 11
+	StaticRecordBytesEventTally StaticRecordBytesEvent = 12
+	StaticRecordBytesEventToSpare StaticRecordBytesEvent = 13
+	StaticRecordBytesEventToowide StaticRecordBytesEvent = 14
+	StaticRecordBytesEventWidth StaticRecordBytesEvent = 15
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	StaticRecordBytesEventNull StaticRecordBytesEvent = 13
+	StaticRecordBytesEventNull StaticRecordBytesEvent = 16
 )
 
 func (e StaticRecordBytesEvent) String() string {
@@ -167,12 +170,16 @@ func (e StaticRecordBytesEvent) String() string {
 		return "from_spare"
 	case StaticRecordBytesEventKeep:
 		return "keep"
+	case StaticRecordBytesEventLead:
+		return "lead"
 	case StaticRecordBytesEventLongSpare:
 		return "long_spare"
 	case StaticRecordBytesEventMeasure:
 		return "measure"
 	case StaticRecordBytesEventOther:
 		return "other"
+	case StaticRecordBytesEventPeek:
+		return "peek"
 	case StaticRecordBytesEventReset:
 		return "reset"
 	case StaticRecordBytesEventTally:
@@ -181,6 +188,8 @@ func (e StaticRecordBytesEvent) String() string {
 		return "to_spare"
 	case StaticRecordBytesEventToowide:
 		return "toowide"
+	case StaticRecordBytesEventWidth:
+		return "width"
 	case StaticRecordBytesEventNull:
 		return ""
 	}
@@ -225,6 +234,8 @@ type StaticRecordBytesPolicy struct {
 	vMatches uint32
 	// W3C SCXML 5.2: the `misses` datamodel variable, published (`sce:direction="out"`).
 	vMisses uint32
+	// W3C SCXML 5.2: the `leads` datamodel variable, published (`sce:direction="out"`).
+	vLeads uint32
 	// W3C SCXML 5.2: the `errors` datamodel variable, published (`sce:direction="out"`).
 	vErrors uint32
 	// W3C SCXML 6.4: Parent communication (unbounded — see sce.ParentEventQueue)
@@ -245,6 +256,7 @@ func NewStaticRecordBytesPolicy() StaticRecordBytesPolicy {
 		vSize: 0,
 		vMatches: 0,
 		vMisses: 0,
+		vLeads: 0,
 		vErrors: 0,
 	}
 }
@@ -286,6 +298,12 @@ func (p *StaticRecordBytesPolicy) Misses() uint32 {
 	return p.vMisses
 }
 
+// Leads reports what the published `leads` datamodel
+// variable holds now (W3C SCXML 5.2). Only the machine writes it.
+func (p *StaticRecordBytesPolicy) Leads() uint32 {
+	return p.vLeads
+}
+
 // Errors reports what the published `errors` datamodel
 // variable holds now (W3C SCXML 5.2). Only the machine writes it.
 func (p *StaticRecordBytesPolicy) Errors() uint32 {
@@ -299,6 +317,7 @@ type StaticRecordBytesInvokeParams struct {
 	VSize *uint32
 	VMatches *uint32
 	VMisses *uint32
+	VLeads *uint32
 	VErrors *uint32
 }
 
@@ -313,6 +332,9 @@ func (p *StaticRecordBytesPolicy) AcceptParams(params StaticRecordBytesInvokePar
 	}
 	if params.VMisses != nil {
 		p.vMisses = *params.VMisses
+	}
+	if params.VLeads != nil {
+		p.vLeads = *params.VLeads
 	}
 	if params.VErrors != nil {
 		p.vErrors = *params.VErrors
@@ -447,12 +469,16 @@ func (p *StaticRecordBytesPolicy) GetEventFromName(name string) (StaticRecordByt
 		return StaticRecordBytesEventFromSpare, true
 	case "keep":
 		return StaticRecordBytesEventKeep, true
+	case "lead":
+		return StaticRecordBytesEventLead, true
 	case "long_spare":
 		return StaticRecordBytesEventLongSpare, true
 	case "measure":
 		return StaticRecordBytesEventMeasure, true
 	case "other":
 		return StaticRecordBytesEventOther, true
+	case "peek":
+		return StaticRecordBytesEventPeek, true
 	case "reset":
 		return StaticRecordBytesEventReset, true
 	case "tally":
@@ -461,6 +487,8 @@ func (p *StaticRecordBytesPolicy) GetEventFromName(name string) (StaticRecordByt
 		return StaticRecordBytesEventToSpare, true
 	case "toowide":
 		return StaticRecordBytesEventToowide, true
+	case "width":
+		return StaticRecordBytesEventWidth, true
 	}
 	return StaticRecordBytesEventNull, false
 }
@@ -738,7 +766,7 @@ func (p *StaticRecordBytesPolicy) FirstEnabledTransition(state StaticRecordBytes
 				}, true
 			}
 		}
-		if event == StaticRecordBytesEventForget {
+		if event == StaticRecordBytesEventPeek {
 			{
 				return sce.EnabledTransition[StaticRecordBytesState, sce.HistoryID]{
 					Source:          state,
@@ -748,11 +776,44 @@ func (p *StaticRecordBytesPolicy) FirstEnabledTransition(state StaticRecordBytes
 				}, true
 			}
 		}
-		if event == StaticRecordBytesEventErrorExecution {
+		if event == StaticRecordBytesEventWidth {
 			{
 				return sce.EnabledTransition[StaticRecordBytesState, sce.HistoryID]{
 					Source:          state,
 					TransitionIndex: 13,
+					HasActions:      true,
+					IsInternal:      true,
+				}, true
+			}
+		}
+		if event == StaticRecordBytesEventLead {
+			// NL→IR Item C1 Path A: native typed `_event.data` guard — cond
+			// "frames[0].frame === 'ab'" lowered to a tag-checked field comparison on
+			// the lifted `pending<Event>Payload` (no script engine).
+			if func() bool { var sceFailure scealgorithm.Failure; sceValue := string(scealgorithm.At(&sceFailure, p.vFrames[:], int64(0)).frame) == "ab"; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordBytesEventErrorExecution, "<transition cond='frames[0].frame === 'ab''>: an integer operation overflowed or failed")); return false }; return sceValue }() {
+				return sce.EnabledTransition[StaticRecordBytesState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 14,
+					HasActions:      true,
+					IsInternal:      true,
+				}, true
+			}
+		}
+		if event == StaticRecordBytesEventForget {
+			{
+				return sce.EnabledTransition[StaticRecordBytesState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 15,
+					HasActions:      true,
+					IsInternal:      true,
+				}, true
+			}
+		}
+		if event == StaticRecordBytesEventErrorExecution {
+			{
+				return sce.EnabledTransition[StaticRecordBytesState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 16,
 					HasActions:      true,
 					IsInternal:      true,
 				}, true
@@ -770,7 +831,7 @@ func (p *StaticRecordBytesPolicy) ExecuteTransitionContent(source StaticRecordBy
 	case StaticRecordBytesStateIdle:
 		switch transitionIndex {
 		case 0:
-			//line static_record_bytes.scxml:42
+			//line static_record_bytes.scxml:43
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -781,7 +842,7 @@ func (p *StaticRecordBytesPolicy) ExecuteTransitionContent(source StaticRecordBy
 
 			}()
 		case 1:
-			//line static_record_bytes.scxml:45
+			//line static_record_bytes.scxml:46
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -792,7 +853,7 @@ func (p *StaticRecordBytesPolicy) ExecuteTransitionContent(source StaticRecordBy
 
 			}()
 		case 2:
-			//line static_record_bytes.scxml:48
+			//line static_record_bytes.scxml:49
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -803,7 +864,7 @@ func (p *StaticRecordBytesPolicy) ExecuteTransitionContent(source StaticRecordBy
 
 			}()
 		case 3:
-			//line static_record_bytes.scxml:51
+			//line static_record_bytes.scxml:52
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -814,7 +875,7 @@ func (p *StaticRecordBytesPolicy) ExecuteTransitionContent(source StaticRecordBy
 
 			}()
 		case 4:
-			//line static_record_bytes.scxml:54
+			//line static_record_bytes.scxml:55
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -825,7 +886,7 @@ func (p *StaticRecordBytesPolicy) ExecuteTransitionContent(source StaticRecordBy
 
 			}()
 		case 5:
-			//line static_record_bytes.scxml:57
+			//line static_record_bytes.scxml:58
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -836,7 +897,7 @@ func (p *StaticRecordBytesPolicy) ExecuteTransitionContent(source StaticRecordBy
 
 			}()
 		case 6:
-			//line static_record_bytes.scxml:60
+			//line static_record_bytes.scxml:61
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -847,7 +908,7 @@ func (p *StaticRecordBytesPolicy) ExecuteTransitionContent(source StaticRecordBy
 
 			}()
 		case 7:
-			//line static_record_bytes.scxml:63
+			//line static_record_bytes.scxml:64
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -858,7 +919,7 @@ func (p *StaticRecordBytesPolicy) ExecuteTransitionContent(source StaticRecordBy
 
 			}()
 		case 8:
-			//line static_record_bytes.scxml:66
+			//line static_record_bytes.scxml:67
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -869,7 +930,7 @@ func (p *StaticRecordBytesPolicy) ExecuteTransitionContent(source StaticRecordBy
 
 			}()
 		case 9:
-			//line static_record_bytes.scxml:69
+			//line static_record_bytes.scxml:70
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -878,7 +939,7 @@ func (p *StaticRecordBytesPolicy) ExecuteTransitionContent(source StaticRecordBy
 
 			}()
 		case 10:
-			//line static_record_bytes.scxml:75
+			//line static_record_bytes.scxml:76
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -890,7 +951,7 @@ func (p *StaticRecordBytesPolicy) ExecuteTransitionContent(source StaticRecordBy
 
 			}()
 		case 11:
-			//line static_record_bytes.scxml:78
+			//line static_record_bytes.scxml:79
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -907,7 +968,40 @@ func (p *StaticRecordBytesPolicy) ExecuteTransitionContent(source StaticRecordBy
 
 			}()
 		case 12:
-			//line static_record_bytes.scxml:83
+			//line static_record_bytes.scxml:89
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
+
+
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.BoundedBytes(&sceFailure, scealgorithm.At(&sceFailure, p.vFrames[:], int64(0)).frame, 16); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordBytesEventErrorExecution, "<assign location='spare'>: an integer operation overflowed or failed")); return true }; p.vSpare = sceValue; return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+			}()
+		case 13:
+			//line static_record_bytes.scxml:92
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
+
+
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := uint32(len(scealgorithm.AtU(&sceFailure, p.vFrames[:], uint64(scealgorithm.SubUint32(&sceFailure, uint32(len(p.vFrames)), 1))).frame)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordBytesEventErrorExecution, "<assign location='size'>: an integer operation overflowed or failed")); return true }; p.vSize = sceValue; return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+			}()
+		case 14:
+			//line static_record_bytes.scxml:95
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
+
+
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vLeads, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordBytesEventErrorExecution, "<assign location='leads'>: an integer operation overflowed or failed")); return true }; p.vLeads = sceValue; return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+			}()
+		case 15:
+			//line static_record_bytes.scxml:98
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -916,8 +1010,8 @@ func (p *StaticRecordBytesPolicy) ExecuteTransitionContent(source StaticRecordBy
 	p.vFrames = p.vFrames[:0]
 
 			}()
-		case 13:
-			//line static_record_bytes.scxml:86
+		case 16:
+			//line static_record_bytes.scxml:101
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

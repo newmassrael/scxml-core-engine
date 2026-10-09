@@ -749,6 +749,7 @@ func TestARecordHoldsABytesFieldWithinTheBoundItsSchemaDeclares(t *testing.T) {
 		"size":    func() any { return policy.Size() },
 		"matches": func() any { return policy.Matches() },
 		"misses":  func() any { return policy.Misses() },
+		"leads":   func() any { return policy.Leads() },
 		"errors":  func() any { return policy.Errors() },
 	}))
 }
