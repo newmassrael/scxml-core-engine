@@ -5199,6 +5199,22 @@
         {
           "file": "backends/cpp/forge-runtime/tests/conformance/queue_generated_test.cpp",
           "kind": "references"
+        },
+        {
+          "file": "backends/go/forge-runtime/queue/queue.go",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/forge-runtime/queue/spsc.go",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/forge-runtime/queue/scq.go",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/forge-runtime/queue/contract_test.go",
+          "kind": "references"
         }
       ]
     },

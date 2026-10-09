@@ -105,6 +105,7 @@ paths = [
     "backends/go/forge-runtime/interpolation",
     "backends/go/forge-runtime/lookup",
     "backends/go/forge-runtime/observer",
+    "backends/go/forge-runtime/queue",
     "backends/go/forge-runtime/round_trip",
     "backends/go/forge-runtime/timer",
     "backends/kotlin/forge-runtime/src",
