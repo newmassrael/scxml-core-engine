@@ -5287,6 +5287,30 @@
         {
           "file": "scripts/gates/forge-kotlin.sh",
           "kind": "references"
+        },
+        {
+          "file": "backends/python/forge-runtime/sce_forge_runtime/queue.py",
+          "kind": "implements"
+        },
+        {
+          "file": "tools/codegen/templates/forge/python/queue.py.jinja2",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/forge-runtime/tests/test_queue_runtime.py",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/forge-runtime/tests/test_queue_generated.py",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/forge-runtime/tests/test_queue_history.py",
+          "kind": "references"
+        },
+        {
+          "file": "scripts/gates/forge-python.sh",
+          "kind": "references"
         }
       ]
     },

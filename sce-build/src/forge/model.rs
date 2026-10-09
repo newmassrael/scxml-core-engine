@@ -5235,6 +5235,10 @@ pub struct QueueModel {
     /// document. Skipped from serialization for the same reason.
     #[serde(skip)]
     pub element_type_line: Option<u32>,
+    /// Row of `<sce:progress>`, for the refusal that a backend cannot keep the
+    /// progress it declares. Skipped from serialization for the same reason.
+    #[serde(skip)]
+    pub progress_line: Option<u32>,
 }
 
 /// The algorithm a queue document selects — one row of the RFC §synth-5-P

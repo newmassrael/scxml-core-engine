@@ -6897,6 +6897,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `queue/element-type-not-a-kind` | Validation |
 | `queue/intrusive-link-field-missing` | Validation |
 | `queue/storage-runtime-missing` | Generate |
+| `queue/progress-unreachable-on-backend` | Generate |
 | `timer/period-below-tick-rate` | Validation |
 | `timer/slot-overflow` | Mesh Deploy |
 | `extern/symbol-not-in-whitelist` | Validation |

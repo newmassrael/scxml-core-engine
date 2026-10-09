@@ -5379,6 +5379,30 @@ pub enum GenerateError {
         implemented: String,
     },
 
+    /// SCE Protocol-Synthesis RFC §synth-5-P
+    /// (`queue/progress-unreachable-on-backend`) — the declared
+    /// `<sce:progress>` is stronger than the most the target language's
+    /// runtime can give any queue. `queue/progress-unreachable` judges the
+    /// document alone against the selection table; this is the same judgement
+    /// against the backend, because Python has no compare-and-swap primitive
+    /// and its queue is one ring under one lock. Refused rather than weakened,
+    /// for the reason that code gives.
+    #[error(
+        "queue '{queue_name}': <sce:progress>{declared}</sce:progress> cannot be met on the {language} backend: its runtime gives {reachable} at most. \
+         SCE Protocol-Synthesis RFC §5.P: progress is declared, checked, and never silently weakened. \
+         Repair: declare {reachable}, or generate for a backend whose runtime gives {declared}."
+    )]
+    QueueProgressUnreachableOnBackend {
+        /// Queue name from `<scxml sce:kind="queue" name="...">`.
+        queue_name: String,
+        /// The progress the document declares.
+        declared: String,
+        /// The strongest progress the target language's runtime gives.
+        reachable: String,
+        /// The target language's wire name.
+        language: String,
+    },
+
     /// `deploy.yaml`'s
     /// `platform.c11_section_attribute` is present but the codegen
     /// target backend is not C11. The section attribute injects

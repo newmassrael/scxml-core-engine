@@ -18401,16 +18401,43 @@ fn resolve_queue_render_inputs(
         .map(|p| constant("participants", p, resolution.and_then(|r| r.participants)))
         .transpose()?;
 
+    // The document alone was judged against the selection table when it was
+    // parsed; here it is judged against the platform. A backend whose runtime
+    // cannot build a non-blocking queue refuses a document that asks for one,
+    // for the reason `queue/progress-unreachable` gives.
+    let ceiling = crate::forge::codegen_matrix::queue_progress_ceiling(language);
+    if m.progress > ceiling {
+        let word = |p: QueueProgress| match p {
+            QueueProgress::WaitFree => "wait-free",
+            QueueProgress::LockFree => "lock-free",
+            QueueProgress::Blocking => "blocking",
+        };
+        return Err(
+            ForgeError::from(GenerateError::QueueProgressUnreachableOnBackend {
+                queue_name: m.name.clone(),
+                declared: word(m.progress).to_string(),
+                reachable: word(ceiling).to_string(),
+                language: crate::forge::codegen_matrix::language_wire_name(language).to_string(),
+            })
+            .at_line(m.progress_line),
+        );
+    }
+
     let selection = m.selection();
     // The ring of an SCQ row is a power of two of slots, at least the
     // capacity and at least the participants: its empty test is justified
     // only for as many enqueuers or dequeuers as it has slots. The parser has
-    // already refused an SCQ row without participants.
+    // already refused an SCQ row without participants. Python's queue has no
+    // index rings: it is one ring under one lock for every row.
+    let single_lock = language == crate::generator::Language::Python;
     let ring_slots = match selection.algorithm {
-        QueueAlgorithm::Scq => Some(capacity.max(participants.unwrap_or(1)).next_power_of_two()),
+        QueueAlgorithm::Scq if !single_lock => {
+            Some(capacity.max(participants.unwrap_or(1)).next_power_of_two())
+        }
         _ => None,
     };
     let runtime_type = match selection.algorithm {
+        _ if single_lock => "Queue",
         QueueAlgorithm::LamportRing => "Spsc",
         QueueAlgorithm::Scq => "Scq",
         // The selection table gives `bounded` storage the Lamport ring or SCQ
@@ -18432,12 +18459,25 @@ fn resolve_queue_render_inputs(
         participants,
         ring_slots,
         runtime_type,
-        algorithm: selection.algorithm.name(),
+        algorithm: if single_lock {
+            "a single ring under one lock"
+        } else {
+            selection.algorithm.name()
+        },
         producers: cardinality(m.producers),
         consumers: cardinality(m.consumers),
         declared_progress: progress(m.progress),
-        push_progress: progress(selection.push),
-        pop_progress: progress(selection.pop),
+        // One lock makes every row `blocking`, whatever the table would give.
+        push_progress: progress(if single_lock {
+            QueueProgress::Blocking
+        } else {
+            selection.push
+        }),
+        pop_progress: progress(if single_lock {
+            QueueProgress::Blocking
+        } else {
+            selection.pop
+        }),
     })
 }
 
@@ -18738,6 +18778,52 @@ fn render_bounded_collection_kotlin(
     tmpl.render(ctx).map_err(|e| {
         ForgeError::from(GenerateError::TemplateRender(format!(
             "bounded_collection.kt.jinja2 (kotlin): {e}"
+        )))
+    })
+}
+
+/// Render a `<sce:kind="queue">` document for the Python backend (SCE
+/// Protocol-Synthesis RFC §synth-5-P): a module that names the queue the
+/// `sce_forge_runtime.queue` module builds, over the element document's class,
+/// with the contract and what the algorithm gives as constants. Python has no
+/// compare-and-swap, so one lock-guarded ring serves every row and gives
+/// `blocking`; a document that declares more is refused by
+/// [`resolve_queue_render_inputs`] before it gets here.
+fn render_queue_python(
+    env: &minijinja::Environment<'_>,
+    m: &crate::forge::model::QueueModel,
+    _imports: &[ImportContext],
+    options: &crate::ForgeCompileOptions,
+) -> Result<String, ForgeError> {
+    let inputs = resolve_queue_render_inputs(m, options, crate::generator::Language::Python)?;
+    let tmpl = env.get_template("queue.py.jinja2").map_err(|e| {
+        ForgeError::from(GenerateError::TemplateLoad(format!(
+            "queue.py.jinja2 (python): {e}"
+        )))
+    })?;
+    let element_pascal = filters::to_pascal_case(m.element_type.clone());
+    let element_snake = filters::to_snake_case(m.element_type.clone());
+    let ctx = minijinja::context! {
+        name => &m.name,
+        pascal => filters::to_pascal_case(m.name.clone()),
+        snake => filters::to_snake_case(m.name.clone()),
+        // Python uses relative-package imports (`from .<snake> import
+        // <Pascal>`), the shape the codec / procedure import resolver emits.
+        element_import_stmt => format!("from .{element_snake} import {element_pascal}"),
+        element_pascal => element_pascal,
+        capacity => inputs.capacity,
+        participants => inputs.participants,
+        producers => inputs.producers,
+        consumers => inputs.consumers,
+        declared_progress => inputs.declared_progress,
+        push_progress => inputs.push_progress,
+        pop_progress => inputs.pop_progress,
+        algorithm => inputs.algorithm,
+        runtime_dep => "sce_forge_runtime.queue",
+    };
+    tmpl.render(ctx).map_err(|e| {
+        ForgeError::from(GenerateError::TemplateRender(format!(
+            "queue.py.jinja2 (python): {e}"
         )))
     })
 }
@@ -19937,9 +20023,7 @@ pub fn generate_python_with_imports(
             render_event_schema(&env, m, imports, crate::generator::Language::Python)?
         }
         // Queue kind: see cpp dispatch.
-        ForgeDocument::Queue(_) => {
-            unreachable!("ForgeDocument::Queue rejected by codegen_matrix::check on python")
-        }
+        ForgeDocument::Queue(m) => render_queue_python(&env, m, imports, options)?,
     };
     let code = import_the_single_rounding(code);
 

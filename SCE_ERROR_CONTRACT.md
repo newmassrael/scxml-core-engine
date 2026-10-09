@@ -856,6 +856,7 @@ references against a real document and drift silently.
 | `queue/intrusive-link-field-missing` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.P |
 | `queue/participants-unresolved` | `validation` | no | SCE Protocol-Synthesis RFC §5.P |
 | `queue/progress-unreachable` | `validation` | no | SCE Protocol-Synthesis RFC §5.P |
+| `queue/progress-unreachable-on-backend` | `generate` | no | SCE Protocol-Synthesis RFC §5.P |
 | `queue/storage-not-exactly-one` | `validation` | no | SCE Protocol-Synthesis RFC §5.P |
 | `queue/storage-runtime-missing` | `generate` | no | SCE Protocol-Synthesis RFC §5.P |
 | `reassembly/binding-on-unpaired-listener` | `validation` | no | SCE Protocol-Synthesis RFC §5.M |

@@ -826,6 +826,7 @@ GATES: dict[str, dict] = {
         "workflows": ["forge-conformance.yml"],
         "runner_workflow": True,
         "extra": ["backends/python/**"],
+        "deps": ["codegen-build"],
         "ci_only": "107s. forge-conformance.yml verifies every language arm "
                    "in parallel jobs, which is where this belongs — the arms "
                    "fire together anyway, so paying for them serially at push "

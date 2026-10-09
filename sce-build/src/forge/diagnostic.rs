@@ -1251,6 +1251,12 @@ pub enum DiagnosticCode {
     /// implement its storage mode yet. `expected` carries the modes it does.
     #[serde(rename = "queue/storage-runtime-missing")]
     QueueStorageRuntimeMissing,
+    /// The document is valid and declares a progress stronger than the target
+    /// language's runtime can give any queue (Python, with no
+    /// compare-and-swap, gives `blocking`). `expected` carries what the
+    /// backend gives and `actual` what the document declared.
+    #[serde(rename = "queue/progress-unreachable-on-backend")]
+    QueueProgressUnreachableOnBackend,
 
     // ── §synth-5-J-2 Rust no_std variant rejection (item C3).
     //    Producer: `cmd_generate` walks the parsed SCXML model when
@@ -3497,6 +3503,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         QueueElementTypeNotAKind,
         QueueIntrusiveLinkFieldMissing,
         QueueStorageRuntimeMissing,
+        QueueProgressUnreachableOnBackend,
         // Codegen Rust no_std variant rejection (SCE Protocol-Synthesis RFC §synth-5-J-2,
         // item C3)
         CodegenNoStdScriptNotSupported,
@@ -4267,7 +4274,8 @@ impl DiagnosticCode {
             | QueueDeployLimitUnresolved
             | QueueElementTypeNotAKind
             | QueueIntrusiveLinkFieldMissing
-            | QueueStorageRuntimeMissing => Some("SCE Protocol-Synthesis RFC §5.P"),
+            | QueueStorageRuntimeMissing
+            | QueueProgressUnreachableOnBackend => Some("SCE Protocol-Synthesis RFC §5.P"),
 
             // ── §synth-5-M Fragment-reassembly variant parse-time structure
             //    validators (SCE Protocol-Synthesis RFC §synth-5-M lines 2944-2945,
@@ -5038,6 +5046,7 @@ impl DiagnosticCode {
             QueueElementTypeNotAKind => "queue/element-type-not-a-kind",
             QueueIntrusiveLinkFieldMissing => "queue/intrusive-link-field-missing",
             QueueStorageRuntimeMissing => "queue/storage-runtime-missing",
+            QueueProgressUnreachableOnBackend => "queue/progress-unreachable-on-backend",
             TimerPeriodBelowTickRate => "timer/period-below-tick-rate",
             TimerSlotOverflow => "timer/slot-overflow",
             ExternSymbolNotInWhitelist => "extern/symbol-not-in-whitelist",
@@ -9812,6 +9821,22 @@ fn generate_fields(e: &GenerateError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![queue_name.clone(), storage.clone(), language.clone()],
         },
+        GenerateError::QueueProgressUnreachableOnBackend {
+            queue_name,
+            declared,
+            reachable,
+            language,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::QueueProgressUnreachableOnBackend,
+            stage: Stage::Generate,
+            // What the backend gives is a closed fact the repair names;
+            // declaring it is one repair among several (the other is another
+            // backend), so it is metadata and not a `Fix`.
+            expected: Some(vec![reachable.clone()]),
+            actual: Some(declared.clone()),
+            fix: None,
+            key_fragments: vec![queue_name.clone(), declared.clone(), language.clone()],
+        },
         // ── Non-MCU backend refuses `platform.c11_section_attribute`
         //    (SCE Protocol-Synthesis RFC §5.2).
         //    `actual` carries the offending backend name (`cpp` /
@@ -13128,6 +13153,17 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:c20d84b540bc7c3f","code":"queue/storage-runtime-missing","stage":"generate","spec":"SCE Protocol-Synthesis RFC §5.P","message":"queue 'rx_events': intrusive storage is not implemented by the rust forge runtime yet. SCE Protocol-Synthesis RFC §5.P specifies it, and the runtimes land in the RFC's order; this document is valid and is refused rather than lowered to a queue that gives less. Repair: use a storage mode the rust runtime has (bounded), or generate for a backend that has intrusive.","expected":["bounded"],"actual":"intrusive"}"#,
             ),
+            (
+                "forge/queue-progress-unreachable-on-backend",
+                GenerateError::QueueProgressUnreachableOnBackend {
+                    queue_name: "rx_events".into(),
+                    declared: "lock-free".into(),
+                    reachable: "blocking".into(),
+                    language: "python".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:fdf677359c170d3a","code":"queue/progress-unreachable-on-backend","stage":"generate","spec":"SCE Protocol-Synthesis RFC §5.P","message":"queue 'rx_events': <sce:progress>lock-free</sce:progress> cannot be met on the python backend: its runtime gives blocking at most. SCE Protocol-Synthesis RFC §5.P: progress is declared, checked, and never silently weakened. Repair: declare blocking, or generate for a backend whose runtime gives lock-free.","expected":["blocking"],"actual":"lock-free"}"#,
+            ),
             // ── SCE Protocol-Synthesis RFC §synth-5-J-2 Rust no_std variant rejections
             //    (item C3). Author-side `--no-std` gate on
             //    `sce-codegen generate -l rust`. ──
@@ -16394,6 +16430,7 @@ mod tests {
             // to change the cardinality or the storage), and the second is
             // a list to choose from, so neither is a `Fix`.
             | QueueProgressUnreachable
+            | QueueProgressUnreachableOnBackend
             | QueueStorageRuntimeMissing => ExpectedIsMetadata,
 
             // ── Deterministic fix or no fix; expected=None ────
@@ -17502,6 +17539,7 @@ mod tests {
                 | QueueElementTypeNotAKind
                 | QueueIntrusiveLinkFieldMissing
                 | QueueStorageRuntimeMissing
+                | QueueProgressUnreachableOnBackend
                 | MemReassemblyPoolVariantMissingMaxFragments
                 | MemReassemblyPoolVariantMissingTimeout
                 | MemReassemblySlotSizeBelowDeclaredMtu
@@ -17697,9 +17735,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            424,
+            425,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 424 distinct variants to match the DiagnosticCode \
+             expected 425 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -18477,6 +18515,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | QueueElementTypeNotAKind
             | QueueIntrusiveLinkFieldMissing
             | QueueStorageRuntimeMissing
+            | QueueProgressUnreachableOnBackend
             | MemReassemblyPoolVariantMissingMaxFragments
             | MemReassemblyPoolVariantMissingTimeout
             | MemReassemblySlotSizeBelowDeclaredMtu

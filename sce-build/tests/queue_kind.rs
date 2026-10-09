@@ -939,6 +939,105 @@ fn a_storage_the_kotlin_runtime_lacks_is_refused_by_name() {
     }
 }
 
+// ─── Python emit ───
+
+#[test]
+fn a_blocking_queue_emits_a_python_module_over_the_single_lock_runtime_for_any_row() {
+    for (producers, consumers, extra, places) in [
+        ("one", "one", "", ("1", "1")),
+        (
+            "many",
+            "many",
+            r#"<sce:participants const="5"/>"#,
+            ("PARTICIPANTS", "PARTICIPANTS"),
+        ),
+        (
+            "many",
+            "one",
+            r#"<sce:participants const="3"/>"#,
+            ("PARTICIPANTS", "1"),
+        ),
+    ] {
+        let xml = queue_doc(
+            "frame_queue",
+            producers,
+            consumers,
+            "blocking",
+            &format!(r#"<sce:bounded capacity="8"/>{extra}"#),
+        );
+        let code = compile_for(Language::Python, &xml, "frame_queue.scxml")
+            .unwrap_or_else(|e| panic!("{producers}/{consumers} blocking queue emits: {e:?}"));
+        assert!(
+            code.contains("from sce_forge_runtime.queue import Queue"),
+            "{code}"
+        );
+        assert!(code.contains("from .rx_event import RxEvent"), "{code}");
+        assert!(code.contains("CAPACITY: Final[int] = 8"), "{code}");
+        assert!(
+            code.contains(&format!("PRODUCER_PLACES: Final[int] = {}", places.0)),
+            "{code}"
+        );
+        assert!(
+            code.contains(&format!("CONSUMER_PLACES: Final[int] = {}", places.1)),
+            "{code}"
+        );
+        assert!(code.contains("FrameQueue = Queue[RxEvent]"), "{code}");
+        assert!(
+            code.contains("PUSH_PROGRESS: Final[str] = \"blocking\"")
+                && code.contains("POP_PROGRESS: Final[str] = \"blocking\""),
+            "one lock makes every row blocking:\n{code}"
+        );
+        assert!(!code.contains("RING_SLOTS"), "{code}");
+    }
+}
+
+#[test]
+fn a_progress_the_python_backend_cannot_give_is_refused_by_name_at_the_row_that_declares_it() {
+    for (producers, consumers, progress, extra) in [
+        ("one", "one", "wait-free", ""),
+        (
+            "many",
+            "many",
+            "lock-free",
+            r#"<sce:participants const="3"/>"#,
+        ),
+    ] {
+        let xml = queue_doc(
+            "frame_queue",
+            producers,
+            consumers,
+            progress,
+            &format!(r#"<sce:bounded capacity="8"/>{extra}"#),
+        );
+        let located = compile_for(Language::Python, &xml, "frame_queue.scxml")
+            .expect_err("a progress the backend cannot give is refused");
+        let row = row_text(&located, &xml);
+        assert!(
+            row.contains("<sce:progress>"),
+            "{progress}: the refusal is placed on the progress row, not {row}"
+        );
+        match located.error {
+            ForgeError::Generate(boxed) => match *boxed {
+                GenerateError::QueueProgressUnreachableOnBackend {
+                    declared,
+                    reachable,
+                    language,
+                    ..
+                } => {
+                    assert_eq!(declared, progress);
+                    assert_eq!(reachable, "blocking");
+                    assert_eq!(language, "python");
+                }
+                other => panic!("expected QueueProgressUnreachableOnBackend, got {other:?}"),
+            },
+            other => panic!("expected a generate error, got {other:?}"),
+        }
+        // The same document is valid for a backend that can give it.
+        compile_for(Language::Rust, &xml, "frame_queue.scxml")
+            .expect("the document is valid; only the Python backend refuses it");
+    }
+}
+
 // ─── Cross-document resolution ───
 
 /// The row a refusal points at, and that row's text.

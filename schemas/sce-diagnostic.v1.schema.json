@@ -191,6 +191,7 @@
         "queue/element-type-not-a-kind",
         "queue/intrusive-link-field-missing",
         "queue/storage-runtime-missing",
+        "queue/progress-unreachable-on-backend",
         "codegen/no-std-script-not-supported",
         "codegen/no-std-http-not-supported",
         "codegen/no-std-fs-load-not-supported",

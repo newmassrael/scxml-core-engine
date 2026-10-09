@@ -1,0 +1,65 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{{ sce_map.source_marker(source_location, "python", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+# SCE Forge: Auto-generated from Extended SCXML (sce:kind="queue")
+# Runtime: {{ runtime_dep }}
+# Do not edit — regenerate from the source SCXML file.
+#
+# SCE Protocol-Synthesis RFC §synth-5-P queue — a first-in first-out queue
+# that hands elements from one thread to another. The document states the
+# contract (element type, {{ producers }} producer(s), {{ consumers }} consumer(s),
+# `{{ declared_progress }}`) and names no algorithm; Python has no
+# compare-and-swap primitive, so the queue is {{ algorithm }}.
+#
+# Push is {{ push_progress }}, pop is {{ pop_progress }}: a thread stopped while it holds
+# the lock stops the others, which is why a document that declares more is
+# refused for this backend (`queue/progress-unreachable-on-backend`).
+#
+# Operations (from `Queue`):
+#   producer() / consumer()  a handle, or None when every place of that side
+#                            is taken; release() gives the place back
+#   try_push(v) -> PushStatus   PushStatus.OK takes the element; FULL does not
+#   try_pop() -> Optional[T]    None when the queue is empty
+#   capacity
+
+from __future__ import annotations
+
+from typing import Final
+
+from sce_forge_runtime.queue import Queue
+
+{{ element_import_stmt }}
+
+# The most elements the queue holds (`<sce:bounded>`).
+CAPACITY: Final[int] = {{ capacity }}
+{% if participants %}
+
+# The most threads that hold a handle on a side that is `many` at the same time
+# (`<sce:participants>`). A side that is `one` has one place.
+PARTICIPANTS: Final[int] = {{ participants }}
+{% endif %}
+
+# How many handles of each side may be held at once.
+PRODUCER_PLACES: Final[int] = {{ 1 if producers == "one" else "PARTICIPANTS" }}
+CONSUMER_PLACES: Final[int] = {{ 1 if consumers == "one" else "PARTICIPANTS" }}
+
+# What the document requires of push and pop (`<sce:progress>`).
+DECLARED_PROGRESS: Final[str] = "{{ declared_progress }}"
+# What the selected algorithm gives push.
+PUSH_PROGRESS: Final[str] = "{{ push_progress }}"
+# What the selected algorithm gives pop.
+POP_PROGRESS: Final[str] = "{{ pop_progress }}"
+# The algorithm this backend gave the contract.
+ALGORITHM: Final[str] = "{{ algorithm }}"
+
+# The queue. Its storage is one list, allocated when the queue is built and
+# never again; an element that has left it is not referenced by it.
+{{ pascal }} = Queue[{{ element_pascal }}]
+
+
+def new_{{ snake }}() -> {{ pascal }}:
+    """An empty queue of ``CAPACITY`` elements."""
+    return Queue(CAPACITY, PRODUCER_PLACES, CONSUMER_PLACES)

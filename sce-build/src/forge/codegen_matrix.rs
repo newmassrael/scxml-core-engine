@@ -28,7 +28,7 @@
 //! a `(kind, backend)` pair set.
 
 use crate::forge::error::GenerateError;
-use crate::forge::model::ForgeKind;
+use crate::forge::model::{ForgeKind, QueueProgress};
 use crate::generator::Language;
 
 /// Class of a kind per RFC §synth-5-J-4. Drives which `(kind, language)`
@@ -228,12 +228,15 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
         // (`sce_forge_runtime::queue`: the Lamport ring and SCQ) and so has
         // C++'s (`sce/forge/queue.h`: the same two), Go's
         // (`sce-forge-runtime/queue`: the same two) and Kotlin's
-        // (`com.sce.forge.runtime.queue`: the same two); the other two are the
-        // RFC's landing order, one runtime at a time, and each is flipped
-        // here with its template and its conformance arm.
+        // (`com.sce.forge.runtime.queue`: the same two) and Python's
+        // (`sce_forge_runtime.queue`: one ring under one lock, `blocking`);
+        // C11 is the RFC's last, flipped here with its template and its
+        // conformance arm.
         ForgeKind::Queue => match lang {
-            Language::Rust | Language::Cpp | Language::Go | Language::Kotlin => true,
-            Language::Python | Language::C11 => false,
+            Language::Rust | Language::Cpp | Language::Go | Language::Kotlin | Language::Python => {
+                true
+            }
+            Language::C11 => false,
         },
     }
 }
@@ -375,6 +378,21 @@ pub const fn language_wire_name(lang: Language) -> &'static str {
         Language::Go => "go",
         Language::Python => "python",
         Language::C11 => "c11",
+    }
+}
+
+/// The strongest progress a backend's runtime can give any `queue` document
+/// (SCE Protocol-Synthesis RFC §synth-5-P, Backends). The selection table
+/// judges a document against the algorithm its storage and cardinality pick
+/// (`queue/progress-unreachable`); this is the judgement against the platform,
+/// which no choice of storage can lift. Python has no compare-and-swap
+/// primitive, so its queue is one ring under one lock and gives `blocking`.
+pub const fn queue_progress_ceiling(lang: Language) -> QueueProgress {
+    match lang {
+        Language::Python => QueueProgress::Blocking,
+        Language::Rust | Language::Cpp | Language::Kotlin | Language::Go | Language::C11 => {
+            QueueProgress::WaitFree
+        }
     }
 }
 
