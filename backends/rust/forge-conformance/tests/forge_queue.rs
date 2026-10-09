@@ -428,6 +428,33 @@ fn the_checker_refuses_a_history_no_run_can_produce() {
 /// How many values each recorded run pushes through the queue.
 const VALUES_PER_RUN: u64 = 2_000;
 
+/// A recorded history, sent through the JSON form every backend writes its
+/// runs in (`tests/forge/conformance/queue_history.schema.json`) and read
+/// back, so what is judged is what a file carries and the writer and the
+/// reader are held to real histories and not only to the hand-written ones.
+///
+/// When `SCE_QUEUE_HISTORY_DIR` names a directory the text is also written
+/// there as `<name>.json`, which is how the Rust gate has the shared command,
+/// `sce-codegen check-queue-history`, judge this arm's runs as it judges the
+/// other backends'. A name is a shape, so a shape recorded many times leaves
+/// its last recording.
+fn through_the_wire(history: History, name: &str) -> History {
+    let text = history.to_json();
+    let read = History::from_json(&text)
+        .unwrap_or_else(|e| panic!("{name}: the writer's own output does not read: {e}"));
+    assert_eq!(
+        read.to_json(),
+        text,
+        "{name}: writing what was read gives the same text"
+    );
+    if let Some(dir) = std::env::var_os("SCE_QUEUE_HISTORY_DIR") {
+        let path = std::path::Path::new(&dir).join(format!("{name}.json"));
+        std::fs::write(&path, &text)
+            .unwrap_or_else(|e| panic!("cannot write {}: {e}", path.display()));
+    }
+    read
+}
+
 /// Run one producer and one consumer on two threads, recording every
 /// attempt either side made — the refused pushes and the empty pops too,
 /// because those are results the checker must account for.
@@ -509,6 +536,7 @@ fn popped_values(history: &History) -> Vec<u64> {
 }
 
 fn assert_run_is_linearizable(history: &History) {
+    let history = &through_the_wire(history.clone(), &format!("rust_spsc_n{}", history.capacity));
     assert_eq!(
         popped_values(history),
         (1..=VALUES_PER_RUN).collect::<Vec<_>>(),
@@ -670,7 +698,10 @@ fn assert_scq_run_is_linearizable<const N: usize, const R: usize>(
     consumers: usize,
     values_per_producer: u64,
 ) {
-    let history = record_scq_run::<N, R>(producers, consumers, values_per_producer);
+    let history = through_the_wire(
+        record_scq_run::<N, R>(producers, consumers, values_per_producer),
+        &format!("rust_scq_n{N}_r{R}_p{producers}_c{consumers}"),
+    );
     let shape = format!(
         "capacity {N}, {producers} producer(s), {consumers} consumer(s), \
          {values_per_producer} values each"

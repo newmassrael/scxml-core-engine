@@ -20,9 +20,32 @@
 # without `alloc` — so no lane ran them at all.
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+source "$SCE_REPO_ROOT/scripts/lib/sce_codegen.sh"
 
-cargo test --release -p sce-forge-conformance --features alloc \
+# The queue arm's stress runs write the histories they recorded here, in the
+# JSON form every backend writes (SCE Protocol-Synthesis RFC §synth-5-P,
+# verification layer 2). They are judged below by the command the other
+# backends' histories are judged by, so no backend is judged by a checker of
+# its own. Under `target/`, emptied first: a file left from an earlier run
+# would be judged in place of one this run did not write.
+QUEUE_HISTORIES="$SCE_REPO_ROOT/target/queue-histories/rust"
+rm -rf "$QUEUE_HISTORIES"
+mkdir -p "$QUEUE_HISTORIES"
+
+SCE_QUEUE_HISTORY_DIR="$QUEUE_HISTORIES" \
+    cargo test --release -p sce-forge-conformance --features alloc \
     || sce_gate_fail "Rust forge conformance"
+
+# Ten shapes are recorded (four Lamport capacities and six SCQ shapes). A glob
+# that matched nothing would hand the command a literal pattern and fail, but a
+# run that recorded three of ten would pass, so the count is held as well.
+shopt -s nullglob
+queue_histories=("$QUEUE_HISTORIES"/*.json)
+shopt -u nullglob
+(( ${#queue_histories[@]} >= 10 )) \
+    || sce_gate_fail "Rust queue histories: ${#queue_histories[@]} written, expected at least 10"
+"$(sce_codegen_require "$SCE_REPO_ROOT")" check-queue-history "${queue_histories[@]}" \
+    || sce_gate_fail "Rust queue histories are not linearizable"
 
 # The queue runtime's loom models (SCE Protocol-Synthesis RFC §synth-5-P,
 # verification layer 3). They build only under `--cfg loom` and the target is
