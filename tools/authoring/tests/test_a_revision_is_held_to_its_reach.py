@@ -309,6 +309,33 @@ class ACommandIsAReviser(unittest.TestCase):
             process._end_group(child, True)
         self.assertTrue(child.killed)
 
+    def test_a_taskkill_that_hangs_is_given_a_time_and_then_the_command_itself_is_killed(self):
+        from sce_author import process
+
+        class Child:
+            returncode = None
+            pid = 9
+            stdin = stdout = stderr = None
+            killed = False
+
+            def wait(self):
+                pass
+
+            def kill(self):
+                self.killed = True
+
+        seen = {}
+
+        def hung(argv, **kw):
+            seen.update(kw)
+            raise process.subprocess.TimeoutExpired(argv, kw["timeout"])
+
+        child = Child()
+        with mock.patch.object(process.subprocess, "run", hung):
+            process._end_group(child, True)
+        self.assertEqual(process._TASKKILL_WITHIN, seen.get("timeout"))
+        self.assertTrue(child.killed)
+
     def test_a_command_that_finishes_is_read_as_before_when_it_has_a_session_of_its_own(self):
         code = "import sys; print('said'); print('and', file=sys.stderr); sys.exit(0)"
         command_reviser(self.command(code), self.design)("x")   # no error: exit 0 is a finished round

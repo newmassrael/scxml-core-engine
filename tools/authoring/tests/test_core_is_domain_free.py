@@ -46,6 +46,12 @@ SUBJECT_WORDS = {
 # its caller named, plus its own schema directory.
 ALLOWED_OPEN_SITES = {"pack.py", "prose.py", "check.py", "brief.py"}
 
+# A string that begins with "/" and is no location: the switches of Windows' `taskkill`, which
+# `process.py` passes to end a program's tree where there is no process group to signal. Named one
+# by one, in the one module, so that a path written into another module, or into this one, is still
+# found; the case is not widened to "anything short" and the strings are not split to get past it.
+NOT_A_LOCATION = {("process.py", "/F"), ("process.py", "/T"), ("process.py", "/PID")}
+
 
 def sources():
     return sorted(CORE.glob("*.py"))
@@ -78,7 +84,9 @@ class CoreIsDomainFree(unittest.TestCase):
             tree = ast.parse(path.read_text(encoding="utf-8"))
             for node in ast.walk(tree):
                 if isinstance(node, ast.Constant) and isinstance(node.value, str):
-                    if node.value.startswith(("/", "~/", "../", "./")):
+                    if node.value.startswith(("/", "~/", "../", "./")) and (
+                        (path.name, node.value) not in NOT_A_LOCATION
+                    ):
                         offences.append(f"{path.name}:{node.lineno}: absolute path {node.value!r}")
                 if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
                     if node.func.id in {"open"} and node.args:

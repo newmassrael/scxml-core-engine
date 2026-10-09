@@ -150,6 +150,10 @@ def _run_in_own_group(argv: list, cwd, timeout: float | None, stdin_text: str | 
 #: `CREATE_NEW_PROCESS_GROUP` of Windows' process creation flags, which `subprocess` names only there.
 _NEW_PROCESS_GROUP = 0x00000200
 
+#: How long `taskkill` is given to end a tree, in seconds. Ending it is the last act of a round that
+#: has already run past its clock, so it is bounded too.
+_TASKKILL_WITHIN = 10.0
+
 
 def _on_windows() -> bool:
     return sys.platform == "win32"
@@ -174,8 +178,10 @@ def _end_group(child: subprocess.Popen, windows: bool) -> None:
         if windows:
             try:
                 subprocess.run(["taskkill", "/F", "/T", "/PID", str(child.pid)],
-                               capture_output=True, check=False)
-            except OSError:
+                               capture_output=True, check=False, timeout=_TASKKILL_WITHIN)
+            except (OSError, subprocess.TimeoutExpired):
+                # It cannot be run, or it hung: a program that outlasts the round's clock because
+                # its killer did is the failure this exists to prevent. The command itself still goes.
                 child.kill()
         else:
             try:
