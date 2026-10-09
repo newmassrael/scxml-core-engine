@@ -1,0 +1,64 @@
+# Mutation cases for "a conversation that outgrows the model's context is begun again".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_conversation_that_outgrows_the_models_context_is_begun_again.cases`.
+#
+# A model server answers 400 when the conversation is longer than the model's context, and the run
+# used to end there (measured with a local model on 2026-10-09: three of three long specifications,
+# and one of two short ones). It now begins the conversation again from what it holds: the
+# requirement list the tool gave and the design last sent to be checked, never from a summary the
+# model would have to write with no room left. Each case below takes one part of that away and must
+# make a test of `app-core/tests/local.rs` or the unit tests of `app-core/src/local.rs` red.
+#
+# ⚠ A mutated tree is built under `-D warnings`, so every case keeps each binding it had in
+# use: a mutation that stops reading one is an unused-variable ERROR, the tree does not
+# compile, and the verdict is INCONCLUSIVE.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported INCONCLUSIVE with
+# the anchor quoted, never as a pass.
+
+mutation_tests -p sce-app-core --features cli --lib --test local
+mutation_targets app-core/src/local.rs
+mutation_oracles app-core/tests/local.rs
+
+mutation_case "a refusal about the context is taken for any other refusal" <<'PY'
+edit("app-core/src/local.rs",
+     "            if response.status == 400 && overflows_context(&error_message(&response.body)) {",
+     "            if response.status == 400 && false && overflows_context(&error_message(&response.body)) {")
+PY
+
+mutation_case "a conversation that outgrew the context is not begun again" <<'PY'
+edit("app-core/src/local.rs",
+     "                Turn::ContextFull { .. } if handed < self.config.handoffs => {",
+     "                Turn::ContextFull { .. } if false && handed < self.config.handoffs => {")
+PY
+
+mutation_case "the conversation begun again keeps its whole history" <<'PY'
+edit("app-core/src/local.rs",
+     "                    messages = vec![\n                        json!({\"role\": \"system\", \"content\": system}),\n                        json!({\"role\": \"user\", \"content\": format!(\"{}\\n\\n{handoff}\", prompt(job))}),\n                    ];",
+     "                    messages.push(json!({\"role\": \"user\", \"content\": handoff.clone()}));")
+PY
+
+mutation_case "the requirement list is left out of what is handed over" <<'PY'
+edit("app-core/src/local.rs",
+     "    if let Some(listed) = listed {\n        let mut words = format!(",
+     "    if let Some(listed) = listed.filter(|_| false) {\n        let mut words = format!(")
+PY
+
+mutation_case "the design last sent to be checked is left out of what is handed over" <<'PY'
+edit("app-core/src/local.rs",
+     "    let design = last_design(messages);",
+     "    let design = last_design(messages).filter(|_| false);")
+PY
+
+mutation_case "any words of a limit are taken for the context being full" <<'PY'
+edit("app-core/src/local.rs",
+     "    said.contains(\"context\")\n        && [",
+     "    true\n        && [")
+PY
+
+mutation_case "a design that was cut is not said to be" <<'PY'
+edit("app-core/src/local.rs",
+     "    format!(\n        \"{head}\\n[cut here: {} more characters]\",\n        text.chars().count() - max\n    )\n}",
+     "    head\n}")
+PY

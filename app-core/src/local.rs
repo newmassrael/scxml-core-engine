@@ -87,12 +87,13 @@ fn tools_words(names: &[&str]) -> String {
 /// is the name of.
 fn told() -> String {
     format!(
-        "{SYSTEM_PROMPT}\n{}\n{ANSWER_FORM}\n{}\n{}\n{REPAIRS}\n{}\n{SCHEMA_ECHO}\n{}\n{WORK_SCOPE}",
+        "{SYSTEM_PROMPT}\n{}\n{ANSWER_FORM}\n{}\n{}\n{REPAIRS}\n{}\n{SCHEMA_ECHO}\n{}\n{}\n{WORK_SCOPE}",
         tools_words(&AUTHOR_TOOLS),
         prompt(&blank_job()),
         AUTHOR_TOOLS.join(","),
         repair_words("<what was wrong>"),
         unreadable_words("<why>"),
+        handoff_words("<where it stood>"),
     )
 }
 
@@ -101,6 +102,121 @@ fn repair_words(wrong: &str) -> String {
     format!(
         "Your last message is not the draft: {wrong}\n\nAnswer again with only the JSON object in \
          the form asked for."
+    )
+}
+
+/// The most of the design last sent to be checked that a new conversation is handed, and of what
+/// the tool said of it: a hand-over that is itself most of a context is no new start.
+const HANDOFF_DESIGN_MAX: usize = 100_000;
+const HANDOFF_RESULT_MAX: usize = 8_000;
+
+/// The tools whose arguments are the design the model is putting right.
+const DESIGN_TOOLS: [&str; 2] = ["validate_scxml_set", "validate_scxml"];
+
+/// Whether what a server said of a refused request is that the conversation is longer than the
+/// model's context. Servers word it differently (measured: "prompt (65532 tokens) leaves no room to
+/// answer in the context"; llama.cpp "exceeds the available context size"; vLLM and OpenAI
+/// "maximum context length"), and all of them say `context`.
+fn overflows_context(message: &str) -> bool {
+    let said = message.to_lowercase();
+    said.contains("context")
+        && [
+            "exceed",
+            "no room",
+            "too long",
+            "too large",
+            "maximum",
+            "limit",
+            "length",
+            "overflow",
+        ]
+        .iter()
+        .any(|word| said.contains(word))
+}
+
+/// The start of `text`, at most `max` characters, said to be cut when it is.
+fn kept(text: &str, max: usize) -> String {
+    if text.chars().count() <= max {
+        return text.to_string();
+    }
+    let head: String = text.chars().take(max).collect();
+    format!(
+        "{head}\n[cut here: {} more characters]",
+        text.chars().count() - max
+    )
+}
+
+/// The design the model last sent to be checked, with what the tool said of it: the tool, the
+/// arguments as the model wrote them, and the answer.
+fn last_design(messages: &[Value]) -> Option<(String, String, String)> {
+    for (at, message) in messages.iter().enumerate().rev() {
+        let Some(calls) = message["tool_calls"].as_array() else {
+            continue;
+        };
+        for call in calls.iter().rev() {
+            let name = call["function"]["name"].as_str().unwrap_or("");
+            if !DESIGN_TOOLS.contains(&name) {
+                continue;
+            }
+            let id = call["id"].as_str().unwrap_or("");
+            let answer = messages[at + 1..]
+                .iter()
+                .find(|m| m["role"] == "tool" && m["tool_call_id"] == id)
+                .and_then(|m| m["content"].as_str())
+                .unwrap_or("");
+            return Some((
+                name.to_string(),
+                call["function"]["arguments"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_string(),
+                answer.to_string(),
+            ));
+        }
+    }
+    None
+}
+
+/// Where a conversation stood, from what the run holds and not from what a model would say of it:
+/// the requirement list the tool gave (the draft's, whatever the model writes), and the design last
+/// sent to be checked with the tool's answer. Whether a design was carried is the second value.
+fn standing_of(messages: &[Value], listed: Option<&Listed>) -> (String, bool) {
+    let mut parts = Vec::new();
+    if let Some(listed) = listed {
+        let mut words = format!(
+            "The requirement list is built, and the application keeps it as the draft's \
+             requirements: do not build it again. Its manifest:\n{}",
+            listed.manifest
+        );
+        if let Some(sidecar) = &listed.sidecar {
+            words.push_str(&format!("\nThe words behind its ids:\n{sidecar}"));
+        }
+        parts.push(words);
+    }
+    let design = last_design(messages);
+    let carried = design.is_some();
+    match design {
+        Some((tool, arguments, answer)) => parts.push(format!(
+            "The last design you sent to `{tool}`, as the arguments you wrote:\n{}\n\nWhat the tool \
+             said of it:\n{}",
+            kept(&arguments, HANDOFF_DESIGN_MAX),
+            kept(&answer, HANDOFF_RESULT_MAX)
+        )),
+        None => parts.push(
+            "No design had been sent to be checked yet: the conversation ended while you were \
+             still reading. Read only what you need."
+                .to_string(),
+        ),
+    }
+    (parts.join("\n\n"), carried)
+}
+
+/// What a model is handed when its conversation reached the context limit and is begun again.
+fn handoff_words(standing: &str) -> String {
+    format!(
+        "Your earlier conversation on this request reached the model's context limit and was \
+         ended. You are not starting from nothing; this is where it stood.\n\n{standing}\n\n\
+         Continue from here, and keep what you read and what you ask the tools for short."
     )
 }
 
@@ -122,6 +238,10 @@ pub struct LocalConfig {
     pub max_turns: u32,
     /// How long a run may take before it is stopped.
     pub timeout: Duration,
+    /// How many times a conversation that reached the model's context limit is ended and begun
+    /// again from where it stood (the requirement list the tool gave and the design last sent to be
+    /// checked). 0 gives up at the first.
+    pub handoffs: u32,
 }
 
 impl LocalConfig {
@@ -131,6 +251,7 @@ impl LocalConfig {
             model: model.into(),
             max_turns: 60,
             timeout: Duration::from_secs(30 * 60),
+            handoffs: 2,
         }
     }
 }
@@ -160,6 +281,12 @@ pub enum Step {
     /// The server could not read a tool call the model made, and why (the model is told, and asked
     /// again).
     NotReadable { why: String },
+    /// The conversation reached the model's context limit and was begun again from where it
+    /// stood: how long the words it was handed are, and whether a design was carried in them.
+    HandedOver {
+        handoff_chars: usize,
+        carried_design: bool,
+    },
 }
 
 /// What asking the model once came to.
@@ -169,6 +296,9 @@ enum Turn {
     /// The server could not read a tool call of the model: why, and the server's own words for
     /// when it is not put right.
     Unreadable { why: String, said: String },
+    /// The conversation is longer than the model's context allows: the server's own words, for
+    /// when it is not begun again.
+    ContextFull { said: String },
 }
 
 /// Somebody who is told each step of a run.
@@ -367,6 +497,11 @@ impl Local {
                     return Ok(Turn::Unreadable { why, said });
                 }
             }
+            // A conversation longer than the model's context is told apart the same way: it is
+            // not a server that is down, and what to do about it is the run's to decide.
+            if response.status == 400 && overflows_context(&error_message(&response.body)) {
+                return Ok(Turn::ContextFull { said });
+            }
             return Err(GenerateError::Failed(said));
         }
         let reply: Value = serde_json::from_slice(&response.body).map_err(|_| {
@@ -470,6 +605,8 @@ impl Generator for Local {
         // Tool calls the server could not read, which are put right as a draft that is not one is,
         // and counted apart from those: a model that is wrong about one is not wrong about both.
         let mut unread = 0;
+        // Times the conversation was begun again because it reached the model's context limit.
+        let mut handed = 0;
         for turn in 0..self.config.max_turns {
             self.trace.say(|| Step::Asked {
                 turn,
@@ -487,6 +624,25 @@ impl Generator for Local {
                     self.trace.say(|| Step::NotReadable { why });
                     return Err(GenerateError::Failed(said));
                 }
+                // The conversation outgrew the model's context. What the run holds (the list the
+                // tool gave, the design last sent to be checked) is what it began again from; the
+                // model is not asked to write a summary, which it has no room for and could get
+                // wrong.
+                Turn::ContextFull { .. } if handed < self.config.handoffs => {
+                    handed += 1;
+                    let (standing, carried_design) = standing_of(&messages, listed.as_ref());
+                    let handoff = handoff_words(&standing);
+                    self.trace.say(|| Step::HandedOver {
+                        handoff_chars: handoff.chars().count(),
+                        carried_design,
+                    });
+                    messages = vec![
+                        json!({"role": "system", "content": system}),
+                        json!({"role": "user", "content": format!("{}\n\n{handoff}", prompt(job))}),
+                    ];
+                    continue;
+                }
+                Turn::ContextFull { said } => return Err(GenerateError::Failed(said)),
             };
             let calls = calls_of(&message, turn);
             self.trace.say(|| Step::Said {
@@ -701,12 +857,21 @@ fn answers_in(said: &str) -> Result<Vec<Value>, String> {
         return Err("the message is empty".to_string());
     }
     let mut objects = Vec::new();
+    // The first `{` that opens what is meant to be the draft (`model` is its first key) and cannot
+    // be read as JSON: what is wrong with it is what the model is told. Without it the objects
+    // inside it are all that is read, none of them has a `model`, and the model is told there is
+    // none to its own message that begins with one (measured with a local model on 2026-10-09: a
+    // draft missing its last `}` was sent back three times, word for word).
+    let mut unreadable_draft: Option<serde_json::Error> = None;
     for (at, _) in said.match_indices('{') {
-        let mut values = serde_json::Deserializer::from_str(&said[at..]).into_iter::<Value>();
-        if let Some(Ok(value)) = values.next() {
-            if value.is_object() {
-                objects.push((at, value));
+        let rest = &said[at..];
+        let mut values = serde_json::Deserializer::from_str(rest).into_iter::<Value>();
+        match values.next() {
+            Some(Ok(value)) if value.is_object() => objects.push((at, value)),
+            Some(Err(error)) if unreadable_draft.is_none() && opens_with_model(rest) => {
+                unreadable_draft = Some(error);
             }
+            _ => {}
         }
     }
     // A schema's own top level is `properties` and `type`; no draft has them there.
@@ -715,25 +880,44 @@ fn answers_in(said: &str) -> Result<Vec<Value>, String> {
             return Err(SCHEMA_ECHO.to_string());
         }
     }
-    if objects.is_empty() {
-        return Err(format!(
-            "there is no JSON object in it: {}",
-            short(said, 200)
-        ));
-    }
+    let no_object = objects.is_empty();
     let candidates: Vec<Value> = objects
         .into_iter()
         .map(|(_, value)| value)
         .filter(|value| value.get("model").is_some())
         .collect();
-    if candidates.is_empty() {
-        Err(
-            "there is a JSON object in it, but it has no `model`: the draft has `model` in it"
-                .to_string(),
-        )
-    } else {
-        Ok(candidates)
+    if !candidates.is_empty() {
+        return Ok(candidates);
     }
+    Err(if let Some(error) = unreadable_draft {
+        unreadable_draft_said(&error)
+    } else if no_object {
+        format!("there is no JSON object in it: {}", short(said, 200))
+    } else {
+        "there is a JSON object in it, but it has no `model`: the draft has `model` in it"
+            .to_string()
+    })
+}
+
+/// Whether `text`, which begins at a `{`, opens with the key `model`: what a draft does.
+fn opens_with_model(text: &str) -> bool {
+    text[1..].trim_start().starts_with("\"model\"")
+}
+
+/// What a model whose draft is not JSON is told: where the reader stopped, and what the usual
+/// cause of that is. The draft is not read on its behalf (a brace added to a message is a guess at
+/// what it meant), and it is not told there is no `model`.
+fn unreadable_draft_said(error: &serde_json::Error) -> String {
+    let why = if error.is_eof() {
+        "it ends before it is closed: a closing `}`, `]` or `\"` is missing at the end"
+    } else {
+        "it is not valid JSON"
+    };
+    format!(
+        "the draft begins with `model` but cannot be read as JSON ({error}): {why}. Write the \
+         draft again as ONE valid JSON object, every string escaped (a newline as \\n, a quote \
+         as \\\") and every brace and bracket closed"
+    )
 }
 
 /// The start of `text`, on one line, for a sentence that quotes it.
@@ -974,8 +1158,105 @@ mod tests {
         assert!(prose.contains("no JSON object"), "{prose}");
         assert!(prose.contains("I could not write a model"), "{prose}");
         assert!(other.contains("no `model`"), "{other}");
-        // An answer that stopped in the middle (the model ran out of room) is not an object at all.
-        assert!(cut.contains("no JSON object"), "{cut}");
+        // An answer that stopped in the middle (the model ran out of room) is a draft that is cut,
+        // and is said to be: not that there is no object, and not that there is no `model`.
+        assert!(cut.contains("ends before it is closed"), "{cut}");
+        assert!(!cut.contains("no `model`"), "{cut}");
+    }
+
+    #[test]
+    fn a_server_saying_the_conversation_is_too_long_for_the_context_is_known_by_its_words() {
+        for said in [
+            // Strata, measured.
+            "prompt (65532 tokens) leaves no room to answer in the context",
+            // llama.cpp's server.
+            "the request exceeds the available context size",
+            // vLLM and OpenAI.
+            "This model's maximum context length is 4096 tokens. However, you requested 5000",
+            "context_length_exceeded",
+        ] {
+            assert!(overflows_context(said), "{said}");
+        }
+        for said in [
+            "model 'qwen-test' not found",
+            "invalid api key",
+            "messages: Input should be a valid list",
+            "the arguments are not valid JSON",
+            // Words of a limit and of exceeding it, and nothing of a context.
+            "rate limit exceeded, retry later",
+        ] {
+            assert!(!overflows_context(said), "{said}");
+        }
+    }
+
+    #[test]
+    fn the_last_design_sent_to_be_checked_is_found_with_what_the_tool_said_of_it() {
+        let messages = vec![
+            json!({"role": "user", "content": "task"}),
+            json!({"role": "assistant", "tool_calls": [
+                {"id": "a", "function": {"name": "validate_scxml", "arguments": "{\"d\":1}"}}]}),
+            json!({"role": "tool", "tool_call_id": "a", "content": "first said"}),
+            json!({"role": "assistant", "tool_calls": [
+                {"id": "b", "function": {"name": "scxml_kinds", "arguments": "{}"}}]}),
+            json!({"role": "tool", "tool_call_id": "b", "content": "kinds"}),
+            json!({"role": "assistant", "tool_calls": [
+                {"id": "c", "function": {"name": "validate_scxml_set", "arguments": "{\"d\":2}"}}]}),
+            json!({"role": "tool", "tool_call_id": "c", "content": "second said"}),
+        ];
+
+        let (tool, arguments, answer) = last_design(&messages).unwrap();
+
+        assert_eq!(tool, "validate_scxml_set");
+        assert_eq!(arguments, "{\"d\":2}");
+        assert_eq!(answer, "second said");
+        assert!(last_design(&messages[..1]).is_none());
+        // A call whose answer never came is carried with nothing said of it.
+        let (_, _, unanswered) = last_design(&messages[..6]).unwrap();
+        assert_eq!(unanswered, "");
+    }
+
+    #[test]
+    fn a_design_too_long_for_a_hand_over_is_cut_and_said_to_be() {
+        let long = "x".repeat(HANDOFF_RESULT_MAX + 50);
+        let cut = kept(&long, HANDOFF_RESULT_MAX);
+
+        assert!(cut.starts_with(&"x".repeat(HANDOFF_RESULT_MAX)));
+        assert!(cut.contains("[cut here: 50 more characters]"), "{cut}");
+        assert_eq!(kept("short", 100), "short");
+    }
+
+    #[test]
+    fn a_draft_missing_its_last_brace_is_told_that_and_not_that_it_has_no_model() {
+        // Measured with a local model (2026-10-09): `{"model": ...}` one `}` short was answered
+        // "there is a JSON object in it, but it has no `model`" because only the objects inside it
+        // could be read, and the model sent the same message back three times.
+        let whole = form("<scxml/>");
+        let short_by_one = &whole[..whole.len() - 1];
+        let wrong = draft_in(short_by_one, None).unwrap_err();
+
+        assert!(wrong.contains("cannot be read as JSON"), "{wrong}");
+        assert!(wrong.contains("ends before it is closed"), "{wrong}");
+        assert!(!wrong.contains("no `model`"), "{wrong}");
+        // The same draft, closed, is one.
+        assert!(draft_in(&whole, None).is_ok());
+        // And with a sentence before and a code fence after, as models write it: the reader stops
+        // at the fence and says what it expected there, which a missing brace is.
+        let fenced = format!("Here it is:\n```json\n{short_by_one}\n```");
+        let wrong = draft_in(&fenced, None).unwrap_err();
+        assert!(wrong.contains("cannot be read as JSON"), "{wrong}");
+        assert!(wrong.contains("expected `,` or `}`"), "{wrong}");
+        assert!(!wrong.contains("no `model`"), "{wrong}");
+    }
+
+    #[test]
+    fn a_draft_that_is_not_valid_json_is_told_so_with_where_the_reader_stopped() {
+        // An unescaped quote inside a string: the reader stops there, not at the end.
+        let said = r#"{"model": {"entry": "a.scxml", "documents": [{"name": "a.scxml", "text": "x "y" z"}]}}"#;
+        let wrong = draft_in(said, None).unwrap_err();
+
+        assert!(wrong.contains("cannot be read as JSON"), "{wrong}");
+        assert!(wrong.contains("not valid JSON"), "{wrong}");
+        assert!(wrong.contains("line 1 column"), "{wrong}");
     }
 
     #[test]

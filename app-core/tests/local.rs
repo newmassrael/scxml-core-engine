@@ -592,6 +592,149 @@ fn a_model_that_only_calls_tools_runs_out_of_turns() {
     assert_eq!(rig.server.requests().len(), 3);
 }
 
+// ---- a conversation longer than the model's context --------------------------------------------
+
+/// What a server that measures the prompt says when it is too long (Strata's words, measured).
+fn context_full() -> Script {
+    Script::Reply(
+        400,
+        r#"{"error":{"message":"prompt (131070 tokens) leaves no room to answer in the context of 131072 tokens"}}"#
+            .to_string(),
+    )
+}
+
+#[test]
+fn a_conversation_that_outgrew_the_context_is_begun_again_from_the_list_and_the_last_design() {
+    let rig = Rig::new(
+        "local-handoff",
+        vec![
+            calls(&[(Some("c1"), "scxml_requirement_set", "{}")]),
+            calls(&[(
+                Some("c2"),
+                "validate_scxml_set",
+                r#"{"documents_text":[{"name":"m.scxml","text":"<scxml><!-- version one --></scxml>"}]}"#,
+            )]),
+            context_full(),
+            says(&model_only("<scxml><!-- version two --></scxml>")),
+        ],
+    );
+    requirement_set_gives(
+        &rig.folder,
+        &json!({
+            "manifest_text": "{\"doc_id\":\"from-tool\",\"rev\":\"9\"}\n",
+            "sidecar_text": "{\"R1\":\"the door closes\"}",
+        }),
+    );
+    let steps = Arc::new(Mutex::new(Vec::new()));
+    let seen = Arc::clone(&steps);
+    let local = rig
+        .local(LocalConfig::for_model("qwen-test"))
+        .with_trace(move |step| seen.lock().unwrap().push(step.clone()));
+
+    let made = local.generate(&job(), &Cancel::new()).unwrap();
+
+    // The draft is the one written after the conversation began again, with the list the tool gave.
+    assert_eq!(
+        made.model.entry_text(),
+        "<scxml><!-- version two --></scxml>"
+    );
+    assert_eq!(
+        made.requirements.manifest,
+        "{\"doc_id\":\"from-tool\",\"rev\":\"9\"}\n"
+    );
+    // The fourth request is a new conversation: the system words and one message, not the history.
+    let fourth = rig.server.messages(3);
+    assert_eq!(fourth.len(), 2, "{fourth:?}");
+    assert_eq!(fourth[0]["role"], "system");
+    assert_eq!(fourth[1]["role"], "user");
+    let handed = fourth[1]["content"].as_str().unwrap();
+    assert!(
+        handed.contains("`door-lock`"),
+        "the task as it was: {handed}"
+    );
+    assert!(
+        handed.contains("reached the model's context limit"),
+        "{handed}"
+    );
+    assert!(handed.contains("from-tool"), "the list: {handed}");
+    assert!(handed.contains("the door closes"), "its words: {handed}");
+    assert!(handed.contains("version one"), "the last design: {handed}");
+    assert!(handed.contains("validate_scxml_set"), "{handed}");
+    assert!(
+        steps.lock().unwrap().iter().any(|step| matches!(
+            step,
+            Step::HandedOver {
+                carried_design: true,
+                ..
+            }
+        )),
+        "{:?}",
+        steps.lock().unwrap()
+    );
+}
+
+#[test]
+fn a_conversation_that_outgrew_the_context_before_any_design_says_so() {
+    let rig = Rig::new(
+        "local-handoff-early",
+        vec![context_full(), says(&draft("<scxml/>"))],
+    );
+
+    rig.run().unwrap();
+
+    let second = rig.server.messages(1);
+    assert_eq!(second.len(), 2, "{second:?}");
+    let handed = second[1]["content"].as_str().unwrap();
+    assert!(handed.contains("No design had been sent"), "{handed}");
+}
+
+#[test]
+fn a_conversation_that_keeps_outgrowing_the_context_is_begun_again_only_so_many_times() {
+    let rig = Rig::new(
+        "local-handoff-limit",
+        vec![context_full(), context_full(), context_full()],
+    );
+    let config = LocalConfig {
+        handoffs: 2,
+        ..LocalConfig::for_model("qwen-test")
+    };
+
+    let refused = rig
+        .local(config)
+        .generate(&job(), &Cancel::new())
+        .unwrap_err();
+
+    let GenerateError::Failed(said) = refused else {
+        panic!("expected a failure, got {refused:?}");
+    };
+    assert!(
+        said.contains("leaves no room"),
+        "the server's words: {said}"
+    );
+    assert_eq!(
+        rig.server.requests().len(),
+        3,
+        "begun again twice, and then given up"
+    );
+}
+
+#[test]
+fn a_run_that_may_not_begin_again_gives_up_at_the_first_overflow() {
+    let rig = Rig::new("local-handoff-none", vec![context_full()]);
+    let config = LocalConfig {
+        handoffs: 0,
+        ..LocalConfig::for_model("qwen-test")
+    };
+
+    let refused = rig
+        .local(config)
+        .generate(&job(), &Cancel::new())
+        .unwrap_err();
+
+    assert!(matches!(refused, GenerateError::Failed(_)), "{refused:?}");
+    assert_eq!(rig.server.requests().len(), 1);
+}
+
 // ---- when the servers are not what they should be --------------------------------------------
 
 #[test]
