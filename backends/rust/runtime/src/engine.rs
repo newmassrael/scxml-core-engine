@@ -3708,8 +3708,16 @@ impl<P: StatePolicy> Engine<P> {
         }
         for restored in std::mem::take(&mut self.restored_host_invokes) {
             let invoke_id = restored.request.invoke_id.clone();
+            // A request SCE sends on the document's behalf (a Mesh request) may already
+            // have reached its peer, which would act on it twice if it were sent again,
+            // and the router that carried it is gone with the process that saved it. It
+            // is not started: the document is told the call was interrupted, and sends
+            // a new one if it means to ask again.
+            let sent_by_sce =
+                crate::host_processor::is_reserved_type(&restored.request.processor_type);
             match restored.deadline {
-                RestoredDeadline::Passed => self.raise_host_invoke_deadline(&invoke_id),
+                RestoredDeadline::Passed => self.raise_host_invoke_failure(&invoke_id, "deadline"),
+                _ if sent_by_sce => self.raise_host_invoke_failure(&invoke_id, "interrupted"),
                 RestoredDeadline::None | RestoredDeadline::At(_) => {
                     let deadline_at = match restored.deadline {
                         RestoredDeadline::At(at) => Some(at),
@@ -4005,17 +4013,18 @@ impl<P: StatePolicy> Engine<P> {
         {
             return;
         }
-        self.raise_host_invoke_deadline(invoke_id);
+        self.raise_host_invoke_failure(invoke_id, "deadline");
     }
 
-    /// Tell the document an invocation's deadline passed: `error.invoke.<id>`,
-    /// or the generic `error.invoke` when it names no specific one, with
-    /// `_event.invokeid` set and `_event.data` the string `"deadline"`.
+    /// Tell the document an invocation did not finish: `error.invoke.<id>`, or the
+    /// generic `error.invoke` when it names no specific one, with `_event.invokeid`
+    /// set and `_event.data` the string `reason` — `"deadline"` when its deadline
+    /// passed, `"interrupted"` when a restore found a call it must not send again.
     #[cfg(not(feature = "no_std"))]
-    fn raise_host_invoke_deadline(&mut self, invoke_id: &str) {
+    fn raise_host_invoke_failure(&mut self, invoke_id: &str, reason: &str) {
         let event_name = format!("{}{invoke_id}", crate::invoke::ERROR_INVOKE_PREFIX);
         let mut metadata = EventMetadata::external(SceString::new(), SceString::new());
-        metadata.data = crate::sce_string_from_str("\"deadline\"");
+        metadata.data = crate::sce_string_from_str(&format!("\"{reason}\""));
         metadata.invoke_id = crate::sce_string_from_str(invoke_id);
         if let Some(meta) = Self::arriving_event(&event_name, metadata) {
             self.external_queue.raise(meta);

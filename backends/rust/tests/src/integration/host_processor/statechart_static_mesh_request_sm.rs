@@ -181,6 +181,178 @@ impl StatechartStaticMeshRequestObserve for Engine<StatechartStaticMeshRequestPo
     }
 }
 
+// ── SCE Accepted Subset §2.15: saving a sce-static machine and restoring it ──
+
+/// A running machine saved at a macrostep boundary, and restored into a new
+/// process in place of `initialize` — every variable, the machine's own
+/// included, and where the machine stands. The saved state is JSON
+/// (`SavedState::to_json`), the same on every backend.
+pub trait StatechartStaticMeshRequestPersist: Sized {
+    /// The policy a restored machine is built around, constructed by the host
+    /// as it would be for `initialize`.
+    type Policy;
+
+    /// The shape a saved state of this document is bound to: a state saved
+    /// from a document that renamed, re-typed or moved a state or a variable
+    /// is refused, one saved before a guard or an action changed is not.
+    const SHAPE: &'static str;
+
+    /// The document's `<history>` pseudo-states, by the id a saved state keys
+    /// them by — what a saved state records of each, and what a restore reads
+    /// back. Empty for a document that declares none.
+    const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<
+        ::sce_rust_runtime::NoHistory,
+    >];
+
+    /// The machine's whole state, each delayed `<send>` still waiting written
+    /// as the moment it comes due on the wall clock whose reading now is
+    /// `wall_now_ms`, in milliseconds since the Unix epoch. Refused for a
+    /// machine that is not running, and for one whose last macrostep stopped
+    /// at the microstep ceiling.
+    fn save_at(
+        &self,
+        wall_now_ms: u64,
+    ) -> Result<
+        ::sce_rust_runtime::saved_state::SavedState,
+        ::sce_rust_runtime::saved_state::StateRefusal,
+    >;
+
+    /// [`save_at`](Self::save_at) at the host's wall clock now.
+    ///
+    /// Absent on `wasm32-unknown-unknown`, which provides no wall clock to read:
+    /// a host there says what time it is, through [`save_at`](Self::save_at).
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+    fn save(
+        &self,
+    ) -> Result<
+        ::sce_rust_runtime::saved_state::SavedState,
+        ::sce_rust_runtime::saved_state::StateRefusal,
+    > {
+        self.save_at(::sce_rust_runtime::saved_state::wall_clock_ms())
+    }
+
+    /// A machine of `policy` standing where `saved` left one, measuring time
+    /// by `clock` and told by `wall_now_ms` what time it is on the wall clock
+    /// the saved `due`s were written against: a waiting send comes due when
+    /// its saved moment does, and one already due comes due now. No
+    /// `<onentry>` runs and no `<data>` is evaluated: the saved run already
+    /// did both.
+    fn restore_with(
+        policy: Self::Policy,
+        saved: &::sce_rust_runtime::saved_state::SavedState,
+        clock: ::sce_rust_runtime::SceClock,
+        wall_now_ms: u64,
+    ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal>;
+
+    /// [`restore_with`](Self::restore_with) on the engine's own clock, at the
+    /// host's wall clock now.
+    ///
+    /// Absent on `wasm32-unknown-unknown`, for the reason [`save`](Self::save)
+    /// is: a host there gives the clock and the wall time to
+    /// [`restore_with`](Self::restore_with).
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+    fn restore(
+        policy: Self::Policy,
+        saved: &::sce_rust_runtime::saved_state::SavedState,
+    ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal> {
+        Self::restore_with(
+            policy,
+            saved,
+            ::sce_rust_runtime::SceClock::default(),
+            ::sce_rust_runtime::saved_state::wall_clock_ms(),
+        )
+    }
+}
+
+impl StatechartStaticMeshRequestPersist for Engine<StatechartStaticMeshRequestPolicy> {
+    type Policy = StatechartStaticMeshRequestPolicy;
+
+    const SHAPE: &'static str = "d4fc8b35c38b20ad10aa11be11d5f07569eb9d8721c7120f1a810d27608af7db";
+
+    const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<
+        ::sce_rust_runtime::NoHistory,
+    >] = &[];
+
+    fn save_at(
+        &self,
+        wall_now_ms: u64,
+    ) -> Result<
+        ::sce_rust_runtime::saved_state::SavedState,
+        ::sce_rust_runtime::saved_state::StateRefusal,
+    > {
+        let policy = self.policy();
+        ::sce_rust_runtime::saved_state::save(
+            self,
+            Self::SHAPE,
+            vec![
+                (
+                    "load".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.load),
+                ),
+                (
+                    "label".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.label),
+                ),
+                (
+                    "peer".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.peer),
+                ),
+                (
+                    "answered".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.answered),
+                ),
+                (
+                    "failed".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.failed),
+                ),
+                (
+                    "refused".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.refused),
+                ),
+            ],
+            ::sce_rust_runtime::saved_state::save_history(self.policy(), Self::HISTORIES),
+            wall_now_ms,
+        )
+    }
+
+    fn restore_with(
+        mut policy: StatechartStaticMeshRequestPolicy,
+        saved: &::sce_rust_runtime::saved_state::SavedState,
+        clock: ::sce_rust_runtime::SceClock,
+        wall_now_ms: u64,
+    ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal> {
+        ::sce_rust_runtime::saved_state::check_shape(saved, Self::SHAPE)?;
+        // Judged with the configuration and before any value is written, so a
+        // refused restore holds no half of a state. A document with no
+        // `<history>` refuses any a saved state records.
+        ::sce_rust_runtime::saved_state::restore_history::<StatechartStaticMeshRequestPolicy>(
+            saved,
+            Self::HISTORIES,
+        )?;
+        policy.load = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("load")?,
+            "load",
+        )?;
+        policy.label =
+            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("label")?, "label", 16)?;
+        policy.peer =
+            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("peer")?, "peer", 16)?;
+        policy.answered = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("answered")?,
+            "answered",
+        )?;
+        policy.failed = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("failed")?,
+            "failed",
+        )?;
+        policy.refused = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("refused")?,
+            "refused",
+        )?;
+        ::sce_rust_runtime::saved_state::enter(policy, saved, clock, wall_now_ms)
+    }
+}
+
 /// §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
 /// machine's variables before it starts. A variable left `None` keeps the
 /// value its `<data>` gave it.
@@ -959,6 +1131,17 @@ impl StatePolicy for StatechartStaticMeshRequestPolicy {
     // W3C SCXML 6.4: Execute pending invokes at macrostep end
     fn execute_pending_invokes(&mut self, engine: &mut Engine<Self>) {
         self.do_execute_pending_invokes(engine);
+    }
+
+    // SCE Accepted Subset 2.15, "Saving and restoring": a saved state names the
+    // `<invoke>`s a declared host invoker is running, and a restore starts each
+    // again from the request it saved. What it may name is what the document
+    // hands to a host.
+    fn host_invoke_owner(processor_type: &str, invoke_id: &str) -> Option<Self::State> {
+        match (processor_type, invoke_id) {
+            ("sce:mesh-rpc", "ask") => Some(StatechartStaticMeshRequestState::Asking),
+            _ => None,
+        }
     }
 
     // W3C SCXML 6.2 + 6.4: a delayed `<send target="#_parent">` whose wait is

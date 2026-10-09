@@ -2905,22 +2905,21 @@ fn delays_a_send_to_another_session(model: &SCXMLModel) -> bool {
 ///   starts unless the fields still choose it;
 /// - a host-run invocation (`<invoke type>` a declared invoker serves) starts
 ///   again from the request it was started with, which the saved state holds,
-///   with the deadline it had left.
+///   with the deadline it had left;
+/// - a mesh-rpc call is saved the same way, and is the one that is NOT started
+///   again: it reaches this point already lowered to a host-served invoke of the
+///   type SCE reserves for it (`lower_mesh_invokes`), and its one request in
+///   flight may already have reached its peer, which would act on it twice if it
+///   were sent again. A restore starts nothing and tells the document the call
+///   was interrupted (`error.invoke.<id>`, data `"interrupted"`), and a document
+///   that means to ask again sends a new request.
 ///
 /// One no host serves is refused when it starts (`error.execution`), so nothing
 /// is running and a saved state has nothing to name.
 ///
-/// The rest do not reduce: a mesh-rpc call has one request in flight that
-/// cannot be sent twice, and a mesh peer is a session this machine does not
-/// own. A saved state that left one out would restore a machine waiting on
-/// something nobody is doing.
-///
-/// A mesh-rpc call reaches this point already lowered to a host-served invoke
-/// of the type SCE reserves for it (`lower_mesh_invokes`), so it is told from
-/// a host's own by that type: a host may not declare one under the reserved
-/// prefix, so a host-served invoke that has one is SCE's own. The request such
-/// a call was started with may already have reached its peer, and starting it
-/// again would have the peer act on it twice.
+/// The rest do not reduce: a mesh peer is a session this machine does not own.
+/// A saved state that left one out would restore a machine waiting on something
+/// nobody is doing.
 fn invokes_what_a_restore_cannot_start(model: &SCXMLModel) -> bool {
     model
         .states
@@ -2928,12 +2927,10 @@ fn invokes_what_a_restore_cannot_start(model: &SCXMLModel) -> bool {
         .flat_map(|s| &s.invokes)
         .any(|invoke| match invoke {
             crate::model::Invoke::Scxml(info) => info.remote_mesh_target.is_some(),
-            crate::model::Invoke::Unsupported(info) => {
-                info.host_served
-                    && crate::host_processor_analyzer::is_reserved_type(&info.invoke_type)
-            }
-            crate::model::Invoke::Hybrid(_) => false,
+            // Lowered to a host-served invoke before this point; one that was not has no
+            // host invoke a saved state could hold.
             crate::model::Invoke::MeshRpc(_) => true,
+            crate::model::Invoke::Unsupported(_) | crate::model::Invoke::Hybrid(_) => false,
         })
 }
 

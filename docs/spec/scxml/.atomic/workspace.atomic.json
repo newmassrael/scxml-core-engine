@@ -5538,11 +5538,6 @@
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-          "symbol": "raiseHostInvokeDeadline",
-          "kind": "references"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "savedExternal",
           "kind": "references"
         },
@@ -5696,6 +5691,11 @@
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "sendToTarget",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "raiseHostInvokeFailure",
           "kind": "references"
         }
       ],
@@ -21797,6 +21797,12 @@
       "target_kind": "section",
       "target_id": "scxml-5.10",
       "reason": "a file-level binding does not cover a cite inside a function once the section has symbol bindings in that file; the symbol bindings do"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.10",
+      "reason": "the function is renamed raiseHostInvokeFailure: it now carries the reason, deadline or interrupted"
     }
   ],
   "frames": {},

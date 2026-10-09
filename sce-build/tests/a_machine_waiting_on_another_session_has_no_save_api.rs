@@ -339,10 +339,11 @@ fn an_invoke_no_host_serves_is_generated_with_the_save_api() {
 }
 
 #[test]
-fn an_invoke_that_a_restore_cannot_start_is_generated_without_it() {
+fn a_mesh_request_is_generated_with_the_save_api() {
     // A Mesh request may already have reached its peer, and starting it again
-    // would have the peer act on it twice, so a machine that saved one would
-    // restore either waiting for an answer nobody is sending or asking again.
+    // would have the peer act on it twice, so a restore does not start it: the
+    // saved state holds it as a call that was in flight, and the document is told
+    // on the first macrostep that it was interrupted. Nothing is lost by saving.
     let mesh = r##"<invoke type="sce:mesh-rpc" id="ask" src="#peer">
       <param name="_mesh_event" expr="'service.request'"/>
     </invoke>"##;
@@ -354,9 +355,9 @@ fn an_invoke_that_a_restore_cannot_start_is_generated_without_it() {
     for extra in [mesh.to_string(), format!("{child}{mesh}")] {
         for (language, has) in save_api_per_backend(&machine(&extra)) {
             assert!(
-                !has,
-                "{language}: an invocation a restore cannot start is not in a saved state, so \
-                 the machine must not offer to save one: {extra}"
+                has,
+                "{language}: a Mesh request is in a saved state as an interrupted call, so the \
+                 machine saves it: {extra}"
             );
         }
     }

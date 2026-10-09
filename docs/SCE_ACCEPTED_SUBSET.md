@@ -4888,12 +4888,28 @@ re-parented or re-bounded refuses it. What the shape cannot see — a
 variable of the same name and type whose meaning changed — is the author's to
 avoid until a document can declare a migration.
 
+A Mesh request (`<invoke type="sce:mesh-rpc">`) is saved, and is the one host-run
+invocation a restore does not start again. Its one request may already have
+reached its peer, which would act on it twice if it were sent again, and the router
+that carried it is gone with the process that saved it; it is told from a host's
+own invocation by the type SCE reserves for it, which a host may not declare. The
+saved state holds it as the call it was — type, id, peer, `<param>`s and the event
+data it was sent with, and no deadline, since the router owns that — and a restore
+sends nothing: in the first macrostep the document receives `error.invoke.<id>`
+(or the generic `error.invoke`) with `_event.invokeid` set and `_event.data` the
+string `"interrupted"`, and a document that means to ask again sends a new request
+from the handler. A call whose deadline had already passed is told `"deadline"`, as
+any host-run invocation's is. A machine holding one is told to tick at once
+(`Engine::time_until_next_scheduled_ms` answers `0`), so a host driving it by that
+answer delivers the interruption instead of sleeping on an empty scheduler. The
+alternative — restoring the call and sending the same request again — is not
+chosen: it would need every responder to recognise a repeat and answer it once, a
+contract the Mesh does not make, and a repeat that a responder did not recognise
+is a second side effect.
+
 A document that waits on ANOTHER SESSION whose start a restore cannot repeat has
-state this version of the format does not carry: a Mesh request (`sce:mesh-rpc`,
-whose one request may already have reached its peer and would be acted on twice
-if sent again — it is told from a host's own invocation by the type SCE reserves
-for it, which a host may not declare), a peer on another device, or a delayed
-`<send>` whose target is a `#_`
+state this version of the format does not carry: a peer on another device, or a
+delayed `<send>` whose target is a `#_`
 location other than `#_internal` — the parent, an invocation, a child session —
 which is delivered through a session the state does not hold. Such a machine is
 generated WITHOUT `save` /

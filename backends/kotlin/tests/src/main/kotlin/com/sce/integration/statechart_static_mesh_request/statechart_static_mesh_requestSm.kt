@@ -128,6 +128,85 @@ class StatechartStaticMeshRequestStateMachine(
         _snapshot.value = Snapshot(activeConfiguration, currentData(), truncated)
     }
 
+    // ── SCE Accepted Subset §2.15: saving this machine, restoring it ─────────
+
+    /**
+     * The shape a saved state of this document is bound to: a state saved
+     * from a document that renamed, re-typed or moved a state or a variable is
+     * refused, one saved before a guard or an action changed is not.
+     */
+    val savedShape: String = "d4fc8b35c38b20ad10aa11be11d5f07569eb9d8721c7120f1a810d27608af7db"
+
+    /**
+     * This machine's whole state at the macrostep boundary it stands at —
+     * every variable, the machine's own included, and where it stands — as
+     * the `sce-saved-state` document every backend reads ([SavedState.toJson]).
+     * Each delayed `<send>` still waiting is written as the moment it comes due
+     * on the wall clock whose reading now is [wallNowMs], in milliseconds since
+     * the Unix epoch.
+     *
+     * @throws StateRefusal for a machine that is not running, or whose last
+     *   macrostep stopped at the microstep ceiling.
+     */
+    fun save(wallNowMs: Long): SavedState = savedState(
+        savedShape,
+        linkedMapOf(
+            "load" to SavedValues.of(load),
+            "label" to SavedValues.of(label),
+            "peer" to SavedValues.of(peer),
+            "answered" to SavedValues.of(answered),
+            "failed" to SavedValues.of(failed),
+            "refused" to SavedValues.of(refused),
+        ),
+        wallNowMs,
+    )
+
+    /** [save] at the host's wall clock now. */
+    fun save(): SavedState = save(SavedState.wallClockMs())
+
+    /**
+     * Stand this machine where [saved] left one, in place of [initialize]: no
+     * `<onentry>` runs and no `<data>` is evaluated, since the saved run
+     * already did both. Every value is read before any is written, so a
+     * refused restore leaves the machine as it was.
+     *
+     * The delayed sends [saved] holds are armed against this machine's `clock`,
+     * which is installed before a restore as before [initialize]; [wallNowMs]
+     * is what time it is on the wall clock the saved `due`s were written
+     * against. A send comes due when its saved moment does, and one already due
+     * comes due now.
+     *
+     * @throws StateRefusal for a machine that has already started, a state
+     *   saved from a document of another shape, a configuration that is not
+     *   one of this document, or a value its variable's type cannot hold.
+     */
+    fun restore(saved: SavedState, wallNowMs: Long) {
+        beginRestore(saved, savedShape)
+        val saved1 = SavedValues.uint32(saved.variable("load"), "load")
+        val saved2 = SavedValues.string(saved.variable("label"), "label", 16)
+        val saved3 = SavedValues.string(saved.variable("peer"), "peer", 16)
+        val saved4 = SavedValues.uint32(saved.variable("answered"), "answered")
+        val saved5 = SavedValues.uint32(saved.variable("failed"), "failed")
+        val saved6 = SavedValues.uint32(saved.variable("refused"), "refused")
+        load = saved1
+        label = saved2
+        peer = saved3
+        answered = saved4
+        failed = saved5
+        refused = saved6
+        enterSaved(saved, wallNowMs)
+    }
+
+    /** [restore] at the host's wall clock now. */
+    fun restore(saved: SavedState) = restore(saved, SavedState.wallClockMs())
+
+    // §scxml-6.4.1: a saved state names the `<invoke>`s a declared host invoker
+    // is running, and a restore starts each again from the request it saved. What
+    // it may name is what the document hands to a host.
+    override val staticHostInvokes: List<Triple<String, String, StatechartStaticMeshRequestState>> = listOf(
+        Triple("sce:mesh-rpc", "ask", StatechartStaticMeshRequestState.Asking),
+    )
+
     override val initialState: StatechartStaticMeshRequestState = StatechartStaticMeshRequestState.Idle
 
     // W3C SCXML 6.2: which entry point a host must drive this machine with in

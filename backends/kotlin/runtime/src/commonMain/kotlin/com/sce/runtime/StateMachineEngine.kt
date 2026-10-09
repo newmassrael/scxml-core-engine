@@ -1198,9 +1198,17 @@ abstract class StateMachineEngine<S : State, E : Event>(
         restoredHostInvokes.clear()
         for (invocation in restored) {
             val request = invocation.request
-            when (val deadline = invocation.deadline) {
-                RestoredDeadline.Passed -> raiseHostInvokeDeadline(request.invokeId)
-                RestoredDeadline.None, is RestoredDeadline.At -> {
+            // A request SCE sends on the document's behalf (a Mesh request) may already
+            // have reached its peer, which would act on it twice if it were sent again,
+            // and the router that carried it is gone with the process that saved it. It
+            // is not started: the document is told the call was interrupted, and sends a
+            // new one if it means to ask again.
+            val sentBySce = isReservedType(request.processorType)
+            val deadline = invocation.deadline
+            when {
+                deadline == RestoredDeadline.Passed -> raiseHostInvokeFailure(request.invokeId, "deadline")
+                sentBySce -> raiseHostInvokeFailure(request.invokeId, "interrupted")
+                else -> {
                     val at = (deadline as? RestoredDeadline.At)?.atMs
                     if (!startHostInvoke(request, at)) {
                         resolveEventByName("error.execution")?.let {
@@ -1213,11 +1221,12 @@ abstract class StateMachineEngine<S : State, E : Event>(
     }
 
     /**
-     * Tell the document an invocation's deadline passed: `error.invoke.<id>`, or
-     * the generic `error.invoke` when it names no specific one, with
-     * `_event.invokeid` set and `_event.data` the string `"deadline"`.
+     * Tell the document an invocation did not finish: `error.invoke.<id>`, or the
+     * generic `error.invoke` when it names no specific one, with `_event.invokeid`
+     * set and `_event.data` the string [reason] — `"deadline"` when its deadline
+     * passed, `"interrupted"` when a restore found a call it must not send again.
      */
-    private fun raiseHostInvokeDeadline(invokeId: String) {
+    private fun raiseHostInvokeFailure(invokeId: String, reason: String) {
         val name = ERROR_INVOKE_PREFIX + invokeId
         val expired = resolveArrivingEvent(name) ?: return
         // The JSON spelling of the string, as every other backend carries it.
@@ -1228,7 +1237,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
             expired,
             EventMetadata(
                 type = "external",
-                data = "\"deadline\"",
+                data = "\"$reason\"",
                 invokeId = invokeId,
                 name = arrivalNameOf(expired, name),
             ),
@@ -1369,7 +1378,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
         if (startedHostInvokes[key]?.token != deadline.token) return
         startedHostInvokes.remove(key)
         if (!deliverHostInvokeCancel(deadline.processorType, deadline.invokeId, deadline.token)) return
-        raiseHostInvokeDeadline(deadline.invokeId)
+        raiseHostInvokeFailure(deadline.invokeId, "deadline")
     }
 
     /**
