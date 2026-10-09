@@ -367,3 +367,36 @@ target_include_directories(queue_generated_test PRIVATE
 target_compile_options(queue_generated_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
 target_link_libraries(queue_generated_test PRIVATE Threads::Threads)
 add_test(NAME queue_generated COMMAND queue_generated_test)
+
+# The queues on real threads, written as histories and judged by the command
+# every backend's histories are judged by (verification layer 2). The recorder
+# runs the runtime's queues and writes one history per run; the second test
+# hands the files to `sce-codegen check-queue-history`, so this arm carries no
+# linearizability checker of its own. 4 Lamport capacities recorded 3 times and
+# 6 SCQ shapes recorded 25 times: 162 histories.
+add_executable(queue_history_recorder "${CMAKE_CURRENT_SOURCE_DIR}/queue_history_recorder.cpp")
+target_include_directories(queue_history_recorder PRIVATE "${RUNTIME_INCLUDE_DIR}")
+target_compile_options(queue_history_recorder PRIVATE -Wall -Wextra -Wpedantic -Werror)
+target_link_libraries(queue_history_recorder PRIVATE Threads::Threads)
+set(QUEUE_HISTORIES_DIR "${CMAKE_CURRENT_BINARY_DIR}/queue_histories")
+add_test(NAME queue_history_record COMMAND queue_history_recorder "${QUEUE_HISTORIES_DIR}")
+set_tests_properties(queue_history_record PROPERTIES FIXTURES_SETUP queue_histories)
+add_test(NAME queue_history_check
+    COMMAND "${CMAKE_COMMAND}"
+            "-DCODEGEN=${SCE_CODEGEN}"
+            "-DDIR=${QUEUE_HISTORIES_DIR}"
+            -DMINIMUM=162
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/check_queue_histories.cmake")
+set_tests_properties(queue_history_check PROPERTIES FIXTURES_REQUIRED queue_histories)
+
+# The same script over the corpus of histories sce-build keeps, which holds
+# histories that are not linearizable: it must refuse them, saying so. A check
+# that could only pass would prove nothing about the histories the arm wrote.
+add_test(NAME queue_history_check_refuses
+    COMMAND "${CMAKE_COMMAND}"
+            "-DCODEGEN=${SCE_CODEGEN}"
+            "-DDIR=${REPO_ROOT}/sce-build/tests/fixtures/queue_histories"
+            -DMINIMUM=1
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/check_queue_histories.cmake")
+set_tests_properties(queue_history_check_refuses PROPERTIES
+    PASS_REGULAR_EXPRESSION "queue histories refused")
