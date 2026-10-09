@@ -1,5 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+#
+# §synth-5-P: the runtime half of the `queue` kind for Python. The ledger reads
+# comments and not docstrings, so the section is cited here as well as in the
+# module's docstring below.
 
 """The runtime half of ``sce:kind="queue"`` (SCE Protocol-Synthesis RFC
 §synth-5-P) for Python: a queue that hands elements from one thread to another.

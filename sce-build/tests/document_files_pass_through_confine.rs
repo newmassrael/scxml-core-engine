@@ -190,6 +190,10 @@ const NOT_A_DOCUMENTS: &[(&str, Why, Functions)] = &[
             ("cmd_expand", 1),
             ("addr2sce_load_symbol_table", 1),
             ("load_sourcemap", 1),
+            // The run histories a backend's stress test wrote, named on the
+            // command line (`check-queue-history`): records of a run and not
+            // documents a document names.
+            ("cmd_check_queue_history", 1),
         ],
     ),
     (
