@@ -242,6 +242,15 @@ pub struct LocalConfig {
     /// again from where it stood (the requirement list the tool gave and the design last sent to be
     /// checked). 0 gives up at the first.
     pub handoffs: u32,
+    /// The model's context, in tokens, when it is known (a connection says it). With it a
+    /// conversation is begun again as soon as the server reports a prompt of `handoff_percent` of
+    /// it, before the server has to refuse the next request; a server that does not refuse but
+    /// cuts the conversation short in silence (Ollama's default) is only held by this. Without it
+    /// the server's own refusal is what begins a conversation again.
+    pub context_tokens: Option<u32>,
+    /// How full, in percent of `context_tokens`, a conversation may be before it is begun again.
+    /// Room is left for what the next tool call gives back, which can be a document.
+    pub handoff_percent: u32,
 }
 
 impl LocalConfig {
@@ -252,6 +261,8 @@ impl LocalConfig {
             max_turns: 60,
             timeout: Duration::from_secs(30 * 60),
             handoffs: 2,
+            context_tokens: None,
+            handoff_percent: 80,
         }
     }
 }
@@ -282,17 +293,24 @@ pub enum Step {
     /// again).
     NotReadable { why: String },
     /// The conversation reached the model's context limit and was begun again from where it
-    /// stood: how long the words it was handed are, and whether a design was carried in them.
+    /// stood: how long the words it was handed are, whether a design was carried in them, and
+    /// whether it was begun again before the server had to refuse it (the connection says how big
+    /// the context is) and not after.
     HandedOver {
         handoff_chars: usize,
         carried_design: bool,
+        proactive: bool,
     },
 }
 
 /// What asking the model once came to.
 enum Turn {
-    /// The model's message.
-    Message(Value),
+    /// The model's message, and how many tokens the server says the conversation it was asked
+    /// about came to (not every server says).
+    Message {
+        message: Value,
+        prompt_tokens: Option<u64>,
+    },
     /// The server could not read a tool call of the model: why, and the server's own words for
     /// when it is not put right.
     Unreadable { why: String, said: String },
@@ -423,6 +441,40 @@ impl Local {
         }
     }
 
+    /// Whether the server's report of the last conversation is as full of the model's context as
+    /// the connection allows. Never, for a connection that did not say how big the context is.
+    fn is_nearly_full(&self, prompt_tokens: Option<u64>) -> bool {
+        match (self.config.context_tokens, prompt_tokens) {
+            (Some(context), Some(used)) => {
+                used * 100 >= u64::from(context) * u64::from(self.config.handoff_percent)
+            }
+            _ => false,
+        }
+    }
+
+    /// Put `messages` back to a conversation of the system words and the task, handed what the run
+    /// holds of where the last one stood. What the model is told is not a summary it wrote.
+    fn begin_again(
+        &self,
+        job: &Job,
+        system: &str,
+        messages: &mut Vec<Value>,
+        listed: Option<&Listed>,
+        proactive: bool,
+    ) {
+        let (standing, carried_design) = standing_of(messages, listed);
+        let handoff = handoff_words(&standing);
+        self.trace.say(|| Step::HandedOver {
+            handoff_chars: handoff.chars().count(),
+            carried_design,
+            proactive,
+        });
+        *messages = vec![
+            json!({"role": "system", "content": system}),
+            json!({"role": "user", "content": format!("{}\n\n{handoff}", prompt(job))}),
+        ];
+    }
+
     fn too_long(&self) -> GenerateError {
         GenerateError::Failed(format!(
             "the run took longer than {} and was stopped",
@@ -512,7 +564,10 @@ impl Local {
         })?;
         let message = reply["choices"][0]["message"].clone();
         if message.is_object() {
-            Ok(Turn::Message(message))
+            Ok(Turn::Message {
+                message,
+                prompt_tokens: reply["usage"]["prompt_tokens"].as_u64(),
+            })
         } else {
             Err(GenerateError::Failed(
                 "the server's answer has no message: it is not a chat completion".to_string(),
@@ -607,13 +662,30 @@ impl Generator for Local {
         let mut unread = 0;
         // Times the conversation was begun again because it reached the model's context limit.
         let mut handed = 0;
+        // How many tokens the server said the last conversation it answered came to.
+        let mut prompt_tokens: Option<u64> = None;
         for turn in 0..self.config.max_turns {
+            // The connection says how big the model's context is: begin again as soon as the
+            // server reports the conversation as full as the connection allows, before it has to
+            // refuse the next request. A conversation begun again has no wrong draft and no
+            // unreadable call behind it, so the tries for those are its own.
+            if handed < self.config.handoffs && self.is_nearly_full(prompt_tokens) {
+                handed += 1;
+                self.begin_again(job, &system, &mut messages, listed.as_ref(), true);
+                (repairs, unread, prompt_tokens) = (0, 0, None);
+            }
             self.trace.say(|| Step::Asked {
                 turn,
                 messages: messages.len(),
             });
             let message = match self.ask(&messages, &offered, deadline, cancel)? {
-                Turn::Message(message) => message,
+                Turn::Message {
+                    message,
+                    prompt_tokens: reported,
+                } => {
+                    prompt_tokens = reported;
+                    message
+                }
                 Turn::Unreadable { why, .. } if unread < REPAIRS => {
                     self.trace.say(|| Step::NotReadable { why: why.clone() });
                     unread += 1;
@@ -630,16 +702,8 @@ impl Generator for Local {
                 // wrong.
                 Turn::ContextFull { .. } if handed < self.config.handoffs => {
                     handed += 1;
-                    let (standing, carried_design) = standing_of(&messages, listed.as_ref());
-                    let handoff = handoff_words(&standing);
-                    self.trace.say(|| Step::HandedOver {
-                        handoff_chars: handoff.chars().count(),
-                        carried_design,
-                    });
-                    messages = vec![
-                        json!({"role": "system", "content": system}),
-                        json!({"role": "user", "content": format!("{}\n\n{handoff}", prompt(job))}),
-                    ];
+                    self.begin_again(job, &system, &mut messages, listed.as_ref(), false);
+                    (repairs, unread, prompt_tokens) = (0, 0, None);
                     continue;
                 }
                 Turn::ContextFull { said } => return Err(GenerateError::Failed(said)),

@@ -25,6 +25,7 @@ import {
   type Outlook,
 } from "./ai_settings_model";
 import { BILLING_WORDS, NOT_USED_WORDS, programChoice } from "./ai_settings_view";
+import { NO_LIMITS } from "./contract";
 import type {
   Candidate,
   ClaudeClient,
@@ -120,7 +121,7 @@ export class CodexSection {
       auth: chosenSource(this.status(), kept, this.draftSource),
       server_url: null,
       // What a person set outside this screen is theirs: saving a model does not drop it.
-      limits: kept?.connection.limits ?? { turns: null, seconds: null },
+      limits: kept?.connection.limits ?? NO_LIMITS,
     };
   }
 

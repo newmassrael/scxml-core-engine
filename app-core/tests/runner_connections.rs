@@ -129,6 +129,7 @@ fn pin(connection: &str, revision: &str) -> Pin {
         limits: Limits {
             turns: Some(7),
             seconds: None,
+            ..Limits::default()
         },
     }
 }

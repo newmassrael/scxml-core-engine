@@ -195,9 +195,11 @@ impl Setup {
                 Step::HandedOver {
                     handoff_chars,
                     carried_design,
+                    proactive,
                 } => println!(
                     "[{at:>4}s]   the context was full: begun again from where it stood \
-                     ({handoff_chars} characters handed over, design carried: {carried_design})"
+                     ({handoff_chars} characters handed over, design carried: {carried_design}, \
+                     before the server refused: {proactive})"
                 ),
             }
         });

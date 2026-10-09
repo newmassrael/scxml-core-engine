@@ -603,6 +603,128 @@ fn context_full() -> Script {
     )
 }
 
+/// `script`, an answer of the server that says the conversation it was asked about came to
+/// `prompt_tokens` tokens.
+fn reporting(script: Script, prompt_tokens: u64) -> Script {
+    let Script::Reply(status, body) = script else {
+        panic!("only a reply can report its usage");
+    };
+    let mut reply: Value = serde_json::from_str(&body).unwrap();
+    reply["usage"] = json!({"prompt_tokens": prompt_tokens, "completion_tokens": 10});
+    Script::Reply(status, reply.to_string())
+}
+
+fn validating(text: &str) -> Script {
+    calls(&[(
+        Some("c1"),
+        "validate_scxml_set",
+        &json!({"documents_text": [{"name": "m.scxml", "text": text}]}).to_string(),
+    )])
+}
+
+#[test]
+fn a_conversation_the_connection_says_is_nearly_full_is_begun_again_before_the_server_refuses() {
+    let rig = Rig::new(
+        "local-handoff-early-start",
+        vec![
+            reporting(validating("<scxml><!-- version one --></scxml>"), 900),
+            says(&draft("<scxml><!-- version two --></scxml>")),
+        ],
+    );
+    let config = LocalConfig {
+        context_tokens: Some(1_000),
+        handoff_percent: 80,
+        ..LocalConfig::for_model("qwen-test")
+    };
+    let steps = Arc::new(Mutex::new(Vec::new()));
+    let seen = Arc::clone(&steps);
+    let local = rig
+        .local(config)
+        .with_trace(move |step| seen.lock().unwrap().push(step.clone()));
+
+    local.generate(&job(), &Cancel::new()).unwrap();
+
+    // Two requests, and the second is a new conversation: the server was never refused.
+    assert_eq!(rig.server.requests().len(), 2);
+    let second = rig.server.messages(1);
+    assert_eq!(second.len(), 2, "{second:?}");
+    assert!(second[1]["content"]
+        .as_str()
+        .unwrap()
+        .contains("version one"));
+    assert!(
+        steps.lock().unwrap().iter().any(|step| matches!(
+            step,
+            Step::HandedOver {
+                proactive: true,
+                carried_design: true,
+                ..
+            }
+        )),
+        "{:?}",
+        steps.lock().unwrap()
+    );
+}
+
+#[test]
+fn a_conversation_below_what_the_connection_allows_is_left_as_it_is() {
+    let rig = Rig::new(
+        "local-handoff-below",
+        vec![
+            reporting(validating("<scxml/>"), 700),
+            says(&draft("<scxml/>")),
+        ],
+    );
+    let config = LocalConfig {
+        context_tokens: Some(1_000),
+        ..LocalConfig::for_model("qwen-test")
+    };
+
+    rig.local(config).generate(&job(), &Cancel::new()).unwrap();
+
+    // The second request carries the whole conversation: system, task, the call and its answer.
+    assert_eq!(rig.server.messages(1).len(), 4);
+}
+
+#[test]
+fn a_connection_that_did_not_say_how_big_the_context_is_is_not_begun_again_on_the_servers_report() {
+    let rig = Rig::new(
+        "local-handoff-unknown",
+        vec![
+            reporting(validating("<scxml/>"), 999_999),
+            says(&draft("<scxml/>")),
+        ],
+    );
+
+    rig.run().unwrap();
+
+    assert_eq!(rig.server.messages(1).len(), 4);
+}
+
+#[test]
+fn a_conversation_begun_again_has_its_own_tries_for_a_draft_that_is_not_one() {
+    // A draft one closing brace short is not a draft (twice: the tries are used up), the context
+    // is full, and the next draft is short of a brace again. In the conversation begun again that
+    // is the first of its tries, and the draft after it is taken.
+    let whole = draft("<scxml/>");
+    let short_by_one = whole[..whole.len() - 1].to_string();
+    let rig = Rig::new(
+        "local-handoff-tries",
+        vec![
+            says(&short_by_one),
+            says(&short_by_one),
+            context_full(),
+            says(&short_by_one),
+            says(&whole),
+        ],
+    );
+
+    let made = rig.run().unwrap();
+
+    assert_eq!(made.model.entry_text(), "<scxml/>");
+    assert_eq!(rig.server.requests().len(), 5);
+}
+
 #[test]
 fn a_conversation_that_outgrew_the_context_is_begun_again_from_the_list_and_the_last_design() {
     let rig = Rig::new(

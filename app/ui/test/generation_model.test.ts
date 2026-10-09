@@ -3,6 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 
+import { NO_LIMITS } from "../src/contract";
 import type {
   AdapterListing,
   AdapterStatus,
@@ -191,7 +192,7 @@ describe("where the latest request stands", () => {
       expect(
         made({
           origin: "gui",
-          pin: { connection: "claude", revision: "a".repeat(64), adapter: "claude-code", model: null, limits: { turns: null, seconds: null } },
+          pin: { connection: "claude", revision: "a".repeat(64), adapter: "claude-code", model: null, limits: NO_LIMITS },
         }),
       ).toMatchObject({ unchosen: false });
       // What was not read of the request is not guessed at.
@@ -250,7 +251,7 @@ describe("what the person may do", () => {
       revision: "a".repeat(64),
       adapter: "claude-code",
       model: null,
-      limits: { turns: null, seconds: null },
+      limits: NO_LIMITS,
     } as const;
     const stuck = statusOf(head("queued", 0), detail({ state: "queued", lease: null, pin: pinned }), null, {
       hosts: [

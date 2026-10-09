@@ -316,8 +316,32 @@ export interface Connection {
   readonly model: string | null;
   readonly auth: AuthSource;
   readonly server_url: string | null;
-  readonly limits: { readonly turns: number | null; readonly seconds: number | null };
+  readonly limits: Limits;
 }
+
+/**
+ * What one generation may spend, as a connection says it; `null` is the application's default. The
+ * last three are for a model server: how many times its conversation is begun again when the
+ * model's context is full, the model's context in tokens when a person knows it, and how full (in
+ * percent) a conversation may be before it is begun again. The screen has no field for them yet,
+ * and carries them through a save, so that editing another setting does not lose them.
+ */
+export interface Limits {
+  readonly turns: number | null;
+  readonly seconds: number | null;
+  readonly handoffs: number | null;
+  readonly context_tokens: number | null;
+  readonly handoff_percent: number | null;
+}
+
+/** A connection that limits nothing. */
+export const NO_LIMITS: Limits = {
+  turns: null,
+  seconds: null,
+  handoffs: null,
+  context_tokens: null,
+  handoff_percent: null,
+};
 
 /** A connection as it is kept, with the revision it is kept under. */
 export interface StoredConnection {
@@ -642,7 +666,7 @@ export interface RequestPin {
   readonly revision: Revision;
   readonly adapter: AdapterKind;
   readonly model: string | null;
-  readonly limits: { readonly turns: number | null; readonly seconds: number | null };
+  readonly limits: Limits;
 }
 
 /** The halves of a candidate the executor has written; a bundle needs both. */
@@ -1365,10 +1389,17 @@ function parseRequestPin(value: unknown, where: string): RequestPin {
     revision: revision(r["revision"], `${where}.revision`),
     adapter: oneOf(r, "adapter", where, ["claude-code", "codex", "local"] as const),
     model: nullableText(r, "model", where),
-    limits: {
-      turns: nullableCount(limits, "turns", `${where}.limits`),
-      seconds: nullableCount(limits, "seconds", `${where}.limits`),
-    },
+    limits: parseLimits(limits, `${where}.limits`),
+  };
+}
+
+function parseLimits(limits: Obj, where: string): Limits {
+  return {
+    turns: nullableCount(limits, "turns", where),
+    seconds: nullableCount(limits, "seconds", where),
+    handoffs: nullableCount(limits, "handoffs", where),
+    context_tokens: nullableCount(limits, "context_tokens", where),
+    handoff_percent: nullableCount(limits, "handoff_percent", where),
   };
 }
 
@@ -1680,10 +1711,7 @@ function parseConnection(value: unknown, where: string): Connection {
     model: nullableText(r, "model", where),
     auth: oneOf(r, "auth", where, ["official-login", "app-store", "env-api-key", "server-key", "none"] as const),
     server_url: nullableText(r, "server_url", where),
-    limits: {
-      turns: nullableCount(limits, "turns", `${where}.limits`),
-      seconds: nullableCount(limits, "seconds", `${where}.limits`),
-    },
+    limits: parseLimits(limits, `${where}.limits`),
   };
 }
 

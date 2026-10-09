@@ -13,7 +13,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { AiSettings, type AiSettingsHost } from "../src/ai_settings";
 import { CLAUDE_CONNECTION_ID, CODEX_CONNECTION_ID, LOCAL_CONNECTION_ID } from "../src/ai_settings_model";
 import type { Api } from "../src/api";
-import { SUPPORTED_COMMAND_SET_VERSION } from "../src/contract";
+import { NO_LIMITS, SUPPORTED_COMMAND_SET_VERSION } from "../src/contract";
 import type {
   Candidate,
   ClaudeAccount,
@@ -77,7 +77,7 @@ const connection = (model: string | null): Connection => ({
   model,
   auth: "official-login",
   server_url: null,
-  limits: { turns: 40, seconds: null },
+  limits: { ...NO_LIMITS, turns: 40 },
 });
 
 /** The program Codex answered from, and another one the application found. */
@@ -120,7 +120,7 @@ const codexConnection = (over: Partial<Connection> = {}): Connection => ({
   model: null,
   auth: "official-login",
   server_url: null,
-  limits: { turns: null, seconds: 900 },
+  limits: { ...NO_LIMITS, seconds: 900 },
   ...over,
 });
 
@@ -480,7 +480,7 @@ describe("saving the connection", () => {
     await settle();
 
     expect(r.core.asked("save_connection")).toEqual([
-      { connection: { ...connection("opus"), limits: { turns: null, seconds: null } }, base: null },
+      { connection: { ...connection("opus"), limits: NO_LIMITS }, base: null },
     ]);
     expect(r.core.asked("set_default_connection")).toEqual([{ id: CLAUDE_CONNECTION_ID, expect: null }]);
     expect(r.root.textContent).toContain("from the next generation");
@@ -1031,7 +1031,7 @@ describe("saving a connection to Codex", () => {
           model: null,
           auth: "official-login",
           server_url: null,
-          limits: { turns: null, seconds: null },
+          limits: NO_LIMITS,
         },
         base: null,
       },
@@ -1423,7 +1423,7 @@ const serverConnection = (over: Partial<Connection> = {}): Connection => ({
   model: "qwen3-coder:30b",
   auth: "none",
   server_url: OLLAMA,
-  limits: { turns: 30, seconds: null },
+  limits: { ...NO_LIMITS, turns: 30 },
   ...over,
 });
 
@@ -1546,7 +1546,7 @@ describe("a model server of the person's", () => {
           model: "qwen3-coder:30b",
           auth: "none",
           server_url: OLLAMA,
-          limits: { turns: null, seconds: null },
+          limits: NO_LIMITS,
         },
         base: null,
       },
@@ -1593,7 +1593,7 @@ describe("a model server of the person's", () => {
   });
 
   it("is edited where it is kept, whatever it was named, and what a person set elsewhere is not dropped", async () => {
-    const other = serverConnection({ id: "pc2", server_url: FAR_SECURE, limits: { turns: 12, seconds: 900 } });
+    const other = serverConnection({ id: "pc2", server_url: FAR_SECURE, limits: { ...NO_LIMITS, turns: 12, seconds: 900 } });
     const r = await chooseServer({
       listing: { connections: [{ connection: other, revision: REVISION_1 }], unreadable: [], default: "pc2" },
       servers: [[FAR_SECURE, listed(FAR_SECURE, ["qwen3-coder:30b"], { reach: "network", tls: true })]],
@@ -1607,7 +1607,7 @@ describe("a model server of the person's", () => {
     expect(saved?.connection.id).toBe("pc2");
     expect(saved?.base).toBe(REVISION_1);
     expect(saved?.connection.model).toBe("devstral:24b");
-    expect(saved?.connection.limits).toEqual({ turns: 12, seconds: 900 });
+    expect(saved?.connection.limits).toEqual({ ...NO_LIMITS, turns: 12, seconds: 900 });
     expect(r.core.asked("set_default_connection")).toEqual([{ id: "pc2", expect: "pc2" }]);
   });
 

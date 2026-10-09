@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { SUPPORTED_COMMAND_SET_VERSION } from "../src/contract";
+import { NO_LIMITS, SUPPORTED_COMMAND_SET_VERSION } from "../src/contract";
 import type {
   ClaudeAccount,
   ClaudeClient,
@@ -82,7 +82,7 @@ const connection = (over: Partial<Connection> = {}): Connection => ({
   model: "opus",
   auth: "official-login",
   server_url: null,
-  limits: { turns: null, seconds: null },
+  limits: NO_LIMITS,
   ...over,
 });
 

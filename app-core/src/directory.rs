@@ -359,6 +359,15 @@ impl Connections {
                 .limits
                 .seconds
                 .map_or(defaults.timeout, |s| Duration::from_secs(u64::from(s))),
+            // What a person who knows the model says of its context: how many times to begin
+            // again, how big the context is, and how full it may be. Nothing is assumed of a
+            // model that was not described.
+            handoffs: pin.limits.handoffs.unwrap_or(defaults.handoffs),
+            context_tokens: pin.limits.context_tokens,
+            handoff_percent: pin
+                .limits
+                .handoff_percent
+                .unwrap_or(defaults.handoff_percent),
             ..defaults
         };
         Ok(Local::new(endpoint, author, config))

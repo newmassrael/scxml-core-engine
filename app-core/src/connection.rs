@@ -29,6 +29,15 @@ const SERVER_MAX: usize = 300;
 pub const TURNS_MAX: u32 = 500;
 /// The longest, in seconds, a connection may allow one generation.
 pub const SECONDS_MAX: u32 = 86_400;
+/// The most times a local model's conversation may be begun again because its context was full.
+pub const HANDOFFS_MAX: u32 = 10;
+/// The context a model may be said to have, in tokens: below the least a hand-over itself would
+/// fill it, above the most any model is offered.
+pub const CONTEXT_TOKENS_MIN: u32 = 4_096;
+pub const CONTEXT_TOKENS_MAX: u32 = 4_000_000;
+/// How full, in percent of the context, a conversation may be before it is begun again.
+pub const HANDOFF_PERCENT_MIN: u32 = 10;
+pub const HANDOFF_PERCENT_MAX: u32 = 95;
 
 fn bad(message: impl Into<String>) -> StoreError {
     StoreError::refused("bad-connection", message, serde_json::Value::Null)
@@ -143,11 +152,28 @@ pub struct Limits {
     pub turns: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub seconds: Option<u32>,
+    /// For a model server: how many times a conversation that outgrew the model's context is
+    /// begun again from where it stood. 0 gives up at the first.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub handoffs: Option<u32>,
+    /// For a model server: the model's context, in tokens, when the person knows it. With it a
+    /// conversation is begun again before the server has to refuse it; without it only the
+    /// server's own refusal does.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_tokens: Option<u32>,
+    /// For a model server: how full, in percent of `context_tokens`, a conversation may be before
+    /// it is begun again.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub handoff_percent: Option<u32>,
 }
 
 impl Limits {
     pub(crate) fn is_empty(&self) -> bool {
-        self.turns.is_none() && self.seconds.is_none()
+        self.turns.is_none()
+            && self.seconds.is_none()
+            && self.handoffs.is_none()
+            && self.context_tokens.is_none()
+            && self.handoff_percent.is_none()
     }
 
     fn validate(&self) -> Result<(), StoreError> {
@@ -162,6 +188,29 @@ impl Limits {
             if !(1..=SECONDS_MAX).contains(&seconds) {
                 return Err(bad(format!(
                     "a time limit of {seconds} seconds is not between 1 and {SECONDS_MAX}"
+                )));
+            }
+        }
+        if let Some(handoffs) = self.handoffs {
+            if handoffs > HANDOFFS_MAX {
+                return Err(bad(format!(
+                    "a limit of {handoffs} hand-overs is not between 0 and {HANDOFFS_MAX}"
+                )));
+            }
+        }
+        if let Some(tokens) = self.context_tokens {
+            if !(CONTEXT_TOKENS_MIN..=CONTEXT_TOKENS_MAX).contains(&tokens) {
+                return Err(bad(format!(
+                    "a context of {tokens} tokens is not between {CONTEXT_TOKENS_MIN} and \
+                     {CONTEXT_TOKENS_MAX}"
+                )));
+            }
+        }
+        if let Some(percent) = self.handoff_percent {
+            if !(HANDOFF_PERCENT_MIN..=HANDOFF_PERCENT_MAX).contains(&percent) {
+                return Err(bad(format!(
+                    "a hand-over at {percent} percent is not between {HANDOFF_PERCENT_MIN} and \
+                     {HANDOFF_PERCENT_MAX}"
                 )));
             }
         }

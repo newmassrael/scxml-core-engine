@@ -397,11 +397,48 @@ fn limits_are_positive_and_bounded() {
         (None, Some(86_401), false),
     ] {
         let mut connection = claude("main");
-        connection.limits = Limits { turns, seconds };
+        connection.limits = Limits {
+            turns,
+            seconds,
+            ..Limits::default()
+        };
         if ok {
             accepted(&connection);
         } else {
             assert!(refusal(&connection).contains("limit"));
+        }
+    }
+}
+
+#[test]
+fn what_a_person_says_of_a_models_context_is_bounded_too() {
+    for (handoffs, context_tokens, handoff_percent, ok) in [
+        (Some(0), None, None, true),
+        (Some(10), None, None, true),
+        (None, Some(4_096), None, true),
+        (None, Some(4_000_000), Some(10), true),
+        (None, None, Some(95), true),
+        (Some(11), None, None, false),
+        (None, Some(4_095), None, false),
+        (None, Some(4_000_001), None, false),
+        (None, None, Some(9), false),
+        (None, None, Some(96), false),
+    ] {
+        let mut connection = claude("main");
+        connection.limits = Limits {
+            handoffs,
+            context_tokens,
+            handoff_percent,
+            ..Limits::default()
+        };
+        if ok {
+            accepted(&connection);
+        } else {
+            let said = refusal(&connection);
+            assert!(
+                said.contains("hand-over") || said.contains("context"),
+                "{said}"
+            );
         }
     }
 }

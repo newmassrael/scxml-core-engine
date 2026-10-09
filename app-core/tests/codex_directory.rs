@@ -145,6 +145,7 @@ fn codex_connection(auth: AuthSource) -> Connection {
         limits: Limits {
             turns: Some(12),
             seconds: Some(900),
+            ..Limits::default()
         },
     }
 }

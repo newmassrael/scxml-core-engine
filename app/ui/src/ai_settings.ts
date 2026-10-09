@@ -32,6 +32,7 @@ import { BILLING_WORDS, NOT_USED_WORDS, SIGN_IN_WORDS, programChoice } from "./a
 import type { Api, ConnectionRef } from "./api";
 import { CodexSection } from "./codex_settings";
 import { ServerSection } from "./server_settings";
+import { NO_LIMITS } from "./contract";
 import type {
   Candidate,
   CodexStatus,
@@ -370,7 +371,7 @@ export class AiSettings {
       auth: "official-login",
       server_url: null,
       // What a person set outside this screen is theirs: saving a model does not drop it.
-      limits: kept?.connection.limits ?? { turns: null, seconds: null },
+      limits: kept?.connection.limits ?? NO_LIMITS,
     };
   }
 

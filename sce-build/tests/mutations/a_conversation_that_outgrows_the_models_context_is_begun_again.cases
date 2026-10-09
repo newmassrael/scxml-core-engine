@@ -10,6 +10,11 @@
 # model would have to write with no room left. Each case below takes one part of that away and must
 # make a test of `app-core/tests/local.rs` or the unit tests of `app-core/src/local.rs` red.
 #
+# When to begin again is the connection's to say, not the run's: a person who knows the model gives
+# its context in tokens and how full it may be, and the run begins again before the server has to
+# refuse. The cases from "a connection that said nothing of its context" on take that away part
+# by part: in the run, in the way the connection reaches it, and in what the store accepts.
+#
 # ⚠ A mutated tree is built under `-D warnings`, so every case keeps each binding it had in
 # use: a mutation that stops reading one is an unused-variable ERROR, the tree does not
 # compile, and the verdict is INCONCLUSIVE.
@@ -17,9 +22,9 @@
 # Anchors are literal slices of the source; an edit that moves one is reported INCONCLUSIVE with
 # the anchor quoted, never as a pass.
 
-mutation_tests -p sce-app-core --features cli --lib --test local
-mutation_targets app-core/src/local.rs
-mutation_oracles app-core/tests/local.rs
+mutation_tests -p sce-app-core --features cli --lib --test local --test connections --test connection_directory
+mutation_targets app-core/src/local.rs app-core/src/directory.rs app-core/src/connection.rs
+mutation_oracles app-core/tests/local.rs app-core/tests/connections.rs app-core/tests/connection_directory.rs
 
 mutation_case "a refusal about the context is taken for any other refusal" <<'PY'
 edit("app-core/src/local.rs",
@@ -35,8 +40,8 @@ PY
 
 mutation_case "the conversation begun again keeps its whole history" <<'PY'
 edit("app-core/src/local.rs",
-     "                    messages = vec![\n                        json!({\"role\": \"system\", \"content\": system}),\n                        json!({\"role\": \"user\", \"content\": format!(\"{}\\n\\n{handoff}\", prompt(job))}),\n                    ];",
-     "                    messages.push(json!({\"role\": \"user\", \"content\": handoff.clone()}));")
+     "        *messages = vec![\n            json!({\"role\": \"system\", \"content\": system}),\n            json!({\"role\": \"user\", \"content\": format!(\"{}\\n\\n{handoff}\", prompt(job))}),\n        ];",
+     "        let _ = (job, system);\n        messages.push(json!({\"role\": \"user\", \"content\": handoff.clone()}));")
 PY
 
 mutation_case "the requirement list is left out of what is handed over" <<'PY'
@@ -61,4 +66,82 @@ mutation_case "a design that was cut is not said to be" <<'PY'
 edit("app-core/src/local.rs",
      "    format!(\n        \"{head}\\n[cut here: {} more characters]\",\n        text.chars().count() - max\n    )\n}",
      "    head\n}")
+PY
+
+mutation_case "a connection that said nothing of its context is begun again anyway" <<'PY'
+edit("app-core/src/local.rs",
+     "            _ => false,\n        }\n    }\n\n    /// Put `messages`",
+     "            _ => true,\n        }\n    }\n\n    /// Put `messages`")
+PY
+
+mutation_case "the percent a connection allows is taken for a fixed one" <<'PY'
+edit("app-core/src/local.rs",
+     "                used * 100 >= u64::from(context) * u64::from(self.config.handoff_percent)",
+     "                used * 100 >= u64::from(context) * 80 + 0 * u64::from(self.config.handoff_percent)")
+PY
+
+mutation_case "a conversation exactly as full as allowed is not begun again" <<'PY'
+edit("app-core/src/local.rs",
+     "                used * 100 >= u64::from(context) * u64::from(self.config.handoff_percent)",
+     "                used * 100 > u64::from(context) * u64::from(self.config.handoff_percent)")
+PY
+
+mutation_case "a conversation begun early keeps the tries it had spent" <<'PY'
+edit("app-core/src/local.rs",
+     "                self.begin_again(job, &system, &mut messages, listed.as_ref(), true);\n                (repairs, unread, prompt_tokens) = (0, 0, None);",
+     "                self.begin_again(job, &system, &mut messages, listed.as_ref(), true);\n                prompt_tokens = None;")
+PY
+
+mutation_case "a conversation begun after a refusal keeps the tries it had spent" <<'PY'
+edit("app-core/src/local.rs",
+     "                    self.begin_again(job, &system, &mut messages, listed.as_ref(), false);\n                    (repairs, unread, prompt_tokens) = (0, 0, None);",
+     "                    self.begin_again(job, &system, &mut messages, listed.as_ref(), false);\n                    prompt_tokens = None;")
+PY
+
+mutation_case "a conversation begun early is judged by the size of the one before it" <<'PY'
+edit("app-core/src/local.rs",
+     "                self.begin_again(job, &system, &mut messages, listed.as_ref(), true);\n                (repairs, unread, prompt_tokens) = (0, 0, None);",
+     "                self.begin_again(job, &system, &mut messages, listed.as_ref(), true);\n                (repairs, unread) = (0, 0);")
+PY
+
+mutation_case "the context a connection gives does not reach the run" <<'PY'
+edit("app-core/src/directory.rs",
+     "            context_tokens: pin.limits.context_tokens,",
+     "            context_tokens: None,")
+PY
+
+mutation_case "the percent a connection gives does not reach the run" <<'PY'
+edit("app-core/src/directory.rs",
+     "                .handoff_percent\n                .unwrap_or(defaults.handoff_percent),",
+     "                .handoff_percent\n                .map(|_| defaults.handoff_percent)\n                .unwrap_or(defaults.handoff_percent),")
+PY
+
+mutation_case "the hand-overs a connection allows do not reach the run" <<'PY'
+edit("app-core/src/directory.rs",
+     "            handoffs: pin.limits.handoffs.unwrap_or(defaults.handoffs),",
+     "            handoffs: pin.limits.handoffs.map(|_| defaults.handoffs).unwrap_or(defaults.handoffs),")
+PY
+
+mutation_case "a limit of hand-overs alone is taken for a connection without limits" <<'PY'
+edit("app-core/src/connection.rs",
+     "            && self.handoffs.is_none()\n",
+     "")
+PY
+
+mutation_case "a context of any size is accepted" <<'PY'
+edit("app-core/src/connection.rs",
+     "            if !(CONTEXT_TOKENS_MIN..=CONTEXT_TOKENS_MAX).contains(&tokens) {",
+     "            if false && !(CONTEXT_TOKENS_MIN..=CONTEXT_TOKENS_MAX).contains(&tokens) {")
+PY
+
+mutation_case "a hand-over at any percent is accepted" <<'PY'
+edit("app-core/src/connection.rs",
+     "            if !(HANDOFF_PERCENT_MIN..=HANDOFF_PERCENT_MAX).contains(&percent) {",
+     "            if false && !(HANDOFF_PERCENT_MIN..=HANDOFF_PERCENT_MAX).contains(&percent) {")
+PY
+
+mutation_case "any number of hand-overs is accepted" <<'PY'
+edit("app-core/src/connection.rs",
+     "            if handoffs > HANDOFFS_MAX {",
+     "            if false && handoffs > HANDOFFS_MAX {")
 PY

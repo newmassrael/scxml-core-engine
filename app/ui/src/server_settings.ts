@@ -17,6 +17,7 @@
 // only waits.
 
 import { answeringOf, localConnection, LOCAL_CONNECTION_ID, type Asked } from "./ai_settings_model";
+import { NO_LIMITS } from "./contract";
 import type { ConnectionListing, Connection, Described, ServerStatus } from "./contract";
 import { h } from "./dom";
 import type { Child } from "./dom";
@@ -103,7 +104,7 @@ export class ServerSection {
       auth: "none",
       server_url: this.address(),
       // What a person set outside this screen is theirs: saving a model does not drop it.
-      limits: kept?.connection.limits ?? { turns: null, seconds: null },
+      limits: kept?.connection.limits ?? NO_LIMITS,
     };
   }
 

@@ -213,6 +213,7 @@ fn claude() -> Connection {
         limits: Limits {
             turns: Some(40),
             seconds: Some(600),
+            ..Limits::default()
         },
     }
 }
@@ -375,6 +376,7 @@ fn local() -> Connection {
         limits: Limits {
             turns: Some(30),
             seconds: Some(900),
+            ..Limits::default()
         },
     }
 }
@@ -407,6 +409,30 @@ fn what_a_connection_does_not_limit_is_left_to_the_defaults_of_a_model_server_ru
     let defaults = LocalConfig::for_model("qwen3-coder:30b");
     assert_eq!(server.config().max_turns, defaults.max_turns);
     assert_eq!(server.config().timeout, defaults.timeout);
+    // Nothing is assumed of a model nobody described: the context is not known, and the
+    // conversation is begun again only when the server refuses it.
+    assert_eq!(server.config().handoffs, defaults.handoffs);
+    assert_eq!(server.config().handoff_percent, defaults.handoff_percent);
+    assert_eq!(server.config().context_tokens, None);
+}
+
+#[test]
+fn what_a_connection_says_of_the_models_context_is_what_decides_when_to_begin_again() {
+    let rig = Rig::new("dir-local-context", SUBSCRIPTION);
+    let mut described = local();
+    described.limits = Limits {
+        handoffs: Some(4),
+        context_tokens: Some(131_072),
+        handoff_percent: Some(70),
+        ..Limits::default()
+    };
+    let pin = rig.pin(&described);
+
+    let server = rig.directory(Policy::shipped()).local_for(&pin).unwrap();
+
+    assert_eq!(server.config().handoffs, 4);
+    assert_eq!(server.config().context_tokens, Some(131_072));
+    assert_eq!(server.config().handoff_percent, 70);
 }
 
 #[test]
