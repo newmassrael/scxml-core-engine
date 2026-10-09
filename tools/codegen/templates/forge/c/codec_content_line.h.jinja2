@@ -14,7 +14,15 @@
     escapes, quoting — is the runtime's (`sce_forge_cl_*`); this spells none of
     it. #}
 {% macro read_value(e) %}
-{% if e.kind == "string" and e.is_list %}
+{% if e.separator %}
+{#- A list of values on one line: the rows of the holder are `max_size` apart,
+    and a record keeps its own holder in `rec`. #}
+{% set h = "rec->" if e.is_records else "v->" %}
+{% set n = e.value_member if e.is_records else e.name %}
+{{ step("sce_forge_cl_property_read_strings(&line, '" ~ e.separator ~ "', " ~ e.max_values ~ "U, " ~ e.max_size ~ "U, " ~ ("true" if e.text else "false") ~ ", (char *)" ~ h ~ n ~ ", " ~ h ~ n ~ "_len, &" ~ h ~ n ~ "_count)", "            ") }}
+{% elif e.is_records %}
+{{ step("sce_forge_cl_property_read_string(&line, " ~ e.max_size ~ "U, " ~ ("true" if e.text else "false") ~ ", rec->" ~ e.value_member ~ ", &rec->" ~ e.value_member ~ "_len)", "            ") }}
+{% elif e.kind == "string" and e.is_list %}
 {{ step("sce_forge_cl_property_read_string(&line, " ~ e.max_size ~ "U, " ~ ("true" if e.text else "false") ~ ", v->" ~ e.name ~ "[v->" ~ e.name ~ "_count], &v->" ~ e.name ~ "_len[v->" ~ e.name ~ "_count])", "            ") }}
             v->{{ e.name }}_count++;
 {% elif e.kind == "string" %}
@@ -32,7 +40,9 @@
 {#- The write of one property's value, its name and parameters already
     written, at indent `i`; `element` is the value's holder. #}
 {% macro write_value(e, i, element, length) %}
-{% if e.kind == "string" %}
+{% if e.separator %}
+{{ step("sce_forge_cl_writer_strings(&out, (const char *)" ~ element ~ ", " ~ length ~ ", " ~ element ~ "_count, '" ~ e.separator ~ "', " ~ ("true" if e.text else "false") ~ ", " ~ e.max_size ~ "U, " ~ e.max_values ~ "U)", i) }}
+{% elif e.kind == "string" %}
 {{ step("sce_forge_cl_writer_string(&out, " ~ element ~ ", " ~ length ~ ", " ~ ("true" if e.text else "false") ~ ", " ~ e.max_size ~ "U)", i) }}
 {% elif e.kind == "bool" %}
 {{ step("sce_forge_cl_writer_bool(&out, " ~ element ~ ")", i) }}
@@ -42,14 +52,16 @@
 {{ step("sce_forge_cl_writer_int(&out, (int64_t)" ~ element ~ ")", i) }}
 {% endif %}
 {% endmacro %}
-{#- The parameters of a property, each written when present, at indent `i`. #}
-{% macro write_params(e, i) %}
+{#- The parameters of a property, each written when present, at indent `i`, read
+    from `holder`: `self->` for the codec itself, `rec->` for the record of one
+    line. #}
+{% macro write_params(e, i, holder) %}
 {% for p in e.params %}
 {% if p.required %}
-{{ step("sce_forge_cl_writer_param(&out, \"" ~ p.param ~ "\", self->" ~ p.name ~ ", self->" ~ p.name ~ "_len, " ~ p.max_size ~ "U)", i) }}
+{{ step("sce_forge_cl_writer_param(&out, \"" ~ p.param ~ "\", " ~ holder ~ p.name ~ ", " ~ holder ~ p.name ~ "_len, " ~ p.max_size ~ "U)", i) }}
 {% else %}
-{{ i }}if (self->{{ p.name }}_present) {
-{{ step("sce_forge_cl_writer_param(&out, \"" ~ p.param ~ "\", self->" ~ p.name ~ ", self->" ~ p.name ~ "_len, " ~ p.max_size ~ "U)", i ~ "    ") }}
+{{ i }}if ({{ holder }}{{ p.name }}_present) {
+{{ step("sce_forge_cl_writer_param(&out, \"" ~ p.param ~ "\", " ~ holder ~ p.name ~ ", " ~ holder ~ p.name ~ "_len, " ~ p.max_size ~ "U)", i ~ "    ") }}
 {{ i }}}
 {% endif %}
 {% endfor %}
@@ -93,10 +105,43 @@ extern "C" {
  * optional entry or parameter is present when `<name>_present` is true. A
  * zero-initialised value is the infallible starting value: every entry at its
  * zero, every optional one absent. */
+{% for e in entries if e.is_records %}
+/* One line of `{{ e.property }}` (docs/adr/0014): the parameters it carries and its
+ * {% if e.separator %}list of values, cut at `{{ e.separator }}`{% else %}value{% endif %}. A parameter that may be absent is present when
+ * `<name>_present` is true. */
+typedef struct {
+{% for p in e.params %}
+    /* Parameter `{{ p.param }}`{% if p.required %}, required{% endif %}. */
+    char {{ p.name }}[{{ p.max_size }}];
+    size_t {{ p.name }}_len;
+{% if not p.required %}
+    bool {{ p.name }}_present;
+{% endif %}
+{% endfor %}
+{% if e.separator %}
+    /* The values of the line, at most {{ e.max_values }}. */
+    char {{ e.value_member }}[{{ e.max_values }}][{{ e.max_size }}];
+    size_t {{ e.value_member }}_len[{{ e.max_values }}];
+    size_t {{ e.value_member }}_count;
+{% else %}
+    /* The value of the line. */
+    char {{ e.value_member }}[{{ e.max_size }}];
+    size_t {{ e.value_member }}_len;
+{% endif %}
+} {{ e.record_type }};
+
+{% endfor %}
 typedef struct {
 {% for e in entries %}
-    /* Property `{{ e.property }}`{% if e.is_list %}, up to {{ e.max_count }} lines{% elif e.required %}, required{% endif %}. */
-{% if e.kind == "string" and e.is_list %}
+    /* Property `{{ e.property }}`{% if e.is_records %}, up to {{ e.max_count }} lines, each a record{% elif e.is_list %}, up to {{ e.max_count }} lines{% elif e.is_values %}, a list of at most {{ e.max_values }} values{% endif %}{% if e.required %}, required{% endif %}. */
+{% if e.is_records %}
+    {{ e.record_type }} {{ e.name }}[{{ e.max_count }}];
+    size_t {{ e.name }}_count;
+{% elif e.is_values %}
+    char {{ e.name }}[{{ e.max_values }}][{{ e.max_size }}];
+    size_t {{ e.name }}_len[{{ e.max_values }}];
+    size_t {{ e.name }}_count;
+{% elif e.kind == "string" and e.is_list %}
     char {{ e.name }}[{{ e.max_count }}][{{ e.max_size }}];
     size_t {{ e.name }}_len[{{ e.max_count }}];
     size_t {{ e.name }}_count;
@@ -106,9 +151,10 @@ typedef struct {
 {% else %}
     {{ e.value_type }} {{ e.name }};
 {% endif %}
-{% if not e.required and not e.is_list %}
+{% if not e.required and not e.is_list and not e.is_records and not e.is_values %}
     bool {{ e.name }}_present;
 {% endif %}
+{% if not e.is_records %}
 {% for p in e.params %}
     /* Parameter `{{ p.param }}` of `{{ e.property }}`{% if p.required %}, required{% endif %}. */
     char {{ p.name }}[{{ p.max_size }}];
@@ -117,6 +163,7 @@ typedef struct {
     bool {{ p.name }}_present;
 {% endif %}
 {% endfor %}
+{% endif %}
 {% endfor %}
 } {{ c_struct_typedef }};
 
@@ -133,12 +180,14 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
     int64_t raw_i = 0;
     sce_forge_codec_status_t s;
 {% for e in entries %}
-{% if not e.is_list %}
+{% if not (e.is_list or e.is_records) %}
     bool seen_{{ e.name }} = false;
 {% endif %}
+{% if not e.is_records %}
 {% for p in e.params %}
     bool seen_{{ p.name }} = false;
 {% endfor %}
+{% endif %}
 {% endfor %}
     (void)raw_u;
     (void)raw_i;
@@ -160,7 +209,7 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
         }
 {% for e in entries %}
         {% if not loop.first %}else {% endif %}if (sce_forge_cl_property_is(&line, "{{ e.property }}")) {
-{% if e.is_list %}
+{% if e.is_list or e.is_records %}
             if (v->{{ e.name }}_count >= {{ e.max_count }}U) {
                 return SCE_FORGE_CODEC_LINE_TOO_MANY;
             }
@@ -169,6 +218,16 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
                 return SCE_FORGE_CODEC_LINE_TOO_MANY;
             }
 {% endif %}
+{% if e.is_records %}
+{#- The parameters of this line live in the record of the line, and the line is
+    judged on them before its value is read. #}
+            {
+                {{ e.record_type }} *rec = &v->{{ e.name }}[v->{{ e.name }}_count];
+{% for p in e.params %}
+                bool seen_{{ p.name }} = false;
+{% endfor %}
+{% endif %}
+{% set holder = "rec->" if e.is_records else "v->" %}
 {% if e.params %}
             for (;;) {
                 bool more = false;
@@ -181,18 +240,28 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
                     if (seen_{{ p.name }}) {
                         return SCE_FORGE_CODEC_LINE_TOO_MANY;
                     }
-{{ step("sce_forge_cl_property_read_param_string(&line, " ~ p.max_size ~ "U, v->" ~ p.name ~ ", &v->" ~ p.name ~ "_len)", "                    ") }}
+{{ step("sce_forge_cl_property_read_param_string(&line, " ~ p.max_size ~ "U, " ~ holder ~ p.name ~ ", &" ~ holder ~ p.name ~ "_len)", "                    ") }}
                     seen_{{ p.name }} = true;
 {% if not p.required %}
-                    v->{{ p.name }}_present = true;
+                    {{ holder }}{{ p.name }}_present = true;
 {% endif %}
                 }
 {% endfor %}
             }
 {% endif %}
-{{ read_value(e) }}{% if not e.is_list %}
+{% if e.is_records %}
+{% for p in e.params if p.required %}
+                if (!seen_{{ p.name }}) {
+                    return SCE_FORGE_CODEC_LINE_REQUIRED_MISSING;
+                }
+{% endfor %}
+{% endif %}
+{{ read_value(e) }}{% if e.is_records %}
+                v->{{ e.name }}_count++;
+            }
+{% elif not e.is_list %}
             seen_{{ e.name }} = true;
-{% if not e.required %}
+{% if not e.required and not e.is_values %}
             v->{{ e.name }}_present = true;
 {% endif %}
 {% endif %}
@@ -201,15 +270,21 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
     }
 {% for e in entries %}
 {% if e.required %}
+{% if e.is_list or e.is_records %}
+    if (v->{{ e.name }}_count == 0U) {
+{% else %}
     if (!seen_{{ e.name }}) {
+{% endif %}
         return SCE_FORGE_CODEC_LINE_REQUIRED_MISSING;
     }
 {% endif %}
+{% if not e.is_records %}
 {% for p in e.params if p.required %}
     if (!seen_{{ p.name }}) {
         return SCE_FORGE_CODEC_LINE_REQUIRED_MISSING;
     }
 {% endfor %}
+{% endif %}
 {% endfor %}
     /* Only a component that decoded whole moves the cursor. */
     if (!sce_forge_cursor_advance(&c, sce_forge_cl_reader_consumed(&reader))) {
@@ -227,10 +302,31 @@ static inline sce_forge_codec_status_t {{ c_encode_func }}(const {{ c_struct_typ
     sce_forge_codec_status_t s;
 {{ step("sce_forge_cl_writer_begin(&out)", "    ") }}
 {% for e in entries %}
-{% if e.is_list %}
+{% if e.is_records %}
     if (self->{{ e.name }}_count > {{ e.max_count }}U) {
         return SCE_FORGE_CODEC_LINE_TOO_MANY;
     }
+{% if e.required %}
+    if (self->{{ e.name }}_count == 0U) {
+        return SCE_FORGE_CODEC_LINE_REQUIRED_MISSING;
+    }
+{% endif %}
+    {
+        size_t i;
+        for (i = 0; i < self->{{ e.name }}_count; ++i) {
+            const {{ e.record_type }} *rec = &self->{{ e.name }}[i];
+{{ step("sce_forge_cl_writer_property(&out, \"" ~ e.property ~ "\")", "            ") }}
+{{ write_params(e, "            ", "rec->") }}{{ write_value(e, "            ", "rec->" ~ e.value_member, "rec->" ~ e.value_member ~ "_len") }}        }
+    }
+{% elif e.is_list %}
+    if (self->{{ e.name }}_count > {{ e.max_count }}U) {
+        return SCE_FORGE_CODEC_LINE_TOO_MANY;
+    }
+{% if e.required %}
+    if (self->{{ e.name }}_count == 0U) {
+        return SCE_FORGE_CODEC_LINE_REQUIRED_MISSING;
+    }
+{% endif %}
     {
         size_t i;
         for (i = 0; i < self->{{ e.name }}_count; ++i) {
@@ -240,11 +336,11 @@ static inline sce_forge_codec_status_t {{ c_encode_func }}(const {{ c_struct_typ
 {% elif e.required %}
     {
 {{ step("sce_forge_cl_writer_property(&out, \"" ~ e.property ~ "\")", "        ") }}
-{{ write_params(e, "        ") }}{{ write_value(e, "        ", "self->" ~ e.name, "self->" ~ e.name ~ "_len") }}    }
+{{ write_params(e, "        ", "self->") }}{{ write_value(e, "        ", "self->" ~ e.name, "self->" ~ e.name ~ "_len") }}    }
 {% else %}
-    if (self->{{ e.name }}_present) {
+    if ({{ ("self->" ~ e.name ~ "_count > 0U") if e.is_values else ("self->" ~ e.name ~ "_present") }}) {
 {{ step("sce_forge_cl_writer_property(&out, \"" ~ e.property ~ "\")", "        ") }}
-{{ write_params(e, "        ") }}{{ write_value(e, "        ", "self->" ~ e.name, "self->" ~ e.name ~ "_len") }}    }{% if e.optional_params %} else if ({% for p in e.optional_params %}{% if not loop.first %} || {% endif %}self->{{ p.name }}_present{% endfor %}) {
+{{ write_params(e, "        ", "self->") }}{{ write_value(e, "        ", "self->" ~ e.name, "self->" ~ e.name ~ "_len") }}    }{% if e.optional_params %} else if ({% for p in e.optional_params %}{% if not loop.first %} || {% endif %}self->{{ p.name }}_present{% endfor %}) {
         /* A parameter with no value of its property has no line to stand on. */
         return SCE_FORGE_CODEC_LINE_REQUIRED_MISSING;
     }{% endif %}

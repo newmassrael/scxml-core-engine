@@ -529,6 +529,68 @@ static inline sce_forge_codec_status_t sce_forge_cl_property_read_string(sce_for
     return SCE_FORGE_CODEC_OK;
 }
 
+/* Read the value as a list of strings cut at `separator` (docs/adr/0014): at
+ * most `max_values` of them, each at most `max_size` bytes. Part `i` is written
+ * to `out + i * max_size`, its length to `lens[i]`, and the number of parts to
+ * `*count`. The value is cut before it is unescaped: with `text` a separator
+ * that a backslash precedes is part of the value, and with anything else every
+ * separator cuts. The parts are judged left to right and the first failure is
+ * the line's: a part past `max_values` is SCE_FORGE_CODEC_LINE_TOO_MANY, even
+ * one that is empty or too long; an empty part is SCE_FORGE_CODEC_LINE_BAD_VALUE. */
+static inline sce_forge_codec_status_t sce_forge_cl_property_read_strings(sce_forge_cl_property_t *p, char separator,
+                                                                          size_t max_values, size_t max_size, bool text,
+                                                                          char *out, size_t *lens, size_t *count) {
+    size_t n = 0;
+    size_t parts = 0;
+    sce_forge_codec_status_t s = sce_forge_cl_property_begin_value(p);
+    *count = 0;
+    if (s != SCE_FORGE_CODEC_OK) {
+        return s;
+    }
+    for (;;) {
+        int value;
+        const int b = sce_forge_cl_scan_bump(&p->scan);
+        if (b < 0 || b == (int)(unsigned char)separator) {
+            if (n == 0) {
+                return SCE_FORGE_CODEC_LINE_BAD_VALUE;
+            }
+            if (!sce_forge_is_valid_utf8((const uint8_t *)(out + parts * max_size), n)) {
+                return SCE_FORGE_CODEC_LINE_BAD_VALUE;
+            }
+            lens[parts] = n;
+            ++parts;
+            *count = parts;
+            n = 0;
+            if (b < 0) {
+                return SCE_FORGE_CODEC_OK;
+            }
+            /* A separator opens another part, which may not pass the bound. */
+            if (parts >= max_values) {
+                return SCE_FORGE_CODEC_LINE_TOO_MANY;
+            }
+            continue;
+        }
+        value = b;
+        if (text && b == '\\') {
+            const int e = sce_forge_cl_scan_bump(&p->scan);
+            if (e == '\\' || e == ';' || e == ',') {
+                value = e;
+            } else if (e == 'n' || e == 'N') {
+                value = '\n';
+            } else {
+                return SCE_FORGE_CODEC_LINE_BAD_ESCAPE;
+            }
+        } else if (sce_forge_cl_is_control(b)) {
+            return SCE_FORGE_CODEC_LINE_BAD_VALUE;
+        }
+        if (n == max_size) {
+            return SCE_FORGE_CODEC_LINE_TOO_LONG;
+        }
+        out[parts * max_size + n] = (char)value;
+        ++n;
+    }
+}
+
 /* The decimal the rest of the value is — an optional sign, digits — as
  * (`*negative`, `*magnitude`). A `-` is read only when `allow_minus`, so an
  * unsigned type refuses `-0` as well. */
@@ -840,6 +902,66 @@ static inline sce_forge_codec_status_t sce_forge_cl_writer_string(sce_forge_cl_w
     s = sce_forge_cl_writer_value_units(w, value, len, text);
     if (s != SCE_FORGE_CODEC_OK) {
         return s;
+    }
+    return sce_forge_cl_writer_end_line(w);
+}
+
+/* Write `:<value>{separator}<value>…` and end the line (docs/adr/0014). Value
+ * `i` is `values + i * max_size`, `lens[i]` bytes. No values is
+ * SCE_FORGE_CODEC_LINE_REQUIRED_MISSING and more than `max_values` is
+ * SCE_FORGE_CODEC_LINE_TOO_MANY. A value past `max_size` is
+ * SCE_FORGE_CODEC_LINE_TOO_LONG; one with a control character (but a TEXT's line
+ * feed), invalid UTF-8, an empty one, and one that is not a TEXT and holds the
+ * separator are SCE_FORGE_CODEC_LINE_BAD_VALUE, because a reader would cut or
+ * refuse them. Every value is held before any of the line is written. */
+static inline sce_forge_codec_status_t sce_forge_cl_writer_strings(sce_forge_cl_writer_t *w, const char *values,
+                                                                   const size_t *lens, size_t count, char separator,
+                                                                   bool text, size_t max_size, size_t max_values) {
+    size_t i;
+    size_t k;
+    sce_forge_codec_status_t s;
+    if (count == 0) {
+        return SCE_FORGE_CODEC_LINE_REQUIRED_MISSING;
+    }
+    if (count > max_values) {
+        return SCE_FORGE_CODEC_LINE_TOO_MANY;
+    }
+    for (i = 0; i < count; ++i) {
+        const char *value = values + i * max_size;
+        if (lens[i] > max_size) {
+            return SCE_FORGE_CODEC_LINE_TOO_LONG;
+        }
+        if (lens[i] == 0) {
+            return SCE_FORGE_CODEC_LINE_BAD_VALUE;
+        }
+        for (k = 0; k < lens[i]; ++k) {
+            const int b = (unsigned char)value[k];
+            if (sce_forge_cl_is_control(b) && !(text && b == '\n')) {
+                return SCE_FORGE_CODEC_LINE_BAD_VALUE;
+            }
+            if (!text && value[k] == separator) {
+                return SCE_FORGE_CODEC_LINE_BAD_VALUE;
+            }
+        }
+        if (!sce_forge_is_valid_utf8((const uint8_t *)value, lens[i])) {
+            return SCE_FORGE_CODEC_LINE_BAD_VALUE;
+        }
+    }
+    s = sce_forge_cl_writer_unit_char(w, ':');
+    if (s != SCE_FORGE_CODEC_OK) {
+        return s;
+    }
+    for (i = 0; i < count; ++i) {
+        if (i > 0) {
+            s = sce_forge_cl_writer_unit_char(w, separator);
+            if (s != SCE_FORGE_CODEC_OK) {
+                return s;
+            }
+        }
+        s = sce_forge_cl_writer_value_units(w, values + i * max_size, lens[i], text);
+        if (s != SCE_FORGE_CODEC_OK) {
+            return s;
+        }
     }
     return sce_forge_cl_writer_end_line(w);
 }

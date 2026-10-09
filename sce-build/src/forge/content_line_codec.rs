@@ -40,35 +40,15 @@ pub fn lowers(lang: Language) -> bool {
     )
 }
 
-/// Whether `lang` generates the line record of a repeated property that declares
-/// a parameter, and the list of values a `sce:separator` makes of a line
-/// (docs/adr/0014). Each backend turns this on in the commit that generates it,
-/// against the conformance vectors: a codec that compiled and dropped a parameter
-/// would be the silent loss the decision exists to end.
-pub fn lowers_line_records(lang: Language) -> bool {
-    match lang {
-        Language::Python | Language::Go | Language::Kotlin | Language::Rust | Language::Cpp => true,
-        Language::C11 => false,
-    }
-}
-
 /// Why `lang` does not generate the content-line codec `m`, or `None` when it
-/// does.
+/// does. Every backend generates the line record of a repeated property that
+/// declares a parameter and the list of values a `sce:separator` makes of a line
+/// (docs/adr/0014), each against the same conformance vectors, so the shape is
+/// no ground for refusing one.
 pub fn refusal(lang: Language, m: &CodecModel) -> Option<String> {
     if !lowers(lang) {
         return Some(format!(
             "codec '{}' is sce:encoding=\"content-line\", which has no {lang:?} generation yet",
-            m.name
-        ));
-    }
-    if m.content_line
-        .as_ref()
-        .is_some_and(|c| c.uses_line_records())
-        && !lowers_line_records(lang)
-    {
-        return Some(format!(
-            "codec '{}' reads a line of a repeated property as a record, or a line as a list \
-             of values (sce:separator), which has no {lang:?} generation yet (docs/adr/0014)",
             m.name
         ));
     }
@@ -437,8 +417,18 @@ fn render_c(
     // C11 runtime. Every string has its bound (`sce:max-size` is required of
     // one), so C11 refuses nothing the other backends admit.
     let mut entries = entries_context(&l, m, |_| "char".to_string(), |_| None);
+    let codec_snake = crate::filters::to_snake_case(m.name.clone());
     for entry in &mut entries {
         mark_optional_params(entry);
+        // A line record is a typedef of its own, named from the codec and the entry
+        // as the codec's own typedef is (`<codec>_t`).
+        if entry["is_records"].as_bool() == Some(true) {
+            entry["record_type"] = format!(
+                "{codec_snake}_{}_line_t",
+                entry["name"].as_str().unwrap_or_default()
+            )
+            .into();
+        }
         // The bounds of an integer entry's read, as C literals: a 64-bit literal
         // needs its width said, and the smallest int64 has no literal at all.
         let (min, max) = (entry["min"].as_i64(), entry["max"].as_u64());
@@ -488,7 +478,12 @@ fn max_encoded_bytes(m: &CodecModel) -> u64 {
         }
         let value = match &entry.sce_type {
             SceType::String => {
-                u64::from(entry.max_size.unwrap_or(0)) * if entry.text { 2 } else { 1 }
+                // A line that holds a list carries every value at its bound and a
+                // separator between each (docs/adr/0014); the separator is not
+                // escaped, so it counts as one octet.
+                let values = u64::from(entry.max_values.unwrap_or(1));
+                u64::from(entry.max_size.unwrap_or(0)) * if entry.text { 2 } else { 1 } * values
+                    + (values - 1)
             }
             SceType::Bool => 5,
             _ => 20,

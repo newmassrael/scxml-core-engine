@@ -530,6 +530,144 @@ static void what_is_written_is_read_back(void) {
     }
 }
 
+/* A line holding a list of values (docs/adr/0014). */
+
+/* The property `V` of `value` read as a list: at most `max_values` parts of at
+ * most 8 bytes each, joined with `|` into `joined` so a case compares as text. */
+static sce_forge_codec_status_t list_of(const char *value, char separator, size_t max_values, bool text, char *joined,
+                                        size_t joined_size) {
+    char storage[256];
+    sce_forge_cl_reader_t reader;
+    sce_forge_cl_property_t line;
+    bool has = false;
+    char parts[4][8];
+    size_t lens[4];
+    size_t count = 0;
+    size_t i;
+    size_t at = 0;
+    sce_forge_codec_status_t s;
+    const int n = snprintf(storage, sizeof storage, "BEGIN:VEVENT\r\nV:%s\r\nEND:VEVENT\r\n", value);
+    (void)sce_forge_cl_reader_begin(&reader, (const uint8_t *)storage, (size_t)n, "VEVENT");
+    (void)sce_forge_cl_reader_next(&reader, &line, &has);
+    s = sce_forge_cl_property_read_strings(&line, separator, max_values, 8, text, (char *)parts, lens, &count);
+    joined[0] = '\0';
+    if (s != SCE_FORGE_CODEC_OK) {
+        return s;
+    }
+    for (i = 0; i < count && at + lens[i] + 2 < joined_size; ++i) {
+        if (i > 0) {
+            joined[at++] = '|';
+        }
+        memcpy(joined + at, parts[i], lens[i]);
+        at += lens[i];
+    }
+    joined[at] = '\0';
+    return SCE_FORGE_CODEC_OK;
+}
+
+static void a_list_is_cut_at_the_separator_before_it_is_unescaped(void) {
+    char got[64];
+    CHECK(list_of("a,b,c", ',', 4, false, got, sizeof got) == SCE_FORGE_CODEC_OK && strcmp(got, "a|b|c") == 0,
+          "a plain list");
+    CHECK(list_of("a\\,b,c", ',', 4, true, got, sizeof got) == SCE_FORGE_CODEC_OK && strcmp(got, "a,b|c") == 0,
+          "an escaped comma is a value's");
+    /* Without TEXT there is no escape: a backslash is a byte and every separator cuts. */
+    CHECK(list_of("a\\,b", ',', 4, false, got, sizeof got) == SCE_FORGE_CODEC_OK && strcmp(got, "a\\|b") == 0,
+          "no escape without TEXT");
+    CHECK(list_of("a;b,c", ',', 4, true, got, sizeof got) == SCE_FORGE_CODEC_OK && strcmp(got, "a;b|c") == 0,
+          "a semicolon is a value's");
+    CHECK(list_of("1;2", ';', 2, false, got, sizeof got) == SCE_FORGE_CODEC_OK && strcmp(got, "1|2") == 0,
+          "a list cut at a semicolon");
+    CHECK(list_of("a,b\r\n c", ',', 4, false, got, sizeof got) == SCE_FORGE_CODEC_OK && strcmp(got, "a|bc") == 0,
+          "a fold inside a part");
+}
+
+static void a_list_is_refused_at_its_first_failing_part(void) {
+    char got[64];
+    CHECK(list_of("", ',', 3, true, got, sizeof got) == SCE_FORGE_CODEC_LINE_BAD_VALUE, "no value");
+    CHECK(list_of("a,,b", ',', 3, true, got, sizeof got) == SCE_FORGE_CODEC_LINE_BAD_VALUE, "an empty part between");
+    CHECK(list_of(",a", ',', 3, true, got, sizeof got) == SCE_FORGE_CODEC_LINE_BAD_VALUE, "an empty first part");
+    CHECK(list_of("a,", ',', 3, true, got, sizeof got) == SCE_FORGE_CODEC_LINE_BAD_VALUE, "an empty last part");
+    CHECK(list_of("a,b,c,d", ',', 3, true, got, sizeof got) == SCE_FORGE_CODEC_LINE_TOO_MANY, "a fourth part");
+    /* A part past the bound is too many, whatever the part is. */
+    CHECK(list_of("a,b,c,", ',', 3, true, got, sizeof got) == SCE_FORGE_CODEC_LINE_TOO_MANY, "an empty fourth part");
+    CHECK(list_of("a,b,c,xxxxxxxxxxxxxxx", ',', 3, true, got, sizeof got) == SCE_FORGE_CODEC_LINE_TOO_MANY,
+          "a long fourth part");
+    CHECK(list_of("xxxxxxxxxxxxxxx,,", ',', 3, true, got, sizeof got) == SCE_FORGE_CODEC_LINE_TOO_LONG,
+          "too long before empty");
+    CHECK(list_of(",,xxxxxxxxxxxxxxx", ',', 3, true, got, sizeof got) == SCE_FORGE_CODEC_LINE_BAD_VALUE,
+          "empty before too long");
+    CHECK(list_of("a,b\\x", ',', 3, true, got, sizeof got) == SCE_FORGE_CODEC_LINE_BAD_ESCAPE, "a bad escape");
+    CHECK(list_of("a,b\\", ',', 3, true, got, sizeof got) == SCE_FORGE_CODEC_LINE_BAD_ESCAPE, "a trailing backslash");
+}
+
+/* `count` values of at most 8 bytes, as the rows `writer_strings` reads. */
+static sce_forge_codec_status_t put_list(sce_forge_cl_writer_t *w, const char *const *items, size_t count,
+                                         char separator, bool text, size_t max_values) {
+    char rows[4][8];
+    size_t lens[4];
+    size_t i;
+    memset(rows, 0, sizeof rows);
+    for (i = 0; i < count && i < 4; ++i) {
+        lens[i] = strlen(items[i]);
+        memcpy(rows[i], items[i], lens[i] > 8 ? 8 : lens[i]);
+    }
+    return sce_forge_cl_writer_strings(w, (const char *)rows, lens, count, separator, text, 8, max_values);
+}
+
+static void a_list_is_written_with_its_separator_and_held_before_it_is_written(void) {
+    static const char want[] = "BEGIN:VEVENT\r\nC:a\\,b,c\\;d,e\\\\f\r\nG:1;2\r\nEND:VEVENT\r\n";
+    static const char *const text_list[] = {"a,b", "c;d", "e\\f"};
+    static const char *const geo[] = {"1", "2"};
+    written_t out;
+    size_t n;
+    size_t before;
+    char rows[4][8];
+    size_t lens[4] = {1, 9, 1, 1};
+    written_init(&out);
+    CHECK(sce_forge_cl_writer_property(&out.w, "C") == SCE_FORGE_CODEC_OK, "name");
+    CHECK(put_list(&out.w, text_list, 3, ',', true, 4) == SCE_FORGE_CODEC_OK, "a TEXT list");
+    CHECK(sce_forge_cl_writer_property(&out.w, "G") == SCE_FORGE_CODEC_OK, "name");
+    CHECK(put_list(&out.w, geo, 2, ';', false, 2) == SCE_FORGE_CODEC_OK, "a list cut at a semicolon");
+    n = written_finish(&out);
+    CHECK(n == sizeof want - 1U && memcmp(out.buf, want, n) == 0, "the written lists");
+
+    written_init(&out);
+    CHECK(sce_forge_cl_writer_property(&out.w, "C") == SCE_FORGE_CODEC_OK, "name");
+    before = sce_forge_writer_position(&out.sink);
+    memset(rows, 0, sizeof rows);
+    rows[0][0] = 'a';
+    rows[1][0] = 'b';
+    rows[2][0] = 'c';
+    rows[3][0] = 'd';
+    CHECK(sce_forge_cl_writer_strings(&out.w, (const char *)rows, lens, 0, ',', false, 8, 4) ==
+              SCE_FORGE_CODEC_LINE_REQUIRED_MISSING,
+          "no values");
+    lens[1] = 1;
+    CHECK(sce_forge_cl_writer_strings(&out.w, (const char *)rows, lens, 3, ',', false, 8, 2) ==
+              SCE_FORGE_CODEC_LINE_TOO_MANY,
+          "past the count");
+    lens[1] = 9;
+    CHECK(sce_forge_cl_writer_strings(&out.w, (const char *)rows, lens, 2, ',', false, 8, 4) ==
+              SCE_FORGE_CODEC_LINE_TOO_LONG,
+          "past the size");
+    lens[1] = 0;
+    CHECK(sce_forge_cl_writer_strings(&out.w, (const char *)rows, lens, 2, ',', false, 8, 4) ==
+              SCE_FORGE_CODEC_LINE_BAD_VALUE,
+          "an empty value");
+    /* Not a TEXT, so a separator in a value could not be told from a cut. */
+    rows[0][0] = ',';
+    lens[0] = 1;
+    CHECK(sce_forge_cl_writer_strings(&out.w, (const char *)rows, lens, 1, ',', false, 8, 4) ==
+              SCE_FORGE_CODEC_LINE_BAD_VALUE,
+          "the separator in a value");
+    rows[0][0] = '\n';
+    CHECK(sce_forge_cl_writer_strings(&out.w, (const char *)rows, lens, 1, ',', false, 8, 4) ==
+              SCE_FORGE_CODEC_LINE_BAD_VALUE,
+          "a line feed outside a TEXT");
+    CHECK(sce_forge_writer_position(&out.sink) == before, "something of a refused list reached the sink");
+}
+
 int main(void) {
     a_component_is_read_property_by_property_and_stops_after_its_end();
     names_are_matched_without_regard_to_case_and_lf_ends_a_line();
@@ -549,6 +687,9 @@ int main(void) {
     a_value_a_line_could_not_carry_is_refused_before_it_is_written();
     a_full_sink_is_reported_as_the_sink_reports_it();
     what_is_written_is_read_back();
+    a_list_is_cut_at_the_separator_before_it_is_unescaped();
+    a_list_is_refused_at_its_first_failing_part();
+    a_list_is_written_with_its_separator_and_held_before_it_is_written();
     if (failures != 0) {
         fprintf(stderr, "%d check(s) failed\n", failures);
         return 1;

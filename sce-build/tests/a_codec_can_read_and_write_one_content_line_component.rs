@@ -486,24 +486,21 @@ fn a_separator_and_its_bound_are_held_to_the_entry_they_qualify() {
     );
 }
 
-/// The shapes the decision adds are declared and checked, and a backend refuses
-/// them by name until its own commit generates them; the codec that uses neither
-/// is generated everywhere. `GENERATING` is the list of backends that have landed.
+/// The shapes the decision adds (a line record, a list of values) are generated
+/// by every backend, each against the same vectors, so none refuses a codec for
+/// using them (docs/adr/0014).
 #[test]
-fn a_line_record_is_refused_by_name_until_a_backend_generates_it() {
-    const GENERATING: [Language; 5] = [
-        Language::Python,
-        Language::Go,
-        Language::Kotlin,
-        Language::Rust,
-        Language::Cpp,
-    ];
+fn every_backend_generates_a_line_record_and_a_list_of_values() {
     let m = codec(&document(
         "",
         &format!(
             "    <data id=\"uid\" sce:type=\"string\" sce:property=\"UID\" sce:max-size=\"8\"/>\n{RECORDS}"
         ),
     ));
+    assert!(m
+        .content_line
+        .as_ref()
+        .is_some_and(|c| c.uses_line_records()));
     for lang in [
         Language::Rust,
         Language::Kotlin,
@@ -512,22 +509,8 @@ fn a_line_record_is_refused_by_name_until_a_backend_generates_it() {
         Language::Python,
         Language::C11,
     ] {
-        let generating = GENERATING.contains(&lang);
-        assert_eq!(
-            content_line_codec::lowers_line_records(lang),
-            generating,
-            "{lang:?}"
-        );
         let refusal = content_line_codec::refusal(lang, &m);
-        if generating {
-            assert!(refusal.is_none(), "{lang:?}: {refusal:?}");
-        } else {
-            let why = refusal.expect("refused by name");
-            assert!(
-                why.contains("record") && why.contains("docs/adr/0014"),
-                "{lang:?}: {why}"
-            );
-        }
+        assert!(refusal.is_none(), "{lang:?}: {refusal:?}");
     }
 }
 

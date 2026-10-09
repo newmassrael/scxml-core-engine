@@ -12,10 +12,39 @@
    A case's size is its own, not a fixed buffer's: a folded component is longer
    than the 256 bytes the generic fragment reserves. #}
 static void test_{{ f.name }}(void) {
+{# A list of line records (docs/adr/0014) is baked in as an array of one
+   struct per record: each member a literal and its length, a list member an
+   array of them. The size of each array is the widest any case needs. #}
+{% for field in f.fields if field.members %}
+{% set fn = field.name | to_snake_case %}
+    typedef struct {
+{% for m in field.members %}
+{% set mn = m.name | to_snake_case %}
+{% if m.list %}
+{% set ns = namespace(most=1) %}
+{% for c in f.cases %}{% for r in c.decoded[field.name] %}{% if (r[m.name] | length) > ns.most %}{% set ns.most = r[m.name] | length %}{% endif %}{% endfor %}{% endfor %}
+        const char *{{ mn }}[{{ ns.most }}];
+        size_t {{ mn }}_len[{{ ns.most }}];
+        size_t {{ mn }}_count;
+{% else %}
+        const char *{{ mn }};
+        size_t {{ mn }}_len;
+{% if m.optional %}
+        bool {{ mn }}_present;
+{% endif %}
+{% endif %}
+{% endfor %}
+    } {{ fn }}_rec_t;
+{% endfor %}
     typedef struct {
 {% for field in f.fields %}
 {% set fn = field.name | to_snake_case %}
-{% if field.list %}
+{% if field.members %}
+{% set ns = namespace(most=1) %}
+{% for c in f.cases %}{% if (c.decoded[field.name] | length) > ns.most %}{% set ns.most = c.decoded[field.name] | length %}{% endif %}{% endfor %}
+        {{ fn }}_rec_t input_{{ fn }}[{{ ns.most }}];
+        size_t input_{{ fn }}_count;
+{% elif field.list %}
 {% set ns = namespace(most=1) %}
 {% for c in f.cases %}
 {% if (c.decoded[field.name] | length) > ns.most %}{% set ns.most = c.decoded[field.name] | length %}{% endif %}
@@ -42,7 +71,33 @@ static void test_{{ f.name }}(void) {
         {
 {% for field in f.fields %}
 {% set fn = field.name | to_snake_case %}
-{% if field.list %}
+{% if field.members %}
+            .input_{{ fn }}_count = {{ c.decoded[field.name] | length }},
+{% if (c.decoded[field.name] | length) > 0 %}
+            .input_{{ fn }} = {
+{% for r in c.decoded[field.name] %}
+                {
+{% for m in field.members %}
+{% set mn = m.name | to_snake_case %}
+{% if m.list %}
+                    .{{ mn }} = { {% for item in r[m.name] %}{{ item | c_bytes_literal }}{% if not loop.last %}, {% endif %}{% endfor %} },
+                    .{{ mn }}_len = { {% for item in r[m.name] %}{{ item | byte_len }}{% if not loop.last %}, {% endif %}{% endfor %} },
+                    .{{ mn }}_count = {{ r[m.name] | length }},
+{% elif m.optional and r[m.name] is none %}
+{# Absent: the value stays zero-initialised and the flag false. #}
+{% else %}
+                    .{{ mn }} = {{ r[m.name] | c_bytes_literal }},
+                    .{{ mn }}_len = {{ r[m.name] | byte_len }},
+{% if m.optional %}
+                    .{{ mn }}_present = true,
+{% endif %}
+{% endif %}
+{% endfor %}
+                },
+{% endfor %}
+            },
+{% endif %}
+{% elif field.list %}
             .input_{{ fn }} = { {% for item in c.decoded[field.name] %}{{ item | c_bytes_literal }}{% if not loop.last %}, {% endif %}{% endfor %}{% if (c.decoded[field.name] | length) == 0 %}NULL{% endif %} },
             .input_{{ fn }}_len = { {% for item in c.decoded[field.name] %}{{ item | byte_len }}{% if not loop.last %}, {% endif %}{% endfor %}{% if (c.decoded[field.name] | length) == 0 %}0{% endif %} },
             .input_{{ fn }}_count = {{ c.decoded[field.name] | length }},
@@ -80,7 +135,52 @@ static void test_{{ f.name }}(void) {
         }
 {% for field in f.fields %}
 {% set fn = field.name | to_snake_case %}
-{% if field.list %}
+{% if field.members %}
+        if (round_tripped.{{ fn }}_count != cases[i].input_{{ fn }}_count) {
+            fprintf(stderr, "FAIL: {{ f.name }} case %zu decode field {{ field.name }}: count actual=%zu expected=%zu\n",
+                i, round_tripped.{{ fn }}_count, cases[i].input_{{ fn }}_count);
+            ++g_failures;
+            continue;
+        }
+        for (size_t k = 0; k < cases[i].input_{{ fn }}_count; ++k) {
+            const {{ fn }}_rec_t *want = &cases[i].input_{{ fn }}[k];
+{% for m in field.members %}
+{% set mn = m.name | to_snake_case %}
+{% if m.list %}
+            if (round_tripped.{{ fn }}[k].{{ mn }}_count != want->{{ mn }}_count) {
+                fprintf(stderr, "FAIL: {{ f.name }} case %zu {{ field.name }}[%zu].{{ m.name }}: count actual=%zu expected=%zu\n",
+                    i, k, round_tripped.{{ fn }}[k].{{ mn }}_count, want->{{ mn }}_count);
+                ++g_failures;
+            } else {
+                for (size_t j = 0; j < want->{{ mn }}_count; ++j) {
+                    if (round_tripped.{{ fn }}[k].{{ mn }}_len[j] != want->{{ mn }}_len[j] ||
+                        memcmp(round_tripped.{{ fn }}[k].{{ mn }}[j], want->{{ mn }}[j], want->{{ mn }}_len[j]) != 0) {
+                        fprintf(stderr, "FAIL: {{ f.name }} case %zu {{ field.name }}[%zu].{{ m.name }}[%zu]\n", i, k, j);
+                        ++g_failures;
+                    }
+                }
+            }
+{% elif m.optional %}
+            if (round_tripped.{{ fn }}[k].{{ mn }}_present != want->{{ mn }}_present) {
+                fprintf(stderr, "FAIL: {{ f.name }} case %zu {{ field.name }}[%zu].{{ m.name }}: present actual=%d expected=%d\n",
+                    i, k, (int)round_tripped.{{ fn }}[k].{{ mn }}_present, (int)want->{{ mn }}_present);
+                ++g_failures;
+            } else if (want->{{ mn }}_present &&
+                       (round_tripped.{{ fn }}[k].{{ mn }}_len != want->{{ mn }}_len ||
+                        memcmp(round_tripped.{{ fn }}[k].{{ mn }}, want->{{ mn }}, want->{{ mn }}_len) != 0)) {
+                fprintf(stderr, "FAIL: {{ f.name }} case %zu {{ field.name }}[%zu].{{ m.name }}\n", i, k);
+                ++g_failures;
+            }
+{% else %}
+            if (round_tripped.{{ fn }}[k].{{ mn }}_len != want->{{ mn }}_len ||
+                memcmp(round_tripped.{{ fn }}[k].{{ mn }}, want->{{ mn }}, want->{{ mn }}_len) != 0) {
+                fprintf(stderr, "FAIL: {{ f.name }} case %zu {{ field.name }}[%zu].{{ m.name }}\n", i, k);
+                ++g_failures;
+            }
+{% endif %}
+{% endfor %}
+        }
+{% elif field.list %}
         if (round_tripped.{{ fn }}_count != cases[i].input_{{ fn }}_count) {
             fprintf(stderr, "FAIL: {{ f.name }} case %zu decode field {{ field.name }}: count actual=%zu expected=%zu\n",
                 i, round_tripped.{{ fn }}_count, cases[i].input_{{ fn }}_count);
@@ -130,7 +230,30 @@ static void test_{{ f.name }}(void) {
         memset(&val, 0, sizeof val);
 {% for field in f.fields %}
 {% set fn = field.name | to_snake_case %}
-{% if field.list %}
+{% if field.members %}
+        for (size_t k = 0; k < cases[i].input_{{ fn }}_count; ++k) {
+            const {{ fn }}_rec_t *want = &cases[i].input_{{ fn }}[k];
+{% for m in field.members %}
+{% set mn = m.name | to_snake_case %}
+{% if m.list %}
+            for (size_t j = 0; j < want->{{ mn }}_count; ++j) {
+                memcpy(val.{{ fn }}[k].{{ mn }}[j], want->{{ mn }}[j], want->{{ mn }}_len[j]);
+                val.{{ fn }}[k].{{ mn }}_len[j] = want->{{ mn }}_len[j];
+            }
+            val.{{ fn }}[k].{{ mn }}_count = want->{{ mn }}_count;
+{% else %}
+            if (want->{{ mn }}_len > 0) {
+                memcpy(val.{{ fn }}[k].{{ mn }}, want->{{ mn }}, want->{{ mn }}_len);
+            }
+            val.{{ fn }}[k].{{ mn }}_len = want->{{ mn }}_len;
+{% if m.optional %}
+            val.{{ fn }}[k].{{ mn }}_present = want->{{ mn }}_present;
+{% endif %}
+{% endif %}
+{% endfor %}
+        }
+        val.{{ fn }}_count = cases[i].input_{{ fn }}_count;
+{% elif field.list %}
         for (size_t k = 0; k < cases[i].input_{{ fn }}_count; ++k) {
             memcpy(val.{{ fn }}[k], cases[i].input_{{ fn }}[k], cases[i].input_{{ fn }}_len[k]);
             val.{{ fn }}_len[k] = cases[i].input_{{ fn }}_len[k];
