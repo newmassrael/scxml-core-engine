@@ -190,7 +190,12 @@ Criteria set before code. Each stage ends with a push; none needs the next.
    `scxml_revision_check` given the same two lineages, and a delta of a later step needs no
    composition. The join's home is D1.
 4. **The workbench report.** The screen shows the revision report of a work whose acceptance
-   lapsed because its text was revised. Depends on the screen; not specified here.
+   lapsed because its text was revised. Done in the acceptance panel (`revision_model.ts`,
+   `App.loadRevision`): beside the acceptance it asks `read_revision_report`, shows the
+   verdict, the counts and the page as the product wrote them, and shows the core's own
+   sentence when it cannot compare yet (`revision-not-current`, `revision-not-judged`). The
+   screen compares nothing; a report of other revisions than the screen is showing is not
+   shown as this work's.
    - **4a. The product judges (D1 (c)).** Three steps, each pushed:
      1. *The cases.* `sce-build/tests/fixtures/revision_judgment/cases.json`, generated from the
         Python implementation by `tools/authoring/eval/revision_judgment_cases.py` and guarded

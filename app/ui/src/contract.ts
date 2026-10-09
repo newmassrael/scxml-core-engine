@@ -1178,9 +1178,10 @@ export function parseReadAcceptance(value: unknown): ReadAcceptance {
 }
 
 /**
- * `read_acceptance_delta`. A report the screen does not show yet (the revision report of a work
- * is for the client that revises it), so this holds the shape and nothing is read out of the
- * lines: all four parts are there together or none is, which is what a work nobody accepted says.
+ * `read_acceptance_delta`. The screen does not show these lines: what it shows of a revision is
+ * `read_revision_report`, which joins them with the words of each requirement. This holds the
+ * shape and nothing is read out of the lines: all four parts are there together or none is, which
+ * is what a work nobody accepted says.
  */
 export function parseReadAcceptanceDelta(value: unknown): ReadAcceptanceDelta {
   const where = "read_acceptance_delta";

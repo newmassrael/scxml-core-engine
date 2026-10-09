@@ -22,6 +22,7 @@ import {
   parseJudgment,
   parseListing,
   parseReadConnection,
+  parseReadRevisionReport,
   parseRegisteredRequest,
   parseRequestList,
   parseRequestReply,
@@ -53,6 +54,7 @@ import {
   type HostListing,
   type Judgment,
   type Listing,
+  type ReadRevisionReport,
   type RegisteredRequest,
   type Review,
   type Revision,
@@ -119,6 +121,15 @@ export interface Api {
    * a broken contract rather than shown.
    */
   readJudgment(id: string, basis: Basis, acceptance: Revision | null): Promise<Judgment>;
+  /**
+   * What the revision of the work did since the owner accepted it, requirement by requirement:
+   * the words of each requirement beside what the design's evidence did, the verdict, and the
+   * page an owner reads. `report` is `null` for a work nobody accepted. Refused with
+   * `revision-not-current` while the design or the list was written for an earlier text than
+   * the work has now, and with `revision-not-judged` when the list says nothing of its words;
+   * each in the sentence a person is told.
+   */
+  readRevisionReport(id: string): Promise<ReadRevisionReport>;
   /**
    * Accept the design as the owner was shown it: `expect` is the `basis` of the report
    * they read. Refused with `moved` when any of it has changed since, and with
@@ -304,6 +315,9 @@ export function apiOver(transport: Transport): Api {
         throw new ContractError("read_judgment.basis", "the revisions that were asked about");
       }
       return judgment;
+    },
+    async readRevisionReport(id) {
+      return parseReadRevisionReport(await transport.call("read_revision_report", { id }));
     },
     async accept(id, expect) {
       return parseSaved(await transport.call("accept", { id, expect }));

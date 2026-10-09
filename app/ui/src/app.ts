@@ -29,6 +29,15 @@ import { apiOver, type Api } from "./api";
 import { answerState, type AnswerState } from "./answer_states";
 import { comparePages, previousOf, type ChangePanel } from "./change_model";
 import {
+  countOf,
+  panelOfFailure,
+  panelOfRead,
+  reportIsOf,
+  stillShown,
+  verdictOf,
+  type RevisionPanel,
+} from "./revision_model";
+import {
   answersConflicted,
   answersFailed,
   answersRequest,
@@ -228,6 +237,11 @@ export class App {
   private acceptance: AcceptancePanel | null = null;
   /** The newest request for the acceptance; an older one that answers later is dropped. */
   private acceptanceTicket = 0;
+  /**
+   * What the revision did since the owner accepted, beside the acceptance; `null` for a work
+   * nobody accepted. It is asked with the acceptance and dropped with it (`acceptanceTicket`).
+   */
+  private revision: RevisionPanel | null = null;
   /** A work the person asked for while the editor held text that is not saved. */
   private pendingSwitch: Work | null = null;
   /** The window was asked to close while something was not saved, and the person has not yet said what to do. */
@@ -378,6 +392,7 @@ export class App {
       this.answersUnreadable = null;
       this.acceptanceTicket += 1;
       this.acceptance = null;
+      this.revision = null;
       this.requestHead = null;
       this.requestDetail = null;
       this.requestBusy = null;
@@ -983,6 +998,7 @@ export class App {
       this.review = null;
       this.acceptanceTicket += 1;
       this.acceptance = null;
+      this.revision = null;
       this.render();
       return true;
     }
@@ -1047,6 +1063,7 @@ export class App {
     const basis = basisOf(snapshot);
     if (basis === null) {
       this.acceptance = { phase: "no-list" };
+      this.revision = null;
       return Promise.resolve(true);
     }
     const panel = this.acceptance;
@@ -1054,7 +1071,40 @@ export class App {
       panel !== null && panel.phase === "read" && panelIsOf(panel.state, snapshot)
         ? { phase: "read", state: restanded(panel.state, snapshot) }
         : { phase: "reading" };
+    void this.loadRevision(id, snapshot, basis, ticket);
     return this.loadJudgment(id, snapshot, basis, ticket);
+  }
+
+  /**
+   * What the revision did since the owner accepted, asked beside the judgment and applied under
+   * the same ticket, so an answer for a work or a state that has moved on is dropped. A work
+   * nobody accepted has nothing to report and no panel. The core says when it cannot compare yet
+   * (the design or the list was written for an earlier text) and the screen shows its sentence;
+   * the screen compares nothing itself. A report of other revisions than the screen is showing is
+   * not shown as this work's: it is asked about again when the work's heads move.
+   */
+  private async loadRevision(id: string, snapshot: WorkSnapshot, basis: Basis, ticket: number): Promise<void> {
+    if (snapshot.acceptance === null) {
+      this.revision = null;
+      return;
+    }
+    this.revision = stillShown(this.revision, basis) ?? { phase: "reading" };
+    const session = this.session;
+    const current = (): boolean => session === this.session && ticket === this.acceptanceTicket;
+    try {
+      const panel = panelOfRead(await this.api.readRevisionReport(id));
+      if (!current()) return;
+      this.revision =
+        panel !== null && panel.phase === "read" && !reportIsOf(panel.report, basis)
+          ? { phase: "reading" }
+          : panel;
+    } catch (error) {
+      if (!current()) return;
+      // A token wanted is the sign-in form's to answer.
+      if (this.askForToken(error)) return;
+      this.revision = panelOfFailure(error, (e) => this.explain(e));
+    }
+    this.render();
   }
 
   /**
@@ -1252,6 +1302,7 @@ export class App {
       this.answers = null;
       this.answersUnreadable = null;
       this.acceptance = null;
+      this.revision = null;
       this.selected = null;
       this.editor = null;
       this.entries = [];
@@ -2233,6 +2284,7 @@ export class App {
           ? h("p", { class: "banner", role: "status" }, this.t("requirementsUnstated"))
           : null,
       this.acceptedBanner(state),
+      state.accepted === null ? null : this.revisionBlock(),
       report === null
         ? this.sceDidNotAnswer(
             this.t("measureFailed", { detail: state.measureFailure?.message ?? "" }),
@@ -2314,6 +2366,68 @@ export class App {
   }
 
   /** What SCE finds of the requirements: counts, the table, and the page it writes for the owner. */
+  /**
+   * What the revision did since the owner accepted, as the core says it. The screen reads the
+   * verdict and the counts the product gave and shows the product's own page; when the core
+   * cannot compare yet it says why in its own sentence, and nothing is guessed.
+   */
+  private revisionBlock(): HTMLElement | null {
+    const panel = this.revision;
+    if (panel === null) return null;
+    const heading = h("h4", {}, this.t("revisionTitle"));
+    switch (panel.phase) {
+      case "reading":
+        return h("div", { class: "revision" }, heading, h("p", { class: "muted" }, this.t("revisionReading")));
+      case "held":
+        return h(
+          "div",
+          { class: "revision" },
+          heading,
+          h("p", { class: "banner banner-warn", role: "status" }, this.t("revisionHeld", { detail: panel.message })),
+        );
+      case "failed":
+        return h(
+          "div",
+          { class: "revision" },
+          heading,
+          h("p", { class: "banner banner-error", role: "alert" }, this.t("revisionFailed", { detail: panel.message })),
+        );
+      case "read": {
+        const report = panel.report;
+        const verdict = verdictOf(report);
+        const total = countOf(report.summary, "requirements");
+        const outside = countOf(report.summary, "violations");
+        const look = countOf(report.summary, "look");
+        return h(
+          "div",
+          { class: "revision" },
+          heading,
+          h(
+            "p",
+            { class: verdict === "within-reach" ? "banner" : "banner banner-warn", role: "status" },
+            verdict === "within-reach"
+              ? this.t("revisionWithinReach")
+              : verdict === "outside-reach"
+                ? this.t("revisionOutsideReach")
+                : report.verdict,
+          ),
+          total === null || outside === null || look === null
+            ? null
+            : h(
+                "p",
+                {},
+                this.t("revisionCounts", {
+                  count: String(total),
+                  outside: String(outside),
+                  look: String(look),
+                }),
+              ),
+          h("details", { class: "page" }, h("summary", {}, this.t("revisionPage")), h("pre", { class: "pseudo" }, report.page)),
+        );
+      }
+    }
+  }
+
   private measureBlock(report: RequirementsReport): HTMLElement {
     const gloss = (word: string): string => {
       const sentence = OUTCOME_SENTENCES[word];

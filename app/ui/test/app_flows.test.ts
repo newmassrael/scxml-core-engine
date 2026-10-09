@@ -277,6 +277,9 @@ class FakeCore implements Transport {
     this.listsByRevision.set(list.revision, list);
   }
 
+  /** What the revision report says the revision stayed within the reach of, when it compares at all. */
+  revisionVerdict: "within-reach" | "outside-reach" = "within-reach";
+
   /** What the owner accepted, as the core keeps it: the work as it stands now, stated on `channel`. */
   setAcceptance(id: string, channel = "direct"): void {
     const basis = this.basisOf(id);
@@ -916,6 +919,56 @@ class FakeCore implements Transport {
         work.revisions.push({ revision, text });
         this.supersedeOpen(String(args["id"]));
         return { outcome: "saved", revision, parent: head };
+      }
+      case "read_revision_report": {
+        // The core's rule: nothing accepted, nothing to report; a design or a list written for an
+        // earlier text than the work has now is held back, in one sentence, and never compared.
+        if (work === undefined) throw new CommandFailure("not-found", `work \`${String(args["id"])}\``);
+        const id = String(args["id"]);
+        const held = this.acceptances.get(id);
+        if (held === undefined) return { acceptance: null, report: null };
+        const head = work.revisions.at(-1)?.revision ?? null;
+        const behind: string[] = [];
+        if (standingOf(this.lists.get(id)?.writtenFor ?? null, head) === "behind") behind.push("requirement list");
+        if (standingOf(this.models.get(id)?.writtenFor ?? null, head) === "behind") behind.push("model");
+        if (behind.length > 0) {
+          throw new CommandFailure(
+            "revision-not-current",
+            `the specification was changed after the ${behind.join(" and the ")} was written for it`,
+            { source_head: head },
+          );
+        }
+        const now = this.basisOf(id);
+        if (now === null) throw new CommandFailure("not-found", "a model or a requirement list of this work");
+        const ids = this.lists.get(id)?.ids ?? [];
+        return {
+          acceptance: {
+            revision: held.revision,
+            accepted_at: "2026-10-03T09:00:10Z",
+            channel: held.channel,
+            basis: held.basis,
+            open: held.open,
+          },
+          report: {
+            verdict: this.revisionVerdict,
+            summary: {
+              requirements: ids.length,
+              violations: this.revisionVerdict === "outside-reach" ? 1 : 0,
+              look: 0,
+              ok: ids.length,
+            },
+            requirements: ids.map((requirement) => ({
+              requirement,
+              words: "carried",
+              evidence: "unchanged",
+              kind: "carries-over",
+              severity: "ok",
+            })),
+            unclaimed: { added: [], gone: 0 },
+            of: { accepted: held.basis, now },
+            page: `REVISION REPORT\n  ${ids.length} requirements\n`,
+          },
+        };
       }
       default:
         throw new CommandFailure("unknown-command", name);
@@ -2261,6 +2314,58 @@ describe("accepting the design", () => {
     expect(acceptanceText()).toContain("What SCE listed as left open when it was accepted");
     expect(acceptButton().textContent).toBe("Accept the design as it is now");
     expect(acceptButton().disabled).toBe(false);
+  });
+
+  const revisionText = (): string => root.querySelector(".acceptance .revision")?.textContent ?? "";
+
+  it("says what the revision did since the owner accepted, as the core's verdict, counts and page", async () => {
+    core.setAcceptance("alpha");
+    await click("Alpha");
+
+    expect(revisionText()).toContain("What changed since you accepted");
+    expect(revisionText()).toContain("The revision stayed within the reach of what changed");
+    expect(revisionText()).toContain("2 requirements: 0 outside the reach, 0 to look at again.");
+    // The page is the product's, exactly as it wrote it.
+    expect(root.querySelector(".acceptance .revision .page pre")?.textContent).toBe("REVISION REPORT\n  2 requirements\n");
+  });
+
+  it("says when the design moved where the words did not, in a warning", async () => {
+    core.revisionVerdict = "outside-reach";
+    core.setAcceptance("alpha");
+    await click("Alpha");
+
+    expect(revisionText()).toContain("The design moved where the words did not.");
+    expect(root.querySelector(".acceptance .revision .banner-warn")).not.toBeNull();
+    expect(revisionText()).toContain("1 outside the reach");
+  });
+
+  it("has nothing to say of a revision for a work nobody accepted, and does not ask", async () => {
+    await click("Alpha");
+
+    expect(root.querySelector(".acceptance .revision")).toBeNull();
+    expect(core.callsOf("read_revision_report")).toHaveLength(0);
+  });
+
+  it("holds the comparison back in the core's sentence while the text moved on and nothing was written for it", async () => {
+    core.setAcceptance("alpha");
+    core.saveElsewhere("alpha", "alpha from elsewhere");
+    await click("Alpha");
+
+    expect(revisionText()).toContain(
+      "Not compared yet: the specification was changed after the requirement list and the model was written for it",
+    );
+    // No verdict is made up for a state that cannot be compared.
+    expect(revisionText()).not.toContain("within the reach");
+    expect(root.querySelector(".acceptance .revision .page")).toBeNull();
+  });
+
+  it("says in words when the revision report cannot be read, and the rest of the panel still shows", async () => {
+    core.setAcceptance("alpha");
+    core.failNext("read_revision_report", new CommandFailure("transport", "the server did not answer"));
+    await click("Alpha");
+
+    expect(revisionText()).toContain("could not be read");
+    expect(acceptanceText()).toContain("SCE measured the design against 2 requirements");
   });
 
   it("says when an acceptance was relayed by an authoring client and not made in this application", async () => {
