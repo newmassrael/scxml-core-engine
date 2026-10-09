@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: cb41954d893211ff980559eb7566d5cfca26a8d312a941a8b0426661b4fb8dcd
+// source-hash: 7ad55f268a9fbf4c094293a60d20a17c7e9e6598a9a6fe5787c0e9f2898a7e28
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -147,12 +147,14 @@ const (
 	StaticRecordStringEventPeek StaticRecordStringEvent = 8
 	StaticRecordStringEventPeeklast StaticRecordStringEvent = 9
 	StaticRecordStringEventReset StaticRecordStringEvent = 10
-	StaticRecordStringEventTally StaticRecordStringEvent = 11
-	StaticRecordStringEventToNote StaticRecordStringEvent = 12
-	StaticRecordStringEventToowide StaticRecordStringEvent = 13
-	StaticRecordStringEventWide StaticRecordStringEvent = 14
+	StaticRecordStringEventTake StaticRecordStringEvent = 11
+	StaticRecordStringEventTakelast StaticRecordStringEvent = 12
+	StaticRecordStringEventTally StaticRecordStringEvent = 13
+	StaticRecordStringEventToNote StaticRecordStringEvent = 14
+	StaticRecordStringEventToowide StaticRecordStringEvent = 15
+	StaticRecordStringEventWide StaticRecordStringEvent = 16
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	StaticRecordStringEventNull StaticRecordStringEvent = 15
+	StaticRecordStringEventNull StaticRecordStringEvent = 17
 )
 
 func (e StaticRecordStringEvent) String() string {
@@ -179,6 +181,10 @@ func (e StaticRecordStringEvent) String() string {
 		return "peeklast"
 	case StaticRecordStringEventReset:
 		return "reset"
+	case StaticRecordStringEventTake:
+		return "take"
+	case StaticRecordStringEventTakelast:
+		return "takelast"
 	case StaticRecordStringEventTally:
 		return "tally"
 	case StaticRecordStringEventToNote:
@@ -477,6 +483,10 @@ func (p *StaticRecordStringPolicy) GetEventFromName(name string) (StaticRecordSt
 		return StaticRecordStringEventPeeklast, true
 	case "reset":
 		return StaticRecordStringEventReset, true
+	case "take":
+		return StaticRecordStringEventTake, true
+	case "takelast":
+		return StaticRecordStringEventTakelast, true
 	case "tally":
 		return StaticRecordStringEventTally, true
 	case "to_note":
@@ -820,7 +830,7 @@ func (p *StaticRecordStringPolicy) FirstEnabledTransition(state StaticRecordStri
 				}, true
 			}
 		}
-		if event == StaticRecordStringEventForget {
+		if event == StaticRecordStringEventTake {
 			{
 				return sce.EnabledTransition[StaticRecordStringState, sce.HistoryID]{
 					Source:          state,
@@ -830,11 +840,31 @@ func (p *StaticRecordStringPolicy) FirstEnabledTransition(state StaticRecordStri
 				}, true
 			}
 		}
-		if event == StaticRecordStringEventErrorExecution {
+		if event == StaticRecordStringEventTakelast {
 			{
 				return sce.EnabledTransition[StaticRecordStringState, sce.HistoryID]{
 					Source:          state,
 					TransitionIndex: 15,
+					HasActions:      true,
+					IsInternal:      true,
+				}, true
+			}
+		}
+		if event == StaticRecordStringEventForget {
+			{
+				return sce.EnabledTransition[StaticRecordStringState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 16,
+					HasActions:      true,
+					IsInternal:      true,
+				}, true
+			}
+		}
+		if event == StaticRecordStringEventErrorExecution {
+			{
+				return sce.EnabledTransition[StaticRecordStringState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 17,
 					HasActions:      true,
 					IsInternal:      true,
 				}, true
@@ -1030,7 +1060,29 @@ func (p *StaticRecordStringPolicy) ExecuteTransitionContent(source StaticRecordS
 
 			}()
 		case 14:
-			//line static_record_string.scxml:95
+			//line static_record_string.scxml:99
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
+
+
+	if (func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.vLabels[:], int64(0)).sensor; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordStringEventErrorExecution, "<assign location='last.sensor'>: an integer operation overflowed or failed")); return true }; p.vLast.sensor = sceValue; return false }()) || (func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, scealgorithm.At(&sceFailure, p.vLabels[:], int64(0)).label, 8); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordStringEventErrorExecution, "<assign location='last.label'>: an integer operation overflowed or failed")); return true }; p.vLast.label = sceValue; return false }()) {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+			}()
+		case 15:
+			//line static_record_string.scxml:102
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
+
+
+	if (func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AtU(&sceFailure, p.vLabels[:], uint64(scealgorithm.SubUint32(&sceFailure, uint32(len(p.vLabels)), 1))).sensor; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordStringEventErrorExecution, "<assign location='last.sensor'>: an integer operation overflowed or failed")); return true }; p.vLast.sensor = sceValue; return false }()) || (func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, scealgorithm.AtU(&sceFailure, p.vLabels[:], uint64(scealgorithm.SubUint32(&sceFailure, uint32(len(p.vLabels)), 1))).label, 8); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordStringEventErrorExecution, "<assign location='last.label'>: an integer operation overflowed or failed")); return true }; p.vLast.label = sceValue; return false }()) {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+			}()
+		case 16:
+			//line static_record_string.scxml:105
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1039,8 +1091,8 @@ func (p *StaticRecordStringPolicy) ExecuteTransitionContent(source StaticRecordS
 	p.vLabels = p.vLabels[:0]
 
 			}()
-		case 15:
-			//line static_record_string.scxml:98
+		case 17:
+			//line static_record_string.scxml:108
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

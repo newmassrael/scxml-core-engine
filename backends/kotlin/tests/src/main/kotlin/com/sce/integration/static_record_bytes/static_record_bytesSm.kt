@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: cb41954d893211ff980559eb7566d5cfca26a8d312a941a8b0426661b4fb8dcd
+// source-hash: 7ad55f268a9fbf4c094293a60d20a17c7e9e6598a9a6fe5787c0e9f2898a7e28
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_record_bytes.scxml
@@ -34,6 +34,8 @@ sealed interface StaticRecordBytesEvent : Event {
     data object Other : StaticRecordBytesEvent
     data object Peek : StaticRecordBytesEvent
     data object Reset : StaticRecordBytesEvent
+    data object Take : StaticRecordBytesEvent
+    data object Takelast : StaticRecordBytesEvent
     data object Tally : StaticRecordBytesEvent
     data object ToSpare : StaticRecordBytesEvent
     data object Toowide : StaticRecordBytesEvent
@@ -428,6 +430,24 @@ class StaticRecordBytesStateMachine(
             hasActions = true,
             isInternal = true,
         )
+
+        // W3C SCXML 3.13: idle's transition 17, as the microstep reads it.
+        val transitionIdleAt17 = EnabledTransition<StaticRecordBytesState, HistoryId>(
+            StaticRecordBytesState.Idle,
+            emptyList(),
+            17,
+            hasActions = true,
+            isInternal = true,
+        )
+
+        // W3C SCXML 3.13: idle's transition 18, as the microstep reads it.
+        val transitionIdleAt18 = EnabledTransition<StaticRecordBytesState, HistoryId>(
+            StaticRecordBytesState.Idle,
+            emptyList(),
+            18,
+            hasActions = true,
+            isInternal = true,
+        )
     }
 
     // W3C SCXML: Resolve state ID string to State object
@@ -460,6 +480,8 @@ class StaticRecordBytesStateMachine(
         "other" -> StaticRecordBytesEvent.Other
         "peek" -> StaticRecordBytesEvent.Peek
         "reset" -> StaticRecordBytesEvent.Reset
+        "take" -> StaticRecordBytesEvent.Take
+        "takelast" -> StaticRecordBytesEvent.Takelast
         "tally" -> StaticRecordBytesEvent.Tally
         "to_spare" -> StaticRecordBytesEvent.ToSpare
         "toowide" -> StaticRecordBytesEvent.Toowide
@@ -481,6 +503,8 @@ class StaticRecordBytesStateMachine(
         is StaticRecordBytesEvent.Other -> "other"
         is StaticRecordBytesEvent.Peek -> "peek"
         is StaticRecordBytesEvent.Reset -> "reset"
+        is StaticRecordBytesEvent.Take -> "take"
+        is StaticRecordBytesEvent.Takelast -> "takelast"
         is StaticRecordBytesEvent.Tally -> "tally"
         is StaticRecordBytesEvent.ToSpare -> "to_spare"
         is StaticRecordBytesEvent.Toowide -> "toowide"
@@ -516,8 +540,10 @@ class StaticRecordBytesStateMachine(
             event is StaticRecordBytesEvent.Peek -> transitionIdleAt12
             event is StaticRecordBytesEvent.Width -> transitionIdleAt13
             event is StaticRecordBytesEvent.Lead && (try { com.sce.forge.runtime.SceChecked.at(frames, (0).toLong()).frame.contentEquals("ab".toByteArray()) } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordBytesEvent.Error.Execution, "<transition cond='frames[0].frame === 'ab''>: an integer operation overflowed or failed"); false }) -> transitionIdleAt14
-            event is StaticRecordBytesEvent.Forget -> transitionIdleAt15
-            event is StaticRecordBytesEvent.Error.Execution -> transitionIdleAt16
+            event is StaticRecordBytesEvent.Take -> transitionIdleAt15
+            event is StaticRecordBytesEvent.Takelast -> transitionIdleAt16
+            event is StaticRecordBytesEvent.Forget -> transitionIdleAt17
+            event is StaticRecordBytesEvent.Error.Execution -> transitionIdleAt18
             else -> null
         }
     }
@@ -657,12 +683,26 @@ class StaticRecordBytesStateMachine(
             }
             }
             15 -> {
-                // SCE-MAP: static_record_bytes.scxml:98 :: idle :: _transition_15
+                // SCE-MAP: static_record_bytes.scxml:102 :: idle :: _transition_15
+
+            if ((try { last = last.copy(sensor = com.sce.forge.runtime.SceChecked.at(frames, (0).toLong()).sensor); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordBytesEvent.Error.Execution, "<assign location='last.sensor'>: an integer operation overflowed or failed"); true }) || (try { last = last.copy(frame = com.sce.forge.runtime.SceChecked.bounded(com.sce.forge.runtime.SceChecked.at(frames, (0).toLong()).frame, 8)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordBytesEvent.Error.Execution, "<assign location='last.frame'>: an integer operation overflowed or failed"); true })) {
+                return
+            }
+            }
+            16 -> {
+                // SCE-MAP: static_record_bytes.scxml:105 :: idle :: _transition_16
+
+            if ((try { last = last.copy(sensor = com.sce.forge.runtime.SceChecked.at(frames, (com.sce.forge.runtime.SceChecked.sub((frames).size.toUInt(), 1.toUInt())).toLong()).sensor); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordBytesEvent.Error.Execution, "<assign location='last.sensor'>: an integer operation overflowed or failed"); true }) || (try { last = last.copy(frame = com.sce.forge.runtime.SceChecked.bounded(com.sce.forge.runtime.SceChecked.at(frames, (com.sce.forge.runtime.SceChecked.sub((frames).size.toUInt(), 1.toUInt())).toLong()).frame, 8)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordBytesEvent.Error.Execution, "<assign location='last.frame'>: an integer operation overflowed or failed"); true })) {
+                return
+            }
+            }
+            17 -> {
+                // SCE-MAP: static_record_bytes.scxml:108 :: idle :: _transition_17
 
             frames = emptyList()
             }
-            16 -> {
-                // SCE-MAP: static_record_bytes.scxml:101 :: idle :: _transition_16
+            18 -> {
+                // SCE-MAP: static_record_bytes.scxml:111 :: idle :: _transition_18
 
             if (try { errors = com.sce.forge.runtime.SceChecked.add(errors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordBytesEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
                 return

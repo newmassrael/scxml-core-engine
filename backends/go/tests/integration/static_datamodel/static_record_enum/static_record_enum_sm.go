@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: cb41954d893211ff980559eb7566d5cfca26a8d312a941a8b0426661b4fb8dcd
+// source-hash: 7ad55f268a9fbf4c094293a60d20a17c7e9e6598a9a6fe5787c0e9f2898a7e28
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -140,14 +140,17 @@ const (
 	StaticRecordEnumEventCount StaticRecordEnumEvent = 1
 	StaticRecordEnumEventForget StaticRecordEnumEvent = 2
 	StaticRecordEnumEventLead StaticRecordEnumEvent = 3
-	StaticRecordEnumEventPeek StaticRecordEnumEvent = 4
-	StaticRecordEnumEventPeeklast StaticRecordEnumEvent = 5
-	StaticRecordEnumEventRecall StaticRecordEnumEvent = 6
-	StaticRecordEnumEventRemember StaticRecordEnumEvent = 7
-	StaticRecordEnumEventToggle StaticRecordEnumEvent = 8
-	StaticRecordEnumEventZoom StaticRecordEnumEvent = 9
+	StaticRecordEnumEventMonth StaticRecordEnumEvent = 4
+	StaticRecordEnumEventPeek StaticRecordEnumEvent = 5
+	StaticRecordEnumEventPeeklast StaticRecordEnumEvent = 6
+	StaticRecordEnumEventRecall StaticRecordEnumEvent = 7
+	StaticRecordEnumEventRemember StaticRecordEnumEvent = 8
+	StaticRecordEnumEventTake StaticRecordEnumEvent = 9
+	StaticRecordEnumEventTakelast StaticRecordEnumEvent = 10
+	StaticRecordEnumEventToggle StaticRecordEnumEvent = 11
+	StaticRecordEnumEventZoom StaticRecordEnumEvent = 12
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	StaticRecordEnumEventNull StaticRecordEnumEvent = 10
+	StaticRecordEnumEventNull StaticRecordEnumEvent = 13
 )
 
 func (e StaticRecordEnumEvent) String() string {
@@ -160,6 +163,8 @@ func (e StaticRecordEnumEvent) String() string {
 		return "forget"
 	case StaticRecordEnumEventLead:
 		return "lead"
+	case StaticRecordEnumEventMonth:
+		return "month"
 	case StaticRecordEnumEventPeek:
 		return "peek"
 	case StaticRecordEnumEventPeeklast:
@@ -168,6 +173,10 @@ func (e StaticRecordEnumEvent) String() string {
 		return "recall"
 	case StaticRecordEnumEventRemember:
 		return "remember"
+	case StaticRecordEnumEventTake:
+		return "take"
+	case StaticRecordEnumEventTakelast:
+		return "takelast"
 	case StaticRecordEnumEventToggle:
 		return "toggle"
 	case StaticRecordEnumEventZoom:
@@ -436,6 +445,8 @@ func (p *StaticRecordEnumPolicy) GetEventFromName(name string) (StaticRecordEnum
 		return StaticRecordEnumEventForget, true
 	case "lead":
 		return StaticRecordEnumEventLead, true
+	case "month":
+		return StaticRecordEnumEventMonth, true
 	case "peek":
 		return StaticRecordEnumEventPeek, true
 	case "peeklast":
@@ -444,6 +455,10 @@ func (p *StaticRecordEnumPolicy) GetEventFromName(name string) (StaticRecordEnum
 		return StaticRecordEnumEventRecall, true
 	case "remember":
 		return StaticRecordEnumEventRemember, true
+	case "take":
+		return StaticRecordEnumEventTake, true
+	case "takelast":
+		return StaticRecordEnumEventTakelast, true
 	case "toggle":
 		return StaticRecordEnumEventToggle, true
 	case "zoom":
@@ -635,7 +650,7 @@ func (p *StaticRecordEnumPolicy) FirstEnabledTransition(state StaticRecordEnumSt
 				}, true
 			}
 		}
-		if event == StaticRecordEnumEventZoom {
+		if event == StaticRecordEnumEventMonth {
 			{
 				return sce.EnabledTransition[StaticRecordEnumState, sce.HistoryID]{
 					Source:          state,
@@ -645,7 +660,7 @@ func (p *StaticRecordEnumPolicy) FirstEnabledTransition(state StaticRecordEnumSt
 				}, true
 			}
 		}
-		if event == StaticRecordEnumEventRemember {
+		if event == StaticRecordEnumEventZoom {
 			{
 				return sce.EnabledTransition[StaticRecordEnumState, sce.HistoryID]{
 					Source:          state,
@@ -655,7 +670,7 @@ func (p *StaticRecordEnumPolicy) FirstEnabledTransition(state StaticRecordEnumSt
 				}, true
 			}
 		}
-		if event == StaticRecordEnumEventCount {
+		if event == StaticRecordEnumEventRemember {
 			{
 				return sce.EnabledTransition[StaticRecordEnumState, sce.HistoryID]{
 					Source:          state,
@@ -665,7 +680,7 @@ func (p *StaticRecordEnumPolicy) FirstEnabledTransition(state StaticRecordEnumSt
 				}, true
 			}
 		}
-		if event == StaticRecordEnumEventRecall {
+		if event == StaticRecordEnumEventCount {
 			{
 				return sce.EnabledTransition[StaticRecordEnumState, sce.HistoryID]{
 					Source:          state,
@@ -675,7 +690,7 @@ func (p *StaticRecordEnumPolicy) FirstEnabledTransition(state StaticRecordEnumSt
 				}, true
 			}
 		}
-		if event == StaticRecordEnumEventPeek {
+		if event == StaticRecordEnumEventRecall {
 			{
 				return sce.EnabledTransition[StaticRecordEnumState, sce.HistoryID]{
 					Source:          state,
@@ -685,11 +700,21 @@ func (p *StaticRecordEnumPolicy) FirstEnabledTransition(state StaticRecordEnumSt
 				}, true
 			}
 		}
-		if event == StaticRecordEnumEventPeeklast {
+		if event == StaticRecordEnumEventPeek {
 			{
 				return sce.EnabledTransition[StaticRecordEnumState, sce.HistoryID]{
 					Source:          state,
 					TransitionIndex: 8,
+					HasActions:      true,
+					IsInternal:      true,
+				}, true
+			}
+		}
+		if event == StaticRecordEnumEventPeeklast {
+			{
+				return sce.EnabledTransition[StaticRecordEnumState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 9,
 					HasActions:      true,
 					IsInternal:      true,
 				}, true
@@ -702,7 +727,27 @@ func (p *StaticRecordEnumPolicy) FirstEnabledTransition(state StaticRecordEnumSt
 			if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.vSeen[:], int64(0)).layout == EnumViewModeWeek; if sceFailure.Failed() { return false }; return sceValue }() {
 				return sce.EnabledTransition[StaticRecordEnumState, sce.HistoryID]{
 					Source:          state,
-					TransitionIndex: 9,
+					TransitionIndex: 10,
+					HasActions:      true,
+					IsInternal:      true,
+				}, true
+			}
+		}
+		if event == StaticRecordEnumEventTake {
+			{
+				return sce.EnabledTransition[StaticRecordEnumState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 11,
+					HasActions:      true,
+					IsInternal:      true,
+				}, true
+			}
+		}
+		if event == StaticRecordEnumEventTakelast {
+			{
+				return sce.EnabledTransition[StaticRecordEnumState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 12,
 					HasActions:      true,
 					IsInternal:      true,
 				}, true
@@ -712,7 +757,7 @@ func (p *StaticRecordEnumPolicy) FirstEnabledTransition(state StaticRecordEnumSt
 			{
 				return sce.EnabledTransition[StaticRecordEnumState, sce.HistoryID]{
 					Source:          state,
-					TransitionIndex: 10,
+					TransitionIndex: 13,
 					HasActions:      true,
 					IsInternal:      true,
 				}, true
@@ -774,13 +819,22 @@ func (p *StaticRecordEnumPolicy) ExecuteTransitionContent(source StaticRecordEnu
 			func() {
 
 
+	p.vShown.layout = EnumViewModeMonth
+
+			}()
+		case 4:
+			//line static_record_enum.scxml:44
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
+
+
 	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint8(&sceFailure, p.vShown.zoom, 1); if sceFailure.Failed() { return true }; p.vShown.zoom = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 			}()
-		case 4:
-			//line static_record_enum.scxml:45
+		case 5:
+			//line static_record_enum.scxml:48
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -791,8 +845,8 @@ func (p *StaticRecordEnumPolicy) ExecuteTransitionContent(source StaticRecordEnu
 	}
 
 			}()
-		case 5:
-			//line static_record_enum.scxml:49
+		case 6:
+			//line static_record_enum.scxml:52
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -816,8 +870,8 @@ func (p *StaticRecordEnumPolicy) ExecuteTransitionContent(source StaticRecordEnu
 	}
 
 			}()
-		case 6:
-			//line static_record_enum.scxml:58
+		case 7:
+			//line static_record_enum.scxml:61
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -831,24 +885,13 @@ func (p *StaticRecordEnumPolicy) ExecuteTransitionContent(source StaticRecordEnu
 	}
 
 			}()
-		case 7:
-			//line static_record_enum.scxml:68
-			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
-			func() {
-
-
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.vSeen[:], int64(0)).layout; if sceFailure.Failed() { return true }; p.vShown.layout = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
-			}()
 		case 8:
 			//line static_record_enum.scxml:71
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AtU(&sceFailure, p.vSeen[:], uint64(scealgorithm.SubUint32(&sceFailure, uint32(len(p.vSeen)), 1))).layout; if sceFailure.Failed() { return true }; p.vShown.layout = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.vSeen[:], int64(0)).layout; if sceFailure.Failed() { return true }; p.vShown.layout = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -859,13 +902,46 @@ func (p *StaticRecordEnumPolicy) ExecuteTransitionContent(source StaticRecordEnu
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vLeads, 1); if sceFailure.Failed() { return true }; p.vLeads = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AtU(&sceFailure, p.vSeen[:], uint64(scealgorithm.SubUint32(&sceFailure, uint32(len(p.vSeen)), 1))).layout; if sceFailure.Failed() { return true }; p.vShown.layout = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 			}()
 		case 10:
 			//line static_record_enum.scxml:77
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
+
+
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vLeads, 1); if sceFailure.Failed() { return true }; p.vLeads = sceValue; return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+			}()
+		case 11:
+			//line static_record_enum.scxml:84
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
+
+
+	if (func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.vSeen[:], int64(0)).layout; if sceFailure.Failed() { return true }; p.vShown.layout = sceValue; return false }()) || (func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.vSeen[:], int64(0)).zoom; if sceFailure.Failed() { return true }; p.vShown.zoom = sceValue; return false }()) {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+			}()
+		case 12:
+			//line static_record_enum.scxml:87
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
+
+
+	if (func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AtU(&sceFailure, p.vSeen[:], uint64(scealgorithm.SubUint32(&sceFailure, uint32(len(p.vSeen)), 1))).layout; if sceFailure.Failed() { return true }; p.vShown.layout = sceValue; return false }()) || (func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AtU(&sceFailure, p.vSeen[:], uint64(scealgorithm.SubUint32(&sceFailure, uint32(len(p.vSeen)), 1))).zoom; if sceFailure.Failed() { return true }; p.vShown.zoom = sceValue; return false }()) {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+			}()
+		case 13:
+			//line static_record_enum.scxml:90
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

@@ -80,11 +80,19 @@
       "event": "peeklast", "expect": { "variables": { "note": "é€é", "errors": 5 } } },
     { "note": "a guard comparing the first with a literal holds",
       "event": "isfirst", "expect": { "variables": { "note": "first", "errors": 5 } } },
+    { "note": "the first record whole into `last`: its number and its text",
+      "event": "take", "expect": { "variables": { "last": { "sensor": 200, "label": "whole" }, "errors": 5 } } },
+    { "note": "the last record whole, by an index computed from the length: seven bytes in three characters",
+      "event": "takelast", "expect": { "variables": { "last": { "sensor": 202, "label": "é€é" }, "errors": 5 } } },
     { "note": "emptied: the list has no record at index 0",
       "event": "forget", "expect": { "variables": { "labels": [], "note": "first", "errors": 5 } } },
     { "note": "nothing is read, `note` is left as it was and error.execution is raised",
       "event": "peek", "expect": { "variables": { "note": "first", "errors": 6 } } },
     { "note": "the guard cannot be evaluated: it is false, and error.execution says so",
-      "event": "isfirst", "expect": { "variables": { "note": "first", "errors": 7 } } }
+      "event": "isfirst", "expect": { "variables": { "note": "first", "errors": 7 } } },
+    { "note": "no record at index 0 to take whole: `last` is left as it was, number and text, and error.execution is raised",
+      "event": "take", "expect": { "variables": { "last": { "sensor": 202, "label": "é€é" }, "errors": 8 } } },
+    { "note": "nor a last one: len(labels) - 1 is an unsigned underflow",
+      "event": "takelast", "expect": { "variables": { "last": { "sensor": 202, "label": "é€é" }, "errors": 9 } } }
   ]
 }

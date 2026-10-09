@@ -426,6 +426,12 @@ impl StaticTarget for JsTarget {
     fn assign_field(&self, _target: &str, _field: &str, _value: &str) -> String {
         String::new()
     }
+    // A list is the array its variable holds, and a record in it is the plain object it
+    // is everywhere else, which a `set` writes again rather than changes: the element
+    // the library reads — it throws for an index outside the array — is the value.
+    fn record_at(&self, list: &str, index: &str) -> Option<String> {
+        Some(format!("{RUNTIME_GLOBAL}.at({list}, {index})"))
+    }
     // The document's `<assign location="rec.field">` becomes an `<assign>` of
     // the whole record, written again with that field changed.
     fn field_assignment(&self, record: &str, field: &str, value: &str) -> Option<(String, String)> {

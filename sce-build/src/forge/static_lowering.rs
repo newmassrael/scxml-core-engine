@@ -27,6 +27,7 @@ use crate::forge::expr::{
     transpile_into_owned, transpile_into_receiving, ExprTarget, Receiving, Refusal,
 };
 use crate::forge::model::{EnumModel, EventSchemaModel, SceType};
+use crate::forge::static_datamodel::indexed_element;
 use crate::forge::type_ctx::{StaticEnum, StaticScope};
 use crate::forge::types::InferredType;
 use crate::generator::Language;
@@ -522,6 +523,26 @@ pub trait StaticTarget {
     /// that is plain data, and a clone of it for one that owns text.
     fn record_copy(&self, value: &str, _schema: &EventSchemaModel) -> String {
         value.to_string()
+    }
+    /// The statements `parts`, each lowered from an action that can fail, as the one
+    /// statement of an action that runs them in order and stops at the first that
+    /// fails. A statement that can fail is, for most targets, an expression that is
+    /// `true` when it failed, so they are joined by `||`, which does not evaluate
+    /// the rest once one has. A target whose such statement is a block that leaves
+    /// by itself writes them one after another.
+    fn in_sequence(&self, parts: &[String]) -> String {
+        parts
+            .iter()
+            .map(|part| format!("({part})"))
+            .collect::<Vec<_>>()
+            .join(" || ")
+    }
+    /// The element of `list` at `index`, whole, as an expression that fails when the
+    /// index is outside the list — for a target that holds a list as a value it can read
+    /// an element of whole. `None` for a target whose record is a type no expression
+    /// names: it copies the element into the record a field at a time.
+    fn record_at(&self, _list: &str, _index: &str) -> Option<String> {
+        None
     }
     /// [`Self::receiving_write`] of a value that is a record of the type `held`,
     /// for a target that names the type of the local the value is computed into.
@@ -4215,6 +4236,10 @@ impl StaticTarget for PythonTarget {
     fn name(&self) -> &'static str {
         "Python"
     }
+    // A statement that fails raises, which leaves the block: the lines follow one another.
+    fn in_sequence(&self, parts: &[String]) -> String {
+        parts.join("\n")
+    }
     fn callee(&self, document_name: &str) -> Option<Callee> {
         Some(generated_callee(Language::Python, document_name, None))
     }
@@ -4805,6 +4830,11 @@ impl CTarget {
 impl StaticTarget for CTarget {
     fn name(&self) -> &'static str {
         "C11"
+    }
+    // A statement that fails is a block of its own that returns from the function: the
+    // blocks follow one another.
+    fn in_sequence(&self, parts: &[String]) -> String {
+        parts.join("\n")
     }
     // An algorithm's C artifact is a header of `static inline` functions, which
     // the machine includes by the line a forge kind importing it writes; a call
@@ -6080,6 +6110,28 @@ fn lower_action(
                 Some((alias, schema)) if action.expr.trim() == "_event.data" => {
                     payload_record_value(rewrites.machine, alias, schema, target, &lower)?
                 }
+                // The element of a list of records at an index, whole: a target
+                // that reads one whole copies it as it copies a named record; any
+                // other copies the element a field at a time.
+                Some((_, schema)) if indexed_element(&action.expr).is_some() => {
+                    let (list, index) =
+                        indexed_element(&action.expr).expect("guarded by the match above");
+                    let lowered = lower(index, InferredType::Unknown)?;
+                    let named = renames.get(list).copied().unwrap_or(list);
+                    match target.record_at(named, &lowered.text) {
+                        Some(element) => Receiving {
+                            text: target.record_copy(&element, schema),
+                            can_fail: true,
+                        },
+                        None => {
+                            let (list, index) = (list.to_string(), index.to_string());
+                            return lower_element_fields(
+                                action, &list, &index, schema, ctx, renames, rewrites,
+                            )
+                            .map(|reads| reads || reads_payload);
+                        }
+                    }
+                }
                 // A record taken from another by name is a copy of it.
                 Some((_, schema)) => {
                     let value = lower(&action.expr, slot)?;
@@ -6609,6 +6661,57 @@ fn lower_action(
         _ => {}
     }
     Ok(lower_nested(action, ctx, renames, rewrites)? || reads_payload)
+}
+
+/// `<assign location="last" expr="days[i]">` for a target that cannot read an element
+/// whole: one `<assign location="last.f" expr="days[i].f">` for each field `f` of the
+/// schema, lowered as any such assignment is and written one after another in the
+/// statement the action lands in. A read that fails — an index outside the list fails
+/// the first, and the same index fails every one — ends the block there (§scxml-4.9),
+/// before anything is written.
+///
+/// `list` and `index` are as the document spells them; each synthetic assignment
+/// renames them as the document's own would be.
+fn lower_element_fields(
+    action: &mut Action,
+    list: &str,
+    index: &str,
+    schema: &EventSchemaModel,
+    ctx: &crate::forge::types::TypeCtx<'_>,
+    renames: &HashMap<&str, &str>,
+    rewrites: &Rewrites<'_>,
+) -> Result<bool, GenerateError> {
+    let record = action.location.trim().to_string();
+    let mut statements = Vec::new();
+    let mut fails = Vec::new();
+    let mut reads_payload = false;
+    for field in &schema.fields {
+        let mut copy = action.clone();
+        copy.location = format!("{record}.{}", field.id);
+        copy.expr = format!("{list}[{index}].{}", field.id);
+        // Nothing of the copy is written in the document: no site to note.
+        copy.spellings = Default::default();
+        reads_payload |= lower_action(&mut copy, ctx, renames, rewrites)?;
+        fails.push(copy.native_fails);
+        statements.push(copy.native_code);
+    }
+    // Every read of an element can fail, so every statement does. A schema whose copy
+    // were a mix of the two would have no one way to join them.
+    if fails.iter().any(|f| *f) != fails.iter().all(|f| *f) {
+        return Err(GenerateError::unsupported(format!(
+            "`{record} = {list}[{index}]`: some fields of the record are copied by a statement \
+             that can fail and some by one that cannot, which {} has no way to run in order",
+            rewrites.target.name()
+        )));
+    }
+    let can_fail = fails.first().copied().unwrap_or(false);
+    action.native_code = if can_fail {
+        rewrites.target.in_sequence(&statements)
+    } else {
+        statements.join("\n")
+    };
+    action.native_fails = can_fail;
+    Ok(reads_payload)
 }
 
 /// Lower the value of a `<param>` that crosses as data (SCE Accepted Subset

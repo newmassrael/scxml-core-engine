@@ -307,6 +307,46 @@ pub(crate) fn list_read_refusal(list: &str) -> crate::forge::expr::Refusal {
     .at(None)
 }
 
+/// `days[0]` or `days[len(days) - 1]`: the name of a list and the text of the index
+/// an element of it is read at, whole — nothing follows the bracket that closes the
+/// index, so `days[0].frame` is a field's read and not this. `None` for any other
+/// spelling.
+pub(crate) fn indexed_element(written: &str) -> Option<(&str, &str)> {
+    let text = written.trim();
+    let open = text.find('[')?;
+    let list = text[..open].trim();
+    let is_name = !list.is_empty()
+        && !list.starts_with(|c: char| c.is_ascii_digit())
+        && list.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+    if !is_name {
+        return None;
+    }
+    let mut depth = 0usize;
+    for (at, c) in text[open..].char_indices() {
+        match c {
+            '[' => depth += 1,
+            ']' => {
+                depth -= 1;
+                if depth == 0 {
+                    // The bracket opened first closes last, or the text goes on past it.
+                    let close = open + at;
+                    let index = text[open + 1..close].trim();
+                    return (close + 1 == text.len() && !index.is_empty()).then_some((list, index));
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Whether `name` is one of the identifiers `text` is made of — `last` is in
+/// `last.n + 1` and `len(last)`, and is not in `lasting`.
+fn names_identifier(text: &str, name: &str) -> bool {
+    text.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+        .any(|word| word == name)
+}
+
 /// A variable's declared type; `Unknown` for an enum, whose width the
 /// inference layer declines to claim ([`InferredType::from_sce_type`]).
 fn variable_type(var: &Variable) -> InferredType {
@@ -1605,6 +1645,11 @@ impl<'a> Judge<'a> {
                     .and_then(|v| v.value_type.as_ref())
                     .and_then(crate::forge::model::AlgorithmValueType::record_alias)
                 {
+                    // ... or from the element of a list of its schema, by an index:
+                    // the element is copied field by field, as a field of it is read.
+                    if let Some((list, index)) = indexed_element(&action.expr) {
+                        return self.element_copy(ctx, action, alias, list, index, state);
+                    }
                     return self.record_of(
                         "assign",
                         &action.expr,
@@ -1922,6 +1967,76 @@ impl<'a> Judge<'a> {
             self.loop_records.borrow_mut().pop();
         }
         judged
+    }
+
+    /// A record variable of the schema `alias` takes the element of a list of that
+    /// schema at `index` whole (`<assign location="last" expr="days[0]"/>`).
+    ///
+    /// Nothing in an expression makes a record, so no backend reads an element
+    /// whole: the copy is the element's fields read one by one, each as
+    /// `days[0].<field>` is, and each field is judged here as that read is. An index
+    /// outside the list fails the first read, writes nothing and ends the block
+    /// (§scxml-4.9), as it does for a field. The index is read once per field, so
+    /// it may not name the record being written: its own fields change under it.
+    fn element_copy(
+        &self,
+        ctx: &TypeCtx<'_>,
+        action: &Action,
+        alias: &str,
+        list: &str,
+        index: &str,
+        state: &str,
+    ) -> Result<(), Located<ForgeError>> {
+        let spelling = action.spellings.get("expr");
+        let location = action.location.trim();
+        let written = action.expr.trim();
+        let refuse = |rule: String| {
+            self.rule_at(
+                "<assign>".to_string(),
+                &rule,
+                spelling.map(|s| s.row()),
+                spelling.map(|s| s.col()),
+                state,
+                written,
+            )
+        };
+        match self
+            .list_var(list)
+            .and_then(|v| v.value_type.as_ref())
+            .and_then(crate::forge::model::AlgorithmValueType::list_elem)
+        {
+            Some(crate::forge::model::ListElemType::Record { alias: held }) if held == alias => {}
+            Some(crate::forge::model::ListElemType::Record { alias: held }) => {
+                return Err(refuse(format!(
+                    "an element of the list `{list}` is a record of the schema {held}, and \
+                     `{location}` holds one of the schema {alias}"
+                )));
+            }
+            _ => return self.record_of("assign", written, spelling, alias, state),
+        }
+        if names_identifier(index, location) {
+            return Err(refuse(format!(
+                "the index of the element reads `{location}`, which the copy writes a field at a \
+                 time, so the index would change under it: take the index into a variable first"
+            )));
+        }
+        let Some(schema) = self.schemas.get(alias) else {
+            return self.record_of("assign", written, spelling, alias, state);
+        };
+        for field in &schema.fields {
+            // An enum is untyped to an expression: the schema holds it to the enum.
+            let slot = match field.sce_type {
+                crate::forge::model::SceType::Enum(_) => InferredType::Unknown,
+                ref ty => InferredType::from_sce_type(ty),
+            };
+            self.expr(
+                ctx,
+                &format!("{list}[{index}].{}", field.id),
+                spelling,
+                Expected::Slot(slot),
+            )?;
+        }
+        Ok(())
     }
 
     /// `expr`, which an `<sce:append>` to a list of `record:<alias>` or an

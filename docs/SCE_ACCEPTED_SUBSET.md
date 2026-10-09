@@ -3681,9 +3681,11 @@ variable is closed over its fields, so any other member is
 `expression/unknown-member`. It is updated a field at a time,
 `<assign location="shown.<field>">`, or taken whole from another record of the
 same schema by its name, `<assign location="shown" expr="chosen"/>` — a record
-variable, or the record item of a `<foreach>` over a list of it. Nothing in an
-expression makes a record, so any other value assigned to the whole record is
-`scxml/static-datamodel-rule` on the `expr`, which says which names it takes.
+variable, or the record item of a `<foreach>` over a list of it — or from the
+element a list of that schema holds at an index, `<assign location="shown"
+expr="days[0]"/>`. Nothing in an expression makes a record, so any other value
+assigned to the whole record is `scxml/static-datamodel-rule` on the `expr`,
+which says which names it takes.
 A missing field is refused on the
 `sce:type` that names the record, an unknown or repeated one on its `name`,
 both as `validation/attribute-rule-violated`. `<sce:set>` is its own element
@@ -4022,6 +4024,22 @@ keeps the untyped width it has, which takes that of what it meets.
 `scenarios/static_list_index.json` holds all of this on every engine that runs
 the model, and `scenarios/static_record_list_index.json` the field of an
 indexed record.
+
+**An element taken whole.** The element of a list of records at an index is no
+value an expression holds, so it is taken whole only into a record variable of
+its schema — `<assign location="last" expr="days[len(days) - 1]"/>` — and is
+copied as its fields are read, one by one, each as `days[…].<field>` is: a
+number, a bool, a string, a byte string or an enum, held to the bound its schema
+gives it. An index outside the list fails the first read, so the record is left
+as it was, `error.execution` is raised and the block ends, as it does for a
+field. The index is read once for each field, so it may not name the record
+being written (`last = days[last.n]` is `scxml/static-datamodel-rule`, which says
+to take the index into a variable first), and an element of another schema is
+refused with both schemas named. An element is not appended whole by its index:
+`<sce:append expr="days[0]"/>` names a record the way no expression does.
+`scenarios/static_record_list_index.json`, `static_record_bytes.json`,
+`static_record_enum.json` and `static_record_string.json` hold it on every
+engine.
 
 **A list of records.** `sce:type="list&lt;record:Day&gt;"` holds records of an
 imported event-schema, declared as a record variable is (a type of the

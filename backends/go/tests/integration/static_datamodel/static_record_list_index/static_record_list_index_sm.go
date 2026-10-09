@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: cb41954d893211ff980559eb7566d5cfca26a8d312a941a8b0426661b4fb8dcd
+// source-hash: 7ad55f268a9fbf4c094293a60d20a17c7e9e6598a9a6fe5787c0e9f2898a7e28
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -20,7 +20,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: static_record_list_index.scxml:21 :: _machine
+// SCE-MAP: static_record_list_index.scxml:27 :: _machine
 
 package static_record_list_index
 
@@ -141,9 +141,12 @@ const (
 	StaticRecordListIndexEventLast StaticRecordListIndexEvent = 2
 	StaticRecordListIndexEventNext StaticRecordListIndexEvent = 3
 	StaticRecordListIndexEventOrder StaticRecordListIndexEvent = 4
-	StaticRecordListIndexEventTotal StaticRecordListIndexEvent = 5
+	StaticRecordListIndexEventPickCursor StaticRecordListIndexEvent = 5
+	StaticRecordListIndexEventPickFirst StaticRecordListIndexEvent = 6
+	StaticRecordListIndexEventPickLast StaticRecordListIndexEvent = 7
+	StaticRecordListIndexEventTotal StaticRecordListIndexEvent = 8
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	StaticRecordListIndexEventNull StaticRecordListIndexEvent = 6
+	StaticRecordListIndexEventNull StaticRecordListIndexEvent = 9
 )
 
 func (e StaticRecordListIndexEvent) String() string {
@@ -158,6 +161,12 @@ func (e StaticRecordListIndexEvent) String() string {
 		return "next"
 	case StaticRecordListIndexEventOrder:
 		return "order"
+	case StaticRecordListIndexEventPickCursor:
+		return "pick_cursor"
+	case StaticRecordListIndexEventPickFirst:
+		return "pick_first"
+	case StaticRecordListIndexEventPickLast:
+		return "pick_last"
 	case StaticRecordListIndexEventTotal:
 		return "total"
 	case StaticRecordListIndexEventNull:
@@ -251,6 +260,8 @@ type StaticRecordListIndexPolicy struct {
 	// ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
 	// W3C SCXML 5.2: the `draft` datamodel variable.
 	vDraft StaticRecordListIndexDayRecord
+	// W3C SCXML 5.2: the `picked` datamodel variable, published (`sce:direction="out"`).
+	vPicked StaticRecordListIndexDayRecord
 	// W3C SCXML 5.2: the `days` datamodel variable.
 	vDays []StaticRecordListIndexDayRecord
 	// W3C SCXML 5.2: the `cursor` datamodel variable, published (`sce:direction="out"`).
@@ -278,6 +289,7 @@ type StaticRecordListIndexPolicy struct {
 func NewStaticRecordListIndexPolicy() StaticRecordListIndexPolicy {
 	return StaticRecordListIndexPolicy{
 		vDraft: StaticRecordListIndexDayRecord{year: 2026, month: 1, dayOfMonth: 1},
+		vPicked: StaticRecordListIndexDayRecord{year: 2000, month: 1, dayOfMonth: 1},
 		vDays: nil,
 		vCursor: 0,
 		vDay: 0,
@@ -286,6 +298,12 @@ func NewStaticRecordListIndexPolicy() StaticRecordListIndexPolicy {
 		vOrdered: false,
 		vRefusals: 0,
 	}
+}
+
+// Picked reports what the published `picked` datamodel
+// variable holds now (W3C SCXML 5.2). Only the machine writes it.
+func (p *StaticRecordListIndexPolicy) Picked() StaticRecordListIndexDayRecord {
+	return p.vPicked
 }
 
 // Cursor reports what the published `cursor` datamodel
@@ -485,6 +503,12 @@ func (p *StaticRecordListIndexPolicy) GetEventFromName(name string) (StaticRecor
 		return StaticRecordListIndexEventNext, true
 	case "order":
 		return StaticRecordListIndexEventOrder, true
+	case "pick_cursor":
+		return StaticRecordListIndexEventPickCursor, true
+	case "pick_first":
+		return StaticRecordListIndexEventPickFirst, true
+	case "pick_last":
+		return StaticRecordListIndexEventPickLast, true
 	case "total":
 		return StaticRecordListIndexEventTotal, true
 	}
@@ -627,7 +651,7 @@ func (p *StaticRecordListIndexPolicy) ClearEventMetadata() {
 // ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
 // configuration, runs its <onentry>, and its <initial> transition's content when
 // its initial state is entered by default.
-//line static_record_list_index.scxml:21
+//line static_record_list_index.scxml:27
 func (p *StaticRecordListIndexPolicy) ExecuteEntryActions(state StaticRecordListIndexState, engine *sce.Engine[StaticRecordListIndexState, StaticRecordListIndexEvent], isDefaultEntry bool) {
 	switch state {
 	default:
@@ -640,7 +664,7 @@ func (p *StaticRecordListIndexPolicy) ExecuteEntryActions(state StaticRecordList
 // <initial> content) when the history was taken with nothing recorded. The
 // engine asks for it by the entry set's defaultHistoryContent answer; a history
 // that restored what it recorded runs nothing.
-//line static_record_list_index.scxml:21
+//line static_record_list_index.scxml:27
 func (p *StaticRecordListIndexPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[StaticRecordListIndexState, StaticRecordListIndexEvent]) {
 	// W3C SCXML 3.10.2: no <history> in this document has default content.
 }
@@ -648,7 +672,7 @@ func (p *StaticRecordListIndexPolicy) ExecuteHistoryDefaultContent(history sce.H
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
 // runs its <onexit>, cancels its invocations and removes it from the
 // configuration — §scxml-D-exitStates's order.
-//line static_record_list_index.scxml:21
+//line static_record_list_index.scxml:27
 func (p *StaticRecordListIndexPolicy) ExecuteExitActions(state StaticRecordListIndexState, engine *sce.Engine[StaticRecordListIndexState, StaticRecordListIndexEvent], configurationBeforeExit []StaticRecordListIndexState) {
 	// §scxml-D-exitStates orders one state's exit as onexit, then
 	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
@@ -665,7 +689,7 @@ func (p *StaticRecordListIndexPolicy) ExecuteExitActions(state StaticRecordListI
 // BindCurrentEvent binds the event whose transitions are about to be selected as
 // the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
 // and not for an eventless selection, which has no event of its own.
-//line static_record_list_index.scxml:21
+//line static_record_list_index.scxml:27
 func (p *StaticRecordListIndexPolicy) BindCurrentEvent(event StaticRecordListIndexEvent, engine *sce.Engine[StaticRecordListIndexState, StaticRecordListIndexEvent]) {
 	// This document's guards never read _event, so there is nothing to bind.
 }
@@ -675,7 +699,7 @@ func (p *StaticRecordListIndexPolicy) BindCurrentEvent(event StaticRecordListInd
 // that event enables and whose guard holds. The engine walks the atomic states
 // and their ancestors and keeps the ordered set; the null event asks for
 // eventless transitions.
-//line static_record_list_index.scxml:21
+//line static_record_list_index.scxml:27
 func (p *StaticRecordListIndexPolicy) FirstEnabledTransition(state StaticRecordListIndexState, event StaticRecordListIndexEvent, engine *sce.Engine[StaticRecordListIndexState, StaticRecordListIndexEvent]) (sce.EnabledTransition[StaticRecordListIndexState, sce.HistoryID], bool) {
 	switch state {
 	case StaticRecordListIndexStateReading:
@@ -709,11 +733,41 @@ func (p *StaticRecordListIndexPolicy) FirstEnabledTransition(state StaticRecordL
 				}, true
 			}
 		}
-		if event == StaticRecordListIndexEventTotal {
+		if event == StaticRecordListIndexEventPickFirst {
 			{
 				return sce.EnabledTransition[StaticRecordListIndexState, sce.HistoryID]{
 					Source:          state,
 					TransitionIndex: 3,
+					HasActions:      true,
+					IsInternal:      true,
+				}, true
+			}
+		}
+		if event == StaticRecordListIndexEventPickLast {
+			{
+				return sce.EnabledTransition[StaticRecordListIndexState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 4,
+					HasActions:      true,
+					IsInternal:      true,
+				}, true
+			}
+		}
+		if event == StaticRecordListIndexEventPickCursor {
+			{
+				return sce.EnabledTransition[StaticRecordListIndexState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 5,
+					HasActions:      true,
+					IsInternal:      true,
+				}, true
+			}
+		}
+		if event == StaticRecordListIndexEventTotal {
+			{
+				return sce.EnabledTransition[StaticRecordListIndexState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 6,
 					HasActions:      true,
 					IsInternal:      true,
 				}, true
@@ -726,7 +780,7 @@ func (p *StaticRecordListIndexPolicy) FirstEnabledTransition(state StaticRecordL
 			if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.vDays[:], int64(0)).dayOfMonth < scealgorithm.At(&sceFailure, p.vDays[:], int64(1)).dayOfMonth; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordListIndexEventErrorExecution, "<transition cond='days[0].dayOfMonth < days[1].dayOfMonth'>: an integer operation overflowed or failed")); return false }; return sceValue }() {
 				return sce.EnabledTransition[StaticRecordListIndexState, sce.HistoryID]{
 					Source:          state,
-					TransitionIndex: 4,
+					TransitionIndex: 7,
 					HasActions:      true,
 					IsInternal:      true,
 				}, true
@@ -736,7 +790,7 @@ func (p *StaticRecordListIndexPolicy) FirstEnabledTransition(state StaticRecordL
 			{
 				return sce.EnabledTransition[StaticRecordListIndexState, sce.HistoryID]{
 					Source:          state,
-					TransitionIndex: 5,
+					TransitionIndex: 8,
 					HasActions:      true,
 					IsInternal:      true,
 				}, true
@@ -746,7 +800,7 @@ func (p *StaticRecordListIndexPolicy) FirstEnabledTransition(state StaticRecordL
 			{
 				return sce.EnabledTransition[StaticRecordListIndexState, sce.HistoryID]{
 					Source:          state,
-					TransitionIndex: 6,
+					TransitionIndex: 9,
 					HasActions:      true,
 					IsInternal:      true,
 				}, true
@@ -758,13 +812,13 @@ func (p *StaticRecordListIndexPolicy) FirstEnabledTransition(state StaticRecordL
 
 // ExecuteTransitionContent runs one transition's executable content (W3C SCXML
 // 3.13), between the microstep's exits and its entries.
-//line static_record_list_index.scxml:21
+//line static_record_list_index.scxml:27
 func (p *StaticRecordListIndexPolicy) ExecuteTransitionContent(source StaticRecordListIndexState, transitionIndex int, engine *sce.Engine[StaticRecordListIndexState, StaticRecordListIndexEvent]) {
 	switch source {
 	case StaticRecordListIndexStateReading:
 		switch transitionIndex {
 		case 0:
-			//line static_record_list_index.scxml:39
+			//line static_record_list_index.scxml:50
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticRecordListIndexPayloadTagDayPicked {
@@ -791,7 +845,7 @@ func (p *StaticRecordListIndexPolicy) ExecuteTransitionContent(source StaticReco
 
 			}()
 		case 1:
-			//line static_record_list_index.scxml:45
+			//line static_record_list_index.scxml:56
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -814,7 +868,7 @@ func (p *StaticRecordListIndexPolicy) ExecuteTransitionContent(source StaticReco
 
 			}()
 		case 2:
-			//line static_record_list_index.scxml:50
+			//line static_record_list_index.scxml:61
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -825,7 +879,40 @@ func (p *StaticRecordListIndexPolicy) ExecuteTransitionContent(source StaticReco
 
 			}()
 		case 3:
-			//line static_record_list_index.scxml:53
+			//line static_record_list_index.scxml:64
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
+
+
+	if (func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.vDays[:], int64(0)).year; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordListIndexEventErrorExecution, "<assign location='picked.year'>: an integer operation overflowed or failed")); return true }; p.vPicked.year = sceValue; return false }()) || (func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.vDays[:], int64(0)).month; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordListIndexEventErrorExecution, "<assign location='picked.month'>: an integer operation overflowed or failed")); return true }; p.vPicked.month = sceValue; return false }()) || (func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.vDays[:], int64(0)).dayOfMonth; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordListIndexEventErrorExecution, "<assign location='picked.dayOfMonth'>: an integer operation overflowed or failed")); return true }; p.vPicked.dayOfMonth = sceValue; return false }()) {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+			}()
+		case 4:
+			//line static_record_list_index.scxml:67
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
+
+
+	if (func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AtU(&sceFailure, p.vDays[:], uint64(scealgorithm.SubUint32(&sceFailure, uint32(len(p.vDays)), 1))).year; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordListIndexEventErrorExecution, "<assign location='picked.year'>: an integer operation overflowed or failed")); return true }; p.vPicked.year = sceValue; return false }()) || (func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AtU(&sceFailure, p.vDays[:], uint64(scealgorithm.SubUint32(&sceFailure, uint32(len(p.vDays)), 1))).month; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordListIndexEventErrorExecution, "<assign location='picked.month'>: an integer operation overflowed or failed")); return true }; p.vPicked.month = sceValue; return false }()) || (func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AtU(&sceFailure, p.vDays[:], uint64(scealgorithm.SubUint32(&sceFailure, uint32(len(p.vDays)), 1))).dayOfMonth; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordListIndexEventErrorExecution, "<assign location='picked.dayOfMonth'>: an integer operation overflowed or failed")); return true }; p.vPicked.dayOfMonth = sceValue; return false }()) {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+			}()
+		case 5:
+			//line static_record_list_index.scxml:70
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
+
+
+	if (func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.vDays[:], int64(p.vCursor)).year; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordListIndexEventErrorExecution, "<assign location='picked.year'>: an integer operation overflowed or failed")); return true }; p.vPicked.year = sceValue; return false }()) || (func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.vDays[:], int64(p.vCursor)).month; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordListIndexEventErrorExecution, "<assign location='picked.month'>: an integer operation overflowed or failed")); return true }; p.vPicked.month = sceValue; return false }()) || (func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.vDays[:], int64(p.vCursor)).dayOfMonth; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordListIndexEventErrorExecution, "<assign location='picked.dayOfMonth'>: an integer operation overflowed or failed")); return true }; p.vPicked.dayOfMonth = sceValue; return false }()) {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+			}()
+		case 6:
+			//line static_record_list_index.scxml:73
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -835,8 +922,8 @@ func (p *StaticRecordListIndexPolicy) ExecuteTransitionContent(source StaticReco
 	}
 
 			}()
-		case 4:
-			//line static_record_list_index.scxml:56
+		case 7:
+			//line static_record_list_index.scxml:76
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -844,8 +931,8 @@ func (p *StaticRecordListIndexPolicy) ExecuteTransitionContent(source StaticReco
 	p.vOrdered = true
 
 			}()
-		case 5:
-			//line static_record_list_index.scxml:59
+		case 8:
+			//line static_record_list_index.scxml:79
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -853,8 +940,8 @@ func (p *StaticRecordListIndexPolicy) ExecuteTransitionContent(source StaticReco
 	p.vOrdered = false
 
 			}()
-		case 6:
-			//line static_record_list_index.scxml:62
+		case 9:
+			//line static_record_list_index.scxml:82
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

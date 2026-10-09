@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: cb41954d893211ff980559eb7566d5cfca26a8d312a941a8b0426661b4fb8dcd
+// source-hash: 7ad55f268a9fbf4c094293a60d20a17c7e9e6598a9a6fe5787c0e9f2898a7e28
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_record_string.scxml
@@ -35,6 +35,8 @@ sealed interface StaticRecordStringEvent : Event {
     data object Peek : StaticRecordStringEvent
     data object Peeklast : StaticRecordStringEvent
     data object Reset : StaticRecordStringEvent
+    data object Take : StaticRecordStringEvent
+    data object Takelast : StaticRecordStringEvent
     data object Tally : StaticRecordStringEvent
     data object ToNote : StaticRecordStringEvent
     data object Toowide : StaticRecordStringEvent
@@ -426,6 +428,24 @@ class StaticRecordStringStateMachine(
             hasActions = true,
             isInternal = true,
         )
+
+        // W3C SCXML 3.13: idle's transition 16, as the microstep reads it.
+        val transitionIdleAt16 = EnabledTransition<StaticRecordStringState, HistoryId>(
+            StaticRecordStringState.Idle,
+            emptyList(),
+            16,
+            hasActions = true,
+            isInternal = true,
+        )
+
+        // W3C SCXML 3.13: idle's transition 17, as the microstep reads it.
+        val transitionIdleAt17 = EnabledTransition<StaticRecordStringState, HistoryId>(
+            StaticRecordStringState.Idle,
+            emptyList(),
+            17,
+            hasActions = true,
+            isInternal = true,
+        )
     }
 
     // W3C SCXML: Resolve state ID string to State object
@@ -457,6 +477,8 @@ class StaticRecordStringStateMachine(
         "peek" -> StaticRecordStringEvent.Peek
         "peeklast" -> StaticRecordStringEvent.Peeklast
         "reset" -> StaticRecordStringEvent.Reset
+        "take" -> StaticRecordStringEvent.Take
+        "takelast" -> StaticRecordStringEvent.Takelast
         "tally" -> StaticRecordStringEvent.Tally
         "to_note" -> StaticRecordStringEvent.ToNote
         "toowide" -> StaticRecordStringEvent.Toowide
@@ -477,6 +499,8 @@ class StaticRecordStringStateMachine(
         is StaticRecordStringEvent.Peek -> "peek"
         is StaticRecordStringEvent.Peeklast -> "peeklast"
         is StaticRecordStringEvent.Reset -> "reset"
+        is StaticRecordStringEvent.Take -> "take"
+        is StaticRecordStringEvent.Takelast -> "takelast"
         is StaticRecordStringEvent.Tally -> "tally"
         is StaticRecordStringEvent.ToNote -> "to_note"
         is StaticRecordStringEvent.Toowide -> "toowide"
@@ -511,8 +535,10 @@ class StaticRecordStringStateMachine(
             event is StaticRecordStringEvent.Peek -> transitionIdleAt11
             event is StaticRecordStringEvent.Peeklast -> transitionIdleAt12
             event is StaticRecordStringEvent.Isfirst && (try { com.sce.forge.runtime.SceChecked.at(labels, (0).toLong()).label == "whole" } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordStringEvent.Error.Execution, "<transition cond='labels[0].label === 'whole''>: an integer operation overflowed or failed"); false }) -> transitionIdleAt13
-            event is StaticRecordStringEvent.Forget -> transitionIdleAt14
-            event is StaticRecordStringEvent.Error.Execution -> transitionIdleAt15
+            event is StaticRecordStringEvent.Take -> transitionIdleAt14
+            event is StaticRecordStringEvent.Takelast -> transitionIdleAt15
+            event is StaticRecordStringEvent.Forget -> transitionIdleAt16
+            event is StaticRecordStringEvent.Error.Execution -> transitionIdleAt17
             else -> null
         }
     }
@@ -659,12 +685,26 @@ class StaticRecordStringStateMachine(
             }
             }
             14 -> {
-                // SCE-MAP: static_record_string.scxml:95 :: idle :: _transition_14
+                // SCE-MAP: static_record_string.scxml:99 :: idle :: _transition_14
+
+            if ((try { last = last.copy(sensor = com.sce.forge.runtime.SceChecked.at(labels, (0).toLong()).sensor); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordStringEvent.Error.Execution, "<assign location='last.sensor'>: an integer operation overflowed or failed"); true }) || (try { last = last.copy(label = com.sce.forge.runtime.SceChecked.bounded(com.sce.forge.runtime.SceChecked.at(labels, (0).toLong()).label, 8)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordStringEvent.Error.Execution, "<assign location='last.label'>: an integer operation overflowed or failed"); true })) {
+                return
+            }
+            }
+            15 -> {
+                // SCE-MAP: static_record_string.scxml:102 :: idle :: _transition_15
+
+            if ((try { last = last.copy(sensor = com.sce.forge.runtime.SceChecked.at(labels, (com.sce.forge.runtime.SceChecked.sub((labels).size.toUInt(), 1.toUInt())).toLong()).sensor); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordStringEvent.Error.Execution, "<assign location='last.sensor'>: an integer operation overflowed or failed"); true }) || (try { last = last.copy(label = com.sce.forge.runtime.SceChecked.bounded(com.sce.forge.runtime.SceChecked.at(labels, (com.sce.forge.runtime.SceChecked.sub((labels).size.toUInt(), 1.toUInt())).toLong()).label, 8)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordStringEvent.Error.Execution, "<assign location='last.label'>: an integer operation overflowed or failed"); true })) {
+                return
+            }
+            }
+            16 -> {
+                // SCE-MAP: static_record_string.scxml:105 :: idle :: _transition_16
 
             labels = emptyList()
             }
-            15 -> {
-                // SCE-MAP: static_record_string.scxml:98 :: idle :: _transition_15
+            17 -> {
+                // SCE-MAP: static_record_string.scxml:108 :: idle :: _transition_17
 
             if (try { errors = com.sce.forge.runtime.SceChecked.add(errors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordStringEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
                 return

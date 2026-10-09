@@ -39,6 +39,19 @@
     { "event": "next", "expect": { "variables": { "day": 5, "year": 2028, "cursor": 3, "refusals": 4 } } },
     { "note": "index 3 is not below the length 3: nothing is read, and the cursor stays where it was",
       "event": "next",
-      "expect": { "variables": { "day": 5, "year": 2028, "cursor": 3, "refusals": 5 } } }
+      "expect": { "variables": { "day": 5, "year": 2028, "cursor": 3, "refusals": 5 } } },
+
+    { "note": "the element read whole: index 3 is not below the length, so `picked` is left as its <sce:set>s built it and error.execution is raised",
+      "event": "pick_cursor",
+      "expect": { "variables": { "picked": { "year": 2000, "month": 1, "dayOfMonth": 1 }, "refusals": 6 } } },
+    { "note": "the first day, whole: every field of it, and nothing raised",
+      "event": "pick_first",
+      "expect": { "variables": { "picked": { "year": 2026, "month": 9, "dayOfMonth": 12 }, "refusals": 6 } } },
+    { "note": "the last day, by an index computed from the length",
+      "event": "pick_last",
+      "expect": { "variables": { "picked": { "year": 2028, "month": 3, "dayOfMonth": 5 }, "refusals": 6 } } },
+    { "note": "an index outside the list again: the record keeps the day it held, all three fields of it",
+      "event": "pick_cursor",
+      "expect": { "variables": { "picked": { "year": 2028, "month": 3, "dayOfMonth": 5 }, "refusals": 7 } } }
   ]
 }

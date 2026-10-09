@@ -386,11 +386,78 @@ fn an_enum_value_taken_from_an_element_is_used_as_an_enum_value_is() {
     }
 }
 
+/// An element is no value an expression holds, so it is taken whole only where a record of
+/// its schema is written: the record is copied from it field by field, on every target.
+#[test]
+fn an_element_is_copied_whole_into_a_record_of_its_schema() {
+    let body = r#"
+      <assign location="draft" expr="days[0]"/>
+      <assign location="draft" expr="days[len(days) - 1]"/>
+      <assign location="draft" expr="days[small]"/>"#;
+    for args in EVERY_TARGET {
+        let (ok, out) = check_records(args, body);
+        assert!(ok, "{args:?}: an element copied whole:\n{out}");
+    }
+}
+
+/// The copy reads the index once for each field of the record it writes, so an index that
+/// names the record would change under it; and a spelling that is not an element at an
+/// index is a name or nothing.
+#[test]
+fn an_element_is_copied_only_where_the_copy_means_what_it_says() {
+    for (body, because) in [
+        (
+            r#"<assign location="draft" expr="days[draft.dayOfMonth]"/>"#,
+            "the index of the element reads `draft`",
+        ),
+        (
+            r#"<assign location="draft" expr="days[0].year"/>"#,
+            "a whole record of the schema Day is taken by name",
+        ),
+        (
+            r#"<assign location="draft" expr="small[0]"/>"#,
+            "a whole record of the schema Day is taken by name",
+        ),
+        (
+            r#"<assign location="draft" expr="days[0] + days[1]"/>"#,
+            "a whole record of the schema Day is taken by name",
+        ),
+    ] {
+        let (ok, out) = check_records(&["check"], body);
+        assert!(!ok, "expected a refusal ({because}), got:\n{out}");
+        assert!(
+            out.contains(because),
+            "the refusal must say {because:?}:\n{out}"
+        );
+    }
+}
+
+#[test]
+fn an_element_of_another_schema_is_no_source_for_a_record() {
+    let machine = list_machine(
+        &["schema_day.scxml", "schema_labelled.scxml"],
+        r#"<sce:import kind="event-schema" src="schema_day.scxml" as="Day"/>
+  <sce:import kind="event-schema" src="schema_labelled.scxml" as="Labelled"/>"#,
+        r#"<data id="days" sce:type="list&lt;record:Day&gt;" sce:capacity="3"/>
+    <data id="tag" sce:type="record:Labelled">
+      <sce:set name="sensor" expr="1"/>
+      <sce:set name="label" expr="'a'"/>
+    </data>"#,
+        r#"<assign location="tag" expr="days[0]"/>"#,
+    );
+    let (ok, out) = check_machine(&["check"], &machine);
+    assert!(!ok, "expected a refusal, got:\n{out}");
+    assert!(
+        out.contains("an element of the list `days` is a record of the schema Day"),
+        "the refusal must name the two schemas:\n{out}"
+    );
+}
+
 #[test]
 fn an_element_of_a_list_of_records_is_still_no_value() {
     for (body, because) in [
         (
-            r#"<assign location="draft" expr="days[0]"/>"#,
+            r#"<sce:append target="days" expr="days[0]"/>"#,
             "a whole record of the schema Day is taken by name",
         ),
         (

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: cb41954d893211ff980559eb7566d5cfca26a8d312a941a8b0426661b4fb8dcd
+// source-hash: 7ad55f268a9fbf4c094293a60d20a17c7e9e6598a9a6fe5787c0e9f2898a7e28
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -72,8 +72,8 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
-#![doc = "SCE-MAP: static_record_list_index.scxml:21 :: _machine"]
-// SCE-MAP: static_record_list_index.scxml:21 :: _machine
+#![doc = "SCE-MAP: static_record_list_index.scxml:27 :: _machine"]
+// SCE-MAP: static_record_list_index.scxml:27 :: _machine
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -100,6 +100,9 @@ pub enum StaticRecordListIndexEvent {
     Last,
     Next,
     Order,
+    PickCursor,
+    PickFirst,
+    PickLast,
     Total,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
@@ -126,6 +129,9 @@ impl StaticRecordListIndexEvent {
         StaticRecordListIndexEvent::Last,
         StaticRecordListIndexEvent::Next,
         StaticRecordListIndexEvent::Order,
+        StaticRecordListIndexEvent::PickCursor,
+        StaticRecordListIndexEvent::PickFirst,
+        StaticRecordListIndexEvent::PickLast,
         StaticRecordListIndexEvent::Total,
     ];
 }
@@ -188,6 +194,7 @@ pub struct StaticRecordListIndexDayRecord {
 #[derive(Debug, Clone, PartialEq)]
 #[allow(non_snake_case)]
 pub struct StaticRecordListIndexData {
+    pub picked: StaticRecordListIndexDayRecord,
     pub cursor: i32,
     pub day: u8,
     pub year: u16,
@@ -224,6 +231,7 @@ impl StaticRecordListIndexObserve for Engine<StaticRecordListIndexPolicy> {
         StaticRecordListIndexSnapshot {
             configuration: self.get_active_states(),
             data: StaticRecordListIndexData {
+                picked: policy.picked,
                 cursor: policy.cursor,
                 day: policy.day,
                 year: policy.year,
@@ -352,7 +360,7 @@ pub trait StaticRecordListIndexPersist: Sized {
 impl StaticRecordListIndexPersist for Engine<StaticRecordListIndexPolicy> {
     type Policy = StaticRecordListIndexPolicy;
 
-    const SHAPE: &'static str = "f453b7ad5fb911648b7913b43a5c9757ae86437ab29508e32ecd936378702b4b";
+    const SHAPE: &'static str = "61da1e53bacb07a726bb31390dd73254464024a8045abcda447f2ae9c0a2c9d8";
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<
         ::sce_rust_runtime::NoHistory,
@@ -373,6 +381,10 @@ impl StaticRecordListIndexPersist for Engine<StaticRecordListIndexPolicy> {
                 (
                     "draft".to_string(),
                     ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.draft),
+                ),
+                (
+                    "picked".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.picked),
                 ),
                 (
                     "days".to_string(),
@@ -426,6 +438,10 @@ impl StaticRecordListIndexPersist for Engine<StaticRecordListIndexPolicy> {
             saved.variable("draft")?,
             "draft",
         )?;
+        policy.picked = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("picked")?,
+            "picked",
+        )?;
         policy.days = ::sce_rust_runtime::saved_state::bounded(saved.variable("days")?, "days", 3)?;
         policy.cursor = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("cursor")?,
@@ -475,6 +491,8 @@ pub struct StaticRecordListIndexPolicy {
     pending_payload: StaticRecordListIndexPayload,
     /// W3C SCXML 5.2: the `draft` datamodel variable.
     draft: StaticRecordListIndexDayRecord,
+    /// W3C SCXML 5.2: the `picked` datamodel variable, published (`sce:direction="out"`).
+    picked: StaticRecordListIndexDayRecord,
     /// W3C SCXML 5.2: the `days` datamodel variable.
     days: Vec<StaticRecordListIndexDayRecord>,
     /// W3C SCXML 5.2: the `cursor` datamodel variable, published (`sce:direction="out"`).
@@ -518,6 +536,11 @@ impl StaticRecordListIndexPolicy {
             month: 1,
             dayOfMonth: 1,
         };
+        let picked: StaticRecordListIndexDayRecord = StaticRecordListIndexDayRecord {
+            year: 2000,
+            month: 1,
+            dayOfMonth: 1,
+        };
         let days: Vec<StaticRecordListIndexDayRecord> = Vec::new();
         let cursor: i32 = 0;
         let day: u8 = 0;
@@ -528,6 +551,7 @@ impl StaticRecordListIndexPolicy {
         Self {
             pending_payload: StaticRecordListIndexPayload::default(),
             draft,
+            picked,
             days,
             cursor,
             day,
@@ -563,6 +587,12 @@ impl StaticRecordListIndexPolicy {
         if let Some(value) = params.refusals {
             self.refusals = value;
         }
+    }
+
+    /// W3C SCXML 5.2: what the published `picked` datamodel variable
+    /// holds now. Only the machine writes it.
+    pub fn picked(&self) -> StaticRecordListIndexDayRecord {
+        self.picked
     }
 
     /// W3C SCXML 5.2: what the published `cursor` datamodel variable
@@ -740,6 +770,9 @@ impl StatePolicy for StaticRecordListIndexPolicy {
             StaticRecordListIndexEvent::Last => "last",
             StaticRecordListIndexEvent::Next => "next",
             StaticRecordListIndexEvent::Order => "order",
+            StaticRecordListIndexEvent::PickCursor => "pick_cursor",
+            StaticRecordListIndexEvent::PickFirst => "pick_first",
+            StaticRecordListIndexEvent::PickLast => "pick_last",
             StaticRecordListIndexEvent::Total => "total",
             StaticRecordListIndexEvent::Null => "",
         }
@@ -752,6 +785,9 @@ impl StatePolicy for StaticRecordListIndexPolicy {
             "last" => Some(StaticRecordListIndexEvent::Last),
             "next" => Some(StaticRecordListIndexEvent::Next),
             "order" => Some(StaticRecordListIndexEvent::Order),
+            "pick_cursor" => Some(StaticRecordListIndexEvent::PickCursor),
+            "pick_first" => Some(StaticRecordListIndexEvent::PickFirst),
+            "pick_last" => Some(StaticRecordListIndexEvent::PickLast),
             "total" => Some(StaticRecordListIndexEvent::Total),
             _ => None,
         }
@@ -832,8 +868,8 @@ impl StatePolicy for StaticRecordListIndexPolicy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: static_record_list_index.scxml:21 :: _machine"]
-    // SCE-MAP: static_record_list_index.scxml:21 :: _machine
+    #[doc = "SCE-MAP: static_record_list_index.scxml:27 :: _machine"]
+    // SCE-MAP: static_record_list_index.scxml:27 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -849,8 +885,8 @@ impl StatePolicy for StaticRecordListIndexPolicy {
     // recorded runs nothing.
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: static_record_list_index.scxml:21 :: _machine"]
-    // SCE-MAP: static_record_list_index.scxml:21 :: _machine
+    #[doc = "SCE-MAP: static_record_list_index.scxml:27 :: _machine"]
+    // SCE-MAP: static_record_list_index.scxml:27 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -866,8 +902,8 @@ impl StatePolicy for StaticRecordListIndexPolicy {
     // the first of `state`'s own transitions, in document order, that `event`
     // enables. The engine walks the atomic states and their ancestors and
     // keeps the ordered set. `Event::Null` asks for eventless transitions.
-    #[doc = "SCE-MAP: static_record_list_index.scxml:21 :: _machine"]
-    // SCE-MAP: static_record_list_index.scxml:21 :: _machine
+    #[doc = "SCE-MAP: static_record_list_index.scxml:27 :: _machine"]
+    // SCE-MAP: static_record_list_index.scxml:27 :: _machine
     fn first_enabled_transition(
         &mut self,
         state: Self::State,
@@ -909,12 +945,45 @@ impl StatePolicy for StaticRecordListIndexPolicy {
                         });
                     }
                 }
-                if event == StaticRecordListIndexEvent::Total {
+                if event == StaticRecordListIndexEvent::PickFirst {
                     {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
                             targets: &[],
                             transition_index: 3,
+                            has_actions: true,
+                            is_internal: true,
+                        });
+                    }
+                }
+                if event == StaticRecordListIndexEvent::PickLast {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[],
+                            transition_index: 4,
+                            has_actions: true,
+                            is_internal: true,
+                        });
+                    }
+                }
+                if event == StaticRecordListIndexEvent::PickCursor {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[],
+                            transition_index: 5,
+                            has_actions: true,
+                            is_internal: true,
+                        });
+                    }
+                }
+                if event == StaticRecordListIndexEvent::Total {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[],
+                            transition_index: 6,
                             has_actions: true,
                             is_internal: true,
                         });
@@ -936,7 +1005,7 @@ impl StatePolicy for StaticRecordListIndexPolicy {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
                             targets: &[],
-                            transition_index: 4,
+                            transition_index: 7,
                             has_actions: true,
                             is_internal: true,
                         });
@@ -947,7 +1016,7 @@ impl StatePolicy for StaticRecordListIndexPolicy {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
                             targets: &[],
-                            transition_index: 5,
+                            transition_index: 8,
                             has_actions: true,
                             is_internal: true,
                         });
@@ -958,7 +1027,7 @@ impl StatePolicy for StaticRecordListIndexPolicy {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
                             targets: &[],
-                            transition_index: 6,
+                            transition_index: 9,
                             has_actions: true,
                             is_internal: true,
                         });
@@ -972,8 +1041,8 @@ impl StatePolicy for StaticRecordListIndexPolicy {
 
     // W3C SCXML 3.13: a transition's executable content, run by the engine
     // between the microstep's exits and its entries.
-    #[doc = "SCE-MAP: static_record_list_index.scxml:21 :: _machine"]
-    // SCE-MAP: static_record_list_index.scxml:21 :: _machine
+    #[doc = "SCE-MAP: static_record_list_index.scxml:27 :: _machine"]
+    // SCE-MAP: static_record_list_index.scxml:27 :: _machine
     fn execute_transition_content(
         &mut self,
         source: Self::State,
@@ -984,7 +1053,7 @@ impl StatePolicy for StaticRecordListIndexPolicy {
             StaticRecordListIndexState::Reading => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: static_record_list_index.scxml:39 :: reading :: _transition_0
+                        // SCE-MAP: static_record_list_index.scxml:50 :: reading :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
                         let ev = match &self.pending_payload {
                             StaticRecordListIndexPayload::DayPicked(ev) => ev.clone(),
@@ -1015,7 +1084,7 @@ impl StatePolicy for StaticRecordListIndexPolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: static_record_list_index.scxml:45 :: reading :: _transition_1
+                        // SCE-MAP: static_record_list_index.scxml:56 :: reading :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1066,7 +1135,7 @@ impl StatePolicy for StaticRecordListIndexPolicy {
                         }
                     }
                     2 => {
-                        // SCE-MAP: static_record_list_index.scxml:50 :: reading :: _transition_2
+                        // SCE-MAP: static_record_list_index.scxml:61 :: reading :: _transition_2
                         // W3C SCXML 3.13: Transition 2 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1087,8 +1156,125 @@ impl StatePolicy for StaticRecordListIndexPolicy {
                         }
                     }
                     3 => {
-                        // SCE-MAP: static_record_list_index.scxml:53 :: reading :: _transition_3
+                        // SCE-MAP: static_record_list_index.scxml:64 :: reading :: _transition_3
                         // W3C SCXML 3.13: Transition 3 actions
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // W3C SCXML 5.3: <assign location="picked">
+                            let sce_failed = (match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.picked.year = sce_forge_runtime::algorithm::at_ref(&self.days, 0)?.year;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordListIndexEvent::ErrorExecution, "<assign location='picked.year'>: an integer operation overflowed or failed"));
+        true
+    }
+}) || (match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.picked.month = sce_forge_runtime::algorithm::at_ref(&self.days, 0)?.month;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordListIndexEvent::ErrorExecution, "<assign location='picked.month'>: an integer operation overflowed or failed"));
+        true
+    }
+}) || (match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.picked.dayOfMonth = sce_forge_runtime::algorithm::at_ref(&self.days, 0)?.dayOfMonth;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordListIndexEvent::ErrorExecution, "<assign location='picked.dayOfMonth'>: an integer operation overflowed or failed"));
+        true
+    }
+});
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                            }
+                        }
+                    }
+                    4 => {
+                        // SCE-MAP: static_record_list_index.scxml:67 :: reading :: _transition_4
+                        // W3C SCXML 3.13: Transition 4 actions
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // W3C SCXML 5.3: <assign location="picked">
+                            let sce_failed = (match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.picked.year = sce_forge_runtime::algorithm::at_ref(&self.days, sce_forge_runtime::algorithm::sub::<u32>((self.days).len() as u32, 1)?)?.year;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordListIndexEvent::ErrorExecution, "<assign location='picked.year'>: an integer operation overflowed or failed"));
+        true
+    }
+}) || (match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.picked.month = sce_forge_runtime::algorithm::at_ref(&self.days, sce_forge_runtime::algorithm::sub::<u32>((self.days).len() as u32, 1)?)?.month;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordListIndexEvent::ErrorExecution, "<assign location='picked.month'>: an integer operation overflowed or failed"));
+        true
+    }
+}) || (match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.picked.dayOfMonth = sce_forge_runtime::algorithm::at_ref(&self.days, sce_forge_runtime::algorithm::sub::<u32>((self.days).len() as u32, 1)?)?.dayOfMonth;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordListIndexEvent::ErrorExecution, "<assign location='picked.dayOfMonth'>: an integer operation overflowed or failed"));
+        true
+    }
+});
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                            }
+                        }
+                    }
+                    5 => {
+                        // SCE-MAP: static_record_list_index.scxml:70 :: reading :: _transition_5
+                        // W3C SCXML 3.13: Transition 5 actions
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // W3C SCXML 5.3: <assign location="picked">
+                            let sce_failed = (match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.picked.year = sce_forge_runtime::algorithm::at_ref(&self.days, self.cursor)?.year;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordListIndexEvent::ErrorExecution, "<assign location='picked.year'>: an integer operation overflowed or failed"));
+        true
+    }
+}) || (match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.picked.month = sce_forge_runtime::algorithm::at_ref(&self.days, self.cursor)?.month;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordListIndexEvent::ErrorExecution, "<assign location='picked.month'>: an integer operation overflowed or failed"));
+        true
+    }
+}) || (match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.picked.dayOfMonth = sce_forge_runtime::algorithm::at_ref(&self.days, self.cursor)?.dayOfMonth;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordListIndexEvent::ErrorExecution, "<assign location='picked.dayOfMonth'>: an integer operation overflowed or failed"));
+        true
+    }
+});
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                            }
+                        }
+                    }
+                    6 => {
+                        // SCE-MAP: static_record_list_index.scxml:73 :: reading :: _transition_6
+                        // W3C SCXML 3.13: Transition 6 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             // W3C SCXML 5.3: <assign location="sum">
@@ -1107,27 +1293,27 @@ impl StatePolicy for StaticRecordListIndexPolicy {
                             }
                         }
                     }
-                    4 => {
-                        // SCE-MAP: static_record_list_index.scxml:56 :: reading :: _transition_4
-                        // W3C SCXML 3.13: Transition 4 actions
+                    7 => {
+                        // SCE-MAP: static_record_list_index.scxml:76 :: reading :: _transition_7
+                        // W3C SCXML 3.13: Transition 7 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             // W3C SCXML 5.3: <assign location="ordered">
                             self.ordered = true;
                         }
                     }
-                    5 => {
-                        // SCE-MAP: static_record_list_index.scxml:59 :: reading :: _transition_5
-                        // W3C SCXML 3.13: Transition 5 actions
+                    8 => {
+                        // SCE-MAP: static_record_list_index.scxml:79 :: reading :: _transition_8
+                        // W3C SCXML 3.13: Transition 8 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             // W3C SCXML 5.3: <assign location="ordered">
                             self.ordered = false;
                         }
                     }
-                    6 => {
-                        // SCE-MAP: static_record_list_index.scxml:62 :: reading :: _transition_6
-                        // W3C SCXML 3.13: Transition 6 actions
+                    9 => {
+                        // SCE-MAP: static_record_list_index.scxml:82 :: reading :: _transition_9
+                        // W3C SCXML 3.13: Transition 9 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             // W3C SCXML 5.3: <assign location="refusals">

@@ -1302,8 +1302,11 @@ static const variable_t record_list_index_variables[] = {
     {"year", static_record_list_index_read_year},       {"sum", static_record_list_index_read_sum},
     {"ordered", static_record_list_index_read_ordered}, {"refusals", static_record_list_index_read_refusals},
 };
+RECORD_READER(static_record_list_index, picked, static_record_list_index_record_day_t, DAY_FIELDS)
+static const record_variable_t record_list_index_records[] = {RECORD_ROW(static_record_list_index, picked),
+                                                              {NULL, NULL, NULL, NULL}};
 STATIC_SCENARIO(static_record_list_index, record_list_index_states, record_list_index_variables, NULL, no_lists,
-                no_records)
+                record_list_index_records)
 
 // static_record_enum: a record with an enum field is held in the machine's own
 // type for the enum — compared with `===`, assigned a variant, appended whole and
@@ -1847,13 +1850,13 @@ int main(void) {
     bad |= static_real32_scenario("static_real32", 11);
     bad |= static_record_real_scenario("static_record_real", 5);
     bad |= static_record_real32_scenario("static_record_real32", 7);
-    bad |= static_record_string_scenario("static_record_string", 28);
+    bad |= static_record_string_scenario("static_record_string", 32);
     bad |= static_block_ends_list_scenario("static_block_ends_list", 4);
     bad |= static_record_fields_scenario("static_record_fields", 9);
     bad |= static_record_scenario("static_record", 16);
     bad |= static_record_list_scenario("static_record_list", 14);
-    bad |= static_record_list_index_scenario("static_record_list_index", 15);
-    bad |= static_record_enum_scenario("static_record_enum", 18);
+    bad |= static_record_list_index_scenario("static_record_list_index", 19);
+    bad |= static_record_enum_scenario("static_record_enum", 29);
     bad |= static_whole_payload_scenario("static_whole_payload", 9);
     bad |= static_wire_enum_scenario("static_wire_enum", 7);
     bad |= static_payload_scenario("static_payload", 5);
@@ -1862,7 +1865,7 @@ int main(void) {
     bad |= static_payload_relay_scenario("static_payload_relay", 5);
     bad |= static_string_capacity_scenario("static_string_capacity", 11);
     bad |= static_bytes_scenario("static_bytes", 12);
-    bad |= static_record_bytes_scenario("static_record_bytes", 32);
+    bad |= static_record_bytes_scenario("static_record_bytes", 36);
     bad |= static_payload_bytes_scenario("static_payload_bytes", 15);
     bad |= static_bytes_wire_scenario("static_bytes_wire", 8);
     bad |= static_donedata_scenario("static_donedata", 6);

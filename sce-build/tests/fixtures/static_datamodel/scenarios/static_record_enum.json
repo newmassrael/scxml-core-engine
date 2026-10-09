@@ -43,6 +43,27 @@
     { "note": "emptied: the list has no record at index 0, so nothing is read and the record is left as it was",
       "event": "peek", "expect": { "variables": { "shown": { "layout": "agenda_list", "zoom": 2 } } } },
     { "note": "the guard cannot be evaluated: it is false",
-      "event": "lead", "expect": { "variables": { "leads": 1 } } }
+      "event": "lead", "expect": { "variables": { "leads": 1 } } },
+
+    { "note": "the record at an index, whole: no record at index 0, so `shown` is left as it was, its variant and its number",
+      "event": "take", "expect": { "variables": { "shown": { "layout": "agenda_list", "zoom": 2 } } } },
+
+    { "note": "two records remembered, both of the month layout, one zoom apart",
+      "event": "month", "expect": { "variables": { "shown": { "layout": "month", "zoom": 2 } } } },
+    { "event": "remember", "expect": { "variables": { "seen": [ { "layout": "month", "zoom": 2 } ] } } },
+    { "event": "zoom", "expect": { "variables": { "shown": { "layout": "month", "zoom": 3 } } } },
+    { "event": "remember", "expect": { "variables": { "seen": [ { "layout": "month", "zoom": 2 }, { "layout": "month", "zoom": 3 } ] } } },
+
+    { "note": "the record turns to the agenda, and takes the first one whole: its variant and its number both change",
+      "event": "agenda", "expect": { "variables": { "shown": { "layout": "agenda_list", "zoom": 3 } } } },
+    { "event": "take", "expect": { "variables": { "shown": { "layout": "month", "zoom": 2 } } } },
+
+    { "note": "... and the last, by an index computed from the length",
+      "event": "agenda", "expect": { "variables": { "shown": { "layout": "agenda_list", "zoom": 2 } } } },
+    { "event": "takelast", "expect": { "variables": { "shown": { "layout": "month", "zoom": 3 } } } },
+
+    { "note": "emptied: len(seen) - 1 is an unsigned underflow, so nothing is read and the record is left as it was",
+      "event": "forget", "expect": { "variables": { "seen": [] } } },
+    { "event": "takelast", "expect": { "variables": { "shown": { "layout": "month", "zoom": 3 } } } }
   ]
 }

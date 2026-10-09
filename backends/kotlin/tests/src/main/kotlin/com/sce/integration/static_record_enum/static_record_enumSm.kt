@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: cb41954d893211ff980559eb7566d5cfca26a8d312a941a8b0426661b4fb8dcd
+// source-hash: 7ad55f268a9fbf4c094293a60d20a17c7e9e6598a9a6fe5787c0e9f2898a7e28
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_record_enum.scxml
@@ -24,10 +24,13 @@ sealed interface StaticRecordEnumEvent : Event {
     data object Count : StaticRecordEnumEvent
     data object Forget : StaticRecordEnumEvent
     data object Lead : StaticRecordEnumEvent
+    data object Month : StaticRecordEnumEvent
     data object Peek : StaticRecordEnumEvent
     data object Peeklast : StaticRecordEnumEvent
     data object Recall : StaticRecordEnumEvent
     data object Remember : StaticRecordEnumEvent
+    data object Take : StaticRecordEnumEvent
+    data object Takelast : StaticRecordEnumEvent
     data object Toggle : StaticRecordEnumEvent
     data object Zoom : StaticRecordEnumEvent
 }
@@ -341,6 +344,33 @@ class StaticRecordEnumStateMachine(
             hasActions = true,
             isInternal = true,
         )
+
+        // W3C SCXML 3.13: viewing's transition 11, as the microstep reads it.
+        val transitionViewingAt11 = EnabledTransition<StaticRecordEnumState, HistoryId>(
+            StaticRecordEnumState.Viewing,
+            emptyList(),
+            11,
+            hasActions = true,
+            isInternal = true,
+        )
+
+        // W3C SCXML 3.13: viewing's transition 12, as the microstep reads it.
+        val transitionViewingAt12 = EnabledTransition<StaticRecordEnumState, HistoryId>(
+            StaticRecordEnumState.Viewing,
+            emptyList(),
+            12,
+            hasActions = true,
+            isInternal = true,
+        )
+
+        // W3C SCXML 3.13: viewing's transition 13, as the microstep reads it.
+        val transitionViewingAt13 = EnabledTransition<StaticRecordEnumState, HistoryId>(
+            StaticRecordEnumState.Viewing,
+            emptyList(),
+            13,
+            hasActions = true,
+            isInternal = true,
+        )
     }
 
     // W3C SCXML: Resolve state ID string to State object
@@ -365,10 +395,13 @@ class StaticRecordEnumStateMachine(
         "count" -> StaticRecordEnumEvent.Count
         "forget" -> StaticRecordEnumEvent.Forget
         "lead" -> StaticRecordEnumEvent.Lead
+        "month" -> StaticRecordEnumEvent.Month
         "peek" -> StaticRecordEnumEvent.Peek
         "peeklast" -> StaticRecordEnumEvent.Peeklast
         "recall" -> StaticRecordEnumEvent.Recall
         "remember" -> StaticRecordEnumEvent.Remember
+        "take" -> StaticRecordEnumEvent.Take
+        "takelast" -> StaticRecordEnumEvent.Takelast
         "toggle" -> StaticRecordEnumEvent.Toggle
         "zoom" -> StaticRecordEnumEvent.Zoom
         else -> null
@@ -380,10 +413,13 @@ class StaticRecordEnumStateMachine(
         is StaticRecordEnumEvent.Count -> "count"
         is StaticRecordEnumEvent.Forget -> "forget"
         is StaticRecordEnumEvent.Lead -> "lead"
+        is StaticRecordEnumEvent.Month -> "month"
         is StaticRecordEnumEvent.Peek -> "peek"
         is StaticRecordEnumEvent.Peeklast -> "peeklast"
         is StaticRecordEnumEvent.Recall -> "recall"
         is StaticRecordEnumEvent.Remember -> "remember"
+        is StaticRecordEnumEvent.Take -> "take"
+        is StaticRecordEnumEvent.Takelast -> "takelast"
         is StaticRecordEnumEvent.Toggle -> "toggle"
         is StaticRecordEnumEvent.Zoom -> "zoom"
     }
@@ -405,14 +441,17 @@ class StaticRecordEnumStateMachine(
             event is StaticRecordEnumEvent.Toggle && shown.layout == StaticRecordEnumViewModeEnum.MONTH -> transitionViewingAt0
             event is StaticRecordEnumEvent.Toggle && shown.layout == StaticRecordEnumViewModeEnum.WEEK -> transitionViewingAt1
             event is StaticRecordEnumEvent.Agenda -> transitionViewingAt2
-            event is StaticRecordEnumEvent.Zoom -> transitionViewingAt3
-            event is StaticRecordEnumEvent.Remember -> transitionViewingAt4
-            event is StaticRecordEnumEvent.Count -> transitionViewingAt5
-            event is StaticRecordEnumEvent.Recall -> transitionViewingAt6
-            event is StaticRecordEnumEvent.Peek -> transitionViewingAt7
-            event is StaticRecordEnumEvent.Peeklast -> transitionViewingAt8
-            event is StaticRecordEnumEvent.Lead && (try { com.sce.forge.runtime.SceChecked.at(seen, (0).toLong()).layout == StaticRecordEnumViewModeEnum.WEEK } catch (_: com.sce.forge.runtime.AlgorithmFailure) { false }) -> transitionViewingAt9
-            event is StaticRecordEnumEvent.Forget -> transitionViewingAt10
+            event is StaticRecordEnumEvent.Month -> transitionViewingAt3
+            event is StaticRecordEnumEvent.Zoom -> transitionViewingAt4
+            event is StaticRecordEnumEvent.Remember -> transitionViewingAt5
+            event is StaticRecordEnumEvent.Count -> transitionViewingAt6
+            event is StaticRecordEnumEvent.Recall -> transitionViewingAt7
+            event is StaticRecordEnumEvent.Peek -> transitionViewingAt8
+            event is StaticRecordEnumEvent.Peeklast -> transitionViewingAt9
+            event is StaticRecordEnumEvent.Lead && (try { com.sce.forge.runtime.SceChecked.at(seen, (0).toLong()).layout == StaticRecordEnumViewModeEnum.WEEK } catch (_: com.sce.forge.runtime.AlgorithmFailure) { false }) -> transitionViewingAt10
+            event is StaticRecordEnumEvent.Take -> transitionViewingAt11
+            event is StaticRecordEnumEvent.Takelast -> transitionViewingAt12
+            event is StaticRecordEnumEvent.Forget -> transitionViewingAt13
             else -> null
         }
     }
@@ -470,19 +509,24 @@ class StaticRecordEnumStateMachine(
             3 -> {
                 // SCE-MAP: static_record_enum.scxml:41 :: viewing :: _transition_3
 
+            shown = shown.copy(layout = StaticRecordEnumViewModeEnum.MONTH)
+            }
+            4 -> {
+                // SCE-MAP: static_record_enum.scxml:44 :: viewing :: _transition_4
+
             if (try { shown = shown.copy(zoom = com.sce.forge.runtime.SceChecked.add(shown.zoom, 1.toUByte())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
             }
-            4 -> {
-                // SCE-MAP: static_record_enum.scxml:45 :: viewing :: _transition_4
+            5 -> {
+                // SCE-MAP: static_record_enum.scxml:48 :: viewing :: _transition_5
 
             if (if (seen.size < 4) { seen = seen + (shown); false } else { true }) {
                 return
             }
             }
-            5 -> {
-                // SCE-MAP: static_record_enum.scxml:49 :: viewing :: _transition_5
+            6 -> {
+                // SCE-MAP: static_record_enum.scxml:52 :: viewing :: _transition_6
 
             weeks = 0.toUInt()
 
@@ -498,8 +542,8 @@ class StaticRecordEnumStateMachine(
             }
             }
             }
-            6 -> {
-                // SCE-MAP: static_record_enum.scxml:58 :: viewing :: _transition_6
+            7 -> {
+                // SCE-MAP: static_record_enum.scxml:61 :: viewing :: _transition_7
 
 
             for (v in seen) {
@@ -507,29 +551,43 @@ class StaticRecordEnumStateMachine(
             shown = v
             }
             }
-            7 -> {
-                // SCE-MAP: static_record_enum.scxml:68 :: viewing :: _transition_7
-
-            if (try { shown = shown.copy(layout = com.sce.forge.runtime.SceChecked.at(seen, (0).toLong()).layout); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
-                return
-            }
-            }
             8 -> {
                 // SCE-MAP: static_record_enum.scxml:71 :: viewing :: _transition_8
 
-            if (try { shown = shown.copy(layout = com.sce.forge.runtime.SceChecked.at(seen, (com.sce.forge.runtime.SceChecked.sub((seen).size.toUInt(), 1.toUInt())).toLong()).layout); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
+            if (try { shown = shown.copy(layout = com.sce.forge.runtime.SceChecked.at(seen, (0).toLong()).layout); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
             }
             9 -> {
                 // SCE-MAP: static_record_enum.scxml:74 :: viewing :: _transition_9
 
-            if (try { leads = com.sce.forge.runtime.SceChecked.add(leads, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
+            if (try { shown = shown.copy(layout = com.sce.forge.runtime.SceChecked.at(seen, (com.sce.forge.runtime.SceChecked.sub((seen).size.toUInt(), 1.toUInt())).toLong()).layout); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
             }
             10 -> {
                 // SCE-MAP: static_record_enum.scxml:77 :: viewing :: _transition_10
+
+            if (try { leads = com.sce.forge.runtime.SceChecked.add(leads, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
+                return
+            }
+            }
+            11 -> {
+                // SCE-MAP: static_record_enum.scxml:84 :: viewing :: _transition_11
+
+            if ((try { shown = shown.copy(layout = com.sce.forge.runtime.SceChecked.at(seen, (0).toLong()).layout); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) || (try { shown = shown.copy(zoom = com.sce.forge.runtime.SceChecked.at(seen, (0).toLong()).zoom); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true })) {
+                return
+            }
+            }
+            12 -> {
+                // SCE-MAP: static_record_enum.scxml:87 :: viewing :: _transition_12
+
+            if ((try { shown = shown.copy(layout = com.sce.forge.runtime.SceChecked.at(seen, (com.sce.forge.runtime.SceChecked.sub((seen).size.toUInt(), 1.toUInt())).toLong()).layout); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) || (try { shown = shown.copy(zoom = com.sce.forge.runtime.SceChecked.at(seen, (com.sce.forge.runtime.SceChecked.sub((seen).size.toUInt(), 1.toUInt())).toLong()).zoom); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true })) {
+                return
+            }
+            }
+            13 -> {
+                // SCE-MAP: static_record_enum.scxml:90 :: viewing :: _transition_13
 
             seen = emptyList()
             }

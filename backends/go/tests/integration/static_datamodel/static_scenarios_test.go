@@ -708,6 +708,7 @@ func TestAFieldOfAnIndexedRecordIsRead(t *testing.T) {
 		"sum":      func() any { return policy.Sum() },
 		"ordered":  func() any { return policy.Ordered() },
 		"refusals": func() any { return policy.Refusals() },
+		"picked":   func() any { return dayJSON(policy.Picked()) },
 	}))
 }
 

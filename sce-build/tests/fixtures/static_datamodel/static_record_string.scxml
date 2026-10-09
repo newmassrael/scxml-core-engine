@@ -92,6 +92,16 @@
     <transition event="isfirst" cond="labels[0].label === 'whole'" type="internal">
       <assign location="note" expr="'first'"/>
     </transition>
+    <!-- The record at an index is read whole into `last`, its text with its number:
+         `take` the first, `takelast` the last by an index computed from the length.
+         The copy is the fields read one by one; an index outside the list fails the
+         first read, so `last` is left as it was and error.execution is raised. -->
+    <transition event="take" type="internal">
+      <assign location="last" expr="labels[0]"/>
+    </transition>
+    <transition event="takelast" type="internal">
+      <assign location="last" expr="labels[len(labels) - 1]"/>
+    </transition>
     <transition event="forget" type="internal">
       <sce:clear target="labels"/>
     </transition>

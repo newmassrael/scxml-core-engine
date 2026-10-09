@@ -38,6 +38,9 @@
     <transition event="agenda" type="internal">
       <assign location="shown.layout" expr="ViewMode.agenda_list"/>
     </transition>
+    <transition event="month" type="internal">
+      <assign location="shown.layout" expr="ViewMode.month"/>
+    </transition>
     <transition event="zoom" type="internal">
       <assign location="shown.zoom" expr="shown.zoom + 1"/>
     </transition>
@@ -73,6 +76,16 @@
     </transition>
     <transition event="lead" cond="seen[0].layout === ViewMode.week" type="internal">
       <assign location="leads" expr="leads + 1"/>
+    </transition>
+    <!-- The record at an index is read whole into `shown`, its enum field among the
+         rest: `take` the first, `takelast` the last by an index computed from the
+         length. An index outside the list fails the first read, so `shown` is left
+         as it was and error.execution is raised. -->
+    <transition event="take" type="internal">
+      <assign location="shown" expr="seen[0]"/>
+    </transition>
+    <transition event="takelast" type="internal">
+      <assign location="shown" expr="seen[len(seen) - 1]"/>
     </transition>
     <transition event="forget" type="internal">
       <sce:clear target="seen"/>

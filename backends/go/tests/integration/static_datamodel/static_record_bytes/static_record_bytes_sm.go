@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: cb41954d893211ff980559eb7566d5cfca26a8d312a941a8b0426661b4fb8dcd
+// source-hash: 7ad55f268a9fbf4c094293a60d20a17c7e9e6598a9a6fe5787c0e9f2898a7e28
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -148,12 +148,14 @@ const (
 	StaticRecordBytesEventOther StaticRecordBytesEvent = 9
 	StaticRecordBytesEventPeek StaticRecordBytesEvent = 10
 	StaticRecordBytesEventReset StaticRecordBytesEvent = 11
-	StaticRecordBytesEventTally StaticRecordBytesEvent = 12
-	StaticRecordBytesEventToSpare StaticRecordBytesEvent = 13
-	StaticRecordBytesEventToowide StaticRecordBytesEvent = 14
-	StaticRecordBytesEventWidth StaticRecordBytesEvent = 15
+	StaticRecordBytesEventTake StaticRecordBytesEvent = 12
+	StaticRecordBytesEventTakelast StaticRecordBytesEvent = 13
+	StaticRecordBytesEventTally StaticRecordBytesEvent = 14
+	StaticRecordBytesEventToSpare StaticRecordBytesEvent = 15
+	StaticRecordBytesEventToowide StaticRecordBytesEvent = 16
+	StaticRecordBytesEventWidth StaticRecordBytesEvent = 17
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	StaticRecordBytesEventNull StaticRecordBytesEvent = 16
+	StaticRecordBytesEventNull StaticRecordBytesEvent = 18
 )
 
 func (e StaticRecordBytesEvent) String() string {
@@ -182,6 +184,10 @@ func (e StaticRecordBytesEvent) String() string {
 		return "peek"
 	case StaticRecordBytesEventReset:
 		return "reset"
+	case StaticRecordBytesEventTake:
+		return "take"
+	case StaticRecordBytesEventTakelast:
+		return "takelast"
 	case StaticRecordBytesEventTally:
 		return "tally"
 	case StaticRecordBytesEventToSpare:
@@ -481,6 +487,10 @@ func (p *StaticRecordBytesPolicy) GetEventFromName(name string) (StaticRecordByt
 		return StaticRecordBytesEventPeek, true
 	case "reset":
 		return StaticRecordBytesEventReset, true
+	case "take":
+		return StaticRecordBytesEventTake, true
+	case "takelast":
+		return StaticRecordBytesEventTakelast, true
 	case "tally":
 		return StaticRecordBytesEventTally, true
 	case "to_spare":
@@ -799,7 +809,7 @@ func (p *StaticRecordBytesPolicy) FirstEnabledTransition(state StaticRecordBytes
 				}, true
 			}
 		}
-		if event == StaticRecordBytesEventForget {
+		if event == StaticRecordBytesEventTake {
 			{
 				return sce.EnabledTransition[StaticRecordBytesState, sce.HistoryID]{
 					Source:          state,
@@ -809,11 +819,31 @@ func (p *StaticRecordBytesPolicy) FirstEnabledTransition(state StaticRecordBytes
 				}, true
 			}
 		}
-		if event == StaticRecordBytesEventErrorExecution {
+		if event == StaticRecordBytesEventTakelast {
 			{
 				return sce.EnabledTransition[StaticRecordBytesState, sce.HistoryID]{
 					Source:          state,
 					TransitionIndex: 16,
+					HasActions:      true,
+					IsInternal:      true,
+				}, true
+			}
+		}
+		if event == StaticRecordBytesEventForget {
+			{
+				return sce.EnabledTransition[StaticRecordBytesState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 17,
+					HasActions:      true,
+					IsInternal:      true,
+				}, true
+			}
+		}
+		if event == StaticRecordBytesEventErrorExecution {
+			{
+				return sce.EnabledTransition[StaticRecordBytesState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 18,
 					HasActions:      true,
 					IsInternal:      true,
 				}, true
@@ -1001,7 +1031,29 @@ func (p *StaticRecordBytesPolicy) ExecuteTransitionContent(source StaticRecordBy
 
 			}()
 		case 15:
-			//line static_record_bytes.scxml:98
+			//line static_record_bytes.scxml:102
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
+
+
+	if (func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.vFrames[:], int64(0)).sensor; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordBytesEventErrorExecution, "<assign location='last.sensor'>: an integer operation overflowed or failed")); return true }; p.vLast.sensor = sceValue; return false }()) || (func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.BoundedBytes(&sceFailure, scealgorithm.At(&sceFailure, p.vFrames[:], int64(0)).frame, 8); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordBytesEventErrorExecution, "<assign location='last.frame'>: an integer operation overflowed or failed")); return true }; p.vLast.frame = sceValue; return false }()) {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+			}()
+		case 16:
+			//line static_record_bytes.scxml:105
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
+
+
+	if (func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AtU(&sceFailure, p.vFrames[:], uint64(scealgorithm.SubUint32(&sceFailure, uint32(len(p.vFrames)), 1))).sensor; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordBytesEventErrorExecution, "<assign location='last.sensor'>: an integer operation overflowed or failed")); return true }; p.vLast.sensor = sceValue; return false }()) || (func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.BoundedBytes(&sceFailure, scealgorithm.AtU(&sceFailure, p.vFrames[:], uint64(scealgorithm.SubUint32(&sceFailure, uint32(len(p.vFrames)), 1))).frame, 8); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordBytesEventErrorExecution, "<assign location='last.frame'>: an integer operation overflowed or failed")); return true }; p.vLast.frame = sceValue; return false }()) {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+			}()
+		case 17:
+			//line static_record_bytes.scxml:108
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1010,8 +1062,8 @@ func (p *StaticRecordBytesPolicy) ExecuteTransitionContent(source StaticRecordBy
 	p.vFrames = p.vFrames[:0]
 
 			}()
-		case 16:
-			//line static_record_bytes.scxml:101
+		case 18:
+			//line static_record_bytes.scxml:111
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

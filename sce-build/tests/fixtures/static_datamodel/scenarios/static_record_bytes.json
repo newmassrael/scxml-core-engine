@@ -74,6 +74,12 @@
     { "note": "the length of the last, by an index computed from the length of the list",
       "event": "width", "expect": { "variables": { "size": 2, "errors": 3 } } },
 
+    { "note": "the first record whole into `last`: its number and its five bytes, which the field of eight holds",
+      "event": "take", "expect": { "variables": { "last": { "sensor": 1, "frame": "hello" }, "errors": 3 } } },
+
+    { "note": "the last record whole, by an index computed from the length: two bytes again",
+      "event": "takelast", "expect": { "variables": { "last": { "sensor": 1, "frame": "ab" }, "errors": 3 } } },
+
     { "note": "emptied",
       "event": "forget", "expect": { "variables": { "frames": [], "errors": 3 } } },
 
@@ -96,6 +102,12 @@
       "event": "lead", "expect": { "variables": { "leads": 1, "errors": 5 } } },
 
     { "note": "no last record to measure: the length is left as it was and error.execution is raised",
-      "event": "width", "expect": { "variables": { "size": 2, "errors": 6 } } }
+      "event": "width", "expect": { "variables": { "size": 2, "errors": 6 } } },
+
+    { "note": "no record at index 0 to take whole: `last` is left as it was, number and bytes, and error.execution is raised",
+      "event": "take", "expect": { "variables": { "last": { "sensor": 1, "frame": "ab" }, "errors": 7 } } },
+
+    { "note": "nor a last one: len(frames) - 1 is an unsigned underflow",
+      "event": "takelast", "expect": { "variables": { "last": { "sensor": 1, "frame": "ab" }, "errors": 8 } } }
   ]
 }

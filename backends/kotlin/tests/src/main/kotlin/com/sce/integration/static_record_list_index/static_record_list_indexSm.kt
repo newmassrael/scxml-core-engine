@@ -1,10 +1,10 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: cb41954d893211ff980559eb7566d5cfca26a8d312a941a8b0426661b4fb8dcd
+// source-hash: 7ad55f268a9fbf4c094293a60d20a17c7e9e6598a9a6fe5787c0e9f2898a7e28
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_record_list_index.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: static_record_list_index.scxml:21 :: _machine
+// SCE-MAP: static_record_list_index.scxml:27 :: _machine
 
 package com.sce.integration.static_record_list_index
 
@@ -29,6 +29,9 @@ sealed interface StaticRecordListIndexEvent : Event {
     data object Last : StaticRecordListIndexEvent
     data object Next : StaticRecordListIndexEvent
     data object Order : StaticRecordListIndexEvent
+    data object PickCursor : StaticRecordListIndexEvent
+    data object PickFirst : StaticRecordListIndexEvent
+    data object PickLast : StaticRecordListIndexEvent
     data object Total : StaticRecordListIndexEvent
 }
 // ── NL→IR Item C1 Path A: typed `_event.data` payload classes ─────────
@@ -63,6 +66,9 @@ class StaticRecordListIndexStateMachine(
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `draft` datamodel variable, the machine's own. */
     private var draft: StaticRecordListIndexDayRecord = StaticRecordListIndexDayRecord(year = 2026.toUShort(), month = 1.toUByte(), dayOfMonth = 1.toUByte())
+    /** W3C SCXML 5.2: the `picked` datamodel variable, published (`sce:direction="out"`). */
+    var picked: StaticRecordListIndexDayRecord = StaticRecordListIndexDayRecord(year = 2000.toUShort(), month = 1.toUByte(), dayOfMonth = 1.toUByte())
+        private set
     /** W3C SCXML 5.2: the `days` datamodel variable, the machine's own. */
     private var days: List<StaticRecordListIndexDayRecord> = emptyList()
     /** W3C SCXML 5.2: the `cursor` datamodel variable, published (`sce:direction="out"`). */
@@ -110,6 +116,7 @@ class StaticRecordListIndexStateMachine(
 
     /** The published variables as one immutable value, in declaration order. */
     data class Data(
+        val picked: StaticRecordListIndexDayRecord,
         val cursor: Int,
         val day: UByte,
         val year: UShort,
@@ -132,6 +139,7 @@ class StaticRecordListIndexStateMachine(
     )
 
     private fun currentData(): Data = Data(
+        picked = picked,
         cursor = cursor,
         day = day,
         year = year,
@@ -164,7 +172,7 @@ class StaticRecordListIndexStateMachine(
      * from a document that renamed, re-typed or moved a state or a variable is
      * refused, one saved before a guard or an action changed is not.
      */
-    val savedShape: String = "f453b7ad5fb911648b7913b43a5c9757ae86437ab29508e32ecd936378702b4b"
+    val savedShape: String = "61da1e53bacb07a726bb31390dd73254464024a8045abcda447f2ae9c0a2c9d8"
 
     /**
      * This machine's whole state at the macrostep boundary it stands at —
@@ -181,6 +189,7 @@ class StaticRecordListIndexStateMachine(
         savedShape,
         linkedMapOf(
             "draft" to draft.toSaved(),
+            "picked" to picked.toSaved(),
             "days" to SavedValues.list(days) { it.toSaved() },
             "cursor" to SavedValues.of(cursor),
             "day" to SavedValues.of(day),
@@ -214,21 +223,23 @@ class StaticRecordListIndexStateMachine(
     fun restore(saved: SavedState, wallNowMs: Long) {
         beginRestore(saved, savedShape)
         val saved1 = StaticRecordListIndexDayRecord.fromSaved(saved.variable("draft"), "draft")
-        val saved2 = SavedValues.list(saved.variable("days"), "days", 3) { e, w -> StaticRecordListIndexDayRecord.fromSaved(e, w) }
-        val saved3 = SavedValues.int32(saved.variable("cursor"), "cursor")
-        val saved4 = SavedValues.uint8(saved.variable("day"), "day")
-        val saved5 = SavedValues.uint16(saved.variable("year"), "year")
-        val saved6 = SavedValues.uint32(saved.variable("sum"), "sum")
-        val saved7 = SavedValues.bool(saved.variable("ordered"), "ordered")
-        val saved8 = SavedValues.uint32(saved.variable("refusals"), "refusals")
+        val saved2 = StaticRecordListIndexDayRecord.fromSaved(saved.variable("picked"), "picked")
+        val saved3 = SavedValues.list(saved.variable("days"), "days", 3) { e, w -> StaticRecordListIndexDayRecord.fromSaved(e, w) }
+        val saved4 = SavedValues.int32(saved.variable("cursor"), "cursor")
+        val saved5 = SavedValues.uint8(saved.variable("day"), "day")
+        val saved6 = SavedValues.uint16(saved.variable("year"), "year")
+        val saved7 = SavedValues.uint32(saved.variable("sum"), "sum")
+        val saved8 = SavedValues.bool(saved.variable("ordered"), "ordered")
+        val saved9 = SavedValues.uint32(saved.variable("refusals"), "refusals")
         draft = saved1
-        days = saved2
-        cursor = saved3
-        day = saved4
-        year = saved5
-        sum = saved6
-        ordered = saved7
-        refusals = saved8
+        picked = saved2
+        days = saved3
+        cursor = saved4
+        day = saved5
+        year = saved6
+        sum = saved7
+        ordered = saved8
+        refusals = saved9
         enterSaved(saved, wallNowMs)
     }
 
@@ -370,6 +381,33 @@ class StaticRecordListIndexStateMachine(
             hasActions = true,
             isInternal = true,
         )
+
+        // W3C SCXML 3.13: reading's transition 7, as the microstep reads it.
+        val transitionReadingAt7 = EnabledTransition<StaticRecordListIndexState, HistoryId>(
+            StaticRecordListIndexState.Reading,
+            emptyList(),
+            7,
+            hasActions = true,
+            isInternal = true,
+        )
+
+        // W3C SCXML 3.13: reading's transition 8, as the microstep reads it.
+        val transitionReadingAt8 = EnabledTransition<StaticRecordListIndexState, HistoryId>(
+            StaticRecordListIndexState.Reading,
+            emptyList(),
+            8,
+            hasActions = true,
+            isInternal = true,
+        )
+
+        // W3C SCXML 3.13: reading's transition 9, as the microstep reads it.
+        val transitionReadingAt9 = EnabledTransition<StaticRecordListIndexState, HistoryId>(
+            StaticRecordListIndexState.Reading,
+            emptyList(),
+            9,
+            hasActions = true,
+            isInternal = true,
+        )
     }
 
     // W3C SCXML: Resolve state ID string to State object
@@ -395,6 +433,9 @@ class StaticRecordListIndexStateMachine(
         "last" -> StaticRecordListIndexEvent.Last
         "next" -> StaticRecordListIndexEvent.Next
         "order" -> StaticRecordListIndexEvent.Order
+        "pick_cursor" -> StaticRecordListIndexEvent.PickCursor
+        "pick_first" -> StaticRecordListIndexEvent.PickFirst
+        "pick_last" -> StaticRecordListIndexEvent.PickLast
         "total" -> StaticRecordListIndexEvent.Total
         else -> null
     }
@@ -406,6 +447,9 @@ class StaticRecordListIndexStateMachine(
         is StaticRecordListIndexEvent.Last -> "last"
         is StaticRecordListIndexEvent.Next -> "next"
         is StaticRecordListIndexEvent.Order -> "order"
+        is StaticRecordListIndexEvent.PickCursor -> "pick_cursor"
+        is StaticRecordListIndexEvent.PickFirst -> "pick_first"
+        is StaticRecordListIndexEvent.PickLast -> "pick_last"
         is StaticRecordListIndexEvent.Total -> "total"
     }
 
@@ -426,43 +470,46 @@ class StaticRecordListIndexStateMachine(
             event is StaticRecordListIndexEvent.Day.Picked -> transitionReadingAt0
             event is StaticRecordListIndexEvent.Next -> transitionReadingAt1
             event is StaticRecordListIndexEvent.Last -> transitionReadingAt2
-            event is StaticRecordListIndexEvent.Total -> transitionReadingAt3
-            event is StaticRecordListIndexEvent.Order && (try { com.sce.forge.runtime.SceChecked.at(days, (0).toLong()).dayOfMonth < com.sce.forge.runtime.SceChecked.at(days, (1).toLong()).dayOfMonth } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordListIndexEvent.Error.Execution, "<transition cond='days[0].dayOfMonth < days[1].dayOfMonth'>: an integer operation overflowed or failed"); false }) -> transitionReadingAt4
-            event is StaticRecordListIndexEvent.Order -> transitionReadingAt5
-            event is StaticRecordListIndexEvent.Error.Execution -> transitionReadingAt6
+            event is StaticRecordListIndexEvent.PickFirst -> transitionReadingAt3
+            event is StaticRecordListIndexEvent.PickLast -> transitionReadingAt4
+            event is StaticRecordListIndexEvent.PickCursor -> transitionReadingAt5
+            event is StaticRecordListIndexEvent.Total -> transitionReadingAt6
+            event is StaticRecordListIndexEvent.Order && (try { com.sce.forge.runtime.SceChecked.at(days, (0).toLong()).dayOfMonth < com.sce.forge.runtime.SceChecked.at(days, (1).toLong()).dayOfMonth } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordListIndexEvent.Error.Execution, "<transition cond='days[0].dayOfMonth < days[1].dayOfMonth'>: an integer operation overflowed or failed"); false }) -> transitionReadingAt7
+            event is StaticRecordListIndexEvent.Order -> transitionReadingAt8
+            event is StaticRecordListIndexEvent.Error.Execution -> transitionReadingAt9
             else -> null
         }
     }
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: static_record_list_index.scxml:21 :: _machine
+    // SCE-MAP: static_record_list_index.scxml:27 :: _machine
     override fun onEntry(state: StaticRecordListIndexState, isDefaultEntry: Boolean) {
         when (state) {
             is StaticRecordListIndexState.Reading -> {
-                // SCE-MAP: static_record_list_index.scxml:38 :: reading :: _state_body
+                // SCE-MAP: static_record_list_index.scxml:49 :: reading :: _state_body
             }
         }
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: static_record_list_index.scxml:21 :: _machine
+    // SCE-MAP: static_record_list_index.scxml:27 :: _machine
     override fun onExit(state: StaticRecordListIndexState) {
         when (state) {
             is StaticRecordListIndexState.Reading -> {
-                // SCE-MAP: static_record_list_index.scxml:38 :: reading :: _state_body
+                // SCE-MAP: static_record_list_index.scxml:49 :: reading :: _state_body
             }
         }
     }
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: static_record_list_index.scxml:21 :: _machine
+    // SCE-MAP: static_record_list_index.scxml:27 :: _machine
     override fun executeTransitionContent(source: StaticRecordListIndexState, transitionIndex: Int) {
         when (source) {
         is StaticRecordListIndexState.Reading -> when (transitionIndex) {
             0 -> {
-                // SCE-MAP: static_record_list_index.scxml:39 :: reading :: _transition_0
+                // SCE-MAP: static_record_list_index.scxml:50 :: reading :: _transition_0
                 if (pendingDayPickedPayload == null) {
                     return
                 }
@@ -478,7 +525,7 @@ class StaticRecordListIndexStateMachine(
             }
             }
             1 -> {
-                // SCE-MAP: static_record_list_index.scxml:45 :: reading :: _transition_1
+                // SCE-MAP: static_record_list_index.scxml:56 :: reading :: _transition_1
 
             if (try { day = com.sce.forge.runtime.SceChecked.at(days, (cursor).toLong()).dayOfMonth; false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordListIndexEvent.Error.Execution, "<assign location='day'>: an integer operation overflowed or failed"); true }) {
                 return
@@ -493,31 +540,52 @@ class StaticRecordListIndexStateMachine(
             }
             }
             2 -> {
-                // SCE-MAP: static_record_list_index.scxml:50 :: reading :: _transition_2
+                // SCE-MAP: static_record_list_index.scxml:61 :: reading :: _transition_2
 
             if (try { day = com.sce.forge.runtime.SceChecked.at(days, (com.sce.forge.runtime.SceChecked.sub((days).size.toUInt(), 1.toUInt())).toLong()).dayOfMonth; false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordListIndexEvent.Error.Execution, "<assign location='day'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             3 -> {
-                // SCE-MAP: static_record_list_index.scxml:53 :: reading :: _transition_3
+                // SCE-MAP: static_record_list_index.scxml:64 :: reading :: _transition_3
+
+            if ((try { picked = picked.copy(year = com.sce.forge.runtime.SceChecked.at(days, (0).toLong()).year); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordListIndexEvent.Error.Execution, "<assign location='picked.year'>: an integer operation overflowed or failed"); true }) || (try { picked = picked.copy(month = com.sce.forge.runtime.SceChecked.at(days, (0).toLong()).month); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordListIndexEvent.Error.Execution, "<assign location='picked.month'>: an integer operation overflowed or failed"); true }) || (try { picked = picked.copy(dayOfMonth = com.sce.forge.runtime.SceChecked.at(days, (0).toLong()).dayOfMonth); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordListIndexEvent.Error.Execution, "<assign location='picked.dayOfMonth'>: an integer operation overflowed or failed"); true })) {
+                return
+            }
+            }
+            4 -> {
+                // SCE-MAP: static_record_list_index.scxml:67 :: reading :: _transition_4
+
+            if ((try { picked = picked.copy(year = com.sce.forge.runtime.SceChecked.at(days, (com.sce.forge.runtime.SceChecked.sub((days).size.toUInt(), 1.toUInt())).toLong()).year); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordListIndexEvent.Error.Execution, "<assign location='picked.year'>: an integer operation overflowed or failed"); true }) || (try { picked = picked.copy(month = com.sce.forge.runtime.SceChecked.at(days, (com.sce.forge.runtime.SceChecked.sub((days).size.toUInt(), 1.toUInt())).toLong()).month); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordListIndexEvent.Error.Execution, "<assign location='picked.month'>: an integer operation overflowed or failed"); true }) || (try { picked = picked.copy(dayOfMonth = com.sce.forge.runtime.SceChecked.at(days, (com.sce.forge.runtime.SceChecked.sub((days).size.toUInt(), 1.toUInt())).toLong()).dayOfMonth); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordListIndexEvent.Error.Execution, "<assign location='picked.dayOfMonth'>: an integer operation overflowed or failed"); true })) {
+                return
+            }
+            }
+            5 -> {
+                // SCE-MAP: static_record_list_index.scxml:70 :: reading :: _transition_5
+
+            if ((try { picked = picked.copy(year = com.sce.forge.runtime.SceChecked.at(days, (cursor).toLong()).year); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordListIndexEvent.Error.Execution, "<assign location='picked.year'>: an integer operation overflowed or failed"); true }) || (try { picked = picked.copy(month = com.sce.forge.runtime.SceChecked.at(days, (cursor).toLong()).month); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordListIndexEvent.Error.Execution, "<assign location='picked.month'>: an integer operation overflowed or failed"); true }) || (try { picked = picked.copy(dayOfMonth = com.sce.forge.runtime.SceChecked.at(days, (cursor).toLong()).dayOfMonth); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordListIndexEvent.Error.Execution, "<assign location='picked.dayOfMonth'>: an integer operation overflowed or failed"); true })) {
+                return
+            }
+            }
+            6 -> {
+                // SCE-MAP: static_record_list_index.scxml:73 :: reading :: _transition_6
 
             if (try { sum = com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.at(days, (0).toLong()).dayOfMonth, com.sce.forge.runtime.SceChecked.at(days, (1).toLong()).dayOfMonth).toUInt(); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordListIndexEvent.Error.Execution, "<assign location='sum'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
-            4 -> {
-                // SCE-MAP: static_record_list_index.scxml:56 :: reading :: _transition_4
+            7 -> {
+                // SCE-MAP: static_record_list_index.scxml:76 :: reading :: _transition_7
 
             ordered = true
             }
-            5 -> {
-                // SCE-MAP: static_record_list_index.scxml:59 :: reading :: _transition_5
+            8 -> {
+                // SCE-MAP: static_record_list_index.scxml:79 :: reading :: _transition_8
 
             ordered = false
             }
-            6 -> {
-                // SCE-MAP: static_record_list_index.scxml:62 :: reading :: _transition_6
+            9 -> {
+                // SCE-MAP: static_record_list_index.scxml:82 :: reading :: _transition_9
 
             if (try { refusals = com.sce.forge.runtime.SceChecked.add(refusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordListIndexEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return

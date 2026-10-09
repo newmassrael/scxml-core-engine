@@ -17,6 +17,12 @@
   day by an index computed from the length, `total` adds the first two days'
   numbers, and `order` is guarded by a comparison of their fields.
   `refusals` counts the error.execution events the document answers.
+
+  The element itself is read too, whole, into a record variable of its schema:
+  `pick_first`, `pick_last` and `pick_cursor` set `picked` to the day at an index.
+  Nothing in an expression makes a record, so no backend reads one whole; the copy
+  is the fields read one by one, and an index outside the list fails the first of
+  them, so `picked` is left as it was and error.execution says so.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="reading" datamodel="sce-static" name="static_record_list_index">
@@ -24,6 +30,11 @@
   <datamodel>
     <data id="draft" sce:type="record:Day">
       <sce:set name="year" expr="2026"/>
+      <sce:set name="month" expr="1"/>
+      <sce:set name="dayOfMonth" expr="1"/>
+    </data>
+    <data id="picked" sce:type="record:Day" sce:direction="out">
+      <sce:set name="year" expr="2000"/>
       <sce:set name="month" expr="1"/>
       <sce:set name="dayOfMonth" expr="1"/>
     </data>
@@ -49,6 +60,15 @@
     </transition>
     <transition event="last" type="internal">
       <assign location="day" expr="days[len(days) - 1].dayOfMonth"/>
+    </transition>
+    <transition event="pick_first" type="internal">
+      <assign location="picked" expr="days[0]"/>
+    </transition>
+    <transition event="pick_last" type="internal">
+      <assign location="picked" expr="days[len(days) - 1]"/>
+    </transition>
+    <transition event="pick_cursor" type="internal">
+      <assign location="picked" expr="days[cursor]"/>
     </transition>
     <transition event="total" type="internal">
       <assign location="sum" expr="days[0].dayOfMonth + days[1].dayOfMonth"/>

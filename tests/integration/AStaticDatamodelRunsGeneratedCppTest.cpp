@@ -1268,6 +1268,7 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, AFieldOfAnIndexedRecordIsRead) {
         {"sum", [](const Machine &m) { return json(m.sum()); }},
         {"ordered", [](const Machine &m) { return json(m.ordered()); }},
         {"refusals", [](const Machine &m) { return json(m.refusals()); }},
+        {"picked", [](const Machine &m) { return dayJson(m.picked()); }},
     });
     replay("static_record_list_index", driver);
 }
