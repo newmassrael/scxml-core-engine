@@ -7,6 +7,7 @@
 #include "events/IEventDispatcher.h"
 #include "runtime/IEventRaiser.h"
 #include <memory>
+#include <optional>
 #include <string>
 
 namespace SCE {
@@ -25,7 +26,10 @@ private:
     std::shared_ptr<IEventRaiser> eventRaiser_;
     std::string sessionId_;
     std::string basicHttpAccessUri_;
-    SchedulerMode schedulerMode_ = SchedulerMode::AUTOMATIC;  // Default to normal (automatic) mode
+    /// Absent means the builder leaves the scheduler's mode as its owner set it. A scheduler can
+    /// be shared (a child session built for `<invoke>` uses its parent's), and a builder that
+    /// wrote a default into it would switch the parent's MANUAL clock back to the wall clock.
+    std::optional<SchedulerMode> schedulerMode_;
 
 public:
     StateMachineBuilder() = default;

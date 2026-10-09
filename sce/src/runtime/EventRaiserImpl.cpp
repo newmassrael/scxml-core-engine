@@ -310,16 +310,18 @@ bool EventRaiserImpl::raiseEventWithPriority(const std::string &eventName, const
     // W3C SCXML compliance: Check if immediate mode is enabled
     // W3C SCXML Test 230: Platform events (done.*, error.*) must ALWAYS be queued
     // to prevent nested processing issues when child completes during parent transition
-    // In interactive debugging, scheduler MANUAL mode overrides immediate mode
-    // All events must be queued for step-by-step execution, even if immediate mode is enabled
+    // Whether a session is stepped is a property of that session's raiser, not of the scheduler
+    // it shares: the host that steps a session (the interactive runner starts it with
+    // `start(false)`) keeps immediate mode off for it. The scheduler's mode is the clock's, and
+    // a child session shares its parent's scheduler, so reading the mode here would queue the
+    // events of a child nobody steps and leave them there.
     // §scxml-3.13: EXTERNAL events must NOT bypass INTERNAL events in the queue
     // EXTERNAL events can use immediate mode only if no INTERNAL events are queued (Test 422)
-    bool isSchedulerManual = scheduler_ && (scheduler_->getMode() == SchedulerMode::MANUAL);
     bool isPlatform = isPlatformEvent(eventName);
     bool isInternal = (priority == EventPriority::INTERNAL);
     bool hasInternalEvents = hasQueuedInternalEvents();
 
-    if (immediateMode_.load() && !isPlatform && !isSchedulerManual) {
+    if (immediateMode_.load() && !isPlatform) {
         // §scxml-3.13: INTERNAL events always use immediate mode
         //
         // §scxml-D-mainEventLoop: an EXTERNAL event may skip the queue only
@@ -384,7 +386,7 @@ bool EventRaiserImpl::raiseEventWithPriority(const std::string &eventName, const
                 return false;
             }
         }  // end if (canProcessImmediately)
-    }  // end if (immediateMode_.load() && !isPlatform && !isSchedulerManual)
+    }  // end if (immediateMode_.load() && !isPlatform)
 
     // SCXML compliance: Use synchronous queue when immediate mode is disabled
     // §scxml-3.13: EXTERNAL events queued when INTERNAL events are pending
@@ -409,8 +411,6 @@ bool EventRaiserImpl::raiseEventWithPriority(const std::string &eventName, const
         if (immediateMode_.load()) {
             if (isPlatform) {
                 reason = "platform event (done.*/error.*)";
-            } else if (isSchedulerManual) {
-                reason = "scheduler in MANUAL mode";
             } else if (!isInternal && hasInternalEvents) {
                 reason = "EXTERNAL event blocked by INTERNAL events (W3C 5.9.2)";
             }

@@ -25,6 +25,9 @@
 #include "events/EventSchedulerImpl.h"
 #include "events/IEventDispatcher.h"
 #include "events/IEventTarget.h"
+#include "runtime/EventRaiserImpl.h"
+#include "runtime/StateMachineBuilder.h"
+#include "scripting/ScriptEngineProvider.h"
 
 #include <atomic>
 #include <chrono>
@@ -152,6 +155,82 @@ TEST(SchedulerManualModeTest, ManualModeHoldsADelayedEventPastItsWallClockDeadli
     const size_t polled = scheduler->forcePoll();
     EXPECT_EQ(polled, 1u) << "forcePoll() advances the logical clock to the event and releases it";
     EXPECT_EQ(probe.fired(), 1) << "the polled event must actually execute";
+
+    scheduler->shutdown();
+}
+
+namespace {
+
+/// A raiser over `scheduler`.
+std::shared_ptr<EventRaiserImpl> raiserOver(const std::shared_ptr<EventSchedulerImpl> &scheduler) {
+    auto raiser = std::make_shared<EventRaiserImpl>();
+    raiser->setScheduler(scheduler);
+    return raiser;
+}
+
+}  // namespace
+
+// A child session built for `<invoke>` shares its parent's scheduler, and that is how it
+// inherits the parent's mode. The builder used to write AUTOMATIC into whatever scheduler it
+// was given, so the first child a stepped parent invoked put the whole tree back on the wall
+// clock: from then on a delayed event fell due when the host was slow, not when a step asked
+// for it.
+TEST(SchedulerManualModeTest, ABuilderNotToldAModeLeavesTheSchedulersModeAlone) {
+    ManualModeProbe probe;
+    auto scheduler = probe.makeScheduler();
+    scheduler->setMode(SchedulerMode::MANUAL);
+
+    auto machine = StateMachineBuilder()
+                       .withScriptEngine(ScriptEngineProvider::getScriptEngine())
+                       .withEventRaiser(raiserOver(scheduler))
+                       .build();
+    ASSERT_NE(machine, nullptr);
+
+    EXPECT_EQ(scheduler->getMode(), SchedulerMode::MANUAL)
+        << "building a state machine over a MANUAL scheduler changed the scheduler's mode";
+
+    scheduler->shutdown();
+}
+
+// And the explicit request is still honoured, or the test above would pass against a builder
+// that had stopped touching the mode at all.
+TEST(SchedulerManualModeTest, ABuilderToldAModeSetsIt) {
+    ManualModeProbe probe;
+    auto scheduler = probe.makeScheduler();
+
+    auto machine = StateMachineBuilder()
+                       .withScriptEngine(ScriptEngineProvider::getScriptEngine())
+                       .withEventRaiser(raiserOver(scheduler))
+                       .withSchedulerMode(SchedulerMode::MANUAL)
+                       .build();
+    ASSERT_NE(machine, nullptr);
+
+    EXPECT_EQ(scheduler->getMode(), SchedulerMode::MANUAL) << "withSchedulerMode(MANUAL) did not reach the scheduler";
+
+    scheduler->shutdown();
+}
+
+// Whether a session is stepped is its raiser's immediate mode. A child shares the scheduler of
+// the parent that is being stepped but is not stepped itself, so its raiser must still hand an
+// event to its session at once. Reading the scheduler's mode here queued the child's events
+// where nothing would ever take them: a stepped parent invoking a child that had to answer
+// came to a stop.
+TEST(SchedulerManualModeTest, ARaiserInImmediateModeDeliversAtOnceOverAManualScheduler) {
+    ManualModeProbe probe;
+    auto scheduler = probe.makeScheduler();
+    scheduler->setMode(SchedulerMode::MANUAL);
+
+    auto raiser = raiserOver(scheduler);
+    std::atomic<int> delivered{0};
+    raiser->setEventCallback([&](const std::string &, const std::string &) {
+        delivered.fetch_add(1);
+        return true;
+    });
+    raiser->setImmediateMode(true);
+
+    raiser->raiseExternalEvent("report", "");
+
+    EXPECT_EQ(delivered.load(), 1) << "an event raised in immediate mode waited for a step the session does not have";
 
     scheduler->shutdown();
 }

@@ -27,11 +27,12 @@ std::shared_ptr<StateMachine> StateMachineBuilder::build() {
     if (eventRaiser_) {
         stateMachine->setEventRaiser(eventRaiser_);
 
-        // Apply scheduler mode for parent-child inheritance
-        // Get scheduler from EventRaiser and set mode (MANUAL for interactive debugging)
-        auto scheduler = eventRaiser_->getScheduler();
-        if (scheduler) {
-            scheduler->setMode(schedulerMode_);
+        // A mode is written only when the caller asked for one. A child built for <invoke>
+        // shares its parent's scheduler, so leaving the mode alone is how it inherits MANUAL.
+        if (schedulerMode_) {
+            if (auto scheduler = eventRaiser_->getScheduler()) {
+                scheduler->setMode(*schedulerMode_);
+            }
         }
     }
 
