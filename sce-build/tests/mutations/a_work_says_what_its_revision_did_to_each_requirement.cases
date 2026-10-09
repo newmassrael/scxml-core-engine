@@ -30,7 +30,7 @@ mutation_oracles app-core/tests/a_work_says_what_its_revision_did_to_each_requir
 mutation_case "the words of the accepted list are read from the list the work has now" <<'PY'
 edit("app-core/src/revision_report.rs",
      "        &sce_revision::of_list(&held(older), \"the owner accepted\").map_err(cannot_say)?,",
-     "        &sce_revision::of_list(&held(newer), \"the owner accepted\").map_err(cannot_say)?,")
+     "        &sce_revision::of_list(&held({ let _ = older; newer }), \"the owner accepted\").map_err(cannot_say)?,")
 PY
 
 mutation_case "the acceptance's pin is never asked" <<'PY'
@@ -55,4 +55,22 @@ mutation_case "the list that was accepted is read at the head and not at the rev
 edit("app-core/src/commands.rs",
      "                .read_requirements(&id, Some(&acceptance.basis.requirements))?",
      "                .read_requirements(&id, None)?")
+PY
+
+mutation_case "a report is made of a list that was written for an earlier text" <<'PY'
+edit("app-core/src/commands.rs",
+     "            refuse_what_is_behind_the_text(&now)?;\n            let lines = renderer.delta_acceptance(&now.snapshot, &acceptance.record)?;\n            // The list the owner accepted",
+     "            let _ = &now;\n            let lines = renderer.delta_acceptance(&now.snapshot, &acceptance.record)?;\n            // The list the owner accepted")
+PY
+
+mutation_case "what is behind the text is taken to be what is current" <<'PY'
+edit("app-core/src/commands.rs",
+     "        .filter(|(_, standing)| *standing == \"behind\")",
+     "        .filter(|(_, standing)| *standing == \"current\")")
+PY
+
+mutation_case "a part that cannot say what it was written for is held back as if it were behind" <<'PY'
+edit("app-core/src/commands.rs",
+     "        .filter(|(_, standing)| *standing == \"behind\")",
+     "        .filter(|(_, standing)| *standing != \"current\")")
 PY
