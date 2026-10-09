@@ -2385,7 +2385,14 @@ pub fn compile_forge_with_deploy(
             &extern_decls,
             &options,
         ),
-        generator::Language::Kotlin => forge::generator::generate_kotlin(&doc, &template_base),
+        // Kotlin, Go and Python take the options too. They were handed the
+        // options-less entry points, so the deploy's resolutions (a queue's
+        // capacity, participants and what the deploy says of the target) never
+        // reached them and a `source="deploy"` number was refused as unresolved
+        // on exactly the three backends that could not be told.
+        generator::Language::Kotlin => {
+            forge::generator::generate_kotlin_with_imports(&doc, &template_base, &[], &options)
+        }
         generator::Language::Rust => forge::generator::generate_rust_with_imports_and_externs(
             &doc,
             &template_base,
@@ -2393,8 +2400,12 @@ pub fn compile_forge_with_deploy(
             &extern_decls,
             &options,
         ),
-        generator::Language::Go => forge::generator::generate_go(&doc, &template_base),
-        generator::Language::Python => forge::generator::generate_python(&doc, &template_base),
+        generator::Language::Go => {
+            forge::generator::generate_go_with_imports(&doc, &template_base, &[], &options)
+        }
+        generator::Language::Python => {
+            forge::generator::generate_python_with_imports(&doc, &template_base, &[], &options)
+        }
         generator::Language::C11 => forge::generator::generate_c11_with_imports_and_externs(
             &doc,
             &template_base,
@@ -2824,6 +2835,14 @@ pub struct QueueResolution {
     /// `machines.<m>.queues.<q>.min_wrap_ops`: the longest delay, in
     /// operations, the design relies on.
     pub min_wrap_ops: Option<u64>,
+    /// `platform.class` of the target machine. The `no-alloc` profile of the
+    /// RFC is the `mcu` class (no heap, no general-purpose OS): a `segmented`
+    /// queue, which allocates, is refused on it
+    /// (`queue/segmented-needs-alloc`).
+    pub platform_class: Option<mesh::deploy::PlatformClass>,
+    /// `machines.<m>.queues.<q>.placement`: where each side runs. `None` when
+    /// the deploy states none, in which case the placement checks are silent.
+    pub placement: Option<mesh::deploy::QueuePlacement>,
 }
 
 /// Compile a forge SCXML with cross-file import resolution, validation,
@@ -5467,6 +5486,10 @@ pub fn resolve_queue_deploy_limits(
         min_wrap_ops: machine
             .and_then(|machine| machine.queues.get(&queue.name))
             .and_then(|queue| queue.min_wrap_ops),
+        platform_class: platform.map(|platform| platform.class),
+        placement: machine
+            .and_then(|machine| machine.queues.get(&queue.name))
+            .and_then(|queue| queue.placement.clone()),
     })
 }
 

@@ -1430,6 +1430,66 @@ pub struct QueueDeployConfig {
     /// whose bound is 2^62.
     #[serde(default)]
     pub min_wrap_ops: Option<u64>,
+    /// Where each side of the queue runs: the cores, and whether in a thread or
+    /// in an interrupt handler (SCE Protocol-Synthesis RFC §synth-5-P,
+    /// Placement). It decides two refusals the document alone cannot: an
+    /// ISR-side operation whose progress is below `lock-free`
+    /// (`queue/progress-insufficient-for-isr`), and an ISR producer on a
+    /// `segmented` queue, whose push may allocate (`queue/alloc-in-isr`).
+    ///
+    /// ```yaml
+    /// queues:
+    ///   rx_events:
+    ///     placement:
+    ///       producers:
+    ///         - context: isr
+    ///           cores: [0]
+    ///       consumers:
+    ///         - context: thread
+    ///           cores: [0]
+    /// ```
+    ///
+    /// Absent ⇒ the deploy states no placement and the placement checks are
+    /// silent for this queue.
+    #[serde(default)]
+    pub placement: Option<QueuePlacement>,
+}
+
+/// Where a queue's producers and consumers run (see
+/// [`QueueDeployConfig::placement`]). One entry per participant the machine
+/// binds to that side.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct QueuePlacement {
+    /// The producing participants.
+    pub producers: Vec<SidePlacement>,
+    /// The consuming participants.
+    pub consumers: Vec<SidePlacement>,
+}
+
+/// One participant of a queue side: the cores it runs on and the context it
+/// runs in.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SidePlacement {
+    /// A thread, or an interrupt handler.
+    pub context: ExecutionContext,
+    /// The cores it runs on. Carried for the cross-core checks (the worker
+    /// inbox migration's ordering checks read it); the queue's own checks read
+    /// the context.
+    pub cores: Vec<u32>,
+}
+
+/// The context a queue participant runs in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ExecutionContext {
+    /// An ordinary thread or task, which a preempting participant may stop.
+    Thread,
+    /// An interrupt handler, which runs to completion over whatever it
+    /// preempted: a participant stopped partway through an operation stays
+    /// stopped until the handler returns.
+    Isr,
 }
 
 /// SRAM region descriptor (SCE Mesh §mesh-14, SCE Protocol-Synthesis RFC §synth-5-K).

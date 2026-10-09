@@ -1275,6 +1275,21 @@ pub enum DiagnosticCode {
     /// carries the bound, `actual` the figure the deploy states.
     #[serde(rename = "queue/wrap-bound-below-deploy-minimum")]
     QueueWrapBoundBelowDeployMinimum,
+    /// The deploy places a side of a queue in an interrupt handler and the
+    /// operation that side performs gives less than `lock-free` on the target.
+    /// `expected` carries the weakest progress an ISR side may have, `actual`
+    /// what the operation gives.
+    #[serde(rename = "queue/progress-insufficient-for-isr")]
+    QueueProgressInsufficientForIsr,
+    /// The deploy places a producer of a `segmented` queue in an interrupt
+    /// handler, and its push may allocate.
+    #[serde(rename = "queue/alloc-in-isr")]
+    QueueAllocInIsr,
+    /// A `segmented` queue on a machine of `platform.class` `mcu`, the no-alloc
+    /// profile. `expected` carries the storage modes that need no allocator,
+    /// `actual` the platform class.
+    #[serde(rename = "queue/segmented-needs-alloc")]
+    QueueSegmentedNeedsAlloc,
 
     // ── §synth-5-J-2 Rust no_std variant rejection (item C3).
     //    Producer: `cmd_generate` walks the parsed SCXML model when
@@ -3526,6 +3541,9 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         QueueNoAtomicsAcrossCores,
         QueueWrapBoundUnstated,
         QueueWrapBoundBelowDeployMinimum,
+        QueueProgressInsufficientForIsr,
+        QueueAllocInIsr,
+        QueueSegmentedNeedsAlloc,
         // Codegen Rust no_std variant rejection (SCE Protocol-Synthesis RFC §synth-5-J-2,
         // item C3)
         CodegenNoStdScriptNotSupported,
@@ -4301,7 +4319,10 @@ impl DiagnosticCode {
             | QueueAtomicWidthUnstated
             | QueueNoAtomicsAcrossCores
             | QueueWrapBoundUnstated
-            | QueueWrapBoundBelowDeployMinimum => Some("SCE Protocol-Synthesis RFC §5.P"),
+            | QueueWrapBoundBelowDeployMinimum
+            | QueueProgressInsufficientForIsr
+            | QueueAllocInIsr
+            | QueueSegmentedNeedsAlloc => Some("SCE Protocol-Synthesis RFC §5.P"),
 
             // ── §synth-5-M Fragment-reassembly variant parse-time structure
             //    validators (SCE Protocol-Synthesis RFC §synth-5-M lines 2944-2945,
@@ -5077,6 +5098,9 @@ impl DiagnosticCode {
             QueueNoAtomicsAcrossCores => "queue/no-atomics-across-cores",
             QueueWrapBoundUnstated => "queue/wrap-bound-unstated",
             QueueWrapBoundBelowDeployMinimum => "queue/wrap-bound-below-deploy-minimum",
+            QueueProgressInsufficientForIsr => "queue/progress-insufficient-for-isr",
+            QueueAllocInIsr => "queue/alloc-in-isr",
+            QueueSegmentedNeedsAlloc => "queue/segmented-needs-alloc",
             TimerPeriodBelowTickRate => "timer/period-below-tick-rate",
             TimerSlotOverflow => "timer/slot-overflow",
             ExternSymbolNotInWhitelist => "extern/symbol-not-in-whitelist",
@@ -9851,6 +9875,44 @@ fn generate_fields(e: &GenerateError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![queue_name.clone(), storage.clone(), language.clone()],
         },
+        GenerateError::QueueProgressInsufficientForIsr {
+            queue_name,
+            side,
+            operation: _,
+            reachable,
+            algorithm,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::QueueProgressInsufficientForIsr,
+            stage: Stage::Generate,
+            // The floor for an ISR side is a closed fact; how to meet it (run
+            // the side in a thread, change the target) is the author's, so it
+            // is metadata and not a `Fix`.
+            expected: Some(vec!["lock-free".into()]),
+            actual: Some(reachable.clone()),
+            fix: None,
+            key_fragments: vec![queue_name.clone(), side.clone(), algorithm.clone()],
+        },
+        GenerateError::QueueAllocInIsr { queue_name } => DiagnosticPayload {
+            code: DiagnosticCode::QueueAllocInIsr,
+            stage: Stage::Generate,
+            expected: None,
+            actual: None,
+            fix: None,
+            key_fragments: vec![queue_name.clone()],
+        },
+        GenerateError::QueueSegmentedNeedsAlloc {
+            queue_name,
+            platform_class,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::QueueSegmentedNeedsAlloc,
+            stage: Stage::Generate,
+            // The two modes that need no allocator; which one the author wants
+            // is theirs.
+            expected: Some(vec!["bounded".into(), "intrusive".into()]),
+            actual: Some(platform_class.clone()),
+            fix: None,
+            key_fragments: vec![queue_name.clone(), platform_class.clone()],
+        },
         GenerateError::QueueAtomicWidthUnstated {
             queue_name,
             algorithm,
@@ -13281,6 +13343,35 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:9d9cc95474ba3ec2","code":"queue/wrap-bound-below-deploy-minimum","stage":"generate","spec":"SCE Protocol-Synthesis RFC §5.P","message":"queue 'rx_events': the SCQ ring's wrap bound is 1073741824 operations, below the 4000000000 that machines.<machine>.queues.rx_events.min_wrap_ops says the design relies on. SCE Protocol-Synthesis RFC §5.P (Counter width). Repair: use a target with 64-bit atomics (a bound of 2^62), or lower min_wrap_ops to a delay the design can bound.","expected":["1073741824"],"actual":"4000000000"}"#,
             ),
+            (
+                "forge/queue-progress-insufficient-for-isr",
+                GenerateError::QueueProgressInsufficientForIsr {
+                    queue_name: "rx_events".into(),
+                    side: "consumer".into(),
+                    operation: "pop".into(),
+                    reachable: "blocking".into(),
+                    algorithm: "a single ring under one lock".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:03af62f715ef545f","code":"queue/progress-insufficient-for-isr","stage":"generate","spec":"SCE Protocol-Synthesis RFC §5.P","message":"queue 'rx_events': the consumer runs in an interrupt handler, and its pop gives blocking on this target (a single ring under one lock). SCE Protocol-Synthesis RFC §5.P (Placement): an ISR-side operation must be lock-free or better, or run inside the interrupt-masked section of a single-core target without atomics. Repair: run the consumer in a thread (machines.<machine>.queues.rx_events.placement), or use a target whose queue gives lock-free (read-modify-write atomics, platform.atomic_rmw_width 32 or 64), or on a target without them keep platform.core_count 1.","expected":["lock-free"],"actual":"blocking"}"#,
+            ),
+            (
+                "forge/queue-alloc-in-isr",
+                GenerateError::QueueAllocInIsr {
+                    queue_name: "rx_events".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:148d6732211910e1","code":"queue/alloc-in-isr","stage":"generate","spec":"SCE Protocol-Synthesis RFC §5.P","message":"queue 'rx_events': a producer runs in an interrupt handler, and the queue is `segmented`, so its push may allocate a segment. SCE Protocol-Synthesis RFC §5.P (Placement): an ISR producer on a segmented queue is refused. Repair: use `bounded` storage, whose push allocates nothing, or run the producer in a thread."}"#,
+            ),
+            (
+                "forge/queue-segmented-needs-alloc",
+                GenerateError::QueueSegmentedNeedsAlloc {
+                    queue_name: "rx_events".into(),
+                    platform_class: "mcu".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:2c402e0176df52fb","code":"queue/segmented-needs-alloc","stage":"generate","spec":"SCE Protocol-Synthesis RFC §5.P","message":"queue 'rx_events': `segmented` storage is bounded by an injected allocator, and the target machine is platform.class mcu, whose memory is fixed at build time. SCE Protocol-Synthesis RFC §5.P (Storage modes): `segmented` is refused on the no-alloc profile. Repair: use `bounded` storage (a capacity fixed at build time) or `intrusive` (the caller owns the nodes), or target a machine that has a heap.","expected":["bounded","intrusive"],"actual":"mcu"}"#,
+            ),
             // ── SCE Protocol-Synthesis RFC §synth-5-J-2 Rust no_std variant rejections
             //    (item C3). Author-side `--no-std` gate on
             //    `sce-codegen generate -l rust`. ──
@@ -16552,6 +16643,8 @@ mod tests {
             | QueueNoAtomicsAcrossCores
             | QueueWrapBoundUnstated
             | QueueWrapBoundBelowDeployMinimum
+            | QueueProgressInsufficientForIsr
+            | QueueSegmentedNeedsAlloc
             | QueueStorageRuntimeMissing => ExpectedIsMetadata,
 
             // ── Deterministic fix or no fix; expected=None ────
@@ -16840,6 +16933,7 @@ mod tests {
             // and sit in `ExpectedIsMetadata`.
             | QueueStorageNotExactlyOne
             | QueueAllocatorProgressMissing
+            | QueueAllocInIsr
             | QueueParticipantsUnresolved
             // Item C3 no_std rejections: author repair is
             // "drop --no-std" or "remove the offending construct"
@@ -17665,6 +17759,9 @@ mod tests {
                 | QueueNoAtomicsAcrossCores
                 | QueueWrapBoundUnstated
                 | QueueWrapBoundBelowDeployMinimum
+                | QueueAllocInIsr
+                | QueueProgressInsufficientForIsr
+                | QueueSegmentedNeedsAlloc
                 | MemReassemblyPoolVariantMissingMaxFragments
                 | MemReassemblyPoolVariantMissingTimeout
                 | MemReassemblySlotSizeBelowDeclaredMtu
@@ -17860,9 +17957,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            429,
+            432,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 429 distinct variants to match the DiagnosticCode \
+             expected 432 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -18645,6 +18742,9 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | QueueNoAtomicsAcrossCores
             | QueueWrapBoundUnstated
             | QueueWrapBoundBelowDeployMinimum
+            | QueueAllocInIsr
+            | QueueProgressInsufficientForIsr
+            | QueueSegmentedNeedsAlloc
             | MemReassemblyPoolVariantMissingMaxFragments
             | MemReassemblyPoolVariantMissingTimeout
             | MemReassemblySlotSizeBelowDeclaredMtu

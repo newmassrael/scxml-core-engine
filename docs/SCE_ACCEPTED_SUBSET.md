@@ -6910,6 +6910,9 @@ Codes that the author can avoid by writing a better SCXML /
 | `queue/no-atomics-across-cores` | Generate |
 | `queue/wrap-bound-unstated` | Generate |
 | `queue/wrap-bound-below-deploy-minimum` | Generate |
+| `queue/progress-insufficient-for-isr` | Generate |
+| `queue/alloc-in-isr` | Generate |
+| `queue/segmented-needs-alloc` | Generate |
 | `timer/period-below-tick-rate` | Validation |
 | `timer/slot-overflow` | Mesh Deploy |
 | `extern/symbol-not-in-whitelist` | Validation |

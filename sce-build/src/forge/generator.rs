@@ -18356,6 +18356,53 @@ fn resolve_queue_render_inputs(
     use crate::forge::model::{
         CapacitySource, QueueAlgorithm, QueueCardinality, QueueProgress, QueueStorage,
     };
+    // What the deploy says about the machine, resolved from the deploy file by
+    // the caller that has it (`compile_forge_with_deploy`, the command line's
+    // `--deploy --target-machine`). A deploy key needs it; without one the
+    // build has no deploy context, or the key names another machine, and a
+    // number is not guessed.
+    let resolution = options
+        .queue_resolutions
+        .as_ref()
+        .and_then(|resolutions| resolutions.get(&m.name));
+
+    // Placement: where each side runs. The refusals of a design that no backend
+    // can lower come before the one that says a backend does not yet, because
+    // waiting for the runtime would not repair them.
+    let isr_side = |sides: &dyn Fn(
+        &crate::mesh::deploy::QueuePlacement,
+    ) -> &[crate::mesh::deploy::SidePlacement]| {
+        resolution
+            .and_then(|r| r.placement.as_ref())
+            .is_some_and(|placement| {
+                sides(placement)
+                    .iter()
+                    .any(|side| side.context == crate::mesh::deploy::ExecutionContext::Isr)
+            })
+    };
+    let producer_in_isr = isr_side(&|p| &p.producers);
+    let consumer_in_isr = isr_side(&|p| &p.consumers);
+    if matches!(m.storage, QueueStorage::Segmented { .. }) {
+        // A segmented queue is bounded by an allocator, and the no-alloc
+        // profile (a machine of platform.class mcu) has none.
+        if let Some(class @ crate::mesh::deploy::PlatformClass::Mcu) =
+            resolution.and_then(|r| r.platform_class)
+        {
+            return Err(ForgeError::from(GenerateError::QueueSegmentedNeedsAlloc {
+                queue_name: m.name.clone(),
+                platform_class: format!("{class:?}").to_lowercase(),
+            })
+            .at_line(m.storage_line));
+        }
+        // And an interrupt handler must not allocate.
+        if producer_in_isr {
+            return Err(ForgeError::from(GenerateError::QueueAllocInIsr {
+                queue_name: m.name.clone(),
+            })
+            .at_line(m.storage_line));
+        }
+    }
+
     let QueueStorage::Bounded { capacity } = &m.storage else {
         let storage = match &m.storage {
             QueueStorage::Bounded { .. } => "bounded",
@@ -18372,14 +18419,8 @@ fn resolve_queue_render_inputs(
         })
         .at_line(m.storage_line));
     };
-    // A constant is carried through. A deploy key needs the resolution
-    // `compile_forge_with_deploy` made from the deploy file; without one the
-    // build has no deploy context, or the key names another machine, and a
-    // number is not guessed.
-    let resolution = options
-        .queue_resolutions
-        .as_ref()
-        .and_then(|resolutions| resolutions.get(&m.name));
+    // A constant is carried through; a deploy key takes the number resolved
+    // above, and is refused without one.
     let constant = |element: &str,
                     source: &CapacitySource,
                     resolved: Option<u32>|
@@ -18527,14 +18568,56 @@ fn resolve_queue_render_inputs(
         // was refused above.
         (_, other, _) => unreachable!("bounded queue selected {other:?}"),
     };
-    let cardinality = |c: QueueCardinality| match c {
-        QueueCardinality::One => "one",
-        QueueCardinality::Many => "many",
+    // What each operation gives on this target. Mutual exclusion makes every
+    // row `blocking`, whatever the table would give.
+    let push_given = if single_ring {
+        QueueProgress::Blocking
+    } else {
+        selection.push
+    };
+    let pop_given = if single_ring {
+        QueueProgress::Blocking
+    } else {
+        selection.pop
+    };
+    let algorithm = match (single_ring, language) {
+        (true, crate::generator::Language::Python) => "a single ring under one lock",
+        (true, _) => "a single ring under an interrupt-masked critical section",
+        (false, _) => selection.algorithm.name(),
     };
     let progress = |p: QueueProgress| match p {
         QueueProgress::WaitFree => "wait-free",
         QueueProgress::LockFree => "lock-free",
         QueueProgress::Blocking => "blocking",
+    };
+    // Placement: an operation an interrupt handler performs must be lock-free or
+    // better. A handler runs to completion over whatever it preempted, so a
+    // blocking operation that waits for a preempted participant waits forever;
+    // lock-freedom guarantees some operation completes in a bounded number of
+    // steps, and with the handler the only thing running it can only be the
+    // handler's. The one blocking queue an ISR may use is the interrupt-masked
+    // ring of a single-core target without atomics, which no handler can preempt.
+    let interrupt_masked = is_c11 && single_ring;
+    for (in_isr, side, operation, given) in [
+        (producer_in_isr, "producer", "push", push_given),
+        (consumer_in_isr, "consumer", "pop", pop_given),
+    ] {
+        if in_isr && given < QueueProgress::LockFree && !interrupt_masked {
+            return Err(
+                ForgeError::from(GenerateError::QueueProgressInsufficientForIsr {
+                    queue_name: m.name.clone(),
+                    side: side.to_string(),
+                    operation: operation.to_string(),
+                    reachable: progress(given).to_string(),
+                    algorithm: algorithm.to_string(),
+                })
+                .at_line(m.storage_line),
+            );
+        }
+    }
+    let cardinality = |c: QueueCardinality| match c {
+        QueueCardinality::One => "one",
+        QueueCardinality::Many => "many",
     };
     Ok(QueueRenderInputs {
         capacity,
@@ -18543,26 +18626,12 @@ fn resolve_queue_render_inputs(
         runtime_type,
         entry_bits: c11_entry_bits,
         wrap_bound_ops,
-        algorithm: match (single_ring, language) {
-            (true, crate::generator::Language::Python) => "a single ring under one lock",
-            (true, _) => "a single ring under an interrupt-masked critical section",
-            (false, _) => selection.algorithm.name(),
-        },
+        algorithm,
         producers: cardinality(m.producers),
         consumers: cardinality(m.consumers),
         declared_progress: progress(m.progress),
-        // Mutual exclusion makes every row `blocking`, whatever the table would
-        // give.
-        push_progress: progress(if single_ring {
-            QueueProgress::Blocking
-        } else {
-            selection.push
-        }),
-        pop_progress: progress(if single_ring {
-            QueueProgress::Blocking
-        } else {
-            selection.pop
-        }),
+        push_progress: progress(push_given),
+        pop_progress: progress(pop_given),
     })
 }
 

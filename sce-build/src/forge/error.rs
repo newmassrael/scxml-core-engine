@@ -5478,6 +5478,65 @@ pub enum GenerateError {
         min_wrap_ops: u64,
     },
 
+    /// SCE Protocol-Synthesis RFC §synth-5-P
+    /// (`queue/progress-insufficient-for-isr`) — the deploy places a side of
+    /// the queue in an interrupt handler, and the operation that side performs
+    /// gives less than `lock-free` on this target. An interrupt handler runs to
+    /// completion over whatever it preempted: a participant stopped partway
+    /// through a blocking operation stays stopped until the handler returns, so
+    /// a handler that waits for it waits forever. Lock-freedom is what lets the
+    /// handler finish, because some operation completes in a bounded number of
+    /// steps and, with the handler the only thing running, it can only be the
+    /// handler's. The one exception is the interrupt-masked ring of a
+    /// single-core target without atomics, which no handler can preempt.
+    #[error(
+        "queue '{queue_name}': the {side} runs in an interrupt handler, and its {operation} gives {reachable} on this target ({algorithm}). \
+         SCE Protocol-Synthesis RFC §5.P (Placement): an ISR-side operation must be lock-free or better, or run inside the interrupt-masked section of a single-core target without atomics. \
+         Repair: run the {side} in a thread (machines.<machine>.queues.{queue_name}.placement), or use a target whose queue gives lock-free (read-modify-write atomics, platform.atomic_rmw_width 32 or 64), or on a target without them keep platform.core_count 1."
+    )]
+    QueueProgressInsufficientForIsr {
+        /// Queue name from `<scxml sce:kind="queue" name="...">`.
+        queue_name: String,
+        /// `producer` or `consumer`.
+        side: String,
+        /// `push` or `pop`.
+        operation: String,
+        /// What the operation gives on this target.
+        reachable: String,
+        /// The algorithm the target gave the contract.
+        algorithm: String,
+    },
+
+    /// SCE Protocol-Synthesis RFC §synth-5-P (`queue/alloc-in-isr`) — an
+    /// interrupt-handler producer on a `segmented` queue. Its push may allocate
+    /// a segment, and an interrupt handler must not allocate: the allocator may
+    /// be mid-operation in the code the handler preempted.
+    #[error(
+        "queue '{queue_name}': a producer runs in an interrupt handler, and the queue is `segmented`, so its push may allocate a segment. \
+         SCE Protocol-Synthesis RFC §5.P (Placement): an ISR producer on a segmented queue is refused. \
+         Repair: use `bounded` storage, whose push allocates nothing, or run the producer in a thread."
+    )]
+    QueueAllocInIsr {
+        /// Queue name from `<scxml sce:kind="queue" name="...">`.
+        queue_name: String,
+    },
+
+    /// SCE Protocol-Synthesis RFC §synth-5-P (`queue/segmented-needs-alloc`) —
+    /// a `segmented` queue on the no-alloc profile. Its occupancy is bounded by
+    /// an allocator, and a target whose whole memory is fixed at build time has
+    /// none. The no-alloc profile is a machine of `platform.class` `mcu`.
+    #[error(
+        "queue '{queue_name}': `segmented` storage is bounded by an injected allocator, and the target machine is platform.class {platform_class}, whose memory is fixed at build time. \
+         SCE Protocol-Synthesis RFC §5.P (Storage modes): `segmented` is refused on the no-alloc profile. \
+         Repair: use `bounded` storage (a capacity fixed at build time) or `intrusive` (the caller owns the nodes), or target a machine that has a heap."
+    )]
+    QueueSegmentedNeedsAlloc {
+        /// Queue name from `<scxml sce:kind="queue" name="...">`.
+        queue_name: String,
+        /// The target's `platform.class`, as the deploy spells it.
+        platform_class: String,
+    },
+
     /// `deploy.yaml`'s
     /// `platform.c11_section_attribute` is present but the codegen
     /// target backend is not C11. The section attribute injects

@@ -3612,7 +3612,7 @@ section, so the ISR check below is met there although the row is
 counter-width check above.
 
 **Placement.** A deploy block
-`machines.<m>.queues.<q>.placement` lists, for each side, the cores
+`machines.<m>.queues.<q>.placement` lists, for each side (`producers:` and `consumers:`, one `{context: thread|isr, cores: [...]}` entry per participant), the cores
 it runs on and whether it runs in a thread or an ISR. An ISR-side
 operation must be `lock-free` or better, or run inside the
 interrupt-masked section of a single-core target without atomics
@@ -3718,7 +3718,7 @@ pub enum QueueStorage {
 - `queue/element-type-not-a-kind` — as `collection/element-type-not-a-kind`
 - `queue/intrusive-link-field-missing` — `link-field` is not a field of the element type
 - `queue/progress-unreachable` — no selection row meets the declared progress for this storage and cardinality; and `queue/progress-unreachable-on-backend` (generate stage) — the declared progress is above what the target backend's runtime gives any queue (Python gives `blocking`)
-- `queue/segmented-needs-alloc` — `segmented` on the no-alloc profile; and `queue/storage-runtime-missing` (generate stage) — a valid document whose storage mode the target backend's runtime does not implement yet, refused by name rather than lowered to a queue that gives less
+- `queue/segmented-needs-alloc` — `segmented` on the no-alloc profile (a machine of `platform.class` `mcu`; generate stage, so a compile with no deploy cannot know it); and `queue/storage-runtime-missing` (generate stage) — a valid document whose storage mode the target backend's runtime does not implement yet, refused by name rather than lowered to a queue that gives less
 - `queue/allocator-progress-missing` — `<sce:segmented>` without `allocator-progress`
 - `queue/participants-unresolved` — an SCQ row or a domain needs `<sce:participants>` and it is absent; a `source="deploy"` capacity or participants key naming an undeclared limit is `queue/deploy-limit-unresolved`, with the declared limits as its fix candidates
 - `queue/progress-insufficient-for-isr` — an ISR-side operation below `lock-free`
