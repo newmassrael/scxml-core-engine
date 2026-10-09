@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: ee37533f857b01b43223ccdf57f0449c0b326ab00d940ee5b3e09fb6a557b07f
+// source-hash: ef4ca0a4dd7e55791acb35707aca0211307a64b1955f47f3e92b31829dc36eec
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -99,9 +99,12 @@ pub enum StaticRecordStringEvent {
     Fill,
     Forget,
     FromNote,
+    Isfirst,
     Keep,
     LabelledTaken,
     LongNote,
+    Peek,
+    Peeklast,
     Reset,
     Tally,
     ToNote,
@@ -131,9 +134,12 @@ impl StaticRecordStringEvent {
         StaticRecordStringEvent::Fill,
         StaticRecordStringEvent::Forget,
         StaticRecordStringEvent::FromNote,
+        StaticRecordStringEvent::Isfirst,
         StaticRecordStringEvent::Keep,
         StaticRecordStringEvent::LabelledTaken,
         StaticRecordStringEvent::LongNote,
+        StaticRecordStringEvent::Peek,
+        StaticRecordStringEvent::Peeklast,
         StaticRecordStringEvent::Reset,
         StaticRecordStringEvent::Tally,
         StaticRecordStringEvent::ToNote,
@@ -666,9 +672,12 @@ impl StatePolicy for StaticRecordStringPolicy {
             StaticRecordStringEvent::Fill => "fill",
             StaticRecordStringEvent::Forget => "forget",
             StaticRecordStringEvent::FromNote => "from_note",
+            StaticRecordStringEvent::Isfirst => "isfirst",
             StaticRecordStringEvent::Keep => "keep",
             StaticRecordStringEvent::LabelledTaken => "labelled.taken",
             StaticRecordStringEvent::LongNote => "long_note",
+            StaticRecordStringEvent::Peek => "peek",
+            StaticRecordStringEvent::Peeklast => "peeklast",
             StaticRecordStringEvent::Reset => "reset",
             StaticRecordStringEvent::Tally => "tally",
             StaticRecordStringEvent::ToNote => "to_note",
@@ -684,9 +693,12 @@ impl StatePolicy for StaticRecordStringPolicy {
             "fill" => Some(StaticRecordStringEvent::Fill),
             "forget" => Some(StaticRecordStringEvent::Forget),
             "from_note" => Some(StaticRecordStringEvent::FromNote),
+            "isfirst" => Some(StaticRecordStringEvent::Isfirst),
             "keep" => Some(StaticRecordStringEvent::Keep),
             "labelled.taken" => Some(StaticRecordStringEvent::LabelledTaken),
             "long_note" => Some(StaticRecordStringEvent::LongNote),
+            "peek" => Some(StaticRecordStringEvent::Peek),
+            "peeklast" => Some(StaticRecordStringEvent::Peeklast),
             "reset" => Some(StaticRecordStringEvent::Reset),
             "tally" => Some(StaticRecordStringEvent::Tally),
             "to_note" => Some(StaticRecordStringEvent::ToNote),
@@ -936,7 +948,7 @@ impl StatePolicy for StaticRecordStringPolicy {
                         });
                     }
                 }
-                if event == StaticRecordStringEvent::Forget {
+                if event == StaticRecordStringEvent::Peek {
                     {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
@@ -947,12 +959,53 @@ impl StatePolicy for StaticRecordStringPolicy {
                         });
                     }
                 }
-                if event == StaticRecordStringEvent::ErrorExecution {
+                if event == StaticRecordStringEvent::Peeklast {
                     {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
                             targets: &[],
                             transition_index: 12,
+                            has_actions: true,
+                            is_internal: true,
+                        });
+                    }
+                }
+                if event == StaticRecordStringEvent::Isfirst {
+                    if match (|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> {
+                        Ok(sce_forge_runtime::algorithm::at_ref(&self.labels, 0)?.label == "whole")
+                    })() {
+                        Ok(sce_value) => sce_value,
+                        Err(_) => {
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<transition cond='labels[0].label === 'whole''>: an integer operation overflowed or failed"));
+                            false
+                        }
+                    } {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[],
+                            transition_index: 13,
+                            has_actions: true,
+                            is_internal: true,
+                        });
+                    }
+                }
+                if event == StaticRecordStringEvent::Forget {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[],
+                            transition_index: 14,
+                            has_actions: true,
+                            is_internal: true,
+                        });
+                    }
+                }
+                if event == StaticRecordStringEvent::ErrorExecution {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[],
+                            transition_index: 15,
                             has_actions: true,
                             is_internal: true,
                         });
@@ -1244,17 +1297,80 @@ impl StatePolicy for StaticRecordStringPolicy {
                         }
                     }
                     11 => {
-                        // SCE-MAP: static_record_string.scxml:81 :: idle :: _transition_11
+                        // SCE-MAP: static_record_string.scxml:86 :: idle :: _transition_11
                         // W3C SCXML 3.13: Transition 11 actions
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // W3C SCXML 5.3: <assign location="note">
+                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.note = sce_forge_runtime::algorithm::bounded(sce_forge_runtime::algorithm::at_ref(&self.labels, 0)?.label.to_string(), 16)?;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<assign location='note'>: an integer operation overflowed or failed"));
+        true
+    }
+};
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                            }
+                        }
+                    }
+                    12 => {
+                        // SCE-MAP: static_record_string.scxml:89 :: idle :: _transition_12
+                        // W3C SCXML 3.13: Transition 12 actions
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // W3C SCXML 5.3: <assign location="note">
+                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.note = sce_forge_runtime::algorithm::bounded(sce_forge_runtime::algorithm::at_ref(&self.labels, sce_forge_runtime::algorithm::sub::<u32>((self.labels).len() as u32, 1)?)?.label.to_string(), 16)?;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<assign location='note'>: an integer operation overflowed or failed"));
+        true
+    }
+};
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                            }
+                        }
+                    }
+                    13 => {
+                        // SCE-MAP: static_record_string.scxml:92 :: idle :: _transition_13
+                        // W3C SCXML 3.13: Transition 13 actions
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // W3C SCXML 5.3: <assign location="note">
+                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.note = sce_forge_runtime::algorithm::bounded("first".to_string(), 16)?;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<assign location='note'>: an integer operation overflowed or failed"));
+        true
+    }
+};
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                            }
+                        }
+                    }
+                    14 => {
+                        // SCE-MAP: static_record_string.scxml:95 :: idle :: _transition_14
+                        // W3C SCXML 3.13: Transition 14 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             // SCE Accepted Subset §2.15: <sce:clear target="labels">
                             self.labels.clear();
                         }
                     }
-                    12 => {
-                        // SCE-MAP: static_record_string.scxml:84 :: idle :: _transition_12
-                        // W3C SCXML 3.13: Transition 12 actions
+                    15 => {
+                        // SCE-MAP: static_record_string.scxml:98 :: idle :: _transition_15
+                        // W3C SCXML 3.13: Transition 15 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             // W3C SCXML 5.3: <assign location="errors">

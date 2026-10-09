@@ -1835,11 +1835,21 @@ fn names(scope: &StaticScope, target: &dyn StaticTarget) -> Vec<(String, String)
         }))
         // A field of the element a list of records is indexed at: spelled as the
         // target spells a record's field.
-        .chain(
-            scope
-                .indexed_record_fields()
-                .map(|(path, field)| (path.to_string(), target.record_field(field))),
-        )
+        .chain(scope.indexed_record_fields().map(|(path, field)| {
+            // A string field of a target that holds it in a buffer of its own is
+            // read through that buffer, as a record variable's is.
+            let spelled = if scope.indexed_field_is_string(path) {
+                target
+                    .record_string_read("", field)
+                    .map(|read| read.trim_start_matches('.').to_string())
+            } else {
+                None
+            };
+            (
+                path.to_string(),
+                spelled.unwrap_or_else(|| target.record_field(field)),
+            )
+        }))
         // A callee the target cannot reach is left out: `lower` has already
         // refused a document that calls one.
         .chain(scope.callees.iter().filter_map(|c| {

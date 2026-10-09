@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: ee37533f857b01b43223ccdf57f0449c0b326ab00d940ee5b3e09fb6a557b07f
+// source-hash: ef4ca0a4dd7e55791acb35707aca0211307a64b1955f47f3e92b31829dc36eec
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -922,8 +922,10 @@ impl StatePolicy for StaticRecordListIndexPolicy {
                 }
                 if event == StaticRecordListIndexEvent::Order {
                     if match (|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> {
-                        Ok(sce_forge_runtime::algorithm::at(&self.days, 0)?.dayOfMonth
-                            < sce_forge_runtime::algorithm::at(&self.days, 1)?.dayOfMonth)
+                        Ok(
+                            sce_forge_runtime::algorithm::at_ref(&self.days, 0)?.dayOfMonth
+                                < sce_forge_runtime::algorithm::at_ref(&self.days, 1)?.dayOfMonth,
+                        )
                     })() {
                         Ok(sce_value) => sce_value,
                         Err(_) => {
@@ -1019,7 +1021,7 @@ impl StatePolicy for StaticRecordListIndexPolicy {
                         'action_block: {
                             // W3C SCXML 5.3: <assign location="day">
                             let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.day = sce_forge_runtime::algorithm::at(&self.days, self.cursor)?.dayOfMonth;
+    self.day = sce_forge_runtime::algorithm::at_ref(&self.days, self.cursor)?.dayOfMonth;
     Ok(())
 })() {
     Ok(()) => false,
@@ -1034,7 +1036,7 @@ impl StatePolicy for StaticRecordListIndexPolicy {
 
                             // W3C SCXML 5.3: <assign location="year">
                             let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.year = sce_forge_runtime::algorithm::at(&self.days, self.cursor)?.year;
+    self.year = sce_forge_runtime::algorithm::at_ref(&self.days, self.cursor)?.year;
     Ok(())
 })() {
     Ok(()) => false,
@@ -1070,7 +1072,7 @@ impl StatePolicy for StaticRecordListIndexPolicy {
                         'action_block: {
                             // W3C SCXML 5.3: <assign location="day">
                             let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.day = sce_forge_runtime::algorithm::at(&self.days, sce_forge_runtime::algorithm::sub::<u32>((self.days).len() as u32, 1)?)?.dayOfMonth;
+    self.day = sce_forge_runtime::algorithm::at_ref(&self.days, sce_forge_runtime::algorithm::sub::<u32>((self.days).len() as u32, 1)?)?.dayOfMonth;
     Ok(())
 })() {
     Ok(()) => false,
@@ -1091,7 +1093,7 @@ impl StatePolicy for StaticRecordListIndexPolicy {
                         'action_block: {
                             // W3C SCXML 5.3: <assign location="sum">
                             let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.sum = sce_forge_runtime::algorithm::add::<u8>(sce_forge_runtime::algorithm::at(&self.days, 0)?.dayOfMonth, sce_forge_runtime::algorithm::at(&self.days, 1)?.dayOfMonth)? as u32;
+    self.sum = sce_forge_runtime::algorithm::add::<u8>(sce_forge_runtime::algorithm::at_ref(&self.days, 0)?.dayOfMonth, sce_forge_runtime::algorithm::at_ref(&self.days, 1)?.dayOfMonth)? as u32;
     Ok(())
 })() {
     Ok(()) => false,

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: ee37533f857b01b43223ccdf57f0449c0b326ab00d940ee5b3e09fb6a557b07f
+// source-hash: ef4ca0a4dd7e55791acb35707aca0211307a64b1955f47f3e92b31829dc36eec
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -140,16 +140,19 @@ const (
 	StaticRecordStringEventFill StaticRecordStringEvent = 1
 	StaticRecordStringEventForget StaticRecordStringEvent = 2
 	StaticRecordStringEventFromNote StaticRecordStringEvent = 3
-	StaticRecordStringEventKeep StaticRecordStringEvent = 4
-	StaticRecordStringEventLabelledTaken StaticRecordStringEvent = 5
-	StaticRecordStringEventLongNote StaticRecordStringEvent = 6
-	StaticRecordStringEventReset StaticRecordStringEvent = 7
-	StaticRecordStringEventTally StaticRecordStringEvent = 8
-	StaticRecordStringEventToNote StaticRecordStringEvent = 9
-	StaticRecordStringEventToowide StaticRecordStringEvent = 10
-	StaticRecordStringEventWide StaticRecordStringEvent = 11
+	StaticRecordStringEventIsfirst StaticRecordStringEvent = 4
+	StaticRecordStringEventKeep StaticRecordStringEvent = 5
+	StaticRecordStringEventLabelledTaken StaticRecordStringEvent = 6
+	StaticRecordStringEventLongNote StaticRecordStringEvent = 7
+	StaticRecordStringEventPeek StaticRecordStringEvent = 8
+	StaticRecordStringEventPeeklast StaticRecordStringEvent = 9
+	StaticRecordStringEventReset StaticRecordStringEvent = 10
+	StaticRecordStringEventTally StaticRecordStringEvent = 11
+	StaticRecordStringEventToNote StaticRecordStringEvent = 12
+	StaticRecordStringEventToowide StaticRecordStringEvent = 13
+	StaticRecordStringEventWide StaticRecordStringEvent = 14
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	StaticRecordStringEventNull StaticRecordStringEvent = 12
+	StaticRecordStringEventNull StaticRecordStringEvent = 15
 )
 
 func (e StaticRecordStringEvent) String() string {
@@ -162,12 +165,18 @@ func (e StaticRecordStringEvent) String() string {
 		return "forget"
 	case StaticRecordStringEventFromNote:
 		return "from_note"
+	case StaticRecordStringEventIsfirst:
+		return "isfirst"
 	case StaticRecordStringEventKeep:
 		return "keep"
 	case StaticRecordStringEventLabelledTaken:
 		return "labelled.taken"
 	case StaticRecordStringEventLongNote:
 		return "long_note"
+	case StaticRecordStringEventPeek:
+		return "peek"
+	case StaticRecordStringEventPeeklast:
+		return "peeklast"
 	case StaticRecordStringEventReset:
 		return "reset"
 	case StaticRecordStringEventTally:
@@ -454,12 +463,18 @@ func (p *StaticRecordStringPolicy) GetEventFromName(name string) (StaticRecordSt
 		return StaticRecordStringEventForget, true
 	case "from_note":
 		return StaticRecordStringEventFromNote, true
+	case "isfirst":
+		return StaticRecordStringEventIsfirst, true
 	case "keep":
 		return StaticRecordStringEventKeep, true
 	case "labelled.taken":
 		return StaticRecordStringEventLabelledTaken, true
 	case "long_note":
 		return StaticRecordStringEventLongNote, true
+	case "peek":
+		return StaticRecordStringEventPeek, true
+	case "peeklast":
+		return StaticRecordStringEventPeeklast, true
 	case "reset":
 		return StaticRecordStringEventReset, true
 	case "tally":
@@ -772,7 +787,7 @@ func (p *StaticRecordStringPolicy) FirstEnabledTransition(state StaticRecordStri
 				}, true
 			}
 		}
-		if event == StaticRecordStringEventForget {
+		if event == StaticRecordStringEventPeek {
 			{
 				return sce.EnabledTransition[StaticRecordStringState, sce.HistoryID]{
 					Source:          state,
@@ -782,11 +797,44 @@ func (p *StaticRecordStringPolicy) FirstEnabledTransition(state StaticRecordStri
 				}, true
 			}
 		}
-		if event == StaticRecordStringEventErrorExecution {
+		if event == StaticRecordStringEventPeeklast {
 			{
 				return sce.EnabledTransition[StaticRecordStringState, sce.HistoryID]{
 					Source:          state,
 					TransitionIndex: 12,
+					HasActions:      true,
+					IsInternal:      true,
+				}, true
+			}
+		}
+		if event == StaticRecordStringEventIsfirst {
+			// NL→IR Item C1 Path A: native typed `_event.data` guard — cond
+			// "labels[0].label === 'whole'" lowered to a tag-checked field comparison on
+			// the lifted `pending<Event>Payload` (no script engine).
+			if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.vLabels[:], int64(0)).label == "whole"; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordStringEventErrorExecution, "<transition cond='labels[0].label === 'whole''>: an integer operation overflowed or failed")); return false }; return sceValue }() {
+				return sce.EnabledTransition[StaticRecordStringState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 13,
+					HasActions:      true,
+					IsInternal:      true,
+				}, true
+			}
+		}
+		if event == StaticRecordStringEventForget {
+			{
+				return sce.EnabledTransition[StaticRecordStringState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 14,
+					HasActions:      true,
+					IsInternal:      true,
+				}, true
+			}
+		}
+		if event == StaticRecordStringEventErrorExecution {
+			{
+				return sce.EnabledTransition[StaticRecordStringState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 15,
 					HasActions:      true,
 					IsInternal:      true,
 				}, true
@@ -949,7 +997,40 @@ func (p *StaticRecordStringPolicy) ExecuteTransitionContent(source StaticRecordS
 
 			}()
 		case 11:
-			//line static_record_string.scxml:81
+			//line static_record_string.scxml:86
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
+
+
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, scealgorithm.At(&sceFailure, p.vLabels[:], int64(0)).label, 16); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordStringEventErrorExecution, "<assign location='note'>: an integer operation overflowed or failed")); return true }; p.vNote = sceValue; return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+			}()
+		case 12:
+			//line static_record_string.scxml:89
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
+
+
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, scealgorithm.AtU(&sceFailure, p.vLabels[:], uint64(scealgorithm.SubUint32(&sceFailure, uint32(len(p.vLabels)), 1))).label, 16); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordStringEventErrorExecution, "<assign location='note'>: an integer operation overflowed or failed")); return true }; p.vNote = sceValue; return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+			}()
+		case 13:
+			//line static_record_string.scxml:92
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
+
+
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "first", 16); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordStringEventErrorExecution, "<assign location='note'>: an integer operation overflowed or failed")); return true }; p.vNote = sceValue; return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+			}()
+		case 14:
+			//line static_record_string.scxml:95
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -958,8 +1039,8 @@ func (p *StaticRecordStringPolicy) ExecuteTransitionContent(source StaticRecordS
 	p.vLabels = p.vLabels[:0]
 
 			}()
-		case 12:
-			//line static_record_string.scxml:84
+		case 15:
+			//line static_record_string.scxml:98
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

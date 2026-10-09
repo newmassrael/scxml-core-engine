@@ -650,18 +650,19 @@ fn resolve_names(ast: &mut TypedExpr, ctx: &TypeCtx<'_>, source: &str) -> Result
 }
 
 /// Refuse a field of the element a list of records is indexed at that is not a
-/// number or a `bool` the schema declares: the scope types `<list>[].<field>`
-/// for exactly those, so any other field — one the schema does not have, or a
-/// string, a byte string or an enum, which a `<foreach>` item reads — comes out
-/// of inference untyped and would reach every backend as an operand of no type.
+/// number, a `bool` or a string the schema declares: the scope types
+/// `<list>[].<field>` for exactly those, so any other field — one the schema does
+/// not have, or a byte string or an enum, which a `<foreach>` item reads — comes
+/// out of inference untyped and would reach every backend as an operand of no
+/// type.
 fn reject_unreadable_element_fields(expr: &TypedExpr, source: &str) -> Result<(), Refusal> {
     if let ExprKind::Member { object, property } = &expr.kind {
         if let Some(list) = indexed_list_name(object) {
             if expr.ty == InferredType::Unknown {
                 return Err(ExprError::UnsupportedConstruct {
                     construct: format!(
-                        "`{list}[…].{property}`, which is no number or bool field of the \
-                         element (a field of another type is read through a <foreach> item)"
+                        "`{list}[…].{property}`, which is no number, bool or string field of \
+                         the element (a field of another type is read through a <foreach> item)"
                     ),
                     observed: expr
                         .span
@@ -6724,6 +6725,33 @@ fn rust_emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
                 emit_rust(alternate, expr.ty)?,
             )
         }
+        // A field of the element a list of records is indexed at is read through
+        // the element by reference: a record that owns text is not `Copy`, and the
+        // list keeps its element.
+        ExprKind::Member { object, property }
+            if matches!(
+                &object.kind,
+                ExprKind::Checked {
+                    op: CheckedOp::Index,
+                    right: Some(_),
+                    ..
+                }
+            ) =>
+        {
+            let ExprKind::Checked {
+                left,
+                right: Some(index),
+                ..
+            } = &object.kind
+            else {
+                unreachable!("guarded by the match above")
+            };
+            format!(
+                "sce_forge_runtime::algorithm::at_ref(&{}, {})?.{property}",
+                wrap_postfix(left, emit_rust(left, InferredType::Unknown)?),
+                emit_rust(index, InferredType::Unknown)?,
+            )
+        }
         ExprKind::Member { object, property } => {
             format!(
                 "{}.{property}",
@@ -8459,8 +8487,15 @@ fn emit_c(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError>
 /// recorded and the read gives 0 when the index is outside the collection, and
 /// an index that is outside is never read, the collection's emptiness included.
 /// A `bytes` view and a `list<T>` view carry their length; a build-time array's is
-/// its `sizeof`.
-fn c_checked_index(left: &TypedExpr, index: &TypedExpr, field: &str) -> Result<String, ExprError> {
+/// its `sizeof`. `failed` is what the read gives when it records a failure: 0, or
+/// the empty string for a field that is text, which a function that takes a string
+/// must never be handed as a null pointer.
+fn c_checked_index(
+    left: &TypedExpr,
+    index: &TypedExpr,
+    field: &str,
+    failed: &str,
+) -> Result<String, ExprError> {
     let object = wrap_postfix(left, emit_c(left, InferredType::Unknown)?);
     let idx = emit_c(index, InferredType::Unknown)?;
     let accessor = c_element_accessor(left.ty);
@@ -8475,7 +8510,7 @@ fn c_checked_index(left: &TypedExpr, index: &TypedExpr, field: &str) -> Result<S
     };
     Ok(format!(
         "(sce_forge_checked_index_from_{from}(&sce_failure_, {idx}, {len}) \
-         ? {object}{accessor}[{idx}]{field} : 0)"
+         ? {object}{accessor}[{idx}]{field} : {failed})"
     ))
 }
 
@@ -8653,7 +8688,12 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             else {
                 unreachable!("guarded by the match above")
             };
-            c_checked_index(left, index, &format!(".{property}"))?
+            let failed = if expr.ty == InferredType::Str {
+                "\"\""
+            } else {
+                "0"
+            };
+            c_checked_index(left, index, &format!(".{property}"), failed)?
         }
         ExprKind::Member { object, property } => {
             format!(
@@ -8742,7 +8782,7 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             op: CheckedOp::Index,
             left,
             right: Some(index),
-        } => c_checked_index(left, index, "")?,
+        } => c_checked_index(left, index, "", "0")?,
         // SCE_FORGE.md §3.4.1: the runtime's helper for the operation's own
         // width, which records a failure in the body's `sce_failure_` and
         // yields 0; the statement around it returns that failure. C has no

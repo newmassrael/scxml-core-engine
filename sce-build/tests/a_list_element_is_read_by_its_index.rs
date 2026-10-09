@@ -238,6 +238,82 @@ fn a_field_of_an_element_is_read_by_the_elements_index() {
     }
 }
 
+/// A statechart with a `list<record:Labelled>` `labels` — a record with a string
+/// field of at most eight bytes — a `string` `note` of sixteen, a `bool` `same` and
+/// the given `body` in one transition, beside the schema it imports.
+fn labelled_machine(body: &str) -> (tempfile::TempDir, PathBuf) {
+    let dir = tempdir().expect("tempdir");
+    std::fs::copy(
+        repo_root().join("sce-build/tests/fixtures/static_datamodel/schema_labelled.scxml"),
+        dir.path().join("schema_labelled.scxml"),
+    )
+    .expect("the Labelled schema");
+    let path = dir.path().join("probe.scxml");
+    std::fs::write(
+        &path,
+        format!(
+            r##"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s" datamodel="sce-static">
+  <sce:import kind="event-schema" src="schema_labelled.scxml" as="Labelled"/>
+  <datamodel>
+    <data id="labels" sce:type="list&lt;record:Labelled&gt;" sce:capacity="3"/>
+    <data id="note" sce:type="string" sce:capacity="16" expr="'hello'"/>
+    <data id="same" sce:type="bool" expr="false"/>
+    <data id="small" sce:type="uint8" expr="0"/>
+  </datamodel>
+  <state id="s">
+    <transition event="go" type="internal">
+      {body}
+    </transition>
+  </state>
+</scxml>
+"##
+        ),
+    )
+    .expect("write probe");
+    (dir, path)
+}
+
+fn check_labelled(args: &[&str], body: &str) -> (bool, String) {
+    let (_dir, path) = labelled_machine(body);
+    let out = Command::new(sce_codegen_bin())
+        .arg("--workspace-root")
+        .arg(repo_root())
+        .arg("--error-format=json")
+        .args(args)
+        .arg(&path)
+        .output()
+        .expect("invoke sce-codegen");
+    (
+        out.status.success(),
+        String::from_utf8_lossy(&out.stderr).into_owned() + &String::from_utf8_lossy(&out.stdout),
+    )
+}
+
+#[test]
+fn a_string_field_of_an_element_is_read_by_the_elements_index() {
+    let body = r#"
+      <assign location="note" expr="labels[0].label"/>
+      <assign location="note" expr="labels[len(labels) - 1].label"/>
+      <assign location="same" expr="labels[0].label === labels[1].label"/>
+      <if cond="labels[small].label === 'a'">
+        <assign location="small" expr="labels[0].sensor"/>
+      </if>"#;
+    for args in [
+        &["check"][..],
+        &["check", "-l", "rust"],
+        &["check", "-l", "kotlin"],
+        &["check", "-l", "cpp"],
+        &["check", "-l", "go"],
+        &["check", "-l", "python"],
+        &["check", "-l", "c11"],
+    ] {
+        let (ok, out) = check_labelled(args, body);
+        assert!(ok, "{args:?}: a string field of an indexed element:\n{out}");
+    }
+}
+
 #[test]
 fn an_element_of_a_list_of_records_is_still_no_value() {
     for (body, because) in [

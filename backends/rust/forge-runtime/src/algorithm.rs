@@ -125,6 +125,16 @@ pub fn at<T: Copy, I: TryInto<usize>>(xs: &[T], i: I) -> Result<T, AlgorithmErro
         .ok_or(AlgorithmError::OutOfRange)
 }
 
+/// [`at`] for an element that is not `Copy`, handed back by reference: a
+/// record that owns text, a field of which an expression reads through the
+/// reference and never moves out of the list.
+pub fn at_ref<T, I: TryInto<usize>>(xs: &[T], i: I) -> Result<&T, AlgorithmError> {
+    i.try_into()
+        .ok()
+        .and_then(|i| xs.get(i))
+        .ok_or(AlgorithmError::OutOfRange)
+}
+
 /// A value of type `S` stored where a `T` is declared: the same value, or an
 /// overflow when `T` cannot hold it — never a wrapped one.
 pub fn narrow<T: CheckedInt + TryFrom<S>, S: CheckedInt>(v: S) -> Result<T, AlgorithmError> {

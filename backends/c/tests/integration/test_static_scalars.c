@@ -1845,7 +1845,7 @@ int main(void) {
     bad |= static_real32_scenario("static_real32", 11);
     bad |= static_record_real_scenario("static_record_real", 5);
     bad |= static_record_real32_scenario("static_record_real32", 7);
-    bad |= static_record_string_scenario("static_record_string", 22);
+    bad |= static_record_string_scenario("static_record_string", 28);
     bad |= static_block_ends_list_scenario("static_block_ends_list", 4);
     bad |= static_record_fields_scenario("static_record_fields", 9);
     bad |= static_record_scenario("static_record", 16);

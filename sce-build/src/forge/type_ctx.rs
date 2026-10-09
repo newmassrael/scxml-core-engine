@@ -471,7 +471,9 @@ fn static_record_paths<'v>(
     for var in variables {
         // An element of a `list<record:<alias>>` read by its index, `xs[i].f`, is
         // read through `<id>[].<field>`: the index is a value and the path is
-        // not, and only a number or a bool is a value an expression computes with.
+        // not, and only a number, a bool or a string is a value an expression
+        // computes with (a byte string or an enum field is read through a
+        // `<foreach>` item).
         if let Some(ListElemType::Record { alias }) = var
             .value_type
             .as_ref()
@@ -482,7 +484,10 @@ fn static_record_paths<'v>(
                     let ty = InferredType::from_sce_type(&field.sce_type);
                     if matches!(
                         ty,
-                        InferredType::Int { .. } | InferredType::Float { .. } | InferredType::Bool
+                        InferredType::Int { .. }
+                            | InferredType::Float { .. }
+                            | InferredType::Bool
+                            | InferredType::Str
                     ) {
                         paths.push((format!("{}{INDEXED_ELEMENT}{}", var.id, field.id), ty));
                     }
@@ -524,6 +529,25 @@ fn static_record_string_bounds<'v>(
 ) -> Vec<(String, usize)> {
     let mut bounds = Vec::new();
     for var in variables {
+        // A string field of the element a list of records is indexed at is bounded
+        // by the schema alike, under the path it is typed by (`labels[].label`).
+        if let Some(ListElemType::Record { alias }) = var
+            .value_type
+            .as_ref()
+            .and_then(AlgorithmValueType::list_elem)
+        {
+            if let Some(schema) = records.get(alias) {
+                for field in &schema.fields {
+                    if let (SceType::String, Some(bound)) = (&field.sce_type, field.max_size) {
+                        bounds.push((
+                            format!("{}{INDEXED_ELEMENT}{}", var.id, field.id),
+                            bound as usize,
+                        ));
+                    }
+                }
+            }
+            continue;
+        }
         let Some(schema) = var
             .value_type
             .as_ref()
@@ -686,7 +710,17 @@ impl StaticScope {
     pub fn record_string_fields(&self) -> impl Iterator<Item = (&str, &str)> {
         self.record_string_bounds
             .iter()
+            .filter(|(path, _)| !path.contains(INDEXED_ELEMENT))
             .filter_map(|(path, _)| path.split_once('.'))
+    }
+
+    /// Whether the field at `path`, as [`Self::indexed_record_fields`] gives it, is a
+    /// string: the one a target that holds a string in a buffer of its own reads
+    /// through that buffer.
+    pub fn indexed_field_is_string(&self, path: &str) -> bool {
+        self.record_string_bounds
+            .iter()
+            .any(|(held, _)| held == path)
     }
 
     /// Each field of the element a list of records is indexed at, as the path it

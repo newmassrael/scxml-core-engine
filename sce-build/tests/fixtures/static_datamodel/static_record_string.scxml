@@ -78,6 +78,20 @@
         <assign location="note" expr="l.label"/>
       </foreach>
     </transition>
+    <!-- The string field of the record at an index is read as a loop's is: `peek`
+         takes the first, `peeklast` the last by an index computed from the length,
+         and `isfirst` is guarded by a comparison of the first with a literal. An
+         index outside the list reads nothing and raises error.execution, a guard
+         that cannot be evaluated is false and raises it too. -->
+    <transition event="peek" type="internal">
+      <assign location="note" expr="labels[0].label"/>
+    </transition>
+    <transition event="peeklast" type="internal">
+      <assign location="note" expr="labels[len(labels) - 1].label"/>
+    </transition>
+    <transition event="isfirst" cond="labels[0].label === 'whole'" type="internal">
+      <assign location="note" expr="'first'"/>
+    </transition>
     <transition event="forget" type="internal">
       <sce:clear target="labels"/>
     </transition>
