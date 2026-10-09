@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SCE Protocol-Synthesis RFC §synth-5-P (queue kind): one producer, one
+  consumer, wait-free, bounded to four. The selection table gives this the
+  Lamport ring. The Rust conformance crate compiles what the generator emits
+  for it and runs the queue.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://sce.dev/ext sce-forge.xsd"
+       sce:kind="queue"
+       name="queue_conformance_spsc"
+       version="1.0">
+  <sce:element-type>queue_conformance_event</sce:element-type>
+  <sce:producers>one</sce:producers>
+  <sce:consumers>one</sce:consumers>
+  <sce:progress>wait-free</sce:progress>
+  <sce:bounded capacity="4"/>
+</scxml>

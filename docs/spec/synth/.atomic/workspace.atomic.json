@@ -5155,6 +5155,26 @@
         {
           "file": "tests/forge/resources/queue_segmented_lscq.scxml",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/forge-conformance/build.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/forge-conformance/tests/forge_queue_generated.rs",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/queue_conformance_event.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/queue_conformance_scq.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/queue_conformance_spsc.scxml",
+          "kind": "references"
         }
       ]
     },

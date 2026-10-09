@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SCE Protocol-Synthesis RFC §synth-5-P (queue kind): the element the queue
+  conformance fixtures hand over. Scalars only, so the generated struct
+  carries no borrow and is its own owned form, which a queue may hold.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="little" name="queue_conformance_event">
+  <datamodel>
+    <data id="sensor_id" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <data id="value" sce:type="uint16" sce:byte="1" sce:bit-size="16"/>
+  </datamodel>
+</scxml>

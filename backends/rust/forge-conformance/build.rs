@@ -167,11 +167,28 @@ fn main() {
         &out_dir,
         &options,
     );
+
+    // Step 6: queue kind (RFC §synth-5-P). The generator's output for a
+    // queue is a module that names a runtime queue type over the element
+    // codec's struct; until it is compiled, nothing shows that the names it
+    // writes are the names the runtime has. One queue per bounded algorithm
+    // row, sharing one element codec under a parent module so the queues'
+    // `use super::queue_conformance_event` resolves.
+    generate_stripped_fixtures(
+        &[
+            "queue_conformance_event",
+            "queue_conformance_spsc",
+            "queue_conformance_scq",
+        ],
+        &resource_dir,
+        &out_dir,
+        &options,
+    );
 }
 
 /// Generate each named forge SCXML to Rust into `OUT_DIR`, stripping the
-/// leading `#![doc]` inner attribute so the result can be `include!()`-ed
-/// inside a parent `mod {}` by the round-trip integration tests.
+/// inner attributes so the result can be `include!()`-ed inside a parent
+/// `mod {}` by the round-trip integration tests.
 fn generate_stripped_fixtures(
     names: &[&str],
     resource_dir: &Path,
@@ -195,10 +212,22 @@ fn generate_stripped_fixtures(
         .unwrap_or_else(|e| panic!("sce-build codegen failed for {name}: {e}"));
         for (filename, code) in output.files {
             let target = Path::new(out_dir).join(&filename);
-            std::fs::write(&target, strip_inner_doc(&code))
+            std::fs::write(&target, strip_inner_attributes(&code))
                 .unwrap_or_else(|e| panic!("write {}: {e}", target.display()));
         }
     }
+}
+
+/// Drop every inner attribute line (`#![doc = ...]`, and the `#![allow(...)]`
+/// a module-shaped template such as the queue's opens with), for the same
+/// reason `strip_inner_doc` drops the doc one: none is legal at an
+/// `include!` injection point. The including `mod` carries the `allow`s
+/// instead, as outer attributes.
+fn strip_inner_attributes(code: &str) -> String {
+    code.lines()
+        .filter(|line| !line.trim_start().starts_with("#!["))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Drop the leading `#![doc = "SCE-MAP: ..."]` inner attribute so the

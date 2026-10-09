@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SCE Protocol-Synthesis RFC §synth-5-P (queue kind): many producers, many
+  consumers, lock-free, bounded to six with three participants a side. The
+  selection table gives this SCQ, whose two index rings are the next power of
+  two at or above both numbers: eight slots. The Rust conformance crate
+  compiles what the generator emits for it and runs the queue.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://sce.dev/ext sce-forge.xsd"
+       sce:kind="queue"
+       name="queue_conformance_scq"
+       version="1.0">
+  <sce:element-type>queue_conformance_event</sce:element-type>
+  <sce:producers>many</sce:producers>
+  <sce:consumers>many</sce:consumers>
+  <sce:progress>lock-free</sce:progress>
+  <sce:bounded capacity="6"/>
+  <sce:participants const="3"/>
+</scxml>
