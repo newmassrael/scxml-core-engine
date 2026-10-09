@@ -18250,13 +18250,15 @@ fn render_queue_rust(
             QueueStorage::Segmented { .. } => "segmented",
             QueueStorage::Intrusive { .. } => "intrusive",
         };
-        return Err(GenerateError::QueueStorageRuntimeMissing {
+        // Placed on the storage element: the refusal's `actual` is the mode
+        // that element spells, and the document names it elsewhere too.
+        return Err(ForgeError::from(GenerateError::QueueStorageRuntimeMissing {
             queue_name: m.name.clone(),
             storage: storage.to_string(),
             language: "rust".to_string(),
             implemented: "bounded".to_string(),
-        }
-        .into());
+        })
+        .at_line(m.storage_line));
     };
     // A constant is carried through. A deploy key needs the resolution
     // `compile_forge_with_deploy` made from the deploy file; without one the

@@ -5225,6 +5225,12 @@ pub struct QueueModel {
     /// root element (RFC §synth-5-O), for the SCE-MAP marker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_location: Option<SourceLocation>,
+    /// Row of the storage element (`<sce:bounded>`, `<sce:segmented>` or
+    /// `<sce:intrusive>`), so a refusal about the storage mode is placed on
+    /// the row that spells it. Skipped from serialization to keep the wire
+    /// byte-stable, the way every other `line` on this model is.
+    #[serde(skip)]
+    pub storage_line: Option<u32>,
 }
 
 /// The algorithm a queue document selects — one row of the RFC §synth-5-P

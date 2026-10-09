@@ -10484,6 +10484,12 @@ fn parse_queue(
         .map(|node| read_capacity_source(&node, diag, "<sce:participants>", "const"))
         .transpose()?;
 
+    // Exactly one of the three was written (checked above), so this is the
+    // storage element's own row.
+    let storage_line = bounded
+        .or(segmented)
+        .or(intrusive)
+        .map(|node| row_of(&node));
     let model = QueueModel {
         name: doc_name.to_string(),
         element_type,
@@ -10493,6 +10499,7 @@ fn parse_queue(
         storage,
         participants,
         source_location: forge_source_location_of(root, diag),
+        storage_line,
     };
 
     // ── Judged on the document alone: the selection table ──

@@ -389,7 +389,7 @@ fn codec_doc(name: &str) -> String {
 }
 
 /// Compile the queue with its element codec; the queue's single file body.
-fn compile(queue_xml: &str, queue_basename: &str) -> Result<String, ForgeError> {
+fn compile(queue_xml: &str, queue_basename: &str) -> Result<String, Located<ForgeError>> {
     let dir = tempdir().expect("tempdir");
     let codec_path = dir.path().join("rx_event.scxml");
     fs::write(&codec_path, codec_doc("rx_event")).expect("write codec");
@@ -402,8 +402,7 @@ fn compile(queue_xml: &str, queue_basename: &str) -> Result<String, ForgeError> 
         Language::Rust,
         &ForgeCompileOptions::default(),
         None,
-    )
-    .map_err(|e| e.error)?;
+    )?;
     let output = outputs
         .iter()
         .find(|(name, _)| name == queue_basename)
@@ -490,8 +489,26 @@ fn a_storage_the_rust_runtime_lacks_is_refused_by_name() {
         ("queue_segmented_lscq.scxml", "segmented"),
         ("queue_intrusive_mpsc.scxml", "intrusive"),
     ] {
-        let err = compile(&resource(fixture), fixture)
+        let located = compile(&resource(fixture), fixture)
             .expect_err("a storage without a runtime is refused");
+        // The refusal is placed on the storage element, so the mode it
+        // names is found on the row it points at and not by searching a
+        // document that spells the word in its comment, its element and its
+        // `sce:kind`.
+        let text = resource(fixture);
+        let row = located
+            .location
+            .line
+            .expect("the refusal carries the storage element's row");
+        let line = text
+            .lines()
+            .nth(row as usize - 1)
+            .unwrap_or_else(|| panic!("{fixture} has no row {row}"));
+        assert!(
+            line.contains(&format!("<sce:{storage}")),
+            "{fixture}: row {row} is not the storage element: {line}"
+        );
+        let err = located.error;
         let codes: Vec<_> = err.to_diagnostics().iter().map(|d| d.code).collect();
         assert!(
             matches!(
@@ -530,7 +547,7 @@ fn a_deploy_key_capacity_is_not_lowered_as_if_it_were_a_constant() {
     );
     let err = compile(&xml, "frame_queue.scxml").expect_err("deploy capacity is not resolved");
     assert!(
-        err.to_string().contains("machines.m.limits.frames"),
+        err.error.to_string().contains("machines.m.limits.frames"),
         "the refusal names the key: {err}"
     );
 }
