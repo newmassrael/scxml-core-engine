@@ -21,6 +21,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 from sce_author import revision, revision_gate
 from sce_author.__main__ import main
@@ -237,9 +238,10 @@ class ACommandIsAReviser(unittest.TestCase):
                          "a process the reviser started went on running after the timeout")
 
     def test_a_host_that_cannot_stop_a_group_does_not_start_the_command_and_says_so(self):
-        # Windows has no `os.killpg`. A command started there could not be stopped with what it
-        # started, and its first timeout would be an AttributeError in place of the round's failure
-        # (a review of the gate, 2026-10-09). The marker proves nothing was started.
+        # A host with neither a POSIX group to signal nor Windows' tree to end: a command started
+        # there could not be stopped with what it started, and its first timeout would be an
+        # AttributeError in place of the round's failure (a review of the gate, 2026-10-09). The
+        # marker proves nothing was started.
         marker = self.design.parent / "started"
         code = f"import pathlib; pathlib.Path({str(marker)!r}).write_text('started')"
         self.addCleanup(setattr, os, "killpg", os.killpg)
@@ -249,6 +251,63 @@ class ACommandIsAReviser(unittest.TestCase):
         self.assertIn("could not be started", str(caught.exception))
         self.assertIn("process group", str(caught.exception))
         self.assertFalse(marker.exists(), "the command ran on a host that cannot stop its group")
+
+    def test_on_windows_the_command_is_started_in_a_group_of_its_own_and_its_tree_is_ended_with_taskkill(self):
+        # What this holds is the command that is issued, not that Windows ends a tree with it: it was
+        # written from what `taskkill` documents and has not been run there.
+        from sce_author import process
+
+        self.assertEqual({"creationflags": 0x00000200}, process._own_group_options(True))
+        self.assertEqual({"start_new_session": True}, process._own_group_options(False))
+
+        class Child:
+            returncode = None
+            pid = 4242
+            stdin = stdout = stderr = None
+            waited = False
+
+            def wait(self):
+                self.waited = True
+
+            def kill(self):
+                raise AssertionError("taskkill was there to end the tree")
+
+        issued = []
+        child = Child()
+        with mock.patch.object(process.subprocess, "run", lambda argv, **kw: issued.append(argv)):
+            process._end_group(child, True)
+        self.assertEqual([["taskkill", "/F", "/T", "/PID", "4242"]], issued)
+        self.assertTrue(child.waited)
+
+        # A program already collected is not signalled: its number belongs to nobody now.
+        issued.clear()
+        child.returncode = 0
+        with mock.patch.object(process.subprocess, "run", lambda argv, **kw: issued.append(argv)):
+            process._end_group(child, True)
+        self.assertEqual([], issued)
+
+    def test_when_taskkill_cannot_be_run_the_command_itself_is_killed(self):
+        from sce_author import process
+
+        class Child:
+            returncode = None
+            pid = 7
+            stdin = stdout = stderr = None
+            killed = False
+
+            def wait(self):
+                pass
+
+            def kill(self):
+                self.killed = True
+
+        def missing(argv, **kw):
+            raise FileNotFoundError(argv[0])
+
+        child = Child()
+        with mock.patch.object(process.subprocess, "run", missing):
+            process._end_group(child, True)
+        self.assertTrue(child.killed)
 
     def test_a_command_that_finishes_is_read_as_before_when_it_has_a_session_of_its_own(self):
         code = "import sys; print('said'); print('and', file=sys.stderr); sys.exit(0)"

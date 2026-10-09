@@ -121,38 +121,67 @@ def _run_in_own_group(argv: list, cwd, timeout: float | None, stdin_text: str | 
     """`run` for a program started in a session of its own, whose whole group is stopped when it
     runs past its clock or this call is interrupted.
 
-    ⚠ Stopping a group is a POSIX call (`os.killpg`, `signal.SIGKILL`), and a session of its own is
-    a POSIX argument that Windows ignores. Where there is no such call the program is not started:
-    one started with no way to stop what it starts would fail on its first timeout with an
-    `AttributeError`, and the gate would not say that the round ran past its clock. The caller
-    reads the refusal as a program that could not be started."""
-    if not hasattr(os, "killpg"):
-        raise OSError(f"a program cannot be run in a group of its own on {sys.platform}: stopping "
-                      "everything it started needs a process group, which only POSIX has")
+    ⚠ What stops a program together with what it started differs by host. POSIX starts it in a
+    session of its own and signals the group (`os.killpg`). Windows starts it in a process group of
+    its own (`CREATE_NEW_PROCESS_GROUP`) and ends its tree with `taskkill /F /T`, which follows the
+    parent links of the processes that are still alive: one whose parent has already exited is not
+    found. ⚠ The Windows way was written from what `taskkill` documents and was NOT run on Windows:
+    what is held here is the command it issues, not that it ends a tree. A host with neither is
+    refused before anything is started: a program started with no way to stop what it starts would
+    fail on its first timeout with an `AttributeError`, and the gate would not say that the round
+    ran past its clock. The caller reads the refusal as a program that could not be started."""
+    windows = _on_windows()
+    options = _own_group_options(windows)
     child = subprocess.Popen(argv, stdin=subprocess.PIPE if stdin_text is not None else None,
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-                             encoding="utf-8", cwd=cwd, env=environment, start_new_session=True)
+                             encoding="utf-8", cwd=cwd, env=environment, **options)
     try:
         out, err = child.communicate(input=stdin_text, timeout=timeout)
     except subprocess.TimeoutExpired as exc:
-        _end_group(child)
+        _end_group(child, windows)
         raise ProcessTimeout(
             f"{os.path.basename(str(argv[0]))} had not finished after {timeout:.0f} s") from exc
     except BaseException:
-        _end_group(child)
+        _end_group(child, windows)
         raise
     return subprocess.CompletedProcess(argv, child.returncode, out, err)
 
 
-def _end_group(child: subprocess.Popen) -> None:
+#: `CREATE_NEW_PROCESS_GROUP` of Windows' process creation flags, which `subprocess` names only there.
+_NEW_PROCESS_GROUP = 0x00000200
+
+
+def _on_windows() -> bool:
+    return sys.platform == "win32"
+
+
+def _own_group_options(windows: bool) -> dict:
+    """The arguments that start a program so that what it starts can be stopped with it, or the
+    refusal of a host that has no such way."""
+    if windows:
+        return {"creationflags": _NEW_PROCESS_GROUP}
+    if hasattr(os, "killpg"):
+        return {"start_new_session": True}
+    raise OSError(f"a program cannot be run in a group of its own on {sys.platform}: stopping "
+                  "everything it started needs a process group, which this host has no way to stop")
+
+
+def _end_group(child: subprocess.Popen, windows: bool) -> None:
     """Stop everything the program started, collect it and close its pipes. Only while the program
     is still uncollected: once it is collected its number belongs to nobody, and a signal to it
     could reach a stranger."""
     if child.returncode is None:
-        try:
-            os.killpg(child.pid, signal.SIGKILL)
-        except (ProcessLookupError, PermissionError):
-            pass
+        if windows:
+            try:
+                subprocess.run(["taskkill", "/F", "/T", "/PID", str(child.pid)],
+                               capture_output=True, check=False)
+            except OSError:
+                child.kill()
+        else:
+            try:
+                os.killpg(child.pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
     for pipe in (child.stdin, child.stdout, child.stderr):
         if pipe is not None:
             pipe.close()
