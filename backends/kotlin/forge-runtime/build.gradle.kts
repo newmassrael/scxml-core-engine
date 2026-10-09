@@ -161,12 +161,13 @@ val generateForgeFixtures by tasks.registering(GenerateForgeFixtures::class) {
     outputDir.set(layout.buildDirectory.dir("generated/conformance/kotlin"))
 }
 
-// RFC variant-default-uniformity (kotlin half) — generate
-// the 3 default-marker codec fixtures into a separate output dir wired
-// into jvmTest. Lives outside the numerical-conformance manifest because
-// the marker fixtures are contract testing (Default emission), not
-// oracle comparison. Mirrors the cpp/python/go round-trip atomics.
-abstract class GenerateRoundTripFixtures : DefaultTask() {
+// Fixtures generated into a separate output dir wired into jvmTest, outside
+// the numerical-conformance manifest. RFC variant-default-uniformity (kotlin
+// half) generates the 3 default-marker codec fixtures this way: they are
+// contract testing (Default emission), not oracle comparison. Mirrors the
+// cpp/python/go round-trip atomics. The queue kind's fixtures are generated the
+// same way.
+abstract class GenerateFixtures : DefaultTask() {
     @get:InputFile
     @get:PathSensitive(PathSensitivity.ABSOLUTE)
     abstract val sceCodegen: RegularFileProperty
@@ -174,6 +175,12 @@ abstract class GenerateRoundTripFixtures : DefaultTask() {
     @get:InputDirectory
     @get:PathSensitive(PathSensitivity.RELATIVE)
     abstract val resourceDir: DirectoryProperty
+
+    // The documents under resourceDir this task generates, by name without
+    // the extension. Declared by each registration, so one task class serves
+    // every set of fixtures that is generated outside the numerical manifest.
+    @get:Input
+    abstract val fixtures: ListProperty<String>
 
     @get:OutputDirectory
     abstract val outputDir: DirectoryProperty
@@ -195,12 +202,7 @@ abstract class GenerateRoundTripFixtures : DefaultTask() {
         val out = outputDir.get().asFile
         out.deleteRecursively()
         out.mkdirs()
-        val fixtures = listOf(
-            "codec_default_marker_arm_a",
-            "codec_default_marker_arm_b",
-            "codec_variant_default_marker",
-        )
-        for (fixture in fixtures) {
+        for (fixture in fixtures.get()) {
             execOperations.exec {
                 commandLine(
                     bin.absolutePath,
@@ -214,11 +216,37 @@ abstract class GenerateRoundTripFixtures : DefaultTask() {
     }
 }
 
-val generateRoundTripFixtures by tasks.registering(GenerateRoundTripFixtures::class) {
+val generateRoundTripFixtures by tasks.registering(GenerateFixtures::class) {
     dependsOn(":buildSceCodegen")
     sceCodegen.set(rootProject.layout.projectDirectory.file(sceCodegenRelative))
     resourceDir.set(rootProject.layout.projectDirectory.dir("tests/forge/resources"))
+    fixtures.set(
+        listOf(
+            "codec_default_marker_arm_a",
+            "codec_default_marker_arm_b",
+            "codec_variant_default_marker",
+        ),
+    )
     outputDir.set(layout.buildDirectory.dir("generated/round_trip/kotlin"))
+}
+
+// The queue kind's fixtures (SCE Protocol-Synthesis RFC §synth-5-P). They
+// assert no numerical oracle value, so the numerical manifest does not list
+// them; QueueGeneratedTest compiles what the generator writes for each bounded
+// algorithm row against the runtime and uses the queues. The element comes
+// first because the queues import its class.
+val generateQueueFixtures by tasks.registering(GenerateFixtures::class) {
+    dependsOn(":buildSceCodegen")
+    sceCodegen.set(rootProject.layout.projectDirectory.file(sceCodegenRelative))
+    resourceDir.set(rootProject.layout.projectDirectory.dir("tests/forge/resources"))
+    fixtures.set(
+        listOf(
+            "queue_conformance_event",
+            "queue_conformance_spsc",
+            "queue_conformance_scq",
+        ),
+    )
+    outputDir.set(layout.buildDirectory.dir("generated/queue/kotlin"))
 }
 
 kotlin {
@@ -241,12 +269,26 @@ kotlin {
             }
             kotlin.srcDir(generateForgeFixtures.map { it.outputDir })
             kotlin.srcDir(generateRoundTripFixtures.map { it.outputDir })
+            kotlin.srcDir(generateQueueFixtures.map { it.outputDir })
         }
     }
 }
 
 tasks.withType<Test>().configureEach {
     systemProperty("sce.repo.root", rootProject.projectDir.absolutePath)
+    // The queue kind's stress runs write their histories to the directory this
+    // variable names (QueueHistoryTest). The files are the task's output and
+    // Gradle does not know it: a gate that empties the directory and runs the
+    // task again would otherwise find it UP-TO-DATE, the tests unrun and the
+    // directory empty. Asking for histories therefore always runs the tests.
+    if (providers.environmentVariable("SCE_QUEUE_HISTORY_DIR").isPresent) {
+        outputs.upToDateWhen { false }
+    }
+    // The queue contract is read at run time by path, so it is an input like
+    // the numerical reference below.
+    inputs.file(rootProject.layout.projectDirectory.file("tests/forge/conformance/queue_contract.json"))
+        .withPropertyName("queueContract")
+        .withPathSensitivity(PathSensitivity.NONE)
     // The generated harness reads the reference cases at run time, by path
     // (harness.kt.jinja2), so to Gradle they are an input like any other: left
     // undeclared, a change to the cases alone leaves jvmTest UP-TO-DATE and the

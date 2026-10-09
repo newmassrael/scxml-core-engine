@@ -853,6 +853,92 @@ fn a_storage_the_go_runtime_lacks_is_refused_by_name() {
     }
 }
 
+// ─── Kotlin emit ───
+
+#[test]
+fn a_lamport_ring_emits_a_kotlin_file_over_the_spsc_runtime_and_no_ring_constants() {
+    let xml = queue_doc(
+        "frame_queue",
+        "one",
+        "one",
+        "wait-free",
+        r#"<sce:bounded capacity="8"/>"#,
+    );
+    let code = compile_for(Language::Kotlin, &xml, "frame_queue.scxml").expect("spsc queue emits");
+    assert!(
+        code.contains("package com.sce.generated.frame_queue"),
+        "{code}"
+    );
+    assert!(
+        code.contains("import com.sce.forge.runtime.queue.Spsc"),
+        "{code}"
+    );
+    assert!(
+        code.contains("import com.sce.generated.rx_event.RxEvent"),
+        "{code}"
+    );
+    assert!(code.contains("const val CAPACITY: Int = 8"), "{code}");
+    assert!(
+        code.contains("typealias FrameQueue = Spsc<RxEvent>"),
+        "{code}"
+    );
+    assert!(code.contains("Spsc(CAPACITY)"), "{code}");
+    assert!(
+        code.contains("const val DECLARED_PROGRESS: String = \"wait-free\""),
+        "{code}"
+    );
+    assert!(
+        !code.contains("RING_SLOTS") && !code.contains("PARTICIPANTS"),
+        "a Lamport ring has no index rings:\n{code}"
+    );
+}
+
+#[test]
+fn an_scq_ring_is_sized_the_same_way_in_kotlin() {
+    // Capacity 6 and 5 participants: the next power of two at or above both.
+    let xml = queue_doc(
+        "work_queue",
+        "many",
+        "many",
+        "lock-free",
+        r#"<sce:bounded capacity="6"/><sce:participants const="5"/>"#,
+    );
+    let code = compile_for(Language::Kotlin, &xml, "work_queue.scxml").expect("scq queue emits");
+    assert!(code.contains("const val RING_SLOTS: Int = 8"), "{code}");
+    assert!(code.contains("const val PARTICIPANTS: Int = 5"), "{code}");
+    assert!(
+        code.contains("typealias WorkQueue = Scq<RxEvent>"),
+        "{code}"
+    );
+    assert!(code.contains("Scq(CAPACITY, RING_SLOTS)"), "{code}");
+    assert!(
+        code.contains("const val WRAP_BOUND_OPS: Long = RUNTIME_WRAP_BOUND_OPS"),
+        "{code}"
+    );
+}
+
+#[test]
+fn a_storage_the_kotlin_runtime_lacks_is_refused_by_name() {
+    let located = compile_for(
+        Language::Kotlin,
+        &resource("queue_intrusive_mpsc.scxml"),
+        "queue_intrusive_mpsc.scxml",
+    )
+    .expect_err("a storage without a runtime is refused");
+    match located.error {
+        ForgeError::Generate(boxed) => match *boxed {
+            GenerateError::QueueStorageRuntimeMissing {
+                language, storage, ..
+            } => {
+                assert_eq!(language, "kotlin");
+                assert_eq!(storage, "intrusive");
+            }
+            other => panic!("expected QueueStorageRuntimeMissing, got {other:?}"),
+        },
+        other => panic!("expected a generate error, got {other:?}"),
+    }
+}
+
 // ─── Cross-document resolution ───
 
 /// The row a refusal points at, and that row's text.

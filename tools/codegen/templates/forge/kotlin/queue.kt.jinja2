@@ -1,0 +1,103 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{{ sce_map.source_marker(source_location, "kotlin", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="queue")
+// Runtime: {{ runtime_dep }}
+// Do not edit — regenerate from the source SCXML file.
+//
+// SCE Protocol-Synthesis RFC §synth-5-P queue — a first-in first-out queue
+// that hands elements from one thread to another. The document states the
+// contract (element type, {{ producers }} producer(s), {{ consumers }} consumer(s),
+// `{{ declared_progress }}`) and names no algorithm; the algorithm below is what
+// the selection table gives that contract.
+//
+// Selected: {{ algorithm }}. Push is {{ push_progress }}, pop is {{ pop_progress }}.
+//
+// Operations (from `{{ runtime_type }}`):
+//   producer() / consumer()  a handle, or null when every place of that side
+//                            is taken; release() gives the place back
+//   tryPush(v): PushStatus   PushStatus.Ok takes the element; Full does not
+//   tryPop(): T?             null when the queue is empty
+//   capacity
+{% if ring_slots %}
+//
+// The ring's 64-bit entries are `kotlin.concurrent.atomics.AtomicLong`, which
+// the JVM makes lock-free where the processor has a 64-bit compare-and-swap.
+// A JVM on a processor without one would run them under a lock and give the
+// row the progress `blocking`; that is the platform's to state, and the
+// runtime cannot see it.
+{% endif %}
+
+@file:Suppress(
+    "ClassName",
+    "FunctionName",
+    "PropertyName",
+    "MemberVisibilityCanBePrivate",
+    "RemoveRedundantQualifierName",
+    "unused",
+)
+
+package com.sce.generated.{{ snake }}
+
+import com.sce.forge.runtime.queue.{{ runtime_type }}
+import com.sce.generated.{{ element_snake }}.{{ element_pascal }}
+{% if ring_slots %}
+import com.sce.forge.runtime.queue.WRAP_BOUND_OPS as RUNTIME_WRAP_BOUND_OPS
+{% endif %}
+
+/** The most elements the queue holds (`<sce:bounded>`). */
+const val CAPACITY: Int = {{ capacity }}
+{% if ring_slots %}
+
+/**
+ * The size of each of the queue's two index rings: a power of two, at least
+ * [CAPACITY] and at least [PARTICIPANTS]. The algorithm's empty test is
+ * justified only for as many producers or consumers as the ring has slots
+ * (Nikolaev 2019 §5.1), so the ring is sized by both.
+ */
+const val RING_SLOTS: Int = {{ ring_slots }}
+
+/**
+ * The most threads that hold a handle on one side at the same time
+ * (`<sce:participants>`). The queue hands out no more handles than
+ * [RING_SLOTS] on either side.
+ */
+const val PARTICIPANTS: Int = {{ participants }}
+
+/**
+ * How many operations a participant may be delayed between reading a ring entry
+ * and acting on it before it could be misled: 2^62 for the 64-bit entries this
+ * ring keeps, which at 10^9 operations a second is 146 years (RFC §synth-5-P,
+ * Counter width).
+ */
+const val WRAP_BOUND_OPS: Long = RUNTIME_WRAP_BOUND_OPS
+{% endif %}
+
+/** What the document requires of push and pop (`<sce:progress>`). */
+const val DECLARED_PROGRESS: String = "{{ declared_progress }}"
+
+/** What the selected algorithm gives push. */
+const val PUSH_PROGRESS: String = "{{ push_progress }}"
+
+/** What the selected algorithm gives pop. */
+const val POP_PROGRESS: String = "{{ pop_progress }}"
+
+/** The algorithm the selection table gave this contract. */
+const val ALGORITHM: String = "{{ algorithm }}"
+
+/**
+ * The queue. Its storage is one array, allocated when the queue is built and
+ * never again; an element that has left it is not referenced by it.
+ */
+typealias {{ pascal }} = {{ runtime_type }}<{{ element_pascal }}>
+
+/** An empty queue of [CAPACITY] elements. */
+fun new{{ pascal }}(): {{ pascal }} =
+{% if ring_slots %}
+    {{ runtime_type }}(CAPACITY, RING_SLOTS)
+{% else %}
+    {{ runtime_type }}(CAPACITY)
+{% endif %}

@@ -5251,6 +5251,42 @@
         {
           "file": "scripts/gates/forge-go.sh",
           "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/forge-runtime/src/commonMain/kotlin/com/sce/forge/runtime/queue/Queue.kt",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/forge-runtime/src/commonMain/kotlin/com/sce/forge/runtime/queue/Spsc.kt",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/forge-runtime/src/commonMain/kotlin/com/sce/forge/runtime/queue/Scq.kt",
+          "kind": "implements"
+        },
+        {
+          "file": "tools/codegen/templates/forge/kotlin/queue.kt.jinja2",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/forge-runtime/src/jvmTest/kotlin/com/sce/forge/runtime/queue/QueueContractTest.kt",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/forge-runtime/src/jvmTest/kotlin/com/sce/forge/runtime/queue/QueueGeneratedTest.kt",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/forge-runtime/src/jvmTest/kotlin/com/sce/forge/runtime/queue/QueueHistoryTest.kt",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/forge-runtime/src/jvmTest/kotlin/com/sce/forge/runtime/queue/QueueRuntimeTest.kt",
+          "kind": "references"
+        },
+        {
+          "file": "scripts/gates/forge-kotlin.sh",
+          "kind": "references"
         }
       ]
     },

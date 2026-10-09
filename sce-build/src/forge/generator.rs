@@ -17153,9 +17153,7 @@ pub fn generate_kotlin_with_imports(
             render_event_schema(&env, m, imports, crate::generator::Language::Kotlin)?
         }
         // Queue kind: see cpp dispatch.
-        ForgeDocument::Queue(_) => {
-            unreachable!("ForgeDocument::Queue rejected by codegen_matrix::check on kotlin")
-        }
+        ForgeDocument::Queue(m) => render_queue_kotlin(&env, m, imports, options)?,
     };
 
     let filename = format!("{}.kt", filters::to_pascal_case(doc.name().to_string()));
@@ -18740,6 +18738,48 @@ fn render_bounded_collection_kotlin(
     tmpl.render(ctx).map_err(|e| {
         ForgeError::from(GenerateError::TemplateRender(format!(
             "bounded_collection.kt.jinja2 (kotlin): {e}"
+        )))
+    })
+}
+
+/// Render a `<sce:kind="queue">` document for the Kotlin backend (SCE
+/// Protocol-Synthesis RFC §synth-5-P): a file that names the queue type the
+/// selection table picks from `com.sce.forge.runtime.queue`, over the element
+/// document's class, with the contract and what the algorithm gives as
+/// constants. Bounded storage only, for the reason `render_queue_rust` gives.
+fn render_queue_kotlin(
+    env: &minijinja::Environment<'_>,
+    m: &crate::forge::model::QueueModel,
+    _imports: &[ImportContext],
+    options: &crate::ForgeCompileOptions,
+) -> Result<String, ForgeError> {
+    let inputs = resolve_queue_render_inputs(m, options, crate::generator::Language::Kotlin)?;
+    let tmpl = env.get_template("queue.kt.jinja2").map_err(|e| {
+        ForgeError::from(GenerateError::TemplateLoad(format!(
+            "queue.kt.jinja2 (kotlin): {e}"
+        )))
+    })?;
+    let ctx = minijinja::context! {
+        name => &m.name,
+        pascal => filters::to_pascal_case(m.name.clone()),
+        snake => filters::to_snake_case(m.name.clone()),
+        element_pascal => filters::to_pascal_case(m.element_type.clone()),
+        element_snake => filters::to_snake_case(m.element_type.clone()),
+        capacity => inputs.capacity,
+        ring_slots => inputs.ring_slots,
+        participants => inputs.participants,
+        runtime_type => inputs.runtime_type,
+        algorithm => inputs.algorithm,
+        producers => inputs.producers,
+        consumers => inputs.consumers,
+        declared_progress => inputs.declared_progress,
+        push_progress => inputs.push_progress,
+        pop_progress => inputs.pop_progress,
+        runtime_dep => "com.sce.forge.runtime.queue",
+    };
+    tmpl.render(ctx).map_err(|e| {
+        ForgeError::from(GenerateError::TemplateRender(format!(
+            "queue.kt.jinja2 (kotlin): {e}"
         )))
     })
 }
