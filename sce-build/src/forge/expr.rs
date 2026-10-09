@@ -639,7 +639,7 @@ fn resolve_names(ast: &mut TypedExpr, ctx: &TypeCtx<'_>, source: &str) -> Result
     infer_types(ast, ctx);
     reject_unknown_callees(ast, ctx)?;
     reject_unknown_names(ast, ctx)?;
-    reject_unnamed_record_elements(ast, source)?;
+    reject_unnamed_record_elements(ast, ctx, source)?;
     reject_misdirected_indexing(ast, source)?;
     reject_unreadable_element_fields(ast, ctx, source)?;
     reject_records_as_operands(ast, source, RecordPlace::Whole)?;
@@ -752,20 +752,26 @@ fn reject_misdirected_indexing(expr: &TypedExpr, source: &str) -> Result<(), Ref
 /// through a name — a parameter, a local, a `<sce:foreach>` item — whose
 /// fields the record rule types (SCE_FORGE.md §4.12); `xs[i]` has no name,
 /// so `xs[i].wallTime` would reach every backend as an operand of no type.
-fn reject_unnamed_record_elements(expr: &TypedExpr, source: &str) -> Result<(), Refusal> {
+fn reject_unnamed_record_elements(
+    expr: &TypedExpr,
+    ctx: &TypeCtx<'_>,
+    source: &str,
+) -> Result<(), Refusal> {
     // `xs[i].f` is the one way an element of a list of records is read by its
     // index: the field is typed through `<xs>[].<f>`, and the element itself is
-    // never a value. Its index and its list are walked as any expression is.
+    // never a value. Its index and its list are walked as any expression is. It is
+    // a way only where the scope types those fields (a static statechart's does,
+    // an algorithm's does not): elsewhere the element is refused here, at `xs[i]`.
     if let ExprKind::Member { object, .. } = &expr.kind {
         if let ExprKind::Index {
             object: list,
             index,
         } = &object.kind
         {
-            if indexed_list_name(object).is_some() {
+            if indexed_list_name(object).is_some_and(|name| ctx.reads_elements_of(name)) {
                 return [list.as_ref(), index.as_ref()]
                     .into_iter()
-                    .try_for_each(|child| reject_unnamed_record_elements(child, source));
+                    .try_for_each(|child| reject_unnamed_record_elements(child, ctx, source));
             }
         }
     }
@@ -786,7 +792,7 @@ fn reject_unnamed_record_elements(expr: &TypedExpr, source: &str) -> Result<(), 
     }
     expr.children()
         .into_iter()
-        .try_for_each(|child| reject_unnamed_record_elements(child, source))
+        .try_for_each(|child| reject_unnamed_record_elements(child, ctx, source))
 }
 
 /// Where a record-valued node stands, for [`reject_records_as_operands`].

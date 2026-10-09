@@ -1205,6 +1205,15 @@ impl<'a> TypeCtx<'a> {
             || self.enums.contains_key(name)
     }
 
+    /// Whether this scope types the fields of the element a list of records is
+    /// indexed at, `<list>[].<field>` — a static statechart registers them, an
+    /// algorithm does not. Where it does not, `xs[i].f` is no way to read a record
+    /// and is refused at `xs[i]`, the element that has no name.
+    pub fn reads_elements_of(&self, list: &str) -> bool {
+        let prefix = format!("{list}{}", crate::forge::type_ctx::INDEXED_ELEMENT);
+        self.vars.keys().any(|path| path.starts_with(&prefix))
+    }
+
     /// Look up a function signature. Returns `None` if absent.
     pub fn lookup_func(&self, name: &str) -> Option<&FuncSig> {
         self.funcs.get(name)
