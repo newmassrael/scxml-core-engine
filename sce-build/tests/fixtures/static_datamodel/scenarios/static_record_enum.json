@@ -30,7 +30,19 @@
 
     { "note": "a whole record, enum field included, from the last item the loop saw",
       "event": "recall", "expect": { "variables": { "shown": { "layout": "agenda_list", "zoom": 2 } } } },
+    { "note": "the enum field of the record at an index is read as a loop's is: the first, a week",
+      "event": "peek", "expect": { "variables": { "shown": { "layout": "week", "zoom": 2 }, "leads": 0 } } },
+    { "note": "... compared with a variant in a guard, which holds for the first",
+      "event": "lead", "expect": { "variables": { "leads": 1 } } },
+    { "note": "... and the last, by an index computed from the length, a variant spelled with an underscore",
+      "event": "peeklast", "expect": { "variables": { "shown": { "layout": "agenda_list", "zoom": 2 } } } },
+
     { "event": "forget", "expect": { "variables": { "seen": [] } } },
-    { "event": "count", "expect": { "variables": { "weeks": 0 } } }
+    { "event": "count", "expect": { "variables": { "weeks": 0 } } },
+
+    { "note": "emptied: the list has no record at index 0, so nothing is read and the record is left as it was",
+      "event": "peek", "expect": { "variables": { "shown": { "layout": "agenda_list", "zoom": 2 } } } },
+    { "note": "the guard cannot be evaluated: it is false",
+      "event": "lead", "expect": { "variables": { "leads": 1 } } }
   ]
 }

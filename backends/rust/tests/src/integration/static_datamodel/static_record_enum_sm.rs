@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: ef4ca0a4dd7e55791acb35707aca0211307a64b1955f47f3e92b31829dc36eec
+// source-hash: 552d5eb22ef933056085dce88fe5367b344dcf477c9ae66190ff1867ab30429e
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -98,6 +98,9 @@ pub enum StaticRecordEnumEvent {
     Agenda,
     Count,
     Forget,
+    Lead,
+    Peek,
+    Peeklast,
     Recall,
     Remember,
     Toggle,
@@ -126,6 +129,9 @@ impl StaticRecordEnumEvent {
         StaticRecordEnumEvent::Agenda,
         StaticRecordEnumEvent::Count,
         StaticRecordEnumEvent::Forget,
+        StaticRecordEnumEvent::Lead,
+        StaticRecordEnumEvent::Peek,
+        StaticRecordEnumEvent::Peeklast,
         StaticRecordEnumEvent::Recall,
         StaticRecordEnumEvent::Remember,
         StaticRecordEnumEvent::Toggle,
@@ -175,6 +181,7 @@ pub struct StaticRecordEnumData {
     pub seen: Vec<StaticRecordEnumViewRecord>,
     pub weeks: u32,
     pub flips: u32,
+    pub leads: u32,
 }
 
 /// What a host observes: the full active configuration — every active state,
@@ -208,6 +215,7 @@ impl StaticRecordEnumObserve for Engine<StaticRecordEnumPolicy> {
                 seen: policy.seen.clone(),
                 weeks: policy.weeks,
                 flips: policy.flips,
+                leads: policy.leads,
             },
             truncated: self.last_macrostep_truncated(),
         }
@@ -359,7 +367,7 @@ pub trait StaticRecordEnumPersist: Sized {
 impl StaticRecordEnumPersist for Engine<StaticRecordEnumPolicy> {
     type Policy = StaticRecordEnumPolicy;
 
-    const SHAPE: &'static str = "941b4cd3ef3c635175f4eebd0cda9103f5ee12a9d569303a82d4aa1c62bc7475";
+    const SHAPE: &'static str = "5badf5f6ffa55e8a6f26846fbf63d8ca259130207872c648bab3f3409f8e1f2d";
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<
         ::sce_rust_runtime::NoHistory,
@@ -392,6 +400,10 @@ impl StaticRecordEnumPersist for Engine<StaticRecordEnumPolicy> {
                 (
                     "flips".to_string(),
                     ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.flips),
+                ),
+                (
+                    "leads".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.leads),
                 ),
             ],
             ::sce_rust_runtime::saved_state::save_history(self.policy(), Self::HISTORIES),
@@ -426,6 +438,10 @@ impl StaticRecordEnumPersist for Engine<StaticRecordEnumPolicy> {
             saved.variable("flips")?,
             "flips",
         )?;
+        policy.leads = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("leads")?,
+            "leads",
+        )?;
         ::sce_rust_runtime::saved_state::enter(policy, saved, clock, wall_now_ms)
     }
 }
@@ -437,6 +453,7 @@ impl StaticRecordEnumPersist for Engine<StaticRecordEnumPolicy> {
 pub struct StaticRecordEnumInvokeParams {
     pub weeks: Option<u32>,
     pub flips: Option<u32>,
+    pub leads: Option<u32>,
 }
 
 // ======================================================================
@@ -452,6 +469,8 @@ pub struct StaticRecordEnumPolicy {
     weeks: u32,
     /// W3C SCXML 5.2: the `flips` datamodel variable, published (`sce:direction="out"`).
     flips: u32,
+    /// W3C SCXML 5.2: the `leads` datamodel variable, published (`sce:direction="out"`).
+    leads: u32,
     // W3C SCXML 5.10: Session ID (script engine + invoke tracking).
     //
     // SCE Protocol-Synthesis RFC §synth-5-J-2: gated to !no_std. Under `--no-std` both the
@@ -483,11 +502,13 @@ impl StaticRecordEnumPolicy {
         let seen: Vec<StaticRecordEnumViewRecord> = Vec::new();
         let weeks: u32 = 0;
         let flips: u32 = 0;
+        let leads: u32 = 0;
         Self {
             shown,
             seen,
             weeks,
             flips,
+            leads,
             session_id: None,
             parent_external_queue: None,
             invoke_id: String::new(),
@@ -503,6 +524,9 @@ impl StaticRecordEnumPolicy {
         }
         if let Some(value) = params.flips {
             self.flips = value;
+        }
+        if let Some(value) = params.leads {
+            self.leads = value;
         }
     }
 
@@ -528,6 +552,12 @@ impl StaticRecordEnumPolicy {
     /// holds now. Only the machine writes it.
     pub fn flips(&self) -> u32 {
         self.flips
+    }
+
+    /// W3C SCXML 5.2: what the published `leads` datamodel variable
+    /// holds now. Only the machine writes it.
+    pub fn leads(&self) -> u32 {
+        self.leads
     }
 }
 
@@ -667,6 +697,9 @@ impl StatePolicy for StaticRecordEnumPolicy {
             StaticRecordEnumEvent::Agenda => "agenda",
             StaticRecordEnumEvent::Count => "count",
             StaticRecordEnumEvent::Forget => "forget",
+            StaticRecordEnumEvent::Lead => "lead",
+            StaticRecordEnumEvent::Peek => "peek",
+            StaticRecordEnumEvent::Peeklast => "peeklast",
             StaticRecordEnumEvent::Recall => "recall",
             StaticRecordEnumEvent::Remember => "remember",
             StaticRecordEnumEvent::Toggle => "toggle",
@@ -680,6 +713,9 @@ impl StatePolicy for StaticRecordEnumPolicy {
             "agenda" => Some(StaticRecordEnumEvent::Agenda),
             "count" => Some(StaticRecordEnumEvent::Count),
             "forget" => Some(StaticRecordEnumEvent::Forget),
+            "lead" => Some(StaticRecordEnumEvent::Lead),
+            "peek" => Some(StaticRecordEnumEvent::Peek),
+            "peeklast" => Some(StaticRecordEnumEvent::Peeklast),
             "recall" => Some(StaticRecordEnumEvent::Recall),
             "remember" => Some(StaticRecordEnumEvent::Remember),
             "toggle" => Some(StaticRecordEnumEvent::Toggle),
@@ -844,12 +880,51 @@ impl StatePolicy for StaticRecordEnumPolicy {
                         });
                     }
                 }
-                if event == StaticRecordEnumEvent::Forget {
+                if event == StaticRecordEnumEvent::Peek {
                     {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
                             targets: &[],
                             transition_index: 7,
+                            has_actions: true,
+                            is_internal: true,
+                        });
+                    }
+                }
+                if event == StaticRecordEnumEvent::Peeklast {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[],
+                            transition_index: 8,
+                            has_actions: true,
+                            is_internal: true,
+                        });
+                    }
+                }
+                if event == StaticRecordEnumEvent::Lead {
+                    if match (|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> {
+                        Ok(sce_forge_runtime::algorithm::at_ref(&self.seen, 0)?.layout
+                            == StaticRecordEnumViewModeEnum::Week)
+                    })() {
+                        Ok(sce_value) => sce_value,
+                        Err(_) => false,
+                    } {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[],
+                            transition_index: 9,
+                            has_actions: true,
+                            is_internal: true,
+                        });
+                    }
+                }
+                if event == StaticRecordEnumEvent::Forget {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[],
+                            transition_index: 10,
                             has_actions: true,
                             is_internal: true,
                         });
@@ -875,7 +950,7 @@ impl StatePolicy for StaticRecordEnumPolicy {
             StaticRecordEnumState::Viewing => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: static_record_enum.scxml:29 :: viewing :: _transition_0
+                        // SCE-MAP: static_record_enum.scxml:30 :: viewing :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -898,7 +973,7 @@ impl StatePolicy for StaticRecordEnumPolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: static_record_enum.scxml:33 :: viewing :: _transition_1
+                        // SCE-MAP: static_record_enum.scxml:34 :: viewing :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -921,7 +996,7 @@ impl StatePolicy for StaticRecordEnumPolicy {
                         }
                     }
                     2 => {
-                        // SCE-MAP: static_record_enum.scxml:37 :: viewing :: _transition_2
+                        // SCE-MAP: static_record_enum.scxml:38 :: viewing :: _transition_2
                         // W3C SCXML 3.13: Transition 2 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -930,7 +1005,7 @@ impl StatePolicy for StaticRecordEnumPolicy {
                         }
                     }
                     3 => {
-                        // SCE-MAP: static_record_enum.scxml:40 :: viewing :: _transition_3
+                        // SCE-MAP: static_record_enum.scxml:41 :: viewing :: _transition_3
                         // W3C SCXML 3.13: Transition 3 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -950,7 +1025,7 @@ impl StatePolicy for StaticRecordEnumPolicy {
                         }
                     }
                     4 => {
-                        // SCE-MAP: static_record_enum.scxml:44 :: viewing :: _transition_4
+                        // SCE-MAP: static_record_enum.scxml:45 :: viewing :: _transition_4
                         // W3C SCXML 3.13: Transition 4 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -967,7 +1042,7 @@ impl StatePolicy for StaticRecordEnumPolicy {
                         }
                     }
                     5 => {
-                        // SCE-MAP: static_record_enum.scxml:48 :: viewing :: _transition_5
+                        // SCE-MAP: static_record_enum.scxml:49 :: viewing :: _transition_5
                         // W3C SCXML 3.13: Transition 5 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -997,7 +1072,7 @@ impl StatePolicy for StaticRecordEnumPolicy {
                         }
                     }
                     6 => {
-                        // SCE-MAP: static_record_enum.scxml:57 :: viewing :: _transition_6
+                        // SCE-MAP: static_record_enum.scxml:58 :: viewing :: _transition_6
                         // W3C SCXML 3.13: Transition 6 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1010,8 +1085,68 @@ impl StatePolicy for StaticRecordEnumPolicy {
                         }
                     }
                     7 => {
-                        // SCE-MAP: static_record_enum.scxml:62 :: viewing :: _transition_7
+                        // SCE-MAP: static_record_enum.scxml:68 :: viewing :: _transition_7
                         // W3C SCXML 3.13: Transition 7 actions
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // W3C SCXML 5.3: <assign location="shown.layout">
+                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.shown.layout = sce_forge_runtime::algorithm::at_ref(&self.seen, 0)?.layout;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        true
+    }
+};
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                            }
+                        }
+                    }
+                    8 => {
+                        // SCE-MAP: static_record_enum.scxml:71 :: viewing :: _transition_8
+                        // W3C SCXML 3.13: Transition 8 actions
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // W3C SCXML 5.3: <assign location="shown.layout">
+                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.shown.layout = sce_forge_runtime::algorithm::at_ref(&self.seen, sce_forge_runtime::algorithm::sub::<u32>((self.seen).len() as u32, 1)?)?.layout;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        true
+    }
+};
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                            }
+                        }
+                    }
+                    9 => {
+                        // SCE-MAP: static_record_enum.scxml:74 :: viewing :: _transition_9
+                        // W3C SCXML 3.13: Transition 9 actions
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // W3C SCXML 5.3: <assign location="leads">
+                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.leads = sce_forge_runtime::algorithm::add::<u32>(self.leads, 1)?;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        true
+    }
+};
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                            }
+                        }
+                    }
+                    10 => {
+                        // SCE-MAP: static_record_enum.scxml:77 :: viewing :: _transition_10
+                        // W3C SCXML 3.13: Transition 10 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             // SCE Accepted Subset §2.15: <sce:clear target="seen">

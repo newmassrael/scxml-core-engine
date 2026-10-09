@@ -641,7 +641,7 @@ fn resolve_names(ast: &mut TypedExpr, ctx: &TypeCtx<'_>, source: &str) -> Result
     reject_unknown_names(ast, ctx)?;
     reject_unnamed_record_elements(ast, source)?;
     reject_misdirected_indexing(ast, source)?;
-    reject_unreadable_element_fields(ast, source)?;
+    reject_unreadable_element_fields(ast, ctx, source)?;
     reject_records_as_operands(ast, source, RecordPlace::Whole)?;
     reject_buffers_as_values(ast, source)?;
     reject_call_argument_mismatches(ast, ctx, source)?;
@@ -650,19 +650,28 @@ fn resolve_names(ast: &mut TypedExpr, ctx: &TypeCtx<'_>, source: &str) -> Result
 }
 
 /// Refuse a field of the element a list of records is indexed at that is not a
-/// number, a `bool` or a string the schema declares: the scope types
-/// `<list>[].<field>` for exactly those, so any other field — one the schema does
-/// not have, or a byte string or an enum, which a `<foreach>` item reads — comes
-/// out of inference untyped and would reach every backend as an operand of no
-/// type.
-fn reject_unreadable_element_fields(expr: &TypedExpr, source: &str) -> Result<(), Refusal> {
+/// number, a `bool`, a string or an enum the schema declares: the scope
+/// registers `<list>[].<field>` for exactly those — an enum untyped, as the
+/// lattice names no type for one — so any other field, one the schema does not
+/// have or a byte string, which a `<foreach>` item reads, is absent from it and
+/// would reach every backend as an operand of no type.
+fn reject_unreadable_element_fields(
+    expr: &TypedExpr,
+    ctx: &TypeCtx<'_>,
+    source: &str,
+) -> Result<(), Refusal> {
     if let ExprKind::Member { object, property } = &expr.kind {
         if let Some(list) = indexed_list_name(object) {
-            if expr.ty == InferredType::Unknown {
+            let path = format!(
+                "{list}{}{property}",
+                crate::forge::type_ctx::INDEXED_ELEMENT
+            );
+            if expr.ty == InferredType::Unknown && !ctx.declares(&path) {
                 return Err(ExprError::UnsupportedConstruct {
                     construct: format!(
-                        "`{list}[…].{property}`, which is no number, bool or string field of \
-                         the element (a field of another type is read through a <foreach> item)"
+                        "`{list}[…].{property}`, which is no number, bool, string or enum field \
+                         of the element (a field of another type is read through a <foreach> \
+                         item)"
                     ),
                     observed: expr
                         .span
@@ -676,7 +685,7 @@ fn reject_unreadable_element_fields(expr: &TypedExpr, source: &str) -> Result<()
     }
     expr.children()
         .into_iter()
-        .try_for_each(|child| reject_unreadable_element_fields(child, source))
+        .try_for_each(|child| reject_unreadable_element_fields(child, ctx, source))
 }
 
 /// Refuse an index read whose object is a value that holds no elements, or

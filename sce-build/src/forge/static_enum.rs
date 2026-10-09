@@ -21,6 +21,7 @@
 
 use crate::forge::error::ExprError;
 use crate::forge::expr::{dotted_path, parse_to_ast, BinOp, ExprKind, Refusal, TypedExpr};
+use crate::forge::type_ctx::INDEXED_ELEMENT;
 use crate::forge::types::TypeCtx;
 
 /// The enum alias `expr` is a value of, or `None` when it is not an enum
@@ -54,7 +55,7 @@ fn class_of(
     match &node.kind {
         // `<alias>.<variant>`: the variant itself was judged against the
         // enum's own set by the expression pass that ran before this one.
-        ExprKind::Member { object, .. } => {
+        ExprKind::Member { object, property } => {
             if let ExprKind::Ident(alias) = &object.kind {
                 if ctx.lookup_enum(alias).is_some() {
                     return Ok(Some(alias.clone()));
@@ -65,6 +66,22 @@ fn class_of(
             // number of names it is spelled in.
             if let Some(held) = dotted_path(node).and_then(|path| var_alias(&path)) {
                 return Ok(Some(held));
+            }
+            // `<list>[<index>].<field>`: the field of the element a list of records
+            // is indexed at, held under `<list>[].<field>` whatever the index is.
+            if let ExprKind::Index {
+                object: list,
+                index,
+            } = &object.kind
+            {
+                if let ExprKind::Ident(name) = &list.kind {
+                    if let Some(held) = var_alias(&format!("{name}{INDEXED_ELEMENT}{property}")) {
+                        if class_of(index, ctx, var_alias)?.is_some() {
+                            return Err(refuse(index, "an enum value as an index"));
+                        }
+                        return Ok(Some(held));
+                    }
+                }
             }
             nothing_but(node, ctx, var_alias)
         }

@@ -1312,6 +1312,7 @@ STATIC_SCENARIO(static_record_list_index, record_list_index_states, record_list_
 #define VIEW_FIELDS(N, E) E(layout, enum_view_mode_declared_name) N(zoom)
 VARIABLE_READER(static_record_enum, weeks)
 VARIABLE_READER(static_record_enum, flips)
+VARIABLE_READER(static_record_enum, leads)
 RECORD_READER(static_record_enum, shown, static_record_enum_record_view_t, VIEW_FIELDS)
 RECORD_LIST_READER(static_record_enum, seen, static_record_enum_record_view_view_t, static_record_enum_record_view_t,
                    VIEW_FIELDS)
@@ -1321,6 +1322,7 @@ static const name_value_t record_enum_states[] = {
 static const variable_t record_enum_variables[] = {
     {"weeks", static_record_enum_read_weeks},
     {"flips", static_record_enum_read_flips},
+    {"leads", static_record_enum_read_leads},
 };
 static const record_variable_t record_enum_records[] = {
     RECORD_ROW(static_record_enum, shown), RECORD_LIST_ROW(static_record_enum, seen), {NULL, NULL, NULL, NULL}};
@@ -1851,7 +1853,7 @@ int main(void) {
     bad |= static_record_scenario("static_record", 16);
     bad |= static_record_list_scenario("static_record_list", 14);
     bad |= static_record_list_index_scenario("static_record_list_index", 15);
-    bad |= static_record_enum_scenario("static_record_enum", 13);
+    bad |= static_record_enum_scenario("static_record_enum", 18);
     bad |= static_whole_payload_scenario("static_whole_payload", 9);
     bad |= static_wire_enum_scenario("static_wire_enum", 7);
     bad |= static_payload_scenario("static_payload", 5);

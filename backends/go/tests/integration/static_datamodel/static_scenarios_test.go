@@ -858,6 +858,7 @@ func TestARecordHoldsAnEnumField(t *testing.T) {
 		},
 		"weeks": func() any { return policy.Weeks() },
 		"flips": func() any { return policy.Flips() },
+		"leads": func() any { return policy.Leads() },
 	}))
 }
 

@@ -3985,16 +3985,20 @@ Over a list of records the element is no value, and a **field** of it is:
 `days[cursor].dayOfMonth` is typed by the schema as `d.dayOfMonth` of a
 `<foreach>` item is, and stands wherever a value of that type does — and is
 checked as the element's own read is, the field taken from the element the
-index names. A number, a `bool` or a string field is read this way, a string as a
-record variable's string field is (`note = labels[0].label`, `labels[i].label ===
-'a'`), held to the `sce:max-size` its schema declares and to the variable it is
-assigned to; a byte string or an enum field is read through a `<foreach>` item,
-and so is the record whole (`last = days[0]` is `scxml/static-datamodel-rule`, as
-any record not named is). A field the schema does not declare is
-refused, and a field is read and never written
+index names. A number, a `bool`, a string or an enum field is read this way, a
+string as a record variable's string field is (`note = labels[0].label`,
+`labels[i].label === 'a'`), held to the `sce:max-size` its schema declares and to
+the variable it is assigned to, and an enum as a record variable's enum field is
+(`shown.layout = seen[0].layout`, `seen[i].layout === ViewMode.week`): stored in a
+variable of its own enum, logged, or compared with `===` and `!==` to a value of
+that same enum, and no more than that. A byte string field is read through a
+`<foreach>` item, and so is the record whole (`last = days[0]` is
+`scxml/static-datamodel-rule`, as any record not named is). A field the schema
+does not declare is refused, and a field is read and never written
 (`<assign location="days[0].year">` is refused). An index outside the list reads
-nothing for a string as for a number: the statement is skipped, a guard it stands
-in is false, and `error.execution` says so.
+nothing for a string or an enum as for a number: the statement is skipped, a
+guard it stands in is false, and `error.execution` says so. An enum value is no
+index (`xs[seen[0].layout]` is refused).
 
 The read is checked as an integer operation is (SCE_FORGE.md §3.4.1): an index
 below zero, or not below the length, is a failure — the element is not read, the

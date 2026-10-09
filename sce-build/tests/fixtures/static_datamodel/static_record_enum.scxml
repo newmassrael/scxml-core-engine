@@ -22,6 +22,7 @@
     <data id="seen" sce:type="list&lt;record:View&gt;" sce:capacity="4" sce:direction="out"/>
     <data id="weeks" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="flips" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="leads" sce:type="uint32" expr="0" sce:direction="out"/>
   </datamodel>
   <state id="viewing">
     <!-- A month and a week trade places: the enum field is compared and
@@ -58,6 +59,20 @@
       <foreach array="seen" item="v">
         <assign location="shown" expr="v"/>
       </foreach>
+    </transition>
+    <!-- The enum field of the record at an index is read as a loop's is: `peek`
+         takes the first into the record's own, `peeklast` the last by an index
+         computed from the length, and `lead` is guarded by a comparison of the
+         first with a variant. An index outside the list reads nothing and
+         raises error.execution, a guard that cannot be evaluated is false. -->
+    <transition event="peek" type="internal">
+      <assign location="shown.layout" expr="seen[0].layout"/>
+    </transition>
+    <transition event="peeklast" type="internal">
+      <assign location="shown.layout" expr="seen[len(seen) - 1].layout"/>
+    </transition>
+    <transition event="lead" cond="seen[0].layout === ViewMode.week" type="internal">
+      <assign location="leads" expr="leads + 1"/>
     </transition>
     <transition event="forget" type="internal">
       <sce:clear target="seen"/>

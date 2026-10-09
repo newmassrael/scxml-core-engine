@@ -1291,6 +1291,7 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, ARecordHoldsAnEnumField) {
          }},
         {"weeks", [](const Machine &m) { return json(m.weeks()); }},
         {"flips", [](const Machine &m) { return json(m.flips()); }},
+        {"leads", [](const Machine &m) { return json(m.leads()); }},
     });
     replay("static_record_enum", driver);
 }

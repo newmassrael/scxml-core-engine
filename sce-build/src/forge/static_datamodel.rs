@@ -372,8 +372,40 @@ pub(crate) fn enum_variables(
         if let Some(schema) = value_type.record_alias().and_then(|a| records.get(a)) {
             held.extend(enum_fields(&var.id, schema));
         }
+        // The enum field of the element a list of records is indexed at, held
+        // under `<list>[].<field>` whatever the index is.
+        if let Some(crate::forge::model::ListElemType::Record { alias }) = value_type.list_elem() {
+            if let Some(schema) = records.get(alias) {
+                held.extend(enum_field_aliases(schema).map(|(field, alias)| {
+                    (
+                        format!(
+                            "{}{}{field}",
+                            var.id,
+                            crate::forge::type_ctx::INDEXED_ELEMENT
+                        ),
+                        alias.to_string(),
+                    )
+                }));
+            }
+        }
     }
     held
+}
+
+/// Each enum field of a record of `schema`, by the field's id and the alias of
+/// the enum it holds.
+fn enum_field_aliases(
+    schema: &crate::forge::model::EventSchemaModel,
+) -> impl Iterator<Item = (&str, &str)> {
+    schema
+        .fields
+        .iter()
+        .filter_map(|field| match &field.sce_type {
+            crate::forge::model::SceType::Enum(reference) => {
+                Some((field.id.as_str(), reference.alias.as_str()))
+            }
+            _ => None,
+        })
 }
 
 /// Each enum field of a record of `schema` held under the name `holder`, by
@@ -382,15 +414,8 @@ pub(crate) fn enum_fields(
     holder: &str,
     schema: &crate::forge::model::EventSchemaModel,
 ) -> Vec<(String, String)> {
-    schema
-        .fields
-        .iter()
-        .filter_map(|field| match &field.sce_type {
-            crate::forge::model::SceType::Enum(reference) => {
-                Some((format!("{holder}.{}", field.id), reference.alias.clone()))
-            }
-            _ => None,
-        })
+    enum_field_aliases(schema)
+        .map(|(field, alias)| (format!("{holder}.{field}"), alias.to_string()))
         .collect()
 }
 
