@@ -447,6 +447,57 @@ impl<'a> Property<'a> {
         BoundedString::from_utf8(buf).map_err(|_| CodecError::LineBadValue)
     }
 
+    /// Read the value as a list of `string` cut at `separator`, at most `M` of
+    /// them and each at most `N` bytes (docs/adr/0014). The value is cut before it
+    /// is unescaped: with `text` a separator that a backslash precedes is part of
+    /// the value, and with anything else every separator cuts. The parts are
+    /// judged left to right and the first failure is the line's: a part past `M`
+    /// is `LineTooMany`, even one that is empty or too long; an empty part is
+    /// `LineBadValue`.
+    pub fn read_strings<const N: usize, const M: usize>(
+        &mut self,
+        separator: u8,
+        text: bool,
+    ) -> Result<BoundedVec<BoundedString<N>, M>, CodecError> {
+        self.begin_value()?;
+        let mut values: BoundedVec<BoundedString<N>, M> = BoundedVec::new();
+        let mut buf: BoundedVec<u8, N> = BoundedVec::new();
+        loop {
+            let next = self.scan.bump();
+            if next.is_none() || next == Some(separator) {
+                if buf.is_empty() {
+                    return Err(CodecError::LineBadValue);
+                }
+                let part = core::mem::replace(&mut buf, BoundedVec::new());
+                let part = BoundedString::from_utf8(part).map_err(|_| CodecError::LineBadValue)?;
+                values.push(part).map_err(|_| CodecError::LineTooMany)?;
+                if next.is_none() {
+                    return Ok(values);
+                }
+                // A separator opens another part, which may not pass the bound.
+                if values.len() >= M {
+                    return Err(CodecError::LineTooMany);
+                }
+                continue;
+            }
+            let b = next.unwrap_or_default();
+            let byte = if text && b == b'\\' {
+                match self.scan.bump() {
+                    Some(b'\\') => b'\\',
+                    Some(b';') => b';',
+                    Some(b',') => b',',
+                    Some(b'n' | b'N') => b'\n',
+                    _ => return Err(CodecError::LineBadEscape),
+                }
+            } else if is_control(b) {
+                return Err(CodecError::LineBadValue);
+            } else {
+                b
+            };
+            buf.push(byte).map_err(|_| CodecError::LineTooLong)?;
+        }
+    }
+
     /// The decimal the rest of the value is: an optional sign, digits. A `-` is
     /// read only when `allow_minus`, so an unsigned type refuses `-0` as well.
     fn read_decimal(&mut self, allow_minus: bool) -> Result<i128, CodecError> {
@@ -634,6 +685,69 @@ impl<'s, S: SceSink + ?Sized> ContentLineWriter<'s, S> {
             self.units(value)?;
         }
         self.end_line()
+    }
+
+    /// Write `:<value>{separator}<value>…` and end the line (docs/adr/0014). No
+    /// values is `LineRequiredMissing` and more than `max_values` is
+    /// `LineTooMany`. A value past `max_size` is `LineTooLong`; one with a control
+    /// character (but a TEXT's line feed), an empty one, and one that is not a
+    /// TEXT and holds the separator are `LineBadValue`, because a reader would cut
+    /// or refuse them. Every value is held before any of the line is written.
+    pub fn strings<T: AsRef<str>>(
+        &mut self,
+        values: &[T],
+        separator: u8,
+        text: bool,
+        max_size: usize,
+        max_values: usize,
+    ) -> Result<(), CodecError> {
+        if values.is_empty() {
+            return Err(CodecError::LineRequiredMissing);
+        }
+        if values.len() > max_values {
+            return Err(CodecError::LineTooMany);
+        }
+        for value in values {
+            let value = value.as_ref();
+            if value.len() > max_size {
+                return Err(CodecError::LineTooLong);
+            }
+            if value
+                .bytes()
+                .any(|b| is_control(b) && !(text && b == b'\n'))
+            {
+                return Err(CodecError::LineBadValue);
+            }
+            if value.is_empty() || (!text && value.bytes().any(|b| b == separator)) {
+                return Err(CodecError::LineBadValue);
+            }
+        }
+        self.unit(b":")?;
+        for (index, value) in values.iter().enumerate() {
+            if index > 0 {
+                self.unit(core::slice::from_ref(&separator))?;
+            }
+            self.value_units(value.as_ref(), text)?;
+        }
+        self.end_line()
+    }
+
+    /// The units of a value: one character each, escaped when `text`.
+    fn value_units(&mut self, value: &str, text: bool) -> Result<(), CodecError> {
+        if !text {
+            return self.units(value);
+        }
+        for c in value.chars() {
+            let mut buf = [0u8; 4];
+            match c {
+                '\\' => self.unit(b"\\\\")?,
+                ';' => self.unit(b"\\;")?,
+                ',' => self.unit(b"\\,")?,
+                '\n' => self.unit(b"\\n")?,
+                _ => self.unit(c.encode_utf8(&mut buf).as_bytes())?,
+            }
+        }
+        Ok(())
     }
 
     fn digits(&mut self, negative: bool, mut magnitude: u64) -> Result<(), CodecError> {
@@ -1075,6 +1189,131 @@ mod tests {
             assert_eq!(got.as_str(), value);
             assert!(r.next_property().expect("end").is_none());
             assert_eq!(r.consumed(), text.len());
+        }
+    }
+
+    // A line holding a list of values (docs/adr/0014).
+
+    type Values<const N: usize, const M: usize> = BoundedVec<BoundedString<N>, M>;
+
+    fn values<const N: usize, const M: usize>(
+        value: &str,
+        separator: u8,
+        text: bool,
+    ) -> Result<Vec<String>, CodecError> {
+        let input = format!("BEGIN:VEVENT\r\nV:{value}\r\nEND:VEVENT\r\n");
+        let mut r = ContentLineReader::begin(input.as_bytes(), "VEVENT")?;
+        let mut p = r.next_property()?.expect("the property");
+        let got: Values<N, M> = p.read_strings(separator, text)?;
+        Ok(got.iter().map(|s| String::from(s.as_str())).collect())
+    }
+
+    #[test]
+    fn a_list_is_cut_at_the_separator_before_it_is_unescaped() {
+        let cut =
+            |value: &str, sep: u8, text: bool| values::<8, 4>(value, sep, text).expect("read");
+        assert_eq!(cut("a,b,c", b',', false), ["a", "b", "c"]);
+        assert_eq!(cut("a\\,b,c", b',', true), ["a,b", "c"]);
+        // Without TEXT there is no escape: a backslash is a byte and every separator cuts.
+        assert_eq!(cut("a\\,b", b',', false), ["a\\", "b"]);
+        assert_eq!(cut("a;b,c", b',', true), ["a;b", "c"]);
+        assert_eq!(cut("1;2", b';', false), ["1", "2"]);
+        assert_eq!(cut("a,b\r\n c", b',', false), ["a", "bc"]);
+    }
+
+    #[test]
+    fn a_list_is_refused_at_its_first_failing_part() {
+        let refused = |value: &str| values::<8, 3>(value, b',', true).expect_err(value);
+        assert_eq!(refused(""), CodecError::LineBadValue);
+        assert_eq!(refused("a,,b"), CodecError::LineBadValue);
+        assert_eq!(refused(",a"), CodecError::LineBadValue);
+        assert_eq!(refused("a,"), CodecError::LineBadValue);
+        assert_eq!(refused("a,b,c,d"), CodecError::LineTooMany);
+        // A part past the bound is too many, whatever the part is.
+        assert_eq!(refused("a,b,c,"), CodecError::LineTooMany);
+        assert_eq!(refused("a,b,c,xxxxxxxxxxxxxxx"), CodecError::LineTooMany);
+        assert_eq!(refused("xxxxxxxxxxxxxxx,,"), CodecError::LineTooLong);
+        assert_eq!(refused(",,xxxxxxxxxxxxxxx"), CodecError::LineBadValue);
+        assert_eq!(refused("a,b\\x"), CodecError::LineBadEscape);
+        assert_eq!(refused("a,b\\"), CodecError::LineBadEscape);
+    }
+
+    #[test]
+    fn a_list_is_written_with_its_separator_and_held_before_it_is_written() {
+        let text = written(|w| {
+            w.property("C").expect("name");
+            w.strings(&["a,b", "c;d", "e\\f"], b',', true, 8, 4)
+                .expect("list");
+            w.property("G").expect("name");
+            w.strings(&["1", "2"], b';', false, 8, 2).expect("list");
+        });
+        assert_eq!(
+            text,
+            "BEGIN:VEVENT\r\nC:a\\,b,c\\;d,e\\\\f\r\nG:1;2\r\nEND:VEVENT\r\n"
+        );
+
+        let mut buf = [0u8; 256];
+        let mut sink = SliceSink::new(&mut buf);
+        let mut w = ContentLineWriter::begin(&mut sink, "VEVENT").expect("begin");
+        w.property("C").expect("name");
+        let none: [&str; 0] = [];
+        assert_eq!(
+            w.strings(&none, b',', false, 8, 4),
+            Err(CodecError::LineRequiredMissing)
+        );
+        assert_eq!(
+            w.strings(&["a", "b", "c"], b',', false, 8, 2),
+            Err(CodecError::LineTooMany)
+        );
+        assert_eq!(
+            w.strings(&["a", "abcdefghi"], b',', false, 8, 4),
+            Err(CodecError::LineTooLong)
+        );
+        assert_eq!(
+            w.strings(&["a", ""], b',', false, 8, 4),
+            Err(CodecError::LineBadValue)
+        );
+        // Not a TEXT, so a separator in a value could not be told from a cut.
+        assert_eq!(
+            w.strings(&["a,b"], b',', false, 8, 4),
+            Err(CodecError::LineBadValue)
+        );
+        assert_eq!(
+            w.strings(&["a\nb"], b',', false, 8, 4),
+            Err(CodecError::LineBadValue)
+        );
+        // Every refusal came before a byte of the list was written: only the
+        // component's opening and the property's name are on the line.
+        w.finish().expect("finish");
+        assert_eq!(&*sink.into_written(), b"BEGIN:VEVENT\r\nCEND:VEVENT\r\n");
+    }
+
+    #[test]
+    fn a_text_list_is_read_back_as_written() {
+        for list in [
+            std::vec!["a"],
+            std::vec!["a,b", "c"],
+            std::vec!["xxxxxxxx", "\u{e9}"],
+            std::vec!["a;b"],
+        ] {
+            let text = written(|w| {
+                w.property("V").expect("name");
+                w.strings(&list, b',', true, 8, 4).expect("list");
+            });
+            assert_eq!(
+                values::<8, 4>(
+                    text.split("V:")
+                        .nth(1)
+                        .expect("value")
+                        .split("\r\n")
+                        .next()
+                        .expect("line"),
+                    b',',
+                    true
+                )
+                .expect("read"),
+                list
+            );
         }
     }
 }

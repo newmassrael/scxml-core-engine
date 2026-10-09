@@ -36,7 +36,34 @@
         let round_tripped = {{ f.name | to_pascal_case }}::decode(&mut cursor)
             .expect("{{ f.name }} case {i} decode must succeed");
 {% for field in f.fields %}
-{% if field.list %}
+{% if field.members %}
+        // A list of line records (docs/adr/0014), as the vector writes each: an
+        // object keyed by the parameter ids, then `value` or `values`.
+        {
+            let got: Vec<serde_json::Value> = round_tripped
+                .{{ field.name | to_snake_case }}
+                .iter()
+                .map(|r| {
+                    serde_json::json!({
+{% for m in field.members %}
+{% if m.list %}
+                        "{{ m.name }}": r.{{ m.name | to_snake_case }}.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+{% elif m.optional %}
+                        "{{ m.name }}": r.{{ m.name | to_snake_case }}.as_deref(),
+{% else %}
+                        "{{ m.name }}": r.{{ m.name | to_snake_case }}.as_str(),
+{% endif %}
+{% endfor %}
+                    })
+                })
+                .collect();
+            assert_eq!(
+                serde_json::Value::Array(got),
+                decoded["{{ field.name }}"],
+                "{{ f.name }} case {i} decode {{ field.name }}"
+            );
+        }
+{% elif field.list %}
         {
             let want: Vec<&str> = decoded["{{ field.name }}"]
                 .as_array()
@@ -85,7 +112,43 @@
         if !case["decode_only"].as_bool().unwrap_or(false) {
             let mut value = {{ f.name | to_pascal_case }}::new();
 {% for field in f.fields %}
-{% if field.list %}
+{% if field.members %}
+            for r in decoded["{{ field.name }}"]
+                .as_array()
+                .expect("{{ field.name }} must be an array")
+            {
+                value
+                    .{{ field.name | to_snake_case }}
+                    .push(fixtures::{{ f.name }}::{{ f.name | to_pascal_case }}{{ field.name | to_pascal_case }}Line {
+{% for m in field.members %}
+{% if m.list %}
+                        {{ m.name | to_snake_case }}: r["{{ m.name }}"]
+                            .as_array()
+                            .expect("a record's values are an array")
+                            .iter()
+                            .map(|s| {
+                                ::sce_forge_runtime::heapless::String::try_from(
+                                    s.as_str().expect("a list value is a string"),
+                                )
+                                .expect("a case value fits its bound")
+                            })
+                            .collect(),
+{% elif m.optional %}
+                        {{ m.name | to_snake_case }}: r["{{ m.name }}"].as_str().map(|s| {
+                            ::sce_forge_runtime::heapless::String::try_from(s)
+                                .expect("a case value fits its bound")
+                        }),
+{% else %}
+                        {{ m.name | to_snake_case }}: ::sce_forge_runtime::heapless::String::try_from(
+                            r["{{ m.name }}"].as_str().expect("a record's member is a string"),
+                        )
+                        .expect("a case value fits its bound"),
+{% endif %}
+{% endfor %}
+                    })
+                    .expect("a case list fits its bound");
+            }
+{% elif field.list %}
             for v in decoded["{{ field.name }}"]
                 .as_array()
                 .expect("{{ field.name }} must be an array")

@@ -47,8 +47,8 @@ pub fn lowers(lang: Language) -> bool {
 /// would be the silent loss the decision exists to end.
 pub fn lowers_line_records(lang: Language) -> bool {
     match lang {
-        Language::Python | Language::Go | Language::Kotlin => true,
-        Language::Rust | Language::Cpp | Language::C11 => false,
+        Language::Python | Language::Go | Language::Kotlin | Language::Rust => true,
+        Language::Cpp | Language::C11 => false,
     }
 }
 
@@ -514,11 +514,37 @@ fn render_rust(
     for entry in &mut entries {
         let value_type = entry["value_type"].as_str().unwrap_or_default().to_string();
         let required = entry["required"].as_bool() == Some(true);
-        let (field_type, local_type, local_init) = if entry["is_list"].as_bool() == Some(true) {
-            let list = format!(
-                "heapless::Vec<{value_type}, {}>",
-                entry["max_count"].as_u64().unwrap_or(0)
-            );
+        let max_count = entry["max_count"].as_u64().unwrap_or(0);
+        // The values of one line, when it holds a list (docs/adr/0014).
+        let values_type = format!(
+            "heapless::Vec<{value_type}, {}>",
+            entry["max_values"].as_u64().unwrap_or(0)
+        );
+        let (field_type, local_type, local_init) = if entry["is_records"].as_bool() == Some(true) {
+            // A line record is a struct of its own, and the field a bounded list of
+            // them. What its value member holds is one value, or the list a
+            // separator makes.
+            let record_type = entry["record_type"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string();
+            entry["value_field_type"] = if entry["separator"].is_string() {
+                values_type.clone().into()
+            } else {
+                value_type.clone().into()
+            };
+            let list = format!("heapless::Vec<{record_type}, {max_count}>");
+            (list.clone(), list, "heapless::Vec::new()".to_string())
+        } else if entry["is_values"].as_bool() == Some(true) {
+            // One line holding a list: the field is the list, and its local an
+            // option, so a second line of the property is told from the first.
+            (
+                values_type.clone(),
+                format!("Option<{values_type}>"),
+                "None".to_string(),
+            )
+        } else if entry["is_list"].as_bool() == Some(true) {
+            let list = format!("heapless::Vec<{value_type}, {max_count}>");
             (list.clone(), list, "heapless::Vec::new()".to_string())
         } else if required {
             (
