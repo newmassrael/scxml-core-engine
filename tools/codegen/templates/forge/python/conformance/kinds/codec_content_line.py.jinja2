@@ -27,18 +27,46 @@
                 f"{{ f.name }} case {i} decode returned None",
             )
 {% for field in f.fields %}
+{% if field.members %}
+            # A list of line records (docs/adr/0014), as the vector writes each:
+            # an object keyed by the parameter ids, then `value` or `values`.
+            self.assertEqual(
+                [
+                    {
+{% for m in field.members %}
+                        "{{ m.name }}": r.{{ m.name | to_snake_case }},
+{% endfor %}
+                    }
+                    for r in getattr(round_tripped, "{{ field.name | to_snake_case }}")
+                ],
+                decoded["{{ field.name }}"],
+                f"{{ f.name }} case {i} decode {{ field.name }}",
+            )
+{% else %}
             self.assertEqual(
                 getattr(round_tripped, "{{ field.name | to_snake_case }}"),
                 decoded["{{ field.name }}"],
                 f"{{ f.name }} case {i} decode {{ field.name }}",
             )
+{% endif %}
 {% endfor %}
 
             if case.get("decode_only"):
                 continue
             value = {{ f.name }}.{{ f.name | to_pascal_case }}(
 {% for field in f.fields %}
+{% if field.members %}
+                {{ field.name | to_snake_case }}=[
+                    {{ f.name }}.{{ f.name | to_pascal_case }}{{ field.name | to_pascal_case }}Line(
+{% for m in field.members %}
+                        {{ m.name | to_snake_case }}=d["{{ m.name }}"],
+{% endfor %}
+                    )
+                    for d in decoded["{{ field.name }}"]
+                ],
+{% else %}
                 {{ field.name | to_snake_case }}=decoded["{{ field.name }}"],
+{% endif %}
 {% endfor %}
             )
             self.assertEqual(

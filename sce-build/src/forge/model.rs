@@ -2865,14 +2865,36 @@ impl ContentLineModel {
     /// (docs/adr/0014). One answer, read by the generator's refusal and by every
     /// backend that learns the shape.
     pub fn uses_line_records(&self) -> bool {
-        self.entries.iter().any(|entry| {
-            entry.param.is_none()
-                && (entry.separator.is_some()
-                    || (entry.max_count.is_some()
-                        && self.entries.iter().any(|p| {
-                            p.param.is_some() && p.property.eq_ignore_ascii_case(&entry.property)
-                        })))
-        })
+        self.entries
+            .iter()
+            .any(|entry| self.reads_records(entry) || self.reads_values(entry))
+    }
+
+    /// Whether the lines of `entry` are read as records: a repeated property that
+    /// declares a parameter, or whose line holds a list of values. The field is
+    /// then a list of records (docs/adr/0014, decision 1), and the parameters of
+    /// the property are members of each record, not members of the codec.
+    pub fn reads_records(&self, entry: &ContentLineEntry) -> bool {
+        entry.param.is_none()
+            && entry.max_count.is_some()
+            && (entry.separator.is_some() || self.parameters_of(entry).next().is_some())
+    }
+
+    /// Whether `entry` is one line holding a list of values: a separator on a
+    /// property that occurs once (docs/adr/0014, decision 2). The field is a list
+    /// of values, and the parameters of the property stay members of the codec.
+    pub fn reads_values(&self, entry: &ContentLineEntry) -> bool {
+        entry.param.is_none() && entry.max_count.is_none() && entry.separator.is_some()
+    }
+
+    /// The parameter entries declared for `entry`'s property, in declaration order.
+    pub fn parameters_of<'a>(
+        &'a self,
+        entry: &'a ContentLineEntry,
+    ) -> impl Iterator<Item = &'a ContentLineEntry> + 'a {
+        self.entries
+            .iter()
+            .filter(|p| p.param.is_some() && p.property.eq_ignore_ascii_case(&entry.property))
     }
 }
 

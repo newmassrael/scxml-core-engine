@@ -486,11 +486,12 @@ fn a_separator_and_its_bound_are_held_to_the_entry_they_qualify() {
     );
 }
 
-/// The shapes the decision adds are declared and checked, and no backend generates
-/// them yet, so each refuses them by name; the codec that uses neither is still
-/// generated everywhere.
+/// The shapes the decision adds are declared and checked, and a backend refuses
+/// them by name until its own commit generates them; the codec that uses neither
+/// is generated everywhere. `GENERATING` is the list of backends that have landed.
 #[test]
 fn a_line_record_is_refused_by_name_until_a_backend_generates_it() {
+    const GENERATING: [Language; 1] = [Language::Python];
     let m = codec(&document(
         "",
         &format!(
@@ -505,12 +506,22 @@ fn a_line_record_is_refused_by_name_until_a_backend_generates_it() {
         Language::Python,
         Language::C11,
     ] {
-        assert!(!content_line_codec::lowers_line_records(lang), "{lang:?}");
-        let why = content_line_codec::refusal(lang, &m).expect("refused by name");
-        assert!(
-            why.contains("record") && why.contains("docs/adr/0014"),
-            "{lang:?}: {why}"
+        let generating = GENERATING.contains(&lang);
+        assert_eq!(
+            content_line_codec::lowers_line_records(lang),
+            generating,
+            "{lang:?}"
         );
+        let refusal = content_line_codec::refusal(lang, &m);
+        if generating {
+            assert!(refusal.is_none(), "{lang:?}: {refusal:?}");
+        } else {
+            let why = refusal.expect("refused by name");
+            assert!(
+                why.contains("record") && why.contains("docs/adr/0014"),
+                "{lang:?}: {why}"
+            );
+        }
     }
 }
 

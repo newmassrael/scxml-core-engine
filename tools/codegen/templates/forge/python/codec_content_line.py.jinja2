@@ -8,7 +8,9 @@
     quoting — is the runtime's (`sce_forge_runtime.content_line`); this spells
     none of it. #}
 {% macro read_value(e) -%}
-{%- if e.kind == "string" -%}
+{%- if e.separator -%}
+line.read_strings("{{ e.separator }}", {{ e.max_values }}, {{ e.max_size }}, {{ "True" if e.text else "False" }})
+{%- elif e.kind == "string" -%}
 line.read_string({{ e.max_size }}, {{ "True" if e.text else "False" }})
 {%- elif e.kind == "bool" -%}
 line.read_bool()
@@ -21,7 +23,9 @@ line.read_int({{ e.min }}, {{ e.max }})
 {#- The write of one property's value `v`, its name and parameters already
     written, at indent `i`. #}
 {% macro write_value(e, i) %}
-{% if e.kind == "string" %}
+{% if e.separator %}
+{{ i }}out.strings(v, "{{ e.separator }}", {{ "True" if e.text else "False" }}, {{ e.max_size }}, {{ e.max_values }})
+{% elif e.kind == "string" %}
 {{ i }}out.string(v, {{ "True" if e.text else "False" }}, {{ e.max_size }})
 {% elif e.kind == "bool" %}
 {{ i }}out.boolean(v)
@@ -33,14 +37,15 @@ line.read_int({{ e.min }}, {{ e.max }})
 {{ i }}out.{{ "uint" if e.kind == "uint" else "integer" }}(v)
 {% endif %}
 {% endmacro %}
-{#- The parameters of a property, each written when present, at indent `i`. #}
-{% macro write_params(e, i) %}
+{#- The parameters of a property, each written when present, at indent `i`, read
+    from `holder`: the codec itself, or the record of one line. #}
+{% macro write_params(e, i, holder) %}
 {% for p in e.params %}
 {% if p.required %}
-{{ i }}out.param("{{ p.param }}", self.{{ p.name }}, {{ p.max_size }})
+{{ i }}out.param("{{ p.param }}", {{ holder }}.{{ p.name }}, {{ p.max_size }})
 {% else %}
-{{ i }}if self.{{ p.name }} is not None:
-{{ i }}    out.param("{{ p.param }}", self.{{ p.name }}, {{ p.max_size }})
+{{ i }}if {{ holder }}.{{ p.name }} is not None:
+{{ i }}    out.param("{{ p.param }}", {{ holder }}.{{ p.name }}, {{ p.max_size }})
 {% endif %}
 {% endfor %}
 {% endmacro %}
@@ -64,6 +69,27 @@ from dataclasses import dataclass, field
 from typing import List, Optional
 
 
+{% for e in entries if e.is_records %}
+@dataclass
+class {{ e.record_type }}:
+    """One line of ``{{ e.property }}`` (docs/adr/0014): the parameters it
+    carries and its {% if e.separator %}list of values, cut at ``{{ e.separator }}``{% else %}value{% endif %}. A
+    parameter that may be absent is ``None``."""
+
+{% for p in e.params %}
+    #: Parameter ``{{ p.param }}``{% if p.required %}, required{% endif %}.
+    {{ p.name }}: {{ p.field_type }} = {{ p.default }}
+{% endfor %}
+{% if e.separator %}
+    #: The values of the line, at most {{ e.max_values }}.
+    values: List[str] = field(default_factory=list)
+{% else %}
+    #: The value of the line.
+    value: str = ""
+{% endif %}
+
+
+{% endfor %}
 @dataclass
 class {{ struct_name }}:
     """One ``{{ component }}`` component of content lines (SCE_FORGE.md
@@ -71,15 +97,19 @@ class {{ struct_name }}:
     skips the rest; encode writes the entries present in declaration order,
     folded at 75 octets. A required entry starts at its type's default and an
     optional one absent (``None``), so ``{{ struct_name }}()`` is the
-    infallible constructor every codec offers."""
+    infallible constructor every codec offers. A repeated property that
+    declares a parameter, or whose line holds a list of values, is a list of
+    line records."""
 
 {% for e in entries %}
-    #: Property ``{{ e.property }}``{% if e.is_list %}, up to {{ e.max_count }} lines{% elif e.required %}, required{% endif %}.
+    #: Property ``{{ e.property }}``{% if e.is_records %}, up to {{ e.max_count }} lines, each a record{% elif e.is_list %}, up to {{ e.max_count }} lines{% elif e.is_values %}, a list of at most {{ e.max_values }} values{% endif %}{% if e.required %}, required{% endif %}.
     {{ e.name }}: {{ e.field_type }} = {{ e.default }}
+{% if not e.is_records %}
 {% for p in e.params %}
     #: Parameter ``{{ p.param }}`` of ``{{ e.property }}``{% if p.required %}, required{% endif %}.
     {{ p.name }}: {{ p.field_type }} = {{ p.default }}
 {% endfor %}
+{% endif %}
 {% endfor %}
 
     @classmethod
@@ -98,14 +128,20 @@ class {{ struct_name }}:
     def _decode_at(cls, c: SceCursor) -> {{ struct_name }}:
         reader = content_line.ContentLineReader.begin(c.peek_slice(c.remaining()), "{{ component }}")
 {% for e in entries %}
-{% if e.is_list %}
+{% if e.is_records %}
+        held_{{ e.name }}: List[{{ e.record_type }}] = []
+{% elif e.is_list %}
         held_{{ e.name }}: List[str] = []
+{% elif e.is_values %}
+        held_{{ e.name }}: Optional[List[str]] = None
 {% else %}
         held_{{ e.name }}: Optional[{{ e.value_type }}] = None
 {% endif %}
+{% if not e.is_records %}
 {% for p in e.params %}
         held_{{ p.name }}: Optional[{{ p.value_type }}] = None
 {% endfor %}
+{% endif %}
 {% endfor %}
         while True:
             line = reader.next_property()
@@ -113,46 +149,78 @@ class {{ struct_name }}:
                 break
 {% for e in entries %}
 {% if loop.first %}            if{% else %}            elif{% endif %} line.is_named("{{ e.property }}"):
-{% if e.is_list %}
+{% if e.is_records or e.is_list %}
                 if len(held_{{ e.name }}) >= {{ e.max_count }}:
                     raise content_line.LineTooMany()
 {% else %}
                 if held_{{ e.name }} is not None:
                     raise content_line.LineTooMany()
 {% endif %}
+{% if e.is_records %}
+{#- The parameters of this line, kept in locals of the line: they belong to its
+    record, and the line is judged on them before its value is looked at. #}
+{% for p in e.params %}
+                line_{{ p.name }}: Optional[{{ p.value_type }}] = None
+{% endfor %}
+{% endif %}
 {% if e.params %}
                 while line.next_param():
 {% for p in e.params %}
 {% if loop.first %}                    if{% else %}                    elif{% endif %} line.param_is("{{ p.param }}"):
-                        if held_{{ p.name }} is not None:
+                        if {{ "line_" if e.is_records else "held_" }}{{ p.name }} is not None:
                             raise content_line.LineTooMany()
-                        held_{{ p.name }} = line.read_param_string({{ p.max_size }})
+                        {{ "line_" if e.is_records else "held_" }}{{ p.name }} = line.read_param_string({{ p.max_size }})
 {% endfor %}
 {% endif %}
-{% if e.is_list %}
+{% if e.is_records %}
+{% for p in e.params if p.required %}
+                if line_{{ p.name }} is None:
+                    raise content_line.LineRequiredMissing()
+{% endfor %}
+                held_{{ e.name }}.append({{ e.record_type }}(
+{% for p in e.params %}
+                    {{ p.name }}=line_{{ p.name }},
+{% endfor %}
+                    {{ e.value_member }}={{ read_value(e) }},
+                ))
+{% elif e.is_list %}
                 held_{{ e.name }}.append({{ read_value(e) }})
 {% else %}
                 held_{{ e.name }} = {{ read_value(e) }}
 {% endif %}
 {% endfor %}
+{#- A required entry needs a line: a list that stayed empty has none, and so has
+    a value that was never read. #}
 {% for e in entries %}
 {% if e.required %}
+{% if e.is_records or e.is_list %}
+        if not held_{{ e.name }}:
+{% else %}
         if held_{{ e.name }} is None:
+{% endif %}
             raise content_line.LineRequiredMissing()
 {% endif %}
+{% if not e.is_records %}
 {% for p in e.params if p.required %}
         if held_{{ p.name }} is None:
             raise content_line.LineRequiredMissing()
 {% endfor %}
+{% endif %}
 {% endfor %}
         # Only a component that decoded whole moves the cursor.
         c.advance(reader.consumed())
         return cls(
 {% for e in entries %}
+{% if e.is_values %}
+            {{ e.name }}=held_{{ e.name }} if held_{{ e.name }} is not None else [],
+{% else %}
             {{ e.name }}=held_{{ e.name }},
+{% endif %}
+{% if not e.is_records %}
 {% for p in e.params %}
             {{ p.name }}=held_{{ p.name }},
 {% endfor %}
+{% endif %}
 {% endfor %}
         )
 
@@ -163,19 +231,33 @@ class {{ struct_name }}:
         out = content_line.ContentLineWriter(w, "{{ component }}")
         out.begin()
 {% for e in entries %}
-{% if e.is_list %}
+{% if e.is_records %}
         if len(self.{{ e.name }}) > {{ e.max_count }}:
             raise content_line.LineTooMany()
+{% if e.required %}
+        if not self.{{ e.name }}:
+            raise content_line.LineRequiredMissing()
+{% endif %}
+        for record in self.{{ e.name }}:
+            out.property("{{ e.property }}")
+{{ write_params(e, "            ", "record") }}            v = record.{{ e.value_member }}
+{{ write_value(e, "            ") }}{% elif e.is_list %}
+        if len(self.{{ e.name }}) > {{ e.max_count }}:
+            raise content_line.LineTooMany()
+{% if e.required %}
+        if not self.{{ e.name }}:
+            raise content_line.LineRequiredMissing()
+{% endif %}
         for v in self.{{ e.name }}:
             out.property("{{ e.property }}")
 {{ write_value(e, "            ") }}{% elif e.required %}
         v = self.{{ e.name }}
         out.property("{{ e.property }}")
-{{ write_params(e, "        ") }}{{ write_value(e, "        ") }}{% else %}
+{{ write_params(e, "        ", "self") }}{{ write_value(e, "        ") }}{% else %}
         v = self.{{ e.name }}
-        if v is not None:
+        if {{ "v" if e.is_values else "v is not None" }}:
             out.property("{{ e.property }}")
-{{ write_params(e, "            ") }}{{ write_value(e, "            ") }}{% if e.optional_params %}        elif {% for p in e.optional_params %}{% if not loop.first %} or {% endif %}self.{{ p.name }} is not None{% endfor %}:
+{{ write_params(e, "            ", "self") }}{{ write_value(e, "            ") }}{% if e.optional_params %}        elif {% for p in e.optional_params %}{% if not loop.first %} or {% endif %}self.{{ p.name }} is not None{% endfor %}:
             # A parameter with no value of its property has no line to stand on.
             raise content_line.LineRequiredMissing()
 {% endif %}{% endif %}

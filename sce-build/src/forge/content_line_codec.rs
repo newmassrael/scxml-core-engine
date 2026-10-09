@@ -47,12 +47,8 @@ pub fn lowers(lang: Language) -> bool {
 /// would be the silent loss the decision exists to end.
 pub fn lowers_line_records(lang: Language) -> bool {
     match lang {
-        Language::Rust
-        | Language::Kotlin
-        | Language::Cpp
-        | Language::Go
-        | Language::Python
-        | Language::C11 => false,
+        Language::Python => true,
+        Language::Rust | Language::Kotlin | Language::Cpp | Language::Go | Language::C11 => false,
     }
 }
 
@@ -160,15 +156,20 @@ fn entries_context(
         SceType::String => string_type(e.max_size.unwrap_or(0)),
         other => l.type_name(other).into_owned(),
     };
+    let struct_name = l
+        .base_context(&m.name)
+        .get("struct_name")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default()
+        .to_string();
     model
         .entries
         .iter()
         .filter(|e| e.param.is_none())
         .map(|e| {
+            let is_records = model.reads_records(e);
             let params: Vec<serde_json::Value> = model
-                .entries
-                .iter()
-                .filter(|p| p.param.is_some() && p.property.eq_ignore_ascii_case(&e.property))
+                .parameters_of(e)
                 .map(|p| {
                     let name = l.codec_field_id(&p.id);
                     serde_json::json!({
@@ -192,7 +193,21 @@ fn entries_context(
                 "required": e.required,
                 "max_size": e.max_size,
                 "max_count": e.max_count,
-                "is_list": e.max_count.is_some(),
+                // One value a line, on several lines.
+                "is_list": e.max_count.is_some() && !is_records,
+                // One line holding a list of values (docs/adr/0014).
+                "is_values": model.reads_values(e),
+                // Several lines, each a record of its parameters and its value or
+                // values (docs/adr/0014). The parameters are members of the record
+                // and not of the codec, and the record is a type of its own.
+                "is_records": is_records,
+                "separator": e.separator,
+                "max_values": e.max_values,
+                "record_type": is_records.then(|| format!(
+                    "{struct_name}{}Line",
+                    crate::filters::to_pascal_case(e.id.clone())
+                )),
+                "value_member": if e.separator.is_some() { "values" } else { "value" },
                 "value_type": value_type(e),
                 "bits": int_bits(&e.sce_type),
                 "min": int_range(&e.sce_type).map(|r| r.0),
@@ -238,7 +253,7 @@ fn render_kotlin(
     shape_fields(
         &mut entries,
         &FieldShapes {
-            list_type: "MutableList<String>",
+            list_of: &|t| format!("MutableList<{t}>"),
             list_default: Some("mutableListOf()"),
             optional_type: &|t| format!("{t}?"),
             optional_default: Some("null"),
@@ -265,7 +280,7 @@ fn render_cpp(
     shape_fields(
         &mut entries,
         &FieldShapes {
-            list_type: "std::vector<std::string>",
+            list_of: &|t| format!("std::vector<{t}>"),
             list_default: None,
             optional_type: &|t| format!("std::optional<{t}>"),
             optional_default: None,
@@ -293,7 +308,7 @@ fn render_python(
     shape_fields(
         &mut entries,
         &FieldShapes {
-            list_type: "List[str]",
+            list_of: &|t| format!("List[{t}]"),
             list_default: Some("field(default_factory=list)"),
             optional_type: &|t| format!("Optional[{t}]"),
             optional_default: Some("None"),
@@ -320,7 +335,7 @@ fn render_go(
     shape_fields(
         &mut entries,
         &FieldShapes {
-            list_type: "[]string",
+            list_of: &|t| format!("[]{t}"),
             list_default: None,
             optional_type: &|t| format!("*{t}"),
             optional_default: None,
@@ -338,7 +353,9 @@ fn render_go(
 /// How a backend spells an entry that is a list or is optional, and what such
 /// a field starts at, for [`shape_fields`].
 struct FieldShapes<'a> {
-    list_type: &'a str,
+    /// The type of a list of `t`: of values, or of the line records of a repeated
+    /// property (docs/adr/0014).
+    list_of: &'a dyn Fn(&str) -> String,
     /// The start of a list, when the backend spells one.
     list_default: Option<&'a str>,
     /// The type of a value that may be absent.
@@ -356,8 +373,17 @@ fn shape_fields(entries: &mut [serde_json::Value], shapes: &FieldShapes<'_>) {
     for entry in entries {
         let value_type = entry["value_type"].as_str().unwrap_or_default().to_string();
         let required = entry["required"].as_bool() == Some(true);
-        if entry["is_list"].as_bool() == Some(true) {
-            entry["field_type"] = shapes.list_type.into();
+        if entry["is_records"].as_bool() == Some(true) {
+            let record_type = entry["record_type"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string();
+            entry["field_type"] = (shapes.list_of)(&record_type).into();
+            entry["default"] = shapes.list_default.into();
+        } else if entry["is_list"].as_bool() == Some(true)
+            || entry["is_values"].as_bool() == Some(true)
+        {
+            entry["field_type"] = (shapes.list_of)(&value_type).into();
             entry["default"] = shapes.list_default.into();
         } else if !required {
             entry["field_type"] = (shapes.optional_type)(&value_type).into();

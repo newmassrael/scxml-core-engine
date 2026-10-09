@@ -16,7 +16,7 @@ convention, and a generated ``encode`` lets through.
 
 from __future__ import annotations
 
-from typing import Callable, Optional, Tuple
+from typing import Callable, List, Optional, Tuple
 
 from .codec import CodecError, NeedMoreBytes, SceSink
 
@@ -414,6 +414,48 @@ class ContentLineProperty:
             buf.append(value)
         return _utf8(bytes(buf))
 
+    def read_strings(self, separator: str, max_values: int, max_size: int, text: bool) -> List[str]:
+        """Read the value as a list of ``string`` cut at ``separator``, at most
+        ``max_values`` of them and each at most ``max_size`` bytes
+        (docs/adr/0014). The value is cut before it is unescaped: with ``text``
+        a separator that a backslash precedes is part of the value, and with
+        anything else every separator cuts. The parts are judged left to right
+        and the first failure is the line's: a part past ``max_values`` is
+        :class:`LineTooMany`, even one that is empty or too long; an empty part
+        is :class:`LineBadValue`."""
+        self._begin_value()
+        scan = self._scan
+        cut = ord(separator)
+        values: List[str] = []
+        buf = bytearray()
+        while True:
+            b = scan.bump()
+            if b < 0 or b == cut:
+                if not buf:
+                    raise LineBadValue()
+                values.append(_utf8(bytes(buf)))
+                if b < 0:
+                    return values
+                buf = bytearray()
+                # A separator opens another part, which may not pass the bound.
+                if len(values) >= max_values:
+                    raise LineTooMany()
+                continue
+            value = b
+            if text and b == _BACKSLASH:
+                e = scan.bump()
+                if e in (_BACKSLASH, ord(";"), ord(",")):
+                    value = e
+                elif e in (ord("n"), ord("N")):
+                    value = _LF
+                else:
+                    raise LineBadEscape()
+            elif _is_control(b):
+                raise LineBadValue()
+            if len(buf) == max_size:
+                raise LineTooLong()
+            buf.append(value)
+
     def _read_decimal(self, allow_minus: bool) -> int:
         """The decimal the rest of the value is: an optional sign, digits. A
         ``-`` is read only when ``allow_minus``, so an unsigned type refuses
@@ -567,6 +609,34 @@ class ContentLineWriter:
             raise LineBadValue()
         self._unit(b":")
         self._value_units(value, text)
+        self._end_line()
+
+    def strings(self, values: List[str], separator: str, text: bool, max_size: int, max_values: int) -> None:
+        """Write ``:<value>{separator}<value>…`` and end the line
+        (docs/adr/0014). No values is :class:`LineRequiredMissing` and more than
+        ``max_values`` is :class:`LineTooMany`. A value past ``max_size`` is
+        :class:`LineTooLong`; one with a control character (but a TEXT's line
+        feed), an empty one, and one that is not a TEXT and holds the separator
+        are :class:`LineBadValue`, because a reader would cut or refuse them.
+        Every value is held before any of the line is written."""
+        if not values:
+            raise LineRequiredMissing()
+        if len(values) > max_values:
+            raise LineTooMany()
+        cut = separator.encode("ascii")
+        for value in values:
+            data = self._bytes_of(value)
+            if len(data) > max_size:
+                raise LineTooLong()
+            if any(_is_control(b) and not (text and b == _LF) for b in data):
+                raise LineBadValue()
+            if not data or (not text and cut in data):
+                raise LineBadValue()
+        self._unit(b":")
+        for index, value in enumerate(values):
+            if index:
+                self._unit(cut)
+            self._value_units(value, text)
         self._end_line()
 
     def _digits(self, text: str) -> None:

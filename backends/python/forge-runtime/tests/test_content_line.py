@@ -290,3 +290,83 @@ def test_what_is_written_is_read_back(value):
     assert reader.next_property().read_string(256, True) == value
     assert reader.next_property() is None
     assert reader.consumed() == len(text)
+
+
+# -- A line holding a list of values (docs/adr/0014) ---------------------
+
+
+def _values(value: bytes, separator: str, max_values: int, max_size: int, text: bool):
+    reader = cl.ContentLineReader.begin(b"BEGIN:VEVENT\r\nV:" + value + b"\r\nEND:VEVENT\r\n", "VEVENT")
+    return reader.next_property().read_strings(separator, max_values, max_size, text)
+
+
+def test_a_list_is_cut_at_the_separator_before_it_is_unescaped():
+    assert _values(b"a,b,c", ",", 4, 8, False) == ["a", "b", "c"]
+    assert _values(b"a\\,b,c", ",", 4, 8, True) == ["a,b", "c"]
+    # Without TEXT there is no escape, so a backslash is a byte and every separator cuts.
+    assert _values(b"a\\,b", ",", 4, 8, False) == ["a\\", "b"]
+    assert _values(b"a;b,c", ",", 4, 8, True) == ["a;b", "c"]
+    assert _values(b"1;2", ";", 2, 8, False) == ["1", "2"]
+    # A fold inside a part is removed like any other.
+    assert _values(b"a,b\r\n c", ",", 4, 8, False) == ["a", "bc"]
+
+
+@pytest.mark.parametrize(
+    "value, error",
+    [
+        (b"", cl.LineBadValue),
+        (b"a,,b", cl.LineBadValue),
+        (b",a", cl.LineBadValue),
+        (b"a,", cl.LineBadValue),
+        (b"a,b,c,d", cl.LineTooMany),
+        # A part past the bound is too many, whatever the part is.
+        (b"a,b,c,", cl.LineTooMany),
+        (b"a,b,c,xxxxxxxxxxxxxxx", cl.LineTooMany),
+        (b"xxxxxxxxxxxxxxx,,", cl.LineTooLong),
+        (b",,xxxxxxxxxxxxxxx", cl.LineBadValue),
+        (b"a,b\\x", cl.LineBadEscape),
+        (b"a,b\\", cl.LineBadEscape),
+    ],
+)
+def test_a_list_is_refused_at_its_first_failing_part(value, error):
+    with pytest.raises(error):
+        _values(value, ",", 3, 8, True)
+
+
+def test_a_list_is_written_with_its_separator_and_held_before_it_is_written():
+    def write(w):
+        w.property("C")
+        w.strings(["a,b", "c;d", "e\\f"], ",", True, 8, 4)
+        w.property("G")
+        w.strings(["1", "2"], ";", False, 8, 2)
+
+    assert _written(write) == "BEGIN:VEVENT\r\nC:a\\,b,c\\;d,e\\\\f\r\nG:1;2\r\nEND:VEVENT\r\n"
+
+    out = bytearray()
+    w = cl.ContentLineWriter(BytearraySink(out), "VEVENT")
+    w.begin()
+    w.property("C")
+    before = len(out)
+    for call, error in (
+        (lambda: w.strings([], ",", False, 8, 4), cl.LineRequiredMissing),
+        (lambda: w.strings(["a", "b", "c"], ",", False, 8, 2), cl.LineTooMany),
+        (lambda: w.strings(["a", "abcdefghi"], ",", False, 8, 4), cl.LineTooLong),
+        (lambda: w.strings(["a", ""], ",", False, 8, 4), cl.LineBadValue),
+        # Not a TEXT, so a separator in a value could not be told from a cut.
+        (lambda: w.strings(["a,b"], ",", False, 8, 4), cl.LineBadValue),
+        (lambda: w.strings(["a\nb"], ",", False, 8, 4), cl.LineBadValue),
+    ):
+        with pytest.raises(error):
+            call()
+    assert len(out) == before
+
+
+@pytest.mark.parametrize("values", [["a"], ["a,b", "c"], ["x" * 8, "é"], ["a;b"]])
+def test_a_text_list_is_read_back_as_written(values):
+    def write(w):
+        w.property("V")
+        w.strings(values, ",", True, 8, 4)
+
+    text = _written(write).encode("utf-8")
+    reader = cl.ContentLineReader.begin(text, "VEVENT")
+    assert reader.next_property().read_strings(",", 4, 8, True) == values
