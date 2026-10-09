@@ -150,13 +150,13 @@ PY
 mutation_case "join: a carried neighbour explains a move" <<'PY'
 edit("sce-revision/src/join.rs",
      "        if matches!(words, \"changed\" | \"new\") && matches!(evidence, \"changed\" | \"new\") {",
-     "        if matches!(evidence, \"changed\" | \"new\") {")
+     "        if { let _ = words; true } && matches!(evidence, \"changed\" | \"new\") {")
 PY
 
 mutation_case "join: more rows gone than places moved is explained all the same" <<'PY'
 edit("sce-revision/src/join.rs",
      "        if places.is_empty() || gone > places.len() as i64 {",
-     "        if places.is_empty() {")
+     "        if places.is_empty() || { let _ = gone; false } {")
 PY
 
 mutation_case "join: a move is explained when only one of its places is the neighbour's" <<'PY'
