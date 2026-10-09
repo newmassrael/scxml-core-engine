@@ -868,8 +868,11 @@ it has no room for), with the tries for a wrong draft and an unreadable call cou
 limits of a connection tune that, and none is a number the program assumes of a model: `handoffs`
 (how many times; 0 gives up at the first, 2 when unset), `context_tokens` (the model's context, when
 a person knows it) and `handoff_percent` (how full of it a conversation may be, 80 when unset). With
-`context_tokens` the conversation is begun again as soon as the server reports a prompt that full,
-before the server has to refuse the next request; without it only the server's own refusal of a
+`context_tokens` the conversation is begun again as soon as the next request would be that full,
+counted from the prompt the server last reported and what was added since at three characters to a
+token (a check's answer is often most of it: measured, a conversation under the limit took 17
+thousand characters of one and was refused), before the server has to refuse the next request;
+without it only the server's own refusal of a
 prompt longer than the context does, which is the one thing every server can be relied on to say.
 The store refuses a context outside 4096 to 4000000 tokens, a percent outside 10 to 95 and more
 than 10 hand-overs. The screen carries these limits through a save but has no field for them yet.

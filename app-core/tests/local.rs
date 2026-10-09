@@ -687,6 +687,58 @@ fn a_conversation_below_what_the_connection_allows_is_left_as_it_is() {
 }
 
 #[test]
+fn what_a_tool_added_since_the_servers_report_counts_toward_the_conversation_being_full() {
+    // The server counted 500 of 1000 tokens, under the 80 percent a connection allows. The check's
+    // answer that followed is 2400 characters, about 800 tokens more: the next request would be
+    // refused, so the conversation is begun again before it is sent (measured with a local model:
+    // 17 thousand characters of a check's answer took a conversation over the limit it was under).
+    let rig = Rig::new(
+        "local-handoff-added",
+        vec![
+            reporting(validating("<scxml><!-- version one --></scxml>"), 500),
+            says(&draft("<scxml><!-- version two --></scxml>")),
+        ],
+    );
+    tool_gives(
+        &rig.folder,
+        "validate_scxml_set",
+        &json!({"verdict": "accepted", "note": "x".repeat(2_400)}),
+    );
+    let config = LocalConfig {
+        context_tokens: Some(1_000),
+        ..LocalConfig::for_model("qwen-test")
+    };
+
+    rig.local(config).generate(&job(), &Cancel::new()).unwrap();
+
+    let second = rig.server.messages(1);
+    assert_eq!(second.len(), 2, "{second:?}");
+    assert!(second[1]["content"]
+        .as_str()
+        .unwrap()
+        .contains("version one"));
+}
+
+#[test]
+fn a_small_answer_after_the_servers_report_does_not_begin_the_conversation_again() {
+    let rig = Rig::new(
+        "local-handoff-added-small",
+        vec![
+            reporting(validating("<scxml/>"), 500),
+            says(&draft("<scxml/>")),
+        ],
+    );
+    let config = LocalConfig {
+        context_tokens: Some(1_000),
+        ..LocalConfig::for_model("qwen-test")
+    };
+
+    rig.local(config).generate(&job(), &Cancel::new()).unwrap();
+
+    assert_eq!(rig.server.messages(1).len(), 4);
+}
+
+#[test]
 fn a_connection_that_did_not_say_how_big_the_context_is_is_not_begun_again_on_the_servers_report() {
     let rig = Rig::new(
         "local-handoff-unknown",

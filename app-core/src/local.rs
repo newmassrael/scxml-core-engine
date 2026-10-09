@@ -115,6 +115,12 @@ fn repair_words(wrong: &str) -> String {
 const HANDOFF_DESIGN_MAX: usize = 100_000;
 const HANDOFF_RESULT_MAX: usize = 8_000;
 
+/// How many characters of what is added to a conversation are taken for a token before the server
+/// has counted them. Low on purpose: code and JSON come to about three, and a low number counts
+/// too much, which begins a conversation again a little early, where a high one counts too little
+/// and has the server refuse the request.
+const CHARS_PER_TOKEN: u64 = 3;
+
 /// The tools whose arguments are the design the model is putting right.
 const DESIGN_TOOLS: [&str; 2] = ["validate_scxml_set", "validate_scxml"];
 
@@ -446,11 +452,23 @@ impl Local {
         }
     }
 
-    /// Whether the server's report of the last conversation is as full of the model's context as
-    /// the connection allows. Never, for a connection that did not say how big the context is.
-    fn is_nearly_full(&self, prompt_tokens: Option<u64>) -> bool {
-        match (self.config.context_tokens, prompt_tokens) {
-            (Some(context), Some(used)) => {
+    /// Whether the next request would be as full of the model's context as the connection allows:
+    /// what the server counted in the last one it answered (`reported`, with how many messages that
+    /// was), and what has been added since, which is mostly the answers of tools and is the part
+    /// that jumps (measured with a local model on 2026-10-09: a conversation at about 33 thousand
+    /// tokens grew by 17 thousand characters of a check's answer and was refused, with the report
+    /// alone still under the limit). Never, for a connection that did not say how big the context
+    /// is, and never before the server has said anything of the conversation.
+    fn is_nearly_full(&self, reported: Option<(u64, usize)>, messages: &[Value]) -> bool {
+        match (self.config.context_tokens, reported) {
+            (Some(context), Some((counted, asked))) => {
+                let added: usize = messages
+                    .get(asked..)
+                    .unwrap_or_default()
+                    .iter()
+                    .map(|message| message.to_string().len())
+                    .sum();
+                let used = counted + added as u64 / CHARS_PER_TOKEN;
                 used * 100 >= u64::from(context) * u64::from(self.config.handoff_percent)
             }
             _ => false,
@@ -669,14 +687,15 @@ impl Generator for Local {
         let mut unread = 0;
         // Times the conversation was begun again because it reached the model's context limit.
         let mut handed = 0;
-        // How many tokens the server said the last conversation it answered came to.
-        let mut prompt_tokens: Option<u64> = None;
+        // How many tokens the server said the last conversation it answered came to, and how many
+        // messages that conversation had.
+        let mut prompt_tokens: Option<(u64, usize)> = None;
         for turn in 0..self.config.max_turns {
             // The connection says how big the model's context is: begin again as soon as the
             // server reports the conversation as full as the connection allows, before it has to
             // refuse the next request. A conversation begun again has no wrong draft and no
             // unreadable call behind it, so the tries for those are its own.
-            if handed < self.config.handoffs && self.is_nearly_full(prompt_tokens) {
+            if handed < self.config.handoffs && self.is_nearly_full(prompt_tokens, &messages) {
                 handed += 1;
                 self.begin_again(job, &system, &mut messages, listed.as_ref(), true);
                 (repairs, unread, prompt_tokens) = (0, 0, None);
@@ -690,7 +709,9 @@ impl Generator for Local {
                     message,
                     prompt_tokens: reported,
                 } => {
-                    prompt_tokens = reported;
+                    // What it counted was the conversation as it was asked, which is as long as
+                    // `messages` is now.
+                    prompt_tokens = reported.map(|counted| (counted, messages.len()));
                     message
                 }
                 Turn::Unreadable { why, .. } if unread < REPAIRS => {

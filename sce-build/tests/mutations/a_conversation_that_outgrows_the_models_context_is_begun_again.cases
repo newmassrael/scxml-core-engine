@@ -145,3 +145,21 @@ edit("app-core/src/connection.rs",
      "            if handoffs > HANDOFFS_MAX {",
      "            if false && handoffs > HANDOFFS_MAX {")
 PY
+
+mutation_case "what a tool added since the servers report is not counted" <<'PY'
+edit("app-core/src/local.rs",
+     "                let used = counted + added as u64 / CHARS_PER_TOKEN;",
+     "                let used = counted + 0 * (added as u64 / CHARS_PER_TOKEN);")
+PY
+
+mutation_case "the whole conversation is counted again on top of the servers report" <<'PY'
+edit("app-core/src/local.rs",
+     "                    .get(asked..)\n                    .unwrap_or_default()",
+     "                    .get(asked * 0..)\n                    .unwrap_or_default()")
+PY
+
+mutation_case "what was added counts for nothing when it comes to a token" <<'PY'
+edit("app-core/src/local.rs",
+     "const CHARS_PER_TOKEN: u64 = 3;",
+     "const CHARS_PER_TOKEN: u64 = 3_000_000;")
+PY
