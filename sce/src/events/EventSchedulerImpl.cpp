@@ -293,8 +293,6 @@ void EventSchedulerImpl::shutdown(bool waitForCompletion) {
         sendIdIndex_.clear();
         executionQueue_.clear();
         queueSize_.store(0, std::memory_order_release);
-        sessionQueues_.clear();
-        sessionExecuting_.clear();
 
         if (cancelledCount > 0) {
             SCE_LOG_DEBUG("EventSchedulerImpl: Cancelled {} pending events during shutdown", cancelledCount);
@@ -303,11 +301,18 @@ void EventSchedulerImpl::shutdown(bool waitForCompletion) {
 
 #ifndef __EMSCRIPTEN__
     {
+        // The per-session queues are the callback workers' to read, so they are cleared under
+        // the lock the workers hold, with the tasks that would have drained them.
         std::unique_lock<std::mutex> callbackLock(callbackQueueMutex_);
         while (!callbackQueue_.empty()) {
             callbackQueue_.pop();
         }
+        sessionQueues_.clear();
+        sessionExecuting_.clear();
     }
+#else
+    sessionQueues_.clear();
+    sessionExecuting_.clear();
 #endif
 
     SCE_LOG_DEBUG("EventSchedulerImpl: Scheduler shutdown complete");
@@ -325,30 +330,37 @@ void EventSchedulerImpl::executeSessionEventsSync(
                       sessionId);
 
         for (auto &eventPtr : sessionEvents) {
-            if (!eventPtr) {
-                SCE_LOG_ERROR("EventSchedulerImpl: NULL shared_ptr in session '{}'", sessionId);
-                continue;
-            }
-            try {
-                SCE_LOG_DEBUG("EventSchedulerImpl: {} executing event '{}' in session '{}' at logical time {}ms",
-                              context, eventPtr->event.eventName, sessionId, eventPtr->logicalExecuteTime.count());
-
-                EventDescriptor eventWithTimestamp = std::move(eventPtr->event);
-                eventWithTimestamp.logicalExecuteTime = eventPtr->logicalExecuteTime;
-
-                bool success = executionCallback_(eventWithTimestamp, eventPtr->target, eventPtr->sendId);
-
-                if (success) {
-                    SCE_LOG_DEBUG("EventSchedulerImpl: Event '{}' executed successfully", eventPtr->event.eventName);
-                } else {
-                    SCE_LOG_WARN("EventSchedulerImpl: Event '{}' execution failed", eventPtr->event.eventName);
-                }
-
-            } catch (const std::exception &e) {
-                SCE_LOG_ERROR("EventSchedulerImpl: Error executing event '{}': {}", eventPtr->event.eventName,
-                              e.what());
-            }
+            executeScheduledEvent(eventPtr, sessionId, context);
         }
+    }
+}
+
+void EventSchedulerImpl::executeScheduledEvent(const ScheduledEventPtr &eventPtr, const std::string &sessionId,
+                                               const std::string &context) {
+    if (!eventPtr) {
+        SCE_LOG_ERROR("EventSchedulerImpl: NULL shared_ptr in session '{}'", sessionId);
+        return;
+    }
+
+    // The name is read before the event is moved out: the log lines below name it.
+    const std::string eventName = eventPtr->event.eventName;
+    try {
+        SCE_LOG_DEBUG("EventSchedulerImpl: {} executing event '{}' in session '{}' at logical time {}ms", context,
+                      eventName, sessionId, eventPtr->logicalExecuteTime.count());
+
+        EventDescriptor eventWithTimestamp = std::move(eventPtr->event);
+        eventWithTimestamp.logicalExecuteTime = eventPtr->logicalExecuteTime;
+
+        bool success = executionCallback_(eventWithTimestamp, eventPtr->target, eventPtr->sendId);
+
+        if (success) {
+            SCE_LOG_DEBUG("EventSchedulerImpl: Event '{}' executed successfully", eventName);
+        } else {
+            SCE_LOG_WARN("EventSchedulerImpl: Event '{}' execution failed", eventName);
+        }
+
+    } catch (const std::exception &e) {
+        SCE_LOG_ERROR("EventSchedulerImpl: Error executing event '{}': {}", eventName, e.what());
     }
 }
 
@@ -402,57 +414,70 @@ size_t EventSchedulerImpl::processReadyEvents() {
     if (mode_.load(std::memory_order_acquire) == SchedulerMode::MANUAL) {
         executeSessionEventsSync(sessionEventGroups, "MANUAL mode");
     } else {
+        // §scxml-6.2.3: a session's events run in the order they fell due, not in the order two
+        // workers happen to pick up two batches: the batch of one timer wake-up can be taken by
+        // a worker while the next wake-up's batch for the same session is taken by the other.
         for (auto &[sessionId, sessionEvents] : sessionEventGroups) {
-            if (sessionEvents.empty()) {
-                continue;
+            if (!sessionEvents.empty()) {
+                enqueueSessionEvents(sessionId, std::move(sessionEvents));
             }
-
-            auto sessionTask = [this, sessionId, sessionEvents]() {
-                SCE_LOG_DEBUG("EventSchedulerImpl: Processing {} events for session '{}'", sessionEvents.size(),
-                              sessionId);
-
-                for (auto &eventPtr : sessionEvents) {
-                    if (!eventPtr) {
-                        SCE_LOG_ERROR("EventSchedulerImpl: NULL shared_ptr in session '{}'", sessionId);
-                        continue;
-                    }
-                    try {
-                        SCE_LOG_DEBUG(
-                            "EventSchedulerImpl: Executing event '{}' sequentially in session '{}' at logical "
-                            "time {}ms",
-                            eventPtr->event.eventName, sessionId, eventPtr->logicalExecuteTime.count());
-
-                        EventDescriptor eventWithTimestamp = std::move(eventPtr->event);
-                        eventWithTimestamp.logicalExecuteTime = eventPtr->logicalExecuteTime;
-
-                        bool success = executionCallback_(eventWithTimestamp, eventPtr->target, eventPtr->sendId);
-
-                        if (success) {
-                            SCE_LOG_DEBUG("EventSchedulerImpl: Event '{}' executed successfully",
-                                          eventPtr->event.eventName);
-                        } else {
-                            SCE_LOG_WARN("EventSchedulerImpl: Event '{}' execution failed", eventPtr->event.eventName);
-                        }
-
-                    } catch (const std::exception &e) {
-                        SCE_LOG_ERROR("EventSchedulerImpl: Error executing event '{}': {}", eventPtr->event.eventName,
-                                      e.what());
-                    }
-                }
-            };
-
-            {
-                std::lock_guard<std::mutex> callbackLock(callbackQueueMutex_);
-                callbackQueue_.push(std::move(sessionTask));
-            }
-
-            callbackCondition_.notify_one();
         }
     }
 #endif
 
     return readyEvents.size();
 }
+
+#ifndef __EMSCRIPTEN__
+void EventSchedulerImpl::enqueueSessionEvents(const std::string &sessionId, std::vector<ScheduledEventPtr> &&events) {
+    bool startDrain = false;
+    {
+        std::lock_guard<std::mutex> lock(callbackQueueMutex_);
+
+        auto &pending = sessionQueues_[sessionId];
+        for (auto &event : events) {
+            pending.push(std::move(event));
+        }
+
+        // A drain that is running takes what was just added: it only stops when it finds the
+        // queue empty under this lock, so nothing is left behind for want of a second drain.
+        bool &executing = sessionExecuting_[sessionId];
+        if (!executing) {
+            executing = true;
+            startDrain = true;
+            callbackQueue_.push([this, sessionId]() { drainSession(sessionId); });
+        }
+    }
+
+    if (startDrain) {
+        callbackCondition_.notify_one();
+    }
+}
+
+void EventSchedulerImpl::drainSession(const std::string &sessionId) {
+    for (;;) {
+        ScheduledEventPtr next;
+        {
+            std::lock_guard<std::mutex> lock(callbackQueueMutex_);
+
+            auto queueIt = sessionQueues_.find(sessionId);
+            if (callbackShutdownRequested_.load() || queueIt == sessionQueues_.end() || queueIt->second.empty()) {
+                // The session has nothing left, or the scheduler is stopping and what is
+                // queued is cancelled with the rest of the schedule.
+                sessionQueues_.erase(sessionId);
+                sessionExecuting_.erase(sessionId);
+                return;
+            }
+
+            next = std::move(queueIt->second.front());
+            queueIt->second.pop();
+        }
+
+        // Outside the lock: the callback may schedule, cancel or shut down.
+        executeScheduledEvent(next, sessionId, "Callback worker");
+    }
+}
+#endif
 
 #ifndef __EMSCRIPTEN__
 

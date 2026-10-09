@@ -131,10 +131,24 @@ private:
     executeSessionEventsSync(const std::unordered_map<std::string, std::vector<ScheduledEventPtr>> &sessionEventGroups,
                              const std::string &context);
 
+    /// Hand one event that fell due to the execution callback. The one place an
+    /// event leaves the scheduler, so the synchronous and the threaded paths
+    /// cannot disagree about what executing one means.
+    void executeScheduledEvent(const ScheduledEventPtr &eventPtr, const std::string &sessionId,
+                               const std::string &context);
+
 #ifndef __EMSCRIPTEN__
     void timerThreadMain();
     void callbackWorker();
     void ensureThreadsStarted();
+
+    /// Append the events of `sessionId` that just fell due, in the order they fell due,
+    /// to that session's own queue, and start a drain when none is running for it.
+    void enqueueSessionEvents(const std::string &sessionId, std::vector<ScheduledEventPtr> &&events);
+
+    /// Execute `sessionId`'s queued events one at a time until the queue is empty.
+    /// Runs on a callback worker; at most one drain per session exists at any moment.
+    void drainSession(const std::string &sessionId);
 #endif
 
     // Thread safety: Single mutex for both queue and index (always modified together)
@@ -151,7 +165,14 @@ private:
     ExecutionQueueType executionQueue_;
     std::unordered_map<std::string, QueueIterator> sendIdIndex_;
 
-    // Per-session sequential execution queues
+    // Per-session sequential execution: the events of one session that fell due run one at a
+    // time, in the order they fell due, on whichever callback worker takes the session. Two
+    // workers never execute the same session's events at once, so an event that fell due
+    // later cannot be delivered before one that fell due earlier. Sessions are independent of
+    // one another and still run in parallel.
+    //
+    // Guarded by callbackQueueMutex_, the lock the callback workers wait on, and not by
+    // mutex_: handing a session its next event must not wait for the schedule.
     std::unordered_map<std::string, std::queue<ScheduledEventPtr>> sessionQueues_;
     std::unordered_map<std::string, bool> sessionExecuting_;
 

@@ -1170,6 +1170,32 @@ target_link_libraries(scheduler_manual_mode_tests
 )
 
 # ============================================================================
+# 4.4.3. Scheduler per-session ordering Tests (W3C SCXML 6.2 delayed send)
+#
+# One session's delayed events run one at a time, in the order they fell due,
+# on any machine; another session is not made to wait for it.
+# ============================================================================
+
+add_executable(scheduler_session_order_tests
+    events/ASessionsDelayedEventsRunInTheOrderTheyFellDueTest.cpp
+)
+
+target_include_directories(scheduler_session_order_tests
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/sce/include
+        ${CMAKE_SOURCE_DIR}/sce/src
+        ${CMAKE_SOURCE_DIR}/tests
+)
+
+target_link_libraries(scheduler_session_order_tests
+    PRIVATE
+        sce_runtime
+        GTest::gtest_main
+        pthread
+)
+
+# ============================================================================
 # 4.5. History Manager Tests (SOLID SCXML W3C Compliance)
 # ============================================================================
 
@@ -9644,6 +9670,7 @@ add_test(NAME HistoryTests COMMAND history_tests)
 add_test(NAME HttpBridgeTests COMMAND http_bridge_tests)
 add_test(NAME SessionTargetRoutingTests COMMAND session_target_routing_tests)
 add_test(NAME SchedulerManualModeTests COMMAND scheduler_manual_mode_tests)
+add_test(NAME SchedulerSessionOrderTests COMMAND scheduler_session_order_tests)
 
 # Priority Level 2: Core component tests (basic functionality validation, ~1-5s)
 add_test(NAME StateMachineTests COMMAND state_machine_tests)
