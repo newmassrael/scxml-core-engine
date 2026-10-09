@@ -5231,6 +5231,26 @@
         {
           "file": "sce-build/tests/queue_history_format.rs",
           "kind": "references"
+        },
+        {
+          "file": "backends/cpp/forge-runtime/tests/conformance/check_queue_histories.cmake",
+          "kind": "references"
+        },
+        {
+          "file": "backends/cpp/forge-runtime/tests/conformance/queue_history_recorder.cpp",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/forge-runtime/queue/history_test.go",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/forge-runtime/queue/scq_history_test.go",
+          "kind": "references"
+        },
+        {
+          "file": "scripts/gates/forge-go.sh",
+          "kind": "references"
         }
       ]
     },

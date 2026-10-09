@@ -25,3 +25,31 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
     || sce_gate_fail "Go forge conformance"
 ( cd backends/go/forge-runtime && go test ./round_trip/ -count=1 ) \
     || sce_gate_fail "Go forge round-trip"
+
+# The queue kind's Go arm (SCE Protocol-Synthesis RFC §synth-5-P). Go has no
+# tool for the memory-model layer, so its evidence is the race detector over
+# the runtime's tests (layer 5) and the histories its stress runs write
+# (layer 2), which are judged below by the command every backend's histories
+# are judged by, not by a checker of the arm's own.
+#
+# The histories go under `target/`, emptied first: a file left from an earlier
+# run would be judged in place of one this run did not write.
+source "$SCE_REPO_ROOT/scripts/lib/sce_codegen.sh"
+QUEUE_HISTORIES="$SCE_REPO_ROOT/target/queue-histories/go"
+rm -rf "$QUEUE_HISTORIES"
+mkdir -p "$QUEUE_HISTORIES"
+( cd backends/go/forge-runtime \
+    && SCE_QUEUE_HISTORY_DIR="$QUEUE_HISTORIES" go test -race -count=1 ./queue/ ) \
+    || sce_gate_fail "Go forge queue runtime under the race detector"
+# 4 Lamport capacities recorded 3 times and 6 SCQ shapes recorded 25 times. A
+# run that recorded fewer would pass the judgement below, so the count is held.
+shopt -s nullglob
+queue_histories=("$QUEUE_HISTORIES"/*.json)
+shopt -u nullglob
+(( ${#queue_histories[@]} >= 162 )) \
+    || sce_gate_fail "Go queue histories: ${#queue_histories[@]} written, expected at least 162"
+"$(sce_codegen_require "$SCE_REPO_ROOT")" check-queue-history "${queue_histories[@]}" \
+    || sce_gate_fail "Go queue histories are not linearizable"
+# The packages the generator writes for a queue, under the race detector too.
+( cd backends/go/forge-runtime && go test -race -count=1 -run 'Lamport|Scq' ./conformance/ ) \
+    || sce_gate_fail "Go forge queue generated packages under the race detector"
