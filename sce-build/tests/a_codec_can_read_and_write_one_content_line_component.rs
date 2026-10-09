@@ -491,7 +491,7 @@ fn a_separator_and_its_bound_are_held_to_the_entry_they_qualify() {
 /// is generated everywhere. `GENERATING` is the list of backends that have landed.
 #[test]
 fn a_line_record_is_refused_by_name_until_a_backend_generates_it() {
-    const GENERATING: [Language; 2] = [Language::Python, Language::Go];
+    const GENERATING: [Language; 3] = [Language::Python, Language::Go, Language::Kotlin];
     let m = codec(&document(
         "",
         &format!(

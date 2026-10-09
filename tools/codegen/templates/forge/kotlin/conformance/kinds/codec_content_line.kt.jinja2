@@ -26,7 +26,29 @@
             val roundTripped = {{ f.name | to_pascal_case }}.decode(cursor)
                 ?: error("{{ f.name }} case $i decode returned null")
 {% for field in f.fields %}
-{% if field.list %}
+{% if field.members %}
+            // A list of line records (docs/adr/0014), as the vector writes each: an
+            // object keyed by the parameter ids, then `value` or `values`.
+            assertEquals(
+                decoded["{{ field.name }}"]!!.jsonArray.map { r ->
+                    r.jsonObject.mapValues { (_, v) ->
+                        when (v) {
+                            is kotlinx.serialization.json.JsonNull -> null
+                            is kotlinx.serialization.json.JsonArray -> v.map { it.jsonPrimitive.content }
+                            else -> v.jsonPrimitive.content
+                        }
+                    }
+                },
+                roundTripped.{{ field.name }}.map { r ->
+                    mapOf(
+{% for m in field.members %}
+                        "{{ m.name }}" to r.{{ m.name }},
+{% endfor %}
+                    )
+                },
+                "{{ f.name }} case $i decode {{ field.name }}",
+            )
+{% elif field.list %}
             assertEquals(
                 decoded["{{ field.name }}"]!!.jsonArray.map { it.jsonPrimitive.content },
                 roundTripped.{{ field.name }}.toList(),
@@ -46,7 +68,24 @@
             if (!decodeOnly) {
                 val valueObj = {{ f.name | to_pascal_case }}()
 {% for field in f.fields %}
-{% if field.list %}
+{% if field.members %}
+                decoded["{{ field.name }}"]!!.jsonArray.forEach { r ->
+                    val o = r.jsonObject
+                    valueObj.{{ field.name }}.add(
+                        {{ f.name | to_pascal_case }}{{ field.name | to_pascal_case }}Line(
+{% for m in field.members %}
+{% if m.list %}
+                            {{ m.name }} = o["{{ m.name }}"]!!.jsonArray.map { it.jsonPrimitive.content }.toMutableList(),
+{% elif m.optional %}
+                            {{ m.name }} = o["{{ m.name }}"]!!.let { el -> if (el is kotlinx.serialization.json.JsonNull) null else el.jsonPrimitive.content },
+{% else %}
+                            {{ m.name }} = o["{{ m.name }}"]!!.jsonPrimitive.content,
+{% endif %}
+{% endfor %}
+                        ),
+                    )
+                }
+{% elif field.list %}
                 valueObj.{{ field.name }}.addAll(decoded["{{ field.name }}"]!!.jsonArray.map { it.jsonPrimitive.content })
 {% else %}
                 decoded["{{ field.name }}"]!!.let { el ->

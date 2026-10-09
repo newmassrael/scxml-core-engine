@@ -7,7 +7,9 @@
     grammar — unfolding, TEXT escapes, quoting — is the runtime's
     (`com.sce.forge.runtime.ContentLine*`); this spells none of it. #}
 {% macro read_value(e) -%}
-{%- if e.kind == "string" -%}
+{%- if e.separator -%}
+line.readStrings('{{ e.separator }}', {{ e.max_values }}, {{ e.max_size }}, {{ "true" if e.text else "false" }}) ?: return null
+{%- elif e.kind == "string" -%}
 line.readString({{ e.max_size }}, {{ "true" if e.text else "false" }}) ?: return null
 {%- elif e.kind == "bool" -%}
 line.readBool() ?: return null
@@ -24,7 +26,9 @@ line.readInt(Long.MIN_VALUE, Long.MAX_VALUE) ?: return null
 {#- The write of one property's value `v`, its name and parameters already
     written. #}
 {% macro write_value(e) -%}
-{%- if e.kind == "string" -%}
+{%- if e.separator -%}
+out.strings(v, '{{ e.separator }}', {{ "true" if e.text else "false" }}, {{ e.max_size }}, {{ e.max_values }})?.let { return it }
+{%- elif e.kind == "string" -%}
 out.string(v, {{ "true" if e.text else "false" }}, {{ e.max_size }})?.let { return it }
 {%- elif e.kind == "bool" -%}
 out.boolean(v)?.let { return it }
@@ -55,22 +59,45 @@ import com.sce.forge.runtime.SceSink
 {% endif %}
 {% endfor %}
 
+{% for e in entries if e.is_records %}
+/**
+ * One line of `{{ e.property }}` (docs/adr/0014): the parameters it carries and
+ * its {% if e.separator %}list of values, cut at `{{ e.separator }}`{% else %}value{% endif %}. A parameter that may be absent is `null`.
+ */
+data class {{ e.record_type }}(
+{% for p in e.params %}
+    /** Parameter `{{ p.param }}`{% if p.required %}, required{% endif %}. */
+    var {{ p.name }}: {{ p.field_type }} = {{ p.default }},
+{% endfor %}
+{% if e.separator %}
+    /** The values of the line, at most {{ e.max_values }}. */
+    var {{ e.value_member }}: MutableList<String> = mutableListOf(),
+{% else %}
+    /** The value of the line. */
+    var {{ e.value_member }}: String = "",
+{% endif %}
+)
+
+{% endfor %}
 /**
  * One `{{ component }}` component of content lines (SCE_FORGE.md §4.6.4).
  * Decode reads the properties this codec declares in any order and skips the
  * rest; encode writes the entries present in declaration order, folded at 75
  * octets. A required entry starts at its type's default and an optional one
  * absent (`null`), so `{{ struct_name }}()` is the infallible constructor every
- * codec offers.
+ * codec offers. A repeated property that declares a parameter, or whose line
+ * holds a list of values, is a list of line records.
  */
 data class {{ struct_name }}(
 {% for e in entries %}
-    /** Property `{{ e.property }}`{% if e.is_list %}, up to {{ e.max_count }} lines{% elif e.required %}, required{% endif %}. */
+    /** Property `{{ e.property }}`{% if e.is_records %}, up to {{ e.max_count }} lines, each a record{% elif e.is_list %}, up to {{ e.max_count }} lines{% elif e.is_values %}, a list of at most {{ e.max_values }} values{% endif %}{% if e.required %}, required{% endif %}. */
     var {{ e.name }}: {{ e.field_type }} = {{ e.default }},
+{% if not e.is_records %}
 {% for p in e.params %}
     /** Parameter `{{ p.param }}` of `{{ e.property }}`{% if p.required %}, required{% endif %}. */
     var {{ p.name }}: {{ p.field_type }} = {{ p.default }},
 {% endfor %}
+{% endif %}
 {% endfor %}
 ) {
     /**
@@ -82,8 +109,29 @@ data class {{ struct_name }}(
         val out = ContentLineWriter(w, "{{ component }}")
         out.begin()?.let { return it }
 {% for e in entries %}
-{% if e.is_list %}
+{% if e.is_records %}
         if ({{ e.name }}.size > {{ e.max_count }}) return ContentLine.fail(CodecError.LineTooMany)
+{% if e.required %}
+        if ({{ e.name }}.isEmpty()) return ContentLine.fail(CodecError.LineRequiredMissing)
+{% endif %}
+        for (record in {{ e.name }}) {
+            val v = record.{{ e.value_member }}
+            out.property("{{ e.property }}")?.let { return it }
+{% for p in e.params %}
+{% if p.required %}
+            out.param("{{ p.param }}", record.{{ p.name }}, {{ p.max_size }})?.let { return it }
+{% else %}
+            val {{ p.name }}Value = record.{{ p.name }}
+            if ({{ p.name }}Value != null) out.param("{{ p.param }}", {{ p.name }}Value, {{ p.max_size }})?.let { return it }
+{% endif %}
+{% endfor %}
+            {{ write_value(e) }}
+        }
+{% elif e.is_list %}
+        if ({{ e.name }}.size > {{ e.max_count }}) return ContentLine.fail(CodecError.LineTooMany)
+{% if e.required %}
+        if ({{ e.name }}.isEmpty()) return ContentLine.fail(CodecError.LineRequiredMissing)
+{% endif %}
         for (v in {{ e.name }}) {
             out.property("{{ e.property }}")?.let { return it }
             {{ write_value(e) }}
@@ -108,7 +156,7 @@ data class {{ struct_name }}(
 {% for p in e.params if not p.required %}
             val {{ p.name }}Value = {{ p.name }}
 {% endfor %}
-            if (v != null) {
+            if ({{ "v.isNotEmpty()" if e.is_values else "v != null" }}) {
                 out.property("{{ e.property }}")?.let { return it }
 {% for p in e.params %}
 {% if p.required %}
@@ -146,14 +194,20 @@ data class {{ struct_name }}(
             val rest = cursor.peekSlice(cursor.remaining()) ?: return null
             val reader = ContentLineReader.begin(rest, "{{ component }}") ?: return null
 {% for e in entries %}
-{% if e.is_list %}
+{% if e.is_records %}
+            val {{ e.name }}Values = mutableListOf<{{ e.record_type }}>()
+{% elif e.is_list %}
             val {{ e.name }}Values = mutableListOf<String>()
+{% elif e.is_values %}
+            var {{ e.name }}Value: MutableList<String>? = null
 {% else %}
             var {{ e.name }}Value: {{ e.value_type }}? = null
 {% endif %}
+{% if not e.is_records %}
 {% for p in e.params %}
             var {{ p.name }}Read: {{ p.value_type }}? = null
 {% endfor %}
+{% endif %}
 {% endfor %}
             while (true) {
                 val line = reader.next()
@@ -163,24 +217,42 @@ data class {{ struct_name }}(
                 }
 {% for e in entries %}
                 {% if not loop.first %}else {% endif %}if (line.isNamed("{{ e.property }}")) {
-{% if e.is_list %}
+{% if e.is_list or e.is_records %}
                     if ({{ e.name }}Values.size >= {{ e.max_count }}) {
                         return ContentLine.refuse(CodecError.LineTooMany)
                     }
 {% else %}
                     if ({{ e.name }}Value != null) return ContentLine.refuse(CodecError.LineTooMany)
 {% endif %}
+{% set held = "Line" if e.is_records else "Read" %}
+{% if e.is_records %}
+{#- The parameters of this line are locals of the line: they belong to its
+    record, and the line is judged on them before its value is looked at. #}
+{% for p in e.params %}
+                    var {{ p.name }}{{ held }}: {{ p.value_type }}? = null
+{% endfor %}
+{% endif %}
 {% if e.params %}
                     while (line.nextParam() ?: return null) {
 {% for p in e.params %}
                         {% if not loop.first %}else {% endif %}if (line.paramNamed("{{ p.param }}")) {
-                            if ({{ p.name }}Read != null) return ContentLine.refuse(CodecError.LineTooMany)
-                            {{ p.name }}Read = line.readParamString({{ p.max_size }}) ?: return null
+                            if ({{ p.name }}{{ held }} != null) return ContentLine.refuse(CodecError.LineTooMany)
+                            {{ p.name }}{{ held }} = line.readParamString({{ p.max_size }}) ?: return null
                         }
 {% endfor %}
                     }
 {% endif %}
-{% if e.is_list %}
+{% if e.is_records %}
+{% for p in e.params if p.required %}
+                    if ({{ p.name }}Line == null) return ContentLine.refuse(CodecError.LineRequiredMissing)
+{% endfor %}
+                    {{ e.name }}Values.add({{ e.record_type }}(
+{% for p in e.params %}
+                        {{ p.name }} = {{ p.name }}Line,
+{% endfor %}
+                        {{ e.value_member }} = {{ read_value(e) }},
+                    ))
+{% elif e.is_list %}
                     {{ e.name }}Values.add({{ read_value(e) }})
 {% else %}
                     {{ e.name }}Value = {{ read_value(e) }}
@@ -188,15 +260,24 @@ data class {{ struct_name }}(
                 }
 {% endfor %}
             }
+{% for e in entries if e.required and (e.is_list or e.is_records) %}
+            // A required list needs a line.
+            if ({{ e.name }}Values.isEmpty()) return ContentLine.refuse(CodecError.LineRequiredMissing)
+{% endfor %}
             val value = {{ struct_name }}(
 {% for e in entries %}
-{% if e.is_list %}
+{% if e.is_list or e.is_records %}
                 {{ e.name }} = {{ e.name }}Values,
+{% elif e.is_values and e.required %}
+                {{ e.name }} = {{ e.name }}Value ?: return ContentLine.refuse(CodecError.LineRequiredMissing),
+{% elif e.is_values %}
+                {{ e.name }} = {{ e.name }}Value ?: mutableListOf(),
 {% elif e.required %}
                 {{ e.name }} = {{ e.name }}Value ?: return ContentLine.refuse(CodecError.LineRequiredMissing),
 {% else %}
                 {{ e.name }} = {{ e.name }}Value,
 {% endif %}
+{% if not e.is_records %}
 {% for p in e.params %}
 {% if p.required %}
                 {{ p.name }} = {{ p.name }}Read ?: return ContentLine.refuse(CodecError.LineRequiredMissing),
@@ -204,6 +285,7 @@ data class {{ struct_name }}(
                 {{ p.name }} = {{ p.name }}Read,
 {% endif %}
 {% endfor %}
+{% endif %}
 {% endfor %}
             )
             // Only a component that decoded whole moves the cursor.

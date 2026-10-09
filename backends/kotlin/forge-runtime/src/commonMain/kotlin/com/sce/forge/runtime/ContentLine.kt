@@ -442,6 +442,50 @@ class ContentLineProperty internal constructor(
     }
 
     /**
+     * Read the value as a list of `string` cut at [separator], at most
+     * [maxValues] of them and each at most [maxSize] bytes (docs/adr/0014). The
+     * value is cut before it is unescaped: with [text] a separator that a
+     * backslash precedes is part of the value, and with anything else every
+     * separator cuts. The parts are judged left to right and the first failure is
+     * the line's: a part past [maxValues] is [CodecError.LineTooMany], even one
+     * that is empty or too long; an empty part is [CodecError.LineBadValue].
+     */
+    fun readStrings(separator: Char, maxValues: Int, maxSize: Int, text: Boolean): MutableList<String>? {
+        if (!beginValue()) return null
+        val values = mutableListOf<String>()
+        val buf = ByteArray(maxSize)
+        var n = 0
+        while (true) {
+            val b = scan.bump()
+            if (b < 0 || b == separator.code) {
+                if (n == 0) return ContentLine.refuse(CodecError.LineBadValue)
+                values.add(utf8(buf, n) ?: return null)
+                if (b < 0) return values
+                n = 0
+                // A separator opens another part, which may not pass the bound.
+                if (values.size >= maxValues) return ContentLine.refuse(CodecError.LineTooMany)
+                continue
+            }
+            val byte: Int
+            if (text && b == '\\'.code) {
+                byte = when (scan.bump()) {
+                    '\\'.code -> '\\'.code
+                    ';'.code -> ';'.code
+                    ','.code -> ','.code
+                    'n'.code, 'N'.code -> 0x0A
+                    else -> return ContentLine.refuse(CodecError.LineBadEscape)
+                }
+            } else if (ContentLine.isControl(b)) {
+                return ContentLine.refuse(CodecError.LineBadValue)
+            } else {
+                byte = b
+            }
+            if (n == maxSize) return ContentLine.refuse(CodecError.LineTooLong)
+            buf[n++] = byte.toByte()
+        }
+    }
+
+    /**
      * The decimal the rest of the value is — an optional sign, digits — as
      * (negative, magnitude). A `-` is read only when [allowMinus], so an unsigned
      * type refuses `-0` as well.
@@ -623,6 +667,36 @@ class ContentLineWriter(private val sink: SceSink, private val component: String
         }
         unit(':')?.let { return it }
         valueUnits(bytes, text)?.let { return it }
+        return endLine()
+    }
+
+    /**
+     * Write `:<value>{separator}<value>…` and end the line (docs/adr/0014). No
+     * values is [CodecError.LineRequiredMissing] and more than [maxValues] is
+     * [CodecError.LineTooMany]. A value past [maxSize] bytes is
+     * [CodecError.LineTooLong]; one with a control character (but a TEXT's line
+     * feed), an empty one, and one that is not a TEXT and holds the separator are
+     * [CodecError.LineBadValue], because a reader would cut or refuse them. Every
+     * value is held before any of the line is written.
+     */
+    fun strings(values: List<String>, separator: Char, text: Boolean, maxSize: Int, maxValues: Int): CodecError? {
+        if (values.isEmpty()) return ContentLine.fail(CodecError.LineRequiredMissing)
+        if (values.size > maxValues) return ContentLine.fail(CodecError.LineTooMany)
+        val encoded = values.map { it.encodeToByteArray() }
+        for (bytes in encoded) {
+            if (bytes.size > maxSize) return ContentLine.fail(CodecError.LineTooLong)
+            if (bytes.any { ContentLine.isControl(it.toInt() and 0xFF) && !(text && it == LF) }) {
+                return ContentLine.fail(CodecError.LineBadValue)
+            }
+            if (bytes.isEmpty() || (!text && bytes.any { it.toInt() == separator.code })) {
+                return ContentLine.fail(CodecError.LineBadValue)
+            }
+        }
+        unit(':')?.let { return it }
+        for ((index, bytes) in encoded.withIndex()) {
+            if (index > 0) unit(separator)?.let { return it }
+            valueUnits(bytes, text)?.let { return it }
+        }
         return endLine()
     }
 
