@@ -874,6 +874,14 @@ prompt longer than the context does, which is the one thing every server can be 
 The store refuses a context outside 4096 to 4000000 tokens, a percent outside 10 to 95 and more
 than 10 hand-overs. The screen carries these limits through a save but has no field for them yet.
 
+**A draft need not write the design out a second time.** A model's last message is its draft, and a
+design of tens of thousands of characters written out again is a second chance to drop a brace or a
+line (measured with a local model: the last `}` of a draft, twice). `"documents": "accepted"` in
+place of the list stands for the documents the model sent to its latest `validate_scxml_set` or
+`validate_scxml` call, as it sent them, and only when that tool accepted them: a design put right
+and not checked again, one the tool refused, and a call the run cannot read the documents of (they
+were given by path) are each refused with the reason, and the model writes them out.
+
 ### The model, and where it stands
 
 A model is saved for a text revision (`written_for`), so "is this model about the

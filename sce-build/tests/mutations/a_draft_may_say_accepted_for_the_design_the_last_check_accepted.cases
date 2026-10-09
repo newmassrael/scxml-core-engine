@@ -1,0 +1,71 @@
+# Mutation cases for "a draft may say `accepted` for the design the last check accepted".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_draft_may_say_accepted_for_the_design_the_last_check_accepted.cases`.
+#
+# A model that writes a long design out a second time in its draft may drop a brace or a line of it
+# (measured with a local model on 2026-10-09: the last `}` of a draft, twice). `"documents":
+# "accepted"` stands for the documents of the latest check when that check accepted them, and for
+# nothing else: a design put right and not checked again, one the tool refused, and one the run
+# cannot read are all refused, and the model is told which. Each case below takes one part of that
+# away and must make a test of `app-core/tests/local.rs` or the unit tests of
+# `app-core/src/local.rs` red.
+#
+# ⚠ A mutated tree is built under `-D warnings`, so every case keeps each binding it had in
+# use: a mutation that stops reading one is an unused-variable ERROR, the tree does not
+# compile, and the verdict is INCONCLUSIVE.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported INCONCLUSIVE with
+# the anchor quoted, never as a pass.
+
+mutation_tests -p sce-app-core --features cli --lib --test local
+mutation_targets app-core/src/local.rs
+mutation_oracles app-core/tests/local.rs
+
+mutation_case "a design the tool refused is taken for the accepted one" <<'PY'
+edit("app-core/src/local.rs",
+     "            accepted: !failed && verdict.as_deref() == Some(\"accepted\"),",
+     "            accepted: !failed || verdict.as_deref() == Some(\"accepted\"),")
+PY
+
+mutation_case "a check that failed is taken for an accepted one" <<'PY'
+edit("app-core/src/local.rs",
+     "            accepted: !failed && verdict.as_deref() == Some(\"accepted\"),",
+     "            accepted: verdict.as_deref() == Some(\"accepted\") && (failed || !failed),")
+PY
+
+mutation_case "any verdict is taken for acceptance" <<'PY'
+edit("app-core/src/local.rs",
+     "            accepted: !failed && verdict.as_deref() == Some(\"accepted\"),",
+     "            accepted: !failed && verdict.is_some(),")
+PY
+
+mutation_case "the verdict is read from the whole answer, pages included" <<'PY'
+edit("app-core/src/local.rs",
+     "        let verdict = serde_json::Deserializer::from_str(words)\n            .into_iter::<Value>()\n            .next()\n            .and_then(Result::ok)\n            .and_then(|answer| answer[\"verdict\"].as_str().map(str::to_string));",
+     "        let verdict = serde_json::from_str::<Value>(words)\n            .ok()\n            .and_then(|answer| answer[\"verdict\"].as_str().map(str::to_string));")
+PY
+
+mutation_case "the word accepted with no check behind it is taken as documents" <<'PY'
+edit("app-core/src/local.rs",
+     "            None => Err(format!(\n                \"`documents` is `{ACCEPTED}`, but no design was sent",
+     "            None if false => Err(format!(\n                \"`documents` is `{ACCEPTED}`, but no design was sent")
+PY
+
+mutation_case "the word accepted is left in the draft instead of the documents" <<'PY'
+edit("app-core/src/local.rs",
+     "                answer[\"model\"][\"documents\"] = Value::Array(",
+     "                let _ = Value::Array(")
+PY
+
+mutation_case "a later check the run cannot read leaves the older design held" <<'PY'
+edit("app-core/src/local.rs",
+     "                    if DESIGN_TOOLS.contains(&call.name.as_str()) {\n                        checked = Checked::of_call(call, &done.words, done.failed);\n                    }",
+     "                    if DESIGN_TOOLS.contains(&call.name.as_str()) {\n                        checked = Checked::of_call(call, &done.words, done.failed).or(checked);\n                    }")
+PY
+
+mutation_case "a model is not told the word is enough when its draft cannot be read" <<'PY'
+edit("app-core/src/local.rs",
+     "         as \\\\\\\") and every brace and bracket closed. If your last check accepted the design \\\n         and you changed nothing since, you need not write it out: `\\\"documents\\\": \\\"accepted\\\"` \\\n         stands for it\"",
+     "         as \\\\\\\") and every brace and bracket closed\"")
+PY

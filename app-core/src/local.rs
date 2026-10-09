@@ -41,6 +41,7 @@ use crate::client_run::{
 };
 use crate::http_client::{self, Endpoint, HttpError, Request};
 use crate::mcp_client::{McpClient, McpError, Tool};
+use crate::model_set::Document;
 use crate::revision::Revision;
 use crate::runner::{Cancel, Draft, GenerateError, Generator, Job};
 
@@ -69,7 +70,11 @@ whole SCXML document, exactly as validate_scxml accepted it>\"}]}}\n\
 When the model is several documents that import each other, list each of them in `documents` \
 and add `\"entry\": \"<the name of the one to start from>\"` inside `model`. The requirement list \
 is not part of what you write: the application takes it from your last scxml_requirement_set \
-call, so call that tool and leave `requirements` out of the draft.";
+call, so call that tool and leave `requirements` out of the draft.\n\
+When the last design you sent to validate_scxml_set or validate_scxml was accepted and you have \
+changed nothing since, do not write its documents out again: put the word accepted where the \
+list is, `\"documents\": \"accepted\"`, and the application takes the documents as you sent them \
+to that check.";
 
 /// What a model is told of its tools: the authoring instructions it is also given describe tools
 /// that save and that take a request, which are for the clients that do those things themselves,
@@ -652,6 +657,8 @@ impl Generator for Local {
         // What the tool that builds the requirement list gave last: it is the list, and the model
         // is not asked to write it out again.
         let mut listed: Option<Listed> = None;
+        // The design the model last sent to be checked, and whether the tool accepted it.
+        let mut checked: Option<Checked> = None;
         let mut messages = vec![
             json!({"role": "system", "content": system}),
             json!({"role": "user", "content": prompt(job)}),
@@ -729,6 +736,12 @@ impl Generator for Local {
                     if call.name == REQUIREMENT_SET && !done.failed {
                         listed = Listed::in_words(&done.words).or(listed);
                     }
+                    // The latest check is the design the run holds, whether or not it was
+                    // accepted: a design put right and not checked again is not one to save as
+                    // the accepted one.
+                    if DESIGN_TOOLS.contains(&call.name.as_str()) {
+                        checked = Checked::of_call(call, &done.words, done.failed);
+                    }
                     messages.push(json!({
                         "role": "tool",
                         "tool_call_id": call.id,
@@ -738,7 +751,7 @@ impl Generator for Local {
                 continue;
             }
             let said = content_of(&message);
-            match draft_in(&said, listed.as_ref()) {
+            match draft_in(&said, listed.as_ref(), checked.as_ref()) {
                 Ok(draft) => return Ok(draft),
                 Err(wrong) if repairs < REPAIRS => {
                     self.trace.say(|| Step::NotTheDraft { why: wrong.clone() });
@@ -882,17 +895,117 @@ impl Listed {
     }
 }
 
+/// The word a model may put in place of the documents of its draft: the ones its last check was
+/// given. A design of tens of thousands of characters written out a second time is a second chance
+/// to drop a brace or a line of it (measured with a local model on 2026-10-09: the last `}` of a
+/// draft, twice), and what the check accepted is what is saved when nothing is written out.
+const ACCEPTED: &str = "accepted";
+
+/// The design the model last sent to be checked, as the run holds it: the documents of the call
+/// as the model wrote them, and whether the tool accepted them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Checked {
+    documents: Vec<Document>,
+    accepted: bool,
+}
+
+impl Checked {
+    /// The design a call of a checking tool sent, and what the tool said of it. `None` when the
+    /// call is not one that sends documents the run can read, which is then not a design it holds.
+    fn of_call(call: &Call, words: &str, failed: bool) -> Option<Checked> {
+        let arguments = call.arguments.as_ref().ok()?;
+        let named = |entry: &Value| match (entry["name"].as_str(), entry["text"].as_str()) {
+            (Some(name), Some(text)) => Some(Document {
+                name: name.to_string(),
+                text: text.to_string(),
+            }),
+            _ => None,
+        };
+        let documents: Vec<Document> = match call.name.as_str() {
+            "validate_scxml_set" => arguments["documents_text"]
+                .as_array()?
+                .iter()
+                .map(named)
+                .collect::<Option<_>>()?,
+            "validate_scxml" => {
+                let first = Document {
+                    name: arguments["document_name"]
+                        .as_str()
+                        .unwrap_or("document.scxml")
+                        .to_string(),
+                    text: arguments["document_text"].as_str()?.to_string(),
+                };
+                let companions = arguments["companions_text"].as_array();
+                std::iter::once(Some(first))
+                    .chain(companions.into_iter().flatten().map(named))
+                    .collect::<Option<_>>()?
+            }
+            _ => return None,
+        };
+        // The answer is a JSON object, and for an accepted set the pages of its documents follow
+        // it as text of their own: only the first value is the verdict.
+        let verdict = serde_json::Deserializer::from_str(words)
+            .into_iter::<Value>()
+            .next()
+            .and_then(Result::ok)
+            .and_then(|answer| answer["verdict"].as_str().map(str::to_string));
+        Some(Checked {
+            documents,
+            accepted: !failed && verdict.as_deref() == Some("accepted"),
+        })
+    }
+
+    /// `answer` with `accepted` in the place of its documents replaced by the design the run
+    /// holds, or what is wrong with saying that. Nothing else of an answer is touched.
+    fn put_in(held: Option<&Checked>, answer: &mut Value) -> Result<(), String> {
+        if answer["model"]["documents"] != ACCEPTED {
+            return Ok(());
+        }
+        match held {
+            Some(Checked {
+                documents,
+                accepted: true,
+            }) => {
+                answer["model"]["documents"] = Value::Array(
+                    documents
+                        .iter()
+                        .map(|d| json!({"name": d.name, "text": d.text}))
+                        .collect(),
+                );
+                Ok(())
+            }
+            Some(_) => Err(format!(
+                "`documents` is `{ACCEPTED}`, but the last design you sent to be checked was not \
+                 accepted: put it right and check it again, or write the documents out"
+            )),
+            None => Err(format!(
+                "`documents` is `{ACCEPTED}`, but no design was sent to validate_scxml_set or \
+                 validate_scxml that the application could read: write the documents out"
+            )),
+        }
+    }
+}
+
 /// What a model that said the description of the form back is told.
 const SCHEMA_ECHO: &str = "that is the description of the form (a JSON Schema), not a draft \
 written in it: write the draft itself, an object with `model` in it";
 
 /// The draft in the model's last message, or what is wrong with it. `listed` is the requirement
-/// list the tool gave, which is the draft's whatever the model wrote of it.
-fn draft_in(said: &str, listed: Option<&Listed>) -> Result<Draft, String> {
+/// list the tool gave, which is the draft's whatever the model wrote of it; `checked` is the design
+/// the model last sent to be checked, which `"documents": "accepted"` stands for.
+fn draft_in(
+    said: &str,
+    listed: Option<&Listed>,
+    checked: Option<&Checked>,
+) -> Result<Draft, String> {
     let mut first_wrong = None;
     for mut answer in answers_in(said)? {
         if let Some(listed) = listed {
             listed.put_in(&mut answer);
+        }
+        if let Err(wrong) = Checked::put_in(checked, &mut answer) {
+            first_wrong.get_or_insert(wrong);
+            continue;
         }
         match draft_from(&answer) {
             Ok(draft) => return Ok(draft),
@@ -980,7 +1093,9 @@ fn unreadable_draft_said(error: &serde_json::Error) -> String {
     format!(
         "the draft begins with `model` but cannot be read as JSON ({error}): {why}. Write the \
          draft again as ONE valid JSON object, every string escaped (a newline as \\n, a quote \
-         as \\\") and every brace and bracket closed"
+         as \\\") and every brace and bracket closed. If your last check accepted the design \
+         and you changed nothing since, you need not write it out: `\"documents\": \"accepted\"` \
+         stands for it"
     )
 }
 
@@ -1132,6 +1247,36 @@ pub fn list_models(endpoint: &Endpoint, bearer: Option<&str>) -> Result<Vec<Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model_set::ModelFiles;
+
+    /// A message read as the draft with no check behind it: what most of these say is of the
+    /// message alone.
+    fn draft_in(said: &str, listed: Option<&Listed>) -> Result<Draft, String> {
+        super::draft_in(said, listed, None)
+    }
+
+    /// A call of a checking tool, as the model made it.
+    fn check_call(name: &str, arguments: Value) -> Call {
+        Call {
+            id: "c1".to_string(),
+            name: name.to_string(),
+            raw: arguments.to_string(),
+            arguments: Ok(arguments),
+        }
+    }
+
+    /// The words of an accepted check: the verdict, then the page of the document as text.
+    const ACCEPTED_WORDS: &str = "{\"verdict\": \"accepted\"}\n\n--- page ---\nstate idle";
+
+    fn set_call() -> Call {
+        check_call(
+            "validate_scxml_set",
+            json!({"documents_text": [
+                {"name": "door.scxml", "text": "<door/>"},
+                {"name": "event.xsd", "text": "<event/>"},
+            ]}),
+        )
+    }
 
     fn form(model: &str) -> String {
         json!({
@@ -1611,5 +1756,98 @@ mod tests {
         assert_eq!(name.len(), "local/".len() + 12);
         // What names them is the task and the form, not where the server is or which model it runs.
         assert_eq!(other.instructions().unwrap(), name);
+    }
+
+    fn accepted_form(entry: Option<&str>) -> String {
+        json!({
+            "model": {"documents": ACCEPTED, "entry": entry},
+            "requirements": {"manifest_text": "{}\n"},
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn the_word_accepted_stands_for_the_documents_the_last_check_accepted() {
+        let held = Checked::of_call(&set_call(), ACCEPTED_WORDS, false);
+
+        let made =
+            super::draft_in(&accepted_form(Some("door.scxml")), None, held.as_ref()).unwrap();
+
+        // The documents are the ones the call was given, in the entry's order, not what the
+        // model wrote in the draft.
+        let names: Vec<&str> = match &made.model {
+            ModelFiles::Set { documents, .. } => {
+                documents.iter().map(|d| d.name.as_str()).collect()
+            }
+            ModelFiles::Single(_) => vec![],
+        };
+        assert_eq!(names, ["door.scxml", "event.xsd"]);
+    }
+
+    #[test]
+    fn the_word_accepted_is_refused_for_a_design_the_tool_did_not_accept() {
+        let refused = Checked::of_call(&set_call(), "{\"verdict\": \"refused\"}", false);
+        let errored = Checked::of_call(&set_call(), ACCEPTED_WORDS, true);
+
+        for held in [refused, errored] {
+            let wrong = super::draft_in(&accepted_form(None), None, held.as_ref()).unwrap_err();
+            assert!(wrong.contains("was not accepted"), "{wrong}");
+        }
+    }
+
+    #[test]
+    fn the_word_accepted_is_refused_when_no_design_was_checked() {
+        let wrong = super::draft_in(&accepted_form(None), None, None).unwrap_err();
+
+        assert!(wrong.contains("no design was sent"), "{wrong}");
+    }
+
+    #[test]
+    fn a_check_made_after_the_accepted_one_is_the_design_that_is_held() {
+        // The caller keeps the latest check: `accepted` after a refused one is not the old design.
+        let first = Checked::of_call(&set_call(), ACCEPTED_WORDS, false);
+        let later = Checked::of_call(&set_call(), "{\"verdict\": \"refused\"}", false);
+
+        assert!(first.unwrap().accepted);
+        assert!(!later.unwrap().accepted);
+    }
+
+    #[test]
+    fn a_single_document_check_holds_the_document_under_the_name_it_was_given() {
+        let call = check_call(
+            "validate_scxml",
+            json!({"document_text": "<door/>", "document_name": "door.scxml"}),
+        );
+
+        let held = Checked::of_call(&call, ACCEPTED_WORDS, false).unwrap();
+
+        assert_eq!(held.documents.len(), 1);
+        assert_eq!(held.documents[0].name, "door.scxml");
+        assert!(held.accepted);
+    }
+
+    #[test]
+    fn a_call_the_run_cannot_read_a_design_from_holds_none() {
+        let unreadable = Call {
+            id: "c1".to_string(),
+            name: "validate_scxml_set".to_string(),
+            raw: "{".to_string(),
+            arguments: Err("eof".to_string()),
+        };
+        let by_path = check_call(
+            "validate_scxml_set",
+            json!({"documents": ["/x/door.scxml"]}),
+        );
+
+        assert_eq!(Checked::of_call(&unreadable, ACCEPTED_WORDS, false), None);
+        assert_eq!(Checked::of_call(&by_path, ACCEPTED_WORDS, false), None);
+    }
+
+    #[test]
+    fn a_draft_that_cannot_be_read_is_told_the_word_accepted_is_enough() {
+        let wrong = draft_in("{\"model\": {\"documents\": [", None).unwrap_err();
+
+        assert!(wrong.contains(ACCEPTED), "{wrong}");
+        assert!(told().contains(&format!("\"documents\": \"{ACCEPTED}\"")));
     }
 }

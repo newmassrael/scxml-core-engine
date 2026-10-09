@@ -857,6 +857,112 @@ fn a_run_that_may_not_begin_again_gives_up_at_the_first_overflow() {
     assert_eq!(rig.server.requests().len(), 1);
 }
 
+/// The draft that says its documents are the ones the last check accepted.
+fn accepted_draft() -> String {
+    json!({
+        "model": {"documents": "accepted"},
+        "requirements": {"manifest_text": "{}\n"},
+    })
+    .to_string()
+}
+
+#[test]
+fn a_model_that_says_accepted_is_given_the_documents_it_sent_to_the_check() {
+    let rig = Rig::new(
+        "local-accepted",
+        vec![
+            validating("<scxml><!-- checked --></scxml>"),
+            says(&accepted_draft()),
+        ],
+    );
+    tool_gives(
+        &rig.folder,
+        "validate_scxml_set",
+        &json!({"verdict": "accepted"}),
+    );
+
+    let made = rig.run().unwrap();
+
+    // The model never wrote the document out in its draft, and the draft is what was checked.
+    assert_eq!(made.model.entry_text(), "<scxml><!-- checked --></scxml>");
+    assert_eq!(rig.server.requests().len(), 2, "no repair was needed");
+}
+
+#[test]
+fn a_model_that_says_accepted_over_a_design_the_check_refused_is_told_so_and_writes_it_out() {
+    let rig = Rig::new(
+        "local-accepted-refused",
+        vec![
+            validating("<scxml><!-- refused --></scxml>"),
+            says(&accepted_draft()),
+            says(&draft("<scxml><!-- written out --></scxml>")),
+        ],
+    );
+    tool_gives(
+        &rig.folder,
+        "validate_scxml_set",
+        &json!({"verdict": "refused"}),
+    );
+
+    let made = rig.run().unwrap();
+
+    assert_eq!(
+        made.model.entry_text(),
+        "<scxml><!-- written out --></scxml>"
+    );
+    let third = rig.server.messages(2);
+    let told = third.last().unwrap()["content"].as_str().unwrap();
+    assert!(told.contains("was not accepted"), "{told}");
+}
+
+#[test]
+fn a_later_check_the_run_cannot_read_is_not_the_design_an_earlier_one_accepted() {
+    let rig = Rig::new(
+        "local-accepted-later",
+        vec![
+            validating("<scxml><!-- checked --></scxml>"),
+            // The same tool, but with the documents by path: what the run holds no text of.
+            calls(&[(
+                Some("c2"),
+                "validate_scxml_set",
+                r#"{"documents":["/somewhere/m.scxml"]}"#,
+            )]),
+            says(&accepted_draft()),
+            says(&draft("<scxml><!-- written out --></scxml>")),
+        ],
+    );
+    tool_gives(
+        &rig.folder,
+        "validate_scxml_set",
+        &json!({"verdict": "accepted"}),
+    );
+
+    let made = rig.run().unwrap();
+
+    // The first check's documents are not what the model last sent to be checked.
+    assert_eq!(
+        made.model.entry_text(),
+        "<scxml><!-- written out --></scxml>"
+    );
+    let fourth = rig.server.messages(3);
+    let told = fourth.last().unwrap()["content"].as_str().unwrap();
+    assert!(told.contains("no design was sent"), "{told}");
+}
+
+#[test]
+fn a_model_that_says_accepted_before_any_check_is_told_there_was_none() {
+    let rig = Rig::new(
+        "local-accepted-unchecked",
+        vec![says(&accepted_draft()), says(&draft("<scxml/>"))],
+    );
+
+    rig.run().unwrap();
+
+    let second = rig.server.messages(1);
+    let told = second.last().unwrap()["content"].as_str().unwrap();
+    assert!(told.contains("no design was sent"), "{told}");
+}
+
 // ---- when the servers are not what they should be --------------------------------------------
 
 #[test]
