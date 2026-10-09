@@ -1239,6 +1239,14 @@ pub enum DiagnosticCode {
     /// `Fix::ReplaceOneOf` over the limits the machine does declare.
     #[serde(rename = "queue/deploy-limit-unresolved")]
     QueueDeployLimitUnresolved,
+    /// `<sce:element-type>` names no codec or procedure document in the
+    /// build. Carries a `Fix::ReplaceOneOf` over the documents that exist.
+    #[serde(rename = "queue/element-type-not-a-kind")]
+    QueueElementTypeNotAKind,
+    /// `<sce:intrusive link-field>` names a field the element document does
+    /// not declare. Carries a `Fix::ReplaceOneOf` over the fields it does.
+    #[serde(rename = "queue/intrusive-link-field-missing")]
+    QueueIntrusiveLinkFieldMissing,
     /// The document is valid and the target language's runtime does not
     /// implement its storage mode yet. `expected` carries the modes it does.
     #[serde(rename = "queue/storage-runtime-missing")]
@@ -3486,6 +3494,8 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         QueueProgressUnreachable,
         QueueParticipantsUnresolved,
         QueueDeployLimitUnresolved,
+        QueueElementTypeNotAKind,
+        QueueIntrusiveLinkFieldMissing,
         QueueStorageRuntimeMissing,
         // Codegen Rust no_std variant rejection (SCE Protocol-Synthesis RFC §synth-5-J-2,
         // item C3)
@@ -4255,6 +4265,8 @@ impl DiagnosticCode {
             | QueueProgressUnreachable
             | QueueParticipantsUnresolved
             | QueueDeployLimitUnresolved
+            | QueueElementTypeNotAKind
+            | QueueIntrusiveLinkFieldMissing
             | QueueStorageRuntimeMissing => Some("SCE Protocol-Synthesis RFC §5.P"),
 
             // ── §synth-5-M Fragment-reassembly variant parse-time structure
@@ -5023,6 +5035,8 @@ impl DiagnosticCode {
             QueueProgressUnreachable => "queue/progress-unreachable",
             QueueParticipantsUnresolved => "queue/participants-unresolved",
             QueueDeployLimitUnresolved => "queue/deploy-limit-unresolved",
+            QueueElementTypeNotAKind => "queue/element-type-not-a-kind",
+            QueueIntrusiveLinkFieldMissing => "queue/intrusive-link-field-missing",
             QueueStorageRuntimeMissing => "queue/storage-runtime-missing",
             TimerPeriodBelowTickRate => "timer/period-below-tick-rate",
             TimerSlotOverflow => "timer/slot-overflow",
@@ -8841,6 +8855,46 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 element.clone(),
                 machine.clone(),
                 limit.clone(),
+            ],
+        },
+        ValidationError::QueueElementTypeNotAKind {
+            queue_name,
+            element_type,
+            candidates,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::QueueElementTypeNotAKind,
+            stage: Stage::Validation,
+            // `actual` is the element-type text as authored; the sorted
+            // codec + procedure names ride `Fix::ReplaceOneOf`, as they do
+            // for `collection/element-type-not-a-kind`.
+            expected: None,
+            actual: Some(element_type.clone()),
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: candidates.clone(),
+            }),
+            key_fragments: vec![queue_name.clone(), element_type.clone()],
+        },
+        ValidationError::QueueIntrusiveLinkFieldMissing {
+            queue_name,
+            link_field,
+            element_type,
+            element_kind,
+            candidates,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::QueueIntrusiveLinkFieldMissing,
+            stage: Stage::Validation,
+            // `actual` is the link field as authored; the element's sorted
+            // field names ride `Fix::ReplaceOneOf`.
+            expected: None,
+            actual: Some(link_field.clone()),
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: candidates.clone(),
+            }),
+            key_fragments: vec![
+                queue_name.clone(),
+                element_type.clone(),
+                element_kind.clone(),
+                link_field.clone(),
             ],
         },
         ValidationError::TimerPeriodBelowTickRate {
@@ -13042,6 +13096,28 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:d57d7bac7528712b","code":"queue/deploy-limit-unresolved","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.P","message":"queue 'rx_events': <sce:bounded source=\"deploy\" key=\"machines.mcu_node.limits.rx_capacity\"/> references limit 'rx_capacity' on machine 'mcu_node', but deploy.yaml does not declare `machines.mcu_node.limits.rx_capacity`. SCE Protocol-Synthesis RFC §5.P: a queue's capacity and participants take the §5.L capacity forms and resolve at codegen time to a constant from `machines.<machine>.limits.<limit>:`; an unresolved limit blocks emission. Repair: declare `rx_capacity: <count>` under `machines.mcu_node.limits:` in deploy.yaml (declared limits today: alpha, tx_capacity), or write the element with `const=\"N\"`.","actual":"machines.mcu_node.limits.rx_capacity","fix":{"kind":"replace_one_of","candidates":["alpha","tx_capacity"]}}"#,
             ),
             (
+                "forge/queue-element-type-not-a-kind",
+                ValidationError::QueueElementTypeNotAKind {
+                    queue_name: "rx_events".into(),
+                    element_type: "rx_evnt".into(),
+                    candidates: vec!["rx_event".into(), "tx_event".into()],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:a0b0c15b8e70ec48","code":"queue/element-type-not-a-kind","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.P","message":"queue 'rx_events': <sce:element-type>rx_evnt</sce:element-type> does not name a codec-kind struct or procedure-kind state record in this build. SCE Protocol-Synthesis RFC §5.P: the queue stores the element document's own type, which resolves as a bounded collection's element does. Declare the element type as a separate `.scxml` document (codec: `<scxml sce:kind=\"codec\" name=\"rx_evnt\">`; procedure: `<scxml sce:kind=\"procedure\" name=\"rx_evnt\">`), or replace the body text with one of the registered candidates: rx_event, tx_event.","actual":"rx_evnt","fix":{"kind":"replace_one_of","candidates":["rx_event","tx_event"]}}"#,
+            ),
+            (
+                "forge/queue-intrusive-link-field-missing",
+                ValidationError::QueueIntrusiveLinkFieldMissing {
+                    queue_name: "rx_events".into(),
+                    link_field: "nxt".into(),
+                    element_type: "rx_event".into(),
+                    element_kind: "codec".into(),
+                    candidates: vec!["next".into(), "sensor".into()],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:c6bb0f4bc4505bc3","code":"queue/intrusive-link-field-missing","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.P","message":"queue 'rx_events': <sce:intrusive link-field=\"nxt\"/> names a field that does not exist on element-type 'rx_event' (codec kind). SCE Protocol-Synthesis RFC §5.P: an intrusive queue links its elements through a field each one carries, so the field must be one the element document declares. Replace `link-field=\"nxt\"` with one of the rx_event's declared fields: next, sensor.","actual":"nxt","fix":{"kind":"replace_one_of","candidates":["next","sensor"]}}"#,
+            ),
+            (
                 "forge/queue-storage-runtime-missing",
                 GenerateError::QueueStorageRuntimeMissing {
                     queue_name: "rx_events".into(),
@@ -16100,6 +16176,11 @@ mod tests {
             // Queue deploy-time capacity and participants: the same sorted
             // declared-limit candidate set, on the queue's own code.
             | QueueDeployLimitUnresolved
+            // Queue cross-document resolution: the sorted codec + procedure
+            // names for the element type, and the element's sorted field
+            // names for the intrusive link field.
+            | QueueElementTypeNotAKind
+            | QueueIntrusiveLinkFieldMissing
             // C7-lowering algorithm-over-BC dispatch (RFC §synth-5-A line 311
             // + §synth-5-L line 2611-2618 + 2642-2647). Two of the six
             // codes carry a closed candidate set:
@@ -17418,6 +17499,8 @@ mod tests {
                 | QueueProgressUnreachable
                 | QueueParticipantsUnresolved
                 | QueueDeployLimitUnresolved
+                | QueueElementTypeNotAKind
+                | QueueIntrusiveLinkFieldMissing
                 | QueueStorageRuntimeMissing
                 | MemReassemblyPoolVariantMissingMaxFragments
                 | MemReassemblyPoolVariantMissingTimeout
@@ -17614,9 +17697,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            422,
+            424,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 422 distinct variants to match the DiagnosticCode \
+             expected 424 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -18391,6 +18474,8 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | QueueProgressUnreachable
             | QueueParticipantsUnresolved
             | QueueDeployLimitUnresolved
+            | QueueElementTypeNotAKind
+            | QueueIntrusiveLinkFieldMissing
             | QueueStorageRuntimeMissing
             | MemReassemblyPoolVariantMissingMaxFragments
             | MemReassemblyPoolVariantMissingTimeout

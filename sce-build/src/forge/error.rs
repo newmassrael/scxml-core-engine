@@ -3147,6 +3147,59 @@ pub enum ValidationError {
         candidates: Vec<String>,
     },
 
+    /// SCE Protocol-Synthesis RFC §synth-5-P (`queue/element-type-not-a-kind`)
+    /// — `<sce:element-type>` does not name a codec or procedure document in
+    /// this build. The queue stores the element document's own type, so the
+    /// name has to resolve exactly as a bounded collection's does.
+    ///
+    /// Raised by the cross-document pass of
+    /// [`crate::compile_scxml_with_imports`], which holds the element
+    /// candidates; a single-document compile cannot resolve it. The closed
+    /// candidate list rides `Fix::ReplaceOneOf` with the sorted codec and
+    /// procedure names.
+    #[error(
+        "queue '{queue_name}': <sce:element-type>{element_type}</sce:element-type> does not name a codec-kind struct or procedure-kind state record in this build. \
+         SCE Protocol-Synthesis RFC §5.P: the queue stores the element document's own type, which resolves as a bounded collection's element does. \
+         Declare the element type as a separate `.scxml` document (codec: `<scxml sce:kind=\"codec\" name=\"{element_type}\">`; procedure: `<scxml sce:kind=\"procedure\" name=\"{element_type}\">`), or replace the body text with one of the registered candidates: {}.",
+        crate::forge::error::joined_or_none(.candidates)
+    )]
+    QueueElementTypeNotAKind {
+        /// Queue name from `<scxml sce:kind="queue" name="...">`.
+        queue_name: String,
+        /// `<sce:element-type>` body text as authored.
+        element_type: String,
+        /// Sorted codec and procedure document names in the build.
+        candidates: Vec<String>,
+    },
+
+    /// SCE Protocol-Synthesis RFC §synth-5-P (`queue/intrusive-link-field-missing`)
+    /// — `<sce:intrusive link-field>` names a field the element document does
+    /// not declare. An intrusive queue links the elements through a field
+    /// each one carries, so the field has to exist on the element.
+    ///
+    /// Runs only once the element type resolves, so the two codes never fire
+    /// together. The fields are the element document's
+    /// [`crate::forge::model::ForgeDocument::record_fields`]; the closed
+    /// candidate list rides `Fix::ReplaceOneOf`.
+    #[error(
+        "queue '{queue_name}': <sce:intrusive link-field=\"{link_field}\"/> names a field that does not exist on element-type '{element_type}' ({element_kind} kind). \
+         SCE Protocol-Synthesis RFC §5.P: an intrusive queue links its elements through a field each one carries, so the field must be one the element document declares. \
+         Replace `link-field=\"{link_field}\"` with one of the {element_type}'s declared fields: {}.",
+        crate::forge::error::joined_or_none(.candidates)
+    )]
+    QueueIntrusiveLinkFieldMissing {
+        /// Queue name from `<scxml sce:kind="queue" name="...">`.
+        queue_name: String,
+        /// `link-field` value as authored.
+        link_field: String,
+        /// Element-type name, already resolved to a codec or procedure.
+        element_type: String,
+        /// `codec` or `procedure`.
+        element_kind: String,
+        /// Sorted declared field names of the element document.
+        candidates: Vec<String>,
+    },
+
     /// SCE Protocol-Synthesis RFC §synth-5-L line 2655
     /// (`collection/overflow-policy-oldest-wins-requires-ordering-insertion`)
     /// — `<sce:on-overflow>oldest-wins</sce:on-overflow>` declared

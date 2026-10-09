@@ -5231,6 +5231,10 @@ pub struct QueueModel {
     /// byte-stable, the way every other `line` on this model is.
     #[serde(skip)]
     pub storage_line: Option<u32>,
+    /// Row of `<sce:element-type>`, for the refusals that name the element
+    /// document. Skipped from serialization for the same reason.
+    #[serde(skip)]
+    pub element_type_line: Option<u32>,
 }
 
 /// The algorithm a queue document selects — one row of the RFC §synth-5-P

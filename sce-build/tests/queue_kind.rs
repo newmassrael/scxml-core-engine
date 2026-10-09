@@ -375,6 +375,8 @@ fn template_dir() -> PathBuf {
     sce_build::find_template_dir_for(Language::Rust)
 }
 
+/// The element document: a `sensor` value and a `next` field, the one an
+/// intrusive queue links its elements through.
 fn codec_doc(name: &str) -> String {
     format!(
         r##"<?xml version="1.0" encoding="UTF-8"?>
@@ -383,6 +385,7 @@ fn codec_doc(name: &str) -> String {
        sce:kind="codec" sce:default-endian="big" name="{name}" version="1.0">
   <datamodel>
     <sce:field id="sensor" sce:type="uint32" sce:byte="0" sce:bit-size="32"/>
+    <sce:field id="next" sce:type="uint32" sce:byte="4" sce:bit-size="32"/>
   </datamodel>
 </scxml>"##
     )
@@ -550,4 +553,104 @@ fn a_deploy_key_capacity_is_not_lowered_as_if_it_were_a_constant() {
         err.error.to_string().contains("machines.m.limits.frames"),
         "the refusal names the key: {err}"
     );
+}
+
+// ─── Cross-document resolution ───
+
+/// The row a refusal points at, and that row's text.
+fn row_text<'a>(located: &Located<ForgeError>, text: &'a str) -> &'a str {
+    let row = located.location.line.expect("the refusal carries a row") as usize;
+    text.lines()
+        .nth(row - 1)
+        .unwrap_or_else(|| panic!("the document has no row {row}"))
+}
+
+#[test]
+fn an_element_type_that_names_no_document_is_refused_with_the_documents_there_are() {
+    let xml = queue_doc(
+        "frame_queue",
+        "one",
+        "one",
+        "wait-free",
+        r#"<sce:bounded capacity="8"/>"#,
+    )
+    .replace("rx_event", "rx_evnt");
+    let located =
+        compile(&xml, "frame_queue.scxml").expect_err("the element type resolves nowhere");
+    assert!(
+        row_text(&located, &xml).contains("<sce:element-type>rx_evnt<"),
+        "the refusal is placed on the element-type row"
+    );
+    let diagnostics = located.error.to_diagnostics();
+    assert!(matches!(
+        diagnostics.as_slice(),
+        [d] if matches!(d.code, DiagnosticCode::QueueElementTypeNotAKind)
+    ));
+    match located.error {
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::QueueElementTypeNotAKind {
+                queue_name,
+                element_type,
+                candidates,
+            } => {
+                assert_eq!(queue_name, "frame_queue");
+                assert_eq!(element_type, "rx_evnt");
+                assert_eq!(candidates, ["rx_event"], "the documents in the build");
+            }
+            other => panic!("expected QueueElementTypeNotAKind, got {other:?}"),
+        },
+        other => panic!("expected a validation error, got {other:?}"),
+    }
+}
+
+#[test]
+fn an_intrusive_link_field_the_element_lacks_is_refused_with_its_fields() {
+    let xml = queue_doc(
+        "frame_queue",
+        "many",
+        "one",
+        "blocking",
+        r#"<sce:intrusive link-field="nxt"/>"#,
+    );
+    let located = compile(&xml, "frame_queue.scxml").expect_err("the element has no such field");
+    assert!(
+        row_text(&located, &xml).contains("link-field=\"nxt\""),
+        "the refusal is placed on the storage row"
+    );
+    match located.error {
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::QueueIntrusiveLinkFieldMissing {
+                link_field,
+                element_type,
+                element_kind,
+                candidates,
+                ..
+            } => {
+                assert_eq!(link_field, "nxt");
+                assert_eq!(element_type, "rx_event");
+                assert_eq!(element_kind, "codec");
+                assert_eq!(
+                    candidates,
+                    ["next", "sensor"],
+                    "the element's fields, sorted"
+                );
+            }
+            other => panic!("expected QueueIntrusiveLinkFieldMissing, got {other:?}"),
+        },
+        other => panic!("expected a validation error, got {other:?}"),
+    }
+}
+
+#[test]
+fn only_an_intrusive_queue_is_asked_for_a_link_field() {
+    // A bounded queue writes none, and the element has the field a document
+    // would name: neither the element type nor the link field is refused.
+    let xml = queue_doc(
+        "frame_queue",
+        "one",
+        "one",
+        "wait-free",
+        r#"<sce:bounded capacity="8"/>"#,
+    );
+    compile(&xml, "frame_queue.scxml").expect("a resolvable element type is accepted");
 }

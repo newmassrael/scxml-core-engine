@@ -3283,6 +3283,7 @@ fn compile_document_set(
     let mut workers_for_outbox: Vec<(String, forge::model::WorkerModel)> = Vec::new();
     let mut bounded_collections_for_xref: Vec<(String, forge::model::BoundedCollectionModel)> =
         Vec::new();
+    let mut queues_for_xref: Vec<(String, forge::model::QueueModel)> = Vec::new();
     let mut element_type_candidates: std::collections::HashMap<
         String,
         forge::model::ForgeDocument,
@@ -3372,6 +3373,9 @@ fn compile_document_set(
             }
             forge::model::ForgeDocument::BoundedCollection(bc) => {
                 bounded_collections_for_xref.push((path_str.to_string(), bc));
+            }
+            forge::model::ForgeDocument::Queue(queue) => {
+                queues_for_xref.push((path_str.to_string(), queue));
             }
             forge::model::ForgeDocument::Link(link) => {
                 // The cross-doc link validators read this
@@ -3588,6 +3592,10 @@ fn compile_document_set(
         &element_type_candidates,
         &all_externs,
     )?;
+    // A queue stores the element document's own type, so its element type
+    // resolves against the same candidates a bounded collection's does
+    // (RFC §synth-5-P).
+    validate_queue_cross_refs(&queues_for_xref, &element_type_candidates)?;
 
     // ── Deploy-aware cross-doc link validators ──
     //
@@ -5828,6 +5836,75 @@ fn validate_bounded_collection_cross_refs(
                 .into(),
                 diag_label.clone(),
                 None,
+                None,
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// SCE Protocol-Synthesis RFC §synth-5-P — the queue's references to other
+/// documents, which only the whole build can judge.
+///
+/// * `queue/element-type-not-a-kind` — `<sce:element-type>` does not name a
+///   codec or procedure document in the build. The candidates are the same
+///   map the bounded-collection pass reads, so a name that is an element
+///   there is an element here. The closed list rides `Fix::ReplaceOneOf`.
+/// * `queue/intrusive-link-field-missing` — `<sce:intrusive link-field>`
+///   names a field the resolved element document does not declare. Runs only
+///   once the element type resolves, so the two never fire together; the
+///   closed list is the element's declared fields.
+///
+/// Each refusal is placed on the row that spells the offending text (the
+/// element-type row, the storage row), so a consumer applying the fix edits
+/// the right line. An empty `queues` is a no-op, which is every build with
+/// no queue document.
+fn validate_queue_cross_refs(
+    queues: &[(String, forge::model::QueueModel)],
+    element_type_candidates: &std::collections::HashMap<String, forge::model::ForgeDocument>,
+) -> Result<(), forge::error::Located<forge::error::ForgeError>> {
+    use forge::error::{Located, ValidationError};
+    use forge::model::QueueStorage;
+
+    let mut element_type_names: Vec<String> = element_type_candidates.keys().cloned().collect();
+    element_type_names.sort();
+
+    for (diag_label, queue) in queues {
+        let Some(element) = element_type_candidates.get(queue.element_type.as_str()) else {
+            return Err(Located::new(
+                ValidationError::QueueElementTypeNotAKind {
+                    queue_name: queue.name.clone(),
+                    element_type: queue.element_type.clone(),
+                    candidates: element_type_names.clone(),
+                }
+                .into(),
+                diag_label.clone(),
+                queue.element_type_line,
+                None,
+            ));
+        };
+        let QueueStorage::Intrusive { link_field } = &queue.storage else {
+            continue;
+        };
+        // Both candidate kinds are records; a kind without fields has no
+        // link field to offer and is left to its own checks.
+        let Some(fields) = element.record_fields() else {
+            continue;
+        };
+        let mut candidates: Vec<String> = fields.into_iter().map(|(name, _)| name).collect();
+        if !candidates.iter().any(|name| name == link_field) {
+            candidates.sort();
+            return Err(Located::new(
+                ValidationError::QueueIntrusiveLinkFieldMissing {
+                    queue_name: queue.name.clone(),
+                    link_field: link_field.clone(),
+                    element_type: queue.element_type.clone(),
+                    element_kind: element.kind().to_string(),
+                    candidates,
+                }
+                .into(),
+                diag_label.clone(),
+                queue.storage_line,
                 None,
             ));
         }

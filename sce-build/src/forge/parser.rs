@@ -10500,6 +10500,7 @@ fn parse_queue(
         participants,
         source_location: forge_source_location_of(root, diag),
         storage_line,
+        element_type_line: find_sce_child(root, "element-type").map(|node| row_of(&node)),
     };
 
     // ── Judged on the document alone: the selection table ──
