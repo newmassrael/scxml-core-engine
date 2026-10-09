@@ -2936,6 +2936,24 @@ enum Commands {
         header_dir: String,
     },
 
+    /// Judge recorded queue histories for linearizability (SCE
+    /// Protocol-Synthesis RFC §synth-5-P, verification layer 2).
+    ///
+    /// Each FILE is a history in the JSON form that
+    /// `tests/forge/conformance/queue_history.schema.json` describes: what
+    /// the participants of one stress run observed, each operation with the
+    /// instants it was invoked and returned. The stress run of every backend
+    /// writes its histories in that form and this one command judges them,
+    /// so no backend carries a checker of its own. One line is printed per
+    /// file; the command fails when any file is not linearizable, is not a
+    /// history, or records no operation (a run that recorded nothing proves
+    /// nothing).
+    CheckQueueHistory {
+        /// The history files to judge
+        #[arg(required = true)]
+        files: Vec<String>,
+    },
+
     /// Verify that generated files were generated from the current inputs,
     /// per spec §synth-6.2.6.
     ///
@@ -3501,6 +3519,7 @@ fn main() {
             manifest,
             header_dir,
         } => cmd_check_aot_briefs(&manifest, &header_dir),
+        Commands::CheckQueueHistory { files } => cmd_check_queue_history(&files),
         Commands::ProvenanceRoster => cmd_provenance_roster(),
         Commands::Kinds { kind } => cmd_kinds(kind.as_deref()),
         Commands::Expand { scxml, include_dir } => cmd_expand(&scxml, &include_dir),
@@ -3601,6 +3620,7 @@ fn assert_unchanged_refusal(command: &Commands) -> Option<String> {
         | Commands::Coverage { .. }
         | Commands::ListFixtures(_)
         | Commands::CheckAotBriefs { .. }
+        | Commands::CheckQueueHistory { .. }
         | Commands::ProvenanceRoster
         | Commands::Kinds { .. }
         | Commands::Expand { .. }
@@ -11180,6 +11200,48 @@ fn cmd_check_aot_briefs(manifest_path: &str, header_dir: &str) {
         "{} AOT test header brief(s) read; none states a spec section",
         registry.fixtures().len()
     );
+}
+
+/// Judge recorded queue histories. See `Commands::CheckQueueHistory`.
+///
+/// Every file is judged and a line printed for each before the command fails,
+/// so a run that wrote six histories and broke two says which two.
+fn cmd_check_queue_history(files: &[String]) {
+    use sce_build::queue_history::{check, History, Verdict};
+
+    let mut refused = 0usize;
+    for path in files {
+        let verdict = std::fs::read_to_string(path)
+            .map_err(|e| format!("cannot be read: {e}"))
+            .and_then(|text| History::from_json(&text).map_err(|e| e.to_string()))
+            .and_then(|history| {
+                let operations: usize = history.participants.iter().map(Vec::len).sum();
+                if operations == 0 {
+                    return Err("records no operation, which proves nothing".to_string());
+                }
+                match check(&history) {
+                    Verdict::Linearizable => Ok(operations),
+                    Verdict::NotLinearizable { explored, deepest } => Err(format!(
+                        "is not linearizable: the search explored {explored} states and got no \
+                         further than {deepest:?} operations placed per participant"
+                    )),
+                    Verdict::Malformed(why) => Err(format!("cannot have come from a run: {why}")),
+                }
+            });
+        match verdict {
+            Ok(operations) => outln!("ok   {path}: linearizable ({operations} operations)"),
+            Err(why) => {
+                refused += 1;
+                outln!("FAIL {path}: {why}");
+            }
+        }
+    }
+    if refused != 0 {
+        cli_exit(CliError::ScxmlGenerate {
+            stage: "check-queue-history",
+            detail: format!("{refused} of {} histories refused", files.len()),
+        });
+    }
 }
 
 /// List the W3C statechart conformance registry.

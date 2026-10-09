@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "capacity": 2,
+  "refusal": "at-capacity",
+  "participants": [[], []]
+}

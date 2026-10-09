@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "capacity": 2,
+  "refusal": "at-capacity",
+  "participants": [
+    [
+      { "call": "push", "value": 1, "outcome": "pushed", "invoked": 1, "returned": 2 },
+      { "call": "push", "value": 2, "outcome": "pushed", "invoked": 3, "returned": 4 },
+      { "call": "push", "value": 3, "outcome": "full", "invoked": 5, "returned": 6 },
+      { "call": "pop", "value": 1, "outcome": "popped", "invoked": 7, "returned": 8 },
+      { "call": "pop", "value": 2, "outcome": "popped", "invoked": 9, "returned": 10 },
+      { "call": "pop", "outcome": "empty", "invoked": 11, "returned": 12 }
+    ]
+  ]
+}

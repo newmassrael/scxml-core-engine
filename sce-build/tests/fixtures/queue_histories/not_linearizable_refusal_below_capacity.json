@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "capacity": 2,
+  "refusal": "at-capacity",
+  "participants": [
+    [
+      { "call": "push", "value": 1, "outcome": "pushed", "invoked": 1, "returned": 2 },
+      { "call": "push", "value": 2, "outcome": "full", "invoked": 3, "returned": 4 }
+    ]
+  ]
+}

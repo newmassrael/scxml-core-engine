@@ -11,7 +11,7 @@
 //! - **Linearizability.** Real runs of the one-producer, one-consumer queue
 //!   on two threads, and of the SCQ queue with several producers and several
 //!   consumers, record what each participant observed, and
-//!   `sce_forge_conformance::queue_history::check` judges the record.
+//!   `sce_build::queue_history::check` judges the record.
 //!
 //! The checker is tested here as well, against histories built by hand,
 //! because a checker that accepted everything would make the second layer
@@ -24,9 +24,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use sce_forge_conformance::queue_history::{
-    check, Call, History, Operation, Outcome, Refusal, Verdict,
-};
+use sce_build::queue_history::{check, Call, History, Operation, Outcome, Refusal, Verdict};
 use sce_forge_runtime::queue::scq::Scq;
 use sce_forge_runtime::queue::spsc::Spsc;
 use sce_forge_runtime::queue::PushError;

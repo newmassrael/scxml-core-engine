@@ -37,6 +37,9 @@ sce-portable-bytes = { path = "../portable-bytes", default-features = false }
 sce-build = { path = "../../../sce-build" }
 
 [dev-dependencies]
+# The queue history checker (`sce_build::queue_history`), which the queue arm's
+# tests judge their recorded runs with.
+sce-build = { path = "../../../sce-build" }
 # `float_roundtrip` makes a JSON real parse to the nearest double. serde_json's
 # default parser is faster but can land one unit in the last place away, which
 # turns the multiplier 0.9999999999999999 of a `retry_next_backoff` case into

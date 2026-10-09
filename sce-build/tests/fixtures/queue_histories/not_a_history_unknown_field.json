@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "capacity": 2,
+  "refusal": "at-capacity",
+  "participants": [
+    [{ "call": "push", "value": 1, "outcome": "pushed", "invoked": 1, "returned": 2, "latency": 1 }]
+  ]
+}

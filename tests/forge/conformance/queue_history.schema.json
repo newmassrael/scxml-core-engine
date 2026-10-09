@@ -1,0 +1,80 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "QueueHistory",
+  "description": "What the participants of one queue stress run observed (SCE Protocol-Synthesis RFC section 5.P, verification layer 2). Every backend's stress run writes this form and `sce-codegen check-queue-history` judges it, so one linearizability checker serves all of them. A participant is one thread or goroutine; its operations are listed in its program order. Every operation carries two readings of ONE clock that all participants share, taken immediately before the call (`invoked`) and immediately after it returned (`returned`); a counter that each participant increments atomically at both points is such a clock, and gives distinct readings. An operation that returned before another was invoked is ordered before it; operations that overlap may be ordered either way. The history is linearizable when its operations can be put in one sequence that keeps that order and is a run of the sequential bounded FIFO of `capacity` in which each operation gives the result it was observed to give.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "capacity", "refusal", "participants"],
+  "properties": {
+    "version": {
+      "description": "The version of this format. A reader that meets another refuses the file.",
+      "const": 1
+    },
+    "capacity": {
+      "description": "The capacity of the sequential queue the run is judged against: the capacity the queue under test was built with.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "refusal": {
+      "description": "When the queue under test may refuse a push. `at-capacity`: only when it holds `capacity` elements (the Lamport ring, whose slot is handed back by the store that retires the element). `while-slots-are-held`: also while operations of other participants that overlap the push hold the slots it is short of, at most one per other participant (the SCQ queue, whose pop returns its slot only after reading its element, and whose push holds the slot it took until it has published). Capacity is exact at rest under both, and a refusal that no overlapping operation could explain is a violation under both.",
+      "enum": ["at-capacity", "while-slots-are-held"]
+    },
+    "participants": {
+      "description": "One list per participant, in that participant's program order.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": { "$ref": "#/definitions/Operation" }
+      }
+    }
+  },
+  "definitions": {
+    "Operation": {
+      "description": "One observed operation. `value` is the value pushed (a push) or the value returned (a pop that popped); a pop that found the queue empty names none. A push is `pushed` or `full`; a pop is `popped` or `empty`.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["call", "outcome", "invoked", "returned"],
+      "properties": {
+        "call": { "enum": ["push", "pop"] },
+        "outcome": { "enum": ["pushed", "full", "popped", "empty"] },
+        "value": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "invoked": {
+          "description": "The clock reading taken immediately before the call.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "returned": {
+          "description": "The clock reading taken immediately after the call returned. Later than `invoked`, and earlier than the same participant's next `invoked`.",
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "call": { "const": "push" },
+            "outcome": { "enum": ["pushed", "full"] }
+          },
+          "required": ["value"]
+        },
+        {
+          "properties": {
+            "call": { "const": "pop" },
+            "outcome": { "const": "popped" }
+          },
+          "required": ["value"]
+        },
+        {
+          "properties": {
+            "call": { "const": "pop" },
+            "outcome": { "const": "empty" }
+          },
+          "not": { "required": ["value"] }
+        }
+      ]
+    }
+  }
+}

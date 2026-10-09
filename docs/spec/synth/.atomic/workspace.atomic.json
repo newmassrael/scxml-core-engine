@@ -5049,10 +5049,6 @@
           "kind": "implements"
         },
         {
-          "file": "backends/rust/forge-conformance/src/queue_history.rs",
-          "kind": "implements"
-        },
-        {
           "file": "backends/rust/forge-runtime/src/lib.rs",
           "kind": "references"
         },
@@ -5223,6 +5219,18 @@
         {
           "file": "tools/codegen/templates/forge/go/queue_unsupported.go.jinja2",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/queue_history.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/bin/sce_codegen.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/queue_history_format.rs",
+          "kind": "references"
         }
       ]
     },
@@ -5972,6 +5980,12 @@
       "target_kind": "section",
       "target_id": "synth-5-J-2",
       "reason": "Stage E, the Rust backend onto Appendix D: get_initial_children is gone - initial targets are the policy's as-written get_initial_targets table, dereferenced by the runtime's entry procedures"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-P",
+      "reason": "the checker moved to sce-build/src/queue_history.rs so sce-codegen check-queue-history can judge every backend"
     }
   ],
   "frames": {},

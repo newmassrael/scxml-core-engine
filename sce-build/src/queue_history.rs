@@ -2,7 +2,8 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
 //! A linearizability checker for queue histories (SCE Protocol-Synthesis
-//! RFC §synth-5-P, verification layer 2).
+//! RFC §synth-5-P, verification layer 2), and the one JSON format a history
+//! is written in.
 //!
 //! A history is what the participants of one run observed: for each
 //! participant, its operations in program order, each with the instant it
@@ -21,9 +22,17 @@
 //! operations it could not get past when there is none.
 //!
 //! Nothing here knows an implementation or a language. A history recorded
-//! in this shape is judged by this one search, whichever backend ran.
+//! in this shape is judged by this one search, whichever backend ran: the
+//! stress run of each backend writes the JSON form ([`History::to_json`],
+//! read by [`History::from_json`], described by
+//! `tests/forge/conformance/queue_history.schema.json`), and
+//! `sce-codegen check-queue-history` judges the files. The checker lives in
+//! this crate, and not in a backend's tests, because that command is the one
+//! binary every backend's job already has.
 
 use std::collections::{HashSet, VecDeque};
+
+use serde::{Deserialize, Serialize};
 
 /// What an operation asked of the queue.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -316,4 +325,184 @@ fn well_formed(history: &History) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+// ─────────────────────────────── The JSON form ───────────────────────────────
+
+/// The version of the JSON form this module reads and writes. A reader that
+/// meets another refuses the file instead of guessing at it.
+pub const HISTORY_FORMAT_VERSION: u64 = 1;
+
+/// Why a file is not a history of this format: the place in the document and
+/// what is wrong there.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HistoryError(pub String);
+
+impl std::fmt::Display for HistoryError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for HistoryError {}
+
+/// The document as it sits in a file. Unknown fields are refused, so a field
+/// a writer adds that this reader would drop is an error and not a silent
+/// loss of what the writer meant.
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HistoryDocument {
+    version: u64,
+    capacity: usize,
+    refusal: RefusalWire,
+    participants: Vec<Vec<OperationWire>>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy)]
+#[serde(rename_all = "kebab-case")]
+enum RefusalWire {
+    AtCapacity,
+    WhileSlotsAreHeld,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+enum CallWire {
+    Push,
+    Pop,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+enum OutcomeWire {
+    Pushed,
+    Full,
+    Popped,
+    Empty,
+}
+
+/// One operation. `value` is the value pushed (a push) or the value returned
+/// (a pop that popped), and is absent from a pop that found the queue empty.
+#[derive(Serialize, Deserialize, Clone, Copy)]
+#[serde(deny_unknown_fields)]
+struct OperationWire {
+    call: CallWire,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    value: Option<u64>,
+    outcome: OutcomeWire,
+    invoked: u64,
+    returned: u64,
+}
+
+impl History {
+    /// Read a history from its JSON form.
+    ///
+    /// Refuses a document that is not JSON, names another version, has a field
+    /// this format does not, or states an operation that cannot be one: a push
+    /// without its value, a pop that popped without its value, a pop that
+    /// found the queue empty and names one, or a call paired with an outcome
+    /// the other call has. What this checks is the shape; whether the times
+    /// are those of a run is [`check`]'s `Malformed`.
+    pub fn from_json(text: &str) -> Result<History, HistoryError> {
+        let document: HistoryDocument = serde_json::from_str(text)
+            .map_err(|e| HistoryError(format!("not a queue history: {e}")))?;
+        if document.version != HISTORY_FORMAT_VERSION {
+            return Err(HistoryError(format!(
+                "version {} is not the version this reader reads ({HISTORY_FORMAT_VERSION})",
+                document.version
+            )));
+        }
+        let mut participants = Vec::with_capacity(document.participants.len());
+        for (who, operations) in document.participants.iter().enumerate() {
+            let mut observed = Vec::with_capacity(operations.len());
+            for (at, operation) in operations.iter().enumerate() {
+                let place = format!("participants[{who}][{at}]");
+                observed.push(operation.observed(&place)?);
+            }
+            participants.push(observed);
+        }
+        Ok(History {
+            capacity: document.capacity,
+            refusal: match document.refusal {
+                RefusalWire::AtCapacity => Refusal::AtCapacity,
+                RefusalWire::WhileSlotsAreHeld => Refusal::WhileSlotsAreHeld,
+            },
+            participants,
+        })
+    }
+
+    /// Write the history in its JSON form, as [`History::from_json`] reads it.
+    pub fn to_json(&self) -> String {
+        let document = HistoryDocument {
+            version: HISTORY_FORMAT_VERSION,
+            capacity: self.capacity,
+            refusal: match self.refusal {
+                Refusal::AtCapacity => RefusalWire::AtCapacity,
+                Refusal::WhileSlotsAreHeld => RefusalWire::WhileSlotsAreHeld,
+            },
+            participants: self
+                .participants
+                .iter()
+                .map(|operations| operations.iter().map(OperationWire::of).collect())
+                .collect(),
+        };
+        serde_json::to_string_pretty(&document).expect("a history serialises")
+    }
+}
+
+impl OperationWire {
+    fn of(operation: &Operation) -> OperationWire {
+        let (call, pushed) = match operation.call {
+            Call::Push(value) => (CallWire::Push, Some(value)),
+            Call::Pop => (CallWire::Pop, None),
+        };
+        let (outcome, popped) = match operation.outcome {
+            Outcome::Pushed => (OutcomeWire::Pushed, None),
+            Outcome::Full => (OutcomeWire::Full, None),
+            Outcome::Popped(value) => (OutcomeWire::Popped, Some(value)),
+            Outcome::Empty => (OutcomeWire::Empty, None),
+        };
+        OperationWire {
+            call,
+            value: pushed.or(popped),
+            outcome,
+            invoked: operation.invoked,
+            returned: operation.returned,
+        }
+    }
+
+    fn observed(&self, place: &str) -> Result<Operation, HistoryError> {
+        let refuse = |reason: &str| HistoryError(format!("{place}: {reason}"));
+        let (call, outcome) = match (self.call, self.outcome, self.value) {
+            (CallWire::Push, OutcomeWire::Pushed, Some(value)) => {
+                (Call::Push(value), Outcome::Pushed)
+            }
+            (CallWire::Push, OutcomeWire::Full, Some(value)) => (Call::Push(value), Outcome::Full),
+            (CallWire::Push, OutcomeWire::Pushed | OutcomeWire::Full, None) => {
+                return Err(refuse("a push names the value it pushed"));
+            }
+            (CallWire::Push, OutcomeWire::Popped | OutcomeWire::Empty, _) => {
+                return Err(refuse("a push is pushed or full, not popped or empty"));
+            }
+            (CallWire::Pop, OutcomeWire::Popped, Some(value)) => {
+                (Call::Pop, Outcome::Popped(value))
+            }
+            (CallWire::Pop, OutcomeWire::Popped, None) => {
+                return Err(refuse("a pop that popped names the value it returned"));
+            }
+            (CallWire::Pop, OutcomeWire::Empty, None) => (Call::Pop, Outcome::Empty),
+            (CallWire::Pop, OutcomeWire::Empty, Some(_)) => {
+                return Err(refuse("a pop that found the queue empty names no value"));
+            }
+            (CallWire::Pop, OutcomeWire::Pushed | OutcomeWire::Full, _) => {
+                return Err(refuse("a pop is popped or empty, not pushed or full"));
+            }
+        };
+        Ok(Operation {
+            call,
+            outcome,
+            invoked: self.invoked,
+            returned: self.returned,
+        })
+    }
 }

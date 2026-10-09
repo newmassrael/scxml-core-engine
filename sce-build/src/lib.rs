@@ -200,6 +200,11 @@ pub mod position_map;
 /// report, unresolved-placeholder report, and provenance emit would
 /// fragment into incompatible representations if each grew its own.
 pub mod provenance;
+/// The linearizability checker for queue histories and the JSON form a
+/// backend's stress run writes one in (RFC §synth-5-P, verification layer 2).
+/// Here, and not in a backend's tests, so `sce-codegen check-queue-history`
+/// judges the history of every backend.
+pub mod queue_history;
 /// What a parse read of a document — its SCE elements and its `sce:`
 /// attributes — so what it did not read is refused rather than ignored.
 pub mod read_ledger;

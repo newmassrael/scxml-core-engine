@@ -411,6 +411,14 @@ name = "every_kind_example_is_accepted"
 path = "tests/every_kind_example_is_accepted.rs"
 required-features = ["cli"]
 
+# The queue history form and `sce-codegen check-queue-history` on the real
+# binary: every fixture history judged as its name says, the schema as strict
+# as the reader, and a written history read back the same.
+[[test]]
+name = "queue_history_format"
+path = "tests/queue_history_format.rs"
+required-features = ["cli"]
+
 # `sce-codegen diagram` on the binary: files named by state, a refusal
 # that writes nothing, and the written set checkable for drift.
 [[test]]
