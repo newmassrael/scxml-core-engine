@@ -206,32 +206,46 @@ def of_list(held: dict, what: str) -> dict:
 
 def advance(prev: dict, doc_id: str, spec: Spec, quotes: list[str], *,
             texts: dict[str, str] | None = None,
-            continues: dict[str, str] | None = None) -> Advance:
+            continues: dict[str, str] | None = None,
+            fresh: bool = False) -> Advance:
     """The list of a revision of the specification, built against its lineage.
 
     `quotes` are the located quotes in reading order, already normalised. `texts`
     maps an id to the words it last had (the previous sidecar, normalised);
     without them only equal words and stated continuations carry an id.
-    `continues` maps a quote of this revision to the id it continues."""
+    `continues` maps a quote of this revision to the id it continues.
+
+    With `fresh` nothing is carried: every id the lineage has live is retired in this revision and
+    every quote is issued a new id from `next`. It is the way to start the ids over that never
+    reuses one: a lineage built wrongly cannot be reset to R1, which would let `R3` name a
+    requirement the owner once accepted under another meaning, so it is closed and the numbering
+    goes on. It is a revision of its own even when the text is the same: the old ids are retired
+    IN a revision and the new ones issued in it, and one row on which an id is both issued and
+    retired would say nothing about when either happened."""
     if prev["doc_id"] != doc_id:
         raise LineageError(f"the lineage is for '{prev['doc_id']}', not '{doc_id}': one lineage follows "
                            "one specification")
+    if fresh and continues:
+        raise LineageError("'fresh' and 'continues' cannot be given together: 'fresh' carries no id, and "
+                           "a continuation is the id a requirement keeps")
     last = prev["revisions"][-1]
     if not last["rev"].isdigit():
         raise LineageError(f"the lineage's last rev {last['rev']!r} is not a whole number")
     same_text = spec.sha256 is not None and last["spec_sha256"] == spec.sha256
-    rev = last["rev"] if same_text else str(int(last["rev"]) + 1)
+    new_row = fresh or not same_text
+    rev = str(int(last["rev"]) + 1) if new_row else last["rev"]
 
     rows = {row["id"]: row for row in prev["requirements"]}
     live = sorted((i for i, row in rows.items() if row["retired_rev"] is None), key=_id_order)
-    latest = {i: rows[i]["quotes"][-1]["sha256"] for i in live}
+    # What an id may be carried to: nothing, when every id is to be issued afresh.
+    latest = {} if fresh else {i: rows[i]["quotes"][-1]["sha256"] for i in live}
     digests = [sha256_text(q) for q in quotes]
 
     carried: dict[int, tuple[str, str, str | None]] = {}  # quote index -> (id, status, how)
     taken: set[str] = set()
 
     for n, digest in enumerate(digests):
-        for i in live:
+        for i in latest:
             if i not in taken and latest[i] == digest:
                 carried[n] = (i, "carried", None)
                 taken.add(i)
@@ -264,7 +278,7 @@ def advance(prev: dict, doc_id: str, spec: Spec, quotes: list[str], *,
     for n, i in _near_matches(quotes, open_quotes, words):
         carried[n] = (i, "changed", "near-match")
         taken.add(i)
-    unseen = [i for i in live if i not in taken and i not in words]
+    unseen = [i for i in latest if i not in taken and i not in words]
     if unseen and any(n not in carried for n in range(len(quotes))):
         notes.append(f"{', '.join(unseen)} ended without a successor and their words were not given "
                      "(`previous_sidecar`), so no near match could be tried for them")
@@ -295,10 +309,10 @@ def advance(prev: dict, doc_id: str, spec: Spec, quotes: list[str], *,
         requirements.append(row)
     requirements += new_rows
     revisions = [dict(r) for r in prev["revisions"]]
-    if same_text:
-        revisions[-1] = _revision_row(rev, spec)
-    else:
+    if new_row:
         revisions.append(_revision_row(rev, spec))
+    else:
+        revisions[-1] = _revision_row(rev, spec)
     lineage = _checked({"lineage": LINEAGE_KIND, "v": LINEAGE_VERSION, "doc_id": doc_id, "next": counter,
                         "revisions": revisions, "requirements": requirements})
 
@@ -324,6 +338,10 @@ def advance(prev: dict, doc_id: str, spec: Spec, quotes: list[str], *,
     if last["spec_sha256"] is None:
         notes.append("the lineage was made from a list that predates lineages, so the sentences of the "
                      "previous revision are unknown and no sentence delta is given")
+    if fresh:
+        notes.append(f"every id was issued afresh: the ids the lineage had live were retired in rev {rev} "
+                     f"and the numbering goes on from R{prev['next']}. A design that cites the old ids "
+                     "has to be written again to cite the new ones")
     return Advance(lineage, rev, ids, statuses, delta, notes)
 
 

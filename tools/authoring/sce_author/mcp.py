@@ -1038,7 +1038,13 @@ TOOLS = [
             "whose words changed too much to be recognised, say so in "
             "`continues` ({quote: id}); the tool refuses one that does not fit "
             "and never invents one. An id that no requirement of the revision "
-            "carries is closed and never issued again. Returns "
+            "carries is closed and never issued again. To start the ids over "
+            "(a lineage built wrongly, or numbering the owner no longer trusts) "
+            "give `fresh: true` with the lineage: nothing is carried, every id "
+            "that was live is retired, and every requirement is issued a new id "
+            "from where the numbering left off -- never from R1, because a "
+            "retired id is never reused. A design that cites the old ids has to "
+            "be written again to cite the new ones. Returns "
             "`manifest_text` and `sidecar_text` -- pass them as "
             "`manifest_text` and `sidecar_text` to scxml_requirements and "
             "scxml_acceptance_report -- the `lineage_text` to keep beside them "
@@ -1080,6 +1086,13 @@ TOOLS = [
                         "list's requirement it continues, when its words changed too much to be "
                         "recognised. Only ones you are sure of."),
                     "additionalProperties": {"type": "string"},
+                },
+                "fresh": {
+                    "type": "boolean",
+                    "description": (
+                        "For a revision: issue every requirement a new id from where the "
+                        "numbering left off and retire every id that was live, instead of "
+                        "carrying any. The ids are never reused. Not with `continues`."),
                 },
             },
         },
@@ -2893,12 +2906,15 @@ def _requirement_set_tool(args: dict, staging: _Staging) -> dict:
     earlier = {key: _staged_text(staging, staging.file(args, key, what, f"{key}.json", required=False), what)
                for key, what in (("lineage", "the lineage"), ("previous_sidecar", "the previous sidecar"),
                                  ("previous_manifest", "the previous manifest"))}
+    fresh = args.get("fresh", False)
+    if not isinstance(fresh, bool):
+        raise ToolArgumentError("'fresh' has to be true or false")
     try:
         built = requirement_set.build(text, args.get("requirements"), doc_id=doc_id,
                                       lineage_text=earlier["lineage"],
                                       previous_manifest_text=earlier["previous_manifest"],
                                       previous_sidecar_text=earlier["previous_sidecar"],
-                                      continues=args.get("continues"))
+                                      continues=args.get("continues"), fresh=fresh)
     except requirement_set.RequirementSetError as error:
         raise ToolArgumentError(str(error)) from error
     reply = requirement_set.answer(built)

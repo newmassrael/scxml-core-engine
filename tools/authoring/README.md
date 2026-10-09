@@ -308,7 +308,11 @@ whose wording changed slightly keeps it too and is listed `changed`, one the
 revision lost is retired and its id is never issued again, and `rev` follows the
 text (a reflow is not a revision). A rewording too large to recognise can be
 stated (`continues`, `{quote: id}`); a list made before lineages existed is
-revised from its `previous_manifest` and `previous_sidecar`. The answer's `delta`
+revised from its `previous_manifest` and `previous_sidecar`. The ids can be started
+over with `fresh: true`: nothing is carried, every id that was live is retired in a
+revision of its own, and each requirement is issued a new id from where the numbering
+left off, never from R1 (`docs/adr/0012-the-ids-are-started-over-by-retiring-them-not-by-resetting-them.md`).
+The answer's `delta`
 says which ids were carried, changed, new or retired and which sentences were
 added or removed. On the same 16 edits that is 0 ids naming another requirement
 unnoticed; the one thing it cannot do is tell a reworded requirement from a

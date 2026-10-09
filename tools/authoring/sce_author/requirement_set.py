@@ -120,7 +120,7 @@ def build(specification: str, items: object, *, doc_id: str = "spec",
           rev: str = "1", lineage_text: str | None = None,
           previous_manifest_text: str | None = None,
           previous_sidecar_text: str | None = None,
-          continues: object = None) -> Built:
+          continues: object = None, fresh: bool = False) -> Built:
     """The manifest and sidecar for `items`, a list of `{quote, statement}`
     (and optionally `modality`), or the refusals that stand in the way.
 
@@ -130,7 +130,9 @@ def build(specification: str, items: object, *, doc_id: str = "spec",
     a revision: each requirement keeps the id it had, and `rev` follows the
     specification. `previous_sidecar_text` gives the words behind the ids, which
     is what lets a reworded requirement keep its id; `continues` maps a quote to
-    the id it continues, for a rewording too large to recognise."""
+    the id it continues, for a rewording too large to recognise. `fresh` carries no id: every id
+    the lineage had live is retired and every requirement is issued a new one from where the
+    numbering left off (never from R1: a retired id is never issued again)."""
     if not isinstance(items, list) or not items:
         raise RequirementSetError(
             "'requirements' has to be a non-empty list of objects with a "
@@ -189,7 +191,7 @@ def build(specification: str, items: object, *, doc_id: str = "spec",
     quotes = [quote for _, _, _, quote in located]
     try:
         step = _identify(doc_id, rev, spec, quotes, lineage_text, previous_manifest_text,
-                         previous_sidecar_text, continues)
+                         previous_sidecar_text, continues, fresh)
     except rl.LineageError as error:
         raise RequirementSetError(str(error)) from error
     built.rev, built.lineage, built.delta, built.notes = step.rev, step.lineage, step.delta, step.notes
@@ -269,13 +271,18 @@ def _json(text: str, what: str) -> dict:
 
 
 def _identify(doc_id: str, rev: str, spec: rl.Spec, quotes: list[str], lineage_text: str | None,
-              manifest_text: str | None, sidecar_text: str | None, continues: object) -> rl.Advance:
+              manifest_text: str | None, sidecar_text: str | None, continues: object,
+              fresh: bool = False) -> rl.Advance:
     """The ids of `quotes`: a first list's, or a revision's against a lineage (or against
     the manifest and sidecar of a list that predates lineages, which are adopted as one)."""
     if lineage_text is not None and manifest_text is not None:
         raise RequirementSetError("give the lineage or the previous manifest, not both: the lineage already "
                                   "holds what the manifest would be adopted for")
     if lineage_text is None and manifest_text is None:
+        if fresh:
+            raise RequirementSetError("'fresh' belongs to a revision: give the lineage a previous call "
+                                      "returned (or the previous manifest) as well. A first list is "
+                                      "numbered in reading order and has no id to start over")
         if sidecar_text is not None or continues:
             raise RequirementSetError("'previous_sidecar' and 'continues' belong to a revision: give the "
                                       "lineage a previous call returned (or the previous manifest) as well")
@@ -300,7 +307,7 @@ def _identify(doc_id: str, rev: str, spec: rl.Spec, quotes: list[str], lineage_t
                             manifest_sha256=rl.sha256_text(manifest_text),
                             sidecar_sha256=rl.sha256_text(sidecar_text))
     return rl.advance(previous, doc_id, spec, quotes, texts=texts,
-                      continues={normalise(k): v for k, v in (continues or {}).items()})
+                      continues={normalise(k): v for k, v in (continues or {}).items()}, fresh=fresh)
 
 
 def answer(built: Built) -> dict:

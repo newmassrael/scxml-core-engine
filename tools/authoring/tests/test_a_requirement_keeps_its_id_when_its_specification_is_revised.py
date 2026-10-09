@@ -423,7 +423,116 @@ class AnythingThatIsNotThisSpecificationsLineageIsRefused(unittest.TestCase):
             rs.build(LAMP, items(LAMP_QUOTES), lineage_text=json.dumps(lineage))
 
 
+class EveryIdCanBeIssuedAfreshWhenTheOwnerAsks(unittest.TestCase):
+    """The way to start the numbering over without ever reusing a number: nothing is carried, every
+    id the lineage had live is retired, and every requirement is issued a new id from `next`. A
+    lineage that was built wrongly (a succession nobody should have believed) cannot be reset to
+    R1, which would let `R3` name a requirement the owner once accepted under another meaning; it
+    is closed, and the numbering goes on."""
+
+    def fresh(self, prose=LAMP, quotes=LAMP_QUOTES):
+        first = build(LAMP, LAMP_QUOTES)
+        return first, revise(first, prose, quotes, fresh=True)
+
+    def test_every_requirement_gets_a_new_id_numbered_on_from_next_even_when_its_words_are_the_same(self):
+        first, again = self.fresh()
+        self.assertEqual(["R6", "R7", "R8", "R9", "R10"], [r.id for r in again.requirements])
+        self.assertEqual({"new"}, {r.status for r in again.requirements})
+        self.assertEqual(11, again.lineage["next"])
+
+    def test_the_delta_says_every_old_id_was_retired_and_nothing_was_carried(self):
+        _, again = self.fresh()
+        moved = again.delta["requirements"]
+        self.assertEqual([], moved["carried"])
+        self.assertEqual([], moved["changed"])
+        self.assertEqual(["R1", "R2", "R3", "R4", "R5"], moved["retired"])
+        self.assertEqual(["R6", "R7", "R8", "R9", "R10"], moved["new"])
+
+    def test_it_is_a_revision_of_its_own_though_the_text_is_the_same(self):
+        # The old ids were retired IN a revision, and the new ones issued in it: one row on which
+        # an id is both issued and retired would say nothing about when either happened.
+        first, again = self.fresh()
+        self.assertEqual("2", again.rev)
+        self.assertEqual(["1", "2"], [row["rev"] for row in again.lineage["revisions"]])
+        old = {row["id"]: row for row in again.lineage["requirements"]}
+        self.assertEqual({"2"}, {old[f"R{n}"]["retired_rev"] for n in range(1, 6)})
+        self.assertEqual({"2"}, {old[f"R{n}"]["first_rev"] for n in range(6, 11)})
+        self.assertEqual({None}, {old[f"R{n}"]["retired_rev"] for n in range(6, 11)})
+
+    def test_what_it_makes_continues_the_lineage_it_was_made_from(self):
+        # The store holds a list to this: a lineage that does not continue the one it keeps is
+        # refused, so a way to renumber that is not an extension would be a way nobody can save.
+        first, again = self.fresh()
+        rl.extends(first.lineage, again.lineage)
+
+    def test_what_the_work_says_of_it_is_that_every_old_id_was_retired_and_every_new_one_is_new(self):
+        # The acceptance the owner made keeps pinning the list it was taken of; the words side of
+        # the revision report is `between` of that lineage and this one. It must say what happened
+        # to the ids and not claim a word carried.
+        first, again = self.fresh()
+        said = rl.between(first.lineage, again.lineage)["requirements"]
+        self.assertEqual([], said["carried"])
+        self.assertEqual([], said["changed"])
+        self.assertEqual(["R1", "R2", "R3", "R4", "R5"], said["retired"])
+        self.assertEqual(["R10", "R6", "R7", "R8", "R9"], sorted(said["new"]))
+
+    def test_a_later_ordinary_revision_keeps_the_new_ids_and_never_the_old_ones(self):
+        first, again = self.fresh()
+        later = revise(again, LAMP, LAMP_QUOTES)
+        self.assertEqual(["R6", "R7", "R8", "R9", "R10"], [r.id for r in later.requirements])
+        self.assertEqual({"carried"}, {r.status for r in later.requirements})
+        rl.extends(again.lineage, later.lineage)
+
+    def test_it_is_a_revision_of_the_words_too(self):
+        prose = LAMP.replace("30 seconds", "45 seconds")
+        _, again = self.fresh(prose, [q.replace("30 seconds", "45 seconds") for q in LAMP_QUOTES])
+        self.assertEqual(["R6", "R7", "R8", "R9", "R10"], [r.id for r in again.requirements])
+        self.assertTrue(again.delta["specification_changed"])
+
+    def test_the_lineage_it_makes_validates_against_its_schema(self):
+        schema = json.loads(SCHEMA.read_text(encoding="utf-8"))
+        _, again = self.fresh()
+        jsonschema.validate(again.lineage, schema)
+
+    def test_it_cannot_be_asked_together_with_a_continuation_that_it_would_make_meaningless(self):
+        first = build(LAMP, LAMP_QUOTES)
+        with self.assertRaises(rs.RequirementSetError) as raised:
+            revise(first, LAMP, LAMP_QUOTES, fresh=True, continues={LAMP_QUOTES[0]: "R1"})
+        self.assertIn("'fresh'", str(raised.exception))
+        self.assertIn("'continues'", str(raised.exception))
+
+    def test_a_first_list_has_nothing_to_renumber_and_says_so(self):
+        with self.assertRaises(rs.RequirementSetError) as raised:
+            build(LAMP, LAMP_QUOTES, fresh=True)
+        self.assertIn("'fresh' belongs to a revision", str(raised.exception))
+
+    def test_a_list_that_predates_lineages_can_be_renumbered_too(self):
+        first = build(LAMP, LAMP_QUOTES)
+        again = build(LAMP, LAMP_QUOTES, previous_manifest_text=rs.render_manifest(first.manifest),
+                      previous_sidecar_text=json.dumps(first.sidecar), fresh=True)
+        self.assertEqual(["R6", "R7", "R8", "R9", "R10"], [r.id for r in again.requirements])
+
+
 class TheToolHandsTheLineageBackAndTakesItAgain(unittest.TestCase):
+    def test_a_fresh_revision_through_the_tool(self):
+        first = call("scxml_requirement_set", specification_text=LAMP, requirements=items(LAMP_QUOTES),
+                     doc_id="lamp")
+        first = json.loads(first["content"][0]["text"])
+        again = call("scxml_requirement_set", specification_text=LAMP, requirements=items(LAMP_QUOTES),
+                     doc_id="lamp", lineage_text=first["lineage_text"],
+                     previous_sidecar_text=first["sidecar_text"], fresh=True)
+        self.assertFalse(again.get("isError"), again["content"][0]["text"])
+        answer = json.loads(again["content"][0]["text"])
+        self.assertEqual(["R6", "R7", "R8", "R9", "R10"], sorted(
+            (r["id"] for r in answer["requirements"]), key=lambda i: int(i[1:])))
+        self.assertEqual(["R1", "R2", "R3", "R4", "R5"], answer["delta"]["requirements"]["retired"])
+
+    def test_the_tool_offers_fresh_and_says_it_never_reuses_a_number(self):
+        tool = next(t for t in mcp.TOOLS if t["name"] == "scxml_requirement_set")
+        self.assertIn("fresh", tool["inputSchema"]["properties"])
+        self.assertEqual("boolean", tool["inputSchema"]["properties"]["fresh"]["type"])
+        self.assertIn("never reused", tool["description"])
+
     def test_a_revision_through_the_tool(self):
         first = call("scxml_requirement_set", specification_text=LAMP, requirements=items(LAMP_QUOTES),
                      doc_id="lamp")

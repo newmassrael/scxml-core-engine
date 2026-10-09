@@ -148,6 +148,9 @@ same compare-and-swap.**
   until a second implementation has been held to the same cases.
 - **D2. A way to start the lineage over.** Recommendation: none. A specification written again
   from nothing is a new work, and an id that may be issued twice is the defect.
+  **Decided 2026-10-09 (ADR 0012):** not a reset, which would reuse numbers, but a revision that
+  retires every id and issues new ones from `next` (`fresh`). The recommendation stood for resetting
+  and was incomplete about the need: a lineage built wrongly had no way out.
 
 ## What this does not claim
 
