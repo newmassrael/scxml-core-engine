@@ -1,0 +1,70 @@
+# Mutation case for "a hazard is published before it is checked".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_hazard_is_published_before_it_is_checked.cases`.
+#
+# The LSCQ row of SCE Protocol-Synthesis RFC §synth-5-P frees a segment through
+# hazard pointers (`queue::hazard`). A participant names the segment it is about
+# to touch in its slot, and only then reads the location it validates against
+# again; the scan that frees a retired segment reads the slots after the
+# retirement. For the scan to see a participant that has validated, the
+# publication has to come before the check in the one order every thread shares,
+# and `Hazard::protect` gives that with two sequentially consistent accesses.
+# The case below takes both to `Relaxed`, so a participant can validate a segment
+# the scan has already read past and is about to free.
+#
+# The oracle is the queue's real-thread tests (`queue_threads.rs`) built with
+# ThreadSanitizer, the build the forge-rust gate runs them under. It is not the
+# loom models and not Miri, and the measurements that put it here are these
+# (2026-10-10, the build machine):
+#
+#   - loom 0.7.2 reports a race in the UNMODIFIED handshake. A probe written
+#     with plain loom atomics and `SeqCst` on both sides, a protocol that is
+#     correct under C11, fails on its first execution: loom lets a `SeqCst` load
+#     read a value the sequential order has already replaced. A model that fails
+#     on correct code cannot judge a weakening of it.
+#   - Miri, the gate's own command, eight seeds, passed all four LSCQ real-thread
+#     tests with the publication weakened and reported nothing.
+#   - ThreadSanitizer reported a data race on twenty of twenty runs of the four
+#     LSCQ tests with it weakened, and on none of the unmodified tree. The race
+#     it names is the consequence the hazard exists to prevent: a producer's
+#     atomic read of a segment's `next` (`lscq.rs`, `try_push`) against another
+#     thread's plain write of the same address as it builds a new segment, so a
+#     segment was freed, its memory reused, and a participant still read it. The
+#     process exits non-zero while the tests print `ok`, which is how this harness
+#     already reads a sanitizer report: a binary that exits non-zero with no
+#     failed test counted is red, and named.
+#
+# What that does and does not establish. The sanitizer sees the use-after-free,
+# not the ordering that allowed it, and it sees it only on a schedule that
+# produces one. Twenty of twenty on one machine says the schedule is common
+# there; it is not a promise about a slower host, and a SURVIVED here would be a
+# finding about the oracle's reach rather than permission to weaken the
+# publication. The other half of the guarantee, that a scan keeps what a hazard
+# names, is `a_scan_keeps_what_a_hazard_names.cases`, and its oracle is exact.
+#
+# The build is not cargo's default, so the casefile declares what it needs. The
+# flags are the selector's. The toolchain is `mutation_env RUSTUP_TOOLCHAIN`,
+# read from `scripts/lib/queue_sanitizer.sh`, which is where the forge-rust gate
+# reads it, so the two cannot name different nightlies. `-Zbuild-std` rebuilds
+# the standard library with the sanitizer (its own target directory, so the flag
+# does not invalidate the ordinary build), which is why the round needs the
+# `rust-src` component, and why the mutation-rounds gate installs the toolchain
+# for a casefile that declares one.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+source "$SCE_REPO_ROOT/scripts/lib/queue_sanitizer.sh"
+mutation_env "RUSTUP_TOOLCHAIN=$QUEUE_SANITIZER_NIGHTLY"
+mutation_tests -Zbuild-std --target x86_64-unknown-linux-gnu --target-dir target/tsan --config 'build.rustflags=["-Zsanitizer=thread"]' -p sce-forge-runtime --test queue_threads
+mutation_targets backends/rust/forge-runtime/src/queue/hazard.rs
+mutation_oracles backends/rust/forge-runtime/tests/queue_threads.rs
+
+mutation_case "a participant publishes its hazard without ordering it before the check" <<'PY'
+edit("backends/rust/forge-runtime/src/queue/hazard.rs",
+     r'''            self.slot().store(pointer.cast(), Ordering::SeqCst);
+            let again = source.load(Ordering::SeqCst);''',
+     r'''            self.slot().store(pointer.cast(), Ordering::Relaxed);
+            let again = source.load(Ordering::Relaxed);''')
+PY

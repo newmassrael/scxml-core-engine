@@ -69,7 +69,9 @@ cargo test --release -p sce-forge-runtime --target-dir target/loom \
 # 2026-10-09: Miri reports the race as undefined behaviour and ThreadSanitizer
 # as a data race, the process exiting non-zero while the test prints `ok`).
 # What neither sees is a lost or duplicated element, which is layers 2 and 3.
-QUEUE_SANITIZER_NIGHTLY="nightly-2026-10-08"
+# The date itself is in `scripts/lib/queue_sanitizer.sh`, which a mutation
+# casefile reads too, so that the gate and the casefile cannot disagree.
+source "$SCE_REPO_ROOT/scripts/lib/queue_sanitizer.sh"
 sce_gate_step "queue runtime under Miri and ThreadSanitizer"
 rustup toolchain install "$QUEUE_SANITIZER_NIGHTLY" --profile minimal \
     --component miri --component rust-src >/dev/null 2>&1 \

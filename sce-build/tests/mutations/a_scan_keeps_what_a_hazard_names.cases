@@ -27,17 +27,17 @@
 # already replaced, so it reports a race the memory model forbids. A model that
 # fails on correct code cannot be an oracle.
 #
-# What this casefile does NOT cover, and nothing in the tree does yet. The other
-# half of the handshake is the order of the publication and the check in
-# `Hazard::protect`: a hazard must be published before the location it is
-# validated against is read again, which the two `SeqCst` accesses give. Taking
-# both to `Relaxed` was run under Miri on the LSCQ real-thread tests with eight
-# seeds (the forge-rust gate's own command, 2026-10-10), and every test passed
-# with no report. Loom cannot judge it for the reason above, and ThreadSanitizer
-# was not run against it. The tool that models `SeqCst` is GenMC, whose harnesses
-# so far cover the C11 queues and not the Rust hazard domain. Until a harness
-# covers it, that weakening is unobserved; it is not a case here because a case
-# no oracle can catch is a permanent SURVIVED, which says nothing.
+# What this casefile does NOT cover. The other half of the handshake is the order
+# of the publication and the check in `Hazard::protect`: a hazard must be
+# published before the location it is validated against is read again, which the
+# two `SeqCst` accesses give. Taking both to `Relaxed` is not a case here because
+# this oracle cannot see it: the scan is run by hand with the slot held still, and
+# the order is a property of two threads. Loom cannot judge it for the reason
+# above, and Miri, run on the LSCQ real-thread tests with eight seeds (the
+# forge-rust gate's own command, 2026-10-10), passed every test and reported
+# nothing. ThreadSanitizer sees it, on twenty of twenty runs of the same tests,
+# and `a_hazard_is_published_before_it_is_checked.cases` is the casefile that
+# holds it, with the measurements.
 #
 # Anchors are literal slices of the source; an edit that moves one is reported
 # INCONCLUSIVE with the anchor quoted, never as a pass.

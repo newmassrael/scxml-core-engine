@@ -125,6 +125,10 @@ declare -A RUNNER_OF=()
 declare -A TARGETS_OF=()
 declare -A NEEDS_OF=()
 declare -A CASES_OF=()
+# `env` is the fourth key a casefile declares that this gate ACTS on: a
+# `mutation_env RUSTUP_TOOLCHAIN=<toolchain>` is a toolchain the round needs and
+# the job does not have, and the gate installs it below, before the round.
+declare -A ENV_OF=()
 # The whole corpus is declared by ONE call. It used to be one call per casefile,
 # 169 of them on 2026-10-01 at about half a second each, and this gate runs once
 # per push and several times over inside the test that holds it. `--declares`
@@ -149,6 +153,7 @@ to remove."
             runner) RUNNER_OF["$casefile"]="$value" ;;
             target|oracle) TARGETS_OF["$casefile"]+="$value"$'\n' ;;
             needs) NEEDS_OF["$casefile"]+="$value"$'\n' ;;
+            env) ENV_OF["$casefile"]+="$value"$'\n' ;;
             cases) CASES_OF["$casefile"]="$value" ;;
         esac
     done <<<"$declared"
@@ -390,6 +395,21 @@ failed=()
 for casefile in "${SELECTED[@]}"; do
     sce_gate_step "round: $casefile${SCE_MUTATION_SHARD:+ (shard $SCE_MUTATION_SHARD)}"
     round=(scripts/mutate ${shard_args[@]+"${shard_args[@]}"} "$casefile")
+    # A toolchain the casefile declared is installed here, where the job knows
+    # what it was handed, and checked again by the round itself, which refuses a
+    # host that lacks it. `rust-src` because a sanitizer build rebuilds the
+    # standard library from it. A casefile that declares none costs nothing.
+    toolchain=""
+    while IFS= read -r pair; do
+        if [[ "$pair" == RUSTUP_TOOLCHAIN=* ]]; then
+            toolchain="${pair#RUSTUP_TOOLCHAIN=}"
+        fi
+    done <<<"${ENV_OF[$casefile]:-}"
+    if [[ -n "$toolchain" ]]; then
+        sce_gate_step "toolchain: $toolchain (declared by $casefile)"
+        rustup toolchain install "$toolchain" --profile minimal --component rust-src >/dev/null 2>&1 \
+            || sce_gate_fail "install the toolchain $toolchain that $casefile declares, with rust-src"
+    fi
     if [[ "${NEEDS_OF[$casefile]:-}" == *"http-fixture"* ]]; then
         round=(sce_gate_with_http_fixture_server "${round[@]}")
     fi

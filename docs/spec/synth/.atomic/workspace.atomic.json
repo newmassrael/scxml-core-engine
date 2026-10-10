@@ -5530,6 +5530,14 @@
         {
           "file": "sce-build/tests/mutations/a_segmented_queue_survives_two_producers_racing_to_link.cases",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/mutations/a_hazard_is_published_before_it_is_checked.cases",
+          "kind": "references"
+        },
+        {
+          "file": "scripts/lib/queue_sanitizer.sh",
+          "kind": "references"
         }
       ]
     },

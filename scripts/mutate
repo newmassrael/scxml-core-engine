@@ -322,6 +322,10 @@ MUTATION_TIMEOUT_PINNED="${MUTATION_ARTIFACT_TIMEOUT:+1}"
 MUTATION_ARTIFACT_TIMEOUT="${MUTATION_ARTIFACT_TIMEOUT:-300}"
 # What the casefile declared with `mutation_timeout`, in seconds, or empty.
 MUTATION_TIMEOUT_DECLARED=""
+# What the casefile declared with `mutation_env`: the names in declaration order,
+# and each name's value. Declared here, applied at the start of a full round.
+MUTATION_ENV_NAMES=()
+declare -A MUTATION_ENV_VALUE=()
 # Ceiling on the resident size the TEST RUNNER itself may reach, in KiB.
 #
 # This is the ctest runner's clock, in the only currency that measures the
@@ -689,6 +693,103 @@ mutation_timeout() {
     if [[ -z "$MUTATION_TIMEOUT_PINNED" ]]; then
         MUTATION_ARTIFACT_TIMEOUT="$seconds"
     fi
+}
+
+# Environment variables the tests under study need in order to mean anything,
+# as `NAME=VALUE` words.
+#
+# Some oracles are not "cargo test" but cargo test under a different build:
+# the queue runtime's real-thread tests are judged by ThreadSanitizer, which
+# needs a nightly toolchain (`RUSTUP_TOOLCHAIN`), the standard library built
+# with the sanitizer and a target triple. The flags are the selector's, and the
+# selector is cargo's arguments; the toolchain is not an argument, because the
+# `+nightly` that names one is read by the `rustup` proxy before cargo sees any,
+# so it has nowhere to go but the environment. Measured 2026-10-10: the
+# real-thread tests under that build report a data race on every one of twenty
+# runs when the hazard-pointer publication is weakened, and none on the tree as
+# it is, which no loom model and no Miri run could say.
+#
+# Open in the names, closed in the shape. A name is upper-case letters, digits
+# and underscores and a value is not empty; the harness's own variables
+# (`MUTATION_*`, `SCE_MUTATION_*`) are refused, because a casefile that set
+# `MUTATION_ARTIFACT_TIMEOUT` here would be overruling `mutation_timeout` by the
+# back door. The same name with a different value is refused, as a second
+# `mutation_timeout` is: one casefile, one answer. The same value twice is the
+# same casefile read twice and is the same declaration.
+#
+# APPLIED ONLY BY A FULL ROUND, not by `--declares` or `--check`. Those two run
+# `cargo metadata` and read manifests, they run on every push with whatever
+# toolchain the host has, and a `RUSTUP_TOOLCHAIN` the host has not installed
+# would fail them for a reason that says nothing about the casefile. A value
+# the caller already had in the environment is replaced, and the round says so:
+# the declaration is part of what the verdicts mean, where the bound above is a
+# preference.
+mutation_env() {
+    local pair name value
+    if (( $# == 0 )); then
+        red "mutation_env takes one or more NAME=VALUE words and was given none"
+        exit 2
+    fi
+    for pair in "$@"; do
+        if [[ ! "$pair" =~ ^([A-Z][A-Z0-9_]*)=(.+)$ ]]; then
+            red "mutation_env takes NAME=VALUE with an upper-case name and a value"
+            red "that is not empty; it was given: $pair"
+            exit 2
+        fi
+        name="${BASH_REMATCH[1]}"
+        value="${BASH_REMATCH[2]}"
+        case "$name" in
+        MUTATION_* | SCE_MUTATION_*)
+            red "mutation_env $name: a variable of this harness is not the casefile's"
+            red "to set. A bound is declared with mutation_timeout."
+            exit 2
+            ;;
+        esac
+        if [[ -n "${MUTATION_ENV_VALUE[$name]+set}" ]]; then
+            if [[ "${MUTATION_ENV_VALUE[$name]}" != "$value" ]]; then
+                red "the casefile declared mutation_env $name twice (${MUTATION_ENV_VALUE[$name]} and $value)"
+                red "— one casefile has one answer, or the verdicts name neither"
+                exit 2
+            fi
+            continue
+        fi
+        MUTATION_ENV_NAMES+=("$name")
+        MUTATION_ENV_VALUE[$name]="$value"
+    done
+}
+
+# Put the declared environment where the round's builds and runs will read it.
+mutation_apply_env() {
+    local name
+    for name in ${MUTATION_ENV_NAMES[@]+"${MUTATION_ENV_NAMES[@]}"}; do
+        if [[ -n "${!name+set}" && "${!name}" != "${MUTATION_ENV_VALUE[$name]}" ]]; then
+            dim "mutation_env $name=${MUTATION_ENV_VALUE[$name]} replaces the caller's ${!name}"
+        else
+            dim "mutation_env $name=${MUTATION_ENV_VALUE[$name]}"
+        fi
+        export "$name=${MUTATION_ENV_VALUE[$name]}"
+    done
+}
+
+# A declared toolchain is one this host has. Checked before the build rather
+# than left to cargo, whose message for a toolchain that is not installed
+# names the proxy and not the casefile that asked for it.
+mutation_check_toolchain() {
+    local toolchain="${MUTATION_ENV_VALUE[RUSTUP_TOOLCHAIN]:-}"
+    [[ -n "$toolchain" ]] || return 0
+    if command -v rustup >/dev/null 2>&1 && rustup run "$toolchain" rustc --version >/dev/null 2>&1; then
+        dim "declared toolchain is installed: $toolchain"
+        return 0
+    fi
+    red "the casefile declares 'mutation_env RUSTUP_TOOLCHAIN=$toolchain' and this host has no"
+    red "such toolchain. Every case below would read as CAUGHT for that reason rather"
+    red "than for the clause it defends."
+    red ""
+    red "  rustup toolchain install $toolchain --profile minimal --component rust-src"
+    red ""
+    red "The mutation-rounds gate installs it for the rounds that declare it; by hand,"
+    red "install it first."
+    return 1
 }
 
 # ── Internals ──────────────────────────────────────────────────────
@@ -2719,6 +2820,12 @@ mutation_init() {
         if [[ -n "$MUTATION_TIMEOUT_DECLARED" ]]; then
             printf 'timeout\t%s\n' "$MUTATION_TIMEOUT_DECLARED"
         fi
+        # The environment the casefile declared, one `env` line per variable and
+        # none when it declared none, so the gate that provisions a round can
+        # install a declared toolchain without parsing the casefile itself.
+        for _name in ${MUTATION_ENV_NAMES[@]+"${MUTATION_ENV_NAMES[@]}"}; do
+            printf 'env\t%s=%s\n' "$_name" "${MUTATION_ENV_VALUE[$_name]}"
+        done
         exit 0
     fi
     if [[ -n "$MUTATION_TIMEOUT_DECLARED" ]]; then
@@ -2751,6 +2858,11 @@ mutation_init() {
     # on every push and does not provision anything, so a socket demanded there
     # would fail every push for a service no push needs.
     mutation_check_needs || exit 2
+
+    # Here and not before the `--check` return, for the reason that return
+    # gives: a declared toolchain is something a round provisions.
+    mutation_apply_env
+    mutation_check_toolchain || exit 2
 
     mutation_resolve_artifacts
     dim "resolved ${#MUTATION_ARTIFACTS[@]} test artifact(s) via $MUTATION_RUNNER"
@@ -3408,7 +3520,7 @@ while (( $# )); do
             printf '  (default)   full round — build, run, require every case CAUGHT\n'
             printf '  --check     apply and restore only; no build, no test run\n'
             printf '  --declares  print the declared runner, targets, services, case count and,\n'
-            printf '              when the casefile gave one, its mutation_timeout;\n'
+            printf '              when the casefile gave them, its mutation_timeout and mutation_env;\n'
             printf '              given several casefiles it declares them all in this one process,\n'
             printf '              each block introduced by a "casefile<TAB>path" line\n'
             printf '  --shard I/N run the I-th contiguous slice of the declared cases, so a\n'
