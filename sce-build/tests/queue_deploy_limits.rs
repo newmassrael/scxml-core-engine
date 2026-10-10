@@ -606,10 +606,19 @@ topology:
     }
 
     // Neither applies to a thread producer on a machine with a heap: the queue is
-    // then refused only for the runtime it does not have yet.
+    // lowered where the backend has a runtime for it (Rust), and refused only for
+    // the runtime it does not have yet where it has none (Kotlin).
     let threads = ap.replace("context: isr", "context: thread");
-    let err = compile_for_language(Language::Rust, SEGMENTED, &threads)
-        .expect_err("segmented has no runtime yet");
+    let code = compile_for_language(Language::Rust, SEGMENTED, &threads)
+        .expect("a thread producer on a machine with a heap is what segmented is for");
+    assert!(
+        code.contains(
+            "Lscq<'d, RxEvent, SEGMENT, RING_SLOTS, HAZARD_SLOTS, A, ALLOCATOR_PROGRESS_RANK>"
+        ),
+        "the placement checks do not change what the runtime lowers: {code}"
+    );
+    let err = compile_for_language(Language::Kotlin, SEGMENTED, &threads)
+        .expect_err("segmented has no Kotlin runtime yet");
     assert!(
         matches!(
             generate(err),
