@@ -266,7 +266,7 @@ class ACommandIsAReviser(unittest.TestCase):
             stdin = stdout = stderr = None
             waited = False
 
-            def wait(self):
+            def wait(self, timeout=None):
                 self.waited = True
 
             def kill(self):
@@ -295,7 +295,7 @@ class ACommandIsAReviser(unittest.TestCase):
             stdin = stdout = stderr = None
             killed = False
 
-            def wait(self):
+            def wait(self, timeout=None):
                 pass
 
             def kill(self):
@@ -318,7 +318,7 @@ class ACommandIsAReviser(unittest.TestCase):
             stdin = stdout = stderr = None
             killed = False
 
-            def wait(self):
+            def wait(self, timeout=None):
                 pass
 
             def kill(self):
@@ -334,6 +334,58 @@ class ACommandIsAReviser(unittest.TestCase):
         with mock.patch.object(process.subprocess, "run", hung):
             process._end_group(child, True)
         self.assertEqual(process._TASKKILL_WITHIN, seen.get("timeout"))
+        self.assertTrue(child.killed)
+
+    def _alive(self, process, ends_on_kill):
+        """A program `taskkill` did not end: it lives until its own kill, if that ends it, and a wait
+        with no time never returns for it (here that is an error, not a hang)."""
+
+        class Alive:
+            returncode = None
+            pid = 11
+            stdin = stdout = stderr = None
+            killed = False
+            ended = False
+
+            def wait(self, timeout=None):
+                if self.ended:
+                    return 0
+                if timeout is None:
+                    raise AssertionError("waited without a time for a program that is still running")
+                raise process.subprocess.TimeoutExpired("program", timeout)
+
+            def kill(self):
+                self.killed = True
+                self.ended = ends_on_kill
+
+        return Alive()
+
+    def test_a_taskkill_that_answers_with_a_failure_while_the_command_lives_is_not_waited_on(self):
+        # `taskkill` can refuse (access denied) and still return: its answer is read, not only whether
+        # it could be run, and the command is asked about itself, which is the evidence.
+        from sce_author import process
+
+        child = self._alive(process, ends_on_kill=True)
+
+        def refused(argv, **kw):
+            return process.subprocess.CompletedProcess(argv, 1, b"", b"ERROR: Access is denied.")
+
+        with mock.patch.object(process.subprocess, "run", refused):
+            process._end_group(child, True)
+        self.assertTrue(child.killed)
+
+    def test_a_command_that_cannot_be_ended_is_said_so_and_not_waited_on(self):
+        from sce_author import process
+
+        child = self._alive(process, ends_on_kill=False)
+
+        def refused(argv, **kw):
+            return process.subprocess.CompletedProcess(argv, 1, b"", b"")
+
+        with mock.patch.object(process.subprocess, "run", refused):
+            with self.assertRaises(OSError) as caught:
+                process._end_group(child, True)
+        self.assertIn("11", str(caught.exception))
         self.assertTrue(child.killed)
 
     def test_a_command_that_finishes_is_read_as_before_when_it_has_a_session_of_its_own(self):

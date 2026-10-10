@@ -174,24 +174,45 @@ def _end_group(child: subprocess.Popen, windows: bool) -> None:
     """Stop everything the program started, collect it and close its pipes. Only while the program
     is still uncollected: once it is collected its number belongs to nobody, and a signal to it
     could reach a stranger."""
-    if child.returncode is None:
-        if windows:
-            try:
-                subprocess.run(["taskkill", "/F", "/T", "/PID", str(child.pid)],
-                               capture_output=True, check=False, timeout=_TASKKILL_WITHIN)
-            except (OSError, subprocess.TimeoutExpired):
-                # It cannot be run, or it hung: a program that outlasts the round's clock because
-                # its killer did is the failure this exists to prevent. The command itself still goes.
-                child.kill()
-        else:
-            try:
-                os.killpg(child.pid, signal.SIGKILL)
-            except (ProcessLookupError, PermissionError):
-                pass
-    for pipe in (child.stdin, child.stdout, child.stderr):
-        if pipe is not None:
-            pipe.close()
+    try:
+        if child.returncode is None:
+            if windows:
+                _end_tree_on_windows(child)
+            else:
+                try:
+                    os.killpg(child.pid, signal.SIGKILL)
+                except (ProcessLookupError, PermissionError):
+                    pass
+    finally:
+        for pipe in (child.stdin, child.stdout, child.stderr):
+            if pipe is not None:
+                pipe.close()
     child.wait()
+
+
+def _end_tree_on_windows(child: subprocess.Popen) -> None:
+    """End a program and what it started with `taskkill`, and see that it ended: what `taskkill`
+    answers is not the evidence (it can refuse and still return, or hang, or not be there), the program
+    is. A program that outlasts the round's clock because its killer did is the failure this exists to
+    prevent, so every wait here has a time, and one that cannot be ended is said, not waited on."""
+    try:
+        subprocess.run(["taskkill", "/F", "/T", "/PID", str(child.pid)],
+                       capture_output=True, check=False, timeout=_TASKKILL_WITHIN)
+    except (OSError, subprocess.TimeoutExpired):
+        pass  # it could not be run, or it hung: nothing was ended, and the program is killed below
+    else:
+        try:
+            child.wait(timeout=_TASKKILL_WITHIN)
+            return
+        except subprocess.TimeoutExpired:
+            pass  # it answered, and the program is still there
+    # The tree was not ended; the command itself still goes.
+    child.kill()
+    try:
+        child.wait(timeout=_TASKKILL_WITHIN)
+    except subprocess.TimeoutExpired:
+        raise OSError(f"the program (process {child.pid}) could not be ended: `taskkill` and a kill "
+                      f"of it left it running after {_TASKKILL_WITHIN:g} seconds each") from None
 
 
 @dataclass(frozen=True)

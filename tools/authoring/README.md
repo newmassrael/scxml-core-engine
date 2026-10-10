@@ -392,9 +392,11 @@ disk is not the bytes it was has failed: `reviser-failed`), or ask again when th
 be the same (`stalled`). The reviser runs in a session of its own, and a timeout stops everything it
 started and not only the command; what it leaves running after it exits is not stopped. On POSIX
 that is a signal to the group; on Windows the reviser is started in a process group of its own and
-its tree is ended with `taskkill /F /T`, which follows the parent links of what is still alive. The
-Windows way was written from what `taskkill` documents and has NOT been run on Windows: the tests
-hold the command it issues, not that it ends a tree. A host with neither does not start the reviser
+its tree is ended with `taskkill /F /T`, which follows the parent links of what is still alive. What
+`taskkill` answers is not taken as the result: the reviser itself is waited for, for a few seconds, and
+one that is still there is killed by itself; one that cannot be ended even so is said (`OSError`), never
+waited on. The Windows way was written from what `taskkill` documents and has NOT been run on Windows:
+the tests hold the command it issues and what is done when it fails, not that it ends a tree. A host with neither does not start the reviser
 and the round fails with the reason. The gate cannot stop a client editing more than it was told to inside one round:
 that is found after it is made and asked to be put back. `within-reach` is still not "right"
 (`docs/adr/0013-a-revision-is-held-to-its-reach-by-a-loop-its-caller-runs.md`).
