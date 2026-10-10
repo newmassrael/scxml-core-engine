@@ -62,6 +62,7 @@ MUTANTS=(
     "load_acquire|s/__atomic_load_n(p0, __ATOMIC_ACQUIRE)/__atomic_load_n(p0, __ATOMIC_RELAXED)/"
     "load_seq_cst|s/__atomic_load_n(p0, __ATOMIC_SEQ_CST)/__atomic_load_n(p0, __ATOMIC_RELAXED)/"
     "store_seq_cst|s/__atomic_store_n(p0, p1, __ATOMIC_SEQ_CST)/__atomic_store_n(p0, p1, __ATOMIC_RELAXED)/"
+    "store_release|s/__atomic_store_n(p0, p1, __ATOMIC_RELEASE)/__atomic_store_n(p0, p1, __ATOMIC_RELAXED)/"
     "cas|s/__ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)/__ATOMIC_RELAXED, __ATOMIC_RELAXED)/"
     "fetch_add|s/__atomic_fetch_add(p0, p1, __ATOMIC_ACQ_REL)/__atomic_fetch_add(p0, p1, __ATOMIC_RELAXED)/"
     "fetch_or|s/__atomic_fetch_or(p0, p1, __ATOMIC_ACQ_REL)/__atomic_fetch_or(p0, p1, __ATOMIC_RELAXED)/"
@@ -112,11 +113,15 @@ for harness in "$HARNESS_DIR"/*.c; do
         # own host file (a path built twice) as "caught", for all seven mutants.
         # Measured 2026-10-10 by running one mutant by hand, which GenMC passed.
         # So the report must show GenMC got as far as exploring (`Transformation
-        # complete`) and name an error it found.
+        # complete`) and name an error it found. The error is looked for
+        # ANYWHERE in the line, not at its start: GenMC writes it to stderr and
+        # the graph to stdout, both into this one log, and a caught mutant
+        # printed `(1, 13): Rna (, 0) [(1, 5)]Error: Non-atomic race!` on one
+        # line (measured 2026-10-10), which `^Error` called "no error found".
         if (( GENMC_STATUS != 0 )); then
             grep -q 'Transformation complete' "$WORK/${name}_$label.log" \
                 || { cat "$WORK/${name}_$label.log"; sce_gate_fail "$name: mutant '$label' did not even reach exploration; its failure says nothing about the runtime"; }
-            grep -qE '^(Error|ERROR)' "$WORK/${name}_$label.log" \
+            grep -qE 'Error: ' "$WORK/${name}_$label.log" \
                 || { cat "$WORK/${name}_$label.log"; sce_gate_fail "$name: mutant '$label' exited $GENMC_STATUS without reporting a memory-model error"; }
         fi
         if (( GENMC_STATUS == 0 )); then

@@ -5514,6 +5514,10 @@
         {
           "file": "backends/kotlin/forge-runtime/src/jvmTest/kotlin/com/sce/forge/runtime/queue/QueueLincheckTest.kt",
           "kind": "references"
+        },
+        {
+          "file": "backends/c/forge-runtime/tests/genmc/spsc_slot_reuse.c",
+          "kind": "references"
         }
       ]
     },
