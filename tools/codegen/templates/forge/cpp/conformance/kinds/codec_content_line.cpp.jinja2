@@ -8,8 +8,25 @@
    and does not write, and a refused decode leaves the cursor where it found it.
    C++ names no failure (the nullopt convention), so a reject asserts refusal.
    The rejects are read from the reference like the cases are, and not inlined
-   as byte literals. #}
-    const auto &spec = ref["{{ f.ref_section }}"]["{{ f.name }}"];
+   as byte literals.
+
+   An entry that is an enum (docs/adr/0015) is written in a vector as its carrier
+   number and held by the codec as the enum's own type. A decoded value is
+   compared as its carrier (`to_underlying`), and a value written into the codec
+   is taken from the number by the enum's `from_underlying`, which a closed enum
+   answers `std::nullopt` for a carrier it does not declare, so a closed enum's is
+   unwrapped and an open one, whose conversion is total, is not. `enum_ns` is the
+   namespace of the enum's own header. #}
+{% macro enum_ns(m) -%}
+SCE::Generated::{{ m.enum_document | to_pascal_case }}
+{%- endmacro %}
+{% macro carrier(m, expr) -%}
+static_cast<std::uint64_t>({{ enum_ns(m) }}::to_underlying({{ expr }}))
+{%- endmacro %}
+{% macro lift(m, json) -%}
+{{ enum_ns(m) }}::from_underlying(static_cast<{{ m.type | cpp_type }}>({{ json }}.get<{{ m.type | cpp_type }}>())){% if not m.enum_open %}.value(){% endif %}
+{%- endmacro %}
+    const auto &spec =ref["{{ f.ref_section }}"]["{{ f.name }}"];
     int i = 0;
     for (const auto &case_entry : spec["cases"]) {
         const auto &decoded_json = case_entry["decoded"];
@@ -37,7 +54,11 @@
                 for (const auto &r : round_tripped->{{ field.name }}) {
                     nlohmann::json o = nlohmann::json::object();
 {% for m in field.members %}
-{% if m.optional %}
+{% if m.enum_document and m.optional %}
+                    o["{{ m.name }}"] = r.{{ m.name }}.has_value() ? nlohmann::json({{ carrier(m, "*r." ~ m.name) }}) : nlohmann::json(nullptr);
+{% elif m.enum_document %}
+                    o["{{ m.name }}"] = {{ carrier(m, "r." ~ m.name) }};
+{% elif m.optional %}
                     o["{{ m.name }}"] = r.{{ m.name }}.has_value() ? nlohmann::json(*r.{{ m.name }}) : nlohmann::json(nullptr);
 {% else %}
                     o["{{ m.name }}"] = r.{{ m.name }};
@@ -47,6 +68,30 @@
                 }
                 CHECK(got == decoded_json["{{ field.name }}"], "{{ f.name }} case %d decode {{ field.name }}", i);
             }
+{% elif field.list and field.enum_document %}
+            {
+                std::vector<std::uint64_t> got;
+                for (const auto &e : round_tripped->{{ field.name }}) {
+                    got.push_back({{ carrier(field, "e") }});
+                }
+                CHECK(got == decoded_json["{{ field.name }}"].get<std::vector<std::uint64_t>>(),
+                      "{{ f.name }} case %d decode {{ field.name }}", i);
+            }
+{% elif field.enum_document and field.optional %}
+            {
+                std::optional<std::uint64_t> want;
+                if (!decoded_json["{{ field.name }}"].is_null()) {
+                    want = decoded_json["{{ field.name }}"].get<std::uint64_t>();
+                }
+                std::optional<std::uint64_t> got;
+                if (round_tripped->{{ field.name }}.has_value()) {
+                    got = {{ carrier(field, "*round_tripped->" ~ field.name) }};
+                }
+                CHECK(got == want, "{{ f.name }} case %d decode {{ field.name }}", i);
+            }
+{% elif field.enum_document %}
+            CHECK({{ carrier(field, "round_tripped->" ~ field.name) }} == decoded_json["{{ field.name }}"].get<std::uint64_t>(),
+                  "{{ f.name }} case %d decode {{ field.name }}", i);
 {% elif field.list %}
             CHECK(round_tripped->{{ field.name }} == decoded_json["{{ field.name }}"].get<std::vector<{{ field.type | cpp_type }}>>(),
                   "{{ f.name }} case %d decode {{ field.name }}", i);
@@ -72,7 +117,13 @@
             for (const auto &r : decoded_json["{{ field.name }}"]) {
                 SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.name | to_pascal_case }}{{ field.name | to_pascal_case }}Line rec;
 {% for m in field.members %}
-{% if m.list %}
+{% if m.enum_document and m.optional %}
+                if (!r["{{ m.name }}"].is_null()) {
+                    rec.{{ m.name }} = {{ lift(m, 'r["' ~ m.name ~ '"]') }};
+                }
+{% elif m.enum_document %}
+                rec.{{ m.name }} = {{ lift(m, 'r["' ~ m.name ~ '"]') }};
+{% elif m.list %}
                 rec.{{ m.name }} = r["{{ m.name }}"].get<std::vector<std::string>>();
 {% elif m.optional %}
                 if (!r["{{ m.name }}"].is_null()) {
@@ -84,6 +135,16 @@
 {% endfor %}
                 _codec_val.{{ field.name }}.push_back(std::move(rec));
             }
+{% elif field.list and field.enum_document %}
+            for (const auto &n : decoded_json["{{ field.name }}"]) {
+                _codec_val.{{ field.name }}.push_back({{ lift(field, "n") }});
+            }
+{% elif field.enum_document and field.optional %}
+            if (!decoded_json["{{ field.name }}"].is_null()) {
+                _codec_val.{{ field.name }} = {{ lift(field, 'decoded_json["' ~ field.name ~ '"]') }};
+            }
+{% elif field.enum_document %}
+            _codec_val.{{ field.name }} = {{ lift(field, 'decoded_json["' ~ field.name ~ '"]') }};
 {% elif field.list %}
             _codec_val.{{ field.name }} = decoded_json["{{ field.name }}"].get<std::vector<{{ field.type | cpp_type }}>>();
 {% elif field.optional %}

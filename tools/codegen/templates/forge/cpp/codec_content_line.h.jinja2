@@ -37,6 +37,21 @@ out.{{ e.name }}.push_back({{ expr }});
                 const auto v = line->read_bool();
                 if (!v) return std::nullopt;
                 {{ store(e, "*v") }}
+{% elif e.kind == "enum" %}
+{#- The text names a carrier and the enum's own conversion takes it to a variant,
+    so a closed and an open enum are read by one rule (docs/adr/0015): a closed
+    enum answers `std::nullopt` for a carrier it does not declare. #}
+                const auto raw = line->read_enum(kTexts_{{ e.enum_alias }});
+                if (!raw) return std::nullopt;
+                const auto v = {{ e.enum_from }}(static_cast<{{ e.carrier_type }}>(*raw));
+{% if not e.enum_is_open %}
+                if (!v) return std::nullopt;
+{% endif %}
+{% if e.is_records %}
+                rec.{{ e.value_member }} = {{ "v" if e.enum_is_open else "*v" }};
+{% else %}
+                {{ store(e, "v" if e.enum_is_open else "*v") }}
+{% endif %}
 {% elif e.kind == "uint" %}
                 const auto raw = line->read_uint(static_cast<std::uint64_t>(std::numeric_limits<{{ e.value_type }}>::max()));
                 if (!raw) return std::nullopt;
@@ -57,6 +72,8 @@ out.{{ e.name }}.push_back({{ expr }});
             if (auto e = out.string(v, {{ "true" if e.text else "false" }}, {{ e.max_size }})) return e;
 {% elif e.kind == "bool" %}
             if (auto e = out.boolean(v)) return e;
+{% elif e.kind == "enum" %}
+            if (auto e = out.enum_value(kTexts_{{ e.enum_alias }}, static_cast<std::uint64_t>({{ e.enum_to }}))) return e;
 {% elif e.kind == "uint" %}
             if (auto e = out.uint(static_cast<std::uint64_t>(v))) return e;
 {% else %}
@@ -67,7 +84,21 @@ out.{{ e.name }}.push_back({{ expr }});
     ("" for the codec itself, "rec." for the record of one line). #}
 {% macro write_params(e, holder) %}
 {% for p in e.params %}
+{% if p.kind == "enum" %}
+{#- A parameter that is an enum is written as the text of its variant
+    (docs/adr/0015); `pv` is the name `enum_to` takes its carrier from. #}
 {% if p.required %}
+            {
+                const auto pv = {{ holder }}{{ p.name }};
+                if (auto e = out.enum_param("{{ p.param }}", kTexts_{{ p.enum_alias }}, static_cast<std::uint64_t>({{ p.enum_to }}))) return e;
+            }
+{% else %}
+            if ({{ holder }}{{ p.name }}.has_value()) {
+                const auto pv = *{{ holder }}{{ p.name }};
+                if (auto e = out.enum_param("{{ p.param }}", kTexts_{{ p.enum_alias }}, static_cast<std::uint64_t>({{ p.enum_to }}))) return e;
+            }
+{% endif %}
+{% elif p.required %}
             if (auto e = out.param("{{ p.param }}", {{ holder }}{{ p.name }}, {{ p.max_size }})) return e;
 {% else %}
             if ({{ holder }}{{ p.name }}.has_value()) {
@@ -103,20 +134,32 @@ out.{{ e.name }}.push_back({{ expr }});
 
 namespace SCE::Generated::{{ namespace }} {
 
+{#- What an entry that is an enum is written and read by (docs/adr/0015): each
+    variant's text and the carrier it stands for, held as data here because the
+    enum's own type carries none. #}
+{% for t in enum_tables %}
+inline constexpr ::SCE::Forge::ContentLine::EnumText kTextRows_{{ t.alias }}[] = {
+{% for r in t.rows %}
+    {"{{ r.text }}", {{ r.value }}u},
+{% endfor %}
+};
+inline constexpr ::SCE::Forge::ContentLine::EnumTexts kTexts_{{ t.alias }}{kTextRows_{{ t.alias }}, {{ t.rows | length }}};
+
+{% endfor %}
 {% for e in entries if e.is_records %}
 /// One line of `{{ e.property }}` (docs/adr/0014): the parameters it carries and
 /// its {% if e.separator %}list of values, cut at `{{ e.separator }}`{% else %}value{% endif %}. A parameter that may be absent is `std::nullopt`.
 struct {{ e.record_type }} {
 {% for p in e.params %}
     /// Parameter `{{ p.param }}`{% if p.required %}, required{% endif %}.
-    {{ p.field_type }} {{ p.name }}{};
+    {{ p.field_type }} {{ p.name }}{{ "{" ~ p.enum_default ~ "}" if p.kind == "enum" and p.required else "{}" }};
 {% endfor %}
 {% if e.separator %}
     /// The values of the line, at most {{ e.max_values }}.
     std::vector<std::string> {{ e.value_member }}{};
 {% else %}
     /// The value of the line.
-    std::string {{ e.value_member }}{};
+    {{ e.value_type }} {{ e.value_member }}{{ "{" ~ e.enum_default ~ "}" if e.kind == "enum" else "{}" }};
 {% endif %}
 };
 
@@ -131,11 +174,11 @@ struct {{ e.record_type }} {
 struct {{ struct_name }} {
 {% for e in entries %}
     /// Property `{{ e.property }}`{% if e.is_records %}, up to {{ e.max_count }} lines, each a record{% elif e.is_list %}, up to {{ e.max_count }} lines{% elif e.is_values %}, a list of at most {{ e.max_values }} values{% endif %}{% if e.required %}, required{% endif %}.
-    {{ e.field_type }} {{ e.name }}{};
+    {{ e.field_type }} {{ e.name }}{{ "{" ~ e.enum_default ~ "}" if e.kind == "enum" and e.required and not (e.is_list or e.is_records) else "{}" }};
 {% if not e.is_records %}
 {% for p in e.params %}
     /// Parameter `{{ p.param }}` of `{{ e.property }}`{% if p.required %}, required{% endif %}.
-    {{ p.field_type }} {{ p.name }}{};
+    {{ p.field_type }} {{ p.name }}{{ "{" ~ p.enum_default ~ "}" if p.kind == "enum" and p.required else "{}" }};
 {% endfor %}
 {% endif %}
 {% endfor %}
@@ -251,10 +294,21 @@ private:
 {% for p in e.params %}
                     {% if not loop.first %}else {% endif %}if (line->param_is("{{ p.param }}")) {
                         if ({{ p.name }}_present) return std::nullopt;
+{% if p.kind == "enum" %}
+                        const auto praw = line->read_param_enum(kTexts_{{ p.enum_alias }});
+                        if (!praw) return std::nullopt;
+                        const auto pe = {{ p.enum_from }}(static_cast<{{ p.carrier_type }}>(*praw));
+{% if not p.enum_is_open %}
+                        if (!pe) return std::nullopt;
+{% endif %}
+                        {{ p.name }}_present = true;
+                        {{ "rec" if e.is_records else "out" }}.{{ p.name }} = {{ "pe" if p.enum_is_open else "*pe" }};
+{% else %}
                         auto pv = line->read_param_string({{ p.max_size }});
                         if (!pv) return std::nullopt;
                         {{ p.name }}_present = true;
                         {{ "rec" if e.is_records else "out" }}.{{ p.name }} = std::move(*pv);
+{% endif %}
                     }
 {% endfor %}
                 }

@@ -497,6 +497,116 @@ void a_text_list_is_read_back_as_written() {
     }
 }
 
+// An enum read and written by the text of its variants (docs/adr/0015).
+
+/// A closed vocabulary the way a generated codec holds it: the carriers neither
+/// start at zero nor run on.
+const cl::EnumText kStatusRows[] = {{"NEEDS-ACTION", 1}, {"IN-PROCESS", 2}, {"COMPLETED", 4}, {"cancelled", 8}};
+const cl::EnumTexts kStatus{kStatusRows, 4};
+
+std::optional<std::uint64_t> enum_value(const std::string &value, std::optional<CodecError> *why = nullptr) {
+    const Bytes in = bytes_of("BEGIN:VEVENT\r\nS:" + value + "\r\nEND:VEVENT\r\n");
+    auto reader = cl::Reader::begin(in.data(), in.size(), "VEVENT");
+    auto line = reader->next();
+    auto carrier = line->read_enum(kStatus);
+    if (why != nullptr) {
+        *why = line->error();
+    }
+    return carrier;
+}
+
+std::optional<std::uint64_t> enum_param(const std::string &line_text, std::optional<CodecError> *why = nullptr) {
+    const Bytes in = bytes_of("BEGIN:VEVENT\r\n" + line_text + "\r\nEND:VEVENT\r\n");
+    auto reader = cl::Reader::begin(in.data(), in.size(), "VEVENT");
+    auto line = reader->next();
+    const auto more = line->next_param();
+    CHECK(more && *more, "a parameter to read");
+    auto carrier = line->read_param_enum(kStatus);
+    if (why != nullptr) {
+        *why = line->error();
+    }
+    return carrier;
+}
+
+void a_text_is_matched_ascii_case_insensitively() {
+    CHECK(enum_value("NEEDS-ACTION") == 1u, "the text");
+    CHECK(enum_value("needs-action") == 1u, "in lower case");
+    CHECK(enum_value("In-Process") == 2u, "in mixed case");
+    CHECK(enum_value("completed") == 4u, "a text in lower case");
+    // A variant with no text of its own is read by its declared name, in any case.
+    CHECK(enum_value("CANCELLED") == 8u, "a declared name in capitals");
+    CHECK(enum_value("Cancelled") == 8u, "a declared name in mixed case");
+}
+
+void a_value_no_variant_names_is_a_bad_value() {
+    const std::vector<std::string> values = {
+        "",
+        "DONE",
+        "NEEDS",
+        "NEEDS-ACTION-",
+        "NEEDS-ACTION-NEEDS-ACTION-NEEDS-ACTION",
+        " IN-PROCESS",
+        "IN-PROCESS ",
+        // The declared name of a variant that has a text is not its text.
+        "needsAction",
+        // A value is no TEXT, so a backslash in it is not an escape.
+        "IN\\-PROCESS",
+        "IN-\x07PROCESS",
+        // Only the 26 letters fold: U+017F and U+0131 are not S and I.
+        "IN-PROCE\xc5\xbf\xc5\xbf",
+        "\xc4\xb1N-PROCESS",
+    };
+    for (const auto &value : values) {
+        std::optional<CodecError> why;
+        CHECK(!enum_value(value, &why), value.c_str());
+        CHECK(why == CodecError::LineBadValue, "a bad value");
+    }
+}
+
+void a_text_cut_by_a_fold_is_read_whole() {
+    CHECK(enum_value("IN-PRO\r\n CESS") == 2u, "a folded text");
+}
+
+void a_parameter_that_is_an_enum_is_matched_quoted_or_not() {
+    CHECK(enum_param("S;ROLE=completed:x") == 4u, "an unquoted text");
+    CHECK(enum_param("S;ROLE=\"Needs-Action\":x") == 1u, "a quoted text");
+    for (const char *bad : {"S;ROLE=:x", "S;ROLE=BOSS:x", "S;ROLE=\"\":x", "S;ROLE=COMPLETED,COMPLETED:x"}) {
+        std::optional<CodecError> why;
+        CHECK(!enum_param(bad, &why), bad);
+        CHECK(why == CodecError::LineBadValue, "a bad value");
+    }
+    // The value is scanned whole before it is judged, so a quote that never closes
+    // is malformed even though the text before it names no variant.
+    std::optional<CodecError> why;
+    CHECK(!enum_param("S;ROLE=\"ZZZ:x", &why), "an open quote");
+    CHECK(why == CodecError::LineMalformed, "malformed before bad");
+}
+
+void an_enum_is_written_as_the_text_its_enum_declares() {
+    const std::string text = written([](cl::Writer &w) {
+        CHECK(!w.property("S"), "name");
+        CHECK(!w.enum_param("ROLE", kStatus, 1), "a parameter");
+        CHECK(!w.enum_param("X-Q", kStatus, 8), "a declared name");
+        CHECK(!w.enum_value(kStatus, 2), "a value");
+        CHECK(!w.property("T"), "name");
+        CHECK(!w.enum_value(kStatus, 8), "a value");
+    });
+    CHECK(text == "BEGIN:VEVENT\r\nS;ROLE=NEEDS-ACTION;X-Q=cancelled:IN-PROCESS\r\nT:cancelled\r\nEND:VEVENT\r\n",
+          "the enum written as text");
+}
+
+void a_carrier_no_variant_declares_has_no_text_and_is_not_written() {
+    Bytes out;
+    VectorSink sink(out);
+    cl::Writer w(sink, "VEVENT");
+    CHECK(!w.begin(), "begin");
+    CHECK(!w.property("S"), "name");
+    const std::size_t before = out.size();
+    CHECK(w.enum_value(kStatus, 9) == CodecError::LineBadValue, "a value");
+    CHECK(w.enum_param("ROLE", kStatus, 9) == CodecError::LineBadValue, "a parameter");
+    CHECK(out.size() == before, "something of a refused enum reached the sink");
+}
+
 }  // namespace
 
 int main() {
@@ -522,6 +632,12 @@ int main() {
     a_list_is_refused_at_its_first_failing_part();
     a_list_is_written_with_its_separator_and_held_before_it_is_written();
     a_text_list_is_read_back_as_written();
+    a_text_is_matched_ascii_case_insensitively();
+    a_value_no_variant_names_is_a_bad_value();
+    a_text_cut_by_a_fold_is_read_whole();
+    a_parameter_that_is_an_enum_is_matched_quoted_or_not();
+    an_enum_is_written_as_the_text_its_enum_declares();
+    a_carrier_no_variant_declares_has_no_text_and_is_not_written();
     if (failures != 0) {
         std::fprintf(stderr, "%d check(s) failed\n", failures);
         return 1;

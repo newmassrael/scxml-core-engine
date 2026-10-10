@@ -33,6 +33,21 @@ namespace SCE::Forge::ContentLine {
 /// The most octets of one physical line (SCE_FORGE.md §4.6.4, *Folding*).
 inline constexpr std::size_t kFoldWidth = 75;
 
+/// One variant of an enum a content-line entry is read and written by
+/// (docs/adr/0015): the text the enum document gives it and the carrier value it
+/// stands for. A generated codec holds the variants of an enum, in declaration
+/// order, as a constant: the enum's own type carries no text.
+struct EnumText {
+    const char *text;
+    std::uint64_t value;
+};
+
+/// The variants of an enum in declaration order.
+struct EnumTexts {
+    const EnumText *rows;
+    std::size_t count;
+};
+
 namespace detail {
 
 constexpr std::uint8_t kCr = 13;
@@ -52,6 +67,41 @@ constexpr std::uint8_t kTab = 9;
 
 [[nodiscard]] constexpr int lower(int b) noexcept {
     return (b >= 0x41 && b <= 0x5A) ? b + 0x20 : b;
+}
+
+/// The longest text of `table`, in bytes.
+[[nodiscard]] inline std::size_t longest_text(const EnumTexts &table) noexcept {
+    std::size_t longest = 0;
+    for (std::size_t i = 0; i < table.count; ++i) {
+        const std::size_t n = std::string_view(table.rows[i].text).size();
+        if (n > longest) {
+            longest = n;
+        }
+    }
+    return longest;
+}
+
+/// The carrier of the first variant whose text `value` is, compared ASCII
+/// case-insensitively: only the 26 letters fold, so a character Unicode folds to
+/// one of them (U+017F, U+0131) is not that letter.
+[[nodiscard]] inline std::optional<std::uint64_t> carrier_of(std::string_view value, const EnumTexts &table) noexcept {
+    for (std::size_t i = 0; i < table.count; ++i) {
+        const std::string_view text(table.rows[i].text);
+        if (text.size() != value.size()) {
+            continue;
+        }
+        bool same = true;
+        for (std::size_t j = 0; j < value.size(); ++j) {
+            if (lower(static_cast<unsigned char>(text[j])) != lower(static_cast<unsigned char>(value[j]))) {
+                same = false;
+                break;
+            }
+        }
+        if (same) {
+            return table.rows[i].value;
+        }
+    }
+    return std::nullopt;
 }
 
 /// A walk over the bytes of one logical line, `raw[pos, limit)`, with its folds
@@ -427,6 +477,64 @@ public:
             return false;
         }
         return refuse<bool>(CodecError::LineBadValue);
+    }
+
+    /// Read the value as the text of a variant of an enum (docs/adr/0015): the
+    /// carrier of the first row of `table` whose text it is, ASCII
+    /// case-insensitively. A value no row names is `LineBadValue`, whatever its
+    /// bytes are: it is no TEXT, so a backslash in it is not an escape, and nothing
+    /// of it is kept past the longest text.
+    [[nodiscard]] std::optional<std::uint64_t> read_enum(const EnumTexts &table) {
+        if (!begin_value()) {
+            return std::nullopt;
+        }
+        const std::size_t longest = detail::longest_text(table);
+        std::string word;
+        for (;;) {
+            const int b = scan_.bump();
+            if (b < 0) {
+                break;
+            }
+            if (word.size() <= longest) {
+                word.push_back(static_cast<char>(b));
+            }
+        }
+        const auto carrier = detail::carrier_of(word, table);
+        if (!carrier) {
+            return refuse<std::uint64_t>(CodecError::LineBadValue);
+        }
+        return carrier;
+    }
+
+    /// Read the value of the parameter `next_param` stands on as the text of a
+    /// variant of an enum (docs/adr/0015). The whole value is scanned before it is
+    /// judged, so a line the grammar refuses is `LineMalformed` before it is
+    /// `LineBadValue`; a second value is `LineBadValue`.
+    [[nodiscard]] std::optional<std::uint64_t> read_param_enum(const EnumTexts &table) {
+        if (phase_ != Phase::ParamValue) {
+            return refuse<std::uint64_t>(CodecError::LineMalformed);
+        }
+        const std::size_t longest = detail::longest_text(table);
+        std::string word;
+        const int more = scan_param_value([&](int b) {
+            if (word.size() <= longest) {
+                word.push_back(static_cast<char>(b));
+            }
+            return true;
+        });
+        if (more < 0) {
+            return std::nullopt;
+        }
+        param_from_ = kNone;
+        phase_ = Phase::AtSeparator;
+        if (more > 0) {
+            return refuse<std::uint64_t>(CodecError::LineBadValue);
+        }
+        const auto carrier = detail::carrier_of(word, table);
+        if (!carrier) {
+            return refuse<std::uint64_t>(CodecError::LineBadValue);
+        }
+        return carrier;
     }
 
     /// Why the last read refused.
@@ -875,7 +983,50 @@ public:
         return digits(value ? "TRUE" : "FALSE");
     }
 
+    /// Write `;<name>=<text>` for the variant of `table` with `carrier`. A text is
+    /// letters, digits and hyphens, so it is never quoted (docs/adr/0015). A
+    /// carrier no variant declares has no text and is `LineBadValue`.
+    [[nodiscard]] std::optional<CodecError> enum_param(std::string_view name, const EnumTexts &table,
+                                                       std::uint64_t carrier) noexcept {
+        const char *text = text_of(table, carrier);
+        if (text == nullptr) {
+            return CodecError::LineBadValue;
+        }
+        if (auto e = unit_char(';')) {
+            return e;
+        }
+        if (auto e = ascii_units(name)) {
+            return e;
+        }
+        if (auto e = unit_char('=')) {
+            return e;
+        }
+        return ascii_units(text);
+    }
+
+    /// Write `:<text>` for the variant of `table` with `carrier` and end the line
+    /// (docs/adr/0015). A carrier no variant declares has no text and is
+    /// `LineBadValue`.
+    [[nodiscard]] std::optional<CodecError> enum_value(const EnumTexts &table, std::uint64_t carrier) {
+        const char *text = text_of(table, carrier);
+        if (text == nullptr) {
+            return CodecError::LineBadValue;
+        }
+        return digits(text);
+    }
+
 private:
+    /// The text of the first variant of `table` with `carrier`, as the enum
+    /// declares it; `nullptr` for a carrier of an open enum no variant declares.
+    [[nodiscard]] static const char *text_of(const EnumTexts &table, std::uint64_t carrier) noexcept {
+        for (std::size_t i = 0; i < table.count; ++i) {
+            if (table.rows[i].value == carrier) {
+                return table.rows[i].text;
+            }
+        }
+        return nullptr;
+    }
+
     [[nodiscard]] std::optional<CodecError> raw(std::string_view text) noexcept {
         return sink_.write_bytes(reinterpret_cast<const std::uint8_t *>(text.data()), text.size());
     }
