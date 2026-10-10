@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
+# Mirrors: genmc-queue.yml
+#
 # The C11 queue under GenMC: layer 3 of the queue kind's verification (SCE
 # Protocol-Synthesis RFC §synth-5-P). GenMC explores every execution the C11
 # memory model allows, where a stress run samples the few a machine gives.
