@@ -305,12 +305,17 @@ def _outcomes(verification) -> list:
             for r in verification.results]
 
 
-_DATA = re.compile(r"<data\b((?:\s+[\w:.-]+\s*=\s*(?:\"[^\"]*\"|'[^']*'))*)(\s*/?>)")
 _ATTRIBUTE = re.compile(r"(\s+)([\w:.-]+)(\s*=\s*)(\"[^\"]*\"|'[^']*')")
 
 
-def document_with(text: str, ident: str, value: str, attribute: str = "expr") -> str:
-    """The document's text with `<data id=ident>`'s `attribute` replaced.
+def _opening_tag(tag: str):
+    return re.compile(rf"<{tag}\b((?:\s+[\w:.-]+\s*=\s*(?:\"[^\"]*\"|'[^']*'))*)(\s*/?>)")
+
+
+def document_with(text: str, ident: str, value: str, attribute: str = "expr",
+                  tag: str = "data") -> str:
+    """The document's text with `<tag id=ident>`'s `attribute` replaced (`<data>` unless a
+    decision region's `<state>` is meant).
 
     ⚠ On the TEXT, not a re-serialised tree: a parser keeps no record of
     namespace prefixes, and the product reads `sce:` by prefix as much as by
@@ -329,11 +334,11 @@ def document_with(text: str, ident: str, value: str, attribute: str = "expr") ->
             if a.group(2) != attribute:
                 return a.group(0)
             return f'{a.group(1)}{attribute}{a.group(3)}"{escaped}"'
-        return "<data" + _ATTRIBUTE.sub(one, attributes) + match.group(2)
+        return f"<{tag}" + _ATTRIBUTE.sub(one, attributes) + match.group(2)
 
-    changed = _DATA.sub(element, text)
+    changed = _opening_tag(tag).sub(element, text)
     if changed == text:
-        raise ValueError(f"no <data id={ident!r}> with {attribute} in the document")
+        raise ValueError(f"no <{tag} id={ident!r}> with {attribute} in the document")
     return changed
 
 
@@ -344,7 +349,7 @@ def explore(pack, binding_path: pathlib.Path, base, run, max_runs: int = MAX_RUN
     `run(binding_path)` is a verify run of the same pack and codegen; `base`
     is the run the report is about."""
     from .check import read_binding, read_document
-    from .verify import imports_made_absolute
+    from .verify import imports_made_absolute, mark_key
 
     binding = read_binding(binding_path)
     document = (binding_path.parent / binding["document"]).resolve()
@@ -357,12 +362,26 @@ def explore(pack, binding_path: pathlib.Path, base, run, max_runs: int = MAX_RUN
         cases = {e[0] for e in a.refuted_by + a.implicated_by}
         if cases:
             failing_of[key] = cases
+    # ⚠ A decision region is run whether or not anything failed: no value rests on it, so no
+    # failure is ever blamed on it, and "does any case tell its alternatives apart" is the only
+    # thing a run can say about it -- including, when nothing fails, that none does.
+    every_failure = {name for name, failures in before if failures}
+    regions = {mark_key(m): m for m in declared.marks if m.region}
+    for key in regions:
+        if key in base.assumptions:
+            failing_of[key] = set(every_failure)
+    regions = {key: m for key, m in regions.items() if key in failing_of}
     found: dict = {}
     runs = 0
     with tempfile.TemporaryDirectory() as tmp:
         for key in sorted(failing_of):
             source_kind, _, subject = key.partition(":")
-            if source_kind == "document":
+            region = key in regions
+            if region:
+                ident = regions[key].ident
+                options, untried, exhaustive = region_options(
+                    ident, regions[key].marker, declared, texts)
+            elif source_kind == "document":
                 options, untried, exhaustive = document_options(subject, declared)
             else:
                 kind, _, name = subject.partition(":")
@@ -392,8 +411,9 @@ def explore(pack, binding_path: pathlib.Path, base, run, max_runs: int = MAX_RUN
                     changed = home / document.name
                     attribute, text, chosen = path
                     changed.write_text(
-                        document_with(source, subject, with_candidate(text, chosen, value),
-                                      attribute),
+                        document_with(source, ident if region else subject,
+                                      with_candidate(text, chosen, value), attribute,
+                                      "state" if region else "data"),
                         encoding="utf-8")
                     variant["document"] = str(changed)
                 else:
@@ -415,7 +435,7 @@ def explore(pack, binding_path: pathlib.Path, base, run, max_runs: int = MAX_RUN
                     elif was and now != was and name_ in failing_of[key]:
                         flip.moved.append(name_)
                 cf.flips.append(flip)
-            cf.verdict = _verdict(cf)
+            cf.verdict = _region_verdict(cf) if region else _verdict(cf)
     return found
 
 
@@ -442,6 +462,44 @@ def document_options(ident: str, declared) -> tuple[list, list, bool]:
             [], True)
 
 
+def _read_by_a_condition(state: str, texts) -> bool:
+    """Whether some condition of the document reads `state` with `In()`."""
+    return any(re.search(rf"\bIn\(\s*(['\"]){re.escape(state)}\1\s*\)", text) for text in texts)
+
+
+def region_options(ident: str, marker: str, declared, texts=()) -> tuple[list, list, bool]:
+    """The alternatives of a decision region (`check.Mark.region`): its `initial` set to each
+    other candidate. Exhaustive over what the author weighed, as a document's own guess is.
+    The key a region is filed under is `<state id>#<marker>`, and this takes both halves.
+
+    ⚠ An alternative is run only if the logic READS it. A candidate no condition names with
+    `In()` is a label with nothing behind it: setting `initial` to it does not run the other
+    reading of the specification, it switches the rule OFF, and every case that needed the rule
+    then fails. Measured 2026-10-10 on a writer's document whose logic read only the chosen
+    candidate: the run reported four cases broken, which is a statement about the missing logic
+    and would have read as the cases telling two readings apart. So the alternative is not tried,
+    and the reason says so. The same holds for the chosen candidate: a region nothing reads
+    decides nothing."""
+    mark = next((m for m in declared.marks
+                 if m.region and m.ident == ident and m.marker == marker), None)
+    if mark is None:
+        return [], [f"no decision region {ident!r} marked {marker!r} in the document"], False
+    others = [c for c in mark.candidates if c != mark.initial]
+    if not others:
+        return [], ["its author lists no alternative but the one chosen"], True
+    if not _read_by_a_condition(mark.initial, texts):
+        return [], [f"no condition reads the chosen alternative {mark.initial!r} with In(): the "
+                    f"region decides nothing, so there is nothing for an alternative to change"], False
+    options, untried = [], []
+    for other in others:
+        if _read_by_a_condition(other, texts):
+            options.append(("candidate", ("initial", mark.initial, mark.initial), other))
+        else:
+            untried.append(f"{other!r} is read by no condition: choosing it would switch the rule "
+                           f"off, not run the other reading -- write the logic for it and it is run")
+    return options, untried, not untried
+
+
 def repairs_all(flip: Flip, cf: Counterfactual) -> bool:
     """Whether one alternative repairs EVERY failure the guess was blamed in
     and breaks nothing.
@@ -452,6 +510,29 @@ def repairs_all(flip: Flip, cf: Counterfactual) -> bool:
     the pair says is that no single value is right: the document hands one
     value to two situations the tests tell apart."""
     return set(flip.fixed) == set(cf.failing) and not flip.broken
+
+
+def _region_verdict(cf: Counterfactual) -> str:
+    """What running a decision region's alternatives says. Its failing cases are EVERY failing
+    case of the run: nothing says which cases a region decides, so each alternative is judged
+    against all of them.
+
+        witness      an alternative repairs every failing case and breaks none
+        separated    some case changes with the alternative: the cases tell them apart
+        unseparated  NO case changes: the cases cannot tell the alternatives apart, so a pass
+                     says nothing about which one the specification means
+        partial      none of those run changed a case, and some were not run
+        untried      no alternative was run
+    """
+    if not cf.flips:
+        return "untried"
+    if cf.failing and any(repairs_all(f, cf) for f in cf.flips):
+        return "witness"
+    if any(f.fixed or f.moved or f.broken for f in cf.flips):
+        return "separated"
+    # ⚠ "No case tells them apart" is claimed only of ALL the alternatives: where some were not
+    # run (nothing reads them), the ones that were changed nothing and that is all it says.
+    return "unseparated" if cf.exhaustive else "partial"
 
 
 def _verdict(cf: Counterfactual) -> str:
@@ -492,6 +573,11 @@ def lines(gap) -> list[str]:
                               " -- but not every alternative of this guess was "
                               "tried (below), so it is not cleared"))
         out.extend(f"not tried: {u}" for u in cf["untried"])
+        if cf["verdict"] == "unseparated":
+            out.append("no case tells these alternatives apart: every case judged the same with "
+                       "each, so a pass says nothing about which one the specification means")
+        elif cf["verdict"] == "separated":
+            out.append("the cases tell these alternatives apart")
     for case, address in gap.sole:
         out.append(f"case {case!r}: {address} -- every other recorded guess "
                    f"beside this one was cleared; it is the only one left")

@@ -403,10 +403,32 @@ mark it `sce:assumed` IN THE DOCUMENT and write NAME in the reason. The
 document is what the next reader is handed, so a reading kept only in the
 binding, a comment, an evidence line or your report is one nobody finds, and
 `check` refuses a document that names a picture of the specification and marks
-no guess with its name. Where the host forbids a script engine, a `<data>` is
-not available to you: mark the element the reading shapes (the state or the
-region), not a comment. `gaps` then lists it as unplaced -- no case can try it --
-which is the true state of it, and the mark is still in the document.
+no guess with its name.
+
+Where the host forbids a script engine, a `<data>` is not available to you
+(`generate` answers `needs_script_engine: true` for one, and for a condition
+written as an expression). Write the decision as a DECISION REGION instead: a
+state whose child states are the alternatives, whose `initial` is the one you
+chose, marked `sce:assumed`, with the children's ids as its candidates -- and
+have the logic read it with `In()`, which needs no script engine:
+
+    <state id="pairRule" initial="stillHeld"
+           sce:assumed="PAIR_RULE" sce:assumed-reason="..."
+           sce:assumed-candidates="stillHeld changedOnce">
+      <state id="stillHeld"/>
+      <state id="changedOnce"/>
+    </state>
+    ...
+    <transition event="rr.pdc.lock" cond="In('stillHeld') &amp;&amp; In('rlLocked')" .../>
+    <transition event="rr.pdc.lock" cond="In('changedOnce') &amp;&amp; In('rlChanged')" .../>
+
+Write the logic for EVERY candidate, not only the chosen one: `gaps
+--counterfactual` changes `initial` to each other child, runs the cases again
+and says whether any case tells the alternatives apart -- and a candidate no
+condition reads is not run at all, because setting it would only switch the
+rule off. A mark on any other state or region is listed as unplaced, which
+says no case can ever try it; it is still better than a comment, which nothing
+reads.
 
 Give each decided value its own `<data>` -- a decision variable -- whose
 `expr` is that value alone, mark IT `sce:assumed`, and have the logic read it:

@@ -53,7 +53,7 @@ import dataclasses
 import json
 import pathlib
 
-from .check import read_document
+from .check import read_binding, read_document
 from .counterfactual import candidate_site
 from .errors import READ_ERRORS, AuthoringError, describe_path
 from .pack import _validate
@@ -368,6 +368,45 @@ def hold(document: pathlib.Path, record_path: pathlib.Path,
     report["next"] = "; ".join(steps) if steps else "the draft keeps to the record"
     text = json.dumps(report, indent=2, ensure_ascii=False) + "\n"
     return ("", text) if refuses else (text, "")
+
+
+def cited_markers(document: pathlib.Path, record_path: pathlib.Path | None = None,
+                  profile: pathlib.Path | None = None,
+                  codegen: pathlib.Path | None = None, *,
+                  cwd: pathlib.Path | None = None) -> tuple[frozenset, str]:
+    """(the marker ids the OWNER has answered, "") -- or (nothing, why it could not be said).
+
+    The decision record's ids, and the markers the product says cite a house rule of `profile`.
+    ⚠ The product marks the house rules and this reads the mark, as `hold` does: what a house
+    rule IS belongs to the profile, and nothing here reads the file to find out. With neither
+    given nothing is cited, and a report reads every mark off a `<data>` as a guess.
+
+    A cited id applies a standing answer rather than guessing. Whether the answer it applies is
+    the right one is `hold`'s question, not this one's."""
+
+    def here(path: pathlib.Path) -> pathlib.Path:
+        path = pathlib.Path(path)
+        return path if cwd is None or path.is_absolute() else pathlib.Path(cwd) / path
+
+    cited: set = set()
+    if record_path:
+        cited.update(load_record(here(record_path)).decisions)
+    if profile:
+        text, refused = unresolved_markers(document, codegen, profile=here(profile), cwd=cwd)
+        if refused:
+            return frozenset(), refused
+        cited.update(m["id"] for m in json.loads(text)["markers"] or []
+                     if m.get("house_rule") and m.get("id"))
+    return frozenset(cited), ""
+
+
+def cited_by_binding(binding_path: pathlib.Path, record_path: pathlib.Path | None = None,
+                     profile: pathlib.Path | None = None,
+                     codegen: pathlib.Path | None = None) -> tuple[frozenset, str]:
+    """`cited_markers` of the document a binding names."""
+    binding_path = pathlib.Path(binding_path)
+    document = (binding_path.parent / read_binding(binding_path)["document"]).resolve()
+    return cited_markers(document, record_path, profile, codegen)
 
 
 def compose_record(doc_id: str, markers: list[dict], answers: dict,

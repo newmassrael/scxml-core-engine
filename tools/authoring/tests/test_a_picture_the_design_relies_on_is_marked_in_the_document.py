@@ -101,6 +101,47 @@ class APictureTheDesignReliesOn(Fixture):
                           ("parallel", "p", "B", "q", ())],
                          [(m.element, m.ident, m.marker, m.reason, m.candidates) for m in marks])
 
+    def test_a_picture_nothing_names_is_a_notice_in_the_answer_and_never_a_refusal(self):
+        """The one case `unmarked_pictures` cannot see: a writer who looked at a picture and
+        named it nowhere. The server remembers nothing of what a caller was shown, so the answer
+        names the pictures nothing in the design names and the writer says whether that is right."""
+        from sce_author.check import picture_notice, unnamed_pictures_of
+        (self.root / "fixture.scxml").write_text(DOCUMENT, encoding="utf-8")
+        path = self.root / "fixture.binding.yaml"
+        path.write_text(yaml.safe_dump(BINDING), encoding="utf-8")
+        prose = self.prose(SPECIFICATION)
+        self.assertEqual([], [f for f in check(self.pack(), path, prose) if f.where.startswith("picture")])
+        self.assertEqual([PICTURE], unnamed_pictures_of(path, prose))
+        self.assertIn(PICTURE, picture_notice([PICTURE]))
+        self.assertIn("`picture`", picture_notice([PICTURE]))
+
+    def test_a_picture_the_design_names_is_no_notice(self):
+        from sce_author.check import unnamed_pictures_of
+        (self.root / "fixture.scxml").write_text(self.cited(), encoding="utf-8")
+        path = self.root / "fixture.binding.yaml"
+        path.write_text(yaml.safe_dump(BINDING), encoding="utf-8")
+        self.assertEqual([], unnamed_pictures_of(path, self.prose(SPECIFICATION)))
+
+    def test_without_the_specification_there_is_nothing_to_say(self):
+        from sce_author.check import picture_notice, unnamed_pictures_of
+        path = self.root / "fixture.binding.yaml"
+        path.write_text(yaml.safe_dump(BINDING), encoding="utf-8")
+        self.assertEqual([], unnamed_pictures_of(path, None))
+        self.assertEqual("", picture_notice([]))
+
+    def test_the_tool_carries_the_notice_beside_a_clean_answer(self):
+        from sce_author.mcp import call_tool
+        (self.root / "fixture.scxml").write_text(DOCUMENT, encoding="utf-8")
+        path = self.root / "fixture.binding.yaml"
+        path.write_text(yaml.safe_dump(BINDING), encoding="utf-8")
+        (self.root / "spec.md").write_text(SPECIFICATION, encoding="utf-8")
+        answer = call_tool("check", {"pack": str(self.pack_dir), "binding": str(path),
+                                     "prose": [str(self.root / "spec.md")]})
+        self.assertFalse(answer.get("isError"), answer)
+        text = answer["content"][0]["text"]
+        self.assertTrue(text.startswith("no refusals"), text)
+        self.assertIn(f"notice: the specification shows 1 picture(s) that neither", text)
+
     def test_a_picture_the_design_never_names_is_not_asked_about(self):
         self.assertEqual([], self.findings())
 

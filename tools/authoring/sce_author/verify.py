@@ -703,16 +703,25 @@ class Assumption:
     # no output's value rests on it, so no case can blame it and no alternative can be put in
     # its place. It is still recorded, and said to be unplaced rather than dropped.
     placed: bool = True
+    # A decision REGION (`check.Mark.region`): no value rests on it, but its alternatives can be
+    # run. Its status stays `unexplored` until `counterfactual` has run them.
+    region: bool = False
 
     @property
     def status(self) -> str:
         if not self.placed:
-            return "unplaced"
+            return "unexplored" if self.region else "unplaced"
         if self.refuted_by:
             return "refuted"
         if self.implicated_by:
             return "implicated"
         return "held" if self.held_in else "untested"
+
+
+def mark_key(mark) -> str:
+    """The key a mark that no value rests on is filed under: its element and id, and its handle.
+    One place, because `counterfactual` finds a decision region again by it."""
+    return f"document:{f'{mark.element} {mark.ident}'.strip()}#{mark.marker}"
 
 
 def recorded_assumptions(declared, binding: dict) -> dict:
@@ -735,10 +744,10 @@ def recorded_assumptions(declared, binding: dict) -> dict:
         if mark.element == "data" and declared.assumed_marker.get(mark.ident) == mark.marker:
             continue
         subject = f"{mark.element} {mark.ident}".strip()
-        key = f"document:{subject}#{mark.marker}"
+        key = mark_key(mark)
         found[key] = Assumption(
             key=key, source="document", subject=subject, marker=mark.marker,
-            reason=mark.reason, candidates=mark.candidates, placed=False)
+            reason=mark.reason, candidates=mark.candidates, placed=False, region=mark.region)
     for kind in ("input", "output"):
         for name, rule in sorted((binding.get(f"{kind}s") or {}).items()):
             if (rule or {}).get("assumed"):

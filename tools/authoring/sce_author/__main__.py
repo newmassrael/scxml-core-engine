@@ -15,13 +15,14 @@ import sys
 import tempfile
 
 from .brief import write as write_brief
-from .check import check
+from .check import check, picture_notice, unnamed_pictures_of
 from .compare import DRIVES, STEPS
 from .compare import compare as run_compare
 from .compare import summary as compare_summary
 from .counterfactual import MAX_RUNS, explore
 from .counterfactual import lines as counterfactual_lines
 from .coverage import coverage as run_coverage
+from .decisions import cited_by_binding
 from .decisions import hold as hold_decisions
 from .decisions import summary as decisions_summary
 from .errors import AuthoringError, IngestError
@@ -115,6 +116,9 @@ def cmd_check(args) -> int:
     for f in findings:
         print(f"  {f}")
     print(f"  {len(findings)} refusal(s)")
+    notice = picture_notice(unnamed_pictures_of(pathlib.Path(args.binding), prose))
+    if notice:
+        print(f"  {notice}")
     return 1 if findings else 0
 
 
@@ -138,7 +142,15 @@ def cmd_gaps(args) -> int:
             pack, pathlib.Path(args.binding), result,
             lambda variant: run_verify(pack, variant, codegen, args.backend),
             args.max_runs)
-    gaps = gap_report(result, pack, prose, questions, counterfactuals)
+    cited, refused = cited_by_binding(
+        pathlib.Path(args.binding),
+        pathlib.Path(args.decisions) if args.decisions else None,
+        pathlib.Path(args.profile) if args.profile else None,
+        pathlib.Path(args.codegen) if args.codegen else None)
+    if refused:
+        print(f"refused: {refused}", file=sys.stderr)
+        return 1
+    gaps = gap_report(result, pack, prose, questions, counterfactuals, cited)
     if args.ask_out:
         # Only the questions, one per line: nothing a case holds, so the file
         # can go to the author as it is (`gaps.ask_of_author` says why).
@@ -635,6 +647,12 @@ def main(argv=None) -> int:
     g.add_argument("--max-runs", type=int, default=MAX_RUNS,
                    help=f"runs --counterfactual may spend (default {MAX_RUNS}); "
                         f"what it could not try is reported")
+    g.add_argument("--decisions",
+                   help="the owner's decision record: a mark citing one of its ids is the owner's "
+                        "answer applied, not a guess")
+    g.add_argument("--profile",
+                   help="the owner's authoring profile: a mark citing one of its house rules is "
+                        "the owner's answer applied, not a guess")
     g.set_defaults(fn=cmd_gaps)
 
     o = with_pack(sub.add_parser(

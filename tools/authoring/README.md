@@ -1212,7 +1212,7 @@ interface-integration workflow.
     python3 -m sce_author picture   --prose <file>... --name <NAME> --out <file>
     python3 -m sce_author questions --pack <dir> --prose <file>...
     python3 -m sce_author review    --pack <dir> --prose <file>...
-    python3 -m sce_author check     --pack <dir> --binding <file>
+    python3 -m sce_author check     --pack <dir> --binding <file> [--prose <file>...]
     python3 -m sce_author coverage  --pack <dir> --binding <file>...
     python3 -m sce_author pseudo                 --binding <file>
 
@@ -1374,8 +1374,14 @@ alternative can be run in its place, which is no reason to leave it out. Measure
 2026-10-10, three of five writers put the reading of one picture on a state or a
 region, and the report named none of them. The fix it states is the one `brief`
 gives: a guess is a `<data>` whose expression is the decided value, which the logic
-reads. A mark that cites the owner's decision or a house rule is unplaced by the
-same rule and is as intended; the report cannot tell, and says so.
+reads -- or, where the host allows no script engine, a decision region (see "A picture
+is not read" below), which `gaps --counterfactual` can run. A mark that cites the owner's
+decision or a house rule is unplaced by the same rule and is as intended. Handed the
+decision record and the profile (`--decisions`, `--profile`; the tool's `decisions`,
+`profile`), `gaps` lists such a mark as **cited** -- the owner's standing answer applied,
+nothing to settle -- instead of unplaced; the house rules are the product's mark, read with
+`sce-codegen unresolved --profile`, as `decisions` reads them. Handed neither, it cannot
+tell and says unplaced.
 ⚠ Credit is not blame the same way round: a wrong value at a position several
 guesses decide together says at least one of them is wrong, not each, so each
 is **implicated** (naming the others) and only a guess that decides a failing
@@ -1744,7 +1750,12 @@ the document or the binding NAMES, when no `sce:assumed` of the document names i
 core cannot say whether a drawing bears on a design, and a mark for every drawing
 of a long specification would be a demand for a reason nobody has. The limit is
 the other side of the same sentence -- a writer who reads a picture and names it
-nowhere is not caught here.
+nowhere is not caught by the refusal. It is not left silent: the answer of `check` (the
+command and the tool) carries a NOTICE, never a refusal, naming the pictures the
+specification shows that neither the document nor the binding names. The server could
+instead have remembered which pictures a caller was shown, and does not: a remote server
+serves many callers and keeps nothing of any, so a ledger there would say who saw what
+wrongly. The writer, who knows whether it looked, says whether the notice is right.
 
 ⚠ **A guess cannot always sit on a `<data>`, and requiring it made the mark vanish.**
 A guess a case can contradict is a decision variable, and `gaps` runs the alternatives
@@ -1761,8 +1772,33 @@ three. A refusal that cannot be satisfied is satisfied by
 removing what it looks at, so it was withdrawn. What stands is the honest half: a mark
 anywhere is read (`Document.marks`), `gaps` lists one off a `<data>` as unplaced, and
 `check` still refuses a picture the design names and no mark names. Making such a
-guess testable WITHOUT a script engine -- the alternatives run as separate documents,
-say -- is open and is what would make the refusal sound.
+guess testable WITHOUT a script engine is what would make the refusal sound, and it is
+now possible: a **decision region** (below). The refusal itself stays withdrawn: a host
+that forbids a script engine leaves a writer the choice of region or an unplaced mark,
+and `gaps` says which it got.
+
+⚠ **A decision region is a decision a case can contradict, written without a value.** A
+`<state>` whose child states are the alternatives, whose `initial` is the one chosen,
+marked `sce:assumed` with the children's ids as its `sce:assumed-candidates`, and which
+the logic reads with `In()` -- a guard the generator accepts with no script engine
+(`<data>` and a condition written as an expression are what `generate` answers
+`needs_script_engine: true` for). Setting `initial` to another child IS the alternative,
+so `gaps --counterfactual` runs the document again with it and judges EVERY case, since
+nothing says which cases a region decides. What that says is filed like any guess: one
+alternative repairs every failing case and breaks none (**refuted**, the alternative is
+the answer); the cases tell the alternatives apart (**held** when nothing fails,
+**implicated** when something does); no case changes (**untested** -- a pass says nothing
+about which reading is meant, which is the sentence a rule read off a picture needed).
+Before any of that it is **unexplored**.
+
+⚠⚠ **An alternative is run only if the logic reads it.** Measured 2026-10-10 on the first
+writer to use a region (three given the guidance, one followed it): its logic read only
+the chosen candidate, so setting `initial` to the other switched the rule off and broke
+four cases. That would have been reported as the cases telling two readings apart, and it
+was a statement about missing logic. A candidate no condition reads with `In()` is not
+run, and the report says so (`not tried: ... read by no condition`); a region whose chosen
+candidate nothing reads decides nothing. "No case tells the alternatives apart" is claimed
+only when every alternative was run.
 
 ⚠ A cheaper discriminator was built first and measured wrong: "a stretch of
 pictures with no text between them" was true of 156 drawings out of 156,

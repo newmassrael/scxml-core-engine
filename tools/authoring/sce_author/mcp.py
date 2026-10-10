@@ -88,12 +88,12 @@ WORKBENCH_TOOLS = frozenset({
 # asks for sections. Measured 2026-09-26: a 227,761-character brief was
 # refused by the client that asked for it.
 BRIEF_LIMIT = 60_000
-from .check import check
+from .check import check, picture_notice, unnamed_pictures_of
 from .compare import compare as compare_drafts
 from .compare import summary as compare_summary
 from .counterfactual import MAX_RUNS, explore
 from .coverage import coverage as run_coverage
-from .decisions import compose_record
+from .decisions import cited_by_binding, compose_record
 from .decisions import hold as hold_decisions
 from .decisions import load_record as load_decision_record
 from .errors import AuthoringError, describe_path
@@ -1990,7 +1990,10 @@ TOOLS = [
             "still say it); every unresolved value and assumed precondition "
             "is listed too, most urgent first, each with what the text should "
             "gain. Give `prose` to also locate each gap in the text and count "
-            "what the text leaves open before anything is run."
+            "what the text leaves open before anything is run. A guess written "
+            "as a decision REGION (a state whose children are the candidates) is "
+            "run by its alternatives with `counterfactual`, and comes back "
+            "untested when no case tells them apart."
         ),
         "inputSchema": {
             "type": "object",
@@ -2020,6 +2023,18 @@ TOOLS = [
                     "type": "integer",
                     "minimum": 0,
                     "description": "Runs `counterfactual` may spend (default 64); what it could not try is reported.",
+                },
+                "decisions": {
+                    "type": "string",
+                    "description": (
+                        "Path to the owner's decision record. A mark citing one of its ids "
+                        "is the owner's answer applied (`cited`), not a guess."),
+                },
+                "profile": {
+                    "type": "string",
+                    "description": (
+                        "Path to the owner's authoring profile. A mark citing one of its "
+                        "house rules is the owner's answer applied (`cited`), not a guess."),
                 },
             },
         },
@@ -4251,9 +4266,11 @@ def call_tool(name: str, args: dict, *, remote: bool = False,
                                         "binding file, which names its own document")
             prose = load_prose(_prose_arg(args)) if args.get("prose") is not None else None
             findings = check(pack, pathlib.Path(binding), prose)
+            notice = picture_notice(unnamed_pictures_of(pathlib.Path(binding), prose))
             if not findings:
-                return _text("no refusals: every address, field and symbol exists.")
-            return _failure("\n".join(str(f) for f in findings))
+                return _text("no refusals: every address, field and symbol exists."
+                             + (f"\n{notice}" if notice else ""))
+            return _failure("\n".join(str(f) for f in findings) + (f"\n{notice}" if notice else ""))
 
         if name == "scaffold":
             pack = load_pack(_pack_arg(args))
@@ -4350,7 +4367,17 @@ def call_tool(name: str, args: dict, *, remote: bool = False,
                 pack, pathlib.Path(binding), result,
                 lambda variant: run_verify(pack, variant, None, backend), max_runs)
                 if wanted else None)
-            found = gap_report(result, pack, prose, questions, counterfactuals)
+            owned = {}
+            for key in ("decisions", "profile"):
+                value = args.get(key)
+                if value is not None and not isinstance(value, str):
+                    raise ToolArgumentError(f"{key!r} has to be a path, as a string")
+                owned[key] = pathlib.Path(value) if value else None
+            cited, refused = cited_by_binding(pathlib.Path(binding), owned["decisions"],
+                                              owned["profile"])
+            if refused:
+                return _failure(refused)
+            found = gap_report(result, pack, prose, questions, counterfactuals, cited)
             # The prose's own questions are counted, not carried: `questions`
             # is the tool that lists them, and there can be hundreds.
             counts = {kind: sum(1 for g in found if g.kind == kind) for kind in GAP_ORDER}

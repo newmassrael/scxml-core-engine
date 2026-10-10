@@ -14,6 +14,10 @@ very different things is true:
     untested   nothing compares it -- neither the text nor the tests decide it
     unplaced   written on an element that holds no value, so no case can name
                it and no alternative can be run in its place
+    unexplored a decision region (a state whose children are the candidates and
+               whose `initial` is the choice): its alternatives can be run and
+               have not been. Run, it is refuted, implicated, held or untested
+               like any other guess -- untested meaning no case tells them apart
     cleared    implicated, and every alternative it could take was run without
                moving those failures -- they do not rest on it
                (`counterfactual`, when the caller asks for it)
@@ -39,8 +43,8 @@ from dataclasses import dataclass, field
 # Most urgent first. A refutation is a known wrong answer; an untested guess
 # is an unknown one, which is worse than an open question only because nobody
 # is asking it.
-ORDER = ("refuted", "implicated", "untested", "unplaced", "open", "question", "untestable",
-         "held", "cleared")
+ORDER = ("refuted", "implicated", "untested", "unexplored", "unplaced", "open", "question",
+         "untestable", "held", "cleared", "cited")
 
 FIX = {
     "refuted": ("The product's tests answer this, and not as guessed. The "
@@ -51,11 +55,19 @@ FIX = {
                    "settle each."),
     "untested": ("No case compares a position resting on this guess. Neither "
                  "the specification nor the tests decide it; both should."),
+    "cited": ("Applies an answer the owner gave (a decision of the record, or a house rule of the "
+              "profile), so it is not a guess: nothing here to settle."),
+    "unexplored": ("A decision region whose alternatives have not all been run. Run `gaps "
+                   "--counterfactual` to learn whether any case tells them apart; an "
+                   "alternative no condition reads with `In()` is not run until the logic for "
+                   "it is written."),
     "unplaced": ("Written on an element that holds no value (a state, a region), so no "
                  "output rests on it: a failing case cannot name it and its alternatives "
                  "cannot be run in its place. If it is a guess, give the decision a `<data>` "
-                 "of its own that the logic reads. If it cites the owner's decision or a "
-                 "house rule, it is as intended."),
+                 "of its own that the logic reads -- or, where the host allows no script "
+                 "engine, a decision REGION: a state whose child states are the candidates, "
+                 "whose `initial` is the one chosen and which the logic reads with `In()`. "
+                 "If it cites the owner's decision or a house rule, it is as intended."),
     "open": ("No answer could even be guessed. The specification, or the "
              "interface it is written against, must name it."),
     "question": "Answer it in the specification.",
@@ -153,8 +165,13 @@ def _where(positions, model, prose) -> list:
     return found
 
 
-def report(verification, pack, prose=None, questions=(), counterfactuals=None) -> list[Gap]:
+def report(verification, pack, prose=None, questions=(), counterfactuals=None,
+           cited=frozenset()) -> list[Gap]:
     """Every gap the run and the prose expose, most urgent first.
+
+    `cited` is the marker ids the owner has already answered (`decisions.cited_markers`): a mark
+    that no value rests on and that cites one is `cited` -- the owner's standing answer applied,
+    which is not a gap -- rather than `unplaced`, which says nothing can ever try a guess.
 
     `questions` are `questions.ask`'s answers for the same prose, when the
     caller asked for them: what the text leaves open before anything is run.
@@ -171,7 +188,17 @@ def report(verification, pack, prose=None, questions=(), counterfactuals=None) -
     for key, a in verification.assumptions.items():
         cf = found.get(key)
         kind = a.status
-        if cf is not None and kind in ("refuted", "implicated"):
+        if a.source == "document" and not a.placed and a.marker in cited:
+            kind = "cited"
+        elif a.region and cf is not None:
+            # A decision region's alternatives were run against every case. What that says:
+            # one repairs every failure (refuted, with that alternative the answer); the cases
+            # tell them apart (held when nothing fails, implicated when something does); or no
+            # case does (untested -- a pass says nothing about which one is meant).
+            kind = {"witness": "refuted",
+                    "separated": "implicated" if cf.failing else "held",
+                    "unseparated": "untested"}.get(cf.verdict, kind)
+        elif cf is not None and kind in ("refuted", "implicated"):
             if cf.verdict == "cleared":
                 kind = "cleared"
             elif cf.verdict == "witness":

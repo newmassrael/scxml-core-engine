@@ -112,6 +112,13 @@ class Mark:
     marker: str           # the handle the author gave the guess
     reason: str
     candidates: tuple = ()
+    # A decision REGION: a `<state>` whose child states are the alternatives, whose `initial` is
+    # the one chosen, and whose candidates are exactly those children. The logic reads it with
+    # `In()`, which a statechart can do WITHOUT a script engine -- the way to write a decision a
+    # case can contradict where a `<data>` is not available. Changing `initial` to another child
+    # is the alternative `counterfactual` runs.
+    region: bool = False
+    initial: str = ""         # a region's chosen alternative: its `initial`
 
 
 def _marks_of(root) -> tuple[Mark, ...]:
@@ -123,9 +130,13 @@ def _marks_of(root) -> tuple[Mark, ...]:
         ident = node.get("id") or ""
         marker = node.get(f"{SCE_NS}assumed")
         if marker:
+            candidates = tuple((node.get(f"{SCE_NS}assumed-candidates") or "").split())
+            children = {child.get("id") for child in node if child.tag == f"{SCXML_NS}state"}
+            region = (node.tag == f"{SCXML_NS}state" and bool(ident) and bool(candidates)
+                      and node.get("initial") in candidates and set(candidates) <= children)
             found.append(Mark(element, ident, marker,
-                              node.get(f"{SCE_NS}assumed-reason") or "",
-                              tuple((node.get(f"{SCE_NS}assumed-candidates") or "").split())))
+                              node.get(f"{SCE_NS}assumed-reason") or "", candidates, region,
+                              node.get("initial") or "" if region else ""))
         for child in node:
             if child.tag == f"{SCE_NS}assumed" and child.get("id"):
                 found.append(Mark(element, ident, child.get("id"),
@@ -1250,6 +1261,41 @@ def unread_driven_inputs(pack: Pack, prose, declared_inputs: dict) -> list[Findi
 
 # The mark `ingest` leaves where a picture sits in the specification's text.
 _PICTURE_MARK = re.compile(r"\[picture: ([^\]\r\n]+)\]")
+
+
+def unnamed_pictures(prose, document, binding_path: pathlib.Path) -> list[str]:
+    """The pictures the specification shows that neither the document nor the binding names.
+
+    A NOTICE, never a refusal. This core cannot say whether a drawing bears on a design, so
+    refusing for every unnamed one would demand a reason for each drawing of a long specification
+    -- but a writer who looked at a picture and named it nowhere is the one case `unmarked_pictures`
+    cannot see, and the server has no memory of what a caller was shown (a remote one serves many).
+    So the answer says which pictures nothing in the design names, and the writer, who knows
+    whether it looked, says whether that is right. Measured 2026-10-10: five writers each called
+    `picture` once and every one named it in its design, so the notice is empty where it should be."""
+    shown = list(dict.fromkeys(_PICTURE_MARK.findall(prose.text)))
+    if not shown:
+        return []
+    named = document.path.read_text(encoding="utf-8") + "\n" + binding_path.read_text(encoding="utf-8")
+    return [name for name in shown if name not in named]
+
+
+def unnamed_pictures_of(binding_path: pathlib.Path, prose) -> list[str]:
+    """`unnamed_pictures` for a binding and the document it names; nothing without the specification."""
+    if prose is None:
+        return []
+    binding_path = pathlib.Path(binding_path)
+    document = read_document((binding_path.parent / read_binding(binding_path)["document"]).resolve())
+    return unnamed_pictures(prose, document, binding_path)
+
+
+def picture_notice(names: list[str]) -> str:
+    """The sentence that carries `unnamed_pictures` to a reader, or nothing."""
+    if not names:
+        return ""
+    return (f"notice: the specification shows {len(names)} picture(s) that neither the document nor "
+            f"the binding names: {', '.join(names)}. If one bears on the design, look at it (the "
+            f"`picture` tool) and mark what you read `sce:assumed`, naming it in the reason.")
 
 
 def unmarked_pictures(prose, document, binding_path: pathlib.Path) -> list[Finding]:
