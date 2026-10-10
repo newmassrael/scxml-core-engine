@@ -341,6 +341,9 @@ COST_MEASURED: dict[str, str] = {
     # not the gate. 52 is what it costs when it has something to do, which is
     # the only time the change set selects it.
     "forge-kotlin": "2026-09-18",
+    # 72s, `scripts/gate genmc-queue` on pc2 with two harnesses and ten mutants
+    # each, the first run that read GenMC's reports rather than its exit codes.
+    "genmc-queue": "2026-10-10",
     # 1363s against a declared 151 — the widest gap this table has recorded,
     # and the first entry for a `ci_only` gate, which is why it went unseen:
     # the drift report prices what a push selects, and nothing selects this.
@@ -905,6 +908,36 @@ GATES: dict[str, dict] = {
                    "forge-conformance.yml.",
         "cost_s": 52,
         "summary": "Kotlin forge conformance (Gradle jvmTest)",
+    },
+    # The C11 queue under GenMC (SCE Protocol-Synthesis RFC §synth-5-P, layer
+    # 3), and the mutants that show the check reads orderings at all. It needs
+    # GenMC, which no hosted runner carries and which is built from source
+    # (`scripts/install_genmc.sh`), so it runs where that was done.
+    #
+    # ⚠ `ci_only` because the install is the cost and the hosts do not all have
+    # it: the gate fails loudly where GenMC is absent rather than skipping, and
+    # a push that selected it on such a host would be refused for a reason that
+    # says nothing about the tree. The workflow caches the build under a key
+    # made of the installer's hash, so the pin and the cache move together.
+    "genmc-queue": {
+        "workflows": ["genmc-queue.yml"],
+        "runner_workflow": True,
+        # What the gate reads, and no wider: the runtime headers GenMC compiles,
+        # the harnesses, and the hosted atomics every harness includes whole.
+        # The same set as the workflow's `paths:`, which the self-test holds.
+        "extra": [
+            "backends/c/forge-runtime/include/**",
+            "backends/c/forge-runtime/tests/genmc/**",
+            "backends/c/forge-runtime/tests/conformance/sce_atomic_host.c",
+            "scripts/install_genmc.sh",
+        ],
+        "ci_only": "72s measured 2026-10-10 on a host that has GenMC, and the "
+                   "host is the constraint: GenMC is built from source "
+                   "(scripts/install_genmc.sh), no hosted runner carries it, "
+                   "and the build machines do not all have it. "
+                   "genmc-queue.yml builds it once per pin and caches it.",
+        "cost_s": 72,
+        "summary": "C11 queue under GenMC + weakened-ordering mutants",
     },
     # Catches codegen breakage in the example documents (the namespace
     # migration that broke them shipped green otherwise) and lints every

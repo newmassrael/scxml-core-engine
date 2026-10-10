@@ -1,0 +1,84 @@
+name: GenMC Queue
+
+# The C11 queue under GenMC: layer 3 of the queue kind's verification (SCE
+# Protocol-Synthesis RFC §synth-5-P). GenMC explores every execution the C11
+# memory model allows, where a stress run samples the few a machine happens to
+# give. `scripts/gates/genmc-queue.sh` states the two claims (each harness
+# passes; each required mutant, the hosted atomics with one ordering weakened,
+# is caught) and what its first version got wrong.
+#
+# ## Why a lane of its own
+#
+# GenMC is not on a hosted runner and is not a package: it is built from source
+# against LLVM 19 and a C++20 compiler (`scripts/install_genmc.sh`, which owns the
+# revision). The build is the cost, so it is cached under a key made of the
+# script's own hash: the pin lives in that script, and a cache that outlived a pin
+# bump would run the old checker.
+#
+# ## Why `ci_only` in the registry
+#
+# The build machines carry it on one host, and the gate fails loudly where it is
+# absent rather than skipping, so it is not in the push set; this job is where it
+# runs on every change that can move what it judges.
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'backends/c/forge-runtime/include/**'
+      - 'backends/c/forge-runtime/tests/genmc/**'
+      - 'backends/c/forge-runtime/tests/conformance/sce_atomic_host.c'
+      - 'scripts/install_genmc.sh'
+      - 'scripts/gate'
+      - 'scripts/gates/lib.sh'
+      - 'scripts/gates/genmc-queue.sh'
+      - '.github/workflows/genmc-queue.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'backends/c/forge-runtime/include/**'
+      - 'backends/c/forge-runtime/tests/genmc/**'
+      - 'backends/c/forge-runtime/tests/conformance/sce_atomic_host.c'
+      - 'scripts/install_genmc.sh'
+      - 'scripts/gate'
+      - 'scripts/gates/lib.sh'
+      - 'scripts/gates/genmc-queue.sh'
+      - '.github/workflows/genmc-queue.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  genmc-queue:
+    name: GenMC Queue
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+
+      # What GenMC is built from: a C++20 compiler of g++ 14, clang and the LLVM
+      # development files of a major it supports (19), cmake and ninja, and the
+      # three development libraries it links.
+      - name: Install GenMC build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++-14 clang-19 llvm-19-dev cmake ninja-build \
+              libffi-dev zlib1g-dev libedit-dev
+
+      - name: Restore GenMC
+        id: genmc-cache
+        uses: actions/cache@v5
+        with:
+          path: ~/.local/genmc
+          key: genmc-${{ hashFiles('scripts/install_genmc.sh') }}
+
+      - name: Build GenMC (pinned revision)
+        if: steps.genmc-cache.outputs.cache-hit != 'true'
+        run: scripts/install_genmc.sh
+
+      - name: GenMC queue gate
+        run: scripts/gate genmc-queue

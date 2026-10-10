@@ -5498,6 +5498,18 @@
         {
           "file": "tools/codegen/templates/forge/rust/worker.rs.jinja2",
           "kind": "references"
+        },
+        {
+          "file": "backends/c/forge-runtime/tests/genmc/scq64_slot_reuse.c",
+          "kind": "references"
+        },
+        {
+          "file": "backends/c/forge-runtime/tests/genmc/scq64_two_threads.c",
+          "kind": "references"
+        },
+        {
+          "file": "scripts/gates/genmc-queue.sh",
+          "kind": "references"
         }
       ]
     },
