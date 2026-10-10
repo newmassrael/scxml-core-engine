@@ -1744,6 +1744,46 @@ describe("a model server of the person's", () => {
     expect(r.root.textContent).not.toContain("Models it lists");
   });
 
+  it("keeps the save button on screen when a field is left, so that the press which left it is not lost", async () => {
+    // A press on the button first takes the person out of the field they typed in, and what leaving
+    // says must not replace the button before the press is over: in a real browser the first click
+    // saved nothing and the second did.
+    const typed: Record<string, string> = {
+      "#ai-server-address": "http://127.0.0.1:9999/v1",
+      "#ai-server-context-tokens": "40k",
+    };
+    for (const [field, text] of Object.entries(typed)) {
+      const r = await chooseServer();
+      typeInto(r.root, "#ai-server-name", "box");
+      typeInto(r.root, "#ai-server-address", OLLAMA);
+      typeInto(r.root, "#ai-server-model", "m");
+      const save = r.root.querySelector<HTMLButtonElement>("#ai-save")!;
+      const drawn = r.redraws;
+
+      typeInto(r.root, field, text);
+      r.root.querySelector<HTMLInputElement>(field)!.dispatchEvent(new Event("change"));
+      await settle();
+
+      expect(r.root.contains(save), field).toBe(true);
+      expect(r.redraws, field).toBe(drawn);
+    }
+  });
+
+  it("says a limit is not a whole number once its field is left, and stops saying it when it is", async () => {
+    const r = await chooseServer();
+    const field = r.root.querySelector<HTMLInputElement>("#ai-server-context-tokens")!;
+    const said = () => r.root.textContent?.includes("This is not a whole number") ?? false;
+
+    typeInto(r.root, "#ai-server-context-tokens", "40k");
+    expect(said()).toBe(false);
+    field.dispatchEvent(new Event("change"));
+    expect(said()).toBe(true);
+
+    typeInto(r.root, "#ai-server-context-tokens", "40000");
+    field.dispatchEvent(new Event("change"));
+    expect(said()).toBe(false);
+  });
+
   it("says in the core's words that an address is not one a connection could keep", async () => {
     const r = await chooseServer({
       servers: [["ftp://x", new CommandFailure("bad-connection", "`ftp://x` is not a server address")]],

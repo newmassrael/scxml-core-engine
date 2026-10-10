@@ -23,6 +23,11 @@ import { h } from "./dom";
 import type { Child } from "./dom";
 import type { Key } from "./i18n";
 
+/** What of `children` is something to put on the screen: `h` drops the rest, and so does a slot filled in place. */
+function present(children: Child[]): (Node | string)[] {
+  return children.filter((child): child is Node | string => child !== null && child !== false && child !== undefined);
+}
+
 /** What the server section needs of the settings it is drawn in. */
 export interface ServerSectionEnv {
   readonly t: (key: Key, values?: Record<string, string>) => string;
@@ -83,6 +88,14 @@ export class ServerSection {
   /** The buttons as drawn, so that typing can enable them without drawing the fields again. */
   private saveButton: HTMLButtonElement | null = null;
   private checkButtonDrawn: HTMLButtonElement | null = null;
+  /**
+   * What is said of the address, and of each limit, as drawn. Leaving a field changes what is said, and
+   * saying it by drawing the whole panel again would replace the button the person is pressing: the press
+   * began in the field, the field is left, and the button that was pressed is gone before it ends.
+   */
+  private statusSlot: HTMLElement | null = null;
+  private warningsSlot: HTMLElement | null = null;
+  private limitSlots = new Map<ServerLimit, HTMLElement>();
 
   constructor(private readonly env: ServerSectionEnv) {}
 
@@ -203,7 +216,7 @@ export class ServerSection {
         h("dt", {}, t("aiServerAddress")),
         h("dd", {}, this.addressField(), this.presets()),
         h("dt", {}, t("aiServerState")),
-        h("dd", { id: STATUS_ID }, this.checkButton(), ...this.statusLines()),
+        h("dd", { id: STATUS_ID }, this.checkButton(), this.drawnStatus()),
         h("dt", {}, t("aiModel")),
         h("dd", {}, this.modelField()),
         ...SERVER_LIMITS.flatMap((limit) => [
@@ -212,9 +225,33 @@ export class ServerSection {
         ]),
       ),
       h("p", { class: "muted" }, t("aiServerSentTo")),
-      ...this.warnings(),
+      this.drawnWarnings(),
       this.saveControls(),
     ];
+  }
+
+  private drawnStatus(): HTMLElement {
+    this.statusSlot = h("div", {}, ...this.statusLines());
+    return this.statusSlot;
+  }
+
+  private drawnWarnings(): HTMLElement {
+    this.warningsSlot = h("div", {}, ...this.warnings());
+    return this.warningsSlot;
+  }
+
+  /** What was said of the address that was there is not said of this one: said again in place. */
+  private refreshAddress(): void {
+    this.statusSlot?.replaceChildren(...present(this.statusLines()));
+    this.warningsSlot?.replaceChildren(...present(this.warnings()));
+    this.refreshSave();
+  }
+
+  private limitWarning(key: ServerLimit): Child {
+    const text = this.limitText(key, this.keptLimits());
+    return typedCount(text) === undefined
+      ? h("div", { class: "banner banner-warn", role: "status" }, this.env.t("aiServerLimitNotCount"))
+      : null;
   }
 
   /** What is kept now, one line, so that what is typed below can be told from it. */
@@ -264,9 +301,9 @@ export class ServerSection {
         this.draftAddress = (event.target as HTMLInputElement).value;
         this.refreshSave();
       },
-      // What was said of the address that was there is not said of this one: drawn again once the
-      // person has left the field, not at each key, which would take the cursor out of it.
-      onchange: () => this.env.redraw(),
+      // Said again once the person has left the field, not at each key, which would take the cursor
+      // out of it; and in place, so that the button the person is on their way to is not replaced.
+      onchange: () => this.refreshAddress(),
     });
     field.value = this.draftAddress ?? localConnection(this.env.listing())?.connection.server_url ?? "";
     return field;
@@ -397,19 +434,14 @@ export class ServerSection {
         this.draftLimits[key] = (event.target as HTMLInputElement).value;
         this.refreshSave();
       },
-      // Said once the person has left the field, not at each key, which would take the cursor out.
-      onchange: () => this.env.redraw(),
+      // Said once the person has left the field, not at each key, which would take the cursor out; and
+      // in place, so that the button the person is on their way to is not replaced.
+      onchange: () => this.limitSlots.get(key)?.replaceChildren(...present([this.limitWarning(key)])),
     });
-    const text = this.limitText(key, kept);
-    field.value = text;
-    const notCount = typedCount(text) === undefined;
-    return h(
-      "div",
-      {},
-      field,
-      h("div", { class: "muted" }, t(note)),
-      notCount ? h("div", { class: "banner banner-warn", role: "status" }, t("aiServerLimitNotCount")) : null,
-    );
+    field.value = this.limitText(key, kept);
+    const slot = h("div", {}, this.limitWarning(key));
+    this.limitSlots.set(key, slot);
+    return h("div", {}, field, h("div", { class: "muted" }, t(note)), slot);
   }
 
   /** Where the specification goes, as loudly as it deserves. */
