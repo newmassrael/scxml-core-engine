@@ -686,6 +686,25 @@ def stable_point(cursors: list, last_seen: list, now: int, max_idle: int):
     return ("ok", stable)
 
 
+def utf8_length(data: list):
+    """sce:std/text/utf8_length — the code points of a UTF-8 byte string. The
+    judge of what is UTF-8 is Python's strict decoder, which holds RFC 3629 as the
+    document does (no overlong form, no surrogate, nothing past U+10FFFF) but is
+    not the document's own table of ranges, so the two can disagree."""
+    try:
+        return ("ok", len(bytes(data).decode("utf-8")))
+    except UnicodeDecodeError:
+        return ("fails", "precondition")
+
+
+def utf8_within(data: list, limit: int):
+    """sce:std/text/utf8_within — at most `limit` code points; not UTF-8 fails."""
+    counted = utf8_length(data)
+    if counted[0] == "fails":
+        return counted
+    return ("ok", counted[1] <= limit)
+
+
 def entry(element: int, wall: int, counter: int, node: int) -> dict:
     return {"element": element, "wallTime": wall, "counter": counter, "nodeId": node}
 
@@ -1721,6 +1740,63 @@ def murmur_args(rng: SplitMix64):
     return [data, seed]
 
 
+#: Where UTF-8's rules change their mind: the first and last scalar value of
+#: each encoded width, either side of the surrogates, and the last one.
+SCALAR_EDGES = [
+    0x00, 0x41, 0x7F, 0x80, 0x7FF, 0x800, 0xD7FF, 0xE000, 0xFEFF, 0xFFFF,
+    0x10000, 0x1F468, 0x10FFFF,
+]
+#: The bytes at which the grammar narrows or ends a range, and one either side.
+BYTE_EDGES = [
+    0x00, 0x7F, 0x80, 0x8F, 0x90, 0x9F, 0xA0, 0xBF, 0xC0, 0xC1, 0xC2, 0xDF,
+    0xE0, 0xE1, 0xEC, 0xED, 0xEE, 0xEF, 0xF0, 0xF1, 0xF3, 0xF4, 0xF5, 0xFF,
+]
+
+
+def draw_scalar(rng: SplitMix64) -> int:
+    """A Unicode scalar value, at an edge or anywhere in a width; never a surrogate."""
+    if rng.below(3) == 0:
+        return rng.pick(SCALAR_EDGES)
+    low, high = rng.pick([(0, 0x7F), (0x80, 0x7FF), (0x800, 0xD7FF), (0xE000, 0xFFFF), (0x10000, 0x10FFFF)])
+    return rng.between(low, high)
+
+
+def utf8_text(rng: SplitMix64, longest: int) -> list:
+    """The UTF-8 bytes of a drawn string of at most `longest` characters."""
+    return list("".join(chr(draw_scalar(rng)) for _ in range(rng.between(0, longest))).encode("utf-8"))
+
+
+def utf8_args(rng: SplitMix64) -> list:
+    """A byte string that is mostly valid text, and often one fault away from it:
+    a byte replaced, dropped or put in at a place the grammar looks at, or the
+    string cut mid-character; the rest is bytes drawn from the grammar's edges."""
+    style = rng.below(6)
+    if style == 0:
+        return [[rng.pick(BYTE_EDGES) if rng.below(2) else rng.between(0, 255) for _ in range(rng.between(0, 6))]]
+    data = utf8_text(rng, rng.pick([1, 2, 4, 8, 20]))
+    if style <= 2 or not data:
+        return [data]
+    at = rng.below(len(data))
+    if style == 3:
+        data[at] = rng.pick(BYTE_EDGES)
+    elif style == 4:
+        del data[at:]
+    else:
+        data.insert(at, rng.pick(BYTE_EDGES))
+    return [data]
+
+
+def utf8_within_args(rng: SplitMix64) -> list:
+    """The same strings with a limit at, just under and just over their length."""
+    data = utf8_args(rng)[0]
+    counted = answer_of(utf8_length(data))
+    if counted is None or rng.below(4) == 0:
+        limit = rng.pick([0, 1, 2, 5, 100, U32_MAX])
+    else:
+        limit = max(0, counted + rng.pick([-1, 0, 0, 1]))
+    return [data, limit]
+
+
 MULTIPLIER_EDGES = [
     1.0, 1.0000000000000002, 1.5, 2.0, 3.0, 10.0, 1e3, 1e15, 1e18, 1e19, 1e300,
     1.7976931348623157e308,
@@ -2655,6 +2731,8 @@ FIXTURES = {
     "undo_field_plan": (lambda args: undo_field_plan(*args), plan_args, 400, 0xE110_003F),
     "undo_set_readds": (lambda args: undo_set_readds(*args), readds_args, 300, 0xE110_0040),
     "stable_point": (lambda args: stable_point(*args), stable_point_args, 500, 0xE110_0041),
+    "utf8_length": (lambda args: utf8_length(*args), utf8_args, 600, 0xE110_0042),
+    "utf8_within": (lambda args: utf8_within(*args), utf8_within_args, 400, 0xE110_0043),
 }
 
 
@@ -2944,6 +3022,34 @@ def validate_laws() -> None:
         if taking:
             joined = answer_of(stable_point(cursors + [rng.pick(CURSOR_EDGES)], last_seen + [now], now, max_idle))
             stable_join_law.holds(joined is not None and joined <= answer, inputs)
+
+    # The code-point count, held to what a count of code points must satisfy
+    # whatever the bytes are. The strings come from characters, not from bytes, so
+    # the count a law expects is the number of characters that were encoded.
+    utf8_sum_law = Law("utf8_length of two texts joined is the sum of their lengths")
+    utf8_chars_law = Law("utf8_length of an encoded text is the number of its characters")
+    utf8_cut_law = Law("a text cut inside its last multi-byte character is not UTF-8")
+    utf8_within_law = Law("utf8_within is utf8_length being at most the limit")
+    utf8_bytes_law = Law("a code-point count is never more than the bytes, nor less than a quarter of them")
+    for _ in range(LAW_RUNS):
+        chars = [draw_scalar(rng) for _ in range(rng.between(0, 12))]
+        other = [draw_scalar(rng) for _ in range(rng.between(0, 12))]
+        text = list("".join(map(chr, chars)).encode("utf-8"))
+        tail = list("".join(map(chr, other)).encode("utf-8"))
+        inputs = [text, tail]
+        utf8_chars_law.holds(answer_of(utf8_length(text)) == len(chars), inputs)
+        utf8_sum_law.holds(
+            answer_of(utf8_length(text + tail)) == len(chars) + len(other), inputs
+        )
+        counted = len(chars)
+        limit = rng.pick([0, 1, counted, counted + 1, max(counted - 1, 0), U32_MAX])
+        utf8_within_law.holds(answer_of(utf8_within(text, limit)) == (counted <= limit), [text, limit])
+        utf8_bytes_law.holds(counted <= len(text) <= 4 * counted, inputs)
+        if chars and chars[-1] > 0x7F:
+            utf8_cut_law.holds(utf8_length(text[:-1]) == ("fails", "precondition"), inputs)
+
+    for law in (utf8_sum_law, utf8_chars_law, utf8_cut_law, utf8_within_law, utf8_bytes_law):
+        law.was_asked()
 
     # A remove, as the documents of an observed-remove set spell it: it tombstones
     # the live entries of the element it observes (orset_observed), and nothing a

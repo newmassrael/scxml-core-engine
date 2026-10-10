@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/text/utf8_within.scxml — whether a UTF-8 byte string holds at most
+  `limit` characters, a character being a code point as in utf8_length.
+
+  This is the field-length cap of a shared record (a title, a description): the
+  limit is an argument, so a policy that gives each tier its own is a value the
+  caller passes and not a document of its own. A byte string that is not UTF-8
+  fails `precondition` as it does in utf8_length: it is not text, so it is
+  neither within nor beyond a limit.
+
+  A cap in characters does not bound storage, which a byte cap beside it does
+  (a content-line entry's `sce:max-size`); see utf8_length for why the unit is
+  the code point.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="utf8_within" version="1.0">
+  <sce:import kind="algorithm" src="utf8_length.scxml" as="length"/>
+  <sce:signature>
+    <sce:param name="data" type="bytes"/>
+    <sce:param name="limit" type="uint32"/>
+    <sce:return type="bool" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:return expr="length(data) &lt;= limit"/>
+  </sce:body>
+</scxml>

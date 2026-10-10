@@ -2051,6 +2051,35 @@
       }
     },
     {
+      "name": "utf8_length",
+      "document": "sce:std/text/utf8_length.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "utf8_length",
+      "args": [
+        "bytes"
+      ],
+      "output": {
+        "type": "u32",
+        "compare": "equality"
+      }
+    },
+    {
+      "name": "utf8_within",
+      "document": "sce:std/text/utf8_within.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "utf8_within",
+      "args": [
+        "bytes",
+        "u32"
+      ],
+      "output": {
+        "type": "bool",
+        "compare": "equality"
+      }
+    },
+    {
       "name": "weekday_from_days",
       "document": "sce:std/time/weekday_from_days.scxml",
       "kind": "algorithm",

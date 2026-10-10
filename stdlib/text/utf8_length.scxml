@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/text/utf8_length.scxml — the number of characters of a UTF-8 byte
+  string, where a character is a Unicode scalar value (a code point), judged
+  against RFC 3629 section 4 and nothing looser:
+
+    UTF8-1 = %x00-7F
+    UTF8-2 = %xC2-DF UTF8-tail
+    UTF8-3 = %xE0 %xA0-BF UTF8-tail / %xE1-EC 2( UTF8-tail ) /
+             %xED %x80-9F UTF8-tail / %xEE-EF 2( UTF8-tail )
+    UTF8-4 = %xF0 %x90-BF 2( UTF8-tail ) / %xF1-F3 3( UTF8-tail ) /
+             %xF4 %x80-8F 2( UTF8-tail )
+    UTF8-tail = %x80-BF
+
+  The four ranges that are not the plain 80-BF are the grammar's refusals: an
+  overlong form (C0, C1, E0 followed by less than A0, F0 followed by less than
+  90), a surrogate (ED followed by more than 9F) and a value past U+10FFFF (F4
+  followed by more than 8F, and F5-FF).
+
+  A byte string the grammar does not accept fails `precondition`: it has no
+  character count, and a cap measured on it would be measured on bytes a
+  reader will not read as text.
+
+  WHY CODE POINTS. A length cap written in "characters" is the same cap
+  everywhere only if every platform counts the same thing, and the platforms'
+  own `length` do not: JavaScript, Java and Kotlin count UTF-16 code units, Rust
+  and Python count code points, Swift counts extended grapheme clusters, Go and
+  C count bytes. The same family emoji is 18 bytes, 5 code points, 8 UTF-16
+  code units and one grapheme cluster. A code point is the unit RFC 3629
+  itself defines the bytes of, and it is fixed for every Unicode version; a
+  grapheme cluster is not (UAX #29 changes with the Unicode data). A cap that
+  must hold on a server and on every client is therefore a code-point cap,
+  checked by this document on both and not by a platform's `length`.
+
+  A code-point cap is not a size cap: a code point is up to four bytes, so
+  storage is bounded by a byte cap beside it (a content-line entry's
+  `sce:max-size`), and this document answers the question the byte cap
+  cannot.
+
+  The count is as wide as the input is long, and the input's length is a
+  uint32, so no string fails `overflow`; the declaration is `may-fail` because
+  the document has the `precondition` failure and the contract holds every
+  checked integer step of a `may-fail` document to its declared width.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="utf8_length" version="1.0">
+  <sce:signature>
+    <sce:param name="data" type="bytes"/>
+    <sce:return type="uint32" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="n" type="uint32" init="len(data)"/>
+    <sce:var name="i" type="uint32" init="0"/>
+    <sce:var name="count" type="uint32" init="0"/>
+    <sce:while cond="i &lt; n">
+      <sce:var name="lead" type="uint32" init="data[i]"/>
+      <!-- The continuation bytes the lead asks for, and the range of the
+           first of them, which is the one the grammar narrows. -->
+      <sce:var name="tails" type="uint32" init="0"/>
+      <sce:var name="lo" type="uint32" init="128"/>
+      <sce:var name="hi" type="uint32" init="191"/>
+      <sce:if cond="lead &lt;= 127">
+        <sce:assign target="tails" expr="0"/>
+        <sce:else>
+          <sce:if cond="lead &gt;= 194 &amp;&amp; lead &lt;= 223">
+            <sce:assign target="tails" expr="1"/>
+            <sce:else>
+              <sce:if cond="lead === 224">
+                <sce:assign target="tails" expr="2"/>
+                <sce:assign target="lo" expr="160"/>
+                <sce:else>
+                  <sce:if cond="lead === 237">
+                    <sce:assign target="tails" expr="2"/>
+                    <sce:assign target="hi" expr="159"/>
+                    <sce:else>
+                      <sce:if cond="lead &gt;= 225 &amp;&amp; lead &lt;= 239">
+                        <sce:assign target="tails" expr="2"/>
+                        <sce:else>
+                          <sce:if cond="lead === 240">
+                            <sce:assign target="tails" expr="3"/>
+                            <sce:assign target="lo" expr="144"/>
+                            <sce:else>
+                              <sce:if cond="lead === 244">
+                                <sce:assign target="tails" expr="3"/>
+                                <sce:assign target="hi" expr="143"/>
+                                <sce:else>
+                                  <sce:require cond="lead &gt;= 241 &amp;&amp; lead &lt;= 243"/>
+                                  <sce:assign target="tails" expr="3"/>
+                                </sce:else>
+                              </sce:if>
+                            </sce:else>
+                          </sce:if>
+                        </sce:else>
+                      </sce:if>
+                    </sce:else>
+                  </sce:if>
+                </sce:else>
+              </sce:if>
+            </sce:else>
+          </sce:if>
+        </sce:else>
+      </sce:if>
+      <!-- A sequence cut short by the end of the string is not one. -->
+      <sce:require cond="tails &lt;= n - i - 1"/>
+      <sce:var name="k" type="uint32" init="1"/>
+      <sce:while cond="k &lt;= tails">
+        <sce:var name="b" type="uint32" init="data[i + k]"/>
+        <sce:require cond="b &gt;= (k === 1 ? lo : 128) &amp;&amp; b &lt;= (k === 1 ? hi : 191)"/>
+        <sce:assign target="k" expr="k + 1"/>
+      </sce:while>
+      <sce:assign target="i" expr="i + tails + 1"/>
+      <sce:assign target="count" expr="count + 1"/>
+    </sce:while>
+    <sce:return expr="count"/>
+  </sce:body>
+</scxml>
