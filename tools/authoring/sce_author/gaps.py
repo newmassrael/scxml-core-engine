@@ -12,6 +12,8 @@ very different things is true:
                at least one of them is wrong, the cases do not say which
     held       the tests agree with the guess -- the text should still say so
     untested   nothing compares it -- neither the text nor the tests decide it
+    unplaced   written on an element that holds no value, so no case can name
+               it and no alternative can be run in its place
     cleared    implicated, and every alternative it could take was run without
                moving those failures -- they do not rest on it
                (`counterfactual`, when the caller asks for it)
@@ -37,7 +39,7 @@ from dataclasses import dataclass, field
 # Most urgent first. A refutation is a known wrong answer; an untested guess
 # is an unknown one, which is worse than an open question only because nobody
 # is asking it.
-ORDER = ("refuted", "implicated", "untested", "open", "question", "untestable",
+ORDER = ("refuted", "implicated", "untested", "unplaced", "open", "question", "untestable",
          "held", "cleared")
 
 FIX = {
@@ -49,6 +51,11 @@ FIX = {
                    "settle each."),
     "untested": ("No case compares a position resting on this guess. Neither "
                  "the specification nor the tests decide it; both should."),
+    "unplaced": ("Written on an element that holds no value (a state, a region), so no "
+                 "output rests on it: a failing case cannot name it and its alternatives "
+                 "cannot be run in its place. If it is a guess, give the decision a `<data>` "
+                 "of its own that the logic reads. If it cites the owner's decision or a "
+                 "house rule, it is as intended."),
     "open": ("No answer could even be guessed. The specification, or the "
              "interface it is written against, must name it."),
     "question": "Answer it in the specification.",
@@ -122,7 +129,7 @@ def ask_of_author(assumption, kind: str) -> str:
     """
     # ⚠ Every guess without them, failing or not: asking only where a failure
     # rests would tell the author which guesses the tests contradict.
-    if assumption.source != "document" or assumption.candidates:
+    if assumption.source != "document" or assumption.candidates or not assumption.placed:
         return ""
     handle = assumption.marker or assumption.subject
     return (f"for `{handle}` on `{assumption.subject}`: add "

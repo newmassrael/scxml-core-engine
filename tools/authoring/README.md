@@ -1368,6 +1368,14 @@ reason this is a command of its own: `verify` names a refuted guess beside its
 failure, and an untested one reads in a verdict of "all passed" exactly like a
 checked one. Every guess on the path to a position is credited, not only the
 nearest — a document's value and the binding's symbol for it are two decisions.
+⚠ A mark written on an element that holds no value — a state, a region — is listed
+too, as **unplaced**: no output's value rests on it, so no case can blame it and no
+alternative can be run in its place, which is no reason to leave it out. Measured
+2026-10-10, three of five writers put the reading of one picture on a state or a
+region, and the report named none of them. The fix it states is the one `brief`
+gives: a guess is a `<data>` whose expression is the decided value, which the logic
+reads. A mark that cites the owner's decision or a house rule is unplaced by the
+same rule and is as intended; the report cannot tell, and says so.
 ⚠ Credit is not blame the same way round: a wrong value at a position several
 guesses decide together says at least one of them is wrong, not each, so each
 is **implicated** (naming the others) and only a guess that decides a failing

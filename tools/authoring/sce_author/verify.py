@@ -699,9 +699,15 @@ class Assumption:
     # The values its author weighed (`sce:assumed-candidates`), for a
     # document's guess -- empty where none were written down.
     candidates: tuple = ()
+    # False for a mark written on an element that holds no value to run (a state, a region):
+    # no output's value rests on it, so no case can blame it and no alternative can be put in
+    # its place. It is still recorded, and said to be unplaced rather than dropped.
+    placed: bool = True
 
     @property
     def status(self) -> str:
+        if not self.placed:
+            return "unplaced"
         if self.refuted_by:
             return "refuted"
         if self.implicated_by:
@@ -711,13 +717,28 @@ class Assumption:
 
 def recorded_assumptions(declared, binding: dict) -> dict:
     """Every recorded guess of this document and binding, keyed as
-    `assumption_key_behind` names them, none of them attributed yet."""
+    `assumption_key_behind` names them, none of them attributed yet.
+
+    ⚠ Every mark the document carries, not only the `<data>` ones. A guess is attributed through
+    the values that read it (`assumption_keys_behind`), and a mark on a state or a region has none,
+    so it can never be refuted or held -- which is not a reason to leave it out. Left out, a guess
+    written there read, in the report, exactly like a specification with no guess in it: measured
+    2026-10-10 over five writers' documents, three put the reading of one picture on a state or a
+    region, and the report named none of them."""
     found = {}
     for ident, reason in sorted((declared.assumed if declared else {}).items()):
         found[f"document:{ident}"] = Assumption(
             key=f"document:{ident}", source="document", subject=ident,
             marker=declared.assumed_marker.get(ident, ""), reason=reason,
             candidates=(declared.assumed_candidates.get(ident) or ((), ""))[0])
+    for mark in (declared.marks if declared else ()):
+        if mark.element == "data" and declared.assumed_marker.get(mark.ident) == mark.marker:
+            continue
+        subject = f"{mark.element} {mark.ident}".strip()
+        key = f"document:{subject}#{mark.marker}"
+        found[key] = Assumption(
+            key=key, source="document", subject=subject, marker=mark.marker,
+            reason=mark.reason, candidates=mark.candidates, placed=False)
     for kind in ("input", "output"):
         for name, rule in sorted((binding.get(f"{kind}s") or {}).items()):
             if (rule or {}).get("assumed"):
