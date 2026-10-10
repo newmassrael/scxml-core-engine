@@ -79,6 +79,28 @@ class APictureTheDesignReliesOn(Fixture):
             'sce:assumed-candidates="a b"/>')
         self.assertEqual([], self.findings(on_a_state))
 
+    def test_the_child_element_form_of_the_mark_counts_too(self):
+        """The product reads `<sce:assumed id=... reason=.../>` as well as the attribute."""
+        as_an_element = self.cited().replace(
+            "</datamodel>",
+            "</datamodel>\n  <state id=\"s\">"
+            f'<sce:assumed id="PAIR_TIMING" reason="read from {PICTURE}" candidates="a b"/>'
+            "</state>")
+        self.assertEqual([], self.findings(as_an_element))
+
+    def test_the_document_lists_every_mark_whatever_element_carries_it(self):
+        from sce_author.check import read_document
+        document = self.cited().replace(
+            "</datamodel>",
+            "</datamodel>\n  <state id=\"s\" sce:assumed=\"A\" sce:assumed-reason=\"r\" "
+            'sce:assumed-candidates="x y"/>\n'
+            '  <parallel id="p"><sce:assumed id="B" reason="q"/></parallel>')
+        (self.root / "fixture.scxml").write_text(document, encoding="utf-8")
+        marks = read_document(self.root / "fixture.scxml").marks
+        self.assertEqual([("state", "s", "A", "r", ("x", "y")),
+                          ("parallel", "p", "B", "q", ())],
+                         [(m.element, m.ident, m.marker, m.reason, m.candidates) for m in marks])
+
     def test_a_picture_the_design_never_names_is_not_asked_about(self):
         self.assertEqual([], self.findings())
 

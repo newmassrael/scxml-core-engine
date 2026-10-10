@@ -96,6 +96,44 @@ _PREVIOUS_READ = re.compile(r"(?<![\w.])previous\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)
 _STRING_LITERAL = re.compile(r"'(?:[^'\\]|\\.)*'|\"(?:[^\"\\]|\\.)*\"")
 
 
+@dataclass(frozen=True)
+class Mark:
+    """One `sce:assumed` the document carries, on whatever element carries it.
+
+    ⚠ The product reads the marker on every node that can carry one, in the attribute form and in
+    the child-element form (`<sce:assumed id=... reason=.../>`). `Document.assumed` and its two
+    companions hold only the `<data>` ones, because those are the ones a value rests on and the
+    ones `verify` can name when a case fails. This is the whole list, so a question about WHERE a
+    guess was written is asked of the one reader that can answer it.
+    """
+
+    element: str          # the carrying element's local name: data, state, parallel, ...
+    ident: str            # its `id`, when it has one
+    marker: str           # the handle the author gave the guess
+    reason: str
+    candidates: tuple = ()
+
+
+def _marks_of(root) -> tuple[Mark, ...]:
+    found = []
+    for node in root.iter():
+        element = node.tag.rpartition("}")[2] if isinstance(node.tag, str) else ""
+        if not element:
+            continue
+        ident = node.get("id") or ""
+        marker = node.get(f"{SCE_NS}assumed")
+        if marker:
+            found.append(Mark(element, ident, marker,
+                              node.get(f"{SCE_NS}assumed-reason") or "",
+                              tuple((node.get(f"{SCE_NS}assumed-candidates") or "").split())))
+        for child in node:
+            if child.tag == f"{SCE_NS}assumed" and child.get("id"):
+                found.append(Mark(element, ident, child.get("id"),
+                                  child.get("reason") or "",
+                                  tuple((child.get("candidates") or "").split())))
+    return tuple(found)
+
+
 @dataclass
 class Document:
     """What an SCXML declares it receives and produces."""
@@ -114,6 +152,9 @@ class Document:
     # `sce:initial`): `sce:assumed-candidates`, space-separated, the current
     # one among them -- what `gaps --counterfactual` puts in its place.
     assumed_candidates: dict = dataclasses.field(default_factory=dict)
+    # EVERY `sce:assumed` of the document, on any element (`Mark`). The three above are the
+    # `<data>` ones; ask this where a guess was written, never to find what a value rests on.
+    marks: tuple = ()
     # Output identifier -> the reason its author gave for leaving it
     # `sce:unresolved`: a value nobody has decided, written as a question
     # rather than a guess. The product refuses to BUILD such a document for
@@ -449,6 +490,7 @@ def read_document(path: pathlib.Path) -> Document:
         assumed=assumed,
         assumed_marker=assumed_marker,
         assumed_candidates=assumed_candidates,
+        marks=_marks_of(root),
         unresolved=unresolved,
         reads=reads,
         sends=tuple(sends),
@@ -1231,14 +1273,11 @@ def unmarked_pictures(prose, document, binding_path: pathlib.Path) -> list[Findi
         return []
     texts = {"document": document.path.read_text(encoding="utf-8"),
              "binding": binding_path.read_text(encoding="utf-8")}
-    # ⚠ Every element that carries the mark, not only `<data>`: `document.assumed` holds the
-    # decision variables, and a reading of a picture is as often a decision about a state or the
-    # whole parallel region. Asked of `document.assumed` alone, the first run over five real
+    # ⚠ Every mark of the document (`Document.marks`), not `document.assumed`: that holds the
+    # decision variables only, and a reading of a picture is as often a decision about a state or
+    # the whole parallel region. Asked of `document.assumed` alone, the first run over five real
     # writers' documents refused all five, including the three that had marked it.
-    marked = "\n".join(
-        value for element in ET.parse(document.path).getroot().iter()
-        for value in (element.get(f"{SCE_NS}assumed-reason"), element.get(f"{SCE_NS}assumed"))
-        if value and element.get(f"{SCE_NS}assumed"))
+    marked = "\n".join(f"{mark.marker}\n{mark.reason}" for mark in document.marks)
     out = []
     for name in shown:
         cited_in = [side for side, text in texts.items() if name in text]
