@@ -2937,11 +2937,43 @@ def validate_laws() -> None:
             joined = answer_of(stable_point(cursors + [rng.pick(CURSOR_EDGES)], last_seen + [now], now, max_idle))
             stable_join_law.holds(joined is not None and joined <= answer, inputs)
 
+    # A remove, as the documents of an observed-remove set spell it: it tombstones
+    # the live entries of the element it observes (orset_observed), and nothing a
+    # node adds later. The four documents together must give the set its meaning.
+    remove_law = Law("an orset remove takes out the element it observed")
+    remove_only_law = Law("an orset remove leaves every other element as it was")
+    add_wins_law = Law("an orset add concurrent with a remove survives it")
+    contains_law = Law("orset_contains is orset_observed having something to observe")
+    for _ in range(LAW_RUNS):
+        pool = entry_pool(rng)
+        adds, tombstones = entry_sample(rng, pool), entry_sample(rng, pool)
+        element = rng.pick([held["element"] for held in pool])
+        live = orset_live(adds, tombstones)[1]
+        observed = orset_observed(live, element)[1]
+        contains_law.holds(orset_contains(live, element)[1] == bool(observed), [adds, tombstones, element])
+
+        after = orset_live(adds, orset_union(tombstones, observed)[1])[1]
+        inputs = [adds, tombstones, element]
+        remove_law.holds(not orset_contains(after, element)[1], inputs)
+        remove_only_law.holds(
+            [held for held in after if held["element"] != element]
+            == [held for held in live if held["element"] != element],
+            inputs,
+        )
+        # An add the remove could not have seen: of the same element, held neither as
+        # an add nor as a tombstone, so it is nowhere in `live` when the remove is made.
+        concurrent = entry_near(rng, rng.pick(pool))
+        concurrent = dict(concurrent, element=element)
+        if concurrent not in adds and concurrent not in tombstones:
+            survivors = orset_live(adds + [concurrent], orset_union(tombstones, observed)[1])[1]
+            add_wins_law.holds(orset_contains(survivors, element)[1], [adds, tombstones, element, concurrent])
+
     every_law = (
         union_laws + [prune_law] + order_laws + clock_laws + [classify_law] + apply_laws + ack_laws
         + [page_law, insert_law, dedup_law, hold_law, gcra_law, retry_law, utc_law]
         + [insert_order_law, cancel_law, prune_keeps_law, diff_bound_law, diff_pruned_law, membership_law]
         + [stable_order_law, stable_idle_law, stable_join_law, stable_least_law]
+        + [remove_law, remove_only_law, add_wins_law, contains_law]
     )
     for law in every_law:
         law.was_asked()
