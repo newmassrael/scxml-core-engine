@@ -118,8 +118,8 @@
       "decision_status": "active",
       "bindings": [
         {
-          "file": "sce/include/mesh/EventQueueBridge.h",
-          "symbol": "try_push",
+          "file": "sce/include/mesh/ShmChannel.h",
+          "symbol": "ShmChannel",
           "kind": "implements"
         }
       ],
@@ -4652,6 +4652,18 @@
       "target_kind": "section",
       "target_id": "mesh-19",
       "reason": "both cores build their routers from the peer tables generated from one deploy.yaml; declared in SCE-VERIFIES"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "mesh-10.3",
+      "reason": "the bridge is the forge SCQ queue now; the one consumer that serialises deliveries is ShmChannel::drainWith"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "mesh-10.3",
+      "reason": "the cite resolves to the enclosing class ShmChannel"
     }
   ],
   "frames": {},

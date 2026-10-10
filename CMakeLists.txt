@@ -507,6 +507,13 @@ if(SCE_ENABLE_MESH)
         COMPONENT Core
         FILES_MATCHING PATTERN "*.h"
     )
+    # EventQueueBridge.h is the forge runtime's SCQ queue, so a consumer of the
+    # installed mesh headers needs that one header beside them. It includes
+    # only the standard library.
+    install(FILES backends/cpp/forge-runtime/include/sce/forge/queue.h
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/sce/forge
+        COMPONENT Core
+    )
 endif()
 
 # Scripting tier: sce_scripting (qjs/lua54 register themselves here)

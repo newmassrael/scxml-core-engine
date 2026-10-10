@@ -945,7 +945,7 @@ Pattern-based dispatch is handled by `SCE::Mesh::dispatchEnvelope<Policy>()` in 
 
 ##### SHM Wire Layout (Control Ring + Payload Arena)
 
-Shared memory has a unique constraint: the lock-free MPSC ring buffer (Vyukov algorithm) requires fixed-size slots, but SCXML events are variable-length. SCE Mesh resolves this through a **control-plus-arena** layout — the textbook approach used by high-performance shm IPC systems (iceoryx, DDS implementations):
+Shared memory has a unique constraint: the lock-free control ring (the forge runtime's SCQ queue, which carries slot indices and no pointers, so it means the same in every process that maps it) requires fixed-size slots, but SCXML events are variable-length. SCE Mesh resolves this through a **control-plus-arena** layout — the textbook approach used by high-performance shm IPC systems (iceoryx, DDS implementations):
 
 ```
 ┌─────────────────────────────────────────┐
@@ -954,7 +954,7 @@ Shared memory has a unique constraint: the lock-free MPSC ring buffer (Vyukov al
 │ Layout header:                          │
 │   ready_magic (atomic uint64)            │ ← startup handshake
 ├─────────────────────────────────────────┤
-│ Control ring buffer (Vyukov MPSC)        │
+│ Control ring buffer (SCQ)                │
 │   fixed-size slots: {offset, length}    │ ← 8 bytes each, lock-free
 │   capacity: power of 2                  │
 ├─────────────────────────────────────────┤

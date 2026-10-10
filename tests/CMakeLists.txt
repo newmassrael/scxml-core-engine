@@ -5081,6 +5081,35 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
 
     add_test(NAME mesh_local_runtime_verification COMMAND mesh_local_runtime_test)
 
+    # ── EventQueueBridge runtime verification ────────────────────
+    # The bridge is the forge runtime's SCQ queue. mesh_compile_test only
+    # checks that it compiles; this runs it: capacity and order, the places
+    # it hands out, and many producer threads against one consumer losing
+    # nothing and reordering nothing.
+    if(NOT TARGET Threads::Threads)
+        find_package(Threads REQUIRED)
+    endif()
+    add_executable(mesh_event_queue_bridge_test
+        mesh/test_mesh_event_queue_bridge.cpp
+    )
+
+    target_include_directories(mesh_event_queue_bridge_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/sce/include
+    )
+
+    target_link_libraries(mesh_event_queue_bridge_test
+        PRIVATE
+            sce_mesh_common
+            Threads::Threads
+    )
+
+    target_compile_features(mesh_event_queue_bridge_test PRIVATE cxx_std_17)
+
+    apply_sce_test_policies(mesh_event_queue_bridge_test)
+
+    add_test(NAME mesh_event_queue_bridge_verification COMMAND mesh_event_queue_bridge_test)
+
     # ── shm_transport runtime verification (fork-based) ──────────
     # Parent sends via router; child opens shm and drains. Proves
     # READY_MAGIC handshake, end-to-end event delivery, and

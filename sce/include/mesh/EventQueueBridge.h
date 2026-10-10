@@ -1,163 +1,59 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// SCE Mesh EventQueueBridge — bounded MPSC (Multi-Producer Single-Consumer)
-// lock-free queue for cross-thread event injection.
+// SCE Mesh EventQueueBridge — bounded queue with many producers and one
+// consumer, for cross-thread event injection.
 //
-// Implementation: Dmitry Vyukov bounded MPSC queue with per-cell sequence
-// numbers. Lock-free for both producers (CAS on write position) and
-// the single consumer (non-atomic read position).
+// It is the forge runtime's SCQ data queue (sce/forge/queue.h; the queue kind's
+// migration rule in the SCE Protocol-Synthesis RFC, section 5.P), not a queue of
+// the mesh's own.
+// The queue it replaces was Dmitry Vyukov's bounded MPSC ring, which the header
+// called lock-free and which is not, formally: a producer that has claimed a
+// cell and then stalls hides every later cell from the consumer until it
+// resumes. SCQ is lock-free on both sides: a stalled participant never hides
+// what others have pushed.
 //
-// Consumer: `ShmChannel` placement-news this bridge in shared memory for
-// the shm transport's receive side.
+// Consumer: `ShmChannel` places this queue in shared memory for the shm
+// transport's control ring. SCQ's rings carry indices, never pointers, and its
+// elements are stored inline, so the queue means the same in every process
+// that maps it.
 
 #pragma once
 
-#include <array>
-#include <atomic>
+#include "sce/forge/queue.h"
+
 #include <cstddef>
-#include <new>
-#include <type_traits>
-#include <utility>
 
 namespace SCE::Mesh {
 
-/// Bounded MPSC lock-free queue for cross-thread event delivery.
+/// Bounded lock-free queue for cross-thread event delivery, for many
+/// producers and one consumer.
 ///
-/// @tparam T        Event type (must be move-constructible and destructible)
-/// @tparam Capacity Queue depth, must be a power of 2 (default: 256)
+/// @tparam T        Event type (nothrow-move-constructible and
+///                  nothrow-destructible)
+/// @tparam Capacity Queue depth, a power of 2 (default: 256). It is also the
+///                  ring size, so up to `Capacity` producer handles and as many
+///                  consumer handles may be alive at once.
 ///
-/// Thread safety:
-///   try_push()  — safe to call from multiple producer threads concurrently
-///   try_pop()   — must be called from exactly one consumer thread
-///   empty()     — safe to call from the consumer thread only
-template <typename T, std::size_t Capacity = 256> class EventQueueBridge {
-    static_assert(Capacity > 0 && (Capacity & (Capacity - 1)) == 0, "Capacity must be a power of 2");
-    static_assert(std::is_move_constructible<T>::value, "Event type must be move-constructible");
-    static_assert(std::is_destructible<T>::value, "Event type must be destructible");
-
-    static constexpr std::size_t MASK = Capacity - 1;
-
-    // ── Per-cell layout ─────────────────────────────────────────
-    // Each cell has a sequence number that coordinates producer/consumer
-    // handoff without requiring a global lock.
-    //
-    // Sequence lifecycle:
-    //   Initial:    seq == cell_index  (cell is empty, available for write)
-    //   After push: seq == cell_index + 1  (cell is full, available for read)
-    //   After pop:  seq == cell_index + Capacity  (cell is empty, next round)
-    struct Cell {
-        std::atomic<std::size_t> sequence;
-        alignas(T) unsigned char storage[sizeof(T)];
-    };
-
-    // ── Cache-line aligned positions ────────────────────────────
-    // Separate cache lines prevent false sharing between producer
-    // and consumer hot paths.
-    alignas(64) std::array<Cell, Capacity> buffer_;
-    alignas(64) std::atomic<std::size_t> write_pos_{0};
-    alignas(64) std::size_t read_pos_{0};  // consumer-only, no atomic needed
-
-public:
-    EventQueueBridge() noexcept {
-        for (std::size_t i = 0; i < Capacity; ++i) {
-            buffer_[i].sequence.store(i, std::memory_order_relaxed);
-        }
-    }
-
-    ~EventQueueBridge() {
-        // In-place destroy remaining elements without requiring default constructor
-        for (;;) {
-            Cell &cell = buffer_[read_pos_ & MASK];
-            std::size_t seq = cell.sequence.load(std::memory_order_acquire);
-            if (static_cast<std::ptrdiff_t>(seq - (read_pos_ + 1)) < 0) {
-                break;
-            }
-            reinterpret_cast<T *>(cell.storage)->~T();
-            cell.sequence.store(read_pos_ + Capacity, std::memory_order_relaxed);
-            ++read_pos_;
-        }
-    }
-
-    EventQueueBridge(const EventQueueBridge &) = delete;
-    EventQueueBridge &operator=(const EventQueueBridge &) = delete;
-
-    /// Push an event into the queue (producer side, thread-safe).
-    ///
-    /// @return true if the event was enqueued, false if the queue is full.
-    ///         Callers should back off or drop the event on false.
-    [[nodiscard]] bool try_push(T event) noexcept {
-        // §mesh-10.3: this is where concurrent transport deliveries are
-        // serialised into one instance's queue. Many producers claim cells
-        // here; exactly one consumer drains them, so the engine still sees
-        // one event at a time and the W3C run-to-completion guarantee holds
-        // without a lock on the processing path.
-        Cell *cell;
-        std::size_t pos = write_pos_.load(std::memory_order_relaxed);
-
-        for (;;) {
-            cell = &buffer_[pos & MASK];
-            std::size_t seq = cell->sequence.load(std::memory_order_acquire);
-            auto diff = static_cast<std::ptrdiff_t>(seq) - static_cast<std::ptrdiff_t>(pos);
-
-            if (diff == 0) {
-                // Cell is available for writing — try to claim it
-                if (write_pos_.compare_exchange_weak(pos, pos + 1, std::memory_order_relaxed)) {
-                    break;
-                }
-                // CAS failed — another producer claimed this cell, retry
-            } else if (diff < 0) {
-                // Cell is still occupied by an unread value — queue is full
-                return false;
-            } else {
-                // Another producer advanced write_pos past us — reload
-                pos = write_pos_.load(std::memory_order_relaxed);
-            }
-        }
-
-        // We own the cell — move-construct the event in-place
-        ::new (cell->storage) T(std::move(event));
-        // Publish: advance sequence to signal consumer
-        cell->sequence.store(pos + 1, std::memory_order_release);
-        return true;
-    }
-
-    /// Pop an event from the queue (consumer side, single-thread only).
-    ///
-    /// @param[out] out Receives the popped event on success.
-    /// @return true if an event was dequeued, false if the queue is empty.
-    [[nodiscard]] bool try_pop(T &out) noexcept {
-        Cell *cell = &buffer_[read_pos_ & MASK];
-        std::size_t seq = cell->sequence.load(std::memory_order_acquire);
-        auto diff = static_cast<std::ptrdiff_t>(seq) - static_cast<std::ptrdiff_t>(read_pos_ + 1);
-
-        if (diff < 0) {
-            // Cell has not been written yet — queue is empty
-            return false;
-        }
-
-        // Cell is ready — move the event out and destroy the in-place copy
-        T *ptr = reinterpret_cast<T *>(cell->storage);
-        out = std::move(*ptr);
-        ptr->~T();
-
-        // Release cell for the next producer round
-        cell->sequence.store(read_pos_ + Capacity, std::memory_order_release);
-        ++read_pos_;
-        return true;
-    }
-
-    /// Check if the queue appears empty (consumer-thread only).
-    ///
-    /// This is an approximation: a concurrent push may complete between
-    /// the check and the caller's next action. Use try_pop() for
-    /// authoritative emptiness detection.
-    [[nodiscard]] bool empty() const noexcept {
-        const Cell &cell = buffer_[read_pos_ & MASK];
-        std::size_t seq = cell.sequence.load(std::memory_order_acquire);
-        auto diff = static_cast<std::ptrdiff_t>(seq) - static_cast<std::ptrdiff_t>(read_pos_ + 1);
-        return diff < 0;
-    }
-};
+/// Operations go through handles, which keep the number of concurrent
+/// participants within what the ring's empty test is justified for:
+///
+///   producer()        — a producing handle, or `std::nullopt` when `Capacity`
+///                       are alive; give it back by destroying it.
+///   Producer::try_push(T&&) -> PushStatus
+///                     — `Ok` moves the event in; `Full` leaves it untouched.
+///   consumer()        — the consuming handle. Exactly one thread pops, so the
+///                       engine still sees one event at a time and the W3C
+///                       run-to-completion guarantee holds without a lock on
+///                       the processing path (SCE_MESH.md section 10.3: this
+///                       is where concurrent transport deliveries are
+///                       serialised into one instance's queue).
+///   Consumer::try_pop() -> std::optional<T>
+///
+/// A handle is process-local state and must not be stored in the queue's own
+/// storage: a queue in shared memory is used through handles each process
+/// holds for itself.
+template <typename T, std::size_t Capacity = 256>
+using EventQueueBridge = ::SCE::Forge::Queue::Scq<T, Capacity, Capacity>;
 
 }  // namespace SCE::Mesh

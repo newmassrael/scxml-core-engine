@@ -127,11 +127,15 @@ if(SCE_ENABLE_MESH)
         src/mesh/MeshEnvelopeCodec.cpp
     )
 
+    # The forge runtime's include directory is PUBLIC because two public
+    # headers name it: EventQueueBridge.h is the forge runtime's SCQ queue, and
+    # ShmChannel.h places it in shared memory. An installed tree carries that one
+    # header (see the install rule in the top-level CMakeLists.txt), under
+    # include/sce/forge, which `sce_core`'s install interface already exposes.
     target_include_directories(sce_mesh_common
         PUBLIC
             $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-        PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}/../backends/cpp/forge-runtime/include
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../backends/cpp/forge-runtime/include>
     )
 
     target_link_libraries(sce_mesh_common

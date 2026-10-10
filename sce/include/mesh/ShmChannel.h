@@ -18,11 +18,20 @@
 //
 // Concurrency model: **SPSC overall** (single producer, single consumer).
 //
-// The underlying EventQueueBridge (Vyukov) is MPSC-capable by itself, but
-// this channel is SPSC because send() reserves arena space via plain
-// load/store on head_vc — not CAS. A second concurrent producer would
-// race on arena writes even though the control ring push is atomic. The
-// debug assertion in send() catches violations.
+// The underlying EventQueueBridge (the forge runtime's SCQ) takes many
+// producers by itself, but this channel is SPSC because send() reserves
+// arena space via plain load/store on head_vc — not CAS. A second concurrent
+// producer would race on arena writes even though the control ring push is
+// atomic. The debug assertion in send() catches violations.
+//
+// The ring's producer and consumer handles are held by this object, in the
+// process, never in the shared layout: a handle points at the queue it was
+// taken from, and a pointer means nothing in another process. Each side takes
+// its handle on first use and gives it back when the channel is destroyed. The
+// handle counts live in the shared layout, so a process that dies holding one
+// leaves its place taken until the creator builds the layout afresh (Create
+// resets every counter); the ring has as many places as slots, and a channel
+// has one participant a side.
 //
 // SPSC is sufficient here: each SCE machine is single-threaded
 // per W3C RTC, and each ShmChannel is per-target (one sender SM →
@@ -45,9 +54,11 @@
 #include <cstdint>
 #include <cstring>
 #include <new>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <thread>
+#include <utility>
 
 namespace SCE::Mesh {
 
@@ -73,7 +84,7 @@ static_assert(sizeof(ControlSlot) == 12, "ControlSlot must be 12 bytes");
 inline constexpr std::size_t SHM_DEFAULT_ARENA_BYTES = 65536;
 
 /// Default control ring capacity (slots). Power of 2 required by
-/// EventQueueBridge.
+/// EventQueueBridge (it is the SCQ ring size).
 inline constexpr std::size_t SHM_DEFAULT_RING_CAPACITY = 256;
 
 /// Shared memory event channel.
@@ -98,12 +109,20 @@ class ShmChannel {
         alignas(64) char arena[ArenaSize];
     };
 
-    /// "SCE_MSH3" — identifies the control-ring + payload-arena layout
-    /// introduced in SCE_MESH.md Section 7.5 (2026-04-13).
-    static constexpr std::uint64_t READY_MAGIC = 0x5343455F4D534833ULL;
+    /// "SCE_MSH4" — identifies the control-ring + payload-arena layout of
+    /// SCE_MESH.md Section 7.5 with the SCQ control ring. "SCE_MSH3" was the
+    /// same layout over the Vyukov ring, whose bytes mean something else: a
+    /// peer built against the other one must not read this segment as its own.
+    static constexpr std::uint64_t READY_MAGIC = 0x5343455F4D534834ULL;
 
     ShmSegment segment_;
     Layout *layout_ = nullptr;
+
+    /// This process's handles on the control ring. Declared after `segment_`
+    /// so they are destroyed first: giving a place back writes into the
+    /// mapping, which must still be there.
+    std::optional<typename ControlBridge::Producer> producer_;
+    std::optional<typename ControlBridge::Consumer> consumer_;
 
 #ifndef NDEBUG
     /// SPSC enforcement: the first send() call captures the producer
@@ -145,15 +164,33 @@ public:
         // page when the last mapping is gone.
     }
 
-    ShmChannel(ShmChannel &&o) noexcept : segment_(std::move(o.segment_)), layout_(o.layout_) {
+    ShmChannel(ShmChannel &&o) noexcept
+        : segment_(std::move(o.segment_)), layout_(o.layout_), producer_(std::move(o.producer_)),
+          consumer_(std::move(o.consumer_)) {
         o.layout_ = nullptr;
+        // A moved-from handle holds no place; the moved-from channel holds none.
+        o.producer_.reset();
+        o.consumer_.reset();
     }
 
     ShmChannel &operator=(ShmChannel &&o) noexcept {
         if (this != &o) {
+            // The handles go back before the mapping they write into is replaced.
+            producer_.reset();
+            consumer_.reset();
             segment_ = std::move(o.segment_);
             layout_ = o.layout_;
             o.layout_ = nullptr;
+            // A handle cannot be assigned, only constructed over, so the
+            // places move by construction.
+            if (o.producer_) {
+                producer_.emplace(std::move(*o.producer_));
+            }
+            if (o.consumer_) {
+                consumer_.emplace(std::move(*o.consumer_));
+            }
+            o.producer_.reset();
+            o.consumer_.reset();
         }
         return *this;
     }
@@ -188,9 +225,19 @@ public:
         return layout_ != nullptr;
     }
 
-    /// Check if the control ring is empty (receiver side).
+    /// Check whether nothing is in flight: every byte the producer reserved in
+    /// the arena has been reclaimed by the consumer, which is the case exactly
+    /// when the control ring holds no entry the consumer has not finished with
+    /// (receiver side).
+    ///
+    /// An approximation, as an emptiness check on a concurrent queue is: a
+    /// send may complete between the check and the caller's next action, and a
+    /// send that has pushed its control entry but not yet published its
+    /// reservation is not counted. Use drain() for the authoritative answer.
     [[nodiscard]] bool empty() const noexcept {
-        return layout_ ? layout_->control.empty() : true;
+        return layout_ ? layout_->head_vc.load(std::memory_order_acquire) ==
+                             layout_->tail_vc.load(std::memory_order_acquire)
+                       : true;
     }
 
     /// Drain all pending events from the channel into a state machine engine.
@@ -239,6 +286,12 @@ public:
     /// internal wire-21 paths route decode failures through their own
     /// codegen `decodeEnvelope` instrumentation).
     ///
+    /// This is the one consumer of the control ring (§mesh-10.3): many
+    /// transport deliveries are serialised into the ring by its producers, and
+    /// exactly one place pops them, so the engine sees one event at a time and
+    /// the W3C run-to-completion guarantee holds without a lock on the
+    /// processing path.
+    ///
     /// Does NOT call `engine.step()` — macrostep timing is scheduler /
     /// application responsibility (§scxml-3.13).
     ///
@@ -248,10 +301,18 @@ public:
         if (!layout_) {
             return 0;
         }
+        if (!consumer_) {
+            // The place is taken on first use and kept until the channel goes.
+            std::optional<typename ControlBridge::Consumer> handle = layout_->control.consumer();
+            if (!handle) {
+                return 0;
+            }
+            consumer_.emplace(std::move(*handle));
+        }
 
         std::size_t count = 0;
-        ControlSlot slot;
-        while (layout_->control.try_pop(slot)) {
+        while (std::optional<ControlSlot> popped = consumer_->try_pop()) {
+            const ControlSlot slot = *popped;
             MeshEnvelope env;
             if (!decodeEnvelope(reinterpret_cast<const std::uint8_t *>(layout_->arena + slot.offset), slot.length,
                                 env)) {
@@ -286,6 +347,14 @@ private:
         if (len > ArenaSize) {
             return false;
         }
+        if (!producer_) {
+            // The place is taken on first use and kept until the channel goes.
+            std::optional<typename ControlBridge::Producer> handle = layout_->control.producer();
+            if (!handle) {
+                return false;
+            }
+            producer_.emplace(std::move(*handle));
+        }
 
 #ifndef NDEBUG
         std::thread::id empty{};
@@ -315,7 +384,8 @@ private:
 
         std::memcpy(layout_->arena + phys, raw, len);
 
-        if (!layout_->control.try_push({phys, static_cast<std::uint32_t>(len), advance})) {
+        if (producer_->try_push(ControlSlot{phys, static_cast<std::uint32_t>(len), advance}) !=
+            SCE::Forge::Queue::PushStatus::Ok) {
             return false;
         }
 

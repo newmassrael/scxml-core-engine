@@ -170,10 +170,13 @@ int main() {
     env.type = "dummy";
     (void)router.route_send("#motor", env);
 
-    // Verify EventQueueBridge push/pop/empty compile
+    // Verify EventQueueBridge push/pop through its handles compile (the queue is
+    // exercised at run time by test_mesh_event_queue_bridge.cpp).
     SCE::Mesh::EventQueueBridge<int, 64> bridge;
-    (void)bridge.try_push(42);
-    (void)bridge.empty();
+    auto bridge_producer = bridge.producer();
+    auto bridge_consumer = bridge.consumer();
+    (void)bridge_producer->try_push(42);
+    (void)bridge_consumer->try_pop();
 
     std::printf("SCE Mesh compile verification: PASS\n");
     return 0;
