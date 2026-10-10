@@ -1731,7 +1731,7 @@ document is wrong*. The hops are one route and it is tested as one:
 What is refused is not the picture. It is a reading of a picture entering as a
 fact, where nothing downstream can ever disagree with it.
 
-⚠ **The mark goes in the document, and `check` asks for it there.** Measured
+⚠ **The mark goes in the document, on a `<data>`, and `check` asks for both.** Measured
 2026-10-10, five writers given one specification and its one picture all called
 `picture` and read the same rule, and kept the reading in three different places:
 three documents carried it as `sce:assumed`; one kept it in the binding's
@@ -1745,6 +1745,24 @@ core cannot say whether a drawing bears on a design, and a mark for every drawin
 of a long specification would be a demand for a reason nobody has. The limit is
 the other side of the same sentence -- a writer who reads a picture and names it
 nowhere is not caught here.
+
+⚠ **And the mark sits where a case can reach it.** Of those three documents, none
+had put it on a `<data>`: one marked a state, two a parallel region. A guess is
+worth recording because a case can contradict it, and `verify` and `gaps` reach a
+guess only through the value that reads it, so a mark on a structural element is
+recorded and never tried -- `gaps` lists it as **unplaced** and `check` refuses
+it (`unplaced_guesses`). The guess is written as a decision variable: a `<data>`
+whose `expr` is the decided value, or a `bool` the logic branches on, candidates
+`true false` (`brief` gives both shapes). The one exception is a mark that cites an
+answer the owner already gave: the decision record's ids and the profile's house
+rules, which `check` is handed with `--decisions` and `--profile` (the MCP tool's
+`decisions` and `profile`). The house rules are the product's mark, read with
+`sce-codegen unresolved --profile`, as `decisions` reads them; handed neither,
+`check` takes no mark for a citation and says how to say it is one, which fails
+loudly where the other choice would fail silently on every call that forgot an
+argument. An event schema's `<datamodel sce:assumed>` is a different document
+(`sce:payload`) and is not read here. Measured 2026-10-10 over 1777 stored writer
+documents: 636 carry a guess and 33 of them carry one off a `<data>`.
 
 ⚠ A cheaper discriminator was built first and measured wrong: "a stretch of
 pictures with no text between them" was true of 156 drawings out of 156,
