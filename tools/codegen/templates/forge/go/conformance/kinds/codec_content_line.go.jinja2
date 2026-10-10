@@ -18,7 +18,10 @@
 		   the fields by name, an absent parameter is a nil pointer. #}
 		{{ field.name | to_pascal_case }} []{{ f.name }}.{{ f.name | to_pascal_case }}{{ field.name | to_pascal_case }}Line `json:"{{ field.name }}"`
 {% else %}
-		{{ field.name | to_pascal_case }} {% if field.list %}[]{% elif field.optional %}*{% endif %}{{ field.type | go_type }} `json:"{{ field.name }}"`
+		{# A field that is an enum (docs/adr/0015) is written in a vector as its carrier
+		   number, which encoding/json reads straight into the enum's own defined
+		   integer type — the type the generated codec holds. #}
+		{{ field.name | to_pascal_case }} {% if field.list %}[]{% elif field.optional %}*{% endif %}{% if field.enum_document %}{{ field.enum_document }}.{{ field.enum_document | to_pascal_case }}{% else %}{{ field.type | go_type }}{% endif %} `json:"{{ field.name }}"`
 {% endif %}
 {% endfor %}
 	}
@@ -53,7 +56,7 @@
 		} else {
 			for j := range d.{{ fp }} {
 				if roundTripped.{{ fp }}[j] != d.{{ fp }}[j] {
-					t.Errorf("{{ f.name }} case %d decode {{ field.name }}[%d]: actual=%q expected=%q", i, j, roundTripped.{{ fp }}[j], d.{{ fp }}[j])
+					t.Errorf("{{ f.name }} case %d decode {{ field.name }}[%d]: actual=%v expected=%v", i, j, roundTripped.{{ fp }}[j], d.{{ fp }}[j])
 				}
 			}
 		}

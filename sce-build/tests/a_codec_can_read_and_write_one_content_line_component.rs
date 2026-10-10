@@ -660,7 +660,7 @@ fn an_enum_entry_takes_none_of_a_strings_own_attributes() {
 #[test]
 fn an_enum_entry_is_refused_by_name_until_a_backend_generates_it() {
     // The backends that have landed it; each adds itself in its own commit.
-    const GENERATING: [Language; 1] = [Language::Python];
+    const GENERATING: [Language; 2] = [Language::Python, Language::Go];
     let m = codec(&enum_document(ENUM_ENTRIES));
     for lang in [
         Language::Rust,

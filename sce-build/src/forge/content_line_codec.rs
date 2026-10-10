@@ -46,8 +46,8 @@ pub fn lowers(lang: Language) -> bool {
 /// read such an entry as nothing would be a wrong output.
 pub fn lowers_enum_entries(lang: Language) -> bool {
     match lang {
-        Language::Python => true,
-        Language::Rust | Language::Kotlin | Language::Cpp | Language::Go | Language::C11 => false,
+        Language::Python | Language::Go => true,
+        Language::Rust | Language::Kotlin | Language::Cpp | Language::C11 => false,
     }
 }
 
@@ -120,6 +120,11 @@ fn enum_keys(l: &LangCtx, ty: &SceType, value: &str) -> serde_json::Map<String, 
         keys.insert("enum_from".into(), l.enum_from_underlying(&r.alias).into());
         keys.insert("enum_to".into(), l.codec_carrier_expr(ty, value).into());
         keys.insert("enum_is_open".into(), l.enum_is_open(&r.alias).into());
+        keys.insert("carrier_type".into(), l.enum_carrier_type(&r.alias).into());
+        // A required entry starts at the first variant the enum declares, as a CBOR
+        // enum field does: a closed set need not declare the zero a language would
+        // start it at.
+        keys.insert("enum_default".into(), l.enum_default_expr(&r.alias).into());
     }
     keys
 }
@@ -411,6 +416,7 @@ fn render_go(
     let uses_math = entries.iter().any(|e| e["bits"].is_u64());
     ctx.insert("uses_math".into(), uses_math.into());
     insert_component(&mut ctx, m);
+    insert_enum_tables(&mut ctx, &l, m);
     ctx.insert("entries".into(), entries.into());
     l.render(env, "codec_content_line", ctx)
 }

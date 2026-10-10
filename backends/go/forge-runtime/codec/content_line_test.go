@@ -569,3 +569,128 @@ func TestContentLineWhatIsWrittenIsReadBack(t *testing.T) {
 		}
 	}
 }
+
+// ── An enum read and written by the text of its variants (docs/adr/0015) ──
+
+// clStatus is a closed vocabulary the way a generated codec holds it: each
+// variant's text and its carrier, the carriers neither starting at zero nor
+// running on.
+var clStatus = EnumTexts{{"NEEDS-ACTION", 1}, {"IN-PROCESS", 2}, {"COMPLETED", 4}, {"cancelled", 8}}
+
+func clEnumValue(value string) (uint64, error) {
+	reader, err := NewContentLineReader([]byte("BEGIN:VEVENT\r\nS:"+value+"\r\nEND:VEVENT\r\n"), "VEVENT")
+	if err != nil {
+		return 0, err
+	}
+	line, err := reader.Next()
+	if err != nil {
+		return 0, err
+	}
+	return line.ReadEnum(clStatus)
+}
+
+func clEnumParam(text string) (uint64, error) {
+	reader, err := NewContentLineReader([]byte("BEGIN:VEVENT\r\n"+text+"\r\nEND:VEVENT\r\n"), "VEVENT")
+	if err != nil {
+		return 0, err
+	}
+	line, err := reader.Next()
+	if err != nil {
+		return 0, err
+	}
+	if more, err := line.NextParam(); err != nil || !more {
+		return 0, errors.New("no parameter")
+	}
+	return line.ReadParamEnum(clStatus)
+}
+
+func TestContentLineATextIsMatchedAsciiCaseInsensitively(t *testing.T) {
+	for _, c := range []struct {
+		value   string
+		carrier uint64
+	}{
+		{"NEEDS-ACTION", 1}, {"needs-action", 1}, {"In-Process", 2}, {"completed", 4},
+		// A variant with no text of its own is read by its declared name, in any case.
+		{"CANCELLED", 8}, {"Cancelled", 8},
+	} {
+		if got, err := clEnumValue(c.value); err != nil || got != c.carrier {
+			t.Errorf("%q read as %d %v, want %d", c.value, got, err, c.carrier)
+		}
+	}
+}
+
+func TestContentLineAValueNoVariantNamesIsABadValue(t *testing.T) {
+	for _, value := range []string{
+		"", "DONE", "NEEDS", "NEEDS-ACTION-", "NEEDS-ACTION-NEEDS-ACTION-NEEDS-ACTION",
+		" IN-PROCESS", "IN-PROCESS ",
+		// The declared name of a variant that has a text is not its text.
+		"needsAction",
+		// A value is no TEXT, so a backslash in it is not an escape.
+		"IN\\-PROCESS", "IN-\x07PROCESS",
+		// Only the 26 letters fold: U+017F and U+0131 are not S and I.
+		"IN-PROCEſſ", "ıN-PROCESS",
+	} {
+		if got, err := clEnumValue(value); !errors.Is(err, ErrLineBadValue) {
+			t.Errorf("%q read as %d %v, want a bad value", value, got, err)
+		}
+	}
+}
+
+func TestContentLineATextCutByAFoldIsReadWhole(t *testing.T) {
+	reader, _ := NewContentLineReader([]byte("BEGIN:VEVENT\r\nS:IN-PRO\r\n CESS\r\nEND:VEVENT\r\n"), "VEVENT")
+	line, _ := reader.Next()
+	if got, err := line.ReadEnum(clStatus); err != nil || got != 2 {
+		t.Errorf("read as %d %v", got, err)
+	}
+}
+
+func TestContentLineAParameterThatIsAnEnumIsMatchedQuotedOrNot(t *testing.T) {
+	if got, err := clEnumParam("S;ROLE=completed:x"); err != nil || got != 4 {
+		t.Errorf("read as %d %v", got, err)
+	}
+	if got, err := clEnumParam(`S;ROLE="Needs-Action":x`); err != nil || got != 1 {
+		t.Errorf("read as %d %v", got, err)
+	}
+	for _, bad := range []string{"S;ROLE=:x", "S;ROLE=BOSS:x", `S;ROLE="":x`, "S;ROLE=COMPLETED,COMPLETED:x"} {
+		if _, err := clEnumParam(bad); !errors.Is(err, ErrLineBadValue) {
+			t.Errorf("%q: %v, want a bad value", bad, err)
+		}
+	}
+	// The value is scanned whole before it is judged, so a quote that never closes
+	// is malformed even though the text before it names no variant.
+	if _, err := clEnumParam(`S;ROLE="ZZZ:x`); !errors.Is(err, ErrLineMalformed) {
+		t.Errorf("an open quote: %v, want malformed", err)
+	}
+}
+
+func TestContentLineAnEnumIsWrittenAsTheTextItsEnumDeclares(t *testing.T) {
+	text := clWritten(t, func(w *ContentLineWriter) {
+		clMust(t, w.Property("S"))
+		clMust(t, w.EnumParam("ROLE", clStatus, 1))
+		clMust(t, w.EnumParam("X-Q", clStatus, 8))
+		clMust(t, w.EnumValue(clStatus, 2))
+		clMust(t, w.Property("T"))
+		clMust(t, w.EnumValue(clStatus, 8))
+	})
+	want := "BEGIN:VEVENT\r\nS;ROLE=NEEDS-ACTION;X-Q=cancelled:IN-PROCESS\r\nT:cancelled\r\nEND:VEVENT\r\n"
+	if text != want {
+		t.Errorf("wrote %q, want %q", text, want)
+	}
+}
+
+func TestContentLineACarrierNoVariantDeclaresHasNoTextAndIsNotWritten(t *testing.T) {
+	var out []byte
+	w := NewContentLineWriter(NewBytesSink(&out), "VEVENT")
+	clMust(t, w.Begin())
+	clMust(t, w.Property("S"))
+	before := len(out)
+	if err := w.EnumValue(clStatus, 9); !errors.Is(err, ErrLineBadValue) {
+		t.Errorf("a value: %v, want a bad value", err)
+	}
+	if err := w.EnumParam("ROLE", clStatus, 9); !errors.Is(err, ErrLineBadValue) {
+		t.Errorf("a parameter: %v, want a bad value", err)
+	}
+	if len(out) != before {
+		t.Errorf("a refused value was written: %q", out[before:])
+	}
+}

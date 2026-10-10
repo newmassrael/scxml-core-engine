@@ -670,6 +670,113 @@ func (p *ContentLineProperty) ReadBool() (bool, error) {
 	return false, ErrLineBadValue
 }
 
+// EnumText is one variant of an enum a content-line entry is read and written
+// by (docs/adr/0015): the text the enum document gives it and the carrier value
+// it stands for.
+type EnumText struct {
+	Text  string
+	Value uint64
+}
+
+// EnumTexts is the variants of an enum in declaration order. A generated codec
+// holds it as data, because the enum's own type carries no text.
+type EnumTexts []EnumText
+
+func (t EnumTexts) longest() int {
+	longest := 0
+	for _, row := range t {
+		if len(row.Text) > longest {
+			longest = len(row.Text)
+		}
+	}
+	return longest
+}
+
+// carrierOf is the carrier of the first variant whose text value is, compared
+// ASCII case-insensitively: only the 26 letters fold, so a character Unicode
+// folds to one of them (U+017F, U+0131) is not that letter. A value no variant
+// names is ErrLineBadValue.
+func (t EnumTexts) carrierOf(value []byte) (uint64, error) {
+	for _, row := range t {
+		if len(row.Text) != len(value) {
+			continue
+		}
+		same := true
+		for i := 0; i < len(value); i++ {
+			if lineLower(int(row.Text[i])) != lineLower(int(value[i])) {
+				same = false
+				break
+			}
+		}
+		if same {
+			return row.Value, nil
+		}
+	}
+	return 0, ErrLineBadValue
+}
+
+// textOf is the text of the first variant with carrier, as the enum declares it;
+// a carrier of an open enum that no variant declares has none, and is
+// ErrLineBadValue.
+func (t EnumTexts) textOf(carrier uint64) (string, error) {
+	for _, row := range t {
+		if row.Value == carrier {
+			return row.Text, nil
+		}
+	}
+	return "", ErrLineBadValue
+}
+
+// ReadEnum reads the value as the text of a variant of an enum (docs/adr/0015):
+// the carrier of the first row of table whose text it is, ASCII
+// case-insensitively. A value no row names is ErrLineBadValue, whatever its bytes
+// are: it is no TEXT, so a backslash in it is not an escape, and nothing of it is
+// kept past the longest text.
+func (p *ContentLineProperty) ReadEnum(table EnumTexts) (uint64, error) {
+	if err := p.beginValue(); err != nil {
+		return 0, err
+	}
+	longest := table.longest()
+	word := make([]byte, 0, 16)
+	for {
+		b := p.scan.bump()
+		if b < 0 {
+			break
+		}
+		if len(word) <= longest {
+			word = append(word, byte(b))
+		}
+	}
+	return table.carrierOf(word)
+}
+
+// ReadParamEnum reads the value of the parameter NextParam stands on as the text
+// of a variant of an enum (docs/adr/0015). The whole value is scanned before it is
+// judged, so a line the grammar refuses is ErrLineMalformed before it is
+// ErrLineBadValue; a second value is ErrLineBadValue.
+func (p *ContentLineProperty) ReadParamEnum(table EnumTexts) (uint64, error) {
+	if p.phase != phaseParamValue {
+		return 0, ErrLineMalformed
+	}
+	longest := table.longest()
+	word := make([]byte, 0, 16)
+	more, err := p.scanParamValue(func(b int) error {
+		if len(word) <= longest {
+			word = append(word, byte(b))
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	p.paramFrom = -1
+	p.phase = phaseAtSeparator
+	if more {
+		return 0, ErrLineBadValue
+	}
+	return table.carrierOf(word)
+}
+
 // ── Writing ─────────────────────────────────────────────────────────────
 
 // ContentLineWriter writes the lines of one component into a sink.
@@ -913,4 +1020,33 @@ func (w *ContentLineWriter) Bool(value bool) error {
 		return w.digits("TRUE")
 	}
 	return w.digits("FALSE")
+}
+
+// EnumParam writes `;<name>=<text>` for the variant with carrier. A text is
+// letters, digits and hyphens, so it is never quoted (docs/adr/0015).
+func (w *ContentLineWriter) EnumParam(name string, table EnumTexts, carrier uint64) error {
+	text, err := table.textOf(carrier)
+	if err != nil {
+		return err
+	}
+	if err := w.unit([]byte{';'}); err != nil {
+		return err
+	}
+	if err := w.asciiUnits(name); err != nil {
+		return err
+	}
+	if err := w.unit([]byte{'='}); err != nil {
+		return err
+	}
+	return w.asciiUnits(text)
+}
+
+// EnumValue writes `:<text>` for the variant with carrier and ends the line
+// (docs/adr/0015).
+func (w *ContentLineWriter) EnumValue(table EnumTexts, carrier uint64) error {
+	text, err := table.textOf(carrier)
+	if err != nil {
+		return err
+	}
+	return w.digits(text)
 }

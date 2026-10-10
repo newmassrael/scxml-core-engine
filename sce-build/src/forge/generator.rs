@@ -23508,6 +23508,9 @@ struct EnumImport {
     /// for (docs/adr/0015); empty when the import was built to ask a type
     /// question only.
     texts: Vec<EnumText>,
+    /// The carrier the enum document declares, for a backend that converts a
+    /// number read off a line to the enum through a width of its own.
+    carrier: Option<SceType>,
 }
 
 pub(crate) struct LangCtx {
@@ -23550,6 +23553,7 @@ impl LangCtx {
                     // rather than here.
                     first_variant: imp.enum_variants.first().cloned().unwrap_or_default(),
                     texts: imp.enum_texts.clone(),
+                    carrier: imp.enum_underlying.clone(),
                 }
             })
             .collect();
@@ -23601,6 +23605,7 @@ impl LangCtx {
                     source_name: String::new(),
                     first_variant: String::new(),
                     texts: Vec::new(),
+                    carrier: None,
                 })
                 .collect(),
             origin: "LangCtx::with_static_enums",
@@ -23689,6 +23694,16 @@ impl LangCtx {
     /// and writes an enum entry by (docs/adr/0015).
     pub(crate) fn enum_texts(&self, alias: &str) -> &[EnumText] {
         &self.enum_import(alias).texts
+    }
+
+    /// This language's type for the carrier of the enum `alias` names, which a
+    /// backend that holds a number read off a line at a width of its own converts
+    /// to the enum through; `None` when the import carries no carrier.
+    pub(crate) fn enum_carrier_type(&self, alias: &str) -> Option<String> {
+        self.enum_import(alias)
+            .carrier
+            .as_ref()
+            .map(|ty| self.type_name(ty).into_owned())
     }
 
     pub(crate) fn enum_from_underlying(&self, alias: &str) -> String {

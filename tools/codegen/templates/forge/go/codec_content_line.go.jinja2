@@ -6,6 +6,20 @@
     refusal returns its typed error, this backend's decode convention. The
     line grammar — unfolding, TEXT escapes, quoting — is the runtime's
     (`codec.ContentLine*`); this spells none of it. #}
+{#- The enum a number read off a line stands for, as the enum's own conversion
+    names it: a closed enum answers whether the carrier is one of its variants,
+    an open enum is total (docs/adr/0015). `raw` is the carrier the text names,
+    and `bad` is what the caller returns for a variant the enum does not hold. #}
+{% macro enum_of(x, raw, indent) %}
+{% if x.enum_is_open %}
+{{ indent }}{{ "pv" if x.param is defined else "v" }} := {{ x.enum_from }}({{ x.carrier_type }}({{ raw }}))
+{% else %}
+{{ indent }}{{ "pv" if x.param is defined else "v" }}, ok := {{ x.enum_from }}({{ x.carrier_type }}({{ raw }}))
+{{ indent }}if !ok {
+{{ indent }}	return nil, codec.ErrLineBadValue
+{{ indent }}}
+{% endif %}
+{% endmacro %}
 {% macro read_value(e) %}
 {% if e.separator %}
 			v, err := line.ReadStrings('{{ e.separator }}', {{ e.max_values }}, {{ e.max_size }}, {{ "true" if e.text else "false" }})
@@ -22,6 +36,12 @@
 			if err != nil {
 				return nil, err
 			}
+{% elif e.kind == "enum" %}
+			raw, err := line.ReadEnum(texts{{ e.enum_alias }})
+			if err != nil {
+				return nil, err
+			}
+{{ enum_of(e, "raw", "\t\t\t") }}
 {% elif e.kind == "uint" %}
 			raw, err := line.ReadUint(uint64(math.MaxUint{{ e.bits }}))
 			if err != nil {
@@ -70,6 +90,10 @@
 		if err := out.Bool(v); err != nil {
 			return err
 		}
+{% elif e.kind == "enum" %}
+		if err := out.EnumValue(texts{{ e.enum_alias }}, uint64({{ e.enum_to }})); err != nil {
+			return err
+		}
 {% elif e.kind == "uint" %}
 		if err := out.Uint(uint64(v)); err != nil {
 			return err
@@ -84,7 +108,25 @@
     the codec itself, or the record of one line. #}
 {% macro write_params(e, holder) %}
 {% for p in e.params %}
+{% if p.kind == "enum" %}
+{#- A parameter that is an enum is written as the text of its variant; `pv` is
+    the value its carrier is taken from. #}
 {% if p.required %}
+		{
+			pv := {{ holder }}.{{ p.name }}
+			if err := out.EnumParam("{{ p.param }}", texts{{ p.enum_alias }}, uint64({{ p.enum_to }})); err != nil {
+				return err
+			}
+		}
+{% else %}
+		if {{ holder }}.{{ p.name }} != nil {
+			pv := *{{ holder }}.{{ p.name }}
+			if err := out.EnumParam("{{ p.param }}", texts{{ p.enum_alias }}, uint64({{ p.enum_to }})); err != nil {
+				return err
+			}
+		}
+{% endif %}
+{% elif p.required %}
 		if err := out.Param("{{ p.param }}", {{ holder }}.{{ p.name }}, {{ p.max_size }}); err != nil {
 			return err
 		}
@@ -118,6 +160,17 @@ import (
 {% endfor %}
 )
 
+{# What an entry that is an enum is written and read by (docs/adr/0015): each
+   variant's text and the carrier it stands for, held as data here because the
+   enum's own type carries none. #}
+{% for t in enum_tables %}
+var texts{{ t.alias }} = codec.EnumTexts{
+{% for r in t.rows %}
+	{"{{ r.text }}", {{ r.value }}},
+{% endfor %}
+}
+
+{% endfor %}
 {% for e in entries if e.is_records %}
 // {{ e.record_type }} is one line of `{{ e.property }}` (docs/adr/0014): the
 // parameters it carries and its {% if e.separator %}list of values, cut at `{{ e.separator }}`{% else %}value{% endif %}. A parameter that
@@ -132,7 +185,7 @@ type {{ e.record_type }} struct {
 	{{ e.value_member }} []string
 {% else %}
 	// {{ e.value_member }} is the value of the line.
-	{{ e.value_member }} string
+	{{ e.value_member }} {{ e.value_type }}
 {% endif %}
 }
 
@@ -159,7 +212,20 @@ type {{ struct_name }} struct {
 // New{{ struct_name }} returns the infallible starting value: a required entry
 // at its type's default, an optional one absent.
 func New{{ struct_name }}() *{{ struct_name }} {
-	return &{{ struct_name }}{}
+{# A required enum starts at the first variant its enum declares, because a
+   closed set need not declare the zero Go would start it at (docs/adr/0015). #}
+	return &{{ struct_name }}{
+{% for e in entries %}
+{% if e.kind == "enum" and e.required and not (e.is_list or e.is_records) %}
+		{{ e.name }}: {{ e.enum_default }},
+{% endif %}
+{% if not e.is_records %}
+{% for p in e.params if p.kind == "enum" and p.required %}
+		{{ p.name }}: {{ p.enum_default }},
+{% endfor %}
+{% endif %}
+{% endfor %}
+	}
 }
 
 // Decode{{ struct_name }} decodes one component from cursor. On success the
@@ -238,10 +304,18 @@ func decode{{ struct_name }}At(c *codec.SceCursor) (*{{ struct_name }}, error) {
 					if {{ p.name | lower }}Seen {
 						return nil, codec.ErrLineTooMany
 					}
+{% if p.kind == "enum" %}
+					raw, err := line.ReadParamEnum(texts{{ p.enum_alias }})
+					if err != nil {
+						return nil, err
+					}
+{{ enum_of(p, "raw", "\t\t\t\t\t") }}
+{% else %}
 					pv, err := line.ReadParamString({{ p.max_size }})
 					if err != nil {
 						return nil, err
 					}
+{% endif %}
 {% if p.required %}
 					{{ "rec" if e.is_records else "out" }}.{{ p.name }} = pv
 {% else %}
