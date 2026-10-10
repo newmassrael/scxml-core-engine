@@ -77,5 +77,10 @@ name = "loom_queue_lscq"
 path = "tests/loom_queue_lscq.rs"
 test = false
 
+[[test]]
+name = "loom_queue_lscq_race"
+path = "tests/loom_queue_lscq_race.rs"
+test = false
+
 [lints]
 workspace = true

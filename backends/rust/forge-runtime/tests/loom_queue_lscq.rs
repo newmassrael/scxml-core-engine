@@ -11,11 +11,12 @@
 //! an access to an element's slot is not ordered after the access that last
 //! wrote it. What these models add to the SCQ ones (`loom_queue_scq.rs`) is the
 //! list around the rings: that a segment is linked behind another with its first
-//! element already in it and no element is lost across the link; that two
-//! producers racing to link a successor leave exactly one, with nothing lost;
-//! that a closed segment is drained before it is retired, so an element still
-//! arriving in it is found; and that a segment a consumer retires while a
-//! producer is using it is not freed under the producer.
+//! element already in it and no element is lost across the link; that a closed
+//! segment is drained before it is retired, so an element still arriving in it is
+//! found; and that a segment a consumer retires while a producer is using it is
+//! not freed under the producer. The race of two producers to link a successor
+//! is in `loom_queue_lscq_race.rs`, which has a file of its own because exploring
+//! it takes minutes where these models take well under a second.
 //!
 //! **Safety, not progress**, for the reason `loom_queue_scq.rs` gives: no model
 //! waits for another thread, each thread makes its attempts once, and what is
@@ -47,70 +48,18 @@ compile_error!(
 );
 
 #[cfg(loom)]
-mod models {
-    use std::alloc::Layout;
-    use std::ptr::NonNull;
+mod loom_support;
 
-    use loom::sync::atomic::{AtomicUsize, Ordering};
+#[cfg(loom)]
+mod models {
+    use loom::sync::atomic::Ordering;
     use loom::sync::Arc;
     use loom::thread;
-    use sce_forge_runtime::queue::allocator::{Progress, SegmentAllocator};
-    use sce_forge_runtime::queue::hazard::HazardDomain;
     use sce_forge_runtime::queue::linked::LinkedLamport;
-    use sce_forge_runtime::queue::lscq::{Consumer, Lscq};
 
-    /// Run `body` under every interleaving within the preemption bound the
-    /// module documentation states.
-    fn model(body: impl Fn() + Sync + Send + 'static) {
-        let mut builder = loom::model::Builder::new();
-        builder.preemption_bound = Some(3);
-        builder.check(body);
-    }
-
-    /// The system allocator, counting the blocks it has out so a model can say
-    /// that the queue gave every segment back.
-    struct Counting {
-        live: AtomicUsize,
-    }
-
-    impl Counting {
-        fn new() -> Self {
-            Self {
-                live: AtomicUsize::new(0),
-            }
-        }
-    }
-
-    // SAFETY: blocks come from the system allocator with the layout asked for and
-    // go back to it with the same; the count is atomic. The system allocator can
-    // block, which is what `PROGRESS` says.
-    unsafe impl SegmentAllocator for Counting {
-        const PROGRESS: Progress = Progress::Blocking;
-
-        fn allocate(&self, layout: Layout) -> Option<NonNull<u8>> {
-            // SAFETY: a segment's layout is never zero-sized.
-            let block = NonNull::new(unsafe { std::alloc::alloc(layout) })?;
-            self.live.fetch_add(1, Ordering::SeqCst);
-            Some(block)
-        }
-
-        unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: Layout) {
-            // SAFETY: the caller's contract: `ptr` came from `allocate` with `layout`.
-            unsafe { std::alloc::dealloc(ptr.as_ptr(), layout) };
-            self.live.fetch_sub(1, Ordering::SeqCst);
-        }
-    }
-
-    /// Loom builds the queue afresh in every execution, and a queue borrows its
-    /// allocator and its domain; both are leaked for the one execution, which is
-    /// a few words, so that the queue can be shared by `Arc` between threads.
-    fn leaked_allocator() -> &'static Counting {
-        Box::leak(Box::new(Counting::new()))
-    }
-
-    fn leaked_domain<const H: usize>() -> &'static HazardDomain<H> {
-        Box::leak(Box::new(HazardDomain::<H>::new()))
-    }
+    use super::loom_support::{
+        drain, leaked_allocator, leaked_domain, model, queue_over, Counting,
+    };
 
     // ─── Linked Lamport rings ───
 
@@ -149,24 +98,6 @@ mod models {
 
     // ─── LSCQ ───
 
-    /// Segments of one element over a ring of two, a hazard domain of four slots,
-    /// a producer and a consumer place on each side.
-    type Queue = Lscq<'static, usize, 1, 2, 4, Counting, 0>;
-
-    fn queue_over(allocator: &'static Counting, domain: &'static HazardDomain<4>) -> Arc<Queue> {
-        Arc::new(Queue::new(allocator, domain).expect("first segment"))
-    }
-
-    /// Whatever is left in the queue, oldest first. Run after every thread has
-    /// joined, so nothing else touches the queue and the loop ends.
-    fn drain(consumer: &Consumer<'_, '_, usize, 1, 2, 4, Counting, 0>) -> Vec<usize> {
-        let mut left = Vec::new();
-        while let Some(element) = consumer.try_pop() {
-            left.push(element);
-        }
-        left
-    }
-
     /// One producer pushes two elements through segments of one and one consumer
     /// pops. The second push closes the first segment and links a successor holding
     /// the element, and the pop meets the close, the link and the retirement at any
@@ -193,53 +124,6 @@ mod models {
             pushing.join().unwrap();
             seen.extend(drain(&consumer));
             assert_eq!(seen, [1, 2], "both come out once, in order, unchanged");
-            drop(consumer);
-            drop(queue);
-            assert_eq!(
-                allocator.live.load(Ordering::SeqCst),
-                0,
-                "every segment went back"
-            );
-        });
-    }
-
-    /// Two producers find the first segment full and race to link a successor,
-    /// each with its own element already in the segment it offers. One wins; the
-    /// other frees its segment and pushes behind the winner's. Neither element is
-    /// lost or duplicated, and every segment, the loser's included, goes back.
-    #[test]
-    fn lscq_two_producers_racing_to_link_lose_nothing() {
-        model(|| {
-            let allocator = leaked_allocator();
-            let domain = leaked_domain::<4>();
-            let queue = queue_over(allocator, domain);
-            assert!(
-                queue.producer().unwrap().try_push(0).is_ok(),
-                "the first segment is now full"
-            );
-            let (first, second) = (queue.clone(), queue.clone());
-            let a = thread::spawn(move || {
-                assert!(first.producer().unwrap().try_push(1).is_ok());
-            });
-            let b = thread::spawn(move || {
-                assert!(second.producer().unwrap().try_push(2).is_ok());
-            });
-
-            // Two pops: the first takes the element the segment held, and the
-            // second can meet its close, its link and its retirement and go on to
-            // the segment behind, which is what a producer still pushing into the
-            // first must not be left behind by.
-            let consumer = queue.consumer().unwrap();
-            let mut seen: Vec<usize> = Vec::new();
-            seen.extend(consumer.try_pop());
-            seen.extend(consumer.try_pop());
-            a.join().unwrap();
-            b.join().unwrap();
-            seen.extend(drain(&consumer));
-            assert_eq!(seen.first(), Some(&0), "the first element is first");
-            let mut rest = seen[1..].to_vec();
-            rest.sort_unstable();
-            assert_eq!(rest, [1, 2], "each of the others comes out once");
             drop(consumer);
             drop(queue);
             assert_eq!(

@@ -5518,6 +5518,10 @@
         {
           "file": "backends/c/forge-runtime/tests/genmc/spsc_slot_reuse.c",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/forge-runtime/tests/loom_queue_lscq_race.rs",
+          "kind": "references"
         }
       ]
     },

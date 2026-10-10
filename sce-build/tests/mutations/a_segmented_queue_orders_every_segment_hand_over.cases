@@ -12,7 +12,10 @@
 # consumer through the filled count (linked) or the ring's own indices (LSCQ,
 # whose rings are the SCQ of `an_scq_queue_orders_every_index_hand_over.cases`).
 # The oracle is the loom models in
-# `backends/rust/forge-runtime/tests/loom_queue_lscq.rs`, which explore every
+# `backends/rust/forge-runtime/tests/loom_queue_lscq.rs` (the race of two
+# producers to link a successor is in `loom_queue_lscq_race.rs`, whose
+# exploration takes minutes, longer than `scripts/mutate` lets one test binary
+# run, and is not part of this casefile's oracle), which explore every
 # interleaving within three preemptions and every outcome the memory model
 # allows, and fail when a slot is read or written with no happens-before edge
 # from the access before it, or when an element is lost or a segment is not
@@ -31,7 +34,7 @@
 
 mutation_tests -p sce-forge-runtime --release --target-dir target/loom --config 'build.rustflags=["--cfg","loom"]' --test loom_queue_lscq
 mutation_targets backends/rust/forge-runtime/src/queue/lscq.rs backends/rust/forge-runtime/src/queue/linked.rs backends/rust/forge-runtime/src/queue/hazard.rs backends/rust/forge-runtime/src/queue/scq.rs
-mutation_oracles backends/rust/forge-runtime/tests/loom_queue_lscq.rs
+mutation_oracles backends/rust/forge-runtime/tests/loom_queue_lscq.rs backends/rust/forge-runtime/tests/loom_support/mod.rs
 
 # ── Linked Lamport rings ───────────────────────────────────────────
 
