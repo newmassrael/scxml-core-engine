@@ -84,7 +84,8 @@ could pass a design it had not put right were found in a review of the first ver
   does not start the reviser and the round fails saying why. Windows has a way of its own: a process
   group of its own and `taskkill /F /T` on a timeout. Its answer is not the result (it can refuse and
   still return): the reviser is waited for with a time, killed by itself when it is still there, and
-  said not to be endable when even that leaves it running (a review, 2026-10-10). It was written from
+  said not to be endable when even that leaves it running, and closing its output pipes is bounded
+  too, a pipe a child of it still holds being left open and named (a review, 2026-10-10). It was written from
   what `taskkill` documents and has not been run on Windows; what the tests hold is the command it
   issues and what is done when it fails.
 

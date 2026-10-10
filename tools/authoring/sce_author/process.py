@@ -138,9 +138,11 @@ def _run_in_own_group(argv: list, cwd, timeout: float | None, stdin_text: str | 
     try:
         out, err = child.communicate(input=stdin_text, timeout=timeout)
     except subprocess.TimeoutExpired as exc:
-        _end_group(child, windows)
+        left = _end_group(child, windows)
+        held = (f"; its {', '.join(left)} pipe(s) were still held by what it started and were left open"
+                if left else "")
         raise ProcessTimeout(
-            f"{os.path.basename(str(argv[0]))} had not finished after {timeout:.0f} s") from exc
+            f"{os.path.basename(str(argv[0]))} had not finished after {timeout:.0f} s{held}") from exc
     except BaseException:
         _end_group(child, windows)
         raise
@@ -170,10 +172,32 @@ def _own_group_options(windows: bool) -> dict:
                   "everything it started needs a process group, which this host has no way to stop")
 
 
-def _end_group(child: subprocess.Popen, windows: bool) -> None:
-    """Stop everything the program started, collect it and close its pipes. Only while the program
-    is still uncollected: once it is collected its number belongs to nobody, and a signal to it
-    could reach a stranger."""
+#: How long closing the output pipes of an ended program is given, in seconds. A pipe is held by what
+#: still has the other end: a child of the program that `taskkill` did not find, or on Windows the reader
+#: thread of `communicate`, which keeps the pipe's lock while it waits for what such a child may yet say.
+_CLOSE_WITHIN = 5.0
+
+
+def _close_within(pipes: dict, seconds: float) -> list[str]:
+    """Close each pipe on a thread of its own and wait `seconds` for all of them together. The names of
+    the pipes still open after that are returned: a close that waits for a holder has no end of its own,
+    so it is left on its thread (a daemon, which does not keep the process alive) and said."""
+    threads = {}
+    for name, pipe in pipes.items():
+        thread = threading.Thread(target=pipe.close, name=f"close-{name}", daemon=True)
+        thread.start()
+        threads[name] = thread
+    deadline = time.monotonic() + seconds
+    for thread in threads.values():
+        thread.join(max(0.0, deadline - time.monotonic()))
+    return [name for name, thread in threads.items() if thread.is_alive()]
+
+
+def _end_group(child: subprocess.Popen, windows: bool) -> list[str]:
+    """Stop everything the program started, collect it and close its pipes; the names of the pipes that
+    could not be closed in `_CLOSE_WITHIN` are returned. Only while the program is still uncollected:
+    once it is collected its number belongs to nobody, and a signal to it could reach a stranger."""
+    left: list[str] = []
     try:
         if child.returncode is None:
             if windows:
@@ -184,10 +208,11 @@ def _end_group(child: subprocess.Popen, windows: bool) -> None:
                 except (ProcessLookupError, PermissionError):
                     pass
     finally:
-        for pipe in (child.stdin, child.stdout, child.stderr):
-            if pipe is not None:
-                pipe.close()
+        left = _close_within({name: pipe for name, pipe in
+                              (("stdin", child.stdin), ("stdout", child.stdout), ("stderr", child.stderr))
+                              if pipe is not None}, _CLOSE_WITHIN)
     child.wait()
+    return left
 
 
 def _end_tree_on_windows(child: subprocess.Popen) -> None:

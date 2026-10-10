@@ -395,7 +395,9 @@ that is a signal to the group; on Windows the reviser is started in a process gr
 its tree is ended with `taskkill /F /T`, which follows the parent links of what is still alive. What
 `taskkill` answers is not taken as the result: the reviser itself is waited for, for a few seconds, and
 one that is still there is killed by itself; one that cannot be ended even so is said (`OSError`), never
-waited on. The Windows way was written from what `taskkill` documents and has NOT been run on Windows:
+waited on. Closing its output pipes is bounded too: a pipe still held by what the reviser started (or, on
+Windows, by the reader thread of `communicate`) is left open after a few seconds and named in the round's
+failure, not waited on. The Windows way was written from what `taskkill` documents and has NOT been run on Windows:
 the tests hold the command it issues and what is done when it fails, not that it ends a tree. A host with neither does not start the reviser
 and the round fails with the reason. The gate cannot stop a client editing more than it was told to inside one round:
 that is found after it is made and asked to be put back. `within-reach` is still not "right"

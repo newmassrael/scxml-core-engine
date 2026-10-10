@@ -19,6 +19,7 @@ import shlex
 import shutil
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from unittest import mock
@@ -387,6 +388,68 @@ class ACommandIsAReviser(unittest.TestCase):
                 process._end_group(child, True)
         self.assertIn("11", str(caught.exception))
         self.assertTrue(child.killed)
+
+    def _held_pipe(self):
+        """An output pipe that cannot be closed while something still holds it, as a reader thread of
+        Windows' `communicate` holds it while a child that outlived its parent keeps the other end open.
+        Its close waits for a release that never comes (here: until the test ends)."""
+        release = threading.Event()
+        self.addCleanup(release.set)
+
+        class Held:
+            closed = False
+
+            def close(self):
+                release.wait(30)
+                self.closed = True
+
+        return Held()
+
+    def test_a_pipe_a_child_of_the_command_still_holds_is_not_waited_on_when_the_command_is_ended(self):
+        from sce_author import process
+
+        class Child:
+            returncode = 0
+            pid = 12
+            stdin = None
+            stderr = None
+            waited = False
+
+            def wait(self, timeout=None):
+                self.waited = True
+
+        child = Child()
+        child.stdout = self._held_pipe()
+        started = time.monotonic()
+        with mock.patch.object(process, "_CLOSE_WITHIN", 0.3):
+            left = process._end_group(child, False)
+        self.assertLess(time.monotonic() - started, 5.0, "ending the command waited on a pipe still held")
+        self.assertEqual(["stdout"], left)
+        self.assertTrue(child.waited)
+
+    def test_the_round_still_fails_for_its_clock_and_says_which_pipe_was_left(self):
+        from sce_author import process
+
+        class Child:
+            returncode = None
+            pid = 13
+            stdin = stderr = None
+
+            def communicate(self, input=None, timeout=None):
+                raise process.subprocess.TimeoutExpired("program", timeout)
+
+            def wait(self, timeout=None):
+                return 0
+
+        child = Child()
+        child.stdout = self._held_pipe()
+        with mock.patch.object(process.subprocess, "Popen", lambda *a, **k: child), \
+                mock.patch.object(process.os, "killpg", lambda *a: None), \
+                mock.patch.object(process, "_CLOSE_WITHIN", 0.3):
+            with self.assertRaises(process.ProcessTimeout) as caught:
+                process._run_in_own_group(["x"], None, 1.0, None, None)
+        self.assertIn("had not finished", str(caught.exception))
+        self.assertIn("stdout", str(caught.exception))
 
     def test_a_command_that_finishes_is_read_as_before_when_it_has_a_session_of_its_own(self):
         code = "import sys; print('said'); print('and', file=sys.stderr); sys.exit(0)"
