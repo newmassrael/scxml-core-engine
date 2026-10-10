@@ -49,6 +49,14 @@ private fun atOrBefore(x: Long, y: Long): Boolean = x - y <= 0
 private const val NONE: Long = -1
 
 /**
+ * The tail's top bit, set once a ring is closed: an enqueue that takes a ticket
+ * from a closed tail gets the bit back and puts nothing on the ring. This is the
+ * finalize bit of Nikolaev's LSCQ. The tickets are the bits below it, and a
+ * 64-bit counter never reaches it ([WRAP_BOUND_OPS]).
+ */
+private const val FIN: Long = Long.MIN_VALUE
+
+/**
  * One SCQ ring of R slots (R a power of two) and 2R entries.
  *
  * An entry is cycle | IsSafe | index: the index in the low log2(2R) bits, the
@@ -122,14 +130,33 @@ private class Ring(slots: Long, filled: Long) {
     }
 
     /**
-     * Puts [index] on the ring. The ring never refuses: at most R indices
-     * circulate through it, and an enqueue that finds its entry unusable takes
-     * the next ticket.
+     * Closes the ring: an enqueue that takes its ticket after this one's
+     * fetch-or puts nothing on it. An enqueue that already holds a ticket may
+     * still complete; the dequeues that follow either find its entry or make it
+     * unusable, which sends that enqueue to the next ticket and so to a refusal.
      */
-    fun enqueue(index: Long) {
+    fun close() {
+        fetchOr(tail, FIN)
+    }
+
+    /**
+     * Puts [index] on the ring and returns true, or returns false, putting
+     * nothing, when the ring is closed. An open ring never refuses: at most R
+     * indices circulate through it, and an enqueue that finds its entry unusable
+     * takes the next ticket.
+     */
+    fun enqueue(index: Long): Boolean {
         val stored = index xor indexMask
         while (true) {
+            // Looking first keeps a closed ring's tail from counting attempts
+            // that cannot succeed; the ticket's own bit is what decides.
+            if (tail.load() and FIN != 0L) {
+                return false
+            }
             val ticket = tail.fetchAndAdd(1)
+            if (ticket and FIN != 0L) {
+                return false
+            }
             val ticketCycle = (ticket shl 1) or lowMask
             val slot = entries[mapTicket(ticket)]
             var entry = slot.load()
@@ -147,7 +174,7 @@ private class Ring(slots: Long, filled: Long) {
                     if (threshold.load() != thresholdAfterEnqueue) {
                         threshold.store(thresholdAfterEnqueue)
                     }
-                    return
+                    return true
                 }
                 // The entry changed; judge what it is now.
                 entry = slot.load()
@@ -172,14 +199,16 @@ private class Ring(slots: Long, filled: Long) {
     /**
      * Moves tail back to head after dequeues overshot an empty ring, so that
      * the next enqueue does not start a cycle ahead of what is read.
+     * [observedTail] is the word as read, closing bit included, and the word
+     * written keeps the bit: a ring that was closed stays closed.
      */
     private fun catchUp(observedTail: Long, observedHead: Long) {
         var tailSeen = observedTail
         var headSeen = observedHead
-        while (!tail.compareAndSet(tailSeen, headSeen)) {
+        while (!tail.compareAndSet(tailSeen, headSeen or (tailSeen and FIN))) {
             headSeen = head.load()
             tailSeen = tail.load()
-            if (!before(tailSeen, headSeen)) {
+            if (!before(tailSeen and FIN.inv(), headSeen)) {
                 break
             }
         }
@@ -233,9 +262,18 @@ private class Ring(slots: Long, filled: Long) {
         }
     }
 
-    /** Takes the oldest index off the ring, or returns [NONE] when it is empty. */
-    fun dequeue(): Long {
-        if (threshold.load() < 0) {
+    /**
+     * Takes the oldest index off the ring, or returns [NONE] when it is empty.
+     * The empty answer may come from the threshold alone, which does not look at
+     * a ticket an enqueue holds and has not yet filled. With [byThreshold] false
+     * the threshold neither ends the dequeue early nor is spent by it: the head
+     * walks to the tail, which a closed ring no longer moves, so an enqueue still
+     * holding a ticket either finds its entry taken from it (and takes the next
+     * ticket, which is refused) or has already filled it, and then the walk
+     * returns its index.
+     */
+    fun dequeue(byThreshold: Boolean = true): Long {
+        if (byThreshold && threshold.load() < 0) {
             return NONE
         }
         while (true) {
@@ -247,14 +285,16 @@ private class Ring(slots: Long, filled: Long) {
             }
 
             val tailSeen = tail.load()
-            if (atOrBefore(tailSeen, ticket + 1)) {
+            if (atOrBefore(tailSeen and FIN.inv(), ticket + 1)) {
                 catchUp(tailSeen, ticket + 1)
-                threshold.addAndFetch(-1)
+                if (byThreshold) {
+                    threshold.addAndFetch(-1)
+                }
                 return NONE
             }
             // addAndFetch returns the new value; the value before was positive
             // exactly when the new one is not below zero.
-            if (threshold.addAndFetch(-1) < 0) {
+            if (byThreshold && threshold.addAndFetch(-1) < 0) {
                 return NONE
             }
         }
@@ -307,13 +347,75 @@ public class Scq<T : Any>(public val capacity: Int, public val ringSlots: Int) {
     private val slots: Array<Any?>
 
     init {
-        require(capacity >= 1) { "a queue's capacity must be at least one element" }
-        require(ringSlots >= 1 && ringSlots and (ringSlots - 1) == 0) { "the ring size must be a power of two" }
-        require(ringSlots >= capacity) { "the ring must have at least as many slots as the capacity" }
-        require(ringSlots <= MAX_RING_SLOTS) { "a ring this large leaves its entries too few bits for the cycle" }
+        checkShape(capacity, ringSlots)
         allocated = Ring(ringSlots.toLong(), 0)
         free = Ring(ringSlots.toLong(), capacity.toLong())
         slots = arrayOfNulls(capacity)
+    }
+
+    internal companion object {
+        /**
+         * Refuses a shape no ring can have, by throwing `IllegalArgumentException`.
+         * A list of rings checks it before it asks its allocator for a segment, so
+         * a bad shape is not reported as an allocator's refusal.
+         */
+        fun checkShape(capacity: Int, ringSlots: Int) {
+            require(capacity >= 1) { "a queue's capacity must be at least one element" }
+            require(ringSlots >= 1 && ringSlots and (ringSlots - 1) == 0) { "the ring size must be a power of two" }
+            require(ringSlots >= capacity) { "the ring must have at least as many slots as the capacity" }
+            require(ringSlots <= MAX_RING_SLOTS) { "a ring this large leaves its entries too few bits for the cycle" }
+        }
+    }
+
+    /**
+     * Takes [value] and returns true, or returns false and takes nothing: when
+     * the queue has no free slot it is closed, and when it is closed already
+     * nothing more is ever pushed into it, which is what lets a list of rings put
+     * every later element behind this ring's. The queue's places are not
+     * consulted: the list of rings that owns this ring keeps its own. Lock-free.
+     */
+    internal fun pushOrClose(value: T): Boolean {
+        val index = free.dequeue()
+        if (index == NONE) {
+            allocated.close()
+            return false
+        }
+        slots[index.toInt()] = value
+        if (allocated.enqueue(index)) {
+            return true
+        }
+        // The ring was closed under the push: the index is still ours, and goes
+        // back to the free ring, which is never closed.
+        slots[index.toInt()] = null
+        free.enqueue(index)
+        return false
+    }
+
+    /** Takes the oldest element, or returns `null` when the ring is empty. Lock-free. */
+    internal fun popOrNull(): T? = takeFrom(allocated.dequeue())
+
+    /**
+     * Takes the oldest element of a closed ring, or returns `null` only when no
+     * element can ever arrive in it again. A ring is given up only after this
+     * answers `null`: until then an element may still arrive in it. Lock-free.
+     */
+    internal fun popDrained(): T? = takeFrom(allocated.dequeue(byThreshold = false))
+
+    /**
+     * The element of the slot [index] named, which came off the allocated ring,
+     * so the slot holds a pushed element and no other participant holds it until
+     * the enqueue below hands it on. The slot is cleared so the queue keeps no
+     * reference to an element that has left it.
+     */
+    private fun takeFrom(index: Long): T? {
+        if (index == NONE) {
+            return null
+        }
+        @Suppress("UNCHECKED_CAST")
+        val value = slots[index.toInt()] as T
+        slots[index.toInt()] = null
+        free.enqueue(index)
+        return value
     }
 
     /**
@@ -370,22 +472,7 @@ public class Scq<T : Any>(public val capacity: Int, public val ringSlots: Int) {
         public fun tryClone(): Consumer<T>? = checkNotNull(queue) { "the consumer was released" }.consumer()
 
         /** Takes the oldest element, or returns `null` when the queue is empty. Lock-free. */
-        public fun tryPop(): T? {
-            val q = checkNotNull(queue) { "the consumer was released" }
-            val index = q.allocated.dequeue()
-            if (index == NONE) {
-                return null
-            }
-            // The index came off the allocated ring, so the slot holds a pushed
-            // element and no other participant holds the slot until the enqueue
-            // below hands it on. The slot is cleared so the queue keeps no
-            // reference to an element that has left it.
-            @Suppress("UNCHECKED_CAST")
-            val value = q.slots[index.toInt()] as T
-            q.slots[index.toInt()] = null
-            q.free.enqueue(index)
-            return value
-        }
+        public fun tryPop(): T? = checkNotNull(queue) { "the consumer was released" }.popOrNull()
 
         /** The capacity of the queue this side drains. */
         public val capacity: Int

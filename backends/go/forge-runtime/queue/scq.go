@@ -26,6 +26,12 @@ const WrapBoundOps uint64 = 1 << 62
 // cycle.
 const maxRingSlots = 1 << 30
 
+// fin is the tail's top bit, set once a ring is closed: an enqueue that takes a
+// ticket from a closed tail gets the bit back and puts nothing on the ring. This
+// is the finalize bit of Nikolaev's LSCQ. The tickets are the bits below it, and
+// a 64-bit counter never reaches it (WrapBoundOps).
+const fin uint64 = 1 << 63
+
 // before reports whether x is before y in the order that wraps: the signed
 // difference. Tickets and cycles are compared this way throughout.
 func before(x, y uint64) bool { return int64(x-y) < 0 }
@@ -129,13 +135,28 @@ func (r *ring) initial(position, filled uint64) uint64 {
 	return ^uint64(0)
 }
 
-// enqueue puts index on the ring. The ring never refuses: at most R indices
-// circulate through it, and an enqueue that finds its entry unusable takes the
-// next ticket.
-func (r *ring) enqueue(index uint64) {
+// close closes the ring: an enqueue that takes its ticket after this one's
+// fetch-or puts nothing on it. An enqueue that already holds a ticket may still
+// complete; the dequeues that follow either find its entry or make it unusable,
+// which sends that enqueue to the next ticket and so to a refusal.
+func (r *ring) close() { fetchOr(&r.tail.v, fin) }
+
+// enqueue puts index on the ring and reports true, or reports false, putting
+// nothing, when the ring is closed. An open ring never refuses: at most R
+// indices circulate through it, and an enqueue that finds its entry unusable
+// takes the next ticket.
+func (r *ring) enqueue(index uint64) bool {
 	stored := index ^ r.indexMask
 	for {
+		// Looking first keeps a closed ring's tail from counting attempts that
+		// cannot succeed; the ticket's own bit is what decides.
+		if r.tail.v.Load()&fin != 0 {
+			return false
+		}
 		tail := r.tail.v.Add(1) - 1
+		if tail&fin != 0 {
+			return false
+		}
 		ticketCycle := (tail << 1) | r.lowMask
 		slot := &r.entries[r.mapTicket(tail)]
 		entry := slot.Load()
@@ -153,7 +174,7 @@ func (r *ring) enqueue(index uint64) {
 				if r.threshold.v.Load() != r.thresholdAfterEnqueue {
 					r.threshold.v.Store(r.thresholdAfterEnqueue)
 				}
-				return
+				return true
 			}
 			// The entry changed; judge what it is now.
 			entry = slot.Load()
@@ -174,12 +195,14 @@ func fetchOr(slot *atomic.Uint64, mask uint64) {
 }
 
 // catchUp moves tail back to head after dequeues overshot an empty ring, so
-// that the next enqueue does not start a cycle ahead of what is read.
+// that the next enqueue does not start a cycle ahead of what is read. tail is
+// the word as read, closing bit included, and the word written keeps the bit: a
+// ring that was closed stays closed.
 func (r *ring) catchUp(tail, head uint64) {
-	for !r.tail.v.CompareAndSwap(tail, head) {
+	for !r.tail.v.CompareAndSwap(tail, head|(tail&fin)) {
 		head = r.head.v.Load()
 		tail = r.tail.v.Load()
-		if !before(tail, head) {
+		if !before(tail&^fin, head) {
 			break
 		}
 	}
@@ -232,9 +255,23 @@ func (r *ring) look(slot *atomic.Uint64, ticketCycle uint64) (uint64, bool) {
 }
 
 // dequeue takes the oldest index off the ring, or reports false when it is
-// empty.
-func (r *ring) dequeue() (uint64, bool) {
-	if r.threshold.v.Load() < 0 {
+// empty. The empty answer may come from the threshold alone, which does not look
+// at a ticket an enqueue holds and has not yet filled.
+func (r *ring) dequeue() (uint64, bool) { return r.dequeueBy(true) }
+
+// dequeueDrained takes the oldest index off a closed ring, or reports false only
+// once every ticket the ring ever granted has been consumed or made unusable. It
+// ignores the threshold and walks the head up to the tail, which a closed ring no
+// longer moves, so an enqueue still holding a ticket either finds its entry taken
+// from it (and takes the next ticket, which is refused) or has already filled it,
+// and then the walk returns its index. A segment is given up only after this
+// answers false: until then an element may still arrive in it.
+func (r *ring) dequeueDrained() (uint64, bool) { return r.dequeueBy(false) }
+
+// dequeueBy is the dequeue; byThreshold says whether the threshold may end it
+// early and is spent by it.
+func (r *ring) dequeueBy(byThreshold bool) (uint64, bool) {
+	if byThreshold && r.threshold.v.Load() < 0 {
 		return 0, false
 	}
 	for {
@@ -245,14 +282,16 @@ func (r *ring) dequeue() (uint64, bool) {
 		}
 
 		tail := r.tail.v.Load()
-		if atOrBefore(tail, head+1) {
+		if atOrBefore(tail&^fin, head+1) {
 			r.catchUp(tail, head+1)
-			r.threshold.v.Add(-1)
+			if byThreshold {
+				r.threshold.v.Add(-1)
+			}
 			return 0, false
 		}
 		// Add returns the new value; the value before was positive exactly
 		// when the new one is not below zero.
-		if r.threshold.v.Add(-1) < 0 {
+		if byThreshold && r.threshold.v.Add(-1) < 0 {
 			return 0, false
 		}
 	}
@@ -300,10 +339,10 @@ type Scq[T any] struct {
 	slots     []T
 }
 
-// NewScq returns an empty queue of exactly capacity elements over rings of
-// ringSlots slots. It panics when capacity is below one, when ringSlots is not
-// a power of two, is below capacity, or is more than a ring can number.
-func NewScq[T any](capacity, ringSlots int) *Scq[T] {
+// checkShape panics for a shape no ring can have. A list of rings checks it
+// before it asks its allocator for a segment, so a bad shape is not reported as
+// an allocator's refusal.
+func checkShape(capacity, ringSlots int) {
 	if capacity < 1 {
 		panic("queue: a queue's capacity must be at least one element")
 	}
@@ -316,6 +355,62 @@ func NewScq[T any](capacity, ringSlots int) *Scq[T] {
 	if ringSlots > maxRingSlots {
 		panic("queue: a ring this large leaves its entries too few bits for the cycle")
 	}
+}
+
+// pushOrClose takes value and reports true, or reports false and takes nothing:
+// when the queue has no free slot it is closed, and when it is closed already
+// nothing more is ever pushed into it, which is what lets a list of rings put
+// every later element behind this ring's. The queue's places are not consulted:
+// the list of rings that owns this ring keeps its own. Lock-free.
+func (q *Scq[T]) pushOrClose(value T) bool {
+	index, ok := q.free.dequeue()
+	if !ok {
+		q.allocated.close()
+		return false
+	}
+	q.slots[index] = value
+	if q.allocated.enqueue(index) {
+		return true
+	}
+	// The ring was closed under the push: the index is still ours, and goes
+	// back to the free ring, which is never closed. The slot is cleared so the
+	// queue keeps no reference to the element it did not take.
+	var zero T
+	q.slots[index] = zero
+	q.free.enqueue(index)
+	return false
+}
+
+// pop takes the oldest element, or reports false when the ring is empty.
+// Lock-free.
+func (q *Scq[T]) pop() (T, bool) { return q.takeFrom(q.allocated.dequeue()) }
+
+// popDrained takes the oldest element of a closed ring, or reports false only
+// when no element can ever arrive in it again. A ring is given up only after
+// this reports false. Lock-free.
+func (q *Scq[T]) popDrained() (T, bool) { return q.takeFrom(q.allocated.dequeueDrained()) }
+
+// takeFrom is the element of the slot index named, which came off the allocated
+// ring, so the slot holds a pushed element and no other participant holds it
+// until the enqueue below hands it on. The slot is cleared so the queue keeps no
+// reference to an element that has left it.
+func (q *Scq[T]) takeFrom(index uint64, ok bool) (T, bool) {
+	if !ok {
+		var none T
+		return none, false
+	}
+	value := q.slots[index]
+	var zero T
+	q.slots[index] = zero
+	q.free.enqueue(index)
+	return value, true
+}
+
+// NewScq returns an empty queue of exactly capacity elements over rings of
+// ringSlots slots. It panics when capacity is below one, when ringSlots is not
+// a power of two, is below capacity, or is more than a ring can number.
+func NewScq[T any](capacity, ringSlots int) *Scq[T] {
+	checkShape(capacity, ringSlots)
 	return &Scq[T]{
 		allocated: newRing(uint64(ringSlots), 0),
 		free:      newRing(uint64(ringSlots), uint64(capacity)),
@@ -397,23 +492,7 @@ func (c *ScqConsumer[T]) TryClone() (*ScqConsumer[T], bool) { return c.queue.Con
 
 // TryPop takes the oldest element, or reports false when the queue is empty.
 // Lock-free.
-func (c *ScqConsumer[T]) TryPop() (T, bool) {
-	q := c.queue
-	index, ok := q.allocated.dequeue()
-	if !ok {
-		var none T
-		return none, false
-	}
-	// The index came off the allocated ring, so the slot holds a pushed
-	// element and no other participant holds the slot until the enqueue below
-	// hands it on. The slot is cleared so the queue keeps no reference to an
-	// element that has left it.
-	value := q.slots[index]
-	var zero T
-	q.slots[index] = zero
-	q.free.enqueue(index)
-	return value, true
-}
+func (c *ScqConsumer[T]) TryPop() (T, bool) { return c.queue.pop() }
 
 // Capacity is the capacity of the queue this side drains.
 func (c *ScqConsumer[T]) Capacity() int { return c.queue.Capacity() }

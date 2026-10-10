@@ -19,7 +19,14 @@ import unittest
 import weakref
 
 import _sce_codegen
-from sce_forge_runtime.queue import Consumer, Producer, PushStatus, Queue
+from sce_forge_runtime.queue import (
+    Consumer,
+    Producer,
+    Progress,
+    PushStatus,
+    Queue,
+    SegmentedQueue,
+)
 
 CONTRACT = _sce_codegen.REPO_ROOT / "tests" / "forge" / "conformance" / "queue_contract.json"
 DEADLINE_SECONDS = 120
@@ -30,6 +37,30 @@ class Tracked:
 
     def __init__(self, value: int) -> None:
         self.value = value
+
+
+class BudgetAllocator:
+    """The allocator the segmented queue's tests inject: it gives at most `limit`
+    segments at once (no limit when `limit` is None), counting the ones it has out
+    so a test can say that the queue gave every segment back. `progress` is what a
+    test says it gives, so a test can inject one that gives less than a queue's
+    document declared for it. The queue calls it under its own lock."""
+
+    def __init__(self, limit: int | None = None, progress: Progress = Progress.LOCK_FREE) -> None:
+        self.limit = limit
+        self.progress = progress
+        self.live = 0
+        self.granted = 0
+
+    def allocate(self) -> bool:
+        if self.limit is not None and self.live >= self.limit:
+            return False
+        self.live += 1
+        self.granted += 1
+        return True
+
+    def deallocate(self) -> None:
+        self.live -= 1
 
 
 def _ring_places(scenario: dict) -> tuple[int, int]:
@@ -56,8 +87,13 @@ class TestContractScenarios(unittest.TestCase):
                     # (queue/storage-runtime-missing), so there is no runtime to run.
                     continue
                 if scenario["storage"] == "segmented":
-                    # Not lowered to Python yet; the generator refuses the row by
-                    # name (queue/storage-runtime-missing), so there is no runtime.
+                    # Every cardinality is one list of segments under one lock. The
+                    # allocator gives the scenario's `segments` at once, and all it
+                    # is asked for when the scenario names none.
+                    allocator = BudgetAllocator(scenario.get("segments"))
+                    queue = SegmentedQueue.create(scenario["segment"], allocator, Progress.BLOCKING, 1, 1)
+                    self.assertIsNotNone(queue, "the allocator gives the first segment")
+                    self._run(queue, scenario)
                     continue
                 self.assertEqual(
                     "bounded",
@@ -67,7 +103,7 @@ class TestContractScenarios(unittest.TestCase):
                 producers, consumers = _ring_places(scenario)
                 self._run(Queue(scenario["capacity"], producers, consumers), scenario)
 
-    def _run(self, queue: Queue, scenario: dict) -> None:
+    def _run(self, queue: Queue | SegmentedQueue, scenario: dict) -> None:
         for index, step in enumerate(scenario["steps"]):
             context = f"{scenario['id']} step {index}"
             op = step["op"]
@@ -76,7 +112,11 @@ class TestContractScenarios(unittest.TestCase):
             elif op == "push":
                 with queue.producer() as producer:
                     status = producer.try_push(Tracked(step["value"]))
-                want = {"ok": PushStatus.OK, "full": PushStatus.FULL}[step["expect"]]
+                want = {
+                    "ok": PushStatus.OK,
+                    "full": PushStatus.FULL,
+                    "out_of_memory": PushStatus.OUT_OF_MEMORY,
+                }[step["expect"]]
                 self.assertEqual(want, status, context)
             elif op == "pop":
                 with queue.consumer() as consumer:
@@ -175,7 +215,153 @@ class TestRuntimeProperties(unittest.TestCase):
             self.assertIsNone(reference(), "the queue kept a reference to an element that has left it")
 
 
+class TestSegmentedRuntime(unittest.TestCase):
+    def test_an_allocator_that_gives_less_than_the_document_declared_is_refused(self) -> None:
+        allocator = BudgetAllocator(progress=Progress.LOCK_FREE)
+        for required in (Progress.BLOCKING, Progress.LOCK_FREE):
+            self.assertIsNotNone(SegmentedQueue.create(2, allocator, required, 1, 1))
+        with self.assertRaises(ValueError):
+            SegmentedQueue.create(2, allocator, Progress.WAIT_FREE, 1, 1)
+        self.assertEqual(2, allocator.live, "the refused queue asked for no segment")
+
+    def test_a_shape_it_cannot_run_is_refused_before_the_allocator_is_asked(self) -> None:
+        allocator = BudgetAllocator()
+        for arguments in ((0, 1, 1), (2, 0, 1), (2, 1, 0)):
+            with self.subTest(arguments=arguments), self.assertRaises(ValueError):
+                SegmentedQueue.create(arguments[0], allocator, Progress.BLOCKING, arguments[1], arguments[2])
+        self.assertEqual(0, allocator.granted, "a bad shape is not an allocator's refusal")
+
+    def test_a_queue_whose_first_segment_is_refused_is_not_built(self) -> None:
+        self.assertIsNone(SegmentedQueue.create(2, BudgetAllocator(0), Progress.BLOCKING, 1, 1))
+
+    def test_each_segment_goes_back_as_the_consumer_leaves_it(self) -> None:
+        allocator = BudgetAllocator()
+        queue = SegmentedQueue.create(3, allocator, Progress.BLOCKING, 1, 1)
+        assert queue is not None
+        with queue.producer() as producer, queue.consumer() as consumer:
+            assert producer is not None and consumer is not None
+            for i in range(4 * 3 + 1):
+                self.assertEqual(PushStatus.OK, producer.try_push(i))
+            self.assertEqual(5, allocator.live, "thirteen elements of three are in five segments")
+            for i in range(4 * 3 + 1):
+                self.assertEqual(i, consumer.try_pop())
+            self.assertIsNone(consumer.try_pop())
+            self.assertEqual(1, allocator.live, "the consumer gave back every segment it left")
+
+    def test_the_queue_holds_what_the_allocator_allows_and_is_room_again_once_a_segment_goes_back(self) -> None:
+        queue = SegmentedQueue.create(2, BudgetAllocator(2), Progress.BLOCKING, 1, 1)
+        assert queue is not None
+        with queue.producer() as producer, queue.consumer() as consumer:
+            assert producer is not None and consumer is not None
+            for i in range(4):
+                self.assertEqual(PushStatus.OK, producer.try_push(i))
+            for _ in range(2):
+                self.assertEqual(PushStatus.OUT_OF_MEMORY, producer.try_push(4), "a refusal changes nothing")
+            for i in range(3):
+                self.assertEqual(i, consumer.try_pop())
+            self.assertEqual(PushStatus.OK, producer.try_push(4), "the segment the consumer left is room again")
+            self.assertEqual(3, consumer.try_pop())
+            self.assertEqual(4, consumer.try_pop())
+            self.assertIsNone(consumer.try_pop())
+
+    def test_a_side_hands_out_no_more_handles_than_it_has_places(self) -> None:
+        queue = SegmentedQueue.create(2, BudgetAllocator(), Progress.BLOCKING, 2, 1)
+        assert queue is not None
+        first, second = queue.producer(), queue.producer()
+        assert first is not None and second is not None
+        self.assertIsNone(queue.producer(), "a third producer has no place")
+        self.assertIsNone(first.try_clone())
+        first.release()
+        self.assertIsNotNone(second.try_clone(), "a released place is free again")
+        self.assertIsNotNone(queue.consumer())
+        self.assertIsNone(queue.consumer(), "a `one` side has one place")
+
+    def test_a_released_handle_is_not_usable(self) -> None:
+        queue = SegmentedQueue.create(2, BudgetAllocator(), Progress.BLOCKING, 1, 1)
+        assert queue is not None
+        producer = queue.producer()
+        assert producer is not None
+        producer.release()
+        producer.release()  # releasing twice gives nothing back twice
+        self.assertIsNotNone(queue.producer(), "the place was given back exactly once")
+        with self.assertRaises(RuntimeError):
+            producer.try_push(1)
+
+    def test_a_popped_slot_is_cleared(self) -> None:
+        queue = SegmentedQueue.create(2, BudgetAllocator(), Progress.BLOCKING, 1, 1)
+        assert queue is not None
+        with queue.producer() as producer, queue.consumer() as consumer:
+            assert producer is not None and consumer is not None
+            element = Tracked(7)
+            reference = weakref.ref(element)
+            self.assertEqual(PushStatus.OK, producer.try_push(element))
+            popped = consumer.try_pop()
+            assert popped is not None
+            del element, popped
+            gc.collect()
+            self.assertIsNone(reference(), "the queue kept a reference to an element that has left it")
+
+
 class TestThreads(unittest.TestCase):
+    def test_segmented_threads_lose_nothing_and_reorder_nothing(self) -> None:
+        # The allocator allows only a few segments at once, so producers meet
+        # refusals and wait for the consumers to give segments back.
+        producers, consumers, per_producer = 3, 3, 3000
+        total = producers * per_producer
+        allocator = BudgetAllocator(6)
+        queue = SegmentedQueue.create(4, allocator, Progress.BLOCKING, producers, consumers)
+        assert queue is not None
+        delivered = [0]
+        delivered_lock = threading.Lock()
+        failures: list[str] = []
+        deadline = time.monotonic() + DEADLINE_SECONDS
+        seen = [[-1] * producers for _ in range(consumers)]
+        counts = [[0] * producers for _ in range(consumers)]
+
+        def produce(p: int, handle: object) -> None:
+            with handle:  # type: ignore[attr-defined]
+                for i in range(per_producer):
+                    while handle.try_push(p * per_producer + i) is not PushStatus.OK:  # type: ignore[attr-defined]
+                        if time.monotonic() > deadline:
+                            failures.append("the elements did not all arrive before the deadline")
+                            return
+                        time.sleep(0)
+
+        def consume(c: int, handle: object) -> None:
+            with handle:  # type: ignore[attr-defined]
+                while True:
+                    with delivered_lock:
+                        if delivered[0] >= total:
+                            return
+                    if time.monotonic() > deadline:
+                        failures.append("the elements did not all arrive before the deadline")
+                        return
+                    value = handle.try_pop()  # type: ignore[attr-defined]
+                    if value is None:
+                        time.sleep(0)
+                        continue
+                    origin = value // per_producer
+                    if value <= seen[c][origin]:
+                        failures.append(f"consumer {c} saw {value} after {seen[c][origin]}")
+                    seen[c][origin] = value
+                    counts[c][origin] += 1
+                    with delivered_lock:
+                        delivered[0] += 1
+
+        threads = []
+        for p in range(producers):
+            threads.append(threading.Thread(target=produce, args=(p, queue.producer())))
+        for c in range(consumers):
+            threads.append(threading.Thread(target=consume, args=(c, queue.consumer())))
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        self.assertEqual([], failures[:5])
+        for p in range(producers):
+            self.assertEqual(per_producer, sum(row[p] for row in counts), f"every element of producer {p} arrived once")
+        self.assertTrue(1 <= allocator.live <= 6, f"the allocator's ceiling held and the rest went back: {allocator.live}")
+
     def test_threads_lose_nothing_and_reorder_nothing(self) -> None:
         producers, consumers, per_producer = 3, 3, 5000
         total = producers * per_producer

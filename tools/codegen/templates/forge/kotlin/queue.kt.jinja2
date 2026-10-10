@@ -16,12 +16,32 @@
 //
 // Selected: {{ algorithm }}. Push is {{ push_progress }}, pop is {{ pop_progress }}.
 //
+{% if segmented %}
+// The queue is segmented (`<sce:segmented segment="{{ segment }}" allocator-progress="{{ allocator_progress }}"/>`):
+// it grows by segments of {{ segment }} element(s) taken from a `SegmentAllocator` the caller builds it
+// with, and holds as many elements as that allocator allows. A collected runtime
+// frees a segment by the collector, so there is no reclamation domain; the
+// allocator decides only whether the queue may have one more segment.
+//
+// Operations (from `{{ runtime_type }}`):
+//   new{{ pascal }}(allocator)  the queue, or null when the allocator refused the
+//                            first segment; fails when the allocator gives less
+//                            progress than the document declared for it
+//   producer() / consumer()  a handle, or null when every place of that side
+//                            is taken; release() gives the place back
+//   tryPush(v): PushStatus   PushStatus.Ok takes the element; OutOfMemory means
+//                            the allocator refused a segment, and the element
+//                            stays with the caller
+//   tryPop(): T?             null when the queue is empty
+//   segment
+{% else %}
 // Operations (from `{{ runtime_type }}`):
 //   producer() / consumer()  a handle, or null when every place of that side
 //                            is taken; release() gives the place back
 //   tryPush(v): PushStatus   PushStatus.Ok takes the element; Full does not
 //   tryPop(): T?             null when the queue is empty
 //   capacity
+{% endif %}
 {% if ring_slots %}
 //
 // The ring's 64-bit entries are `kotlin.concurrent.atomics.AtomicLong`. The JVM
@@ -45,19 +65,45 @@ package com.sce.generated.{{ snake }}
 
 import com.sce.forge.runtime.queue.{{ runtime_type }}
 import com.sce.generated.{{ element_snake }}.{{ element_pascal }}
+{% if segmented %}
+import com.sce.forge.runtime.queue.Progress
+import com.sce.forge.runtime.queue.SegmentAllocator
+{% endif %}
 {% if ring_slots %}
 import com.sce.forge.runtime.queue.WRAP_BOUND_OPS as RUNTIME_WRAP_BOUND_OPS
 {% endif %}
 
+{% if segmented %}
+/** The elements one segment holds (`<sce:segmented segment>`). */
+const val SEGMENT: Int = {{ segment }}
+
+/**
+ * What the document declared the allocator gives (`allocator-progress`). The
+ * queue is built only over an allocator whose progress is at least this: a queue
+ * that would claim more than its allocator gives does not build.
+ */
+val ALLOCATOR_PROGRESS: Progress = Progress.{{ allocator_enumerator }}
+
+/** [ALLOCATOR_PROGRESS] as the document spells it. */
+const val ALLOCATOR_PROGRESS_WORD: String = "{{ allocator_progress }}"
+{% else %}
 /** The most elements the queue holds (`<sce:bounded>`). */
 const val CAPACITY: Int = {{ capacity }}
+{% endif %}
 {% if ring_slots %}
 
 /**
+{% if segmented %}
+ * The size of each of the two index rings of each segment: a power of two, at
+ * least [SEGMENT] and at least [PARTICIPANTS]. The algorithm's empty test is
+ * justified only for as many producers or consumers as a ring has slots
+ * (Nikolaev 2019 §5.1), so the ring is sized by both.
+{% else %}
  * The size of each of the queue's two index rings: a power of two, at least
  * [CAPACITY] and at least [PARTICIPANTS]. The algorithm's empty test is
  * justified only for as many producers or consumers as the ring has slots
  * (Nikolaev 2019 §5.1), so the ring is sized by both.
+{% endif %}
  */
 const val RING_SLOTS: Int = {{ ring_slots }}
 
@@ -112,6 +158,28 @@ const val POP_PROGRESS: String = "{{ pop_progress }}"
 /** The algorithm the selection table gave this contract. */
 const val ALGORITHM: String = "{{ algorithm }}"
 
+{% if segmented %}
+/**
+ * The queue. It grows by segments the allocator gives; an element that has left
+ * it is not referenced by it, and a segment it has left is the collector's.
+ */
+typealias {{ pascal }} = {{ runtime_type }}<{{ element_pascal }}>
+
+/**
+ * An empty queue of segments of [SEGMENT] elements over [allocator], or `null`
+ * when the allocator will not give the first segment. Fails when the
+ * allocator's progress is below [ALLOCATOR_PROGRESS]{% if ring_slots %}, and on a processor
+ * [SCQ_ARCHITECTURES] does not list{% endif %}.
+ */
+fun new{{ pascal }}(allocator: SegmentAllocator): {{ pascal }}? {
+{% if ring_slots %}
+    requireLockFree64BitAtomics()
+    return {{ runtime_type }}.create(SEGMENT, RING_SLOTS, allocator, ALLOCATOR_PROGRESS)
+{% else %}
+    return {{ runtime_type }}.create(SEGMENT, allocator, ALLOCATOR_PROGRESS)
+{% endif %}
+}
+{% else %}
 /**
  * The queue. Its storage is one array, allocated when the queue is built and
  * never again; an element that has left it is not referenced by it.
@@ -132,3 +200,4 @@ fun new{{ pascal }}(): {{ pascal }} {
     return {{ runtime_type }}(CAPACITY)
 {% endif %}
 }
+{% endif %}

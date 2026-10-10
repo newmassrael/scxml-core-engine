@@ -33,9 +33,15 @@ import unittest
 from pathlib import Path
 from typing import Any
 
-from sce_forge_runtime.queue import PushStatus, Queue
+from sce_forge_runtime.queue import Progress, PushStatus, Queue, SegmentedQueue
+from test_queue_runtime import BudgetAllocator
 
 DEADLINE_SECONDS = 120
+# Runs of each segmented shape, (producers, consumers, values per producer): the
+# queue holds every value, and the many-participant shapes are short for the same
+# reason as above.
+RUNS_PER_SEGMENTED_SHAPE = 25
+SEGMENTED_SHAPES = ((1, 1, 600), (2, 1, 60), (1, 2, 60), (2, 2, 50), (3, 3, 30))
 # Runs of each single-producer, single-consumer capacity. Their histories are
 # megabytes and the ring has no schedule a second run reaches that the first
 # does not.
@@ -68,10 +74,14 @@ class Clock:
             return self._ticks
 
 
-def _record_run(capacity: int, producers: int, consumers: int, per_producer: int) -> dict[str, Any]:
-    """`producers` producers and `consumers` consumers on real threads, each
-    producer pushing `per_producer` distinct values."""
-    queue: Queue[int] = Queue(capacity, producers, consumers)
+def _record_run(
+    queue: Queue[int] | SegmentedQueue[int], capacity: int, producers: int, consumers: int, per_producer: int
+) -> dict[str, Any]:
+    """`producers` producers and `consumers` consumers on real threads through
+    `queue`, each producer pushing `per_producer` distinct values, judged against
+    a sequential queue of `capacity`. A segmented queue has no capacity, and the
+    recording gives the count of all values: the history is judged against a
+    queue that holds every one, so its push is never refused."""
     clock = Clock()
     deadline = time.monotonic() + DEADLINE_SECONDS
     total = producers * per_producer
@@ -155,15 +165,30 @@ class TestQueueHistories(unittest.TestCase):
         directory = _history_dir()
         for capacity in (1, 2, 3, 8):
             for run in range(RUNS_PER_ONE_ONE_CAPACITY):
-                document = _record_run(capacity, 1, 1, VALUES_PER_ONE_ONE_RUN)
+                document = _record_run(Queue(capacity, 1, 1), capacity, 1, 1, VALUES_PER_ONE_ONE_RUN)
                 _write(directory, f"python_lock_n{capacity}_p1_c1_long_{run}", document)
 
     def test_many_participant_runs_are_written_as_histories(self) -> None:
         directory = _history_dir()
         for capacity, producers, consumers, per_producer in SHAPES:
             for run in range(RUNS_PER_SHAPE):
-                document = _record_run(capacity, producers, consumers, per_producer)
+                queue: Queue[int] = Queue(capacity, producers, consumers)
+                document = _record_run(queue, capacity, producers, consumers, per_producer)
                 _write(directory, f"python_lock_n{capacity}_p{producers}_c{consumers}_{run}", document)
+
+    def test_segmented_runs_are_written_as_histories(self) -> None:
+        directory = _history_dir()
+        # The shapes are the C arm's, over segments of two and four elements.
+        for producers, consumers, per_producer in SEGMENTED_SHAPES:
+            for run in range(RUNS_PER_SEGMENTED_SHAPE):
+                allocator = BudgetAllocator()
+                queue = SegmentedQueue.create(2, allocator, Progress.BLOCKING, producers, consumers)
+                assert queue is not None
+                total = producers * per_producer
+                document = _record_run(queue, total, producers, consumers, per_producer)
+                if allocator.live != 1:
+                    raise AssertionError(f"the queue gave back every segment but its newest: {allocator.live} out")
+                _write(directory, f"python_segmented_n2_p{producers}_c{consumers}_{run}", document)
 
 
 if __name__ == "__main__":

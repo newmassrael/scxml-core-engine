@@ -36,14 +36,15 @@ mkdir -p "$QUEUE_HISTORIES"
     PYTHONPATH=tests python3 -m unittest \
     tests.test_queue_runtime tests.test_queue_generated tests.test_queue_history ) \
     || sce_gate_fail "Python forge queue"
-# 4 capacities recorded 3 times with one producer and one consumer, and 6
-# shapes recorded 25 times. A run that recorded fewer would pass the judgement
-# below, so the count is held. Linearizability is judged by the command every
-# backend's histories are judged by, not by a checker of the arm's own.
+# 4 capacities recorded 3 times with one producer and one consumer, 6 shapes
+# recorded 25 times and 5 segmented shapes recorded 25 times. A run that
+# recorded fewer would pass the judgement below, so the count is held.
+# Linearizability is judged by the command every backend's histories are judged
+# by, not by a checker of the arm's own.
 shopt -s nullglob
 queue_histories=("$QUEUE_HISTORIES"/*.json)
 shopt -u nullglob
-(( ${#queue_histories[@]} >= 162 )) \
-    || sce_gate_fail "Python queue histories: ${#queue_histories[@]} written, expected at least 162"
+(( ${#queue_histories[@]} >= 287 )) \
+    || sce_gate_fail "Python queue histories: ${#queue_histories[@]} written, expected at least 287"
 "$(sce_codegen_require "$SCE_REPO_ROOT")" check-queue-history "${queue_histories[@]}" \
     || sce_gate_fail "Python queue histories are not linearizable"

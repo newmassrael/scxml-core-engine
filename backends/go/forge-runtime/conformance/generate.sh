@@ -105,7 +105,13 @@ done
 # element's package by the same prefix, so they are generated into the same
 # tree. queue_generated_test.go compiles them against the runtime and uses the
 # queues.
-QUEUE_FIXTURES=(queue_conformance_event queue_conformance_spsc queue_conformance_scq)
+QUEUE_FIXTURES=(
+    queue_conformance_event
+    queue_conformance_spsc
+    queue_conformance_scq
+    queue_conformance_segmented
+    queue_conformance_segmented_many
+)
 for fixture in "${QUEUE_FIXTURES[@]}"; do
     pkg_dir="$OUT_DIR/$fixture"
     mkdir -p "$pkg_dir"

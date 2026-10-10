@@ -18,23 +18,61 @@
 # the lock stops the others, which is why a document that declares more is
 # refused for this backend (`queue/progress-unreachable-on-backend`).
 #
+{% if segmented %}
+# The queue is segmented (`<sce:segmented segment="{{ segment }}" allocator-progress="{{ allocator_progress }}"/>`):
+# it grows by segments of {{ segment }} element(s) taken from a SegmentAllocator the
+# caller builds it with, and holds as many elements as that allocator allows. A
+# collected runtime frees a segment by the collector, so there is no reclamation
+# domain; the allocator decides only whether the queue may have one more segment.
+#
+# Operations (from `{{ runtime_type }}`):
+#   new_{{ snake }}(allocator)  the queue, or None when the allocator refused the
+#                            first segment; raises ValueError when the allocator
+#                            gives less progress than the document declared for it
+#   producer() / consumer()  a handle, or None when every place of that side
+#                            is taken; release() gives the place back
+#   try_push(v) -> PushStatus   PushStatus.OK takes the element; OUT_OF_MEMORY
+#                            means the allocator refused a segment, and the
+#                            element stays with the caller
+#   try_pop() -> Optional[T]    None when the queue is empty
+#   segment
+{% else %}
 # Operations (from `Queue`):
 #   producer() / consumer()  a handle, or None when every place of that side
 #                            is taken; release() gives the place back
 #   try_push(v) -> PushStatus   PushStatus.OK takes the element; FULL does not
 #   try_pop() -> Optional[T]    None when the queue is empty
 #   capacity
+{% endif %}
 
 from __future__ import annotations
 
+{% if segmented %}
+from typing import Final, Optional
+
+from sce_forge_runtime.queue import Progress, SegmentAllocator, {{ runtime_type }}
+{% else %}
 from typing import Final
 
 from sce_forge_runtime.queue import Queue
+{% endif %}
 
 {{ element_import_stmt }}
 
+{% if segmented %}
+# The elements one segment holds (`<sce:segmented segment>`).
+SEGMENT: Final[int] = {{ segment }}
+
+# What the document declared the allocator gives (`allocator-progress`). The queue
+# is built only over an allocator whose progress is at least this: a queue that
+# would claim more than its allocator gives does not build.
+ALLOCATOR_PROGRESS: Final[Progress] = Progress.{{ allocator_enumerator }}
+# ALLOCATOR_PROGRESS as the document spells it.
+ALLOCATOR_PROGRESS_WORD: Final[str] = "{{ allocator_progress }}"
+{% else %}
 # The most elements the queue holds (`<sce:bounded>`).
 CAPACITY: Final[int] = {{ capacity }}
+{% endif %}
 {% if participants %}
 
 # The most threads that hold a handle on a side that is `many` at the same time
@@ -55,6 +93,18 @@ POP_PROGRESS: Final[str] = "{{ pop_progress }}"
 # The algorithm this backend gave the contract.
 ALGORITHM: Final[str] = "{{ algorithm }}"
 
+{% if segmented %}
+# The queue. It grows by segments the allocator gives; an element that has left
+# it is not referenced by it, and a segment it has left is the collector's.
+{{ pascal }} = {{ runtime_type }}[{{ element_pascal }}]
+
+
+def new_{{ snake }}(allocator: SegmentAllocator) -> Optional[{{ pascal }}]:
+    """An empty queue of segments of ``SEGMENT`` elements over ``allocator``, or
+    ``None`` when the allocator will not give the first segment. Raises
+    ``ValueError`` when the allocator's progress is below ``ALLOCATOR_PROGRESS``."""
+    return {{ runtime_type }}.create(SEGMENT, allocator, ALLOCATOR_PROGRESS, PRODUCER_PLACES, CONSUMER_PLACES)
+{% else %}
 # The queue. Its storage is one list, allocated when the queue is built and
 # never again; an element that has left it is not referenced by it.
 {{ pascal }} = Queue[{{ element_pascal }}]
@@ -63,3 +113,4 @@ ALGORITHM: Final[str] = "{{ algorithm }}"
 def new_{{ snake }}() -> {{ pascal }}:
     """An empty queue of ``CAPACITY`` elements."""
     return Queue(CAPACITY, PRODUCER_PLACES, CONSUMER_PLACES)
+{% endif %}

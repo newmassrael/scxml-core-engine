@@ -606,8 +606,9 @@ topology:
     }
 
     // Neither applies to a thread producer on a machine with a heap: the queue is
-    // lowered where the backend has a runtime for it (Rust), and refused only for
-    // the runtime it does not have yet where it has none (Kotlin).
+    // lowered wherever the backend has a runtime for it (Rust and Kotlin here; Go
+    // needs a module prefix the deploy entry does not carry, so its arm's tests
+    // judge it).
     let threads = ap.replace("context: isr", "context: thread");
     let code = compile_for_language(Language::Rust, SEGMENTED, &threads)
         .expect("a thread producer on a machine with a heap is what segmented is for");
@@ -617,14 +618,11 @@ topology:
         ),
         "the placement checks do not change what the runtime lowers: {code}"
     );
-    let err = compile_for_language(Language::Kotlin, SEGMENTED, &threads)
-        .expect_err("segmented has no Kotlin runtime yet");
+    let code = compile_for_language(Language::Kotlin, SEGMENTED, &threads)
+        .expect("a thread producer on a machine with a heap is what segmented is for");
     assert!(
-        matches!(
-            generate(err),
-            GenerateError::QueueStorageRuntimeMissing { .. }
-        ),
-        "the placement checks do not change what a missing runtime says"
+        code.contains("Lscq<RxEvent>"),
+        "the placement checks do not change what the Kotlin runtime lowers: {code}"
     );
 }
 

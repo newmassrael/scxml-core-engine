@@ -22,10 +22,10 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-private class Payload(val value: Long)
+internal class Payload(val value: Long)
 
 /** Whether [reference] is cleared once the collector has been asked a few times. */
-private fun collected(reference: WeakReference<Payload>): Boolean {
+internal fun collected(reference: WeakReference<Payload>): Boolean {
     repeat(50) {
         System.gc()
         if (reference.get() == null) {
@@ -41,13 +41,13 @@ private fun collected(reference: WeakReference<Payload>): Boolean {
  * function of its own and not a block, so no local of the caller holds the
  * payload and only the queue could.
  */
-private fun pushedPayload(value: Long, push: (Payload) -> PushStatus): WeakReference<Payload> {
+internal fun pushedPayload(value: Long, push: (Payload) -> PushStatus): WeakReference<Payload> {
     val payload = Payload(value)
     assertEquals(PushStatus.Ok, push(payload))
     return WeakReference(payload)
 }
 
-private const val DEADLINE_NANOS = 120_000_000_000L
+internal const val DEADLINE_NANOS = 120_000_000_000L
 
 class QueueRuntimeTest {
     @Test

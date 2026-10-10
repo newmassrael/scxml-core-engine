@@ -74,7 +74,8 @@ private const val VALUES_PER_SPSC_RUN = 2000
  */
 private const val RUNS_PER_SCQ_SHAPE = 25
 
-private const val DEADLINE_NANOS = 120_000_000_000L
+/** Runs of each segmented shape are recorded, for the same reason as the SCQ shapes'. */
+private const val RUNS_PER_SEGMENTED_SHAPE = 25
 
 /** Where the histories are written, or null when nowhere is named. */
 private fun historyDir(): File? {
@@ -154,23 +155,37 @@ private fun recordSpscRun(capacity: Int): History {
     return History(capacity, REFUSAL_AT_CAPACITY, listOf(pushes, pops))
 }
 
+/** A producing handle of whichever queue a run is on: what it pushes with and how it gives its place back. */
+private class Producing(val push: (Long) -> PushStatus, val release: () -> Unit)
+
+/** A consuming handle of whichever queue a run is on. */
+private class Consuming(val pop: () -> Long?, val release: () -> Unit)
+
 /**
- * [producers] producers and [consumers] consumers on real threads through the
- * SCQ queue, each producer pushing [perProducer] distinct values.
+ * One producer thread for each of [producers] and one consumer thread for each
+ * of [consumers] on real threads, each producer pushing [perProducer] distinct
+ * values, judged against a sequential queue of [capacity] under [refusal]. A
+ * push the queue does not take is recorded with the outcome [refused] and tried
+ * again; a status other than that or `Ok` fails the run.
  */
-private fun recordScqRun(capacity: Int, ringSlots: Int, producers: Int, consumers: Int, perProducer: Long): History {
-    val queue = Scq<Long>(capacity, ringSlots)
+private fun recordRun(
+    capacity: Int,
+    refusal: String,
+    refused: PushStatus,
+    producers: List<Producing>,
+    consumers: List<Consuming>,
+    perProducer: Long,
+): History {
     val clock = Clock()
     val deadline = System.nanoTime() + DEADLINE_NANOS
-    val total = producers * perProducer
+    val total = producers.size * perProducer
     val delivered = AtomicLong(0)
     val failures = ConcurrentLinkedQueue<String>()
-    val logs = List(producers + consumers) { ArrayList<Operation>() }
+    val logs = List(producers.size + consumers.size) { ArrayList<Operation>() }
 
     val threads = ArrayList<Thread>()
-    for (p in 0 until producers) {
-        val handle = checkNotNull(queue.producer()) { "the ring has a place for every producer of a shape" }
-        threads.add(thread(name = "scq-producer-$p") {
+    for ((p, handle) in producers.withIndex()) {
+        threads.add(thread(name = "producer-$p") {
             try {
                 for (i in 0 until perProducer) {
                     val value = p * perProducer + i + 1
@@ -180,11 +195,15 @@ private fun recordScqRun(capacity: Int, ringSlots: Int, producers: Int, consumer
                             return@thread
                         }
                         val invoked = clock.tick()
-                        val status = handle.tryPush(value)
+                        val status = handle.push(value)
                         val returned = clock.tick()
                         if (status == PushStatus.Ok) {
                             logs[p].add(Operation("push", value, "pushed", invoked, returned))
                             break
+                        }
+                        if (status != refused) {
+                            failures.add("a push reported $status where only $refused is a refusal of this queue")
+                            return@thread
                         }
                         logs[p].add(Operation("push", value, "full", invoked, returned))
                         Thread.yield()
@@ -195,18 +214,17 @@ private fun recordScqRun(capacity: Int, ringSlots: Int, producers: Int, consumer
             }
         })
     }
-    for (c in 0 until consumers) {
-        val handle = checkNotNull(queue.consumer()) { "the ring has a place for every consumer of a shape" }
-        threads.add(thread(name = "scq-consumer-$c") {
+    for ((c, handle) in consumers.withIndex()) {
+        threads.add(thread(name = "consumer-$c") {
             try {
-                val mine = logs[producers + c]
+                val mine = logs[producers.size + c]
                 while (delivered.load() < total) {
                     if (System.nanoTime() > deadline) {
                         failures.add("the elements did not all arrive before the deadline")
                         return@thread
                     }
                     val invoked = clock.tick()
-                    val value = handle.tryPop()
+                    val value = handle.pop()
                     val returned = clock.tick()
                     if (value != null) {
                         mine.add(Operation("pop", value, "popped", invoked, returned))
@@ -223,7 +241,67 @@ private fun recordScqRun(capacity: Int, ringSlots: Int, producers: Int, consumer
     }
     threads.forEach { it.join() }
     assertTrue(failures.isEmpty(), failuresOf(failures))
-    return History(capacity, REFUSAL_WHILE_SLOTS_ARE_HELD, logs)
+    return History(capacity, refusal, logs)
+}
+
+/**
+ * [producers] producers and [consumers] consumers on real threads through the
+ * SCQ queue, each producer pushing [perProducer] distinct values.
+ */
+private fun recordScqRun(capacity: Int, ringSlots: Int, producers: Int, consumers: Int, perProducer: Long): History {
+    val queue = Scq<Long>(capacity, ringSlots)
+    val pushing = List(producers) {
+        val handle = checkNotNull(queue.producer()) { "the ring has a place for every producer of a shape" }
+        Producing(handle::tryPush, handle::release)
+    }
+    val popping = List(consumers) {
+        val handle = checkNotNull(queue.consumer()) { "the ring has a place for every consumer of a shape" }
+        Consuming(handle::tryPop, handle::release)
+    }
+    return recordRun(capacity, REFUSAL_WHILE_SLOTS_ARE_HELD, PushStatus.Full, pushing, popping, perProducer)
+}
+
+/**
+ * The segmented queues through an allocator that gives as many segments as are
+ * asked for: one producer and one consumer through linked Lamport rings of four,
+ * and otherwise [producers] and [consumers] through a list of SCQ rings of
+ * segments of two over rings of four. A segmented queue has no capacity, and the
+ * recording gives none that could matter: the history is judged against a queue
+ * that holds every value, so a push is never refused, and an empty pop is judged
+ * exactly as for any other queue. The queue's segments must all be back with the
+ * allocator but the one a list of rings keeps, or the run fails.
+ */
+private fun recordSegmentedRun(many: Boolean, producers: Int, consumers: Int, perProducer: Long): History {
+    val allocator = BudgetAllocator()
+    val pushing: List<Producing>
+    val popping: List<Consuming>
+    if (many) {
+        val queue = checkNotNull(Lscq.create<Long>(2, 4, allocator, Progress.LockFree)) { "the allocator gives a segment" }
+        pushing = List(producers) {
+            val handle = checkNotNull(queue.producer()) { "a ring of four has a place for every producer of a shape" }
+            Producing(handle::tryPush, handle::release)
+        }
+        popping = List(consumers) {
+            val handle = checkNotNull(queue.consumer()) { "a ring of four has a place for every consumer of a shape" }
+            Consuming(handle::tryPop, handle::release)
+        }
+    } else {
+        val queue = checkNotNull(LinkedLamport.create<Long>(4, allocator, Progress.LockFree)) { "the allocator gives a segment" }
+        val producer = checkNotNull(queue.producer()) { "a fresh queue hands out a handle a side" }
+        val consumer = checkNotNull(queue.consumer()) { "a fresh queue hands out a handle a side" }
+        pushing = listOf(Producing(producer::tryPush, producer::release))
+        popping = listOf(Consuming(consumer::tryPop, consumer::release))
+    }
+    val history = recordRun(
+        (producers * perProducer).toInt(),
+        REFUSAL_AT_CAPACITY,
+        PushStatus.OutOfMemory,
+        pushing,
+        popping,
+        perProducer,
+    )
+    assertTrue(allocator.live == 1L, "the queue gave back every segment but its newest: ${allocator.live} still out")
+    return history
 }
 
 class QueueHistoryTest {
@@ -256,6 +334,29 @@ class QueueHistoryTest {
             for (run in 0 until RUNS_PER_SCQ_SHAPE) {
                 val history = recordScqRun(s.capacity, s.ringSlots, s.producers, s.consumers, s.perProducer)
                 write(dir, "kotlin_scq_n${s.capacity}_r${s.ringSlots}_p${s.producers}_c${s.consumers}_$run", history)
+            }
+        }
+    }
+
+    @Test
+    fun theSegmentedRunsAreWrittenAsHistories() {
+        val dir = historyDir()!!
+        // The shapes are the C arm's: linked Lamport rings for one and one, and
+        // a list of SCQ rings with few and with several threads a side, short
+        // runs of many segments each.
+        class Shape(val many: Boolean, val producers: Int, val consumers: Int, val perProducer: Long)
+        val shapes = listOf(
+            Shape(false, 1, 1, 600),
+            Shape(true, 2, 1, 60),
+            Shape(true, 1, 2, 60),
+            Shape(true, 2, 2, 50),
+            Shape(true, 3, 3, 30),
+        )
+        for (s in shapes) {
+            for (run in 0 until RUNS_PER_SEGMENTED_SHAPE) {
+                val history = recordSegmentedRun(s.many, s.producers, s.consumers, s.perProducer)
+                val row = if (s.many) "lscq_n2_r4" else "linked_lamport_n4"
+                write(dir, "kotlin_segmented_${row}_p${s.producers}_c${s.consumers}_$run", history)
             }
         }
     }

@@ -18465,16 +18465,12 @@ fn resolve_queue_render_inputs(
             | crate::generator::Language::Cpp
             | crate::generator::Language::C11
     );
-    // `segmented` where the runtime has the allocator contract, the hazard-pointer
-    // domain and the two segment lists: Rust, C++ and C11. Another language's
-    // runtime lands in the RFC's order; a collected one takes its allocator but
-    // not a domain.
-    let offers_segmented = matches!(
-        language,
-        crate::generator::Language::Rust
-            | crate::generator::Language::Cpp
-            | crate::generator::Language::C11
-    );
+    // `segmented` on every backend: each has the allocator contract and the two
+    // segment lists. Rust, C++ and C11 also build the hazard-pointer domain that
+    // frees a segment; a collected runtime (Kotlin, Go, Python) takes its
+    // allocator and not a domain, the collector being the reclamation, and Python
+    // keeps one list under one lock. Only `intrusive` can still be refused for a
+    // backend, and the reason is not a runtime to come.
     let (bounded_capacity, link_field, segmented) = match &m.storage {
         QueueStorage::Bounded { capacity } => (Some(capacity), None, None),
         QueueStorage::Intrusive { link_field } if offers_intrusive => {
@@ -18483,33 +18479,16 @@ fn resolve_queue_render_inputs(
         QueueStorage::Segmented {
             segment,
             allocator_progress,
-        } if offers_segmented => (None, None, Some((*segment, *allocator_progress))),
-        refused => {
-            let (storage, status) = match refused {
-                QueueStorage::Bounded { .. } => unreachable!("bounded is offered everywhere"),
-                QueueStorage::Segmented { .. } => (
-                    "segmented",
-                    " yet. SCE Protocol-Synthesis RFC §5.P specifies it, and the runtimes land in the RFC's order; this document is valid and is refused rather than lowered to a queue that gives less",
-                ),
-                QueueStorage::Intrusive { .. } => (
-                    "intrusive",
-                    ", and will not be: a node of a garbage-collected backend is a plain object whose property cannot be an atomic in place, so there is no link for the list to use. SCE Protocol-Synthesis RFC §5.P specifies the mode for the backends that address memory (Rust, C++, C11); this document is valid and is refused rather than lowered to a queue that gives less",
-                ),
-            };
-            let implemented = match (offers_intrusive, offers_segmented) {
-                (true, true) => "bounded, intrusive, segmented",
-                (true, false) => "bounded, intrusive",
-                (false, true) => "bounded, segmented",
-                (false, false) => "bounded",
-            };
+        } => (None, None, Some((*segment, *allocator_progress))),
+        QueueStorage::Intrusive { .. } => {
             // Placed on the storage element: the refusal's `actual` is the mode
             // that element spells, and the document names it elsewhere too.
             return Err(ForgeError::from(GenerateError::QueueStorageRuntimeMissing {
                 queue_name: m.name.clone(),
-                storage: storage.to_string(),
+                storage: "intrusive".to_string(),
                 language: crate::forge::codegen_matrix::language_wire_name(language).to_string(),
-                implemented: implemented.to_string(),
-                status: status.to_string(),
+                implemented: "bounded, segmented".to_string(),
+                status: ", and will not be: a node of a garbage-collected backend is a plain object whose property cannot be an atomic in place, so there is no link for the list to use. SCE Protocol-Synthesis RFC §5.P specifies the mode for the backends that address memory (Rust, C++, C11); this document is valid and is refused rather than lowered to a queue that gives less".to_string(),
             })
             .at_line(m.storage_line));
         }
@@ -18661,7 +18640,7 @@ fn resolve_queue_render_inputs(
         // Each segment of a list of SCQ rings is one: its ring holds the
         // segment's elements and works for as many participants a side as it has
         // slots.
-        QueueAlgorithm::Lscq => {
+        QueueAlgorithm::Lscq if !single_ring => {
             let segment = segmented.map_or(1, |(segment, _)| segment);
             Some(segment.max(participants.unwrap_or(1)).next_power_of_two())
         }
@@ -18711,6 +18690,7 @@ fn resolve_queue_render_inputs(
         }
     }
     let runtime_type = match (language, selection.algorithm, c11_entry_bits) {
+        (crate::generator::Language::Python, _, _) if segmented.is_some() => "SegmentedQueue",
         (crate::generator::Language::Python, _, _) => "Queue",
         // The intrusive list: the Rust and C++ runtimes name it `Mpsc` and
         // `IntrusiveMpsc` (the flag for many consumers is a parameter of the
@@ -18755,6 +18735,9 @@ fn resolve_queue_render_inputs(
         selection.pop
     };
     let algorithm = match (single_ring, language, link_field.is_some()) {
+        (true, crate::generator::Language::Python, _) if segmented.is_some() => {
+            "a single list of segments under one lock"
+        }
         (true, crate::generator::Language::Python, _) => "a single ring under one lock",
         (true, _, true) => "a single list under an interrupt-masked critical section",
         (true, _, false) => "a single ring under an interrupt-masked critical section",
@@ -18911,6 +18894,16 @@ fn render_queue_go(
         ring_slots => inputs.ring_slots,
         participants => inputs.participants,
         runtime_type => inputs.runtime_type,
+        segmented => inputs.segment.is_some(),
+        segment => inputs.segment,
+        // The allocator progress the document declared, as the runtime's
+        // `Progress` constant the queue is held to when it is built.
+        allocator_progress => inputs.allocator_progress.map(|(_, word)| word),
+        allocator_enumerator => inputs.allocator_progress.map(|(rank, _)| match rank {
+            0 => "Blocking",
+            1 => "LockFree",
+            _ => "WaitFree",
+        }),
         build_constraint => (inputs.ring_slots.is_some())
             .then(|| QUEUE_SCQ_GO_ARCHITECTURES.join(" || ")),
         algorithm => inputs.algorithm,
@@ -19233,6 +19226,17 @@ fn render_queue_python(
         element_pascal => element_pascal,
         capacity => inputs.capacity,
         participants => inputs.participants,
+        runtime_type => inputs.runtime_type,
+        segmented => inputs.segment.is_some(),
+        segment => inputs.segment,
+        // The allocator progress the document declared, as the runtime's
+        // `Progress` member the queue is held to when it is built.
+        allocator_progress => inputs.allocator_progress.map(|(_, word)| word),
+        allocator_enumerator => inputs.allocator_progress.map(|(rank, _)| match rank {
+            0 => "BLOCKING",
+            1 => "LOCK_FREE",
+            _ => "WAIT_FREE",
+        }),
         producers => inputs.producers,
         consumers => inputs.consumers,
         declared_progress => inputs.declared_progress,
@@ -19275,6 +19279,16 @@ fn render_queue_kotlin(
         ring_slots => inputs.ring_slots,
         participants => inputs.participants,
         runtime_type => inputs.runtime_type,
+        segmented => inputs.segment.is_some(),
+        segment => inputs.segment,
+        // The allocator progress the document declared, as the runtime's
+        // `Progress` enumerator the queue is held to when it is built.
+        allocator_progress => inputs.allocator_progress.map(|(_, word)| word),
+        allocator_enumerator => inputs.allocator_progress.map(|(rank, _)| match rank {
+            0 => "Blocking",
+            1 => "LockFree",
+            _ => "WaitFree",
+        }),
         scq_architectures => QUEUE_SCQ_JVM_ARCHITECTURES,
         algorithm => inputs.algorithm,
         producers => inputs.producers,

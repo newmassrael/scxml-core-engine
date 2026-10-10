@@ -11,6 +11,7 @@ package queue
 
 import (
 	"encoding/json"
+	"math"
 	"os"
 	"strconv"
 	"testing"
@@ -53,10 +54,39 @@ func (s spscSubject) pop() (tracked, bool) {
 	return consumer.TryPop()
 }
 
+// linkedSubject is the segmented row for one producer and one consumer. A
+// segmented queue has no capacity, and no scenario of one asks for it.
+type linkedSubject struct{ q *LinkedLamport[tracked] }
+
+func (s linkedSubject) capacity() int { panic("a segmented queue has no capacity to ask for") }
+
+func (s linkedSubject) push(element tracked) PushStatus {
+	producer, ok := s.q.Producer()
+	if !ok {
+		panic("a scenario holds one handle at a time")
+	}
+	defer producer.Release()
+	return producer.TryPush(element)
+}
+
+func (s linkedSubject) pop() (tracked, bool) {
+	consumer, ok := s.q.Consumer()
+	if !ok {
+		panic("a scenario holds one handle at a time")
+	}
+	defer consumer.Release()
+	return consumer.TryPop()
+}
+
 // newScqSubject builds the SCQ subject for a capacity. It is nil on a GOARCH
 // that has no SCQ row (scq_test.go sets it under the row's build constraint),
 // and a scenario that needs it is then refused by name.
 var newScqSubject func(capacity int) subject
+
+// newLscqSubject builds the list-of-rings subject for a segment size over an
+// allocator. It is nil on a GOARCH that has no SCQ row, which a list of SCQ rings
+// is built from (lscq_test.go sets it under the same build constraint).
+var newLscqSubject func(segment int, allocator SegmentAllocator) subject
 
 // ceilPow2 is the ring size of an SCQ row for a capacity: the capacity rounded
 // up to a power of two.
@@ -80,6 +110,8 @@ type contractScenario struct {
 	Producers string         `json:"producers"`
 	Consumers string         `json:"consumers"`
 	Capacity  int            `json:"capacity"`
+	Segment   int            `json:"segment"`
+	Segments  *int64         `json:"segments"`
 	Steps     []contractStep `json:"steps"`
 }
 
@@ -107,12 +139,13 @@ func runScenario(t *testing.T, s subject, scenario contractScenario) {
 			}
 			var want string
 			if err := json.Unmarshal(step.Expect, &want); err != nil {
-				t.Fatalf("%s: a push expects \"ok\" or \"full\": %v", context, err)
+				t.Fatalf("%s: a push expects \"ok\", \"full\" or \"out_of_memory\": %v", context, err)
 			}
 			got := s.push(tracked{value: *step.Value})
 			switch {
 			case got == PushOK && want == "ok":
 			case got == PushFull && want == "full":
+			case got == PushOutOfMemory && want == "out_of_memory":
 			default:
 				t.Fatalf("%s: push gave %d, want %s", context, got, want)
 			}
@@ -183,9 +216,27 @@ func TestEveryContractScenarioHolds(t *testing.T) {
 				// (queue/storage-runtime-missing), so there is no runtime to run.
 				t.Skipf("the intrusive row is not lowered to Go, and the generator refuses it by name: %s", scenario.ID)
 			case scenario.Storage == "segmented":
-				// Not lowered to Go yet; the generator refuses the row by name
-				// (queue/storage-runtime-missing), so there is no runtime to run.
-				t.Skipf("the segmented row is not lowered to Go yet, and the generator refuses it by name: %s", scenario.ID)
+				// The allocator gives the scenario's `segments` at once, and all
+				// it is asked for when the scenario names none.
+				limit := int64(math.MaxInt64)
+				if scenario.Segments != nil {
+					limit = *scenario.Segments
+				}
+				allocator := newBudgetAllocator(limit)
+				if scenario.Producers == "one" && scenario.Consumers == "one" {
+					q, built := NewLinkedLamport[tracked](scenario.Segment, allocator, LockFree)
+					if !built {
+						t.Fatalf("%s: the allocator refused the first segment", scenario.ID)
+					}
+					runScenario(t, linkedSubject{q}, scenario)
+					return
+				}
+				// Any other cardinality selects a list of SCQ rings (the RFC's
+				// selection table).
+				if newLscqSubject == nil {
+					t.Skipf("the SCQ row is absent on this GOARCH (scq.go's build constraint), and a list of SCQ rings is built from it; refused by name: %s", scenario.ID)
+				}
+				runScenario(t, newLscqSubject(scenario.Segment, allocator), scenario)
 			default:
 				t.Fatalf("the Go arm has no runtime for the row %s/%s/%s", scenario.Storage, scenario.Producers, scenario.Consumers)
 			}

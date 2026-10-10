@@ -985,8 +985,8 @@ fn a_storage_the_go_runtime_lacks_is_refused_by_name() {
     let located = compile_files(
         Language::Go,
         &go_options(),
-        &resource("queue_segmented_lscq.scxml"),
-        "queue_segmented_lscq.scxml",
+        &resource("queue_intrusive_mpsc.scxml"),
+        "queue_intrusive_mpsc.scxml",
     )
     .expect_err("a storage without a runtime is refused");
     match located.error {
@@ -995,11 +995,133 @@ fn a_storage_the_go_runtime_lacks_is_refused_by_name() {
                 language, storage, ..
             } => {
                 assert_eq!(language, "go");
-                assert_eq!(storage, "segmented");
+                assert_eq!(storage, "intrusive");
             }
             other => panic!("expected QueueStorageRuntimeMissing, got {other:?}"),
         },
         other => panic!("expected a generate error, got {other:?}"),
+    }
+}
+
+#[test]
+fn one_producer_and_one_consumer_over_segments_emit_linked_lamport_rings_in_go() {
+    let xml = segmented_doc("frame_queue", "one", "one", "lock-free", "lock-free", "");
+    let files = compile_files(Language::Go, &go_options(), &xml, "frame_queue.scxml")
+        .expect("a segmented queue emits on Go");
+    let names: Vec<&str> = files.iter().map(|(name, _)| name.as_str()).collect();
+    assert_eq!(names, ["frame_queue.go"], "linked rings have no companion");
+    let code = &files[0].1;
+    assert!(code.contains("const Segment = 6\n"), "{code}");
+    assert!(
+        code.contains("type FrameQueue = queue.LinkedLamport[rx_event.RxEvent]\n"),
+        "{code}"
+    );
+    assert!(
+        code.contains("const AllocatorProgress = queue.LockFree\n")
+            && code.contains("AllocatorProgressWord = \"lock-free\""),
+        "{code}"
+    );
+    assert!(
+        code.contains("func NewFrameQueue(allocator queue.SegmentAllocator) (*FrameQueue, bool)")
+            && code.contains(
+                "queue.NewLinkedLamport[rx_event.RxEvent](Segment, allocator, AllocatorProgress)"
+            ),
+        "{code}"
+    );
+    // No ring, no architecture constraint and no capacity.
+    assert!(
+        !code.contains("RingSlots")
+            && !code.contains("//go:build")
+            && !code.contains("const Capacity"),
+        "{code}"
+    );
+}
+
+#[test]
+fn many_producers_over_segments_emit_lscq_under_the_scq_architectures_in_go() {
+    let xml = segmented_doc(
+        "frame_queue",
+        "many",
+        "many",
+        "lock-free",
+        "lock-free",
+        r#"<sce:participants const="3"/>"#,
+    );
+    let files = compile_files(Language::Go, &go_options(), &xml, "frame_queue.scxml")
+        .expect("a segmented queue emits on Go");
+    let names: Vec<&str> = files.iter().map(|(name, _)| name.as_str()).collect();
+    assert_eq!(
+        names,
+        ["frame_queue.go", "frame_queue_unsupported.go"],
+        "a list of SCQ rings has the SCQ row's companion"
+    );
+    let code = &files[0].1;
+    assert!(
+        code.contains("const RingSlots = 8\n") && code.contains("const Participants = 3\n"),
+        "{code}"
+    );
+    assert!(
+        code.contains("type FrameQueue = queue.Lscq[rx_event.RxEvent]\n"),
+        "{code}"
+    );
+    assert!(
+        code.contains(
+            "queue.NewLscq[rx_event.RxEvent](Segment, RingSlots, allocator, AllocatorProgress)"
+        ),
+        "{code}"
+    );
+    assert!(code.contains("//go:build "), "{code}");
+}
+
+// ─── Python emit of a segmented queue ───
+
+#[test]
+fn a_segmented_queue_emits_a_python_module_over_the_single_lock_segment_list() {
+    for (producers, consumers, extra, places) in [
+        ("one", "one", "", ("1", "1")),
+        (
+            "many",
+            "many",
+            r#"<sce:participants const="5"/>"#,
+            ("PARTICIPANTS", "PARTICIPANTS"),
+        ),
+    ] {
+        let xml = segmented_doc(
+            "frame_queue",
+            producers,
+            consumers,
+            "blocking",
+            "blocking",
+            extra,
+        );
+        let code = compile_for(Language::Python, &xml, "frame_queue.scxml")
+            .unwrap_or_else(|e| panic!("{producers}/{consumers} segmented queue emits: {e:?}"));
+        assert!(
+            code.contains(
+                "from sce_forge_runtime.queue import Progress, SegmentAllocator, SegmentedQueue"
+            ),
+            "{code}"
+        );
+        assert!(code.contains("SEGMENT: Final[int] = 6"), "{code}");
+        assert!(
+            code.contains("ALLOCATOR_PROGRESS: Final[Progress] = Progress.BLOCKING"),
+            "{code}"
+        );
+        assert!(
+            code.contains(&format!("PRODUCER_PLACES: Final[int] = {}", places.0))
+                && code.contains(&format!("CONSUMER_PLACES: Final[int] = {}", places.1)),
+            "{code}"
+        );
+        assert!(
+            code.contains("FrameQueue = SegmentedQueue[RxEvent]")
+                && code.contains("def new_frame_queue(allocator: SegmentAllocator) -> Optional[FrameQueue]:")
+                && code.contains("SegmentedQueue.create(SEGMENT, allocator, ALLOCATOR_PROGRESS, PRODUCER_PLACES, CONSUMER_PLACES)"),
+            "{code}"
+        );
+        assert!(
+            code.contains("PUSH_PROGRESS: Final[str] = \"blocking\"") && !code.contains("CAPACITY"),
+            "{code}"
+        );
     }
 }
 
@@ -1083,6 +1205,95 @@ fn an_scq_ring_is_sized_the_same_way_in_kotlin() {
     );
     assert!(
         code.contains("const val WRAP_BOUND_OPS: Long = RUNTIME_WRAP_BOUND_OPS"),
+        "{code}"
+    );
+}
+
+#[test]
+fn one_producer_and_one_consumer_over_segments_emit_linked_lamport_rings_in_kotlin() {
+    let xml = segmented_doc("frame_queue", "one", "one", "lock-free", "lock-free", "");
+    let code = compile_for(Language::Kotlin, &xml, "frame_queue.scxml")
+        .expect("a segmented queue emits on Kotlin");
+    assert!(code.contains("const val SEGMENT: Int = 6"), "{code}");
+    assert!(
+        code.contains("typealias FrameQueue = LinkedLamport<RxEvent>"),
+        "{code}"
+    );
+    // The allocator's progress is the document's own and is held to when the
+    // queue is built, so a weaker allocator does not build.
+    assert!(
+        code.contains("val ALLOCATOR_PROGRESS: Progress = Progress.LockFree")
+            && code.contains("ALLOCATOR_PROGRESS_WORD: String = \"lock-free\""),
+        "{code}"
+    );
+    assert!(
+        code.contains("PUSH_PROGRESS: String = \"lock-free\"")
+            && code.contains("POP_PROGRESS: String = \"wait-free\""),
+        "{code}"
+    );
+    assert!(
+        code.contains("fun newFrameQueue(allocator: SegmentAllocator): FrameQueue?")
+            && code.contains("LinkedLamport.create(SEGMENT, allocator, ALLOCATOR_PROGRESS)"),
+        "{code}"
+    );
+    // One producer and one consumer have no ring to size, no processor to check
+    // and no capacity.
+    assert!(
+        !code.contains("RING_SLOTS")
+            && !code.contains("requireLockFree64BitAtomics")
+            && !code.contains("const val CAPACITY"),
+        "{code}"
+    );
+}
+
+#[test]
+fn many_producers_over_segments_emit_lscq_in_kotlin() {
+    for (producers, consumers) in [("many", "many"), ("many", "one"), ("one", "many")] {
+        let xml = segmented_doc(
+            "frame_queue",
+            producers,
+            consumers,
+            "lock-free",
+            "lock-free",
+            r#"<sce:participants const="3"/>"#,
+        );
+        let code = compile_for(Language::Kotlin, &xml, "frame_queue.scxml")
+            .unwrap_or_else(|e| panic!("{producers}/{consumers} segmented queue emits: {e:?}"));
+        assert!(
+            code.contains("const val RING_SLOTS: Int = 8")
+                && code.contains("const val PARTICIPANTS: Int = 3"),
+            "{code}"
+        );
+        assert!(
+            code.contains("typealias FrameQueue = Lscq<RxEvent>"),
+            "{code}"
+        );
+        // Each ring's entries are 64-bit atomics, so the processor is checked
+        // before the first ring is built.
+        let constructor = code
+            .split("fun newFrameQueue(")
+            .nth(1)
+            .unwrap_or_else(|| panic!("the factory is emitted:\n{code}"));
+        assert!(
+            constructor.contains("requireLockFree64BitAtomics()")
+                && constructor.find("requireLockFree64BitAtomics()")
+                    < constructor
+                        .find("Lscq.create(SEGMENT, RING_SLOTS, allocator, ALLOCATOR_PROGRESS)"),
+            "construction checks the processor before it builds a ring:\n{code}"
+        );
+        // A collected runtime has no reclamation domain.
+        assert!(!code.contains("HAZARD_SLOTS"), "{code}");
+    }
+}
+
+#[test]
+fn a_blocking_allocator_makes_the_segmented_push_blocking_in_kotlin() {
+    let xml = segmented_doc("frame_queue", "one", "one", "blocking", "blocking", "");
+    let code = compile_for(Language::Kotlin, &xml, "frame_queue.scxml")
+        .expect("a blocking segmented queue emits on Kotlin");
+    assert!(
+        code.contains("val ALLOCATOR_PROGRESS: Progress = Progress.Blocking")
+            && code.contains("PUSH_PROGRESS: String = \"blocking\""),
         "{code}"
     );
 }

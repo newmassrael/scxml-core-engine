@@ -233,8 +233,9 @@ val generateRoundTripFixtures by tasks.registering(GenerateFixtures::class) {
 // The queue kind's fixtures (SCE Protocol-Synthesis RFC §synth-5-P). They
 // assert no numerical oracle value, so the numerical manifest does not list
 // them; QueueGeneratedTest compiles what the generator writes for each bounded
-// algorithm row against the runtime and uses the queues. The element comes
-// first because the queues import its class.
+// and segmented algorithm row against the runtime and uses the queues. The
+// element comes first because the queues import its class. The intrusive
+// fixtures are absent: a collected backend refuses that storage mode by name.
 val generateQueueFixtures by tasks.registering(GenerateFixtures::class) {
     dependsOn(":buildSceCodegen")
     sceCodegen.set(rootProject.layout.projectDirectory.file(sceCodegenRelative))
@@ -244,6 +245,8 @@ val generateQueueFixtures by tasks.registering(GenerateFixtures::class) {
             "queue_conformance_event",
             "queue_conformance_spsc",
             "queue_conformance_scq",
+            "queue_conformance_segmented",
+            "queue_conformance_segmented_many",
         ),
     )
     outputDir.set(layout.buildDirectory.dir("generated/queue/kotlin"))

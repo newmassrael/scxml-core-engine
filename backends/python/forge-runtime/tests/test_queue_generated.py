@@ -28,7 +28,8 @@ import unittest
 from pathlib import Path
 
 import _sce_codegen
-from sce_forge_runtime.queue import PushStatus, Queue
+from sce_forge_runtime.queue import Progress, PushStatus, Queue, SegmentedQueue
+from test_queue_runtime import BudgetAllocator
 
 REPO_ROOT = _sce_codegen.REPO_ROOT
 RESOURCE_DIR = REPO_ROOT / "tests" / "forge" / "resources"
@@ -58,6 +59,10 @@ def _blocking(fixture: str, name: str, directory: Path) -> Path:
     text = (RESOURCE_DIR / f"{fixture}.scxml").read_text()
     for declared in ("wait-free", "lock-free"):
         text = text.replace(f"<sce:progress>{declared}</sce:progress>", "<sce:progress>blocking</sce:progress>")
+    # A segmented fixture also declares what its allocator gives: this backend's
+    # push is blocking, and the allocator the tests inject says so.
+    for declared in ("wait-free", "lock-free"):
+        text = text.replace(f'allocator-progress="{declared}"', 'allocator-progress="blocking"')
     text = text.replace(f'name="{fixture}"', f'name="{name}"')
     path = directory / f"{name}.scxml"
     path.write_text(text)
@@ -77,6 +82,8 @@ class TestGeneratedQueues(unittest.TestCase):
             RESOURCE_DIR / "queue_conformance_event.scxml",
             _blocking("queue_conformance_spsc", "queue_blocking_one_one", sources),
             _blocking("queue_conformance_scq", "queue_blocking_many_many", sources),
+            _blocking("queue_conformance_segmented", "queue_blocking_segmented_one_one", sources),
+            _blocking("queue_conformance_segmented_many", "queue_blocking_segmented_many", sources),
         ]
         for document in documents:
             done = _generate(cls.codegen, document, out)
@@ -87,6 +94,10 @@ class TestGeneratedQueues(unittest.TestCase):
         cls.event = _load("queue_conformance_event", out / "queue_conformance_event.py", package)
         cls.one_one = _load("queue_blocking_one_one", out / "queue_blocking_one_one.py", package)
         cls.many_many = _load("queue_blocking_many_many", out / "queue_blocking_many_many.py", package)
+        cls.segmented_one_one = _load(
+            "queue_blocking_segmented_one_one", out / "queue_blocking_segmented_one_one.py", package
+        )
+        cls.segmented_many = _load("queue_blocking_segmented_many", out / "queue_blocking_segmented_many.py", package)
 
     @classmethod
     def tearDownClass(cls) -> None:
@@ -132,6 +143,48 @@ class TestGeneratedQueues(unittest.TestCase):
                     self.assertIsNotNone(got, f"pop {i}")
                     self.assertEqual(i, got.value, f"pop {i}: first in, first out")
                 self.assertIsNone(consumer.try_pop(), "drained")
+
+    def test_the_segmented_modules_state_the_shape_and_the_allocator_they_need(self) -> None:
+        one, many = self.segmented_one_one, self.segmented_many
+        self.assertEqual(3, one.SEGMENT)
+        self.assertEqual(3, many.SEGMENT)
+        self.assertEqual(2, many.PARTICIPANTS)
+        self.assertEqual((1, 1), (one.PRODUCER_PLACES, one.CONSUMER_PLACES))
+        self.assertEqual((2, 2), (many.PRODUCER_PLACES, many.CONSUMER_PLACES))
+        for module in (one, many):
+            self.assertEqual("blocking", module.ALLOCATOR_PROGRESS_WORD)
+            self.assertIs(Progress.BLOCKING, module.ALLOCATOR_PROGRESS)
+            self.assertEqual("blocking", module.PUSH_PROGRESS)
+            self.assertIn("lock", module.ALGORITHM)
+            self.assertFalse(hasattr(module, "CAPACITY"), "a segmented queue has no capacity")
+
+    def test_a_segmented_queue_hands_over_across_segments_and_reports_a_refused_segment(self) -> None:
+        for module, name in (
+            (self.segmented_one_one, "new_queue_blocking_segmented_one_one"),
+            (self.segmented_many, "new_queue_blocking_segmented_many"),
+        ):
+            with self.subTest(module=module.__name__):
+                # Two segments of three: six elements, then the allocator refuses.
+                queue = getattr(module, name)(BudgetAllocator(2))
+                self.assertIsInstance(queue, SegmentedQueue)
+                producer, consumer = queue.producer(), queue.consumer()
+                self.assertIsNone(consumer.try_pop(), "a new queue is empty")
+                for i in range(2 * module.SEGMENT):
+                    status = producer.try_push(self.event.QueueConformanceEvent(sensor_id=1, value=i))
+                    self.assertIs(PushStatus.OK, status, f"push {i} fits the two segments")
+                refused = producer.try_push(self.event.QueueConformanceEvent(sensor_id=9, value=99))
+                self.assertIs(PushStatus.OUT_OF_MEMORY, refused, "the allocator refuses a third segment")
+                for i in range(2 * module.SEGMENT):
+                    got = consumer.try_pop()
+                    self.assertIsNotNone(got, f"pop {i}")
+                    self.assertEqual(i, got.value, f"pop {i}: first in, first out")
+                self.assertIsNone(consumer.try_pop(), "drained")
+
+    def test_a_segmented_module_refuses_an_allocator_that_gives_less_than_declared(self) -> None:
+        # The fixtures declare a blocking allocator, which every allocator meets;
+        # a module that declared more is checked through the runtime directly.
+        queue = self.segmented_one_one.new_queue_blocking_segmented_one_one(BudgetAllocator(0))
+        self.assertIsNone(queue, "an allocator with no segment to give")
 
     def test_a_document_declaring_more_than_blocking_is_refused_for_python_by_name(self) -> None:
         for fixture, declared in (("queue_conformance_spsc", "wait-free"), ("queue_conformance_scq", "lock-free")):

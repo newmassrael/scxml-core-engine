@@ -5443,6 +5443,58 @@
         {
           "file": "backends/c/forge-runtime/include/sce/forge/queue_segmented.h",
           "kind": "references"
+        },
+        {
+          "file": "backends/go/forge-runtime/queue/allocator.go",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/forge-runtime/queue/budget_allocator_test.go",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/forge-runtime/queue/linked.go",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/forge-runtime/queue/linked_test.go",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/forge-runtime/queue/lscq.go",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/forge-runtime/queue/lscq_history_test.go",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/forge-runtime/queue/lscq_test.go",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/forge-runtime/queue/segmented_history_test.go",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/forge-runtime/src/commonMain/kotlin/com/sce/forge/runtime/queue/Allocator.kt",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/forge-runtime/src/commonMain/kotlin/com/sce/forge/runtime/queue/Linked.kt",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/forge-runtime/src/commonMain/kotlin/com/sce/forge/runtime/queue/Lscq.kt",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/forge-runtime/src/jvmTest/kotlin/com/sce/forge/runtime/queue/BudgetAllocator.kt",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/forge-runtime/src/jvmTest/kotlin/com/sce/forge/runtime/queue/SegmentedRuntimeTest.kt",
+          "kind": "references"
         }
       ]
     },

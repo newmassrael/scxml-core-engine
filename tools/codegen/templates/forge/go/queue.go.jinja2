@@ -16,12 +16,33 @@
 //
 // Selected: {{ algorithm }}. Push is {{ push_progress }}, pop is {{ pop_progress }}.
 //
+{% if segmented %}
+// The queue is segmented (`<sce:segmented segment="{{ segment }}" allocator-progress="{{ allocator_progress }}"/>`):
+// it grows by segments of {{ segment }} element(s) taken from a queue.SegmentAllocator the
+// caller builds it with, and holds as many elements as that allocator allows. A
+// collected runtime frees a segment by the collector, so there is no
+// reclamation domain; the allocator decides only whether the queue may have one
+// more segment.
+//
+// Operations (from `queue`):
+//   New{{ pascal }}(allocator)  the queue, or false when the allocator refused the
+//                            first segment; panics when the allocator gives
+//                            less progress than the document declared for it
+//   Producer() / Consumer()  a handle, or false when every place of that side
+//                            is taken; Release gives the place back
+//   TryPush(v) PushStatus    PushOK takes the element; PushOutOfMemory means the
+//                            allocator refused a segment, and the element stays
+//                            with the caller
+//   TryPop() (T, bool)
+//   Segment()
+{% else %}
 // Operations (from `queue`):
 //   Producer() / Consumer()  a handle, or false when every place of that side
 //                            is taken; Release gives the place back
 //   TryPush(v) PushStatus    PushOK takes the element; PushFull does not
 //   TryPop() (T, bool)
 //   Capacity()
+{% endif %}
 {% if build_constraint %}
 
 //go:build {{ build_constraint }}
@@ -34,14 +55,35 @@ import (
 {{ element_import_stmt }}
 )
 
+{% if segmented %}
+// Segment is the elements one segment holds (`<sce:segmented segment>`).
+const Segment = {{ segment }}
+
+// AllocatorProgress is what the document declared the allocator gives
+// (`allocator-progress`). The queue is built only over an allocator whose
+// Progress is at least this: a queue that would claim more than its allocator
+// gives does not build.
+const AllocatorProgress = queue.{{ allocator_enumerator }}
+
+// AllocatorProgressWord is AllocatorProgress as the document spells it.
+const AllocatorProgressWord = "{{ allocator_progress }}"
+{% else %}
 // Capacity is the most elements the queue holds (`<sce:bounded>`).
 const Capacity = {{ capacity }}
+{% endif %}
 {% if ring_slots %}
 
+{% if segmented %}
+// RingSlots is the size of each of the two index rings of each segment: a power
+// of two, at least Segment and at least Participants. The algorithm's empty test
+// is justified only for as many producers or consumers as a ring has slots
+// (Nikolaev 2019 §5.1), so the ring is sized by both.
+{% else %}
 // RingSlots is the size of each of the queue's two index rings: a power of two,
 // at least Capacity and at least Participants. The algorithm's empty test is
 // justified only for as many producers or consumers as the ring has slots
 // (Nikolaev 2019 §5.1), so the ring is sized by both.
+{% endif %}
 const RingSlots = {{ ring_slots }}
 
 // Participants is the most goroutines that hold a handle on one side at the
@@ -68,6 +110,23 @@ const (
 	Algorithm = "{{ algorithm }}"
 )
 
+{% if segmented %}
+// {{ pascal }} is the queue. It grows by segments the allocator gives; an element
+// that has left it is not referenced by it, and a segment it has left is the
+// collector's.
+type {{ pascal }} = queue.{{ runtime_type }}[{{ element_qualified }}]
+
+// New{{ pascal }} returns an empty queue of segments of Segment elements over
+// allocator, or false when the allocator will not give the first segment. It
+// panics when the allocator's Progress is below AllocatorProgress.
+func New{{ pascal }}(allocator queue.SegmentAllocator) (*{{ pascal }}, bool) {
+{% if ring_slots %}
+	return queue.New{{ runtime_type }}[{{ element_qualified }}](Segment, RingSlots, allocator, AllocatorProgress)
+{% else %}
+	return queue.New{{ runtime_type }}[{{ element_qualified }}](Segment, allocator, AllocatorProgress)
+{% endif %}
+}
+{% else %}
 // {{ pascal }} is the queue. Its storage is one slice, allocated when the queue
 // is built and never again; an element that has left it is not referenced by it.
 type {{ pascal }} = queue.{{ runtime_type }}[{{ element_qualified }}]
@@ -80,3 +139,4 @@ func New{{ pascal }}() *{{ pascal }} {
 	return queue.New{{ runtime_type }}[{{ element_qualified }}](Capacity)
 {% endif %}
 }
+{% endif %}

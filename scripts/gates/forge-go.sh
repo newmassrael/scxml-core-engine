@@ -41,15 +41,17 @@ mkdir -p "$QUEUE_HISTORIES"
 ( cd backends/go/forge-runtime \
     && SCE_QUEUE_HISTORY_DIR="$QUEUE_HISTORIES" go test -race -count=1 ./queue/ ) \
     || sce_gate_fail "Go forge queue runtime under the race detector"
-# 4 Lamport capacities recorded 3 times and 6 SCQ shapes recorded 25 times. A
-# run that recorded fewer would pass the judgement below, so the count is held.
+# 4 Lamport capacities recorded 3 times, 6 SCQ shapes recorded 25 times, and 5
+# segmented shapes (the linked Lamport rings and four of the list of SCQ rings)
+# recorded 25 times. A run that recorded fewer would pass the judgement below,
+# so the count is held.
 shopt -s nullglob
 queue_histories=("$QUEUE_HISTORIES"/*.json)
 shopt -u nullglob
-(( ${#queue_histories[@]} >= 162 )) \
-    || sce_gate_fail "Go queue histories: ${#queue_histories[@]} written, expected at least 162"
+(( ${#queue_histories[@]} >= 287 )) \
+    || sce_gate_fail "Go queue histories: ${#queue_histories[@]} written, expected at least 287"
 "$(sce_codegen_require "$SCE_REPO_ROOT")" check-queue-history "${queue_histories[@]}" \
     || sce_gate_fail "Go queue histories are not linearizable"
 # The packages the generator writes for a queue, under the race detector too.
-( cd backends/go/forge-runtime && go test -race -count=1 -run 'Lamport|Scq' ./conformance/ ) \
+( cd backends/go/forge-runtime && go test -race -count=1 -run 'Lamport|Scq|Lscq' ./conformance/ ) \
     || sce_gate_fail "Go forge queue generated packages under the race detector"

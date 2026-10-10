@@ -64,15 +64,15 @@ mkdir -p "$QUEUE_HISTORIES"
 SCE_QUEUE_HISTORY_DIR="$QUEUE_HISTORIES" ./gradlew --console=plain :sce-forge-runtime-kotlin:jvmTest \
     || sce_gate_fail "Kotlin forge conformance"
 
-# 4 Lamport capacities recorded 3 times and 6 SCQ shapes recorded 25 times. A
-# run that recorded fewer would pass the judgement below, so the count is held.
-# Linearizability is judged by the command every backend's histories are judged
-# by, not by a checker of the arm's own.
+# 4 Lamport capacities recorded 3 times, 6 SCQ shapes recorded 25 times and 5
+# segmented shapes recorded 25 times. A run that recorded fewer would pass the
+# judgement below, so the count is held. Linearizability is judged by the command
+# every backend's histories are judged by, not by a checker of the arm's own.
 shopt -s nullglob
 queue_histories=("$QUEUE_HISTORIES"/*.json)
 shopt -u nullglob
-(( ${#queue_histories[@]} >= 162 )) \
-    || sce_gate_fail "Kotlin queue histories: ${#queue_histories[@]} written, expected at least 162"
+(( ${#queue_histories[@]} >= 287 )) \
+    || sce_gate_fail "Kotlin queue histories: ${#queue_histories[@]} written, expected at least 287"
 "$(sce_codegen_require "$SCE_REPO_ROOT")" check-queue-history "${queue_histories[@]}" \
     || sce_gate_fail "Kotlin queue histories are not linearizable"
 

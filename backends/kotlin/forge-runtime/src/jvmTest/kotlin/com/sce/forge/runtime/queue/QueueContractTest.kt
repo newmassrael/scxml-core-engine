@@ -29,57 +29,57 @@ private class Tracked(val value: Long)
 /**
  * What a scenario asks of a queue, so one reading of the steps serves every
  * runtime this arm has. Each runtime reaches its producer and consumer its own
- * way; the scenarios do not know how.
+ * way; the scenarios do not know how. A segmented queue has no capacity, and no
+ * scenario of one asks for it.
  */
-private interface Subject {
-    fun capacity(): Int
-    fun push(element: Tracked): PushStatus
-    fun pop(): Tracked?
+private class Subject(
+    private val capacity: Int?,
+    private val push: (Tracked) -> PushStatus,
+    private val pop: () -> Tracked?,
+) {
+    fun capacity(): Int = checkNotNull(capacity) { "a segmented queue has no capacity to ask for" }
+
+    fun push(element: Tracked): PushStatus = push.invoke(element)
+
+    fun pop(): Tracked? = pop.invoke()
 }
 
-private class SpscSubject(private val queue: Spsc<Tracked>) : Subject {
-    override fun capacity() = queue.capacity
-
-    override fun push(element: Tracked): PushStatus {
-        val producer = checkNotNull(queue.producer()) { "a scenario holds one handle at a time" }
-        try {
-            return producer.tryPush(element)
-        } finally {
-            producer.release()
-        }
-    }
-
-    override fun pop(): Tracked? {
-        val consumer = checkNotNull(queue.consumer()) { "a scenario holds one handle at a time" }
-        try {
-            return consumer.tryPop()
-        } finally {
-            consumer.release()
-        }
+/**
+ * Runs [use] on a handle and gives the handle's place back. A scenario holds one
+ * handle at a time, so every step takes one and returns it.
+ */
+private inline fun <H : Any, R> held(handle: H?, release: (H) -> Unit, use: (H) -> R): R {
+    val taken = checkNotNull(handle) { "a scenario holds one handle at a time" }
+    try {
+        return use(taken)
+    } finally {
+        release(taken)
     }
 }
 
-private class ScqSubject(private val queue: Scq<Tracked>) : Subject {
-    override fun capacity() = queue.capacity
+private fun spscSubject(queue: Spsc<Tracked>) = Subject(
+    queue.capacity,
+    { element -> held(queue.producer(), Spsc.Producer<Tracked>::release) { it.tryPush(element) } },
+    { held(queue.consumer(), Spsc.Consumer<Tracked>::release) { it.tryPop() } },
+)
 
-    override fun push(element: Tracked): PushStatus {
-        val producer = checkNotNull(queue.producer()) { "a scenario holds one handle at a time" }
-        try {
-            return producer.tryPush(element)
-        } finally {
-            producer.release()
-        }
-    }
+private fun scqSubject(queue: Scq<Tracked>) = Subject(
+    queue.capacity,
+    { element -> held(queue.producer(), Scq.Producer<Tracked>::release) { it.tryPush(element) } },
+    { held(queue.consumer(), Scq.Consumer<Tracked>::release) { it.tryPop() } },
+)
 
-    override fun pop(): Tracked? {
-        val consumer = checkNotNull(queue.consumer()) { "a scenario holds one handle at a time" }
-        try {
-            return consumer.tryPop()
-        } finally {
-            consumer.release()
-        }
-    }
-}
+private fun linkedSubject(queue: LinkedLamport<Tracked>) = Subject(
+    null,
+    { element -> held(queue.producer(), LinkedLamport.Producer<Tracked>::release) { it.tryPush(element) } },
+    { held(queue.consumer(), LinkedLamport.Consumer<Tracked>::release) { it.tryPop() } },
+)
+
+private fun lscqSubject(queue: Lscq<Tracked>) = Subject(
+    null,
+    { element -> held(queue.producer(), Lscq.Producer<Tracked>::release) { it.tryPush(element) } },
+    { held(queue.consumer(), Lscq.Consumer<Tracked>::release) { it.tryPop() } },
+)
 
 /** The ring size of an SCQ row for a capacity: the capacity rounded up to a power of two. */
 internal fun ceilPow2(n: Int): Int {
@@ -107,6 +107,7 @@ private fun runScenario(subject: Subject, scenario: JsonObject) {
                 when {
                     got == PushStatus.Ok && want == "ok" -> Unit
                     got == PushStatus.Full && want == "full" -> Unit
+                    got == PushStatus.OutOfMemory && want == "out_of_memory" -> Unit
                     else -> fail("$context: push gave $got, want $want")
                 }
             }
@@ -139,6 +140,32 @@ class QueueContractTest {
         return parsed
     }
 
+    /**
+     * The queue a segmented scenario names, over an allocator that gives the
+     * scenario's `segments` at once (all it asks for when it names none).
+     * Segmented rows are one producer and one consumer, which select linked
+     * Lamport rings, and any other cardinality, which selects a list of SCQ
+     * rings (the RFC's selection table).
+     */
+    private fun segmentedSubject(id: String, scenario: JsonObject): Subject {
+        val segment = scenario.getValue("segment").jsonPrimitive.int
+        val segments = scenario["segments"]?.jsonPrimitive?.long ?: Long.MAX_VALUE
+        val allocator = BudgetAllocator(segments)
+        val one = scenario.getValue("producers").jsonPrimitive.content == "one" &&
+            scenario.getValue("consumers").jsonPrimitive.content == "one"
+        return if (one) {
+            linkedSubject(
+                LinkedLamport.create<Tracked>(segment, allocator, Progress.LockFree)
+                    ?: fail("$id: the allocator refused the first segment"),
+            )
+        } else {
+            lscqSubject(
+                Lscq.create<Tracked>(segment, ceilPow2(segment), allocator, Progress.LockFree)
+                    ?: fail("$id: the allocator refused the first segment"),
+            )
+        }
+    }
+
     @Test
     fun everyContractScenarioHolds() {
         val scenarios: JsonArray = contract().getValue("scenarios").jsonArray
@@ -156,18 +183,17 @@ class QueueContractTest {
                 // (queue/storage-runtime-missing), so there is no runtime to run.
                 continue
             }
-            if (storage == "segmented") {
-                // Not lowered to Kotlin yet; the generator refuses the row by name
-                // (queue/storage-runtime-missing), so there is no runtime to run.
-                continue
-            }
-            val capacity = scenario.getValue("capacity").jsonPrimitive.int
             val subject: Subject = when {
-                storage == "bounded" && producers == "one" && consumers == "one" -> SpscSubject(Spsc(capacity))
+                storage == "segmented" -> segmentedSubject(id, scenario)
+                storage == "bounded" && producers == "one" && consumers == "one" ->
+                    spscSubject(Spsc(scenario.getValue("capacity").jsonPrimitive.int))
                 // Any other cardinality selects the SCQ row (the RFC's
                 // selection table), so the three combinations share one
                 // runtime.
-                storage == "bounded" -> ScqSubject(Scq(capacity, ceilPow2(capacity)))
+                storage == "bounded" -> {
+                    val capacity = scenario.getValue("capacity").jsonPrimitive.int
+                    scqSubject(Scq(capacity, ceilPow2(capacity)))
+                }
                 else -> fail("$id: the Kotlin arm has no runtime for the row $storage/$producers/$consumers")
             }
             runScenario(subject, scenario)

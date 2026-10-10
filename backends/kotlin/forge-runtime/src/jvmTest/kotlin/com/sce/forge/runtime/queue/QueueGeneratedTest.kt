@@ -31,6 +31,25 @@ import com.sce.generated.queue_conformance_scq.SCQ_ARCHITECTURES
 import com.sce.generated.queue_conformance_scq.requireLockFree64BitAtomics
 import com.sce.generated.queue_conformance_scq.WRAP_BOUND_OPS as SCQ_WRAP_BOUND_OPS
 import com.sce.generated.queue_conformance_scq.newQueueConformanceScq
+import com.sce.generated.queue_conformance_segmented.ALGORITHM as LINKED_ALGORITHM
+import com.sce.generated.queue_conformance_segmented.ALLOCATOR_PROGRESS as LINKED_ALLOCATOR_PROGRESS
+import com.sce.generated.queue_conformance_segmented.ALLOCATOR_PROGRESS_WORD as LINKED_ALLOCATOR_PROGRESS_WORD
+import com.sce.generated.queue_conformance_segmented.DECLARED_PROGRESS as LINKED_DECLARED_PROGRESS
+import com.sce.generated.queue_conformance_segmented.POP_PROGRESS as LINKED_POP_PROGRESS
+import com.sce.generated.queue_conformance_segmented.PUSH_PROGRESS as LINKED_PUSH_PROGRESS
+import com.sce.generated.queue_conformance_segmented.QueueConformanceSegmented
+import com.sce.generated.queue_conformance_segmented.SEGMENT as LINKED_SEGMENT
+import com.sce.generated.queue_conformance_segmented.newQueueConformanceSegmented
+import com.sce.generated.queue_conformance_segmented_many.ALGORITHM as LSCQ_ALGORITHM
+import com.sce.generated.queue_conformance_segmented_many.ALLOCATOR_PROGRESS as LSCQ_ALLOCATOR_PROGRESS
+import com.sce.generated.queue_conformance_segmented_many.DECLARED_PROGRESS as LSCQ_DECLARED_PROGRESS
+import com.sce.generated.queue_conformance_segmented_many.PARTICIPANTS as LSCQ_PARTICIPANTS
+import com.sce.generated.queue_conformance_segmented_many.POP_PROGRESS as LSCQ_POP_PROGRESS
+import com.sce.generated.queue_conformance_segmented_many.PUSH_PROGRESS as LSCQ_PUSH_PROGRESS
+import com.sce.generated.queue_conformance_segmented_many.QueueConformanceSegmentedMany
+import com.sce.generated.queue_conformance_segmented_many.RING_SLOTS as LSCQ_RING_SLOTS
+import com.sce.generated.queue_conformance_segmented_many.SEGMENT as LSCQ_SEGMENT
+import com.sce.generated.queue_conformance_segmented_many.newQueueConformanceSegmentedMany
 import com.sce.generated.queue_conformance_spsc.ALGORITHM as SPSC_ALGORITHM
 import com.sce.generated.queue_conformance_spsc.CAPACITY as SPSC_CAPACITY
 import com.sce.generated.queue_conformance_spsc.DECLARED_PROGRESS as SPSC_DECLARED_PROGRESS
@@ -51,6 +70,10 @@ import kotlin.test.assertTrue
 private fun runtimeQueue(queue: QueueConformanceSpsc): Spsc<QueueConformanceEvent> = queue
 
 private fun runtimeQueue(queue: QueueConformanceScq): Scq<QueueConformanceEvent> = queue
+
+private fun runtimeQueue(queue: QueueConformanceSegmented): LinkedLamport<QueueConformanceEvent> = queue
+
+private fun runtimeQueue(queue: QueueConformanceSegmentedMany): Lscq<QueueConformanceEvent> = queue
 
 private fun event(sensor: Int, value: Int) = QueueConformanceEvent(sensor_id = sensor.toUByte(), value = value.toUShort())
 
@@ -131,5 +154,92 @@ class QueueGeneratedTest {
             assertEquals(i.toUShort(), got.value, "pop $i: first in, first out")
         }
         assertNull(consumer.tryPop(), "drained")
+    }
+
+    @Test
+    fun theLinkedLamportFileStatesWhatTheDocumentRequiredAndWhatItGives() {
+        assertEquals(3, LINKED_SEGMENT, "the segment is the document's: three")
+        assertEquals("lock-free", LINKED_DECLARED_PROGRESS)
+        assertEquals("lock-free", LINKED_PUSH_PROGRESS, "a push no stronger than its allocator")
+        assertEquals("wait-free", LINKED_POP_PROGRESS)
+        assertTrue(LINKED_ALGORITHM.contains("Lamport"), "one and one select linked Lamport rings: $LINKED_ALGORITHM")
+        assertEquals(Progress.LockFree, LINKED_ALLOCATOR_PROGRESS, "the allocator progress is the document's")
+        assertEquals("lock-free", LINKED_ALLOCATOR_PROGRESS_WORD)
+        val queue = assertNotNull(newQueueConformanceSegmented(BudgetAllocator()))
+        assertEquals(LINKED_SEGMENT, runtimeQueue(queue).segment)
+    }
+
+    @Test
+    fun theLinkedLamportFileHandsElementsOverAcrossSegmentsAndReportsARefusedSegment() {
+        // Two segments of three: six elements, then the allocator refuses.
+        val allocator = BudgetAllocator(limit = 2)
+        val queue = assertNotNull(newQueueConformanceSegmented(allocator))
+        val producer = assertNotNull(queue.producer())
+        val consumer = assertNotNull(queue.consumer())
+
+        assertNull(consumer.tryPop(), "a new queue is empty")
+        for (i in 0 until 2 * LINKED_SEGMENT) {
+            assertEquals(PushStatus.Ok, producer.tryPush(event(1, i)), "push $i fits the two segments")
+        }
+        assertEquals(PushStatus.OutOfMemory, producer.tryPush(event(9, 99)), "the allocator refuses a third segment")
+        for (i in 0 until 2 * LINKED_SEGMENT) {
+            val got = assertNotNull(consumer.tryPop(), "pop $i")
+            assertEquals(i.toUShort(), got.value, "pop $i: first in, first out")
+        }
+        assertNull(consumer.tryPop(), "drained")
+        assertEquals(PushStatus.Ok, producer.tryPush(event(1, 100)), "a segment the consumer gave back is room again")
+    }
+
+    @Test
+    fun theLinkedLamportFileRefusesAnAllocatorThatGivesLessThanTheDocumentDeclared() {
+        val failure = assertFailsWith<IllegalArgumentException> {
+            newQueueConformanceSegmented(BudgetAllocator(progress = Progress.Blocking))
+        }
+        assertTrue(failure.message!!.contains("Blocking"), "the message names what the allocator gives: ${failure.message}")
+        assertNull(newQueueConformanceSegmented(BudgetAllocator(limit = 0)), "an allocator with no segment to give")
+    }
+
+    @Test
+    fun theLscqFileStatesTheRingItNeedsAndWhatItGives() {
+        assertEquals(3, LSCQ_SEGMENT, "the segment is the document's: three")
+        assertEquals(2, LSCQ_PARTICIPANTS, "the participants are the document's: two")
+        assertEquals(4, LSCQ_RING_SLOTS, "the next power of two at or above max(segment, participants)")
+        assertEquals("lock-free", LSCQ_DECLARED_PROGRESS)
+        assertEquals("lock-free", LSCQ_PUSH_PROGRESS)
+        assertEquals("lock-free", LSCQ_POP_PROGRESS)
+        assertTrue(LSCQ_ALGORITHM.contains("LSCQ"), "many and many select LSCQ: $LSCQ_ALGORITHM")
+        assertEquals(Progress.LockFree, LSCQ_ALLOCATOR_PROGRESS)
+        val queue = assertNotNull(newQueueConformanceSegmentedMany(BudgetAllocator()))
+        assertEquals(LSCQ_SEGMENT, runtimeQueue(queue).segment)
+        assertEquals(LSCQ_RING_SLOTS, runtimeQueue(queue).ringSlots)
+    }
+
+    @Test
+    fun theLscqFileHandsElementsOverAcrossSegmentsAndGivesEachSegmentBack() {
+        val allocator = BudgetAllocator()
+        val queue = assertNotNull(newQueueConformanceSegmentedMany(allocator))
+        val producer = assertNotNull(queue.producer())
+        val consumer = assertNotNull(queue.consumer())
+        val total = 4 * LSCQ_SEGMENT + 1
+
+        assertNull(consumer.tryPop(), "a new queue is empty")
+        for (i in 0 until total) {
+            assertEquals(PushStatus.Ok, producer.tryPush(event(2, i)), "push $i")
+        }
+        assertTrue(allocator.granted >= 5, "thirteen elements of three need at least five segments: ${allocator.granted}")
+        for (i in 0 until total) {
+            val got = assertNotNull(consumer.tryPop(), "pop $i")
+            assertEquals(i.toUShort(), got.value, "pop $i: first in, first out")
+        }
+        assertNull(consumer.tryPop(), "drained")
+        assertEquals(1L, allocator.live, "only the newest segment is still the queue's")
+    }
+
+    @Test
+    fun theLscqFileRefusesAnAllocatorThatGivesLessThanTheDocumentDeclared() {
+        assertFailsWith<IllegalArgumentException> {
+            newQueueConformanceSegmentedMany(BudgetAllocator(progress = Progress.Blocking))
+        }
+        assertNull(newQueueConformanceSegmentedMany(BudgetAllocator(limit = 0)), "an allocator with no segment to give")
     }
 }
