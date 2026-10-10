@@ -5987,7 +5987,17 @@ through the W3C SCXML §3 entry semantics:
 After the parse completes, a BFS over those edges computes the
 design-time reach set. A state outside the closure is dead code —
 codegen would still emit per-state surface for it, but no execution
-path ever enters it. Two rejection codes:
+path ever enters it. One exception, the **decision region**: a
+compound `<state>` marked `sce:assumed` whose `sce:assumed-candidates`
+are ids of its own child states makes a choice between readings of the
+specification, `initial` being the reading taken. The other children
+are the readings not taken and are entered if the choice changes
+(§scxml-3.3), so each candidate joins the reach set. It is narrow: the
+marker must be `assumed` (an `unresolved` question is not a reading),
+and every candidate must be a direct child; a child the marker does not
+list is still an orphan. A region lets a guess be written, and run
+against its alternatives, with no script engine, because the logic reads
+it with `In()`. Two rejection codes:
 
 - `scxml/unreachable-state` — the orphan-state form, emitted when an
   unreachable `<state>` / `<parallel>` / `<final>` declares no

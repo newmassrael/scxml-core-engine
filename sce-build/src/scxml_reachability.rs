@@ -59,6 +59,7 @@ use std::collections::{HashSet, VecDeque};
 
 use crate::forge::error::{ForgeError, Located};
 use crate::model::SCXMLModel;
+use crate::provenance::MarkerKind;
 use crate::scxml_semantic::ScxmlSemanticError;
 
 /// Reject the document on its first reachability violation — the first
@@ -258,6 +259,39 @@ fn compute_reach_set(model: &SCXMLModel) -> HashSet<String> {
             }
         }
 
+        // A decision region. A compound state the author marked
+        // `sce:assumed`, whose `sce:assumed-candidates` are ids of its own
+        // child states, makes a choice between readings of the
+        // specification: `initial` is the reading taken and the other
+        // children are the readings not taken, entered only if the choice
+        // changes (§scxml-3.3 initial-cascade). They are alternatives, not
+        // dead code, so they join the reach set. Without this the region the
+        // authoring tools ask for -- the way to write a guess a case can
+        // contradict where no script engine is allowed -- would be refused
+        // for the very states that make it one.
+        //
+        // Narrow on purpose: the marker must be `assumed` (a question the
+        // owner has not answered is `unresolved`, and an unanswered question
+        // is not a reading), and EVERY candidate must be a direct child of
+        // the marked state. A child that is no candidate, or a candidate
+        // elsewhere in the tree, is still an orphan.
+        for marker in &state.unresolved {
+            if marker.kind != MarkerKind::Assumed || marker.candidates.is_empty() {
+                continue;
+            }
+            let all_children = marker.candidates.iter().all(|candidate| {
+                model
+                    .states
+                    .get(candidate)
+                    .is_some_and(|child| child.parent.as_deref() == Some(state.id.as_str()))
+            });
+            if all_children {
+                for candidate in &marker.candidates {
+                    queue.push_back(candidate.clone());
+                }
+            }
+        }
+
         // Transition `target` edges contribute regardless of state
         // category (compound / parallel / atomic). Multi-target
         // attributes (§scxml-3.13) enqueue every part.
@@ -424,6 +458,80 @@ mod tests {
             },
         );
         assert!(validate(&model, "test.scxml").is_ok());
+    }
+
+    /// A decision region: `rule` is marked `sce:assumed` with its children
+    /// as candidates, `taken` is its `initial` and the document's deep
+    /// `initial` (what the parser resolves it to). `extra` are further
+    /// children, `candidates` what the marker lists.
+    fn region(
+        kind: MarkerKind,
+        candidates: &[&str],
+        extra_children: &[&str],
+        alt_parent: Option<&str>,
+    ) -> SCXMLModel {
+        let mut model = SCXMLModel {
+            initial: "taken".to_string(),
+            ..Default::default()
+        };
+        let mut rule = state("rule", 0);
+        rule.initial = "taken".to_string();
+        rule.unresolved = vec![crate::provenance::UnresolvedMarker {
+            id: "R".to_string(),
+            kind,
+            candidates: candidates.iter().map(|c| c.to_string()).collect(),
+            ..Default::default()
+        }];
+        let taken = child("taken", "rule", 1);
+        let mut alt = state("alt", 2);
+        alt.parent = alt_parent.map(str::to_string);
+        let mut states = vec![rule, taken, alt];
+        for (n, id) in extra_children.iter().enumerate() {
+            states.push(child(id, "rule", 3 + n as u32));
+        }
+        insert_states(&mut model, states);
+        model
+    }
+
+    /// The readings an author did not take are alternatives, not dead code
+    /// (§scxml-3.3): the region is accepted.
+    #[test]
+    fn a_decision_regions_alternatives_are_reachable() {
+        let model = region(MarkerKind::Assumed, &["taken", "alt"], &[], Some("rule"));
+        assert!(validate(&model, "test.scxml").is_ok());
+    }
+
+    /// Narrow: a child the marker does not list is still an orphan.
+    #[test]
+    fn a_child_that_is_no_candidate_is_still_an_orphan() {
+        let model = region(
+            MarkerKind::Assumed,
+            &["taken", "alt"],
+            &["stray"],
+            Some("rule"),
+        );
+        let err = validate(&model, "test.scxml").expect_err("stray is no alternative");
+        let diags = err.error.to_diagnostics();
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].code.as_str(), "scxml/unreachable-state");
+        assert_eq!(diags[0].actual.as_deref(), Some("stray"));
+    }
+
+    /// An open question is not a reading: `unresolved` makes no region.
+    #[test]
+    fn an_unresolved_marker_makes_no_region() {
+        let model = region(MarkerKind::Unresolved, &["taken", "alt"], &[], Some("rule"));
+        let err = validate(&model, "test.scxml").expect_err("alt is dead code");
+        assert_eq!(err.error.to_diagnostics()[0].actual.as_deref(), Some("alt"));
+    }
+
+    /// Every candidate must be a direct child: one elsewhere in the tree
+    /// makes the marker no region, so the orphan is still found.
+    #[test]
+    fn a_candidate_that_is_not_a_child_makes_no_region() {
+        let model = region(MarkerKind::Assumed, &["taken", "alt"], &[], None);
+        let err = validate(&model, "test.scxml").expect_err("alt is not the region's child");
+        assert_eq!(err.error.to_diagnostics()[0].actual.as_deref(), Some("alt"));
     }
 
     /// Empty `initial` → parser's first-top-level-state default
