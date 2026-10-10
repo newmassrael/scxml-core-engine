@@ -658,15 +658,7 @@ fn an_enum_entry_takes_none_of_a_strings_own_attributes() {
 }
 
 #[test]
-fn an_enum_entry_is_refused_by_name_until_a_backend_generates_it() {
-    // The backends that have landed it; each adds itself in its own commit.
-    const GENERATING: [Language; 5] = [
-        Language::Python,
-        Language::Go,
-        Language::Kotlin,
-        Language::Rust,
-        Language::Cpp,
-    ];
+fn every_backend_generates_an_enum_entry() {
     let m = codec(&enum_document(ENUM_ENTRIES));
     for lang in [
         Language::Rust,
@@ -676,22 +668,8 @@ fn an_enum_entry_is_refused_by_name_until_a_backend_generates_it() {
         Language::Python,
         Language::C11,
     ] {
-        let generating = GENERATING.contains(&lang);
-        assert_eq!(
-            content_line_codec::lowers_enum_entries(lang),
-            generating,
-            "{lang:?}"
-        );
         let refusal = content_line_codec::refusal(lang, &m);
-        if generating {
-            assert!(refusal.is_none(), "{lang:?}: {refusal:?}");
-        } else {
-            let why = refusal.expect("refused by name");
-            assert!(
-                why.contains("enum") && why.contains("docs/adr/0015"),
-                "{lang:?}: {why}"
-            );
-        }
+        assert!(refusal.is_none(), "{lang:?}: {refusal:?}");
     }
 }
 
@@ -837,12 +815,11 @@ fn the_enum_a_codec_reads_gives_each_variant_a_text_a_line_can_carry() {
         entry,
     );
     assert!(said.contains("`done`") && said.contains("`Done`"), "{said}");
-    // A vocabulary that is sound reaches the refusal that names a language that has
-    // not landed an enum entry.
+    // A vocabulary that is sound is generated, and says nothing of either rule.
     let sound = status_document(&[("needsAction", 0, Some("NEEDS-ACTION")), ("done", 1, None)]);
-    let said = generated_against("c11", &sound, entry);
+    let said = generated_against("python", &sound, entry);
     assert!(
-        said.contains("docs/adr/0015") && !said.contains("iana-token"),
+        !said.contains("iana-token") && !said.contains("sce:text"),
         "{said}"
     );
 }

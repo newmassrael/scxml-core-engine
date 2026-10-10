@@ -668,6 +668,145 @@ static void a_list_is_written_with_its_separator_and_held_before_it_is_written(v
     CHECK(sce_forge_writer_position(&out.sink) == before, "something of a refused list reached the sink");
 }
 
+/* An enum read and written by the text of its variants (docs/adr/0015). */
+
+/* A closed vocabulary the way a generated codec holds it: the carriers neither
+ * start at zero nor run on. */
+static const sce_forge_cl_enum_text_t k_status[] = {
+    {"NEEDS-ACTION", 1}, {"IN-PROCESS", 2}, {"COMPLETED", 4}, {"cancelled", 8}};
+#define K_STATUS_COUNT (sizeof k_status / sizeof k_status[0])
+/* One more than the longest text. */
+#define K_STATUS_CAP 13U
+
+static sce_forge_codec_status_t enum_value(const char *value, uint64_t *out) {
+    char text[128];
+    char word[K_STATUS_CAP];
+    sce_forge_cl_reader_t reader;
+    sce_forge_cl_property_t line;
+    bool has = false;
+    sce_forge_codec_status_t s;
+    snprintf(text, sizeof text, "BEGIN:VEVENT\r\nS:%s\r\nEND:VEVENT\r\n", value);
+    s = sce_forge_cl_reader_begin(&reader, (const uint8_t *)text, strlen(text), "VEVENT");
+    if (s != SCE_FORGE_CODEC_OK) {
+        return s;
+    }
+    s = sce_forge_cl_reader_next(&reader, &line, &has);
+    if (s != SCE_FORGE_CODEC_OK || !has) {
+        return s;
+    }
+    return sce_forge_cl_property_read_enum(&line, k_status, K_STATUS_COUNT, word, K_STATUS_CAP, out);
+}
+
+static sce_forge_codec_status_t enum_param(const char *line_text, uint64_t *out) {
+    char text[128];
+    char word[K_STATUS_CAP];
+    sce_forge_cl_reader_t reader;
+    sce_forge_cl_property_t line;
+    bool has = false;
+    bool more = false;
+    sce_forge_codec_status_t s;
+    snprintf(text, sizeof text, "BEGIN:VEVENT\r\n%s\r\nEND:VEVENT\r\n", line_text);
+    s = sce_forge_cl_reader_begin(&reader, (const uint8_t *)text, strlen(text), "VEVENT");
+    if (s != SCE_FORGE_CODEC_OK) {
+        return s;
+    }
+    s = sce_forge_cl_reader_next(&reader, &line, &has);
+    if (s != SCE_FORGE_CODEC_OK || !has) {
+        return s;
+    }
+    s = sce_forge_cl_property_next_param(&line, &more);
+    CHECK(s == SCE_FORGE_CODEC_OK && more, "a parameter to read");
+    return sce_forge_cl_property_read_param_enum(&line, k_status, K_STATUS_COUNT, word, K_STATUS_CAP, out);
+}
+
+static void a_text_is_matched_ascii_case_insensitively(void) {
+    uint64_t c = 0;
+    CHECK(enum_value("NEEDS-ACTION", &c) == SCE_FORGE_CODEC_OK && c == 1, "the text");
+    CHECK(enum_value("needs-action", &c) == SCE_FORGE_CODEC_OK && c == 1, "in lower case");
+    CHECK(enum_value("In-Process", &c) == SCE_FORGE_CODEC_OK && c == 2, "in mixed case");
+    CHECK(enum_value("completed", &c) == SCE_FORGE_CODEC_OK && c == 4, "a text in lower case");
+    /* A variant with no text of its own is read by its declared name, in any case. */
+    CHECK(enum_value("CANCELLED", &c) == SCE_FORGE_CODEC_OK && c == 8, "a declared name in capitals");
+    CHECK(enum_value("Cancelled", &c) == SCE_FORGE_CODEC_OK && c == 8, "a declared name in mixed case");
+}
+
+static void a_value_no_variant_names_is_a_bad_value(void) {
+    static const char *const values[] = {
+        "",
+        "DONE",
+        "NEEDS",
+        "NEEDS-ACTION-",
+        "NEEDS-ACTION-NEEDS-ACTION-NEEDS-ACTION",
+        " IN-PROCESS",
+        "IN-PROCESS ",
+        /* The declared name of a variant that has a text is not its text. */
+        "needsAction",
+        /* A value is no TEXT, so a backslash in it is not an escape. */
+        "IN\\-PROCESS",
+        "IN-\x07PROCESS",
+        /* Only the 26 letters fold: U+017F and U+0131 are not S and I. */
+        "IN-PROCE\xc5\xbf\xc5\xbf",
+        "\xc4\xb1N-PROCESS",
+    };
+    size_t i;
+    for (i = 0; i < sizeof values / sizeof values[0]; ++i) {
+        uint64_t c = 0;
+        CHECK(enum_value(values[i], &c) == SCE_FORGE_CODEC_LINE_BAD_VALUE, values[i]);
+    }
+}
+
+static void a_text_cut_by_a_fold_is_read_whole(void) {
+    uint64_t c = 0;
+    CHECK(enum_value("IN-PRO\r\n CESS", &c) == SCE_FORGE_CODEC_OK && c == 2, "a folded text");
+}
+
+static void a_parameter_that_is_an_enum_is_matched_quoted_or_not(void) {
+    static const char *const bad[] = {"S;ROLE=:x", "S;ROLE=BOSS:x", "S;ROLE=\"\":x", "S;ROLE=COMPLETED,COMPLETED:x"};
+    uint64_t c = 0;
+    size_t i;
+    CHECK(enum_param("S;ROLE=completed:x", &c) == SCE_FORGE_CODEC_OK && c == 4, "an unquoted text");
+    CHECK(enum_param("S;ROLE=\"Needs-Action\":x", &c) == SCE_FORGE_CODEC_OK && c == 1, "a quoted text");
+    for (i = 0; i < sizeof bad / sizeof bad[0]; ++i) {
+        CHECK(enum_param(bad[i], &c) == SCE_FORGE_CODEC_LINE_BAD_VALUE, bad[i]);
+    }
+    /* The value is scanned whole before it is judged, so a quote that never closes
+     * is malformed even though the text before it names no variant. */
+    CHECK(enum_param("S;ROLE=\"ZZZ:x", &c) == SCE_FORGE_CODEC_LINE_MALFORMED, "malformed before bad");
+    /* A value longer than the buffer is no text, and is not stored past it. */
+    CHECK(enum_param("S;ROLE=NEEDS-ACTION-NEEDS-ACTION:x", &c) == SCE_FORGE_CODEC_LINE_BAD_VALUE, "an overlong value");
+}
+
+static void an_enum_is_written_as_the_text_its_enum_declares(void) {
+    static const char want[] =
+        "BEGIN:VEVENT\r\nS;ROLE=NEEDS-ACTION;X-Q=cancelled:IN-PROCESS\r\nT:cancelled\r\nEND:VEVENT\r\n";
+    written_t out;
+    size_t n;
+    written_init(&out);
+    CHECK(sce_forge_cl_writer_property(&out.w, "S") == SCE_FORGE_CODEC_OK, "name");
+    CHECK(sce_forge_cl_writer_enum_param(&out.w, "ROLE", k_status, K_STATUS_COUNT, 1) == SCE_FORGE_CODEC_OK,
+          "a parameter");
+    CHECK(sce_forge_cl_writer_enum_param(&out.w, "X-Q", k_status, K_STATUS_COUNT, 8) == SCE_FORGE_CODEC_OK,
+          "a declared name");
+    CHECK(sce_forge_cl_writer_enum_value(&out.w, k_status, K_STATUS_COUNT, 2) == SCE_FORGE_CODEC_OK, "a value");
+    CHECK(sce_forge_cl_writer_property(&out.w, "T") == SCE_FORGE_CODEC_OK, "name");
+    CHECK(sce_forge_cl_writer_enum_value(&out.w, k_status, K_STATUS_COUNT, 8) == SCE_FORGE_CODEC_OK, "a value");
+    n = written_finish(&out);
+    CHECK(n == sizeof want - 1U && memcmp(out.buf, want, n) == 0, "the enum written as text");
+}
+
+static void a_carrier_no_variant_declares_has_no_text_and_is_not_written(void) {
+    written_t out;
+    size_t before;
+    written_init(&out);
+    CHECK(sce_forge_cl_writer_property(&out.w, "S") == SCE_FORGE_CODEC_OK, "name");
+    before = sce_forge_writer_position(&out.sink);
+    CHECK(sce_forge_cl_writer_enum_value(&out.w, k_status, K_STATUS_COUNT, 9) == SCE_FORGE_CODEC_LINE_BAD_VALUE,
+          "a value");
+    CHECK(sce_forge_cl_writer_enum_param(&out.w, "ROLE", k_status, K_STATUS_COUNT, 9) == SCE_FORGE_CODEC_LINE_BAD_VALUE,
+          "a parameter");
+    CHECK(sce_forge_writer_position(&out.sink) == before, "something of a refused enum reached the sink");
+}
+
 int main(void) {
     a_component_is_read_property_by_property_and_stops_after_its_end();
     names_are_matched_without_regard_to_case_and_lf_ends_a_line();
@@ -690,6 +829,12 @@ int main(void) {
     a_list_is_cut_at_the_separator_before_it_is_unescaped();
     a_list_is_refused_at_its_first_failing_part();
     a_list_is_written_with_its_separator_and_held_before_it_is_written();
+    a_text_is_matched_ascii_case_insensitively();
+    a_value_no_variant_names_is_a_bad_value();
+    a_text_cut_by_a_fold_is_read_whole();
+    a_parameter_that_is_an_enum_is_matched_quoted_or_not();
+    an_enum_is_written_as_the_text_its_enum_declares();
+    a_carrier_no_variant_declares_has_no_text_and_is_not_written();
     if (failures != 0) {
         fprintf(stderr, "%d check(s) failed\n", failures);
         return 1;

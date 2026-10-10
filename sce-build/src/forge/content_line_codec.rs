@@ -40,34 +40,16 @@ pub fn lowers(lang: Language) -> bool {
     )
 }
 
-/// Whether `lang` generates an entry that is an enum, written and read by the
-/// text of its variants (docs/adr/0015). Each backend turns this on in the commit
-/// that generates it, against the conformance vectors: a codec that compiled and
-/// read such an entry as nothing would be a wrong output.
-pub fn lowers_enum_entries(lang: Language) -> bool {
-    match lang {
-        Language::Python | Language::Go | Language::Kotlin | Language::Rust | Language::Cpp => true,
-        Language::C11 => false,
-    }
-}
-
 /// Why `lang` does not generate the content-line codec `m`, or `None` when it
 /// does. Every backend generates the line record of a repeated property that
-/// declares a parameter and the list of values a `sce:separator` makes of a line
-/// (docs/adr/0014), each against the same conformance vectors, so that shape is
-/// no ground for refusing one. An enum entry is refused by name in a backend
-/// until that backend's own commit generates it (docs/adr/0015).
+/// declares a parameter, the list of values a `sce:separator` makes of a line
+/// (docs/adr/0014) and an entry that is an enum, written and read by the text of
+/// its variants (docs/adr/0015), each against the same conformance vectors, so
+/// none of those shapes is a ground for refusing one.
 pub fn refusal(lang: Language, m: &CodecModel) -> Option<String> {
     if !lowers(lang) {
         return Some(format!(
             "codec '{}' is sce:encoding=\"content-line\", which has no {lang:?} generation yet",
-            m.name
-        ));
-    }
-    if m.content_line.as_ref().is_some_and(|c| c.uses_enums()) && !lowers_enum_entries(lang) {
-        return Some(format!(
-            "codec '{}' reads an entry as an enum by the text of its variants, which has no \
-             {lang:?} generation yet (docs/adr/0015)",
             m.name
         ));
     }
@@ -135,6 +117,16 @@ fn enum_keys(l: &LangCtx, ty: &SceType, value: &str) -> serde_json::Map<String, 
             .max()
             .unwrap_or(0);
         keys.insert("enum_cap".into(), (longest + 1).into());
+        // The conversion to the carrier as a function name, for a backend whose
+        // holder is not one name: C11 reads a value out of `self->x[i]` or
+        // `rec->x`, and the template writes the call over that holder.
+        keys.insert(
+            "enum_to_fn".into(),
+            l.codec_carrier_expr(ty, "\u{1}")
+                .trim_end_matches("(\u{1})")
+                .to_string()
+                .into(),
+        );
     }
     keys
 }
@@ -551,9 +543,45 @@ fn render_c(
         }
     }
     insert_component(&mut ctx, m);
+    insert_enum_tables(&mut ctx, &l, m);
+    // One buffer serves every enum the codec reads, so it is the size of the
+    // widest: one more than the longest text of any of them.
+    let word_cap = m
+        .content_line
+        .as_ref()
+        .into_iter()
+        .flat_map(|c| c.entries.iter())
+        .filter_map(|e| match &e.sce_type {
+            SceType::Enum(r) => l
+                .enum_texts(&r.alias)
+                .iter()
+                .map(|row| row.text.len())
+                .max(),
+            _ => None,
+        })
+        .max()
+        .map_or(0, |longest| longest + 1);
+    ctx.insert("enum_word_cap".into(), word_cap.into());
     ctx.insert("entries".into(), entries.into());
-    ctx.insert("max_encoded_bytes".into(), max_encoded_bytes(m).into());
+    ctx.insert("max_encoded_bytes".into(), max_encoded_bytes(&l, m).into());
     l.render(env, "codec_content_line", ctx)
+}
+
+/// The most bytes an entry's value, or a parameter's, takes on a line, before
+/// escapes and folds. A string is held to its `sce:max-size`; an enum is written
+/// as the text of a variant, so the longest of its texts (docs/adr/0015) —
+/// without it a codec whose enum has a long text would be handed a buffer too
+/// small for it, which `…_MAX_BYTES` promises never happens.
+fn value_width(l: &LangCtx, entry: &ContentLineEntry) -> u64 {
+    match &entry.sce_type {
+        SceType::Enum(r) => l
+            .enum_texts(&r.alias)
+            .iter()
+            .map(|row| row.text.len() as u64)
+            .max()
+            .unwrap_or(0),
+        _ => u64::from(entry.max_size.unwrap_or(0)),
+    }
 }
 
 /// The most bytes `m` encodes to, folds and escapes included: a bound a C11
@@ -561,7 +589,7 @@ fn render_c(
 /// largest — a TEXT with every character escaped, a list full — and every
 /// logical line cut as often as a cut can fall (a line carries at least 71
 /// payload octets between cuts, the widest unit being four).
-fn max_encoded_bytes(m: &CodecModel) -> u64 {
+fn max_encoded_bytes(l: &LangCtx, m: &CodecModel) -> u64 {
     let Some(model) = m.content_line.as_ref() else {
         return 0;
     };
@@ -577,9 +605,11 @@ fn max_encoded_bytes(m: &CodecModel) -> u64 {
         {
             // `;` + name + `=` + the quotes + the value.
             let name = param.param.as_deref().map_or(0, str::len) as u64;
-            logical += 1 + name + 1 + 2 + u64::from(param.max_size.unwrap_or(0));
+            logical += 1 + name + 1 + 2 + value_width(l, param);
         }
         let value = match &entry.sce_type {
+            // An enum's text is letters, digits and hyphens: nothing is escaped.
+            SceType::Enum(_) => value_width(l, entry),
             SceType::String => {
                 // A line that holds a list carries every value at its bound and a
                 // separator between each (docs/adr/0014); the separator is not

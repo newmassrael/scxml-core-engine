@@ -327,11 +327,35 @@ static inline bool sce_forge_cl_property_param_is(const sce_forge_cl_property_t 
     return p->has_param && sce_forge_cl_unfolded_eq(p->raw, p->param_from, p->param_to, name);
 }
 
+/* Hand one byte of a parameter value to out[0, max_size). A byte is refused
+ * when it is a control character or passes `max_size`, unless the scan is
+ * `lenient`: then nothing is refused, no byte is stored past `max_size`, and `*n`
+ * keeps counting, so a value longer than the buffer is told by `*n > max_size`
+ * (docs/adr/0015: an enum's text is judged after the whole value is scanned). */
+static inline sce_forge_codec_status_t sce_forge_cl_param_byte(char *out, size_t max_size, size_t *n, int b,
+                                                               bool lenient) {
+    if (!lenient) {
+        if (sce_forge_cl_is_control(b)) {
+            return SCE_FORGE_CODEC_LINE_BAD_VALUE;
+        }
+        if (*n == max_size) {
+            return SCE_FORGE_CODEC_LINE_TOO_LONG;
+        }
+    }
+    if (*n < max_size) {
+        out[*n] = (char)b;
+    }
+    ++*n;
+    return SCE_FORGE_CODEC_OK;
+}
+
 /* Scan one parameter value — a quoted string, or text up to `;`, `:`, `,` or
  * `"` — storing each byte of it in out[0, max_size) (NULL: skipped) and its
- * length in `*len`. `*more` is whether another value follows a `,`. */
-static inline sce_forge_codec_status_t sce_forge_cl_scan_param_value(sce_forge_cl_property_t *p, char *out,
-                                                                     size_t max_size, size_t *len, bool *more) {
+ * length in `*len`. `*more` is whether another value follows a `,`. `lenient`
+ * is as for `sce_forge_cl_param_byte`. */
+static inline sce_forge_codec_status_t sce_forge_cl_scan_param_value_as(sce_forge_cl_property_t *p, char *out,
+                                                                        size_t max_size, size_t *len, bool *more,
+                                                                        bool lenient) {
     size_t n = 0;
     int b;
     if (sce_forge_cl_scan_peek(&p->scan) == '"') {
@@ -345,13 +369,10 @@ static inline sce_forge_codec_status_t sce_forge_cl_scan_param_value(sce_forge_c
                 break;
             }
             if (out != NULL) {
-                if (sce_forge_cl_is_control(b)) {
-                    return SCE_FORGE_CODEC_LINE_BAD_VALUE;
+                const sce_forge_codec_status_t s = sce_forge_cl_param_byte(out, max_size, &n, b, lenient);
+                if (s != SCE_FORGE_CODEC_OK) {
+                    return s;
                 }
-                if (n == max_size) {
-                    return SCE_FORGE_CODEC_LINE_TOO_LONG;
-                }
-                out[n++] = (char)b;
             }
         }
     } else {
@@ -365,13 +386,10 @@ static inline sce_forge_codec_status_t sce_forge_cl_scan_param_value(sce_forge_c
             }
             (void)sce_forge_cl_scan_bump(&p->scan);
             if (out != NULL) {
-                if (sce_forge_cl_is_control(b)) {
-                    return SCE_FORGE_CODEC_LINE_BAD_VALUE;
+                const sce_forge_codec_status_t s = sce_forge_cl_param_byte(out, max_size, &n, b, lenient);
+                if (s != SCE_FORGE_CODEC_OK) {
+                    return s;
                 }
-                if (n == max_size) {
-                    return SCE_FORGE_CODEC_LINE_TOO_LONG;
-                }
-                out[n++] = (char)b;
             }
         }
     }
@@ -389,6 +407,13 @@ static inline sce_forge_codec_status_t sce_forge_cl_scan_param_value(sce_forge_c
         return SCE_FORGE_CODEC_OK;
     }
     return SCE_FORGE_CODEC_LINE_MALFORMED;
+}
+
+/* `sce_forge_cl_scan_param_value_as` that refuses a control character and a
+ * value past `max_size`, which is how a string parameter is read. */
+static inline sce_forge_codec_status_t sce_forge_cl_scan_param_value(sce_forge_cl_property_t *p, char *out,
+                                                                     size_t max_size, size_t *len, bool *more) {
+    return sce_forge_cl_scan_param_value_as(p, out, max_size, len, more, false);
 }
 
 static inline sce_forge_codec_status_t sce_forge_cl_skip_param_value(sce_forge_cl_property_t *p) {
@@ -704,6 +729,102 @@ static inline sce_forge_codec_status_t sce_forge_cl_property_read_bool(sce_forge
     return SCE_FORGE_CODEC_LINE_BAD_VALUE;
 }
 
+/* One variant of an enum a content-line entry is read and written by
+ * (docs/adr/0015): the text the enum document gives it and the carrier value it
+ * stands for. A generated codec holds the variants of an enum, in declaration
+ * order, as a constant array: the enum's own type carries no text. */
+typedef struct {
+    const char *text;
+    uint64_t value;
+} sce_forge_cl_enum_text_t;
+
+/* The carrier of the first of rows[0, count) whose text is word[0, n), compared
+ * ASCII case-insensitively: only the 26 letters fold, so a character Unicode
+ * folds to one of them (U+017F, U+0131) is not that letter. SCE_FORGE_CODEC_LINE_
+ * BAD_VALUE when none is. `n` is the whole length of the value, which may be
+ * past the `cap` bytes `word` holds: a value that does not fit is longer than
+ * every text, and names no variant. */
+static inline sce_forge_codec_status_t sce_forge_cl_enum_carrier_of(const sce_forge_cl_enum_text_t *rows, size_t count,
+                                                                    const char *word, size_t cap, size_t n,
+                                                                    uint64_t *out) {
+    size_t i;
+    if (n > cap) {
+        return SCE_FORGE_CODEC_LINE_BAD_VALUE;
+    }
+    for (i = 0; i < count; ++i) {
+        const size_t len = strlen(rows[i].text);
+        size_t j;
+        if (len != n) {
+            continue;
+        }
+        for (j = 0; j < n; ++j) {
+            if (sce_forge_cl_lower((unsigned char)rows[i].text[j]) != sce_forge_cl_lower((unsigned char)word[j])) {
+                break;
+            }
+        }
+        if (j == n) {
+            *out = rows[i].value;
+            return SCE_FORGE_CODEC_OK;
+        }
+    }
+    return SCE_FORGE_CODEC_LINE_BAD_VALUE;
+}
+
+/* Read the value as the text of a variant of an enum (docs/adr/0015): the
+ * carrier of the first of rows[0, count) whose text it is, ASCII
+ * case-insensitively. `word` is a buffer of `cap` bytes, one more than the
+ * longest text, which the caller holds. A value no row names is
+ * SCE_FORGE_CODEC_LINE_BAD_VALUE, whatever its bytes are: it is no TEXT, so a
+ * backslash in it is not an escape. */
+static inline sce_forge_codec_status_t sce_forge_cl_property_read_enum(sce_forge_cl_property_t *p,
+                                                                       const sce_forge_cl_enum_text_t *rows,
+                                                                       size_t count, char *word, size_t cap,
+                                                                       uint64_t *out) {
+    size_t n = 0;
+    sce_forge_codec_status_t s = sce_forge_cl_property_begin_value(p);
+    if (s != SCE_FORGE_CODEC_OK) {
+        return s;
+    }
+    for (;;) {
+        const int b = sce_forge_cl_scan_bump(&p->scan);
+        if (b < 0) {
+            break;
+        }
+        if (n < cap) {
+            word[n] = (char)b;
+        }
+        ++n;
+    }
+    return sce_forge_cl_enum_carrier_of(rows, count, word, cap, n, out);
+}
+
+/* Read the value of the parameter `next_param` stands on as the text of a variant
+ * of an enum (docs/adr/0015). The whole value is scanned before it is judged,
+ * so a line the grammar refuses is SCE_FORGE_CODEC_LINE_MALFORMED before it is
+ * SCE_FORGE_CODEC_LINE_BAD_VALUE; a second value is
+ * SCE_FORGE_CODEC_LINE_BAD_VALUE. */
+static inline sce_forge_codec_status_t sce_forge_cl_property_read_param_enum(sce_forge_cl_property_t *p,
+                                                                             const sce_forge_cl_enum_text_t *rows,
+                                                                             size_t count, char *word, size_t cap,
+                                                                             uint64_t *out) {
+    bool more = false;
+    size_t n = 0;
+    sce_forge_codec_status_t s;
+    if (p->phase != SCE_FORGE_CL_PARAM_VALUE) {
+        return SCE_FORGE_CODEC_LINE_MALFORMED;
+    }
+    s = sce_forge_cl_scan_param_value_as(p, word, cap, &n, &more, true);
+    if (s != SCE_FORGE_CODEC_OK) {
+        return s;
+    }
+    p->has_param = false;
+    p->phase = SCE_FORGE_CL_AT_SEPARATOR;
+    if (more) {
+        return SCE_FORGE_CODEC_LINE_BAD_VALUE;
+    }
+    return sce_forge_cl_enum_carrier_of(rows, count, word, cap, n, out);
+}
+
 /* ── Writing ───────────────────────────────────────────────────────── */
 
 /* A writer of the lines of one component into a sink.
@@ -1012,6 +1133,58 @@ static inline sce_forge_codec_status_t sce_forge_cl_writer_int(sce_forge_cl_writ
 /* Write `:TRUE` or `:FALSE` and end the line. */
 static inline sce_forge_codec_status_t sce_forge_cl_writer_bool(sce_forge_cl_writer_t *w, bool value) {
     return sce_forge_cl_writer_digits(w, value ? "TRUE" : "FALSE");
+}
+
+/* The text of the first of rows[0, count) with `carrier`, as the enum declares
+ * it; NULL for a carrier of an open enum that no variant declares. */
+static inline const char *sce_forge_cl_enum_text_of(const sce_forge_cl_enum_text_t *rows, size_t count,
+                                                    uint64_t carrier) {
+    size_t i;
+    for (i = 0; i < count; ++i) {
+        if (rows[i].value == carrier) {
+            return rows[i].text;
+        }
+    }
+    return NULL;
+}
+
+/* Write `;<name>=<text>` for the variant of rows[0, count) with `carrier`. A text
+ * is letters, digits and hyphens, so it is never quoted (docs/adr/0015). A
+ * carrier no variant declares has no text and is SCE_FORGE_CODEC_LINE_BAD_VALUE. */
+static inline sce_forge_codec_status_t sce_forge_cl_writer_enum_param(sce_forge_cl_writer_t *w, const char *name,
+                                                                      const sce_forge_cl_enum_text_t *rows,
+                                                                      size_t count, uint64_t carrier) {
+    sce_forge_codec_status_t s;
+    const char *text = sce_forge_cl_enum_text_of(rows, count, carrier);
+    if (text == NULL) {
+        return SCE_FORGE_CODEC_LINE_BAD_VALUE;
+    }
+    s = sce_forge_cl_writer_unit_char(w, ';');
+    if (s != SCE_FORGE_CODEC_OK) {
+        return s;
+    }
+    s = sce_forge_cl_writer_ascii_units(w, name);
+    if (s != SCE_FORGE_CODEC_OK) {
+        return s;
+    }
+    s = sce_forge_cl_writer_unit_char(w, '=');
+    if (s != SCE_FORGE_CODEC_OK) {
+        return s;
+    }
+    return sce_forge_cl_writer_ascii_units(w, text);
+}
+
+/* Write `:<text>` for the variant of rows[0, count) with `carrier` and end the
+ * line (docs/adr/0015). A carrier no variant declares has no text and is
+ * SCE_FORGE_CODEC_LINE_BAD_VALUE. */
+static inline sce_forge_codec_status_t sce_forge_cl_writer_enum_value(sce_forge_cl_writer_t *w,
+                                                                      const sce_forge_cl_enum_text_t *rows,
+                                                                      size_t count, uint64_t carrier) {
+    const char *text = sce_forge_cl_enum_text_of(rows, count, carrier);
+    if (text == NULL) {
+        return SCE_FORGE_CODEC_LINE_BAD_VALUE;
+    }
+    return sce_forge_cl_writer_digits(w, text);
 }
 
 #ifdef __cplusplus

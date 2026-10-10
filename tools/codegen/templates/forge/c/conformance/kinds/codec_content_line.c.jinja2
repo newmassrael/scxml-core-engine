@@ -26,6 +26,12 @@ static void test_{{ f.name }}(void) {
         const char *{{ mn }}[{{ ns.most }}];
         size_t {{ mn }}_len[{{ ns.most }}];
         size_t {{ mn }}_count;
+{% elif m.enum_document %}
+{#- An enum member (docs/adr/0015) is baked as its carrier number. #}
+        {{ m.type | c_type }} {{ mn }};
+{% if m.optional %}
+        bool {{ mn }}_present;
+{% endif %}
 {% else %}
         const char *{{ mn }};
         size_t {{ mn }}_len;
@@ -49,8 +55,12 @@ static void test_{{ f.name }}(void) {
 {% for c in f.cases %}
 {% if (c.decoded[field.name] | length) > ns.most %}{% set ns.most = c.decoded[field.name] | length %}{% endif %}
 {% endfor %}
+{% if field.enum_document %}
+        {{ field.type | c_type }} input_{{ fn }}[{{ ns.most }}];
+{% else %}
         const char *input_{{ fn }}[{{ ns.most }}];
         size_t input_{{ fn }}_len[{{ ns.most }}];
+{% endif %}
         size_t input_{{ fn }}_count;
 {% elif field.type == "string" %}
         const char *input_{{ fn }};
@@ -85,6 +95,11 @@ static void test_{{ f.name }}(void) {
                     .{{ mn }}_count = {{ r[m.name] | length }},
 {% elif m.optional and r[m.name] is none %}
 {# Absent: the value stays zero-initialised and the flag false. #}
+{% elif m.enum_document %}
+                    .{{ mn }} = {{ r[m.name] | c_literal(m.type) }},
+{% if m.optional %}
+                    .{{ mn }}_present = true,
+{% endif %}
 {% else %}
                     .{{ mn }} = {{ r[m.name] | c_bytes_literal }},
                     .{{ mn }}_len = {{ r[m.name] | byte_len }},
@@ -97,6 +112,9 @@ static void test_{{ f.name }}(void) {
 {% endfor %}
             },
 {% endif %}
+{% elif field.list and field.enum_document %}
+            .input_{{ fn }} = { {% for item in c.decoded[field.name] %}{{ item | c_literal(field.type) }}{% if not loop.last %}, {% endif %}{% endfor %}{% if (c.decoded[field.name] | length) == 0 %}0{% endif %} },
+            .input_{{ fn }}_count = {{ c.decoded[field.name] | length }},
 {% elif field.list %}
             .input_{{ fn }} = { {% for item in c.decoded[field.name] %}{{ item | c_bytes_literal }}{% if not loop.last %}, {% endif %}{% endfor %}{% if (c.decoded[field.name] | length) == 0 %}NULL{% endif %} },
             .input_{{ fn }}_len = { {% for item in c.decoded[field.name] %}{{ item | byte_len }}{% if not loop.last %}, {% endif %}{% endfor %}{% if (c.decoded[field.name] | length) == 0 %}0{% endif %} },
@@ -160,6 +178,20 @@ static void test_{{ f.name }}(void) {
                     }
                 }
             }
+{% elif m.enum_document and m.optional %}
+            if (round_tripped.{{ fn }}[k].{{ mn }}_present != want->{{ mn }}_present) {
+                fprintf(stderr, "FAIL: {{ f.name }} case %zu {{ field.name }}[%zu].{{ m.name }}: present differs\n", i, k);
+                ++g_failures;
+            } else if (want->{{ mn }}_present &&
+                       (long long){{ m.enum_document | to_snake_case }}_to_underlying(round_tripped.{{ fn }}[k].{{ mn }}) != (long long)want->{{ mn }}) {
+                fprintf(stderr, "FAIL: {{ f.name }} case %zu {{ field.name }}[%zu].{{ m.name }}: carrier differs\n", i, k);
+                ++g_failures;
+            }
+{% elif m.enum_document %}
+            if ((long long){{ m.enum_document | to_snake_case }}_to_underlying(round_tripped.{{ fn }}[k].{{ mn }}) != (long long)want->{{ mn }}) {
+                fprintf(stderr, "FAIL: {{ f.name }} case %zu {{ field.name }}[%zu].{{ m.name }}: carrier differs\n", i, k);
+                ++g_failures;
+            }
 {% elif m.optional %}
             if (round_tripped.{{ fn }}[k].{{ mn }}_present != want->{{ mn }}_present) {
                 fprintf(stderr, "FAIL: {{ f.name }} case %zu {{ field.name }}[%zu].{{ m.name }}: present actual=%d expected=%d\n",
@@ -188,11 +220,18 @@ static void test_{{ f.name }}(void) {
             continue;
         }
         for (size_t k = 0; k < cases[i].input_{{ fn }}_count; ++k) {
+{% if field.enum_document %}
+            if ((long long){{ field.enum_document | to_snake_case }}_to_underlying(round_tripped.{{ fn }}[k]) != (long long)cases[i].input_{{ fn }}[k]) {
+                fprintf(stderr, "FAIL: {{ f.name }} case %zu decode field {{ field.name }}[%zu]: carrier differs\n", i, k);
+                ++g_failures;
+            }
+{% else %}
             if (round_tripped.{{ fn }}_len[k] != cases[i].input_{{ fn }}_len[k] ||
                 memcmp(round_tripped.{{ fn }}[k], cases[i].input_{{ fn }}[k], cases[i].input_{{ fn }}_len[k]) != 0) {
                 fprintf(stderr, "FAIL: {{ f.name }} case %zu decode field {{ field.name }}[%zu]\n", i, k);
                 ++g_failures;
             }
+{% endif %}
         }
 {% else %}
 {% if field.optional %}
@@ -209,6 +248,13 @@ static void test_{{ f.name }}(void) {
             memcmp(round_tripped.{{ fn }}, cases[i].input_{{ fn }}, cases[i].input_{{ fn }}_len) != 0) {
             fprintf(stderr, "FAIL: {{ f.name }} case %zu decode field {{ field.name }}: actual_len=%zu expected_len=%zu\n",
                 i, round_tripped.{{ fn }}_len, cases[i].input_{{ fn }}_len);
+            ++g_failures;
+        }
+{% elif field.enum_document %}
+{#- An enum (docs/adr/0015) is held as the enum's own type and baked as its
+    carrier number, so the two are compared as carriers. #}
+        if ((long long){{ field.enum_document | to_snake_case }}_to_underlying(round_tripped.{{ fn }}) != (long long)cases[i].input_{{ fn }}) {
+            fprintf(stderr, "FAIL: {{ f.name }} case %zu decode field {{ field.name }}: carrier differs\n", i);
             ++g_failures;
         }
 {% else %}
@@ -241,6 +287,23 @@ static void test_{{ f.name }}(void) {
                 val.{{ fn }}[k].{{ mn }}_len[j] = want->{{ mn }}_len[j];
             }
             val.{{ fn }}[k].{{ mn }}_count = want->{{ mn }}_count;
+{% elif m.enum_document %}
+{#- A carrier number taken to the enum's own type (docs/adr/0015). #}
+{% if m.optional %}
+            val.{{ fn }}[k].{{ mn }}_present = want->{{ mn }}_present;
+            if (want->{{ mn }}_present) {
+{% endif %}
+{% if m.enum_open %}
+            val.{{ fn }}[k].{{ mn }} = {{ m.enum_document | to_snake_case }}_from_underlying(({{ m.type | c_type }})want->{{ mn }});
+{% else %}
+            if (!{{ m.enum_document | to_snake_case }}_from_underlying(({{ m.type | c_type }})want->{{ mn }}, &val.{{ fn }}[k].{{ mn }})) {
+                fprintf(stderr, "FAIL: {{ f.name }} case %zu: a carrier no variant declares\n", i);
+                ++g_failures;
+            }
+{% endif %}
+{% if m.optional %}
+            }
+{% endif %}
 {% else %}
             if (want->{{ mn }}_len > 0) {
                 memcpy(val.{{ fn }}[k].{{ mn }}, want->{{ mn }}, want->{{ mn }}_len);
@@ -251,6 +314,18 @@ static void test_{{ f.name }}(void) {
 {% endif %}
 {% endif %}
 {% endfor %}
+        }
+        val.{{ fn }}_count = cases[i].input_{{ fn }}_count;
+{% elif field.list and field.enum_document %}
+        for (size_t k = 0; k < cases[i].input_{{ fn }}_count; ++k) {
+{% if field.enum_open %}
+            val.{{ fn }}[k] = {{ field.enum_document | to_snake_case }}_from_underlying(({{ field.type | c_type }})cases[i].input_{{ fn }}[k]);
+{% else %}
+            if (!{{ field.enum_document | to_snake_case }}_from_underlying(({{ field.type | c_type }})cases[i].input_{{ fn }}[k], &val.{{ fn }}[k])) {
+                fprintf(stderr, "FAIL: {{ f.name }} case %zu: a carrier no variant declares\n", i);
+                ++g_failures;
+            }
+{% endif %}
         }
         val.{{ fn }}_count = cases[i].input_{{ fn }}_count;
 {% elif field.list %}
@@ -268,6 +343,25 @@ static void test_{{ f.name }}(void) {
             memcpy(val.{{ fn }}, cases[i].input_{{ fn }}, cases[i].input_{{ fn }}_len);
         }
         val.{{ fn }}_len = cases[i].input_{{ fn }}_len;
+{% elif field.enum_document %}
+{#- The carrier number a vector holds, taken to the enum's own type: a closed
+    enum answers false for a carrier it does not declare, which no case holds. #}
+{#- An absent optional field holds no carrier, so it is not converted. #}
+{% if field.optional %}
+        if (cases[i].input_{{ fn }}_present) {
+{% endif %}
+{% if field.enum_open %}
+        val.{{ fn }} = {{ field.enum_document | to_snake_case }}_from_underlying(({{ field.type | c_type }})cases[i].input_{{ fn }});
+{% else %}
+        if (!{{ field.enum_document | to_snake_case }}_from_underlying(({{ field.type | c_type }})cases[i].input_{{ fn }}, &val.{{ fn }})) {
+            fprintf(stderr, "FAIL: {{ f.name }} case %zu: a carrier no variant declares\n", i);
+            ++g_failures;
+            continue;
+        }
+{% endif %}
+{% if field.optional %}
+        }
+{% endif %}
 {% else %}
         val.{{ fn }} = cases[i].input_{{ fn }};
 {% endif %}
