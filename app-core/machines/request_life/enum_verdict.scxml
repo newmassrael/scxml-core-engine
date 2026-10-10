@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!-- What the request's last event came to: taken (`ok`), refused for one of the reasons
+     app-core's `Refusal` names, or nothing to do (`nothing`). `unanswered` is what a
+     machine holds before any event: every transition sets another, so a host that still
+     reads it knows the machine took no event (a payload it could not hold, or a name it
+     has no transition for). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="enum"
+       name="verdict"
+       sce:underlying-type="uint8">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="ok" value="0"/>
+      <sce:variant name="ended" value="1"/>
+      <sce:variant name="held" value="2"/>
+      <sce:variant name="not_holder" value="3"/>
+      <sce:variant name="not_resuming" value="4"/>
+      <sce:variant name="wrong_connection" value="5"/>
+      <sce:variant name="nothing" value="6"/>
+      <sce:variant name="unanswered" value="7"/>
+    </data>
+  </datamodel>
+</scxml>

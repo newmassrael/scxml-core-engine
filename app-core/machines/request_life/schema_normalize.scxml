@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!-- The moment a request is looked at: a running request whose lease ran out is written
+     down as interrupted. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="schema_normalize"
+       sce:event-name="normalize">
+  <datamodel>
+    <data id="now" sce:type="uint64" sce:direction="in"/>
+  </datamodel>
+</scxml>

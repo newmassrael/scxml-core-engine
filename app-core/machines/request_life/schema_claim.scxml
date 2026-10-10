@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!-- An executor takes the request. `offeredMatches` is the host's answer to whether the
+     connection offered is the one the request was made for; `resume` says the caller
+     takes a request that was let go of. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="schema_claim"
+       sce:event-name="claim">
+  <datamodel>
+    <data id="holder" sce:type="string" sce:max-size="64" sce:direction="in"/>
+    <data id="ttl" sce:type="uint64" sce:direction="in"/>
+    <data id="resume" sce:type="bool" sce:direction="in"/>
+    <data id="offeredMatches" sce:type="bool" sce:direction="in"/>
+    <data id="now" sce:type="uint64" sce:direction="in"/>
+  </datamodel>
+</scxml>

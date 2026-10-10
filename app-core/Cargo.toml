@@ -75,6 +75,13 @@ sha2 = { workspace = true }
 # lineage, the list's own, and the continuation of the one the work holds. One implementation,
 # so that this store and the generator refuse in the same words.
 sce-revision = { path = "../sce-revision" }
+# The rules of a generation request are one document (`machines/request_life`), generated into
+# `src/request_life/generated`. The machine that comes out runs on this engine and calls these
+# helpers for its integer arithmetic. `default-features = false` leaves out the engine's own HTTP
+# transport and the allocation-free targets' machinery: nothing here sends over the first or is
+# built for the second.
+sce-rust-runtime = { path = "../backends/rust/runtime", default-features = false }
+sce-forge-runtime = { path = "../backends/rust/forge-runtime", default-features = false }
 clap = { version = "4", features = ["derive"], optional = true }
 # A model server the person reaches over https (a tunnel, a server on another computer). rustls
 # with the ring provider and the web's roots, as the mesh binding's wss client has it

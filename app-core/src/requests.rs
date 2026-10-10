@@ -24,10 +24,20 @@
 //! The request is never taken again unasked. An interrupted request is taken only by a
 //! caller that says it is resuming, because a run is not free and the next one is the
 //! person's to ask for.
+//!
+//! ## Where the rules are
+//!
+//! They are a document, `machines/request_life/request_life.scxml`, and the machine generated
+//! from it (`machines/generate.sh`) decides every one of them: which events a state takes, who may
+//! say them, when a lease has run out, which repeated word is the same word. This file keeps what
+//! is not a rule: the record (its inputs, its pin, the candidate an executor wrote, the notes and
+//! the moments) and the words a caller acts on when a request refuses. `request_life` is the seam:
+//! it stands a machine where a request stands, says one event to it and reads the answer back.
 
 use serde::{Deserialize, Serialize};
 
 use crate::connection::{AdapterKind, ConnectionId, Limits};
+use crate::request_life::{self, Answer, Event, Standing, Verdict};
 use crate::revision::Revision;
 
 /// The lease a claim is given when it does not ask for another, in seconds.
@@ -314,21 +324,64 @@ impl Request {
     /// lease ran out is interrupted. Reading never writes, so this is how a request that
     /// nobody has touched since its executor went away is seen to have been let go of.
     pub fn effective(&self, now: u64) -> State {
-        match (&self.state, &self.lease) {
-            (State::Running, Some(lease)) if lease.expires_at <= now => State::Interrupted,
-            (state, _) => *state,
+        match self.ask(Event::Normalize { now }).verdict {
+            Verdict::Ok => State::Interrupted,
+            _ => self.state,
         }
     }
 
     /// The request with that written down, when it is not already.
     pub fn normalized(&self, now: &Moment) -> Option<Request> {
-        (self.state == State::Running && self.effective(now.epoch) == State::Interrupted).then(
-            || Request {
+        match self.ask(Event::Normalize { now: now.epoch }).verdict {
+            Verdict::Ok => Some(Request {
                 state: State::Interrupted,
                 note: Some("the executor stopped renewing its lease".to_string()),
                 ..self.clone()
+            }),
+            _ => None,
+        }
+    }
+
+    /// Where this request stands, as far as a rule reads it.
+    fn standing(&self) -> Standing<'_> {
+        let lease = self.lease.as_ref();
+        Standing {
+            state: self.state,
+            attempt: self.attempt,
+            holder: lease.map_or("", |lease| lease.holder.as_str()),
+            expires_at: lease.map_or(0, |lease| lease.expires_at),
+            outcome: self
+                .outcome
+                .as_ref()
+                .map_or("", |done| done.bundle.as_str()),
+        }
+    }
+
+    /// What the request's life says of `event`: the rules are the document's
+    /// (`machines/request_life`), and nothing here decides one.
+    fn ask(&self, event: Event<'_>) -> Answer {
+        request_life::decide(&self.standing(), &event)
+    }
+
+    /// Why the request would not take the event, from what the machine refused it for. The
+    /// words a caller acts on are the request's own: who holds it, until when, which attempt.
+    fn refusal(&self, verdict: Verdict) -> Refusal {
+        let lease = self.lease.as_ref();
+        match verdict {
+            Verdict::Ended => Refusal::Ended { state: self.state },
+            Verdict::Held => Refusal::Held {
+                holder: lease.map(|l| l.holder.clone()).unwrap_or_default(),
+                until: lease.map_or(0, |l| l.expires_at),
             },
-        )
+            Verdict::NotHolder => Refusal::NotHolder {
+                holder: lease.map(|l| l.holder.clone()),
+                attempt: self.attempt,
+            },
+            Verdict::NotResuming => Refusal::NotResuming,
+            Verdict::Ok | Verdict::Nothing | Verdict::WrongConnection => {
+                unreachable!("{verdict:?} is not a refusal of a request that is not being claimed")
+            }
+        }
     }
 
     /// `holder` takes the request for `ttl` seconds.
@@ -361,37 +414,32 @@ impl Request {
         now: &Moment,
     ) -> Result<Request, Refusal> {
         let pinned = self.pin.as_ref().map(Pin::reference);
-        if pinned.as_ref() != offered {
-            return Err(Refusal::WrongConnection {
+        let answer = self.ask(Event::Claim {
+            holder,
+            ttl,
+            resume,
+            offered_matches: pinned.as_ref() == offered,
+            now: now.epoch,
+        });
+        match answer.verdict {
+            Verdict::Ok => Ok(Request {
+                state: answer.state,
+                attempt: answer.attempt,
+                lease: Some(Lease {
+                    holder: answer.holder,
+                    attempt: answer.attempt,
+                    granted_at: now.epoch,
+                    expires_at: answer.expires_at,
+                }),
+                note: None,
+                ..self.clone()
+            }),
+            Verdict::WrongConnection => Err(Refusal::WrongConnection {
                 pinned,
                 offered: offered.cloned(),
-            });
-        }
-        let attempt = match self.effective(now.epoch) {
-            State::Queued => self.attempt + 1,
-            State::Interrupted if resume => self.attempt + 1,
-            State::Interrupted => return Err(Refusal::NotResuming),
-            State::Running => {
-                let lease = self.lease.as_ref();
-                return Err(Refusal::Held {
-                    holder: lease.map(|l| l.holder.clone()).unwrap_or_default(),
-                    until: lease.map_or(0, |l| l.expires_at),
-                });
-            }
-            ended => return Err(Refusal::Ended { state: ended }),
-        };
-        Ok(Request {
-            state: State::Running,
-            attempt,
-            lease: Some(Lease {
-                holder: holder.to_string(),
-                attempt,
-                granted_at: now.epoch,
-                expires_at: now.epoch + ttl,
             }),
-            note: None,
-            ..self.clone()
-        })
+            refused => Err(self.refusal(refused)),
+        }
     }
 
     /// Whether `holder` is the executor of attempt `attempt`, the current one.
@@ -399,27 +447,9 @@ impl Request {
     /// A lease that ran out does not stop it being: nobody else has taken the request, and
     /// an attempt is only displaced by a claim or by the request ending.
     fn held_by(&self, holder: &str, attempt: u32) -> Result<(), Refusal> {
-        match self.state {
-            State::Completed | State::Failed | State::Cancelled | State::Superseded => {
-                Err(Refusal::Ended { state: self.state })
-            }
-            State::Queued => Err(Refusal::NotHolder {
-                holder: None,
-                attempt: 0,
-            }),
-            State::Running | State::Interrupted => match &self.lease {
-                Some(lease)
-                    if lease.holder == holder
-                        && lease.attempt == attempt
-                        && attempt == self.attempt =>
-                {
-                    Ok(())
-                }
-                lease => Err(Refusal::NotHolder {
-                    holder: lease.as_ref().map(|l| l.holder.clone()),
-                    attempt: self.attempt,
-                }),
-            },
+        match self.ask(Event::Write { holder, attempt }).verdict {
+            Verdict::Ok => Ok(()),
+            refused => Err(self.refusal(refused)),
         }
     }
 
@@ -432,27 +462,27 @@ impl Request {
         ttl: u64,
         now: &Moment,
     ) -> Result<Request, Refusal> {
-        self.held_by(holder, attempt)?;
-        let lease = self.lease.as_ref().expect("a held request has a lease");
-        Ok(Request {
-            state: State::Running,
-            lease: Some(Lease {
-                expires_at: now.epoch + ttl,
-                ..lease.clone()
-            }),
-            note: None,
-            ..self.clone()
-        })
-    }
-
-    /// Whether this request already ended the way the executor now says, as the same attempt:
-    /// a repeated completion is the same completion, not a second one.
-    fn already(&self, state: State, holder: &str, attempt: u32) -> bool {
-        self.state == state
-            && self
-                .lease
-                .as_ref()
-                .is_some_and(|l| l.holder == holder && l.attempt == attempt)
+        let answer = self.ask(Event::Heartbeat {
+            holder,
+            attempt,
+            ttl,
+            now: now.epoch,
+        });
+        match answer.verdict {
+            Verdict::Ok => {
+                let lease = self.lease.as_ref().expect("a held request has a lease");
+                Ok(Request {
+                    state: answer.state,
+                    lease: Some(Lease {
+                        expires_at: answer.expires_at,
+                        ..lease.clone()
+                    }),
+                    note: None,
+                    ..self.clone()
+                })
+            }
+            refused => Err(self.refusal(refused)),
+        }
     }
 
     /// Whether `holder` speaks for the current attempt, as a request that is not theirs, or
@@ -491,20 +521,23 @@ impl Request {
         bundle: &Revision,
         now: &Moment,
     ) -> Result<Request, Refusal> {
-        if self.already(State::Completed, holder, attempt) && self.outcome_is(bundle) {
-            return Ok(self.clone());
-        }
-        self.held_by(holder, attempt)?;
-        Ok(Request {
-            outcome: Some(Outcome {
-                bundle: bundle.clone(),
+        let answer = self.ask(Event::Publish {
+            holder,
+            attempt,
+            bundle: bundle.as_str(),
+        });
+        match answer.verdict {
+            // The same completion said again is taken as said: nothing about it moves, the
+            // moment it ended at included.
+            Verdict::Ok if self.state == answer.state => Ok(self.clone()),
+            Verdict::Ok => Ok(Request {
+                outcome: Some(Outcome {
+                    bundle: bundle.clone(),
+                }),
+                ..self.ended(answer.state, None, now)
             }),
-            ..self.ended(State::Completed, None, now)
-        })
-    }
-
-    fn outcome_is(&self, bundle: &Revision) -> bool {
-        self.outcome.as_ref().is_some_and(|o| &o.bundle == bundle)
+            refused => Err(self.refusal(refused)),
+        }
     }
 
     /// The executor says it could not, and why.
@@ -515,33 +548,35 @@ impl Request {
         reason: &str,
         now: &Moment,
     ) -> Result<Request, Refusal> {
-        if self.already(State::Failed, holder, attempt) {
-            return Ok(self.clone());
+        let answer = self.ask(Event::Fail { holder, attempt });
+        match answer.verdict {
+            Verdict::Ok if self.state == answer.state => Ok(self.clone()),
+            Verdict::Ok => Ok(self.ended(answer.state, Some(reason.to_string()), now)),
+            refused => Err(self.refusal(refused)),
         }
-        self.held_by(holder, attempt)?;
-        Ok(self.ended(State::Failed, Some(reason.to_string()), now))
     }
 
     /// The owner calls it off. Whoever held it finds, at its next word, that the request
     /// ended. Cancelling a cancelled request is the same cancellation.
     pub fn cancel(&self, now: &Moment) -> Result<Request, Refusal> {
-        match self.state {
-            State::Cancelled => Ok(self.clone()),
-            state if !state.is_open() => Err(Refusal::Ended { state }),
-            _ => Ok(self.ended(
-                State::Cancelled,
+        let answer = self.ask(Event::Cancel);
+        match answer.verdict {
+            Verdict::Ok if self.state == answer.state => Ok(self.clone()),
+            Verdict::Ok => Ok(self.ended(
+                answer.state,
                 Some("cancelled by the owner".to_string()),
                 now,
             )),
+            refused => Err(self.refusal(refused)),
         }
     }
 
     /// The request is replaced, or what it was asked about moved. `None` when it had
     /// already ended: there is nothing to replace.
     pub fn supersede(&self, why: &str, now: &Moment) -> Option<Request> {
-        self.state
-            .is_open()
-            .then(|| self.ended(State::Superseded, Some(why.to_string()), now))
+        let answer = self.ask(Event::Supersede);
+        (answer.verdict == Verdict::Ok)
+            .then(|| self.ended(answer.state, Some(why.to_string()), now))
     }
 
     fn ended(&self, state: State, note: Option<String>, now: &Moment) -> Request {

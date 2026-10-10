@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!-- The executor says it is done and names the bundle it made (a revision: 64 hex digits). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="schema_publish"
+       sce:event-name="publish">
+  <datamodel>
+    <data id="holder" sce:type="string" sce:max-size="64" sce:direction="in"/>
+    <data id="attempt" sce:type="uint32" sce:direction="in"/>
+    <data id="bundle" sce:type="string" sce:max-size="64" sce:direction="in"/>
+  </datamodel>
+</scxml>

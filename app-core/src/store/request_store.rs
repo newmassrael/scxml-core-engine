@@ -49,7 +49,9 @@ const REQUESTS_LOG: &str = "requests.log";
 const REQUESTS_HEAD: &str = "requests.head";
 const ID_PREFIX: &str = "req-";
 const ID_HEX: usize = 12;
-const NAME_MAX: usize = 64;
+// An executor is named by what the request's machine can hold of a holder, so that a name the
+// store accepts is one a request can be claimed, renewed and finished by.
+const NAME_MAX: usize = crate::request_life::TEXT_MAX;
 const KEY_MAX: usize = 200;
 
 static ID_COUNTER: AtomicU64 = AtomicU64::new(0);

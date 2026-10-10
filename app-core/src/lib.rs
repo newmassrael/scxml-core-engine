@@ -62,6 +62,7 @@ pub mod local;
 mod lock;
 pub mod mcp_client;
 pub mod model_set;
+mod request_life;
 pub mod requests;
 pub mod requirements;
 pub mod review;

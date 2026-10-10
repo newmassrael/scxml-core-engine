@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  The life of one generation request: queued until an executor takes it under a
+  lease, running while it renews, interrupted when the lease ran out, and ended
+  four ways (completed, failed, cancelled, superseded). The single source of the
+  rules `app-core/src/requests.rs` applies; that file keeps the record and asks
+  this machine what an event comes to.
+
+  An event the request cannot take leaves it where it was and says why in
+  `verdict`. The host keeps what is not a rule (the inputs a request was made
+  from, its pin, the candidate an executor wrote, notes and timestamps) and tells
+  the machine only what a rule reads: who is speaking, which attempt, what time it
+  is, and whether the connection offered is the one the request was made for.
+
+  A running request whose lease ran out is read as interrupted before anything
+  writes that down. Only a claim reads it that way (a holder that comes back
+  renews, publishes or fails as the same attempt), so `claim` is decided here on
+  the lease, and `normalize` is the event that writes it down.
+
+  Regenerate with `app-core/machines/generate.sh`.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="request" datamodel="sce-static" sce:interface="closed"
+       name="request_life">
+  <sce:import kind="enum" src="enum_verdict.scxml" as="Verdict"/>
+  <sce:import kind="event-schema" src="schema_claim.scxml" as="Claim"/>
+  <sce:import kind="event-schema" src="schema_heartbeat.scxml" as="Heartbeat"/>
+  <sce:import kind="event-schema" src="schema_publish.scxml" as="Publish"/>
+  <sce:import kind="event-schema" src="schema_fail.scxml" as="Fail"/>
+  <sce:import kind="event-schema" src="schema_write.scxml" as="Write"/>
+  <sce:import kind="event-schema" src="schema_normalize.scxml" as="Normalize"/>
+  <sce:import kind="event-schema" src="schema_cancel.scxml" as="Cancel"/>
+  <sce:import kind="event-schema" src="schema_supersede.scxml" as="Supersede"/>
+  <datamodel>
+    <data id="holder" sce:type="string" sce:capacity="64" expr="''" sce:direction="out"/>
+    <data id="attempt" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="expiresAt" sce:type="uint64" expr="0" sce:direction="out"/>
+    <data id="outcome" sce:type="string" sce:capacity="64" expr="''" sce:direction="out"/>
+    <data id="verdict" sce:type="enum:Verdict" expr="Verdict.unanswered" sce:direction="out"/>
+  </datamodel>
+
+  <state id="request" initial="open">
+    <!-- A request is taken by the executor of the connection it was made for, and that is
+         said before anything about its state. -->
+    <transition event="claim" cond="!_event.data.offeredMatches" type="internal">
+      <assign location="verdict" expr="Verdict.wrong_connection"/>
+    </transition>
+    <transition event="claim" cond="In('queued')" target="running" type="internal">
+      <assign location="holder" expr="_event.data.holder"/>
+      <assign location="attempt" expr="attempt + 1"/>
+      <assign location="expiresAt" expr="_event.data.now + _event.data.ttl"/>
+      <assign location="verdict" expr="Verdict.ok"/>
+    </transition>
+    <transition event="claim" cond="In('interrupted') &amp;&amp; _event.data.resume" target="running" type="internal">
+      <assign location="holder" expr="_event.data.holder"/>
+      <assign location="attempt" expr="attempt + 1"/>
+      <assign location="expiresAt" expr="_event.data.now + _event.data.ttl"/>
+      <assign location="verdict" expr="Verdict.ok"/>
+    </transition>
+    <transition event="claim" cond="In('interrupted')" type="internal">
+      <assign location="verdict" expr="Verdict.not_resuming"/>
+    </transition>
+    <!-- A lease that ran out is an interrupted request, written down or not. -->
+    <transition event="claim" cond="In('running') &amp;&amp; expiresAt &lt;= _event.data.now &amp;&amp; _event.data.resume" target="running" type="internal">
+      <assign location="holder" expr="_event.data.holder"/>
+      <assign location="attempt" expr="attempt + 1"/>
+      <assign location="expiresAt" expr="_event.data.now + _event.data.ttl"/>
+      <assign location="verdict" expr="Verdict.ok"/>
+    </transition>
+    <transition event="claim" cond="In('running') &amp;&amp; expiresAt &lt;= _event.data.now" type="internal">
+      <assign location="verdict" expr="Verdict.not_resuming"/>
+    </transition>
+    <transition event="claim" cond="In('running')" type="internal">
+      <assign location="verdict" expr="Verdict.held"/>
+    </transition>
+    <transition event="claim" type="internal">
+      <assign location="verdict" expr="Verdict.ended"/>
+    </transition>
+    <!-- Looking at a request that is not running with an expired lease writes nothing. -->
+    <transition event="normalize" type="internal">
+      <assign location="verdict" expr="Verdict.nothing"/>
+    </transition>
+
+    <state id="open" initial="queued">
+      <!-- Whoever is not the holder of the current attempt, or any caller of a request
+           nobody took (attempt 0, no holder), is refused. -->
+      <transition event="heartbeat" type="internal">
+        <assign location="verdict" expr="Verdict.not_holder"/>
+      </transition>
+      <transition event="publish" type="internal">
+        <assign location="verdict" expr="Verdict.not_holder"/>
+      </transition>
+      <transition event="fail" type="internal">
+        <assign location="verdict" expr="Verdict.not_holder"/>
+      </transition>
+      <transition event="write" type="internal">
+        <assign location="verdict" expr="Verdict.not_holder"/>
+      </transition>
+      <transition event="cancel" target="cancelled" type="internal">
+        <assign location="verdict" expr="Verdict.ok"/>
+      </transition>
+      <transition event="supersede" target="superseded" type="internal">
+        <assign location="verdict" expr="Verdict.ok"/>
+      </transition>
+
+      <state id="queued"/>
+
+      <state id="running">
+        <transition event="heartbeat" cond="_event.data.holder === holder &amp;&amp; _event.data.attempt === attempt" type="internal">
+          <assign location="expiresAt" expr="_event.data.now + _event.data.ttl"/>
+          <assign location="verdict" expr="Verdict.ok"/>
+        </transition>
+        <transition event="publish" cond="_event.data.holder === holder &amp;&amp; _event.data.attempt === attempt" target="completed" type="internal">
+          <assign location="outcome" expr="_event.data.bundle"/>
+          <assign location="verdict" expr="Verdict.ok"/>
+        </transition>
+        <transition event="fail" cond="_event.data.holder === holder &amp;&amp; _event.data.attempt === attempt" target="failed" type="internal">
+          <assign location="verdict" expr="Verdict.ok"/>
+        </transition>
+        <transition event="write" cond="_event.data.holder === holder &amp;&amp; _event.data.attempt === attempt" type="internal">
+          <assign location="verdict" expr="Verdict.ok"/>
+        </transition>
+        <transition event="normalize" cond="expiresAt &lt;= _event.data.now" target="interrupted" type="internal">
+          <assign location="verdict" expr="Verdict.ok"/>
+        </transition>
+      </state>
+
+      <!-- Let go of by an executor that may come back: the holder of the attempt is still
+           the executor, and a heartbeat makes it running again. -->
+      <state id="interrupted">
+        <transition event="heartbeat" cond="_event.data.holder === holder &amp;&amp; _event.data.attempt === attempt" target="running" type="internal">
+          <assign location="expiresAt" expr="_event.data.now + _event.data.ttl"/>
+          <assign location="verdict" expr="Verdict.ok"/>
+        </transition>
+        <transition event="publish" cond="_event.data.holder === holder &amp;&amp; _event.data.attempt === attempt" target="completed" type="internal">
+          <assign location="outcome" expr="_event.data.bundle"/>
+          <assign location="verdict" expr="Verdict.ok"/>
+        </transition>
+        <transition event="fail" cond="_event.data.holder === holder &amp;&amp; _event.data.attempt === attempt" target="failed" type="internal">
+          <assign location="verdict" expr="Verdict.ok"/>
+        </transition>
+        <transition event="write" cond="_event.data.holder === holder &amp;&amp; _event.data.attempt === attempt" type="internal">
+          <assign location="verdict" expr="Verdict.ok"/>
+        </transition>
+      </state>
+    </state>
+
+    <state id="ended" initial="completed">
+      <transition event="heartbeat" type="internal">
+        <assign location="verdict" expr="Verdict.ended"/>
+      </transition>
+      <transition event="publish" type="internal">
+        <assign location="verdict" expr="Verdict.ended"/>
+      </transition>
+      <transition event="fail" type="internal">
+        <assign location="verdict" expr="Verdict.ended"/>
+      </transition>
+      <transition event="write" type="internal">
+        <assign location="verdict" expr="Verdict.ended"/>
+      </transition>
+      <transition event="cancel" type="internal">
+        <assign location="verdict" expr="Verdict.ended"/>
+      </transition>
+      <transition event="supersede" type="internal">
+        <assign location="verdict" expr="Verdict.nothing"/>
+      </transition>
+
+      <!-- The same completion said again by the same attempt is one completion. -->
+      <state id="completed">
+        <transition event="publish" cond="_event.data.holder === holder &amp;&amp; _event.data.attempt === attempt &amp;&amp; _event.data.bundle === outcome" type="internal">
+          <assign location="verdict" expr="Verdict.ok"/>
+        </transition>
+      </state>
+      <state id="failed">
+        <transition event="fail" cond="_event.data.holder === holder &amp;&amp; _event.data.attempt === attempt" type="internal">
+          <assign location="verdict" expr="Verdict.ok"/>
+        </transition>
+      </state>
+      <state id="cancelled">
+        <transition event="cancel" type="internal">
+          <assign location="verdict" expr="Verdict.ok"/>
+        </transition>
+      </state>
+      <state id="superseded"/>
+    </state>
+  </state>
+</scxml>
