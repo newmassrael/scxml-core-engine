@@ -548,6 +548,91 @@ class ContentLineProperty internal constructor(
             else -> ContentLine.refuse(CodecError.LineBadValue)
         }
     }
+
+    /**
+     * Read the value as the text of a variant of an enum (docs/adr/0015): the
+     * carrier of the first row of [table] whose text it is, ASCII
+     * case-insensitively. A value no row names is [CodecError.LineBadValue],
+     * whatever its bytes are: it is no TEXT, so a backslash in it is not an
+     * escape, and nothing of it is kept past the longest text.
+     */
+    fun readEnum(table: EnumTexts): ULong? {
+        if (!beginValue()) return null
+        val longest = table.longest()
+        val word = ArrayList<Byte>()
+        while (true) {
+            val b = scan.bump()
+            if (b < 0) break
+            if (word.size <= longest) word.add(b.toByte())
+        }
+        return table.carrierOf(word.toByteArray())
+    }
+
+    /**
+     * Read the value of the parameter [nextParam] stands on as the text of a
+     * variant of an enum (docs/adr/0015). The whole value is scanned before it
+     * is judged, so a line the grammar refuses is [CodecError.LineMalformed]
+     * before it is [CodecError.LineBadValue]; a second value is
+     * [CodecError.LineBadValue].
+     */
+    fun readParamEnum(table: EnumTexts): ULong? {
+        if (phase != Phase.PARAM_VALUE) return ContentLine.refuse(CodecError.LineMalformed)
+        val longest = table.longest()
+        val word = ArrayList<Byte>()
+        val more = scanParamValue { b ->
+            if (word.size <= longest) word.add(b.toByte())
+            true
+        }
+        if (more < 0) return null
+        paramFrom = -1
+        phase = Phase.AT_SEPARATOR
+        if (more > 0) return ContentLine.refuse(CodecError.LineBadValue)
+        return table.carrierOf(word.toByteArray())
+    }
+}
+
+/**
+ * One variant of an enum a content-line entry is read and written by
+ * (docs/adr/0015): the text the enum document gives it and the carrier value it
+ * stands for.
+ */
+class EnumText(val text: String, val value: ULong)
+
+/**
+ * The variants of an enum in declaration order. A generated codec holds it as
+ * data, because the enum's own type carries no text.
+ */
+class EnumTexts(private val rows: List<EnumText>) {
+    internal fun longest(): Int = rows.maxOfOrNull { it.text.length } ?: 0
+
+    /**
+     * The carrier of the first variant whose text [value] is, compared ASCII
+     * case-insensitively: only the 26 letters fold, so a character Unicode folds
+     * to one of them (U+017F, U+0131) is not that letter. A value no variant names
+     * is [CodecError.LineBadValue].
+     */
+    internal fun carrierOf(value: ByteArray): ULong? {
+        for (row in rows) {
+            val text = row.text.encodeToByteArray()
+            if (text.size != value.size) continue
+            var same = true
+            for (i in value.indices) {
+                if (ContentLine.lower(text[i].toInt() and 0xFF) != ContentLine.lower(value[i].toInt() and 0xFF)) {
+                    same = false
+                    break
+                }
+            }
+            if (same) return row.value
+        }
+        return ContentLine.refuse(CodecError.LineBadValue)
+    }
+
+    /**
+     * The text of the first variant with [carrier], as the enum declares it; a
+     * carrier of an open enum that no variant declares has none, which the caller
+     * answers [CodecError.LineBadValue].
+     */
+    internal fun textOf(carrier: ULong): String? = rows.firstOrNull { it.value == carrier }?.text
 }
 
 // ── Writing ─────────────────────────────────────────────────────────────
@@ -714,4 +799,27 @@ class ContentLineWriter(private val sink: SceSink, private val component: String
 
     /** Write `:TRUE` or `:FALSE` and end the line. */
     fun boolean(value: Boolean): CodecError? = digits(if (value) "TRUE" else "FALSE")
+
+    /**
+     * Write `;<name>=<text>` for the variant with [carrier]. A text is letters,
+     * digits and hyphens, so it is never quoted (docs/adr/0015). A carrier no
+     * variant declares has no text and is [CodecError.LineBadValue].
+     */
+    fun enumParam(name: String, table: EnumTexts, carrier: ULong): CodecError? {
+        val text = table.textOf(carrier) ?: return ContentLine.fail(CodecError.LineBadValue)
+        unit(';')?.let { return it }
+        asciiUnits(name)?.let { return it }
+        unit('=')?.let { return it }
+        return asciiUnits(text)
+    }
+
+    /**
+     * Write `:<text>` for the variant with [carrier] and end the line
+     * (docs/adr/0015). A carrier no variant declares has no text and is
+     * [CodecError.LineBadValue].
+     */
+    fun enumValue(table: EnumTexts, carrier: ULong): CodecError? {
+        val text = table.textOf(carrier) ?: return ContentLine.fail(CodecError.LineBadValue)
+        return digits(text)
+    }
 }

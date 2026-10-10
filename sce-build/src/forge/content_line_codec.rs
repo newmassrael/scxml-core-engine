@@ -46,8 +46,8 @@ pub fn lowers(lang: Language) -> bool {
 /// read such an entry as nothing would be a wrong output.
 pub fn lowers_enum_entries(lang: Language) -> bool {
     match lang {
-        Language::Python | Language::Go => true,
-        Language::Rust | Language::Kotlin | Language::Cpp | Language::C11 => false,
+        Language::Python | Language::Go | Language::Kotlin => true,
+        Language::Rust | Language::Cpp | Language::C11 => false,
     }
 }
 
@@ -329,6 +329,7 @@ fn render_kotlin(
         },
     );
     insert_component(&mut ctx, m);
+    insert_enum_tables(&mut ctx, &l, m);
     ctx.insert("entries".into(), entries.into());
     l.render(env, "codec_content_line", ctx)
 }

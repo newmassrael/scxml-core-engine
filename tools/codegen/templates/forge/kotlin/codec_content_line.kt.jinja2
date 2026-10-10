@@ -13,6 +13,11 @@ line.readStrings('{{ e.separator }}', {{ e.max_values }}, {{ e.max_size }}, {{ "
 line.readString({{ e.max_size }}, {{ "true" if e.text else "false" }}) ?: return null
 {%- elif e.kind == "bool" -%}
 line.readBool() ?: return null
+{%- elif e.kind == "enum" -%}
+{#- The text names a carrier and the enum's own conversion takes it to a variant,
+    so a closed and an open enum are read by one rule (docs/adr/0015): a closed
+    enum answers `null` for a carrier it does not declare. #}
+{{ e.enum_from }}((line.readEnum(TEXTS_{{ e.enum_alias }}) ?: return null).to{{ e.carrier_type }}()){% if not e.enum_is_open %} ?: return ContentLine.refuse(CodecError.LineBadValue){% endif %}
 {%- elif e.kind == "uint" and e.value_type == "ULong" -%}
 line.readUint(ULong.MAX_VALUE) ?: return null
 {%- elif e.kind == "uint" -%}
@@ -32,10 +37,30 @@ out.strings(v, '{{ e.separator }}', {{ "true" if e.text else "false" }}, {{ e.ma
 out.string(v, {{ "true" if e.text else "false" }}, {{ e.max_size }})?.let { return it }
 {%- elif e.kind == "bool" -%}
 out.boolean(v)?.let { return it }
+{%- elif e.kind == "enum" -%}
+out.enumValue(TEXTS_{{ e.enum_alias }}, ({{ e.enum_to }}).toULong())?.let { return it }
 {%- elif e.kind == "uint" -%}
 out.uint(v.toULong())?.let { return it }
 {%- else -%}
 out.int(v.toLong())?.let { return it }
+{%- endif -%}
+{%- endmacro %}
+{#- The write of one parameter `p` whose value is the expression `x`, which is
+    present: a parameter that is an enum is written as the text of its variant
+    (docs/adr/0015), and `pv` is the name `enum_to` takes its carrier from. #}
+{% macro write_param(p, x) -%}
+{%- if p.kind == "enum" -%}
+run { val pv = {{ x }}; out.enumParam("{{ p.param }}", TEXTS_{{ p.enum_alias }}, ({{ p.enum_to }}).toULong()) }?.let { return it }
+{%- else -%}
+out.param("{{ p.param }}", {{ x }}, {{ p.max_size }})?.let { return it }
+{%- endif -%}
+{%- endmacro %}
+{#- The read of one parameter's value, as the expression bound to it. #}
+{% macro read_param(p) -%}
+{%- if p.kind == "enum" -%}
+{{ p.enum_from }}((line.readParamEnum(TEXTS_{{ p.enum_alias }}) ?: return null).to{{ p.carrier_type }}()){% if not p.enum_is_open %} ?: return ContentLine.refuse(CodecError.LineBadValue){% endif %}
+{%- else -%}
+line.readParamString({{ p.max_size }}) ?: return null
 {%- endif -%}
 {%- endmacro %}
 {{ sce_map.source_marker(source_location, "kotlin", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
@@ -50,6 +75,10 @@ import com.sce.forge.runtime.CodecError
 import com.sce.forge.runtime.ContentLine
 import com.sce.forge.runtime.ContentLineReader
 import com.sce.forge.runtime.ContentLineWriter
+{% if enum_tables %}
+import com.sce.forge.runtime.EnumText
+import com.sce.forge.runtime.EnumTexts
+{% endif %}
 import com.sce.forge.runtime.MutableListSink
 import com.sce.forge.runtime.SceCursor
 import com.sce.forge.runtime.SceSink
@@ -59,6 +88,19 @@ import com.sce.forge.runtime.SceSink
 {% endif %}
 {% endfor %}
 
+{# What an entry that is an enum is written and read by (docs/adr/0015): each
+   variant's text and the carrier it stands for, held as data here because the
+   enum's own type carries none. #}
+{% for t in enum_tables %}
+private val TEXTS_{{ t.alias }} = EnumTexts(
+    listOf(
+{% for r in t.rows %}
+        EnumText("{{ r.text }}", {{ r.value }}UL),
+{% endfor %}
+    ),
+)
+
+{% endfor %}
 {% for e in entries if e.is_records %}
 /**
  * One line of `{{ e.property }}` (docs/adr/0014): the parameters it carries and
@@ -74,7 +116,7 @@ data class {{ e.record_type }}(
     var {{ e.value_member }}: MutableList<String> = mutableListOf(),
 {% else %}
     /** The value of the line. */
-    var {{ e.value_member }}: String = "",
+    var {{ e.value_member }}: {{ e.value_type }} = {{ e.value_default }},
 {% endif %}
 )
 
@@ -119,10 +161,10 @@ data class {{ struct_name }}(
             out.property("{{ e.property }}")?.let { return it }
 {% for p in e.params %}
 {% if p.required %}
-            out.param("{{ p.param }}", record.{{ p.name }}, {{ p.max_size }})?.let { return it }
+            {{ write_param(p, "record." ~ p.name) }}
 {% else %}
             val {{ p.name }}Value = record.{{ p.name }}
-            if ({{ p.name }}Value != null) out.param("{{ p.param }}", {{ p.name }}Value, {{ p.max_size }})?.let { return it }
+            if ({{ p.name }}Value != null) {{ write_param(p, p.name ~ "Value") }}
 {% endif %}
 {% endfor %}
             {{ write_value(e) }}
@@ -142,10 +184,10 @@ data class {{ struct_name }}(
             out.property("{{ e.property }}")?.let { return it }
 {% for p in e.params %}
 {% if p.required %}
-            out.param("{{ p.param }}", {{ p.name }}, {{ p.max_size }})?.let { return it }
+            {{ write_param(p, p.name) }}
 {% else %}
             val {{ p.name }}Value = {{ p.name }}
-            if ({{ p.name }}Value != null) out.param("{{ p.param }}", {{ p.name }}Value, {{ p.max_size }})?.let { return it }
+            if ({{ p.name }}Value != null) {{ write_param(p, p.name ~ "Value") }}
 {% endif %}
 {% endfor %}
             {{ write_value(e) }}
@@ -160,9 +202,9 @@ data class {{ struct_name }}(
                 out.property("{{ e.property }}")?.let { return it }
 {% for p in e.params %}
 {% if p.required %}
-                out.param("{{ p.param }}", {{ p.name }}, {{ p.max_size }})?.let { return it }
+                {{ write_param(p, p.name) }}
 {% else %}
-                if ({{ p.name }}Value != null) out.param("{{ p.param }}", {{ p.name }}Value, {{ p.max_size }})?.let { return it }
+                if ({{ p.name }}Value != null) {{ write_param(p, p.name ~ "Value") }}
 {% endif %}
 {% endfor %}
                 {{ write_value(e) }}
@@ -197,7 +239,7 @@ data class {{ struct_name }}(
 {% if e.is_records %}
             val {{ e.name }}Values = mutableListOf<{{ e.record_type }}>()
 {% elif e.is_list %}
-            val {{ e.name }}Values = mutableListOf<String>()
+            val {{ e.name }}Values = mutableListOf<{{ e.value_type }}>()
 {% elif e.is_values %}
             var {{ e.name }}Value: MutableList<String>? = null
 {% else %}
@@ -237,7 +279,7 @@ data class {{ struct_name }}(
 {% for p in e.params %}
                         {% if not loop.first %}else {% endif %}if (line.paramNamed("{{ p.param }}")) {
                             if ({{ p.name }}{{ held }} != null) return ContentLine.refuse(CodecError.LineTooMany)
-                            {{ p.name }}{{ held }} = line.readParamString({{ p.max_size }}) ?: return null
+                            {{ p.name }}{{ held }} = {{ read_param(p) }}
                         }
 {% endfor %}
                     }

@@ -304,6 +304,13 @@ pub struct StructField {
     /// Derived from the document, like `optional`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enum_document: Option<String>,
+    /// The enum this field reads by text is open (`sce:strict-variants="false"`),
+    /// so its conversion from a carrier is total; a closed enum's answers whether
+    /// the carrier is a variant, which a language that spells that as an optional
+    /// value must be told apart from. Derived from the document, with
+    /// [`Self::enum_document`].
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub enum_open: bool,
     /// The members of one record of a list of line records — a repeated
     /// property that declares a parameter or a separator (docs/adr/0014),
     /// which each language carries as a record type. The parameters come in
@@ -1358,9 +1365,12 @@ impl Manifest {
                             f.name, field.name
                         ));
                     }
-                    if let Some(field) = fields.iter().find(|field| field.enum_document.is_some()) {
+                    if let Some(field) = fields
+                        .iter()
+                        .find(|field| field.enum_document.is_some() || field.enum_open)
+                    {
                         return Err(format!(
-                            "fixture {}: field `{}` states `enum_document`, which is derived \
+                            "fixture {}: field `{}` states `enum_document` or `enum_open`, which are derived \
                              from the SCXML (the enum an `enum:<alias>` content-line entry \
                              imports); remove it from fixtures.json",
                             f.name, field.name
@@ -2200,6 +2210,8 @@ struct EnumCarrier {
     /// The name of the enum document, which names the type a language's fragment
     /// converts the number to and from.
     document: String,
+    /// Whether the enum admits a carrier no variant declares.
+    open: bool,
 }
 
 /// The carrier, as a manifest type, of each enum a codec document imports —
@@ -2247,6 +2259,7 @@ fn read_enum_carriers(
             EnumCarrier {
                 ty,
                 document: vocabulary.name.clone(),
+                open: !vocabulary.strict_variants,
             },
         );
     }
@@ -2319,6 +2332,9 @@ fn derive_codec_shape(
         let entry_document = |entry: &crate::forge::model::ContentLineEntry| {
             Ok::<_, String>(enum_of(entry)?.map(|e| e.document.clone()))
         };
+        let entry_open = |entry: &crate::forge::model::ContentLineEntry| {
+            Ok::<_, String>(enum_of(entry)?.is_some_and(|e| e.open))
+        };
         for field in fields.iter_mut() {
             let entry = entries
                 .iter()
@@ -2346,6 +2362,7 @@ fn derive_codec_shape(
                 ));
             }
             field.enum_document = entry_document(entry)?;
+            field.enum_open = entry_open(entry)?;
             field.list = entry.max_count.is_some() || entry.separator.is_some();
             field.optional = !entry.required && !field.list;
             field.members = if entry.max_count.is_some()
@@ -2365,6 +2382,7 @@ fn derive_codec_shape(
                             optional: !p.required,
                             list: false,
                             enum_document: entry_document(p)?,
+                            enum_open: entry_open(p)?,
                             members: Vec::new(),
                         })
                     })
@@ -2377,6 +2395,7 @@ fn derive_codec_shape(
                     optional: false,
                     list: has_list,
                     enum_document: entry_document(entry)?,
+                    enum_open: entry_open(entry)?,
                     members: Vec::new(),
                 });
                 members
@@ -3338,6 +3357,7 @@ mod tests {
             optional: false,
             list: false,
             enum_document: None,
+            enum_open: false,
             members: Vec::new(),
         }];
         let (mut cbor, mut content_line) = (false, false);

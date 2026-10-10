@@ -7,7 +7,21 @@
    marked `decode_only` is an input the codec reads and does not write, and a
    refused decode leaves the cursor where it found it. Kotlin names no failure
    (the null-sentinel convention), so a reject asserts refusal; the rule that
-   refused is `ContentLine.lastError`, which `ContentLineCodecTest` pins. #}
+   refused is `ContentLine.lastError`, which `ContentLineCodecTest` pins.
+
+   An entry that is an enum (docs/adr/0015) is written in a vector as its carrier
+   number and held by the codec as the enum's own type. A decoded value is
+   compared as the carrier's text (`toUnderlying().toString()`), which is what a
+   JSON number's `content` is; a value written into the codec is taken from the
+   number by the enum's `fromUnderlying`, which a closed enum answers `null` for a
+   carrier it does not declare, so a closed enum is asserted non-null and an open
+   one, whose conversion is total, is not. #}
+{% macro lift(m, raw) -%}
+{{ m.enum_document | to_pascal_case }}.fromUnderlying({{ raw | kt_unmarshal(m.type) }}){% if not m.enum_open %}!!{% endif %}
+{%- endmacro %}
+{% macro carrier_text(m, expr, optional) -%}
+{{ expr }}{% if optional %}?{% endif %}.toUnderlying(){% if optional %}?{% endif %}.toString()
+{%- endmacro %}
         val spec = ref["{{ f.ref_section }}"]!!.jsonObject["{{ f.name }}"]!!.jsonObject
         spec["cases"]!!.jsonArray.forEachIndexed { i, caseEl ->
             val decoded = caseEl.jsonObject["decoded"]!!.jsonObject
@@ -42,16 +56,36 @@
                 roundTripped.{{ field.name }}.map { r ->
                     mapOf(
 {% for m in field.members %}
+{% if m.enum_document and m.list %}
+                        "{{ m.name }}" to r.{{ m.name }}.map { it.toUnderlying().toString() },
+{% elif m.enum_document %}
+                        "{{ m.name }}" to {{ carrier_text(m, "r." ~ m.name, m.optional) }},
+{% else %}
                         "{{ m.name }}" to r.{{ m.name }},
+{% endif %}
 {% endfor %}
                     )
                 },
+                "{{ f.name }} case $i decode {{ field.name }}",
+            )
+{% elif field.list and field.enum_document %}
+            assertEquals(
+                decoded["{{ field.name }}"]!!.jsonArray.map { it.jsonPrimitive.content },
+                roundTripped.{{ field.name }}.map { it.toUnderlying().toString() },
                 "{{ f.name }} case $i decode {{ field.name }}",
             )
 {% elif field.list %}
             assertEquals(
                 decoded["{{ field.name }}"]!!.jsonArray.map { it.jsonPrimitive.content },
                 roundTripped.{{ field.name }}.toList(),
+                "{{ f.name }} case $i decode {{ field.name }}",
+            )
+{% elif field.enum_document %}
+            assertEquals(
+                decoded["{{ field.name }}"]!!.let { el ->
+                    if (el is kotlinx.serialization.json.JsonNull) null else el.jsonPrimitive.content
+                },
+                {{ carrier_text(field, "roundTripped." ~ field.name, field.optional) }},
                 "{{ f.name }} case $i decode {{ field.name }}",
             )
 {% else %}
@@ -74,7 +108,11 @@
                     valueObj.{{ field.name }}.add(
                         {{ f.name | to_pascal_case }}{{ field.name | to_pascal_case }}Line(
 {% for m in field.members %}
-{% if m.list %}
+{% if m.enum_document and m.optional %}
+                            {{ m.name }} = o["{{ m.name }}"]!!.let { el -> if (el is kotlinx.serialization.json.JsonNull) null else {{ lift(m, "el") }} },
+{% elif m.enum_document %}
+                            {{ m.name }} = {{ lift(m, 'o["' ~ m.name ~ '"]!!') }},
+{% elif m.list %}
                             {{ m.name }} = o["{{ m.name }}"]!!.jsonArray.map { it.jsonPrimitive.content }.toMutableList(),
 {% elif m.optional %}
                             {{ m.name }} = o["{{ m.name }}"]!!.let { el -> if (el is kotlinx.serialization.json.JsonNull) null else el.jsonPrimitive.content },
@@ -85,8 +123,14 @@
                         ),
                     )
                 }
+{% elif field.list and field.enum_document %}
+                valueObj.{{ field.name }}.addAll(decoded["{{ field.name }}"]!!.jsonArray.map { el -> {{ lift(field, "el") }} })
 {% elif field.list %}
                 valueObj.{{ field.name }}.addAll(decoded["{{ field.name }}"]!!.jsonArray.map { it.jsonPrimitive.content })
+{% elif field.enum_document %}
+                decoded["{{ field.name }}"]!!.let { el ->
+                    if (el !is kotlinx.serialization.json.JsonNull) valueObj.{{ field.name }} = {{ lift(field, "el") }}
+                }
 {% else %}
                 decoded["{{ field.name }}"]!!.let { el ->
                     if (el !is kotlinx.serialization.json.JsonNull) valueObj.{{ field.name }} = {{ 'el' | kt_unmarshal(field.type) }}

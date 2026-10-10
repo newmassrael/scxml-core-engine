@@ -809,6 +809,10 @@
             "null"
           ]
         },
+        "enum_open": {
+          "description": "The enum this field reads by text is open (`sce:strict-variants=\"false\"`), so its conversion from a carrier is total; a closed enum's answers whether the carrier is a variant, which a language that spells that as an optional value must be told apart from. Derived from the document, with [`Self::enum_document`].",
+          "type": "boolean"
+        },
         "list": {
           "description": "The field is a list — a property of an `sce:encoding=\"content-line\"` codec that declares `sce:max-count` (a list of lines) or `sce:separator` (a list of the values of one line), which each language carries as its bounded list (SCE_FORGE.md §4.6.4). A round-trip case writes it as a JSON array, and an empty one is an absent property. Derived from the document, like `optional`.",
           "type": "boolean"
