@@ -24,8 +24,9 @@ from .counterfactual import lines as counterfactual_lines
 from .coverage import coverage as run_coverage
 from .decisions import hold as hold_decisions
 from .decisions import summary as decisions_summary
-from .errors import AuthoringError
+from .errors import AuthoringError, IngestError
 from .gaps import ORDER as GAP_ORDER
+from .ingest import picture_names_held, read_pictures
 from .gaps import report as gap_report
 from .pack import check_pack, load_pack
 from .prose import load_prose
@@ -53,6 +54,24 @@ def cmd_brief(args) -> int:
     # Only the size is printed. The brief carries specification text and a pack
     # may be confidential; a general tool does not decide that for its caller.
     print(f"brief: {size} bytes -> {out}")
+    return 0
+
+
+def cmd_picture(args) -> int:
+    """Write the picture a `[picture: NAME]` mark names to a file, for whoever is going to look at it."""
+    paths = [pathlib.Path(p) for p in args.prose]
+    found = read_pictures(paths, args.name)
+    if not found:
+        held = picture_names_held(paths)
+        said = "; ".join(f"{path}: {', '.join(names) or 'none'}" for path, names in held.items())
+        raise IngestError(f"no specification file holds a picture named {args.name!r}."
+                          + (f" The word documents hold: {said}." if said else ""))
+    if len(found) > 1:
+        raise IngestError(f"{len(found)} specification files hold a picture named {args.name!r} "
+                          f"({', '.join(str(one.source) for one in found)}); name one file in --prose")
+    out = pathlib.Path(args.out)
+    out.write_bytes(found[0].data)
+    print(f"picture: {len(found[0].data)} bytes -> {out}")
     return 0
 
 
@@ -472,6 +491,12 @@ def main(argv=None) -> int:
     b.add_argument("--prose", required=True, nargs="+", help="one or more specification files")
     b.add_argument("--out", required=True, help="where to write the brief")
     b.set_defaults(fn=cmd_brief)
+
+    pic = sub.add_parser("picture", help="write a picture the specification marks `[picture: NAME]` to a file")
+    pic.add_argument("--prose", required=True, nargs="+", help="one or more specification files")
+    pic.add_argument("--name", required=True, help="the NAME in the mark, e.g. image3.png")
+    pic.add_argument("--out", required=True, help="where to write the picture")
+    pic.set_defaults(fn=cmd_picture)
 
     q = with_pack(sub.add_parser("questions", help="what the specification does not answer"))
     q.add_argument("--prose", required=True, nargs="+")

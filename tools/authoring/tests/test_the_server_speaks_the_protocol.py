@@ -122,9 +122,10 @@ class TheServerSpeaksTheProtocol(unittest.TestCase):
         self.assertIn("do not translate, summarize, rename labels", replies[0]["result"]["instructions"])
         self.assertIn('sce:interface="closed"', replies[0]["result"]["instructions"])
         self.assertIn("Call decisions on the draft", replies[0]["result"]["instructions"])
-        names = {t["name"] for t in replies[1]["result"]["tools"]}
+        self.assertIn("[picture: NAME]", replies[0]["result"]["instructions"])
+        names ={t["name"] for t in replies[1]["result"]["tools"]}
         self.assertEqual(
-            {"brief", "questions", "review", "check-pack", "check", "coverage", "verify",
+            {"brief", "picture", "questions", "review", "check-pack", "check", "coverage", "verify",
              "gaps", "pseudo", "scaffold", "compare", "decisions", "scxml_kinds",
              "validate_scxml",
              "validate_scxml_set",

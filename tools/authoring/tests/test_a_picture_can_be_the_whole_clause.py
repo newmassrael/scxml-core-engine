@@ -77,16 +77,23 @@ class APictureCanBeTheWholeClause(unittest.TestCase):
         self.assertNotIn("3.1", said,
                          "3.1 states its rule in text; naming it is noise")
 
-    def test_a_document_whose_pictures_are_all_illustrations_says_so(self):
-        """⚠ The discriminator. Without this, a note that always named
-        something would pass the case above while meaning nothing.
+    def test_a_clause_that_speaks_and_shows_a_picture_is_not_cleared_by_what_it_says(self):
+        """⚠ The belief this replaces: "every clause that shows a picture also states something in
+        text" was printed as reassurance, and the first specification read after it was written
+        refuted it -- a clause whose conditions were a text table said "an example of the two
+        signals' input timing", and the example, which decides when the event fires, was a drawing.
+        The text spoke ABOUT the picture. A clause that speaks is therefore counted apart from one
+        that is silent, and never told it is clear.
         """
         said = self.note(self.spec(document(
             paragraph("3.1 The lamp"),
             paragraph("The lamp is on while the door is open."),
             paragraph(drawn=True),
         )))
-        self.assertIn("No numbered clause", said)
+        self.assertIn("state something in text and also show a picture", said)
+        self.assertIn("does not settle that the picture adds nothing", said)
+        self.assertNotIn("No numbered clause", said)
+        self.assertNotIn("also states something in text", said)
 
     # --------------------------------------------- telling none from unknown
 

@@ -104,11 +104,11 @@ class APictureBecomesAMarkedGuess(unittest.TestCase):
                       "picture exists and not that a rule is inside it")
         self.assertIn("state nothing in text", said)
 
-    def test_a_clause_that_also_speaks_is_not_reported_as_a_hole(self):
-        """The discriminator. A report that named every picture would pass the
-        case above and mean nothing -- most pictures are what a screen looks
-        like, and this corpus measured zero clauses of the dangerous kind in a
-        22,669-line specification.
+    def test_a_clause_that_also_speaks_is_not_reported_as_a_hole_and_not_as_clear(self):
+        """The discriminator, in both directions. A clause that states its rule in text is not named
+        as one that states nothing (the case above would then mean nothing), and it is not told it is
+        clear either: the text can be a table of conditions that refers to the picture for the rule
+        that decides them. It is counted as a clause that speaks AND shows a picture.
         """
         body = "".join([
             paragraph("3.1 The road signal"),
@@ -124,7 +124,9 @@ class APictureBecomesAMarkedGuess(unittest.TestCase):
         said = "\n".join(n for src in load_prose([path]).sources
                          for n in src.notes)
         self.assertIn("picture(s) were not read", said)
-        self.assertIn("No numbered clause", said)
+        self.assertNotIn("state nothing in text", said)
+        self.assertIn("state something in text and also show a picture", said)
+        self.assertNotIn("No numbered clause", said)
 
     # --------------------------------------------- hops 3 and 4: judged
 

@@ -14,6 +14,8 @@ So the shape a caller gets is:
                number of sources in any format there is a reader for
     questions  what the specification does not answer, which is the half a
                writer cannot discover by reading harder
+    picture    a picture the specification marks `[picture: NAME]`, handed over as an image to be
+               looked at: the text names where a rule may have been drawn, this is the drawing
     review     whether the PACK those two rest on is worth resting on
     check-pack everything wrong with the pack, listed whole and not one at a time
     check      whether what was written can reach the platform at all
@@ -57,6 +59,7 @@ dies takes with it the one account of why.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import os
@@ -69,6 +72,7 @@ import xml.etree.ElementTree as ET
 
 from . import brief as brief_sections
 from .brief import assemble
+from .ingest import picture_names_held, read_pictures
 
 # A headless Workbench generation is scoped to one work, with inline drafts only. The
 # application sets this in the server's environment; specification text cannot change it.
@@ -123,6 +127,10 @@ SERVER_VERSION = "1"
 SERVER_INSTRUCTIONS = (
     "When a specification owner asks for pseudocode from a prose specification, "
     "let them use a short natural-language request. Read the source they supplied. "
+    "A picture in it is marked `[picture: NAME]` where it sits: look at each one "
+    "with the picture tool before relying on the text around it, because a rule "
+    "can be drawn and not written, and mark what you read from a picture "
+    "sce:assumed with its clause in the reason. "
     "If the owner keeps an acceptance record for it, call scxml_accepted_for "
     "with that record, the specification and their decision record before "
     "writing anything: when it answers accepted-design, show that design's "
@@ -418,6 +426,33 @@ TOOLS = [
                         "Only these numbered sections. Without it the whole "
                         "brief is returned when it fits, and otherwise its "
                         "section index with each section's size."),
+                },
+            },
+        },
+    },
+    {
+        "name": "picture",
+        "description": (
+            "Look at a picture the specification marks `[picture: NAME]`. The text "
+            "of a specification says where a picture sits and never what it shows; "
+            "a rule can be drawn and not written (an example, a timing, a range), "
+            "even in a clause whose text states other conditions. Ask for each "
+            "marked picture before relying on the text around it. The picture is "
+            "returned as an image. What you read from it is a reading, so it "
+            "enters the document marked `sce:assumed` with the clause it came from "
+            "in the reason, as every other guess does."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "required": ["prose", "name"],
+            "properties": {
+                "prose": _PROSE_ARG,
+                "name": {
+                    "type": "string",
+                    "description": (
+                        "The NAME in the mark, e.g. `image3.png` for `[picture: image3.png]`. "
+                        "A plain-text specification names a picture that is the file of that "
+                        "name in the same folder."),
                 },
             },
         },
@@ -2870,6 +2905,33 @@ def _pseudocode_tool(args: dict, staging: _Staging) -> dict:
                         {"type": "text", "text": provenance}]}
 
 
+def _picture_tool(args: dict) -> dict:
+    """The picture a `[picture: NAME]` mark names, as an image block the caller can look at."""
+    paths = _prose_arg(args)
+    wanted = args.get("name")
+    if not isinstance(wanted, str) or not wanted:
+        raise ToolArgumentError("'name' is required: the NAME in a `[picture: NAME]` mark")
+    found = read_pictures(paths, wanted)
+    if not found:
+        held = picture_names_held(paths)
+        said = "; ".join(f"{path}: {', '.join(names) or 'none'}" for path, names in held.items())
+        return _failure(
+            f"no specification file holds a picture named {wanted!r}."
+            + (f" The word documents hold: {said}." if said else
+               " A plain-text specification names a picture that is the file of that name beside it."))
+    blocks: list[dict] = []
+    for one in found:
+        if one.mime is None:
+            return _failure(
+                f"{one.source}: the picture {one.name} is in a format that cannot be shown here "
+                f"({pathlib.PurePosixPath(one.name).suffix or 'no suffix'}). It is named, and a person "
+                "has to open it from the document itself.")
+        blocks.append({"type": "text", "text": f"[picture: {one.name}] from {one.source}"})
+        blocks.append({"type": "image", "data": base64.b64encode(one.data).decode("ascii"),
+                       "mimeType": one.mime})
+    return {"content": blocks}
+
+
 def _diagram_tool(args: dict, staging: _Staging) -> dict:
     min_pt = args.get("min_pt")
     if min_pt is not None and (isinstance(min_pt, bool)
@@ -4074,6 +4136,9 @@ def call_tool(name: str, args: dict, *, remote: bool = False,
             if len(whole) > BRIEF_LIMIT:
                 return _text(brief_sections.index(prose, pack, BRIEF_LIMIT))
             return _text(whole)
+
+        if name == "picture":
+            return _picture_tool(args)
 
         if name == "questions":
             pack = load_pack(_pack_arg(args))

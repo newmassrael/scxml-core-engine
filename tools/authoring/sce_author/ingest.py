@@ -103,8 +103,8 @@ _O = "{urn:schemas-microsoft-com:office:office}"
 _DOC_R = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
 
 
-def _docx_text(node, attached: dict[str, str]) -> str:
-    """A paragraph's text, and where an enclosed file was attached in it.
+def _docx_text(node, attached: dict[str, str], pictured: dict[str, str] | None = None) -> str:
+    """A paragraph's text, and where an enclosed file or a picture sits in it.
 
     ⚠ The text of a paragraph that carries an embedded object says nothing about
     the object: the body keeps a placeholder picture and a reference, so the
@@ -117,8 +117,13 @@ def _docx_text(node, attached: dict[str, str]) -> str:
     `attached` maps a relationship id to the enclosed file it names. An object
     whose reference is not in it -- a picture of an equation, a link that leaves
     the document -- is not marked: there is no file to point at.
+
+    `pictured` maps a relationship id to the picture it names, and the picture's
+    place is marked the same way (`picture_marks`), so that a reader of the text
+    can tell WHERE a rule may have been drawn and not written.
     """
-    return " ".join(part for part in (_docx_paragraph(node), *enclosed_marks(node, attached)) if part)
+    return " ".join(part for part in (_docx_paragraph(node), *enclosed_marks(node, attached),
+                                      *picture_marks(node, pictured or {}, attached)) if part)
 
 
 def enclosed_objects(node, attached: dict[str, str]) -> list[tuple[str, str | None]]:
@@ -146,6 +151,75 @@ def enclosed_marks(node, attached: dict[str, str]) -> list[str]:
             for name, kind in enclosed_objects(node, attached)]
 
 
+_VML = "{urn:schemas-microsoft-com:vml}"
+_MC_FALLBACK = "{http://schemas.openxmlformats.org/markup-compatibility/2006}Fallback"
+_MEDIA = "word/media/"
+
+# The formats a client can be SHOWN. A picture in any other (a metafile, a bitmap, a TIFF) is still
+# named, counted and placed; `read_pictures` refuses to hand it over and says which format it is.
+SHOWABLE = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+            ".gif": "image/gif", ".webp": "image/webp"}
+
+# The most one picture that is handed over may weigh. A result a client cannot hold is refused by
+# name and size rather than truncated: half an image reads as a different image.
+MAX_PICTURE_BYTES = 4_000_000
+
+
+def pictured_in(archive: zipfile.ZipFile) -> dict[str, str]:
+    """Which picture each relationship id of the body names: id -> the name it is marked and read under.
+
+    The name is the base name of the media file (`image3.png`), which is unique inside one document.
+    A picture the body links to from outside the document names no file here and is not marked.
+    """
+    return {rid: posixpath.basename(part)
+            for rid, (kind, part) in _related(archive, "word/document.xml").items()
+            if kind == "image" and part.startswith(_MEDIA)}
+
+
+def picture_names(node, pictured: dict[str, str], attached: dict[str, str]) -> list[str]:
+    """The pictures under `node`, in the order they sit.
+
+    Two things sit in a body that are not a second picture and are skipped, because marking them would
+    count one picture twice or mark what another mark already says:
+
+      - the fallback half of an alternate-content block: the same picture, drawn the older way;
+      - the preview a word processor keeps for an embedded object that names an enclosed file: the
+        object is marked by `enclosed_marks`, and its preview is what the object looks like.
+
+    The preview of an object that names NO enclosed file (a picture of an equation) is content and is kept.
+    """
+    found: list[str] = []
+
+    def walk(parent) -> None:
+        for child in parent:
+            if child.tag == _MC_FALLBACK:
+                continue
+            if child.tag == f"{_W}object" and enclosed_objects(child, attached):
+                continue
+            rid = None
+            if child.tag == f"{_A}blip":
+                rid = child.get(f"{_DOC_R}embed")
+            elif child.tag == f"{_VML}imagedata":
+                rid = child.get(f"{_DOC_R}id")
+            name = pictured.get(rid or "")
+            if name is not None:
+                found.append(name)
+            walk(child)
+
+    walk(node)
+    return found
+
+
+def picture_marks(node, pictured: dict[str, str], attached: dict[str, str] | None = None) -> list[str]:
+    """The `[picture: NAME]` marks of one paragraph, in the order its pictures sit.
+
+    Public for the reason `enclosed_marks` is: a caller that slices a document by clause places the
+    same marks the whole-document reader does, and does not write a second spelling of them. The
+    NAME is what the `picture` tool is asked for.
+    """
+    return [f"[picture: {name}]" for name in picture_names(node, pictured, attached or {})]
+
+
 # A clause heading is a SHORT line that opens with its number. Long numbered
 # lines are list items, and counting them as headings only makes the clauses
 # finer -- which makes the report below fire more easily, not less, so the
@@ -158,8 +232,8 @@ _CLAUSE_HEADING_CHARS = 80
 _DRAWN = {f"{_W}drawing", f"{_W}pict", f"{_W}object"}
 
 
-def _clauses_carried_by_a_picture(body) -> tuple[list[str], int, int, int]:
-    """Which numbered clauses state nothing in text and only show a picture.
+def _clauses_carried_by_a_picture(body) -> tuple[list[str], list[str], int, int, int]:
+    """Which numbered clauses show a picture, and which of those state nothing in text.
 
     ⚠ THIS EXISTS BECAUSE COUNTING PICTURES DOES NOT ANSWER THE QUESTION IT
     RAISES. "71 pictures were not read" leaves a reader with no way to tell a
@@ -173,9 +247,21 @@ def _clauses_carried_by_a_picture(body) -> tuple[list[str], int, int, int]:
     processor anchors a picture in a paragraph of its own. A test every
     instance passes says nothing.
 
-    Returns the clause numbers, how many drawn things were attributed to a
-    clause, how many there were in total, and how many clauses were found --
-    the last three so the caller can tell "none" from "could not tell".
+    ⚠⚠⚠ A CLAUSE THAT ALSO STATES SOMETHING IN TEXT IS NOT THEREFORE ONE WHOSE
+    PICTURE ADDS NOTHING. That was the belief this report used to rest on --
+    "every clause that shows a picture also states something in text" was
+    printed as reassurance -- and one specification refuted it: its clause
+    carried a table of conditions in text and then said "an example of how the
+    two signals' input timing is processed", and the example, which decides
+    when the event fires and when it does not, was a drawing. The text did
+    speak. It spoke about the picture. So the clauses that show a picture are
+    returned whether or not they speak, and the silent ones are returned
+    apart because for them reading the text is certainly not reading the clause.
+
+    Returns the silent clause numbers, every clause number that shows a picture,
+    how many drawn things were attributed to a clause, how many there were in
+    total, and how many clauses were found -- the last three so the caller can
+    tell "none" from "could not tell".
     """
     clauses: list[list] = []
     current: list | None = None
@@ -197,12 +283,20 @@ def _clauses_carried_by_a_picture(body) -> tuple[list[str], int, int, int]:
         if said:
             current[1] += 1
     silent = [number for number, lines, shown in clauses if shown and not lines]
-    return silent, attributed, drawn, len(clauses)
+    showing = [number for number, _lines, shown in clauses if shown]
+    return silent, showing, attributed, drawn, len(clauses)
+
+
+def _listed(numbers: list[str], most: int = 12) -> str:
+    """Clause numbers for a sentence: all of them, or the first few and how many were left."""
+    if len(numbers) <= most:
+        return ", ".join(numbers)
+    return f"{', '.join(numbers[:most])} and {len(numbers) - most} more"
 
 
 # ------------------------------------------------- what a document encloses
 
-_XL = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+_XL ="{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
 _A = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
 _R = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
 _PKG = "{http://schemas.openxmlformats.org/package/2006/relationships}"
@@ -698,8 +792,15 @@ def _read_docx(path: pathlib.Path) -> Ingested:
             # opposite: the body text hands requirements to "the spreadsheet
             # attached", and a reader that opens only the document part sees
             # none of it AND SUCCEEDS QUIETLY.
+            #
+            # ⚠ "Pictures were layout" is a measurement of one corpus, not a property of
+            # pictures: a later specification drew the rule that decides when an event
+            # fires, in a clause whose conditions were a text table. A picture is
+            # therefore marked where it sits and can be asked for (`read_pictures`), and
+            # the note below does not say the text is enough.
             pictures = sorted(n for n in names if n.startswith("word/media/"))
             enclosed = read_enclosed(zf)
+            pictured = pictured_in(zf)
     except zipfile.BadZipFile as exc:
         raise IngestError(f"{path}: not a readable document ({exc})") from exc
 
@@ -707,11 +808,11 @@ def _read_docx(path: pathlib.Path) -> Ingested:
     for node in body.iter():
         if node.tag == f"{_W}p":
             # A paragraph inside a table cell is emitted by the table branch.
-            lines.append(_docx_text(node, enclosed.attached))
+            lines.append(_docx_text(node, enclosed.attached, pictured))
         elif node.tag == f"{_W}tbl":
             for tr in node.iter(f"{_W}tr"):
                 cells = [
-                    " ".join(_docx_text(p, enclosed.attached) for p in tc.iter(f"{_W}p")).strip()
+                    " ".join(_docx_text(p, enclosed.attached, pictured) for p in tc.iter(f"{_W}p")).strip()
                     for tc in tr.iter(f"{_W}tc")
                 ]
                 lines.append("| " + " | ".join(cells) + " |")
@@ -752,25 +853,50 @@ def _read_docx(path: pathlib.Path) -> Ingested:
         # exactly like a screenshot. A text reader cannot say what a picture
         # SHOWS; it can say whether anything else in that clause says
         # anything, and that is the part a person can act on.
-        silent, attributed, drawn, numbered = _clauses_carried_by_a_picture(body)
+        silent, showing, attributed, drawn, numbered = _clauses_carried_by_a_picture(body)
+        # ⚠ The reassurance this note used to end on -- "a picture is usually what a screen
+        # LOOKS like rather than what decides it", and "every clause that shows a picture also
+        # states something in text" -- was measured true of one corpus and was false of the next
+        # specification read: a timing example that decides when an event fires was a drawing,
+        # in a clause whose table was text. A reader that says the text is enough, when it has
+        # not seen the picture, is the failure this module exists to prevent. What it can say
+        # is where each picture is, by a name that can be asked for.
+        marked = sorted({name for para in body.iter(f"{_W}p")
+                         for name in picture_names(para, pictured, enclosed.attached)})
+        if marked:
+            placed = (f" {len(marked)} of them sit in the body and are named where they sit, as"
+                      " [picture: NAME]; look at one with the `picture` tool.")
+            if len(pictures) > len(marked):
+                placed += (f" {len(pictures) - len(marked)} more are not in the body"
+                           " (a header, a footer) and are not placed.")
+        else:
+            placed = " None could be named where it sits."
+        speaking = sorted({number for number in showing if number not in silent})
         if not numbered:
             where = (" This document has no numbered clauses, so where they"
                      " sit could not be answered.")
-        elif silent:
-            where = (f" {len(silent)} numbered clause(s) state nothing in text"
-                     f" and show only a picture: {', '.join(silent)}."
-                     " There, reading the text is not reading the clause.")
         else:
-            where = (" No numbered clause hands its whole content to one:"
-                     " every clause that shows a picture also states"
-                     " something in text.")
+            where = ""
+            if silent:
+                where += (f" {len(silent)} numbered clause(s) state nothing in text"
+                          f" and show only a picture: {_listed(silent)}."
+                          " There, reading the text is not reading the clause.")
+            if speaking:
+                # Counted, not listed: a word document numbers its headings by a field whose
+                # number is not in the text, so a number read from the text can be a table row's.
+                where += (f" {len(speaking)} numbered clause(s) state something in text"
+                          " and also show a picture."
+                          " The text does not settle that the picture adds nothing: a clause"
+                          " can state a condition in text and leave the rule that decides it"
+                          " to the picture beside it (an example it refers to, a timing, a"
+                          " range). Look at each picture before relying on the text around it.")
         if drawn and attributed < drawn:
             where += (f" {drawn - attributed} of {drawn} sit outside the"
                       " numbering and were not placed.")
         notes.append(
             f"{len(pictures)} picture(s) were not read"
-            " -- a picture is usually what a screen LOOKS like rather than"
-            " what decides it, so this is reported and not refused." + where
+            " -- this reader makes no model calls, so it cannot say what a picture"
+            " shows; it says where each one is." + placed + where
         )
 
     text = "\n".join(line for line in lines if line.strip())
@@ -826,3 +952,97 @@ def ingest(path: pathlib.Path) -> Ingested:
               "add one rather than converting in a pack."
         )
     return reader(path)
+
+
+# ------------------------------------------------------- a picture, handed over
+
+
+@dataclass(frozen=True)
+class PictureFile:
+    """One picture a specification names, as bytes, and whether a client can be shown it."""
+
+    source: pathlib.Path  # the specification file it was found with
+    name: str  # the NAME of its `[picture: NAME]` mark
+    mime: str | None  # None: a format that cannot be shown (a metafile, a bitmap)
+    data: bytes
+
+
+def _plain_name(name: str) -> str:
+    """A picture is asked for by the name in its mark, and a name has no folder in it.
+
+    A path here would turn a request for a picture into a request for any file the server can read.
+    """
+    # A name is its own base name under both separators, whichever system the file was written on.
+    if (not isinstance(name, str) or not name or name in (".", "..") or "\x00" in name
+            or posixpath.basename(name) != name or pathlib.PureWindowsPath(name).name != name):
+        raise IngestError(
+            f"{name!r} is not the name of a picture. Ask for the NAME in a `[picture: NAME]` mark, "
+            "which is a file name and has no folder in it.")
+    return name
+
+
+def read_pictures(paths: Iterable[pathlib.Path], name: str,
+                  limit: int = MAX_PICTURE_BYTES) -> list[PictureFile]:
+    """The picture marked `[picture: NAME]`, from every specification file that holds one by that name.
+
+    A word document holds its pictures under their names. A plain-text specification (a slice of a
+    longer one, say) names a picture it cannot hold, and the picture is the file of that name in the
+    SAME folder. Several files may hold a name: one name is not one picture across documents, so every
+    holder answers and each says which file it came from.
+
+    An empty answer is not an error here; the caller knows which files it asked and says what they hold.
+    A picture heavier than `limit` is refused by name and size, not cut: half an image is a different one.
+    """
+    name = _plain_name(name)
+    suffix = pathlib.PurePosixPath(name).suffix.lower()
+    found: list[PictureFile] = []
+    for given in paths:
+        path = pathlib.Path(given)
+        if not path.is_file():
+            raise IngestError(describe_path(path))
+        if path.suffix.lower() == ".docx":
+            try:
+                with zipfile.ZipFile(path) as zf:
+                    part = _MEDIA + name
+                    if part not in zf.namelist():
+                        continue
+                    size = zf.getinfo(part).file_size
+                    if size > limit:
+                        raise IngestError(
+                            f"{path}: the picture {name} is {size} bytes and the most handed over is "
+                            f"{limit}. Open it from the document itself.")
+                    data = zf.read(part)
+            except zipfile.BadZipFile as exc:
+                raise IngestError(f"{path}: not a readable document ({exc})") from exc
+        else:
+            beside = path.parent / name
+            # A link that leaves the folder would make "the picture beside the specification" any
+            # file the server can read.
+            if not beside.is_file() or beside.resolve().parent != path.parent.resolve():
+                continue
+            size = beside.stat().st_size
+            if size > limit:
+                raise IngestError(
+                    f"{beside}: the picture {name} is {size} bytes and the most handed over is {limit}.")
+            data = beside.read_bytes()
+        found.append(PictureFile(path, name, SHOWABLE.get(suffix), data))
+    return found
+
+
+def picture_names_held(paths: Iterable[pathlib.Path]) -> dict[pathlib.Path, list[str]]:
+    """The pictures each WORD document holds, by name, for saying what could have been asked for.
+
+    A plain-text file holds none by itself (its pictures are files beside it), so it has no entry.
+    """
+    held: dict[pathlib.Path, list[str]] = {}
+    for given in paths:
+        path = pathlib.Path(given)
+        if path.suffix.lower() != ".docx" or not path.is_file():
+            continue
+        try:
+            with zipfile.ZipFile(path) as zf:
+                held[path] = sorted(posixpath.basename(n) for n in zf.namelist()
+                                    if n.startswith(_MEDIA) and posixpath.basename(n))
+        except zipfile.BadZipFile:
+            continue
+    return held

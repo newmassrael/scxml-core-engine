@@ -1209,6 +1209,7 @@ interface-integration workflow.
 
     python3 -m sce_author check-pack --pack <dir>
     python3 -m sce_author brief     --pack <dir> --prose <file>...
+    python3 -m sce_author picture   --prose <file>... --name <NAME> --out <file>
     python3 -m sce_author questions --pack <dir> --prose <file>...
     python3 -m sce_author review    --pack <dir> --prose <file>...
     python3 -m sce_author check     --pack <dir> --binding <file>
@@ -1249,6 +1250,14 @@ the prose itself, which the caller already holds as files. Measured
 2026-09-26: the largest specification in one corpus made a 227,761-character
 brief, 72% of it section 1, and the client that asked refused a result that
 size.
+
+**picture** writes the picture a `[picture: NAME]` mark in the brief names to
+`--out`, and over MCP returns it as an image for the caller to look at. The
+brief marks every picture of a word document where it sits; the text beside a
+mark can say "an example" and leave the rule to the picture, so each marked
+picture is looked at before the text around it is relied on. What is read from
+one enters the document marked `sce:assumed`. See "A picture is not read, and
+the text says where it sits" below.
 
 **questions** is the deliverable that matters for an author: what the prose does
 not say. All domain-free; the ones an author acts on most are:
@@ -1660,25 +1669,53 @@ reader taking one slice of a long specification can tell which enclosed files
 belong to it. An object that names no enclosed file (a picture of an equation, a
 reference the document does not declare) is not marked.
 
-**A picture is not read, and the report says where the unread ones sit.** This
-core makes no model calls, so it cannot say what an image shows. But the count
-alone -- "71 pictures were not read" -- leaves two piles a person cannot tell
-apart: a screenshot beside a paragraph that already states the rule, and a
-diagram a clause hands its whole content to. The second is the requirement.
-Which one it is *can* be decided mechanically, by asking whether the numbered
-clause around the picture states anything at all, so that is what is reported,
-with the clause number attached. On the specification above the answer was
-**none**: every clause showing a picture also states something in text.
+**A picture is not read, and the text says where it sits.** This core makes no
+model calls, so it cannot say what an image shows. It says where each one is:
+the reader marks a picture `[picture: image3.png]` at the place it sits, in the
+order it sits, in a paragraph and in a table cell, so the sentence that refers
+to a picture ("an example of ...") and the picture are next to each other in
+the text a writer reads. The mark is the picture's file name inside the
+document, which is unique there. The preview a word processor keeps for an
+embedded object that names an enclosed file is not marked (the object is, by
+`[enclosed object: ...]`); a picture of an equation names no file, so its
+preview is content and is marked.
 
-**And then the picture is read by whoever can read it.** Refusing to read a
-diagram is not the same as refusing to use one. A reading may come from a
+⚠⚠⚠ **A clause that states something in text is not therefore a clause whose
+picture adds nothing.** This section used to say the opposite. It split the
+unread pictures into two piles -- a clause with no text of its own, which is
+named, and a clause that "also states something in text", which was reported
+as cleared -- and on the first specification measured it found none of the
+first kind. The next specification read refuted the second half: a clause
+whose conditions were a table in text went on to say "an example of how the
+two signals' input timing is processed", and the example, which decides when
+the event fires and when it does not, was a drawing. The text spoke about the
+picture. Five writers then each guessed the rule, and none was ever shown the
+picture, because nothing in the chain could show it. The report now counts the
+clauses that speak and show a picture apart from the ones that are silent, and
+never says the text is enough.
+
+**The `picture` tool hands the picture over to be looked at.** `picture` takes
+the specification files and the NAME in a mark and returns the image itself
+(an MCP image block), so a writer that can look at an image does, before
+relying on the text around it. A plain-text specification (a slice cut out of a
+longer one) names a picture it cannot hold, and the picture is the file of that
+name in the same folder. A name is a file name and never a path; a picture
+heavier than `MAX_PICTURE_BYTES` is refused by name and size and not cut,
+because half an image is a different image; a format that cannot be shown (a
+metafile, a bitmap) is named and refused with the format said, and a person
+opens it from the document. The `picture` command writes the same picture to a
+file for a person or a client that cannot receive images.
+
+**And then the picture is read by whoever can read it.** Handing a diagram over
+is not the same as believing what is read from it. A reading may come from a
 person, a model, or a phone call with whoever drew it, and it enters the
 document the way every other guess does -- marked `sce:assumed`, with the
 clause it came from written in the reason. `verify` runs the document and, if
 a case refutes that value, reports *the guess you recorded* rather than *your
-document is wrong*. The four hops are one route and it is tested as one:
+document is wrong*. The hops are one route and it is tested as one:
 
-    ingest     names the clause whose whole content is a picture
+    ingest     marks where each picture sits and says which clauses show one
+    picture    hands the picture over to be looked at
     questions  puts that in front of the author
     the author reads it and writes the rule, marked
     verify     runs it and hands the author's own sentence back
