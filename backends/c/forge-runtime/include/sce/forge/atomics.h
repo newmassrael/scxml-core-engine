@@ -41,6 +41,7 @@
 #ifndef SCE_FORGE_ATOMICS_H
 #define SCE_FORGE_ATOMICS_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -58,6 +59,25 @@ extern uint32_t sce_atomic_cas_strong_acq_rel_u32(uint32_t *p0, uint32_t p1, uin
 extern uint32_t sce_atomic_fetch_add_acq_rel_u32(uint32_t *p0, uint32_t p1);
 extern uint32_t sce_atomic_fetch_sub_acq_rel_u32(uint32_t *p0, uint32_t p1);
 extern uint32_t sce_atomic_fetch_or_acq_rel_u32(uint32_t *p0, uint32_t p1);
+
+/* The pointer-sized word the `segmented` queues keep their links and hazard
+ * slots in (`size_t` is the generator's spelling of the whitelist's `usize`), and
+ * the one fence they need. A pointer is held in a `size_t` and converted at the
+ * edges (queue_segmented.h), because the family has no atomic of a pointer type.
+ * The hazard-pointer scheme publishes with a seq_cst store, then a seq_cst
+ * fence, then a seq_cst load of what it guards; the retiring side puts a
+ * seq_cst fence between unlinking a segment and reading the hazards. The
+ * family has no seq_cst compare-and-swap, so the fences are what give the
+ * unlinking compare-and-swaps the order that argument needs. */
+extern size_t sce_atomic_load_acquire_usize(const size_t *p0);
+extern size_t sce_atomic_load_seq_cst_usize(const size_t *p0);
+extern void sce_atomic_store_release_usize(size_t *p0, size_t p1);
+extern void sce_atomic_store_seq_cst_usize(size_t *p0, size_t p1);
+extern size_t sce_atomic_cas_strong_acq_rel_usize(size_t *p0, size_t p1, size_t p2);
+extern size_t sce_atomic_xchg_acq_rel_usize(size_t *p0, size_t p1);
+extern size_t sce_atomic_fetch_add_acq_rel_usize(size_t *p0, size_t p1);
+extern size_t sce_atomic_fetch_sub_acq_rel_usize(size_t *p0, size_t p1);
+extern void sce_atomic_fence_seq_cst(void);
 
 extern uint64_t sce_atomic_load_acquire_u64(const uint64_t *p0);
 extern uint64_t sce_atomic_load_seq_cst_u64(const uint64_t *p0);

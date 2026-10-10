@@ -3175,6 +3175,10 @@
         {
           "file": "backends/c/forge-runtime/tests/conformance/sce_irq_host.c",
           "kind": "implements"
+        },
+        {
+          "file": "backends/c/forge-runtime/include/sce/forge/queue_segmented.h",
+          "kind": "references"
         }
       ]
     },
@@ -5434,6 +5438,10 @@
         },
         {
           "file": "sce-build/tests/mutations/a_segmented_queue_keeps_tail_off_a_retired_segment.cases",
+          "kind": "references"
+        },
+        {
+          "file": "backends/c/forge-runtime/include/sce/forge/queue_segmented.h",
           "kind": "references"
         }
       ]

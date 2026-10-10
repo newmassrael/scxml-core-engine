@@ -1553,21 +1553,139 @@ fn masking_interrupts_excludes_nothing_on_another_core() {
 }
 
 #[test]
-fn a_storage_the_c11_runtime_lacks_is_refused_by_name() {
+fn a_segmented_queue_on_c11_needs_the_target_to_state_its_atomic_width() {
     let located = c_compile(
         &ForgeCompileOptions::default(),
         &resource("queue_segmented_lscq.scxml"),
         "queue_segmented_lscq.scxml",
     )
-    .expect_err("a storage without a runtime is refused");
+    .expect_err("the links, places and hazard slots are the platform's atomics");
+    match generate_error(located) {
+        GenerateError::QueueAtomicWidthUnstated { algorithm, .. } => {
+            assert!(algorithm.contains("LSCQ"), "{algorithm}");
+        }
+        other => panic!("expected QueueAtomicWidthUnstated, got {other:?}"),
+    }
+}
+
+#[test]
+fn one_producer_and_one_consumer_over_segments_emit_linked_lamport_rings_in_c() {
+    let xml = segmented_doc("frame_queue", "one", "one", "lock-free", "lock-free", "");
+    for width in [32, 64] {
+        let code = c_compile(
+            &c_options("frame_queue", Some(width), Some(2), None),
+            &xml,
+            "frame_queue.scxml",
+        )
+        .unwrap_or_else(|e| panic!("width {width}: a segmented queue emits on C11: {e:?}"));
+        assert!(
+            code.contains("#include <sce/forge/queue_segmented.h>"),
+            "{code}"
+        );
+        assert!(
+            code.contains("#define FRAME_QUEUE_SEGMENT ((uint32_t)6)"),
+            "{code}"
+        );
+        assert!(code.contains("sce_queue_linked_t core;"), "{code}");
+        // The allocator's progress is the document's own, and `_init` holds the
+        // allocator to it when the queue is built.
+        assert!(
+            code.contains("#define FRAME_QUEUE_ALLOCATOR_PROGRESS SCE_QUEUE_PROGRESS_LOCK_FREE")
+                && code.contains("#define FRAME_QUEUE_ALLOCATOR_PROGRESS_WORD \"lock-free\""),
+            "{code}"
+        );
+        assert!(
+            code.contains("#define FRAME_QUEUE_PUSH_PROGRESS \"lock-free\"")
+                && code.contains("#define FRAME_QUEUE_POP_PROGRESS \"wait-free\""),
+            "{code}"
+        );
+        // No reclamation domain for one producer and one consumer, and no ring.
+        assert!(
+            !code.contains("hazard") && !code.contains("RING_SLOTS"),
+            "{code}"
+        );
+    }
+}
+
+#[test]
+fn many_producers_over_segments_emit_lscq_with_a_hazard_domain_in_c() {
+    for (producers, consumers) in [("many", "many"), ("many", "one"), ("one", "many")] {
+        let xml = segmented_doc(
+            "frame_queue",
+            producers,
+            consumers,
+            "lock-free",
+            "lock-free",
+            r#"<sce:participants const="3"/>"#,
+        );
+        let code = c_compile(
+            &c_options("frame_queue", Some(64), Some(4), None),
+            &xml,
+            "frame_queue.scxml",
+        )
+        .unwrap_or_else(|e| panic!("{producers}/{consumers} segmented queue emits: {e:?}"));
+        assert!(code.contains("sce_queue_lscq_t core;"), "{code}");
+        assert!(
+            code.contains("#define FRAME_QUEUE_RING_SLOTS ((uint32_t)8)")
+                && code.contains("#define FRAME_QUEUE_PARTICIPANTS ((uint32_t)3)")
+                && code.contains("#define FRAME_QUEUE_HAZARD_SLOTS ((uint32_t)6)"),
+            "{code}"
+        );
+        assert!(
+            code.contains("sce_hazard_slot_t slots[FRAME_QUEUE_HAZARD_SLOTS];"),
+            "{code}"
+        );
+        assert!(
+            code.contains("#define FRAME_QUEUE_WRAP_BOUND_OPS ((uint64_t)4611686018427387904u)"),
+            "2^62 on the 64-bit entries of every segment's ring:\n{code}"
+        );
+    }
+}
+
+#[test]
+fn a_target_that_cannot_run_a_segmented_row_is_refused_by_name_in_c() {
+    let lscq = segmented_doc(
+        "frame_queue",
+        "many",
+        "many",
+        "lock-free",
+        "lock-free",
+        r#"<sce:participants const="3"/>"#,
+    );
+    let linked = segmented_doc("frame_queue", "one", "one", "lock-free", "lock-free", "");
+    // Below 64 bits a ring cannot spare the top bit of its tail for the close.
+    let located = c_compile(
+        &c_options("frame_queue", Some(32), Some(2), None),
+        &lscq,
+        "frame_queue.scxml",
+    )
+    .expect_err("an LSCQ ring is closed by the top bit of a 64-bit tail");
     match generate_error(located) {
         GenerateError::QueueStorageRuntimeMissing {
-            language, storage, ..
+            language,
+            storage,
+            status,
+            ..
         } => {
-            assert_eq!(language, "c11");
-            assert_eq!(storage, "segmented");
+            assert_eq!((language.as_str(), storage.as_str()), ("c11", "segmented"));
+            assert!(status.contains("below 64 bits"), "{status}");
         }
         other => panic!("expected QueueStorageRuntimeMissing, got {other:?}"),
+    }
+    // With no read-modify-write atomic neither row has a critical-section form.
+    for xml in [&lscq, &linked] {
+        let located = c_compile(
+            &c_options("frame_queue", Some(0), Some(1), None),
+            xml,
+            "frame_queue.scxml",
+        )
+        .expect_err("a segmented row needs the platform's atomics");
+        match generate_error(located) {
+            GenerateError::QueueStorageRuntimeMissing { status, .. } => {
+                assert!(status.contains("no read-modify-write atomic"), "{status}");
+            }
+            other => panic!("expected QueueStorageRuntimeMissing, got {other:?}"),
+        }
     }
 }
 

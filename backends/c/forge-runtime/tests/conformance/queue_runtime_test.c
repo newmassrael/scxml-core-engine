@@ -31,6 +31,7 @@
 #include "host_irq.h"
 #include <sce/forge/queue.h>
 #include <sce/forge/queue_irq.h>
+#include <sce/forge/queue_segmented.h>
 
 /* ---- The harness ---- */
 
@@ -295,7 +296,8 @@ typedef enum op { OP_CAPACITY, OP_PUSH, OP_POP, OP_DESTROY } op_t;
 typedef struct step {
     op_t op;
     int64_t value;  /* push: the value */
-    int64_t expect; /* capacity: the number; push: 1 ok, 0 full; pop: the value, or -1 empty */
+    int64_t expect; /* capacity: the number; push: 1 ok, 0 full, 2 out of memory; pop: the value,
+                       or -1 empty */
 } step_t;
 
 typedef struct scenario {
@@ -303,7 +305,11 @@ typedef struct scenario {
     int producers_one;
     int consumers_one;
     int intrusive;
-    uint32_t capacity; /* an intrusive scenario: the nodes the caller owns, the stub besides */
+    int segmented;
+    uint32_t capacity; /* an intrusive scenario: the nodes the caller owns, the stub besides;
+                          a segmented one: the elements a segment holds */
+    size_t segments;   /* a segmented scenario: how many segments the allocator gives in all
+                          (the first included), or 0 when it never refuses */
     const step_t *steps;
     unsigned step_count;
 } scenario_t;
@@ -357,6 +363,9 @@ static void every_contract_scenario_holds(void) {
         unsigned k;
         if (scenario->intrusive) {
             continue; /* every_intrusive_scenario_holds */
+        }
+        if (scenario->segmented) {
+            continue; /* every_segmented_scenario_holds */
         }
         if (scenario->producers_one && scenario->consumers_one) {
             kinds[kind_count++] = KIND_SPSC;
@@ -500,6 +509,264 @@ static void an_intrusive_queue_refuses_a_shape_it_cannot_run(void) {
           "a link not aligned for a 32-bit word is refused");
     CHECK(!sce_queue_intrusive_irq_init(&irq, nodes, 4, sizeof(node_t), offsetof(node_t, link), 4, 0),
           "the critical-section list refuses a stub outside the array too");
+}
+
+/* ---- The segmented queues ---- */
+
+/* The system allocator behind the contract a segmented queue is injected with,
+ * giving at most `limit` blocks in all (the contract's `segments`, 0 meaning never
+ * refuse) and counting the blocks it has out, so a scenario sees a refusal and a
+ * test sees a leak. The counts are atomics: the queue calls the allocator from
+ * several threads. */
+typedef struct test_allocator {
+    size_t limit;
+    size_t given;
+    size_t live;
+} test_allocator_t;
+
+static void *test_allocate(void *context, size_t size, size_t align) {
+    test_allocator_t *a = (test_allocator_t *)context;
+    size_t seen = sce_atomic_load_acquire_usize(&a->given);
+    void *block;
+    for (;;) {
+        size_t old;
+        if (a->limit != 0u && seen >= a->limit) {
+            return NULL;
+        }
+        old = sce_atomic_cas_strong_acq_rel_usize(&a->given, seen, seen + 1u);
+        if (old == seen) {
+            break;
+        }
+        seen = old;
+    }
+    block = aligned_alloc(align, sce_queue_align_up(size, align));
+    if (block != NULL) {
+        (void)sce_atomic_fetch_add_acq_rel_usize(&a->live, 1u);
+    }
+    return block;
+}
+
+static void test_deallocate(void *context, void *block, size_t size, size_t align) {
+    test_allocator_t *a = (test_allocator_t *)context;
+    (void)size;
+    (void)align;
+    free(block);
+    (void)sce_atomic_fetch_sub_acq_rel_usize(&a->live, 1u);
+}
+
+static sce_queue_allocator_t test_allocator_of(test_allocator_t *counting, sce_queue_progress_t progress) {
+    sce_queue_allocator_t allocator;
+    allocator.context = counting;
+    allocator.allocate = test_allocate;
+    allocator.deallocate = test_deallocate;
+    allocator.progress = progress;
+    return allocator;
+}
+
+static size_t live_blocks(const test_allocator_t *a) {
+    return sce_atomic_load_acquire_usize(&a->live);
+}
+
+/* One interface over the two segmented queues, so one reading of the steps serves
+ * both. */
+typedef struct segmented_subject {
+    void *queue;
+    uint32_t producer_hazard;
+    uint32_t consumer_hazard;
+    sce_queue_push_status_t (*push)(struct segmented_subject *s, const tracked_t *element);
+    int (*pop)(struct segmented_subject *s, tracked_t *out);
+} segmented_subject_t;
+
+static sce_queue_push_status_t linked_subject_push(segmented_subject_t *s, const tracked_t *element) {
+    return sce_queue_linked_try_push((sce_queue_linked_t *)s->queue, element);
+}
+
+static int linked_subject_pop(segmented_subject_t *s, tracked_t *out) {
+    return sce_queue_linked_try_pop((sce_queue_linked_t *)s->queue, out);
+}
+
+static sce_queue_push_status_t lscq_subject_push(segmented_subject_t *s, const tracked_t *element) {
+    return sce_queue_lscq_try_push((sce_queue_lscq_t *)s->queue, s->producer_hazard, element);
+}
+
+static int lscq_subject_pop(segmented_subject_t *s, tracked_t *out) {
+    return sce_queue_lscq_try_pop((sce_queue_lscq_t *)s->queue, s->consumer_hazard, out);
+}
+
+/* The steps of a segmented scenario; `name` says which queue runs them. A
+ * `destroy` step ends the run, and the caller destroys its queue and checks that
+ * every segment went back. */
+static void run_segmented_steps(segmented_subject_t *s, const char *name, const scenario_t *scenario) {
+    unsigned i;
+    for (i = 0; i < scenario->step_count; i++) {
+        const step_t *step = &scenario->steps[i];
+        switch (step->op) {
+        case OP_PUSH: {
+            const tracked_t element = make_tracked((uint64_t)step->value);
+            const sce_queue_push_status_t got = s->push(s, &element);
+            const sce_queue_push_status_t want = step->expect == 1 ? SCE_QUEUE_PUSH_OK : SCE_QUEUE_PUSH_OUT_OF_MEMORY;
+            CHECK(got == want, "%s/%s step %u: push gave %d, want %d", name, scenario->id, i, (int)got, (int)want);
+            break;
+        }
+        case OP_POP: {
+            tracked_t got;
+            const int popped = s->pop(s, &got);
+            if (step->expect < 0) {
+                CHECK(!popped, "%s/%s step %u: expected the queue to be empty", name, scenario->id, i);
+            } else {
+                CHECK(popped && got.value == (uint64_t)step->expect && got.tag == TAG_OF(got.value),
+                      "%s/%s step %u: popped (%d, %llu), want %lld", name, scenario->id, i, popped,
+                      (unsigned long long)got.value, (long long)step->expect);
+            }
+            break;
+        }
+        case OP_CAPACITY: /* a segmented queue has no capacity */
+        case OP_DESTROY:
+            return;
+        }
+    }
+}
+
+static void run_linked_scenario(const scenario_t *scenario) {
+    test_allocator_t counting = {scenario->segments, 0u, 0u};
+    sce_queue_allocator_t allocator = test_allocator_of(&counting, SCE_QUEUE_PROGRESS_BLOCKING);
+    sce_queue_linked_t q;
+    segmented_subject_t s;
+    CHECK(sce_queue_linked_init(&q, &allocator, SCE_QUEUE_PROGRESS_BLOCKING, sizeof(tracked_t), _Alignof(tracked_t),
+                                scenario->capacity),
+          "linked/%s: the shape is refused", scenario->id);
+    CHECK(sce_queue_linked_producer_acquire(&q) && sce_queue_linked_consumer_acquire(&q), "linked/%s: one place a side",
+          scenario->id);
+    s.queue = &q;
+    s.producer_hazard = 0u;
+    s.consumer_hazard = 0u;
+    s.push = linked_subject_push;
+    s.pop = linked_subject_pop;
+    run_segmented_steps(&s, "linked", scenario);
+    sce_queue_linked_producer_release(&q);
+    sce_queue_linked_consumer_release(&q);
+    sce_queue_linked_destroy(&q);
+    CHECK(live_blocks(&counting) == 0u, "linked/%s: the queue did not give back every segment", scenario->id);
+}
+
+static void run_lscq_scenario(const scenario_t *scenario) {
+    test_allocator_t counting = {scenario->segments, 0u, 0u};
+    sce_queue_allocator_t allocator = test_allocator_of(&counting, SCE_QUEUE_PROGRESS_BLOCKING);
+    sce_hazard_slot_t slots[4];
+    sce_hazard_domain_t domain;
+    sce_queue_lscq_t q;
+    segmented_subject_t s;
+    CHECK(sce_hazard_domain_init(&domain, slots, 4u), "lscq/%s: the domain is refused", scenario->id);
+    CHECK(sce_queue_lscq_init(&q, &domain, &allocator, SCE_QUEUE_PROGRESS_BLOCKING, sizeof(tracked_t),
+                              _Alignof(tracked_t), scenario->capacity, 2u),
+          "lscq/%s: the shape is refused", scenario->id);
+    CHECK(sce_queue_lscq_producer_acquire(&q, &s.producer_hazard) &&
+              sce_queue_lscq_consumer_acquire(&q, &s.consumer_hazard),
+          "lscq/%s: a place a side", scenario->id);
+    s.queue = &q;
+    s.push = lscq_subject_push;
+    s.pop = lscq_subject_pop;
+    run_segmented_steps(&s, "lscq", scenario);
+    sce_queue_lscq_producer_release(&q, s.producer_hazard);
+    sce_queue_lscq_consumer_release(&q, s.consumer_hazard);
+    sce_queue_lscq_destroy(&q);
+    CHECK(live_blocks(&counting) == 0u, "lscq/%s: the queue did not give back every segment", scenario->id);
+    CHECK(sce_hazard_waiting(&domain) == 0u, "lscq/%s: the domain freed every retired segment", scenario->id);
+}
+
+static void every_segmented_scenario_holds(void) {
+    size_t i;
+    unsigned ran = 0;
+    for (i = 0; i < g_scenario_count; i++) {
+        const scenario_t *scenario = &g_scenarios[i];
+        if (!scenario->segmented) {
+            continue;
+        }
+        if (scenario->producers_one && scenario->consumers_one) {
+            run_linked_scenario(scenario);
+        } else {
+            run_lscq_scenario(scenario);
+        }
+        ran++;
+    }
+    CHECK(ran > 0u, "a contract with no segmented scenario checks nothing of the segmented queues");
+}
+
+static void a_segmented_queue_refuses_what_it_cannot_run(void) {
+    test_allocator_t counting = {0u, 0u, 0u};
+    sce_queue_allocator_t allocator = test_allocator_of(&counting, SCE_QUEUE_PROGRESS_BLOCKING);
+    sce_queue_allocator_t lock_free = test_allocator_of(&counting, SCE_QUEUE_PROGRESS_LOCK_FREE);
+    test_allocator_t none = {1u, 1u, 0u}; /* has given its one block already */
+    sce_queue_allocator_t spent = test_allocator_of(&none, SCE_QUEUE_PROGRESS_BLOCKING);
+    sce_hazard_slot_t slots[2];
+    sce_hazard_domain_t domain;
+    sce_queue_linked_t linked;
+    sce_queue_lscq_t lscq;
+    CHECK(sce_hazard_domain_init(&domain, slots, 2u), "a domain of two slots");
+    CHECK(!sce_hazard_domain_init(&domain, slots, 0u), "a domain of no slot is refused");
+
+    /* The allocator gives less progress than the document declared for it. */
+    CHECK(!sce_queue_linked_init(&linked, &allocator, SCE_QUEUE_PROGRESS_LOCK_FREE, sizeof(tracked_t),
+                                 _Alignof(tracked_t), 2u),
+          "linked: a blocking allocator under a lock-free declaration is refused");
+    CHECK(!sce_queue_lscq_init(&lscq, &domain, &allocator, SCE_QUEUE_PROGRESS_LOCK_FREE, sizeof(tracked_t),
+                               _Alignof(tracked_t), 2u, 2u),
+          "lscq: a blocking allocator under a lock-free declaration is refused");
+    CHECK(live_blocks(&counting) == 0u, "a refused construction takes no block");
+    CHECK(sce_queue_lscq_init(&lscq, &domain, &lock_free, SCE_QUEUE_PROGRESS_LOCK_FREE, sizeof(tracked_t),
+                              _Alignof(tracked_t), 2u, 2u),
+          "lscq: a lock-free allocator meets a lock-free declaration");
+    sce_queue_lscq_destroy(&lscq);
+
+    /* A shape the rings refuse. */
+    CHECK(!sce_queue_lscq_init(&lscq, &domain, &allocator, SCE_QUEUE_PROGRESS_BLOCKING, sizeof(tracked_t),
+                               _Alignof(tracked_t), 4u, 2u),
+          "lscq: a ring smaller than the segment is refused");
+    CHECK(!sce_queue_lscq_init(&lscq, &domain, &allocator, SCE_QUEUE_PROGRESS_BLOCKING, sizeof(tracked_t),
+                               _Alignof(tracked_t), 2u, 3u),
+          "lscq: a ring that is not a power of two is refused");
+    CHECK(!sce_queue_linked_init(&linked, &allocator, SCE_QUEUE_PROGRESS_BLOCKING, sizeof(tracked_t), 3u, 2u),
+          "linked: an alignment that is not a power of two is refused");
+
+    /* An allocator that refuses the first segment leaves nothing built. */
+    CHECK(!sce_queue_linked_init(&linked, &spent, SCE_QUEUE_PROGRESS_BLOCKING, sizeof(tracked_t), _Alignof(tracked_t),
+                                 2u),
+          "linked: an allocator that refuses the first segment is refused");
+    CHECK(!sce_queue_lscq_init(&lscq, &domain, &spent, SCE_QUEUE_PROGRESS_BLOCKING, sizeof(tracked_t),
+                               _Alignof(tracked_t), 2u, 2u),
+          "lscq: an allocator that refuses the first segment is refused");
+    CHECK(live_blocks(&none) == 0u, "and takes no block");
+}
+
+/* An LSCQ queue hands out `ring_slots` places a side and no more than the domain
+ * has slots for, and a place and a slot come back when a handle is released. */
+static void an_lscq_queue_hands_out_no_more_places_than_its_ring_and_domain_have(void) {
+    test_allocator_t counting = {0u, 0u, 0u};
+    sce_queue_allocator_t allocator = test_allocator_of(&counting, SCE_QUEUE_PROGRESS_BLOCKING);
+    sce_hazard_slot_t slots[4];
+    sce_hazard_domain_t domain;
+    sce_queue_lscq_t q;
+    uint32_t hazards[4];
+    uint32_t extra;
+    unsigned i;
+    CHECK(sce_hazard_domain_init(&domain, slots, 4u), "a domain of four slots");
+    CHECK(sce_queue_lscq_init(&q, &domain, &allocator, SCE_QUEUE_PROGRESS_BLOCKING, sizeof(tracked_t),
+                              _Alignof(tracked_t), 2u, 4u),
+          "the queue");
+    for (i = 0; i < 3u; i++) {
+        CHECK(sce_queue_lscq_producer_acquire(&q, &hazards[i]), "three producers fit the domain");
+    }
+    CHECK(sce_queue_lscq_consumer_acquire(&q, &hazards[3]), "three producers and one consumer: four slots");
+    CHECK(!sce_queue_lscq_producer_acquire(&q, &extra) && !sce_queue_lscq_consumer_acquire(&q, &extra),
+          "the domain has four slots, all taken");
+    sce_queue_lscq_producer_release(&q, hazards[2]);
+    CHECK(sce_queue_lscq_consumer_acquire(&q, &extra), "a released handle gives its slot back");
+    sce_queue_lscq_consumer_release(&q, extra);
+    sce_queue_lscq_consumer_release(&q, hazards[3]);
+    sce_queue_lscq_producer_release(&q, hazards[1]);
+    sce_queue_lscq_producer_release(&q, hazards[0]);
+    sce_queue_lscq_destroy(&q);
+    CHECK(live_blocks(&counting) == 0u, "every segment went back");
 }
 
 /* ---- Properties ---- */
@@ -796,10 +1063,231 @@ static void real_threads_lose_nothing_and_reorder_nothing(void) {
     }
 }
 
+/* ---- Threads through the segmented queues ---- */
+
+#define SEGMENTED_COUNT 100000u
+
+typedef struct linked_run {
+    sce_queue_linked_t *queue;
+    uint32_t failed;
+    uint64_t *got;
+} linked_run_t;
+
+static void *linked_produce(void *arg) {
+    linked_run_t *run = (linked_run_t *)arg;
+    uint64_t i;
+    for (i = 0; i < SEGMENTED_COUNT; i++) {
+        const tracked_t element = make_tracked(i);
+        if (sce_queue_linked_try_push(run->queue, &element) != SCE_QUEUE_PUSH_OK) {
+            (void)sce_atomic_fetch_add_acq_rel_u32(&run->failed, 1u);
+            return NULL;
+        }
+    }
+    return NULL;
+}
+
+static void *linked_consume(void *arg) {
+    linked_run_t *run = (linked_run_t *)arg;
+    uint64_t taken = 0;
+    unsigned long long spins = 0;
+    while (taken < SEGMENTED_COUNT) {
+        tracked_t element;
+        if (sce_queue_linked_try_pop(run->queue, &element)) {
+            spins = 0;
+            run->got[taken++] = element.value;
+        } else {
+            if (++spins > DEADLINE_SPINS) {
+                (void)sce_atomic_fetch_add_acq_rel_u32(&run->failed, 1u);
+                return NULL;
+            }
+            (void)sched_yield();
+        }
+    }
+    return NULL;
+}
+
+/* One producer and one consumer through linked Lamport rings of three-element
+ * segments: order and count, and every segment given back. */
+static void linked_rings_lose_nothing_between_threads(void) {
+    test_allocator_t counting = {0u, 0u, 0u};
+    sce_queue_allocator_t allocator = test_allocator_of(&counting, SCE_QUEUE_PROGRESS_BLOCKING);
+    sce_queue_linked_t q;
+    linked_run_t run;
+    pthread_t producer;
+    pthread_t consumer;
+    uint64_t i;
+    run.queue = &q;
+    run.failed = 0u;
+    run.got = (uint64_t *)calloc(SEGMENTED_COUNT, sizeof(uint64_t));
+    CHECK(run.got != NULL, "memory for the run");
+    CHECK(
+        sce_queue_linked_init(&q, &allocator, SCE_QUEUE_PROGRESS_BLOCKING, sizeof(tracked_t), _Alignof(tracked_t), 3u),
+        "the queue");
+    CHECK(sce_queue_linked_producer_acquire(&q) && sce_queue_linked_consumer_acquire(&q), "a place a side");
+    (void)pthread_create(&producer, NULL, linked_produce, &run);
+    (void)pthread_create(&consumer, NULL, linked_consume, &run);
+    (void)pthread_join(producer, NULL);
+    (void)pthread_join(consumer, NULL);
+    CHECK(run.failed == 0u, "the elements all arrived before the deadline");
+    for (i = 0; i < SEGMENTED_COUNT; i++) {
+        if (run.got[i] != i) {
+            CHECK(0, "element %llu came out as %llu: not in the order pushed", (unsigned long long)i,
+                  (unsigned long long)run.got[i]);
+            break;
+        }
+    }
+    sce_queue_linked_producer_release(&q);
+    sce_queue_linked_consumer_release(&q);
+    sce_queue_linked_destroy(&q);
+    CHECK(live_blocks(&counting) == 0u, "the queue gave back every segment");
+    free(run.got);
+}
+
+#define LSCQ_PER_PRODUCER 4000u
+
+typedef struct lscq_run {
+    sce_queue_lscq_t *queue;
+    unsigned producers;
+    uint64_t total;
+    uint64_t delivered;
+    uint32_t failed;
+    /* Per consumer, then per producer: the last sequence seen (+1; 0 = none) and
+     * how many were seen. */
+    uint64_t *last_plus_one;
+    uint64_t *counts;
+    unsigned consumers;
+} lscq_run_t;
+
+typedef struct lscq_worker {
+    lscq_run_t *run;
+    unsigned index;
+    pthread_t thread;
+} lscq_worker_t;
+
+static void *lscq_produce(void *arg) {
+    lscq_worker_t *w = (lscq_worker_t *)arg;
+    lscq_run_t *run = w->run;
+    uint32_t hazard;
+    uint64_t i;
+    if (!sce_queue_lscq_producer_acquire(run->queue, &hazard)) {
+        (void)sce_atomic_fetch_add_acq_rel_u32(&run->failed, 1u);
+        return NULL;
+    }
+    for (i = 0; i < LSCQ_PER_PRODUCER; i++) {
+        /* The value carries the producer in its top bits and the sequence below. */
+        const tracked_t element = make_tracked(((uint64_t)w->index << 32) | i);
+        if (sce_queue_lscq_try_push(run->queue, hazard, &element) != SCE_QUEUE_PUSH_OK) {
+            (void)sce_atomic_fetch_add_acq_rel_u32(&run->failed, 1u);
+            break;
+        }
+    }
+    sce_queue_lscq_producer_release(run->queue, hazard);
+    return NULL;
+}
+
+static void *lscq_consume(void *arg) {
+    lscq_worker_t *w = (lscq_worker_t *)arg;
+    lscq_run_t *run = w->run;
+    uint32_t hazard;
+    unsigned long long spins = 0;
+    if (!sce_queue_lscq_consumer_acquire(run->queue, &hazard)) {
+        (void)sce_atomic_fetch_add_acq_rel_u32(&run->failed, 1u);
+        return NULL;
+    }
+    while (sce_atomic_load_acquire_u64(&run->delivered) < run->total) {
+        tracked_t element;
+        if (sce_queue_lscq_try_pop(run->queue, hazard, &element)) {
+            const unsigned producer = (unsigned)(element.value >> 32);
+            const uint64_t sequence = element.value & 0xFFFFFFFFu;
+            uint64_t *last = &run->last_plus_one[(size_t)w->index * run->producers + producer];
+            spins = 0;
+            if (*last != 0u && sequence + 1u <= *last) {
+                (void)sce_atomic_fetch_add_acq_rel_u32(&run->failed, 1u);
+            }
+            *last = sequence + 1u;
+            run->counts[(size_t)w->index * run->producers + producer]++;
+            (void)sce_atomic_fetch_add_acq_rel_u64(&run->delivered, 1u);
+        } else {
+            if (++spins > DEADLINE_SPINS) {
+                (void)sce_atomic_fetch_add_acq_rel_u32(&run->failed, 1u);
+                break;
+            }
+            (void)sched_yield();
+        }
+    }
+    sce_queue_lscq_consumer_release(run->queue, hazard);
+    return NULL;
+}
+
+/* Producers and consumers of an LSCQ queue of two-element segments: nothing is lost
+ * or duplicated, each consumer sees each producer's elements in the order they went
+ * in, and every segment, the retired ones included, goes back. */
+static void lscq_loses_nothing_between_threads(unsigned producers, unsigned consumers) {
+    test_allocator_t counting = {0u, 0u, 0u};
+    sce_queue_allocator_t allocator = test_allocator_of(&counting, SCE_QUEUE_PROGRESS_BLOCKING);
+    sce_hazard_slot_t slots[8];
+    sce_hazard_domain_t domain;
+    sce_queue_lscq_t q;
+    lscq_run_t run;
+    lscq_worker_t workers[8];
+    unsigned i;
+    unsigned p;
+    memset(&run, 0, sizeof run);
+    run.queue = &q;
+    run.producers = producers;
+    run.consumers = consumers;
+    run.total = (uint64_t)producers * LSCQ_PER_PRODUCER;
+    run.last_plus_one = (uint64_t *)calloc((size_t)consumers * producers, sizeof(uint64_t));
+    run.counts = (uint64_t *)calloc((size_t)consumers * producers, sizeof(uint64_t));
+    CHECK(run.last_plus_one != NULL && run.counts != NULL, "memory for the run");
+    CHECK(sce_hazard_domain_init(&domain, slots, 8u), "the domain");
+    CHECK(sce_queue_lscq_init(&q, &domain, &allocator, SCE_QUEUE_PROGRESS_BLOCKING, sizeof(tracked_t),
+                              _Alignof(tracked_t), 2u, 4u),
+          "the queue");
+    for (i = 0; i < consumers; i++) {
+        workers[i].run = &run;
+        workers[i].index = i;
+        (void)pthread_create(&workers[i].thread, NULL, lscq_consume, &workers[i]);
+    }
+    for (p = 0; p < producers; p++) {
+        workers[consumers + p].run = &run;
+        workers[consumers + p].index = p;
+        (void)pthread_create(&workers[consumers + p].thread, NULL, lscq_produce, &workers[consumers + p]);
+    }
+    for (i = 0; i < consumers + producers; i++) {
+        (void)pthread_join(workers[i].thread, NULL);
+    }
+    CHECK(run.failed == 0u, "the elements arrived in order before the deadline");
+    for (p = 0; p < producers; p++) {
+        uint64_t seen = 0;
+        for (i = 0; i < consumers; i++) {
+            seen += run.counts[(size_t)i * producers + p];
+        }
+        CHECK(seen == LSCQ_PER_PRODUCER, "producer %u: %llu of %u elements arrived", p, (unsigned long long)seen,
+              (unsigned)LSCQ_PER_PRODUCER);
+    }
+    sce_queue_lscq_destroy(&q);
+    CHECK(live_blocks(&counting) == 0u, "every segment went back, the retired ones included");
+    CHECK(sce_hazard_waiting(&domain) == 0u, "the domain freed every retired segment");
+    free(run.last_plus_one);
+    free(run.counts);
+}
+
+static void an_lscq_queue_loses_nothing_between_threads(void) {
+    lscq_loses_nothing_between_threads(2u, 2u);
+    lscq_loses_nothing_between_threads(1u, 3u);
+    lscq_loses_nothing_between_threads(3u, 1u);
+}
+
 int main(void) {
     every_contract_scenario_holds();
     every_intrusive_scenario_holds();
     an_intrusive_queue_refuses_a_shape_it_cannot_run();
+    every_segmented_scenario_holds();
+    a_segmented_queue_refuses_what_it_cannot_run();
+    an_lscq_queue_hands_out_no_more_places_than_its_ring_and_domain_have();
+    linked_rings_lose_nothing_between_threads();
+    an_lscq_queue_loses_nothing_between_threads();
     order_holds_across_many_laps();
     exactly_the_capacity_fits_when_nothing_else_runs();
     a_side_hands_out_no_more_places_than_it_has();

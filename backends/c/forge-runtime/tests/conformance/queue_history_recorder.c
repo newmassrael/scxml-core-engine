@@ -41,6 +41,7 @@
 #include "host_irq.h"
 #include <sce/forge/queue.h>
 #include <sce/forge/queue_irq.h>
+#include <sce/forge/queue_segmented.h>
 
 /* ---- Runs per shape ---- */
 
@@ -627,6 +628,211 @@ static void record_list_run(const char *dir, const char *name, list_kind_t kind,
     free(actors);
 }
 
+/* ---- The segmented queues ---- */
+
+/* The system allocator behind the contract a segmented queue is injected with,
+ * counting the blocks it has out so a run can say that the queue gave every segment
+ * back. The count is an atomic: the queue calls the allocator from several
+ * threads. */
+typedef struct counting_allocator {
+    size_t live;
+} counting_allocator_t;
+
+static void *counting_allocate(void *context, size_t size, size_t align) {
+    counting_allocator_t *a = (counting_allocator_t *)context;
+    void *block = aligned_alloc(align, sce_queue_align_up(size, align));
+    if (block != NULL) {
+        (void)sce_atomic_fetch_add_acq_rel_usize(&a->live, 1u);
+    }
+    return block;
+}
+
+static void counting_deallocate(void *context, void *block, size_t size, size_t align) {
+    counting_allocator_t *a = (counting_allocator_t *)context;
+    (void)size;
+    (void)align;
+    free(block);
+    (void)sce_atomic_fetch_sub_acq_rel_usize(&a->live, 1u);
+}
+
+typedef struct segmented_run {
+    int many; /* nonzero: LSCQ; zero: linked Lamport rings */
+    sce_queue_linked_t linked;
+    sce_queue_lscq_t lscq;
+    uint64_t clock;
+    uint64_t delivered;
+    uint64_t total;
+    uint64_t per_producer;
+    unsigned producers;
+    uint32_t failed;
+    log_t *logs;
+} segmented_run_t;
+
+typedef struct segmented_actor {
+    segmented_run_t *run;
+    unsigned index;
+    pthread_t thread;
+} segmented_actor_t;
+
+static uint64_t segmented_tick(segmented_run_t *run) {
+    return sce_atomic_fetch_add_acq_rel_u64(&run->clock, 1u) + 1u;
+}
+
+static void *segmented_produce(void *arg) {
+    segmented_actor_t *a = (segmented_actor_t *)arg;
+    segmented_run_t *run = a->run;
+    log_t *log = &run->logs[a->index];
+    uint32_t hazard = 0;
+    uint64_t i;
+    if (run->many && !sce_queue_lscq_producer_acquire(&run->lscq, &hazard)) {
+        (void)sce_atomic_fetch_add_acq_rel_u32(&run->failed, 1u);
+        return NULL;
+    }
+    if (!run->many && !sce_queue_linked_producer_acquire(&run->linked)) {
+        (void)sce_atomic_fetch_add_acq_rel_u32(&run->failed, 1u);
+        return NULL;
+    }
+    for (i = 0; i < run->per_producer; i++) {
+        element_t element;
+        uint64_t invoked;
+        uint64_t returned;
+        sce_queue_push_status_t status;
+        element.value = (uint64_t)a->index * run->per_producer + i + 1u;
+        invoked = segmented_tick(run);
+        status = run->many ? sce_queue_lscq_try_push(&run->lscq, hazard, &element)
+                           : sce_queue_linked_try_push(&run->linked, &element);
+        returned = segmented_tick(run);
+        if (status != SCE_QUEUE_PUSH_OK) {
+            (void)sce_atomic_fetch_add_acq_rel_u32(&run->failed, 1u);
+            break;
+        }
+        log_add(log, 1, 1, element.value, "pushed", invoked, returned);
+    }
+    if (run->many) {
+        sce_queue_lscq_producer_release(&run->lscq, hazard);
+    } else {
+        sce_queue_linked_producer_release(&run->linked);
+    }
+    return NULL;
+}
+
+static void *segmented_consume(void *arg) {
+    segmented_actor_t *a = (segmented_actor_t *)arg;
+    segmented_run_t *run = a->run;
+    log_t *log = &run->logs[run->producers + a->index];
+    uint32_t hazard = 0;
+    uint64_t spins = 0;
+    if (run->many && !sce_queue_lscq_consumer_acquire(&run->lscq, &hazard)) {
+        (void)sce_atomic_fetch_add_acq_rel_u32(&run->failed, 1u);
+        return NULL;
+    }
+    if (!run->many && !sce_queue_linked_consumer_acquire(&run->linked)) {
+        (void)sce_atomic_fetch_add_acq_rel_u32(&run->failed, 1u);
+        return NULL;
+    }
+    while (sce_atomic_load_acquire_u64(&run->delivered) < run->total) {
+        element_t got;
+        const uint64_t invoked = segmented_tick(run);
+        const int popped =
+            run->many ? sce_queue_lscq_try_pop(&run->lscq, hazard, &got) : sce_queue_linked_try_pop(&run->linked, &got);
+        const uint64_t returned = segmented_tick(run);
+        if (popped) {
+            spins = 0;
+            log_add(log, 0, 1, got.value, "popped", invoked, returned);
+            (void)sce_atomic_fetch_add_acq_rel_u64(&run->delivered, 1u);
+        } else {
+            log_add(log, 0, 0, 0, "empty", invoked, returned);
+            if (++spins > DEADLINE_SPINS) {
+                (void)sce_atomic_fetch_add_acq_rel_u32(&run->failed, 1u);
+                break;
+            }
+            (void)sched_yield();
+        }
+    }
+    if (run->many) {
+        sce_queue_lscq_consumer_release(&run->lscq, hazard);
+    } else {
+        sce_queue_linked_consumer_release(&run->linked);
+    }
+    return NULL;
+}
+
+/* One run of `producers` and `consumers` on a segmented queue (`many`: LSCQ over
+ * segments of two elements and rings of four; else linked Lamport rings of four),
+ * written as `<dir>/<name>.json`. A segmented queue has no capacity, and the
+ * recording gives none that could matter: the history is judged against a queue
+ * that holds every value, so a push is never refused, and an empty pop is judged
+ * exactly as for any other queue. The queue is destroyed before the history is
+ * written, and a segment that did not go back fails the run. */
+static void record_segmented_run(const char *dir, const char *name, int many, unsigned producers, unsigned consumers,
+                                 uint64_t per_producer) {
+    segmented_run_t run;
+    counting_allocator_t counting = {0u};
+    sce_queue_allocator_t allocator;
+    sce_hazard_slot_t slots[8];
+    sce_hazard_domain_t domain;
+    const uint64_t total = (uint64_t)producers * per_producer;
+    const unsigned participants = producers + consumers;
+    segmented_actor_t *actors = (segmented_actor_t *)calloc(participants, sizeof(segmented_actor_t));
+    unsigned i;
+    allocator.context = &counting;
+    allocator.allocate = counting_allocate;
+    allocator.deallocate = counting_deallocate;
+    allocator.progress = SCE_QUEUE_PROGRESS_BLOCKING;
+    memset(&run, 0, sizeof run);
+    run.many = many;
+    run.total = total;
+    run.per_producer = per_producer;
+    run.producers = producers;
+    run.logs = (log_t *)calloc(participants, sizeof(log_t));
+    if (many) {
+        if (!sce_hazard_domain_init(&domain, slots, 8u) ||
+            !sce_queue_lscq_init(&run.lscq, &domain, &allocator, SCE_QUEUE_PROGRESS_BLOCKING, sizeof(element_t),
+                                 _Alignof(element_t), 2u, 4u)) {
+            die("the LSCQ queue refused its shape");
+        }
+    } else if (!sce_queue_linked_init(&run.linked, &allocator, SCE_QUEUE_PROGRESS_BLOCKING, sizeof(element_t),
+                                      _Alignof(element_t), 4u)) {
+        die("the linked rings refused their shape");
+    }
+    for (i = 0; i < producers; i++) {
+        actors[i].run = &run;
+        actors[i].index = i;
+        (void)pthread_create(&actors[i].thread, NULL, segmented_produce, &actors[i]);
+    }
+    for (i = 0; i < consumers; i++) {
+        actors[producers + i].run = &run;
+        actors[producers + i].index = i;
+        (void)pthread_create(&actors[producers + i].thread, NULL, segmented_consume, &actors[producers + i]);
+    }
+    for (i = 0; i < participants; i++) {
+        (void)pthread_join(actors[i].thread, NULL);
+    }
+    if (many) {
+        sce_queue_lscq_destroy(&run.lscq);
+        if (sce_hazard_waiting(&domain) != 0u) {
+            (void)fprintf(stderr, "%s: the domain did not free every retired segment\n", name);
+            exit(1);
+        }
+    } else {
+        sce_queue_linked_destroy(&run.linked);
+    }
+    if (sce_atomic_load_acquire_usize(&counting.live) != 0u) {
+        (void)fprintf(stderr, "%s: the queue did not give back every segment\n", name);
+        exit(1);
+    }
+    if (run.failed != 0u) {
+        (void)fprintf(stderr, "%s: the elements did not all arrive before the deadline\n", name);
+        exit(1);
+    }
+    write_history(dir, name, (uint32_t)total, "at-capacity", NULL, run.logs, participants);
+    for (i = 0; i < participants; i++) {
+        free(run.logs[i].ops);
+    }
+    free(run.logs);
+    free(actors);
+}
+
 int main(int argc, char **argv) {
     static const uint32_t spsc_capacities[] = {1u, 2u, 3u, 8u};
 
@@ -686,6 +892,25 @@ int main(int argc, char **argv) {
                                list_shapes[s].producers, list_shapes[s].consumers, run);
                 record_list_run(dir, name, kind, list_shapes[s].producers, list_shapes[s].consumers,
                                 list_shapes[s].per_producer);
+            }
+        }
+    }
+    {
+        /* Linked Lamport rings for one producer and one consumer; LSCQ for the rest. */
+        static const struct {
+            int many;
+            unsigned producers;
+            unsigned consumers;
+            uint64_t per_producer;
+        } segmented_shapes[] = {{0, 1, 1, 600}, {1, 2, 1, 60}, {1, 1, 2, 60}, {1, 2, 2, 50}, {1, 3, 3, 30}};
+
+        for (s = 0; s < sizeof segmented_shapes / sizeof segmented_shapes[0]; s++) {
+            for (run = 0; run < RUNS_PER_SHAPE; run++) {
+                (void)snprintf(name, sizeof name, "c11_%s_p%u_c%u_%d",
+                               segmented_shapes[s].many ? "lscq_n2_r4" : "linked_lamport_n4",
+                               segmented_shapes[s].producers, segmented_shapes[s].consumers, run);
+                record_segmented_run(dir, name, segmented_shapes[s].many, segmented_shapes[s].producers,
+                                     segmented_shapes[s].consumers, segmented_shapes[s].per_producer);
             }
         }
     }

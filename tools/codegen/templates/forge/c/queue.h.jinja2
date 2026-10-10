@@ -46,6 +46,27 @@
  *                                       when the queue holds none, or while a push
  *                                       is in flight
  */
+{% elif segmented %}
+ * The queue is segmented (`<sce:segmented segment="{{ segment }}" allocator-progress="{{ allocator_progress }}"/>`):
+ * it grows by segments of {{ segment }} element(s) taken from an allocator the caller injects,
+ * and holds as many elements as that allocator allows. It owns no storage of its own and
+ * calls no `malloc`. The queue is `{{ snake }}_t`; build it with `{{ snake }}_init` before another
+ * participant can reach it, and do not move it while it lives.
+{% if hazard_slots %}
+ * Its segments are reclaimed through a hazard-pointer domain the caller builds with
+ * `{{ snake }}_domain_init` and passes in, one per queue; a handle on a side is a place and a
+ * slot of that domain, whose index `{{ snake }}_producer_acquire` and
+ * `{{ snake }}_consumer_acquire` return and every operation takes.
+{% endif %}
+ *
+ * Operations:
+ *   {{ snake }}_init(q{% if hazard_slots %}, domain{% endif %}, &allocator)   zero when the allocator gives less than `{{ allocator_progress }}`,
+ *                                       or refuses the first segment
+ *   {{ snake }}_try_push(q{% if hazard_slots %}, hazard{% endif %}, &element)   SCE_QUEUE_PUSH_OK takes a copy;
+ *                                       SCE_QUEUE_PUSH_OUT_OF_MEMORY leaves the element
+ *   {{ snake }}_try_pop(q{% if hazard_slots %}, hazard{% endif %}, &out)        nonzero when it took an element
+ *   {{ snake }}_destroy(q)              gives every segment back
+ */
 {% else %}
  * The queue is `{{ snake }}_t`: its control block, the storage of its slots and (for
  * an SCQ row) the entries of its two index rings, all static in the object, so
@@ -73,6 +94,9 @@
 #include <sce/portability.h>
 
 #include <sce/forge/queue.h>
+{% if segmented %}
+#include <sce/forge/queue_segmented.h>
+{% endif %}
 {% if runtime_type == "irq" or runtime_type == "intrusive_irq" %}
 #include <sce/forge/queue_irq.h>
 {% endif %}
@@ -136,6 +160,180 @@ static inline int {{ snake }}_try_pop({{ snake }}_t *q, uint32_t *index)
 {
     return sce_queue_{{ runtime_type }}_try_pop(&q->core, index);
 }
+{% elif segmented %}
+/* The elements one segment holds (`<sce:segmented segment>`). */
+#define {{ upper_name }}_SEGMENT ((uint32_t){{ segment }})
+{% if hazard_slots %}
+
+/* The size of each segment's two index rings: a power of two, at least the
+ * segment and at least the participants. A ring's empty test is justified only
+ * for as many producers or consumers as it has slots (Nikolaev 2019 §5.1), so the
+ * ring is sized by both. */
+#define {{ upper_name }}_RING_SLOTS ((uint32_t){{ ring_slots }})
+
+/* The most participants that hold a place on one side at the same time
+ * (`<sce:participants>`). */
+#define {{ upper_name }}_PARTICIPANTS ((uint32_t){{ participants }})
+
+/* The slots of the hazard-pointer domain the queue is built with: one for every
+ * handle that can be alive, both sides together (RFC §synth-5-P, *Reclamation
+ * domain*). */
+#define {{ upper_name }}_HAZARD_SLOTS ((uint32_t){{ hazard_slots }})
+
+/* How many operations a participant may be delayed between reading a ring entry
+ * and acting on it before it could be misled: 2^62 for the 64-bit entries each
+ * segment's ring keeps (RFC §synth-5-P, Counter width). */
+#define {{ upper_name }}_WRAP_BOUND_OPS ((uint64_t){{ wrap_bound_ops }}u)
+{% endif %}
+
+/* What the document requires of push and pop (`<sce:progress>`), what the
+ * selected algorithm gives each (a push is no stronger than the allocator), and
+ * the algorithm. */
+#define {{ upper_name }}_DECLARED_PROGRESS "{{ declared_progress }}"
+#define {{ upper_name }}_PUSH_PROGRESS "{{ push_progress }}"
+#define {{ upper_name }}_POP_PROGRESS "{{ pop_progress }}"
+#define {{ upper_name }}_ALGORITHM "{{ algorithm }}"
+
+/* What the document declared the allocator gives (`allocator-progress`). The
+ * queue is built only over an allocator that gives at least this: `{{ snake }}_init`
+ * returns zero for one that gives less, and no push is slower than the document
+ * says. */
+#define {{ upper_name }}_ALLOCATOR_PROGRESS {{ allocator_enumerator }}
+#define {{ upper_name }}_ALLOCATOR_PROGRESS_WORD "{{ allocator_progress }}"
+{% if hazard_slots %}
+
+/* The reclamation domain the queue is built with: caller-owned, one per queue,
+ * with a slot for every handle that can be alive. */
+typedef struct {{ snake }}_domain {
+    sce_hazard_domain_t core;
+    sce_hazard_slot_t slots[{{ upper_name }}_HAZARD_SLOTS];
+} {{ snake }}_domain_t;
+
+/* Builds an empty domain. Not safe against a concurrent user. */
+static inline int {{ snake }}_domain_init({{ snake }}_domain_t *domain)
+{
+    return sce_hazard_domain_init(&domain->core, domain->slots, {{ upper_name }}_HAZARD_SLOTS);
+}
+{% endif %}
+
+/* The queue. It owns no storage of its own: its segments come from the
+ * allocator it was built over, and it must not move while it lives. */
+typedef struct {{ snake }} {
+    sce_queue_{{ runtime_type }}_t core;
+} {{ snake }}_t;
+
+{% if hazard_slots %}
+/* Builds an empty queue over `*allocator` (copied) and `*domain` (borrowed).
+ * Returns zero, and builds nothing, when the allocator gives less progress than
+ * the document declared for it or refuses the first segment. Not safe against a
+ * concurrent user: hand the queue to the other participants after it returns. */
+static inline int {{ snake }}_init({{ snake }}_t *q, {{ snake }}_domain_t *domain, const sce_queue_allocator_t *allocator)
+{
+    return sce_queue_lscq_init(&q->core, &domain->core, allocator, {{ upper_name }}_ALLOCATOR_PROGRESS,
+                               sizeof({{ element_snake }}_t), SCE_ALIGNOF({{ element_snake }}_t),
+                               {{ upper_name }}_SEGMENT, {{ upper_name }}_RING_SLOTS);
+}
+
+/* Takes a producer place and a slot of the domain: nonzero, with the slot's index
+ * in `*hazard`, or zero when every place or slot is taken. */
+static inline int {{ snake }}_producer_acquire({{ snake }}_t *q, uint32_t *hazard)
+{
+    return sce_queue_lscq_producer_acquire(&q->core, hazard);
+}
+
+/* Gives a producer place and its slot back. */
+static inline void {{ snake }}_producer_release({{ snake }}_t *q, uint32_t hazard)
+{
+    sce_queue_lscq_producer_release(&q->core, hazard);
+}
+
+/* Takes a consumer place and a slot of the domain; see `_producer_acquire`. */
+static inline int {{ snake }}_consumer_acquire({{ snake }}_t *q, uint32_t *hazard)
+{
+    return sce_queue_lscq_consumer_acquire(&q->core, hazard);
+}
+
+/* Gives a consumer place and its slot back. */
+static inline void {{ snake }}_consumer_release({{ snake }}_t *q, uint32_t hazard)
+{
+    sce_queue_lscq_consumer_release(&q->core, hazard);
+}
+
+/* Takes a copy of `*element` into the queue, or reports
+ * SCE_QUEUE_PUSH_OUT_OF_MEMORY when the allocator will not give a segment; the
+ * element is the caller's either way. */
+static inline sce_queue_push_status_t {{ snake }}_try_push({{ snake }}_t *q, uint32_t hazard, const {{ element_snake }}_t *element)
+{
+    return sce_queue_lscq_try_push(&q->core, hazard, element);
+}
+
+/* Takes the oldest element into `*out`, or returns zero when the queue is empty. */
+static inline int {{ snake }}_try_pop({{ snake }}_t *q, uint32_t hazard, {{ element_snake }}_t *out)
+{
+    return sce_queue_lscq_try_pop(&q->core, hazard, out);
+}
+
+/* Gives every segment back, the retired ones included. No handle may be alive. */
+static inline void {{ snake }}_destroy({{ snake }}_t *q)
+{
+    sce_queue_lscq_destroy(&q->core);
+}
+{% else %}
+/* Builds an empty queue over `*allocator` (copied). Returns zero, and builds
+ * nothing, when the allocator gives less progress than the document declared for
+ * it or refuses the first segment. Not safe against a concurrent user: hand the
+ * queue to the other participants after it returns. */
+static inline int {{ snake }}_init({{ snake }}_t *q, const sce_queue_allocator_t *allocator)
+{
+    return sce_queue_linked_init(&q->core, allocator, {{ upper_name }}_ALLOCATOR_PROGRESS,
+                                 sizeof({{ element_snake }}_t), SCE_ALIGNOF({{ element_snake }}_t),
+                                 {{ upper_name }}_SEGMENT);
+}
+
+/* Takes the producer place, or returns zero when it is taken. */
+static inline int {{ snake }}_producer_acquire({{ snake }}_t *q)
+{
+    return sce_queue_linked_producer_acquire(&q->core);
+}
+
+/* Gives the producer place back. */
+static inline void {{ snake }}_producer_release({{ snake }}_t *q)
+{
+    sce_queue_linked_producer_release(&q->core);
+}
+
+/* Takes the consumer place, or returns zero when it is taken. */
+static inline int {{ snake }}_consumer_acquire({{ snake }}_t *q)
+{
+    return sce_queue_linked_consumer_acquire(&q->core);
+}
+
+/* Gives the consumer place back. */
+static inline void {{ snake }}_consumer_release({{ snake }}_t *q)
+{
+    sce_queue_linked_consumer_release(&q->core);
+}
+
+/* Takes a copy of `*element` into the queue, or reports
+ * SCE_QUEUE_PUSH_OUT_OF_MEMORY when the allocator will not give a segment; the
+ * element is the caller's either way. */
+static inline sce_queue_push_status_t {{ snake }}_try_push({{ snake }}_t *q, const {{ element_snake }}_t *element)
+{
+    return sce_queue_linked_try_push(&q->core, element);
+}
+
+/* Takes the oldest element into `*out`, or returns zero when the queue is empty. */
+static inline int {{ snake }}_try_pop({{ snake }}_t *q, {{ element_snake }}_t *out)
+{
+    return sce_queue_linked_try_pop(&q->core, out);
+}
+
+/* Gives every segment back. No handle may be alive. */
+static inline void {{ snake }}_destroy({{ snake }}_t *q)
+{
+    sce_queue_linked_destroy(&q->core);
+}
+{% endif %}
 {% else %}
 /* The most elements the queue holds (`<sce:bounded>`). */
 #define {{ upper_name }}_CAPACITY ((uint32_t){{ capacity }})

@@ -13,6 +13,7 @@
  * `_Atomic`-qualified cast would not.
  */
 
+#include <stddef.h>
 #include <stdint.h>
 
 #include <sce/forge/atomics.h>
@@ -60,4 +61,36 @@ uint32_t sce_atomic_load_relaxed_u32(const uint32_t *p0) {
 
 void sce_atomic_store_relaxed_u32(uint32_t *p0, uint32_t p1) {
     __atomic_store_n(p0, p1, __ATOMIC_RELAXED);
+}
+
+/* The pointer-sized word of the segmented queues' links and hazard slots
+ * (sce/forge/atomics.h). The macro defines a few more orderings than the header
+ * declares; they are harmless and keep the width's set whole. */
+SCE_HOST_ATOMICS(usize, size_t)
+
+size_t sce_atomic_xchg_acq_rel_usize(size_t *p0, size_t p1) {
+    return __atomic_exchange_n(p0, p1, __ATOMIC_ACQ_REL);
+}
+
+/* The one fence the segmented queues use: a sequentially consistent one.
+ * ThreadSanitizer does not model `atomic_thread_fence` (GCC refuses it under
+ * -Werror=tsan, and a tool that ignores a fence reports races the fence
+ * removes), so a build under it takes a sequentially consistent
+ * read-modify-write of a word of its own instead, which is a full barrier on
+ * every architecture and which the tool does model. */
+#if defined(__SANITIZE_THREAD__)
+#define SCE_HOST_TSAN 1
+#elif defined(__has_feature)
+#if __has_feature(thread_sanitizer)
+#define SCE_HOST_TSAN 1
+#endif
+#endif
+
+void sce_atomic_fence_seq_cst(void) {
+#ifdef SCE_HOST_TSAN
+    static size_t barrier;
+    (void)__atomic_exchange_n(&barrier, 0u, __ATOMIC_SEQ_CST);
+#else
+    __atomic_thread_fence(__ATOMIC_SEQ_CST);
+#endif
 }

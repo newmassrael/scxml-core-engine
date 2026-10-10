@@ -18466,12 +18466,14 @@ fn resolve_queue_render_inputs(
             | crate::generator::Language::C11
     );
     // `segmented` where the runtime has the allocator contract, the hazard-pointer
-    // domain and the two segment lists: Rust and C++. Another language's runtime
-    // lands in the RFC's order; a collected one takes its allocator but not a
-    // domain.
+    // domain and the two segment lists: Rust, C++ and C11. Another language's
+    // runtime lands in the RFC's order; a collected one takes its allocator but
+    // not a domain.
     let offers_segmented = matches!(
         language,
-        crate::generator::Language::Rust | crate::generator::Language::Cpp
+        crate::generator::Language::Rust
+            | crate::generator::Language::Cpp
+            | crate::generator::Language::C11
     );
     let (bounded_capacity, link_field, segmented) = match &m.storage {
         QueueStorage::Bounded { capacity } => (Some(capacity), None, None),
@@ -18568,6 +18570,8 @@ fn resolve_queue_render_inputs(
             QueueAlgorithm::Scq
                 | QueueAlgorithm::VyukovMpsc
                 | QueueAlgorithm::VyukovListWithConsumerFlag
+                | QueueAlgorithm::LinkedLamportRings
+                | QueueAlgorithm::Lscq
         );
         if needs_read_modify_write && atomic_rmw_width.is_none() {
             return Err(ForgeError::from(GenerateError::QueueAtomicWidthUnstated {
@@ -18582,6 +18586,35 @@ fn resolve_queue_render_inputs(
                 return Err(ForgeError::from(GenerateError::QueueNoAtomicsAcrossCores {
                     queue_name: m.name.clone(),
                     core_count,
+                })
+                .at_line(m.storage_line));
+            }
+        }
+        // The segmented queues keep their links, places and hazard slots in
+        // atomics of the platform's own, and an LSCQ ring is closed by the top bit
+        // of its 64-bit tail. A target that cannot give those is refused by name:
+        // there is no critical-section form of either row, and a 32-bit ring
+        // cannot spare the bit (queue_scq_width.inc).
+        if segmented.is_some() {
+            let why = match (selection.algorithm, atomic_rmw_width) {
+                (_, Some(0)) => Some(
+                    " on a target with no read-modify-write atomic: the segmented queues' links, places and hazard slots are atomics, and neither row has a critical-section form",
+                ),
+                (QueueAlgorithm::Lscq, Some(width)) if width < 64 => Some(
+                    " on a target whose widest atomic is below 64 bits: a segment's ring is closed by the top bit of its 64-bit tail, and a 32-bit ring cannot spare it",
+                ),
+                _ => None,
+            };
+            if let Some(why) = why {
+                return Err(ForgeError::from(GenerateError::QueueStorageRuntimeMissing {
+                    queue_name: m.name.clone(),
+                    storage: "segmented".to_string(),
+                    language: crate::forge::codegen_matrix::language_wire_name(language)
+                        .to_string(),
+                    implemented: "bounded, intrusive, segmented".to_string(),
+                    status: format!(
+                        "{why}. SCE Protocol-Synthesis RFC §5.P specifies the mode; this document is valid and is refused rather than lowered to a queue that gives less"
+                    ),
                 })
                 .at_line(m.storage_line));
             }
@@ -18645,6 +18678,8 @@ fn resolve_queue_render_inputs(
     let c11_entry_bits = match (is_c11, selection.algorithm, atomic_rmw_width) {
         (true, QueueAlgorithm::Scq, Some(32)) => Some(32u32),
         (true, QueueAlgorithm::Scq, Some(64)) => Some(64u32),
+        // The rings of an LSCQ are 64-bit (the 32-bit target was refused above).
+        (true, QueueAlgorithm::Lscq, Some(64)) => Some(64u32),
         _ => None,
     };
     let wrap_bound_ops = c11_entry_bits.map(|bits| 1u64 << (bits - 2));
@@ -18692,6 +18727,10 @@ fn resolve_queue_render_inputs(
             _,
         ) => "intrusive",
         (_, QueueAlgorithm::VyukovMpsc | QueueAlgorithm::VyukovListWithConsumerFlag, _) => "Mpsc",
+        // The segmented rows: C11's functions are `sce_queue_linked_*` and
+        // `sce_queue_lscq_*` (a target with no atomics was refused above).
+        (crate::generator::Language::C11, QueueAlgorithm::LinkedLamportRings, _) => "linked",
+        (crate::generator::Language::C11, QueueAlgorithm::Lscq, _) => "lscq",
         (crate::generator::Language::C11, _, _) if single_ring => "irq",
         (crate::generator::Language::C11, QueueAlgorithm::LamportRing, _) => "spsc",
         (crate::generator::Language::C11, QueueAlgorithm::Scq, Some(32)) => "scq32",
@@ -19136,13 +19175,25 @@ fn render_queue_c(
         // writes it.
         link_field => inputs.link_field.clone(),
         many_consumers => inputs.consumers == "many",
+        segmented => inputs.segment.is_some(),
+        segment => inputs.segment,
+        // The allocator progress the document declared, as the runtime's
+        // `sce_queue_progress_t` enumerator the queue is built against: the
+        // construction fails when the allocator gives less.
+        allocator_progress => inputs.allocator_progress.map(|(_, word)| word),
+        allocator_enumerator => inputs.allocator_progress.map(|(rank, _)| match rank {
+            0 => "SCE_QUEUE_PROGRESS_BLOCKING",
+            1 => "SCE_QUEUE_PROGRESS_LOCK_FREE",
+            _ => "SCE_QUEUE_PROGRESS_WAIT_FREE",
+        }),
+        hazard_slots => inputs.hazard_slots,
         algorithm => inputs.algorithm,
         producers => inputs.producers,
         consumers => inputs.consumers,
         declared_progress => inputs.declared_progress,
         push_progress => inputs.push_progress,
         pop_progress => inputs.pop_progress,
-        runtime_dep => "sce/forge/queue.h",
+        runtime_dep => if inputs.segment.is_some() { "sce/forge/queue_segmented.h" } else { "sce/forge/queue.h" },
     };
     tmpl.render(ctx).map_err(|e| {
         ForgeError::from(GenerateError::TemplateRender(format!(

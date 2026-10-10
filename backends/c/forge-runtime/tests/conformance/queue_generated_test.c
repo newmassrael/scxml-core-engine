@@ -39,6 +39,8 @@
 #include "queue_c_irq_one.h"
 #include "queue_c_scq32.h"
 #include "queue_c_scq64.h"
+#include "queue_c_segmented.h"
+#include "queue_c_segmented_many.h"
 #include "queue_c_spsc.h"
 
 static unsigned g_failures = 0;
@@ -192,6 +194,211 @@ static void the_intrusive_headers_state_what_the_document_required_and_what_it_g
           QUEUE_C_INTRUSIVE_IRQ_ALGORITHM);
 }
 
+/* ---- The segmented queues ---- */
+
+/* A bump arena over one block: the allocator a segmented queue is injected with on
+ * a target that has no heap to speak of. A grant is a compare-and-swap on the
+ * offset, so an allocation is lock-free, which is what its `progress` says and what
+ * the documents declare for it. Nothing is given back one block at a time: the
+ * arena is released whole, which is how such a target frees what a queue held. */
+typedef struct arena {
+    unsigned char *base;
+    size_t len;
+    size_t next;
+} arena_t;
+
+static void *arena_allocate(void *context, size_t size, size_t align) {
+    arena_t *arena = (arena_t *)context;
+    size_t used = sce_atomic_load_acquire_usize(&arena->next);
+    for (;;) {
+        const size_t address = (size_t)(uintptr_t)arena->base + used;
+        const size_t padding = (align - address % align) % align;
+        const size_t end = used + padding + size;
+        size_t seen;
+        if (end > arena->len) {
+            return NULL;
+        }
+        seen = sce_atomic_cas_strong_acq_rel_usize(&arena->next, used, end);
+        if (seen == used) {
+            return arena->base + used + padding;
+        }
+        used = seen;
+    }
+}
+
+static void arena_deallocate(void *context, void *block, size_t size, size_t align) {
+    (void)context;
+    (void)block;
+    (void)size;
+    (void)align;
+}
+
+static sce_queue_allocator_t arena_allocator(arena_t *arena, sce_queue_progress_t progress) {
+    sce_queue_allocator_t allocator;
+    allocator.context = arena;
+    allocator.allocate = arena_allocate;
+    allocator.deallocate = arena_deallocate;
+    allocator.progress = progress;
+    return allocator;
+}
+
+/* 64 bytes: the alignment of a segment's cache-line-padded parts needs no more. */
+static _Alignas(64) unsigned char g_arena_block[64 * 1024];
+
+static arena_t fresh_arena(size_t len) {
+    arena_t arena;
+    arena.base = g_arena_block;
+    arena.len = len;
+    arena.next = 0u;
+    return arena;
+}
+
+static void the_segmented_headers_state_what_the_document_required_and_what_it_gives(void) {
+    CHECK(QUEUE_C_SEGMENTED_SEGMENT == 3u, "the segment is the document's: three");
+    CHECK(strcmp(QUEUE_C_SEGMENTED_DECLARED_PROGRESS, "lock-free") == 0 &&
+              strcmp(QUEUE_C_SEGMENTED_PUSH_PROGRESS, "lock-free") == 0 &&
+              strcmp(QUEUE_C_SEGMENTED_POP_PROGRESS, "wait-free") == 0,
+          "linked Lamport rings: a push no stronger than its allocator, a wait-free pop");
+    CHECK(strstr(QUEUE_C_SEGMENTED_ALGORITHM, "Lamport") != NULL, "one and one select linked Lamport rings: %s",
+          QUEUE_C_SEGMENTED_ALGORITHM);
+    CHECK(QUEUE_C_SEGMENTED_ALLOCATOR_PROGRESS == SCE_QUEUE_PROGRESS_LOCK_FREE &&
+              strcmp(QUEUE_C_SEGMENTED_ALLOCATOR_PROGRESS_WORD, "lock-free") == 0,
+          "the allocator progress is the document's");
+
+    CHECK(QUEUE_C_SEGMENTED_MANY_SEGMENT == 3u && QUEUE_C_SEGMENTED_MANY_PARTICIPANTS == 2u,
+          "segment and participants");
+    CHECK(QUEUE_C_SEGMENTED_MANY_RING_SLOTS == 4u, "the next power of two at or above max(segment, participants)");
+    CHECK(QUEUE_C_SEGMENTED_MANY_HAZARD_SLOTS == 4u, "a slot for every handle on either side");
+    CHECK(strcmp(QUEUE_C_SEGMENTED_MANY_PUSH_PROGRESS, "lock-free") == 0 &&
+              strcmp(QUEUE_C_SEGMENTED_MANY_POP_PROGRESS, "lock-free") == 0,
+          "LSCQ is lock-free on both sides");
+    CHECK(strstr(QUEUE_C_SEGMENTED_MANY_ALGORITHM, "LSCQ") != NULL, "many and many select LSCQ: %s",
+          QUEUE_C_SEGMENTED_MANY_ALGORITHM);
+    CHECK(QUEUE_C_SEGMENTED_MANY_WRAP_BOUND_OPS == SCE_QUEUE_WRAP_BOUND_OPS_64, "2^62 on 64-bit entries");
+}
+
+static void the_linked_lamport_queue_hands_events_over_in_order_across_segments(void) {
+    static queue_c_segmented_t q;
+    arena_t arena = fresh_arena(sizeof g_arena_block);
+    sce_queue_allocator_t allocator = arena_allocator(&arena, SCE_QUEUE_PROGRESS_LOCK_FREE);
+    queue_conformance_event_t none;
+    unsigned i;
+    CHECK(queue_c_segmented_init(&q, &allocator), "the arena gives the first segment");
+    CHECK(queue_c_segmented_producer_acquire(&q) && queue_c_segmented_consumer_acquire(&q), "one place a side");
+    CHECK(!queue_c_segmented_producer_acquire(&q), "there is one producer, and it is taken");
+    CHECK(!queue_c_segmented_try_pop(&q, &none), "a new queue is empty");
+    /* Three segments' worth and a part: order holds across the links. */
+    for (i = 0; i < 8u; i++) {
+        const queue_conformance_event_t e = make_event(1u, i);
+        CHECK(queue_c_segmented_try_push(&q, &e) == SCE_QUEUE_PUSH_OK, "a push fits the arena");
+    }
+    for (i = 0; i < 8u; i++) {
+        queue_conformance_event_t got;
+        CHECK(queue_c_segmented_try_pop(&q, &got) && got.sensor_id == 1u && got.value == i,
+              "pop %u: first in, first out", i);
+    }
+    CHECK(!queue_c_segmented_try_pop(&q, &none), "drained");
+    queue_c_segmented_producer_release(&q);
+    queue_c_segmented_consumer_release(&q);
+    queue_c_segmented_destroy(&q);
+}
+
+static void the_lscq_queue_hands_events_over_in_order_across_segments(void) {
+    static queue_c_segmented_many_domain_t domain;
+    static queue_c_segmented_many_t q;
+    arena_t arena = fresh_arena(sizeof g_arena_block);
+    sce_queue_allocator_t allocator = arena_allocator(&arena, SCE_QUEUE_PROGRESS_LOCK_FREE);
+    uint32_t producer;
+    uint32_t consumer;
+    uint32_t producer2;
+    uint32_t consumer2;
+    uint32_t extra;
+    queue_conformance_event_t none;
+    queue_conformance_event_t got;
+    unsigned i;
+    CHECK(queue_c_segmented_many_domain_init(&domain), "the domain");
+    CHECK(queue_c_segmented_many_init(&q, &domain, &allocator), "the arena gives the first segment");
+    CHECK(queue_c_segmented_many_producer_acquire(&q, &producer) &&
+              queue_c_segmented_many_consumer_acquire(&q, &consumer),
+          "a place a side");
+    CHECK(!queue_c_segmented_many_try_pop(&q, consumer, &none), "a new queue is empty");
+    for (i = 0; i < 10u; i++) {
+        const queue_conformance_event_t e = make_event(2u, i);
+        CHECK(queue_c_segmented_many_try_push(&q, producer, &e) == SCE_QUEUE_PUSH_OK, "a push fits the arena");
+    }
+    for (i = 0; i < 10u; i++) {
+        CHECK(queue_c_segmented_many_try_pop(&q, consumer, &got) && got.sensor_id == 2u && got.value == i,
+              "pop %u: first in, first out", i);
+    }
+    CHECK(!queue_c_segmented_many_try_pop(&q, consumer, &none), "drained");
+    /* A second producer and a second consumer take the other slots of the domain,
+     * which has one for every handle either side can hold. */
+    CHECK(queue_c_segmented_many_producer_acquire(&q, &producer2) &&
+              queue_c_segmented_many_consumer_acquire(&q, &consumer2),
+          "the second handle of each side");
+    CHECK(!queue_c_segmented_many_producer_acquire(&q, &extra) && !queue_c_segmented_many_consumer_acquire(&q, &extra),
+          "the domain's four slots are taken");
+    {
+        const queue_conformance_event_t e = make_event(3u, 9u);
+        CHECK(queue_c_segmented_many_try_push(&q, producer2, &e) == SCE_QUEUE_PUSH_OK, "the second producer pushes");
+    }
+    CHECK(queue_c_segmented_many_try_pop(&q, consumer2, &got) && got.sensor_id == 3u && got.value == 9u,
+          "and the second consumer pops it");
+    queue_c_segmented_many_consumer_release(&q, consumer2);
+    queue_c_segmented_many_producer_release(&q, producer2);
+    queue_c_segmented_many_consumer_release(&q, consumer);
+    queue_c_segmented_many_producer_release(&q, producer);
+    queue_c_segmented_many_destroy(&q);
+}
+
+static void a_spent_arena_refuses_the_segment_and_the_event_stays_with_its_owner(void) {
+    static queue_c_segmented_t q;
+    arena_t probe = fresh_arena(sizeof g_arena_block);
+    sce_queue_allocator_t probing = arena_allocator(&probe, SCE_QUEUE_PROGRESS_LOCK_FREE);
+    arena_t arena;
+    sce_queue_allocator_t allocator;
+    queue_conformance_event_t refused = make_event(9u, 99u);
+    unsigned i;
+    /* An arena that holds the first segment and not a second: the push that needs
+     * one reports OUT_OF_MEMORY and leaves its element with the caller. */
+    CHECK(queue_c_segmented_init(&q, &probing), "a probe queue");
+    queue_c_segmented_destroy(&q);
+    arena = fresh_arena(probe.next);
+    allocator = arena_allocator(&arena, SCE_QUEUE_PROGRESS_LOCK_FREE);
+    CHECK(queue_c_segmented_init(&q, &allocator), "the arena holds exactly the first segment");
+    CHECK(queue_c_segmented_producer_acquire(&q) && queue_c_segmented_consumer_acquire(&q), "one place a side");
+    for (i = 0; i < QUEUE_C_SEGMENTED_SEGMENT; i++) {
+        const queue_conformance_event_t e = make_event(1u, i);
+        CHECK(queue_c_segmented_try_push(&q, &e) == SCE_QUEUE_PUSH_OK, "the first segment holds a segment");
+    }
+    CHECK(queue_c_segmented_try_push(&q, &refused) == SCE_QUEUE_PUSH_OUT_OF_MEMORY, "the next needs a second segment");
+    CHECK(refused.sensor_id == 9u && refused.value == 99u, "the refused event is as it was");
+    for (i = 0; i < QUEUE_C_SEGMENTED_SEGMENT; i++) {
+        queue_conformance_event_t got;
+        CHECK(queue_c_segmented_try_pop(&q, &got) && got.sensor_id == 1u && got.value == i,
+              "what fit comes out in order");
+    }
+    queue_c_segmented_producer_release(&q);
+    queue_c_segmented_consumer_release(&q);
+    queue_c_segmented_destroy(&q);
+}
+
+static void an_allocator_that_gives_less_than_the_document_declared_is_refused(void) {
+    static queue_c_segmented_t linked;
+    static queue_c_segmented_many_domain_t domain;
+    static queue_c_segmented_many_t many;
+    arena_t arena = fresh_arena(sizeof g_arena_block);
+    sce_queue_allocator_t blocking = arena_allocator(&arena, SCE_QUEUE_PROGRESS_BLOCKING);
+    sce_queue_allocator_t wait_free = arena_allocator(&arena, SCE_QUEUE_PROGRESS_WAIT_FREE);
+    CHECK(!queue_c_segmented_init(&linked, &blocking), "linked: a blocking allocator under a lock-free declaration");
+    CHECK(queue_c_segmented_many_domain_init(&domain), "the domain");
+    CHECK(!queue_c_segmented_many_init(&many, &domain, &blocking),
+          "lscq: a blocking allocator under a lock-free declaration");
+    CHECK(arena.next == 0u, "a refused construction takes no block");
+    CHECK(queue_c_segmented_many_init(&many, &domain, &wait_free), "a wait-free allocator is more than enough");
+    queue_c_segmented_many_destroy(&many);
+}
+
 static void a_many_side_has_the_documents_participants_as_its_places(void) {
     static queue_c_scq64_t scq;
     static queue_c_irq_many_t irq;
@@ -218,6 +425,11 @@ int main(void) {
     exercise_queue_c_intrusive();
     exercise_queue_c_intrusive_irq();
     the_intrusive_headers_state_what_the_document_required_and_what_it_gives();
+    the_segmented_headers_state_what_the_document_required_and_what_it_gives();
+    the_linked_lamport_queue_hands_events_over_in_order_across_segments();
+    the_lscq_queue_hands_events_over_in_order_across_segments();
+    a_spent_arena_refuses_the_segment_and_the_event_stays_with_its_owner();
+    an_allocator_that_gives_less_than_the_document_declared_is_refused();
     each_header_states_what_the_document_required_and_what_it_gives();
     a_many_side_has_the_documents_participants_as_its_places();
     (void)printf("generated queues (C11): %u check(s), %u failure(s)\n", g_checks, g_failures);

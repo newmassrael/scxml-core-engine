@@ -259,6 +259,7 @@ static inline int sce_queue_spsc_try_pop(sce_queue_spsc_t *q, unsigned char *slo
 #define SCE_QSCQ_FETCH_ADD sce_atomic_fetch_add_acq_rel_u64
 #define SCE_QSCQ_FETCH_SUB sce_atomic_fetch_sub_acq_rel_u64
 #define SCE_QSCQ_FETCH_OR sce_atomic_fetch_or_acq_rel_u64
+#define SCE_QSCQ_CLOSABLE 1
 #include <sce/forge/queue_scq_width.inc>
 
 /* The 32-bit-entry queue: a ring of up to 2^15 slots leaves the cycle 15 bits. */
@@ -274,6 +275,7 @@ static inline int sce_queue_spsc_try_pop(sce_queue_spsc_t *q, unsigned char *slo
 #define SCE_QSCQ_FETCH_ADD sce_atomic_fetch_add_acq_rel_u32
 #define SCE_QSCQ_FETCH_SUB sce_atomic_fetch_sub_acq_rel_u32
 #define SCE_QSCQ_FETCH_OR sce_atomic_fetch_or_acq_rel_u32
+#define SCE_QSCQ_CLOSABLE 0
 #include <sce/forge/queue_scq_width.inc>
 
 /* ------------------------------------------------------------------------ */
