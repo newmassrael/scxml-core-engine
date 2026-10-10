@@ -14,6 +14,12 @@
 //! Included only under `--cfg loom`, by the model files, which refuse to compile
 //! without it.
 
+// Each model file compiles this module as its own, and none of them uses every
+// helper: the race file has no use for `offer_switch`, and a file that took
+// the models back out would have none for `drain`. Under the workspace's
+// `warnings = "deny"` a helper a file leaves alone is an error in that file.
+#![allow(dead_code)]
+
 use std::alloc::Layout;
 use std::ptr::NonNull;
 
