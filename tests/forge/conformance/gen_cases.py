@@ -2854,6 +2854,7 @@ def validate_laws() -> None:
     diff_bound_law = Law("merkle_diff never answers later than the earliest change one side lacks")
     diff_pruned_law = Law("merkle_diff still tells a pruned digest apart from one that differs")
     membership_law = Law("acl_membership lists each group once and never the user")
+    diff_minute_law = Law("merkle_diff answers a minute boundary, and 0 for digests that do not differ")
     for _ in range(LAW_RUNS):
         # Distinct nonzero hashes: a change whose hash is 0, or two on opposite sides
         # whose hashes are equal, cancel out of an XOR digest, and no digest of this
@@ -2890,6 +2891,13 @@ def validate_laws() -> None:
         if pruned_side:
             b_digest = answer_of(merkle_prune(b_digest, rng.between(1, 2)))
         divergence = answer_of(answering(merkle_diff)(digest_of(left), b_digest))
+        if divergence is not None:
+            # merkle_divergence names the minute two replicas must exchange from, at a
+            # minute boundary, and 0 when they do not differ.
+            diff_minute_law.holds(
+                divergence["millis"] % 60_000 == 0 and (divergence["differs"] or divergence["millis"] == 0),
+                [left, right],
+            )
         if divergence is not None and differing:
             earliest = min(minute for minute, _ in differing)
             if pruned_side:
@@ -2968,12 +2976,35 @@ def validate_laws() -> None:
             survivors = orset_live(adds + [concurrent], orset_union(tombstones, observed)[1])[1]
             add_wins_law.holds(orset_contains(survivors, element)[1], [adds, tombstones, element, concurrent])
 
+    # hlc_text says its text is fixed-width, so comparing two texts byte by byte
+    # orders them as hlc_compare does; a change log keys its rows by the text, and
+    # a digest hashes it. Two stamps in the range the text can name, sharing fields
+    # as often as the cases do.
+    text_order_law = Law("hlc_text orders byte by byte as hlc_compare orders the stamps")
+
+    def nameable(stamp):
+        return dict(
+            stamp,
+            wallTime=min(max(stamp["wallTime"], 0), TEXT_WALL_MAX) if abs(stamp["wallTime"]) < 2**62
+            else rng.between(0, TEXT_WALL_MAX),
+            counter=stamp["counter"] if stamp["counter"] <= U16_MAX else rng.pick([0, 1, U16_MAX]),
+        )
+
+    for _ in range(LAW_RUNS):
+        first = nameable(stamp_value(rng))
+        second = nameable(near_stamp(rng, first))
+        one, other = answer_of(hlc_text(first)), answer_of(hlc_text(second))
+        text_order_law.holds(
+            one is not None and other is not None and (one > other) - (one < other) == hlc_compare(first, second)[1],
+            [first, second],
+        )
+
     every_law = (
         union_laws + [prune_law] + order_laws + clock_laws + [classify_law] + apply_laws + ack_laws
         + [page_law, insert_law, dedup_law, hold_law, gcra_law, retry_law, utc_law]
         + [insert_order_law, cancel_law, prune_keeps_law, diff_bound_law, diff_pruned_law, membership_law]
         + [stable_order_law, stable_idle_law, stable_join_law, stable_least_law]
-        + [remove_law, remove_only_law, add_wins_law, contains_law]
+        + [remove_law, remove_only_law, add_wins_law, contains_law, text_order_law, diff_minute_law]
     )
     for law in every_law:
         law.was_asked()
