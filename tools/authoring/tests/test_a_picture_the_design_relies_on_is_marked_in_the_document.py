@@ -67,6 +67,18 @@ class APictureTheDesignReliesOn(Fixture):
             'sce:direction="out"', f'sce:direction="out" {MARKED}')
         self.assertEqual([], self.findings(marked))
 
+    def test_a_guess_on_a_state_counts_as_much_as_one_on_a_data_element(self):
+        """The first run over five real documents refused all five: three had put the mark on a
+        state or a parallel region, which `document.assumed` (decision variables only) never held.
+        """
+        on_a_state = self.cited().replace(
+            "</datamodel>",
+            "</datamodel>\n  <state id=\"s\" "
+            'sce:assumed="PAIR_TIMING" '
+            f'sce:assumed-reason="read from {PICTURE}: the later input decides" '
+            'sce:assumed-candidates="a b"/>')
+        self.assertEqual([], self.findings(on_a_state))
+
     def test_a_picture_the_design_never_names_is_not_asked_about(self):
         self.assertEqual([], self.findings())
 

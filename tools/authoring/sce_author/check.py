@@ -1231,7 +1231,14 @@ def unmarked_pictures(prose, document, binding_path: pathlib.Path) -> list[Findi
         return []
     texts = {"document": document.path.read_text(encoding="utf-8"),
              "binding": binding_path.read_text(encoding="utf-8")}
-    marked = "\n".join([*document.assumed.values(), *document.assumed_marker.values()])
+    # ⚠ Every element that carries the mark, not only `<data>`: `document.assumed` holds the
+    # decision variables, and a reading of a picture is as often a decision about a state or the
+    # whole parallel region. Asked of `document.assumed` alone, the first run over five real
+    # writers' documents refused all five, including the three that had marked it.
+    marked = "\n".join(
+        value for element in ET.parse(document.path).getroot().iter()
+        for value in (element.get(f"{SCE_NS}assumed-reason"), element.get(f"{SCE_NS}assumed"))
+        if value and element.get(f"{SCE_NS}assumed"))
     out = []
     for name in shown:
         cited_in = [side for side, text in texts.items() if name in text]
