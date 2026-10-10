@@ -331,6 +331,18 @@ const LANES: &[(&str, f64, u32, u32, u32)] = &[
     // window. The heavy tail moved and the middle did not, so moving this row
     // needs a faster lane, not a quieter day.
     ("forge-conformance.yml", 25.5, 4, 19, 2),
+    // Landed 2026-10-10 with the GenMC gate it runs, and reached this table by
+    // failing `every_workflow_is_classified` on the push that added it.
+    //
+    // ⚠ ONE run, so the median is a single observation and not a median.
+    // Measured 2026-10-10 over its own listing: created 08:29:00Z, updated
+    // 08:32:35Z, conclusion success -- 3.6 minutes, no cancellation, none
+    // unfinished. It is the lane's first run, so the cache of the GenMC build
+    // was empty for it; whether a warm run is faster is not yet measured.
+    // Re-measure it once it has a window; the classification is not close
+    // (3.6 against a 17.6 gap), but the number is not yet what the column says
+    // it is.
+    ("genmc-queue.yml", 3.6, 0, 1, 0),
     ("http-endpoint-ssot.yml", 6.0, 7, 17, 1),
     // ⚠ STAND-IN, borrowed 2026-10-06 when the lane landed: it has no run of
     // its own, so the median below is `example-codegen.yml`'s (8.5, 23
