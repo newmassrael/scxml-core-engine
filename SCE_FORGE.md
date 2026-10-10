@@ -1243,7 +1243,7 @@ of its `<datamodel>` that names a property:
 |---|---|
 | `sce:component` (root) | The name between `BEGIN:` and `END:`. Letters, digits and hyphens. |
 | `sce:property` | The property the entry reads and writes. Matched case-insensitively on decode, written as declared. Letters, digits and hyphens. |
-| `sce:type` | `string`, an integer (`uint8`–`uint64`, `int8`–`int64`) or `bool` (`TRUE`/`FALSE`). A parameter is a `string`. An `enum:<alias>` entry waits on a codec that names variants (`docs/adr/0010`, *Not now*) and is refused. |
+| `sce:type` | `string`, an integer (`uint8`–`uint64`, `int8`–`int64`), `bool` (`TRUE`/`FALSE`) or `enum:<alias>`. A parameter is a `string` or an `enum:<alias>`. An enum entry is written and read by the text its variant declares (`docs/adr/0015`; below), and takes none of a string's `sce:max-size`, `sce:value="text"`, `sce:separator` and `sce:max-values`. |
 | `sce:value="text"` | On a `string` value: an RFC 5545 TEXT, so `\\`, `\;`, `\,` and `\n` are escapes on both sides. Without it the value is carried as written — a date-time, an `RRULE` and a URI are not TEXT. |
 | `sce:param` | The entry is the named parameter of the property `sce:property` names, not its value. It follows the entry of that property. On a property with `sce:max-count` it is a field of the record each line becomes, optional or required per line (`docs/adr/0014`). |
 | `sce:required="true"` | A decode of a component without the property, or whose property lacks the parameter, is refused. A required parameter belongs to a required property — except on a repeated property, where it is required of each line that exists. An entry that is not required is optional in every language. |
@@ -1423,6 +1423,26 @@ against the same vectors (`docs/adr/0014`). A record is a type of its own,
 `<Codec><Entry>Line` (`<codec>_<entry>_line_t` in C11), holding the parameters
 of the line and its `value`, or its `values` for a separator; a required entry of
 any list shape needs at least one line.
+
+**An enum entry** (`sce:type="enum:<alias>"`, `docs/adr/0015`) is a closed
+vocabulary written and read by the text its variant declares, as a property's
+value, a repeated property's value or a parameter. The text of a variant is the
+`sce:text` of its `<sce:variant name="needsAction" value="0" sce:text="NEEDS-ACTION"/>`
+in the enum document, else its declared name; it is the ASCII letters, digits
+and `-` of an RFC 5545 `iana-token` and unique in its enum under ASCII case
+folding, which the enum document holds for an explicit `sce:text` and the codec
+holds for every variant it reads by name. Decode matches the value, once its quotes are
+taken off, against the texts ASCII case-insensitively and gives the variant of
+the first; a text no variant declares, or a value longer than the longest text,
+is `line-bad-value`, and so it is for an open enum (`sce:strict-variants="false"`),
+because a carrier that no text names has no wire form. Encode writes the text as
+the enum declares it, case included, and a value of an open enum that no variant
+declares is `line-bad-value`. The field is the enum's own type and a required
+entry starts at the first declared variant, as a CBOR enum field does. No
+backend's enum type carries the text: the codec carries a table of the texts and
+the carrier values they stand for, and takes the variant through the enum's own
+`from_underlying`. A backend that has not landed it refuses a codec that has an
+enum entry by name (`content_line_codec::lowers_enum_entries`).
 
 Every backend generates it, and the generator's refusal and the conformance
 harness's schedule read one answer (`content_line_codec::refusal`). The vectors

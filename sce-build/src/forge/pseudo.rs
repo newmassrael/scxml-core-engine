@@ -1682,10 +1682,17 @@ fn render_enum(m: &EnumModel) -> Vec<Node> {
             // written in hex wherever the protocol's table is, and a
             // reviewer checking the page against that table looks for
             // `0x10`. See `crate::source_literal`.
+            // A text of the variant's own follows the value, before the line
+            // (docs/adr/0015); its punctuation is part of the text, as `=` is.
+            let own_text = v
+                .text
+                .as_deref()
+                .map(|t| format!(" text {}", text(t)))
+                .unwrap_or_default();
             let mut parts = vec![
                 Part::Word(Word::Variant),
                 Part::Text(format!(
-                    "{} = {}",
+                    "{} = {}{own_text}",
                     text(&v.name),
                     text(&crate::source_literal::as_written(&v.value_text, v.value))
                 )),

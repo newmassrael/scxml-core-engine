@@ -2075,6 +2075,7 @@ mod tests {
                 // Built here, not read from a document, so there is no
                 // authored spelling to keep.
                 value_text: String::new(),
+                text: None,
                 source_line: None,
             }],
             strict_variants: false,
@@ -2614,6 +2615,7 @@ mod tests {
                     value: *v,
                     // Built here, not read from a document.
                     value_text: String::new(),
+                    text: None,
                     source_line: None,
                 })
                 .collect(),

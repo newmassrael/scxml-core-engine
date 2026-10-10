@@ -803,7 +803,7 @@ fn parse_timer(head: &Line<'_>) -> Result<TimerModel, ParseError> {
     Ok(m)
 }
 
-/// `enum <name>: <type> [strict]` with `variant <name> = <n> [@line <n>]`
+/// `enum <name>: <type> [strict]` with `variant <name> = <n> [text <t>] [@line <n>]`
 fn parse_enum(head: &Line<'_>, body: &[&Line<'_>]) -> Result<EnumModel, ParseError> {
     let w: Vec<&str> = head.text.split_whitespace().collect();
     let name = w
@@ -850,7 +850,13 @@ fn parse_enum(head: &Line<'_>, body: &[&Line<'_>]) -> Result<EnumModel, ParseErr
                 line: l.number,
                 why: format!("`{spelling}` is not a value this renderer could have written"),
             })?;
-        let source_line = match (w.get(4), w.get(5)) {
+        // `text <t>` comes before `@line`, when the variant has a text of its own
+        // (docs/adr/0015).
+        let (text, at) = match (w.get(4), w.get(5)) {
+            (Some(&"text"), Some(t)) => (Some(undo(t, l.number)?), 6),
+            _ => (None, 4),
+        };
+        let source_line = match (w.get(at), w.get(at + 1)) {
             (Some(&"@line"), Some(n)) => n.parse().ok(),
             _ => None,
         };
@@ -858,6 +864,7 @@ fn parse_enum(head: &Line<'_>, body: &[&Line<'_>]) -> Result<EnumModel, ParseErr
             name: undo(w.get(1).copied().unwrap_or(""), l.number)?,
             value,
             value_text: spelling.to_string(),
+            text,
             source_line,
         });
     }

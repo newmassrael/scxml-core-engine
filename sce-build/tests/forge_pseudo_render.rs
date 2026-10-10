@@ -744,14 +744,23 @@ fn each_declarative_kind_renders_every_field_it_can_carry() {
             // whole-output case carries it: a wire key written `0x10`
             // must not reach the page as `16`.
             value_text: "0x10".to_string(),
+            text: None,
             source_line: Some(29),
         }],
         strict_variants: true,
         source_location: None,
     };
     assert_eq!(
-        render(&ForgeDocument::Enum(en)).unwrap(),
+        render(&ForgeDocument::Enum(en.clone())).unwrap(),
         "enum nrc: uint8 strict\n  variant reject = 0x10 @line 29\n"
+    );
+    // A text of the variant's own follows the value and comes before the line
+    // (docs/adr/0015).
+    let mut texted = en;
+    texted.variants[0].text = Some("REJECT-ALL".to_string());
+    assert_eq!(
+        render(&ForgeDocument::Enum(texted)).unwrap(),
+        "enum nrc: uint8 strict\n  variant reject = 0x10 text REJECT-ALL @line 29\n"
     );
 
     let ti = TimerModel {

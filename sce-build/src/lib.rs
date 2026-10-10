@@ -3037,6 +3037,11 @@ pub fn compile_forge_from_parsed(
     // cannot be the thing that discovers a misspelled variant.
     forge::retention::check(parsed, base_dir, label.diagnostic_label)?;
 
+    // A content-line codec reads a text off a line and names the variant whose
+    // text it is, so an `enum:<alias>` entry needs an enum whose variants each
+    // have a text a line can carry and no other variant has (docs/adr/0015).
+    forge::content_line_enum::check(parsed, base_dir, label.diagnostic_label)?;
+
     // A `<sce:cycle>` stop that names no real value is a position no
     // cursor can land on — and because the stops ARE positions, it
     // shifts every stop after it, so the defect surfaces as "the wrong

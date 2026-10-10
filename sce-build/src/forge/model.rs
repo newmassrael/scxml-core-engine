@@ -1255,12 +1255,31 @@ pub struct EnumVariant {
     /// carries `value` and is unmoved.
     #[serde(skip, default)]
     pub value_text: String,
+    /// `sce:text`: the text a codec of text lines writes and reads for this
+    /// variant (docs/adr/0015). Absent, the declared [`Self::name`] is the text
+    /// ([`Self::wire_text`]). It is the ASCII letters, digits and `-` of an RFC 5545
+    /// `iana-token`, and unique in its enum under ASCII case folding, so a text
+    /// read off the wire names at most one variant.
+    ///
+    /// It is the enum's, and not a codec's, because it says what a variant is
+    /// called outside a program, which a second codec reads the same way.
+    /// Nothing in an enum's generated type carries it.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub text: Option<String>,
     /// Source line of the `<sce:variant>` element, captured for
     /// duplicate-value / duplicate-name / overflow diagnostics that
     /// anchor on the specific variant. `#[serde(skip)]` keeps the
     /// AST-export wire format stable.
     #[serde(skip, default)]
     pub source_line: Option<u32>,
+}
+
+impl EnumVariant {
+    /// The text this variant has on a text line: its `sce:text`, else its
+    /// declared name (docs/adr/0015).
+    pub fn wire_text(&self) -> &str {
+        self.text.as_deref().unwrap_or(&self.name)
+    }
 }
 
 /// Enum: a closed set of named variants with 1:1 wire-key mapping.
@@ -2859,6 +2878,16 @@ pub struct ContentLineEntry {
 }
 
 impl ContentLineModel {
+    /// Whether the codec has an entry that is an enum — a property's value or a
+    /// parameter written and read by the text of a variant (docs/adr/0015), the
+    /// shape a content-line generator must give a table of texts. One answer,
+    /// read by the generator's refusal and by every backend that learns the shape.
+    pub fn uses_enums(&self) -> bool {
+        self.entries
+            .iter()
+            .any(|entry| matches!(entry.sce_type, SceType::Enum(_)))
+    }
+
     /// Whether the codec has an entry whose lines are records — a repeated
     /// property that declares a parameter, or any entry whose line holds a list of
     /// values — the shape a content-line generator must give a unit of its own

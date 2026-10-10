@@ -1337,6 +1337,14 @@ fn parse_enum(
     // duplicate-value diagnostic names both colliding variants.
     let mut first_value_seen: std::collections::BTreeMap<i128, String> =
         std::collections::BTreeMap::new();
+    // The explicit `sce:text` of each variant read so far, folded, and the names
+    // of every variant, for the uniqueness rule of `sce:text` (docs/adr/0015).
+    let mut texts_seen: std::collections::BTreeMap<String, String> =
+        std::collections::BTreeMap::new();
+    let declared_names: Vec<String> = data_children(&datamodel)
+        .flat_map(|data| sce_children(&data, "variant").collect::<Vec<_>>())
+        .filter_map(|child| child.attribute("name").map(|n| n.trim().to_string()))
+        .collect();
 
     for data in data_children(&datamodel) {
         for child in sce_children(&data, "variant") {
@@ -1437,12 +1445,62 @@ fn parse_enum(
                 ));
             }
 
+            // `sce:text` is the text a codec of text lines writes and reads for the
+            // variant (docs/adr/0015): an `iana-token`, and no other variant's
+            // text or name under ASCII case folding, so a text read off the wire
+            // names at most one variant. A name that is nobody's explicit text is
+            // not held to either rule here; the codec that reads it by name is.
+            let text = match crate::sce_attr::read(&child, "text").map(str::trim) {
+                None => None,
+                Some(t) => {
+                    if !crate::forge::content_line_enum::is_token(t) {
+                        return Err(located(
+                            &child,
+                            label.diagnostic_label,
+                            ValidationError::AttributeRuleViolated {
+                                element: "<sce:variant>".into(),
+                                attr: "sce:text".into(),
+                                value: t.to_string(),
+                                rule: "the ASCII letters, digits and `-` of an iana-token, \
+                                       and not empty"
+                                    .into(),
+                            },
+                        ));
+                    }
+                    let folded = t.to_ascii_lowercase();
+                    let clash = texts_seen.get(&folded).cloned().or_else(|| {
+                        declared_names
+                            .iter()
+                            .find(|n| **n != name && n.to_ascii_lowercase() == folded)
+                            .cloned()
+                    });
+                    if let Some(other) = clash {
+                        return Err(located(
+                            &child,
+                            label.diagnostic_label,
+                            ValidationError::AttributeRuleViolated {
+                                element: "<sce:variant>".into(),
+                                attr: "sce:text".into(),
+                                value: t.to_string(),
+                                rule: format!(
+                                    "unique in its enum under ASCII case folding; `{t}` is \
+                                     already the text of variant `{other}`"
+                                ),
+                            },
+                        ));
+                    }
+                    texts_seen.insert(folded, name.clone());
+                    Some(t.to_string())
+                }
+            };
+
             let source_line = Some(row_of(&child));
             first_value_seen.insert(value, name.clone());
             variants.push(EnumVariant {
                 name,
                 value,
                 value_text: value_str,
+                text,
                 source_line,
             });
         }
@@ -2088,28 +2146,28 @@ fn parse_content_line_entry(
         "sce:type",
         &type_text,
     )?;
-    // ⚠ An `enum:<alias>` entry is read by the grammar above, so an alias that
-    // names no enum import is reported as that, and refused here as what it is:
-    // a codec that maps a property's text to a variant's declared name is not
-    // built yet (docs/adr/0010, Not now).
-    let admitted = if param.is_some() {
-        sce_type == SceType::String
-    } else {
-        sce_type.is_unsigned()
-            || sce_type.is_signed()
-            || matches!(sce_type, SceType::Bool | SceType::String)
-    };
+    // An `enum:<alias>` entry is read by the grammar above, so an alias that names
+    // no enum import is reported as that. It is written and read by the text its
+    // variant declares (docs/adr/0015), as a property's value or as a parameter.
+    let is_enum = matches!(sce_type, SceType::Enum(_));
+    let admitted = is_enum
+        || if param.is_some() {
+            sce_type == SceType::String
+        } else {
+            sce_type.is_unsigned()
+                || sce_type.is_signed()
+                || matches!(sce_type, SceType::Bool | SceType::String)
+        };
     if !admitted {
         return Err(refuse(ValidationError::AttributeRuleViolated {
             element,
             attr: "sce:type".into(),
             value: type_text,
             rule: if param.is_some() {
-                "string — what a parameter of a content line holds"
+                "string or enum:<alias> — what a parameter of a content line holds"
             } else {
-                "string, an integer or bool — the kinds a sce:encoding=\"content-line\" \
-                 codec writes; an enum:<alias> entry waits on a codec that names variants \
-                 (docs/adr/0010, Not now)"
+                "string, an integer, bool or enum:<alias> — the kinds a \
+                 sce:encoding=\"content-line\" codec writes"
             }
             .into(),
         }));
@@ -2187,7 +2245,8 @@ fn parse_content_line_entry(
             attr: "sce:separator".into(),
             value: separator.clone().unwrap_or_default(),
             rule: "a list of values on a string property entry only: a parameter holds one \
-                   value, and an integer or bool is not a list"
+                   value, an integer or bool is not a list, and a list of enums on one \
+                   line is a later addition (docs/adr/0015)"
                 .into(),
         }));
     }
@@ -2223,7 +2282,9 @@ fn parse_content_line_entry(
             element,
             attr: "sce:max-size".into(),
             value: max_size.unwrap_or_default().to_string(),
-            rule: "a size bound on a string entry only".into(),
+            rule: "a size bound on a string entry only: an enum entry is bounded by the \
+                   texts of its variants"
+                .into(),
         }));
     }
     // A text is as long as its sender wrote it, so the bound is the codec's to
@@ -2236,13 +2297,13 @@ fn parse_content_line_entry(
         }));
     }
     if let Some(count) = max_count {
-        if param.is_some() || sce_type != SceType::String || count < 2 {
+        if param.is_some() || !(sce_type == SceType::String || is_enum) || count < 2 {
             return Err(refuse(ValidationError::AttributeRuleViolated {
                 element,
                 attr: "sce:max-count".into(),
                 value: count.to_string(),
-                rule: "at least 2, on a string property entry only: a list of the values of \
-                       a repeated property"
+                rule: "at least 2, on a string or enum property entry only: a list of the \
+                       values of a repeated property"
                     .into(),
             }));
         }
@@ -11552,6 +11613,9 @@ const KNOWN_SCE_ATTRS: &[&str] = &[
     "service",
     "strict-variants",
     "subfunc",
+    // The text a content-line codec writes and reads for an enum variant
+    // (docs/adr/0015).
+    "text",
     "type",
     "underlying-type",
     "unhandled",

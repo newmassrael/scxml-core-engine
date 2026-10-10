@@ -40,15 +40,38 @@ pub fn lowers(lang: Language) -> bool {
     )
 }
 
+/// Whether `lang` generates an entry that is an enum, written and read by the
+/// text of its variants (docs/adr/0015). Each backend turns this on in the commit
+/// that generates it, against the conformance vectors: a codec that compiled and
+/// read such an entry as nothing would be a wrong output.
+pub fn lowers_enum_entries(lang: Language) -> bool {
+    match lang {
+        Language::Rust
+        | Language::Kotlin
+        | Language::Cpp
+        | Language::Go
+        | Language::Python
+        | Language::C11 => false,
+    }
+}
+
 /// Why `lang` does not generate the content-line codec `m`, or `None` when it
 /// does. Every backend generates the line record of a repeated property that
 /// declares a parameter and the list of values a `sce:separator` makes of a line
-/// (docs/adr/0014), each against the same conformance vectors, so the shape is
-/// no ground for refusing one.
+/// (docs/adr/0014), each against the same conformance vectors, so that shape is
+/// no ground for refusing one. An enum entry is refused by name in a backend
+/// until that backend's own commit generates it (docs/adr/0015).
 pub fn refusal(lang: Language, m: &CodecModel) -> Option<String> {
     if !lowers(lang) {
         return Some(format!(
             "codec '{}' is sce:encoding=\"content-line\", which has no {lang:?} generation yet",
+            m.name
+        ));
+    }
+    if m.content_line.as_ref().is_some_and(|c| c.uses_enums()) && !lowers_enum_entries(lang) {
+        return Some(format!(
+            "codec '{}' reads an entry as an enum by the text of its variants, which has no \
+             {lang:?} generation yet (docs/adr/0015)",
             m.name
         ));
     }

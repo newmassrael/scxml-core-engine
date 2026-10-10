@@ -110,9 +110,19 @@ pub fn parse_quietly(base_dir: &Path, import: &ForgeImport) -> Option<ParsedForg
 /// order — or `None` when `alias` names no readable enum. Silent as
 /// [`parse_quietly`] is, for the same reason.
 pub fn enum_variants(parsed: &ParsedForge, base_dir: &Path, alias: &str) -> Option<Vec<String>> {
+    enum_model(parsed, base_dir, alias).map(|e| e.variants.into_iter().map(|v| v.name).collect())
+}
+
+/// The enum imported as `alias`, whole — or `None` when `alias` names no
+/// readable enum. Silent as [`parse_quietly`] is, for the same reason.
+pub fn enum_model(
+    parsed: &ParsedForge,
+    base_dir: &Path,
+    alias: &str,
+) -> Option<crate::forge::model::EnumModel> {
     let import = parsed.imports.iter().find(|i| i.alias == alias)?;
     match parse_quietly(base_dir, import)?.document {
-        ForgeDocument::Enum(e) => Some(e.variants.into_iter().map(|v| v.name).collect()),
+        ForgeDocument::Enum(e) => Some(e),
         _ => None,
     }
 }

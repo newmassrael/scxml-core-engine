@@ -292,6 +292,13 @@
        runs regardless of this opt-out — overflow of the declared
        underlying type remains a wire-level error. -->
   <xs:attribute name="strict-variants" type="xs:boolean"/>
+  <!-- `sce:text` on an enum's `<sce:variant>` (docs/adr/0015): the text a codec
+       of text lines (`sce:encoding="content-line"`) writes and reads for the
+       variant, where it is not the declared name — `NEEDS-ACTION` for a variant
+       named `needsAction`. The ASCII letters, digits and `-` of an RFC 5545
+       `iana-token`, unique in its enum under ASCII case folding; both rules are
+       the parser's, which names the variant that breaks them. -->
+  <xs:attribute name="text" type="xs:string"/>
 
   <!-- NL→IR Mapping Roadmap Item C1 Path A — `sce:event-name` on a
        `sce:kind="event-schema"` `<scxml>` root names the SCXML event
@@ -893,6 +900,8 @@
            enum-kind parser requires both. -->
       <xs:attribute name="name" type="xs:string" use="optional"/>
       <xs:attribute name="value" type="xs:string" use="optional"/>
+      <!-- The text of an enum variant on a text line (docs/adr/0015). -->
+      <xs:attribute ref="sce:text" use="optional"/>
     </xs:complexType>
   </xs:element>
 

@@ -2081,6 +2081,13 @@
         "name": {
           "type": "string"
         },
+        "text": {
+          "description": "`sce:text`: the text a codec of text lines writes and reads for this variant (docs/adr/0015). Absent, the declared [`Self::name`] is the text ([`Self::wire_text`]). It is the ASCII letters, digits and `-` of an RFC 5545 `iana-token`, and unique in its enum under ASCII case folding, so a text read off the wire names at most one variant.\n\nIt is the enum's, and not a codec's, because it says what a variant is called outside a program, which a second codec reads the same way. Nothing in an enum's generated type carries it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "value": {
           "description": "Parsed numeric value of the variant, as a mathematical integer.\n\n`i128` is the narrowest carrier that holds every legal value of every legal `underlying_type` without per-variant tagging: the unsigned carriers reach `u64::MAX` and the signed ones reach `i64::MIN`, and no smaller primitive spans both. The document-level `underlying_type` remains the size-of-record — this field never carries a value the parser did not first prove in range for it.",
           "format": "int128",

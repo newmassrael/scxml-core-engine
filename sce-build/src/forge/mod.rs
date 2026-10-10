@@ -14,6 +14,7 @@ pub mod codegen_markers;
 pub mod codegen_matrix;
 pub mod const_fold;
 pub mod content_line_codec;
+pub mod content_line_enum;
 pub mod coverage;
 pub mod cross_doc_registry;
 pub mod cross_kind_check;

@@ -258,36 +258,10 @@ fn a_kind_a_line_does_not_carry_is_refused() {
     assert!(why.contains("uint8") && why.contains("parameter"), "{why}");
 }
 
-/// An `enum:<alias>` entry maps a property's text to a variant's declared name, which
-/// no backend's enum import offers a codec yet. It is read as the type it is, so an
-/// alias that names no import is reported as that, and one that names an import is
-/// refused as what it waits on.
+/// An `enum:<alias>` entry is read as the type it is (docs/adr/0015), so an alias that
+/// names no enum import is reported as that.
 #[test]
-fn an_enum_entry_waits_on_a_codec_that_names_variants() {
-    let with_import = |entry: &str| {
-        document("", entry).replace(
-            "<datamodel>",
-            r#"<sce:import src="mode.scxml" kind="enum" as="mode"/>
-  <datamodel>"#,
-        )
-    };
-    let why = refusal(&with_import(
-        r#"    <data id="m" sce:type="enum:mode" sce:property="STATUS"/>"#,
-    ));
-    assert!(
-        why.contains("enum:mode") && why.contains("waits on a codec that names variants"),
-        "{why}"
-    );
-
-    let why = refusal(&with_import(
-        r#"    <data id="v" sce:type="string" sce:property="P" sce:max-size="8"/>
-    <data id="q" sce:type="enum:mode" sce:property="P" sce:param="Q"/>"#,
-    ));
-    assert!(
-        why.contains("enum:mode") && why.contains("parameter"),
-        "{why}"
-    );
-
+fn an_enum_entry_names_an_enum_the_codec_imports() {
     let why = refusal(&document(
         "",
         r#"    <data id="m" sce:type="enum:nope" sce:property="STATUS"/>"#,
@@ -601,4 +575,259 @@ fn rust_generates_the_codec_and_it_reads_and_writes_through_the_runtime_alone() 
             "the generated codec spells the wire itself ({borrowed}):\n{generated}"
         );
     }
+}
+
+// ── An enum entry (docs/adr/0015) ───────────────────────────────────────
+
+/// A codec that imports an enum as `Status` and reads it as a property's value,
+/// as a repeated property's value and as a parameter.
+fn enum_document(entries: &str) -> String {
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:encoding="content-line" sce:component="VEVENT" name="probe_event" version="1.0">
+  <sce:import kind="enum" src="probe_status.scxml" as="Status"/>
+  <datamodel>
+    <data id="raw" sce:type="bytes" sce:direction="in"/>
+{entries}
+  </datamodel>
+</scxml>
+"#
+    )
+}
+
+const ENUM_ENTRIES: &str = r#"    <data id="uid" sce:type="string" sce:property="UID" sce:required="true" sce:max-size="16"/>
+    <data id="status" sce:type="enum:Status" sce:property="STATUS"/>
+    <data id="attendee" sce:type="string" sce:property="ATTENDEE" sce:max-count="3" sce:max-size="40"/>
+    <data id="attendeePartstat" sce:type="enum:Status" sce:property="ATTENDEE" sce:param="PARTSTAT" sce:required="true"/>
+    <data id="phase" sce:type="enum:Status" sce:property="PHASE" sce:max-count="2"/>"#;
+
+#[test]
+fn an_enum_entry_is_a_value_a_repeated_value_or_a_parameter() {
+    let m = codec(&enum_document(ENUM_ENTRIES));
+    let content = m.content_line.as_ref().expect("a content-line codec");
+    let kind = |id: &str| {
+        content
+            .entries
+            .iter()
+            .find(|e| e.id == id)
+            .unwrap_or_else(|| panic!("no entry {id}"))
+    };
+    for id in ["status", "attendeePartstat", "phase"] {
+        assert!(
+            matches!(&kind(id).sce_type, SceType::Enum(r) if r.alias == "Status"),
+            "{id}: {:?}",
+            kind(id).sce_type
+        );
+    }
+    assert_eq!(kind("phase").max_count, Some(2));
+    assert!(kind("attendeePartstat").required);
+    assert!(content.uses_enums());
+    // A codec without one has none to generate.
+    assert!(!codec(&document("", EVENT))
+        .content_line
+        .as_ref()
+        .unwrap()
+        .uses_enums());
+}
+
+#[test]
+fn an_enum_entry_takes_none_of_a_strings_own_attributes() {
+    let one = |extra: &str| {
+        refusal(&enum_document(&format!(
+            r#"    <data id="status" sce:type="enum:Status" sce:property="STATUS"{extra}/>"#
+        )))
+    };
+    assert!(one(r#" sce:max-size="8""#).contains("sce:max-size"));
+    assert!(one(r#" sce:value="text""#).contains("sce:value"));
+    let why = one(r#" sce:separator="," sce:max-values="4""#);
+    assert!(
+        why.contains("sce:separator") && why.contains("docs/adr/0015"),
+        "{why}"
+    );
+    // An alias that names no enum import is not one.
+    let why = refusal(&enum_document(
+        r#"    <data id="status" sce:type="enum:Nope" sce:property="STATUS"/>"#,
+    ));
+    assert!(why.contains("Nope"), "{why}");
+    // A list of an enum is two lines at least, as a list of strings is.
+    let why = refusal(&enum_document(
+        r#"    <data id="phase" sce:type="enum:Status" sce:property="PHASE" sce:max-count="1"/>"#,
+    ));
+    assert!(why.contains("sce:max-count"), "{why}");
+}
+
+#[test]
+fn an_enum_entry_is_refused_by_name_until_a_backend_generates_it() {
+    // The backends that have landed it; each adds itself in its own commit.
+    const GENERATING: [Language; 0] = [];
+    let m = codec(&enum_document(ENUM_ENTRIES));
+    for lang in [
+        Language::Rust,
+        Language::Kotlin,
+        Language::Cpp,
+        Language::Go,
+        Language::Python,
+        Language::C11,
+    ] {
+        let generating = GENERATING.contains(&lang);
+        assert_eq!(
+            content_line_codec::lowers_enum_entries(lang),
+            generating,
+            "{lang:?}"
+        );
+        let refusal = content_line_codec::refusal(lang, &m);
+        if generating {
+            assert!(refusal.is_none(), "{lang:?}: {refusal:?}");
+        } else {
+            let why = refusal.expect("refused by name");
+            assert!(
+                why.contains("enum") && why.contains("docs/adr/0015"),
+                "{lang:?}: {why}"
+            );
+        }
+    }
+}
+
+/// An enum document whose variants are `variants` (name, value, `sce:text`).
+fn status_document(variants: &[(&str, u32, Option<&str>)]) -> String {
+    let rows: String = variants
+        .iter()
+        .map(|(name, value, text)| {
+            let text = text.map_or(String::new(), |t| format!(r#" sce:text="{t}""#));
+            format!("      <sce:variant name=\"{name}\" value=\"{value}\"{text}/>\n")
+        })
+        .collect();
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="enum" name="probe_status" sce:underlying-type="uint8">
+  <datamodel>
+    <data id="variants">
+{rows}    </data>
+  </datamodel>
+</scxml>
+"#
+    )
+}
+
+fn enum_refusal(text: &str) -> String {
+    match parse_forge(
+        text,
+        DocumentLabel {
+            identifier: "probe_status",
+            diagnostic_label: "probe_status",
+        },
+    ) {
+        Err(e) => e.to_string(),
+        Ok(other) => panic!("expected a refusal, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_variant_has_the_text_it_declares_else_its_name() {
+    let parsed = parse_forge(
+        &status_document(&[
+            ("needsAction", 0, Some("NEEDS-ACTION")),
+            ("accepted", 1, None),
+            ("declined", 2, Some("declined")),
+        ]),
+        DocumentLabel {
+            identifier: "probe_status",
+            diagnostic_label: "probe_status",
+        },
+    );
+    let Ok(Some(ForgeDocument::Enum(m))) = parsed else {
+        panic!("expected an enum, got {parsed:?}")
+    };
+    let texts: Vec<&str> = m.variants.iter().map(|v| v.wire_text()).collect();
+    assert_eq!(texts, ["NEEDS-ACTION", "accepted", "declined"]);
+    assert_eq!(m.variants[0].text.as_deref(), Some("NEEDS-ACTION"));
+    assert_eq!(m.variants[1].text, None);
+
+    // The page shows the text and reads it back.
+    let doc = ForgeDocument::Enum(m);
+    let page = pseudo::render(&doc).expect("an enum renders");
+    assert!(page.contains("text NEEDS-ACTION"), "{page}");
+    let back = unpseudo::parse(&page).expect("the page reads back");
+    assert_eq!(
+        unpseudo::ir_for_comparison(&back).expect("serializes"),
+        unpseudo::ir_for_comparison(&doc).expect("serializes"),
+        "the round trip changed the enum:\n{page}"
+    );
+}
+
+#[test]
+fn a_variants_text_is_a_token_and_no_other_variants_under_case_folding() {
+    let why = enum_refusal(&status_document(&[("a", 0, Some("not a token"))]));
+    assert!(
+        why.contains("sce:text") && why.contains("iana-token"),
+        "{why}"
+    );
+    let why = enum_refusal(&status_document(&[("a", 0, Some(""))]));
+    assert!(why.contains("sce:text"), "{why}");
+    let why = enum_refusal(&status_document(&[
+        ("a", 0, Some("DONE")),
+        ("b", 1, Some("done")),
+    ]));
+    assert!(why.contains("sce:text") && why.contains("`a`"), "{why}");
+    // Another variant's name is a text too: `ok` and a text `OK` are the same.
+    let why = enum_refusal(&status_document(&[("a", 0, Some("OK")), ("ok", 1, None)]));
+    assert!(why.contains("sce:text") && why.contains("`ok`"), "{why}");
+    // A variant's own name is not a clash with its own text.
+    let kept = parse_forge(
+        &status_document(&[("ok", 0, Some("OK"))]),
+        DocumentLabel {
+            identifier: "probe_status",
+            diagnostic_label: "probe_status",
+        },
+    );
+    assert!(kept.is_ok(), "{kept:?}");
+}
+
+/// What the generator says of `entries` read against the enum `status`, on the
+/// way to a language that has not landed an enum entry: the refusal that names the
+/// vocabulary, or the one that names the language.
+fn generated_against(status: &str, entries: &str) -> String {
+    let dir = tempdir().expect("tempdir");
+    std::fs::write(dir.path().join("probe_status.scxml"), status).expect("write the enum");
+    let source = dir.path().join("probe_event.scxml");
+    std::fs::write(&source, enum_document(entries)).expect("write the codec");
+    let output = Command::new(env!("CARGO_BIN_EXE_sce-codegen"))
+        .args(["generate", "-l", "python", "-o"])
+        .arg(dir.path().join("out"))
+        .arg(&source)
+        .output()
+        .expect("run sce-codegen");
+    format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    )
+}
+
+#[test]
+fn the_enum_a_codec_reads_gives_each_variant_a_text_a_line_can_carry() {
+    let entry = r#"    <data id="status" sce:type="enum:Status" sce:property="STATUS"/>"#;
+    // A variant with no text is called by its name, which must be a token.
+    let said = generated_against(&status_document(&[("needs_action", 0, None)]), entry);
+    assert!(
+        said.contains("needs_action") && said.contains("sce:text"),
+        "{said}"
+    );
+    // Two variants whose texts are one under case folding.
+    let said = generated_against(
+        &status_document(&[("done", 0, None), ("Done", 1, None)]),
+        entry,
+    );
+    assert!(said.contains("`done`") && said.contains("`Done`"), "{said}");
+    // A vocabulary that is sound reaches the refusal that names the language.
+    let said = generated_against(
+        &status_document(&[("needsAction", 0, Some("NEEDS-ACTION")), ("done", 1, None)]),
+        entry,
+    );
+    assert!(
+        said.contains("docs/adr/0015") && !said.contains("iana-token"),
+        "{said}"
+    );
 }
