@@ -9873,8 +9873,10 @@ fn reject_zero_field(
 /// - `<sce:link-rx ref="...">` (required) — driving link kind name.
 ///   Cross-resolution validator (`worker/link-rx-ref-unknown`) lives
 ///   in [`crate::validate_worker_cross_refs`] (item C2).
-/// - `<sce:inbox depth="N"/>` (required) — SPSC ring-buffer depth.
-///   Spec line 894 verbatim attribute form.
+/// - `<sce:inbox ref="..."/>` (required) — alias of the worker's
+///   `<sce:import kind="queue">`. Resolution and the single-consumer
+///   check live in [`crate::validate_worker_cross_refs`]; the removed
+///   inline `depth` / `ordering` fire `worker/inbox-inline-removed`.
 /// - `<sce:outbox ref="...">` (optional) — recipient inbox path.
 ///   Cross-resolution validators
 ///   (`worker/outbox-ref-unknown` +
@@ -9905,11 +9907,8 @@ fn reject_zero_field(
 ///
 /// MachineSchedulerConfig deploy-aware validation
 /// (`worker/scheduler-unsupported` +
-/// `deploy/scheduler-incompatible-with-worker-count`) and
-/// inbox-ordering codegen invariants
-/// (`worker/inbox-ordering-relaxed-across-cores` +
-/// `worker/inbox-ordering-unspecified`) live in the item C2
-/// scheduler-capacity + cross-resolution validators respectively.
+/// `deploy/scheduler-incompatible-with-worker-count`) lives in the item C2
+/// scheduler-capacity validator.
 fn parse_worker(
     root: &roxmltree::Node,
     label: DocumentLabel<'_>,
@@ -9977,12 +9976,14 @@ fn parse_worker(
         ));
     }
 
-    // ── Required: <sce:inbox depth="N"/> ──
+    // ── Required: <sce:inbox ref="<queue alias>"/> ──
     //
-    // Spec line 894 verbatim attribute form. Reject
-    // depth=0 at parse time (load-bearing for any subsequent ring-
-    // buffer layout / codegen logic; an empty inbox cannot service
-    // even a single in-flight event).
+    // The inbox is a queue the worker imports (RFC §synth-5-P, Migration). The
+    // inline `depth` and `ordering` it used to carry are removed: a document
+    // that still writes either is refused with `worker/inbox-inline-removed`,
+    // whose message names the queue document that holds exactly what the old
+    // ring held. That refusal comes first, so a document that carries the old
+    // attributes alone is told what to write instead of that `ref` is missing.
     let inbox_node = find_sce_child(root, "inbox").ok_or_else(|| {
         located(
             root,
@@ -9993,66 +9994,49 @@ fn parse_worker(
             },
         )
     })?;
-    let depth_str = require_attr(&inbox_node, "depth", "<sce:inbox>", label.diagnostic_label)?;
-    let depth: u32 = depth_str.parse().map_err(|_| {
-        located(
+    let removed: Vec<String> = ["depth", "ordering"]
+        .iter()
+        .filter_map(|name| {
+            inbox_node
+                .attribute(*name)
+                .map(|value| format!("{name}=\"{value}\""))
+        })
+        .collect();
+    if !removed.is_empty() {
+        // The ring held `depth - 1` elements (one slot was the full/empty
+        // sentinel), one producer, one consumer, wait-free.
+        let capacity = match inbox_node
+            .attribute("depth")
+            .and_then(|depth| depth.parse::<u32>().ok())
+        {
+            Some(depth) if depth > 1 => (depth - 1).to_string(),
+            _ => "depth - 1".to_string(),
+        };
+        return Err(located(
             &inbox_node,
             label.diagnostic_label,
-            ValidationError::AttributeRuleViolated {
-                element: "<sce:inbox>".into(),
-                attr: "depth".into(),
-                value: depth_str.clone(),
-                rule: "positive u32 integer".into(),
+            ValidationError::WorkerInboxInlineRemoved {
+                worker_name: doc_name.to_string(),
+                removed: removed.join(" "),
+                replacement: format!(
+                    "`<sce:bounded capacity=\"{capacity}\"/>`, producers `one`, consumers `one` and progress `wait-free`"
+                ),
             },
-        )
-    })?;
-    if depth == 0 {
+        ));
+    }
+    let queue_ref = require_attr(&inbox_node, "ref", "<sce:inbox>", label.diagnostic_label)?;
+    if queue_ref.is_empty() {
         return Err(located(
             &inbox_node,
             label.diagnostic_label,
             ValidationError::AttributeRuleViolated {
                 element: "<sce:inbox>".into(),
-                attr: "depth".into(),
-                value: depth_str,
-                rule: "positive integer (depth > 0)".into(),
+                attr: "ref".into(),
+                value: queue_ref,
+                rule: "non-empty queue import alias".into(),
             },
         ));
     }
-
-    // ── Required: <sce:inbox ordering="acq_rel|relaxed"/> ──
-    //
-    // RFC §synth-5-I lines 1752-1758 spec-verbatim. Spec says "no ordering
-    // chosen, codegen defaults to acquire/release with a warning" —
-    // SCE's error-only wire realizes that warning as a required-when-
-    // worker-exists error so the author makes an explicit choice
-    // before codegen emits ambiguous atomic ops on head/tail indices.
-    // The choice changes the emitted code (load_acquire/store_release
-    // vs load_relaxed/store_relaxed) on both Rust + C11 backends.
-    let ordering = match inbox_node.attribute("ordering") {
-        Some("acq_rel") => crate::forge::model::InboxOrdering::AcqRel,
-        Some("relaxed") => crate::forge::model::InboxOrdering::Relaxed,
-        Some(other) => {
-            return Err(located(
-                &inbox_node,
-                label.diagnostic_label,
-                ValidationError::InvalidAttribute {
-                    element: "<sce:inbox>".into(),
-                    attr: "ordering".into(),
-                    value: other.to_string(),
-                    allowed: vec!["acq_rel".into(), "relaxed".into()],
-                },
-            ));
-        }
-        None => {
-            return Err(located(
-                &inbox_node,
-                label.diagnostic_label,
-                ValidationError::WorkerInboxOrderingUnspecified {
-                    worker_name: doc_name.to_string(),
-                },
-            ));
-        }
-    };
 
     // ── Optional: <sce:outbox ref="..."/> ──
     let outbox = find_sce_child(root, "outbox").and_then(|node| {
@@ -10112,7 +10096,7 @@ fn parse_worker(
     Ok(WorkerModel {
         name: doc_name.to_string(),
         link_rx,
-        inbox: InboxConfig { depth, ordering },
+        inbox: InboxConfig { queue_ref },
         outbox,
         source_location: forge_source_location_of(root, label.diagnostic_label),
     })

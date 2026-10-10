@@ -2225,40 +2225,6 @@ pub fn compile_forge_with_deploy(
         })
     })();
 
-    // Build the worker_placement options threading from the
-    // resolved machine's `workers:` block. Fires only on the deploy-
-    // aware path with at least one worker declared. Mirrors the
-    // cache_platform populator pattern (C5) — `compile_forge_with_imports`
-    // never reaches here and worker_placement stays `None`, matching
-    // the codegen-invariant validator's silent-skip on missing
-    // placement.
-    let worker_placement = (|| -> Option<Vec<WorkerPlacement>> {
-        let cfg = deploy?;
-        let machine_name = target_machine?;
-        let device = cfg.device_for_machine(machine_name)?;
-        let machine = device.machines.get(machine_name)?;
-        if machine.workers.is_empty() {
-            return None;
-        }
-        let mut placements: Vec<WorkerPlacement> = machine
-            .workers
-            .iter()
-            .filter_map(|(worker_name, worker_cfg)| {
-                worker_cfg.placement.as_ref().map(|p| WorkerPlacement {
-                    worker_name: worker_name.clone(),
-                    producer_core: p.producer_core,
-                    consumer_core: p.consumer_core,
-                })
-            })
-            .collect();
-        if placements.is_empty() {
-            return None;
-        }
-        // Deterministic order so downstream codegen-invariant scans
-        // are byte-stable across HashMap iteration order.
-        placements.sort_by(|a, b| a.worker_name.cmp(&b.worker_name));
-        Some(placements)
-    })();
     // Bounded-collection capacity resolution. Single-doc path
     // so the map carries at most one entry. CompileConst BCs copy the
     // literal through for uniform render handling (the render layer
@@ -2322,29 +2288,14 @@ pub fn compile_forge_with_deploy(
 
     let options = ForgeCompileOptions {
         cache_platform,
-        worker_placement,
         bounded_collection_resolutions,
         queue_resolutions,
         ..Default::default()
     };
 
-    // Connect the worker_placement populator to its
-    // codegen-invariant consumer. `compile_forge_with_imports` runs
-    // this validator on the imports path; `compile_forge_with_deploy`
-    // needs to run it equivalently so the deploy.yaml-populated
-    // placement reaches the cross-core ordering check. Without this
-    // wire, `worker_placement` would be built-but-unconsumed under
-    // the deploy-aware path (`feedback_silently_broken_hooks.md`
-    // violation).
-    validate_worker_inbox_ordering_placement(
-        &doc,
-        options.worker_placement.as_deref(),
-        label.diagnostic_label,
-    )?;
-
-    // Same rationale for cross-resolution. The `<sce:link-rx>`
-    // ref must resolve to a declared kind=link import; under
-    // `compile_forge_with_deploy` the validator was previously
+    // Cross-resolution. The `<sce:link-rx>` ref must resolve to a
+    // declared kind=link import and the `<sce:inbox>` ref to a kind=queue
+    // one; under `compile_forge_with_deploy` the validator was previously
     // missing — re-wiring closes the gap.
     validate_worker_cross_refs(&doc, &parsed.imports, label.diagnostic_label)?;
 
@@ -2377,11 +2328,24 @@ pub fn compile_forge_with_deploy(
         ));
     }
 
+    // A worker's inbox is the queue it imports (RFC §synth-5-P, Migration), so
+    // rendering one needs the import named. This path reads one document and no
+    // files, so the contexts are the provisional ones the imports declare, named
+    // for the stems of their `src` (the import pass that reads the files is
+    // `compile_forge_from_parsed`'s). Every other kind is rendered as before,
+    // with none.
+    let import_ctx = if matches!(doc, forge::model::ForgeDocument::Worker(_)) {
+        forge::generator::resolve_imports(&parsed.imports, &language, &options)
+            .map_err(|e| Located::in_file(e, label.diagnostic_label))?
+    } else {
+        Vec::new()
+    };
+
     let output = match language {
         generator::Language::Cpp => forge::generator::generate_cpp_with_imports_and_externs(
             &doc,
             &template_base,
-            &[],
+            &import_ctx,
             &extern_decls,
             &options,
         ),
@@ -2390,26 +2354,32 @@ pub fn compile_forge_with_deploy(
         // capacity, participants and what the deploy says of the target) never
         // reached them and a `source="deploy"` number was refused as unresolved
         // on exactly the three backends that could not be told.
-        generator::Language::Kotlin => {
-            forge::generator::generate_kotlin_with_imports(&doc, &template_base, &[], &options)
-        }
+        generator::Language::Kotlin => forge::generator::generate_kotlin_with_imports(
+            &doc,
+            &template_base,
+            &import_ctx,
+            &options,
+        ),
         generator::Language::Rust => forge::generator::generate_rust_with_imports_and_externs(
             &doc,
             &template_base,
-            &[],
+            &import_ctx,
             &extern_decls,
             &options,
         ),
         generator::Language::Go => {
-            forge::generator::generate_go_with_imports(&doc, &template_base, &[], &options)
+            forge::generator::generate_go_with_imports(&doc, &template_base, &import_ctx, &options)
         }
-        generator::Language::Python => {
-            forge::generator::generate_python_with_imports(&doc, &template_base, &[], &options)
-        }
+        generator::Language::Python => forge::generator::generate_python_with_imports(
+            &doc,
+            &template_base,
+            &import_ctx,
+            &options,
+        ),
         generator::Language::C11 => forge::generator::generate_c11_with_imports_and_externs(
             &doc,
             &template_base,
-            &[],
+            &import_ctx,
             &extern_decls,
             &options,
         ),
@@ -2634,18 +2604,6 @@ pub struct ForgeCompileOptions {
     /// validators ensure the field is always `Some` when at least one
     /// `cache-policy: maintain` pool exists.
     pub cache_platform: Option<CachePlatformInfo>,
-    /// RFC §synth-5-D + §synth-5-I worker inbox cross-core placement map.
-    /// Populated by [`compile_forge_with_deploy`] from the resolved
-    /// deploy.yaml `machines.<m>.workers.<w>.placement` block;
-    /// left `None` by
-    /// deploy-unaware callers. The codegen-invariant validator
-    /// [`validate_worker_inbox_ordering_placement`] silent-skips on
-    /// `None` — `compile_forge_with_imports`
-    /// does not have the cross-core information needed to fire
-    /// `worker/inbox-ordering-relaxed-across-cores`. When `Some`, the
-    /// validator scans the slice for any entry whose producer/consumer
-    /// cores differ and whose worker doc declared `ordering="relaxed"`.
-    pub worker_placement: Option<Vec<WorkerPlacement>>,
     /// RFC §synth-5-L bounded-collection codegen-time resolutions, keyed
     /// by `BoundedCollectionModel.name`. Populated by the two upstream
     /// pipelines that have the information the BC template needs:
@@ -2733,28 +2691,6 @@ pub struct ForgeCompileOptions {
     /// (no orchestrator pass ran, so no bounded-collection can resolve an
     /// element either).
     pub element_type_owned_mirrors: Option<std::collections::HashMap<String, bool>>,
-}
-
-/// RFC §synth-5-D + §synth-5-I cross-core worker placement entry. Populated
-/// from deploy.yaml's `machines.<m>.workers.<w>.placement.{producer_core,
-/// consumer_core}` block at [`compile_forge_with_deploy`] time and
-/// threaded to the inbox-ordering validator via
-/// [`ForgeCompileOptions::worker_placement`]. The validator backs the
-/// wire-format `worker/inbox-ordering-relaxed-across-cores` code; the
-/// deploy.yaml schema field is parsed in [`mesh::deploy`] and
-/// populated on the deploy-aware path, while deploy-unaware callers
-/// leave the slice `None` (the validator then silent-skips).
-#[derive(Clone, Debug)]
-pub struct WorkerPlacement {
-    /// Worker doc name (forge `<scxml sce:kind="worker" name="...">`).
-    /// Matches `WorkerModel.name` verbatim.
-    pub worker_name: String,
-    /// Core index hosting the inbox producer (link-rx-driven path).
-    /// Zero-based per the deploy.yaml convention.
-    pub producer_core: u32,
-    /// Core index hosting the inbox consumer (the worker's own SCXML
-    /// processing thread).
-    pub consumer_core: u32,
 }
 
 /// RFC §synth-5-E C5 cache-maintenance codegen-relevant platform invariants.
@@ -3082,16 +3018,10 @@ pub fn compile_forge_from_parsed(
     // path.
     validate_worker_cross_refs(&parsed.document, &parsed.imports, label.diagnostic_label)?;
 
-    // RFC §synth-5-I codegen-invariant for cross-core SPSC ordering.
-    // Silent-skip when `options.worker_placement` is `None` (deploy-
-    // unaware path); fires when the worker's declared `ordering=
-    // "relaxed"` coexists with a placement entry pinning producer +
-    // consumer on different cores.
-    validate_worker_inbox_ordering_placement(
-        &parsed.document,
-        options.worker_placement.as_deref(),
-        label.diagnostic_label,
-    )?;
+    // RFC §synth-5-P Migration: the queue a worker names as its inbox is
+    // single-consumer. Needs the imported document's cardinality, which
+    // enrichment recorded on `import_ctx`.
+    validate_worker_inbox_queue(&parsed.document, &import_ctx, label.diagnostic_label)?;
 
     // RFC §synth-5-I — `<sce:extern>` rejected on non-MCU
     // backends (Kotlin/Go/Python). The wire-format diagnostic reuses
@@ -4767,6 +4697,14 @@ fn validate_and_enrich_imports(
             if let forge::model::ForgeDocument::BufferPool(pm) = &doc {
                 ctx.buffer_pool_slot_size = Some(pm.slot_size);
             }
+            // RFC §synth-5-P Migration: a worker's inbox is a queue it
+            // imports, and the queue must be single-consumer. The worker
+            // cannot judge that without the imported document, so its
+            // cardinality rides the import context to
+            // `validate_worker_inbox_queue`.
+            if let forge::model::ForgeDocument::Queue(qm) = &doc {
+                ctx.queue_consumers_many = qm.consumers == forge::model::QueueCardinality::Many;
+            }
             // RFC §synth-5-A line 311 + §synth-5-L line 2642-2647 (C7-lowering
             // 2026-05-13): bounded-collection imports carry their
             // element-type snake form forward so the algorithm-over-BC
@@ -5222,6 +5160,33 @@ fn validate_worker_cross_refs(
                 worker_name: worker.name.clone(),
                 ref_name: worker.link_rx.clone(),
                 candidates: link_aliases,
+            }
+            .into(),
+            importing_doc,
+            None,
+            None,
+        ));
+    }
+
+    // ── inbox ref → kind=queue import alias ──
+    //
+    // The inbox is a queue the worker imports (RFC §synth-5-P, Migration).
+    // Same closed-set shape as the link-rx ref above. That the queue is
+    // single-consumer needs the imported document, which this per-doc check
+    // does not read: [`validate_worker_inbox_queue`] judges it from the
+    // enriched import context.
+    let mut queue_aliases: Vec<String> = imports
+        .iter()
+        .filter(|i| i.kind == ForgeKind::Queue)
+        .map(|i| i.alias.clone())
+        .collect();
+    queue_aliases.sort();
+    if !queue_aliases.iter().any(|a| a == &worker.inbox.queue_ref) {
+        return Err(Located::new(
+            ValidationError::WorkerInboxRefUnknown {
+                worker_name: worker.name.clone(),
+                ref_name: worker.inbox.queue_ref.clone(),
+                candidates: queue_aliases,
             }
             .into(),
             importing_doc,
@@ -6034,61 +5999,47 @@ fn validate_queue_cross_refs(
     Ok(())
 }
 
-/// RFC §synth-5-I lines 1755-1756 — codegen-invariant guard for SPSC
-/// inbox ordering vs cross-core placement. Silent-skip when
-/// `ForgeCompileOptions.worker_placement` is `None`
-/// (deploy-unaware path doesn't know cross-core
-/// information). When present, walks the placement slice for an entry
-/// matching the worker's name; fires
-/// `worker/inbox-ordering-relaxed-across-cores` when the worker's
-/// declared ordering is `relaxed` AND producer_core != consumer_core.
+/// RFC §synth-5-P *Migration* (the worker) — the queue a worker names as its
+/// inbox must declare `consumers` `one`: a worker is the only context that pops
+/// its inbox, and a `many`-consumer queue is a different contract with an
+/// algorithm (and a cost) chosen for it.
 ///
-/// Placement entries that don't match the worker name silent-skip
-/// (the slice may carry entries for sibling workers in a multi-worker
-/// build). This matches the C5 deploy-aware validator pattern: the
-/// caller assembles a slice; the validator queries by name without
-/// requiring the slice to be exhaustive.
-fn validate_worker_inbox_ordering_placement(
+/// Reads the enriched import context, where `validate_and_enrich_imports` has
+/// recorded the imported queue's cardinality, so it runs after enrichment.
+/// Silent-skip on a non-Worker document, and on an alias that is not among the
+/// imports (that is `worker/inbox-ref-unknown`, judged by
+/// [`validate_worker_cross_refs`]).
+fn validate_worker_inbox_queue(
     doc: &forge::model::ForgeDocument,
-    placement: Option<&[WorkerPlacement]>,
+    import_ctx: &[forge::generator::ImportContext],
     importing_doc: &str,
 ) -> Result<(), forge::error::Located<forge::error::ForgeError>> {
     use forge::error::{Located, ValidationError};
-    use forge::model::{ForgeDocument, InboxOrdering};
+    use forge::model::ForgeDocument;
 
     let worker = match doc {
         ForgeDocument::Worker(w) => w,
         _ => return Ok(()),
     };
-
-    let entries = match placement {
-        Some(p) => p,
-        // Deploy-unaware path — cannot determine cross-core layout,
-        // so silent-skip. The deploy-aware path wires the
-        // production populator from deploy.yaml.
-        None => return Ok(()),
-    };
-
-    if worker.inbox.ordering != InboxOrdering::Relaxed {
+    let Some(queue) = import_ctx
+        .iter()
+        .find(|i| i.alias == worker.inbox.queue_ref && i.kind == "queue")
+    else {
         return Ok(());
+    };
+    if queue.queue_consumers_many {
+        return Err(Located::new(
+            ValidationError::WorkerInboxQueueNotSingleConsumer {
+                worker_name: worker.name.clone(),
+                queue_alias: queue.alias.clone(),
+                queue_name: queue.document_name.clone(),
+            }
+            .into(),
+            importing_doc,
+            None,
+            None,
+        ));
     }
-
-    for entry in entries {
-        if entry.worker_name == worker.name && entry.producer_core != entry.consumer_core {
-            return Err(Located::new(
-                ValidationError::WorkerInboxOrderingRelaxedAcrossCores {
-                    worker_name: worker.name.clone(),
-                    producer_core: entry.producer_core,
-                    consumer_core: entry.consumer_core,
-                }
-                .into(),
-                importing_doc,
-                None,
-                None,
-            ));
-        }
-    }
-
     Ok(())
 }
 

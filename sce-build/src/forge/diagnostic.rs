@@ -1904,31 +1904,31 @@ pub enum DiagnosticCode {
     #[serde(rename = "worker/link-rx-ref-unknown")]
     WorkerLinkRxRefUnknown,
 
-    /// `<sce:inbox>` declared without an explicit `ordering` attribute.
-    /// Spec §synth-5-I lines 1757-1758 verbatim: "no ordering chosen, codegen
-    /// defaults to acquire/release with a warning". SCE's error-only
-    /// wire realizes the warning as a required-when-worker-exists
-    /// error: the author must explicitly pick `acq_rel` or `relaxed`
-    /// (the choice changes the atomic ops emitted on head/tail
-    /// indices in both Rust + C11 codegen). Repair surface = no
-    /// closed candidate list (author chooses based on placement);
-    /// `fix: None` per NeutralOrDeterministic class. Spec-verbatim
-    /// name (`worker/inbox-ordering-unspecified`).
-    #[serde(rename = "worker/inbox-ordering-unspecified")]
-    WorkerInboxOrderingUnspecified,
+    /// `<sce:inbox>` carries the removed inline `depth` / `ordering`
+    /// attributes instead of naming a queue. Spec §synth-5-P *Migration*
+    /// (worker): the inbox is a queue the worker imports and refers to by
+    /// alias; the document that is exactly what the old ring held is named
+    /// in the message (`capacity = depth - 1`, one producer, one consumer,
+    /// `wait-free`). The repair is a removal of the attributes, so the fix
+    /// is `remove_fields`. Spec-verbatim name (`worker/inbox-inline-removed`).
+    #[serde(rename = "worker/inbox-inline-removed")]
+    WorkerInboxInlineRemoved,
 
-    /// `<sce:inbox ordering="relaxed">` declared while deploy.placement
-    /// pins inbox producer and consumer on different cores. Spec §synth-5-I
-    /// lines 1755-1756 verbatim: relaxed on cross-worker shared state
-    /// is insufficient. Codegen-invariant guard: silent-skip when
-    /// `ForgeCompileOptions.worker_placement` is absent (deploy-unaware
-    /// silent-skip precedent), fires when explicit cross-core placement coexists
-    /// with `relaxed` ordering. Repair surface = no closed candidate
-    /// list (author either changes ordering to `acq_rel` or co-locates
-    /// the worker on a single core); `fix: None`. Spec-verbatim name
-    /// (`worker/inbox-ordering-relaxed-across-cores`).
-    #[serde(rename = "worker/inbox-ordering-relaxed-across-cores")]
-    WorkerInboxOrderingRelaxedAcrossCores,
+    /// `<sce:inbox ref>` names no `<sce:import kind="queue">` of the worker.
+    /// Same closed-set shape as `worker/link-rx-ref-unknown`: the fix replaces
+    /// the ref with one of the queue-kind import aliases. Non-spec diagnostic:
+    /// the spec states the imported queue must be single-consumer, and SCE's
+    /// per-document path needs the ref to resolve before it can check that.
+    #[serde(rename = "worker/inbox-ref-unknown")]
+    WorkerInboxRefUnknown,
+
+    /// The queue a worker names as its inbox declares `consumers` `many`.
+    /// Spec §synth-5-P *Migration* (worker): a worker is the only consumer of
+    /// its inbox. No closed repair (the author changes the queue document, or
+    /// the worker's inbox), so `fix: None`. Spec-verbatim name
+    /// (`worker/inbox-queue-not-single-consumer`).
+    #[serde(rename = "worker/inbox-queue-not-single-consumer")]
+    WorkerInboxQueueNotSingleConsumer,
 
     /// Worker doc compiles against a target machine that did not list it
     /// in `deploy.machines.<m>.workers`. Spec §synth-5-D line 912 verbatim
@@ -3630,10 +3630,11 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         PoolSampleCallbackSignatureNonBorrow,
         // Worker kind shared-state encapsulation (SCE Protocol-Synthesis RFC §synth-5-D, item C2)
         WorkerSharedMutableState,
-        // Worker kind cross-resolution + inbox ordering (SCE Protocol-Synthesis RFC §synth-5-D + §synth-5-I, item C2)
+        // Worker kind cross-resolution + inbox as a queue (SCE Protocol-Synthesis RFC §synth-5-D + §synth-5-P, item C2)
         WorkerLinkRxRefUnknown,
-        WorkerInboxOrderingUnspecified,
-        WorkerInboxOrderingRelaxedAcrossCores,
+        WorkerInboxInlineRemoved,
+        WorkerInboxRefUnknown,
+        WorkerInboxQueueNotSingleConsumer,
         // Worker kind scheduler-capacity forge-side anchor (SCE Protocol-Synthesis RFC §synth-5-D, item C2)
         WorkerSchedulerUnsupported,
         // Worker kind SCXML-side outbox cross-resolution (SCE Protocol-Synthesis RFC §synth-5-D, item C2)
@@ -4266,14 +4267,15 @@ impl DiagnosticCode {
             // ── §synth-5-D Worker kind encapsulation (item C2) ───────────
             WorkerSharedMutableState => Some("SCE Protocol-Synthesis RFC §5.D"),
 
-            // ── Worker cross-resolution (RFC §synth-5-D) + SPSC inbox
-            //    ordering (RFC §synth-5-I lines 1752-1758) ──
-            //    Cross-ref codes carry §synth-5-D spec anchor (worker schema
-            //    is §synth-5-D's domain). Ordering codes carry §synth-5-I anchor
-            //    (the SPSC/MPSC ordering contract is §synth-5-I's domain).
+            // ── Worker cross-resolution (RFC §synth-5-D) + the inbox as a
+            //    queue (RFC §synth-5-P, Migration) ──
+            //    The link-rx ref carries the §synth-5-D anchor (worker schema
+            //    is §synth-5-D's domain). The inbox codes carry §synth-5-P:
+            //    the queue kind's migration rule is what states them.
             WorkerLinkRxRefUnknown => Some("SCE Protocol-Synthesis RFC §5.D"),
-            WorkerInboxOrderingUnspecified
-            | WorkerInboxOrderingRelaxedAcrossCores => Some("SCE Protocol-Synthesis RFC §5.I"),
+            WorkerInboxInlineRemoved
+            | WorkerInboxRefUnknown
+            | WorkerInboxQueueNotSingleConsumer => Some("SCE Protocol-Synthesis RFC §5.P"),
 
             // ── Worker scheduler-capacity axis (RFC §synth-5-D + §synth-5-K) ──
             //    Forge-side anchor (line 912) lives in §synth-5-D worker
@@ -5043,8 +5045,9 @@ impl DiagnosticCode {
             PoolSampleCallbackSignatureNonBorrow => "pool/sample-callback-signature-non-borrow",
             WorkerSharedMutableState => "worker/shared-mutable-state",
             WorkerLinkRxRefUnknown => "worker/link-rx-ref-unknown",
-            WorkerInboxOrderingUnspecified => "worker/inbox-ordering-unspecified",
-            WorkerInboxOrderingRelaxedAcrossCores => "worker/inbox-ordering-relaxed-across-cores",
+            WorkerInboxInlineRemoved => "worker/inbox-inline-removed",
+            WorkerInboxRefUnknown => "worker/inbox-ref-unknown",
+            WorkerInboxQueueNotSingleConsumer => "worker/inbox-queue-not-single-consumer",
             WorkerSchedulerUnsupported => "worker/scheduler-unsupported",
             WorkerOutboxRefUnknown => "worker/outbox-ref-unknown",
             WorkerOutboxTargetWrongKind => "worker/outbox-target-wrong-kind",
@@ -8317,43 +8320,60 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             }),
             key_fragments: vec![worker_name.clone(), ref_name.clone()],
         },
-        // ── §synth-5-I SPSC inbox ordering ──
-        ValidationError::WorkerInboxOrderingUnspecified { worker_name } => DiagnosticPayload {
-            code: DiagnosticCode::WorkerInboxOrderingUnspecified,
-            stage: Stage::Validation,
-            // No `actual` value to surface — the violation is the
-            // absence of the `ordering` attribute. NeutralOrDeterministic
-            // non_overlap_class with `fix: None`; author picks
-            // `acq_rel` or `relaxed` based on placement (not a closed
-            // candidate set today — semantics of the choice ride the
-            // diagnostic message, not the wire payload).
-            expected: None,
-            actual: None,
-            fix: None,
-            key_fragments: vec![worker_name.clone()],
-        },
-        ValidationError::WorkerInboxOrderingRelaxedAcrossCores {
+        // ── §synth-5-P the worker's inbox is a queue ──
+        ValidationError::WorkerInboxInlineRemoved {
             worker_name,
-            producer_core,
-            consumer_core,
+            removed,
+            replacement: _,
         } => DiagnosticPayload {
-            code: DiagnosticCode::WorkerInboxOrderingRelaxedAcrossCores,
+            code: DiagnosticCode::WorkerInboxInlineRemoved,
             stage: Stage::Validation,
-            // Codegen-invariant: relaxed declared, but placement pins
-            // producer and consumer on different cores. `actual`
-            // carries the offending ordering string verbatim so the
-            // wire surface names what was declared rather than what
-            // was inferred. NeutralOrDeterministic — author picks
-            // between flipping ordering or re-pinning placement;
-            // neither axis is a closed candidate today.
+            // `actual` is what was authored. `fix` is the removal of exactly
+            // the attributes named; the queue document that replaces them is
+            // the other half of the repair and rides the message, because a
+            // deterministic `fix` leaves `expected` absent.
             expected: None,
-            actual: Some("relaxed".to_string()),
+            actual: Some(removed.clone()),
+            fix: Some(Fix::RemoveFields {
+                location: "sce:inbox".to_string(),
+                fields: removed
+                    .split(' ')
+                    .filter_map(|attr| attr.split('=').next())
+                    .map(str::to_string)
+                    .collect(),
+            }),
+            key_fragments: vec![worker_name.clone(), removed.clone()],
+        },
+        ValidationError::WorkerInboxRefUnknown {
+            worker_name,
+            ref_name,
+            candidates,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::WorkerInboxRefUnknown,
+            stage: Stage::Validation,
+            // Same closed-set shape as `worker/link-rx-ref-unknown`: the
+            // candidates are the queue-kind import aliases.
+            expected: None,
+            actual: Some(ref_name.clone()),
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: candidates.clone(),
+            }),
+            key_fragments: vec![worker_name.clone(), ref_name.clone()],
+        },
+        ValidationError::WorkerInboxQueueNotSingleConsumer {
+            worker_name,
+            queue_alias,
+            queue_name,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::WorkerInboxQueueNotSingleConsumer,
+            stage: Stage::Validation,
+            // The queue declares `many`; a worker is the only consumer.
+            // The author changes the queue document or the worker's inbox:
+            // no closed repair.
+            expected: Some(vec!["one".to_string()]),
+            actual: Some("many".to_string()),
             fix: None,
-            key_fragments: vec![
-                worker_name.clone(),
-                producer_core.to_string(),
-                consumer_core.to_string(),
-            ],
+            key_fragments: vec![worker_name.clone(), queue_alias.clone(), queue_name.clone()],
         },
         ValidationError::WorkerSchedulerUnsupported {
             worker_name,
@@ -12194,38 +12214,47 @@ mod tests {
                 // Hash placeholder — patched by byte-stability assertion.
                 r#"{"v":1,"id":"fnv1a:60c2fe22d1085b50","code":"worker/link-rx-ref-unknown","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.D","message":"worker 'rx_loop': <sce:link-rx ref=\"udp_scout\"> references a name that is not imported as a link kind. Declare the link via <sce:import as=\"udp_scout\" src=\"...\" kind=\"link\"/> on this worker document, or replace the ref with one of the imported link-kind aliases (closest matches: status_link).","actual":"udp_scout","fix":{"kind":"replace_one_of","candidates":["status_link"]}}"#,
             ),
-            // ── §synth-5-I SPSC inbox ordering ──
+            // ── §synth-5-P the worker's inbox is a queue ──
             (
-                // RFC §synth-5-I lines 1757-1758: `<sce:inbox>` declared
-                // without an `ordering` attribute. SCE's error-only wire
-                // realizes the spec "warning" as a required-when-worker-
-                // exists error so authors get a load-bearing choice
-                // before codegen emits ambiguous atomic ops.
-                "forge/worker-inbox-ordering-unspecified",
-                ValidationError::WorkerInboxOrderingUnspecified {
+                // RFC §synth-5-P Migration (worker): the inline `depth` and
+                // `ordering` attributes are removed. The fix removes them and
+                // the message names the queue document that replaces them.
+                "forge/worker-inbox-inline-removed",
+                ValidationError::WorkerInboxInlineRemoved {
                     worker_name: "rx_loop".into(),
+                    removed: "depth=\"16\" ordering=\"acq_rel\"".into(),
+                    replacement: "capacity 15, producers one, consumers one, progress wait-free".into(),
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
-                r#"{"v":1,"id":"fnv1a:066432600b5950a2","code":"worker/inbox-ordering-unspecified","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.I","message":"worker 'rx_loop': <sce:inbox> declared without an `ordering` attribute. Pick `ordering=\"acq_rel\"` (safe default; producer and consumer pair head/tail with acquire+release on every push/pop) or `ordering=\"relaxed\"` (single-core fast-path; cross-core placement raises `worker/inbox-ordering-relaxed-across-cores`). Spec §5.I line 1752-1758 mandates one of these two for every SPSC inbox."}"#,
+                r#"{"v":1,"id":"fnv1a:a1f839e549db2974","code":"worker/inbox-inline-removed","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.P","message":"worker 'rx_loop': <sce:inbox depth=\"16\" ordering=\"acq_rel\"> names no queue. The inline `depth` and `ordering` attributes are removed: import a queue document with `<sce:import kind=\"queue\" .../>` and write `<sce:inbox ref=\"<alias>\"/>`. The queue that holds what this ring held declares capacity 15, producers one, consumers one, progress wait-free (SCE Protocol-Synthesis RFC §5.P, Migration).","actual":"depth=\"16\" ordering=\"acq_rel\"","fix":{"kind":"remove_fields","location":"sce:inbox","fields":["depth","ordering"]}}"#,
             ),
             (
-                // RFC §synth-5-I lines 1755-1756: codegen-invariant
-                // guard. Silent-skip when `ForgeCompileOptions.worker_
-                // placement` is `None` (deploy-unaware path); fires
-                // only when explicit cross-core placement coexists with
-                // `relaxed` ordering. NeutralOrDeterministic — both
-                // repair axes (flip ordering or co-locate) are author
-                // judgment, not a closed candidate.
-                "forge/worker-inbox-ordering-relaxed-across-cores",
-                ValidationError::WorkerInboxOrderingRelaxedAcrossCores {
+                // The ref must name a queue import; the closed set is the
+                // queue-kind aliases, as for `worker/link-rx-ref-unknown`.
+                "forge/worker-inbox-ref-unknown",
+                ValidationError::WorkerInboxRefUnknown {
                     worker_name: "rx_loop".into(),
-                    producer_core: 0,
-                    consumer_core: 1,
+                    ref_name: "rx_events".into(),
+                    candidates: vec!["rx_queue".into()],
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
-                r#"{"v":1,"id":"fnv1a:b605193320262358","code":"worker/inbox-ordering-relaxed-across-cores","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.I","message":"worker 'rx_loop': <sce:inbox ordering=\"relaxed\"> declared but deploy.placement pins producer on core 0 and consumer on core 1. Cross-core SPSC inboxes require acquire/release pairing on head/tail (per spec §5.I lines 1752-1758). Replace with `ordering=\"acq_rel\"` or co-locate producer + consumer on the same core via deploy.placement.","actual":"relaxed"}"#,
+                r#"{"v":1,"id":"fnv1a:73207a48eada4691","code":"worker/inbox-ref-unknown","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.P","message":"worker 'rx_loop': <sce:inbox ref=\"rx_events\"> references a name that is not imported as a queue kind. Declare the queue via <sce:import as=\"rx_events\" src=\"...\" kind=\"queue\"/> on this worker document, or replace the ref with one of the imported queue-kind aliases (closest matches: rx_queue).","actual":"rx_events","fix":{"kind":"replace_one_of","candidates":["rx_queue"]}}"#,
+            ),
+            (
+                // RFC §synth-5-P Migration (worker): the imported queue must
+                // declare `consumers` `one`. NeutralOrDeterministic: the
+                // author changes the queue document or the worker's inbox.
+                "forge/worker-inbox-queue-not-single-consumer",
+                ValidationError::WorkerInboxQueueNotSingleConsumer {
+                    worker_name: "rx_loop".into(),
+                    queue_alias: "rx_events".into(),
+                    queue_name: "rx_event_queue".into(),
+                }
+                .into(),
+                // Hash placeholder — patched by byte-stability assertion.
+                r#"{"v":1,"id":"fnv1a:eb84d6ebc3fbc86e","code":"worker/inbox-queue-not-single-consumer","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.P","message":"worker 'rx_loop': <sce:inbox ref=\"rx_events\"> names queue 'rx_event_queue', which declares consumers=\"many\". A worker is the only consumer of its inbox: declare `consumers` `one` in the queue document (SCE Protocol-Synthesis RFC §5.P, Migration).","expected":["one"],"actual":"many"}"#,
             ),
             (
                 // RFC §synth-5-D line 912: forge-side anchor for scheduler
@@ -16433,6 +16462,9 @@ mod tests {
             // consumes — see `WorkerOutboxRefUnknown` +
             // `WorkerOutboxTargetWrongKind` below.)
             | WorkerLinkRxRefUnknown
+            // The inbox ref resolves against the queue-kind imports, the
+            // same closed set shape as the link-rx ref above.
+            | WorkerInboxRefUnknown
             // ── Worker outbox cross-resolution ──
             //   Two of the three outbox axes carry a closed candidate
             //   list (sorted statechart + worker `.inbox` set);
@@ -16678,6 +16710,11 @@ mod tests {
             // to change the cardinality or the storage), and the second is
             // a list to choose from, so neither is a `Fix`.
             | QueueProgressUnreachable
+            // `worker/inbox-queue-not-single-consumer`: `expected` is the
+            // cardinality a worker's inbox needs (`one`), `actual` the one the
+            // queue declares. The repair is a choice between the queue
+            // document and the worker, so it is not a `Fix`.
+            | WorkerInboxQueueNotSingleConsumer
             | QueueProgressUnreachableOnBackend
             | QueueAtomicWidthUnstated
             | QueueNoAtomicsAcrossCores
@@ -16762,13 +16799,11 @@ mod tests {
             // No closed candidate set — the foreign-namespace path is
             // arbitrary, so `fix: None` ⇒ NeutralOrDeterministic.
             | WorkerSharedMutableState
-            // Worker inbox ordering codes: author chooses `acq_rel` vs
-            // `relaxed` based on placement; codegen-invariant fires
-            // when relaxed coexists with cross-core placement. Both
-            // axes are author-judgment (not closed candidate), so
-            // `fix: None`.
-            | WorkerInboxOrderingUnspecified
-            | WorkerInboxOrderingRelaxedAcrossCores
+            // The inline `depth` / `ordering` of an inbox are removed: the
+            // repair is a removal of exactly those attributes
+            // (`Fix::RemoveFields`), deterministic, so `expected` is absent
+            // and the queue document that replaces them rides the message.
+            | WorkerInboxInlineRemoved
             // Worker scheduler-capacity forge-side anchor
             // (RFC §synth-5-D line 912). Author repair is either adding the
             // worker to `deploy.machines.<m>.workers` or removing the
@@ -17774,8 +17809,9 @@ mod tests {
                 | PoolSampleCallbackSignatureNonBorrow
                 | WorkerSharedMutableState
                 | WorkerLinkRxRefUnknown
-                | WorkerInboxOrderingUnspecified
-                | WorkerInboxOrderingRelaxedAcrossCores
+                | WorkerInboxInlineRemoved
+                | WorkerInboxRefUnknown
+                | WorkerInboxQueueNotSingleConsumer
                 | WorkerSchedulerUnsupported
                 | WorkerOutboxRefUnknown
                 | WorkerOutboxTargetWrongKind
@@ -17998,9 +18034,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            433,
+            434,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 433 distinct variants to match the DiagnosticCode \
+             expected 434 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -18758,8 +18794,9 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | PoolSampleCallbackSignatureNonBorrow
             | WorkerSharedMutableState
             | WorkerLinkRxRefUnknown
-            | WorkerInboxOrderingUnspecified
-            | WorkerInboxOrderingRelaxedAcrossCores
+            | WorkerInboxInlineRemoved
+            | WorkerInboxRefUnknown
+            | WorkerInboxQueueNotSingleConsumer
             | WorkerSchedulerUnsupported
             | WorkerOutboxRefUnknown
             | WorkerOutboxTargetWrongKind

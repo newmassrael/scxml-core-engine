@@ -51,11 +51,10 @@ use crate::forge::model::{
 use crate::forge::model::{
     CapacitySource, CollectionOrdering, ConcurrencyMode, ConditionModel, Direction, EnumModel,
     EnumVariant, EventSchemaModel, FilterModel, FilterType, ForgeDocument, ForgeField, InboxConfig,
-    InboxOrdering, InterpolationAxis, InterpolationMethod, InterpolationModel, LinkClass,
-    LinkInboundEvent, LinkModel, LinkOutboundEvent, LookupEntry, LookupModel, MissPolicy,
-    ObserverModel, OutOfBounds, OverflowPolicy, RangeRule, RateOfChangeRule, ReassemblyConfig,
-    SceType, ThresholdMonitor, TimerModel, TransformModel, ValidatorModel, ValidatorRules,
-    WorkerModel,
+    InterpolationAxis, InterpolationMethod, InterpolationModel, LinkClass, LinkInboundEvent,
+    LinkModel, LinkOutboundEvent, LookupEntry, LookupModel, MissPolicy, ObserverModel, OutOfBounds,
+    OverflowPolicy, RangeRule, RateOfChangeRule, ReassemblyConfig, SceType, ThresholdMonitor,
+    TimerModel, TransformModel, ValidatorModel, ValidatorRules, WorkerModel,
 };
 use crate::provenance::RequirementId;
 
@@ -1095,16 +1094,14 @@ fn parse_bounded_collection(head: &Line<'_>) -> Result<BoundedCollectionModel, P
     Ok(m)
 }
 
-/// One line: `worker <name> link-rx <l> inbox depth <n> ordering <o>
-/// [outbox <x>]`.
+/// One line: `worker <name> link-rx <l> inbox <queue alias> [outbox <x>]`.
 fn parse_worker(head: &Line<'_>) -> Result<WorkerModel, ParseError> {
     let w: Vec<&str> = head.text.split_whitespace().collect();
     let mut m = WorkerModel {
         name: undo(w.get(1).copied().unwrap_or(""), head.number)?,
         link_rx: String::new(),
         inbox: InboxConfig {
-            depth: 0,
-            ordering: InboxOrdering::Relaxed,
+            queue_ref: String::new(),
         },
         outbox: None,
         source_location: None,
@@ -1114,28 +1111,7 @@ fn parse_worker(head: &Line<'_>) -> Result<WorkerModel, ParseError> {
         let value = w.get(i + 1).copied().unwrap_or("");
         match w[i] {
             "link-rx" => m.link_rx = undo(value, head.number)?,
-            "inbox" => {
-                if value != "depth" {
-                    return Err(ParseError {
-                        line: head.number,
-                        why: "inbox needs `depth <n>`".to_string(),
-                    });
-                }
-                m.inbox.depth = w.get(i + 2).and_then(|v| v.parse().ok()).unwrap_or(0);
-                i += 1;
-            }
-            "ordering" => {
-                m.inbox.ordering = match value {
-                    "acq_rel" => InboxOrdering::AcqRel,
-                    "relaxed" => InboxOrdering::Relaxed,
-                    other => {
-                        return Err(ParseError {
-                            line: head.number,
-                            why: format!("`{other}` is not an inbox ordering"),
-                        })
-                    }
-                }
-            }
+            "inbox" => m.inbox.queue_ref = undo(value, head.number)?,
             "outbox" => m.outbox = Some(undo(value, head.number)?),
             other => {
                 return Err(ParseError {

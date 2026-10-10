@@ -502,7 +502,7 @@ mod tests {
             AlgorithmModel, AlgorithmSignature, BackpressurePolicy, BoundedCollectionModel,
             BufferPoolModel, BufferPoolVariant, CachePolicy, CapacitySource, CodecModel,
             CollectionOrdering, ConcurrencyMode, ConditionModel, Direction, Endian, FilterModel,
-            FilterType, ForgeDocument, ForgeField, InboxConfig, InboxOrdering, InterpolationAxis,
+            FilterType, ForgeDocument, ForgeField, InboxConfig, InterpolationAxis,
             InterpolationMethod, InterpolationModel, LinkClass, LinkModel, LookupModel, MissPolicy,
             ObserverModel, OutOfBounds, OverflowPolicy, ProcedureModel, SceType, ThresholdMonitor,
             TimerModel, TransformModel, ValidatorModel, ValidatorRules, WorkerModel,
@@ -664,8 +664,7 @@ mod tests {
                 name: "w".into(),
                 link_rx: "ln".into(),
                 inbox: InboxConfig {
-                    depth: 4,
-                    ordering: InboxOrdering::AcqRel,
+                    queue_ref: "q".into(),
                 },
                 outbox: None,
                 source_location: None,

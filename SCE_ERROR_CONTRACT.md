@@ -968,8 +968,9 @@ references against a real document and drift silently.
 | `validation/unresolved-placeholder` | `validation` | no |  |
 | `validation/unsupported-kind` | `validation` | `replace_one_of` | SCE Forge §3.2 |
 | `validation/wrong-pipeline` | `validation` | no | SCE Forge §4 |
-| `worker/inbox-ordering-relaxed-across-cores` | `validation` | no | SCE Protocol-Synthesis RFC §5.I |
-| `worker/inbox-ordering-unspecified` | `validation` | no | SCE Protocol-Synthesis RFC §5.I |
+| `worker/inbox-inline-removed` | `validation` | `remove_fields` | SCE Protocol-Synthesis RFC §5.P |
+| `worker/inbox-queue-not-single-consumer` | `validation` | no | SCE Protocol-Synthesis RFC §5.P |
+| `worker/inbox-ref-unknown` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.P |
 | `worker/link-rx-ref-unknown` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.D |
 | `worker/outbox-ref-unknown` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.D |
 | `worker/outbox-target-suffix-invalid` | `validation` | `replace_with` | SCE Protocol-Synthesis RFC §5.D |

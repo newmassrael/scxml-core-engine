@@ -230,6 +230,16 @@ pub struct ImportContext {
     #[serde(skip)]
     pub buffer_pool_slot_size: Option<u32>,
 
+    /// For queue imports: whether the imported document declares `consumers`
+    /// `many`, captured at enrichment time from the parsed `QueueModel`.
+    /// Consumed by the worker's inbox check
+    /// (`worker/inbox-queue-not-single-consumer`, RFC §synth-5-P Migration): a
+    /// worker is the only consumer of its inbox, so the queue it names must be
+    /// single-consumer. `false` for non-queue imports and for queue imports
+    /// whose model failed to parse during enrichment.
+    #[serde(skip)]
+    pub queue_consumers_many: bool,
+
     /// For bounded-collection imports: the imported BC's
     /// `<sce:element-type>` body text, captured at enrichment time
     /// from the parsed [`BoundedCollectionModel`]. Consumed by the
@@ -754,6 +764,7 @@ fn resolve_single_import(
         codec_is_borrowed: false,
         codec_as_borrowed_fallible: false,
         buffer_pool_slot_size: None,
+        queue_consumers_many: false,
         bc_element_snake: None,
         embed_dispatch: imp.embed_dispatch.clone(),
         codec_variant_arms_for_inversion: None,
@@ -17976,36 +17987,56 @@ fn check_reassembly_peer_id_zid_invariant_rust(
     }
 }
 
+/// The queue import that is a worker's inbox: the `<sce:import kind="queue">`
+/// whose alias `<sce:inbox ref>` names (SCE Protocol-Synthesis RFC §synth-5-P,
+/// Migration). A worker owns no storage of its own; its inbox is that queue's
+/// generated type, so a worker rendered without the import resolved has no
+/// inbox to name. `validate_worker_cross_refs` refuses an alias that is not an
+/// import before any backend renders, so a miss here is a caller that passed no
+/// import context, and is said so.
+fn worker_inbox_queue<'a>(
+    m: &WorkerModel,
+    imports: &'a [ImportContext],
+) -> Result<&'a ImportContext, ForgeError> {
+    imports
+        .iter()
+        .find(|i| i.alias == m.inbox.queue_ref && i.kind == "queue")
+        .ok_or_else(|| {
+            ForgeError::from(GenerateError::InvalidConfig(format!(
+                "worker '{}': <sce:inbox ref=\"{}\"> names a queue import that was not resolved. \
+                 A worker's inbox is the queue it imports (SCE Protocol-Synthesis RFC §5.P, \
+                 Migration), so the worker is rendered with its imports; a render with none has \
+                 no inbox type to name.",
+                m.name, m.inbox.queue_ref
+            )))
+        })
+}
+
 /// Render a `<sce:kind="worker">` document for the Rust backend
-/// (SCE Protocol-Synthesis RFC §synth-5-D, item C2). Emits a self-contained SPSC ring
-/// buffer with the inbox depth from `<sce:inbox depth>` baked in as a
-/// `const` and the ordering choice from `<sce:inbox ordering>` driving
-/// `Ordering::Acquire`/`Release` vs `Ordering::Relaxed` selection on
-/// head/tail atomic operations. The Producer/Consumer split is the
-/// type-level FSM; both halves are emitted as
-/// distinct structs with disjoint method sets (`try_push` on Producer,
-/// `try_pop` on Consumer).
+/// (SCE Protocol-Synthesis RFC §synth-5-D, item C2). The worker's inbox is the
+/// queue it imports (`<sce:inbox ref>`): the file re-exports that queue's type
+/// as the worker's `Inbox` and states the driving link and the outbox. The ring,
+/// its capacity and its ordering are the queue document's, generated once in the
+/// queue's own file, not restated per worker.
 fn render_worker_rust(
     env: &minijinja::Environment<'_>,
     m: &WorkerModel,
-    _imports: &[ImportContext],
+    imports: &[ImportContext],
 ) -> Result<String, ForgeError> {
     let tmpl = env.get_template("worker.rs.jinja2").map_err(|e| {
         ForgeError::from(GenerateError::TemplateLoad(format!(
             "worker.rs.jinja2 (rust): {e}"
         )))
     })?;
-    let ordering_is_acq_rel = m.inbox.ordering == InboxOrdering::AcqRel;
+    let queue = worker_inbox_queue(m, imports)?;
     let ctx = minijinja::context! {
         name => &m.name,
         pascal_name => filters::to_pascal_case(m.name.clone()),
         snake_name => filters::to_snake_case(m.name.clone()),
-        inbox_depth => m.inbox.depth,
-        inbox_ordering => m.inbox.ordering.to_string(),
-        // Boolean drives the ordering-constants block in the template
-        // (Acquire/Release vs Relaxed). The string form rides ORDERING
-        // const for downstream introspection.
-        ordering_is_acq_rel => ordering_is_acq_rel,
+        inbox_alias => &m.inbox.queue_ref,
+        queue_name => &queue.document_name,
+        queue_snake => filters::to_snake_case(queue.document_name.clone()),
+        queue_pascal => filters::to_pascal_case(queue.document_name.clone()),
         link_rx => &m.link_rx,
         outbox => m.outbox.clone().unwrap_or_default(),
         has_outbox => m.outbox.is_some(),
@@ -19633,21 +19664,23 @@ fn check_listener_sibling_emitted_c(
 }
 
 /// Render the `.h` header for a `<sce:kind="worker">` document on the
-/// C11 backend (SCE Protocol-Synthesis RFC §synth-5-D, item C2). Declares the opaque
-/// `_inbox_producer_t` / `_inbox_consumer_t` family + thin function
-/// prototypes. The `.c` sibling carries the ring-buffer storage and
-/// impl bodies (`render_worker_c_impl`) — both files emit in a single
-/// dispatcher pass per the buffer-pool `.h` + `.ld` precedent.
+/// C11 backend (SCE Protocol-Synthesis RFC §synth-5-D, item C2). The worker's
+/// inbox is the queue it imports (`<sce:inbox ref>`): the header includes that
+/// queue's generated header and names its type as the worker's inbox, and states
+/// the driving link and the outbox. The ring, its storage and its ordering are
+/// the queue document's, generated once in the queue's own header, so a worker
+/// has no translation unit of its own.
 fn render_worker_c_header(
     env: &minijinja::Environment<'_>,
     m: &WorkerModel,
-    _imports: &[ImportContext],
+    imports: &[ImportContext],
 ) -> Result<String, ForgeError> {
     let tmpl = env.get_template("worker.h.jinja2").map_err(|e| {
         ForgeError::from(GenerateError::TemplateLoad(format!(
             "worker.h.jinja2 (c11): {e}"
         )))
     })?;
+    let queue = worker_inbox_queue(m, imports)?;
     let snake_name = filters::to_snake_case(m.name.clone());
     let upper_name = to_upper_snake(&m.name);
     let guard = format!("SCE_FORGE_{}_H", upper_name);
@@ -19656,8 +19689,9 @@ fn render_worker_c_header(
         snake_name => snake_name,
         upper_name => upper_name,
         guard => guard,
-        inbox_depth => m.inbox.depth,
-        inbox_ordering => m.inbox.ordering.to_string(),
+        inbox_alias => &m.inbox.queue_ref,
+        queue_name => &queue.document_name,
+        queue_snake => filters::to_snake_case(queue.document_name.clone()),
         link_rx => &m.link_rx,
         outbox => m.outbox.clone().unwrap_or_default(),
         has_outbox => m.outbox.is_some(),
@@ -19667,44 +19701,6 @@ fn render_worker_c_header(
             "worker.h.jinja2 (c11): {e}"
         )))
     })
-}
-
-/// Render the `.c` impl translation unit for a `<sce:kind="worker">`
-/// document. Carries the ring-buffer storage (`static volatile uint32_t
-/// g_storage[DEPTH]` + head/tail atomics) and the impl bodies for
-/// `_try_push` / `_try_pop`. The ordering choice from `<sce:inbox
-/// ordering>` selects the `sce_atomic_*_acquire_u32` /
-/// `sce_atomic_*_release_u32` vs `_relaxed_u32` baseline atomic
-/// variants. Returns `(filename, content)` so the dispatcher can push
-/// it onto `GeneratedOutput.files` alongside the `.h` header.
-fn render_worker_c_impl(
-    env: &minijinja::Environment<'_>,
-    m: &WorkerModel,
-    _imports: &[ImportContext],
-) -> Result<(String, String), ForgeError> {
-    let tmpl = env.get_template("worker.c.jinja2").map_err(|e| {
-        ForgeError::from(GenerateError::TemplateLoad(format!(
-            "worker.c.jinja2 (c11): {e}"
-        )))
-    })?;
-    let snake_name = filters::to_snake_case(m.name.clone());
-    let upper_name = to_upper_snake(&m.name);
-    let ordering_is_acq_rel = m.inbox.ordering == InboxOrdering::AcqRel;
-    let ctx = minijinja::context! {
-        name => &m.name,
-        snake_name => snake_name.clone(),
-        upper_name => upper_name,
-        inbox_depth => m.inbox.depth,
-        inbox_ordering => m.inbox.ordering.to_string(),
-        ordering_is_acq_rel => ordering_is_acq_rel,
-        link_rx => &m.link_rx,
-    };
-    let content = tmpl.render(ctx).map_err(|e| {
-        ForgeError::from(GenerateError::TemplateRender(format!(
-            "worker.c.jinja2 (c11): {e}"
-        )))
-    })?;
-    Ok((format!("{}.c", snake_name), content))
 }
 
 /// Render a `<sce:kind="buffer-pool">` document for the C11 backend
@@ -20726,15 +20722,6 @@ pub fn generate_c11_with_imports_and_externs(
     // pattern used by algorithm/codec test-vector sidecars above.
     if let ForgeDocument::BufferPool(m) = doc {
         files.push(render_buffer_pool_linker_fragment(&env, m)?);
-    }
-    // RFC §synth-5-D Worker item C2: emit the `.c` sibling alongside the
-    // `.h` header. Ring-buffer storage + impl bodies live in the
-    // `.c` translation unit; the `.h` declared opaque types +
-    // function prototypes. Multi-file emission rides the same
-    // `files` vector pattern used by the buffer-pool linker
-    // fragment + algorithm/codec test-vector sidecars above.
-    if let ForgeDocument::Worker(m) = doc {
-        files.push(render_worker_c_impl(&env, m, imports)?);
     }
     // RFC §synth-5-I — `<sce:extern>` sidecar (C11 shape).
     if let Some(sidecar) = render_externs_sidecar(
@@ -30107,6 +30094,7 @@ mod tests {
             codec_is_borrowed: false,
             codec_as_borrowed_fallible: false,
             buffer_pool_slot_size: None,
+            queue_consumers_many: false,
             bc_element_snake: None,
             embed_dispatch: None,
             codec_variant_arms_for_inversion: None,
@@ -30980,6 +30968,7 @@ mod tests {
                 codec_is_borrowed: false,
                 codec_as_borrowed_fallible: false,
                 buffer_pool_slot_size: None,
+                queue_consumers_many: false,
                 bc_element_snake: None,
                 embed_dispatch: None,
                 codec_variant_arms_for_inversion: None,
@@ -31022,6 +31011,7 @@ mod tests {
                 codec_is_borrowed: false,
                 codec_as_borrowed_fallible: false,
                 buffer_pool_slot_size: None,
+                queue_consumers_many: false,
                 bc_element_snake: None,
                 embed_dispatch: None,
                 codec_variant_arms_for_inversion: None,

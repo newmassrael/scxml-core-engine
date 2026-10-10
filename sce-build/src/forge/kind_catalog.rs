@@ -482,7 +482,7 @@ pub const fn guide(kind: ForgeKind) -> KindGuide {
         K::Worker => KindGuide {
             role: KindRole::PlatformResource,
             summary: "A concurrent execution context that consumes what a link receives \
-                      through a fixed-size inbox.",
+                      through an inbox, which is a queue it imports.",
             choose_when: &[
                 "the text specifies a task that processes incoming messages independently \
                  of whoever sends them",
@@ -499,6 +499,9 @@ pub const fn guide(kind: ForgeKind) -> KindGuide {
                 "reads a link it imports with <sce:import kind=\"link\">; the import is \
                  followed wherever it points, so a check of the worker alone still \
                  reads the link, its framer and its buffer pool",
+                "its inbox is a queue it imports with <sce:import kind=\"queue\"> and \
+                 names with <sce:inbox ref>; the queue declares one consumer, the \
+                 worker, and owns the capacity and the algorithm",
             ],
             example: Example::Document(include_str!("../../kind-examples/worker.scxml")),
         },

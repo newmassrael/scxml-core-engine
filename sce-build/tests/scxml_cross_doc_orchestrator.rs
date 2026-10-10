@@ -108,10 +108,26 @@ fn worker_minimal(name: &str) -> String {
        xmlns:sce="http://sce.dev/ext"
        sce:kind="worker" name="{name}" version="1.0">
   <sce:import as="scout_link" src="scout_link.scxml" kind="link"/>
+  <sce:import as="rx_events" src="rx_events.scxml" kind="queue"/>
   <sce:link-rx ref="scout_link"/>
-  <sce:inbox depth="16" ordering="acq_rel"/>
+  <sce:inbox ref="rx_events"/>
 </scxml>"##
     )
+}
+
+/// The queue every worker fixture in this file names as its inbox: one
+/// consumer, the worker.
+fn inbox_queue_doc() -> &'static str {
+    r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="queue" name="rx_events" version="1.0">
+  <sce:element-type>rx_event</sce:element-type>
+  <sce:producers>one</sce:producers>
+  <sce:consumers>one</sce:consumers>
+  <sce:progress>wait-free</sce:progress>
+  <sce:bounded capacity="15"/>
+</scxml>"##
 }
 
 /// The codec every link fixture in this file names as its framer.
@@ -397,6 +413,9 @@ fn worker_doc_records_into_cross_doc_registry() {
         "scout_stage_pool.scxml",
         &buffer_pool_default("scout_stage_pool", 8, 1536),
     );
+    // The worker's inbox is a queue it imports, which resolves at parse time
+    // like the link beside it.
+    write_doc(dir.path(), "rx_events.scxml", inbox_queue_doc());
     let worker = write_doc(dir.path(), "rx_loop.scxml", &worker_minimal("rx_loop"));
     let main = write_doc(
         dir.path(),

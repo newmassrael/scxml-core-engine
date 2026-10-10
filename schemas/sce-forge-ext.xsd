@@ -1847,12 +1847,13 @@
     via `<scxml sce:kind="worker">`. The schema vertical slice covers
     the four worker body elements:
       - <sce:link-rx ref="..."/>  required driving link kind reference
-      - <sce:inbox depth="N"/>    required SPSC ring-buffer depth
+      - <sce:inbox ref="..."/>    required alias of the imported queue that is the inbox
       - <sce:outbox ref="..."/>   optional recipient inbox path
       - <sce:body>...</sce:body>  optional SCXML actions (usually empty)
-    Cross-resolution + ordering validators live in sce-build
-    (`worker/link-rx-ref-unknown`, `worker/inbox-ordering-unspecified`);
-    the XSD enforces structural shape only.
+    Cross-resolution validators live in sce-build
+    (`worker/link-rx-ref-unknown`, `worker/inbox-ref-unknown`,
+    `worker/inbox-queue-not-single-consumer`); the XSD enforces structural
+    shape only.
   -->
   <xs:element name="link-rx">
     <xs:complexType>
@@ -1862,25 +1863,21 @@
 
   <xs:element name="inbox">
     <xs:complexType>
-      <xs:attribute name="depth" type="xs:positiveInteger" use="required"/>
-      <!-- SCE Protocol-Synthesis RFC §synth-5-I lines 1752-1758: SPSC inbox
-           ordering choice. Spec phrasing labels missing-ordering a
-           "warning"; SCE's error-only wire realizes the warning as a
-           required-when-worker-exists error (parse-time
-           `worker/inbox-ordering-unspecified`), so the XSD shape stays
-           optional and the Rust parser enforces presence with a typed
-           diagnostic that names the choice axes. The XSD enum closes
-           the accepted set to `acq_rel` | `relaxed` so foreign values
-           reject at schema validation time rather than reaching the
-           parser's `InvalidAttribute` fallback. -->
-      <xs:attribute name="ordering" use="optional">
-        <xs:simpleType>
-          <xs:restriction base="xs:string">
-            <xs:enumeration value="acq_rel"/>
-            <xs:enumeration value="relaxed"/>
-          </xs:restriction>
-        </xs:simpleType>
-      </xs:attribute>
+      <!-- SCE Protocol-Synthesis RFC §synth-5-P Migration (worker, §synth-5-D): the
+           inbox is a queue the worker imports with
+           `<sce:import kind="queue">` and names here by alias. The shape
+           stays optional in the schema and the Rust parser enforces presence
+           with a typed diagnostic, as every attribute that a removed form
+           must still reach the parser with does. -->
+      <xs:attribute name="ref" type="xs:NCName" use="optional"/>
+      <!-- Removed: the inline ring depth and ordering. They stay in the
+           grammar for one reason: a document that still writes them must
+           reach the parser, which refuses it with `worker/inbox-inline-removed`
+           and names the queue document that holds exactly what the ring held
+           (`capacity = depth - 1`, one producer, one consumer, `wait-free`),
+           where a schema failure would only say the attribute is unknown. -->
+      <xs:attribute name="depth" type="xs:string" use="optional"/>
+      <xs:attribute name="ordering" type="xs:string" use="optional"/>
     </xs:complexType>
   </xs:element>
 

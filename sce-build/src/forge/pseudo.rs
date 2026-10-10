@@ -256,7 +256,7 @@
 //!   bounded-collection <name> of <type> capacity (deploy-key <k>|const <n>)
 //!       overflow <p> ordering <o> concurrency <c> [index-by <field>]
 //!
-//!   worker <name> link-rx <l> inbox depth <n> ordering <o> [outbox <x>]
+//!   worker <name> link-rx <l> inbox <queue alias> [outbox <x>]
 //!
 //!   buffer-pool <name> slots <n> size <n> section <s> align <n>
 //!       cache <p> [dma <c>]
@@ -329,12 +329,11 @@ use crate::forge::model::{
     CodecEncoding, CodecField, CodecModel, CodecTestVector, CodecVariant, CollectionOrdering,
     ConcurrencyMode, ConditionModel, CountRef, DecodedFieldValue, DecodedValue, Direction, Endian,
     EnumModel, EventSchemaModel, FilterModel, FilterType, FlagDef, FoldBody, ForgeDocument,
-    ForgeField, InboxOrdering, InterpolationMethod, InterpolationModel, LinkClass, LinkModel,
-    LookupModel, MissPolicy, ObserverModel, OutOfBounds, OverflowPolicy, PresentIfPredicate,
-    PresentIfScope, ProcedureHelper, ProcedureModel, ProcedureState, ProcedureTransition,
-    QueueCardinality, QueueModel, QueueProgress, QueueStorage, SceType, TestVector,
-    TestVectorValue, TimerModel, TlvOverflowPolicy, TlvTerminateStrategy, TransformModel,
-    ValidatorModel, WorkerModel,
+    ForgeField, InterpolationMethod, InterpolationModel, LinkClass, LinkModel, LookupModel,
+    MissPolicy, ObserverModel, OutOfBounds, OverflowPolicy, PresentIfPredicate, PresentIfScope,
+    ProcedureHelper, ProcedureModel, ProcedureState, ProcedureTransition, QueueCardinality,
+    QueueModel, QueueProgress, QueueStorage, SceType, TestVector, TestVectorValue, TimerModel,
+    TlvOverflowPolicy, TlvTerminateStrategy, TransformModel, ValidatorModel, WorkerModel,
 };
 use crate::forge::page::{Indent, Node, Part, Shape, Word, EN};
 use crate::model::BlockRole;
@@ -3476,23 +3475,18 @@ fn render_codec_test_vector(tv: &CodecTestVector, out: &mut Out<'_>) {
 //
 // ⚠ The enum spellings below come from `schemas/sce-forge-ext.xsd`'s
 // `xs:enumeration` values, NOT from the serde rename on the Rust enum.
-// The two disagree: `LinkClass` and `InboxOrdering` carry
-// `rename_all = "snake_case"` / `"kebab-case"` while the grammar spells
-// them `raw_eth` and `acq_rel`, and a kebab rendering would print words
+// The two disagree: `LinkClass` carries `rename_all = "snake_case"` while
+// the grammar spells it `raw_eth`, and a kebab rendering would print words
 // no author ever wrote. What a reviewer compares against the
 // specification is the authored spelling.
 
 fn render_worker(m: &WorkerModel) -> Vec<Node> {
     let mut out = Out::new();
-    let ordering = match m.inbox.ordering {
-        InboxOrdering::AcqRel => "acq_rel",
-        InboxOrdering::Relaxed => "relaxed",
-    };
     let mut head = format!(
-        "worker {} link-rx {} inbox depth {} ordering {ordering}",
+        "worker {} link-rx {} inbox {}",
         text(&m.name),
         text(&m.link_rx),
-        m.inbox.depth
+        text(&m.inbox.queue_ref)
     );
     if let Some(o) = &m.outbox {
         let _ = write!(head, " outbox {}", text(o));

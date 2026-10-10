@@ -2790,50 +2790,70 @@ pub enum ValidationError {
         candidates: Vec<String>,
     },
 
-    /// SCE Protocol-Synthesis RFC §synth-5-I line 1757-1758 — `<sce:inbox>` declared
-    /// without an `ordering` attribute. Spec phrasing labels this a
-    /// "warning, codegen defaults to acquire/release"; SCE's error-only
-    /// wire surface (no severity dimension yet) realizes the warning as
-    /// a required-when-worker-exists error: the author must explicitly
-    /// pick `ordering="acq_rel"` or `ordering="relaxed"`. The choice
-    /// changes the emitted atomic operations on head/tail indices in
-    /// both Rust + C11 codegen, so silent default is risk-prone on a
-    /// cross-core multi-MCU target. Diagnostic name preserves spec
-    /// wording verbatim.
+    /// SCE Protocol-Synthesis RFC §synth-5-P *Migration* (worker, §synth-5-D) —
+    /// `<sce:inbox>` names no queue: it carries the removed inline `depth`
+    /// and/or `ordering` attributes. The inbox is now a queue the worker
+    /// imports and refers to by alias (`<sce:inbox ref="..."/>`); the queue
+    /// document owns the capacity and the algorithm, and the ordering is the
+    /// algorithm's, not an author's choice. The fix names the queue document
+    /// that is exactly what the old ring held: `capacity = depth - 1`, one
+    /// producer, one consumer, `wait-free` progress.
     #[error(
-        "worker '{worker_name}': <sce:inbox> declared without an `ordering` attribute. \
-         Pick `ordering=\"acq_rel\"` (safe default; producer and consumer pair head/tail with acquire+release on every push/pop) or `ordering=\"relaxed\"` (single-core fast-path; cross-core placement raises `worker/inbox-ordering-relaxed-across-cores`). Spec §5.I line 1752-1758 mandates one of these two for every SPSC inbox."
+        "worker '{worker_name}': <sce:inbox {removed}> names no queue. The inline `depth` and `ordering` attributes are removed: \
+         import a queue document with `<sce:import kind=\"queue\" .../>` and write `<sce:inbox ref=\"<alias>\"/>`. \
+         The queue that holds what this ring held declares {replacement} (SCE Protocol-Synthesis RFC §5.P, Migration)."
     )]
-    WorkerInboxOrderingUnspecified {
-        /// The worker document whose `<sce:inbox>` lacks ordering.
-        /// Anchored at the `<sce:inbox>` node by `located()`.
+    WorkerInboxInlineRemoved {
+        /// The worker document whose `<sce:inbox>` carries the removed
+        /// attributes. Anchored at the `<sce:inbox>` node by `located()`.
         worker_name: String,
+        /// The removed attributes as authored, in document order
+        /// (`depth="16"`, `ordering="acq_rel"`).
+        removed: String,
+        /// The queue document that replaces them, spelled out: the capacity
+        /// is `depth - 1` when the depth parses, the formula when it does not.
+        replacement: String,
     },
 
-    /// SCE Protocol-Synthesis RFC §synth-5-I line 1755-1756 — `<sce:inbox
-    /// ordering="relaxed">` declared on a worker whose producer and
-    /// consumer halves resolve to different cores via deploy.placement.
-    /// Per spec, `relaxed` on cross-core shared state is "insufficient";
-    /// head/tail indices need acquire/release pairing to guarantee
-    /// happens-before ordering across the cache-coherency boundary.
-    /// Codegen-invariant guard: silent-skip when deploy is absent
-    /// (`ForgeCompileOptions.worker_placement` is `None`), fires only
-    /// when explicit cross-core placement coexists with `relaxed`
-    /// ordering. Diagnostic name preserves spec wording verbatim.
+    /// SCE Protocol-Synthesis RFC §synth-5-P *Migration* (worker, §synth-5-D) —
+    /// `<sce:inbox ref>` does not name an `<sce:import kind="queue">` of this
+    /// worker document. Same closed-set shape as
+    /// [`Self::WorkerLinkRxRefUnknown`]: `candidates` are the sorted aliases
+    /// of the queue imports, and the fix replaces the ref with one of them.
     #[error(
-        "worker '{worker_name}': <sce:inbox ordering=\"relaxed\"> declared but deploy.placement pins producer on core {producer_core} and consumer on core {consumer_core}. \
-         Cross-core SPSC inboxes require acquire/release pairing on head/tail (per spec §5.I lines 1752-1758). Replace with `ordering=\"acq_rel\"` or co-locate producer + consumer on the same core via deploy.placement."
+        "worker '{worker_name}': <sce:inbox ref=\"{ref_name}\"> references a name that is not imported as a queue kind. \
+         Declare the queue via <sce:import as=\"{ref_name}\" src=\"...\" kind=\"queue\"/> on this worker document, \
+         or replace the ref with one of the imported queue-kind aliases (closest matches: {}).",
+        crate::forge::error::joined_or_none(.candidates)
     )]
-    WorkerInboxOrderingRelaxedAcrossCores {
-        /// The worker document whose inbox declared relaxed ordering
-        /// against cross-core placement. Anchored at the `<sce:inbox>`
-        /// node by `located()`.
+    WorkerInboxRefUnknown {
+        /// The worker document whose `<sce:inbox>` carries the unresolvable
+        /// ref. Anchored at the `<sce:inbox>` node by `located()`.
         worker_name: String,
-        /// Core index hosting the inbox producer (link-rx-driven path).
-        producer_core: u32,
-        /// Core index hosting the inbox consumer (the worker's own
-        /// SCXML processing thread).
-        consumer_core: u32,
+        /// Offending `<sce:inbox ref>` value as authored.
+        ref_name: String,
+        /// Sorted closed candidate set — every kind=queue alias known to
+        /// `parsed.imports` for this document.
+        candidates: Vec<String>,
+    },
+
+    /// SCE Protocol-Synthesis RFC §synth-5-P *Migration* (worker, §synth-5-D) — the
+    /// queue a worker names as its inbox declares `consumers` `many`. A worker
+    /// is the one context that pops its inbox, so the queue must declare
+    /// `consumers` `one`; a `many`-consumer queue is a different contract and
+    /// its algorithm (and cost) is chosen for it.
+    #[error(
+        "worker '{worker_name}': <sce:inbox ref=\"{queue_alias}\"> names queue '{queue_name}', which declares consumers=\"many\". \
+         A worker is the only consumer of its inbox: declare `consumers` `one` in the queue document (SCE Protocol-Synthesis RFC §5.P, Migration)."
+    )]
+    WorkerInboxQueueNotSingleConsumer {
+        /// The worker document whose inbox names the queue. Anchored at the
+        /// `<sce:inbox>` node by `located()`.
+        worker_name: String,
+        /// The import alias the worker refers to the queue by.
+        queue_alias: String,
+        /// The queue document's own name.
+        queue_name: String,
     },
 
     /// SCE Protocol-Synthesis RFC §synth-5-D line 912

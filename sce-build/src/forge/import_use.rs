@@ -370,8 +370,13 @@ impl Names {
                 }
                 Ok(())
             }
+            // A worker names the link that drives it and the queue that is its
+            // inbox (RFC §synth-5-P, Migration): the inbox's type is rendered
+            // from that import, so it must survive the pruning of imports the
+            // document does not name.
             ForgeDocument::Worker(m) => {
                 self.name(&m.link_rx);
+                self.name(&m.inbox.queue_ref);
                 self.opt_name(m.outbox.as_deref());
                 Ok(())
             }

@@ -92,8 +92,7 @@ fn hub_lines(doc: &ForgeDocument) -> Result<Vec<String>, Refusal> {
         }
         ForgeDocument::Worker(m) => {
             let mut lines = facts(m, &role_fields)?;
-            lines.push(("inbox.depth".into(), m.inbox.depth.to_string()));
-            lines.push(("inbox.ordering".into(), m.inbox.ordering.to_string()));
+            lines.push(("inbox".into(), m.inbox.queue_ref.clone()));
             lines
         }
         _ => Vec::new(),
@@ -306,13 +305,7 @@ mod tests {
         assert!(
             words
                 .iter()
-                .any(|w| w.starts_with("inbox.depth") && w.ends_with("16")),
-            "{words:?}"
-        );
-        assert!(
-            words
-                .iter()
-                .any(|w| w.starts_with("inbox.ordering") && w.ends_with("acq_rel")),
+                .any(|w| w.starts_with("inbox") && w.ends_with("rx_events")),
             "{words:?}"
         );
         assert_eq!(lines(&sheet), 1);

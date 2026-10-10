@@ -201,11 +201,10 @@ impl StaticAnalyzer {
 }
 
 /// `extern_symbols:` block in deploy.yaml. Today carries one field.
-/// `ordering_default` (spec line 1851 and the cross-core inbox
-/// companion `worker/inbox-ordering-*` family) is absent because the
-/// per-symbol `ordering` it would default is already required at every
-/// declaration site — a default has nothing to fill in until that
-/// requirement is relaxed.
+/// `ordering_default` (spec line 1851) is absent because the per-symbol
+/// `ordering` it would default is already required at every declaration
+/// site — a default has nothing to fill in until that requirement is
+/// relaxed.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ExternSymbolsConfig {
@@ -862,7 +861,7 @@ impl LinkRole {
 /// Conditional default per spec line 2261: `IsrToPool`
 /// when `burst_pps` declared, `WorkerTick` otherwise. Applied at the
 /// field-resolver layer (post-parse), not parser-tier — same pattern
-/// as the `WorkerPlacementConfig` populator.
+/// as the queue placement resolver.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RxDispatch {
@@ -1366,42 +1365,21 @@ impl SchedulerKind {
     }
 }
 
-/// Per-machine worker placement entry (SCE Protocol-Synthesis RFC §synth-5-D + §synth-5-I).
-/// Declares which core hosts each worker doc's inbox producer
-/// (link-rx-driven path) and consumer (SCXML processing thread).
-///
-/// Threaded into [`crate::ForgeCompileOptions::worker_placement`] by
-/// [`crate::compile_forge_with_deploy`] for the codegen-invariant
-/// validator [`crate::validate_worker_inbox_ordering_placement`]
-/// (`e2980d83`) to detect cross-core relaxed-ordering violations
-/// (`worker/inbox-ordering-relaxed-across-cores`).
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct WorkerPlacementConfig {
-    /// Core index hosting the inbox producer.
-    pub producer_core: u32,
-    /// Core index hosting the inbox consumer.
-    pub consumer_core: u32,
-}
-
 /// Per-machine worker descriptor (SCE Protocol-Synthesis RFC §synth-5-D + §synth-5-K).
-/// Authors list every worker doc bound to the machine and declare its
-/// runtime placement when cross-core ordering matters. Absent
-/// `placement:` ⇒ codegen-invariant validator silent-skips for that
-/// worker (single-core mode); the cooperative slot-count check
-/// ([`validate_machine_scheduler_worker_capacity`]) still counts the
-/// entry toward the machine's worker budget.
-#[derive(Debug, Clone, Deserialize)]
+/// Authors list every worker doc bound to the machine; the map's length feeds
+/// the cooperative slot-count check
+/// ([`validate_machine_scheduler_worker_capacity`]).
+///
+/// The schema admits an empty struct today, as [`TimerDeployConfig`] does. It
+/// used to carry a `placement` block (the cores of an inbox's producer and
+/// consumer), read only to refuse `ordering="relaxed"` across cores. The
+/// inbox is now a queue the worker imports (RFC §synth-5-P, Migration), whose
+/// algorithm owns the ordering and whose own deploy entry
+/// (`machines.<m>.queues.<q>.placement`) says where each side runs, so the
+/// block has no reader and is refused as an unknown field.
+#[derive(Debug, Clone, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
-pub struct WorkerDeployConfig {
-    /// Optional cross-core placement (see [`WorkerPlacementConfig`]).
-    /// Required when the worker doc declares `<sce:inbox ordering="relaxed"/>`
-    /// AND `core_count > 1`; the codegen-invariant validator catches the
-    /// cross-core violation. Single-core machines and `ordering="acq_rel"`
-    /// workers omit the block.
-    #[serde(default)]
-    pub placement: Option<WorkerPlacementConfig>,
-}
+pub struct WorkerDeployConfig {}
 
 /// Per-machine timer doc descriptor (SCE Protocol-Synthesis RFC §synth-5-D + §synth-5-K,
 /// C1). Authors list every `sce:kind="timer"` doc bound to the
@@ -2834,9 +2812,9 @@ pub struct MachineConfig {
     /// Per-machine worker doc registry (SCE Protocol-Synthesis RFC §synth-5-D + §synth-5-K).
     /// Keyed by worker name (matches `<scxml sce:kind="worker"
     /// name="...">`). The map's length feeds the cooperative slot-count
-    /// check ([`validate_machine_scheduler_worker_capacity`]); each entry
-    /// can carry an optional cross-core `placement:` block consumed by
-    /// the inbox-ordering codegen-invariant validator.
+    /// check ([`validate_machine_scheduler_worker_capacity`]); an entry
+    /// carries nothing else today (the inbox is a queue the worker
+    /// imports, and the queue's own entry places its sides).
     ///
     /// Absent ⇒ machine declares no workers; the slot-count check
     /// silent-skips. Present ⇒ slot-count check fires when

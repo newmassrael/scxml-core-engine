@@ -3,9 +3,10 @@
 //! 2428-9 / 2430-1 + RFC §synth-5-D line 912).
 //!
 //! Each test exercises one spec-named code with its co-landed
-//! consumer; the populator round-trip test pins the deploy.yaml
-//! `machines.<m>.workers.<w>.placement` → `ForgeCompileOptions.worker_placement`
-//! threading end-to-end.
+//! consumer. A worker entry carries nothing but its name: the inbox is a queue
+//! the worker imports (RFC §synth-5-P, Migration), whose own deploy entry
+//! places its sides, so the `placement` block this entry used to carry (read
+//! only to refuse `ordering="relaxed"` across cores) is refused as unknown.
 //!
 //! Test matrix:
 //! - Happy: full cooperative scheduler + workers block parses and
@@ -21,10 +22,9 @@
 //!   against machine that did not list it in `workers:`.
 //! - Renamed wire `deploy/worker-stack-budget-missing` — existing
 //!   variant fires under the new spec-verbatim wire name.
-//! - Populator round-trip — placement block threads into
-//!   `ForgeCompileOptions.worker_placement` with sorted entries.
-//! - Silent-skip — deploy-unaware path leaves `worker_placement`
-//!   `None` per the absent-input silent-skip precedent.
+//! - Retired `placement` block — a worker entry that still carries it is
+//!   refused as an unknown field.
+//! - A worker compiles against a deploy with its inbox queue named.
 
 use std::fs;
 use std::path::Path;
@@ -55,15 +55,30 @@ fn worker_fixture(name: &str) -> String {
        xmlns:sce="http://sce.dev/ext"
        sce:kind="worker" name="{name}" version="1.0">
   <sce:import as="udp_scout" src="udp_scout.scxml" kind="link"/>
+  <sce:import as="rx_events" src="rx_events.scxml" kind="queue"/>
   <sce:link-rx ref="udp_scout"/>
-  <sce:inbox depth="16" ordering="acq_rel"/>
+  <sce:inbox ref="rx_events"/>
 </scxml>"##
     )
+}
+
+fn queue_fixture() -> &'static str {
+    r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="queue" name="rx_events" version="1.0">
+  <sce:element-type>rx_event</sce:element-type>
+  <sce:producers>one</sce:producers>
+  <sce:consumers>one</sce:consumers>
+  <sce:progress>wait-free</sce:progress>
+  <sce:bounded capacity="15"/>
+</scxml>"##
 }
 
 fn build_workspace() -> tempfile::TempDir {
     let dir = tempdir().expect("tempdir");
     fs::write(dir.path().join("udp_scout.scxml"), link_fixture()).expect("write link");
+    fs::write(dir.path().join("rx_events.scxml"), queue_fixture()).expect("write queue");
     dir
 }
 
@@ -99,14 +114,8 @@ topology:
           tick_period_us: 1000
           keepalive_jitter_budget_us: 5000
         workers:
-          rx_loop:
-            placement:
-              producer_core: 0
-              consumer_core: 0
-          tx_loop:
-            placement:
-              producer_core: 0
-              consumer_core: 1
+          rx_loop: {}
+          tx_loop: {}
 "##;
     let cfg = parse_deploy_str(yaml).expect("full cooperative + workers must parse");
     let machine = cfg
@@ -117,12 +126,6 @@ topology:
     assert_eq!(machine.workers.len(), 2);
     assert!(machine.workers.contains_key("rx_loop"));
     assert!(machine.workers.contains_key("tx_loop"));
-    let rx_placement = machine.workers["rx_loop"]
-        .placement
-        .as_ref()
-        .expect("rx_loop placement");
-    assert_eq!(rx_placement.producer_core, 0);
-    assert_eq!(rx_placement.consumer_core, 0);
 }
 
 // ─── Negative: deploy/worker-slot-budget-missing ──────────────────────
@@ -381,22 +384,16 @@ topology:
     parse_deploy_str(yaml).expect("rt scheduler without jitter budget must parse");
 }
 
-// ─── Populator round-trip via compile_forge_with_deploy ───────────────
+// ─── Retired placement block + a worker against a deploy ──────────────
 
 #[test]
-fn placement_block_populates_worker_placement_options() {
-    // Worker doc declares `ordering="relaxed"` AND deploy.yaml pins
-    // producer + consumer on different cores. End-to-end exercise:
-    //   1. Deploy.yaml `workers.rx_loop.placement` parses.
-    //   2. `compile_forge_with_deploy` populates
-    //      `ForgeCompileOptions.worker_placement` from the deploy.
-    //   3. Codegen-invariant `worker/inbox-ordering-relaxed-across-cores`
-    //      fires from the worker cross-resolution validator using
-    //      the populated slice.
-    //
-    // This pins the populator → validator wire end-to-end without
-    // manually constructing `ForgeCompileOptions` in the test.
-    let _ws = build_workspace();
+fn a_worker_entry_that_still_carries_a_placement_block_is_refused() {
+    // The block named the cores of an inbox's producer and consumer and was
+    // read only to refuse `ordering="relaxed"` across cores. The inbox is now
+    // a queue the worker imports, whose algorithm owns the ordering and whose
+    // own entry (`machines.<m>.queues.<q>.placement`) says where each side
+    // runs, so the block has no reader: a deploy that still writes it is told
+    // it is an unknown field, not left believing it does something.
     let yaml = r##"
 version: "1.0"
 topology:
@@ -416,51 +413,21 @@ topology:
               producer_core: 0
               consumer_core: 1
 "##;
-    let deploy = parse_deploy_str(yaml).expect("deploy parses");
-
-    let relaxed_worker = r##"<?xml version="1.0" encoding="UTF-8"?>
-<scxml xmlns="http://www.w3.org/2005/07/scxml"
-       xmlns:sce="http://sce.dev/ext"
-       sce:kind="worker" name="rx_loop" version="1.0">
-  <sce:import as="udp_scout" src="udp_scout.scxml" kind="link"/>
-  <sce:link-rx ref="udp_scout"/>
-  <sce:inbox depth="16" ordering="relaxed"/>
-</scxml>"##;
-
-    let err = match compile_forge_with_deploy(
-        relaxed_worker,
-        DocumentLabel::symmetric("rx_loop"),
-        Language::Rust,
-        Some(&deploy),
-        Some("mcu_node"),
-    ) {
-        Ok(_) => panic!(
-            "populator → cross-core validator wire must fire when \
-             relaxed + cross-core placement"
-        ),
-        Err(e) => e.error,
+    let message = match parse_deploy_str(yaml) {
+        Ok(_) => panic!("a retired placement block must be refused"),
+        Err(e) => e.to_string(),
     };
-    match err {
-        ForgeError::Validation(boxed) => match *boxed {
-            ValidationError::WorkerInboxOrderingRelaxedAcrossCores {
-                worker_name,
-                producer_core,
-                consumer_core,
-            } => {
-                assert_eq!(worker_name, "rx_loop");
-                assert_eq!(producer_core, 0);
-                assert_eq!(consumer_core, 1);
-            }
-            other => panic!("expected WorkerInboxOrderingRelaxedAcrossCores, got {other:?}"),
-        },
-        other => panic!("expected WorkerInboxOrderingRelaxedAcrossCores, got {other:?}"),
-    }
+    assert!(
+        message.contains("placement"),
+        "the refusal names the field: {message}"
+    );
 }
 
 #[test]
-fn placement_block_same_core_does_not_fire_cross_core_validator() {
-    // Same as above but producer + consumer on the same core →
-    // codegen-invariant silent-passes; relaxed ordering is legal.
+fn a_worker_compiles_against_a_deploy_that_lists_it() {
+    // The worker imports its inbox queue by alias; the single-document path
+    // reads no file, so the import names the queue by the stem of its `src`,
+    // and the worker's emission names that queue as its inbox.
     let _ws = build_workspace();
     let yaml = r##"
 version: "1.0"
@@ -476,29 +443,22 @@ topology:
           tick_period_us: 1000
           keepalive_jitter_budget_us: 5000
         workers:
-          rx_loop:
-            placement:
-              producer_core: 0
-              consumer_core: 0
+          rx_loop: {}
 "##;
     let deploy = parse_deploy_str(yaml).expect("deploy parses");
-
-    let relaxed_worker = r##"<?xml version="1.0" encoding="UTF-8"?>
-<scxml xmlns="http://www.w3.org/2005/07/scxml"
-       xmlns:sce="http://sce.dev/ext"
-       sce:kind="worker" name="rx_loop" version="1.0">
-  <sce:import as="udp_scout" src="udp_scout.scxml" kind="link"/>
-  <sce:link-rx ref="udp_scout"/>
-  <sce:inbox depth="16" ordering="relaxed"/>
-</scxml>"##;
-    compile_forge_with_deploy(
-        relaxed_worker,
+    let out = compile_forge_with_deploy(
+        &worker_fixture("rx_loop"),
         DocumentLabel::symmetric("rx_loop"),
         Language::Rust,
         Some(&deploy),
         Some("mcu_node"),
     )
-    .expect("same-core placement must silent-pass the cross-core validator");
+    .expect("a listed worker compiles against its deploy");
+    let (_, code) = out.files.first().expect("at least one file");
+    assert!(
+        code.contains("pub use super::rx_events::RxEvents as RxLoopInbox;"),
+        "the worker names its inbox queue:\n{code}"
+    );
 }
 
 // ─── Required-when-cooperative ordering: stack budget vs slot budget ──

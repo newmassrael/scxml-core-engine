@@ -10,13 +10,18 @@
 //!      not in the allowlist `[<self-name>, _event, _data, _name,
 //!      _iolocation, <outbox-target>]`).
 //!
-//! Cross-resolution (link-rx ref + outbox ref), inbox ordering codes,
-//! and deploy-aware scheduler-config validators live in
-//! `c2_worker_beta.rs` / `c2_worker_gamma.rs`.
+//! The inbox is a queue the worker imports (RFC §synth-5-P, Migration):
+//! `<sce:inbox ref>` names the import, and the removed inline `depth` and
+//! `ordering` fire `worker/inbox-inline-removed`.
+//!
+//! Cross-resolution (link-rx ref, inbox ref + single-consumer, outbox
+//! ref) and deploy-aware scheduler-config validators live in
+//! `c2_worker_outbox.rs`, `c2_worker_codegen.rs` and
+//! `c2_worker_scheduler_codes.rs`.
 
-use sce_build::forge::diagnostic::{DiagnosticCode, ToDiagnostics};
+use sce_build::forge::diagnostic::{DiagnosticCode, Fix, ToDiagnostics};
 use sce_build::forge::error::{ForgeError, Located, ValidationError, WorkerSharedStateReason};
-use sce_build::forge::model::{ForgeDocument, ForgeKind, InboxConfig, InboxOrdering, WorkerModel};
+use sce_build::forge::model::{ForgeDocument, ForgeKind, InboxConfig, WorkerModel};
 use sce_build::forge::parser::parse_forge;
 use sce_build::DocumentLabel;
 
@@ -38,7 +43,7 @@ fn parse(content: &str, name: &'static str) -> Result<WorkerModel, Located<Forge
 }
 
 /// Happy path: minimal worker with only the required schema slots
-/// (link-rx + inbox). Spec line 893+894 verbatim shape.
+/// (link-rx + inbox).
 #[test]
 fn worker_minimal_schema_parses() {
     let xml = r##"<?xml version="1.0" encoding="UTF-8"?>
@@ -46,17 +51,16 @@ fn worker_minimal_schema_parses() {
        xmlns:sce="http://sce.dev/ext"
        sce:kind="worker" name="rx_loop" version="1.0">
   <sce:link-rx ref="udp_scout"/>
-  <sce:inbox depth="16" ordering="acq_rel"/>
+  <sce:inbox ref="rx_events"/>
 </scxml>"##;
     let w = parse(xml, "rx_loop").expect("minimal worker parses");
     assert_eq!(w.name, "rx_loop");
     assert_eq!(w.link_rx, "udp_scout");
-    assert_eq!(w.inbox.depth, 16);
+    assert_eq!(w.inbox.queue_ref, "rx_events");
     assert_eq!(w.outbox, None);
 }
 
 /// Full schema vertical slice: link-rx + inbox + outbox + empty body.
-/// Spec lines 888-900 verbatim shape.
 #[test]
 fn worker_full_schema_parses() {
     let xml = r##"<?xml version="1.0" encoding="UTF-8"?>
@@ -64,14 +68,14 @@ fn worker_full_schema_parses() {
        xmlns:sce="http://sce.dev/ext"
        sce:kind="worker" name="rx_loop" version="1.0">
   <sce:link-rx ref="udp_scout"/>
-  <sce:inbox depth="32" ordering="acq_rel"/>
+  <sce:inbox ref="rx_events"/>
   <sce:outbox ref="session_fsm.inbox"/>
   <sce:body/>
 </scxml>"##;
     let w = parse(xml, "rx_loop").expect("full worker parses");
     assert_eq!(w.name, "rx_loop");
     assert_eq!(w.link_rx, "udp_scout");
-    assert_eq!(w.inbox.depth, 32);
+    assert_eq!(w.inbox.queue_ref, "rx_events");
     assert_eq!(w.outbox.as_deref(), Some("session_fsm.inbox"));
 }
 
@@ -82,7 +86,7 @@ fn worker_missing_link_rx_rejected() {
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        sce:kind="worker" name="rx_loop" version="1.0">
-  <sce:inbox depth="16" ordering="acq_rel"/>
+  <sce:inbox ref="rx_events"/>
 </scxml>"##;
     let err = parse(xml, "rx_loop").expect_err("missing link-rx must reject");
     match err.error {
@@ -119,15 +123,115 @@ fn worker_missing_inbox_rejected() {
     }
 }
 
-/// Negative: `<sce:inbox>` with `depth="0"` — zero depth is degenerate.
-///
-/// Defense-in-depth: when the SCE-bundled XSD is reachable the rejection
-/// surfaces as an `xs:positiveInteger` validation error; when XSD is
-/// skipped (vendored without the schemas/ directory) the Rust parser's
-/// `depth == 0` guard fires `InvalidAttribute(<sce:inbox>, depth)`. The
-/// test accepts either path — both prove the schema constraint holds.
+/// Negative: `<sce:inbox>` that names no queue and carries no removed
+/// attribute — the `ref` is the required attribute.
 #[test]
-fn worker_inbox_depth_zero_rejected() {
+fn worker_inbox_without_ref_rejected() {
+    let xml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="worker" name="rx_loop" version="1.0">
+  <sce:link-rx ref="udp_scout"/>
+  <sce:inbox/>
+</scxml>"##;
+    let err = parse(xml, "rx_loop").expect_err("an inbox with no ref must reject");
+    match err.error {
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::MissingAttribute { element, attr } => {
+                assert_eq!(element, "<sce:inbox>");
+                assert_eq!(attr, "ref");
+            }
+            other => panic!("expected MissingAttribute(ref), got {other:?}"),
+        },
+        other => panic!("expected MissingAttribute(ref), got {other:?}"),
+    }
+}
+
+/// Negative: an empty `ref` names nothing.
+#[test]
+fn worker_inbox_empty_ref_rejected() {
+    let xml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="worker" name="rx_loop" version="1.0">
+  <sce:link-rx ref="udp_scout"/>
+  <sce:inbox ref=""/>
+</scxml>"##;
+    let err = parse(xml, "rx_loop").expect_err("an empty ref must reject");
+    match &err.error {
+        // Layer 1 (XSD): `xs:NCName` refuses the empty string.
+        ForgeError::Xml(_) => {}
+        // Layer 2 (parser): the non-empty guard inside `parse_worker`.
+        ForgeError::Validation(boxed) => match boxed.as_ref() {
+            ValidationError::AttributeRuleViolated { element, attr, .. } => {
+                assert_eq!(element, "<sce:inbox>");
+                assert_eq!(attr, "ref");
+            }
+            other => panic!("expected an empty-ref rejection, got {other:?}"),
+        },
+        other => panic!("expected an empty-ref rejection, got {other:?}"),
+    }
+}
+
+/// The removed inline form: `depth` and `ordering` fire
+/// `worker/inbox-inline-removed`, whose message names the queue document that
+/// holds exactly what the ring held (`capacity = depth - 1`, one producer, one
+/// consumer, `wait-free`).
+#[test]
+fn worker_inline_depth_and_ordering_are_removed() {
+    let xml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="worker" name="rx_loop" version="1.0">
+  <sce:link-rx ref="udp_scout"/>
+  <sce:inbox depth="16" ordering="acq_rel"/>
+</scxml>"##;
+    let err = parse(xml, "rx_loop").expect_err("the inline form is removed");
+    match &err.error {
+        ForgeError::Validation(boxed) => match boxed.as_ref() {
+            ValidationError::WorkerInboxInlineRemoved {
+                worker_name,
+                removed,
+                replacement,
+            } => {
+                assert_eq!(worker_name, "rx_loop");
+                assert_eq!(removed, "depth=\"16\" ordering=\"acq_rel\"");
+                assert!(
+                    replacement.contains("capacity=\"15\"")
+                        && replacement.contains("producers `one`")
+                        && replacement.contains("consumers `one`")
+                        && replacement.contains("`wait-free`"),
+                    "the replacement names the queue that holds what the ring held: {replacement}"
+                );
+            }
+            other => panic!("expected WorkerInboxInlineRemoved, got {other:?}"),
+        },
+        other => panic!("expected WorkerInboxInlineRemoved, got {other:?}"),
+    }
+    let diags = err.to_diagnostics();
+    assert_eq!(diags.len(), 1);
+    assert!(matches!(
+        diags[0].code,
+        DiagnosticCode::WorkerInboxInlineRemoved
+    ));
+    // The repair of the element is the removal of exactly those attributes.
+    match &diags[0].fix {
+        Some(Fix::RemoveFields { fields, .. }) => {
+            assert_eq!(fields, &["depth".to_string(), "ordering".to_string()]);
+        }
+        other => panic!("expected a remove_fields fix, got {other:?}"),
+    }
+    assert_eq!(
+        diags[0].code.spec_anchor(),
+        Some("SCE Protocol-Synthesis RFC §5.P")
+    );
+}
+
+/// Either removed attribute alone is the same refusal, and it is named first:
+/// a document that carries the old attributes alone is told what to write
+/// instead, not that the `ref` is missing.
+#[test]
+fn worker_inline_depth_alone_is_removed_before_the_missing_ref() {
     let xml = r##"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -135,23 +239,39 @@ fn worker_inbox_depth_zero_rejected() {
   <sce:link-rx ref="udp_scout"/>
   <sce:inbox depth="0"/>
 </scxml>"##;
-    let err = parse(xml, "rx_loop").expect_err("depth=0 must reject");
+    let err = parse(xml, "rx_loop").expect_err("depth is removed");
     match &err.error {
-        // Layer 1 (XSD): xs:positiveInteger restriction rejects "0".
-        ForgeError::Xml(_) => {}
-        // Layer 2 (parser): the `depth == 0` guard inside `parse_worker`.
         ForgeError::Validation(boxed) => match boxed.as_ref() {
-            ValidationError::InvalidAttribute { element, attr, .. } => {
-                assert_eq!(element, "<sce:inbox>");
-                assert_eq!(attr, "depth");
+            ValidationError::WorkerInboxInlineRemoved {
+                removed,
+                replacement,
+                ..
+            } => {
+                assert_eq!(removed, "depth=\"0\"");
+                // A depth that leaves no capacity names the formula.
+                assert!(replacement.contains("depth - 1"), "{replacement}");
             }
-            other => panic!(
-                "expected XSD positive-integer rejection or parser InvalidAttribute, got {other:?}"
-            ),
+            other => panic!("expected WorkerInboxInlineRemoved, got {other:?}"),
         },
-        other => panic!(
-            "expected XSD positive-integer rejection or parser InvalidAttribute, got {other:?}"
-        ),
+        other => panic!("expected WorkerInboxInlineRemoved, got {other:?}"),
+    }
+
+    let ordering_only = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="worker" name="rx_loop" version="1.0">
+  <sce:link-rx ref="udp_scout"/>
+  <sce:inbox ordering="relaxed"/>
+</scxml>"##;
+    let err = parse(ordering_only, "rx_loop").expect_err("ordering is removed");
+    match &err.error {
+        ForgeError::Validation(boxed) => match boxed.as_ref() {
+            ValidationError::WorkerInboxInlineRemoved { removed, .. } => {
+                assert_eq!(removed, "ordering=\"relaxed\"");
+            }
+            other => panic!("expected WorkerInboxInlineRemoved, got {other:?}"),
+        },
+        other => panic!("expected WorkerInboxInlineRemoved, got {other:?}"),
     }
 }
 
@@ -166,7 +286,7 @@ fn worker_import_kind_worker_fires_layer1_guard() {
        sce:kind="worker" name="rx_loop" version="1.0">
   <sce:import as="tx_loop" src="tx_loop.scxml" kind="worker"/>
   <sce:link-rx ref="udp_scout"/>
-  <sce:inbox depth="16" ordering="acq_rel"/>
+  <sce:inbox ref="rx_events"/>
 </scxml>"##;
     let err = parse(xml, "rx_loop").expect_err("worker-kind import must reject");
     match &err.error {
@@ -216,7 +336,7 @@ fn worker_import_kind_worker_minimal_attrs_fires_layer1() {
        sce:kind="worker" name="rx_loop" version="1.0">
   <sce:import kind="worker"/>
   <sce:link-rx ref="udp_scout"/>
-  <sce:inbox depth="16" ordering="acq_rel"/>
+  <sce:inbox ref="rx_events"/>
 </scxml>"##;
     let err = parse(xml, "rx_loop").expect_err("alias-less worker import must reject");
     match &err.error {
@@ -259,7 +379,7 @@ fn worker_import_non_worker_kind_does_not_fire_layer1() {
        sce:kind="worker" name="rx_loop" version="1.0">
   <sce:import as="udp_codec" src="udp.scxml" kind="codec"/>
   <sce:link-rx ref="udp_scout"/>
-  <sce:inbox depth="16" ordering="acq_rel"/>
+  <sce:inbox ref="rx_events"/>
 </scxml>"##;
     let w = parse(xml, "rx_loop").expect("non-worker import is fine");
     assert_eq!(w.name, "rx_loop");
@@ -275,7 +395,7 @@ fn worker_body_assign_to_foreign_namespace_fires_layer2() {
        xmlns:sce="http://sce.dev/ext"
        sce:kind="worker" name="rx_loop" version="1.0">
   <sce:link-rx ref="udp_scout"/>
-  <sce:inbox depth="16" ordering="acq_rel"/>
+  <sce:inbox ref="rx_events"/>
   <sce:body>
     <assign location="other_worker.counter" expr="0"/>
   </sce:body>
@@ -313,7 +433,7 @@ fn worker_body_event_data_refs_pass_layer2() {
        xmlns:sce="http://sce.dev/ext"
        sce:kind="worker" name="rx_loop" version="1.0">
   <sce:link-rx ref="udp_scout"/>
-  <sce:inbox depth="16" ordering="acq_rel"/>
+  <sce:inbox ref="rx_events"/>
   <sce:body>
     <assign location="_event.data" expr="42"/>
   </sce:body>
@@ -330,7 +450,7 @@ fn worker_body_self_namespace_passes_layer2() {
        xmlns:sce="http://sce.dev/ext"
        sce:kind="worker" name="rx_loop" version="1.0">
   <sce:link-rx ref="udp_scout"/>
-  <sce:inbox depth="16" ordering="acq_rel"/>
+  <sce:inbox ref="rx_events"/>
   <sce:body>
     <assign location="rx_loop.counter" expr="0"/>
   </sce:body>
@@ -348,7 +468,7 @@ fn worker_outbox_target_prefix_passes_layer2() {
        xmlns:sce="http://sce.dev/ext"
        sce:kind="worker" name="rx_loop" version="1.0">
   <sce:link-rx ref="udp_scout"/>
-  <sce:inbox depth="16" ordering="acq_rel"/>
+  <sce:inbox ref="rx_events"/>
   <sce:outbox ref="session_fsm.inbox"/>
   <sce:body>
     <send target="session_fsm.inbox" event="rx.tick"/>
@@ -368,7 +488,7 @@ fn worker_body_numeric_literal_does_not_fire_layer2() {
        xmlns:sce="http://sce.dev/ext"
        sce:kind="worker" name="rx_loop" version="1.0">
   <sce:link-rx ref="udp_scout"/>
-  <sce:inbox depth="16" ordering="acq_rel"/>
+  <sce:inbox ref="rx_events"/>
   <sce:body>
     <assign location="rx_loop.x" expr="3.14"/>
   </sce:body>
@@ -388,7 +508,7 @@ fn worker_shared_state_layers_share_diagnostic_code() {
        sce:kind="worker" name="w1" version="1.0">
   <sce:import as="w2" src="w2.scxml" kind="worker"/>
   <sce:link-rx ref="l"/>
-  <sce:inbox depth="1" ordering="acq_rel"/>
+  <sce:inbox ref="q"/>
 </scxml>"##;
     let err1 = parse(xml1, "w1").expect_err("layer 1");
     assert!(matches!(
@@ -402,7 +522,7 @@ fn worker_shared_state_layers_share_diagnostic_code() {
        xmlns:sce="http://sce.dev/ext"
        sce:kind="worker" name="w1" version="1.0">
   <sce:link-rx ref="l"/>
-  <sce:inbox depth="1" ordering="acq_rel"/>
+  <sce:inbox ref="q"/>
   <sce:body><assign location="foo.bar" expr="0"/></sce:body>
 </scxml>"##;
     let err2 = parse(xml2, "w1").expect_err("layer 2");
@@ -431,7 +551,7 @@ fn worker_model_field_shape_is_stable() {
        xmlns:sce="http://sce.dev/ext"
        sce:kind="worker" name="rx_loop" version="1.0">
   <sce:link-rx ref="udp_scout"/>
-  <sce:inbox depth="8" ordering="acq_rel"/>
+  <sce:inbox ref="rx_events"/>
 </scxml>"##;
     let w = parse(xml, "rx_loop").unwrap();
     // Walk through the exhaustive field set to surface any drop or
@@ -439,13 +559,12 @@ fn worker_model_field_shape_is_stable() {
     let WorkerModel {
         name,
         link_rx,
-        inbox: InboxConfig { depth, ordering },
+        inbox: InboxConfig { queue_ref },
         outbox,
         source_location: _,
     } = w;
     assert_eq!(name, "rx_loop");
     assert_eq!(link_rx, "udp_scout");
-    assert_eq!(depth, 8);
-    assert_eq!(ordering, InboxOrdering::AcqRel);
+    assert_eq!(queue_ref, "rx_events");
     assert_eq!(outbox, None);
 }

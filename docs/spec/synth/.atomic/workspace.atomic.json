@@ -2190,10 +2190,6 @@
           "kind": "references"
         },
         {
-          "file": "tools/codegen/templates/forge/c/worker.c.jinja2",
-          "kind": "references"
-        },
-        {
           "file": "tools/codegen/templates/forge/c/worker.h.jinja2",
           "kind": "references"
         },
@@ -3020,11 +3016,6 @@
           "kind": "references"
         },
         {
-          "file": "sce-build/tests/c2_worker_codegen.rs",
-          "symbol": "happy_worker_c11_emits_header_and_impl_sibling",
-          "kind": "references"
-        },
-        {
           "file": "sce-build/tests/c5_cache_maintenance.rs",
           "symbol": "pool_cache_maintenance_misplaced_for_each_trio_symbol",
           "kind": "references"
@@ -3059,14 +3050,6 @@
           "kind": "references"
         },
         {
-          "file": "tools/codegen/templates/forge/c/worker.c.jinja2",
-          "kind": "references"
-        },
-        {
-          "file": "tools/codegen/templates/forge/c/worker.h.jinja2",
-          "kind": "references"
-        },
-        {
           "file": "tools/codegen/templates/forge/cpp/externs.h.jinja2",
           "kind": "references"
         },
@@ -3076,10 +3059,6 @@
         },
         {
           "file": "tools/codegen/templates/forge/rust/externs.rs.jinja2",
-          "kind": "references"
-        },
-        {
-          "file": "tools/codegen/templates/forge/rust/worker.rs.jinja2",
           "kind": "references"
         },
         {
@@ -5495,6 +5474,30 @@
         {
           "file": "backends/kotlin/forge-runtime/src/jvmTest/kotlin/com/sce/forge/runtime/queue/SegmentedRuntimeTest.kt",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/import_use.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/c2_worker_codegen.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/c2_worker_scheduler_codes.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/c2_worker_schema.rs",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/c/worker.h.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/rust/worker.rs.jinja2",
+          "kind": "references"
         }
       ]
     },
@@ -6256,6 +6259,36 @@
       "target_kind": "section",
       "target_id": "synth-5-P",
       "reason": "moved to tests/forge/conformance/check_queue_histories.cmake, shared by the C++ and C11 arms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-D",
+      "reason": "the C worker translation unit is removed: the inbox is the imported queue (RFC 5.P Migration)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-I",
+      "reason": "the C worker translation unit is removed: the inbox is the imported queue (RFC 5.P Migration)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-I",
+      "reason": "the worker header no longer cites the ordering contract: the inbox ordering is the queue algorithm (RFC 5.P Migration)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-I",
+      "reason": "the worker template no longer cites the ordering contract: the inbox ordering is the queue algorithm (RFC 5.P Migration)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-I",
+      "reason": "the test is replaced: a C worker has no translation unit, its inbox is the imported queue (RFC 5.P Migration)"
     }
   ],
   "frames": {},

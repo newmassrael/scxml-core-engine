@@ -3679,7 +3679,7 @@
           "type": "object"
         },
         {
-          "description": "Worker document — RFC §synth-5-D concurrent execution context driven by a `<sce:link-rx>` source.\n\nSchema (per `<scxml sce:kind=\"worker\">` body): - `<sce:link-rx ref=\"...\">` (required) — `<scxml sce:kind=\"link\">` document that drives this worker. Cross-resolution validator: `worker/link-rx-ref-unknown`. - `<sce:inbox depth=\"N\"/>` (required) — SPSC ring-buffer inbox. Producer/consumer pair drawn from `heapless::spsc::split()` on Rust; opaque `sce_inbox_{producer,consumer}_t` on C11. - `<sce:outbox ref=\"...\">` (optional) — recipient worker/state- machine inbox for emitted events. Three cross-resolution validators (`worker/outbox-ref-unknown` + `worker/outbox-target-wrong-kind` + `worker/outbox-target-suffix-invalid`) live in [`crate::validate_worker_outbox_references`]. Parser keeps `outbox` as an opaque `Option<String>`; semantic resolution against statechart + worker recipients happens against the [`crate::forge::cross_doc_registry::SceCrossDocRegistry`] in the orchestrator pass. - `<sce:body>` (optional, usually empty per spec line 897) — SCXML actions. The parser scans for `worker/shared-mutable-state` violations (any `<sce:import kind=\"worker\">` in the document, plus body SCXML data-refs to foreign namespaces).\n\nMCU-class kind (RFC §synth-5-J-4): Rust + C11 emitters only. cpp/kotlin/ go/python rejection via the existing `codegen/mcu-class-kind-on-non- mcu-language` family.",
+          "description": "Worker document — RFC §synth-5-D concurrent execution context driven by a `<sce:link-rx>` source.\n\nSchema (per `<scxml sce:kind=\"worker\">` body): - `<sce:link-rx ref=\"...\">` (required) — `<scxml sce:kind=\"link\">` document that drives this worker. Cross-resolution validator: `worker/link-rx-ref-unknown`. - `<sce:inbox ref=\"...\"/>` (required) — alias of an imported `<sce:import kind=\"queue\">` with one consumer. The worker's producer and consumer halves are that queue's handles. - `<sce:outbox ref=\"...\">` (optional) — recipient worker/state- machine inbox for emitted events. Three cross-resolution validators (`worker/outbox-ref-unknown` + `worker/outbox-target-wrong-kind` + `worker/outbox-target-suffix-invalid`) live in [`crate::validate_worker_outbox_references`]. Parser keeps `outbox` as an opaque `Option<String>`; semantic resolution against statechart + worker recipients happens against the [`crate::forge::cross_doc_registry::SceCrossDocRegistry`] in the orchestrator pass. - `<sce:body>` (optional, usually empty per spec line 897) — SCXML actions. The parser scans for `worker/shared-mutable-state` violations (any `<sce:import kind=\"worker\">` in the document, plus body SCXML data-refs to foreign namespaces).\n\nMCU-class kind (RFC §synth-5-J-4): Rust + C11 emitters only. cpp/kotlin/ go/python rejection via the existing `codegen/mcu-class-kind-on-non- mcu-language` family.",
           "properties": {
             "inbox": {
               "allOf": [
@@ -3687,7 +3687,7 @@
                   "$ref": "#/definitions/InboxConfig"
                 }
               ],
-              "description": "`<sce:inbox depth=\"N\"/>` — required typed event queue."
+              "description": "`<sce:inbox ref=\"...\"/>` — required typed event queue."
             },
             "kind": {
               "enum": [
@@ -4280,47 +4280,17 @@
       "type": "object"
     },
     "InboxConfig": {
-      "description": "`<sce:inbox>` configuration — RFC §synth-5-D line 894 + §synth-5-I lines 1752-1758. SPSC ring-buffer inbox shape; the producer/consumer split is the type-level FSM (`heapless::spsc::{Producer,Consumer}` on Rust; opaque `sce_inbox_{producer,consumer}_t` family on C11). No separate FSM IR module — slot lifecycle is 2-state (free/in-use), degenerate compared to BufferPool's 7-state DMA lifecycle.\n\nThe `depth` attribute is spec-verbatim; the `ordering` attribute is required (RFC §synth-5-I lines 1757-1758 — SCE's error-only wire realizes the spec \"warning, codegen defaults to acq/rel\" as a required-when-worker-exists error so the author makes an explicit choice before codegen emits ambiguous atomic ops). The MPSC variant is not modelled: `ordering` is a per-worker property here, and MPSC would make it a property of the queue shared by N producers — a different type, not a value of this one (RFC §6 tracked).",
+      "description": "`<sce:inbox>` configuration — RFC §synth-5-D + §synth-5-P *Migration*. The inbox is a queue the worker imports (`<sce:import kind=\"queue\">`), named by its alias: the queue document owns the element type, the capacity and the algorithm, so the worker states none of them. The imported queue must declare `consumers` `one` (`worker/inbox-queue-not-single-consumer`); a worker is the one context that pops its inbox.\n\nThe inline `depth` and `ordering` attributes this replaced are refused with `worker/inbox-inline-removed`, whose fix names the queue document that is exactly what the old ring held.",
       "properties": {
-        "depth": {
-          "description": "`<sce:inbox depth=\"N\"/>` attribute body — fixed ring-buffer depth. Parser rejects 0. Spec line 894 verbatim attribute form.",
-          "format": "uint32",
-          "minimum": 0.0,
-          "type": "integer"
-        },
-        "ordering": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/InboxOrdering"
-            }
-          ],
-          "description": "`<sce:inbox ordering=\"acq_rel|relaxed\"/>` (RFC §synth-5-I lines 1752-1758). Required at parse time; absence fires `worker/inbox-ordering-unspecified`. Codegen wires the chosen memory ordering into the head/tail atomic operations on both Rust + C11 backends."
+        "queue_ref": {
+          "description": "`<sce:inbox ref=\"...\"/>` — alias of the `<sce:import kind=\"queue\">` that is this worker's inbox. Resolved against the document's imports by `worker/inbox-ref-unknown`.",
+          "type": "string"
         }
       },
       "required": [
-        "depth",
-        "ordering"
+        "queue_ref"
       ],
       "type": "object"
-    },
-    "InboxOrdering": {
-      "description": "SPSC inbox ordering choice (RFC §synth-5-I lines 1752-1758). Drives the atomic operations emitted on head/tail indices in both Rust and C11 codegen. `AcqRel` is the safe default (every push/pop pairs acquire+release on the index); `Relaxed` is the single-core fast-path (no inter-thread synchronization). Cross-core placement + `Relaxed` fires `worker/inbox-ordering-relaxed-across-cores` at codegen time per spec line 1755-1756.",
-      "oneOf": [
-        {
-          "description": "`ordering=\"acq_rel\"` — atomic load_acquire on head/tail reads, atomic store_release on writes. Required for any inbox whose producer + consumer halves are pinned to different cores.",
-          "enum": [
-            "acq-rel"
-          ],
-          "type": "string"
-        },
-        {
-          "description": "`ordering=\"relaxed\"` — atomic load_relaxed / store_relaxed on head/tail. Single-core fast-path; cross-core placement with this choice raises `worker/inbox-ordering-relaxed-across-cores`.",
-          "enum": [
-            "relaxed"
-          ],
-          "type": "string"
-        }
-      ]
     },
     "InlineKind": {
       "description": "A kind declared in place, inside a statechart's `<data>` element.\n\n⚠ IT IS A STANDALONE KIND, AND THE MODEL SAYS SO. The owner's decision (2026-09-22) is that the `<data>` element takes the role a `<scxml>` root takes in a standalone document, so this carries the same [`ParsedForge`] a file would — the same per-kind parsers, the same validators, the same renderers, and a sibling artifact named `<machine>_<id>`.\n\nWhat it replaced was an `InlineKindData` enum understanding four of the eighteen kinds, filled by a 200-line reader beside the document one and emitted by 750 lines of hand-written code beside the templates. Measured 2026-09-22: those two readers disagreed about three of the four kinds they both claimed to support, and the hand emitters covered one backend of six.",

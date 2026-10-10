@@ -257,8 +257,8 @@ topology:
 #[test]
 fn populate_event_queue_capacity_from_deploy_silent_skip_when_field_absent() {
     // Deploy parses but lacks the new field ⇒ model stays None.
-    // Mirrors cache_platform / worker_placement silent-skip
-    // precedent (absent-input silent-skip).
+    // Mirrors the cache_platform silent-skip precedent (absent-input
+    // silent-skip).
     let dir = tempfile::tempdir().expect("tempdir");
     let deploy_path = dir.path().join("deploy.yaml");
     std::fs::write(

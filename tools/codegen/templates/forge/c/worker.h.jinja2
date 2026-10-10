@@ -4,30 +4,21 @@
 {{ sce_map.source_marker(source_location, "c", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
 
 /* SCE Forge: Auto-generated from Extended SCXML (sce:kind="worker") */
-/* Runtime: backends/c/runtime atomics (sce_atomic_*_u32 family). */
+/* Runtime: the imported queue `{{ queue_name }}`; no translation unit of its own. */
 /* Do not edit — regenerate from the source SCXML file. */
 /*
- * SCE Protocol-Synthesis RFC §synth-5-D worker primitive: SPSC inbox driven by a
- * link-rx source (`<sce:link-rx ref="{{ link_rx }}"/>`) feeding a
- * concurrent execution context on cooperative-scheduler MCUs. Spec
- * line 904: "inbox = heapless::spsc (Rust) or fixed ring buffer (C)".
- * This header declares the opaque `_t` family + thin function
- * prototypes; the `.c` sibling carries the ring-buffer storage and
- * impl bodies.
+ * SCE Protocol-Synthesis RFC §synth-5-D worker primitive: an inbox driven by a
+ * link-rx source (`<sce:link-rx ref="{{ link_rx }}"/>`) feeding a concurrent
+ * execution context on cooperative-scheduler MCUs. The inbox is a queue the
+ * worker imports (`<sce:inbox ref="{{ inbox_alias }}"/>`, RFC §synth-5-P
+ * Migration): its element type, capacity, storage and algorithm are the queue
+ * document's, generated once in `{{ queue_snake }}.h`, and the memory ordering is
+ * part of that algorithm rather than a choice made here. This header names the
+ * queue's type as the worker's inbox and states the link and the outbox; the
+ * queue's own functions (`{{ queue_snake }}_*`) are the inbox's operations.
  *
- * RFC §synth-5-I lines 1752-1758 ordering choice: `ordering="{{ inbox_ordering }}"`
- * pins the head/tail atomic operations to either acq/rel or relaxed
- * variants of the §synth-5-I baseline `sce_atomic_*_u32` family (C4 atomic
- * A registry). Cross-core placement with `relaxed` raises
- * `worker/inbox-ordering-relaxed-across-cores` at codegen time when
- * deploy.placement is supplied.
- *
- * Event payload is a uint32_t tag — SCE-side MVP shape. Integration
- * code maps SCXML event names ↔ uint32_t tags out-of-band. Future
- * extension widens the payload via a deploy.yaml event-type registry.
- *
- * Generated from document `{{ name }}` with depth `{{ inbox_depth }}`,
- * ordering `{{ inbox_ordering }}`, link-rx `{{ link_rx }}`,
+ * Generated from document `{{ name }}` with inbox queue `{{ queue_name }}`,
+ * link-rx `{{ link_rx }}`,
 {%- if has_outbox %}
  * outbox `{{ outbox }}`.
 {%- else %}
@@ -38,21 +29,20 @@
 #ifndef {{ guard }}
 #define {{ guard }}
 
-#include <stdbool.h>
-#include <stddef.h>
-#include <stdint.h>
+#include "{{ queue_snake }}.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* Inbox depth (`<sce:inbox depth="{{ inbox_depth }}"/>`). */
-#define {{ upper_name }}_INBOX_DEPTH ((size_t){{ inbox_depth }})
+/* The worker's inbox: the queue it imports as `{{ inbox_alias }}`. The queue
+ * declares one consumer (`worker/inbox-queue-not-single-consumer`), so the
+ * worker's own context holds the consumer and the link-rx driver the producer.
+ * The caller owns the instance; a `static` of this type is the MCU shape. */
+typedef {{ queue_snake }}_t {{ snake_name }}_inbox_t;
 
-/* SPSC ordering choice (`<sce:inbox ordering="{{ inbox_ordering }}"/>`).
- * Constant carries the author's choice as a stable wire token so
- * downstream tooling can introspect without re-parsing SCXML. */
-#define {{ upper_name }}_INBOX_ORDERING "{{ inbox_ordering }}"
+/* The queue document the inbox is (`<sce:import as="{{ inbox_alias }}" kind="queue"/>`). */
+#define {{ upper_name }}_INBOX_QUEUE "{{ queue_name }}"
 
 /* Driving link kind name (`<sce:link-rx ref="{{ link_rx }}"/>`). */
 #define {{ upper_name }}_LINK_RX "{{ link_rx }}"
@@ -61,42 +51,6 @@ extern "C" {
 /* Recipient inbox path (`<sce:outbox ref="{{ outbox }}"/>`). */
 #define {{ upper_name }}_OUTBOX "{{ outbox }}"
 {%- endif %}
-
-/* Opaque producer handle — pin-passed to `_try_push`. Backed by the
- * single storage block declared in the sibling `.c` translation unit;
- * `_split` returns a producer + consumer pair carved out of that
- * block (the SPSC contract: one producer, one consumer, disjoint
- * method sets). */
-typedef struct {{ snake_name }}_inbox_producer_s {{ snake_name }}_inbox_producer_t;
-
-/* Opaque consumer handle — pin-passed to `_try_pop`. Mirror of the
- * producer half. */
-typedef struct {{ snake_name }}_inbox_consumer_s {{ snake_name }}_inbox_consumer_t;
-
-/* Acquire the producer handle for the worker's inbox. Returns the
- * same pointer on repeated calls (the storage is `static` in the
- * sibling `.c`); the SPSC contract requires the caller to hand the
- * pointer to at most one driver path. */
-{{ snake_name }}_inbox_producer_t *{{ snake_name }}_inbox_producer(void);
-
-/* Acquire the consumer handle. Mirror of `_producer`. */
-{{ snake_name }}_inbox_consumer_t *{{ snake_name }}_inbox_consumer(void);
-
-/* Push `event` onto the inbox. Returns `false` when the inbox is
- * full so the caller can apply backpressure (drop, retry, signal-
- * overflow per the link's `<sce:backpressure>` policy). Atomic
- * ordering on head/tail matches the `ordering="{{ inbox_ordering }}"`
- * choice via the §synth-5-I baseline atomic family. */
-bool {{ snake_name }}_inbox_try_push(
-    {{ snake_name }}_inbox_producer_t *producer, uint32_t event);
-
-/* Pop the next event into `*out`. Returns `false` when the inbox is
- * empty; `*out` is unchanged in that case. */
-bool {{ snake_name }}_inbox_try_pop(
-    {{ snake_name }}_inbox_consumer_t *consumer, uint32_t *out);
-
-/* Capacity in elements — equals `{{ upper_name }}_INBOX_DEPTH`. */
-size_t {{ snake_name }}_inbox_capacity(void);
 
 #ifdef __cplusplus
 }  /* extern "C" */

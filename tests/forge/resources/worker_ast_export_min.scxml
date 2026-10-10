@@ -16,5 +16,5 @@
        xsi:schemaLocation="http://sce.dev/ext sce-forge.xsd"
        sce:kind="worker" name="worker_ast_export_min" version="1.0">
   <sce:link-rx ref="udp_scout"/>
-  <sce:inbox depth="16" ordering="acq_rel"/>
+  <sce:inbox ref="rx_events"/>
 </scxml>

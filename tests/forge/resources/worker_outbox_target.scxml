@@ -27,6 +27,6 @@
        xmlns:sce="http://sce.dev/ext"
        sce:kind="worker" name="worker_outbox_target" version="1.0">
   <sce:link-rx ref="udp_scout"/>
-  <sce:inbox depth="16" ordering="acq_rel"/>
+  <sce:inbox ref="rx_events"/>
   <sce:outbox ref="session_fsm.inbox"/>
 </scxml>

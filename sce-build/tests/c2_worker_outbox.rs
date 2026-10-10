@@ -120,8 +120,26 @@ fn write_link_with_pool(dir: &Path, name: &str) -> (PathBuf, PathBuf) {
     // parse time; deliberately not returned, because callers pass build
     // inputs and this document reaches the build as a dependency.
     write_doc(dir, "scout_frame_codec.scxml", framer_codec_doc());
+    // Every worker in this file names `rx_events` as its inbox, a queue it
+    // imports; written beside the link for the same reason.
+    write_doc(dir, "rx_events.scxml", inbox_queue_doc());
     let link = write_doc(dir, &format!("{name}.scxml"), &link_doc(name));
     (pool, link)
+}
+
+/// The queue every worker fixture in this file names as its inbox: one
+/// consumer, the worker.
+fn inbox_queue_doc() -> &'static str {
+    r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="queue" name="rx_events" version="1.0">
+  <sce:element-type>rx_event</sce:element-type>
+  <sce:producers>one</sce:producers>
+  <sce:consumers>one</sce:consumers>
+  <sce:progress>wait-free</sce:progress>
+  <sce:bounded capacity="15"/>
+</scxml>"##
 }
 
 /// Worker doc with explicit outbox. The link-rx alias matches the
@@ -134,8 +152,9 @@ fn worker_with_outbox(name: &str, link_alias: &str, link_src: &str, outbox_ref: 
        xmlns:sce="http://sce.dev/ext"
        sce:kind="worker" name="{name}" version="1.0">
   <sce:import as="{link_alias}" src="{link_src}" kind="link"/>
+  <sce:import as="rx_events" src="rx_events.scxml" kind="queue"/>
   <sce:link-rx ref="{link_alias}"/>
-  <sce:inbox depth="16" ordering="acq_rel"/>
+  <sce:inbox ref="rx_events"/>
   <sce:outbox ref="{outbox_ref}"/>
 </scxml>"##
     )
@@ -150,8 +169,9 @@ fn worker_without_outbox(name: &str, link_alias: &str, link_src: &str) -> String
        xmlns:sce="http://sce.dev/ext"
        sce:kind="worker" name="{name}" version="1.0">
   <sce:import as="{link_alias}" src="{link_src}" kind="link"/>
+  <sce:import as="rx_events" src="rx_events.scxml" kind="queue"/>
   <sce:link-rx ref="{link_alias}"/>
-  <sce:inbox depth="16" ordering="acq_rel"/>
+  <sce:inbox ref="rx_events"/>
 </scxml>"##
     )
 }

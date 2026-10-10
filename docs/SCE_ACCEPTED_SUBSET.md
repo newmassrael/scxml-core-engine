@@ -6871,8 +6871,9 @@ Codes that the author can avoid by writing a better SCXML /
 | `pool/sample-callback-signature-non-borrow` | Validation |
 | `worker/shared-mutable-state` | Validation |
 | `worker/link-rx-ref-unknown` | Validation |
-| `worker/inbox-ordering-unspecified` | Validation |
-| `worker/inbox-ordering-relaxed-across-cores` | Validation |
+| `worker/inbox-inline-removed` | Validation |
+| `worker/inbox-ref-unknown` | Validation |
+| `worker/inbox-queue-not-single-consumer` | Validation |
 | `worker/scheduler-unsupported` | Validation |
 | `worker/outbox-ref-unknown` | Validation |
 | `worker/outbox-target-wrong-kind` | Validation |

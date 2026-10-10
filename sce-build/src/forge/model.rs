@@ -5019,66 +5019,23 @@ pub struct BufferPoolModel {
 
 // ── Worker kind ────────────────────────────────────────────────
 
-/// SPSC inbox ordering choice (RFC §synth-5-I lines 1752-1758). Drives
-/// the atomic operations emitted on head/tail indices in both Rust and
-/// C11 codegen. `AcqRel` is the safe default (every push/pop pairs
-/// acquire+release on the index); `Relaxed` is the single-core
-/// fast-path (no inter-thread synchronization). Cross-core placement +
-/// `Relaxed` fires `worker/inbox-ordering-relaxed-across-cores` at
-/// codegen time per spec line 1755-1756.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[cfg_attr(test, derive(schemars::JsonSchema))]
-#[serde(rename_all = "kebab-case")]
-pub enum InboxOrdering {
-    /// `ordering="acq_rel"` — atomic load_acquire on head/tail reads,
-    /// atomic store_release on writes. Required for any inbox whose
-    /// producer + consumer halves are pinned to different cores.
-    AcqRel,
-    /// `ordering="relaxed"` — atomic load_relaxed / store_relaxed on
-    /// head/tail. Single-core fast-path; cross-core placement with
-    /// this choice raises `worker/inbox-ordering-relaxed-across-cores`.
-    Relaxed,
-}
-
-impl std::fmt::Display for InboxOrdering {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::AcqRel => write!(f, "acq_rel"),
-            Self::Relaxed => write!(f, "relaxed"),
-        }
-    }
-}
-
-/// `<sce:inbox>` configuration — RFC §synth-5-D line 894 + §synth-5-I lines
-/// 1752-1758. SPSC ring-buffer inbox shape; the
-/// producer/consumer split is the type-level FSM
-/// (`heapless::spsc::{Producer,Consumer}` on Rust; opaque
-/// `sce_inbox_{producer,consumer}_t` family on C11). No separate FSM
-/// IR module — slot lifecycle is 2-state (free/in-use), degenerate
-/// compared to BufferPool's 7-state DMA lifecycle.
+/// `<sce:inbox>` configuration — RFC §synth-5-D + §synth-5-P *Migration*. The
+/// inbox is a queue the worker imports (`<sce:import kind="queue">`), named by
+/// its alias: the queue document owns the element type, the capacity and the
+/// algorithm, so the worker states none of them. The imported queue must
+/// declare `consumers` `one` (`worker/inbox-queue-not-single-consumer`); a
+/// worker is the one context that pops its inbox.
 ///
-/// The `depth` attribute is spec-verbatim; the
-/// `ordering` attribute is required (RFC §synth-5-I lines 1757-1758 —
-/// SCE's error-only
-/// wire realizes the spec "warning, codegen defaults to acq/rel" as
-/// a required-when-worker-exists error so the author makes an
-/// explicit choice before codegen emits ambiguous atomic ops).
-/// The MPSC variant is not modelled: `ordering` is a per-worker
-/// property here, and MPSC would make it a property of the queue
-/// shared by N producers — a different type, not a value of this one
-/// (RFC §6 tracked).
+/// The inline `depth` and `ordering` attributes this replaced are refused with
+/// `worker/inbox-inline-removed`, whose fix names the queue document that is
+/// exactly what the old ring held.
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct InboxConfig {
-    /// `<sce:inbox depth="N"/>` attribute body — fixed ring-buffer
-    /// depth. Parser rejects 0. Spec line 894 verbatim attribute form.
-    pub depth: u32,
-    /// `<sce:inbox ordering="acq_rel|relaxed"/>` (RFC §synth-5-I lines
-    /// 1752-1758). Required at parse time; absence fires
-    /// `worker/inbox-ordering-unspecified`. Codegen wires the chosen
-    /// memory ordering into the head/tail atomic operations on both
-    /// Rust + C11 backends.
-    pub ordering: InboxOrdering,
+    /// `<sce:inbox ref="..."/>` — alias of the `<sce:import kind="queue">`
+    /// that is this worker's inbox. Resolved against the document's imports
+    /// by `worker/inbox-ref-unknown`.
+    pub queue_ref: String,
 }
 
 // ── Bounded-collection kind (RFC §synth-5-L) ─────────────────────────
@@ -5435,9 +5392,9 @@ impl QueueModel {
 /// - `<sce:link-rx ref="...">` (required) — `<scxml sce:kind="link">`
 ///   document that drives this worker. Cross-resolution validator:
 ///   `worker/link-rx-ref-unknown`.
-/// - `<sce:inbox depth="N"/>` (required) — SPSC ring-buffer inbox.
-///   Producer/consumer pair drawn from `heapless::spsc::split()` on
-///   Rust; opaque `sce_inbox_{producer,consumer}_t` on C11.
+/// - `<sce:inbox ref="..."/>` (required) — alias of an imported
+///   `<sce:import kind="queue">` with one consumer. The worker's producer
+///   and consumer halves are that queue's handles.
 /// - `<sce:outbox ref="...">` (optional) — recipient worker/state-
 ///   machine inbox for emitted events. Three cross-resolution
 ///   validators (`worker/outbox-ref-unknown` +
@@ -5466,7 +5423,7 @@ pub struct WorkerModel {
     /// rejects; cross-ref resolution against `SceCrossDocRegistry`
     /// raises `worker/link-rx-ref-unknown`.
     pub link_rx: String,
-    /// `<sce:inbox depth="N"/>` — required typed event queue.
+    /// `<sce:inbox ref="..."/>` — required typed event queue.
     pub inbox: InboxConfig,
     /// `<sce:outbox ref="...">` — optional recipient inbox. When
     /// absent, the worker only injects events into the parent state

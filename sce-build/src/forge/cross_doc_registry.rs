@@ -353,14 +353,13 @@ mod tests {
         // Item C2 `WorkerModel` lacks any cross-doc reference fields
         // itself; the registry just records its name so outbox refs
         // pointing AT this worker can resolve.
-        use super::super::model::{ForgeDocument, InboxConfig, InboxOrdering, WorkerModel};
+        use super::super::model::{ForgeDocument, InboxConfig, WorkerModel};
         let mut reg = SceCrossDocRegistry::new();
         let doc = ForgeDocument::Worker(WorkerModel {
             name: "rx_loop".to_string(),
             link_rx: "udp_scout".to_string(),
             inbox: InboxConfig {
-                depth: 16,
-                ordering: InboxOrdering::AcqRel,
+                queue_ref: "rx_events".to_string(),
             },
             outbox: None,
             source_location: None,

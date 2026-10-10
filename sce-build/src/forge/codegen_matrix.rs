@@ -174,17 +174,13 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
             Language::Rust | Language::C11 => true,
             Language::Cpp | Language::Kotlin | Language::Go | Language::Python => false,
         },
-        // RFC §synth-5-D Worker: dual-emit codegen on Rust + C11.
-        // Rust template uses a self-contained SPSC ring buffer
-        // (spec line 904 author intent was `heapless::spsc` but the
-        // emit stays no-external-crate to match the C11 ring-buffer
-        // side; ordering choice from
-        // `<sce:inbox ordering="...">` drives `Ordering::Acquire/Release`
-        // vs `Ordering::Relaxed` selection). C11 template emits the
-        // opaque `sce_inbox_producer_t` / `sce_inbox_consumer_t` family
-        // backed by `sce_atomic_*_u32` intrinsics from the §synth-5-I
-        // baseline registry. cpp/kotlin/go/python remain MCU-class-
-        // rejected by `kind_class` ahead of this lookup.
+        // RFC §synth-5-D Worker: dual-emit codegen on Rust + C11. The worker's
+        // inbox is the queue it imports (`<sce:inbox ref>`, RFC §synth-5-P
+        // Migration): the Rust template re-exports that queue's type as the
+        // worker's inbox, and the C11 template includes the queue's header and
+        // names its type, so neither carries a ring of its own and the memory
+        // ordering is the queue algorithm's. cpp/kotlin/go/python remain
+        // MCU-class-rejected by `kind_class` ahead of this lookup.
         ForgeKind::Worker => match lang {
             Language::Rust | Language::C11 => true,
             Language::Cpp | Language::Kotlin | Language::Go | Language::Python => false,

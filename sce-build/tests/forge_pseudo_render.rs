@@ -19,14 +19,14 @@ use sce_build::forge::model::{
     CodecModel, CodecTestVector, CodecVariant, CollectionOrdering, ConcurrencyMode, ConditionModel,
     DecodedField, DecodedFieldValue, DecodedValue, Direction, Endian, EnumModel, EnumVariant,
     EventSchemaModel, FilterModel, FilterType, FlagDef, FlagInput, FoldBody, ForgeDocument,
-    ForgeField, InboxConfig, InboxOrdering, InterpolationAxis, InterpolationMethod,
-    InterpolationModel, LinkClass, LinkInboundEvent, LinkModel, LinkOutboundEvent, LookupEntry,
-    LookupModel, MissPolicy, ObserverModel, OutOfBounds, OverflowPolicy, PeekByteSpec,
-    PresentIfPredicate, PresentIfScope, ProcedureAssign, ProcedureDoneParam, ProcedureHelper,
-    ProcedureModel, ProcedureSendAction, ProcedureState, ProcedureTransition, RangeRule,
-    RateOfChangeRule, ReassemblyConfig, SceType, TestVector, TestVectorValue, ThresholdMonitor,
-    TimerModel, TlvEntryFlagBind, TlvEntryId, TlvOverflowPolicy, TlvTerminateStrategy,
-    TransformModel, ValidatorModel, ValidatorRules, VariantArm, WorkerModel,
+    ForgeField, InboxConfig, InterpolationAxis, InterpolationMethod, InterpolationModel, LinkClass,
+    LinkInboundEvent, LinkModel, LinkOutboundEvent, LookupEntry, LookupModel, MissPolicy,
+    ObserverModel, OutOfBounds, OverflowPolicy, PeekByteSpec, PresentIfPredicate, PresentIfScope,
+    ProcedureAssign, ProcedureDoneParam, ProcedureHelper, ProcedureModel, ProcedureSendAction,
+    ProcedureState, ProcedureTransition, RangeRule, RateOfChangeRule, ReassemblyConfig, SceType,
+    TestVector, TestVectorValue, ThresholdMonitor, TimerModel, TlvEntryFlagBind, TlvEntryId,
+    TlvOverflowPolicy, TlvTerminateStrategy, TransformModel, ValidatorModel, ValidatorRules,
+    VariantArm, WorkerModel,
 };
 use sce_build::forge::pseudo::{render, Unsupported};
 use sce_build::provenance::RequirementId;
@@ -1144,15 +1144,14 @@ fn each_mcu_kind_renders_every_field_it_can_carry() {
         name: "rx".to_string(),
         link_rx: "udp0".to_string(),
         inbox: InboxConfig {
-            depth: 16,
-            ordering: InboxOrdering::AcqRel,
+            queue_ref: "rx_events".to_string(),
         },
         outbox: Some("tx0".to_string()),
         source_location: None,
     };
     assert_eq!(
         render(&ForgeDocument::Worker(wk)).unwrap(),
-        "worker rx link-rx udp0 inbox depth 16 ordering acq_rel outbox tx0\n"
+        "worker rx link-rx udp0 inbox rx_events outbox tx0\n"
     );
 
     let bp = BufferPoolModel {

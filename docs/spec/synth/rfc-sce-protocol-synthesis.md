@@ -891,7 +891,7 @@ existing `<parallel>` regions):
 ```xml
 <scxml sce:kind="worker" name="rx_loop" version="1.0">
   <sce:link-rx ref="udp_scout"/>       <!-- drives this worker -->
-  <sce:inbox depth="16"/>              <!-- typed event queue -->
+  <sce:inbox ref="rx_events"/>         <!-- imported queue, one consumer -->
   <sce:outbox ref="session_fsm.inbox"/>
   <sce:body>                           <!-- algorithm-kind-style body -->
     <!-- usually empty; link-rx drives event injection automatically -->
@@ -1749,13 +1749,13 @@ sce_irq_save() -> irq_state_t
 sce_irq_restore(irq_state_t)
 ```
 
-**SPSC/MPSC inbox ordering contract.** Worker inboxes (§5.D) MUST
-use acquire/release pairs for head/tail indices. Use of `relaxed`
-on cross-worker shared state is a diagnostic:
-- `worker/inbox-ordering-relaxed-across-cores` — inbox producer and
-  consumer on different cores; relaxed ordering insufficient
-- `worker/inbox-ordering-unspecified` — no ordering chosen, codegen
-  defaults to acquire/release with a warning
+**SPSC/MPSC inbox ordering contract.** A worker's inbox (§5.D) is a
+queue the worker imports (§5.P, Migration), so its ordering is the
+queue algorithm's: acquire/release on every index, never a choice the
+worker makes. The inline `ordering` and its two former diagnostics
+(`worker/inbox-ordering-*`) are retired with it:
+- `worker/inbox-inline-removed` — `ordering` or `depth` on `<sce:inbox>`
+- `worker/inbox-queue-not-single-consumer` — see §5.P
 
 **Target-level extension.** Architectures may extend the whitelist
 through a **target plugin** declared in deploy.yaml
@@ -1802,9 +1802,9 @@ machines:
 ```
 
 Atomics-only (the default for `core_count: 1`) remains a valid
-choice on cores that share a coherent D-Cache; the diagnostic
-`worker/inbox-ordering-relaxed-across-cores` (above) catches the
-unsafe combinations, and `deploy/multicore-without-target-plugin`
+choice on cores that share a coherent D-Cache; a worker's inbox queue
+(§5.P) owns the ordering that keeps it safe across cores, and
+`deploy/multicore-without-target-plugin`
 (§5.K) catches the case where a cross-core inbox is declared but
 no plugin is loaded.
 
@@ -1848,7 +1848,7 @@ documented in the target_plugin guide).
 - `extern/abi-mismatch`
 - `extern/signature-mismatch`
 - `extern/ordering-unspecified` — atomic intrinsic invoked without explicit ordering suffix
-- `extern/ordering-insufficient-for-cross-core` — relaxed ordering used on state shared across cores (paired with `worker/inbox-ordering-*`)
+- `extern/ordering-insufficient-for-cross-core` — relaxed ordering used on state shared across cores (a worker inbox's own ordering is its queue's)
 - `extern/target-plugin-symbol-conflict` — target plugin redefines a core whitelist symbol
 - `extern/linker-flavor-unsupported` — `linker_flavor` declared as `scatter_arm`/`icf_iar` before the corresponding generator lands (Phase C+)
 - `extern/linker-flavor-os-managed-without-cmake-import` — `os_managed` declared but the deploy does not produce a CMake target the host OS can import
@@ -3389,10 +3389,10 @@ author choose an ordering under which the Rust template's slot write
 is a data race: a plain write through `UnsafeCell` published by a
 `Relaxed` store establishes no happens-before, on one core or on
 many, and the compiler may sink the write past the store. §5.I
-already states that worker inboxes MUST use acquire/release pairs;
-the template accepts `relaxed` anyway, and the diagnostic
-`worker/inbox-ordering-relaxed-across-cores` fires only when a
-deploy placement puts the two sides on different cores. The C ring
+stated that worker inboxes MUST use acquire/release pairs; the
+template accepted `relaxed` anyway, and a diagnostic (retired with
+the inline form, see Migration) fired only when a deploy placement
+put the two sides on different cores. The C ring
 holds `depth - 1` elements, which only a test comment says.
 
 Beyond those four, no kind expresses an unbounded queue, and none
@@ -3622,7 +3622,7 @@ ISR is the only thing running, and lock-freedom guarantees that some
 operation completes in a bounded number of steps, which can only be
 the ISR's. An ISR producer on a `segmented` queue is refused
 (`queue/alloc-in-isr`) because its push may allocate. These checks
-subsume `worker/inbox-ordering-relaxed-across-cores`.
+subsume the retired `worker/inbox-ordering-relaxed-across-cores`.
 
 **Generated interface.** Every backend emits the same operations:
 
@@ -3728,7 +3728,7 @@ pub enum QueueStorage {
 - `queue/wrap-bound-unstated` — an SCQ row on a 32-bit target whose deploy states no `min_wrap_ops`
 - `queue/wrap-bound-below-deploy-minimum` — `WRAP_BOUND_OPS` below `min_wrap_ops`
 - `worker/inbox-queue-not-single-consumer` — a worker inbox naming a queue with `consumers` `many`
-- `worker/inbox-inline-removed` — `depth` or `ordering` on `<sce:inbox>`; the fix names the equivalent queue document
+- `worker/inbox-inline-removed` — `depth` or `ordering` on `<sce:inbox>`; the fix names the equivalent queue document. Companion `worker/inbox-ref-unknown`: the `ref` names no queue import
 
 **Landing order.** First, this section and the admission record in
 `SCE_FORGE.md` §10. Then the layer-1 fixtures, the layer-2 history
