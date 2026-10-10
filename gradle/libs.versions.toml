@@ -14,8 +14,12 @@ core-ktx = "1.16.0"
 # The WebSocket binding's client (SCE_MESH.md §mesh-18.4), the owner's choice
 # for Android on 2026-09-25.
 okhttp = "5.5.0"
+# The queue kind's third verification layer for Kotlin (SCE Protocol-Synthesis
+# RFC §synth-5-P): a model checker over the interleavings of the Kotlin queues.
+lincheck = "3.7"
 
 [libraries]
+lincheck = { module = "org.jetbrains.lincheck:lincheck", version.ref = "lincheck" }
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization" }

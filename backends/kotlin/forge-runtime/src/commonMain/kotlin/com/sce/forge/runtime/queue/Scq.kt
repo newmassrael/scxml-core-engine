@@ -33,8 +33,14 @@ private const val LINE_SHIFT: Int = 3
  * How often a dequeue that found an entry still empty looks again before it
  * makes the entry unusable for the enqueue that owns it. Bounded, so the
  * operation stays lock-free.
+ *
+ * It is patience and not part of the correctness argument: any count, none
+ * included, only changes how soon the entry is given up. A model checker cannot
+ * explore a long spin (the Rust runtime's loom build looks once), so a ring takes
+ * its count as a parameter and the checker's tests pass a small one; every other
+ * ring uses this.
  */
-private const val SPINS: Int = 10_000
+internal const val SPINS: Int = 10_000
 
 /**
  * Whether [x] is before [y] in the order that wraps: the signed difference.
@@ -65,7 +71,7 @@ private const val FIN: Long = Long.MIN_VALUE
  * algorithm orders them but [before] and [atOrBefore], which are the signed
  * difference, and every shift that must not extend a sign is `ushr`.
  */
-private class Ring(slots: Long, filled: Long) {
+private class Ring(slots: Long, filled: Long, private val spins: Int) {
     /** The next ticket a dequeue takes. */
     val head = AtomicLong(0)
 
@@ -246,7 +252,7 @@ private class Ring(slots: Long, filled: Long) {
                     // about to fill it; look a few times, then move the entry to
                     // this cycle so that enqueue fails.
                     looked++
-                    if (looked <= SPINS) {
+                    if (looked <= spins) {
                         break // look again from a fresh read
                     }
                     replacement = ticketCycle xor (entry.inv() and entryCount)
@@ -334,7 +340,10 @@ private class Ring(slots: Long, filled: Long) {
  * power of two, is below [capacity], or is more than a ring can number, by
  * throwing `IllegalArgumentException`.
  */
-public class Scq<T : Any>(public val capacity: Int, public val ringSlots: Int) {
+public class Scq<T : Any> internal constructor(public val capacity: Int, public val ringSlots: Int, spins: Int) {
+    /** A queue whose rings spin [SPINS] times on an entry that is still empty. */
+    public constructor(capacity: Int, ringSlots: Int) : this(capacity, ringSlots, SPINS)
+
     /** The indices of the slots that hold an element, oldest first. */
     private val allocated: Ring
 
@@ -348,8 +357,8 @@ public class Scq<T : Any>(public val capacity: Int, public val ringSlots: Int) {
 
     init {
         checkShape(capacity, ringSlots)
-        allocated = Ring(ringSlots.toLong(), 0)
-        free = Ring(ringSlots.toLong(), capacity.toLong())
+        allocated = Ring(ringSlots.toLong(), 0, spins)
+        free = Ring(ringSlots.toLong(), capacity.toLong(), spins)
         slots = arrayOfNulls(capacity)
     }
 

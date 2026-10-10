@@ -269,6 +269,7 @@ kotlin {
         val jvmTest by getting {
             dependencies {
                 implementation(libs.kotlinx.serialization.json)
+                implementation(libs.lincheck)
             }
             kotlin.srcDir(generateForgeFixtures.map { it.outputDir })
             kotlin.srcDir(generateRoundTripFixtures.map { it.outputDir })

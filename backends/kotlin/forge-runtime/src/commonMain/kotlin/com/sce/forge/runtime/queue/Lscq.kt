@@ -10,11 +10,11 @@ import kotlin.concurrent.atomics.AtomicReference
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 
 /** One segment of an [Lscq]: a ring and the link to the next. */
-internal class RingSegment<T : Any>(segment: Int, ringSlots: Int) {
+internal class RingSegment<T : Any>(segment: Int, ringSlots: Int, spins: Int) {
     /** The segment after this one, or `null` while this is the newest. Linked once, by a compare-and-swap. */
     val next = AtomicReference<RingSegment<T>?>(null)
 
-    val ring = Scq<T>(segment, ringSlots)
+    val ring = Scq<T>(segment, ringSlots, spins)
 }
 
 /**
@@ -67,6 +67,8 @@ public class Lscq<T : Any> private constructor(
     /** The slots of each segment's index rings. */
     public val ringSlots: Int,
     private val allocator: SegmentAllocator,
+    /** How often a ring's dequeue looks again at an entry still empty; see [SPINS]. */
+    private val spins: Int,
     first: RingSegment<T>,
 ) {
     /** The oldest segment. */
@@ -92,13 +94,22 @@ public class Lscq<T : Any> private constructor(
             ringSlots: Int,
             allocator: SegmentAllocator,
             required: Progress,
+        ): Lscq<T>? = create(segment, ringSlots, allocator, required, SPINS)
+
+        /** [create] with the rings' spin count named: what a model checker's tests use. */
+        internal fun <T : Any> create(
+            segment: Int,
+            ringSlots: Int,
+            allocator: SegmentAllocator,
+            required: Progress,
+            spins: Int,
         ): Lscq<T>? {
             Scq.checkShape(segment, ringSlots)
             require(allocator.progress >= required) {
                 "the allocator gives ${allocator.progress}, less than the $required the document declared for it"
             }
-            val first = allocator.allocate { RingSegment<T>(segment, ringSlots) } ?: return null
-            return Lscq(segment, ringSlots, allocator, first)
+            val first = allocator.allocate { RingSegment<T>(segment, ringSlots, spins) } ?: return null
+            return Lscq(segment, ringSlots, allocator, spins, first)
         }
     }
 
@@ -141,7 +152,7 @@ public class Lscq<T : Any> private constructor(
                 }
                 // The segment is closed. Put the element in a segment of our own
                 // before anyone can see it, then try to link it behind this one.
-                val fresh = q.allocator.allocate { RingSegment<T>(q.segment, q.ringSlots) }
+                val fresh = q.allocator.allocate { RingSegment<T>(q.segment, q.ringSlots, q.spins) }
                     ?: return PushStatus.OutOfMemory
                 // A new ring is open and has a free slot, so it takes an element.
                 check(fresh.ring.pushOrClose(value)) { "a new ring refused its first element" }
