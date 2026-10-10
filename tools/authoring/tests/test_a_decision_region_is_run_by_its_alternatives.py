@@ -173,7 +173,37 @@ class ADecisionRegionIsRunByItsAlternatives(unittest.TestCase):
         self.assertEqual("untested", gap.kind)
         self.assertTrue(any("no case tells these alternatives apart" in line for line in lines(gap)),
                         lines(gap))
+        # A region has no position resting on it, so the fix speaks of alternatives.
+        self.assertIn("tells the alternatives apart", gap.fix)
+        self.assertNotIn("position", gap.fix)
+        # With nothing failing there is nothing to repair, so nothing is said to be repaired.
+        self.assertFalse(any("repairs every failure" in line for line in lines(gap)), lines(gap))
+        self.assertTrue(any("changes nothing" in line for line in lines(gap)), lines(gap))
 
+
+    def test_the_product_accepts_the_region_and_still_refuses_a_stray_orphan(self):
+        """⚠ The two halves have to agree. `check` here asks a writer for a decision region, and
+        the product's own reachability pass refused one for its unchosen candidates (`State is
+        unreachable from the document initial configuration`) until it learned that a candidate is
+        an alternative and not dead code. The control: a child that is no candidate is still one."""
+        import subprocess
+        codegen = str(_default_codegen())
+        # Every child of the region is a candidate, as the shape requires.
+        every_child = DOCUMENT.format(
+            chosen="onApproach", first="onApproach", second="onClear onOccupied never")
+        region = self.tmp / "region.scxml"
+        region.write_text(every_child, encoding="utf-8")
+        accepted = subprocess.run([codegen, "check", str(region), "--lint"],
+                                  capture_output=True, text=True)
+        self.assertEqual(0, accepted.returncode, accepted.stdout + accepted.stderr)
+        stray = self.tmp / "stray.scxml"
+        stray.write_text(every_child.replace('<state id="never"/>',
+                                             '<state id="never"/><state id="orphan"/>'),
+                         encoding="utf-8")
+        refused = subprocess.run([codegen, "check", str(stray), "--lint"],
+                                 capture_output=True, text=True)
+        self.assertNotEqual(0, refused.returncode)
+        self.assertIn("unreachable", refused.stdout + refused.stderr)
 
     def test_an_alternative_no_condition_reads_is_not_run_and_is_not_called_held(self):
         """⚠ The discriminator against a result that means nothing. `never` is a candidate that

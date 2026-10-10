@@ -555,8 +555,11 @@ def lines(gap) -> list[str]:
         # dozens long, and forty lines saying "breaks 1" say it once.
         grouped: dict = {}
         for f in cf["tried"]:
+            # ⚠ A repair needs something to repair: with no failing case, `fixed == failing` is
+            # two empty sets agreeing, and "repairs every failure it was blamed in (0)" is not a
+            # finding.
             outcome = (f["decision"], len(f["fixed"]), len(f["moved"]), len(f["broken"]),
-                       set(f["fixed"]) == failing and not f["broken"])
+                       bool(failing) and set(f["fixed"]) == failing and not f["broken"])
             grouped.setdefault(outcome, []).append(f["value"])
         for (decision, fixed, moved, broken, repairs), values in grouped.items():
             shown = ", ".join(repr(v) for v in values[:6]) + (

@@ -112,7 +112,14 @@ def cmd_pseudo(args) -> int:
 def cmd_check(args) -> int:
     pack = _pack(args)
     prose = load_prose([pathlib.Path(p) for p in args.prose]) if args.prose else None
-    findings = check(pack, pathlib.Path(args.binding), prose)
+    cited, refused = cited_by_binding(
+        pathlib.Path(args.binding),
+        pathlib.Path(args.decisions) if args.decisions else None,
+        pathlib.Path(args.profile) if args.profile else None)
+    if refused:
+        print(f"refused: {refused}", file=sys.stderr)
+        return 1
+    findings = check(pack, pathlib.Path(args.binding), prose, cited)
     for f in findings:
         print(f"  {f}")
     print(f"  {len(findings)} refusal(s)")
@@ -606,6 +613,10 @@ def main(argv=None) -> int:
     c.add_argument("--binding", required=True, help="the binding file, which names its own document")
     c.add_argument("--prose", nargs="+",
                    help="the specification: also refuse a precondition it states that nothing reads")
+    c.add_argument("--decisions",
+                   help="the owner's decision record: a mark citing one of its ids may sit on any element")
+    c.add_argument("--profile",
+                   help="the owner's authoring profile: a mark citing one of its house rules may sit on any element")
     c.set_defaults(fn=cmd_check)
 
     v = with_pack(sub.add_parser(

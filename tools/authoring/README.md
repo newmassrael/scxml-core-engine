@@ -1375,7 +1375,8 @@ alternative can be run in its place, which is no reason to leave it out. Measure
 region, and the report named none of them. The fix it states is the one `brief`
 gives: a guess is a `<data>` whose expression is the decided value, which the logic
 reads -- or, where the host allows no script engine, a decision region (see "A picture
-is not read" below), which `gaps --counterfactual` can run. A mark that cites the owner's
+is not read" below), which `gaps --counterfactual` can run; `check` refuses a guess on
+neither. A mark that cites the owner's
 decision or a house rule is unplaced by the same rule and is as intended. Handed the
 decision record and the profile (`--decisions`, `--profile`; the tool's `decisions`,
 `profile`), `gaps` lists such a mark as **cited** -- the owner's standing answer applied,
@@ -1769,13 +1770,22 @@ on a `<data>`, and a third wrote that this was why it used none. All five ended 
 reading in a comment or in a report, all five checked clean, and none had a mark in the
 document -- where the five writers before the rule had put it on a state or a region in
 three. A refusal that cannot be satisfied is satisfied by
-removing what it looks at, so it was withdrawn. What stands is the honest half: a mark
-anywhere is read (`Document.marks`), `gaps` lists one off a `<data>` as unplaced, and
-`check` still refuses a picture the design names and no mark names. Making such a
-guess testable WITHOUT a script engine is what would make the refusal sound, and it is
-now possible: a **decision region** (below). The refusal itself stays withdrawn: a host
-that forbids a script engine leaves a writer the choice of region or an unplaced mark,
-and `gaps` says which it got.
+removing what it looks at, so it was withdrawn. What replaced it is a rule every host can
+satisfy: **a guess sits on a `<data>` the logic reads, or is a decision region (below)
+whose every candidate the logic reads -- and `check` refuses anything else**, showing the
+region written from the mark's own candidates, so the way out is a rewrite of a few lines
+and not a design (`unplaced_guesses`). A mark that cites the owner's decision or a house
+rule may sit anywhere (`--decisions`, `--profile`); a `<datamodel>` mark is an event
+schema's payload choice and is not this rule's. Measured 2026-10-10 on five fresh writers
+of the same specification, run BEFORE the rule was pushed -- the order the first rule
+should have had. Three wrote a correct region on their first document, from the guidance in
+`brief` alone, and the rule never fired for them. Two wrote a mark on a state or a region
+that was no decision region, were refused with the skeleton, and rewrote it as one on the
+next call. All five ended with a region reading every candidate, none moved the mark into a
+comment, and all five passed the eight cases. `gaps --counterfactual` then said, of all five,
+that no case tells the two readings apart. So the guidance does most of the work and the
+refusal catches the writers it misses; that split is two of five, and five is too few to
+say it will hold.
 
 ⚠ **A decision region is a decision a case can contradict, written without a value.** A
 `<state>` whose child states are the alternatives, whose `initial` is the one chosen,
@@ -1790,6 +1800,17 @@ the answer); the cases tell the alternatives apart (**held** when nothing fails,
 **implicated** when something does); no case changes (**untested** -- a pass says nothing
 about which reading is meant, which is the sentence a rule read off a picture needed).
 Before any of that it is **unexplored**.
+
+⚠⚠ **The product has to accept the region, and it did not.** The five writers above wrote
+regions the product's own `check --lint` REFUSED: `State '...' is unreachable from the
+document initial configuration`, once per unchosen candidate, because its reachability pass
+(`scxml_reachability.rs`) counts a state nothing enters as dead code. `check` here had asked
+for a shape the product's acceptance gate then rejected. The pass now treats the candidates
+of a compound state marked `sce:assumed` as alternatives entered if the choice changes
+(`docs/SCE_ACCEPTED_SUBSET.md`, reachability). It is narrow on purpose: the marker must be
+`assumed` and EVERY candidate a direct child, and a child the marker does not list is still
+an orphan; a test here holds the two halves together
+(`test_the_product_accepts_the_region_and_still_refuses_a_stray_orphan`).
 
 ⚠⚠ **An alternative is run only if the logic reads it.** Measured 2026-10-10 on the first
 writer to use a region (three given the guidance, one followed it): its logic read only

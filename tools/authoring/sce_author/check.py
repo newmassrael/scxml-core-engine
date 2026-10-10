@@ -166,6 +166,8 @@ class Document:
     # EVERY `sce:assumed` of the document, on any element (`Mark`). The three above are the
     # `<data>` ones; ask this where a guess was written, never to find what a value rests on.
     marks: tuple = ()
+    # Every `cond` of the document, as written. A decision region is read through them (`In()`).
+    conditions: tuple = ()
     # Output identifier -> the reason its author gave for leaving it
     # `sce:unresolved`: a value nobody has decided, written as a question
     # rather than a guess. The product refuses to BUILD such a document for
@@ -247,6 +249,17 @@ class Document:
         """Every state that could act on this event while it is active."""
         return [state for state, descriptors in self.listeners.items()
                 if any(descriptor_matches(d, event_name) for d in descriptors)]
+
+    def is_placed(self, mark: Mark) -> bool:
+        """Whether a value rests on this mark: it sits on a `<data>` the logic reads, which is
+        what `verify` credits and blames."""
+        return mark.element == "data" and self.assumed_marker.get(mark.ident) == mark.marker
+
+    def region_reads_every_candidate(self, mark: Mark) -> bool:
+        """Whether this mark is a decision region AND the logic reads each of its candidates with
+        `In()`. An alternative nothing reads is a label: running it would only switch the rule off."""
+        from .counterfactual import _read_by_a_condition
+        return mark.region and all(_read_by_a_condition(c, self.conditions) for c in mark.candidates)
 
     def rests_on_an_assumption(self, ident: str) -> str:
         """The assumption this output depends on, transitively, if any."""
@@ -502,6 +515,7 @@ def read_document(path: pathlib.Path) -> Document:
         assumed_marker=assumed_marker,
         assumed_candidates=assumed_candidates,
         marks=_marks_of(root),
+        conditions=tuple(node.get("cond") for node in root.iter() if node.get("cond")),
         unresolved=unresolved,
         reads=reads,
         sends=tuple(sends),
@@ -1263,6 +1277,66 @@ def unread_driven_inputs(pack: Pack, prose, declared_inputs: dict) -> list[Findi
 _PICTURE_MARK = re.compile(r"\[picture: ([^\]\r\n]+)\]")
 
 
+_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_.-]*")
+
+
+def _region_skeleton(mark: Mark) -> str:
+    """The decision region this mark's own candidates make, for the refusal to show. Written from
+    what the author already said, so the way out is a rewrite of a few lines and not a design."""
+    if len(mark.candidates) >= 2 and all(_NAME.fullmatch(c) for c in mark.candidates):
+        children = "".join(f"\n      <state id=\"{c}\"/>" for c in mark.candidates)
+        return (f"    <state id=\"{mark.marker}_choice\" initial=\"{mark.candidates[0]}\"\n"
+                f"           sce:assumed=\"{mark.marker}\" sce:assumed-reason=\"...\"\n"
+                f"           sce:assumed-candidates=\"{' '.join(mark.candidates)}\">{children}\n"
+                f"    </state>\n"
+                + "".join(f"    ... a transition guarded cond=\"In('{c}')\" for {c}\n"
+                          for c in mark.candidates))
+    return ("    <state id=\"NAME_choice\" initial=\"A\" sce:assumed=\"NAME\" sce:assumed-reason=\"...\"\n"
+            "           sce:assumed-candidates=\"A B\"><state id=\"A\"/><state id=\"B\"/></state>\n"
+            "    ... a transition guarded cond=\"In('A')\" and another guarded cond=\"In('B')\"\n")
+
+
+def unplaced_guesses(document, cited=frozenset()) -> list[Finding]:
+    """A guess no case can ever try.
+
+    A guess is worth recording because a case can contradict it, and a case reaches it two ways:
+    through the value that reads it (a `<data>` the logic reads), or through its alternatives (a
+    DECISION REGION whose every candidate the logic reads with `In()`). Anywhere else the mark is
+    recorded and never tried. Both ways work WITHOUT a script engine -- the first rule written here
+    (a `<data>` only) did not, and five writers barred from one moved the mark into a comment, which
+    nothing reads. So this asks for what every host can give.
+
+    `cited` is the marker ids the owner has already answered (`decisions.cited_markers`). A mark
+    that cites one applies a standing answer rather than guessing, and may sit on any element.
+    A `<datamodel>` mark is an event schema's payload choice, a different document's business."""
+    out = []
+    for mark in document.marks:
+        if (document.is_placed(mark) or document.region_reads_every_candidate(mark)
+                or mark.marker in cited or mark.element == "datamodel"):
+            continue
+        where = f"{mark.element} {mark.ident}".strip()
+        if mark.region:
+            from .counterfactual import _read_by_a_condition
+            unread = [c for c in mark.candidates if not _read_by_a_condition(c, document.conditions)]
+            out.append(Finding(
+                where,
+                f"is a decision region (`sce:assumed=\"{mark.marker}\"`) and no condition reads "
+                f"{', '.join(repr(c) for c in unread)} with In(): an alternative nothing reads is a "
+                f"label, and choosing it would switch the rule off instead of running the other "
+                f"reading. Write the logic for every candidate."))
+            continue
+        out.append(Finding(
+            where,
+            f"carries `sce:assumed=\"{mark.marker}\"` on a <{mark.element}>, where no case can ever "
+            f"try it: no output's value rests on it and it has no alternative states to run. Write "
+            f"the decision where a case can reach it -- a `<data>` whose `expr` is the decided value, "
+            f"or, where the host allows no script engine, a decision region:\n"
+            f"{_region_skeleton(mark)}"
+            f"If this cites the owner's decision or a house rule, hand over the decision record and "
+            f"the profile (`--decisions`, `--profile`) and it is accepted where it is."))
+    return out
+
+
 def unnamed_pictures(prose, document, binding_path: pathlib.Path) -> list[str]:
     """The pictures the specification shows that neither the document nor the binding names.
 
@@ -1341,8 +1415,12 @@ def unmarked_pictures(prose, document, binding_path: pathlib.Path) -> list[Findi
     return out
 
 
-def check(pack: Pack, binding_path: pathlib.Path, prose=None) -> list[Finding]:
+def check(pack: Pack, binding_path: pathlib.Path, prose=None,
+          cited=frozenset()) -> list[Finding]:
     """Refusals for this document and binding against the pack.
+
+    Every guess (`sce:assumed`) has to sit where a case can reach it (`unplaced_guesses`); `cited`
+    is the marker ids the owner has answered, which may sit anywhere.
 
     With `prose` -- the specification -- every precondition it states is
     also asked for (`unread_preconditions`), and so is every input it names that
@@ -1758,6 +1836,7 @@ def check(pack: Pack, binding_path: pathlib.Path, prose=None) -> list[Finding]:
     # writing, one author in five listed any, and on guesses nothing failed.
     # A list of one value is an answer too: this decision has no other.
     from .counterfactual import candidate_site
+    out.extend(unplaced_guesses(document, cited))
     for ident in sorted(document.assumed):
         listed = document.assumed_candidates.get(ident)
         if listed is None or not listed[0]:

@@ -426,9 +426,11 @@ Write the logic for EVERY candidate, not only the chosen one: `gaps
 --counterfactual` changes `initial` to each other child, runs the cases again
 and says whether any case tells the alternatives apart -- and a candidate no
 condition reads is not run at all, because setting it would only switch the
-rule off. A mark on any other state or region is listed as unplaced, which
-says no case can ever try it; it is still better than a comment, which nothing
-reads.
+rule off. `check` refuses a guess that sits on neither a `<data>` nor such a
+region, because no case could ever try it, and its answer shows the region
+written from your own candidates. A comment is not a way out: nothing reads it.
+A mark that cites the owner's decision or a house rule may sit anywhere (`check`
+takes the decision record and the profile).
 
 Give each decided value its own `<data>` -- a decision variable -- whose
 `expr` is that value alone, mark IT `sce:assumed`, and have the logic read it:

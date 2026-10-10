@@ -1881,7 +1881,13 @@ TOOLS = [
             "an empty list means the document can reach the platform, which "
             "is a weaker claim than being correct. Give `prose` too, and a "
             "precondition the specification states that the document never "
-            "reads is refused as well."
+            "reads is refused as well. A guess (`sce:assumed`) has to sit where a "
+            "case can reach it: on a `<data>` the logic reads, or as a decision "
+            "region (a state whose child states are the candidates, `initial` the "
+            "one chosen, every candidate read with `In()`) -- the second needs no "
+            "script engine. A mark anywhere else is refused, with a region "
+            "written from its own candidates, unless it cites the owner's "
+            "decision or a house rule (`decisions`, `profile`)."
         ),
         "inputSchema": {
             "type": "object",
@@ -1893,6 +1899,18 @@ TOOLS = [
                     "description": "The binding file, which names its own document.",
                 },
                 "prose": _PROSE_ARG,
+                "decisions": {
+                    "type": "string",
+                    "description": (
+                        "Path to the owner's decision record. A mark citing one "
+                        "of its ids may sit on any element."),
+                },
+                "profile": {
+                    "type": "string",
+                    "description": (
+                        "Path to the owner's authoring profile. A mark citing "
+                        "one of its house rules may sit on any element."),
+                },
             },
         },
     },
@@ -4265,7 +4283,17 @@ def call_tool(name: str, args: dict, *, remote: bool = False,
                 raise ToolArgumentError("'binding' is required: the path to the "
                                         "binding file, which names its own document")
             prose = load_prose(_prose_arg(args)) if args.get("prose") is not None else None
-            findings = check(pack, pathlib.Path(binding), prose)
+            owned = {}
+            for key in ("decisions", "profile"):
+                value = args.get(key)
+                if value is not None and not isinstance(value, str):
+                    raise ToolArgumentError(f"{key!r} has to be a path, as a string")
+                owned[key] = pathlib.Path(value) if value else None
+            cited, refused = cited_by_binding(pathlib.Path(binding), owned["decisions"],
+                                              owned["profile"])
+            if refused:
+                return _failure(refused)
+            findings = check(pack, pathlib.Path(binding), prose, cited)
             notice = picture_notice(unnamed_pictures_of(pathlib.Path(binding), prose))
             if not findings:
                 return _text("no refusals: every address, field and symbol exists."

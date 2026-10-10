@@ -81,12 +81,29 @@ FIX = {
 }
 
 
+# What each kind asks of the specification when the guess is a decision REGION: there is no
+# position resting on it to compare, only alternatives the cases tell apart or do not.
+REGION_FIX = {
+    "refuted": ("An alternative repairs every failing case and breaks none: it is the reading the "
+                "tests expect. The specification should state it."),
+    "implicated": ("A case fails and the alternatives change what fails, and the cases do not say "
+                   "which reading is right. The specification should settle it."),
+    "untested": ("No case tells the alternatives apart, so a pass says nothing about which reading "
+                 "the specification means. The specification should state it, or a case should "
+                 "tell them apart."),
+    "held": ("The cases tell the alternatives apart and the chosen one agrees with them. The "
+             "specification should still say it."),
+}
+
+
 @dataclass
 class Gap:
     kind: str
     subject: str
     reason: str
     marker: str = ""
+    # The guess is a decision region (`check.Mark.region`): `fix` speaks of alternatives.
+    region: bool = False
     positions: list = field(default_factory=list)
     # (file, line, the name found there): where the text touches it.
     where: list = field(default_factory=list)
@@ -108,7 +125,7 @@ class Gap:
 
     @property
     def fix(self) -> str:
-        return FIX[self.kind]
+        return (REGION_FIX.get(self.kind) if self.region else None) or FIX[self.kind]
 
     def as_dict(self) -> dict:
         return {"kind": self.kind, "subject": self.subject, "marker": self.marker,
@@ -205,7 +222,7 @@ def report(verification, pack, prose=None, questions=(), counterfactuals=None,
                 kind = "refuted"
         gaps.append(Gap(
             kind=kind, subject=a.subject, reason=a.reason, marker=a.marker,
-            positions=list(a.positions),
+            region=a.region, positions=list(a.positions),
             where=_where(a.positions, pack.model, prose),
             evidence={"refuted": a.refuted_by or [e[:4] for e in a.implicated_by],
                       "implicated": a.implicated_by,
