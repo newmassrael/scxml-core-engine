@@ -32,6 +32,25 @@ pub fn model(body: impl Fn() + Sync + Send + 'static) {
     builder.check(body);
 }
 
+/// Offer loom a thread switch here, which it would otherwise not try.
+///
+/// Loom decides which interleavings to run by noting, per atomic, the last
+/// access to it, and queues a switch only where another thread's pending access
+/// conflicts with that one. A thread that loads an atomic and then stores it
+/// leaves its own load as the last access, which hides every access another
+/// thread made before it, and the switch that would have put the store ahead of
+/// those accesses is never queued. The linked ring's producer does exactly
+/// that with its filled count. Measured 2026-10-10 on loom 0.7.2, a model of one
+/// push and one pop ran one execution and passed with the count published
+/// `Relaxed`, where a yield in the consumer ran several and failed it.
+///
+/// So a model whose threads race on such an atomic yields where the threads
+/// begin to race, once at the head of the side that only reads. That adds the
+/// switches without changing what the model asserts.
+pub fn offer_switch() {
+    loom::thread::yield_now();
+}
+
 /// The system allocator, counting the blocks it has out so a model can say
 /// that the queue gave every segment back.
 pub struct Counting {
