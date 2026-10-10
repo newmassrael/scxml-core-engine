@@ -451,6 +451,37 @@ class ACommandIsAReviser(unittest.TestCase):
         self.assertIn("had not finished", str(caught.exception))
         self.assertIn("stdout", str(caught.exception))
 
+    def test_the_failure_of_a_round_says_which_pipes_were_left_open(self):
+        # The process layer knows it could not close a pipe (`ProcessTimeout.left_open`); the sentence the
+        # gate gives for the round must carry it, or a person reads "stopped" for a clean stop (a review,
+        # 2026-10-10).
+        from sce_author import process
+
+        def stuck(*args, **kwargs):
+            raise process.ProcessTimeout("reviser had not finished after 1 s", left_open=("stdout", "stderr"))
+
+        reviser = command_reviser("true", self.design, timeout_s=1)
+        with mock.patch.object(process, "run", stuck):
+            with self.assertRaises(ReviserError) as caught:
+                reviser("x")
+        text = str(caught.exception)
+        self.assertIn("was stopped", text)
+        self.assertIn("stdout", text)
+        self.assertIn("stderr", text)
+        self.assertIn("left open", text)
+
+    def test_a_clean_stop_is_not_said_to_have_left_anything_open(self):
+        from sce_author import process
+
+        def stopped(*args, **kwargs):
+            raise process.ProcessTimeout("reviser had not finished after 1 s")
+
+        reviser = command_reviser("true", self.design, timeout_s=1)
+        with mock.patch.object(process, "run", stopped):
+            with self.assertRaises(ReviserError) as caught:
+                reviser("x")
+        self.assertNotIn("left open", str(caught.exception))
+
     def test_a_command_that_finishes_is_read_as_before_when_it_has_a_session_of_its_own(self):
         code = "import sys; print('said'); print('and', file=sys.stderr); sys.exit(0)"
         command_reviser(self.command(code), self.design)("x")   # no error: exit 0 is a finished round

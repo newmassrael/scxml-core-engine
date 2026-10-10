@@ -66,7 +66,14 @@ from dataclasses import dataclass
 
 
 class ProcessTimeout(Exception):
-    """A trusted program did not finish in the time it was given."""
+    """A trusted program did not finish in the time it was given.
+
+    `left_open` names the output pipes that could not be closed after it was stopped, because what it
+    started still held them: the stop is not clean, and a caller that words the failure itself says so."""
+
+    def __init__(self, message: str, left_open: tuple[str, ...] = ()) -> None:
+        super().__init__(message)
+        self.left_open = tuple(left_open)
 
 
 def run(argv: list, *, cwd=None, timeout: float | None = None,
@@ -142,7 +149,8 @@ def _run_in_own_group(argv: list, cwd, timeout: float | None, stdin_text: str | 
         held = (f"; its {', '.join(left)} pipe(s) were still held by what it started and were left open"
                 if left else "")
         raise ProcessTimeout(
-            f"{os.path.basename(str(argv[0]))} had not finished after {timeout:.0f} s{held}") from exc
+            f"{os.path.basename(str(argv[0]))} had not finished after {timeout:.0f} s{held}",
+            left_open=tuple(left)) from exc
     except BaseException:
         _end_group(child, windows)
         raise

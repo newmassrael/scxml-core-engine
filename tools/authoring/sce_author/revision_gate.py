@@ -302,7 +302,11 @@ def command_reviser(command: str, design: pathlib.Path, *,
             except OSError as error:
                 raise ReviserError(f"the reviser could not be started: {error}") from error
             except process.ProcessTimeout as error:
-                raise ReviserError(f"the reviser ran past {timeout_s} seconds and was stopped") from error
+                # A stop that left a pipe open is not a clean one, and the process layer is the one that knows.
+                held = (f"; its {', '.join(error.left_open)} pipe(s) were still held by what it started and "
+                        "were left open" if error.left_open else "")
+                raise ReviserError(
+                    f"the reviser ran past {timeout_s} seconds and was stopped{held}") from error
             except ValueError as error:
                 # Its output is read as UTF-8, and a client that wrote anything else has said
                 # nothing this can keep; whether it revised is still the judgment's to say.
