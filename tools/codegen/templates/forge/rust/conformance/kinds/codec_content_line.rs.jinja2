@@ -9,8 +9,18 @@
    an entry can be absent, and a property can be a list; and a case marked
    `decode_only` is an input the codec reads and does not write, so only its
    decode is held. The encode goes into a caller-owned buffer, the way a target
-   without a heap writes it, and so needs no `alloc`. #}
-    let spec = &reference["{{ f.ref_section }}"]["{{ f.name }}"];
+   without a heap writes it, and so needs no `alloc`.
+
+   An entry that is an enum (docs/adr/0015) is written in a vector as its carrier
+   number and held by the codec as the enum's own type. A decoded value is
+   compared as its carrier (`to_underlying()`), and a value written into the codec
+   is taken from the number by the enum's `from_underlying`, which a closed enum
+   answers `None` for a carrier it does not declare, so a closed enum is
+   unwrapped and an open one, whose conversion is total, is not. #}
+{% macro lift(m, raw) -%}
+fixtures::{{ m.enum_document | to_snake_case }}::{{ m.enum_document | to_pascal_case }}::from_underlying({{ raw | rust_unmarshal(m.type) }}){% if not m.enum_open %}.expect("a case names a declared variant"){% endif %}
+{%- endmacro %}
+    let spec =&reference["{{ f.ref_section }}"]["{{ f.name }}"];
     for (i, case) in spec["cases"]
         .as_array()
         .expect("cases must be array")
@@ -46,7 +56,11 @@
                 .map(|r| {
                     serde_json::json!({
 {% for m in field.members %}
-{% if m.list %}
+{% if m.enum_document and m.optional %}
+                        "{{ m.name }}": r.{{ m.name | to_snake_case }}.map(|e| e.to_underlying()),
+{% elif m.enum_document %}
+                        "{{ m.name }}": r.{{ m.name | to_snake_case }}.to_underlying(),
+{% elif m.list %}
                         "{{ m.name }}": r.{{ m.name | to_snake_case }}.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
 {% elif m.optional %}
                         "{{ m.name }}": r.{{ m.name | to_snake_case }}.as_deref(),
@@ -63,6 +77,37 @@
                 "{{ f.name }} case {i} decode {{ field.name }}"
             );
         }
+{% elif field.list and field.enum_document %}
+        {
+            let want: Vec<{{ field.type | rust_type }}> = decoded["{{ field.name }}"]
+                .as_array()
+                .expect("{{ field.name }} must be an array")
+                .iter()
+                .map(|v| {{ 'v' | rust_unmarshal(field.type) }})
+                .collect();
+            let got: Vec<{{ field.type | rust_type }}> = round_tripped
+                .{{ field.name | to_snake_case }}
+                .iter()
+                .map(|e| e.to_underlying())
+                .collect();
+            assert_eq!(got, want, "{{ f.name }} case {i} decode {{ field.name }}");
+        }
+{% elif field.enum_document and field.optional %}
+        assert_eq!(
+            round_tripped.{{ field.name | to_snake_case }}.map(|e| e.to_underlying()),
+            if decoded["{{ field.name }}"].is_null() {
+                None
+            } else {
+                Some({{ ('decoded["' ~ field.name ~ '"]') | rust_unmarshal(field.type) }})
+            },
+            "{{ f.name }} case {i} decode {{ field.name }}"
+        );
+{% elif field.enum_document %}
+        assert_eq!(
+            round_tripped.{{ field.name | to_snake_case }}.to_underlying(),
+            {{ ('decoded["' ~ field.name ~ '"]') | rust_unmarshal(field.type) }},
+            "{{ f.name }} case {i} decode {{ field.name }}"
+        );
 {% elif field.list %}
         {
             let want: Vec<&str> = decoded["{{ field.name }}"]
@@ -121,7 +166,15 @@
                     .{{ field.name | to_snake_case }}
                     .push(fixtures::{{ f.name }}::{{ f.name | to_pascal_case }}{{ field.name | to_pascal_case }}Line {
 {% for m in field.members %}
-{% if m.list %}
+{% if m.enum_document and m.optional %}
+                        {{ m.name | to_snake_case }}: if r["{{ m.name }}"].is_null() {
+                            None
+                        } else {
+                            Some({{ lift(m, 'r["' ~ m.name ~ '"]') }})
+                        },
+{% elif m.enum_document %}
+                        {{ m.name | to_snake_case }}: {{ lift(m, 'r["' ~ m.name ~ '"]') }},
+{% elif m.list %}
                         {{ m.name | to_snake_case }}: r["{{ m.name }}"]
                             .as_array()
                             .expect("a record's values are an array")
@@ -148,6 +201,22 @@
                     })
                     .expect("a case list fits its bound");
             }
+{% elif field.list and field.enum_document %}
+            for v in decoded["{{ field.name }}"]
+                .as_array()
+                .expect("{{ field.name }} must be an array")
+            {
+                value
+                    .{{ field.name | to_snake_case }}
+                    .push({{ lift(field, "v") }})
+                    .expect("a case list fits its bound");
+            }
+{% elif field.enum_document and field.optional %}
+            if !decoded["{{ field.name }}"].is_null() {
+                value.{{ field.name | to_snake_case }} = Some({{ lift(field, 'decoded["' ~ field.name ~ '"]') }});
+            }
+{% elif field.enum_document %}
+            value.{{ field.name | to_snake_case }} = {{ lift(field, 'decoded["' ~ field.name ~ '"]') }};
 {% elif field.list %}
             for v in decoded["{{ field.name }}"]
                 .as_array()

@@ -46,8 +46,8 @@ pub fn lowers(lang: Language) -> bool {
 /// read such an entry as nothing would be a wrong output.
 pub fn lowers_enum_entries(lang: Language) -> bool {
     match lang {
-        Language::Python | Language::Go | Language::Kotlin => true,
-        Language::Rust | Language::Cpp | Language::C11 => false,
+        Language::Python | Language::Go | Language::Kotlin | Language::Rust => true,
+        Language::Cpp | Language::C11 => false,
     }
 }
 
@@ -125,6 +125,16 @@ fn enum_keys(l: &LangCtx, ty: &SceType, value: &str) -> serde_json::Map<String, 
         // enum field does: a closed set need not declare the zero a language would
         // start it at.
         keys.insert("enum_default".into(), l.enum_default_expr(&r.alias).into());
+        // One more than the longest text, for a backend that reads a value into a
+        // buffer of a size fixed at compile time: a value that fills it is longer
+        // than any text, and names no variant.
+        let longest = l
+            .enum_texts(&r.alias)
+            .iter()
+            .map(|row| row.text.len())
+            .max()
+            .unwrap_or(0);
+        keys.insert("enum_cap".into(), (longest + 1).into());
     }
     keys
 }
@@ -659,6 +669,7 @@ fn render_rust(
         }
     }
     insert_component(&mut ctx, m);
+    insert_enum_tables(&mut ctx, &l, m);
     ctx.insert("entries".into(), entries.into());
     ctx.insert(
         "codec_struct_derives_attr".into(),

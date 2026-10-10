@@ -660,7 +660,12 @@ fn an_enum_entry_takes_none_of_a_strings_own_attributes() {
 #[test]
 fn an_enum_entry_is_refused_by_name_until_a_backend_generates_it() {
     // The backends that have landed it; each adds itself in its own commit.
-    const GENERATING: [Language; 3] = [Language::Python, Language::Go, Language::Kotlin];
+    const GENERATING: [Language; 4] = [
+        Language::Python,
+        Language::Go,
+        Language::Kotlin,
+        Language::Rust,
+    ];
     let m = codec(&enum_document(ENUM_ENTRIES));
     for lang in [
         Language::Rust,
@@ -834,7 +839,7 @@ fn the_enum_a_codec_reads_gives_each_variant_a_text_a_line_can_carry() {
     // A vocabulary that is sound reaches the refusal that names a language that has
     // not landed an enum entry.
     let sound = status_document(&[("needsAction", 0, Some("NEEDS-ACTION")), ("done", 1, None)]);
-    let said = generated_against("rust", &sound, entry);
+    let said = generated_against("cpp", &sound, entry);
     assert!(
         said.contains("docs/adr/0015") && !said.contains("iana-token"),
         "{said}"

@@ -565,6 +565,96 @@ impl<'a> Property<'a> {
             _ => Err(CodecError::LineBadValue),
         }
     }
+
+    /// Read the value as the text of a variant of an enum (docs/adr/0015): the
+    /// carrier of the first row of `table` whose text it is, ASCII
+    /// case-insensitively. `N` is one more than the longest text in `table`, so a
+    /// longer value is told from a text without storing it whole. A value no row
+    /// names is `LineBadValue`, whatever its bytes are: it is no TEXT, so a
+    /// backslash in it is not an escape.
+    pub fn read_enum<const N: usize>(&mut self, table: EnumTexts) -> Result<u64, CodecError> {
+        self.begin_value()?;
+        let mut word = EnumWord::<N>::new();
+        while let Some(b) = self.scan.bump() {
+            word.push(b);
+        }
+        word.carrier_of(table)
+    }
+
+    /// Read the value of the parameter [`next_param`](Self::next_param) stands on
+    /// as the text of a variant of an enum (docs/adr/0015). The whole value is
+    /// scanned before it is judged, so a line the grammar refuses is
+    /// `LineMalformed` before it is `LineBadValue`; a second value is
+    /// `LineBadValue`.
+    pub fn read_param_enum<const N: usize>(&mut self, table: EnumTexts) -> Result<u64, CodecError> {
+        if self.phase != Phase::ParamValue {
+            return Err(CodecError::LineMalformed);
+        }
+        let mut word = EnumWord::<N>::new();
+        let more = self.scan_param_value(|b| {
+            word.push(b);
+            Ok(())
+        })?;
+        self.param = None;
+        self.phase = Phase::AtSeparator;
+        if more {
+            return Err(CodecError::LineBadValue);
+        }
+        word.carrier_of(table)
+    }
+}
+
+/// The variants of an enum a content-line entry is read and written by
+/// (docs/adr/0015), in declaration order: each variant's text and the carrier it
+/// stands for. A generated codec holds it as a constant, because the enum's own
+/// type carries no text, and neither direction allocates.
+pub type EnumTexts = &'static [(&'static str, u64)];
+
+/// The bytes of a value read as an enum's text, up to one more than the longest
+/// text: a value that fills it is longer than any text, and names no variant.
+struct EnumWord<const N: usize> {
+    bytes: BoundedVec<u8, N>,
+    overlong: bool,
+}
+
+impl<const N: usize> EnumWord<N> {
+    fn new() -> Self {
+        Self {
+            bytes: BoundedVec::new(),
+            overlong: false,
+        }
+    }
+
+    fn push(&mut self, b: u8) {
+        if self.bytes.push(b).is_err() {
+            self.overlong = true;
+        }
+    }
+
+    /// The carrier of the first variant whose text this is, compared ASCII
+    /// case-insensitively: only the 26 letters fold, so a character Unicode folds
+    /// to one of them (U+017F, U+0131) is not that letter.
+    fn carrier_of(&self, table: EnumTexts) -> Result<u64, CodecError> {
+        if self.overlong {
+            return Err(CodecError::LineBadValue);
+        }
+        table
+            .iter()
+            .find(|(text, _)| text.as_bytes().eq_ignore_ascii_case(self.bytes.as_slice()))
+            .map(|(_, carrier)| *carrier)
+            .ok_or(CodecError::LineBadValue)
+    }
+}
+
+/// The text of the first variant of `table` with `carrier`, as the enum declares
+/// it; a carrier of an open enum that no variant declares has none, and is
+/// `LineBadValue`.
+fn text_of(table: EnumTexts, carrier: u64) -> Result<&'static str, CodecError> {
+    table
+        .iter()
+        .find(|(_, held)| *held == carrier)
+        .map(|(text, _)| *text)
+        .ok_or(CodecError::LineBadValue)
 }
 
 // ── Writing ─────────────────────────────────────────────────────────────
@@ -789,6 +879,32 @@ impl<'s, S: SceSink + ?Sized> ContentLineWriter<'s, S> {
         for b in if value { &b"TRUE"[..] } else { &b"FALSE"[..] } {
             self.unit(core::slice::from_ref(b))?;
         }
+        self.end_line()
+    }
+
+    /// Write `;<name>=<text>` for the variant of `table` with `carrier`. A text is
+    /// letters, digits and hyphens, so it is never quoted (docs/adr/0015). A
+    /// carrier no variant declares has no text and is `LineBadValue`.
+    pub fn enum_param(
+        &mut self,
+        name: &str,
+        table: EnumTexts,
+        carrier: u64,
+    ) -> Result<(), CodecError> {
+        let text = text_of(table, carrier)?;
+        self.unit(b";")?;
+        self.units(name)?;
+        self.unit(b"=")?;
+        self.units(text)
+    }
+
+    /// Write `:<text>` for the variant of `table` with `carrier` and end the line
+    /// (docs/adr/0015). A carrier no variant declares has no text and is
+    /// `LineBadValue`.
+    pub fn enum_value(&mut self, table: EnumTexts, carrier: u64) -> Result<(), CodecError> {
+        let text = text_of(table, carrier)?;
+        self.unit(b":")?;
+        self.units(text)?;
         self.end_line()
     }
 }
@@ -1315,5 +1431,133 @@ mod tests {
                 list
             );
         }
+    }
+
+    // ── An enum read and written by the text of its variants (docs/adr/0015) ──
+
+    /// A closed vocabulary the way a generated codec holds it: the carriers
+    /// neither start at zero nor run on.
+    const STATUS: EnumTexts = &[
+        ("NEEDS-ACTION", 1),
+        ("IN-PROCESS", 2),
+        ("COMPLETED", 4),
+        ("cancelled", 8),
+    ];
+    /// One more than the longest text of `STATUS`.
+    const CAP: usize = 13;
+
+    fn enum_value(value: &[u8]) -> Result<u64, CodecError> {
+        let mut input = Vec::from(&b"BEGIN:VEVENT\r\nS:"[..]);
+        input.extend_from_slice(value);
+        input.extend_from_slice(b"\r\nEND:VEVENT\r\n");
+        let mut r = ContentLineReader::begin(&input, "VEVENT")?;
+        let mut p = r.next_property()?.expect("a property");
+        p.read_enum::<CAP>(STATUS)
+    }
+
+    fn enum_param(line: &[u8]) -> Result<u64, CodecError> {
+        let mut input = Vec::from(&b"BEGIN:VEVENT\r\n"[..]);
+        input.extend_from_slice(line);
+        input.extend_from_slice(b"\r\nEND:VEVENT\r\n");
+        let mut r = ContentLineReader::begin(&input, "VEVENT")?;
+        let mut p = r.next_property()?.expect("a property");
+        assert!(p.next_param()?);
+        p.read_param_enum::<CAP>(STATUS)
+    }
+
+    #[test]
+    fn a_text_is_matched_ascii_case_insensitively() {
+        for (value, carrier) in [
+            (&b"NEEDS-ACTION"[..], 1),
+            (b"needs-action", 1),
+            (b"In-Process", 2),
+            (b"completed", 4),
+            // A variant with no text of its own is read by its declared name, in any case.
+            (b"CANCELLED", 8),
+            (b"Cancelled", 8),
+        ] {
+            assert_eq!(enum_value(value), Ok(carrier), "{value:?}");
+        }
+    }
+
+    #[test]
+    fn a_value_no_variant_names_is_a_bad_value() {
+        for value in [
+            &b""[..],
+            b"DONE",
+            b"NEEDS",
+            b"NEEDS-ACTION-",
+            b"NEEDS-ACTION-NEEDS-ACTION-NEEDS-ACTION",
+            b" IN-PROCESS",
+            b"IN-PROCESS ",
+            // The declared name of a variant that has a text is not its text.
+            b"needsAction",
+            // A value is no TEXT, so a backslash in it is not an escape.
+            b"IN\\-PROCESS",
+            b"IN-\x07PROCESS",
+            // Only the 26 letters fold: U+017F and U+0131 are not S and I.
+            "IN-PROCE\u{17f}\u{17f}".as_bytes(),
+            "\u{131}N-PROCESS".as_bytes(),
+        ] {
+            assert_eq!(
+                enum_value(value),
+                Err(CodecError::LineBadValue),
+                "{value:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_text_cut_by_a_fold_is_read_whole() {
+        assert_eq!(enum_value(b"IN-PRO\r\n CESS"), Ok(2));
+    }
+
+    #[test]
+    fn a_parameter_that_is_an_enum_is_matched_quoted_or_not() {
+        assert_eq!(enum_param(b"S;ROLE=completed:x"), Ok(4));
+        assert_eq!(enum_param(b"S;ROLE=\"Needs-Action\":x"), Ok(1));
+        for bad in [
+            &b"S;ROLE=:x"[..],
+            b"S;ROLE=BOSS:x",
+            b"S;ROLE=\"\":x",
+            b"S;ROLE=COMPLETED,COMPLETED:x",
+        ] {
+            assert_eq!(enum_param(bad), Err(CodecError::LineBadValue), "{bad:?}");
+        }
+        // The value is scanned whole before it is judged, so a quote that never
+        // closes is malformed even though the text before it names no variant.
+        assert_eq!(
+            enum_param(b"S;ROLE=\"ZZZ:x"),
+            Err(CodecError::LineMalformed)
+        );
+    }
+
+    #[test]
+    fn an_enum_is_written_as_the_text_its_enum_declares() {
+        let text = written(|w| {
+            w.property("S").expect("name");
+            w.enum_param("ROLE", STATUS, 1).expect("param");
+            w.enum_param("X-Q", STATUS, 8).expect("param");
+            w.enum_value(STATUS, 2).expect("value");
+            w.property("T").expect("name");
+            w.enum_value(STATUS, 8).expect("value");
+        });
+        assert_eq!(
+            text,
+            "BEGIN:VEVENT\r\nS;ROLE=NEEDS-ACTION;X-Q=cancelled:IN-PROCESS\r\nT:cancelled\r\nEND:VEVENT\r\n"
+        );
+    }
+
+    #[test]
+    fn a_carrier_no_variant_declares_has_no_text_and_is_not_written() {
+        let mut buf = [0u8; 256];
+        let mut sink = SliceSink::new(&mut buf);
+        let mut w = ContentLineWriter::begin(&mut sink, "VEVENT").expect("begin");
+        w.property("S").expect("name");
+        assert_eq!(w.enum_value(STATUS, 9), Err(CodecError::LineBadValue));
+        assert_eq!(
+            w.enum_param("ROLE", STATUS, 9),
+            Err(CodecError::LineBadValue)
+        );
     }
 }

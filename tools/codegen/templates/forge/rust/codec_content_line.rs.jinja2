@@ -5,6 +5,46 @@
 {#- The read of one property's value, as the statement that stores it. The
     line grammar — unfolding, TEXT escapes, quoting — is the runtime's
     (`sce_forge_runtime::content_line`); this spells none of it. #}
+{#- The enum variant a text on a line names, as an expression: the text names a
+    carrier and the enum's own conversion takes it to a variant, so a closed and
+    an open enum are read by one rule (docs/adr/0015). A closed enum answers
+    `None` for a carrier it does not declare. `call` is the runtime's read. #}
+{% macro enum_of(x, call) -%}
+{{ x.enum_from }}({{ x.carrier_type }}::try_from({{ call }}?).map_err(|_| CodecError::LineBadValue)?){% if not x.enum_is_open %}.ok_or(CodecError::LineBadValue)?{% endif %}
+{%- endmacro %}
+{#- The read of one parameter's value, as the expression bound to it. #}
+{% macro read_param(p) -%}
+{%- if p.kind == "enum" -%}
+{{ enum_of(p, "line.read_param_enum::<" ~ p.enum_cap ~ ">(TEXTS_" ~ (p.enum_alias | upper) ~ ")") }}
+{%- else -%}
+line.read_param_string::<{{ p.max_size }}>()?
+{%- endif -%}
+{%- endmacro %}
+{#- The read of a record's value, as the expression bound to it. #}
+{% macro read_record_value(e) -%}
+{%- if e.kind == "enum" -%}
+{{ enum_of(e, "line.read_enum::<" ~ e.enum_cap ~ ">(TEXTS_" ~ (e.enum_alias | upper) ~ ")") }}
+{%- else -%}
+line.read_string::<{{ e.max_size }}>({{ "true" if e.text else "false" }})?
+{%- endif -%}
+{%- endmacro %}
+{#- The write of one parameter `p`, read from `holder`: a parameter that is an
+    enum is written as the text of its variant (docs/adr/0015). #}
+{% macro write_param(p, holder) -%}
+{%- if p.kind == "enum" and p.required -%}
+out.enum_param("{{ p.param }}", TEXTS_{{ p.enum_alias | upper }}, u64::from({{ holder }}.{{ p.name }}.to_underlying()))?;
+{%- elif p.kind == "enum" -%}
+if let Some(p) = &{{ holder }}.{{ p.name }} {
+                out.enum_param("{{ p.param }}", TEXTS_{{ p.enum_alias | upper }}, u64::from((*p).to_underlying()))?;
+            }
+{%- elif p.required -%}
+out.param("{{ p.param }}", &{{ holder }}.{{ p.name }}, {{ p.max_size }})?;
+{%- else -%}
+if let Some(p) = &{{ holder }}.{{ p.name }} {
+                out.param("{{ p.param }}", p, {{ p.max_size }})?;
+            }
+{%- endif -%}
+{%- endmacro %}
 {% macro store_value(e) -%}
 {%- if e.separator -%}
 {{ e.local }} = Some(line.read_strings::<{{ e.max_size }}, {{ e.max_values }}>(b'{{ e.separator }}', {{ "true" if e.text else "false" }})?);
@@ -14,6 +54,12 @@
                 .map_err(|_| CodecError::LineTooMany)?;
 {%- elif e.kind == "string" -%}
 {{ e.local }} = Some(line.read_string::<{{ e.max_size }}>({{ "true" if e.text else "false" }})?);
+{%- elif e.kind == "enum" and e.is_list -%}
+{{ e.local }}
+                .push({{ enum_of(e, "line.read_enum::<" ~ e.enum_cap ~ ">(TEXTS_" ~ (e.enum_alias | upper) ~ ")") }})
+                .map_err(|_| CodecError::LineTooMany)?;
+{%- elif e.kind == "enum" -%}
+{{ e.local }} = Some({{ enum_of(e, "line.read_enum::<" ~ e.enum_cap ~ ">(TEXTS_" ~ (e.enum_alias | upper) ~ ")") }});
 {%- elif e.kind == "bool" -%}
 {{ e.local }} = Some(line.read_bool()?);
 {%- elif e.kind == "uint" and e.value_type == "u64" -%}
@@ -33,6 +79,8 @@
 out.strings(v.as_slice(), b'{{ e.separator }}', {{ "true" if e.text else "false" }}, {{ e.max_size }}, {{ e.max_values }})?;
 {%- elif e.kind == "string" -%}
 out.string(v, {{ "true" if e.text else "false" }}, {{ e.max_size }})?;
+{%- elif e.kind == "enum" -%}
+out.enum_value(TEXTS_{{ e.enum_alias | upper }}, u64::from((*v).to_underlying()))?;
 {%- elif e.kind == "bool" -%}
 out.boolean(*v)?;
 {%- elif e.kind == "uint" and e.value_type == "u64" -%}
@@ -53,6 +101,9 @@ out.int(i64::from(*v))?;
 
 use sce_forge_runtime::codec::{CodecError, SceCursor, SceSink};
 use sce_forge_runtime::content_line::{ContentLineReader, ContentLineWriter};
+{% if enum_tables %}
+use sce_forge_runtime::content_line::EnumTexts;
+{% endif %}
 use sce_forge_runtime::heapless;
 // `VecSink` and the heap-backed `encode_to_vec` facade are gated on the
 // runtime's `alloc` feature, as they are for a positional codec.
@@ -62,6 +113,23 @@ extern crate alloc;
 use alloc::vec::Vec;
 #[cfg(feature = "alloc")]
 use sce_forge_runtime::codec::VecSink;
+{% if all_imports %}
+
+{% for imp in all_imports %}
+{{ imp.include_stmt }}
+{% endfor %}
+{% endif %}
+{% for t in enum_tables %}
+
+{#- What an entry that is an enum is written and read by (docs/adr/0015): each
+    variant's text and the carrier it stands for, held as data here because the
+    enum's own type carries none. #}
+const TEXTS_{{ t.alias | upper }}: EnumTexts = &[
+{% for r in t.rows %}
+    ("{{ r.text }}", {{ r.value }}),
+{% endfor %}
+];
+{% endfor %}
 
 {% for e in entries if e.is_records %}
 /// One line of `{{ e.property }}` (docs/adr/0014): the parameters it carries and
@@ -153,7 +221,7 @@ impl {{ struct_name }} {
                         if {{ p.local }}.is_some() {
                             return Err(CodecError::LineTooMany);
                         }
-                        {{ p.local }} = Some(line.read_param_string::<{{ p.max_size }}>()?);
+                        {{ p.local }} = Some({{ read_param(p) }});
                     }
 {% endfor %}
                 }
@@ -171,7 +239,7 @@ impl {{ struct_name }} {
 {% if e.separator %}
                         {{ e.value_member }}: line.read_strings::<{{ e.max_size }}, {{ e.max_values }}>(b'{{ e.separator }}', {{ "true" if e.text else "false" }})?,
 {% else %}
-                        {{ e.value_member }}: line.read_string::<{{ e.max_size }}>({{ "true" if e.text else "false" }})?,
+                        {{ e.value_member }}: {{ read_record_value(e) }},
 {% endif %}
                     })
                     .map_err(|_| CodecError::LineTooMany)?;
@@ -229,13 +297,7 @@ impl {{ struct_name }} {
             let v = &record.{{ e.value_member }};
             out.property("{{ e.property }}")?;
 {% for p in e.params %}
-{% if p.required %}
-            out.param("{{ p.param }}", &record.{{ p.name }}, {{ p.max_size }})?;
-{% else %}
-            if let Some(p) = &record.{{ p.name }} {
-                out.param("{{ p.param }}", p, {{ p.max_size }})?;
-            }
-{% endif %}
+            {{ write_param(p, "record") }}
 {% endfor %}
             {{ write_value(e) }}
         }
@@ -254,13 +316,7 @@ impl {{ struct_name }} {
             let v = &self.{{ e.name }};
             out.property("{{ e.property }}")?;
 {% for p in e.params %}
-{% if p.required %}
-            out.param("{{ p.param }}", &self.{{ p.name }}, {{ p.max_size }})?;
-{% else %}
-            if let Some(p) = &self.{{ p.name }} {
-                out.param("{{ p.param }}", p, {{ p.max_size }})?;
-            }
-{% endif %}
+            {{ write_param(p, "self") }}
 {% endfor %}
             {{ write_value(e) }}
         }
@@ -269,13 +325,7 @@ impl {{ struct_name }} {
             let v = &self.{{ e.name }};
             out.property("{{ e.property }}")?;
 {% for p in e.params %}
-{% if p.required %}
-            out.param("{{ p.param }}", &self.{{ p.name }}, {{ p.max_size }})?;
-{% else %}
-            if let Some(p) = &self.{{ p.name }} {
-                out.param("{{ p.param }}", p, {{ p.max_size }})?;
-            }
-{% endif %}
+            {{ write_param(p, "self") }}
 {% endfor %}
             {{ write_value(e) }}
         }{% if e.params %} else if {% for p in e.params %}{% if not loop.first %} || {% endif %}self.{{ p.name }}.is_some(){% endfor %} {
@@ -287,13 +337,7 @@ impl {{ struct_name }} {
         if let Some(v) = &self.{{ e.name }} {
             out.property("{{ e.property }}")?;
 {% for p in e.params %}
-{% if p.required %}
-            out.param("{{ p.param }}", &self.{{ p.name }}, {{ p.max_size }})?;
-{% else %}
-            if let Some(p) = &self.{{ p.name }} {
-                out.param("{{ p.param }}", p, {{ p.max_size }})?;
-            }
-{% endif %}
+            {{ write_param(p, "self") }}
 {% endfor %}
             {{ write_value(e) }}
         }{% if e.params %} else if {% for p in e.params %}{% if not loop.first %} || {% endif %}self.{{ p.name }}.is_some(){% endfor %} {
