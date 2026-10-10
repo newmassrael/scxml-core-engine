@@ -459,14 +459,6 @@ where
             // is freed. The successor exists, so `tail` may legally move to it; if
             // another participant already moved it, the exchange fails and reads
             // that move.
-            // Take `tail` off the segment before it is unlinked from `head`. A
-            // producer validates its hazard on the segment against `tail`, so
-            // `tail` must stop naming the segment before the segment can be
-            // retired; otherwise a producer could publish a hazard after the scan
-            // read its slot, find `tail` still on the segment, and use it once it
-            // is freed. The successor exists, so `tail` may legally move to it; if
-            // another participant already moved it, the exchange fails and reads
-            // that move.
             let _ = queue
                 .tail
                 .0
