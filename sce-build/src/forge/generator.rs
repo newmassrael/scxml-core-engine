@@ -18324,13 +18324,24 @@ fn render_queue_cpp(
         // writes it.
         link_field => inputs.link_field.clone(),
         many_consumers => inputs.consumers == "many",
+        segmented => inputs.segment.is_some(),
+        segment => inputs.segment,
+        // The allocator progress the document declared, as the runtime's
+        // `Progress` enumerator the queue is held to at compile time.
+        allocator_progress => inputs.allocator_progress.map(|(_, word)| word),
+        allocator_enumerator => inputs.allocator_progress.map(|(rank, _)| match rank {
+            0 => "Blocking",
+            1 => "LockFree",
+            _ => "WaitFree",
+        }),
+        hazard_slots => inputs.hazard_slots,
         algorithm => inputs.algorithm,
         producers => inputs.producers,
         consumers => inputs.consumers,
         declared_progress => inputs.declared_progress,
         push_progress => inputs.push_progress,
         pop_progress => inputs.pop_progress,
-        runtime_dep => "sce/forge/queue.h",
+        runtime_dep => if inputs.segment.is_some() { "sce/forge/queue_segmented.h" } else { "sce/forge/queue.h" },
     };
     tmpl.render(ctx).map_err(|e| {
         ForgeError::from(GenerateError::TemplateRender(format!(
@@ -18454,10 +18465,14 @@ fn resolve_queue_render_inputs(
             | crate::generator::Language::Cpp
             | crate::generator::Language::C11
     );
-    // `segmented` where the runtime has the allocator trait, the hazard-pointer
-    // domain and the two segment lists: Rust. Another language's runtime lands in
-    // the RFC's order; a collected one takes its allocator but not a domain.
-    let offers_segmented = matches!(language, crate::generator::Language::Rust);
+    // `segmented` where the runtime has the allocator contract, the hazard-pointer
+    // domain and the two segment lists: Rust and C++. Another language's runtime
+    // lands in the RFC's order; a collected one takes its allocator but not a
+    // domain.
+    let offers_segmented = matches!(
+        language,
+        crate::generator::Language::Rust | crate::generator::Language::Cpp
+    );
     let (bounded_capacity, link_field, segmented) = match &m.storage {
         QueueStorage::Bounded { capacity } => (Some(capacity), None, None),
         QueueStorage::Intrusive { link_field } if offers_intrusive => {

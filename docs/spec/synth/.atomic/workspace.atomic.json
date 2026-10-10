@@ -5427,6 +5427,14 @@
         {
           "file": "sce-build/tests/mutations/a_segmented_queue_orders_every_segment_hand_over.cases",
           "kind": "references"
+        },
+        {
+          "file": "backends/cpp/forge-runtime/include/sce/forge/queue_segmented.h",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/mutations/a_segmented_queue_keeps_tail_off_a_retired_segment.cases",
+          "kind": "references"
         }
       ]
     },

@@ -40,9 +40,20 @@
 //! one segment it is touching. A segment is retired only by the consumer whose
 //! compare-and-swap moved `head` past it; a stalled producer that still holds the
 //! segment keeps only that segment alive (RFC §synth-5-P, *Reclamation domain*).
-//! `tail` never points at a retired segment: the producer that links a successor
-//! holds its hazard on the old one until it has tried to move `tail`, and either it
-//! or a helper has by then.
+//!
+//! **Where a hazard is validated.** A hazard protects a segment only if the
+//! location it is validated against is the one the unlinking thread writes
+//! before the scan runs. A consumer validates against `head`, which the retiring
+//! consumer writes. A producer validates against `tail`, which that consumer does
+//! not write: left alone, `tail` can still name a segment that `head` has left and
+//! that has been retired (the producer that linked its successor has not yet moved
+//! `tail`), so a producer could publish its hazard after the scan read its slot,
+//! find `tail` unchanged, and use the segment once the scan freed it. So a
+//! consumer moves `tail` off the segment, to its successor, before it moves `head`
+//! past it, and every write of `head` and `tail` is sequentially consistent. Then
+//! `tail` does not name a segment by the time it is retired, and any producer whose
+//! check still saw it there published its hazard before the retirement, which the
+//! scan reads after it.
 //!
 //! **Progress.** Push and pop are lock-free: a retry means another participant
 //! moved `head`, `tail` or a ring, and the helping step lets a push finish what a
@@ -331,7 +342,7 @@ where
                     queue
                         .tail
                         .0
-                        .compare_exchange(tail, next, Ordering::AcqRel, Ordering::Relaxed);
+                        .compare_exchange(tail, next, Ordering::SeqCst, Ordering::SeqCst);
                 continue;
             }
             match segment.ring.push_or_close(value) {
@@ -362,8 +373,8 @@ where
                     let _ = queue.tail.0.compare_exchange(
                         tail,
                         fresh.as_ptr(),
-                        Ordering::AcqRel,
-                        Ordering::Relaxed,
+                        Ordering::SeqCst,
+                        Ordering::SeqCst,
                     );
                     self.hazard.clear();
                     return Ok(());
@@ -440,10 +451,30 @@ where
                 self.hazard.clear();
                 return Some(value);
             }
+            // Take `tail` off the segment before it is unlinked from `head`. A
+            // producer validates its hazard on the segment against `tail`, so
+            // `tail` must stop naming the segment before the segment can be
+            // retired; otherwise a producer could publish a hazard after the scan
+            // read its slot, find `tail` still on the segment, and use it once it
+            // is freed. The successor exists, so `tail` may legally move to it; if
+            // another participant already moved it, the exchange fails and reads
+            // that move.
+            // Take `tail` off the segment before it is unlinked from `head`. A
+            // producer validates its hazard on the segment against `tail`, so
+            // `tail` must stop naming the segment before the segment can be
+            // retired; otherwise a producer could publish a hazard after the scan
+            // read its slot, find `tail` still on the segment, and use it once it
+            // is freed. The successor exists, so `tail` may legally move to it; if
+            // another participant already moved it, the exchange fails and reads
+            // that move.
+            let _ = queue
+                .tail
+                .0
+                .compare_exchange(head, next, Ordering::SeqCst, Ordering::SeqCst);
             if queue
                 .head
                 .0
-                .compare_exchange(head, next, Ordering::AcqRel, Ordering::Relaxed)
+                .compare_exchange(head, next, Ordering::SeqCst, Ordering::SeqCst)
                 .is_ok()
             {
                 // This consumer moved `head` past the segment, so it alone
@@ -464,5 +495,101 @@ where
                 }
             }
         }
+    }
+}
+
+#[cfg(all(test, not(loom)))]
+mod tests {
+    extern crate std;
+
+    use super::*;
+    use core::alloc::Layout;
+
+    /// The system allocator, counting the blocks it has out.
+    struct Counting {
+        live: AtomicUsize,
+    }
+
+    // SAFETY: blocks come from the system allocator with the layout asked for and
+    // go back to it with the same; the count is atomic. The system allocator can
+    // block, which is what `PROGRESS` says.
+    unsafe impl SegmentAllocator for Counting {
+        const PROGRESS: Progress = Progress::Blocking;
+
+        fn allocate(&self, layout: Layout) -> Option<NonNull<u8>> {
+            // SAFETY: a segment's layout is never zero-sized.
+            let block = NonNull::new(unsafe { std::alloc::alloc(layout) })?;
+            self.live.fetch_add(1, Ordering::SeqCst);
+            Some(block)
+        }
+
+        unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: Layout) {
+            // SAFETY: the caller's contract: `ptr` came from `allocate` with `layout`.
+            unsafe { std::alloc::dealloc(ptr.as_ptr(), layout) };
+            self.live.fetch_sub(1, Ordering::SeqCst);
+        }
+    }
+
+    /// A producer that has linked a successor and not yet moved `tail` leaves
+    /// `tail` on the segment it linked from. The consumer that then drains and
+    /// retires that segment must take `tail` off it first, because a producer
+    /// validates its hazard against `tail` and a segment `tail` still names looks
+    /// safe to a producer that published after the scan read its slot (module
+    /// documentation, *Where a hazard is validated*). The state is made here by
+    /// putting `tail` back on the first segment after a push linked the second,
+    /// which is what a producer stopped between its two compare-and-swaps leaves.
+    #[test]
+    fn a_consumer_takes_tail_off_a_segment_before_it_retires_it() {
+        let allocator = Counting {
+            live: AtomicUsize::new(0),
+        };
+        let domain = HazardDomain::<4>::new();
+        let queue = Lscq::<u64, 1, 2, 4, Counting, 0>::new(&allocator, &domain).unwrap();
+        let (producer, consumer) = (queue.producer().unwrap(), queue.consumer().unwrap());
+        let first = queue.head.0.load(Ordering::SeqCst);
+
+        assert!(producer.try_push(0).is_ok(), "the first segment takes one");
+        assert!(
+            producer.try_push(1).is_ok(),
+            "the second push links a segment"
+        );
+        let second = queue.tail.0.load(Ordering::SeqCst);
+        assert_ne!(first, second, "the push moved `tail` to the new segment");
+        // A producer stopped after linking and before moving `tail`.
+        queue.tail.0.store(first, Ordering::SeqCst);
+
+        assert_eq!(consumer.try_pop(), Some(0), "the first segment's element");
+        assert_eq!(
+            consumer.try_pop(),
+            Some(1),
+            "the next comes from the second"
+        );
+
+        assert_eq!(
+            queue.head.0.load(Ordering::SeqCst),
+            second,
+            "the consumer moved `head` past the drained segment"
+        );
+        assert_ne!(
+            queue.tail.0.load(Ordering::SeqCst),
+            first,
+            "`tail` still names a segment `head` has left and the consumer retired"
+        );
+        assert_eq!(queue.tail.0.load(Ordering::SeqCst), second);
+
+        // Nothing names the retired segment now, so it can be freed.
+        domain.collect();
+        assert_eq!(
+            allocator.live.load(Ordering::SeqCst),
+            1,
+            "the retired segment went back and the live one did not"
+        );
+        drop((producer, consumer));
+        drop(queue);
+        assert_eq!(
+            allocator.live.load(Ordering::SeqCst),
+            0,
+            "dropping the queue gave back the last segment"
+        );
     }
 }

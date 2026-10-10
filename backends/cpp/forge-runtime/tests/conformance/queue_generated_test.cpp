@@ -22,6 +22,8 @@
 #include "queue_conformance_intrusive_many.h"
 #include "queue_conformance_node.h"
 #include "queue_conformance_scq.h"
+#include "queue_conformance_segmented.h"
+#include "queue_conformance_segmented_many.h"
 #include "queue_conformance_spsc.h"
 
 #include <algorithm>
@@ -30,6 +32,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <map>
+#include <new>
 #include <optional>
 #include <string_view>
 #include <thread>
@@ -55,6 +58,8 @@ namespace scq = ::SCE::Generated::QueueConformanceScq;
 namespace node_ns = ::SCE::Generated::QueueConformanceNode;
 namespace intrusive = ::SCE::Generated::QueueConformanceIntrusive;
 namespace intrusive_many = ::SCE::Generated::QueueConformanceIntrusiveMany;
+namespace segmented = ::SCE::Generated::QueueConformanceSegmented;
+namespace segmented_many = ::SCE::Generated::QueueConformanceSegmentedMany;
 
 using Node = node_ns::QueueConformanceNode;
 
@@ -276,6 +281,170 @@ template <typename Queue> void an_intrusive_queue_hands_nodes_back_in_order() {
     }
 }
 
+// ─── The segmented queues ───
+
+/// A bump arena over one block: the allocator a segmented queue is injected with
+/// on a target that has no heap. A grant is a compare-and-swap on the offset, so
+/// an allocation is lock-free, which is what `kProgress` says and what the
+/// documents declare for it. Nothing is given back one block at a time: the arena
+/// is released whole, which is how such a target frees what a queue held.
+class Arena {
+public:
+    static constexpr queue::Progress kProgress = queue::Progress::LockFree;
+
+    explicit Arena(std::size_t len)
+        : base_(static_cast<unsigned char *>(::operator new(len, std::align_val_t(64)))), len_(len) {}
+
+    ~Arena() {
+        ::operator delete(base_, std::align_val_t(64));
+    }
+
+    Arena(const Arena &) = delete;
+    Arena &operator=(const Arena &) = delete;
+
+    void *allocate(std::size_t size, std::size_t align) noexcept {
+        std::size_t used = next_.load(std::memory_order_relaxed);
+        for (;;) {
+            const std::uintptr_t address = reinterpret_cast<std::uintptr_t>(base_) + used;
+            const std::size_t padding = (align - address % align) % align;
+            const std::size_t end = used + padding + size;
+            if (end > len_) {
+                return nullptr;
+            }
+            if (next_.compare_exchange_weak(used, end, std::memory_order_acq_rel, std::memory_order_relaxed)) {
+                return base_ + used + padding;
+            }
+        }
+    }
+
+    void deallocate(void *, std::size_t, std::size_t) noexcept {}
+
+    /// How much of the block has been given out.
+    std::size_t used() const noexcept {
+        return next_.load(std::memory_order_acquire);
+    }
+
+private:
+    unsigned char *base_;
+    std::size_t len_;
+    std::atomic<std::size_t> next_{0};
+};
+
+void the_segmented_modules_state_what_the_document_required_and_what_it_gives() {
+    CHECK(segmented::SEGMENT == 3, "segment is the document's");
+    CHECK(segmented::DECLARED_PROGRESS == "lock-free", "declared progress");
+    CHECK(segmented::PUSH_PROGRESS == "lock-free", "a push is no stronger than its allocator");
+    CHECK(segmented::POP_PROGRESS == "wait-free", "a pop of linked Lamport rings is wait-free");
+    CHECK(contains(segmented::ALGORITHM, "Lamport"), "one producer and one consumer select linked Lamport rings");
+    CHECK(segmented::ALLOCATOR_PROGRESS == queue::Progress::LockFree, "the allocator progress is the document's");
+    CHECK(segmented::ALLOCATOR_PROGRESS_WORD == "lock-free", "and its word");
+
+    CHECK(segmented_many::SEGMENT == 3 && segmented_many::PARTICIPANTS == 2, "segment and participants");
+    CHECK(segmented_many::RING_SLOTS == 4, "the next power of two at or above max(segment, participants)");
+    CHECK(segmented_many::HAZARD_SLOTS == 4, "a slot for every handle on either side");
+    CHECK(segmented_many::PUSH_PROGRESS == "lock-free" && segmented_many::POP_PROGRESS == "lock-free",
+          "LSCQ is lock-free on both sides");
+    CHECK(contains(segmented_many::ALGORITHM, "LSCQ"), "many producers and consumers select LSCQ");
+    CHECK(segmented_many::WRAP_BOUND_OPS == (std::uint64_t{1} << 62), "the bound the template states is the runtime's");
+}
+
+void the_linked_lamport_queue_hands_events_over_in_order_across_segments() {
+    Arena arena(16 * 1024);
+    segmented::QueueConformanceSegmented<Arena> q(arena);
+    CHECK(q.valid(), "the arena gives the first segment");
+    auto producer = q.producer();
+    auto consumer = q.consumer();
+    CHECK(producer.has_value() && consumer.has_value(), "one handle a side");
+    CHECK(!consumer->try_pop().has_value(), "a new queue is empty");
+    // Three segments' worth and a part: order holds across the links.
+    for (std::uint16_t i = 0; i < 8; ++i) {
+        Event pushed = event(1, i);
+        CHECK(producer->try_push(std::move(pushed)) == queue::PushStatus::Ok, "a push fits the arena");
+    }
+    for (std::uint16_t i = 0; i < 8; ++i) {
+        const std::optional<Event> got = consumer->try_pop();
+        CHECK(got.has_value() && got->sensor_id == 1 && got->value == i, "first in, first out");
+    }
+    CHECK(!consumer->try_pop().has_value(), "drained");
+    CHECK(!q.producer().has_value(), "there is one producer, and it is taken");
+}
+
+void the_lscq_queue_hands_events_over_in_order_across_segments() {
+    Arena arena(64 * 1024);
+    segmented_many::QueueConformanceSegmentedManyDomain domain;
+    segmented_many::QueueConformanceSegmentedMany<Arena> q(arena, domain);
+    CHECK(q.valid(), "the arena gives the first segment");
+    auto producer = q.producer();
+    auto consumer = q.consumer();
+    CHECK(producer.has_value() && consumer.has_value(), "a place a side");
+    CHECK(!consumer->try_pop().has_value(), "a new queue is empty");
+    for (std::uint16_t i = 0; i < 10; ++i) {
+        Event pushed = event(2, i);
+        CHECK(producer->try_push(std::move(pushed)) == queue::PushStatus::Ok, "a push fits the arena");
+    }
+    for (std::uint16_t i = 0; i < 10; ++i) {
+        const std::optional<Event> got = consumer->try_pop();
+        CHECK(got.has_value() && got->sensor_id == 2 && got->value == i, "first in, first out");
+    }
+    CHECK(!consumer->try_pop().has_value(), "drained");
+    // A second producer and a second consumer take the other slots of the domain,
+    // which has one for every handle either side can hold.
+    auto second_producer = producer->try_clone();
+    auto second_consumer = consumer->try_clone();
+    CHECK(second_producer.has_value() && second_consumer.has_value(), "the second handle of each side");
+    CHECK(!producer->try_clone().has_value() && !consumer->try_clone().has_value(),
+          "the domain's four slots are taken");
+    Event pushed = event(3, 9);
+    CHECK(second_producer->try_push(std::move(pushed)) == queue::PushStatus::Ok, "the second producer pushes");
+    const std::optional<Event> got = second_consumer->try_pop();
+    CHECK(got.has_value() && got->sensor_id == 3 && got->value == 9, "and the second consumer pops it");
+}
+
+void a_spent_arena_refuses_the_segment_and_the_event_stays_with_its_owner() {
+    // An arena that holds the first segment and not a second: the push that needs
+    // one reports OutOfMemory and leaves its element as it was.
+    Arena probe(1 << 20);
+    {
+        segmented::QueueConformanceSegmented<Arena> probed(probe);
+    }
+    Arena arena(probe.used());
+    segmented::QueueConformanceSegmented<Arena> q(arena);
+    CHECK(q.valid(), "the arena holds exactly the first segment");
+    auto producer = q.producer();
+    auto consumer = q.consumer();
+    for (std::uint16_t i = 0; i < segmented::SEGMENT; ++i) {
+        Event pushed = event(1, i);
+        CHECK(producer->try_push(std::move(pushed)) == queue::PushStatus::Ok, "the first segment holds a segment");
+    }
+    Event refused = event(9, 99);
+    CHECK(producer->try_push(std::move(refused)) == queue::PushStatus::OutOfMemory, "the next needs a second segment");
+    CHECK(refused.sensor_id == 9 && refused.value == 99, "the refused event comes back whole");
+    for (std::uint16_t i = 0; i < segmented::SEGMENT; ++i) {
+        const std::optional<Event> got = consumer->try_pop();
+        CHECK(got.has_value() && got->sensor_id == 1 && got->value == i, "what fit comes out in order");
+    }
+
+    // The same for the list of rings.
+    Arena probe_many(1 << 20);
+    segmented_many::QueueConformanceSegmentedManyDomain probe_domain;
+    {
+        segmented_many::QueueConformanceSegmentedMany<Arena> probed(probe_many, probe_domain);
+    }
+    Arena arena_many(probe_many.used());
+    segmented_many::QueueConformanceSegmentedManyDomain domain;
+    segmented_many::QueueConformanceSegmentedMany<Arena> many(arena_many, domain);
+    CHECK(many.valid(), "the arena holds exactly the first segment");
+    auto many_producer = many.producer();
+    for (std::uint16_t i = 0; i < segmented_many::SEGMENT; ++i) {
+        Event pushed = event(1, i);
+        CHECK(many_producer->try_push(std::move(pushed)) == queue::PushStatus::Ok, "the first segment holds a segment");
+    }
+    Event refused_many = event(9, 99);
+    CHECK(many_producer->try_push(std::move(refused_many)) == queue::PushStatus::OutOfMemory,
+          "the next needs a second segment");
+    CHECK(refused_many.sensor_id == 9 && refused_many.value == 99, "the refused event comes back whole");
+}
+
 }  // namespace
 
 int main() {
@@ -289,6 +458,10 @@ int main() {
     the_intrusive_modules_state_what_the_document_required_and_what_it_gives();
     an_intrusive_queue_hands_nodes_back_in_order<intrusive::QueueConformanceIntrusive>();
     an_intrusive_queue_hands_nodes_back_in_order<intrusive_many::QueueConformanceIntrusiveMany>();
+    the_segmented_modules_state_what_the_document_required_and_what_it_gives();
+    the_linked_lamport_queue_hands_events_over_in_order_across_segments();
+    the_lscq_queue_hands_events_over_in_order_across_segments();
+    a_spent_arena_refuses_the_segment_and_the_event_stays_with_its_owner();
 
     if (failures != 0) {
         std::fprintf(stderr, "%d check(s) failed\n", failures);

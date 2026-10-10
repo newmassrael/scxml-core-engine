@@ -25,6 +25,7 @@
 // gives, so one recording of a shape would judge the likely ones.
 
 #include "sce/forge/queue.h"
+#include "sce/forge/queue_segmented.h"
 
 #include <atomic>
 #include <chrono>
@@ -32,6 +33,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <new>
 #include <optional>
 #include <string>
 #include <thread>
@@ -363,6 +365,153 @@ bool record_intrusive_runs(const std::filesystem::path &dir, std::size_t produce
     return ok;
 }
 
+/// The system allocator behind the contract a `segmented` queue is injected
+/// with, counting the blocks it has out so a run can say that the queue gave every
+/// segment back. The system allocator can block, which is what `kProgress` says.
+class SystemAllocator {
+public:
+    static constexpr queue::Progress kProgress = queue::Progress::Blocking;
+
+    void *allocate(std::size_t size, std::size_t align) noexcept {
+        void *block = ::operator new(size, std::align_val_t(align), std::nothrow);
+        if (block != nullptr) {
+            live_.fetch_add(1, std::memory_order_seq_cst);
+        }
+        return block;
+    }
+
+    void deallocate(void *block, std::size_t, std::size_t align) noexcept {
+        ::operator delete(block, std::align_val_t(align));
+        live_.fetch_sub(1, std::memory_order_seq_cst);
+    }
+
+    std::size_t live() const noexcept {
+        return live_.load(std::memory_order_seq_cst);
+    }
+
+private:
+    std::atomic<std::size_t> live_{0};
+};
+
+/// `producers` producers and `consumers` consumers on real threads through a
+/// segmented queue, each producer pushing `per_producer` distinct values. A
+/// segmented queue has no capacity and the recording gives none that could
+/// matter: the history is judged against a queue that holds every value, so a push
+/// is never refused, and an empty pop is judged exactly as for any other queue.
+/// `make_push` and `make_pop` are called on the thread that will use them and give
+/// the function that pushes or pops through the handle that thread owns.
+template <typename MakePush, typename MakePop>
+bool record_segmented_run(const std::filesystem::path &dir, const std::string &name, std::size_t producers,
+                          std::size_t consumers, std::uint64_t per_producer, MakePush make_push, MakePop make_pop) {
+    Clock clock;
+    Deadline deadline;
+    const std::uint64_t total = producers * per_producer;
+    std::atomic<std::uint64_t> delivered{0};
+    std::atomic<bool> timed_out{false};
+    std::vector<Participant> participants(producers + consumers);
+
+    std::vector<std::thread> threads;
+    for (std::size_t p = 0; p < producers; ++p) {
+        threads.emplace_back([&, p] {
+            auto push_one = make_push();
+            Participant &ops = participants[p];
+            for (std::uint64_t i = 0; i < per_producer; ++i) {
+                const std::uint64_t value = static_cast<std::uint64_t>(p) * per_producer + i + 1;
+                std::uint64_t pushed = value;
+                const std::uint64_t invoked = clock.tick();
+                const queue::PushStatus status = push_one(std::move(pushed));
+                const std::uint64_t returned = clock.tick();
+                if (status != queue::PushStatus::Ok) {
+                    timed_out = true;
+                    return;
+                }
+                ops.push_back({Call::Push, Outcome::Pushed, value, invoked, returned});
+            }
+        });
+    }
+    for (std::size_t c = 0; c < consumers; ++c) {
+        threads.emplace_back([&, c] {
+            auto pop_one = make_pop();
+            Participant &ops = participants[producers + c];
+            while (delivered.load(std::memory_order_acquire) < total) {
+                if (deadline.passed()) {
+                    timed_out = true;
+                    return;
+                }
+                const std::uint64_t invoked = clock.tick();
+                const std::optional<std::uint64_t> got = pop_one();
+                const std::uint64_t returned = clock.tick();
+                if (got) {
+                    ops.push_back({Call::Pop, Outcome::Popped, *got, invoked, returned});
+                    delivered.fetch_add(1, std::memory_order_acq_rel);
+                } else {
+                    ops.push_back({Call::Pop, Outcome::Empty, 0, invoked, returned});
+                    std::this_thread::yield();
+                }
+            }
+        });
+    }
+    for (std::thread &t : threads) {
+        t.join();
+    }
+    if (timed_out) {
+        std::fprintf(stderr, "%s: the elements did not all arrive before the deadline\n", name.c_str());
+        return false;
+    }
+    return write_history(dir, name, total, "at-capacity", participants);
+}
+
+/// Linked Lamport rings of four-element segments: one producer, one consumer.
+bool record_linked_runs(const std::filesystem::path &dir, std::uint64_t per_producer) {
+    bool ok = true;
+    for (int run = 0; run < kRunsPerScqShape; ++run) {
+        SystemAllocator allocator;
+        bool recorded = false;
+        {
+            queue::LinkedLamport<std::uint64_t, 4, SystemAllocator, queue::Progress::Blocking> q(allocator);
+            recorded = record_segmented_run(
+                dir, "cpp_linked_lamport_n4_p1_c1_" + std::to_string(run), 1, 1, per_producer,
+                [&] {
+                    return [producer = std::move(*q.producer())](std::uint64_t &&v) mutable {
+                        return producer.try_push(std::move(v));
+                    };
+                },
+                [&] { return [consumer = std::move(*q.consumer())]() mutable { return consumer.try_pop(); }; });
+        }
+        // The queue is gone: every segment must be back, the unconsumed ones too.
+        ok &= recorded && allocator.live() == 0;
+    }
+    return ok;
+}
+
+/// LSCQ over segments of `N` elements, rings of `R`, a domain of `H` slots.
+template <std::size_t N, std::size_t R, std::size_t H>
+bool record_lscq_runs(const std::filesystem::path &dir, std::size_t producers, std::size_t consumers,
+                      std::uint64_t per_producer) {
+    bool ok = true;
+    for (int run = 0; run < kRunsPerScqShape; ++run) {
+        SystemAllocator allocator;
+        queue::HazardDomain<H> domain;
+        bool recorded = false;
+        {
+            queue::Lscq<std::uint64_t, N, R, H, SystemAllocator, queue::Progress::Blocking> q(allocator, domain);
+            recorded = record_segmented_run(
+                dir,
+                "cpp_lscq_n" + std::to_string(N) + "_r" + std::to_string(R) + "_p" + std::to_string(producers) + "_c" +
+                    std::to_string(consumers) + "_" + std::to_string(run),
+                producers, consumers, per_producer,
+                [&] {
+                    return [producer = std::move(*q.producer())](std::uint64_t &&v) mutable {
+                        return producer.try_push(std::move(v));
+                    };
+                },
+                [&] { return [consumer = std::move(*q.consumer())]() mutable { return consumer.try_pop(); }; });
+        }
+        ok &= recorded && allocator.live() == 0 && domain.waiting() == 0;
+    }
+    return ok;
+}
+
 template <std::size_t N> bool record_spsc_runs(const std::filesystem::path &dir) {
     bool ok = true;
     for (int run = 0; run < kRunsPerSpscCapacity; ++run) {
@@ -417,6 +566,11 @@ int main(int argc, char **argv) {
     ok &= record_intrusive_runs<false>(dir, 3, 1, 100);
     ok &= record_intrusive_runs<true>(dir, 2, 2, 100);
     ok &= record_intrusive_runs<true>(dir, 3, 2, 80);
+    ok &= record_linked_runs(dir, 600);
+    ok &= record_lscq_runs<2, 4, 8>(dir, 2, 1, 60);
+    ok &= record_lscq_runs<2, 4, 8>(dir, 1, 2, 60);
+    ok &= record_lscq_runs<2, 4, 8>(dir, 2, 2, 50);
+    ok &= record_lscq_runs<4, 4, 8>(dir, 3, 3, 30);
 
     std::size_t written = 0;
     for (const auto &entry : std::filesystem::directory_iterator(dir)) {

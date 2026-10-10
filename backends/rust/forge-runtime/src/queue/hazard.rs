@@ -34,6 +34,12 @@
 //! and the scan reads every hazard with a sequentially consistent load after the
 //! node was unlinked. Either the scan sees the hazard and keeps the node, or the
 //! participant's validation sees the pointer already moved and does not use it.
+//! That holds when the location a participant validates against is written, with
+//! a sequentially consistent operation, by whoever unlinks the node before the
+//! node is retired; the queue using the domain has to arrange that (`lscq.rs`,
+//! *Where a hazard is validated*). No fence is used: every operation in the
+//! argument is itself sequentially consistent, which also keeps the module free of
+//! the one primitive ThreadSanitizer does not model.
 //!
 //! One domain per queue is the intended use. A domain several queues share holds
 //! the nodes of all of them; what a node is freed with is the allocator it names,
@@ -43,7 +49,7 @@
 
 use core::ptr;
 
-use super::sync::{fence, AtomicBool, AtomicPtr, AtomicUsize, Ordering};
+use super::sync::{AtomicBool, AtomicPtr, AtomicUsize, Ordering};
 use super::Padded;
 
 /// The header a retired object carries so the domain can chain it and, once no
@@ -183,8 +189,11 @@ impl<const H: usize> HazardDomain<H> {
             ptr::addr_of_mut!((*node).reclaim).write(Some(reclaim));
             ptr::addr_of_mut!((*node).context).write(context);
         }
+        // Counted before it is published, so a scan that frees it at once never
+        // subtracts what was not yet added.
+        let waiting = self.waiting.fetch_add(1, Ordering::AcqRel) + 1;
         self.push(node, node);
-        if self.waiting.fetch_add(1, Ordering::AcqRel) + 1 >= Self::SCAN_AT {
+        if waiting >= Self::SCAN_AT {
             self.scan();
         }
     }
@@ -327,8 +336,9 @@ impl<const H: usize> Hazard<'_, H> {
     pub fn protect<T>(&self, source: &AtomicPtr<T>) -> *mut T {
         let mut pointer = source.load(Ordering::Acquire);
         loop {
+            // Both are sequentially consistent, so in the one order they share the
+            // publication comes before the check, and no fence is needed between.
             self.slot().store(pointer.cast(), Ordering::SeqCst);
-            fence(Ordering::SeqCst);
             let again = source.load(Ordering::SeqCst);
             if again == pointer {
                 return pointer;

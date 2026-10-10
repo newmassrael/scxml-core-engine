@@ -70,6 +70,15 @@ namespace SCE::Forge::Queue {
 /// `bounded` queue only ever reports `Full`.
 enum class PushStatus : std::uint8_t { Ok, Full, OutOfMemory };
 
+/// What an operation guarantees about how long it takes whatever the other
+/// participants are doing, ordered by strength: a stronger guarantee compares
+/// greater, so "at least `LockFree`" is `>= Progress::LockFree`. The `segmented`
+/// storage mode holds its injected allocator to the progress the document
+/// declared for it (`queue_segmented.h`).
+enum class Progress : std::uint8_t { Blocking = 0, LockFree = 1, WaitFree = 2 };
+
+template <typename T, std::size_t N, std::size_t R, std::size_t H, typename A, Progress Required> class Lscq;
+
 namespace detail {
 
 /// Keeps what it wraps on a cache line of its own, so two indices that two
@@ -99,6 +108,16 @@ template <typename T> union Slot {
     Slot(const Slot &) = delete;
     Slot &operator=(const Slot &) = delete;
 };
+
+/// Put an element back into the object it was moved out of. `destination` was
+/// moved from, so its object is destroyed and a new one is built in its place
+/// from `source`; the element type is only required to be nothrow-move-
+/// constructible, not assignable. A refused push uses it to leave the caller's
+/// argument holding the element it passed, as the contract says.
+template <typename T> void give_back(T &destination, T &&source) noexcept {
+    destination.~T();
+    ::new (static_cast<void *>(std::addressof(destination))) T(std::move(source));
+}
 
 /// Take one of `limit` places of a side, if one is free. A compare-and-swap
 /// loop and not a fetch_add, so a refused request leaves the count as it was
@@ -386,6 +405,12 @@ template <std::size_t R> class Ring {
     /// it makes the entry unusable for the enqueue that owns it. Bounded, so
     /// the operation stays lock-free.
     static constexpr unsigned kSpins = 10000;
+    /// The tail's top bit, set once the ring is closed: an enqueue that takes a
+    /// ticket from a closed tail gets the bit back and puts nothing on the ring.
+    /// This is the finalize bit of Nikolaev's LSCQ, which a `segmented` queue uses
+    /// to end a segment (`queue_segmented.h`); a ring nobody closes never has it.
+    /// Tickets are the low 63 bits, which no run reaches (`kWrapBoundOps`).
+    static constexpr std::uint64_t kFin = std::uint64_t{1} << 63;
 
 public:
     /// The entry a ticket names: the ticket rotated so that consecutive
@@ -414,13 +439,30 @@ public:
     Ring(const Ring &) = delete;
     Ring &operator=(const Ring &) = delete;
 
-    /// Put `index` on the ring. The ring never refuses: at most R indices
-    /// circulate through it, and an enqueue that finds its entry unusable
-    /// takes the next ticket.
-    void enqueue(std::size_t index) noexcept {
+    /// Close the ring: an enqueue that takes its ticket after this one's
+    /// fetch-and-or puts nothing on it. An enqueue that already holds a ticket
+    /// may still complete; the dequeues that follow either find its entry or make
+    /// it unusable, which sends that enqueue to the next ticket and so to a
+    /// refusal.
+    void close() noexcept {
+        tail_.value.fetch_or(kFin, std::memory_order_acq_rel);
+    }
+
+    /// Put `index` on the ring, or return `false`, putting nothing, when the ring
+    /// is closed. An open ring never refuses: at most R indices circulate through
+    /// it, and an enqueue that finds its entry unusable takes the next ticket.
+    bool enqueue(std::size_t index) noexcept {
         const std::uint64_t stored = static_cast<std::uint64_t>(index) ^ kIndexMask;
         for (;;) {
+            // Looking first keeps a closed ring's tail from counting attempts
+            // that cannot succeed; the ticket's own bit is what decides.
+            if ((tail_.value.load(std::memory_order_acquire) & kFin) != 0) {
+                return false;
+            }
             const std::uint64_t tail = tail_.value.fetch_add(1, std::memory_order_acq_rel);
+            if ((tail & kFin) != 0) {
+                return false;
+            }
             const std::uint64_t ticket_cycle = (tail << 1) | kLowMask;
             std::atomic<std::uint64_t> &slot = entry_at(map(tail));
             std::uint64_t seen = slot.load(std::memory_order_acquire);
@@ -441,15 +483,37 @@ public:
                     if (threshold_.value.load(std::memory_order_seq_cst) != kThreshold) {
                         threshold_.value.store(kThreshold, std::memory_order_seq_cst);
                     }
-                    return;
+                    return true;
                 }
             }
         }
     }
 
     /// Take the oldest index off the ring, or `std::nullopt` when it is empty.
+    /// The empty answer may come from the threshold alone, which does not look at
+    /// a ticket an enqueue holds and has not yet filled.
     std::optional<std::size_t> dequeue() noexcept {
-        if (threshold_.value.load(std::memory_order_seq_cst) < 0) {
+        return dequeue_by(true);
+    }
+
+    /// Take the oldest index off a closed ring, or `std::nullopt` once every
+    /// ticket the ring ever granted has been consumed or made unusable. It
+    /// ignores the threshold and walks the head up to the tail, which a closed
+    /// ring no longer moves, so an enqueue still holding a ticket either finds its
+    /// entry taken from it (and takes the next ticket, which is refused) or has
+    /// already filled it, and then the walk returns its index. A segment is
+    /// retired only after this answers `std::nullopt`: until then an element may
+    /// still arrive in it.
+    std::optional<std::size_t> dequeue_drained() noexcept {
+        assert((tail_.value.load(std::memory_order_acquire) & kFin) != 0 &&
+               "only a closed ring has a fixed tail to walk to");
+        return dequeue_by(false);
+    }
+
+private:
+    /// The dequeue; `by_threshold` says whether the threshold may end it early.
+    std::optional<std::size_t> dequeue_by(bool by_threshold) noexcept {
+        if (by_threshold && threshold_.value.load(std::memory_order_seq_cst) < 0) {
             return std::nullopt;
         }
         for (;;) {
@@ -460,18 +524,19 @@ public:
             }
 
             const std::uint64_t tail = tail_.value.load(std::memory_order_acquire);
-            if (at_or_before(tail, head + 1)) {
+            if (at_or_before(tail & ~kFin, head + 1)) {
                 catch_up(tail, head + 1);
-                threshold_.value.fetch_sub(1, std::memory_order_acq_rel);
+                if (by_threshold) {
+                    threshold_.value.fetch_sub(1, std::memory_order_acq_rel);
+                }
                 return std::nullopt;
             }
-            if (threshold_.value.fetch_sub(1, std::memory_order_acq_rel) <= 0) {
+            if (by_threshold && threshold_.value.fetch_sub(1, std::memory_order_acq_rel) <= 0) {
                 return std::nullopt;
             }
         }
     }
 
-private:
     template <std::size_t... P>
     constexpr Ring(std::size_t filled, std::index_sequence<P...>) noexcept
         : head_(0), threshold_(filled == 0 ? -1 : kThreshold), tail_(static_cast<std::uint64_t>(filled)),
@@ -536,12 +601,15 @@ private:
     }
 
     /// Move `tail` back to `head` after dequeues overshot an empty ring, so
-    /// that the next enqueue does not start a cycle ahead of what is read.
+    /// that the next enqueue does not start a cycle ahead of what is read. `tail`
+    /// is the word as read, closing bit included, and the word written keeps the
+    /// bit: a ring that was closed stays closed.
     void catch_up(std::uint64_t tail, std::uint64_t head) noexcept {
-        while (!tail_.value.compare_exchange_weak(tail, head, std::memory_order_acq_rel, std::memory_order_acquire)) {
+        while (!tail_.value.compare_exchange_weak(tail, head | (tail & kFin), std::memory_order_acq_rel,
+                                                  std::memory_order_acquire)) {
             head = head_.value.load(std::memory_order_acquire);
             tail = tail_.value.load(std::memory_order_acquire);
-            if (!before(tail, head)) {
+            if (!before(tail & ~kFin, head)) {
                 break;
             }
         }
@@ -666,10 +734,11 @@ public:
             if (!index) {
                 return PushStatus::Full;
             }
-            // The index came off the free ring, so no other participant holds
-            // this slot until the enqueue below hands it on.
-            ::new (static_cast<void *>(std::addressof(queue.slots_[*index].value_))) T(std::move(value));
-            queue.allocated_.enqueue(*index);
+            // A queue handed out as `bounded` is never closed, so the put cannot
+            // be refused.
+            const bool taken = queue.put(*index, value);
+            assert(taken && "a bounded queue's allocated ring is never closed");
+            (void)taken;
             return PushStatus::Ok;
         }
 
@@ -710,19 +779,7 @@ public:
         /// Pop the oldest element, or `std::nullopt` when the queue is empty.
         /// Lock-free.
         std::optional<T> try_pop() noexcept {
-            Scq &queue = *queue_;
-            const std::optional<std::size_t> index = queue.allocated_.dequeue();
-            if (!index) {
-                return std::nullopt;
-            }
-            // The index came off the allocated ring, so the slot holds a
-            // pushed element and no other participant holds the slot until
-            // the enqueue below hands it on.
-            T &stored = queue.slots_[*index].value_;
-            std::optional<T> value(std::move(stored));
-            stored.~T();
-            queue.free_.enqueue(*index);
-            return value;
+            return queue_->pop_any();
         }
 
         constexpr std::size_t capacity() const noexcept {
@@ -753,6 +810,78 @@ public:
     }
 
 private:
+    /// What a segment of a `segmented` queue does with an SCQ: the same two
+    /// rings, without handles (the segmented queue counts its own participants)
+    /// and with a close that ends the segment (`queue_segmented.h`).
+    template <typename U, std::size_t M, std::size_t S, std::size_t H, typename A, Progress Required> friend class Lscq;
+
+    /// Move `value` into slot `index`, which the caller took off the free ring,
+    /// and put the index on the allocated ring. A closed allocated ring takes
+    /// nothing: the value goes back into `value` and the slot goes back to the
+    /// free ring, and the call returns `false`.
+    bool put(std::size_t index, T &value) noexcept {
+        // The index came off the free ring, so no other participant holds this
+        // slot until the enqueue below hands it on.
+        T &stored = *::new (static_cast<void *>(std::addressof(slots_[index].value_))) T(std::move(value));
+        if (allocated_.enqueue(index)) {
+            return true;
+        }
+        // The enqueue was refused, so the index is still ours and the slot still
+        // holds the element. Put it back where it came from.
+        detail::give_back(value, std::move(stored));
+        stored.~T();
+        [[maybe_unused]] const bool returned = free_.enqueue(index);
+        assert(returned && "the free ring is never closed");
+        return false;
+    }
+
+    /// Take the oldest element, or `std::nullopt` when the queue is empty.
+    /// Lock-free.
+    std::optional<T> pop_any() noexcept {
+        const std::optional<std::size_t> index = allocated_.dequeue();
+        if (!index) {
+            return std::nullopt;
+        }
+        return take(*index);
+    }
+
+    /// Take the oldest element of a closed queue, or `std::nullopt` only when no
+    /// element can ever arrive in it again (`Ring::dequeue_drained`). Lock-free.
+    std::optional<T> pop_drained() noexcept {
+        const std::optional<std::size_t> index = allocated_.dequeue_drained();
+        if (!index) {
+            return std::nullopt;
+        }
+        return take(*index);
+    }
+
+    /// The element in slot `index`, which the caller took off the allocated ring;
+    /// the slot goes back to the free ring.
+    std::optional<T> take(std::size_t index) noexcept {
+        // The index came off the allocated ring, so the slot holds a pushed
+        // element and no other participant holds the slot until the enqueue below
+        // hands it on.
+        T &stored = slots_[index].value_;
+        std::optional<T> value(std::move(stored));
+        stored.~T();
+        [[maybe_unused]] const bool returned = free_.enqueue(index);
+        assert(returned && "the free ring is never closed");
+        return value;
+    }
+
+    /// Push `value`, or close the queue and leave `value` as it was. A queue
+    /// with no free slot is closed, and so is one a close has already reached:
+    /// after a refusal nothing more is ever pushed into it, which is what lets a
+    /// segment list put every later element behind this segment's. Lock-free.
+    bool push_or_close(T &value) noexcept {
+        const std::optional<std::size_t> index = free_.dequeue();
+        if (!index) {
+            allocated_.close();
+            return false;
+        }
+        return put(*index, value);
+    }
+
     /// The indices of the slots that hold an element, oldest first.
     detail::Ring<R> allocated_;
     /// The indices of the slots nobody is using.

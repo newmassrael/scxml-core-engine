@@ -106,7 +106,6 @@ PY
 mutation_case "a participant publishes its hazard without ordering it before the check" <<'PY'
 edit("backends/rust/forge-runtime/src/queue/hazard.rs",
      r'''            self.slot().store(pointer.cast(), Ordering::SeqCst);
-            fence(Ordering::SeqCst);
             let again = source.load(Ordering::SeqCst);''',
      r'''            self.slot().store(pointer.cast(), Ordering::Relaxed);
             let again = source.load(Ordering::Relaxed);''')

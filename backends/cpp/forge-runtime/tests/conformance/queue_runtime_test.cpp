@@ -19,6 +19,7 @@
 // no assertion here would.
 
 #include "sce/forge/queue.h"
+#include "sce/forge/queue_segmented.h"
 
 #include <nlohmann/json.hpp>
 
@@ -28,7 +29,9 @@
 #include <cstdint>
 #include <cstdio>
 #include <fstream>
+#include <functional>
 #include <map>
+#include <new>
 #include <optional>
 #include <string>
 #include <thread>
@@ -160,6 +163,148 @@ template <typename Q> void run_scenario(const std::string &id, const json &steps
     }
 }
 
+/// The system allocator behind the contract a `segmented` queue is injected
+/// with, giving at most `limit` blocks in all (the contract's `segments`) and
+/// counting the blocks it has out, so a scenario sees a refusal and a test sees a
+/// leak. The system allocator can block, which is what `kProgress` says.
+class TestAllocator {
+public:
+    static constexpr queue::Progress kProgress = queue::Progress::Blocking;
+
+    explicit TestAllocator(std::optional<std::size_t> limit = std::nullopt) noexcept : limit_(limit) {}
+
+    void *allocate(std::size_t size, std::size_t align) noexcept {
+        std::size_t seen = given_.load(std::memory_order_seq_cst);
+        for (;;) {
+            if (limit_.has_value() && seen >= *limit_) {
+                return nullptr;
+            }
+            if (given_.compare_exchange_weak(seen, seen + 1, std::memory_order_seq_cst)) {
+                break;
+            }
+        }
+        void *block = ::operator new(size, std::align_val_t(align), std::nothrow);
+        if (block != nullptr) {
+            live_.fetch_add(1, std::memory_order_seq_cst);
+        }
+        return block;
+    }
+
+    void deallocate(void *block, std::size_t, std::size_t align) noexcept {
+        ::operator delete(block, std::align_val_t(align));
+        live_.fetch_sub(1, std::memory_order_seq_cst);
+    }
+
+    /// How many blocks are out now.
+    std::size_t live() const noexcept {
+        return live_.load(std::memory_order_seq_cst);
+    }
+
+private:
+    std::optional<std::size_t> limit_;
+    std::atomic<std::size_t> given_{0};
+    std::atomic<std::size_t> live_{0};
+};
+
+/// The steps of a `segmented` scenario against the `push` and `pop` of one queue.
+/// Returns the list a `destroy` step expects, which ends the run, so the caller
+/// destroys its queue and judges what was destroyed.
+std::optional<Destroyed> run_segmented_steps(const std::string &id, const json &steps, Destroyed &destroyed,
+                                             const std::function<queue::PushStatus(Tracked &)> &push,
+                                             const std::function<std::optional<Tracked>()> &pop) {
+    std::size_t index = 0;
+    for (const json &step : steps) {
+        const std::string context = "scenario " + id + " step " + std::to_string(index++);
+        const std::string op = step.at("op").get<std::string>();
+        const json &expect = step.at("expect");
+        if (op == "push") {
+            const std::uint64_t value = step.at("value").get<std::uint64_t>();
+            Tracked element(value, &destroyed);
+            const queue::PushStatus status = push(element);
+            const std::string want = expect.get<std::string>();
+            if (status == queue::PushStatus::Ok) {
+                CHECK(want == "ok", (context + ": push succeeded, expected " + want).c_str());
+            } else if (status == queue::PushStatus::OutOfMemory) {
+                CHECK(want == "out_of_memory", (context + ": push was refused, expected " + want).c_str());
+                // A refused push hands back its own value.
+                CHECK(element.value == value && element.destroyed == &destroyed,
+                      (context + ": a refused push leaves its element as it was").c_str());
+            } else {
+                CHECK(false, (context + ": a segmented queue reported Full").c_str());
+            }
+        } else if (op == "pop") {
+            const std::optional<Tracked> popped = pop();
+            if (expect.is_string()) {
+                CHECK(expect.get<std::string>() == "empty" && !popped.has_value(),
+                      (context + ": expected the queue to be empty").c_str());
+            } else {
+                CHECK(popped.has_value() && popped->value == expect.get<std::uint64_t>(), context.c_str());
+            }
+        } else if (op == "destroy") {
+            return expect.get<Destroyed>();
+        } else {
+            CHECK(false, (context + ": a segmented scenario has no step \"" + op + "\"").c_str());
+        }
+    }
+    return std::nullopt;
+}
+
+/// What a `destroy` step judges: the queue was destroyed with exactly the
+/// elements listed, and every segment went back to the allocator.
+void judge_destroy(const std::string &id, std::optional<Destroyed> expected, const Destroyed &destroyed,
+                   const TestAllocator &allocator) {
+    if (expected.has_value()) {
+        Destroyed actual = destroyed;
+        std::sort(expected->begin(), expected->end());
+        std::sort(actual.begin(), actual.end());
+        CHECK(actual == *expected, ("scenario " + id + ": the queue destroyed a different set").c_str());
+    }
+    CHECK(allocator.live() == 0, ("scenario " + id + ": the queue did not give back every segment").c_str());
+}
+
+/// One scenario on linked Lamport rings of two-element segments.
+void run_linked_scenario(const std::string &id, std::optional<std::size_t> segments, const json &steps) {
+    TestAllocator allocator(segments);
+    Destroyed destroyed;
+    std::optional<Destroyed> expected;
+    {
+        queue::LinkedLamport<Tracked, 2, TestAllocator, queue::Progress::Blocking> q(allocator);
+        CHECK(q.valid(), "the allocator gives the first segment");
+        auto producer = q.producer();
+        auto consumer = q.consumer();
+        CHECK(producer.has_value() && consumer.has_value(), "one handle a side");
+        expected = run_segmented_steps(
+            id, steps, destroyed, [&](Tracked &e) { return producer->try_push(std::move(e)); },
+            [&] { return consumer->try_pop(); });
+        producer.reset();
+        consumer.reset();
+        destroyed.clear();
+    }
+    judge_destroy(id, expected, destroyed, allocator);
+}
+
+/// One scenario on a list of SCQ rings of two-element segments.
+void run_lscq_scenario(const std::string &id, std::optional<std::size_t> segments, const json &steps) {
+    TestAllocator allocator(segments);
+    queue::HazardDomain<4> domain;
+    Destroyed destroyed;
+    std::optional<Destroyed> expected;
+    {
+        queue::Lscq<Tracked, 2, 2, 4, TestAllocator, queue::Progress::Blocking> q(allocator, domain);
+        CHECK(q.valid(), "the allocator gives the first segment");
+        auto producer = q.producer();
+        auto consumer = q.consumer();
+        CHECK(producer.has_value() && consumer.has_value(), "a place a side");
+        expected = run_segmented_steps(
+            id, steps, destroyed, [&](Tracked &e) { return producer->try_push(std::move(e)); },
+            [&] { return consumer->try_pop(); });
+        producer.reset();
+        consumer.reset();
+        destroyed.clear();
+    }
+    judge_destroy(id, expected, destroyed, allocator);
+}
+
 /// The capacities the fixture uses. A template argument needs its value at
 /// compile time; a scenario naming another capacity stops here by name.
 void dispatch_bounded_spsc(const std::string &id, std::uint64_t capacity, const json &steps) {
@@ -285,8 +430,21 @@ void every_contract_scenario_holds() {
             continue;
         }
         if (storage == "segmented") {
-            // Not lowered to C++ yet; the generator refuses the row by name
-            // (queue/storage-runtime-missing), so there is no runtime to run.
+            // A segmented scenario has `segment` where a bounded one has
+            // `capacity`, and `segments` when its allocator refuses.
+            const std::uint64_t segment = scenario.at("segment").get<std::uint64_t>();
+            CHECK(segment == 2,
+                  ("scenario " + id + ": segment " + std::to_string(segment) + " is not in this arm's dispatch; add it")
+                      .c_str());
+            std::optional<std::size_t> segments;
+            if (scenario.contains("segments")) {
+                segments = scenario.at("segments").get<std::size_t>();
+            }
+            if (producers == "one" && consumers == "one") {
+                run_linked_scenario(id, segments, steps);
+            } else {
+                run_lscq_scenario(id, segments, steps);
+            }
             continue;
         }
         const std::uint64_t capacity = scenario.at("capacity").get<std::uint64_t>();
@@ -611,6 +769,189 @@ void the_lamport_ring_loses_nothing_between_threads() {
     CHECK(in_order, "every element exactly once, in the order pushed");
 }
 
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━ The `segmented` queues ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// One producer and one consumer through linked Lamport rings of three-element
+/// segments: order and count, and every segment given back.
+void linked_lamport_loses_nothing_between_threads() {
+    constexpr std::uint32_t kCount = 100000;
+    TestAllocator allocator;
+    std::vector<std::uint32_t> got;
+    got.reserve(kCount);
+    {
+        queue::LinkedLamport<std::uint32_t, 3, TestAllocator, queue::Progress::Blocking> q(allocator);
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+        std::thread consumer_thread([&] {
+            auto consumer = q.consumer();
+            while (got.size() < kCount) {
+                if (std::chrono::steady_clock::now() > deadline) {
+                    CHECK(false, "the elements did not all arrive before the deadline");
+                    return;
+                }
+                if (std::optional<std::uint32_t> v = consumer->try_pop()) {
+                    got.push_back(*v);
+                } else {
+                    std::this_thread::yield();
+                }
+            }
+        });
+        std::thread producer_thread([&] {
+            auto producer = q.producer();
+            for (std::uint32_t i = 0; i < kCount; ++i) {
+                std::uint32_t v = i;
+                CHECK(producer->try_push(std::move(v)) == queue::PushStatus::Ok, "the allocator never refuses here");
+            }
+        });
+        producer_thread.join();
+        consumer_thread.join();
+    }
+    bool in_order = got.size() == kCount;
+    for (std::uint32_t i = 0; i < got.size() && in_order; ++i) {
+        in_order = got[i] == i;
+    }
+    CHECK(in_order, "every element exactly once, in the order pushed");
+    CHECK(allocator.live() == 0, "the queue gave back every segment");
+}
+
+/// Producers and consumers of an LSCQ queue: nothing is lost or duplicated, each
+/// consumer sees each producer's elements in the order they went in, and every
+/// segment, the retired ones included, goes back. Segments of two, so a run is
+/// thousands of segments, each closed, linked, drained and retired while the
+/// others run.
+void lscq_loses_nothing_between_threads(std::uint8_t producers, std::size_t consumers) {
+    constexpr std::uint32_t kPerProducer = 5000;
+    const std::size_t total = static_cast<std::size_t>(producers) * kPerProducer;
+    TestAllocator allocator;
+    queue::HazardDomain<8> domain;
+    std::atomic<std::size_t> taken{0};
+    std::vector<std::vector<Event>> logs(consumers);
+    {
+        queue::Lscq<Event, 2, 4, 8, TestAllocator, queue::Progress::Blocking> q(allocator, domain);
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+        std::vector<std::thread> threads;
+        for (std::size_t c = 0; c < consumers; ++c) {
+            threads.emplace_back([&, c] {
+                auto consumer = q.consumer();
+                while (taken.load(std::memory_order_acquire) < total) {
+                    if (std::chrono::steady_clock::now() > deadline) {
+                        CHECK(false, "the elements did not all arrive before the deadline");
+                        return;
+                    }
+                    if (std::optional<Event> e = consumer->try_pop()) {
+                        taken.fetch_add(1, std::memory_order_acq_rel);
+                        logs[c].push_back(*e);
+                    } else {
+                        std::this_thread::yield();
+                    }
+                }
+            });
+        }
+        for (std::uint8_t p = 0; p < producers; ++p) {
+            threads.emplace_back([&, p] {
+                auto producer = q.producer();
+                for (std::uint32_t i = 0; i < kPerProducer; ++i) {
+                    Event e{p, i};
+                    CHECK(producer->try_push(std::move(e)) == queue::PushStatus::Ok,
+                          "the allocator never refuses here");
+                }
+            });
+        }
+        for (std::thread &t : threads) {
+            t.join();
+        }
+    }
+
+    std::map<std::uint8_t, std::vector<std::uint32_t>> per_producer;
+    for (const std::vector<Event> &log : logs) {
+        std::map<std::uint8_t, std::uint32_t> last;
+        for (const Event &e : log) {
+            const auto it = last.find(e.producer);
+            if (it != last.end()) {
+                CHECK(e.sequence > it->second, "a producer's elements went backwards");
+            }
+            last[e.producer] = e.sequence;
+            per_producer[e.producer].push_back(e.sequence);
+        }
+    }
+    for (std::uint8_t p = 0; p < producers; ++p) {
+        std::vector<std::uint32_t> got = per_producer[p];
+        std::sort(got.begin(), got.end());
+        bool exact = got.size() == kPerProducer;
+        for (std::uint32_t i = 0; i < got.size() && exact; ++i) {
+            exact = got[i] == i;
+        }
+        CHECK(exact, "every element exactly once, none twice");
+    }
+    CHECK(allocator.live() == 0, "every segment went back, the retired ones included");
+    CHECK(domain.waiting() == 0, "the domain freed every retired segment");
+}
+
+void an_lscq_queue_loses_nothing_between_threads() {
+    lscq_loses_nothing_between_threads(2, 2);
+    lscq_loses_nothing_between_threads(1, 3);
+    lscq_loses_nothing_between_threads(3, 1);
+}
+
+/// A segmented queue destroyed with elements still in it, across segments and
+/// among the retired ones, destroys each of them once and gives every segment
+/// back.
+void a_dropped_segmented_queue_destroys_each_element_once_and_frees_every_segment() {
+    for (int repeat = 0; repeat < 50; ++repeat) {
+        Destroyed destroyed;
+        TestAllocator allocator;
+        queue::HazardDomain<4> domain;
+        std::size_t pushed = 0;
+        std::size_t popped = 0;
+        {
+            queue::Lscq<Tracked, 2, 2, 4, TestAllocator, queue::Progress::Blocking> q(allocator, domain);
+            auto producer = q.producer();
+            auto consumer = q.consumer();
+            for (std::uint64_t i = 0; i < 9; ++i) {
+                Tracked e(i, &destroyed);
+                CHECK(producer->try_push(std::move(e)) == queue::PushStatus::Ok, "the allocator never refuses here");
+                ++pushed;
+            }
+            for (int i = 0; i < 4; ++i) {
+                if (consumer->try_pop().has_value()) {
+                    ++popped;
+                }
+            }
+            CHECK(destroyed.size() == popped, "while the queue is alive only popped elements are destroyed");
+        }
+        CHECK(destroyed.size() == pushed, "dropping the queue destroys exactly what was left: every element once");
+        CHECK(allocator.live() == 0, "every segment went back");
+        CHECK(domain.waiting() == 0, "the domain freed every retired segment");
+    }
+}
+
+/// A segmented queue with many participants hands out `R` producer places and
+/// `R` consumer places and no more than the domain has slots for, and a place and
+/// a slot come back when a handle is destroyed. A queue whose allocator refused
+/// the first segment is not valid and hands out nothing.
+void an_lscq_queue_hands_out_no_more_places_than_its_ring_and_its_domain_have() {
+    TestAllocator allocator;
+    queue::HazardDomain<4> domain;
+    queue::Lscq<std::uint8_t, 2, 4, 4, TestAllocator, queue::Progress::Blocking> q(allocator, domain);
+    std::vector<std::optional<decltype(q)::Producer>> producers;
+    for (int i = 0; i < 3; ++i) {
+        producers.push_back(q.producer());
+        CHECK(producers.back().has_value(), "three producers fit the domain");
+    }
+    auto consumer = q.consumer();
+    CHECK(consumer.has_value(), "three producers and one consumer: four slots");
+    CHECK(!q.producer().has_value() && !q.consumer().has_value(), "the domain has four slots, all taken");
+    producers.pop_back();
+    CHECK(q.consumer().has_value(), "a destroyed handle gives its slot back");
+
+    TestAllocator none(0);
+    queue::HazardDomain<2> small;
+    queue::Lscq<std::uint8_t, 2, 2, 2, TestAllocator, queue::Progress::Blocking> refused(none, small);
+    CHECK(!refused.valid(), "an allocator that refuses the first segment makes the queue not valid");
+    CHECK(!refused.producer().has_value() && !refused.consumer().has_value(), "and it hands out no handle");
+    queue::LinkedLamport<std::uint8_t, 2, TestAllocator, queue::Progress::Blocking> linked(none);
+    CHECK(!linked.valid() && !linked.producer().has_value(), "the linked rings say the same");
+}
+
 }  // namespace
 
 int main() {
@@ -624,6 +965,10 @@ int main() {
     a_queue_in_static_storage_is_constant_initialised_and_usable();
     the_scq_queue_loses_nothing_between_threads();
     the_lamport_ring_loses_nothing_between_threads();
+    linked_lamport_loses_nothing_between_threads();
+    an_lscq_queue_loses_nothing_between_threads();
+    a_dropped_segmented_queue_destroys_each_element_once_and_frees_every_segment();
+    an_lscq_queue_hands_out_no_more_places_than_its_ring_and_its_domain_have();
 
     if (failures != 0) {
         std::fprintf(stderr, "%d check(s) failed\n", failures);

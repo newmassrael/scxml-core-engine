@@ -28,6 +28,18 @@
 //   try_pop() -> std::optional<std::uint32_t>
 //                                    the index of the oldest node; empty while a push is
 //                                    in flight or when the queue holds none
+{% elif segmented %}
+// The queue is segmented (`<sce:segmented segment="{{ segment }}" allocator-progress="{{ allocator_progress }}"/>`):
+// it grows by segments of {{ segment }} element(s) taken from an allocator the caller builds it
+// with, and holds as many elements as that allocator allows. It owns no storage of its own.
+//
+// Operations (from `SCE::Forge::Queue::{{ runtime_type }}`):
+//   {{ pascal }}<A>(allocator{% if hazard_slots %}, domain{% endif %})   the allocator{% if hazard_slots %} and the reclamation domain{% endif %} are the caller's,
+//                                    borrowed for as long as the queue lives; valid() is
+//                                    false when the allocator refused the first segment
+//   producer() / consumer()          a handle, or std::nullopt when every place is taken
+//   try_push(T&&) -> PushStatus      OutOfMemory leaves the argument as it was
+//   try_pop() -> std::optional<T>
 {% else %}
 // Operations (from `SCE::Forge::Queue`):
 //   producer() / consumer()      a handle, or std::nullopt when every place of
@@ -51,6 +63,9 @@
 #include <string_view>
 
 #include "sce/forge/queue.h"
+{% if segmented %}
+#include "sce/forge/queue_segmented.h"
+{% endif %}
 #include "{{ element_snake }}.h"
 
 namespace SCE::Generated::{{ namespace }} {
@@ -75,6 +90,69 @@ inline constexpr std::string_view ALGORITHM = "{{ algorithm }}";
 /// The queue. It owns no storage: the nodes are the caller's, and the queue
 /// allocates nothing.
 using {{ pascal }} = ::SCE::Forge::Queue::IntrusiveMpsc<{{ element_pascal }}Type, &{{ element_pascal }}Type::{{ link_field }}, MANY_CONSUMERS>;
+{% elif segmented %}
+
+/// The elements one segment holds (`<sce:segmented segment>`).
+inline constexpr std::size_t SEGMENT = {{ segment }};
+{% if ring_slots %}
+
+/// Slots in each segment's two index rings: a power of two, at least `SEGMENT`
+/// and at least `PARTICIPANTS`. A ring's empty test is justified only for as many
+/// producers or consumers as it has slots (Nikolaev 2019 §5.1), so the ring is
+/// sized by both.
+inline constexpr std::size_t RING_SLOTS = {{ ring_slots }};
+
+/// The most execution contexts that hold a handle on one side at the same time
+/// (`<sce:participants>`). The queue hands out no more handles than `RING_SLOTS`
+/// on either side.
+inline constexpr std::size_t PARTICIPANTS = {{ participants }};
+
+/// The slots of the hazard-pointer domain the queue is built with: one for every
+/// handle that can be alive, both sides together (RFC §synth-5-P, *Reclamation
+/// domain*).
+inline constexpr std::size_t HAZARD_SLOTS = {{ hazard_slots }};
+
+/// How many operations a participant may be delayed between reading a ring entry
+/// and acting on it before it could be misled: 2^62 for the 64-bit entries each
+/// segment's ring keeps (RFC §synth-5-P, *Counter width*).
+inline constexpr std::uint64_t WRAP_BOUND_OPS = ::SCE::Forge::Queue::kWrapBoundOps;
+
+// Each segment's ring has 64-bit atomic entries. A target without lock-free ones
+// cannot build this queue, and says so here instead of deep in the runtime.
+static_assert(std::atomic<std::uint64_t>::is_always_lock_free,
+              "this queue's rings need lock-free 64-bit atomics, which the target does not have");
+{% endif %}
+
+/// What the document requires of push and pop (`<sce:progress>`).
+inline constexpr std::string_view DECLARED_PROGRESS = "{{ declared_progress }}";
+/// What the selected algorithm gives push, which is no more than the allocator
+/// gives.
+inline constexpr std::string_view PUSH_PROGRESS = "{{ push_progress }}";
+/// What the selected algorithm gives pop.
+inline constexpr std::string_view POP_PROGRESS = "{{ pop_progress }}";
+/// The algorithm the selection table gave this contract.
+inline constexpr std::string_view ALGORITHM = "{{ algorithm }}";
+
+/// What the document declared the allocator gives (`allocator-progress`). The
+/// queue is built only over an allocator whose `kProgress` is at least this: one
+/// that gives less is a compile error where the queue is built, and not a push
+/// that is slower than the document says.
+inline constexpr ::SCE::Forge::Queue::Progress ALLOCATOR_PROGRESS = ::SCE::Forge::Queue::Progress::{{ allocator_enumerator }};
+/// The same, as its word.
+inline constexpr std::string_view ALLOCATOR_PROGRESS_WORD = "{{ allocator_progress }}";
+
+/// The queue over the allocator type `A`, which it borrows. Build it with
+/// `{{ pascal }}<A> queue(allocator{% if hazard_slots %}, domain{% endif %});` and check `valid()`.
+{% if hazard_slots %}
+template <typename A>
+using {{ pascal }} = ::SCE::Forge::Queue::{{ runtime_type }}<{{ element_pascal }}Type, SEGMENT, RING_SLOTS, HAZARD_SLOTS, A, ALLOCATOR_PROGRESS>;
+
+/// The reclamation domain the queue is built with: caller-owned, one per queue.
+using {{ pascal }}Domain = ::SCE::Forge::Queue::HazardDomain<HAZARD_SLOTS>;
+{% else %}
+template <typename A>
+using {{ pascal }} = ::SCE::Forge::Queue::{{ runtime_type }}<{{ element_pascal }}Type, SEGMENT, A, ALLOCATOR_PROGRESS>;
+{% endif %}
 {% else %}
 
 /// The most elements the queue holds (`<sce:bounded>`).

@@ -764,38 +764,77 @@ fn an_scq_ring_is_sized_the_same_way_in_cpp() {
 }
 
 #[test]
-fn a_storage_the_cpp_runtime_lacks_is_refused_by_name() {
-    // `segmented` is the one storage mode left without a C++ runtime.
-    {
-        let (fixture, storage) = ("queue_segmented_lscq.scxml", "segmented");
-        let located = compile_for(Language::Cpp, &resource(fixture), fixture)
-            .expect_err("a storage without a runtime is refused");
-        let text = resource(fixture);
-        let row = located
-            .location
-            .line
-            .expect("the refusal carries the storage element's row");
-        let line = text.lines().nth(row as usize - 1).expect("the row exists");
-        assert!(
-            line.contains(&format!("<sce:{storage}")),
-            "{fixture}: row {row} is not the storage element: {line}"
+fn one_producer_and_one_consumer_over_segments_emit_linked_lamport_rings_in_cpp() {
+    let xml = segmented_doc("frame_queue", "one", "one", "lock-free", "lock-free", "");
+    let code = compile_for(Language::Cpp, &xml, "frame_queue.scxml")
+        .expect("a segmented queue emits on C++");
+    assert!(
+        code.contains("#include \"sce/forge/queue_segmented.h\""),
+        "{code}"
+    );
+    assert!(
+        code.contains("inline constexpr std::size_t SEGMENT = 6;"),
+        "{code}"
+    );
+    assert!(
+        code.contains("template <typename A>\nusing FrameQueue = ::SCE::Forge::Queue::LinkedLamport<RxEventType, SEGMENT, A, ALLOCATOR_PROGRESS>;"),
+        "{code}"
+    );
+    // The allocator's progress is the document's own and is held to by an
+    // enumerator the runtime compares at compile time, so a weaker allocator does
+    // not build.
+    assert!(
+        code.contains("ALLOCATOR_PROGRESS = ::SCE::Forge::Queue::Progress::LockFree;")
+            && code.contains("ALLOCATOR_PROGRESS_WORD = \"lock-free\";"),
+        "{code}"
+    );
+    assert!(
+        code.contains("PUSH_PROGRESS = \"lock-free\"")
+            && code.contains("POP_PROGRESS = \"wait-free\""),
+        "{code}"
+    );
+    // No reclamation domain for one producer and one consumer, and no ring.
+    assert!(
+        !code.contains("HazardDomain") && !code.contains("RING_SLOTS"),
+        "{code}"
+    );
+}
+
+#[test]
+fn many_producers_over_segments_emit_lscq_with_a_hazard_domain_in_cpp() {
+    for (producers, consumers) in [("many", "many"), ("many", "one"), ("one", "many")] {
+        let xml = segmented_doc(
+            "frame_queue",
+            producers,
+            consumers,
+            "lock-free",
+            "lock-free",
+            r#"<sce:participants const="3"/>"#,
         );
-        match located.error {
-            ForgeError::Generate(boxed) => match *boxed {
-                GenerateError::QueueStorageRuntimeMissing {
-                    storage: got,
-                    language,
-                    implemented,
-                    ..
-                } => {
-                    assert_eq!(got, storage);
-                    assert_eq!(language, "cpp");
-                    assert_eq!(implemented, "bounded, intrusive");
-                }
-                other => panic!("expected QueueStorageRuntimeMissing, got {other:?}"),
-            },
-            other => panic!("expected a generate error, got {other:?}"),
-        }
+        let code = compile_for(Language::Cpp, &xml, "frame_queue.scxml")
+            .unwrap_or_else(|e| panic!("{producers}/{consumers} segmented queue emits: {e:?}"));
+        assert!(
+            code.contains("inline constexpr std::size_t RING_SLOTS = 8;")
+                && code.contains("inline constexpr std::size_t PARTICIPANTS = 3;")
+                && code.contains("inline constexpr std::size_t HAZARD_SLOTS = 6;"),
+            "{code}"
+        );
+        assert!(
+            code.contains(
+                "::SCE::Forge::Queue::Lscq<RxEventType, SEGMENT, RING_SLOTS, HAZARD_SLOTS, A, ALLOCATOR_PROGRESS>;"
+            ),
+            "{code}"
+        );
+        assert!(
+            code.contains(
+                "using FrameQueueDomain = ::SCE::Forge::Queue::HazardDomain<HAZARD_SLOTS>;"
+            ),
+            "{code}"
+        );
+        assert!(
+            code.contains("std::atomic<std::uint64_t>::is_always_lock_free"),
+            "{code}"
+        );
     }
 }
 

@@ -341,6 +341,8 @@ set(QUEUE_GENERATED_FIXTURES
     queue_conformance_node
     queue_conformance_intrusive
     queue_conformance_intrusive_many
+    queue_conformance_segmented
+    queue_conformance_segmented_many
 )
 set(QUEUE_GENERATED_HEADERS "")
 foreach(_queue_fixture IN LISTS QUEUE_GENERATED_FIXTURES)
@@ -376,8 +378,8 @@ add_test(NAME queue_generated COMMAND queue_generated_test)
 # runs the runtime's queues and writes one history per run; the second test
 # hands the files to `sce-codegen check-queue-history`, so this arm carries no
 # linearizability checker of its own. 4 Lamport capacities recorded 3 times,
-# 6 SCQ shapes and 5 shapes of the intrusive list recorded 25 times: 287
-# histories.
+# 6 SCQ shapes, 5 shapes of the intrusive list and 5 of the segmented queues
+# recorded 25 times: 412 histories.
 add_executable(queue_history_recorder "${CMAKE_CURRENT_SOURCE_DIR}/queue_history_recorder.cpp")
 target_include_directories(queue_history_recorder PRIVATE "${RUNTIME_INCLUDE_DIR}")
 target_compile_options(queue_history_recorder PRIVATE -Wall -Wextra -Wpedantic -Werror)
@@ -389,7 +391,7 @@ add_test(NAME queue_history_check
     COMMAND "${CMAKE_COMMAND}"
             "-DCODEGEN=${SCE_CODEGEN}"
             "-DDIR=${QUEUE_HISTORIES_DIR}"
-            -DMINIMUM=287
+            -DMINIMUM=412
             -P "${REPO_ROOT}/tests/forge/conformance/check_queue_histories.cmake")
 set_tests_properties(queue_history_check PROPERTIES FIXTURES_REQUIRED queue_histories)
 

@@ -1,0 +1,40 @@
+# Mutation cases for "a segmented queue keeps `tail` off a retired segment".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_segmented_queue_keeps_tail_off_a_retired_segment.cases`.
+#
+# The LSCQ row of SCE Protocol-Synthesis RFC §synth-5-P frees a segment through
+# hazard pointers. A hazard protects a segment only if the location it is
+# validated against is written, before the scan runs, by whoever unlinks it. A
+# producer validates against `tail`, and the consumer that retires a segment
+# writes `head`; so the consumer moves `tail` off the segment first. Without that,
+# a producer that linked a successor and has not yet moved `tail` leaves `tail` on
+# a segment `head` has left, and a producer that publishes its hazard after the
+# scan read its slot finds `tail` unchanged and uses the segment once it is freed
+# (`lscq.rs`, *Where a hazard is validated*).
+#
+# The oracle is a unit test in `lscq.rs`, not the loom models of
+# `a_segmented_queue_orders_every_segment_hand_over.cases`: the race needs a
+# producer stopped between its two compare-and-swaps, a scan that reads two
+# slots on either side of it and a third thread, which is more preemptions than
+# a model that finishes can enumerate. The test makes the state the stopped
+# producer leaves, by putting `tail` back on the first segment, and checks the
+# consequence: after the consumer has drained and retired that segment, `tail`
+# no longer names it.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-forge-runtime --lib queue::lscq::tests
+mutation_targets backends/rust/forge-runtime/src/queue/lscq.rs
+mutation_oracles backends/rust/forge-runtime/src/queue/lscq.rs
+
+mutation_case "a consumer retires a segment without moving tail off it" <<'PY'
+edit("backends/rust/forge-runtime/src/queue/lscq.rs",
+     r'''            let _ = queue
+                .tail
+                .0
+                .compare_exchange(head, next, Ordering::SeqCst, Ordering::SeqCst);
+            if queue''',
+     r'''            if queue''')
+PY
