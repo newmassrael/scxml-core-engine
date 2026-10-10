@@ -667,6 +667,25 @@ def lww_classify(logged: list, msg: dict):
     return ("ok", 1 if any(other > key for other in held) else 0)
 
 
+def stable_point(cursors: list, last_seen: list, now: int, max_idle: int):
+    """sce:std/merge/stable_point — the least cursor among the devices whose
+    cursor moved within `max_idle` of `now`, 0 where none did. The idle time is a
+    checked int64 difference, taken device by device, so a reading that cannot be
+    subtracted fails `overflow` where the loop reaches it."""
+    if len(cursors) != len(last_seen) or max_idle < 0:
+        return ("fails", "precondition")
+    stable, taking = 0, False
+    for cursor, seen in zip(cursors, last_seen):
+        idle = now - seen
+        if not fits(idle, I64_MIN, I64_MAX):
+            return ("fails", "overflow")
+        if idle <= max_idle:
+            if not taking or cursor < stable:
+                stable = cursor
+            taking = True
+    return ("ok", stable)
+
+
 def entry(element: int, wall: int, counter: int, node: int) -> dict:
     return {"element": element, "wallTime": wall, "counter": counter, "nodeId": node}
 
@@ -1553,6 +1572,40 @@ def lww_args(rng: SplitMix64):
     if kind == 0:
         logged.insert(rng.below(len(logged) + 1), msg)
     return [shuffled(rng, logged), msg]
+
+
+#: Cursors a device may hold: small arrival numbers, where the least is told
+#: from the rest, and the edges of a uint64.
+CURSOR_EDGES = [0, 1, 2, 3, 5, 9, U32_MAX, U32_MAX + 1, 2**63 - 1, 2**63, 2**64 - 2, 2**64 - 1]
+
+
+def stable_point_args(rng: SplitMix64):
+    """A group of devices, the wall time it is read at, and how long a device may
+    be idle. Most readings sit within a few milliseconds of the bound, where `<=`
+    is told from `<`; some sit at the ends of an int64, where the idle time is
+    the difference that does not fit."""
+    count = rng.pick([0, 1, 2, 2, 3, 3, 4, 5, 6])
+    if rng.below(8) == 0:
+        now = rng.pick([I64_MIN, I64_MIN + 1, -1, 0, 1, I64_MAX - 1, I64_MAX])
+        max_idle = rng.pick([0, 1, 50, I64_MAX])
+        edge_seen = [I64_MIN, I64_MIN + 1, -1, 0, 1, I64_MAX - 1, I64_MAX]
+        last_seen = [rng.pick(edge_seen) for _ in range(count)]
+    else:
+        now = rng.between(0, 1_000_000)
+        max_idle = rng.pick([0, 1, 50, 50, 1000, I64_MAX])
+        last_seen = []
+        for _ in range(count):
+            # Idle for a little less than, exactly, or a little more than the bound,
+            # or not at all, or read ahead of `now`.
+            idle = rng.pick([-5, 0, 0, 1, max(max_idle - 1, 0), max_idle, max_idle + 1, 3 * max_idle + 7])
+            last_seen.append(now - idle if idle <= I64_MAX else now)
+    cursors = [rng.pick(CURSOR_EDGES) if rng.below(3) == 0 else rng.between(0, 20) for _ in range(count)]
+    kind = rng.below(14)
+    if kind == 0 and last_seen:
+        last_seen = last_seen[:-1]
+    elif kind == 1:
+        max_idle = rng.pick([-1, I64_MIN])
+    return [cursors, last_seen, now, max_idle]
 
 
 def entry_near(rng: SplitMix64, base: dict) -> dict:
@@ -2601,6 +2654,7 @@ FIXTURES = {
     ),
     "undo_field_plan": (lambda args: undo_field_plan(*args), plan_args, 400, 0xE110_003F),
     "undo_set_readds": (lambda args: undo_set_readds(*args), readds_args, 300, 0xE110_0040),
+    "stable_point": (lambda args: stable_point(*args), stable_point_args, 500, 0xE110_0041),
 }
 
 
@@ -2854,10 +2908,40 @@ def validate_laws() -> None:
         groups = answer_of(acl_membership(edges, user))
         membership_law.holds(len(groups) == len(set(groups)) and user not in groups and 0 not in groups, [edges, user])
 
+    stable_order_law = Law("stable_point does not depend on the order of the devices")
+    stable_idle_law = Law("stable_point is not held back by a device idle past maxIdle")
+    stable_join_law = Law("stable_point is never raised by a device that joins while one takes part")
+    stable_least_law = Law("stable_point is the least cursor of the devices taking part, 0 with none")
+    for _ in range(LAW_RUNS):
+        cursors, last_seen, now, max_idle = stable_point_args(rng)
+        answer = answer_of(stable_point(cursors, last_seen, now, max_idle))
+        inputs = [cursors, last_seen, now, max_idle]
+        order = shuffled(rng, list(range(len(cursors))))
+        if len(cursors) == len(last_seen):
+            shuffled_answer = stable_point(
+                [cursors[i] for i in order], [last_seen[i] for i in order], now, max_idle
+            )
+            stable_order_law.holds(shuffled_answer == stable_point(cursors, last_seen, now, max_idle), inputs)
+        if answer is None:
+            continue
+        taking = [c for c, seen in zip(cursors, last_seen) if now - seen <= max_idle]
+        stable_least_law.holds(answer == (min(taking) if taking else 0), inputs)
+        gone = now - max_idle - 1
+        if fits(gone, I64_MIN, I64_MAX) and fits(now - gone, I64_MIN, I64_MAX):
+            stable_idle_law.holds(
+                answer_of(stable_point(cursors + [rng.pick(CURSOR_EDGES)], last_seen + [gone], now, max_idle))
+                == answer,
+                inputs,
+            )
+        if taking:
+            joined = answer_of(stable_point(cursors + [rng.pick(CURSOR_EDGES)], last_seen + [now], now, max_idle))
+            stable_join_law.holds(joined is not None and joined <= answer, inputs)
+
     every_law = (
         union_laws + [prune_law] + order_laws + clock_laws + [classify_law] + apply_laws + ack_laws
         + [page_law, insert_law, dedup_law, hold_law, gcra_law, retry_law, utc_law]
         + [insert_order_law, cancel_law, prune_keeps_law, diff_bound_law, diff_pruned_law, membership_law]
+        + [stable_order_law, stable_idle_law, stable_join_law, stable_least_law]
     )
     for law in every_law:
         law.was_asked()
