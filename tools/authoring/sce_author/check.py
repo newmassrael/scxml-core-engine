@@ -237,12 +237,6 @@ class Document:
         return [state for state, descriptors in self.listeners.items()
                 if any(descriptor_matches(d, event_name) for d in descriptors)]
 
-    def is_placed(self, mark: Mark) -> bool:
-        """Whether this mark sits where a case can reach it: on a `<data>` whose value the
-        logic reads, which is what `verify` credits and blames and `gaps` runs the alternatives
-        of. A mark anywhere else is recorded and never tried."""
-        return mark.element == "data" and self.assumed_marker.get(mark.ident) == mark.marker
-
     def rests_on_an_assumption(self, ident: str) -> str:
         """The assumption this output depends on, transitively, if any."""
         holder = self.assumption_holder(ident)
@@ -1301,47 +1295,13 @@ def unmarked_pictures(prose, document, binding_path: pathlib.Path) -> list[Findi
     return out
 
 
-def unplaced_guesses(document, cited) -> list[Finding]:
-    """A guess written where no case can reach it.
-
-    A guess is worth recording because a case can contradict it: `verify` blames it through the
-    values that read it and `gaps --counterfactual` runs the alternatives in its place, and both
-    walk the document's `<data>`. A mark on a state, a region or the root has no value behind it,
-    so it is recorded and never tried -- a label with no consequence. Measured 2026-10-10, three of
-    five writers given one specification and its picture wrote the reading of that picture there.
-
-    `cited` is the marker ids the OWNER has already answered -- the decision record's ids and the
-    profile's house rules. A mark that cites one applies a standing answer rather than guessing, and
-    may sit on any element: that is the form `decisions` reads. Given nothing, no mark is a citation,
-    and a document that cites one is refused loudly and told how to say so, which is the cheaper
-    failure than accepting every unplaced mark on the chance it was one.
-    """
-    out = []
-    for mark in document.marks:
-        if document.is_placed(mark) or mark.marker in cited:
-            continue
-        where = f"{mark.element} {mark.ident}".strip()
-        out.append(Finding(
-            where,
-            f"carries `sce:assumed=\"{mark.marker}\"` on a <{mark.element}>, which holds no value: "
-            f"no output rests on it, so a failing case cannot name it and `gaps --counterfactual` "
-            f"cannot run its alternatives. Write the guess as a decision variable -- a `<data>` "
-            f"whose `expr` is the decided value, or a `bool` the logic branches on with candidates "
-            f"`true false` -- marked `sce:assumed`, which the logic reads. If this cites the "
-            f"owner's decision or a house rule, hand over the decision record and the profile "
-            f"(`--decisions`, `--profile`) and it is accepted where it is."))
-    return out
-
-
-def check(pack: Pack, binding_path: pathlib.Path, prose=None,
-          cited=frozenset()) -> list[Finding]:
+def check(pack: Pack, binding_path: pathlib.Path, prose=None) -> list[Finding]:
     """Refusals for this document and binding against the pack.
 
     With `prose` -- the specification -- every precondition it states is
     also asked for (`unread_preconditions`), and so is every input it names that
     the pack's cases drive and no rule reads (`unread_driven_inputs`), and every
     picture the design names that no `sce:assumed` names (`unmarked_pictures`).
-    `cited` holds the marker ids the owner has answered (`unplaced_guesses`).
     """
     binding = read_binding(binding_path)
     document = read_document((binding_path.parent / binding["document"]).resolve())
@@ -1752,7 +1712,6 @@ def check(pack: Pack, binding_path: pathlib.Path, prose=None,
     # writing, one author in five listed any, and on guesses nothing failed.
     # A list of one value is an answer too: this decision has no other.
     from .counterfactual import candidate_site
-    out.extend(unplaced_guesses(document, cited))
     for ident in sorted(document.assumed):
         listed = document.assumed_candidates.get(ident)
         if listed is None or not listed[0]:

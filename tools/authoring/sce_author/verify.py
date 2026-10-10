@@ -732,7 +732,7 @@ def recorded_assumptions(declared, binding: dict) -> dict:
             marker=declared.assumed_marker.get(ident, ""), reason=reason,
             candidates=(declared.assumed_candidates.get(ident) or ((), ""))[0])
     for mark in (declared.marks if declared else ()):
-        if declared.is_placed(mark):
+        if mark.element == "data" and declared.assumed_marker.get(mark.ident) == mark.marker:
             continue
         subject = f"{mark.element} {mark.ident}".strip()
         key = f"document:{subject}#{mark.marker}"

@@ -1731,7 +1731,7 @@ document is wrong*. The hops are one route and it is tested as one:
 What is refused is not the picture. It is a reading of a picture entering as a
 fact, where nothing downstream can ever disagree with it.
 
-⚠ **The mark goes in the document, on a `<data>`, and `check` asks for both.** Measured
+⚠ **The mark goes in the document, and `check` asks for it there.** Measured
 2026-10-10, five writers given one specification and its one picture all called
 `picture` and read the same rule, and kept the reading in three different places:
 three documents carried it as `sce:assumed`; one kept it in the binding's
@@ -1746,23 +1746,23 @@ of a long specification would be a demand for a reason nobody has. The limit is
 the other side of the same sentence -- a writer who reads a picture and names it
 nowhere is not caught here.
 
-⚠ **And the mark sits where a case can reach it.** Of those three documents, none
-had put it on a `<data>`: one marked a state, two a parallel region. A guess is
-worth recording because a case can contradict it, and `verify` and `gaps` reach a
-guess only through the value that reads it, so a mark on a structural element is
-recorded and never tried -- `gaps` lists it as **unplaced** and `check` refuses
-it (`unplaced_guesses`). The guess is written as a decision variable: a `<data>`
-whose `expr` is the decided value, or a `bool` the logic branches on, candidates
-`true false` (`brief` gives both shapes). The one exception is a mark that cites an
-answer the owner already gave: the decision record's ids and the profile's house
-rules, which `check` is handed with `--decisions` and `--profile` (the MCP tool's
-`decisions` and `profile`). The house rules are the product's mark, read with
-`sce-codegen unresolved --profile`, as `decisions` reads them; handed neither,
-`check` takes no mark for a citation and says how to say it is one, which fails
-loudly where the other choice would fail silently on every call that forgot an
-argument. An event schema's `<datamodel sce:assumed>` is a different document
-(`sce:payload`) and is not read here. Measured 2026-10-10 over 1777 stored writer
-documents: 636 carry a guess and 33 of them carry one off a `<data>`.
+⚠ **A guess cannot always sit on a `<data>`, and requiring it made the mark vanish.**
+A guess a case can contradict is a decision variable, and `gaps` runs the alternatives
+of one; but a `<data>` in a statechart needs a script engine, and a host that forbids
+one (a host contract saying that a `datamodel` needing variables, conditions or
+assignments pulls in a script engine) leaves a writer only the structural elements.
+A rule that refused a mark off a `<data>` (commit 54bd68e25c) was measured on five
+fresh writers of the same specification, 2026-10-10: two tried a decision variable and
+gave it up when `generate` answered `needs_script_engine: true` or refused `sce:initial`
+on a `<data>`, and a third wrote that this was why it used none. All five ended with the
+reading in a comment or in a report, all five checked clean, and none had a mark in the
+document -- where the five writers before the rule had put it on a state or a region in
+three. A refusal that cannot be satisfied is satisfied by
+removing what it looks at, so it was withdrawn. What stands is the honest half: a mark
+anywhere is read (`Document.marks`), `gaps` lists one off a `<data>` as unplaced, and
+`check` still refuses a picture the design names and no mark names. Making such a
+guess testable WITHOUT a script engine -- the alternatives run as separate documents,
+say -- is open and is what would make the refusal sound.
 
 ⚠ A cheaper discriminator was built first and measured wrong: "a stretch of
 pictures with no text between them" was true of 156 drawings out of 156,
