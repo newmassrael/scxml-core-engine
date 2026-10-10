@@ -19,10 +19,26 @@
 # interleaving within three preemptions and every outcome the memory model
 # allows, and fail when a slot is read or written with no happens-before edge
 # from the access before it, or when an element is lost or a segment is not
-# given back. The cases below each take one hand-over away: the release that
-# publishes a link or a count, the acquire that takes it, the close that ends a
-# segment, the drain that must precede a retirement, and the hazard that keeps a
-# retired segment alive.
+# given back. The five cases below each take one hand-over away: the release
+# that publishes a link or a count, the acquire that takes it, and the drain that
+# must precede a retirement.
+#
+# Two things this oracle cannot see are not cases here, because a case no oracle
+# can catch is a permanent SURVIVED and says nothing (measured 2026-10-10). The
+# close bit of a segment's ring matters only to a producer that arrives after
+# the segment was closed, which takes a second producer: its oracle is the race
+# model, and it needs a casefile of its own with a longer limit than
+# `scripts/mutate` gives one test binary. The hazards that keep a retired
+# segment alive are in `a_scan_keeps_what_a_hazard_names.cases`, with the reason
+# these models cannot judge them.
+#
+# One thing this file needed, and why it is in the models. Loom keeps one last
+# access per atomic and queues a thread switch only against it, so a producer
+# that loads an atomic and then stores it hides every earlier access of the other
+# thread, and the model runs once and passes whatever the ordering. The linked
+# ring's producer does that with its filled count; its model yields in the
+# consumer (`offer_switch` in `tests/loom_support/mod.rs`, which says when a
+# model may). Both linked cases survived until it did.
 #
 # Anchors are literal slices of the source; an edit that moves one is reported
 # INCONCLUSIVE with the anchor quoted, never as a pass.
@@ -33,7 +49,7 @@
 # does not invalidate the ordinary build's.
 
 mutation_tests -p sce-forge-runtime --release --target-dir target/loom --config 'build.rustflags=["--cfg","loom"]' --test loom_queue_lscq
-mutation_targets backends/rust/forge-runtime/src/queue/lscq.rs backends/rust/forge-runtime/src/queue/linked.rs backends/rust/forge-runtime/src/queue/hazard.rs backends/rust/forge-runtime/src/queue/scq.rs
+mutation_targets backends/rust/forge-runtime/src/queue/lscq.rs backends/rust/forge-runtime/src/queue/linked.rs
 mutation_oracles backends/rust/forge-runtime/tests/loom_queue_lscq.rs backends/rust/forge-runtime/tests/loom_support/mod.rs
 
 # ── Linked Lamport rings ───────────────────────────────────────────
@@ -80,15 +96,6 @@ PY
 
 # ── LSCQ: ending a segment ─────────────────────────────────────────
 
-# Without the close bit a producer that found the segment full and linked a
-# successor leaves the old segment open: a producer that has passed its check
-# pushes into a segment a consumer has emptied and retired.
-mutation_case "closing a segment sets no bit in the ring's tail" <<'PY'
-edit("backends/rust/forge-runtime/src/queue/scq.rs",
-     r'''        self.tail.0.fetch_or(Self::FIN, Ordering::AcqRel);''',
-     r'''        self.tail.0.fetch_or(0, Ordering::AcqRel);''')
-PY
-
 # A consumer that moves `head` past a closed segment on the threshold's word
 # alone leaves behind an element whose enqueue holds a ticket and has not yet
 # filled its entry.
@@ -96,20 +103,4 @@ mutation_case "a consumer retires a closed segment without draining it" <<'PY'
 edit("backends/rust/forge-runtime/src/queue/lscq.rs",
      r'''            if let Some(value) = segment.ring.pop_drained() {''',
      r'''            if let Some(value) = segment.ring.pop_drained().filter(|_| false) {''')
-PY
-
-# ── The reclamation domain ─────────────────────────────────────────
-
-mutation_case "a scan frees a segment a hazard names" <<'PY'
-edit("backends/rust/forge-runtime/src/queue/hazard.rs",
-     r'''            if named.contains(&(node as *mut ())) {''',
-     r'''            if false && named.contains(&(node as *mut ())) {''')
-PY
-
-mutation_case "a participant publishes its hazard without ordering it before the check" <<'PY'
-edit("backends/rust/forge-runtime/src/queue/hazard.rs",
-     r'''            self.slot().store(pointer.cast(), Ordering::SeqCst);
-            let again = source.load(Ordering::SeqCst);''',
-     r'''            self.slot().store(pointer.cast(), Ordering::Relaxed);
-            let again = source.load(Ordering::Relaxed);''')
 PY

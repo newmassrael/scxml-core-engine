@@ -5522,6 +5522,10 @@
         {
           "file": "backends/rust/forge-runtime/tests/loom_queue_lscq_race.rs",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/mutations/a_scan_keeps_what_a_hazard_names.cases",
+          "kind": "references"
         }
       ]
     },

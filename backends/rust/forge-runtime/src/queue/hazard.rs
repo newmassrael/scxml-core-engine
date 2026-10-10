@@ -360,3 +360,76 @@ impl<const H: usize> Drop for Hazard<'_, H> {
         self.domain.taken[self.index].store(false, Ordering::Release);
     }
 }
+
+#[cfg(all(test, not(loom)))]
+mod tests {
+    extern crate std;
+
+    use std::boxed::Box;
+
+    use super::*;
+
+    /// What `reclaim` does to a retired node here: count it. The test owns the
+    /// node's memory and gives it back itself, so the count is the number of
+    /// nodes the scan decided to free, and nothing is freed twice.
+    ///
+    /// # Safety
+    ///
+    /// `context` is the `AtomicUsize` the node was retired with.
+    unsafe fn count_reclaim(_node: *mut Retired, context: *const ()) {
+        // SAFETY: the caller's contract.
+        let freed = unsafe { &*context.cast::<AtomicUsize>() };
+        freed.fetch_add(1, Ordering::SeqCst);
+    }
+
+    /// A scan frees a retired object no hazard names and keeps one a hazard
+    /// does, until the hazard is cleared. This is what the hazard is for: a
+    /// segment a participant is in must outlive the scan that a retirement
+    /// starts. Deterministic, because the scan reads the slots once and the test
+    /// holds the slot still across it; the interleavings around the scan are the
+    /// loom models' and the sanitizers' business.
+    #[test]
+    fn a_scan_keeps_a_node_a_hazard_names_and_frees_the_rest() {
+        let domain = HazardDomain::<2>::new();
+        let hazard = domain.acquire().unwrap();
+        let freed = AtomicUsize::new(0);
+        let context = (&freed as *const AtomicUsize).cast::<()>();
+        let named = Box::into_raw(Box::new(Retired::new()));
+        let unnamed = Box::into_raw(Box::new(Retired::new()));
+
+        // The hazard names `named` the way a participant does: it protects what
+        // a location holds.
+        let source = AtomicPtr::new(named);
+        assert_eq!(hazard.protect(&source), named, "the hazard names the node");
+
+        // SAFETY: both are live headers, retired once each, and nothing else
+        // reaches them; `count_reclaim` frees nothing, and the boxes are given
+        // back below.
+        unsafe {
+            domain.retire(named, count_reclaim, context);
+            domain.retire(unnamed, count_reclaim, context);
+        }
+        domain.collect();
+        assert_eq!(
+            freed.load(Ordering::SeqCst),
+            1,
+            "the node no hazard names is freed, the one a hazard names is not"
+        );
+        assert_eq!(domain.waiting(), 1, "the named node waits for a later scan");
+
+        hazard.clear();
+        domain.collect();
+        assert_eq!(
+            freed.load(Ordering::SeqCst),
+            2,
+            "once the hazard is cleared the node is freed"
+        );
+        assert_eq!(domain.waiting(), 0);
+
+        // SAFETY: made by `Box::into_raw` above and never freed by the domain.
+        unsafe {
+            drop(Box::from_raw(named));
+            drop(Box::from_raw(unnamed));
+        }
+    }
+}

@@ -1,0 +1,53 @@
+# Mutation case for "a scan keeps what a hazard names".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_scan_keeps_what_a_hazard_names.cases`.
+#
+# The LSCQ row of SCE Protocol-Synthesis RFC §synth-5-P frees a segment through
+# hazard pointers (`queue::hazard`). A hazard is a participant's published claim
+# on the object it is about to touch, and a scan frees a retired object only if
+# no hazard names it. The case below has the scan ignore the hazards, so a
+# segment a participant is in is freed under it.
+#
+# The oracle is the unit test `a_scan_keeps_a_node_a_hazard_names_and_frees_the_rest`
+# in `hazard.rs`. It holds a hazard on one retired node, retires another that
+# nothing names, runs a scan, and counts what was freed. It is deterministic
+# because the scan reads the slots once and the test holds the slot still across
+# it. It is not the loom models of
+# `a_segmented_queue_orders_every_segment_hand_over.cases`: that file used to
+# carry this case, and no model there could see it (measured 2026-10-10, below).
+#
+# Why no loom model sees it. The race a hazard closes needs two threads in one
+# segment while a third retires it, and the allocator has to make a segment freed
+# under a reader a failure, which loom, seeing atomics and cells and not memory,
+# does not. A model that did both (consumers poisoning what is freed) failed on
+# the unmodified queue, and so did a probe of the hazard handshake written with
+# plain loom atomics and `SeqCst` throughout, a protocol that is correct under
+# C11: loom 0.7.2 lets a `SeqCst` load read a value the sequential order has
+# already replaced, so it reports a race the memory model forbids. A model that
+# fails on correct code cannot be an oracle.
+#
+# What this casefile does NOT cover, and nothing in the tree does yet. The other
+# half of the handshake is the order of the publication and the check in
+# `Hazard::protect`: a hazard must be published before the location it is
+# validated against is read again, which the two `SeqCst` accesses give. Taking
+# both to `Relaxed` was run under Miri on the LSCQ real-thread tests with eight
+# seeds (the forge-rust gate's own command, 2026-10-10), and every test passed
+# with no report. Loom cannot judge it for the reason above, and ThreadSanitizer
+# was not run against it. The tool that models `SeqCst` is GenMC, whose harnesses
+# so far cover the C11 queues and not the Rust hazard domain. Until a harness
+# covers it, that weakening is unobserved; it is not a case here because a case
+# no oracle can catch is a permanent SURVIVED, which says nothing.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-forge-runtime --lib queue::hazard::tests
+mutation_targets backends/rust/forge-runtime/src/queue/hazard.rs
+mutation_oracles backends/rust/forge-runtime/src/queue/hazard.rs
+
+mutation_case "a scan frees a node a hazard names" <<'PY'
+edit("backends/rust/forge-runtime/src/queue/hazard.rs",
+     r'''            if named.contains(&(node as *mut ())) {''',
+     r'''            if false && named.contains(&(node as *mut ())) {''')
+PY
