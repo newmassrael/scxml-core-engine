@@ -111,6 +111,8 @@ backend generates it, each against the same conformance vectors.
   variant, and a name-to-variant table would be six new lookups in six enum spellings for a calendar
   consumer that reads `STATUS`, `PARTSTAT` and `FREQ` as text its algorithm compares. The entry is
   refused by name until a codec that names variants is built, and a `string` carries the text.
+  **Decided in ADR 0015**, on the ground that a closed vocabulary is a capability of the format and
+  not of one reader: a variant gets a text of its own (`sce:text`) and the codec matches by it.
 - *A parameter on a repeated property.* `ATTENDEE;CN=Kim;PARTSTAT=ACCEPTED:mailto:…` needs each
   line to be a record of a value and its parameters, so a bounded list of records and a record the
   codec embeds. That is new to every backend's codec generator, and a calendar consumer's first
