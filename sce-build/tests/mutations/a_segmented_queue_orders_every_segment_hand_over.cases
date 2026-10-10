@@ -27,10 +27,11 @@
 # can catch is a permanent SURVIVED and says nothing (measured 2026-10-10). The
 # close bit of a segment's ring matters only to a producer that arrives after
 # the segment was closed, which takes a second producer: its oracle is the race
-# model, and it needs a casefile of its own with a longer limit than
-# `scripts/mutate` gives one test binary. The hazards that keep a retired
-# segment alive are in `a_scan_keeps_what_a_hazard_names.cases`, with the reason
-# these models cannot judge them.
+# model, and its cases are in
+# `a_segmented_queue_survives_two_producers_racing_to_link.cases`, which declares
+# the longer limit that model needs (`mutation_timeout`). The hazards that keep a
+# retired segment alive are in `a_scan_keeps_what_a_hazard_names.cases`, with the
+# reason these models cannot judge them.
 #
 # One thing this file needed, and why it is in the models. Loom keeps one last
 # access per atomic and queues a thread switch only against it, so a producer

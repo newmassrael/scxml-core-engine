@@ -313,7 +313,15 @@ MUTATION_UNREADABLE="$WORK/unreadable.txt"
 # reads a frozen terminal instead of CAUGHT. Five minutes is far past this
 # repository's slowest test binary (the workspace's longest single artifact
 # runs about two) and far short of a wait anyone would sit through.
+#
+# A casefile whose oracle is slower than that says so with `mutation_timeout`,
+# below; this is the bound for every other one. A value in the environment
+# is the caller's own and wins over the declaration, so it is remembered here,
+# before the default overwrites the question.
+MUTATION_TIMEOUT_PINNED="${MUTATION_ARTIFACT_TIMEOUT:+1}"
 MUTATION_ARTIFACT_TIMEOUT="${MUTATION_ARTIFACT_TIMEOUT:-300}"
+# What the casefile declared with `mutation_timeout`, in seconds, or empty.
+MUTATION_TIMEOUT_DECLARED=""
 # Ceiling on the resident size the TEST RUNNER itself may reach, in KiB.
 #
 # This is the ctest runner's clock, in the only currency that measures the
@@ -631,6 +639,56 @@ mutation_needs() {
             ;;
         esac
     done
+}
+
+# How long one test binary of THIS casefile may run, in seconds, in place of the
+# default above.
+#
+# The default is a verdict about termination: a mutant that never ends is
+# CAUGHT, and the same clock is what a baseline has to beat. A suite whose
+# oracle is slow by nature has no room under it. Measured 2026-10-10, a loom
+# model of two producers racing to link a segment explores some six million
+# executions in 547 seconds on the build machine, and a casefile whose oracle
+# was that file could never start: its baseline was reported as not
+# terminating, on every run, and not one of its cases was ever judged.
+#
+# Declared by the casefile rather than raised for everyone, because the default
+# is also what catches a mutant that spins. Seconds, a whole number, and no more
+# than an hour: one case that does not end costs the whole bound, so the number
+# is a cost the lane pays per case and a typo in it must not be able to turn a
+# round into a day. `mutation_corpus_fits_its_lane` holds the declared numbers
+# against the lane's ceiling.
+#
+# A value in the environment wins. `MUTATION_ARTIFACT_TIMEOUT=60 scripts/mutate`
+# is a person asking for a short round, and answering with the casefile's longer
+# number would be the harness overruling the one thing the caller said.
+MUTATION_TIMEOUT_MAX=3600
+mutation_timeout() {
+    local seconds="${1:-}"
+    if [[ $# -ne 1 || ! "$seconds" =~ ^[1-9][0-9]*$ ]]; then
+        red "mutation_timeout takes one argument, a whole number of seconds"
+        red "greater than zero; it was given: $*"
+        exit 2
+    fi
+    if (( seconds > MUTATION_TIMEOUT_MAX )); then
+        red "mutation_timeout $seconds is above the ${MUTATION_TIMEOUT_MAX}-second limit."
+        red "A case whose test binary never ends costs this much, once per case,"
+        red "so a casefile that needs more is a casefile to split."
+        exit 2
+    fi
+    # Refused only when the number differs. A round reads the casefile more than
+    # once, in this one process, so the same declaration arriving twice is the
+    # same casefile read twice; it is the same reading `mutation_declare_runner`
+    # makes of a runner it has already been given.
+    if [[ -n "$MUTATION_TIMEOUT_DECLARED" && "$MUTATION_TIMEOUT_DECLARED" != "$seconds" ]]; then
+        red "the casefile declared mutation_timeout twice ($MUTATION_TIMEOUT_DECLARED and $seconds)"
+        red "— one casefile has one bound, or the verdicts name neither"
+        exit 2
+    fi
+    MUTATION_TIMEOUT_DECLARED="$seconds"
+    if [[ -z "$MUTATION_TIMEOUT_PINNED" ]]; then
+        MUTATION_ARTIFACT_TIMEOUT="$seconds"
+    fi
 }
 
 # ── Internals ──────────────────────────────────────────────────────
@@ -2654,7 +2712,21 @@ mutation_init() {
         # `mutation_runtime_targets` was invisible to it on the day it landed.
         # The count comes from the declare pass, which is the parser.
         printf 'cases\t%s\n' "${#MUTATION_DECLARED_CASES[@]}"
+        # The bound the casefile asked for, and only when it asked: a casefile
+        # that did not keeps the output it always had, byte for byte. What was
+        # DECLARED, not what applies, because a value in the environment is a
+        # fact about one run and a caller sizing the lane wants the casefile's.
+        if [[ -n "$MUTATION_TIMEOUT_DECLARED" ]]; then
+            printf 'timeout\t%s\n' "$MUTATION_TIMEOUT_DECLARED"
+        fi
         exit 0
+    fi
+    if [[ -n "$MUTATION_TIMEOUT_DECLARED" ]]; then
+        if [[ -n "$MUTATION_TIMEOUT_PINNED" ]]; then
+            dim "test binaries are bounded at ${MUTATION_ARTIFACT_TIMEOUT}s by the environment (the casefile declares ${MUTATION_TIMEOUT_DECLARED}s)"
+        else
+            dim "test binaries are bounded at ${MUTATION_ARTIFACT_TIMEOUT}s, as the casefile declares"
+        fi
     fi
     # Before the snapshot, which reads every declared file and would other-
     # wise die on the missing one with `cp`'s message instead of this one.
@@ -3335,7 +3407,8 @@ while (( $# )); do
             printf '       scripts/mutate --declares <casefile> <casefile>...\n\n'
             printf '  (default)   full round — build, run, require every case CAUGHT\n'
             printf '  --check     apply and restore only; no build, no test run\n'
-            printf '  --declares  print the declared runner, targets, services and case count;\n'
+            printf '  --declares  print the declared runner, targets, services, case count and,\n'
+            printf '              when the casefile gave one, its mutation_timeout;\n'
             printf '              given several casefiles it declares them all in this one process,\n'
             printf '              each block introduced by a "casefile<TAB>path" line\n'
             printf '  --shard I/N run the I-th contiguous slice of the declared cases, so a\n'

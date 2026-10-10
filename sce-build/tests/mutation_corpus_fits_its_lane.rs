@@ -292,3 +292,131 @@ fn the_gate_sizes_every_slice_it_hands_the_lane() {
          walk moved — a corpus that reads as empty satisfies every ceiling"
     );
 }
+
+/// What `scripts/mutate --declares` says, per casefile, about the three things
+/// the check below needs: its runner, how many cases it holds and the bound it
+/// declared, in seconds, if it did.
+struct Declared {
+    runner: String,
+    cases: u32,
+    timeout: Option<u32>,
+}
+
+/// The declarations of every tracked casefile, asked of the harness in ONE
+/// invocation, which is how the rest of this corpus's tests ask.
+fn declarations() -> BTreeMap<String, Declared> {
+    let casefiles = common::repository::paths_git_tracks(&["sce-build/tests/mutations/*.cases"]);
+    let out = std::process::Command::new(repo_root().join("scripts/mutate"))
+        .arg("--declares")
+        .args(&casefiles)
+        .current_dir(repo_root())
+        .output()
+        .expect("run scripts/mutate --declares");
+    assert!(
+        out.status.success(),
+        "`scripts/mutate --declares` over the corpus failed:\n{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let mut found: BTreeMap<String, Declared> = BTreeMap::new();
+    let mut current = String::new();
+    for line in String::from_utf8_lossy(&out.stdout).lines() {
+        let (key, value) = line.split_once('\t').unwrap_or((line, ""));
+        if key == "casefile" {
+            current = value.to_string();
+            found.insert(
+                current.clone(),
+                Declared {
+                    runner: String::new(),
+                    cases: 0,
+                    timeout: None,
+                },
+            );
+            continue;
+        }
+        let Some(declared) = found.get_mut(&current) else {
+            continue;
+        };
+        match key {
+            "runner" => declared.runner = value.to_string(),
+            "cases" => declared.cases = value.parse().unwrap_or(0),
+            "timeout" => declared.timeout = value.parse().ok(),
+            _ => {}
+        }
+    }
+    found
+}
+
+/// A casefile that declares `mutation_timeout` has told the lane how long one
+/// test binary may run, and the lane has to be able to pay for it.
+///
+/// The bound is a cost per case and not only for the baseline: a mutant whose
+/// test binary never ends runs the whole bound before it is CAUGHT, and every
+/// job runs its own baseline first. So the worst a job of `n` cases costs is
+/// `setup + bound + n x (per-case + bound)`, with the setup and per-case
+/// minutes this file already measured for the runner. The harness caps one
+/// declaration at an hour so that a typo cannot reach a day on its own; this is
+/// the check that a declaration under that cap still fits the job it lands in,
+/// and its remedy is to lower the bound or split the casefile, as the cases per
+/// job are lowered for the same reason above.
+#[test]
+fn a_declared_bound_fits_the_job_it_is_scheduled_into() {
+    let root = repo_root();
+    let workflow = std::fs::read_to_string(root.join(".github/workflows/mutation-rounds.yml"))
+        .expect("read the mutation-rounds workflow");
+    let gate = std::fs::read_to_string(root.join("scripts/gates/mutation-rounds.sh"))
+        .expect("read the mutation-rounds gate");
+    let ceiling = lane_timeout_minutes(&workflow);
+    let per_job = cases_per_job(&gate);
+    let declarations = declarations();
+
+    // A floor before any arithmetic, for the reason the test above has one: a
+    // parse that stopped finding casefiles satisfies every inequality below.
+    assert!(
+        declarations.len() >= 80,
+        "`--declares` answered for {} casefile(s), expected at least 80. The \
+         output format or the corpus walk moved, and this check cannot judge \
+         bounds it did not read",
+        declarations.len()
+    );
+    let declaring: Vec<&String> = declarations
+        .iter()
+        .filter(|(_, declared)| declared.timeout.is_some())
+        .map(|(path, _)| path)
+        .collect();
+    assert!(
+        !declaring.is_empty(),
+        "no casefile declares `mutation_timeout`, though the segmented queue's \
+         race model needs one. Either the `timeout` line of `--declares` stopped \
+         being read here, or the last declaration was removed on purpose, in \
+         which case this floor goes with it"
+    );
+
+    for path in declaring {
+        let declared = &declarations[path];
+        let seconds = declared.timeout.expect("filtered to declared bounds");
+        let bound = seconds.div_ceil(60);
+        let (_, setup, per_case) = COST
+            .iter()
+            .find(|(runner, _, _)| *runner == declared.runner)
+            .or_else(|| COST.iter().find(|(runner, _, _)| *runner == "*"))
+            .expect("the cost table has a default row");
+        let in_a_job = per_job
+            .get(&declared.runner)
+            .or_else(|| per_job.get("*"))
+            .copied()
+            .expect("the gate gives every runner a cases-per-job");
+        let slice = declared.cases.min(in_a_job);
+        let cost = setup + bound + slice * (per_case + bound);
+        assert!(
+            cost <= ceiling,
+            "{path} declares mutation_timeout {seconds} ({bound} min). A job of \
+             its {slice} case(s) on the `{}` runner costs, at worst, {setup} + \
+             {bound} + {slice}x({per_case} + {bound}) = {cost} minutes against \
+             the lane's {ceiling}-minute ceiling, and a job that crosses it is \
+             `cancelled`, which is neither green nor red. Lower the bound, or \
+             split the casefile.",
+            declared.runner
+        );
+    }
+}

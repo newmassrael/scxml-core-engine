@@ -1,0 +1,68 @@
+# Mutation cases for "a segmented queue survives two producers racing to link".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_segmented_queue_survives_two_producers_racing_to_link.cases`.
+#
+# The LSCQ row of SCE Protocol-Synthesis RFC §synth-5-P grows by linking a
+# successor segment behind a full one (`queue::lscq`). Two producers that find
+# the same segment full both build a successor and race to link it. One wins;
+# the other must take its element back out of the segment nobody saw, give the
+# segment back to the allocator, and push behind the winner's. Neither element
+# may be lost, and no segment may be left out.
+#
+# The oracle is the one model of `backends/rust/forge-runtime/tests/
+# loom_queue_lscq_race.rs`, which explores every interleaving of two producers
+# and a consumer within three preemptions: some six million executions, 547
+# seconds on the build machine (measured 2026-10-10). That is longer than
+# `scripts/mutate` lets one test binary run by default, and it is why the model
+# has a file of its own and why this casefile declares `mutation_timeout`: the
+# casefile about the other models, `a_segmented_queue_orders_every_segment_hand_over.cases`,
+# runs in a fraction of a second and is not made to wait for it. The bound is
+# declared with room, because the models explore on one core and a hosted runner
+# is slower than the build machine they were measured on.
+#
+# The three cases below each break one step of the loser's side or the close of
+# the segment it lost: the loser leaves its segment out, the loser gives up on
+# its element, and the closed segment is not marked closed.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+#
+# The model builds only under `--cfg loom`. The selector passes it as a cargo
+# `--config` rather than through RUSTFLAGS, so the casefile carries the whole
+# command, and gives the build a target directory of its own so that the cfg
+# does not invalidate the ordinary build's.
+
+mutation_timeout 1800
+mutation_tests -p sce-forge-runtime --release --target-dir target/loom --config 'build.rustflags=["--cfg","loom"]' --test loom_queue_lscq_race
+mutation_targets backends/rust/forge-runtime/src/queue/lscq.rs backends/rust/forge-runtime/src/queue/scq.rs
+mutation_oracles backends/rust/forge-runtime/tests/loom_queue_lscq_race.rs backends/rust/forge-runtime/tests/loom_support/mod.rs
+
+# The producer that lost the race frees the segment it built and offered. Left
+# out, the allocator is never given it back, and the model, which counts the
+# segments the allocator has out, finds one more than there should be.
+mutation_case "the producer that lost the link leaves its segment out" <<'PY'
+edit("backends/rust/forge-runtime/src/queue/lscq.rs",
+     r'''                    unsafe { release(queue.allocator, fresh) };
+                    value = back.expect("a segment holding one element gives it back");''',
+     r'''                    let _ = fresh;
+                    value = back.expect("a segment holding one element gives it back");''')
+PY
+
+# The producer that lost the race pushes its element behind the winner's. Giving
+# up after it has taken the element back loses the element.
+mutation_case "the producer that lost the link gives up on its element" <<'PY'
+edit("backends/rust/forge-runtime/src/queue/lscq.rs",
+     r'''                    value = back.expect("a segment holding one element gives it back");''',
+     r'''                    drop(back);
+                    return Ok(());''')
+PY
+
+# Without the close bit a producer that found the segment full and linked a
+# successor leaves the old segment open: a producer that has passed its check
+# pushes into a segment a consumer has emptied and retired.
+mutation_case "closing a segment sets no bit in the ring's tail" <<'PY'
+edit("backends/rust/forge-runtime/src/queue/scq.rs",
+     r'''        self.tail.0.fetch_or(Self::FIN, Ordering::AcqRel);''',
+     r'''        self.tail.0.fetch_or(0, Ordering::AcqRel);''')
+PY
