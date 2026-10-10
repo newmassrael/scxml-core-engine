@@ -398,6 +398,13 @@ without the list. A failing case can then be run with each other value in its
 place (`gaps --counterfactual`), and the one that repairs it is the answer to
 send back.
 
+A rule you read from a picture (`[picture: NAME]`) is one of these decisions:
+mark it `sce:assumed` IN THE DOCUMENT and write NAME in the reason. The
+document is what the next reader is handed, so a reading kept only in the
+binding, a comment, an evidence line or your report is one nobody finds, and
+`check` refuses a document that names a picture of the specification and marks
+no guess with its name.
+
 Give each decided value its own `<data>` -- a decision variable -- whose
 `expr` is that value alone, mark IT `sce:assumed`, and have the logic read it:
 

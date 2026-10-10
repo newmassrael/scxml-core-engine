@@ -1206,12 +1206,56 @@ def unread_driven_inputs(pack: Pack, prose, declared_inputs: dict) -> list[Findi
         f"under `infrastructure`.")]
 
 
+# The mark `ingest` leaves where a picture sits in the specification's text.
+_PICTURE_MARK = re.compile(r"\[picture: ([^\]\r\n]+)\]")
+
+
+def unmarked_pictures(prose, document, binding_path: pathlib.Path) -> list[Finding]:
+    """A picture the specification shows and this design relies on, that no `sce:assumed` names.
+
+    A reading of a picture enters the design marked, and the mark belongs IN THE DOCUMENT: the
+    document is what the next reader is handed, and `verify` and `gaps` look for a guess where
+    `sce:assumed` is. Measured 2026-10-10 over five writers given one specification and its picture,
+    all five called `picture` and all five read the same rule, and the reading was kept in three
+    different places -- three documents carried it as `sce:assumed`, one kept it in the binding's
+    `assumed:` and the question list only, one cited the picture as evidence and wrote "assumed" in
+    its report alone. A reader of those last two documents is told nothing.
+
+    "Relies on" is the design NAMING the picture, in the document or in the binding. A picture
+    the specification shows and the design never mentions is not asked about: this core cannot say
+    whether a drawing bears on a design, and asking for a mark per drawing of a long specification
+    would be a demand for a reason nobody has.
+    """
+    shown = list(dict.fromkeys(_PICTURE_MARK.findall(prose.text)))
+    if not shown:
+        return []
+    texts = {"document": document.path.read_text(encoding="utf-8"),
+             "binding": binding_path.read_text(encoding="utf-8")}
+    marked = "\n".join([*document.assumed.values(), *document.assumed_marker.values()])
+    out = []
+    for name in shown:
+        cited_in = [side for side, text in texts.items() if name in text]
+        if not cited_in or name in marked:
+            continue
+        out.append(Finding(
+            f"picture {name}",
+            f"is shown in the specification and the {' and the '.join(cited_in)} "
+            f"names it, but no `sce:assumed` in the document does. What is read from a picture "
+            f"enters the document marked, in the document, because the document is what the next "
+            f"reader is handed: a reading kept only in `sce:evidence`, a comment, the binding or a "
+            f"report is one nothing downstream can find. Put `sce:assumed` and "
+            f"`sce:assumed-reason` on the element that applies the reading, and write {name} in the "
+            f"reason."))
+    return out
+
+
 def check(pack: Pack, binding_path: pathlib.Path, prose=None) -> list[Finding]:
     """Refusals for this document and binding against the pack.
 
     With `prose` -- the specification -- every precondition it states is
     also asked for (`unread_preconditions`), and so is every input it names that
-    the pack's cases drive and no rule reads (`unread_driven_inputs`).
+    the pack's cases drive and no rule reads (`unread_driven_inputs`), and every
+    picture the design names that no `sce:assumed` names (`unmarked_pictures`).
     """
     binding = read_binding(binding_path)
     document = read_document((binding_path.parent / binding["document"]).resolve())
@@ -1613,6 +1657,7 @@ def check(pack: Pack, binding_path: pathlib.Path, prose=None) -> list[Finding]:
     if prose is not None:
         out.extend(unread_preconditions(pack, prose, declared_inputs, set(document.inputs)))
         out.extend(unread_driven_inputs(pack, prose, declared_inputs))
+        out.extend(unmarked_pictures(prose, document, binding_path))
 
     # ⚠ Every recorded guess says what else it could have been. A guess that
     # does not cannot be tried when a case fails on it -- `gaps` can only say

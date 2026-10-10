@@ -1723,6 +1723,21 @@ document is wrong*. The hops are one route and it is tested as one:
 What is refused is not the picture. It is a reading of a picture entering as a
 fact, where nothing downstream can ever disagree with it.
 
+⚠ **The mark goes in the document, and `check` asks for it there.** Measured
+2026-10-10, five writers given one specification and its one picture all called
+`picture` and read the same rule, and kept the reading in three different places:
+three documents carried it as `sce:assumed`; one kept it in the binding's
+`assumed:` and the question list only; one cited the picture as `sce:evidence`
+and wrote "assumed" in its report alone. A reader handed only the document --
+the next reader, `verify`, `gaps` -- was told nothing in the last two. With the
+specification (`--prose`), `check` refuses a picture the specification shows and
+the document or the binding NAMES, when no `sce:assumed` of the document names it
+(`unmarked_pictures`). A picture the design never names is not asked about: this
+core cannot say whether a drawing bears on a design, and a mark for every drawing
+of a long specification would be a demand for a reason nobody has. The limit is
+the other side of the same sentence -- a writer who reads a picture and names it
+nowhere is not caught here.
+
 ⚠ A cheaper discriminator was built first and measured wrong: "a stretch of
 pictures with no text between them" was true of 156 drawings out of 156,
 because a word processor anchors a picture in a paragraph of its own. A test
