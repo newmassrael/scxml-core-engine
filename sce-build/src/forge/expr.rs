@@ -5384,9 +5384,17 @@ fn cpp_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             consequent,
             alternate,
         } => {
+            // The condition of a conditional that is itself a conditional is bracketed:
+            // `g ? a : b ? 1 : 0` reads `g ? a : (b ? 1 : 0)`. The consequent and the
+            // alternate keep the spelling they have, which reads as written.
+            let cond = emit_cpp(condition, InferredType::Bool)?;
+            let cond = if matches!(&condition.kind, ExprKind::Conditional { .. }) {
+                format!("({cond})")
+            } else {
+                cond
+            };
             format!(
-                "{} ? {} : {}",
-                emit_cpp(condition, InferredType::Bool)?,
+                "{cond} ? {} : {}",
                 emit_cpp(consequent, expr.ty)?,
                 emit_cpp(alternate, expr.ty)?,
             )
@@ -8694,9 +8702,15 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             consequent,
             alternate,
         } => {
+            // See `cpp_emit_node`: the condition that is a conditional is bracketed.
+            let cond = emit_c(condition, InferredType::Bool)?;
+            let cond = if matches!(&condition.kind, ExprKind::Conditional { .. }) {
+                format!("({cond})")
+            } else {
+                cond
+            };
             format!(
-                "{} ? {} : {}",
-                emit_c(condition, InferredType::Bool)?,
+                "{cond} ? {} : {}",
                 emit_c(consequent, expr.ty)?,
                 emit_c(alternate, expr.ty)?,
             )
@@ -9074,6 +9088,31 @@ mod tests {
             tp("c ? (g ? 1 : 2) : (h ? 3 : 4)", ExprTarget::Python),
             "(1 if g else 2) if c else 3 if h else 4"
         );
+    }
+
+    #[test]
+    fn c_and_cpp_wrap_a_conditional_used_as_a_condition() {
+        // `g ? a : b ? 1 : 0` is `g ? a : (b ? 1 : 0)`: the condition `g ? a : b` of the outer
+        // conditional was emitted without its brackets, which changes what it says and, when
+        // the branches differ in type (a boolean against a string), is not a C++ expression at
+        // all ("operands to ?: have different types"). A document reading
+        // `(c ? x : y) ? 'P' : 'Q'` produced it (2026-10-10); Python and the Interpreter's
+        // script had been given the brackets on 2026-09-28 and these two had not.
+        for target in [ExprTarget::Cpp, ExprTarget::C] {
+            assert_eq!(
+                tp("(g ? a : b) ? 1 : 0", target),
+                "(g ? a : b) ? 1 : 0",
+                "{target:?}"
+            );
+        }
+        // The branches keep their spelling: a conditional there is read as it was written.
+        for target in [ExprTarget::Cpp, ExprTarget::C] {
+            assert_eq!(
+                tp("c ? (g ? 1 : 2) : (h ? 3 : 4)", target),
+                "c ? g ? 1 : 2 : h ? 3 : 4",
+                "{target:?}"
+            );
+        }
     }
 
     #[test]
