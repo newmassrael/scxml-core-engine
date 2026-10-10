@@ -47,6 +47,12 @@ pub fn model(body: impl Fn() + Sync + Send + 'static) {
 /// So a model whose threads race on such an atomic yields where the threads
 /// begin to race, once at the head of the side that only reads. That adds the
 /// switches without changing what the model asserts.
+///
+/// It is not free, and not for every model. The LSCQ models already run some
+/// two thousand executions without it, and with it the casefile lost a case it
+/// had caught (a segment retired without draining it), so they do not yield. A
+/// model takes this only where a mutation it should catch is measured to
+/// survive without it.
 pub fn offer_switch() {
     loom::thread::yield_now();
 }

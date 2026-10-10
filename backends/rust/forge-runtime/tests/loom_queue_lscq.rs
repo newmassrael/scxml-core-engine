@@ -118,7 +118,6 @@ mod models {
             });
 
             let consumer = queue.consumer().unwrap();
-            offer_switch();
             let mut seen: Vec<usize> = Vec::new();
             seen.extend(consumer.try_pop());
             seen.extend(consumer.try_pop());
@@ -154,7 +153,6 @@ mod models {
             });
 
             let consumer = queue.consumer().unwrap();
-            offer_switch();
             let mut seen: Vec<usize> = Vec::new();
             seen.extend(consumer.try_pop());
             seen.extend(consumer.try_pop());
