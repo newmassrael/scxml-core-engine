@@ -1937,6 +1937,11 @@ class History:
         # Output name -> the last value a `hold_last` rule WROTE. A slot the
         # component does not write keeps what it held; this is that slot.
         self.held: dict[str, object] = {}
+        # Position -> what the round before it left there, for every position a round wrote:
+        # what an event slot held before a round moved it, which is what a component that
+        # `announces_old_off` publishes off first. A slot keeps what it held, so a round that
+        # does not write a position leaves the older value here.
+        self.published: dict[str, object] = {}
         self.started = False
 
     def earlier(self, name, rule, case, latches, model):
@@ -1956,6 +1961,46 @@ class History:
             f"input {name!r}: feeds back the output {target!r} before the "
             f"document has ever produced it, and the binding declares no "
             f"`initial`. The first round would read a number nobody computed.")
+
+
+#: The symbol an event record's `Stat` has while the event is not shown.
+_EVENT_OFF = "OFF"
+
+
+def first_announcement(model, history: History | None, produced: dict,
+                       undetermined=frozenset()) -> dict:
+    """What a round's FIRST announcement says, for a case read as `observed: first`.
+
+    A document computes where a slot stands AFTER a round; the host announces the round's
+    writes in order. For a component that `announces_old_off`, a round that moves an event
+    slot from one event to another announces the OLD event off before it announces the new
+    one -- so what a case reading the first announcement sees is `(old ID, OFF)`, not the
+    state the round ends in. The rule is the one the connecting code writes
+    (`GETCACHEDVALUE`, then `flushLastGroup`): only while the old event was shown, and only
+    when the identifier changes.
+
+    Returns the positions whose first announcement differs from the state the round ended
+    in, with the value each one announces; `{}` when nothing moved, or when the slot, or
+    what it held before, is not settled.
+    """
+    if history is None or not history.started:
+        return {}
+    announced: dict = {}
+    for entry in model.by_address.values():
+        if not entry.announces_old_off:
+            continue
+        identity, status = f"{entry.address}.ID", f"{entry.address}.Stat"
+        now, before = produced.get(identity), history.published.get(identity)
+        shown = history.published.get(status)
+        stat_field = entry.field("Stat")
+        if (identity in undetermined or status in undetermined
+                or not isinstance(now, str) or not isinstance(before, str)
+                or not now or not before or now == before
+                or shown is None or shown == _EVENT_OFF
+                or stat_field is None or not stat_field.admits(_EVENT_OFF)):
+            continue
+        announced[identity], announced[status] = before, _EVENT_OFF
+    return announced
 
 
 def input_value(name: str, rule: dict, case, latches: Latches | None = None,
@@ -3797,10 +3842,16 @@ def _verify(pack: Pack, binding_path: pathlib.Path, codegen: pathlib.Path | None
         # platform's would; only the claim about this case is withheld.
         stood_in = planted.stand_in(produced, undetermined)
         if not (judged and withhold_unreceived(result, case, pack.model)):
-            judge.judge(result, case, produced, undetermined,
+            # ⚠ A case read as its FIRST announcement is judged on what the host publishes first,
+            # which for a slot that `announces_old_off` is the old event off, not the state the
+            # round ends in. The state itself is what the document kept and `history` carries on.
+            read = (dict(produced, **first_announcement(pack.model, history, produced, undetermined))
+                    if case.observed == "first" else produced)
+            judge.judge(result, case, read, undetermined,
                         open_values=unknown + sorted(withheld), planted=stood_in)
         if history is not None:
             history.inputs = dict(values)
+            history.published.update(produced)
             history.started = True
         # A setup step moved what it moves -- the remembered values above --
         # and nothing is claimed on it.
