@@ -156,6 +156,11 @@ class QueueContractTest {
                 // (queue/storage-runtime-missing), so there is no runtime to run.
                 continue
             }
+            if (storage == "segmented") {
+                // Not lowered to Kotlin yet; the generator refuses the row by name
+                // (queue/storage-runtime-missing), so there is no runtime to run.
+                continue
+            }
             val capacity = scenario.getValue("capacity").jsonPrimitive.int
             val subject: Subject = when {
                 storage == "bounded" && producers == "one" && consumers == "one" -> SpscSubject(Spsc(capacity))

@@ -56,7 +56,7 @@ shopt -u nullglob
 # and `target/loom` keeps the cfg from invalidating the release build above.
 cargo test --release -p sce-forge-runtime --target-dir target/loom \
     --config 'build.rustflags=["--cfg","loom"]' \
-    --test loom_queue_spsc --test loom_queue_scq \
+    --test loom_queue_spsc --test loom_queue_scq --test loom_queue_lscq \
     || sce_gate_fail "Rust forge queue loom models"
 
 # The queue runtime under Miri and ThreadSanitizer (RFC §synth-5-P,

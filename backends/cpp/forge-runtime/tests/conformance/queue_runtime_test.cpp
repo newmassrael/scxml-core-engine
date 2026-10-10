@@ -284,6 +284,11 @@ void every_contract_scenario_holds() {
             }
             continue;
         }
+        if (storage == "segmented") {
+            // Not lowered to C++ yet; the generator refuses the row by name
+            // (queue/storage-runtime-missing), so there is no runtime to run.
+            continue;
+        }
         const std::uint64_t capacity = scenario.at("capacity").get<std::uint64_t>();
         if (storage == "bounded" && producers == "one" && consumers == "one") {
             dispatch_bounded_spsc(id, capacity, steps);

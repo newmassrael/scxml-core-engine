@@ -5395,6 +5395,38 @@
         {
           "file": "tests/forge/resources/queue_conformance_node.scxml",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/forge-runtime/src/queue/allocator.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/forge-runtime/src/queue/hazard.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/forge-runtime/src/queue/linked.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/forge-runtime/src/queue/lscq.rs",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/queue_conformance_segmented.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/queue_conformance_segmented_many.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/forge-runtime/tests/loom_queue_lscq.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/mutations/a_segmented_queue_orders_every_segment_hand_over.cases",
+          "kind": "references"
         }
       ]
     },

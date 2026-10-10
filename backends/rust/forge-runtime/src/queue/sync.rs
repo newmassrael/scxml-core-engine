@@ -14,10 +14,14 @@
 //! compiles to a plain pointer access.
 
 #[cfg(loom)]
-pub(crate) use loom::sync::atomic::{AtomicI64, AtomicU32, AtomicU64, AtomicUsize, Ordering};
+pub(crate) use loom::sync::atomic::{
+    fence, AtomicBool, AtomicI64, AtomicPtr, AtomicU32, AtomicU64, AtomicUsize, Ordering,
+};
 
 #[cfg(not(loom))]
-pub(crate) use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
+pub(crate) use core::sync::atomic::{
+    fence, AtomicBool, AtomicPtr, AtomicU32, AtomicUsize, Ordering,
+};
 
 /// The 64-bit atomics the SCQ rows need. A target without them has no
 /// such row, and the module that uses them is absent there too.

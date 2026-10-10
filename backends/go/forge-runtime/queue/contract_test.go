@@ -182,6 +182,10 @@ func TestEveryContractScenarioHolds(t *testing.T) {
 				// The generator refuses the row for Go by name
 				// (queue/storage-runtime-missing), so there is no runtime to run.
 				t.Skipf("the intrusive row is not lowered to Go, and the generator refuses it by name: %s", scenario.ID)
+			case scenario.Storage == "segmented":
+				// Not lowered to Go yet; the generator refuses the row by name
+				// (queue/storage-runtime-missing), so there is no runtime to run.
+				t.Skipf("the segmented row is not lowered to Go yet, and the generator refuses it by name: %s", scenario.ID)
 			default:
 				t.Fatalf("the Go arm has no runtime for the row %s/%s/%s", scenario.Storage, scenario.Producers, scenario.Consumers)
 			}

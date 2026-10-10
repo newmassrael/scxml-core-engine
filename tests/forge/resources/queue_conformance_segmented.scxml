@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SCE Protocol-Synthesis RFC §synth-5-P (queue kind, segmented storage): one
+  producer and one consumer over segments of three elements taken from an
+  injected allocator that the document declares lock-free. The selection table
+  gives this linked Lamport rings: pop is wait-free, and push is as strong as the
+  allocator, so lock-free is the strongest progress this document can declare.
+  The Rust conformance crate compiles what the generator emits for it and runs
+  the queue.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://sce.dev/ext sce-forge.xsd"
+       sce:kind="queue"
+       name="queue_conformance_segmented"
+       version="1.0">
+  <sce:element-type>queue_conformance_event</sce:element-type>
+  <sce:producers>one</sce:producers>
+  <sce:consumers>one</sce:consumers>
+  <sce:progress>lock-free</sce:progress>
+  <sce:segmented segment="3" allocator-progress="lock-free"/>
+</scxml>

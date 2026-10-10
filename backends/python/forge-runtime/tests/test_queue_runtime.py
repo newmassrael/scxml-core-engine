@@ -55,6 +55,10 @@ class TestContractScenarios(unittest.TestCase):
                     # The generator refuses the row for Python by name
                     # (queue/storage-runtime-missing), so there is no runtime to run.
                     continue
+                if scenario["storage"] == "segmented":
+                    # Not lowered to Python yet; the generator refuses the row by
+                    # name (queue/storage-runtime-missing), so there is no runtime.
+                    continue
                 self.assertEqual(
                     "bounded",
                     scenario["storage"],

@@ -1,0 +1,113 @@
+# Mutation cases for "a segmented queue orders every segment hand-over".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_segmented_queue_orders_every_segment_hand_over.cases`.
+#
+# The `segmented` storage mode of SCE Protocol-Synthesis RFC §synth-5-P is a list
+# of segments: linked Lamport rings for one producer and one consumer
+# (`queue::linked`), and LSCQ, a list of SCQ rings reclaimed through hazard
+# pointers, for any other cardinality (`queue::lscq`, `queue::hazard`). Each
+# segment is handed from the participant that built it to the others through a
+# link, and an element a segment holds is handed from its producer to its
+# consumer through the filled count (linked) or the ring's own indices (LSCQ,
+# whose rings are the SCQ of `an_scq_queue_orders_every_index_hand_over.cases`).
+# The oracle is the loom models in
+# `backends/rust/forge-runtime/tests/loom_queue_lscq.rs`, which explore every
+# interleaving within three preemptions and every outcome the memory model
+# allows, and fail when a slot is read or written with no happens-before edge
+# from the access before it, or when an element is lost or a segment is not
+# given back. The cases below each take one hand-over away: the release that
+# publishes a link or a count, the acquire that takes it, the close that ends a
+# segment, the drain that must precede a retirement, and the hazard that keeps a
+# retired segment alive.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+#
+# The models build only under `--cfg loom`. The selector passes it as a cargo
+# `--config` rather than through RUSTFLAGS, so the casefile carries the whole
+# command, and gives the build a target directory of its own so that the cfg
+# does not invalidate the ordinary build's.
+
+mutation_tests -p sce-forge-runtime --release --target-dir target/loom --config 'build.rustflags=["--cfg","loom"]' --test loom_queue_lscq
+mutation_targets backends/rust/forge-runtime/src/queue/lscq.rs backends/rust/forge-runtime/src/queue/linked.rs backends/rust/forge-runtime/src/queue/hazard.rs backends/rust/forge-runtime/src/queue/scq.rs
+mutation_oracles backends/rust/forge-runtime/tests/loom_queue_lscq.rs
+
+# ── Linked Lamport rings ───────────────────────────────────────────
+
+mutation_case "the linked producer publishes a filled slot without releasing it" <<'PY'
+edit("backends/rust/forge-runtime/src/queue/linked.rs",
+     r'''            (*tail).written.0.store(written + 1, Ordering::Release);''',
+     r'''            (*tail).written.0.store(written + 1, Ordering::Relaxed);''')
+PY
+
+mutation_case "the linked consumer reads the filled count without acquiring it" <<'PY'
+edit("backends/rust/forge-runtime/src/queue/linked.rs",
+     r'''        let written = unsafe { (*head).written.0.load(Ordering::Acquire) };
+        if read >= written {''',
+     r'''        let written = unsafe { (*head).written.0.load(Ordering::Relaxed) };
+        if read >= written {''')
+PY
+
+# ── LSCQ: the link between two segments ────────────────────────────
+
+mutation_case "an LSCQ producer links a segment without releasing it" <<'PY'
+edit("backends/rust/forge-runtime/src/queue/lscq.rs",
+     r'''                ptr::null_mut(),
+                fresh.as_ptr(),
+                Ordering::AcqRel,
+                Ordering::Acquire,''',
+     r'''                ptr::null_mut(),
+                fresh.as_ptr(),
+                Ordering::Relaxed,
+                Ordering::Relaxed,''')
+PY
+
+mutation_case "an LSCQ consumer reads the link without acquiring it" <<'PY'
+edit("backends/rust/forge-runtime/src/queue/lscq.rs",
+     r'''            let next = segment.next.load(Ordering::Acquire);
+            if next.is_null() {
+                self.hazard.clear();
+                return None;''',
+     r'''            let next = segment.next.load(Ordering::Relaxed);
+            if next.is_null() {
+                self.hazard.clear();
+                return None;''')
+PY
+
+# ── LSCQ: ending a segment ─────────────────────────────────────────
+
+# Without the close bit a producer that found the segment full and linked a
+# successor leaves the old segment open: a producer that has passed its check
+# pushes into a segment a consumer has emptied and retired.
+mutation_case "closing a segment sets no bit in the ring's tail" <<'PY'
+edit("backends/rust/forge-runtime/src/queue/scq.rs",
+     r'''        self.tail.0.fetch_or(Self::FIN, Ordering::AcqRel);''',
+     r'''        self.tail.0.fetch_or(0, Ordering::AcqRel);''')
+PY
+
+# A consumer that moves `head` past a closed segment on the threshold's word
+# alone leaves behind an element whose enqueue holds a ticket and has not yet
+# filled its entry.
+mutation_case "a consumer retires a closed segment without draining it" <<'PY'
+edit("backends/rust/forge-runtime/src/queue/lscq.rs",
+     r'''            if let Some(value) = segment.ring.pop_drained() {''',
+     r'''            if let Some(value) = segment.ring.pop_drained().filter(|_| false) {''')
+PY
+
+# ── The reclamation domain ─────────────────────────────────────────
+
+mutation_case "a scan frees a segment a hazard names" <<'PY'
+edit("backends/rust/forge-runtime/src/queue/hazard.rs",
+     r'''            if named.contains(&(node as *mut ())) {''',
+     r'''            if false && named.contains(&(node as *mut ())) {''')
+PY
+
+mutation_case "a participant publishes its hazard without ordering it before the check" <<'PY'
+edit("backends/rust/forge-runtime/src/queue/hazard.rs",
+     r'''            self.slot().store(pointer.cast(), Ordering::SeqCst);
+            fence(Ordering::SeqCst);
+            let again = source.load(Ordering::SeqCst);''',
+     r'''            self.slot().store(pointer.cast(), Ordering::Relaxed);
+            let again = source.load(Ordering::Relaxed);''')
+PY

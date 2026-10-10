@@ -528,56 +528,152 @@ fn an_scq_ring_is_sized_by_the_larger_of_capacity_and_participants() {
     }
 }
 
+fn segmented_doc(
+    name: &str,
+    producers: &str,
+    consumers: &str,
+    progress: &str,
+    allocator_progress: &str,
+    extra: &str,
+) -> String {
+    queue_doc(
+        name,
+        producers,
+        consumers,
+        progress,
+        &format!(
+            r#"<sce:segmented segment="6" allocator-progress="{allocator_progress}"/>{extra}"#
+        ),
+    )
+}
+
 #[test]
-fn a_storage_the_rust_runtime_lacks_is_refused_by_name() {
-    // `segmented` is the one storage mode left without a Rust runtime.
-    {
-        let (fixture, storage) = ("queue_segmented_lscq.scxml", "segmented");
-        let located = compile(&resource(fixture), fixture)
-            .expect_err("a storage without a runtime is refused");
-        // The refusal is placed on the storage element, so the mode it
-        // names is found on the row it points at and not by searching a
-        // document that spells the word in its comment, its element and its
-        // `sce:kind`.
-        let text = resource(fixture);
-        let row = located
-            .location
-            .line
-            .expect("the refusal carries the storage element's row");
-        let line = text
-            .lines()
-            .nth(row as usize - 1)
-            .unwrap_or_else(|| panic!("{fixture} has no row {row}"));
-        assert!(
-            line.contains(&format!("<sce:{storage}")),
-            "{fixture}: row {row} is not the storage element: {line}"
+fn one_producer_and_one_consumer_over_segments_emit_linked_lamport_rings() {
+    let xml = segmented_doc("frame_queue", "one", "one", "lock-free", "lock-free", "");
+    let code = compile(&xml, "frame_queue.scxml").expect("a segmented queue emits on Rust");
+    assert_parses("linked", &code);
+    assert!(
+        code.contains("use sce_forge_runtime::queue::linked::LinkedLamport;"),
+        "{code}"
+    );
+    assert!(code.contains("pub const SEGMENT: usize = 6;"), "{code}");
+    assert!(
+        code.contains(
+            "pub type FrameQueue<'d, A> = LinkedLamport<'d, RxEvent, SEGMENT, A, ALLOCATOR_PROGRESS_RANK>;"
+        ),
+        "{code}"
+    );
+    // The allocator's progress is the document's own and is held to by a rank the
+    // runtime compares at compile time, so a weaker allocator does not build.
+    assert!(
+        code.contains("pub const ALLOCATOR_PROGRESS_RANK: u8 = 1;")
+            && code.contains("pub const ALLOCATOR_PROGRESS: &str = \"lock-free\";"),
+        "{code}"
+    );
+    // A push is no stronger than its allocator; the Lamport rings add nothing.
+    assert!(
+        code.contains("PUSH_PROGRESS: &str = \"lock-free\"")
+            && code.contains("POP_PROGRESS: &str = \"wait-free\""),
+        "{code}"
+    );
+    // No reclamation domain for one producer and one consumer, and no ring.
+    assert!(
+        !code.contains("HazardDomain") && !code.contains("RING_SLOTS"),
+        "{code}"
+    );
+}
+
+#[test]
+fn a_wait_free_allocator_gives_the_linked_rings_a_wait_free_push() {
+    let xml = segmented_doc("frame_queue", "one", "one", "wait-free", "wait-free", "");
+    let code = compile(&xml, "frame_queue.scxml").expect("a wait-free segmented queue emits");
+    assert!(
+        code.contains("PUSH_PROGRESS: &str = \"wait-free\"")
+            && code.contains("pub const ALLOCATOR_PROGRESS_RANK: u8 = 2;"),
+        "{code}"
+    );
+}
+
+#[test]
+fn many_producers_over_segments_emit_lscq_with_a_hazard_domain_sized_by_participants() {
+    for (producers, consumers) in [("many", "many"), ("many", "one"), ("one", "many")] {
+        let xml = segmented_doc(
+            "frame_queue",
+            producers,
+            consumers,
+            "lock-free",
+            "lock-free",
+            r#"<sce:participants const="3"/>"#,
         );
-        let err = located.error;
-        let codes: Vec<_> = err.to_diagnostics().iter().map(|d| d.code).collect();
+        let code = compile(&xml, "frame_queue.scxml")
+            .unwrap_or_else(|e| panic!("{producers}/{consumers} segmented queue emits: {e:?}"));
+        assert_parses("lscq", &code);
         assert!(
-            matches!(
-                codes.as_slice(),
-                [DiagnosticCode::QueueStorageRuntimeMissing]
+            code.contains("use sce_forge_runtime::queue::lscq::Lscq;")
+                && code.contains("use sce_forge_runtime::queue::hazard::HazardDomain;"),
+            "{code}"
+        );
+        // Segments of six and three participants: the ring is the next power of
+        // two at or above both, and the domain has a slot for every handle on
+        // either side.
+        assert!(
+            code.contains("pub const RING_SLOTS: usize = 8;")
+                && code.contains("pub const PARTICIPANTS: usize = 3;")
+                && code.contains("pub const HAZARD_SLOTS: usize = 6;"),
+            "{code}"
+        );
+        assert!(
+            code.contains(
+                "Lscq<'d, RxEvent, SEGMENT, RING_SLOTS, HAZARD_SLOTS, A, ALLOCATOR_PROGRESS_RANK>;"
             ),
-            "{fixture}"
+            "{code}"
         );
-        match err {
-            ForgeError::Generate(boxed) => match *boxed {
-                GenerateError::QueueStorageRuntimeMissing {
-                    storage: got,
-                    language,
-                    implemented,
-                    ..
-                } => {
-                    assert_eq!(got, storage);
-                    assert_eq!(language, "rust");
-                    assert_eq!(implemented, "bounded, intrusive");
-                }
-                other => panic!("expected QueueStorageRuntimeMissing, got {other:?}"),
-            },
-            other => panic!("expected a generate error, got {other:?}"),
-        }
+        assert!(
+            code.contains("pub type FrameQueueDomain = HazardDomain<HAZARD_SLOTS>;"),
+            "{code}"
+        );
+        assert!(code.contains("target_has_atomic = \"64\""), "{code}");
     }
+}
+
+#[test]
+fn a_blocking_allocator_makes_the_segmented_push_blocking_and_a_stronger_declaration_is_refused() {
+    // The document says what it declares for the push and what the allocator
+    // gives; a push cannot be stronger than the allocator.
+    let xml = segmented_doc(
+        "frame_queue",
+        "many",
+        "many",
+        "blocking",
+        "blocking",
+        r#"<sce:participants const="2"/>"#,
+    );
+    let code = compile(&xml, "frame_queue.scxml").expect("a blocking segmented queue emits");
+    assert!(
+        code.contains("PUSH_PROGRESS: &str = \"blocking\"")
+            && code.contains("POP_PROGRESS: &str = \"lock-free\""),
+        "{code}"
+    );
+    let too_strong = segmented_doc(
+        "frame_queue",
+        "many",
+        "many",
+        "lock-free",
+        "blocking",
+        r#"<sce:participants const="2"/>"#,
+    );
+    let located = compile(&too_strong, "frame_queue.scxml")
+        .expect_err("lock-free over a blocking allocator is refused");
+    let codes: Vec<_> = located
+        .error
+        .to_diagnostics()
+        .iter()
+        .map(|d| d.code)
+        .collect();
+    assert!(
+        matches!(codes.as_slice(), [DiagnosticCode::QueueProgressUnreachable]),
+        "{codes:?}"
+    );
 }
 
 #[test]

@@ -18254,14 +18254,22 @@ fn render_queue_rust(
         ring_slots => inputs.ring_slots,
         participants => inputs.participants,
         // The runtime module is the lower-case of its type: `Spsc` in
-        // `queue::spsc`, `Scq` in `queue::scq`. The intrusive list is `Mpsc`
-        // in `queue::intrusive`.
+        // `queue::spsc`, `Scq` in `queue::scq`, `Lscq` in `queue::lscq`. The
+        // intrusive list is `Mpsc` in `queue::intrusive`, and the linked
+        // Lamport rings are `LinkedLamport` in `queue::linked`.
         runtime_module => if inputs.link_field.is_some() {
             "intrusive".to_string()
+        } else if inputs.runtime_type == "LinkedLamport" {
+            "linked".to_string()
         } else {
             inputs.runtime_type.to_lowercase()
         },
         intrusive => inputs.link_field.is_some(),
+        segmented => inputs.segment.is_some(),
+        segment => inputs.segment,
+        allocator_rank => inputs.allocator_progress.map(|(rank, _)| rank),
+        allocator_progress => inputs.allocator_progress.map(|(_, word)| word),
+        hazard_slots => inputs.hazard_slots,
         // The element's Rust field is the snake case of the id the document
         // names, as the codec writes it.
         link_field => inputs.link_field.as_deref().map(|f| filters::to_snake_case(f.to_string())),
@@ -18347,6 +18355,18 @@ struct QueueRenderInputs {
     /// The field of the element document an `intrusive` queue links through,
     /// as the document spells it. `None` for `bounded` storage.
     link_field: Option<String>,
+    /// The elements one segment of a `segmented` queue holds
+    /// (`<sce:segmented segment="N"/>`). `None` for the other storage modes.
+    segment: Option<u32>,
+    /// What the document declared for the injected allocator
+    /// (`allocator-progress`), as a rank (`Blocking` 0, `LockFree` 1,
+    /// `WaitFree` 2) and as its word. `None` unless the storage is `segmented`.
+    allocator_progress: Option<(u8, &'static str)>,
+    /// The slots of the hazard-pointer domain a `segmented` queue with many
+    /// producers or consumers needs: one for every handle that can be alive, both
+    /// sides together. `None` where no domain is needed (RFC §synth-5-P,
+    /// *Reclamation domain*).
+    hazard_slots: Option<u32>,
     /// The entry word of a C11 SCQ row, in bits: 64 or 32. `None` elsewhere.
     entry_bits: Option<u32>,
     /// The wrap bound of a C11 SCQ row in operations, 2^(entry_bits - 2).
@@ -18434,11 +18454,19 @@ fn resolve_queue_render_inputs(
             | crate::generator::Language::Cpp
             | crate::generator::Language::C11
     );
-    let (bounded_capacity, link_field) = match &m.storage {
-        QueueStorage::Bounded { capacity } => (Some(capacity), None),
+    // `segmented` where the runtime has the allocator trait, the hazard-pointer
+    // domain and the two segment lists: Rust. Another language's runtime lands in
+    // the RFC's order; a collected one takes its allocator but not a domain.
+    let offers_segmented = matches!(language, crate::generator::Language::Rust);
+    let (bounded_capacity, link_field, segmented) = match &m.storage {
+        QueueStorage::Bounded { capacity } => (Some(capacity), None, None),
         QueueStorage::Intrusive { link_field } if offers_intrusive => {
-            (None, Some(link_field.clone()))
+            (None, Some(link_field.clone()), None)
         }
+        QueueStorage::Segmented {
+            segment,
+            allocator_progress,
+        } if offers_segmented => (None, None, Some((*segment, *allocator_progress))),
         refused => {
             let (storage, status) = match refused {
                 QueueStorage::Bounded { .. } => unreachable!("bounded is offered everywhere"),
@@ -18451,10 +18479,11 @@ fn resolve_queue_render_inputs(
                     ", and will not be: a node of a garbage-collected backend is a plain object whose property cannot be an atomic in place, so there is no link for the list to use. SCE Protocol-Synthesis RFC §5.P specifies the mode for the backends that address memory (Rust, C++, C11); this document is valid and is refused rather than lowered to a queue that gives less",
                 ),
             };
-            let implemented = if offers_intrusive {
-                "bounded, intrusive"
-            } else {
-                "bounded"
+            let implemented = match (offers_intrusive, offers_segmented) {
+                (true, true) => "bounded, intrusive, segmented",
+                (true, false) => "bounded, intrusive",
+                (false, true) => "bounded, segmented",
+                (false, false) => "bounded",
             };
             // Placed on the storage element: the refusal's `actual` is the mode
             // that element spells, and the document names it elsewhere too.
@@ -18581,6 +18610,19 @@ fn resolve_queue_render_inputs(
         QueueAlgorithm::Scq if !single_ring => {
             Some(capacity.max(participants.unwrap_or(1)).next_power_of_two())
         }
+        // Each segment of a list of SCQ rings is one: its ring holds the
+        // segment's elements and works for as many participants a side as it has
+        // slots.
+        QueueAlgorithm::Lscq => {
+            let segment = segmented.map_or(1, |(segment, _)| segment);
+            Some(segment.max(participants.unwrap_or(1)).next_power_of_two())
+        }
+        _ => None,
+    };
+    // One slot of the hazard-pointer domain for every handle that can be alive:
+    // `participants` on each side.
+    let hazard_slots = match selection.algorithm {
+        QueueAlgorithm::Lscq => participants.map(|p| 2 * p),
         _ => None,
     };
     // The entry word of a C11 SCQ row is the target's widest read-modify-write
@@ -18641,10 +18683,10 @@ fn resolve_queue_render_inputs(
         (crate::generator::Language::C11, QueueAlgorithm::Scq, _) => "scq64",
         (_, QueueAlgorithm::LamportRing, _) => "Spsc",
         (_, QueueAlgorithm::Scq, _) => "Scq",
-        // The selection table gives `bounded` storage the Lamport ring or SCQ
-        // and nothing else (`QueueModel::selection`), and any other storage
-        // was refused above.
-        (_, other, _) => unreachable!("bounded queue selected {other:?}"),
+        // The segmented rows, which only a backend with the allocator trait and
+        // the domain offers (refused above for the rest).
+        (_, QueueAlgorithm::LinkedLamportRings, _) => "LinkedLamport",
+        (_, QueueAlgorithm::Lscq, _) => "Lscq",
     };
     // What each operation gives on this target. Mutual exclusion makes every
     // row `blocking`, whatever the table would give.
@@ -18704,6 +18746,9 @@ fn resolve_queue_render_inputs(
         ring_slots,
         runtime_type,
         link_field,
+        segment: segmented.map(|(segment, _)| segment),
+        allocator_progress: segmented.map(|(_, declared)| (declared as u8, progress(declared))),
+        hazard_slots,
         entry_bits: c11_entry_bits,
         wrap_bound_ops,
         algorithm,

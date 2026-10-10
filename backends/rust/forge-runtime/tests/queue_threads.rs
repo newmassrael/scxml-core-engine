@@ -281,3 +281,260 @@ fn scq_hands_out_no_more_places_than_its_ring_has_slots() {
     assert!(queue.consumer().is_some());
     assert_eq!(producers.len(), 3);
 }
+
+// ─── The `segmented` queues ───
+
+use std::alloc::Layout;
+use std::ptr::NonNull;
+
+use sce_forge_runtime::queue::allocator::{Progress, SegmentAllocator};
+use sce_forge_runtime::queue::hazard::HazardDomain;
+use sce_forge_runtime::queue::linked::LinkedLamport;
+use sce_forge_runtime::queue::lscq::Lscq;
+
+/// The system allocator, counting the blocks it has out, so a run can say
+/// whether a queue gave every segment back. Under Miri a block that was never
+/// given back is also reported as a leak, which is the same check from the
+/// other side.
+struct Counting {
+    live: AtomicUsize,
+}
+
+impl Counting {
+    const fn new() -> Self {
+        Self {
+            live: AtomicUsize::new(0),
+        }
+    }
+}
+
+// SAFETY: blocks come from the system allocator with the layout asked for and go
+// back to it with the same; the count is atomic. The system allocator can block,
+// which is what `PROGRESS` says.
+unsafe impl SegmentAllocator for Counting {
+    const PROGRESS: Progress = Progress::Blocking;
+
+    fn allocate(&self, layout: Layout) -> Option<NonNull<u8>> {
+        // SAFETY: a segment's layout is never zero-sized.
+        let block = NonNull::new(unsafe { std::alloc::alloc(layout) })?;
+        self.live.fetch_add(1, Ordering::SeqCst);
+        Some(block)
+    }
+
+    unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: Layout) {
+        // SAFETY: the caller's contract: `ptr` came from `allocate` with `layout`.
+        unsafe { std::alloc::dealloc(ptr.as_ptr(), layout) };
+        self.live.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+#[test]
+fn linked_lamport_delivers_every_value_in_order_across_segments() {
+    let allocator = Counting::new();
+    {
+        let queue = LinkedLamport::<u64, 3, Counting, 0>::new(&allocator).unwrap();
+        let (producer, consumer) = (queue.producer().unwrap(), queue.consumer().unwrap());
+        thread::scope(|scope| {
+            scope.spawn(move || {
+                for value in 0..PER_PRODUCER {
+                    producer.try_push(value).unwrap();
+                }
+            });
+            scope.spawn(move || {
+                let mut expected = 0;
+                while expected < PER_PRODUCER {
+                    match consumer.try_pop() {
+                        Some(value) => {
+                            assert_eq!(value, expected, "values leave in the order they came");
+                            expected += 1;
+                        }
+                        None => thread::yield_now(),
+                    }
+                }
+            });
+        });
+    }
+    assert_eq!(
+        allocator.live.load(Ordering::SeqCst),
+        0,
+        "every segment went back"
+    );
+}
+
+/// Producers and consumers of an LSCQ queue, every value delivered once, and
+/// each producer's values seen by each consumer in the order that producer
+/// pushed them. Segments of `N`, so a run is many segments, each closed, linked,
+/// drained and retired while the others run.
+fn lscq_delivers_every_value_once<const N: usize, const R: usize>(
+    producers: u64,
+    consumers: usize,
+) {
+    let allocator = Counting::new();
+    let domain = HazardDomain::<8>::new();
+    let total = producers * PER_PRODUCER;
+    let delivered = AtomicUsize::new(0);
+    let seen: Vec<Vec<u64>> = {
+        let queue = Lscq::<u64, N, R, 8, Counting, 0>::new(&allocator, &domain).unwrap();
+        let (queue, delivered) = (&queue, &delivered);
+        thread::scope(|scope| {
+            for who in 0..producers {
+                scope.spawn(move || {
+                    let producer = queue.producer().unwrap();
+                    for k in 0..PER_PRODUCER {
+                        producer.try_push(who * PER_PRODUCER + k).unwrap();
+                    }
+                });
+            }
+            let takers: Vec<_> = (0..consumers)
+                .map(|_| {
+                    scope.spawn(move || {
+                        let consumer = queue.consumer().unwrap();
+                        let mut mine = Vec::new();
+                        while delivered.load(Ordering::SeqCst) < total as usize {
+                            match consumer.try_pop() {
+                                Some(value) => {
+                                    delivered.fetch_add(1, Ordering::SeqCst);
+                                    mine.push(value);
+                                }
+                                None => thread::yield_now(),
+                            }
+                        }
+                        mine
+                    })
+                })
+                .collect();
+            takers.into_iter().map(|t| t.join().unwrap()).collect()
+        })
+    };
+
+    for (consumer, mine) in seen.iter().enumerate() {
+        for who in 0..producers {
+            let of_theirs: Vec<u64> = mine
+                .iter()
+                .copied()
+                .filter(|v| v / PER_PRODUCER == who)
+                .collect();
+            assert!(
+                of_theirs.windows(2).all(|pair| pair[0] < pair[1]),
+                "consumer {consumer} saw producer {who}'s values out of order: {of_theirs:?}"
+            );
+        }
+    }
+    let mut every: Vec<u64> = seen.into_iter().flatten().collect();
+    every.sort_unstable();
+    assert_eq!(
+        every,
+        (0..total).collect::<Vec<_>>(),
+        "every value comes out exactly once"
+    );
+    assert_eq!(
+        allocator.live.load(Ordering::SeqCst),
+        0,
+        "every segment went back, the retired ones included"
+    );
+    assert_eq!(
+        domain.waiting(),
+        0,
+        "the domain freed every retired segment"
+    );
+}
+
+#[test]
+fn lscq_delivers_every_value_once_to_several_consumers() {
+    lscq_delivers_every_value_once::<2, 4>(2, 2);
+    lscq_delivers_every_value_once::<4, 4>(3, 3);
+}
+
+#[test]
+fn lscq_with_one_producer_and_many_consumers_keeps_the_producers_order() {
+    lscq_delivers_every_value_once::<2, 4>(1, 3);
+}
+
+#[test]
+fn lscq_with_many_producers_and_one_consumer_delivers_each_value_once() {
+    lscq_delivers_every_value_once::<2, 4>(3, 1);
+}
+
+/// A segmented queue dropped with elements still in it, across segments and
+/// among the retired ones, destroys each of them once and gives every segment
+/// back; an element that was popped is destroyed by whoever popped it and not
+/// again by the queue.
+#[test]
+fn a_dropped_segmented_queue_destroys_each_element_once_and_frees_every_segment() {
+    for _ in 0..REPEATS {
+        let destroyed = Arc::new(AtomicUsize::new(0));
+        let allocator = Counting::new();
+        let domain = HazardDomain::<4>::new();
+        let pushed = AtomicUsize::new(0);
+        let popped = AtomicUsize::new(0);
+        {
+            let queue = Lscq::<Counted, 2, 2, 4, Counting, 0>::new(&allocator, &domain).unwrap();
+            let queue = &queue;
+            let (destroyed, pushed, popped) = (&destroyed, &pushed, &popped);
+            thread::scope(|scope| {
+                for _ in 0..2 {
+                    scope.spawn(move || {
+                        let producer = queue.producer().unwrap();
+                        for _ in 0..PER_PRODUCER.min(40) {
+                            assert!(
+                                producer.try_push(Counted(destroyed.clone())).is_ok(),
+                                "the allocator never refuses here"
+                            );
+                            pushed.fetch_add(1, Ordering::SeqCst);
+                        }
+                    });
+                }
+                scope.spawn(move || {
+                    let consumer = queue.consumer().unwrap();
+                    for _ in 0..PER_PRODUCER.min(30) {
+                        if consumer.try_pop().is_some() {
+                            popped.fetch_add(1, Ordering::SeqCst);
+                        }
+                    }
+                });
+            });
+            assert_eq!(
+                destroyed.load(Ordering::SeqCst),
+                popped.load(Ordering::SeqCst),
+                "while the queue is alive only popped elements are destroyed"
+            );
+        }
+        assert_eq!(
+            destroyed.load(Ordering::SeqCst),
+            pushed.load(Ordering::SeqCst),
+            "dropping the queue destroys exactly what was left: every element once"
+        );
+        assert_eq!(
+            allocator.live.load(Ordering::SeqCst),
+            0,
+            "every segment went back"
+        );
+        assert_eq!(domain.waiting(), 0);
+    }
+}
+
+/// A segmented queue with many participants hands out `R` producer places and
+/// `R` consumer places and no more than the domain has slots for, and a place and
+/// a slot come back when a handle is dropped.
+#[test]
+fn lscq_hands_out_no_more_places_than_its_ring_and_its_domain_have() {
+    let allocator = Counting::new();
+    let domain = HazardDomain::<4>::new();
+    let queue = Lscq::<u8, 2, 4, 4, Counting, 0>::new(&allocator, &domain).unwrap();
+    let mut producers: Vec<_> = (0..3).map(|_| queue.producer()).collect();
+    assert!(producers.iter().all(Option::is_some));
+    let consumer = queue.consumer();
+    assert!(
+        consumer.is_some(),
+        "three producers and one consumer: four slots"
+    );
+    assert!(
+        queue.producer().is_none() && queue.consumer().is_none(),
+        "the domain has four slots, all taken"
+    );
+    producers.pop();
+    assert!(
+        queue.consumer().is_some(),
+        "a dropped handle gives its slot back"
+    );
+}

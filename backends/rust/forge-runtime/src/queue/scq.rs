@@ -140,12 +140,19 @@ struct Ring<const R: usize> {
     /// How many failed dequeues remain before the ring may be called empty;
     /// negative means it is empty.
     threshold: Padded<AtomicI64>,
-    /// Next ticket an enqueue takes.
+    /// Next ticket an enqueue takes, and in its top bit [`Ring::FIN`].
     tail: Padded<AtomicU64>,
     entries: [Pair; R],
 }
 
 impl<const R: usize> Ring<R> {
+    /// The tail's top bit, set once the ring is closed: an enqueue that takes a
+    /// ticket from a closed tail gets the bit back and puts nothing on the ring.
+    /// This is the finalize bit of Nikolaev's LSCQ, which a `segmented` queue
+    /// uses to end a segment (`queue::lscq`); a ring nobody closes never has it.
+    /// Tickets are the low 63 bits, which no run reaches
+    /// ([`WRAP_BOUND_OPS`]).
+    const FIN: u64 = 1 << 63;
     /// The number of entries, `2R`; also the value of the `IsSafe` bit.
     const ENTRIES: u64 = 2 * R as u64;
     /// The bits an index occupies.
@@ -258,14 +265,31 @@ impl<const R: usize> Ring<R> {
         }
     }
 
-    /// Put `index` on the ring. The ring never refuses: at most `R` indices
-    /// circulate through it, and an enqueue that finds its entry unusable
-    /// takes the next ticket.
-    fn enqueue(&self, index: usize) {
+    /// Close the ring: no enqueue after this one's fetch-and-or takes a ticket
+    /// that puts an index on it. An enqueue that already holds a ticket may still
+    /// complete; the dequeues that follow either find its entry or make it
+    /// unusable, which sends that enqueue to the next ticket and so to a refusal.
+    fn close(&self) {
+        self.tail.0.fetch_or(Self::FIN, Ordering::AcqRel);
+    }
+
+    /// Put `index` on the ring, or return `false`, putting nothing, when the
+    /// ring is closed. An open ring never refuses: at most `R` indices circulate
+    /// through it, and an enqueue that finds its entry unusable takes the next
+    /// ticket.
+    fn enqueue(&self, index: usize) -> bool {
         let n = Self::ENTRIES;
         let stored = index as u64 ^ Self::INDEX_MASK;
         loop {
+            // Looking first keeps a closed ring's tail from counting attempts
+            // that cannot succeed; the ticket's own bit is what decides.
+            if self.tail.0.load(Ordering::Acquire) & Self::FIN != 0 {
+                return false;
+            }
             let tail = self.tail.0.fetch_add(1, Ordering::AcqRel);
+            if tail & Self::FIN != 0 {
+                return false;
+            }
             let ticket_cycle = (tail << 1) | Self::LOW_MASK;
             let slot = self.entry(Self::map(tail));
             let mut entry = slot.load(Ordering::Acquire);
@@ -290,7 +314,7 @@ impl<const R: usize> Ring<R> {
                         if self.threshold.0.load(Ordering::SeqCst) != Self::THRESHOLD {
                             self.threshold.0.store(Self::THRESHOLD, Ordering::SeqCst);
                         }
-                        return;
+                        return true;
                     }
                     Err(seen) => entry = seen,
                 }
@@ -299,25 +323,54 @@ impl<const R: usize> Ring<R> {
     }
 
     /// Move `tail` back to `head` after dequeues overshot an empty ring, so
-    /// that the next enqueue does not start a cycle ahead of what is read.
+    /// that the next enqueue does not start a cycle ahead of what is read. `tail`
+    /// is the word as read, closing bit included, and the word written keeps the
+    /// bit: a ring that was closed stays closed.
     fn catch_up(&self, mut tail: u64, mut head: u64) {
         while self
             .tail
             .0
-            .compare_exchange_weak(tail, head, Ordering::AcqRel, Ordering::Acquire)
+            .compare_exchange_weak(
+                tail,
+                head | (tail & Self::FIN),
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            )
             .is_err()
         {
             head = self.head.0.load(Ordering::Acquire);
             tail = self.tail.0.load(Ordering::Acquire);
-            if !before(tail, head) {
+            if !before(tail & !Self::FIN, head) {
                 break;
             }
         }
     }
 
-    /// Take the oldest index off the ring, or `None` when it is empty.
+    /// Take the oldest index off the ring, or `None` when it is empty. The empty
+    /// answer may come from the threshold alone, which does not look at a ticket
+    /// an enqueue holds and has not yet filled.
     fn dequeue(&self) -> Option<usize> {
-        if self.threshold.0.load(Ordering::SeqCst) < 0 {
+        self.dequeue_by(true)
+    }
+
+    /// Take the oldest index off a closed ring, or `None` once every ticket the
+    /// ring ever granted has been consumed or made unusable. It ignores the
+    /// threshold and walks the head up to the tail, which a closed ring no longer
+    /// moves, so an enqueue still holding a ticket either finds its entry taken
+    /// from it (and takes the next ticket, which is refused) or has already
+    /// filled it, and then the walk returns its index. A segment is retired only
+    /// after this answers `None`: until then an element may still arrive in it.
+    fn dequeue_drained(&self) -> Option<usize> {
+        debug_assert!(
+            self.tail.0.load(Ordering::Acquire) & Self::FIN != 0,
+            "only a closed ring has a fixed tail to walk to"
+        );
+        self.dequeue_by(false)
+    }
+
+    /// The dequeue; `by_threshold` says whether the threshold may end it early.
+    fn dequeue_by(&self, by_threshold: bool) -> Option<usize> {
+        if by_threshold && self.threshold.0.load(Ordering::SeqCst) < 0 {
             return None;
         }
         let n = Self::ENTRIES;
@@ -371,12 +424,14 @@ impl<const R: usize> Ring<R> {
             }
 
             let tail = self.tail.0.load(Ordering::Acquire);
-            if at_or_before(tail, head.wrapping_add(1)) {
+            if at_or_before(tail & !Self::FIN, head.wrapping_add(1)) {
                 self.catch_up(tail, head.wrapping_add(1));
-                self.threshold.0.fetch_sub(1, Ordering::AcqRel);
+                if by_threshold {
+                    self.threshold.0.fetch_sub(1, Ordering::AcqRel);
+                }
                 return None;
             }
-            if self.threshold.0.fetch_sub(1, Ordering::AcqRel) <= 0 {
+            if by_threshold && self.threshold.0.fetch_sub(1, Ordering::AcqRel) <= 0 {
                 return None;
             }
         }
@@ -504,6 +559,67 @@ impl<T, const N: usize, const R: usize> Scq<T, N, R> {
     }
 }
 
+/// What a segment of a `segmented` queue does with an SCQ: the same two rings,
+/// without handles (the segmented queue counts its own participants) and with a
+/// close that ends the segment (`queue::lscq`).
+impl<T, const N: usize, const R: usize> Scq<T, N, R> {
+    /// Write `value` into slot `index`, which the caller took off the free ring,
+    /// and put the index on the allocated ring. A closed allocated ring takes
+    /// nothing: the value comes back out of the slot and the slot goes back to the
+    /// free ring.
+    fn put(&self, index: usize, value: T) -> Result<(), T> {
+        // SAFETY: the index came off the free ring, so no other participant
+        // holds this slot until the enqueue below hands it on.
+        self.slots[index].with_mut(|slot| unsafe { slot.write(MaybeUninit::new(value)) });
+        if self.allocated.enqueue(index) {
+            return Ok(());
+        }
+        // SAFETY: the enqueue was refused, so the index is still ours and the
+        // slot still holds the value written above.
+        let value = self.slots[index].with(|slot| unsafe { (*slot).assume_init_read() });
+        let returned = self.free.enqueue(index);
+        debug_assert!(returned, "the free ring is never closed");
+        Err(value)
+    }
+
+    /// Take the oldest element, or `None` when the queue is empty. Lock-free.
+    pub(super) fn pop_any(&self) -> Option<T> {
+        let index = self.allocated.dequeue()?;
+        Some(self.take(index))
+    }
+
+    /// Take the oldest element of a closed queue, or `None` only when no element
+    /// can ever arrive in it again (`Ring::dequeue_drained`). Lock-free.
+    pub(super) fn pop_drained(&self) -> Option<T> {
+        let index = self.allocated.dequeue_drained()?;
+        Some(self.take(index))
+    }
+
+    /// The element in slot `index`, which the caller took off the allocated
+    /// ring; the slot goes back to the free ring.
+    fn take(&self, index: usize) -> T {
+        // SAFETY: the index came off the allocated ring, so the slot holds a
+        // pushed element and no other participant holds the slot until the
+        // enqueue below hands it on.
+        let value = self.slots[index].with(|slot| unsafe { (*slot).assume_init_read() });
+        let returned = self.free.enqueue(index);
+        debug_assert!(returned, "the free ring is never closed");
+        value
+    }
+
+    /// Push `value`, or close the queue and hand `value` back. A queue with no
+    /// free slot is closed, and so is one a close has already reached: after a
+    /// refusal nothing more is ever pushed into it, which is what lets a segment
+    /// list put every later element behind this segment's. Lock-free.
+    pub(super) fn push_or_close(&self, value: T) -> Result<(), T> {
+        let Some(index) = self.free.dequeue() else {
+            self.allocated.close();
+            return Err(value);
+        };
+        self.put(index, value)
+    }
+}
+
 impl<T, const N: usize, const R: usize> Default for Scq<T, N, R> {
     fn default() -> Self {
         Self::new()
@@ -552,11 +668,9 @@ impl<T, const N: usize, const R: usize> Producer<'_, T, N, R> {
         let Some(index) = queue.free.dequeue() else {
             return Err(PushError::Full(value));
         };
-        // SAFETY: the index came off the free ring, so no other participant
-        // holds this slot until the enqueue below hands it on.
-        queue.slots[index].with_mut(|slot| unsafe { slot.write(MaybeUninit::new(value)) });
-        queue.allocated.enqueue(index);
-        Ok(())
+        // A queue handed out as `bounded` is never closed, so the put cannot
+        // be refused; the arm is for the type system.
+        queue.put(index, value).map_err(PushError::Full)
     }
 
     /// The capacity of the queue this side fills.
@@ -586,14 +700,7 @@ impl<T, const N: usize, const R: usize> Consumer<'_, T, N, R> {
 
     /// Pop the oldest element, or `None` when the queue is empty. Lock-free.
     pub fn try_pop(&self) -> Option<T> {
-        let queue = self.queue;
-        let index = queue.allocated.dequeue()?;
-        // SAFETY: the index came off the allocated ring, so the slot holds a
-        // pushed element and no other participant holds the slot until the
-        // enqueue below hands it on.
-        let value = queue.slots[index].with(|slot| unsafe { (*slot).assume_init_read() });
-        queue.free.enqueue(index);
-        Some(value)
+        self.queue.pop_any()
     }
 
     /// The capacity of the queue this side drains.

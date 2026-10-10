@@ -48,6 +48,17 @@ mod queue_modules {
             "/queue_conformance_intrusive_many.rs"
         ));
     }
+    #[allow(clippy::all, unused_imports, dead_code)]
+    pub mod queue_conformance_segmented {
+        include!(concat!(env!("OUT_DIR"), "/queue_conformance_segmented.rs"));
+    }
+    #[allow(clippy::all, unused_imports, dead_code)]
+    pub mod queue_conformance_segmented_many {
+        include!(concat!(
+            env!("OUT_DIR"),
+            "/queue_conformance_segmented_many.rs"
+        ));
+    }
 }
 
 use std::collections::BTreeMap;
@@ -60,6 +71,8 @@ use queue_modules::queue_conformance_intrusive as intrusive;
 use queue_modules::queue_conformance_intrusive_many as intrusive_many;
 use queue_modules::queue_conformance_node::QueueConformanceNode;
 use queue_modules::queue_conformance_scq as scq;
+use queue_modules::queue_conformance_segmented as segmented;
+use queue_modules::queue_conformance_segmented_many as segmented_many;
 use queue_modules::queue_conformance_spsc as spsc;
 
 fn event(sensor_id: u8, value: u16) -> QueueConformanceEvent {
@@ -366,4 +379,190 @@ fn the_generated_intrusive_queues_hand_nodes_back_in_order() {
         |q, index| unsafe { q.push(index) },
         |q| q.try_pop(),
     );
+}
+
+// ─── The segmented queues ───
+
+use std::alloc::Layout;
+use std::ptr::NonNull;
+
+use sce_forge_runtime::queue::allocator::{Progress, SegmentAllocator};
+use sce_forge_runtime::queue::PushError;
+
+/// A bump arena over one block: the allocator a segmented queue is injected
+/// with on a target that has no heap. A grant is a compare-and-swap on the
+/// offset, so an allocation is lock-free, which is what `PROGRESS` says and what
+/// the documents declare for it. Nothing is given back one block at a time: the
+/// arena is released whole, which is how such a target frees what a queue held.
+struct Arena {
+    base: *mut u8,
+    len: usize,
+    next: AtomicUsize,
+}
+
+// SAFETY: `base` names a block the arena owns for its whole life (leaked, in
+// this test), and a grant is a disjoint range of it, taken with a
+// compare-and-swap.
+unsafe impl Sync for Arena {}
+unsafe impl Send for Arena {}
+
+impl Arena {
+    fn new(len: usize) -> Self {
+        let block = Box::leak(vec![0u8; len].into_boxed_slice());
+        Self {
+            base: block.as_mut_ptr(),
+            len,
+            next: AtomicUsize::new(0),
+        }
+    }
+}
+
+// SAFETY: a granted block is a range of the arena no other grant overlaps,
+// aligned as asked; `PROGRESS` is what a compare-and-swap loop gives.
+unsafe impl SegmentAllocator for Arena {
+    const PROGRESS: Progress = Progress::LockFree;
+
+    fn allocate(&self, layout: Layout) -> Option<NonNull<u8>> {
+        let mut used = self.next.load(Ordering::Relaxed);
+        loop {
+            let address = self.base as usize + used;
+            let padding = address.next_multiple_of(layout.align()) - address;
+            let end = used + padding + layout.size();
+            if end > self.len {
+                return None;
+            }
+            match self
+                .next
+                .compare_exchange_weak(used, end, Ordering::AcqRel, Ordering::Relaxed)
+            {
+                // SAFETY: `used + padding` is within the block, which `end`
+                // was checked against.
+                Ok(_) => return NonNull::new(unsafe { self.base.add(used + padding) }),
+                Err(now) => used = now,
+            }
+        }
+    }
+
+    unsafe fn deallocate(&self, _ptr: NonNull<u8>, _layout: Layout) {}
+}
+
+#[test]
+fn the_segmented_modules_state_what_the_document_required_and_what_it_gives() {
+    assert_eq!(segmented::SEGMENT, 3);
+    assert_eq!(segmented::DECLARED_PROGRESS, "lock-free");
+    assert_eq!(segmented::PUSH_PROGRESS, "lock-free");
+    assert_eq!(segmented::POP_PROGRESS, "wait-free");
+    assert!(
+        segmented::ALGORITHM.contains("Lamport"),
+        "{}",
+        segmented::ALGORITHM
+    );
+    assert_eq!(segmented::ALLOCATOR_PROGRESS, "lock-free");
+    assert_eq!(
+        segmented::ALLOCATOR_PROGRESS_RANK,
+        Progress::LockFree.rank(),
+        "the rank the template writes is the runtime's"
+    );
+
+    assert_eq!(segmented_many::SEGMENT, 3);
+    assert_eq!(segmented_many::PARTICIPANTS, 2);
+    assert_eq!(
+        segmented_many::RING_SLOTS,
+        4,
+        "the next power of two at or above max(segment, participants)"
+    );
+    assert_eq!(
+        segmented_many::HAZARD_SLOTS,
+        4,
+        "a slot for every handle on either side"
+    );
+    assert_eq!(segmented_many::PUSH_PROGRESS, "lock-free");
+    assert_eq!(segmented_many::POP_PROGRESS, "lock-free");
+    assert!(
+        segmented_many::ALGORITHM.contains("LSCQ"),
+        "{}",
+        segmented_many::ALGORITHM
+    );
+    assert_eq!(
+        segmented_many::WRAP_BOUND_OPS,
+        1u64 << 62,
+        "the bound the template states is the runtime's"
+    );
+}
+
+#[test]
+fn the_linked_lamport_queue_hands_events_over_in_order_across_segments() {
+    let arena = Arena::new(16 * 1024);
+    let queue = segmented::QueueConformanceSegmented::new(&arena)
+        .expect("the arena gives the first segment");
+    let producer = queue.producer().expect("one producer");
+    let consumer = queue.consumer().expect("one consumer");
+    assert!(consumer.try_pop().is_none(), "a new queue is empty");
+    // Three segments' worth and a part: order holds across the links.
+    for i in 0..8u16 {
+        assert!(producer.try_push(event(1, i)).is_ok(), "push {i}");
+    }
+    for i in 0..8u16 {
+        let got = consumer.try_pop().expect("an element");
+        assert_eq!(pair(&got), (1, i), "first in, first out");
+    }
+    assert!(consumer.try_pop().is_none(), "drained");
+}
+
+#[test]
+fn the_lscq_queue_hands_events_over_in_order_across_segments() {
+    let arena = Arena::new(64 * 1024);
+    let domain = segmented_many::QueueConformanceSegmentedManyDomain::new();
+    let queue = segmented_many::QueueConformanceSegmentedMany::new(&arena, &domain)
+        .expect("the arena gives the first segment");
+    let producer = queue.producer().expect("a producer place");
+    let consumer = queue.consumer().expect("a consumer place");
+    assert!(consumer.try_pop().is_none(), "a new queue is empty");
+    for i in 0..10u16 {
+        assert!(producer.try_push(event(2, i)).is_ok(), "push {i}");
+    }
+    for i in 0..10u16 {
+        let got = consumer.try_pop().expect("an element");
+        assert_eq!(pair(&got), (2, i), "first in, first out");
+    }
+    assert!(consumer.try_pop().is_none(), "drained");
+    // A second producer and a second consumer take the other slots of the
+    // domain, which has one for every handle either side can hold.
+    let second_producer = producer.try_clone().expect("a second producer");
+    let second_consumer = consumer.try_clone().expect("a second consumer");
+    assert!(
+        producer.try_clone().is_none() && consumer.try_clone().is_none(),
+        "the domain's four slots are all taken"
+    );
+    assert!(second_producer.try_push(event(3, 9)).is_ok());
+    assert_eq!(
+        pair(&second_consumer.try_pop().expect("an element")),
+        (3, 9)
+    );
+}
+
+#[test]
+fn a_spent_arena_refuses_the_segment_and_the_event_comes_back() {
+    // An arena that holds the first segment and not a second: the push that
+    // needs one is refused and hands its element back.
+    let probe = Arena::new(1 << 20);
+    drop(segmented::QueueConformanceSegmented::new(&probe).expect("a probe queue"));
+    let one_segment = probe.next.load(Ordering::SeqCst);
+    let arena = Arena::new(one_segment);
+    let queue = segmented::QueueConformanceSegmented::new(&arena)
+        .expect("the arena holds exactly the first segment");
+    let producer = queue.producer().expect("one producer");
+    let consumer = queue.consumer().expect("one consumer");
+    for i in 0..segmented::SEGMENT as u16 {
+        assert!(producer.try_push(event(1, i)).is_ok());
+    }
+    match producer.try_push(event(9, 99)) {
+        Err(PushError::OutOfMemory(back)) => {
+            assert_eq!(pair(&back), (9, 99), "the refused element comes back whole")
+        }
+        other => panic!("expected OutOfMemory, got {other:?}"),
+    }
+    for i in 0..segmented::SEGMENT as u16 {
+        assert_eq!(pair(&consumer.try_pop().expect("an element")), (1, i));
+    }
 }

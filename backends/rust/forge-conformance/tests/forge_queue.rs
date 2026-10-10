@@ -17,17 +17,23 @@
 //! because a checker that accepted everything would make the second layer
 //! pass whatever the queue did.
 
+use std::alloc::Layout;
 use std::cell::RefCell;
 use std::path::PathBuf;
+use std::ptr::NonNull;
 use std::rc::Rc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use sce_build::queue_history::{
     check, Call, EmptyPops, History, Operation, Outcome, Refusal, Verdict,
 };
+use sce_forge_runtime::queue::allocator::{Progress, SegmentAllocator};
+use sce_forge_runtime::queue::hazard::HazardDomain;
 use sce_forge_runtime::queue::intrusive::{Link, Mpsc};
+use sce_forge_runtime::queue::linked::LinkedLamport;
+use sce_forge_runtime::queue::lscq::Lscq;
 use sce_forge_runtime::queue::scq::Scq;
 use sce_forge_runtime::queue::spsc::Spsc;
 use sce_forge_runtime::queue::PushError;
@@ -284,6 +290,200 @@ fn run_intrusive_scenario<const MANY_CONSUMERS: bool>(id: &str, nodes: u64, step
     }
 }
 
+/// A `SegmentAllocator` over the system allocator that gives at most `limit`
+/// blocks in all (the contract's `segments`) and counts the blocks it has out, so
+/// a scenario sees a refusal and a test sees a leak.
+struct TestAllocator {
+    limit: Option<usize>,
+    given: AtomicUsize,
+    live: AtomicUsize,
+}
+
+impl TestAllocator {
+    fn new(limit: Option<usize>) -> Self {
+        Self {
+            limit,
+            given: AtomicUsize::new(0),
+            live: AtomicUsize::new(0),
+        }
+    }
+
+    /// How many blocks are out now.
+    fn live(&self) -> usize {
+        self.live.load(Ordering::SeqCst)
+    }
+}
+
+// SAFETY: blocks come from the system allocator with the layout asked for and
+// are returned to it with the same. The grants are counted with a
+// compare-and-swap, so the limit holds across threads. The system allocator can
+// block, which is what `PROGRESS` says.
+unsafe impl SegmentAllocator for TestAllocator {
+    const PROGRESS: Progress = Progress::Blocking;
+
+    fn allocate(&self, layout: Layout) -> Option<NonNull<u8>> {
+        let mut seen = self.given.load(Ordering::SeqCst);
+        loop {
+            if self.limit.is_some_and(|limit| seen >= limit) {
+                return None;
+            }
+            match self
+                .given
+                .compare_exchange(seen, seen + 1, Ordering::SeqCst, Ordering::SeqCst)
+            {
+                Ok(_) => break,
+                Err(now) => seen = now,
+            }
+        }
+        // SAFETY: a segment's layout is never zero-sized.
+        let block = NonNull::new(unsafe { std::alloc::alloc(layout) })?;
+        self.live.fetch_add(1, Ordering::SeqCst);
+        Some(block)
+    }
+
+    unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: Layout) {
+        // SAFETY: the caller's contract: `ptr` came from `allocate` with `layout`.
+        unsafe { std::alloc::dealloc(ptr.as_ptr(), layout) };
+        self.live.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+/// The steps of a `segmented` scenario against the `push` and `pop` of one
+/// queue. Returns the list a `destroy` step expects, which ends the run, so the
+/// caller drops its queue and judges what was destroyed.
+fn run_segmented_steps(
+    id: &str,
+    steps: &[Value],
+    push: &dyn Fn(Tracked) -> Result<(), PushError<Tracked>>,
+    pop: &dyn Fn() -> Option<Tracked>,
+    destroyed: &Rc<RefCell<Vec<u64>>>,
+) -> Option<Vec<u64>> {
+    for (index, step) in steps.iter().enumerate() {
+        let context = format!("scenario {id} step {index}");
+        let expect = field(step, "expect", &context);
+        match field(step, "op", &context).as_str() {
+            Some("push") => {
+                let value = field(step, "value", &context)
+                    .as_u64()
+                    .unwrap_or_else(|| panic!("{context}: \"value\" is not an unsigned integer"));
+                let element = Tracked {
+                    value,
+                    destroyed: destroyed.clone(),
+                };
+                match (push(element), expect.as_str()) {
+                    (Ok(()), Some("ok")) => {}
+                    (Err(PushError::OutOfMemory(back)), Some("out_of_memory")) => {
+                        assert_eq!(
+                            back.value, value,
+                            "{context}: a refused push hands back its own value"
+                        );
+                    }
+                    (Ok(()), _) => panic!("{context}: push succeeded, expected {expect}"),
+                    (Err(PushError::Full(_)), _) => {
+                        panic!("{context}: a segmented queue reported Full, expected {expect}")
+                    }
+                    (Err(PushError::OutOfMemory(_)), _) => {
+                        panic!("{context}: push was refused, expected {expect}")
+                    }
+                }
+            }
+            Some("pop") => {
+                let popped = pop().map(|element| element.value);
+                match expect {
+                    Value::String(s) if s == "empty" => {
+                        assert_eq!(popped, None, "{context}: expected the queue to be empty")
+                    }
+                    Value::Number(n) => assert_eq!(popped, n.as_u64(), "{context}"),
+                    other => panic!("{context}: a pop cannot expect {other}"),
+                }
+            }
+            Some("destroy") => {
+                return Some(
+                    expect
+                        .as_array()
+                        .unwrap_or_else(|| panic!("{context}: \"destroy\" expects a list"))
+                        .iter()
+                        .map(|v| v.as_u64().expect("destroyed values are unsigned integers"))
+                        .collect(),
+                );
+            }
+            other => panic!("{context}: a segmented scenario has no op {other:?}"),
+        }
+    }
+    None
+}
+
+/// What a `destroy` step judges: the queue was dropped and destroyed exactly
+/// the elements listed, and every segment went back to the allocator.
+fn judge_destroy(
+    id: &str,
+    expected: Option<Vec<u64>>,
+    destroyed: &Rc<RefCell<Vec<u64>>>,
+    allocator: &TestAllocator,
+) {
+    if let Some(mut expected) = expected {
+        let mut actual = destroyed.borrow().clone();
+        expected.sort_unstable();
+        actual.sort_unstable();
+        assert_eq!(
+            actual, expected,
+            "scenario {id}: the queue destroyed a different set"
+        );
+    }
+    assert_eq!(
+        allocator.live(),
+        0,
+        "scenario {id}: the queue did not give back every segment"
+    );
+}
+
+/// One scenario on linked Lamport rings of `N`-element segments.
+fn run_linked_scenario<const N: usize>(id: &str, segments: Option<usize>, steps: &[Value]) {
+    let allocator = TestAllocator::new(segments);
+    let destroyed = Rc::new(RefCell::new(Vec::new()));
+    let queue = LinkedLamport::<Tracked, N, TestAllocator, 0>::new(&allocator)
+        .expect("the allocator gives the first segment");
+    let producer = queue.producer().expect("one producer");
+    let consumer = queue.consumer().expect("one consumer");
+    let expected = run_segmented_steps(
+        id,
+        steps,
+        &|e| producer.try_push(e),
+        &|| consumer.try_pop(),
+        &destroyed,
+    );
+    drop((producer, consumer));
+    destroyed.borrow_mut().clear();
+    drop(queue);
+    judge_destroy(id, expected, &destroyed, &allocator);
+}
+
+/// One scenario on a list of SCQ rings of `N` elements, `R` slots each.
+fn run_lscq_scenario<const N: usize, const R: usize>(
+    id: &str,
+    segments: Option<usize>,
+    steps: &[Value],
+) {
+    let allocator = TestAllocator::new(segments);
+    let domain = HazardDomain::<4>::new();
+    let destroyed = Rc::new(RefCell::new(Vec::new()));
+    let queue = Lscq::<Tracked, N, R, 4, TestAllocator, 0>::new(&allocator, &domain)
+        .expect("the allocator gives the first segment");
+    let producer = queue.producer().expect("a producer place");
+    let consumer = queue.consumer().expect("a consumer place");
+    let expected = run_segmented_steps(
+        id,
+        steps,
+        &|e| producer.try_push(e),
+        &|| consumer.try_pop(),
+        &destroyed,
+    );
+    drop((producer, consumer));
+    destroyed.borrow_mut().clear();
+    drop(queue);
+    judge_destroy(id, expected, &destroyed, &allocator);
+}
+
 #[test]
 fn every_contract_scenario_holds() {
     let contract = contract();
@@ -324,6 +524,24 @@ fn every_contract_scenario_holds() {
                     run_intrusive_scenario::<true>(id, nodes, steps)
                 }
                 other => panic!("scenario {id}: no intrusive row for {other:?}"),
+            }
+            continue;
+        }
+        // A segmented scenario has `segment` where a bounded one has `capacity`,
+        // and `segments` when its allocator refuses.
+        if row.0 == Some("segmented") {
+            let segment = field(scenario, "segment", id)
+                .as_u64()
+                .expect("\"segment\" is an integer");
+            let segments = scenario
+                .get("segments")
+                .map(|v| v.as_u64().expect("\"segments\" is an integer") as usize);
+            match (row, segment) {
+                ((_, Some("one"), Some("one")), 2) => run_linked_scenario::<2>(id, segments, steps),
+                ((_, Some("one" | "many"), Some("one" | "many")), 2) => {
+                    run_lscq_scenario::<2, 2>(id, segments, steps)
+                }
+                other => panic!("scenario {id}: no segmented dispatch for {other:?}"),
             }
             continue;
         }
@@ -1014,6 +1232,210 @@ fn recorded_intrusive_runs_are_linearizable() {
         assert_intrusive_run_is_linearizable::<false>(3, 1, 100);
         assert_intrusive_run_is_linearizable::<true>(2, 2, 100);
         assert_intrusive_run_is_linearizable::<true>(3, 2, 80);
+    }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Layer 2 — real runs of the segmented queues
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// A producer's push and a consumer's pop, each owning the handle it works
+/// through, so the recording below does not depend on which queue it runs.
+type PushFn<'q> = Box<dyn Fn(u64) -> Result<(), PushError<u64>> + 'q>;
+type PopFn<'q> = Box<dyn Fn() -> Option<u64> + 'q>;
+
+/// Run `producers` producer threads and `consumers` consumer threads on a
+/// segmented queue, each producer pushing `values_per_producer` values of its
+/// own, and record every attempt. A segmented queue has no capacity and the
+/// recording gives none that could matter: the history is judged against a
+/// queue that holds every value, so a push is never refused, and an empty pop
+/// is judged exactly as for any other queue.
+///
+/// `make_push` and `make_pop` are called on the thread that will use them.
+fn record_segmented_run<'q>(
+    producers: usize,
+    consumers: usize,
+    values_per_producer: u64,
+    make_push: &(dyn Fn() -> PushFn<'q> + Sync),
+    make_pop: &(dyn Fn() -> PopFn<'q> + Sync),
+) -> History {
+    let clock = AtomicU64::new(1);
+    let delivered = AtomicU64::new(0);
+    let total = producers as u64 * values_per_producer;
+    let started = Instant::now();
+    let (clock, delivered) = (&clock, &delivered);
+    let tick = move || clock.fetch_add(1, Ordering::SeqCst);
+
+    let participants = thread::scope(|scope| {
+        let mut threads = Vec::new();
+        for who in 0..producers {
+            threads.push(scope.spawn(move || {
+                let push_one = make_push();
+                let mut ops = Vec::new();
+                for k in 1..=values_per_producer {
+                    let value = who as u64 * values_per_producer + k;
+                    let invoked = tick();
+                    let result = push_one(value);
+                    let returned = tick();
+                    match result {
+                        Ok(()) => ops.push(push(value, Outcome::Pushed, invoked, returned)),
+                        Err(refusal) => panic!("the allocator never refuses here: {refusal:?}"),
+                    }
+                }
+                ops
+            }));
+        }
+        for _ in 0..consumers {
+            threads.push(scope.spawn(move || {
+                let pop_one = make_pop();
+                let mut ops = Vec::new();
+                while delivered.load(Ordering::SeqCst) < total {
+                    let invoked = tick();
+                    let result = pop_one();
+                    let returned = tick();
+                    match result {
+                        Some(value) => {
+                            delivered.fetch_add(1, Ordering::SeqCst);
+                            ops.push(pop(Outcome::Popped(value), invoked, returned));
+                        }
+                        None => {
+                            ops.push(pop(Outcome::Empty, invoked, returned));
+                            assert!(started.elapsed() < STUCK_AFTER, "a consumer is stuck");
+                            thread::yield_now();
+                        }
+                    }
+                }
+                ops
+            }));
+        }
+        threads
+            .into_iter()
+            .map(|handle| handle.join().unwrap())
+            .collect::<Vec<_>>()
+    });
+
+    History {
+        capacity: total as usize,
+        refusal: Refusal::AtCapacity,
+        empty_pops: EmptyPops::Exact,
+        participants,
+    }
+}
+
+/// Judge a recorded segmented run: every value came out exactly once, and the
+/// history is linearizable.
+fn assert_segmented_run_is_linearizable(
+    history: History,
+    name: &str,
+    producers: usize,
+    values_per_producer: u64,
+) {
+    let history = through_the_wire(history, name);
+    let mut popped = every_popped_value(&history);
+    popped.sort_unstable();
+    assert_eq!(
+        popped,
+        (1..=producers as u64 * values_per_producer).collect::<Vec<_>>(),
+        "{name}: every value comes out exactly once"
+    );
+    let verdict = check(&history);
+    assert!(
+        verdict == Verdict::Linearizable,
+        "{name}: {verdict:?}\n{}",
+        describe_stall(&history, &verdict)
+    );
+}
+
+fn record_linked_run<const N: usize>(values: u64) -> History {
+    let allocator = TestAllocator::new(None);
+    let queue = LinkedLamport::<u64, N, TestAllocator, 0>::new(&allocator)
+        .expect("the allocator gives the first segment");
+    let history = record_segmented_run(
+        1,
+        1,
+        values,
+        &|| {
+            let producer = queue.producer().expect("one producer");
+            Box::new(move |v| producer.try_push(v))
+        },
+        &|| {
+            let consumer = queue.consumer().expect("one consumer");
+            Box::new(move || consumer.try_pop())
+        },
+    );
+    drop(queue);
+    assert_eq!(allocator.live(), 0, "the queue gave back every segment");
+    history
+}
+
+#[test]
+fn recorded_linked_lamport_runs_are_linearizable() {
+    // Segments of four elements: 600 values are 150 segments, each allocated by
+    // the producer and freed by the consumer while the other runs.
+    for _ in 0..RECORDINGS_PER_SHAPE {
+        assert_segmented_run_is_linearizable(
+            record_linked_run::<4>(600),
+            "rust_linked_lamport_n4_p1_c1",
+            1,
+            600,
+        );
+    }
+}
+
+fn record_lscq_run<const N: usize, const R: usize>(
+    producers: usize,
+    consumers: usize,
+    values: u64,
+) -> History {
+    let allocator = TestAllocator::new(None);
+    let domain = HazardDomain::<8>::new();
+    let queue = Lscq::<u64, N, R, 8, TestAllocator, 0>::new(&allocator, &domain)
+        .expect("the allocator gives the first segment");
+    let history = record_segmented_run(
+        producers,
+        consumers,
+        values,
+        &|| {
+            let producer = queue.producer().expect("a place for every producer");
+            Box::new(move |v| producer.try_push(v))
+        },
+        &|| {
+            let consumer = queue.consumer().expect("a place for every consumer");
+            Box::new(move || consumer.try_pop())
+        },
+    );
+    drop(queue);
+    assert_eq!(allocator.live(), 0, "the queue gave back every segment");
+    assert_eq!(
+        domain.waiting(),
+        0,
+        "the domain freed every retired segment"
+    );
+    history
+}
+
+fn assert_lscq_run_is_linearizable<const N: usize, const R: usize>(
+    producers: usize,
+    consumers: usize,
+    values: u64,
+) {
+    assert_segmented_run_is_linearizable(
+        record_lscq_run::<N, R>(producers, consumers, values),
+        &format!("rust_lscq_n{N}_r{R}_p{producers}_c{consumers}"),
+        producers,
+        values,
+    );
+}
+
+#[test]
+fn recorded_lscq_runs_are_linearizable() {
+    // Segments of two or four elements, so a run is dozens of segments and every
+    // one is closed, linked, drained and retired while the others run.
+    for _ in 0..RECORDINGS_PER_SHAPE {
+        assert_lscq_run_is_linearizable::<2, 4>(2, 1, 60);
+        assert_lscq_run_is_linearizable::<2, 4>(1, 2, 60);
+        assert_lscq_run_is_linearizable::<2, 4>(2, 2, 50);
+        assert_lscq_run_is_linearizable::<4, 4>(3, 3, 30);
     }
 }
 

@@ -100,18 +100,27 @@ PY
 
 mutation_case "a push publishes the slot's index before it writes the element" <<'PY'
 edit("backends/rust/forge-runtime/src/queue/scq.rs",
-     r'''        queue.slots[index].with_mut(|slot| unsafe { slot.write(MaybeUninit::new(value)) });
-        queue.allocated.enqueue(index);''',
-     r'''        queue.allocated.enqueue(index);
-        queue.slots[index].with_mut(|slot| unsafe { slot.write(MaybeUninit::new(value)) });''')
+     r'''        self.slots[index].with_mut(|slot| unsafe { slot.write(MaybeUninit::new(value)) });
+        if self.allocated.enqueue(index) {
+            return Ok(());
+        }''',
+     r'''        let accepted = self.allocated.enqueue(index);
+        self.slots[index].with_mut(|slot| unsafe { slot.write(MaybeUninit::new(value)) });
+        if accepted {
+            return Ok(());
+        }''')
 PY
 
 mutation_case "a pop returns the slot to the free ring before it reads the element" <<'PY'
 edit("backends/rust/forge-runtime/src/queue/scq.rs",
-     r'''        let value = queue.slots[index].with(|slot| unsafe { (*slot).assume_init_read() });
-        queue.free.enqueue(index);''',
-     r'''        queue.free.enqueue(index);
-        let value = queue.slots[index].with(|slot| unsafe { (*slot).assume_init_read() });''')
+     r'''        let value = self.slots[index].with(|slot| unsafe { (*slot).assume_init_read() });
+        let returned = self.free.enqueue(index);
+        debug_assert!(returned, "the free ring is never closed");
+        value''',
+     r'''        let returned = self.free.enqueue(index);
+        let value = self.slots[index].with(|slot| unsafe { (*slot).assume_init_read() });
+        debug_assert!(returned, "the free ring is never closed");
+        value''')
 PY
 
 mutation_case "the free ring starts one index short" <<'PY'

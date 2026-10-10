@@ -25,10 +25,25 @@
 //!   element. Push is wait-free and cannot fail; pop is `blocking`, and may
 //!   answer "empty" while a push is in flight. It needs only 32-bit atomics.
 //!
-//! No allocation, no global state, no threads (SCE_FORGE.md §2.1, C1/C2):
-//! a queue owns its storage, and where it lives is the caller's choice.
+//! - [`linked`] — the `segmented` row for one producer and one consumer:
+//!   linked Lamport rings, wait-free but for the allocator.
+//! - [`lscq`] — the `segmented` row for any other cardinality: LSCQ, a list of
+//!   SCQ rings reclaimed through a hazard-pointer [`hazard::HazardDomain`],
+//!   lock-free but for the allocator. Like [`scq`] it needs 64-bit atomics.
+//! - [`allocator`] — the [`allocator::SegmentAllocator`] a `segmented` queue is
+//!   injected with, and the progress it declares.
+//!
+//! No global state, no threads (SCE_FORGE.md §2.1, C1/C2): a queue owns its
+//! storage, and where it lives is the caller's choice. A `bounded` or
+//! `intrusive` queue allocates nothing. A `segmented` one allocates only through
+//! the allocator it is given, so the crate links no `alloc` and has no default.
 
+pub mod allocator;
+pub mod hazard;
 pub mod intrusive;
+pub mod linked;
+#[cfg(target_has_atomic = "64")]
+pub mod lscq;
 #[cfg(target_has_atomic = "64")]
 pub mod scq;
 pub mod spsc;

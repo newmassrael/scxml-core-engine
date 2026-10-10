@@ -191,6 +191,8 @@ fn main() {
             "queue_conformance_node",
             "queue_conformance_intrusive",
             "queue_conformance_intrusive_many",
+            "queue_conformance_segmented",
+            "queue_conformance_segmented_many",
         ],
         &resource_dir,
         &out_dir,
