@@ -15,23 +15,27 @@
 //!   largest value of each bound is written once. A line record is reached
 //!   through its list: its parameters are read out of the records (docs/adr/0014).
 //!
-//! There are two fixtures, the event one (a value, or a list of values, per
-//! property) and the records one (a line is a record, a line holds a list). The
-//! vectors are written by `tests/forge/conformance/content_line_model.py`, which
-//! holds each to itself; this file holds the result to the page and the fixture.
+//! There are four fixtures: the event one (a value, or a list of values, per
+//! property), the records one (a line is a record, a line holds a list), the
+//! required-lists one, and the enums one (an entry is read and written by the text
+//! of an enum's variant, docs/adr/0015). The vectors are written by
+//! `tests/forge/conformance/content_line_model.py`, which holds each to itself;
+//! this file holds the result to the page and the fixture.
 
 mod common;
 
 use sce_build::forge::codec_failure::CodecFailure;
+use sce_build::forge::import_source::enum_model;
 use sce_build::forge::model::{CodecEncoding, ContentLineEntry, ForgeDocument, SceType};
-use sce_build::forge::parser::parse_forge;
+use sce_build::forge::parser::{parse_forge, parse_forge_with_imports};
 use sce_build::DocumentLabel;
 use serde_json::Value;
 
-const FIXTURES: [&str; 3] = [
+const FIXTURES: [&str; 4] = [
     "codec_content_line_event",
     "codec_content_line_records",
     "codec_content_line_required_lists",
+    "codec_content_line_enums",
 ];
 
 fn reference() -> Value {
@@ -289,4 +293,112 @@ fn a_line_record_is_told_from_a_list_of_values_by_what_its_entry_declares() {
         .map(|e| e.id.as_str())
         .collect();
     assert_eq!(named, ["attendee", "exdate"]);
+}
+
+/// Each enum the codec imports, by alias: the carrier of every variant and the text
+/// the enum document gives it (`sce:text`, else the declared name).
+fn variants_of(name: &str) -> Vec<(String, Vec<(u64, String)>)> {
+    let path = common::repository::root().join(format!("tests/forge/resources/{name}.scxml"));
+    let text = std::fs::read_to_string(&path).expect("the fixture document");
+    let parsed = parse_forge_with_imports(
+        &text,
+        DocumentLabel {
+            identifier: name,
+            diagnostic_label: name,
+        },
+    )
+    .expect("the fixture parses")
+    .expect("a forge document");
+    let base = path.parent().expect("a directory");
+    parsed
+        .imports
+        .iter()
+        .filter_map(|import| {
+            let vocabulary = enum_model(&parsed, base, &import.alias)?;
+            let variants = vocabulary
+                .variants
+                .iter()
+                .map(|v| {
+                    (
+                        u64::try_from(v.value).expect("an unsigned carrier"),
+                        v.wire_text().to_owned(),
+                    )
+                })
+                .collect();
+            Some((import.alias.clone(), variants))
+        })
+        .collect()
+}
+
+#[test]
+fn every_variant_of_every_enum_is_written_by_a_case_as_its_text_is_declared() {
+    // A written case round-trips, so a variant a written case carries is one the
+    // codec both writes and reads. Its text is in the case's `text` exactly as the
+    // enum document declares it, which is what an encode that folded the case, or
+    // wrote the declared name for a text, would get wrong.
+    let name = "codec_content_line_enums";
+    let entries = entries_of(name);
+    let f = fixture(name);
+    let cases: Vec<&Value> = array(&f, "cases")
+        .iter()
+        .filter(|c| c.get("decode_only").is_none())
+        .collect();
+    let vocabularies = variants_of(name);
+    assert_eq!(
+        vocabularies.len(),
+        3,
+        "the fixture imports a closed, an open and a 16-bit enum"
+    );
+    for (alias, variants) in vocabularies {
+        let using: Vec<&ContentLineEntry> = entries
+            .iter()
+            .filter(|e| matches!(&e.sce_type, SceType::Enum(r) if r.alias == alias))
+            .collect();
+        assert!(!using.is_empty(), "no entry reads the enum `{alias}`");
+        for (carrier, text) in variants {
+            let carried: Vec<&&Value> = cases
+                .iter()
+                .filter(|c| {
+                    using.iter().any(|e| {
+                        occurrences(&entries, e, &c["decoded"])
+                            .iter()
+                            .any(|v| v.as_u64() == Some(carrier))
+                    })
+                })
+                .collect();
+            assert!(
+                !carried.is_empty(),
+                "no written case carries the variant {carrier} of `{alias}`"
+            );
+            assert!(
+                carried
+                    .iter()
+                    .any(|c| c["text"].as_str().is_some_and(|t| t.contains(&text))),
+                "no written case writes the text `{text}` of the variant {carrier} of `{alias}` as declared"
+            );
+        }
+    }
+}
+
+#[test]
+fn an_enum_value_is_a_number_in_a_vector_and_never_a_text() {
+    // `decoded` holds the carrier, so the vectors state a variant by the number
+    // its enum document gives it and a backend converts through its own enum.
+    let name = "codec_content_line_enums";
+    let entries = entries_of(name);
+    let f = fixture(name);
+    for e in entries
+        .iter()
+        .filter(|e| matches!(e.sce_type, SceType::Enum(_)))
+    {
+        for (i, c) in array(&f, "cases").iter().enumerate() {
+            for v in occurrences(&entries, e, &c["decoded"]) {
+                assert!(
+                    v.is_u64(),
+                    "cases[{i}] `{}`: an enum is its carrier, got {v}",
+                    e.id
+                );
+            }
+        }
+    }
 }

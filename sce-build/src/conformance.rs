@@ -2174,6 +2174,51 @@ fn read_codec_model(
     }
 }
 
+/// The carrier, as a manifest type, of each enum a codec document imports —
+/// what a content-line entry typed `enum:<alias>` is in `decoded` (docs/adr/0015):
+/// the number the enum document gives the variant. Read with the parse the
+/// generator reads, so the harness and the product cannot name another width.
+fn read_enum_carriers(
+    scxml_path: &Path,
+    fixture_name: &str,
+) -> Result<std::collections::BTreeMap<String, CanonicalType>, String> {
+    use crate::forge::model::SceType;
+    let text = crate::load_forge_source(scxml_path, &[])
+        .map_err(|e| format!("cannot read {}: {e}", scxml_path.display()))?
+        .positions
+        .expanded;
+    let parsed = crate::forge::parser::parse_forge_with_imports(
+        &text,
+        crate::DocumentLabel::symmetric(fixture_name),
+    )
+    .map_err(|e| format!("{}: {e}", scxml_path.display()))?
+    .ok_or_else(|| format!("{} is not a forge document", scxml_path.display()))?;
+    let base_dir = scxml_path.parent().unwrap_or_else(|| Path::new("."));
+    let mut carriers = std::collections::BTreeMap::new();
+    for import in &parsed.imports {
+        let Some(vocabulary) =
+            crate::forge::import_source::enum_model(&parsed, base_dir, &import.alias)
+        else {
+            continue;
+        };
+        let carrier = match vocabulary.underlying_type {
+            SceType::Uint8 => CanonicalType::U8,
+            SceType::Uint16 => CanonicalType::U16,
+            SceType::Uint32 => CanonicalType::U32,
+            SceType::Uint64 => CanonicalType::U64,
+            other => {
+                return Err(format!(
+                    "fixture {fixture_name}: enum `{}` has the carrier {other:?}, which a \
+                     content-line vector cannot write as a number",
+                    import.alias
+                ))
+            }
+        };
+        carriers.insert(import.alias.clone(), carrier);
+    }
+    Ok(carriers)
+}
+
 /// Fill a codec fixture's derived shape from its document: whether it is CBOR
 /// or content-line, and which listed fields are optional or lists. Every listed
 /// field of such a codec must name one of its entries — a manifest field the
@@ -2220,6 +2265,20 @@ fn derive_codec_shape(
                     && o.max_count.is_some()
             })
         };
+        // What a member of a record is in `decoded`: a string, or the carrier of
+        // the enum it reads by text (docs/adr/0015).
+        let carriers = read_enum_carriers(scxml_path, fixture_name)?;
+        let entry_type = |entry: &crate::forge::model::ContentLineEntry| match &entry.sce_type {
+            crate::forge::model::SceType::Enum(eref) => {
+                carriers.get(&eref.alias).copied().ok_or_else(|| {
+                    format!(
+                        "fixture {fixture_name}: entry `{}` imports no readable enum as `{}`",
+                        entry.id, eref.alias
+                    )
+                })
+            }
+            _ => Ok(CanonicalType::String),
+        };
         for field in fields.iter_mut() {
             let entry = entries
                 .iter()
@@ -2233,6 +2292,19 @@ fn derive_codec_shape(
                     field.name, owner.id
                 ));
             }
+            // An enum entry is its carrier in `decoded`, so the manifest states the
+            // carrier the enum document declares and no other width.
+            if matches!(entry.sce_type, crate::forge::model::SceType::Enum(_))
+                && field.ty != entry_type(entry)?
+            {
+                return Err(format!(
+                    "fixture {fixture_name}: field `{}` reads an enum, whose carrier in \
+                     `decoded` is {:?}, and the manifest says {:?}",
+                    field.name,
+                    entry_type(entry)?,
+                    field.ty
+                ));
+            }
             field.list = entry.max_count.is_some() || entry.separator.is_some();
             field.optional = !entry.required && !field.list;
             field.members = if entry.max_count.is_some()
@@ -2244,19 +2316,21 @@ fn derive_codec_shape(
                 let mut members: Vec<StructField> = entries
                     .iter()
                     .filter(|p| record_member_of(p).is_some_and(|o| o.id == entry.id))
-                    .map(|p| StructField {
-                        name: p.id.clone(),
-                        ty: CanonicalType::String,
-                        compare: CompareMode::Equality,
-                        optional: !p.required,
-                        list: false,
-                        members: Vec::new(),
+                    .map(|p| {
+                        Ok(StructField {
+                            name: p.id.clone(),
+                            ty: entry_type(p)?,
+                            compare: CompareMode::Equality,
+                            optional: !p.required,
+                            list: false,
+                            members: Vec::new(),
+                        })
                     })
-                    .collect();
+                    .collect::<Result<_, String>>()?;
                 let has_list = entry.separator.is_some();
                 members.push(StructField {
                     name: if has_list { "values" } else { "value" }.to_owned(),
-                    ty: CanonicalType::String,
+                    ty: entry_type(entry)?,
                     compare: CompareMode::Equality,
                     optional: false,
                     list: has_list,

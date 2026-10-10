@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Conformance fixture: an OPEN vocabulary a content-line entry reads and
+  writes by the text of its variants (SCE_FORGE.md §4.6.4, docs/adr/0015).
+
+  `sce:strict-variants="false"` lets the generated type carry a carrier no
+  variant declares. A line has no text for such a carrier, so a codec reads
+  only the three texts below and a value outside them is `line-bad-value` on
+  decode, as it is for a closed vocabulary.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="enum" name="enum_content_line_class"
+       sce:underlying-type="uint8" sce:strict-variants="false">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="unclassified" value="0" sce:text="PUBLIC"/>
+      <sce:variant name="restricted" value="1" sce:text="PRIVATE"/>
+      <sce:variant name="secret" value="2" sce:text="CONFIDENTIAL"/>
+    </data>
+  </datamodel>
+</scxml>

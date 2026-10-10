@@ -2267,6 +2267,20 @@
       ]
     },
     {
+      "name": "codec_content_line_enums",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "fields": [
+        { "name": "uid", "type": "string", "compare": "equality" },
+        { "name": "status", "type": "u8", "compare": "equality" },
+        { "name": "clazz", "type": "u8", "compare": "equality" },
+        { "name": "history", "type": "u8", "compare": "equality" },
+        { "name": "attendee", "type": "string", "compare": "equality" },
+        { "name": "step", "type": "u8", "compare": "equality" },
+        { "name": "note", "type": "string", "compare": "equality" }
+      ]
+    },
+    {
       "name": "codec_content_line_event",
       "kind": "codec",
       "ref_section": "codecs",

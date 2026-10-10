@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Conformance fixture: a closed vocabulary over a 16-bit carrier, read as a
+  parameter (SCE_FORGE.md §4.6.4, docs/adr/0015).
+
+  Its carrier is wider than the other two vocabularies' so a codec that took
+  every enum for a byte would not pass, and its values are not consecutive.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="enum" name="enum_content_line_role"
+       sce:underlying-type="uint16">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="chair" value="10" sce:text="CHAIR"/>
+      <sce:variant name="participant" value="300" sce:text="REQ-PARTICIPANT"/>
+      <sce:variant name="observer" value="4000" sce:text="NON-PARTICIPANT"/>
+    </data>
+  </datamodel>
+</scxml>

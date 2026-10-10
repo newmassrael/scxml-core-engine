@@ -34,7 +34,7 @@ from __future__ import annotations
 import json
 import re
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 RESOURCE = Path("tests/forge/resources/codec_content_line_event.scxml")
@@ -68,6 +68,38 @@ def is_control(byte: int) -> bool:
 
 
 @dataclass
+class Vocabulary:
+    """The enum an entry reads by text (docs/adr/0015): each variant's text and
+    the carrier value it stands for, in declaration order. The text is the
+    variant's `sce:text`, else its declared name."""
+
+    rows: list[tuple[str, int]]
+
+    def carrier_of(self, raw: bytes):
+        """The carrier of the first variant whose text `raw` is, ASCII
+        case-insensitively, or None. Only the 26 letters fold: a character
+        that Unicode folds to one (U+017F, U+0131) is not that letter."""
+        folded = raw.lower()
+        for text, carrier in self.rows:
+            if text.encode().lower() == folded:
+                return carrier
+        return None
+
+    def text_of(self, carrier: int):
+        """The text of the variant with that carrier, as the enum declares it,
+        or None for a carrier of an open enum that no variant declares."""
+        return next((t for t, c in self.rows if c == carrier), None)
+
+    def recased(self, rng) -> "Vocabulary":
+        """The same vocabulary with each text in other letter case, which a
+        reader must take for the same variants."""
+        def other(text: str) -> str:
+            return "".join(c.lower() if rng.below(2) else c.upper() for c in text)
+
+        return Vocabulary([(other(t), c) for t, c in self.rows])
+
+
+@dataclass
 class Entry:
     id: str
     prop: str
@@ -81,6 +113,22 @@ class Entry:
     #: is a list cut at the separator.
     separator: str | None = None
     max_values: int | None = None
+    #: An `enum:<alias>` entry (docs/adr/0015): the vocabulary it reads and writes.
+    vocabulary: Vocabulary | None = None
+
+
+def load_vocabulary(codec: Path, root, alias: str) -> Vocabulary:
+    """The variants of the enum the codec imports as `alias`, from that enum's
+    own document."""
+    source = next(
+        i.attrib["src"] for i in root.findall(SCE + "import") if i.attrib["as"] == alias
+    )
+    enum = ET.parse(codec.parent / source).getroot()
+    rows = []
+    for variant in enum.iter(SCE + "variant"):
+        name = variant.attrib["name"]
+        rows.append((variant.attrib.get(SCE + "text", name), int(variant.attrib["value"])))
+    return Vocabulary(rows)
 
 
 def load(path: Path = RESOURCE):
@@ -94,18 +142,24 @@ def load(path: Path = RESOURCE):
         size = data.attrib.get(SCE + "max-size")
         count = data.attrib.get(SCE + "max-count")
         values = data.attrib.get(SCE + "max-values")
+        type_ = data.attrib[SCE + "type"]
         entries.append(
             Entry(
                 id=data.attrib["id"],
                 prop=data.attrib[SCE + "property"],
                 param=data.attrib.get(SCE + "param"),
-                type=data.attrib[SCE + "type"],
+                type=type_,
                 text=data.attrib.get(SCE + "value") == "text",
                 required=data.attrib.get(SCE + "required") == "true",
                 max_size=int(size) if size else None,
                 max_count=int(count) if count else None,
                 separator=data.attrib.get(SCE + "separator"),
                 max_values=int(values) if values else None,
+                vocabulary=(
+                    load_vocabulary(path, root, type_.removeprefix("enum:"))
+                    if type_.startswith("enum:")
+                    else None
+                ),
             )
         )
     return component, entries
@@ -187,6 +241,14 @@ def read_bool(raw: bytes):
     if word == b"FALSE":
         return ("ok", False)
     return fails("line-bad-value")
+
+
+def read_enum(raw: bytes, vocabulary: Vocabulary):
+    """The carrier of the variant `raw` is the text of. A text no variant
+    declares is a bad value, whatever the bytes are: nothing of it is kept, and
+    it is not read as a TEXT, so a backslash in it is not an escape."""
+    carrier = vocabulary.carrier_of(raw)
+    return ("ok", carrier) if carrier is not None else fails("line-bad-value")
 
 
 def split_values(raw: bytes, separator: int, text: bool):
@@ -382,7 +444,10 @@ class Model:
                 continue
             if param.id in seen:
                 return fails("line-too-many")
-            read = read_text(values[0], False, param.max_size)
+            if param.vocabulary:
+                read = read_enum(values[0], param.vocabulary)
+            else:
+                read = read_text(values[0], False, param.max_size)
             if read[0] == "fails":
                 return read
             if len(values) > 1:
@@ -397,6 +462,8 @@ class Model:
         raw = body[i:]
         if entry.separator:
             read = read_values(raw, entry)
+        elif entry.vocabulary:
+            read = read_enum(raw, entry.vocabulary)
         elif entry.type == "string":
             read = read_text(raw, entry.text, entry.max_size)
         elif entry.type == "bool":
@@ -472,6 +539,14 @@ class Model:
                 if p.required:
                     return fails("line-required-missing")
                 continue
+            if p.vocabulary:
+                # A text is letters, digits and hyphens, so it is never quoted.
+                text = p.vocabulary.text_of(pv)
+                if text is None:
+                    return fails("line-bad-value")
+                units += [b";"] + [bytes([b]) for b in p.param.encode()] + [b"="]
+                units += [bytes([b]) for b in text.encode()]
+                continue
             raw = pv.encode("utf-8")
             if len(raw) > p.max_size:
                 return fails("line-too-long")
@@ -497,6 +572,11 @@ class Model:
                 if written[0] == "fails":
                     return written
                 units += written[1]
+        elif entry.vocabulary:
+            text = entry.vocabulary.text_of(value)
+            if text is None:
+                return fails("line-bad-value")
+            units += [bytes([b]) for b in text.encode()]
         elif entry.type == "string":
             written = self.string_units(entry, value, in_list=False)
             if written[0] == "fails":
@@ -1419,6 +1499,373 @@ class RequiredWritten(Written):
             self.reject("fuzz: " + why + " removed", canonical.replace(line, b"", 1), "line-required-missing")
 
 
+# ── The enums fixture (docs/adr/0015) ───────────────────────────────────
+
+ENUMS_FIXTURE = "codec_content_line_enums"
+ENUMS_RESOURCE = Path("tests/forge/resources/codec_content_line_enums.scxml")
+ENUMS_SEED = 0xE116_0004
+
+# The carriers of the three enum documents (enum_content_line_*.scxml). They are
+# written here as numbers, not read, so a vector names the variant it means.
+NEEDS_ACTION, IN_PROCESS, COMPLETED, CANCELLED = 1, 2, 4, 8
+STATUSES = [NEEDS_ACTION, IN_PROCESS, COMPLETED, CANCELLED]
+PUBLIC, PRIVATE, CONFIDENTIAL = 0, 1, 2
+CLASSES = [PUBLIC, PRIVATE, CONFIDENTIAL]
+CHAIR, PARTICIPANT, OBSERVER = 10, 300, 4000
+ROLES = [CHAIR, PARTICIPANT, OBSERVER]
+
+
+def attendee_of(value, role, status=None):
+    """A line record of ATTENDEE: its two enum parameters and its string value."""
+    return {"attendeeRole": role, "attendeeStatus": status, "value": value}
+
+
+def step(status, note=None):
+    """A line record of X-STEP: its string parameter and its enum value."""
+    return {"stepNote": note, "value": status}
+
+
+def enums_of(**fields):
+    """A full `decoded` object of the enums fixture: every entry named, an
+    absent optional as null and an absent list as `[]`. The required CLASS is
+    PUBLIC unless a field says otherwise."""
+    out = {
+        "uid": "u",
+        "status": None,
+        "clazz": PUBLIC,
+        "history": [],
+        "attendee": [],
+        "step": [],
+        "note": None,
+    }
+    out.update(fields)
+    return out
+
+
+ENUMS_BASE = b"UID:u\r\nCLASS:PUBLIC\r\n"
+
+
+def ecomponent(*lines: bytes, base: bytes = ENUMS_BASE) -> bytes:
+    return COMPONENT_HEAD + base + b"".join(lines) + COMPONENT_TAIL
+
+
+LONG_NOTE = "w" * 60 + ";" * 30 + "," * 30
+
+#: (note, decoded) — each is written by the model and read back.
+ENUMS_CASES = [
+    ("the smallest component: the required UID and CLASS, nothing else", enums_of()),
+    ("a variant whose text is not its name: NEEDS-ACTION", enums_of(status=NEEDS_ACTION)),
+    ("a variant whose text is not its name: IN-PROCESS", enums_of(status=IN_PROCESS)),
+    ("a variant whose text is its name in capitals: COMPLETED", enums_of(status=COMPLETED)),
+    ("a variant with no text is written as its declared name: cancelled", enums_of(status=CANCELLED)),
+    ("a required open enum takes the variant it names: PRIVATE", enums_of(clazz=PRIVATE)),
+    ("a required open enum takes the variant it names: CONFIDENTIAL", enums_of(clazz=CONFIDENTIAL)),
+    (
+        "a list of an enum holds as many lines as it may, each a variant",
+        enums_of(history=[NEEDS_ACTION, IN_PROCESS, CANCELLED]),
+    ),
+    ("a list of an enum may repeat a variant", enums_of(history=[COMPLETED, COMPLETED])),
+    (
+        "each line of a repeated property carries its enum parameters: a role on each, a status on some",
+        enums_of(
+            attendee=[
+                attendee_of("mailto:a@example.org", CHAIR, NEEDS_ACTION),
+                attendee_of("mailto:b@example.org", PARTICIPANT),
+                attendee_of("mailto:c@example.org", OBSERVER, CANCELLED),
+            ]
+        ),
+    ),
+    (
+        "a record's line past 75 octets, with the longest texts, is folded",
+        enums_of(attendee=[attendee_of("mailto:" + "a" * 17, PARTICIPANT, NEEDS_ACTION)]),
+    ),
+    (
+        "a line record's value is an enum, beside a string parameter, and the list is full",
+        enums_of(step=[step(NEEDS_ACTION, "n"), step(CANCELLED)]),
+    ),
+    (
+        "a record's string parameter at its bound beside an enum value",
+        enums_of(step=[step(IN_PROCESS, "n" * 16)]),
+    ),
+    (
+        "a TEXT beside the enums writes its escapes, and a long one is folded",
+        enums_of(status=IN_PROCESS, note=LONG_NOTE),
+    ),
+    ("a UID at its bound, with an escape", enums_of(uid="u" * 14 + "\\;")),
+    (
+        "every entry present at once",
+        enums_of(
+            uid="evt-1",
+            status=COMPLETED,
+            clazz=CONFIDENTIAL,
+            history=[CANCELLED, NEEDS_ACTION],
+            attendee=[attendee_of("mailto:k@example.org", CHAIR, IN_PROCESS)],
+            step=[step(COMPLETED, "done")],
+            note="a;b",
+        ),
+    ),
+]
+
+ENUMS_CANON = enums_of(
+    status=IN_PROCESS,
+    clazz=PRIVATE,
+    history=[NEEDS_ACTION, CANCELLED],
+    attendee=[attendee_of("mailto:k", CHAIR, COMPLETED)],
+    step=[step(IN_PROCESS, "n")],
+    note="x",
+)
+
+#: (note, decoded, input) — inputs that decode to `decoded` and are not what the
+#: encoder writes for it.
+ENUMS_ACCEPTS = [
+    (
+        "a text in other letter case is the same variant",
+        enums_of(status=NEEDS_ACTION),
+        ecomponent(b"STATUS:needs-action\r\n"),
+    ),
+    (
+        "a text in mixed case is the same variant",
+        enums_of(status=IN_PROCESS),
+        ecomponent(b"STATUS:In-Process\r\n"),
+    ),
+    (
+        "a variant with no text is read by its declared name in any case",
+        enums_of(status=CANCELLED),
+        ecomponent(b"STATUS:CANCELLED\r\n"),
+    ),
+    (
+        "a text cut by a fold is read whole",
+        enums_of(status=IN_PROCESS),
+        ecomponent(b"STATUS:IN-PRO\r\n CESS\r\n"),
+    ),
+    (
+        "an open enum's text in other letter case",
+        enums_of(clazz=PRIVATE),
+        b"BEGIN:VEVENT\r\nUID:u\r\nCLASS:private\r\nEND:VEVENT\r\n",
+    ),
+    (
+        "parameter values between quotes are taken off before the match",
+        enums_of(attendee=[attendee_of("a", CHAIR, NEEDS_ACTION)]),
+        ecomponent(b'ATTENDEE;ROLE="chair";PARTSTAT="needs-action":a\r\n'),
+    ),
+    (
+        "parameters in any order, one nobody declares skipped, a text in any case",
+        enums_of(attendee=[attendee_of("a", PARTICIPANT, COMPLETED)]),
+        ecomponent(b"ATTENDEE;RSVP=TRUE;PARTSTAT=completed;ROLE=Req-Participant:a\r\n"),
+    ),
+    (
+        "a list of an enum is read from its lines, each in its own case",
+        enums_of(history=[NEEDS_ACTION, CANCELLED]),
+        ecomponent(b"X-HISTORY:needs-action\r\n", b"x-history:Cancelled\r\n"),
+    ),
+    (
+        "a record's value is read as an enum after its parameter",
+        enums_of(step=[step(COMPLETED, "n")]),
+        ecomponent(b"X-STEP;NOTE=n:completed\r\n"),
+    ),
+    (
+        "lower-case names, LF line ends and a text in lower case",
+        enums_of(status=IN_PROCESS),
+        b"begin:vevent\nuid:u\nclass:public\nstatus:in-process\nend:vevent\n",
+    ),
+]
+
+#: (why, input, failure) — single faults in an otherwise valid component.
+ENUMS_REJECTS = [
+    ("a text no variant declares", ecomponent(b"STATUS:DONE\r\n"), "line-bad-value"),
+    ("an empty value", ecomponent(b"STATUS:\r\n"), "line-bad-value"),
+    ("the start of a text is not a text", ecomponent(b"STATUS:NEEDS\r\n"), "line-bad-value"),
+    ("a text with more after it", ecomponent(b"STATUS:NEEDS-ACTION-\r\n"), "line-bad-value"),
+    ("a value longer than the longest text", ecomponent(b"STATUS:NEEDS-ACTION-NEEDS-ACTION\r\n"), "line-bad-value"),
+    ("a space before a text is part of the value", ecomponent(b"STATUS: IN-PROCESS\r\n"), "line-bad-value"),
+    ("a space after a text is part of the value", ecomponent(b"STATUS:IN-PROCESS \r\n"), "line-bad-value"),
+    (
+        "the declared name of a variant that has a text is not its text",
+        ecomponent(b"STATUS:needsAction\r\n"),
+        "line-bad-value",
+    ),
+    ("a name that is neither the text nor an open enum's variant", ecomponent(b"STATUS:inProcess\r\n"), "line-bad-value"),
+    (
+        "a text is not a TEXT: an escape in it is part of the value, not a bad escape",
+        ecomponent(b"STATUS:IN\\-PROCESS\r\n"),
+        "line-bad-value",
+    ),
+    ("a backslash that ends a text", ecomponent(b"STATUS:IN-PROCESS\\\r\n"), "line-bad-value"),
+    ("a control character in a text", ecomponent(b"STATUS:IN-\x07PROCESS\r\n"), "line-bad-value"),
+    (
+        "a letter that Unicode folds to an ASCII one is not that letter: U+017F for S",
+        ecomponent(b"STATUS:IN-PROCE\xc5\xbf\xc5\xbf\r\n"),
+        "line-bad-value",
+    ),
+    (
+        "a letter that Unicode folds to an ASCII one is not that letter: U+0131 for I",
+        ecomponent(b"STATUS:\xc4\xb1N-PROCESS\r\n"),
+        "line-bad-value",
+    ),
+    (
+        "an open enum reads only the texts it declares",
+        COMPONENT_HEAD + b"UID:u\r\nCLASS:SECRET\r\n" + COMPONENT_TAIL,
+        "line-bad-value",
+    ),
+    (
+        "an open enum's text with more after it",
+        COMPONENT_HEAD + b"UID:u\r\nCLASS:PUBLICS\r\n" + COMPONENT_TAIL,
+        "line-bad-value",
+    ),
+    (
+        "an open enum's declared name is not its text",
+        COMPONENT_HEAD + b"UID:u\r\nCLASS:unclassified\r\n" + COMPONENT_TAIL,
+        "line-bad-value",
+    ),
+    ("the STATUS line twice", ecomponent(b"STATUS:IN-PROCESS\r\n", b"STATUS:COMPLETED\r\n"), "line-too-many"),
+    ("the required CLASS twice", ecomponent(b"CLASS:PRIVATE\r\n"), "line-too-many"),
+    (
+        "a fourth line of a list of an enum past three",
+        ecomponent(*[b"X-HISTORY:COMPLETED\r\n"] * 4),
+        "line-too-many",
+    ),
+    (
+        "a bad value on the line that is past the bound is still past the bound",
+        ecomponent(*[b"X-HISTORY:COMPLETED\r\n"] * 3, b"X-HISTORY:DONE\r\n"),
+        "line-too-many",
+    ),
+    ("a bad value in a list of an enum", ecomponent(b"X-HISTORY:COMPLETED\r\n", b"X-HISTORY:DONE\r\n"), "line-bad-value"),
+    (
+        "a third line of X-STEP past two",
+        ecomponent(*[b"X-STEP:COMPLETED\r\n"] * 3),
+        "line-too-many",
+    ),
+    ("the required CLASS absent", COMPONENT_HEAD + b"UID:u\r\n" + COMPONENT_TAIL, "line-required-missing"),
+    ("the required UID absent", COMPONENT_HEAD + b"CLASS:PUBLIC\r\n" + COMPONENT_TAIL, "line-required-missing"),
+    ("a line of ATTENDEE without its required ROLE", ecomponent(b"ATTENDEE:mailto:x\r\n"), "line-required-missing"),
+    (
+        "a line of ATTENDEE with only its optional PARTSTAT",
+        ecomponent(b"ATTENDEE;PARTSTAT=COMPLETED:mailto:x\r\n"),
+        "line-required-missing",
+    ),
+    (
+        "the second line lacks the role the first has",
+        ecomponent(b"ATTENDEE;ROLE=CHAIR:a\r\n", b"ATTENDEE;PARTSTAT=COMPLETED:b\r\n"),
+        "line-required-missing",
+    ),
+    ("a role no variant declares", ecomponent(b"ATTENDEE;ROLE=BOSS:a\r\n"), "line-bad-value"),
+    ("an empty role", ecomponent(b"ATTENDEE;ROLE=:a\r\n"), "line-bad-value"),
+    (
+        "the name of a variant that has a text is not its role",
+        ecomponent(b"ATTENDEE;ROLE=participant:a\r\n"),
+        "line-bad-value",
+    ),
+    ("two values for ROLE, which holds one", ecomponent(b"ATTENDEE;ROLE=CHAIR,CHAIR:a\r\n"), "line-bad-value"),
+    ("two quoted values for ROLE", ecomponent(b'ATTENDEE;ROLE="CHAIR","CHAIR":a\r\n'), "line-bad-value"),
+    ("ROLE given twice in one line", ecomponent(b"ATTENDEE;ROLE=CHAIR;ROLE=OBSERVER:a\r\n"), "line-too-many"),
+    (
+        "a status no variant declares, beside a good role",
+        ecomponent(b"ATTENDEE;ROLE=CHAIR;PARTSTAT=ZZZ:a\r\n"),
+        "line-bad-value",
+    ),
+    ("an empty PARTSTAT", ecomponent(b"ATTENDEE;ROLE=CHAIR;PARTSTAT=:a\r\n"), "line-bad-value"),
+    (
+        "a fourth ATTENDEE line past three",
+        ecomponent(*[b"ATTENDEE;ROLE=CHAIR:a\r\n"] * 4),
+        "line-too-many",
+    ),
+    ("a value of ATTENDEE of 25 octets past its 24", ecomponent(b"ATTENDEE;ROLE=CHAIR:" + b"v" * 25 + b"\r\n"), "line-too-long"),
+    ("a record's enum value that no variant declares", ecomponent(b"X-STEP;NOTE=n:DONE\r\n"), "line-bad-value"),
+    (
+        "a record's parameter is judged before its enum value: a note past 16 and a bad status",
+        ecomponent(b"X-STEP;NOTE=" + b"n" * 17 + b":DONE\r\n"),
+        "line-too-long",
+    ),
+    ("a NOTE of 17 octets past its 16", ecomponent(b"X-STEP;NOTE=" + b"n" * 17 + b":COMPLETED\r\n"), "line-too-long"),
+    ("a UID of 17 octets past its 16", COMPONENT_HEAD + b"UID:" + b"u" * 17 + b"\r\nCLASS:PUBLIC\r\n" + COMPONENT_TAIL, "line-too-long"),
+    ("a stray backslash in the UID, a TEXT", COMPONENT_HEAD + b"UID:a\\q\r\nCLASS:PUBLIC\r\n" + COMPONENT_TAIL, "line-bad-escape"),
+    ("a control character in the UID", COMPONENT_HEAD + b"UID:\x07\r\nCLASS:PUBLIC\r\n" + COMPONENT_TAIL, "line-bad-value"),
+    ("a line that has no colon", ecomponent(b"STATUS\r\n"), "line-malformed"),
+    ("an empty line among the properties", ecomponent(b"\r\n", b"STATUS:IN-PROCESS\r\n"), "line-malformed"),
+    ("the END line is missing", COMPONENT_HEAD + ENUMS_BASE + b"STATUS:IN-PROCESS\r\n", "need-more-bytes"),
+]
+
+
+def draw_enums(rng: SplitMix64) -> dict:
+    """A drawn `decoded` of the enums fixture that the codec writes."""
+    out = enums_of(uid=draw_text(rng, 16, TEXT), clazz=rng.pick(CLASSES))
+    if rng.below(2):
+        out["status"] = rng.pick(STATUSES)
+    out["history"] = [rng.pick(STATUSES) for _ in range(rng.between(0, 3))]
+    for _ in range(rng.between(0, 3)):
+        status = rng.pick(STATUSES) if rng.below(2) else None
+        out["attendee"].append(attendee_of(draw_text(rng, 24), rng.pick(ROLES), status))
+    for _ in range(rng.between(0, 2)):
+        note = draw_text(rng, 16, PARAM) if rng.below(2) else None
+        out["step"].append(step(rng.pick(STATUSES), note))
+    if rng.below(2):
+        out["note"] = draw_text(rng, 120, TEXT)
+    return out
+
+
+def fault_enums(rng: SplitMix64, base: bytes):
+    """(why, input, failure) with one fault put into the canonical component."""
+    lines = base.split(b"\r\n")[:-1]
+    kind = rng.below(10)
+    at = rng.between(1, len(lines) - 2)
+    if kind == 0:
+        return "a property line repeated", b"\r\n".join(lines[: at + 1] + [lines[1]] + lines[at + 1 :]) + b"\r\n", "line-too-many"
+    if kind == 1:
+        return "the END line dropped", b"\r\n".join(lines[:-1]) + b"\r\n", "need-more-bytes"
+    if kind == 2:
+        return "a control character put into the UID", base.replace(b"UID:", b"UID:\x07", 1), "line-bad-value"
+    if kind == 3:
+        return "the UID removed", b"\r\n".join(lines[:1] + lines[2:]) + b"\r\n", "line-required-missing"
+    if kind == 4:
+        return "a status text no variant declares", base.replace(b"STATUS:IN-PROCESS", b"STATUS:DONE", 1), "line-bad-value"
+    if kind == 5:
+        return "the role taken from the attendee", base.replace(b";ROLE=CHAIR", b"", 1), "line-required-missing"
+    if kind == 6:
+        return "a fourth line of the history", base.replace(b"X-HISTORY:NEEDS-ACTION\r\n", b"X-HISTORY:NEEDS-ACTION\r\n" * 3, 1), "line-too-many"
+    if kind == 7:
+        return "an empty line put among the properties", b"\r\n".join(lines[:at] + [b""] + lines[at:]) + b"\r\n", "line-malformed"
+    if kind == 8:
+        return "the CLASS text cut short", base.replace(b"CLASS:PRIVATE", b"CLASS:PRIVAT", 1), "line-bad-value"
+    return "a variant's declared name written for its text", base.replace(b"STATUS:IN-PROCESS", b"STATUS:inProcess", 1), "line-bad-value"
+
+
+class EnumsWritten(Written):
+    """The enums fixture's cases and rejects, each held to the model."""
+
+    def __init__(self, path: Path = ENUMS_RESOURCE):
+        super().__init__(path)
+
+    def build(self):
+        for note, decoded in ENUMS_CASES:
+            self.round_trip(note, decoded)
+        for note, decoded, data in ENUMS_ACCEPTS:
+            self.accept(note, decoded, data)
+        for why, data, failure in ENUMS_REJECTS:
+            self.reject(why, data, failure)
+        # An open enum has a carrier no text names, which the codec refuses to
+        # write. A backend's vectors state decodes only, so the model holds this
+        # one to itself.
+        unwritable = self.model.encode(enums_of(clazz=9))
+        if unwritable != fails("line-bad-value"):
+            raise SystemExit(f"content-line model: an undeclared carrier is written: {unwritable}")
+        rng = SplitMix64(ENUMS_SEED)
+        for _ in range(40):
+            self.round_trip("fuzz: a drawn value written and read back", draw_enums(rng))
+        canonical = self.model.encode(ENUMS_CANON)[1]
+        for _ in range(30):
+            decoded = draw_enums(rng)
+            # The texts are written in another letter case, and read as the same.
+            loud = Model(
+                self.model.component.decode(),
+                [replace(e, vocabulary=e.vocabulary.recased(rng)) if e.vocabulary else e for e in self.entries],
+            )
+            written = loud.encode(decoded)[1]
+            self.accept("fuzz: the same component read from a reshaped input", decoded, reshape(rng, written))
+        for _ in range(30):
+            why, data, failure = fault_enums(rng, canonical)
+            self.reject("fuzz: " + why, data, failure)
+
+
 # ── Splicing into numerical_reference.json ──────────────────────────────
 
 
@@ -1432,6 +1879,7 @@ WRITERS = (
     (FIXTURE, Written),
     (RECORDS_FIXTURE, RecordsWritten),
     (REQUIRED_FIXTURE, RequiredWritten),
+    (ENUMS_FIXTURE, EnumsWritten),
 )
 
 

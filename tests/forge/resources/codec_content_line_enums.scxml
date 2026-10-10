@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Conformance fixture: a content-line codec whose entries are enums, read and
+  written by the text of their variants (SCE_FORGE.md §4.6.4, docs/adr/0015).
+
+  Each entry reaches a place an enum may stand:
+
+    status         an optional property's value, a closed vocabulary
+    clazz          a required property's value, an open vocabulary
+    history        a repeated property's value: a list of the enum
+    attendee       a repeated property of strings whose lines carry two enum
+                   parameters, one required of every line (`attendeeRole`,
+                   a 16-bit carrier) and one optional (`attendeeStatus`)
+    step           a repeated property whose lines are records with an enum
+                   as the line's value, beside a string parameter
+    uid, note      strings, so a bad escape, a bound and a fold are reached in
+                   the same document
+
+  The bounds are small on purpose: a reject vector that passes one is a few
+  bytes long. The same document is the model's input (content_line_model.py),
+  so a change to it moves the vectors with it.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="codec" sce:encoding="content-line" sce:component="VEVENT"
+       name="codec_content_line_enums">
+  <sce:import src="enum_content_line_status.scxml" kind="enum" as="lifecycle"/>
+  <sce:import src="enum_content_line_class.scxml" kind="enum" as="access"/>
+  <sce:import src="enum_content_line_role.scxml" kind="enum" as="role"/>
+  <datamodel>
+    <data id="raw" sce:type="bytes" sce:direction="in"/>
+    <data id="uid" sce:type="string" sce:property="UID" sce:required="true" sce:value="text" sce:max-size="16"/>
+    <data id="status" sce:type="enum:lifecycle" sce:property="STATUS"/>
+    <data id="clazz" sce:type="enum:access" sce:property="CLASS" sce:required="true"/>
+    <data id="history" sce:type="enum:lifecycle" sce:property="X-HISTORY" sce:max-count="3"/>
+    <data id="attendee" sce:type="string" sce:property="ATTENDEE" sce:max-count="3" sce:max-size="24"/>
+    <data id="attendeeRole" sce:type="enum:role" sce:property="ATTENDEE" sce:param="ROLE" sce:required="true"/>
+    <data id="attendeeStatus" sce:type="enum:lifecycle" sce:property="ATTENDEE" sce:param="PARTSTAT"/>
+    <data id="step" sce:type="enum:lifecycle" sce:property="X-STEP" sce:max-count="2"/>
+    <data id="stepNote" sce:type="string" sce:property="X-STEP" sce:param="NOTE" sce:max-size="16"/>
+    <data id="note" sce:type="string" sce:property="COMMENT" sce:value="text" sce:max-size="120"/>
+  </datamodel>
+</scxml>

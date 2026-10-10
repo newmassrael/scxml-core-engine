@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Conformance fixture: a closed vocabulary a content-line entry reads and
+  writes by the text of its variants (SCE_FORGE.md §4.6.4, docs/adr/0015).
+
+  The four variants reach the three ways a text comes to be:
+
+    needsAction  the text is not the name, and has a hyphen the name cannot
+    inProcess    the same, with a text of another length
+    completed    the text is the name in capitals, so a reader that took the
+                 name for the text would write `completed`
+    cancelled    no `sce:text`: the declared name is the text, written as
+                 declared
+
+  The values neither start at zero nor run on, so a codec that took the
+  ordinal of a variant for its carrier would not pass.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="enum" name="enum_content_line_status"
+       sce:underlying-type="uint8">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="needsAction" value="1" sce:text="NEEDS-ACTION"/>
+      <sce:variant name="inProcess" value="2" sce:text="IN-PROCESS"/>
+      <sce:variant name="completed" value="4" sce:text="COMPLETED"/>
+      <sce:variant name="cancelled" value="8"/>
+    </data>
+  </datamodel>
+</scxml>
