@@ -14,6 +14,10 @@ line.read_strings("{{ e.separator }}", {{ e.max_values }}, {{ e.max_size }}, {{ 
 line.read_string({{ e.max_size }}, {{ "True" if e.text else "False" }})
 {%- elif e.kind == "bool" -%}
 line.read_bool()
+{%- elif e.kind == "enum" -%}
+{#- The text names a carrier and the enum's own conversion takes it to a
+    variant, so a closed and an open enum are read by one rule (docs/adr/0015). #}
+content_line.declared({{ e.enum_from }}(line.read_enum(_TEXTS_{{ e.enum_alias }})))
 {%- elif e.kind == "uint" -%}
 line.read_uint({{ e.max }})
 {%- else -%}
@@ -29,6 +33,8 @@ line.read_int({{ e.min }}, {{ e.max }})
 {{ i }}out.string(v, {{ "True" if e.text else "False" }}, {{ e.max_size }})
 {% elif e.kind == "bool" %}
 {{ i }}out.boolean(v)
+{% elif e.kind == "enum" %}
+{{ i }}out.enum_value(_TEXTS_{{ e.enum_alias }}, {{ e.enum_to }})
 {% else %}
 {#- A Python int is unbounded, so the declared width is held here rather than
     by the type. #}
@@ -41,7 +47,13 @@ line.read_int({{ e.min }}, {{ e.max }})
     from `holder`: the codec itself, or the record of one line. #}
 {% macro write_params(e, i, holder) %}
 {% for p in e.params %}
-{% if p.required %}
+{% if p.kind == "enum" %}
+{#- A parameter that is an enum is written as the text of its variant; `pv`
+    is the local its carrier is taken from. #}
+{{ i }}pv = {{ holder }}.{{ p.name }}
+{{ i }}if pv is not None:
+{{ i }}    out.enum_param("{{ p.param }}", _TEXTS_{{ p.enum_alias }}, {{ p.enum_to }})
+{% elif p.required %}
 {{ i }}out.param("{{ p.param }}", {{ holder }}.{{ p.name }}, {{ p.max_size }})
 {% else %}
 {{ i }}if {{ holder }}.{{ p.name }} is not None:
@@ -49,6 +61,14 @@ line.read_int({{ e.min }}, {{ e.max }})
 {% endif %}
 {% endfor %}
 {% endmacro %}
+{#- The read of one parameter's value, as the expression bound to it. #}
+{% macro read_param(p) -%}
+{%- if p.kind == "enum" -%}
+content_line.declared({{ p.enum_from }}(line.read_param_enum(_TEXTS_{{ p.enum_alias }})))
+{%- else -%}
+line.read_param_string({{ p.max_size }})
+{%- endif -%}
+{%- endmacro %}
 {{ sce_map.source_marker(source_location, "python", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
 
 # SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec" sce:encoding="content-line")
@@ -68,6 +88,18 @@ from sce_forge_runtime.codec import BytearraySink, CodecError, SceCursor, SceSin
 from dataclasses import dataclass, field
 from typing import List, Optional
 
+{#- What an entry that is an enum is written and read by (docs/adr/0015): each
+    variant's text and the carrier it stands for, held as data here because the
+    enum's own type carries none. #}
+{% for t in enum_tables %}
+
+_TEXTS_{{ t.alias }}: content_line.EnumTexts = (
+{% for r in t.rows %}
+    ("{{ r.text }}", {{ r.value }}),
+{% endfor %}
+)
+{% endfor %}
+
 
 {% for e in entries if e.is_records %}
 @dataclass
@@ -85,7 +117,7 @@ class {{ e.record_type }}:
     values: List[str] = field(default_factory=list)
 {% else %}
     #: The value of the line.
-    value: str = ""
+    value: {{ e.value_type }} = {{ e.value_default }}
 {% endif %}
 
 
@@ -131,7 +163,7 @@ class {{ struct_name }}:
 {% if e.is_records %}
         held_{{ e.name }}: List[{{ e.record_type }}] = []
 {% elif e.is_list %}
-        held_{{ e.name }}: List[str] = []
+        held_{{ e.name }}: List[{{ e.value_type }}] = []
 {% elif e.is_values %}
         held_{{ e.name }}: Optional[List[str]] = None
 {% else %}
@@ -169,7 +201,7 @@ class {{ struct_name }}:
 {% if loop.first %}                    if{% else %}                    elif{% endif %} line.param_is("{{ p.param }}"):
                         if {{ "line_" if e.is_records else "held_" }}{{ p.name }} is not None:
                             raise content_line.LineTooMany()
-                        {{ "line_" if e.is_records else "held_" }}{{ p.name }} = line.read_param_string({{ p.max_size }})
+                        {{ "line_" if e.is_records else "held_" }}{{ p.name }} = {{ read_param(p) }}
 {% endfor %}
 {% endif %}
 {% if e.is_records %}

@@ -802,6 +802,13 @@
         "compare": {
           "$ref": "#/definitions/CompareMode"
         },
+        "enum_document": {
+          "description": "The name of the enum document this field reads by the text of its variants — an entry or a parameter of an `sce:encoding=\"content-line\"` codec typed `enum:<alias>` (docs/adr/0015). A round-trip case writes the value as the carrier number the enum document gives the variant, and a language's fragment takes it to and from its own enum type through the enum's conversions; this names the type that conversion belongs to. Derived from the document, like `optional`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "list": {
           "description": "The field is a list — a property of an `sce:encoding=\"content-line\"` codec that declares `sce:max-count` (a list of lines) or `sce:separator` (a list of the values of one line), which each language carries as its bounded list (SCE_FORGE.md §4.6.4). A round-trip case writes it as a JSON array, and an empty one is an absent property. Derived from the document, like `optional`.",
           "type": "boolean"

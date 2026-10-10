@@ -27465,6 +27465,40 @@
     }
   },
   "enums": {
+    "enum_content_line_class": {
+      "fixture": "EnumContentLineClass",
+      "signature": "enum EnumContentLineClass : uint8, strict-variants=false",
+      "description": "An open vocabulary a content-line entry reads and writes by the text of its variants (docs/adr/0015): PUBLIC, PRIVATE, CONFIDENTIAL. The carriers are 0, 1, 2, so the first variant is at zero; the codec fixture codec_content_line_enums holds the text on the wire, and this holds the numbers.",
+      "underlying_type": "uint8",
+      "variants": [
+        { "name": "unclassified", "value": 0 },
+        { "name": "restricted", "value": 1 },
+        { "name": "secret", "value": 2 }
+      ]
+    },
+    "enum_content_line_role": {
+      "fixture": "EnumContentLineRole",
+      "signature": "enum EnumContentLineRole : uint16",
+      "description": "A closed vocabulary over a 16-bit carrier, read as a content-line parameter (docs/adr/0015): CHAIR, REQ-PARTICIPANT, NON-PARTICIPANT. The carriers 10, 300 and 4000 do not fit a byte and are not consecutive, so a codec that took every enum for a byte, or an ordinal for a carrier, would not pass.",
+      "underlying_type": "uint16",
+      "variants": [
+        { "name": "chair", "value": 10 },
+        { "name": "participant", "value": 300 },
+        { "name": "observer", "value": 4000 }
+      ]
+    },
+    "enum_content_line_status": {
+      "fixture": "EnumContentLineStatus",
+      "signature": "enum EnumContentLineStatus : uint8",
+      "description": "A closed vocabulary a content-line entry reads and writes by the text of its variants (docs/adr/0015): NEEDS-ACTION, IN-PROCESS, COMPLETED and cancelled. The first three have an sce:text that is not the declared name; the last has none and is written as it is declared. The carriers 1, 2, 4, 8 neither start at zero nor run on.",
+      "underlying_type": "uint8",
+      "variants": [
+        { "name": "needsAction", "value": 1 },
+        { "name": "inProcess", "value": 2 },
+        { "name": "completed", "value": 4 },
+        { "name": "cancelled", "value": 8 }
+      ]
+    },
     "enum_uds_nrc": {
       "fixture": "EnumUdsNrc",
       "signature": "enum EnumUdsNrc : uint8",

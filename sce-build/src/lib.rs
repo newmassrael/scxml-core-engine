@@ -4753,6 +4753,18 @@ fn validate_and_enrich_imports(
                 // lowered without re-opening the imported file. Stored
                 // UNCONVERTED — see `ImportContext::enum_variants`.
                 ctx.enum_variants = em.variants.iter().map(|v| v.name.clone()).collect();
+                // The text each variant is written as on a content line
+                // (docs/adr/0015) rides along with the carrier it stands for:
+                // a codec that reads an entry as this enum carries the table,
+                // and the enum's own type carries none.
+                ctx.enum_texts = em
+                    .variants
+                    .iter()
+                    .map(|v| forge::generator::EnumText {
+                        text: v.wire_text().to_string(),
+                        value: v.value,
+                    })
+                    .collect();
                 ctx.enum_source_name = em.name.clone();
                 // The carrier and the membership rule ride along for the
                 // same reason the variants do: a codec field of this type

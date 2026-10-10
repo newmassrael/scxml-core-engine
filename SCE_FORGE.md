@@ -1441,8 +1441,10 @@ declares is `line-bad-value`. The field is the enum's own type and a required
 entry starts at the first declared variant, as a CBOR enum field does. No
 backend's enum type carries the text: the codec carries a table of the texts and
 the carrier values they stand for, and takes the variant through the enum's own
-`from_underlying`. A backend that has not landed it refuses a codec that has an
-enum entry by name (`content_line_codec::lowers_enum_entries`).
+`from_underlying`. Python generates it (the runtime's `read_enum` and
+`read_param_enum` match the text, and `enum_value` and `enum_param` write it,
+against the table the codec carries); a backend that has not landed it refuses a
+codec that has an enum entry by name (`content_line_codec::lowers_enum_entries`).
 
 Every backend generates it, and the generator's refusal and the conformance
 harness's schedule read one answer (`content_line_codec::refusal`). The vectors

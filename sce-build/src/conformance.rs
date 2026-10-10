@@ -295,6 +295,15 @@ pub struct StructField {
     /// Derived from the document, like `optional`.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub list: bool,
+    /// The name of the enum document this field reads by the text of its
+    /// variants — an entry or a parameter of an `sce:encoding="content-line"`
+    /// codec typed `enum:<alias>` (docs/adr/0015). A round-trip case writes the
+    /// value as the carrier number the enum document gives the variant, and a
+    /// language's fragment takes it to and from its own enum type through the
+    /// enum's conversions; this names the type that conversion belongs to.
+    /// Derived from the document, like `optional`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enum_document: Option<String>,
     /// The members of one record of a list of line records — a repeated
     /// property that declares a parameter or a separator (docs/adr/0014),
     /// which each language carries as a record type. The parameters come in
@@ -1349,6 +1358,14 @@ impl Manifest {
                             f.name, field.name
                         ));
                     }
+                    if let Some(field) = fields.iter().find(|field| field.enum_document.is_some()) {
+                        return Err(format!(
+                            "fixture {}: field `{}` states `enum_document`, which is derived \
+                             from the SCXML (the enum an `enum:<alias>` content-line entry \
+                             imports); remove it from fixtures.json",
+                            f.name, field.name
+                        ));
+                    }
                     if let Some(field) = fields.iter().find(|field| !field.members.is_empty()) {
                         return Err(format!(
                             "fixture {}: field `{}` states `members`, which are \
@@ -2174,6 +2191,17 @@ fn read_codec_model(
     }
 }
 
+/// An enum a content-line codec reads an entry by the text of (docs/adr/0015),
+/// as a vector states it.
+struct EnumCarrier {
+    /// The manifest type of the number a vector writes for a variant: the
+    /// carrier the enum document declares.
+    ty: CanonicalType,
+    /// The name of the enum document, which names the type a language's fragment
+    /// converts the number to and from.
+    document: String,
+}
+
 /// The carrier, as a manifest type, of each enum a codec document imports —
 /// what a content-line entry typed `enum:<alias>` is in `decoded` (docs/adr/0015):
 /// the number the enum document gives the variant. Read with the parse the
@@ -2181,7 +2209,7 @@ fn read_codec_model(
 fn read_enum_carriers(
     scxml_path: &Path,
     fixture_name: &str,
-) -> Result<std::collections::BTreeMap<String, CanonicalType>, String> {
+) -> Result<std::collections::BTreeMap<String, EnumCarrier>, String> {
     use crate::forge::model::SceType;
     let text = crate::load_forge_source(scxml_path, &[])
         .map_err(|e| format!("cannot read {}: {e}", scxml_path.display()))?
@@ -2201,7 +2229,7 @@ fn read_enum_carriers(
         else {
             continue;
         };
-        let carrier = match vocabulary.underlying_type {
+        let ty = match vocabulary.underlying_type {
             SceType::Uint8 => CanonicalType::U8,
             SceType::Uint16 => CanonicalType::U16,
             SceType::Uint32 => CanonicalType::U32,
@@ -2214,7 +2242,13 @@ fn read_enum_carriers(
                 ))
             }
         };
-        carriers.insert(import.alias.clone(), carrier);
+        carriers.insert(
+            import.alias.clone(),
+            EnumCarrier {
+                ty,
+                document: vocabulary.name.clone(),
+            },
+        );
     }
     Ok(carriers)
 }
@@ -2268,16 +2302,22 @@ fn derive_codec_shape(
         // What a member of a record is in `decoded`: a string, or the carrier of
         // the enum it reads by text (docs/adr/0015).
         let carriers = read_enum_carriers(scxml_path, fixture_name)?;
-        let entry_type = |entry: &crate::forge::model::ContentLineEntry| match &entry.sce_type {
+        let enum_of = |entry: &crate::forge::model::ContentLineEntry| match &entry.sce_type {
             crate::forge::model::SceType::Enum(eref) => {
-                carriers.get(&eref.alias).copied().ok_or_else(|| {
+                carriers.get(&eref.alias).map(Some).ok_or_else(|| {
                     format!(
                         "fixture {fixture_name}: entry `{}` imports no readable enum as `{}`",
                         entry.id, eref.alias
                     )
                 })
             }
-            _ => Ok(CanonicalType::String),
+            _ => Ok(None),
+        };
+        let entry_type = |entry: &crate::forge::model::ContentLineEntry| {
+            Ok::<_, String>(enum_of(entry)?.map_or(CanonicalType::String, |e| e.ty))
+        };
+        let entry_document = |entry: &crate::forge::model::ContentLineEntry| {
+            Ok::<_, String>(enum_of(entry)?.map(|e| e.document.clone()))
         };
         for field in fields.iter_mut() {
             let entry = entries
@@ -2305,6 +2345,7 @@ fn derive_codec_shape(
                     field.ty
                 ));
             }
+            field.enum_document = entry_document(entry)?;
             field.list = entry.max_count.is_some() || entry.separator.is_some();
             field.optional = !entry.required && !field.list;
             field.members = if entry.max_count.is_some()
@@ -2323,6 +2364,7 @@ fn derive_codec_shape(
                             compare: CompareMode::Equality,
                             optional: !p.required,
                             list: false,
+                            enum_document: entry_document(p)?,
                             members: Vec::new(),
                         })
                     })
@@ -2334,6 +2376,7 @@ fn derive_codec_shape(
                     compare: CompareMode::Equality,
                     optional: false,
                     list: has_list,
+                    enum_document: entry_document(entry)?,
                     members: Vec::new(),
                 });
                 members
@@ -3294,6 +3337,7 @@ mod tests {
             compare: CompareMode::Equality,
             optional: false,
             list: false,
+            enum_document: None,
             members: Vec::new(),
         }];
         let (mut cbor, mut content_line) = (false, false);

@@ -8,7 +8,24 @@
    a refused decode leaves the cursor where it found it. The generated decode
    funnels every `CodecError` into `None`, so a reject asserts refusal; the rule
    that refused is the runtime's, which its own tests pin. The rejects are read
-   from the reference like the cases are. #}
+   from the reference like the cases are.
+
+   A vector states an entry that is an enum (docs/adr/0015) as its carrier
+   number; the codec holds the enum's own type, so a value written into the
+   codec is taken from the number by the enum's conversion, and a decoded one
+   compares equal to the number because the type is an `IntEnum`. `lift` is the
+   expression of the value a vector holds, as the codec holds it. #}
+{% macro lift(field, expr) -%}
+{%- if field.enum_document and field.list -%}
+[{{ field.enum_document | to_snake_case }}.{{ field.enum_document | to_pascal_case }}.from_underlying(x) for x in {{ expr }}]
+{%- elif field.enum_document and field.optional -%}
+(None if {{ expr }} is None else {{ field.enum_document | to_snake_case }}.{{ field.enum_document | to_pascal_case }}.from_underlying({{ expr }}))
+{%- elif field.enum_document -%}
+{{ field.enum_document | to_snake_case }}.{{ field.enum_document | to_pascal_case }}.from_underlying({{ expr }})
+{%- else -%}
+{{ expr }}
+{%- endif -%}
+{%- endmacro %}
         from sce_forge_runtime.codec import SceCursor as _SceCursor
         for i, case in enumerate(spec["cases"]):
             decoded = case["decoded"]
@@ -59,13 +76,13 @@
                 {{ field.name | to_snake_case }}=[
                     {{ f.name }}.{{ f.name | to_pascal_case }}{{ field.name | to_pascal_case }}Line(
 {% for m in field.members %}
-                        {{ m.name | to_snake_case }}=d["{{ m.name }}"],
+                        {{ m.name | to_snake_case }}={{ lift(m, 'd["' ~ m.name ~ '"]') }},
 {% endfor %}
                     )
                     for d in decoded["{{ field.name }}"]
                 ],
 {% else %}
-                {{ field.name | to_snake_case }}=decoded["{{ field.name }}"],
+                {{ field.name | to_snake_case }}={{ lift(field, 'decoded["' ~ field.name ~ '"]') }},
 {% endif %}
 {% endfor %}
             )

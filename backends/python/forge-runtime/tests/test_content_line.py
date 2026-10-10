@@ -370,3 +370,117 @@ def test_a_text_list_is_read_back_as_written(values):
     text = _written(write).encode("utf-8")
     reader = cl.ContentLineReader.begin(text, "VEVENT")
     assert reader.next_property().read_strings(",", 4, 8, True) == values
+
+
+# ── An enum read and written by the text of its variants (docs/adr/0015) ──
+
+#: A closed vocabulary the way a generated codec holds it: each variant's text
+#: and its carrier, the carriers neither starting at zero nor running on.
+STATUS = (("NEEDS-ACTION", 1), ("IN-PROCESS", 2), ("COMPLETED", 4), ("cancelled", 8))
+
+
+def _enum_value(value: bytes, table=STATUS):
+    text = b"BEGIN:VEVENT\r\nS:" + value + b"\r\nEND:VEVENT\r\n"
+    return cl.ContentLineReader.begin(text, "VEVENT").next_property().read_enum(table)
+
+
+def _enum_param(line: bytes, table=STATUS):
+    text = b"BEGIN:VEVENT\r\n" + line + b"\r\nEND:VEVENT\r\n"
+    prop = cl.ContentLineReader.begin(text, "VEVENT").next_property()
+    assert prop.next_param()
+    return prop.read_param_enum(table)
+
+
+@pytest.mark.parametrize(
+    "value, carrier",
+    [
+        (b"NEEDS-ACTION", 1),
+        (b"needs-action", 1),
+        (b"In-Process", 2),
+        (b"completed", 4),
+        # A variant with no text of its own is read by its declared name, in any case.
+        (b"CANCELLED", 8),
+        (b"Cancelled", 8),
+    ],
+)
+def test_a_text_is_matched_ascii_case_insensitively(value, carrier):
+    assert _enum_value(value) == carrier
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        b"",
+        b"DONE",
+        b"NEEDS",
+        b"NEEDS-ACTION-",
+        b"NEEDS-ACTION-NEEDS-ACTION-NEEDS-ACTION",
+        b" IN-PROCESS",
+        b"IN-PROCESS ",
+        # The declared name of a variant that has a text is not its text.
+        b"needsAction",
+        # A value is no TEXT, so a backslash in it is not an escape.
+        b"IN\\-PROCESS",
+        b"IN-\x07PROCESS",
+        # Only the 26 letters fold: U+017F and U+0131 are not S and I.
+        b"IN-PROCE\xc5\xbf\xc5\xbf",
+        b"\xc4\xb1N-PROCESS",
+    ],
+)
+def test_a_value_no_variant_names_is_a_bad_value(value):
+    with pytest.raises(cl.LineBadValue):
+        _enum_value(value)
+
+
+def test_a_text_cut_by_a_fold_is_read_whole():
+    text = b"BEGIN:VEVENT\r\nS:IN-PRO\r\n CESS\r\nEND:VEVENT\r\n"
+    assert cl.ContentLineReader.begin(text, "VEVENT").next_property().read_enum(STATUS) == 2
+
+
+def test_a_parameter_that_is_an_enum_is_matched_quoted_or_not():
+    assert _enum_param(b"S;ROLE=completed:x") == 4
+    assert _enum_param(b'S;ROLE="Needs-Action":x') == 1
+    for bad in (b"S;ROLE=:x", b"S;ROLE=BOSS:x", b'S;ROLE="":x', b"S;ROLE=COMPLETED,COMPLETED:x"):
+        with pytest.raises(cl.LineBadValue):
+            _enum_param(bad)
+
+
+def test_a_parameter_the_grammar_refuses_is_malformed_before_it_is_a_bad_value():
+    # The value is scanned whole before it is judged, so a quote that never closes
+    # is malformed even though the text before it names no variant.
+    with pytest.raises(cl.LineMalformed):
+        _enum_param(b'S;ROLE="ZZZ:x')
+
+
+def test_an_enum_is_written_as_the_text_its_enum_declares():
+    def write(w):
+        w.property("S")
+        w.enum_param("ROLE", STATUS, 1)
+        w.enum_param("X-Q", STATUS, 8)
+        w.enum_value(STATUS, 2)
+        w.property("T")
+        w.enum_value(STATUS, 8)
+
+    assert _written(write) == (
+        "BEGIN:VEVENT\r\nS;ROLE=NEEDS-ACTION;X-Q=cancelled:IN-PROCESS\r\nT:cancelled\r\n"
+        "END:VEVENT\r\n"
+    )
+
+
+def test_a_carrier_no_variant_declares_has_no_text_and_is_not_written():
+    out = bytearray()
+    w = cl.ContentLineWriter(BytearraySink(out), "VEVENT")
+    w.begin()
+    w.property("S")
+    before = len(out)
+    with pytest.raises(cl.LineBadValue):
+        w.enum_value(STATUS, 9)
+    with pytest.raises(cl.LineBadValue):
+        w.enum_param("ROLE", STATUS, 9)
+    assert len(out) == before
+
+
+def test_a_closed_enums_unknown_carrier_is_refused_by_declared():
+    assert cl.declared("x") == "x"
+    with pytest.raises(cl.LineBadValue):
+        cl.declared(None)

@@ -660,7 +660,7 @@ fn an_enum_entry_takes_none_of_a_strings_own_attributes() {
 #[test]
 fn an_enum_entry_is_refused_by_name_until_a_backend_generates_it() {
     // The backends that have landed it; each adds itself in its own commit.
-    const GENERATING: [Language; 0] = [];
+    const GENERATING: [Language; 1] = [Language::Python];
     let m = codec(&enum_document(ENUM_ENTRIES));
     for lang in [
         Language::Rust,
@@ -785,49 +785,83 @@ fn a_variants_text_is_a_token_and_no_other_variants_under_case_folding() {
     assert!(kept.is_ok(), "{kept:?}");
 }
 
-/// What the generator says of `entries` read against the enum `status`, on the
-/// way to a language that has not landed an enum entry: the refusal that names the
-/// vocabulary, or the one that names the language.
-fn generated_against(status: &str, entries: &str) -> String {
+/// What the generator says of `entries` read against the enum `status`, generating
+/// for `language`: the refusal that names the vocabulary, the one that names the
+/// language when it has not landed an enum entry, or the manifest of what it wrote.
+fn generated_against(language: &str, status: &str, entries: &str) -> String {
     let dir = tempdir().expect("tempdir");
     std::fs::write(dir.path().join("probe_status.scxml"), status).expect("write the enum");
     let source = dir.path().join("probe_event.scxml");
     std::fs::write(&source, enum_document(entries)).expect("write the codec");
     let output = Command::new(env!("CARGO_BIN_EXE_sce-codegen"))
-        .args(["generate", "-l", "python", "-o"])
+        .args(["generate", "-l", language, "-o"])
         .arg(dir.path().join("out"))
         .arg(&source)
         .output()
         .expect("run sce-codegen");
-    format!(
+    let mut said = format!(
         "{}{}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
-    )
+    );
+    // What a language that generates it wrote, so a test can read the codec.
+    if let Ok(written) = std::fs::read_to_string(dir.path().join("out/probe_event.py")) {
+        said.push_str(&written);
+    }
+    said
 }
 
 #[test]
 fn the_enum_a_codec_reads_gives_each_variant_a_text_a_line_can_carry() {
     let entry = r#"    <data id="status" sce:type="enum:Status" sce:property="STATUS"/>"#;
     // A variant with no text is called by its name, which must be a token.
-    let said = generated_against(&status_document(&[("needs_action", 0, None)]), entry);
+    let said = generated_against(
+        "python",
+        &status_document(&[("needs_action", 0, None)]),
+        entry,
+    );
     assert!(
         said.contains("needs_action") && said.contains("sce:text"),
         "{said}"
     );
     // Two variants whose texts are one under case folding.
     let said = generated_against(
+        "python",
         &status_document(&[("done", 0, None), ("Done", 1, None)]),
         entry,
     );
     assert!(said.contains("`done`") && said.contains("`Done`"), "{said}");
-    // A vocabulary that is sound reaches the refusal that names the language.
-    let said = generated_against(
-        &status_document(&[("needsAction", 0, Some("NEEDS-ACTION")), ("done", 1, None)]),
-        entry,
-    );
+    // A vocabulary that is sound reaches the refusal that names a language that has
+    // not landed an enum entry.
+    let sound = status_document(&[("needsAction", 0, Some("NEEDS-ACTION")), ("done", 1, None)]);
+    let said = generated_against("kotlin", &sound, entry);
     assert!(
         said.contains("docs/adr/0015") && !said.contains("iana-token"),
         "{said}"
     );
+}
+
+#[test]
+fn python_reads_and_writes_an_enum_entry_by_the_text_of_its_variants() {
+    let entry = r#"    <data id="status" sce:type="enum:Status" sce:property="STATUS"/>"#;
+    let sound = status_document(&[("needsAction", 0, Some("NEEDS-ACTION")), ("done", 1, None)]);
+    let said = generated_against("python", &sound, entry);
+    assert!(!said.contains("docs/adr/0015"), "{said}");
+    // The table of texts and carriers is in the codec, in declaration order, and the
+    // text of a variant without one is its declared name.
+    assert!(
+        said.contains(r#"("NEEDS-ACTION", 0),"#) && said.contains(r#"("done", 1),"#),
+        "{said}"
+    );
+    // The variant is taken through the enum's own conversion, and the field is the
+    // enum's type, not a string.
+    assert!(
+        said.contains("from_underlying(line.read_enum(_TEXTS_Status))"),
+        "{said}"
+    );
+    assert!(
+        said.contains("out.enum_value(_TEXTS_Status, v.to_underlying())"),
+        "{said}"
+    );
+    assert!(!said.contains("status: Optional[str]"), "{said}");
 }

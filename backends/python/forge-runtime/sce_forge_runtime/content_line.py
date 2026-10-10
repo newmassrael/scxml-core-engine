@@ -76,6 +76,38 @@ def _lower(b: int) -> int:
     return b + 0x20 if 0x41 <= b <= 0x5A else b
 
 
+#: The variants of an enum an entry is read and written by, in declaration
+#: order: each variant's text and the carrier value it stands for
+#: (docs/adr/0015). The generated codec holds it as data.
+EnumTexts = Tuple[Tuple[str, int], ...]
+
+
+def _longest_text(table: EnumTexts) -> int:
+    return max((len(text) for text, _ in table), default=0)
+
+
+def _carrier_of(value: bytes, table: EnumTexts) -> int:
+    """The carrier of the first variant whose text is ``value``, compared
+    ASCII case-insensitively: ``bytes.lower`` folds the 26 letters and no other
+    byte, so a character Unicode folds to one of them (U+017F, U+0131) is not
+    that letter."""
+    folded = value.lower()
+    for text, carrier in table:
+        if text.encode("ascii").lower() == folded:
+            return carrier
+    raise LineBadValue()
+
+
+def declared(value):
+    """``value``, the enum member a carrier was taken to, or
+    :class:`LineBadValue` where the enum is closed and the carrier is none of its
+    variants. The table of a codec holds only declared carriers, so this does not
+    refuse one a generated codec reads; it is the type's own answer, asked."""
+    if value is None:
+        raise LineBadValue()
+    return value
+
+
 class _Scan:
     """A walk over the bytes of one logical line, ``raw[pos:limit]``, with its
     folds removed as it goes: a line break and the one space or tab after it
@@ -512,6 +544,46 @@ class ContentLineProperty:
             return False
         raise LineBadValue()
 
+    def read_enum(self, table: EnumTexts) -> int:
+        """Read the value as the text of a variant of an enum (docs/adr/0015):
+        the carrier of the first row of ``table`` whose text it is, ASCII
+        case-insensitively. A value no row names is :class:`LineBadValue`,
+        whatever its bytes are: it is no TEXT, so a backslash in it is not an
+        escape, and nothing of it is kept past the longest text."""
+        self._begin_value()
+        scan = self._scan
+        longest = _longest_text(table)
+        word = bytearray()
+        while True:
+            b = scan.bump()
+            if b < 0:
+                break
+            if len(word) <= longest:
+                word.append(b)
+        return _carrier_of(bytes(word), table)
+
+    def read_param_enum(self, table: EnumTexts) -> int:
+        """Read the value of the parameter :meth:`next_param` stands on as the
+        text of a variant of an enum (docs/adr/0015). The whole value is scanned
+        before it is judged, so a line the grammar refuses is
+        :class:`LineMalformed` before it is :class:`LineBadValue`; a second value
+        is :class:`LineBadValue`."""
+        if self._phase != _PARAM_VALUE:
+            raise LineMalformed()
+        longest = _longest_text(table)
+        word = bytearray()
+
+        def emit(b: int) -> None:
+            if len(word) <= longest:
+                word.append(b)
+
+        more = self._scan_param_value(emit)
+        self._param_start = -1
+        self._phase = _AT_SEPARATOR
+        if more:
+            raise LineBadValue()
+        return _carrier_of(bytes(word), table)
+
 
 # ── Writing ─────────────────────────────────────────────────────────────
 
@@ -656,3 +728,27 @@ class ContentLineWriter:
     def boolean(self, value: bool) -> None:
         """Write ``:TRUE`` or ``:FALSE`` and end the line."""
         self._digits("TRUE" if value else "FALSE")
+
+    @staticmethod
+    def _text_of(table: EnumTexts, carrier: int) -> str:
+        """The text of the first variant with ``carrier``, as the enum declares
+        it; a carrier of an open enum that no variant declares has none, and is
+        :class:`LineBadValue` (docs/adr/0015)."""
+        for text, held in table:
+            if held == carrier:
+                return text
+        raise LineBadValue()
+
+    def enum_param(self, name: str, table: EnumTexts, carrier: int) -> None:
+        """Write ``;<name>=<text>`` for the variant with ``carrier``. A text is
+        letters, digits and hyphens, so it is never quoted."""
+        text = self._text_of(table, carrier)
+        self._unit(b";")
+        self._ascii_units(name)
+        self._unit(b"=")
+        self._ascii_units(text)
+
+    def enum_value(self, table: EnumTexts, carrier: int) -> None:
+        """Write ``:<text>`` for the variant with ``carrier`` and end the
+        line."""
+        self._digits(self._text_of(table, carrier))

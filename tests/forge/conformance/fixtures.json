@@ -2842,6 +2842,37 @@
       "fields": []
     },
     {
+      "name": "enum_content_line_class",
+      "kind": "enum",
+      "ref_section": "enums",
+      "variants": [
+        { "name": "unclassified", "value": 0 },
+        { "name": "restricted", "value": 1 },
+        { "name": "secret", "value": 2 }
+      ]
+    },
+    {
+      "name": "enum_content_line_role",
+      "kind": "enum",
+      "ref_section": "enums",
+      "variants": [
+        { "name": "chair", "value": 10 },
+        { "name": "participant", "value": 300 },
+        { "name": "observer", "value": 4000 }
+      ]
+    },
+    {
+      "name": "enum_content_line_status",
+      "kind": "enum",
+      "ref_section": "enums",
+      "variants": [
+        { "name": "needsAction", "value": 1 },
+        { "name": "inProcess", "value": 2 },
+        { "name": "completed", "value": 4 },
+        { "name": "cancelled", "value": 8 }
+      ]
+    },
+    {
       "name": "enum_uds_nrc",
       "kind": "enum",
       "ref_section": "enums",

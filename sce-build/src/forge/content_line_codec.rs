@@ -46,12 +46,8 @@ pub fn lowers(lang: Language) -> bool {
 /// read such an entry as nothing would be a wrong output.
 pub fn lowers_enum_entries(lang: Language) -> bool {
     match lang {
-        Language::Rust
-        | Language::Kotlin
-        | Language::Cpp
-        | Language::Go
-        | Language::Python
-        | Language::C11 => false,
+        Language::Python => true,
+        Language::Rust | Language::Kotlin | Language::Cpp | Language::Go | Language::C11 => false,
     }
 }
 
@@ -106,9 +102,57 @@ fn kind(entry: &ContentLineEntry) -> &'static str {
     match &entry.sce_type {
         SceType::String => "string",
         SceType::Bool => "bool",
+        SceType::Enum(_) => "enum",
         ty if ty.is_signed() => "int",
         _ => "uint",
     }
+}
+
+/// What a template needs of an entry or parameter that is an enum, written and
+/// read by the text of its variants (docs/adr/0015): the table it matches
+/// against, the conversion of a carrier into the enum's own type, whether the
+/// enum is open, and the expression that takes `value` to its carrier. Empty for
+/// anything else.
+fn enum_keys(l: &LangCtx, ty: &SceType, value: &str) -> serde_json::Map<String, serde_json::Value> {
+    let mut keys = serde_json::Map::new();
+    if let SceType::Enum(r) = ty {
+        keys.insert("enum_alias".into(), r.alias.clone().into());
+        keys.insert("enum_from".into(), l.enum_from_underlying(&r.alias).into());
+        keys.insert("enum_to".into(), l.codec_carrier_expr(ty, value).into());
+        keys.insert("enum_is_open".into(), l.enum_is_open(&r.alias).into());
+    }
+    keys
+}
+
+/// The tables of the enums the codec reads an entry by, one for each enum in
+/// the order an entry first names it, as a template writes them out.
+fn insert_enum_tables(
+    ctx: &mut serde_json::Map<String, serde_json::Value>,
+    l: &LangCtx,
+    m: &CodecModel,
+) {
+    let model = m
+        .content_line
+        .as_ref()
+        .expect("a content-line codec carries its entries");
+    let mut tables: Vec<serde_json::Value> = Vec::new();
+    let mut seen: Vec<&str> = Vec::new();
+    for entry in &model.entries {
+        let SceType::Enum(r) = &entry.sce_type else {
+            continue;
+        };
+        if seen.contains(&r.alias.as_str()) {
+            continue;
+        }
+        seen.push(&r.alias);
+        let rows: Vec<serde_json::Value> = l
+            .enum_texts(&r.alias)
+            .iter()
+            .map(|row| serde_json::json!({ "text": row.text, "value": row.value.to_string() }))
+            .collect();
+        tables.push(serde_json::json!({ "alias": r.alias, "rows": rows }));
+    }
+    ctx.insert("enum_tables".into(), tables.into());
 }
 
 /// The width in bits of an integer type, as the bound its entry's read is held
@@ -175,19 +219,27 @@ fn entries_context(
                 .parameters_of(e)
                 .map(|p| {
                     let name = l.codec_field_id(&p.id);
-                    serde_json::json!({
+                    let mut param = serde_json::json!({
                         "name": name,
                         "local": format!("field_{name}"),
                         "param": p.param,
+                        "kind": kind(p),
                         "required": p.required,
                         "max_size": p.max_size,
                         "value_type": value_type(p),
                         "default": default_of(&p.sce_type),
-                    })
+                    });
+                    // A parameter's carrier is taken from a local of the line
+                    // that holds the parameter, `pv`.
+                    param
+                        .as_object_mut()
+                        .expect("a json object")
+                        .extend(enum_keys(l, &p.sce_type, "pv"));
+                    param
                 })
                 .collect();
             let name = l.codec_field_id(&e.id);
-            serde_json::json!({
+            let mut entry = serde_json::json!({
                 "name": name,
                 "local": format!("field_{name}"),
                 "property": e.property,
@@ -216,8 +268,17 @@ fn entries_context(
                 "min": int_range(&e.sce_type).map(|r| r.0),
                 "max": int_range(&e.sce_type).map(|r| r.1),
                 "default": default_of(&e.sce_type),
+                // What a line record or a list starts its value at, kept apart from
+                // `default`, which a template reads for the field that holds the
+                // record or the list.
+                "value_default": default_of(&e.sce_type),
                 "params": params,
-            })
+            });
+            entry
+                .as_object_mut()
+                .expect("a json object")
+                .extend(enum_keys(l, &e.sce_type, "v"));
+            entry
         })
         .collect()
 }
@@ -318,6 +379,7 @@ fn render_python(
         },
     );
     insert_component(&mut ctx, m);
+    insert_enum_tables(&mut ctx, &l, m);
     ctx.insert("entries".into(), entries.into());
     l.render(env, "codec_content_line", ctx)
 }

@@ -22,6 +22,15 @@ use std::path::Path;
 
 // ── Cross-file import resolution ──────────────────────────────────
 
+/// One variant of an imported enum as a content line writes it
+/// (docs/adr/0015): the text the enum document gives it and the carrier value it
+/// stands for.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct EnumText {
+    pub text: String,
+    pub value: i128,
+}
+
 /// Template-ready import context for a single `<sce:import>`.
 /// Per-language data is computed here; templates consume it directly.
 #[derive(Debug, Clone, serde::Serialize)]
@@ -357,6 +366,12 @@ pub struct ImportContext {
     /// module exists to prevent.
     #[serde(skip)]
     pub enum_variants: Vec<String>,
+    /// The text each variant of an imported enum is written as on a content line
+    /// (docs/adr/0015) beside the carrier value it stands for, in declaration
+    /// order. A content-line codec that reads an entry as this enum carries the
+    /// table; no backend's enum type does. Empty for every other import.
+    #[serde(skip)]
+    pub enum_texts: Vec<EnumText>,
     /// The imported enum document's own `name`, unconverted. Needed
     /// alongside the variants because two backends fold the type name
     /// INTO the variant identifier (Go's `TypeVariant`, C11's
@@ -776,6 +791,7 @@ fn resolve_single_import(
         // the only place that has the imported document's typed model.
         enum_qualified_type: String::new(),
         enum_variants: Vec::new(),
+        enum_texts: Vec::new(),
         enum_source_name: String::new(),
         enum_underlying: None,
         enum_is_open: false,
@@ -23488,6 +23504,10 @@ struct EnumImport {
     /// starts at when it must be constructed before a decode fills it.
     source_name: String,
     first_variant: String,
+    /// What a content line writes for each variant and the carrier it stands
+    /// for (docs/adr/0015); empty when the import was built to ask a type
+    /// question only.
+    texts: Vec<EnumText>,
 }
 
 pub(crate) struct LangCtx {
@@ -23529,6 +23549,7 @@ impl LangCtx {
                     // ([`enum_default_expr`](Self::enum_default_expr))
                     // rather than here.
                     first_variant: imp.enum_variants.first().cloned().unwrap_or_default(),
+                    texts: imp.enum_texts.clone(),
                 }
             })
             .collect();
@@ -23579,6 +23600,7 @@ impl LangCtx {
                     is_open: false,
                     source_name: String::new(),
                     first_variant: String::new(),
+                    texts: Vec::new(),
                 })
                 .collect(),
             origin: "LangCtx::with_static_enums",
@@ -23660,6 +23682,13 @@ impl LangCtx {
     /// total rather than partial.
     pub(crate) fn enum_is_open(&self, alias: &str) -> bool {
         self.enum_import(alias).is_open
+    }
+
+    /// The text of each variant of the enum `alias` names and the carrier it
+    /// stands for, in declaration order — the table a content-line codec reads
+    /// and writes an enum entry by (docs/adr/0015).
+    pub(crate) fn enum_texts(&self, alias: &str) -> &[EnumText] {
+        &self.enum_import(alias).texts
     }
 
     pub(crate) fn enum_from_underlying(&self, alias: &str) -> String {
@@ -30104,6 +30133,7 @@ mod tests {
             flag_binds: Vec::new(),
             enum_qualified_type: qualified.to_string(),
             enum_variants: Vec::new(),
+            enum_texts: Vec::new(),
             enum_source_name: String::new(),
             enum_underlying: None,
             enum_is_open: false,
@@ -30978,6 +31008,7 @@ mod tests {
                 flag_binds: Vec::new(),
                 enum_qualified_type: String::new(),
                 enum_variants: Vec::new(),
+                enum_texts: Vec::new(),
                 enum_source_name: String::new(),
                 enum_underlying: None,
                 enum_is_open: false,
@@ -31021,6 +31052,7 @@ mod tests {
                 flag_binds: Vec::new(),
                 enum_qualified_type: String::new(),
                 enum_variants: Vec::new(),
+                enum_texts: Vec::new(),
                 enum_source_name: String::new(),
                 enum_underlying: None,
                 enum_is_open: false,
