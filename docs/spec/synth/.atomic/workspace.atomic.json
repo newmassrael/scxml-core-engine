@@ -5538,6 +5538,10 @@
         {
           "file": "scripts/lib/queue_sanitizer.sh",
           "kind": "references"
+        },
+        {
+          "file": "backends/c/forge-runtime/tests/genmc/linked_segment_handover.c",
+          "kind": "references"
         }
       ]
     },
