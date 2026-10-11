@@ -43,6 +43,14 @@ After the change, with the same two pages and the same documents:
 The change is safe by the second-to-last row: no figure that fitted before is drawn differently. It is small by the
 first two: most of what is refused is too TALL, not too wide (331 of 388 on A3), which this change does not address.
 
+⚠ The tables above count every refusal under the one code, and the first account of the height refusals here called
+them statecharts whose table of transitions is long. Measured by what each refusal names, the 370 still refused on A3
+landscape (393 on A4) are two different things: a statechart's figure (80 on A3, 114 on A4), and the dataflow picture
+of a transform, condition, filter or validator (287 on A3, 393 on A4), which is one tall picture of every input,
+computation and output and is the larger part. For the statecharts the drawing alone is taller than a page in most
+cases (median four pages): the table under it is not what makes it too tall, so setting the table on a next sheet
+would admit almost none (2 of 45 measured on A4).
+
 ## Decision
 
 A rank wider than the width a row may take is set as several consecutive ranks. The ranks are cut in the order the
@@ -69,7 +77,7 @@ option and a test holds `None` and a limit larger than the figure to the same re
 
 ## What this does not decide
 
-- A figure too TALL for the page. Of the 370 figures still refused on A3 landscape, most are refused for height: the
-  drawing, and the table of the figure's transitions under it, are one sheet. Setting a figure on several sheets
-  (the table continuing on the next one, and a drawing too tall for a sheet cut between ranks, with the arrows that
-  cross the cut marked on both) is the next step and needs its own decision.
+- A statechart figure too TALL for the page. Its drawing alone is taller than a page, so the table continuing on the
+  next sheet does not help; setting it on several sheets means cutting the drawing between ranks and marking the
+  arrows that cross the cut on both sheets. That needs its own decision.
+- The dataflow picture of a document with many inputs and outputs: see ADR 0018.

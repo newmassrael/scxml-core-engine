@@ -359,10 +359,21 @@ fn labels(
     Ok(out)
 }
 
+/// How far below its box the loop of a ranked box's arrow to itself reaches.
+/// The layout leaves this much room under the last rank when a box there
+/// has such an arrow, so the loop stays inside the frame.
+pub(super) fn loop_depth(rank_gap: f64) -> f64 {
+    rank_gap * 0.55
+}
+
 /// An arrow from a box to itself: a loop into the gap below a ranked box,
 /// or out of the right side of the frame's header.
+///
+/// The loop is wide enough that its two sides and the arrow head on one of
+/// them can be told apart at the minimum type size: a loop of one line's
+/// width is a stub with a head and no line.
 fn loop_path(laid: &Laid, node: Node, port: Point, style: Style) -> (Vec<Point>, Point) {
-    let d = style.body_pt * 0.8;
+    let d = style.body_pt * 1.6;
     match node {
         Node::Frame => {
             let frame = laid.placed(node);
@@ -377,8 +388,21 @@ fn loop_path(laid: &Laid, node: Node, port: Point, style: Style) -> (Vec<Point>,
             (path, (x + reach, h * 0.5))
         }
         _ => {
-            let depth = laid.rank_gap * 0.3;
+            let depth = loop_depth(laid.rank_gap);
             let (px, y) = port;
+            // Both ends of the loop stand on the box's own bottom edge, so
+            // the head on one of them points INTO the box: a loop wider than
+            // a narrow box would end its head in the empty space beside it.
+            // The loop is kept inside the box's width, narrowed when the box
+            // is narrower than the loop, and moved along the edge when the
+            // port it was given is too near an end.
+            let (bx, bw) = {
+                let b = laid.placed(node);
+                (b.x, b.sized.width)
+            };
+            let inset = style.body_pt * 0.3;
+            let d = d.min(((bw - 2.0 * inset) / 2.0).max(style.body_pt * 0.4));
+            let px = px.clamp(bx + inset + d, (bx + bw - inset - d).max(bx + inset + d));
             let path = vec![
                 (px + d, y),
                 (px + d, y + depth),
@@ -468,6 +492,47 @@ mod tests {
   </state>
   <state id="away"><transition event="return" target="back"/></state>
 </scxml>"##;
+
+    /// Both ends of the loop of a box's arrow to itself stand on that box's
+    /// bottom edge, between its left and right sides: the head on one of
+    /// them points into the box, even for a box narrower than the loop.
+    #[test]
+    fn a_loop_starts_and_ends_on_its_own_box() {
+        let narrow = r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="x">
+  <state id="x">
+    <transition event="a" target="x"/>
+    <transition event="b" target="y"/>
+    <transition event="c" target="x"/>
+    <transition event="d" target="x"/>
+  </state>
+  <state id="y"><transition event="e" target="x"/><transition event="f" target="y"/></state>
+</scxml>"##;
+        let m = SCXMLParser::new()
+            .parse_string(narrow, "route")
+            .expect("parses");
+        let printed = print(&m, &EN, Page::named("a3-landscape", 7.0).unwrap()).expect("fits");
+        let mut loops = 0;
+        for p in &printed {
+            for (a, &(u, v)) in p.laid.ends.iter().enumerate() {
+                if u != v {
+                    continue;
+                }
+                let b = p.laid.placed(u);
+                let path = &p.arrows[a].path;
+                let (first, last) = (path[0], path[path.len() - 1]);
+                for end in [first, last] {
+                    loops += 1;
+                    assert!(
+                        end.0 >= b.x - 1e-6 && end.0 <= b.x + b.sized.width + 1e-6,
+                        "{end:?} is beside the box {:?}..{:?}",
+                        b.x,
+                        b.x + b.sized.width
+                    );
+                }
+            }
+        }
+        assert!(loops >= 4, "the loops were drawn: {loops}");
+    }
 
     /// No arrow passes through any box — the frame's header, a ranked
     /// child, a state of another figure — and no label covers a box or

@@ -407,8 +407,16 @@ pub fn lay_out(
         rows.push((y, y + tallest));
         y += tallest + rank_gap;
     }
+    // A box of the last rank with an arrow to itself has its loop below it,
+    // and nothing under the last rank would hold it inside the frame: the
+    // body is as much taller as the loop reaches, and a line for its number.
+    let last_rank_loops = ends
+        .iter()
+        .any(|&(u, v)| u == v && matches!(u, Node::Inner(i) if rank[i] + 1 == ranks));
     let body_height = if layers.is_empty() {
         header
+    } else if last_rank_loops {
+        y - rank_gap + super::route::loop_depth(rank_gap) + style.body_pt * style.leading
     } else {
         y - rank_gap
     };
@@ -501,26 +509,80 @@ fn wrap_wide_ranks(rank: &mut [usize], widths: &[f64], gap: f64, limit: f64) {
     let mut shifted = vec![0usize; rank.len()];
     let mut next = 0usize;
     for r in 0..ranks {
+        let members: Vec<usize> = (0..rank.len()).filter(|&i| rank[i] == r).collect();
+        let chunks = fill(&members, widths, gap, limit, &mut shifted, next);
+        next += chunks;
+    }
+    rank.copy_from_slice(&shifted);
+}
+
+/// Set `members` (box indexes, in document order) into rows no wider than
+/// `limit`, writing each one's rank into `ranks` counting from `first`;
+/// returns how many rows it took.
+///
+/// Rows are filled in order until the next box would pass the limit. That
+/// leaves a short last row (one box alone, where the others hold five), so
+/// the rows are then made even: the row limit is lowered, no further than
+/// the widest box, to the smallest one that still takes the same number of
+/// rows, and the boxes are set again under it.
+fn fill(
+    members: &[usize],
+    widths: &[f64],
+    gap: f64,
+    limit: f64,
+    ranks: &mut [usize],
+    first: usize,
+) -> usize {
+    let rows_under = |bound: f64| -> usize {
         let mut used = 0.0f64;
-        let mut chunk = 0usize;
-        let mut first = true;
-        for (i, &w) in widths.iter().enumerate() {
-            if rank[i] != r {
-                continue;
-            }
-            let need = if first { w } else { used + gap + w };
-            if !first && need > limit {
-                chunk += 1;
-                used = w;
+        let mut rows = 0usize;
+        for (k, &i) in members.iter().enumerate() {
+            let need = if k == 0 {
+                widths[i]
+            } else {
+                used + gap + widths[i]
+            };
+            if k > 0 && need > bound {
+                rows += 1;
+                used = widths[i];
             } else {
                 used = need;
             }
-            first = false;
-            shifted[i] = next + chunk;
         }
-        next += chunk + 1;
+        rows + usize::from(!members.is_empty())
+    };
+    let rows = rows_under(limit);
+    let mut bound = limit;
+    if rows > 1 {
+        let widest = members.iter().map(|&i| widths[i]).fold(0.0, f64::max);
+        let total: f64 =
+            members.iter().map(|&i| widths[i]).sum::<f64>() + gap * (members.len() - 1) as f64;
+        let mut low = (total / rows as f64).max(widest);
+        // Raise the bound from an even share of the total until it takes the
+        // same number of rows: the smallest such bound, in a few steps.
+        let step = (limit - low).max(0.0) / 16.0;
+        while low < limit && rows_under(low) > rows {
+            low += step.max(0.5);
+        }
+        bound = low.min(limit);
     }
-    rank.copy_from_slice(&shifted);
+    let mut used = 0.0f64;
+    let mut row = 0usize;
+    for (k, &i) in members.iter().enumerate() {
+        let need = if k == 0 {
+            widths[i]
+        } else {
+            used + gap + widths[i]
+        };
+        if k > 0 && need > bound {
+            row += 1;
+            used = widths[i];
+        } else {
+            used = need;
+        }
+        ranks[i] = first + row;
+    }
+    rows
 }
 
 #[cfg(test)]
@@ -627,6 +689,86 @@ mod tests {
             .collect();
         let got: Vec<String> = reading.into_iter().map(|r| r.2).collect();
         assert_eq!(got, want);
+    }
+
+    /// A box of the last rank with an arrow to itself has its loop inside
+    /// the frame: the body reaches as far below the box as the loop does.
+    /// A figure with no such loop is as tall as before.
+    #[test]
+    fn the_loop_of_a_box_in_the_last_rank_is_inside_the_frame() {
+        let with_loop = r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="a">
+  <state id="a"><transition event="go" target="b"/></state>
+  <state id="b"><transition event="again" target="b"/></state>
+</scxml>"##;
+        let without = r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="a">
+  <state id="a"><transition event="go" target="b"/></state>
+  <state id="b"/>
+</scxml>"##;
+        let figure = |text: &str| {
+            let m = SCXMLParser::new()
+                .parse_string(text, "loop")
+                .expect("parses");
+            let d = split(&m, 1);
+            let fig = &d.figures[0];
+            let s = Style::at(7.0);
+            lay_out(&m, fig, boxes(&m, &d, fig, &EN, s).unwrap(), s, None).unwrap()
+        };
+        let looped = figure(with_loop);
+        let plain = figure(without);
+        let bottom = looped
+            .inner
+            .iter()
+            .map(|p| p.y + p.sized.height)
+            .fold(0.0, f64::max);
+        assert!(
+            looped.body_height >= bottom + crate::diagram::route::loop_depth(looped.rank_gap),
+            "{} {bottom}",
+            looped.body_height
+        );
+        let plain_bottom = plain
+            .inner
+            .iter()
+            .map(|p| p.y + p.sized.height)
+            .fold(0.0, f64::max);
+        assert!(
+            (plain.body_height - plain_bottom).abs() < 1e-9,
+            "no loop, no extra room"
+        );
+    }
+
+    /// The rows of a wrapped rank are even: seven equal boxes under a limit
+    /// that takes four are set as two rows of four and three, never five
+    /// and one, and the number of rows is the same as when filled in order.
+    #[test]
+    fn the_rows_of_a_wrapped_rank_are_even() {
+        let widths = vec![100.0; 7];
+        let mut greedy = vec![0usize; 7];
+        let rows = fill(
+            &(0..7).collect::<Vec<_>>(),
+            &widths,
+            10.0,
+            450.0,
+            &mut greedy,
+            0,
+        );
+        assert_eq!(rows, 2);
+        let in_row = |r: usize| greedy.iter().filter(|&&x| x == r).count();
+        assert_eq!((in_row(0), in_row(1)), (4, 3));
+        let nine = vec![100.0; 9];
+        let mut ranks = vec![0usize; 9];
+        let rows = fill(
+            &(0..9).collect::<Vec<_>>(),
+            &nine,
+            10.0,
+            450.0,
+            &mut ranks,
+            0,
+        );
+        assert_eq!(rows, 3);
+        let counts: Vec<usize> = (0..3)
+            .map(|r| ranks.iter().filter(|&&x| x == r).count())
+            .collect();
+        assert!(counts.iter().all(|c| (3..=4).contains(c)), "{counts:?}");
     }
 
     /// A figure whose ranks already fit is laid out exactly as it is with

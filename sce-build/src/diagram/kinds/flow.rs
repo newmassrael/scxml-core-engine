@@ -34,6 +34,7 @@ const COLUMN_GAP_EM: f64 = 7.0;
 
 /// One computation: its box, the inputs it reads, and the output it
 /// gives.
+#[derive(Clone)]
 struct Middle {
     block: Block,
     reads: Vec<usize>,
@@ -235,21 +236,186 @@ fn port(top: f64, height: f64, slot: usize, of: usize) -> f64 {
 }
 
 /// The dataflow picture of a transform, condition, filter or validator.
+///
+/// A document with many inputs and outputs is one tall picture, taller than
+/// a page. It is then set as several pictures, each a part of the flow that
+/// fits (see [`split_flow`]): nothing is left out, and a part that has an
+/// input or an output no arrow reaches shows it with no arrow, as the one
+/// picture would. A flow that fits is drawn as one picture, as before.
 pub fn dataflow(
     doc: &ForgeDocument,
     lexicon: &Lexicon,
     page: Page,
 ) -> Result<Vec<Picture>, Refusal> {
-    let mut c = Canvas::new(page);
+    let c = Canvas::new(page);
     let Some((name, flow)) = flow_of(&c, doc, lexicon)? else {
         return Ok(Vec::new());
     };
     if flow.inputs.is_empty() && flow.middles.is_empty() && flow.outputs.is_empty() {
         return Ok(Vec::new());
     }
-    let body = c.style().body_pt;
     let title = format!("{name}: {}", say(lexicon, Phrase::Dataflow)?);
-    c.title(0.0, 0.0, &title)?;
+    match draw_flow(page, &title, &flow) {
+        Ok(sheet) => Ok(vec![Picture {
+            stem: "dataflow".into(),
+            sheet,
+        }]),
+        Err(Refusal::SheetDoesNotFit {
+            what,
+            need_pt,
+            area_pt,
+        }) if need_pt.0 <= area_pt.0 && need_pt.1 > area_pt.1 => {
+            // Too tall and not too wide: the parts are narrower than the whole
+            // and can be as short as one computation.
+            split_flow(page, &title, &flow).map_err(|refused| match refused {
+                Refusal::SheetDoesNotFit { .. } => Refusal::SheetDoesNotFit {
+                    what,
+                    need_pt,
+                    area_pt,
+                },
+                other => other,
+            })
+        }
+        Err(other) => Err(other),
+    }
+}
+
+/// One unit of a flow that is set whole on a picture: a computation with
+/// the inputs it reads and the output it gives, or an input no computation
+/// reads, or an output no computation gives.
+struct Unit {
+    inputs: Vec<usize>,
+    middle: Option<usize>,
+    outputs: Vec<usize>,
+}
+
+/// The flow as units, in the order the pictures are filled: the
+/// computations as the document writes them, then the inputs nothing reads,
+/// then the outputs nothing gives.
+fn units_of(flow: &Flow) -> Vec<Unit> {
+    let mut read = vec![false; flow.inputs.len()];
+    let mut given = vec![false; flow.outputs.len()];
+    let mut units: Vec<Unit> = Vec::new();
+    for (k, m) in flow.middles.iter().enumerate() {
+        for &i in &m.reads {
+            read[i] = true;
+        }
+        let outputs: Vec<usize> = m
+            .gives
+            .filter(|&o| o < flow.outputs.len())
+            .into_iter()
+            .collect();
+        for &o in &outputs {
+            given[o] = true;
+        }
+        units.push(Unit {
+            inputs: m.reads.clone(),
+            middle: Some(k),
+            outputs,
+        });
+    }
+    for (i, r) in read.iter().enumerate() {
+        if !r {
+            units.push(Unit {
+                inputs: vec![i],
+                middle: None,
+                outputs: Vec::new(),
+            });
+        }
+    }
+    for (o, g) in given.iter().enumerate() {
+        if !g {
+            units.push(Unit {
+                inputs: Vec::new(),
+                middle: None,
+                outputs: vec![o],
+            });
+        }
+    }
+    units
+}
+
+/// The part of `flow` the `units` make: their inputs, computations and
+/// outputs, each once, in the order the document has them, with the arrows'
+/// indexes renumbered to the part.
+fn part_of(flow: &Flow, units: &[Unit]) -> Flow {
+    let mut inputs: Vec<usize> = units
+        .iter()
+        .flat_map(|u| u.inputs.iter().copied())
+        .collect();
+    inputs.sort_unstable();
+    inputs.dedup();
+    let mut middles: Vec<usize> = units.iter().filter_map(|u| u.middle).collect();
+    middles.sort_unstable();
+    let mut outputs: Vec<usize> = units
+        .iter()
+        .flat_map(|u| u.outputs.iter().copied())
+        .collect();
+    outputs.sort_unstable();
+    outputs.dedup();
+    let local_input = |i: usize| inputs.iter().position(|&x| x == i);
+    let local_output = |o: usize| outputs.iter().position(|&x| x == o);
+    Flow {
+        inputs: inputs.iter().map(|&i| flow.inputs[i].clone()).collect(),
+        middles: middles
+            .iter()
+            .map(|&k| {
+                let m = &flow.middles[k];
+                Middle {
+                    block: m.block.clone(),
+                    reads: m.reads.iter().filter_map(|&i| local_input(i)).collect(),
+                    gives: m.gives.and_then(local_output),
+                }
+            })
+            .collect(),
+        outputs: outputs.iter().map(|&o| flow.outputs[o].clone()).collect(),
+    }
+}
+
+/// `flow` as several pictures, each the largest run of units, in order,
+/// that fits the page; the pictures are titled `(n/total)`. Refused when
+/// one unit alone does not fit.
+fn split_flow(page: Page, title: &str, flow: &Flow) -> Result<Vec<Picture>, Refusal> {
+    let units = units_of(flow);
+    let mut groups: Vec<Vec<Unit>> = Vec::new();
+    let mut current: Vec<Unit> = Vec::new();
+    for unit in units {
+        current.push(unit);
+        let fits = draw_flow(page, title, &part_of(flow, &current));
+        match fits {
+            Ok(_) => {}
+            Err(refused @ Refusal::SheetDoesNotFit { .. }) => {
+                let unit = current.pop().expect("just pushed");
+                if current.is_empty() {
+                    return Err(refused);
+                }
+                groups.push(std::mem::take(&mut current));
+                current.push(unit);
+            }
+            Err(other) => return Err(other),
+        }
+    }
+    if !current.is_empty() {
+        groups.push(current);
+    }
+    let total = groups.len();
+    let mut sheets = Vec::new();
+    for (n, group) in groups.iter().enumerate() {
+        let part_title = format!("{title} ({}/{total})", n + 1);
+        sheets.push(draw_flow(page, &part_title, &part_of(flow, group))?);
+    }
+    Ok(super::numbered("dataflow", sheets))
+}
+
+/// One flow, drawn as one sheet titled `title`.
+fn draw_flow(
+    page: Page,
+    title: &str,
+    flow: &Flow,
+) -> Result<crate::diagram::sheet::Sheet, Refusal> {
+    let mut c = Canvas::new(page);
+    let body = c.style().body_pt;
+    c.title(0.0, 0.0, title)?;
     let top = c.style().title_pt * c.style().leading + c.line_height();
 
     let widest = |blocks: &[Block]| blocks.iter().map(|b| b.width).fold(0.0, f64::max);
@@ -315,10 +481,7 @@ pub fn dataflow(
     for (o, b) in flow.outputs.iter().enumerate() {
         b.draw(&mut c, out_x, out_tops[o], None)?;
     }
-    Ok(vec![Picture {
-        stem: "dataflow".into(),
-        sheet: c.finish(page, &title)?,
-    }])
+    c.finish(page, title)
 }
 
 #[cfg(test)]
@@ -488,5 +651,60 @@ mod tests {
             }
         }
         assert!(drawn >= 10, "the flow fixtures are drawn: {drawn}");
+    }
+
+    /// A transform of `n` outputs, each read from its own input, and one
+    /// input nothing reads.
+    fn wide_transform(n: usize) -> ForgeDocument {
+        let mut body = String::from(
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="transform" name="many"><datamodel>"#,
+        );
+        for i in 0..n {
+            body.push_str(&format!(
+                r#"<data id="signal_{i}" sce:type="uint16" sce:direction="in"/><data id="value_{i}" sce:type="float64" sce:direction="out" expr="signal_{i} * 0.5"/>"#
+            ));
+        }
+        body.push_str(
+            r#"<data id="never_read" sce:type="uint8" sce:direction="in"/></datamodel></scxml>"#,
+        );
+        parse_forge_with_imports(&body, DocumentLabel::for_input_path("many.scxml"))
+            .expect("parses")
+            .expect("not a statechart")
+            .document
+    }
+
+    /// A picture taller than the page is set as several, none of them
+    /// refused, each titled with its place, and every input and output of
+    /// the document is on one of them, the input nothing reads included.
+    #[test]
+    fn a_dataflow_too_tall_for_the_page_is_set_as_several_pictures() {
+        let doc = wide_transform(40);
+        let pictures = dataflow(&doc, &EN, page()).expect("drawn in parts");
+        assert!(pictures.len() > 1, "{}", pictures.len());
+        assert_eq!(pictures[0].stem, "dataflow");
+        assert_eq!(pictures[1].stem, "dataflow-2");
+        let total = pictures.len();
+        for (n, p) in pictures.iter().enumerate() {
+            let want = format!("many: dataflow ({}/{total})", n + 1);
+            assert!(p.sheet.words().contains(&want.as_str()), "{want}");
+        }
+        let words: Vec<&str> = pictures.iter().flat_map(|p| p.sheet.words()).collect();
+        for i in 0..40 {
+            for id in [format!("signal_{i}"), format!("value_{i}")] {
+                assert!(words.contains(&id.as_str()), "{id} is on a picture");
+            }
+        }
+        assert!(words.contains(&"never_read"), "an unread input is shown");
+        let arrows: usize = pictures.iter().map(|p| arrows(&p.sheet)).sum();
+        assert_eq!(arrows, 80, "both arrows of each of the 40 expressions");
+    }
+
+    /// A flow that fits is one picture, as it was.
+    #[test]
+    fn a_dataflow_that_fits_is_still_one_picture() {
+        let pictures = dataflow(&wide_transform(3), &EN, page()).expect("draws");
+        assert_eq!(pictures.len(), 1);
+        assert_eq!(pictures[0].stem, "dataflow");
+        assert!(pictures[0].sheet.words().contains(&"many: dataflow"));
     }
 }
