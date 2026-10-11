@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: c004aa6d76072d31e9273eed0dc88dc847e351ce7e35f90cc9d56908f01328bd
+// source-hash: ca3b055deba6b38537c3642140f701b5f98f1b971d59425d3c780765d8a6a19b
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -862,7 +862,32 @@ impl StatePolicy for Test354Policy {
                     {
                         let send_id = ::sce_rust_runtime::sce_string_from_str("__send_3");
 
-                        let event_data: &str = "";
+                        // W3C SCXML B.2: inline text takes the ordered readings — an expression
+                        // when it is one, XML when it opens with `<`, otherwise the string. The
+                        // same filter inline `<data>` and `<donedata>` text goes through decides
+                        // which, so one clause reaches one answer wherever `<content>` appears.
+                        //
+                        // Handing the author's text over unread made this line evaluate it *as
+                        // Lua*: `<content>t.length</content>` reached `_event.data` as nil where
+                        // the datamodel reads 5, and whether the text was an expression at all
+                        // was discovered by an evaluation that failed.
+                        // The reading is decided at codegen time; the VALUE is produced here, at
+                        // send time, and serialized so the far end parses instead of evaluating.
+                        let event_data_string: String =
+                            {
+                                self.ensure_script_engine();
+                                let sid = self.session_id.as_ref().unwrap().clone();
+                                let se = self.script_engine.clone();
+                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                match se.evaluate_expression(&sid, "123") {
+            Ok(val) => ::sce_rust_runtime::helpers::event_data::script_value_to_json(&val),
+            Err(e) => {
+                ::sce_rust_runtime::sce_log_error!("send content eval failed: {}", e);
+                String::new()
+            }
+        }
+                            };
+                        let event_data: &str = &event_data_string;
 
                         // W3C SCXML 6.2: Default send (no target = external event)
                         {
@@ -1055,7 +1080,7 @@ impl StatePolicy for Test354Policy {
             }
             Test354State::S3 => {
                 if event == Test354Event::Event2 {
-                    {
+                    if self.safe_evaluate_guard("_scxml_truthy(_event.data)", engine) {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
                             targets: &[::sce_rust_runtime::EntryTarget::State(Test354State::Pass)],

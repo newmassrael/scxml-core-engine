@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: c004aa6d76072d31e9273eed0dc88dc847e351ce7e35f90cc9d56908f01328bd
+// source-hash: ca3b055deba6b38537c3642140f701b5f98f1b971d59425d3c780765d8a6a19b
 
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/354/test354.scxml
@@ -484,7 +484,7 @@ class Test354StateMachine(
             else -> null
         }
         is Test354State.S3 -> when {
-            event is Test354Event.Event2 -> transitionS3At0
+            event is Test354Event.Event2 && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_truthy(_event.data)", "_event.data")) -> transitionS3At0
             event != null -> transitionS3At1
             else -> null
         }
@@ -593,7 +593,7 @@ class Test354StateMachine(
 
 
             if (run send@{
-            val sendData = ""
+            val sendData = evaluateSendContent(com.sce.runtime.ScriptSource.lua("123", "123"))
             // W3C SCXML 6.2: send to this session's external queue
             send(Test354Event.Event2, EventMetadata.external(sendId = "__send_3", origin = scriptSessionId ?: "", data = sendData))
             false
