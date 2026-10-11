@@ -1,10 +1,10 @@
 name: GenMC Queue
 
-# The C11 queue under GenMC: layer 3 of the queue kind's verification (SCE
-# Protocol-Synthesis RFC §synth-5-P). GenMC explores every execution the C11
+# The C11 and C++ queues under GenMC: layer 3 of the queue kind's verification
+# (SCE Protocol-Synthesis RFC §synth-5-P). GenMC explores every execution the C11
 # memory model allows, where a stress run samples the few a machine happens to
 # give. `scripts/gates/genmc-queue.sh` states the two claims (each harness
-# passes; each required mutant, the hosted atomics with one ordering weakened,
+# passes; each required mutant, the runtime's atomics with one ordering weakened,
 # is caught) and what its first version got wrong.
 #
 # ## Why a lane of its own
@@ -28,6 +28,9 @@ on:
       - 'backends/c/forge-runtime/include/**'
       - 'backends/c/forge-runtime/tests/genmc/**'
       - 'backends/c/forge-runtime/tests/conformance/sce_atomic_host.c'
+      - 'backends/cpp/forge-runtime/include/sce/forge/queue.h'
+      - 'backends/cpp/forge-runtime/include/sce/forge/queue_segmented.h'
+      - 'backends/cpp/forge-runtime/tests/genmc/**'
       - 'scripts/install_genmc.sh'
       - 'scripts/gate'
       - 'scripts/gates/lib.sh'
@@ -39,6 +42,9 @@ on:
       - 'backends/c/forge-runtime/include/**'
       - 'backends/c/forge-runtime/tests/genmc/**'
       - 'backends/c/forge-runtime/tests/conformance/sce_atomic_host.c'
+      - 'backends/cpp/forge-runtime/include/sce/forge/queue.h'
+      - 'backends/cpp/forge-runtime/include/sce/forge/queue_segmented.h'
+      - 'backends/cpp/forge-runtime/tests/genmc/**'
       - 'scripts/install_genmc.sh'
       - 'scripts/gate'
       - 'scripts/gates/lib.sh'

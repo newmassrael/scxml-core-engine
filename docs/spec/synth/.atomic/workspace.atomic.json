@@ -5550,6 +5550,14 @@
         {
           "file": "backends/c/forge-runtime/tests/genmc/hazard_keeps_a_named_node.c",
           "kind": "references"
+        },
+        {
+          "file": "backends/cpp/forge-runtime/tests/genmc/spsc_slot_reuse.cpp",
+          "kind": "references"
+        },
+        {
+          "file": "backends/cpp/forge-runtime/tests/genmc/hazard_keeps_a_named_node.cpp",
+          "kind": "references"
         }
       ]
     },

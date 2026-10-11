@@ -909,8 +909,8 @@ GATES: dict[str, dict] = {
         "cost_s": 52,
         "summary": "Kotlin forge conformance (Gradle jvmTest)",
     },
-    # The C11 queue under GenMC (SCE Protocol-Synthesis RFC §synth-5-P, layer
-    # 3), and the mutants that show the check reads orderings at all. It needs
+    # The C11 and C++ queues under GenMC (SCE Protocol-Synthesis RFC §synth-5-P,
+    # layer 3), and the mutants that show the check reads orderings at all. It needs
     # GenMC, which no hosted runner carries and which is built from source
     # (`scripts/install_genmc.sh`), so it runs where that was done.
     #
@@ -923,12 +923,18 @@ GATES: dict[str, dict] = {
         "workflows": ["genmc-queue.yml"],
         "runner_workflow": True,
         # What the gate reads, and no wider: the runtime headers GenMC compiles,
-        # the harnesses, and the hosted atomics every harness includes whole.
-        # The same set as the workflow's `paths:`, which the self-test holds.
+        # the harnesses, and the hosted atomics every C harness includes whole.
+        # For C++ that is the two queue headers a mutant rewrites and the
+        # harnesses with their shim and support headers; every other header of
+        # that runtime is not read. The same set as the workflow's `paths:`,
+        # which the self-test holds.
         "extra": [
             "backends/c/forge-runtime/include/**",
             "backends/c/forge-runtime/tests/genmc/**",
             "backends/c/forge-runtime/tests/conformance/sce_atomic_host.c",
+            "backends/cpp/forge-runtime/include/sce/forge/queue.h",
+            "backends/cpp/forge-runtime/include/sce/forge/queue_segmented.h",
+            "backends/cpp/forge-runtime/tests/genmc/**",
             "scripts/install_genmc.sh",
         ],
         "ci_only": "72s measured 2026-10-10 on a host that has GenMC, and the "
@@ -937,7 +943,7 @@ GATES: dict[str, dict] = {
                    "and the build machines do not all have it. "
                    "genmc-queue.yml builds it once per pin and caches it.",
         "cost_s": 72,
-        "summary": "C11 queue under GenMC + weakened-ordering mutants",
+        "summary": "C11 and C++ queues under GenMC + weakened-ordering mutants",
     },
     # Catches codegen breakage in the example documents (the namespace
     # migration that broke them shipped green otherwise) and lints every
