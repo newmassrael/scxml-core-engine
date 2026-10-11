@@ -132,6 +132,14 @@ pub fn lay_out(
     width_limit: Option<f64>,
 ) -> Result<Laid, BoxError> {
     let gap = style.body_pt * 3.0;
+    // Boxes inside a container's frame keep this much paper between
+    // themselves and the outline, left, right and below. A figure with no
+    // frame (the document's top level) has no outline to keep it from.
+    let inset = if figure.name == FigureName::Document {
+        0.0
+    } else {
+        frame_inset(&style)
+    };
     let rank_gap = style.body_pt * style.leading * 4.0;
     // A slot is as wide as a line needs; a channel apart from the next by
     // less than a line's height, so parallel runs stay distinct.
@@ -268,7 +276,12 @@ pub fn lay_out(
             gap * 2.0 + channels.saturating_sub(1) as f64 * channel_step + widest
         };
         let widths: Vec<f64> = inner.iter().map(|b| b.width).collect();
-        wrap_wide_ranks(&mut rank, &widths, gap, limit - lead - edge_reserve);
+        wrap_wide_ranks(
+            &mut rank,
+            &widths,
+            gap,
+            limit - lead - edge_reserve - 2.0 * inset,
+        );
     }
     let ranks = rank.iter().copied().max().map_or(0, |m| m + 1);
 
@@ -389,12 +402,12 @@ pub fn lay_out(
         layer.iter().map(|&v| width_of(v)).sum::<f64>() + gap * layer.len().saturating_sub(1) as f64
     };
     let rows_width = layers.iter().map(row_width).fold(0.0, f64::max);
-    let body_width = lead + rows_width;
+    let body_width = lead + rows_width + 2.0 * inset;
     let mut xy = vec![(0.0, 0.0); total];
     let mut rows = Vec::new();
     let mut y = header;
     for layer in &layers {
-        let mut x = lead + (rows_width - row_width(layer)) / 2.0;
+        let mut x = inset + lead + (rows_width - row_width(layer)) / 2.0;
         let tallest = layer
             .iter()
             .filter(|&&v| v < n)
@@ -416,9 +429,9 @@ pub fn lay_out(
     let body_height = if layers.is_empty() {
         header
     } else if last_rank_loops {
-        y - rank_gap + super::route::loop_depth(rank_gap) + style.body_pt * style.leading
+        y - rank_gap + super::route::loop_depth(rank_gap) + style.body_pt * style.leading + inset
     } else {
-        y - rank_gap
+        y - rank_gap + inset
     };
     let frame_width = frame.as_ref().map_or(0.0, |f| f.width);
     let body_width = body_width.max(frame_width);
@@ -495,6 +508,13 @@ pub fn lay_out(
         width: (column_x + column_width).max(body_width),
         height: body_height.max(edge_height),
     })
+}
+
+/// The paper a container's frame keeps between its outline and the boxes
+/// inside it, on the left, right and below, in points. The header already
+/// stands a rank gap above the first row, so the top keeps its own room.
+pub fn frame_inset(style: &Style) -> f64 {
+    style.body_pt * 1.5
 }
 
 /// Break each rank whose boxes do not fit `limit` points of width into
@@ -666,6 +686,33 @@ mod tests {
                     || pb.y + pb.sized.height <= pa.y;
                 assert!(apart, "{:?} overlaps {:?}", pa.sized.kind, pb.sized.kind);
             }
+        }
+    }
+
+    /// A container's frame keeps room around its boxes: none stands against
+    /// the outline on the left, the right or below. The top-level figure has
+    /// no outline, and keeps none.
+    #[test]
+    fn the_boxes_of_a_frame_keep_room_from_its_outline() {
+        let m = regions(9);
+        let inset = frame_inset(&Style::at(7.0));
+        let laid = figure_inside_main(&m, None);
+        for p in &laid.inner {
+            assert!(
+                p.x >= inset - 1e-9,
+                "{:?} against the left edge",
+                p.sized.kind
+            );
+            assert!(
+                p.x + p.sized.width <= laid.body_width - inset + 1e-9,
+                "{:?} against the right edge",
+                p.sized.kind
+            );
+            assert!(
+                p.y + p.sized.height <= laid.body_height - inset + 1e-9,
+                "{:?} against the bottom edge",
+                p.sized.kind
+            );
         }
     }
 

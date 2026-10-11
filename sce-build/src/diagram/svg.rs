@@ -482,6 +482,59 @@ fn polyline(out: &mut String, points: &[(f64, f64)], ink: &str, stroke: f64) {
     );
 }
 
+/// A finished figure — what [`render`], [`render_sheet`] or
+/// [`render_checklist`] wrote — with `margin_pt` points of paper on every
+/// side.
+///
+/// The three renderers write one header, so this is the one place that
+/// knows how to widen it: the canvas grows by twice the margin each way, a
+/// paper rectangle covers the new canvas, and the figure is written inside a
+/// group moved by the margin, byte for byte as it was. A margin of zero
+/// returns the figure unchanged, so a caller that asks for none gets the
+/// bytes it always got.
+///
+/// A text that does not begin with the header those renderers write is
+/// refused, not wrapped: framing a document this module did not write would
+/// size the canvas from numbers it had guessed.
+pub fn with_margin(svg: &str, margin_pt: f64) -> Result<String, String> {
+    if margin_pt == 0.0 {
+        return Ok(svg.to_string());
+    }
+    const OPEN: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width=""#;
+    let unwritten = || "the text is not a figure this module wrote".to_string();
+    let rest = svg.strip_prefix(OPEN).ok_or_else(unwritten)?;
+    let (head, body) = rest.split_once('\n').ok_or_else(unwritten)?;
+    let (w, rest) = head.split_once(r#"pt" height=""#).ok_or_else(unwritten)?;
+    let (h, _) = rest.split_once(r#"pt" viewBox=""#).ok_or_else(unwritten)?;
+    let body = body.strip_suffix("</svg>\n").ok_or_else(unwritten)?;
+    let (w, h) = (
+        w.parse::<f64>().map_err(|_| unwritten())?,
+        h.parse::<f64>().map_err(|_| unwritten())?,
+    );
+    let (w, h) = (w + 2.0 * margin_pt, h + 2.0 * margin_pt);
+    let mut out = String::new();
+    let _ = writeln!(
+        out,
+        r#"{OPEN}{w}pt" height="{h}pt" viewBox="0 0 {w} {h}">"#,
+        w = n(w),
+        h = n(h),
+    );
+    let _ = writeln!(
+        out,
+        r#"<rect width="{}" height="{}" fill="{PAPER}"/>"#,
+        n(w),
+        n(h)
+    );
+    let _ = writeln!(
+        out,
+        r#"<g transform="translate({m},{m})">"#,
+        m = n(margin_pt)
+    );
+    out.push_str(body);
+    out.push_str("</g>\n</svg>\n");
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -557,6 +610,71 @@ mod tests {
             let marker = usize::from(p.marker.is_some());
             assert_eq!(arrows, p.arrows.len() + marker, "one drawn line per arrow");
         }
+    }
+
+    /// A margin is paper around the figure and nothing else: the canvas
+    /// grows by twice the margin each way, the figure stands inside a group
+    /// moved by the margin exactly as it was written, and no word is added
+    /// or lost.
+    #[test]
+    fn a_margin_is_paper_around_the_figure_and_nothing_else() {
+        let m = SCXMLParser::new().parse_string(DOC, "svg").expect("parses");
+        for p in print(&m, &EN, Page::a4_portrait(7.0)).expect("fits") {
+            let plain = render(&p);
+            let framed = with_margin(&plain, 10.0).expect("a figure this module wrote");
+            let doc = roxmltree::Document::parse(&framed).expect("well-formed");
+            let root = doc.root_element();
+            assert_eq!(
+                root.attribute("width"),
+                Some(format!("{}pt", n(p.width + 20.0)).as_str())
+            );
+            assert_eq!(
+                root.attribute("height"),
+                Some(format!("{}pt", n(p.height + 20.0)).as_str())
+            );
+            let group = root
+                .children()
+                .find(|c| c.has_tag_name("g"))
+                .expect("the figure's group");
+            assert_eq!(
+                group.attribute("transform"),
+                Some(format!("translate({m},{m})", m = n(10.0)).as_str())
+            );
+            let body = plain
+                .split_once('\n')
+                .and_then(|(_, rest)| rest.strip_suffix("</svg>\n"))
+                .expect("a header and a close");
+            assert!(framed.contains(body), "the figure is written as it was");
+            let words = |s: &str| s.matches("<text").count();
+            assert_eq!(words(&framed), words(&plain));
+        }
+    }
+
+    /// No margin, no change: a caller that asks for none gets the bytes it
+    /// always got, whatever the text is.
+    #[test]
+    fn no_margin_returns_the_text_unchanged() {
+        let m = SCXMLParser::new().parse_string(DOC, "svg").expect("parses");
+        for p in print(&m, &EN, Page::a4_portrait(7.0)).expect("fits") {
+            let plain = render(&p);
+            assert_eq!(with_margin(&plain, 0.0).expect("unchanged"), plain);
+        }
+        assert_eq!(
+            with_margin("not a figure", 0.0).expect("unchanged"),
+            "not a figure"
+        );
+    }
+
+    /// A text this module did not write is refused, not framed from guessed
+    /// numbers.
+    #[test]
+    fn a_text_that_is_not_a_figure_is_refused_a_margin() {
+        assert!(with_margin("<svg/>", 5.0).is_err());
+        assert!(with_margin(
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"x\">\n</svg>\n",
+            5.0
+        )
+        .is_err());
     }
 
     /// Same document, same bytes — in both page languages.

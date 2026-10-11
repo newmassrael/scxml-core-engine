@@ -77,6 +77,20 @@ impl Page {
             })
     }
 
+    /// This page with `pt` points of paper kept around each figure, inside
+    /// the page's own margin.
+    ///
+    /// The figure's margin is spent from the printable area, so a figure
+    /// that fits this page is one that, with `pt` of paper written around it
+    /// by [`super::svg::with_margin`], still fits the page the caller named.
+    /// Every fit check reads [`Page::area_pt`], so none of them is told.
+    pub fn with_figure_margin(self, pt: f64) -> Self {
+        Page {
+            margin_mm: self.margin_mm + pt / PT_PER_MM,
+            ..self
+        }
+    }
+
     /// The printable area, in points.
     pub fn area_pt(&self) -> (f64, f64) {
         (
@@ -418,6 +432,19 @@ mod tests {
             want.iter().any(|(s, _)| s == "where"),
             "the history's default is a transition too: {want:?}"
         );
+    }
+
+    /// A figure's margin comes out of the printable area on both sides, so
+    /// a figure that fits the smaller area still fits the page once the
+    /// margin is written around it.
+    #[test]
+    fn a_figure_margin_is_spent_from_the_printable_area() {
+        let page = Page::a4_portrait(7.0);
+        let (w, h) = page.area_pt();
+        let framed = page.with_figure_margin(10.0).area_pt();
+        assert!((framed.0 - (w - 20.0)).abs() < 1e-9, "{framed:?} {w}");
+        assert!((framed.1 - (h - 20.0)).abs() < 1e-9, "{framed:?} {h}");
+        assert_eq!(page.with_figure_margin(0.0), page);
     }
 
     /// A container with more children than a row of A4 holds, at a type

@@ -2411,6 +2411,12 @@ enum Commands {
         /// one point larger.
         #[arg(long, value_name = "PT", default_value_t = 7.0)]
         min_pt: f64,
+        /// Paper kept around every figure, in points, written into each
+        /// SVG. It is spent from the page's printable area, so a figure
+        /// that fits at `--margin 12` fits the page with that paper around
+        /// it. The default, 0, writes exactly what the command always wrote.
+        #[arg(long, value_name = "PT", default_value_t = 0.0)]
+        margin: f64,
         /// What the figure's own words and the page's words are called.
         #[arg(
             long,
@@ -3444,13 +3450,17 @@ fn main() {
             out,
             page,
             min_pt,
+            margin,
             lexicon,
             manifest,
         } => cmd_diagram(
             &document,
             &out,
-            &page,
-            min_pt,
+            SheetOptions {
+                page: &page,
+                min_pt,
+                margin_pt: margin,
+            },
             &lexicon,
             manifest.as_deref(),
             error_format,
@@ -9276,6 +9286,15 @@ fn write_diagram_files(out: &str, files: &[(String, String)]) {
     });
 }
 
+/// The sheet every figure of one `diagram` run is set on: which page, the
+/// smallest type the figures may be shrunk to, and the paper kept around
+/// each figure.
+struct SheetOptions<'a> {
+    page: &'a str,
+    min_pt: f64,
+    margin_pt: f64,
+}
+
 /// Draw `document` as print figures, one SVG per figure, into `out` — and,
 /// given the specification's manifest, the requirement checklist beside
 /// them, on as many `checklist-<n>.svg` pages as it takes.
@@ -9290,17 +9309,29 @@ fn write_diagram_files(out: &str, files: &[(String, String)]) {
 fn cmd_diagram(
     document: &str,
     out: &str,
-    page: &str,
-    min_pt: f64,
+    sheet: SheetOptions<'_>,
     lexicon: &str,
     manifest: Option<&str>,
     error_format: ErrorFormat,
 ) {
     use sce_build::diagram::fit::{self, Page, Refusal};
 
+    let SheetOptions {
+        page,
+        min_pt,
+        margin_pt,
+    } = sheet;
+
     if !(min_pt.is_finite() && min_pt > 0.0) {
         cli_exit(CliError::Usage {
             detail: format!("--min-pt must be a positive number of points, got {min_pt}"),
+        });
+    }
+    if !(margin_pt.is_finite() && margin_pt >= 0.0) {
+        cli_exit(CliError::Usage {
+            detail: format!(
+                "--margin must be zero or a positive number of points, got {margin_pt}"
+            ),
         });
     }
     let design = read_design(document, error_format);
@@ -9311,11 +9342,23 @@ fn cmd_diagram(
             feature: format!("the '{lexicon}' lexicon is not in this build's registry"),
         })
     });
-    let page = Page::named(page, min_pt).unwrap_or_else(|| {
-        cli_exit(CliError::DiagramUnavailable {
-            feature: format!("the '{page}' page is not in the diagram's page list"),
+    let page_name = page;
+    let page = Page::named(page, min_pt)
+        .unwrap_or_else(|| {
+            cli_exit(CliError::DiagramUnavailable {
+                feature: format!("the '{page}' page is not in the diagram's page list"),
+            })
         })
-    });
+        .with_figure_margin(margin_pt);
+    let (area_w, area_h) = page.area_pt();
+    if area_w <= 0.0 || area_h <= 0.0 {
+        cli_exit(CliError::Usage {
+            detail: format!(
+                "--margin {margin_pt} leaves the '{}' page no printable area",
+                page_name
+            ),
+        });
+    }
 
     let refuse = |refusal: Refusal| -> ! {
         use sce_build::diagram::words::{self, Phrase};
@@ -9360,6 +9403,24 @@ fn cmd_diagram(
                 }
             }
         })
+    };
+
+    // The paper a figure keeps around itself is written into each SVG after
+    // the figure is drawn and fitted: the fit already counted it (see
+    // `Page::with_figure_margin`), and a margin of zero changes no byte.
+    let framed = |files: Vec<(String, String)>| -> Vec<(String, String)> {
+        files
+            .into_iter()
+            .map(|(name, svg)| {
+                let svg =
+                    sce_build::diagram::svg::with_margin(&svg, margin_pt).unwrap_or_else(|why| {
+                        cli_exit(CliError::DiagramUnavailable {
+                            feature: format!("{name}: {why}"),
+                        })
+                    });
+                (name, svg)
+            })
+            .collect()
     };
 
     // A figure of boxes and arrows is of a statechart: states, and the
@@ -9416,7 +9477,7 @@ fn cmd_diagram(
                     sce_build::diagram::svg::render_sheet(sheet),
                 )
             }));
-            write_diagram_files(out, &files);
+            write_diagram_files(out, &framed(files));
             return;
         }
     };
@@ -9460,7 +9521,7 @@ fn cmd_diagram(
             sce_build::diagram::svg::render_checklist(sheet),
         )
     }));
-    write_diagram_files(out, &files);
+    write_diagram_files(out, &framed(files));
 }
 
 fn cmd_pseudo(

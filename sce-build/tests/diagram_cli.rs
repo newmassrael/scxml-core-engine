@@ -559,3 +559,104 @@ fn a_kind_with_a_picture_gets_it_beside_its_field_table() {
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// The width and height an SVG's header declares, in points.
+fn canvas(path: &Path) -> (f64, f64) {
+    let svg = std::fs::read_to_string(path).expect("read svg");
+    let doc = roxmltree::Document::parse(&svg).expect("well-formed");
+    let size = |name: &str| {
+        doc.root_element()
+            .attribute(name)
+            .and_then(|v| v.strip_suffix("pt"))
+            .and_then(|v| v.parse::<f64>().ok())
+            .unwrap_or_else(|| panic!("{path:?} declares no {name} in points"))
+    };
+    (size("width"), size("height"))
+}
+
+/// `--margin` writes paper around every figure of every kind: each SVG is
+/// twice the margin larger each way, and what it draws is the figure it
+/// drew without one. The default, zero, writes the bytes the command always
+/// wrote.
+#[test]
+fn a_margin_is_written_around_every_figure_of_every_kind() {
+    let dir = scratch("diagram-margin");
+    let lock = dir.join("lock.scxml");
+    std::fs::write(&lock, LOCK).expect("write fixture");
+    let documents = [lock, kind_example("lookup"), kind_example("buffer-pool")];
+    for (n, doc) in documents.iter().enumerate() {
+        let (plain, zero, framed) = (
+            dir.join(format!("plain-{n}")),
+            dir.join(format!("zero-{n}")),
+            dir.join(format!("framed-{n}")),
+        );
+        assert!(diagram_with(doc, &plain, &[]).status.success());
+        assert!(diagram_with(doc, &zero, &["--margin", "0"])
+            .status
+            .success());
+        let run = diagram_with(doc, &framed, &["--margin", "12"]);
+        assert!(
+            run.status.success(),
+            "{}",
+            String::from_utf8_lossy(&run.stderr)
+        );
+        let files = written(&run);
+        assert!(!files.is_empty());
+        for path in files {
+            let name = path.file_name().expect("a file name");
+            assert_eq!(
+                std::fs::read(plain.join(name)).expect("plain"),
+                std::fs::read(zero.join(name)).expect("zero"),
+                "{name:?}: a margin of zero is what the command always wrote"
+            );
+            let (pw, ph) = canvas(&plain.join(name));
+            let (fw, fh) = canvas(&path);
+            assert!(
+                (fw - (pw + 24.0)).abs() < 0.02 && (fh - (ph + 24.0)).abs() < 0.02,
+                "{name:?}: {pw}x{ph} became {fw}x{fh}"
+            );
+            assert_eq!(svg_words(&plain.join(name)), svg_words(&path), "{name:?}");
+        }
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The margin is spent from the page: a figure that fits with none is
+/// refused when the paper around it would not fit, and a margin no page can
+/// hold is a usage error. Nothing is written in either case.
+#[test]
+fn a_margin_is_counted_in_the_fit_and_a_margin_no_page_holds_is_refused() {
+    let dir = scratch("diagram-margin-fit");
+    let doc = dir.join("lock.scxml");
+    std::fs::write(&doc, LOCK).expect("write fixture");
+
+    let out = dir.join("a");
+    let run = diagram_with(&doc, &out, &["--margin", "250"]);
+    assert_eq!(
+        run.status.code(),
+        Some(20),
+        "{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    let record: serde_json::Value = serde_json::from_str(
+        String::from_utf8(run.stderr)
+            .expect("utf-8")
+            .lines()
+            .next()
+            .expect("a record"),
+    )
+    .expect("json");
+    assert_eq!(record["code"], "cli/diagram-does-not-fit", "{record}");
+    assert!(!out.exists(), "a refusal writes nothing");
+
+    for bad in ["-1", "nan", "1000"] {
+        let out = dir.join(format!("b{bad}"));
+        // `=` so that a negative number is a value and not an option.
+        let run = diagram_with(&doc, &out, &[&format!("--margin={bad}")]);
+        assert!(!run.status.success(), "--margin {bad} is refused");
+        let stderr = String::from_utf8_lossy(&run.stderr);
+        assert!(stderr.contains("--margin"), "--margin {bad}: {stderr}");
+        assert!(!out.exists(), "--margin {bad} writes nothing");
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
