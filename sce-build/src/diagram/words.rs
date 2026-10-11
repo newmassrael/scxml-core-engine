@@ -117,7 +117,7 @@ pub enum Phrase {
 /// know — which the caller refuses rather than writing another language's
 /// words into the figure.
 pub fn phrase(lexicon: &Lexicon, p: Phrase) -> Option<&'static str> {
-    Some(match (lexicon.name, p) {
+    Some(match (lexicon.language, p) {
         ("en", Phrase::WholeDocument) => "whole document",
         ("en", Phrase::Inside) => "inside",
         ("en", Phrase::OpensIn) => "shown in:",
@@ -243,7 +243,7 @@ pub fn phrase(lexicon: &Lexicon, p: Phrase) -> Option<&'static str> {
 pub fn figure_title(lexicon: &Lexicon, name: &FigureName) -> Option<String> {
     Some(match name {
         FigureName::Document => phrase(lexicon, Phrase::WholeDocument)?.to_string(),
-        FigureName::Inside(s) => match lexicon.name {
+        FigureName::Inside(s) => match lexicon.language {
             // Korean puts the noun first: "released 안쪽".
             "ko" => format!("{s} {}", phrase(lexicon, Phrase::Inside)?),
             _ => format!("{} {s}", phrase(lexicon, Phrase::Inside)?),
@@ -256,7 +256,7 @@ pub fn figure_title(lexicon: &Lexicon, name: &FigureName) -> Option<String> {
 /// named field, are headed by the bare word.
 pub fn after_field(lexicon: &Lexicon, field: &str) -> Option<String> {
     let after = phrase(lexicon, Phrase::After)?;
-    Some(match (lexicon.name, field.is_empty()) {
+    Some(match (lexicon.language, field.is_empty()) {
         (_, true) => after.to_string(),
         ("ko", false) => format!("{field} {after}"),
         (_, false) => format!("{after} {field}"),
@@ -266,7 +266,7 @@ pub fn after_field(lexicon: &Lexicon, field: &str) -> Option<String> {
 /// "from <state>" in the lexicon's word order.
 pub fn from_state(lexicon: &Lexicon, state: &str) -> Option<String> {
     let from = phrase(lexicon, Phrase::From)?;
-    Some(match lexicon.name {
+    Some(match lexicon.language {
         "ko" => format!("{state} {from}"),
         _ => format!("{from} {state}"),
     })

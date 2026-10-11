@@ -403,6 +403,52 @@ fn a_document_of_another_kind_is_set_as_its_field_table() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// The figure of a statechart takes the `plain` lexicon: the same
+/// English phrases around the figure, and the page's plain words in its
+/// boxes and table, because the figure writes an action with the page's
+/// own words.
+#[test]
+fn a_statechart_is_drawn_in_the_plain_lexicon() {
+    let dir = scratch("diagram-plain");
+    let doc = dir.join("lock.scxml");
+    std::fs::write(
+        &doc,
+        r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="off">
+  <state id="off">
+    <transition event="lock" target="on"><raise event="eval"/></transition>
+  </state>
+  <state id="on"/>
+</scxml>"##,
+    )
+    .expect("write the document");
+    let canonical = dir.join("canonical");
+    let plain = dir.join("plain");
+    let default_run = diagram_with(&doc, &canonical, &[]);
+    assert!(
+        default_run.status.success(),
+        "{}",
+        String::from_utf8_lossy(&default_run.stderr)
+    );
+    let run = diagram_with(&doc, &plain, &["--lexicon", "plain"]);
+    assert!(
+        run.status.success(),
+        "{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    let words = svg_words(&plain.join("document.svg"));
+    assert!(
+        words.iter().any(|w| w.contains("tell itself eval")),
+        "{words:?}"
+    );
+    assert!(!words.iter().any(|w| w.contains("raise")), "{words:?}");
+    let default_words = svg_words(&canonical.join("document.svg"));
+    assert!(
+        default_words.iter().any(|w| w.contains("raise eval")),
+        "{default_words:?}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// The checklist's rows name a statechart's boxes and table rows, so a
 /// manifest given with a document of another kind is refused by name and
 /// nothing is written.

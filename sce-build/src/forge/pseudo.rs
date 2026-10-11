@@ -2025,30 +2025,43 @@ fn render_statechart(
 
     let mut out = Out::with_deployment(deployment);
     let datamodel = m.datamodel.as_str();
-    let mut clauses = Vec::new();
+    let mut clauses: Vec<(Word, String)> = Vec::new();
     // The name the author gave the machine (§scxml-3.2 `name`), which is
     // not the file name the head line leads with — a document may carry
     // one, the other, or two different ones. Until 2026-09-28 only the
     // file name reached the page.
     if !m.scxml_name.is_empty() {
-        clauses.push(format!("name: {}", text(&m.scxml_name)));
+        clauses.push((Word::ClauseName, text(&m.scxml_name).into_owned()));
     }
-    clauses.push(format!("datamodel: {datamodel}"));
-    clauses.push(format!("initial: {}", text(&m.initial)));
+    clauses.push((Word::ClauseDatamodel, datamodel.to_string()));
+    clauses.push((Word::ClauseInitial, text(&m.initial).into_owned()));
     if !m.binding.is_empty() {
-        clauses.push(format!("binding: {}", text(&m.binding)));
+        clauses.push((Word::ClauseBinding, text(&m.binding).into_owned()));
     }
     if let Some(cap) = m.event_queue_capacity {
-        clauses.push(format!("queue: {cap}"));
+        clauses.push((Word::ClauseQueue, cap.to_string()));
     }
-    // ⚠ The clause list stays ONE text part. Its parentheses and commas
-    // are this construct's punctuation, the same call the algorithm
-    // signature gets — see `page`'s module note.
-    out.line_of(vec![
+    // The clause list's parentheses and commas are this construct's
+    // punctuation and stay text, the same call the algorithm signature
+    // gets — see `page`'s module note. Its KEYS are words, so a lexicon
+    // can name them: the first sits right after the opening parenthesis,
+    // the others after a comma and a space.
+    let mut head = vec![
         Part::Word(Word::Machine),
         Part::Text(text(&m.name).into_owned()),
-        Part::Text(format!("({})", clauses.join(", "))),
-    ]);
+    ];
+    let last = clauses.len() - 1;
+    for (i, (key, value)) in clauses.into_iter().enumerate() {
+        if i == 0 {
+            head.push(Part::Text("(".into()));
+            head.push(Part::GluedWord(key));
+        } else {
+            head.push(Part::Word(key));
+        }
+        head.push(Part::Text(value));
+        head.push(Part::Glued(if i == last { ")" } else { "," }.into()));
+    }
+    out.line_of(head);
 
     let mut nested: Result<(), Unsupported> = Ok(());
     out.nested(|out| {
@@ -2646,10 +2659,16 @@ fn render_scxml_transition(t: &crate::model::Transition, out: &mut Out<'_>) {
     } else {
         line.push(Part::Text(text(&t.target).into_owned()));
     }
-    if !t.transition_type.is_empty() {
-        // The brackets are this clause's punctuation and travel with
-        // the value, for the reason `page`'s module note gives.
-        line.push(Part::Text(format!("[{}]", text(&t.transition_type))));
+    match t.transition_type.as_str() {
+        "" => {}
+        // The two values the standard defines are words, so a lexicon
+        // can say what each does; any other value stays as the author
+        // wrote it. The brackets are this clause's punctuation and
+        // travel with the value, for the reason `page`'s module note
+        // gives.
+        "external" => line.push(Part::Word(Word::TypeExternal)),
+        "internal" => line.push(Part::Word(Word::TypeInternal)),
+        other => line.push(Part::Text(format!("[{}]", text(other)))),
     }
     // The guard goes last: it is the line's only free-text value, and
     // no transition in this tree carries both a condition and a native
@@ -2806,7 +2825,10 @@ fn render_scxml_action_body(a: &crate::model::Action, out: &mut Out<'_>) {
                 });
             }
         },
-        "raise" => out.line(&format!("raise {}", text(&a.event))),
+        "raise" => out.line_of(vec![
+            Part::Word(Word::Raise),
+            Part::Text(text(&a.event).into_owned()),
+        ]),
         "script" => out.line(&format!("script {}", text(&a.content))),
         "native_action" => {
             // One argument per line, as the algorithm's `call` does and

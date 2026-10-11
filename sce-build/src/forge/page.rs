@@ -223,6 +223,24 @@ pub enum Word {
     /// needs them named, and `반복문 시작` is precisely this pair.
     Begin,
     End,
+    /// The keys of a statechart's head clause list
+    /// (`(name: n, datamodel: d, initial: i, binding: b, queue: q)`),
+    /// the type of a transition (`[external]`, `[internal]`) and the
+    /// action that puts an event on the machine's own queue (`raise`).
+    /// They are the standard's own switches, written as it names them
+    /// by default.
+    /// ⚠ Words and not text the mapping builds, so a lexicon can say
+    /// them in plain terms without the page losing the way back: a
+    /// switch the lexicon cannot name is a switch it cannot rename, and
+    /// a lexicon may not drop one.
+    ClauseName,
+    ClauseDatamodel,
+    ClauseInitial,
+    ClauseBinding,
+    ClauseQueue,
+    TypeExternal,
+    TypeInternal,
+    Raise,
 }
 
 impl Word {
@@ -357,6 +375,14 @@ impl Word {
         Word::RatherThan,
         Word::Begin,
         Word::End,
+        Word::ClauseName,
+        Word::ClauseDatamodel,
+        Word::ClauseInitial,
+        Word::ClauseBinding,
+        Word::ClauseQueue,
+        Word::TypeExternal,
+        Word::TypeInternal,
+        Word::Raise,
     ];
 }
 
@@ -364,6 +390,11 @@ impl Word {
 pub struct Lexicon {
     /// How a page names this lexicon when it declares itself.
     pub name: &'static str,
+    /// The language its words are in, which is what a surface that
+    /// speaks in phrases of its own (the print figures) keys on. Two
+    /// lexicons may share one: `plain` is English, said without the
+    /// standard's words, and a figure's phrases do not change with that.
+    pub language: &'static str,
     /// ⚠ A function with an exhaustive `match`, not a map: a map can be
     /// missing a key at run time and a `match` cannot be missing an arm
     /// at build time.
@@ -373,6 +404,7 @@ pub struct Lexicon {
 /// The default, and the one every gate and every approval means.
 pub const EN: Lexicon = Lexicon {
     name: "en",
+    language: "en",
     word: en_word,
 };
 
@@ -515,6 +547,14 @@ fn en_word(w: Word) -> &'static str {
         Word::RatherThan => "rather-than",
         Word::Begin => "begin",
         Word::End => "end",
+        Word::ClauseName => "name:",
+        Word::ClauseDatamodel => "datamodel:",
+        Word::ClauseInitial => "initial:",
+        Word::ClauseBinding => "binding:",
+        Word::ClauseQueue => "queue:",
+        Word::TypeExternal => "[external]",
+        Word::TypeInternal => "[internal]",
+        Word::Raise => "raise",
     }
 }
 
@@ -537,6 +577,9 @@ pub enum Part {
     /// applies because deciding WHERE a glyph glues means knowing which
     /// construct is being written, and a shape may not know that.
     Glued(String),
+    /// A word appended with NO separator before it: the keys of a
+    /// clause list sit right after the parenthesis that opens it.
+    GluedWord(Word),
 }
 
 /// One line of the page, before a shape has written it.
@@ -656,12 +699,12 @@ fn join_parts(node: &Node, lexicon: &Lexicon, skip_first_word: bool) -> String {
         if skip_first_word && n == 0 {
             continue;
         }
-        if !first && !matches!(part, Part::Glued(_)) {
+        if !first && !matches!(part, Part::Glued(_) | Part::GluedWord(_)) {
             out.push(' ');
         }
         first = false;
         match part {
-            Part::Word(w) => out.push_str((lexicon.word)(*w)),
+            Part::Word(w) | Part::GluedWord(w) => out.push_str((lexicon.word)(*w)),
             Part::Text(t) | Part::Glued(t) => out.push_str(t),
         }
     }
@@ -889,6 +932,7 @@ impl Shape for Endmark {
 /// author did not choose is not this surface's to change.
 pub const KO: Lexicon = Lexicon {
     name: "ko",
+    language: "ko",
     word: ko_word,
 };
 
@@ -1028,6 +1072,47 @@ fn ko_word(w: Word) -> &'static str {
         Word::RatherThan => "배제",
         Word::Begin => "시작",
         Word::End => "종료",
+        Word::ClauseName => "이름:",
+        Word::ClauseDatamodel => "데이터모델:",
+        Word::ClauseInitial => "초기상태:",
+        Word::ClauseBinding => "바인딩:",
+        Word::ClauseQueue => "큐:",
+        Word::TypeExternal => "[외부]",
+        Word::TypeInternal => "[내부]",
+        Word::Raise => "발생",
+    }
+}
+
+/// The default words, with the standard's own switches said as what they
+/// do, for a reader who does not know the standard a statechart is
+/// written in.
+///
+/// ⚠ A lexicon and nothing more, which is the whole of its safety: it
+/// renames words, `normalise_page` puts them back, and the page says
+/// exactly what the canonical page says. Where the standard's name for a
+/// switch is the word a reader would use anyway it is left alone, and a
+/// value the document wrote (`early`, `ecmascript`) is never translated.
+/// Every word keeps a spelling of its own, so reading the page back never
+/// has to guess which one a line meant.
+pub const PLAIN: Lexicon = Lexicon {
+    name: "plain",
+    language: "en",
+    word: plain_word,
+};
+
+fn plain_word(word: Word) -> &'static str {
+    match word {
+        Word::Parallel => "concurrent",
+        Word::Initial => "starts in",
+        Word::InitialChildren => "starts together in",
+        Word::Raise => "tell itself",
+        Word::TypeExternal => "(leaves its source state)",
+        Word::TypeInternal => "(stays in its source state)",
+        Word::ClauseDatamodel => "expression language:",
+        Word::ClauseInitial => "first state:",
+        Word::ClauseBinding => "variables created:",
+        Word::ClauseQueue => "event queue size:",
+        other => en_word(other),
     }
 }
 
@@ -1040,7 +1125,7 @@ fn ko_word(w: Word) -> &'static str {
 pub const SHAPES: &[&dyn Shape] = &[&Indent, &Endmark];
 
 /// Every lexicon a caller may choose.
-pub const LEXICONS: &[&Lexicon] = &[&EN, &KO];
+pub const LEXICONS: &[&Lexicon] = &[&EN, &KO, &PLAIN];
 
 // ── Choosing a pair, and the page saying which one it is ───────
 
