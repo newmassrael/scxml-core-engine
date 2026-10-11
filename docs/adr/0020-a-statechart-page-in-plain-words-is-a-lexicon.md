@@ -40,10 +40,10 @@ what it was:
 | `ClauseName` | `name:` | `name:` |
 | `ClauseDatamodel` | `datamodel:` | `expression language:` |
 | `ClauseInitial` | `initial:` | `first state:` |
-| `ClauseBinding` | `binding:` | `variables created:` |
+| `ClauseBinding` | `binding:` | `initial values assigned:` |
 | `ClauseQueue` | `queue:` | `event queue size:` |
-| `TypeExternal` | `[external]` | `(leaves its source state)` |
-| `TypeInternal` | `[internal]` | `(stays in its source state)` |
+| `TypeExternal` | `[external]` | `(leaves its source state first)` |
+| `TypeInternal` | `[internal]` | `(stays in its source state when the target is inside it)` |
 | `Raise` | `raise` | `tell itself` |
 | `Parallel` | `parallel` | `concurrent` |
 | `Initial` | `initial` | `starts in` |
@@ -60,7 +60,7 @@ line meant. `ko` names the new words too.
 
 ## Consequences
 
-- Nothing is dropped. A `[external]` the author wrote is still written, as `(leaves its source state)`; the page
+- Nothing is dropped. A `[external]` the author wrote is still written, as `(leaves its source state first)`; the page
   says all of the document.
 - It is the same law as every lexicon: `plain` is in `LEXICONS`, so the sweep over every committed `.scxml`,
   every shape and every lexicon holds it to `normalise(write(nodes)) == canonical(nodes)` byte for byte.

@@ -96,11 +96,11 @@ fn the_plain_page_has_none_of_the_standards_words() {
     for word in [
         "expression language: ecmascript",
         "first state: main",
-        "variables created: early",
+        "initial values assigned: early",
         "concurrent main:",
         "starts together in left_off",
-        "(leaves its source state)",
-        "(stays in its source state)",
+        "(leaves its source state first)",
+        "(stays in its source state when the target is inside it)",
         "tell itself eval",
     ] {
         assert!(
