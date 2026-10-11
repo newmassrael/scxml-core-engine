@@ -1049,9 +1049,29 @@ def _pick(root: pathlib.Path, candidates: tuple[str, ...], what: str,
     if not found and not extra:
         problems.refuse(PackError(
             f"{root}: no {what} file. Expected one of {', '.join(candidates)}, "
-            f"or a {what}.d/ directory of them."
+            f"or a {what}.d/ directory of them." + _where_it_is(root, candidates, what)
         ))
     return found + extra
+
+
+def _where_it_is(root: pathlib.Path, candidates: tuple[str, ...], what: str) -> str:
+    """A sentence naming the folders just below `root` that do hold the file, or "".
+
+    ⚠ A writer that is handed a working folder and told only "a pack" passes the
+    folder itself, and "no interface-model file" reads as "there is none" when the
+    pack sits one level down. Only the immediate children are looked at: a pack is
+    a folder that holds its files directly, and a deeper search would name folders
+    that are not packs."""
+    try:
+        children = sorted(p for p in root.iterdir() if p.is_dir())
+    except OSError:
+        return ""
+    holders = [p.name for p in children
+               if any((p / c).is_file() for c in candidates) or (p / f"{what}.d").is_dir()]
+    if not holders:
+        return ""
+    return (f" A {what} file is in {', '.join(f'{name}/' for name in holders)} below it:"
+            f" pass that folder as the pack, for example {holders[0]!r}.")
 
 
 EXAMPLE_FILES = ("examples.yaml", "examples.yml", "examples.json")

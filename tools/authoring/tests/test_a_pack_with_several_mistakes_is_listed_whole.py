@@ -157,6 +157,49 @@ class WhatCouldNotBeCheckedIsSaid(Pack):
         self.assertIn("not a directory", said[0])
 
 
+class AFolderAboveThePackIsPointedAtThePack(unittest.TestCase):
+    """A writer told only "a pack" passes its working folder; the pack is one level down."""
+
+    def setUp(self) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.work = pathlib.Path(temporary.name) / "work"
+        shutil.copytree(FIXTURE, self.work / "pack")
+        (self.work / "reference").mkdir()
+
+    def said(self) -> list[str]:
+        return [str(p) for p in check_pack(self.work).problems]
+
+    def test_the_folder_that_holds_the_pack_is_named(self):
+        said = self.said()
+        self.assertEqual(2, len(said), said)
+        self.assertIn("no interface-model file", said[0])
+        self.assertIn("is in pack/ below it", said[0])
+        self.assertIn("pass that folder as the pack, for example 'pack'", said[0])
+        self.assertIn("no conventions file", said[1])
+        self.assertIn("is in pack/ below it", said[1])
+
+    def test_the_loader_that_stops_at_the_first_problem_says_it_too(self):
+        with self.assertRaises(PackError) as caught:
+            load_pack(self.work)
+        self.assertIn("is in pack/ below it", str(caught.exception))
+
+    def test_a_folder_with_no_pack_below_it_is_refused_as_before(self):
+        shutil.rmtree(self.work / "pack")
+        said = self.said()
+        self.assertIn("no interface-model file", said[0])
+        self.assertNotIn("below it", said[0])
+
+    def test_only_the_folders_just_below_are_looked_at(self):
+        shutil.move(str(self.work / "pack"), str(self.work / "reference" / "deep"))
+        said = self.said()
+        self.assertNotIn("below it", said[0])
+
+    def test_a_pack_that_is_found_says_nothing_extra(self):
+        self.assertEqual([], [str(p) for p in check_pack(self.work / "pack").problems
+                              if "below it" in str(p)])
+
+
 class TheCommand(Pack):
     def run_command(self, root: pathlib.Path) -> tuple[int, str]:
         out = io.StringIO()
