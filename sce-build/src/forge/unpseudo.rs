@@ -3282,9 +3282,13 @@ fn parse_scxml_transition(
         Some((r, c)) => (r, undo(c, line.number)?),
         None => (rest, String::new()),
     };
+    // A transition with no marker is `external`: the page does not write
+    // the default (`pseudo`), and the parser records the default for a
+    // transition that does not say it, so reading the same value here is
+    // what makes the model of a page equal the model of its document.
     let (target, transition_type) = match rest.split_once(" [") {
         Some((t, ty)) => (t, undo(ty.trim_end_matches(']'), line.number)?),
-        None => (rest, String::new()),
+        None => (rest, "external".to_string()),
     };
 
     // ⚠ A transition's traceability comes first in its body, above the

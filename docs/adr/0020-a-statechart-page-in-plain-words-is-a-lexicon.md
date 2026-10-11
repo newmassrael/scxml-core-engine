@@ -32,8 +32,8 @@ wrote differently, dropping a switch left at its default. It was rejected by the
 
 ## Decision
 
-The standard's switches become words, spelled as before in the default lexicon, so the default page is byte for byte
-what it was:
+The standard's switches become words, spelled as before in the default lexicon, so the default page is what it was
+except for the one change named below:
 
 | Word | `en` | `plain` |
 |---|---|---|
@@ -42,8 +42,7 @@ what it was:
 | `ClauseInitial` | `initial:` | `first state:` |
 | `ClauseBinding` | `binding:` | `initial values assigned:` |
 | `ClauseQueue` | `queue:` | `event queue size:` |
-| `TypeExternal` | `[external]` | `(leaves its source state first)` |
-| `TypeInternal` | `[internal]` | `(stays in its source state when the target is inside it)` |
+| `TypeInternal` | `[internal]` | `[internal]` |
 | `Raise` | `raise` | `tell itself` |
 | `Parallel` | `parallel` | `concurrent` |
 | `Initial` | `initial` | `starts in` |
@@ -53,6 +52,19 @@ what it was:
 the opening parenthesis. The parentheses and commas stay text, as the module note of `page` decides. A transition
 type other than `external` and `internal` stays as the author wrote it, in brackets.
 
+### The default transition type is not written, in any lexicon
+
+`external` is what a transition that says nothing means, and the parser records `external` for a transition that
+never wrote a type, so the canonical page carried `[external]` on every such transition (269 of 742 pages). The owner
+asked for it not to be written; the first design kept it as a plain word, which was too long
+(`(leaves its source state first)`) and was dropped.
+
+Not writing it changes the canonical page, so the reader changed with it: a transition line with no marker is read as
+`external`. The two spellings of the default (written, and said nothing) are one model, which is what the parser
+already made them; a document that wrote `type="external"` and one that did not now render the same page. `internal`
+is still written, as `[internal]`, in every lexicon: its plain description is long and the owner chose the short mark.
+A transition type other than these two stays as the author wrote it, in brackets.
+
 `plain` is `en` with those words replaced, so a state, an event, a guard and an action are written exactly as they
 are. A value the document wrote (`early`, `ecmascript`) is never translated. Every word keeps a spelling of its own:
 `plain` spells `Initial` and `InitialChildren` differently so reading the page back never has to guess which one a
@@ -60,16 +72,17 @@ line meant. `ko` names the new words too.
 
 ## Consequences
 
-- Nothing is dropped. A `[external]` the author wrote is still written, as `(leaves its source state first)`; the page
-  says all of the document.
+- The one thing the page no longer says is that a document wrote `type="external"` rather than nothing; the model
+  never distinguished them, so no meaning is lost.
 - It is the same law as every lexicon: `plain` is in `LEXICONS`, so the sweep over every committed `.scxml`,
   every shape and every lexicon holds it to `normalise(write(nodes)) == canonical(nodes)` byte for byte.
 - `diagram --lexicon plain` draws a figure's boxes and tables in the same words, because the figure asks the page.
   ⚠ It did not at first: the figure's own phrases ("whole document", "inside") were keyed by the lexicon's NAME, so
   `plain` was refused as having none. They belong to a language, not to a lexicon, so a lexicon now says which
   language it is in (`Lexicon::language`: `en` and `plain` are `en`) and the figure keys on that.
-- The reverse converter is untouched: it reads the canonical page, and the canonical page is byte for byte what it was
-  over all 742 committed statecharts that render.
+- The reverse converter reads a transition with no marker as `external`; the round trip over every committed document
+  (`a_rendering_reads_back_as_the_same_document`) holds. Apart from the dropped `[external]`, the canonical page is
+  what it was.
 - A lexicon spells every word, so the next switch that is text the mapping builds is found the same way: it cannot
   be named.
 

@@ -20,7 +20,10 @@
 //!
 //! # What holds
 //!
-//! * The default page is byte for byte what it was.
+//! * The default page is what it was, except that the default transition
+//!   type `external` is no longer written on every transition: it was on
+//!   all of them, because the parser records it for a transition that
+//!   never said it. `internal` is still written, in both lexicons.
 //! * In the `plain` lexicon none of those words reaches the page, and each
 //!   is said as what it does.
 //! * It is a LEXICON, so the page is the canonical one under other words:
@@ -71,9 +74,43 @@ fn the_default_page_is_what_it_was() {
         "machine lock (name: lock, datamodel: ecmascript, initial: main, binding: early)\n"
     ));
     assert!(page.contains("parallel main:"));
-    assert!(page.contains("-> left_on [external]"));
+    // `external` is the default, so it is not written, whether the
+    // document wrote it (`lock`) or said nothing.
+    assert!(page.contains("on lock -> left_on\n"), "{page}");
+    assert!(!page.contains("[external]"), "{page}");
     assert!(page.contains("-> left_off [internal] when ready"));
     assert!(page.contains("raise eval"));
+}
+
+#[test]
+fn a_transition_that_writes_external_and_one_that_says_nothing_are_one() {
+    let written = document(DOC);
+    let silent = document(&DOC.replace(r#" type="external""#, ""));
+    assert_eq!(
+        render(&written).expect("renders"),
+        render(&silent).expect("renders")
+    );
+    // The page reads back as the model the parser makes for either.
+    for doc in [&written, &silent] {
+        let page = render(doc).expect("renders");
+        let (ForgeDocument::Statechart(parsed), ForgeDocument::Statechart(read)) = (
+            doc,
+            sce_build::forge::unpseudo::parse(&page).expect("reads back"),
+        ) else {
+            panic!("a statechart reads back as a statechart");
+        };
+        let types = |m: &sce_build::model::SCXMLModel| {
+            let mut all: Vec<(String, String)> = m
+                .states
+                .values()
+                .flat_map(|s| s.transitions.iter())
+                .map(|t| (t.event.clone(), t.transition_type.clone()))
+                .collect();
+            all.sort();
+            all
+        };
+        assert_eq!(types(parsed), types(&read));
+    }
 }
 
 #[test]
@@ -84,7 +121,6 @@ fn the_plain_page_has_none_of_the_standards_words() {
         "binding",
         "initial-children",
         "[external]",
-        "[internal]",
         "raise",
         "parallel",
     ] {
@@ -99,8 +135,7 @@ fn the_plain_page_has_none_of_the_standards_words() {
         "initial values assigned: early",
         "concurrent main:",
         "starts together in left_off",
-        "(leaves its source state first)",
-        "(stays in its source state when the target is inside it)",
+        "-> left_off [internal] when ready",
         "tell itself eval",
     ] {
         assert!(

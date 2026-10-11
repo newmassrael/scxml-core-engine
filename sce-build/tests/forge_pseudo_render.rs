@@ -620,7 +620,7 @@ machine m (datamodel: ecmascript, initial: s0, binding: early)
   state s0:
     on entry:
       raise go
-    on go -> done [external] when v == 0
+    on go -> done when v == 0
   final done:
 "
     );

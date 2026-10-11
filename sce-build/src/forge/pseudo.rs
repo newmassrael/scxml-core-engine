@@ -2660,13 +2660,16 @@ fn render_scxml_transition(t: &crate::model::Transition, out: &mut Out<'_>) {
         line.push(Part::Text(text(&t.target).into_owned()));
     }
     match t.transition_type.as_str() {
-        "" => {}
-        // The two values the standard defines are words, so a lexicon
-        // can say what each does; any other value stays as the author
-        // wrote it. The brackets are this clause's punctuation and
-        // travel with the value, for the reason `page`'s module note
-        // gives.
-        "external" => line.push(Part::Word(Word::TypeExternal)),
+        // `external` is what a transition that says nothing means, and
+        // the parser records it for one that does not say it, so a
+        // written marker would be on every transition of a document
+        // that never chose a type. Not written, and read back as
+        // `external` (`unpseudo`), so the two spellings are one.
+        "" | "external" => {}
+        // `internal` is a word, so a lexicon can name it; any other
+        // value stays as the author wrote it. The brackets are this
+        // clause's punctuation and travel with the value, for the
+        // reason `page`'s module note gives.
         "internal" => line.push(Part::Word(Word::TypeInternal)),
         other => line.push(Part::Text(format!("[{}]", text(other)))),
     }

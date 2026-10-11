@@ -225,7 +225,7 @@ pub enum Word {
     End,
     /// The keys of a statechart's head clause list
     /// (`(name: n, datamodel: d, initial: i, binding: b, queue: q)`),
-    /// the type of a transition (`[external]`, `[internal]`) and the
+    /// the type of a transition that is not the default (`[internal]`) and the
     /// action that puts an event on the machine's own queue (`raise`).
     /// They are the standard's own switches, written as it names them
     /// by default.
@@ -238,7 +238,6 @@ pub enum Word {
     ClauseInitial,
     ClauseBinding,
     ClauseQueue,
-    TypeExternal,
     TypeInternal,
     Raise,
 }
@@ -380,7 +379,6 @@ impl Word {
         Word::ClauseInitial,
         Word::ClauseBinding,
         Word::ClauseQueue,
-        Word::TypeExternal,
         Word::TypeInternal,
         Word::Raise,
     ];
@@ -552,7 +550,6 @@ fn en_word(w: Word) -> &'static str {
         Word::ClauseInitial => "initial:",
         Word::ClauseBinding => "binding:",
         Word::ClauseQueue => "queue:",
-        Word::TypeExternal => "[external]",
         Word::TypeInternal => "[internal]",
         Word::Raise => "raise",
     }
@@ -1077,7 +1074,6 @@ fn ko_word(w: Word) -> &'static str {
         Word::ClauseInitial => "초기상태:",
         Word::ClauseBinding => "바인딩:",
         Word::ClauseQueue => "큐:",
-        Word::TypeExternal => "[외부]",
         Word::TypeInternal => "[내부]",
         Word::Raise => "발생",
     }
@@ -1106,8 +1102,6 @@ fn plain_word(word: Word) -> &'static str {
         Word::Initial => "starts in",
         Word::InitialChildren => "starts together in",
         Word::Raise => "tell itself",
-        Word::TypeExternal => "(leaves its source state first)",
-        Word::TypeInternal => "(stays in its source state when the target is inside it)",
         Word::ClauseDatamodel => "expression language:",
         Word::ClauseInitial => "first state:",
         Word::ClauseBinding => "initial values assigned:",
