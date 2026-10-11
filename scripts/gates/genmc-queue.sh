@@ -66,6 +66,13 @@ MUTANTS=(
     "cas|s/__ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)/__ATOMIC_RELAXED, __ATOMIC_RELAXED)/"
     "fetch_add|s/__atomic_fetch_add(p0, p1, __ATOMIC_ACQ_REL)/__atomic_fetch_add(p0, p1, __ATOMIC_RELAXED)/"
     "fetch_or|s/__atomic_fetch_or(p0, p1, __ATOMIC_ACQ_REL)/__atomic_fetch_or(p0, p1, __ATOMIC_RELAXED)/"
+    # The one fence the segmented queues use (the hazard domain's handshake). It
+    # is the only mutant that weakens it alone: `all` weakens it with every other
+    # ordering, which a harness can catch for a reason that has nothing to do
+    # with the fence. Measured 2026-10-11 on `hazard_keeps_a_named_node`: the
+    # fence weakened alone is caught, so it is not redundant with the
+    # sequentially consistent accesses around it.
+    "fence|s/__atomic_thread_fence(__ATOMIC_SEQ_CST)/__atomic_thread_fence(__ATOMIC_RELAXED)/"
     # Orderings that may be redundant ONE AT A TIME because another provides the
     # hand-over, so each GROUP that could be the sole provider is weakened too.
     "threshold|s/__atomic_load_n(p0, __ATOMIC_SEQ_CST)/__atomic_load_n(p0, __ATOMIC_RELAXED)/;s/__atomic_store_n(p0, p1, __ATOMIC_SEQ_CST)/__atomic_store_n(p0, p1, __ATOMIC_RELAXED)/"
