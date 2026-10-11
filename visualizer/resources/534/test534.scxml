@@ -11,7 +11,7 @@
      </onentry>
      
      <!-- if other end sends us back this event, we succeed -->
-  <transition event="test" expr="_event.data[&quot;_scxmleventname&quot;] == &quot;test&quot;"  target="pass"/>
+  <transition event="test" cond="_event.data[&quot;_scxmleventname&quot;] == &quot;test&quot;"  target="pass"/>
   <transition event="*" target="fail"/>
  </state>
   
