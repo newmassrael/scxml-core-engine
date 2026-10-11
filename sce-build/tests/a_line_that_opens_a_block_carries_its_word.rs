@@ -170,7 +170,7 @@ fn render_for_report(node: &Node) -> String {
     node.parts
         .iter()
         .map(|p| match p {
-            Part::Word(w) => format!("{w:?}"),
+            Part::Word(w) | Part::GluedWord(w) => format!("{w:?}"),
             Part::Text(t) | Part::Glued(t) => t.clone(),
         })
         .collect::<Vec<_>>()
