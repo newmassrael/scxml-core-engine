@@ -678,6 +678,13 @@ refuses a guess that cites no decision, a guess on a question not yet
 answered (a draft may ask it, not guess it), a question the owner already
 answered, and a decision variable — a `<data>` whose `expr` is the decided
 value, with `sce:assumed-candidates` — holding a value other than `chosen`.
+A decision **region** is read the same way: a `<state>` with `sce:assumed`, whose child
+states are the alternatives (`sce:assumed-candidates`, each one of its children) and
+whose `initial` is the one chosen. Its `initial` is compared with `chosen`, and a region
+starting in another alternative is refused as `holds-another-value`. State ids are unique
+in a document, so the record names the alternatives as the draft's child states are named.
+A marker on anything else (a transition, a state that is not such a region) holds no value
+a check can read, and is reported as `answer-not-read` for the owner to read against the answer.
 It reports, and never refuses, a new question the record has not seen,
 shown beside every recorded question on the same clause, since whether two
 sentences ask the same thing is the owner's reading; and an answer no

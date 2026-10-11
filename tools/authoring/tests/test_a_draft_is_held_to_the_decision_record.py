@@ -62,6 +62,29 @@ D2 = {"id": "D2", "question": "Does close always close?", "answer": "Yes."}
 ANSWERED = record(D1, D2)
 
 
+def region(ident: str, initial: str, alternatives: str = "start_a start_b",
+           children: tuple = ("start_a", "start_b"), marker: str = "D3") -> str:
+    """A decision REGION: a state whose child states are the alternatives of one decision and
+    whose `initial` is the one the draft chose (`check.Mark`)."""
+    kids = "".join(f'<state id="{ident}_{kid}"/>' for kid in children)
+    names = " ".join(f"{ident}_{alt}" for alt in alternatives.split())
+    return (f'<state id="{ident}" initial="{ident}_{initial}" sce:assumed="{marker}" '
+            f'sce:assumed-reason="what the figure leaves open" '
+            f'sce:assumed-candidates="{names}">{kids}</state>')
+
+
+def gate(*states: str) -> str:
+    return ('<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" '
+            f'version="1.0" name="gate" initial="{states[0].split(chr(34))[1]}" '
+            'datamodel="ecmascript">' + "".join(states) + "</scxml>")
+
+
+D3 = {"id": "D3", "question": "Must the other signal itself have changed, or only be LOCK now?",
+      "answer": "It must itself have changed.", "candidates": ["r_start_a", "r_start_b"],
+      "chosen": "r_start_a"}
+
+
 @unittest.skipUnless(_default_codegen().exists(),
                      "the markers are the product's to read; build sce-codegen first")
 class ADraftIsHeldToTheDecisionRecord(unittest.TestCase):
@@ -162,6 +185,59 @@ class ADraftIsHeldToTheDecisionRecord(unittest.TestCase):
         verdict, answer = self.held(DOOR, record(D1, valued))
         self.assertEqual("holds", verdict)
         self.assertFalse(self.findings(answer)[("answer-not-read", "D2")]["refuses"])
+
+    # ------------------------------------------------- a decision region is read
+
+    def test_a_decision_region_starting_in_the_answer_holds(self):
+        verdict, answer = self.held(gate(region("r", "start_a")), record(D3))
+        self.assertEqual("holds", verdict)
+        found = self.findings(answer)[("applied", "D3")]
+        self.assertIn("starts in it", found["message"])
+        self.assertNotIn(("answer-not-read", "D3"), self.findings(answer))
+
+    def test_a_decision_region_starting_in_another_alternative_is_refused(self):
+        verdict, answer = self.held(gate(region("r", "start_b")), record(D3))
+        self.assertEqual("refused", verdict)
+        found = self.findings(answer)[("holds-another-value", "D3")]
+        self.assertTrue(found["refuses"])
+        self.assertIn("'r_start_b'", found["message"])
+        self.assertIn("'r_start_a'", found["message"])
+
+    def test_an_answer_that_is_not_an_alternative_of_the_region_is_refused(self):
+        stray = dict(D3, candidates=["r_start_a", "r_start_b", "r_start_c"], chosen="r_start_c")
+        verdict, answer = self.held(gate(region("r", "start_a")), record(stray))
+        self.assertEqual("refused", verdict)
+        self.assertIn(("not-a-candidate", "D3"), self.findings(answer))
+
+    def test_a_state_that_is_not_a_region_is_still_left_to_a_person(self):
+        # One of the two alternatives is not a child state, so the marked state is not a region:
+        # no `initial` is the chosen one, and nothing is read.
+        lopsided = gate(region("r", "start_a", children=("start_a",)))
+        verdict, answer = self.held(lopsided, record(D3))
+        self.assertEqual("holds", verdict)
+        self.assertFalse(self.findings(answer)[("answer-not-read", "D3")]["refuses"])
+
+    def test_two_regions_cannot_both_hold_one_answer(self):
+        # State ids are unique, so the answer is an alternative of one region at most: the other
+        # is refused for not listing it, and the first is judged on its own `initial`.
+        both = gate(region("r", "start_a"), region("s", "start_a"))
+        verdict, answer = self.held(both, record(D3))
+        self.assertEqual("refused", verdict)
+        found = self.findings(answer)
+        self.assertIn(("not-a-candidate", "D3"), found)
+        self.assertIn("s_start_a", found[("not-a-candidate", "D3")]["message"])
+
+    def test_each_region_is_judged_as_itself_not_as_the_first_one_citing_the_decision(self):
+        # The answer is an alternative of the SECOND region: that region holds it, whatever the
+        # first one starts in. (A reader that took the first region for every marker would
+        # report the second as starting in the first's alternative.)
+        both = gate(region("r", "start_a"), region("s", "start_a"))
+        second = dict(D3, candidates=["r_start_a", "s_start_a"], chosen="s_start_a")
+        verdict, answer = self.held(both, record(second))
+        self.assertEqual("refused", verdict, "the first region does not list the answer")
+        found = self.findings(answer)
+        self.assertIn(("applied", "D3"), found)
+        self.assertNotIn(("holds-another-value", "D3"), found)
 
     def test_a_forge_documents_markers_are_held_too(self):
         # The product reads a forge document's markers through its own

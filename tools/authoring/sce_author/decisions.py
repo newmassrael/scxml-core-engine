@@ -37,7 +37,10 @@ What it only REPORTS is what a person has to read:
                      answer to a gap that recurs, marked by the product, so
                      not an uncited guess; a decision of the same id wins
     answer-not-read  the answer is a value and the draft keeps it where no
-                     value can be read, so a person reads it against the answer
+                     value can be read, so a person reads it against the answer.
+                     A decision variable and a decision region (a `<state>` whose
+                     child states are the alternatives and whose `initial` is the
+                     one chosen) are read, not left here
     uncited-answer   an answered decision no marker cites -- the draft either
                      needed no guess there or applied it without saying so
 
@@ -185,6 +188,32 @@ def _where(marker: dict) -> str:
     return ", ".join(p for p in (marker.get("node_path"), line) if p) or "the document"
 
 
+def _region_findings(ident: str, decision: Decision, region) -> Finding:
+    """What a decision REGION holds for an answer that is a value.
+
+    A region is a `<state>` whose child states are the alternatives and whose `initial` is the
+    one chosen (`check.Mark`): the value is written in the document, as plainly as a decision
+    variable's, so it is read against the answer here and not left to a person. A marker on any
+    other node (a transition, a state that is not such a region) still holds no value."""
+    if decision.chosen not in region.candidates:
+        return Finding(
+            "not-a-candidate",
+            f"{ident} was answered {decision.chosen!r}, and <state id={region.ident!r}> lists "
+            f"{' '.join(region.candidates)} as the alternatives it could start in: add the "
+            f"answer as a child state of it and start it there",
+            marker=ident, decision=ident)
+    if region.initial != decision.chosen:
+        return Finding(
+            "holds-another-value",
+            f"<state id={region.ident!r}> starts in {region.initial!r} for {ident}, which the "
+            f"owner answered {decision.chosen!r} ({decision.answer})",
+            marker=ident, decision=ident)
+    return Finding("applied",
+                   f"{ident} holds the owner's answer {decision.chosen!r}: "
+                   f"<state id={region.ident!r}> starts in it",
+                   marker=ident, decision=ident)
+
+
 def _value_findings(marker: dict, decision: Decision, declared) -> Finding:
     """What the draft holds for an answer that is a value."""
     ident = marker["id"]
@@ -197,6 +226,14 @@ def _value_findings(marker: dict, decision: Decision, declared) -> Finding:
             marker=ident, decision=ident)
     sites = [data for data, cited in declared.assumed_marker.items() if cited == ident]
     if not sites:
+        # The region THIS marker is: the product reports one record per marker, and a decision
+        # cited by two regions has two, each listing its own children (state ids are unique, so
+        # the lists differ) -- the one whose alternatives are this record's candidates.
+        regions = [mark for mark in declared.marks
+                   if mark.region and mark.marker == ident
+                   and set(mark.candidates) == set(marker.get("candidates") or mark.candidates)]
+        if regions:
+            return _region_findings(ident, decision, regions[0])
         return Finding(
             "answer-not-read",
             f"{ident} was answered {decision.chosen!r}, and the draft cites it "
