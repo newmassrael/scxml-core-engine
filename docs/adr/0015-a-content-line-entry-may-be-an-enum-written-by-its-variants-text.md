@@ -100,6 +100,12 @@ The order ADR 0014 followed, for the same reason:
    page, so no backend's output is its own oracle.
 3. Generate it for Python, Go, Kotlin, Rust, C++ and C11, one commit each, against the same vectors.
 
+All three steps have landed: the declaration, the vectors, and the six backends (Python
+`9265e7492b`, Go `1a2b3e93aa`, Kotlin `622d05a203`, Rust `6ab002217a`, C++ `119f6a5eca`, C11
+`ff1a0bda97`), each checked against the same vectors. C11 has one limit the others do not: a
+zero-initialised record starts a required enum at carrier 0, which a closed enum may not declare
+(`SCE_FORGE.md` §4.6.4).
+
 ## Not now
 
 - *A list of enums on one line* (`sce:separator` on an enum entry). It needs the list and the enum
