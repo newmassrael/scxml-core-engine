@@ -63,8 +63,19 @@
 
 /* How often a dequeue that found an entry still empty looks again before it
  * makes the entry unusable for the enqueue that owns it. Bounded, so the
- * operation stays lock-free. */
-#define SCE_QSCQ_SPINS 10000u
+ * operation stays lock-free.
+ *
+ * The count is a public, overridable default (`SCE_QUEUE_SCQ_SPINS`) and not a
+ * constant of this file, for the reason the Rust runtime takes it as a
+ * parameter: a model checker explores every iteration of the loop it bounds, so a
+ * check of the segmented queue's retirement, which makes a dequeue walk an empty
+ * ring, needs to say how many looks it models. `SCE_QSCQ_SPINS` itself is
+ * undefined at the end of this file, which is included once per width, so an
+ * override has to live under a name that survives it. */
+#ifndef SCE_QUEUE_SCQ_SPINS
+#define SCE_QUEUE_SCQ_SPINS 10000u
+#endif
+#define SCE_QSCQ_SPINS SCE_QUEUE_SCQ_SPINS
 
 /* One SCQ ring of R slots (R a power of two) and 2R entries. An entry is
  * `cycle | IsSafe | index`: the index in the low log2(2R) bits, the IsSafe bit
