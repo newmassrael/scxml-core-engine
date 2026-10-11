@@ -219,7 +219,9 @@ const PARALLEL_AS_A_STATE: &str = r#"<?xml version="1.0"?>
 #[test]
 fn a_state_of_type_parallel_is_refused_where_it_is_written_with_the_element_that_means_it() {
     let outcome = SCXMLParser::new().parse_string(PARALLEL_AS_A_STATE, "parallel_as_a_state");
-    let refusal = outcome.err().expect("the document is refused, not built");
+    let Err(refusal) = outcome else {
+        panic!("the document is built, not refused");
+    };
     let (code, row, message) = refusal_of(&refusal);
     assert_eq!((code.as_str(), row), (CODE, Some(3)), "{message}");
     assert!(
@@ -243,12 +245,13 @@ fn the_forge_parser_refuses_the_same() {
         &text[at + "<datamodel>".len()..]
     );
     let row = text[..at].matches('\n').count() as u32 + 1;
-    let refusal = sce_build::forge::parser::parse_forge_with_imports(
+    let outcome = sce_build::forge::parser::parse_forge_with_imports(
         &placed,
         DocumentLabel::symmetric("codec_cbor_map"),
-    )
-    .err()
-    .expect("the document is refused, not built");
+    );
+    let Err(refusal) = outcome else {
+        panic!("the document is built, not refused");
+    };
     let (code, line, message) = refusal_of(&refusal);
     assert_eq!((code.as_str(), line), (CODE, Some(row)), "{message}");
 }

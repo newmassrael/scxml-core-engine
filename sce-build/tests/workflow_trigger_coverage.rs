@@ -85,6 +85,13 @@ const UNFILTERABLE_GATES: &[&str] = &[
     // directory, so a filter over today's fixture trees names the documents
     // already known to pass.
     "an_sce_attribute_nothing_reads_is_refused_not_ignored",
+    // Parses every committed `*.scxml` and refuses one carrying an unqualified
+    // attribute the SCXML Recommendation does not define for its element, and
+    // holds the table that says which is which to the specification text the
+    // ledger keeps. The attribute that proves a table row missing arrives in
+    // whichever document an author writes next, in any directory, so a filter
+    // over today's fixture trees names the documents already known to pass.
+    "an_scxml_attribute_outside_the_standard_is_refused",
     // Asks `git ls-files` for every tracked file and decodes each one,
     // refusing a line of prose written in a script this tree does not write
     // prose in unless the file argues for it. What it exists for is a

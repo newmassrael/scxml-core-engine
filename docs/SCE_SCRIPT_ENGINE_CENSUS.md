@@ -98,15 +98,15 @@ reword.
 ```census
 documents-floor 700
 documents-judged-floor 450
-engine-documents 269
+engine-documents 270
 native-prefix-documents 2
 datamodel-variable-init 466
-transition-guard 250
+transition-guard 251
 assign-action 404
 child-invoke-needs-script-engine 57
 log-expr 46
 send-param-expr 49
-send-dynamic-attr 94
+send-dynamic-attr 96
 foreach-action 20
 static-invoke-namelist 11
 donedata-param 10
@@ -128,6 +128,18 @@ means editing this table in the same commit that causes it. A row whose
 population reaches zero is removed in the commit that empties it, because
 a ceiling nothing can breach is indistinguishable from one whose key was
 never spelled correctly.
+
+⚠ **2026-10-11, deliberately:** refusing an unqualified attribute outside the
+SCXML Recommendation's tables (`ADR 0021`) made the tree's documents say what
+they mean, and several of them now carry an expression an engine reads where
+they carried an attribute nobody read. The WebSocket loopback server's two
+`<send expr="_event.data"/>` became `<content expr="_event.data"/>`, and W3C
+conformance fixtures 354, 519 and 534 write their condition as `cond` where
+they wrote `name` or `expr`. Together these raised `engine-documents` by one,
+`transition-guard` by one and `send-dynamic-attr` by two; the figures are what
+this test observed over the whole change, not split per document. A rise
+because a condition that was never evaluated is now evaluated is the count
+telling the truth, not the tree getting worse.
 
 ## What the table says
 

@@ -126,6 +126,12 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # name the documents use. The document that carries an unread attribute next
 # can be written in any directory, which is this workflow's reason.
 #
+# `an_scxml_attribute_outside_the_standard_is_refused` parses every committed
+# `*.scxml` against the Recommendation's attribute table and refuses an
+# unqualified attribute outside it, and holds that table to the specification
+# text. The document that carries such an attribute next can be written in any
+# directory, which is this workflow's reason.
+#
 # `non_latin_prose_declares_why_it_is_here` decodes every tracked file and
 # refuses a line of prose written in a script this tree does not write prose
 # in, unless the file argues in one line that the characters are what it
@@ -173,6 +179,7 @@ cargo test -p sce-build --features cli,ffi \
     --test a_name_the_generated_code_spells_is_a_code_identifier \
     --test a_forge_document_never_declares_one_name_twice \
     --test an_sce_attribute_nothing_reads_is_refused_not_ignored \
+    --test an_scxml_attribute_outside_the_standard_is_refused \
     --test non_latin_prose_declares_why_it_is_here \
     --test ffi_header_parity \
     --test roadmap_marker_gate \
