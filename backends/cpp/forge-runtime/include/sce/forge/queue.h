@@ -63,6 +63,13 @@
 #include <type_traits>
 #include <utility>
 
+/// How often an SCQ dequeue that found an entry empty looks again before it makes
+/// the entry unusable. A build may define it before including this header;
+/// nothing else needs to, and the default is what ships.
+#ifndef SCE_QUEUE_SCQ_SPINS
+#define SCE_QUEUE_SCQ_SPINS 10000u
+#endif
+
 namespace SCE::Forge::Queue {
 
 /// Why a push did not take its element. `OutOfMemory` is the `segmented`
@@ -404,7 +411,13 @@ template <std::size_t R> class Ring {
     /// How often a dequeue that found an entry still empty looks again before
     /// it makes the entry unusable for the enqueue that owns it. Bounded, so
     /// the operation stays lock-free.
-    static constexpr unsigned kSpins = 10000;
+    ///
+    /// The count is a build-time default (`SCE_QUEUE_SCQ_SPINS`, 10000), the same
+    /// name and default the C runtime takes (queue_scq_width.inc), and the Rust
+    /// runtime takes as a parameter: a model checker explores every iteration of
+    /// the loop it bounds, so a check of the segmented queue's retirement, which
+    /// makes a dequeue walk an empty ring, needs to say how many looks it models.
+    static constexpr unsigned kSpins = SCE_QUEUE_SCQ_SPINS;
     /// The tail's top bit, set once the ring is closed: an enqueue that takes a
     /// ticket from a closed tail gets the bit back and puts nothing on the ring.
     /// This is the finalize bit of Nikolaev's LSCQ, which a `segmented` queue uses
