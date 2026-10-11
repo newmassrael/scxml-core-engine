@@ -146,6 +146,41 @@ fn a_figure_that_does_not_fit_is_refused_and_nothing_is_written() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// A parallel of many regions that share no arrow is one rank of boxes: set
+/// in a single row it was wider than A3 (measured 2026-10-11 on a document
+/// of seven regions, 1345 pt against 1106) and was refused. It is drawn now,
+/// the regions in several rows, on the page that refused it and on a smaller
+/// one, and every region is in the figure.
+#[test]
+fn a_parallel_of_many_regions_is_drawn_in_rows_on_the_page_that_refused_it() {
+    let dir = scratch("diagram-regions");
+    let doc = dir.join("regions.scxml");
+    let mut body = String::from(
+        r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="main"><parallel id="main">"#,
+    );
+    for i in 0..12 {
+        body.push_str(&format!(
+            r#"<state id="a_region_with_a_long_descriptive_name_{i}" initial="idle_{i}"><state id="idle_{i}"><transition event="go_{i}" target="busy_{i}"/></state><state id="busy_{i}"/></state>"#
+        ));
+    }
+    body.push_str("</parallel></scxml>");
+    std::fs::write(&doc, body).expect("write fixture");
+    for page in ["a4-portrait", "a3-landscape"] {
+        let out = dir.join(page);
+        let run = diagram_with(&doc, &out, &["--page", page]);
+        assert_eq!(run.status.code(), Some(0), "{page}: {run:?}");
+        let svg =
+            std::fs::read_to_string(out.join("inside-main.svg")).expect("the parallel's figure");
+        for i in 0..12 {
+            assert!(
+                svg.contains(&format!("a_region_with_a_long_descriptive_name_{i}")),
+                "{page}: region {i} is in the figure"
+            );
+        }
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// Given the specification's manifest, the command also writes the
 /// requirement checklist after the figures, and every requirement of the
 /// manifest has its row there — the missing ones saying no figure shows

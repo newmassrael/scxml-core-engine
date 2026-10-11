@@ -12,6 +12,11 @@
 //! Figures are already flat (one container and its direct children), so
 //! there is no deeper fold to try: the refusal names the container whose
 //! children do not fit, which is where an author would split the machine.
+//! The one thing tried first is the width: a rank wider than the page is
+//! set as several ranks (see [`layout::lay_out`], ADR 0017), because a
+//! container of many regions that share no arrow is one rank and would
+//! otherwise be refused for a width that the page's height has room to
+//! spare for.
 //!
 //! Each transition a figure describes gets a number on its arrow and a row
 //! in the table under the figure, which spends height rather than the width
@@ -203,15 +208,62 @@ impl std::fmt::Display for Refusal {
     }
 }
 
+/// How many times a figure is laid out again with a narrower row limit
+/// when what stands beside its rows (arrow labels, the table's columns)
+/// still passes the page.
+const WIDTH_ATTEMPTS: usize = 6;
+
 /// Every figure of `model`, laid out, tabled and checked against `page`.
+///
+/// A figure is first laid out with the page's width as the width of a row:
+/// a rank wider than that is set as several ranks (see
+/// [`layout::lay_out`]). What the row limit does not count — labels that
+/// reach beyond the boxes, the table under the figure — can still make the
+/// figure wider than the page, and the limit is then lowered by what
+/// passed it and the figure laid out again, a few times; only a figure
+/// that does not fit after that is refused.
 pub fn print(model: &SCXMLModel, lexicon: &Lexicon, page: Page) -> Result<Vec<Printed>, Refusal> {
     let style = Style::at(page.min_pt);
     let diagram = split(model, 1);
     let area = page.area_pt();
     let mut out = Vec::new();
     for figure in &diagram.figures {
-        let sized = boxes::boxes(model, &diagram, figure, lexicon, style).map_err(Refusal::Box)?;
-        let laid = layout::lay_out(model, figure, sized, style).map_err(Refusal::Box)?;
+        let mut limit = area.0;
+        let mut printed = print_figure(model, lexicon, style, &diagram, figure, limit)?;
+        for _ in 0..WIDTH_ATTEMPTS {
+            let over = printed.width - area.0;
+            if over <= 0.0 || limit - over < 1.0 {
+                break;
+            }
+            limit -= over + 1.0;
+            printed = print_figure(model, lexicon, style, &diagram, figure, limit)?;
+        }
+        if printed.width > area.0 || printed.height > area.1 {
+            return Err(Refusal::DoesNotFit {
+                figure: figure.name.clone(),
+                need_pt: (printed.width, printed.height),
+                area_pt: area,
+            });
+        }
+        out.push(printed);
+    }
+    Ok(out)
+}
+
+/// One figure, laid out with rows no wider than `limit`, routed and tabled.
+/// Its size is whatever it came to: the page check is the caller's.
+fn print_figure(
+    model: &SCXMLModel,
+    lexicon: &Lexicon,
+    style: Style,
+    diagram: &super::Diagram,
+    figure: &super::Figure,
+    limit: f64,
+) -> Result<Printed, Refusal> {
+    {
+        let sized = boxes::boxes(model, diagram, figure, lexicon, style).map_err(Refusal::Box)?;
+        let laid =
+            layout::lay_out(model, figure, sized, style, Some(limit)).map_err(Refusal::Box)?;
         let title = words::figure_title(lexicon, &figure.name)
             .ok_or(Refusal::Box(BoxError::NoPhrases(lexicon.name)))?;
 
@@ -288,14 +340,7 @@ pub fn print(model: &SCXMLModel, lexicon: &Lexicon, page: Page) -> Result<Vec<Pr
         let table_top = drawing_at.1 + y1 + line;
         let width = (x1 - x0).max(table_width).max(title_width);
         let height = table_top + rows_height;
-        if width > area.0 || height > area.1 {
-            return Err(Refusal::DoesNotFit {
-                figure: figure.name.clone(),
-                need_pt: (width, height),
-                area_pt: area,
-            });
-        }
-        out.push(Printed {
+        Ok(Printed {
             laid,
             arrows,
             marker,
@@ -307,9 +352,8 @@ pub fn print(model: &SCXMLModel, lexicon: &Lexicon, page: Page) -> Result<Vec<Pr
             style,
             width,
             height,
-        });
+        })
     }
-    Ok(out)
 }
 
 #[cfg(test)]

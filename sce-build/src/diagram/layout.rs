@@ -116,6 +116,11 @@ impl Laid {
 
 /// Lay out one figure whose boxes `boxes` has sized, in its drawing order.
 ///
+/// `width_limit` is the width a row of the figure may take, when the caller
+/// has a page to hold it: a rank wider than that is broken into consecutive
+/// ranks, in document order (see [`wrap_wide_ranks`]). `None` keeps every
+/// rank in one row, however wide.
+///
 /// Refused when an arrow names an end the figure draws no box for — the
 /// split and the boxes disagreeing — because an arrow left out is a
 /// transition the reader never sees.
@@ -124,6 +129,7 @@ pub fn lay_out(
     figure: &Figure,
     boxes: Vec<SizedBox>,
     style: Style,
+    width_limit: Option<f64>,
 ) -> Result<Laid, BoxError> {
     let gap = style.body_pt * 3.0;
     let rank_gap = style.body_pt * style.leading * 4.0;
@@ -236,6 +242,33 @@ pub fn lay_out(
                 rank[b] = rank[a] + 1;
             }
         }
+    }
+    // The initial marker — a dot and a short arrow — stands left of the
+    // initial child, so every rank leaves that much room on the left.
+    let lead = if initial.is_some() {
+        style.body_pt * 3.0
+    } else {
+        0.0
+    };
+    // Boxes of one rank share no arrow (an arrow between two puts them in
+    // different ranks), so a rank too wide for the page can be set as
+    // several consecutive ranks with nothing to redraw: an arrow that now
+    // crosses one of them gets a slot in it like in any rank it crosses.
+    if let Some(limit) = width_limit {
+        // The edge column — the states of other figures — and the channels
+        // that reach it stand right of the ranks.
+        let channels = ends
+            .iter()
+            .filter(|(u, v)| matches!(u, Node::Edge(_)) || matches!(v, Node::Edge(_)))
+            .count();
+        let edge_reserve = if edge.is_empty() {
+            0.0
+        } else {
+            let widest = edge.iter().map(|b| b.width).fold(0.0, f64::max);
+            gap * 2.0 + channels.saturating_sub(1) as f64 * channel_step + widest
+        };
+        let widths: Vec<f64> = inner.iter().map(|b| b.width).collect();
+        wrap_wide_ranks(&mut rank, &widths, gap, limit - lead - edge_reserve);
     }
     let ranks = rank.iter().copied().max().map_or(0, |m| m + 1);
 
@@ -355,13 +388,6 @@ pub fn lay_out(
     let row_width = |layer: &Vec<usize>| {
         layer.iter().map(|&v| width_of(v)).sum::<f64>() + gap * layer.len().saturating_sub(1) as f64
     };
-    // The initial marker — a dot and a short arrow — stands left of the
-    // initial child, so every rank leaves that much room on the left.
-    let lead = if initial.is_some() {
-        style.body_pt * 3.0
-    } else {
-        0.0
-    };
     let rows_width = layers.iter().map(row_width).fold(0.0, f64::max);
     let body_width = lead + rows_width;
     let mut xy = vec![(0.0, 0.0); total];
@@ -463,6 +489,40 @@ pub fn lay_out(
     })
 }
 
+/// Break each rank whose boxes do not fit `limit` points of width into
+/// consecutive ranks, in document order, and renumber the ranks after them.
+///
+/// A rank is filled box by box in document order until the next box would
+/// pass `limit`, then the next rank is started; a box wider than `limit`
+/// stands alone, and the page-fit check names it. A rank that fits is left
+/// as it is, so a figure that fitted before is laid out exactly as before.
+fn wrap_wide_ranks(rank: &mut [usize], widths: &[f64], gap: f64, limit: f64) {
+    let ranks = rank.iter().copied().max().map_or(0, |m| m + 1);
+    let mut shifted = vec![0usize; rank.len()];
+    let mut next = 0usize;
+    for r in 0..ranks {
+        let mut used = 0.0f64;
+        let mut chunk = 0usize;
+        let mut first = true;
+        for (i, &w) in widths.iter().enumerate() {
+            if rank[i] != r {
+                continue;
+            }
+            let need = if first { w } else { used + gap + w };
+            if !first && need > limit {
+                chunk += 1;
+                used = w;
+            } else {
+                used = need;
+            }
+            first = false;
+            shifted[i] = next + chunk;
+        }
+        next += chunk + 1;
+    }
+    rank.copy_from_slice(&shifted);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -488,7 +548,118 @@ mod tests {
         let d = split(&m, 1);
         let fig = &d.figures[0];
         let b = boxes(&m, &d, fig, &EN, Style::at(7.0)).expect("sized");
-        lay_out(&m, fig, b, Style::at(7.0)).expect("laid out")
+        lay_out(&m, fig, b, Style::at(7.0), None).expect("laid out")
+    }
+
+    /// A `<parallel>` of `n` regions that share no arrow, each a compound
+    /// state: the figure inside it is one rank of `n` boxes.
+    fn regions(n: usize) -> SCXMLModel {
+        let mut body = String::from(
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="main"><parallel id="main">"#,
+        );
+        for i in 0..n {
+            body.push_str(&format!(
+                r#"<state id="region_number_{i}" initial="idle_{i}"><state id="idle_{i}"><transition event="go_{i}" target="busy_{i}"/></state><state id="busy_{i}"/></state>"#
+            ));
+        }
+        body.push_str("</parallel></scxml>");
+        SCXMLParser::new()
+            .parse_string(&body, "regions")
+            .expect("parses")
+    }
+
+    fn figure_inside_main(m: &SCXMLModel, limit: Option<f64>) -> Laid {
+        let d = split(m, 1);
+        let fig = d
+            .figures
+            .iter()
+            .find(|f| f.name == FigureName::Inside("main".into()))
+            .expect("the parallel's figure");
+        let b = boxes(m, &d, fig, &EN, Style::at(7.0)).expect("sized");
+        lay_out(m, fig, b, Style::at(7.0), limit).expect("laid out")
+    }
+
+    /// Regions that share no arrow stand in one row without a limit, and
+    /// in several rows once the row would pass it: no row is wider than
+    /// the limit, nothing overlaps, every region is still drawn once.
+    #[test]
+    fn a_rank_wider_than_the_limit_is_set_as_several_rows() {
+        let m = regions(9);
+        let wide = figure_inside_main(&m, None);
+        assert_eq!(wide.rows.len(), 1, "one row without a limit");
+        let limit = wide.body_width / 3.0;
+        let wrapped = figure_inside_main(&m, Some(limit));
+        assert!(wrapped.rows.len() >= 3, "{:?}", wrapped.rows);
+        assert!(
+            wrapped.body_width <= limit + 0.5,
+            "{} {limit}",
+            wrapped.body_width
+        );
+        assert_eq!(wrapped.inner.len(), wide.inner.len(), "no box lost");
+        for (a, pa) in wrapped.inner.iter().enumerate() {
+            for pb in &wrapped.inner[a + 1..] {
+                let apart = pa.x + pa.sized.width <= pb.x
+                    || pb.x + pb.sized.width <= pa.x
+                    || pa.y + pa.sized.height <= pb.y
+                    || pb.y + pb.sized.height <= pa.y;
+                assert!(apart, "{:?} overlaps {:?}", pa.sized.kind, pb.sized.kind);
+            }
+        }
+    }
+
+    /// Document order survives the wrap: reading the rows top to bottom,
+    /// left to right, gives the regions in the order the document wrote them.
+    #[test]
+    fn the_wrapped_rows_keep_the_document_order() {
+        let m = regions(9);
+        let wide = figure_inside_main(&m, None);
+        let wrapped = figure_inside_main(&m, Some(wide.body_width / 3.0));
+        let mut reading: Vec<(usize, f64, String)> = wrapped
+            .inner
+            .iter()
+            .map(|p| (p.rank.expect("ranked"), p.x, format!("{:?}", p.sized.kind)))
+            .collect();
+        reading.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.total_cmp(&b.1)));
+        let want: Vec<String> = wide
+            .inner
+            .iter()
+            .map(|p| format!("{:?}", p.sized.kind))
+            .collect();
+        let got: Vec<String> = reading.into_iter().map(|r| r.2).collect();
+        assert_eq!(got, want);
+    }
+
+    /// A figure whose ranks already fit is laid out exactly as it is with
+    /// no limit: the wrap changes nothing it was not needed for.
+    #[test]
+    fn a_figure_that_fits_the_limit_is_laid_out_as_without_one() {
+        let m = SCXMLParser::new()
+            .parse_string(DOC, "layout")
+            .expect("parses");
+        let d = split(&m, 1);
+        let fig = &d.figures[0];
+        let s = Style::at(7.0);
+        let none = lay_out(&m, fig, boxes(&m, &d, fig, &EN, s).unwrap(), s, None).unwrap();
+        let big = lay_out(
+            &m,
+            fig,
+            boxes(&m, &d, fig, &EN, s).unwrap(),
+            s,
+            Some(10_000.0),
+        )
+        .unwrap();
+        assert_eq!(none, big);
+    }
+
+    /// The same document and the same limit give the same figure.
+    #[test]
+    fn the_wrapped_layout_is_deterministic() {
+        let m = regions(9);
+        let limit = figure_inside_main(&m, None).body_width / 3.0;
+        assert_eq!(
+            figure_inside_main(&m, Some(limit)),
+            figure_inside_main(&m, Some(limit))
+        );
     }
 
     fn rank_of(l: &Laid, id: &str) -> usize {
