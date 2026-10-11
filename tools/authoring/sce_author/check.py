@@ -1543,6 +1543,9 @@ def check(pack: Pack, binding_path: pathlib.Path, prose=None,
         for value in (rule.get("map") or {}).values():
             if isinstance(value, str) and not fld.admits(value):
                 out.append(Finding(f"output {name}", f"{address}.{fld.name} does not admit {value!r}"))
+        departure = landing.departure_from_the_platforms_table(rule.get("map") or {}, fld.values)
+        if departure:
+            out.append(Finding(f"output {name}", f"{address}.{fld.name} {departure}"))
         for group in list((rule.get("when") or {}).values()) + [rule.get("also") or {}]:
             for fname, value in group.items():
                 other = entry.field(fname)

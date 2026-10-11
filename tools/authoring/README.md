@@ -2410,6 +2410,22 @@ binding `check` can read, so each gap comes back as a refusal naming its rule.
 the ones that failed failed on the copied half -- a missing `version`, an
 output rule with no `field` -- and never reached the half that reads the prose.
 
+A writer who keeps the skeleton's `map` and renames the rule may still re-type
+it, and a long table loses an entry. `check` therefore holds a `map` to the
+model when the map reads as the platform's own table: every key is an integer
+that is one of the platform's numbers for the field, and it names at least nine
+tenths of the field's symbols. If some number then lands a symbol the model
+numbers otherwise, the rule is refused, naming the first numbers that disagree
+and the symbol the map has no entry for. A map keyed by tokens, by signed
+levels, by numbers the platform does not use, or naming only the few symbols the
+document produces is the document's own numbering, and is left alone.
+⚠ Measured 2026-10-11 on an enumeration of 54 symbols: the re-typed map lost
+one symbol, so every symbol after it landed one number early (240 cases failed)
+and the last symbol moved from 53 to 52, so the document's 53 had no entry (452
+cases could not be judged). `check` had passed it, because every
+NAME the map wrote was one the field admits. Over the 7,090 distinct output maps
+of the authoring survey the rule refuses these two and no other.
+
 `--kind transform` also writes the document the binding names, beside it and
 only if it does not exist: the root declaring `sce:kind="transform"` in SCE's
 namespace, and one `<data>` per rule, with the rule's identifier, its direction
