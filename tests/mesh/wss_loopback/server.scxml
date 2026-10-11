@@ -15,10 +15,10 @@
        name="server" initial="serving" datamodel="ecmascript">
   <state id="serving">
     <transition event="ping" target="serving">
-      <send target="#client" event="pong" expr="_event.data"/>
+      <send target="#client" event="pong"><content expr="_event.data"/></send>
     </transition>
     <transition event="service.request.echo" target="serving">
-      <send target="#client" event="service.response.echo" expr="_event.data"/>
+      <send target="#client" event="service.response.echo"><content expr="_event.data"/></send>
     </transition>
   </state>
 </scxml>

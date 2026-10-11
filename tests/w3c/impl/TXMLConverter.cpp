@@ -498,8 +498,10 @@ std::string TXMLConverter::convertConfAttributes(const std::string &content) {
 
     // Convert value and data processing attributes
     // conf:eventdataSomeVal should be converted to platform-specific event data
-    // For standard SCXML, map to 'name' attribute for param elements
-    result = std::regex_replace(result, CONF_EVENTDATA_SOME_VAL_ATTR, R"(name="$1")");
+    // The IRP states it on a <transition> as a condition: the event carries some data. A
+    // <transition> has no 'name', so the condition is written as 'cond'; written as 'name' it was
+    // read by nobody and the transition was taken whatever the event carried (test 354).
+    result = std::regex_replace(result, CONF_EVENTDATA_SOME_VAL_ATTR, R"(cond="_event.data")");
 
     // conf:eventNamedParamHasValue should be converted to platform-specific event parameter validation
     // For ECMAScript datamodel, convert "name value" to "name == value" or "name == 'value'"
@@ -507,13 +509,14 @@ std::string TXMLConverter::convertConfAttributes(const std::string &content) {
 
     // Step 1: Handle numeric values (e.g., "param1 1" -> "param1 == 1")
     std::regex event_named_param_numeric(R"vwx(conf:eventNamedParamHasValue="(\S+)\s+(\d+)")vwx", std::regex::optimize);
-    result = std::regex_replace(result, event_named_param_numeric, R"(expr="_event.data[&quot;$1&quot;] == $2")");
+    // The IRP states it on a <transition> or <if> as a condition, and both take 'cond', not 'expr'.
+    result = std::regex_replace(result, event_named_param_numeric, R"(cond="_event.data[&quot;$1&quot;] == $2")");
 
     // Step 2: Handle string values (e.g., "_scxmleventname test" -> "_scxmleventname == \"test\"")
     // Use double quotes inside expr to avoid quote nesting issues in ECMAScript
     std::regex event_named_param_string(R"vwx(conf:eventNamedParamHasValue="(\S+)\s+(\S+)")vwx", std::regex::optimize);
     result =
-        std::regex_replace(result, event_named_param_string, R"(expr="_event.data[&quot;$1&quot;] == &quot;$2&quot;")");
+        std::regex_replace(result, event_named_param_string, R"(cond="_event.data[&quot;$1&quot;] == &quot;$2&quot;")");
 
     // Convert conf:quoteExpr to quoted string expressions
     // conf:quoteExpr="event1" -> expr="'event1'" (string literal)
@@ -691,6 +694,11 @@ std::string TXMLConverter::convertConfElements(const std::string &content) {
     // Convert W3C test data array elements to JavaScript arrays
     result = std::regex_replace(result, CONF_ARRAY123_PATTERN, "[1,2,3]");
     result = std::regex_replace(result, CONF_ARRAY456_PATTERN, "[4,5,6]");
+
+    // <conf:someInlineVal/> is an inline value that is some value: any non-empty one. Dropped with
+    // the other conf: elements it left an empty <content>, which test 354 then could not tell from
+    // data that is absent.
+    result = std::regex_replace(result, std::regex(R"(<conf:someInlineVal\s*/>)"), "123");
 
     // W3C SCXML test 294: Convert conf:contentFoo to content element with 'foo' value
     // <conf:contentFoo/> -> <content>'foo'</content>

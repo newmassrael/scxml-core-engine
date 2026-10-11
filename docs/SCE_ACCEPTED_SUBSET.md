@@ -97,6 +97,28 @@ acknowledged at the site that makes the choice; and one inside a value
 carried as written — `<content>`, a `<data>` or `<assign>` value — which
 is the value's, for whoever reads it.
 
+**An unqualified attribute on a W3C element is one the Recommendation
+defines for it, or is refused.** The same `lax` wildcard admits any
+attribute on a W3C element, and the parsers read the attributes they know
+by name, so one the Recommendation does not define for the element was
+never asked for and nothing said so. Measured 2026-10-11 on a document an
+AI wrote: `<state id="main" type="parallel">` built with exit 0 and meant
+an ordinary compound state, so only its first region was entered and six
+of eight test cases failed (`<parallel>` is the element for concurrent
+regions; `<state>` takes `id` and `initial`). `scxml_attributes` holds the
+Recommendation's attribute table for each element — held to the
+specification ledger by
+`an_scxml_attribute_outside_the_standard_is_refused` — and both parsers
+refuse the document as `validation/unknown-scxml-attribute`, one record per
+attribute at its own row, naming what the element takes, the nearest
+spelling, and for the `type="parallel"` and `<send expr>` mistakes the
+element or child that was meant. Qualified attributes belong to their own
+namespace (`sce:` has the check above), and a value carried as written —
+a `<data>` or `<content>` — is its own reader's to judge. The same
+silence was in this repository: a `<send expr="_event.data"/>` whose data
+was never sent, and three W3C fixtures whose converter wrote a condition
+as `expr` on a `<transition>`.
+
 This was never the comment-encoding problem §2.10 describes, and the
 repair is not an encoder. The comments are already safe: the
 generator encodes every value a template writes into one, ids and
@@ -6797,6 +6819,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `validation/mesh-rpc-duplicate-target` | Validation |
 | `validation/removed-attribute` | Validation |
 | `validation/sce-attribute-unread` | Validation |
+| `validation/unknown-scxml-attribute` | Validation |
 | `validation/bytes-max-size-violation` | Validation |
 | `validation/duplicate-requirement-id` | Validation |
 | `validation/provenance-malformed` | Validation |

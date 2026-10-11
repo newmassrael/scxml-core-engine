@@ -1178,6 +1178,19 @@ pub enum ValidationError {
     #[error("{}", unread_sce_summary(.0))]
     UnreadSceAttributes(Vec<crate::read_ledger::Unread>),
 
+    /// Unqualified attributes on SCXML elements that the Recommendation
+    /// does not define for them (`crate::scxml_attributes`).
+    ///
+    /// ⚠ The grammar cannot refuse these either (the same `lax` wrapper),
+    /// and the parsers read only the attributes they know: `<state
+    /// type="parallel">` built with exit 0 and was read as an ordinary
+    /// compound state, so only its first child was ever entered.
+    ///
+    /// One variant for every such attribute in the document; each fans out
+    /// to a record of its own, located at the attribute.
+    #[error("{}", unknown_scxml_summary(.0))]
+    UnknownScxmlAttributes(Vec<crate::scxml_attributes::NotAnScxmlAttribute>),
+
     /// `<invoke type="sce:mesh-rpc">` is missing both `src` and
     /// `srcexpr`. Exactly one must be present (SCE_MESH.md §9.5).
     #[error("<invoke type=\"sce:mesh-rpc\"> must declare exactly one of `src` or `srcexpr` — both are missing. Add `src=\"#<machine>\"` for a build-time target, or `srcexpr=\"...\"` to pick among declared bindings at runtime.")]
@@ -5233,6 +5246,44 @@ pub fn unread_sce_message(unread: &crate::read_ledger::Unread) -> String {
          lists which)",
         unread.attribute, unread.element
     )
+}
+
+/// The message one record of [`ValidationError::UnknownScxmlAttributes`]
+/// carries — the same words whether the list fans out or is summarised: what
+/// the element takes, the nearest spelling, and the repair for a mistake
+/// whose shape is known.
+pub fn unknown_scxml_message(unknown: &crate::scxml_attributes::NotAnScxmlAttribute) -> String {
+    let takes = if unknown.takes.is_empty() {
+        "no attributes".to_string()
+    } else {
+        unknown.takes.join(", ")
+    };
+    let mut message = format!(
+        "{} is not an attribute of <{}> in SCXML (it takes {takes}); a parser that read the \
+         document and ignored it would build something other than what it says",
+        unknown.attribute, unknown.element
+    );
+    if !unknown.near.is_empty() {
+        message.push_str(&format!("; did you mean {}", unknown.near.join(" or ")));
+    }
+    if let Some(hint) = unknown.hint {
+        message.push_str(&format!(": {hint}"));
+    }
+    message
+}
+
+/// The one-line message of [`ValidationError::UnknownScxmlAttributes`] as a
+/// whole: the first record's, and how many follow it.
+fn unknown_scxml_summary(unknown: &[crate::scxml_attributes::NotAnScxmlAttribute]) -> String {
+    match unknown {
+        [] => "no unknown SCXML attribute".to_string(),
+        [only] => unknown_scxml_message(only),
+        [first, rest @ ..] => format!(
+            "{} (and {} more unknown SCXML attribute(s))",
+            unknown_scxml_message(first),
+            rest.len()
+        ),
+    }
 }
 
 /// The one-line message of [`ValidationError::UnreadSceAttributes`] as a

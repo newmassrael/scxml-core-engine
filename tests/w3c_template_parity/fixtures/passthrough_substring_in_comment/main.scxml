@@ -16,7 +16,8 @@
        version="1.0"
        initial="idle">
   <!-- instructional comment: how to sce:use this template family -->
-  <state id="idle" description="how to sce:use this idle state">
+  <state id="idle">
+    <onentry><log label="how to sce:use this idle state"/></onentry>
     <transition event="go" target="running"/>
   </state>
   <state id="running">

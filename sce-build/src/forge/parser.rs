@@ -443,6 +443,10 @@ pub fn parse_forge_with_imports_and_plugin(
     // one nothing reads was dropped without a word until 2026-09-28
     // (`crate::read_ledger` says why the grammar cannot say it).
     read_ledger::refuse_unread_attributes(&ledger, &root, diag)?;
+    // The same wrapper takes an unqualified attribute the Recommendation does
+    // not define for its element, and these parsers read only what they know
+    // (`crate::scxml_attributes` says what that let through).
+    crate::scxml_attributes::refuse_unknown_scxml_attributes(&root, diag)?;
 
     Ok(Some(ParsedForge {
         document,

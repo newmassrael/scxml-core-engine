@@ -12613,6 +12613,12 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-A",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce-build/src/scxml_attributes.rs",
+          "kind": "references"
+        }
+      ],
       "coverage_expectation": "informational",
       "normative_excerpt": {
         "excerpt": {

@@ -326,6 +326,15 @@ name = "cli_check"
 path = "tests/cli_check.rs"
 required-features = ["cli"]
 
+# An attribute the SCXML Recommendation does not define for an element is
+# refused by both parsers and by the binary's `check` and `generate`, and the
+# table that says which is the specification's own. Drives the real binary,
+# so the same `cli` feature gate as the other binary-driven tests.
+[[test]]
+name = "an_scxml_attribute_outside_the_standard_is_refused"
+path = "tests/an_scxml_attribute_outside_the_standard_is_refused.rs"
+required-features = ["cli"]
+
 # `needs_parent` / `parent_sends` on the manifest the real binary writes,
 # validated against the wire schema.
 [[test]]

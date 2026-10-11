@@ -2873,6 +2873,12 @@ impl SCXMLParser {
         // 2026-09-28. Last, so every reader above has recorded its reads.
         crate::read_ledger::refuse_unread_attributes(&recording.finish(), &root, diag_label)?;
 
+        // ⚠ The same wrapper takes an unqualified attribute the Recommendation
+        // does not define for its element: `<state type="parallel">` built
+        // with exit 0 and was read as an ordinary state (2026-10-11). The
+        // parsers ask only for what they know, so nothing else would say so.
+        crate::scxml_attributes::refuse_unknown_scxml_attributes(&root, diag_label)?;
+
         Ok(model)
     }
 

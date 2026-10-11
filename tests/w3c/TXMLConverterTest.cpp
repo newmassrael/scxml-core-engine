@@ -494,16 +494,28 @@ TEST_F(TXMLConverterTest, RemovesSomeInlineValAttribute) {
     EXPECT_NE(result.find("<log"), std::string::npos) << "Log element should be preserved";
 }
 
-// Test conf:eventdataSomeVal attribute conversion for event data processing
-TEST_F(TXMLConverterTest, ConvertsEventdataSomeValAttribute) {
+// <conf:someInlineVal/> is some value: it must not leave the <content> it sits in empty
+TEST_F(TXMLConverterTest, ConvertsSomeInlineValElementToANonEmptyValue) {
     std::string txml = createValidTXML(R"567(
-        <param conf:eventdataSomeVal="eventParam" expr="paramValue"/>
+        <send event="e"><content><conf:someInlineVal/></content></send>
     )567");
 
     std::string result = converter.convertTXMLToSCXML(txml);
 
-    EXPECT_NE(result.find(R"890(name="eventParam")890"), std::string::npos)
-        << "conf:eventdataSomeVal should be converted to name attribute";
+    EXPECT_NE(result.find("<content>123</content>"), std::string::npos)
+        << "conf:someInlineVal should become a non-empty value";
+}
+
+// Test conf:eventdataSomeVal attribute conversion for event data processing
+TEST_F(TXMLConverterTest, ConvertsEventdataSomeValAttribute) {
+    std::string txml = createValidTXML(R"567(
+        <transition event="e" conf:eventdataSomeVal="" target="pass"/>
+    )567");
+
+    std::string result = converter.convertTXMLToSCXML(txml);
+
+    EXPECT_NE(result.find(R"890(cond="_event.data")890"), std::string::npos)
+        << "conf:eventdataSomeVal should be converted to a condition on the event's data";
     EXPECT_EQ(result.find(R"abc(conf:eventdataSomeVal)abc"), std::string::npos)
         << "conf:eventdataSomeVal references should be removed";
 }
@@ -558,8 +570,8 @@ TEST_F(TXMLConverterTest, ConvertsEventNamedParamHasValueAttribute) {
 
     std::string result = converter.convertTXMLToSCXML(txml);
 
-    // Should convert to: expr="_event.data[&quot;param&quot;] == &quot;testValue&quot;"
-    EXPECT_NE(result.find(R"abc(expr="_event.data[&quot;param&quot;] == &quot;testValue&quot;")abc"), std::string::npos)
+    // Should convert to: cond="_event.data[&quot;param&quot;] == &quot;testValue&quot;"
+    EXPECT_NE(result.find(R"abc(cond="_event.data[&quot;param&quot;] == &quot;testValue&quot;")abc"), std::string::npos)
         << "conf:eventNamedParamHasValue should be converted to event data parameter comparison";
     EXPECT_EQ(result.find("conf:eventNamedParamHasValue"), std::string::npos)
         << "conf:eventNamedParamHasValue references should be removed";
@@ -585,9 +597,10 @@ TEST_F(TXMLConverterTest, ConvertsAllW3CIRPAttributesComprehensive) {
         </transition>
         <transition event="result" target="pass">
             <send event="complete" target="external">
-                <param conf:eventdataSomeVal="resultParam" expr="testVar"/>
+                <param name="resultParam" expr="testVar"/>
             </send>
         </transition>
+        <transition event="data" conf:eventdataSomeVal="" target="pass"/>
     </state>
     <state id="checkParam"/>
     <final id="pass"/>
@@ -603,13 +616,13 @@ TEST_F(TXMLConverterTest, ConvertsAllW3CIRPAttributesComprehensive) {
     // W3C test 553: conf:invalidNamelist converts to error-triggering undefined variable
     EXPECT_NE(result.find(R"mno(namelist="__undefined_variable_for_error__")mno"), std::string::npos)
         << "conf:invalidNamelist should be converted to error-triggering namelist";
-    EXPECT_NE(result.find(R"pqr(expr="_event.data[&quot;hasParam&quot;] == &quot;true&quot;")pqr"), std::string::npos)
+    EXPECT_NE(result.find(R"pqr(cond="_event.data[&quot;hasParam&quot;] == &quot;true&quot;")pqr"), std::string::npos)
         << "conf:eventNamedParamHasValue should be converted to event data comparison";
-    EXPECT_NE(result.find(R"stu(name="resultParam")stu"), std::string::npos)
-        << "conf:eventdataSomeVal should be converted to name";
+    EXPECT_NE(result.find(R"stu(cond="_event.data")stu"), std::string::npos)
+        << "conf:eventdataSomeVal should be converted to a condition on the event's data";
 
     // Verify XML structure integrity
-    EXPECT_NE(result.find("<if expr="), std::string::npos) << "If element with expr should be properly formed";
+    EXPECT_NE(result.find("<if cond="), std::string::npos) << "If element with cond should be properly formed";
     EXPECT_NE(result.find("<else>"), std::string::npos) << "Else element should be preserved";
     EXPECT_NE(result.find("<param name="), std::string::npos) << "Param element with name should be properly formed";
 
@@ -624,7 +637,7 @@ TEST_F(TXMLConverterTest, HandlesW3CIRPEdgeCases) {
         <if conf:eventNamedParamHasValue="">
             <transition target="pass"/>
         </if>
-        <param conf:eventdataSomeVal="" expr="value"/>
+        <transition event="e" conf:eventdataSomeVal="" target="pass"/>
         <assign conf:invalidLocation="" expr="null"/>
     )vwx");
 
@@ -639,8 +652,8 @@ TEST_F(TXMLConverterTest, HandlesW3CIRPEdgeCases) {
     // It gets removed by CONF_ALL_ATTRIBUTES cleanup (TXMLConverter.cpp:636)
     EXPECT_EQ(result.find("conf:eventNamedParamHasValue"), std::string::npos)
         << "Empty conf:eventNamedParamHasValue should be removed by cleanup";
-    EXPECT_NE(result.find(R"890(name="")890"), std::string::npos)
-        << "Empty conf:eventdataSomeVal should convert to empty name";
+    EXPECT_NE(result.find(R"890(cond="_event.data")890"), std::string::npos)
+        << "Empty conf:eventdataSomeVal is the form the IRP states and converts to the data condition";
     EXPECT_NE(result.find(R"abc(location="")abc"), std::string::npos)
         << "Empty conf:invalidLocation should convert to empty location";
 

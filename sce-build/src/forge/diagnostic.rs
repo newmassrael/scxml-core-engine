@@ -183,8 +183,67 @@ pub(crate) fn forge_to_diagnostics<T: SingleDiagnostic>(
         if let crate::forge::error::ValidationError::UnreadSceAttributes(unread) = &**validation {
             return unread_sce_diagnostics(&outer.to_single_diagnostic(), unread);
         }
+        if let crate::forge::error::ValidationError::UnknownScxmlAttributes(unknown) = &**validation
+        {
+            return unknown_scxml_diagnostics(&outer.to_single_diagnostic(), unknown);
+        }
     }
     vec![outer.to_single_diagnostic()]
+}
+
+/// One record per unknown SCXML attribute, each at the attribute itself, by
+/// the same rule as [`unread_sce_diagnostics`]: what the records share comes
+/// from `base`, and what differs per attribute is its payload, its message
+/// and its row, so the `id` is recomputed from those.
+fn unknown_scxml_diagnostics(
+    base: &Diagnostic,
+    unknown: &[crate::scxml_attributes::NotAnScxmlAttribute],
+) -> Vec<Diagnostic> {
+    unknown
+        .iter()
+        .map(|u| {
+            let payload = unknown_scxml_payload(u);
+            let location = base.location.clone().map(|l| Location {
+                line: Some(u.row),
+                col: Some(u.col),
+                ..l
+            });
+            Diagnostic {
+                id: compute_id(
+                    payload.code,
+                    payload.stage,
+                    location.as_ref().map(|l| l.file.as_str()),
+                    &payload.key_fragments,
+                ),
+                message: crate::forge::error::unknown_scxml_message(u),
+                location,
+                expected: payload.expected,
+                actual: payload.actual,
+                fix: payload.fix,
+                ..base.clone()
+            }
+        })
+        .collect()
+}
+
+/// The payload of one unknown SCXML attribute: the attribute is `actual`, and
+/// the repair is to remove it from the element that carries it. What the
+/// element does take, and the nearest spelling, ride the message.
+fn unknown_scxml_payload(
+    unknown: &crate::scxml_attributes::NotAnScxmlAttribute,
+) -> DiagnosticPayload {
+    let attribute = unknown.attribute.clone();
+    DiagnosticPayload {
+        code: DiagnosticCode::ValidationUnknownScxmlAttribute,
+        stage: Stage::Validation,
+        expected: None,
+        actual: Some(attribute.clone()),
+        fix: Some(Fix::RemoveFields {
+            location: format!("<{}>", unknown.element),
+            fields: vec![attribute.clone()],
+        }),
+        key_fragments: vec![unknown.element.clone(), attribute],
+    }
 }
 
 /// One record per unread `sce:` attribute, each at the attribute itself.
@@ -760,6 +819,12 @@ pub enum DiagnosticCode {
     /// (`crate::sce_attr`). One record per attribute.
     #[serde(rename = "validation/sce-attribute-unread")]
     ValidationSceAttributeUnread,
+    /// An unqualified attribute on an SCXML element that the Recommendation
+    /// does not define for it (`crate::scxml_attributes`): `<state
+    /// type="parallel">` was read as an ordinary state. One record per
+    /// attribute.
+    #[serde(rename = "validation/unknown-scxml-attribute")]
+    ValidationUnknownScxmlAttribute,
     // ── Forge bytes-typed slot capacity contract. The
     //    inconsistency is between two SCXML-declared caps (e.g.
     //    `sce:response-max-size` on a `<send>` exceeds
@@ -3410,6 +3475,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ValidationMeshRpcDuplicateTarget,
         ValidationRemovedAttribute,
         ValidationSceAttributeUnread,
+        ValidationUnknownScxmlAttribute,
         ValidationBytesMaxSizeViolation,
         // NL→IR Mapping Roadmap Item 1: sce:req traceability
         ValidationDuplicateRequirementId,
@@ -4016,6 +4082,11 @@ impl DiagnosticCode {
             // The vocabulary an `sce:` attribute may come from is the
             // accepted-subset document's business, same as the kinds.
             ValidationUnknownSceAttribute => Some("SCE Accepted Subset §2.2"),
+            // An unqualified attribute outside an element's attribute
+            // table is a document that does not conform: the conformance
+            // clause on the syntactic constraints, which include the
+            // attribute tables.
+            ValidationUnknownScxmlAttribute => Some("W3C SCXML §A.1"),
             // Same clause, for the same reason: `sce:default-covers` is
             // a name from that vocabulary, and what it may say about a
             // value space is part of what the subset accepts.
@@ -4872,6 +4943,7 @@ impl DiagnosticCode {
             ValidationMeshRpcDuplicateTarget => "validation/mesh-rpc-duplicate-target",
             ValidationRemovedAttribute => "validation/removed-attribute",
             ValidationSceAttributeUnread => "validation/sce-attribute-unread",
+            ValidationUnknownScxmlAttribute => "validation/unknown-scxml-attribute",
             ValidationBytesMaxSizeViolation => "validation/bytes-max-size-violation",
             ValidationDuplicateRequirementId => "validation/duplicate-requirement-id",
             ValidationProvenanceMalformed => "validation/provenance-malformed",
@@ -6859,6 +6931,18 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             Some(first) => unread_sce_payload(first),
             None => DiagnosticPayload {
                 code: DiagnosticCode::ValidationSceAttributeUnread,
+                stage: Stage::Validation,
+                expected: None,
+                actual: None,
+                fix: None,
+                key_fragments: Vec::new(),
+            },
+        },
+        // The summary shape, as for the unread `sce:` attributes above.
+        ValidationError::UnknownScxmlAttributes(unknown) => match unknown.first() {
+            Some(first) => unknown_scxml_payload(first),
+            None => DiagnosticPayload {
+                code: DiagnosticCode::ValidationUnknownScxmlAttribute,
                 stage: Stage::Validation,
                 expected: None,
                 actual: None,
@@ -11626,6 +11710,25 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:79f17de8d89256c7","code":"validation/removed-attribute","stage":"validation","spec":"SCE Mesh §13","message":"deprecated attribute sce:qos on <send event=\"brake.activate\"> was removed in SCE Mesh §13 path B; pattern is now inferred from event-name conventions and RPC reply pairing from topology structure. Remove the attribute.","actual":"sce:qos","fix":{"kind":"remove_fields","location":"<send event=\"brake.activate\">","fields":["sce:qos"]}}"#,
+            ),
+            (
+                "forge/unknown-scxml-attribute",
+                ValidationError::UnknownScxmlAttributes(vec![
+                    crate::scxml_attributes::NotAnScxmlAttribute {
+                        element: "state".into(),
+                        attribute: "type".into(),
+                        row: 6,
+                        col: 24,
+                        takes: vec!["id".into(), "initial".into()],
+                        near: Vec::new(),
+                        hint: Some(
+                            "concurrent regions are written <parallel id=\"…\">, not <state type=\"parallel\">; \
+                             read as an ordinary state it would enter only its first child",
+                        ),
+                    },
+                ])
+                .into(),
+                r#"{"v":1,"id":"fnv1a:a95459126721eef8","code":"validation/unknown-scxml-attribute","stage":"validation","spec":"W3C SCXML §A.1","message":"type is not an attribute of <state> in SCXML (it takes id, initial); a parser that read the document and ignored it would build something other than what it says: concurrent regions are written <parallel id=\"…\">, not <state type=\"parallel\">; read as an ordinary state it would enter only its first child","actual":"type","fix":{"kind":"remove_fields","location":"<state>","fields":["type"]}}"#,
             ),
             (
                 "forge/sce-attribute-unread",
@@ -16770,6 +16873,7 @@ mod tests {
             | ValidationMeshRpcDuplicateTarget
             | ValidationRemovedAttribute
             | ValidationSceAttributeUnread
+            | ValidationUnknownScxmlAttribute
             | ValidationBytesMaxSizeViolation
             | MemPoolTooLarge
             | MemInterPoolPaddingNotEmitted
@@ -17677,6 +17781,7 @@ mod tests {
                 | ValidationMeshRpcDuplicateTarget
                 | ValidationRemovedAttribute
                 | ValidationSceAttributeUnread
+                | ValidationUnknownScxmlAttribute
                 | ValidationBytesMaxSizeViolation
                 | ValidationDuplicateRequirementId
                 | ValidationProvenanceMalformed
@@ -18034,9 +18139,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            434,
+            435,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 434 distinct variants to match the DiagnosticCode \
+             expected 435 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -18681,6 +18786,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ValidationMeshRpcDuplicateTarget
             | ValidationRemovedAttribute
             | ValidationSceAttributeUnread
+            | ValidationUnknownScxmlAttribute
             | ValidationBytesMaxSizeViolation
             | ValidationCrossKindFieldNotFound
             | ValidationCrossKindTypeMismatch

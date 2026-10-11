@@ -248,6 +248,10 @@ pub mod scenario_judge;
 /// evidence column `Outcome::NeedsScenario` is waiting for.
 pub mod scenario_set;
 pub mod script_engine_analyzer;
+/// The unqualified attributes the SCXML Recommendation defines for each
+/// element, and the refusal of one it does not: `<state type="parallel">`
+/// was read as an ordinary state without a word.
+pub mod scxml_attributes;
 /// Event-set exhaustiveness
 /// validator. Flags compound `<state>` parents whose sibling children
 /// disagree on event coverage with no parent fallthrough — the
