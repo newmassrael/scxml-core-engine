@@ -128,8 +128,10 @@
       </state>
 
       <!-- Let go of by an executor that may come back: the holder of the attempt is still
-           the executor, and a heartbeat makes it running again. -->
-      <state id="interrupted">
+           the executor, and a heartbeat makes it running again. Looking at it again
+           (normalize) writes nothing down: the lease was already written down as run out,
+           and the request's own `normalize` answers that there is nothing to do. -->
+      <state id="interrupted" sce:unhandled="normalize">
         <transition event="heartbeat" cond="_event.data.holder === holder &amp;&amp; _event.data.attempt === attempt" target="running" type="internal">
           <assign location="expiresAt" expr="_event.data.now + _event.data.ttl"/>
           <assign location="verdict" expr="Verdict.ok"/>

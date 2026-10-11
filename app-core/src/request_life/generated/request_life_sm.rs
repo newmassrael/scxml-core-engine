@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 995c056341af97058fc2b08e13bfdf9a19baaa0f013f3cf915ccac4a945a510c
+// source-hash: 4e6dc7aa1793de88d17d1e19a9f328828182ff33f13459f1d5b910d14bf673c4
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -1597,7 +1597,7 @@ impl StatePolicy for RequestLifePolicy {
             RequestLifeState::Cancelled => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: request_life.scxml:182 :: cancelled :: _transition_0
+                        // SCE-MAP: request_life.scxml:184 :: cancelled :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1611,7 +1611,7 @@ impl StatePolicy for RequestLifePolicy {
             RequestLifeState::Completed => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: request_life.scxml:172 :: completed :: _transition_0
+                        // SCE-MAP: request_life.scxml:174 :: completed :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1625,7 +1625,7 @@ impl StatePolicy for RequestLifePolicy {
             RequestLifeState::Ended => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: request_life.scxml:151 :: ended :: _transition_0
+                        // SCE-MAP: request_life.scxml:153 :: ended :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1634,7 +1634,7 @@ impl StatePolicy for RequestLifePolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: request_life.scxml:154 :: ended :: _transition_1
+                        // SCE-MAP: request_life.scxml:156 :: ended :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1643,7 +1643,7 @@ impl StatePolicy for RequestLifePolicy {
                         }
                     }
                     2 => {
-                        // SCE-MAP: request_life.scxml:157 :: ended :: _transition_2
+                        // SCE-MAP: request_life.scxml:159 :: ended :: _transition_2
                         // W3C SCXML 3.13: Transition 2 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1652,7 +1652,7 @@ impl StatePolicy for RequestLifePolicy {
                         }
                     }
                     3 => {
-                        // SCE-MAP: request_life.scxml:160 :: ended :: _transition_3
+                        // SCE-MAP: request_life.scxml:162 :: ended :: _transition_3
                         // W3C SCXML 3.13: Transition 3 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1661,7 +1661,7 @@ impl StatePolicy for RequestLifePolicy {
                         }
                     }
                     4 => {
-                        // SCE-MAP: request_life.scxml:163 :: ended :: _transition_4
+                        // SCE-MAP: request_life.scxml:165 :: ended :: _transition_4
                         // W3C SCXML 3.13: Transition 4 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1670,7 +1670,7 @@ impl StatePolicy for RequestLifePolicy {
                         }
                     }
                     5 => {
-                        // SCE-MAP: request_life.scxml:166 :: ended :: _transition_5
+                        // SCE-MAP: request_life.scxml:168 :: ended :: _transition_5
                         // W3C SCXML 3.13: Transition 5 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1684,7 +1684,7 @@ impl StatePolicy for RequestLifePolicy {
             RequestLifeState::Failed => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: request_life.scxml:177 :: failed :: _transition_0
+                        // SCE-MAP: request_life.scxml:179 :: failed :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1698,7 +1698,7 @@ impl StatePolicy for RequestLifePolicy {
             RequestLifeState::Interrupted => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: request_life.scxml:133 :: interrupted :: _transition_0
+                        // SCE-MAP: request_life.scxml:135 :: interrupted :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
                         let ev = match &self.pending_payload {
                             RequestLifePayload::Heartbeat(ev) => ev.clone(),
@@ -1725,7 +1725,7 @@ impl StatePolicy for RequestLifePolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: request_life.scxml:137 :: interrupted :: _transition_1
+                        // SCE-MAP: request_life.scxml:139 :: interrupted :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
                         let ev = match &self.pending_payload {
                             RequestLifePayload::Publish(ev) => ev.clone(),
@@ -1752,7 +1752,7 @@ impl StatePolicy for RequestLifePolicy {
                         }
                     }
                     2 => {
-                        // SCE-MAP: request_life.scxml:141 :: interrupted :: _transition_2
+                        // SCE-MAP: request_life.scxml:143 :: interrupted :: _transition_2
                         // W3C SCXML 3.13: Transition 2 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1761,7 +1761,7 @@ impl StatePolicy for RequestLifePolicy {
                         }
                     }
                     3 => {
-                        // SCE-MAP: request_life.scxml:144 :: interrupted :: _transition_3
+                        // SCE-MAP: request_life.scxml:146 :: interrupted :: _transition_3
                         // W3C SCXML 3.13: Transition 3 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
