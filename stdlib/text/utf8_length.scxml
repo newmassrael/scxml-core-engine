@@ -34,6 +34,15 @@
   must hold on a server and on every client is therefore a code-point cap,
   checked by this document on both and not by a platform's `length`.
 
+  THE TEXT IS COUNTED AS GIVEN. This document counts the code points of the
+  bytes it is handed and does not normalize them: one visible string has
+  several encodings, and the counts differ (a Hangul syllable is 1 code point
+  in NFC and 2 or 3 in NFD, so a cap of 100 holds about 33 NFD syllables).
+  A product that wants one cap to mean one thing writes its text in NFC (UAX
+  #15) at the boundary where the text enters, before any cap is checked.
+  Normalization is not a document here; it would carry Unicode's composition
+  tables into every backend and a new table with each Unicode version.
+
   A code-point cap is not a size cap: a code point is up to four bytes, so
   storage is bounded by a byte cap beside it (a content-line entry's
   `sce:max-size`), and this document answers the question the byte cap
