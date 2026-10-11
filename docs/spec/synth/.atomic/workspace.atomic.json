@@ -5558,6 +5558,14 @@
         {
           "file": "backends/cpp/forge-runtime/tests/genmc/hazard_keeps_a_named_node.cpp",
           "kind": "references"
+        },
+        {
+          "file": "backends/cpp/forge-runtime/tests/genmc/lscq_segment_handover.cpp",
+          "kind": "references"
+        },
+        {
+          "file": "backends/cpp/forge-runtime/tests/genmc/linked_segment_handover.cpp",
+          "kind": "references"
         }
       ]
     },

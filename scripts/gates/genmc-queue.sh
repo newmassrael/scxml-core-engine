@@ -158,14 +158,16 @@ require_threads() {
 }
 
 # The baseline of one harness: it passes, it started its threads, and GenMC said
-# it found no error. `$1` is the harness, `$2` its language.
+# it found no error. `$1` is the harness, `$2` its language; further arguments are
+# compiler flags, placed as `run_genmc` places them.
 check_baseline() {
     local harness="$1" language="$2" name threads
+    shift 2
     name="$(harness_name "$harness")"
     threads="$(sed -n 's/^\/\* THREADS: \([0-9]*\) \*\/$/\1/p' "$harness")"
     [[ -n "$threads" ]] || sce_gate_fail "$harness has no '/* THREADS: n */' line naming the threads it makes"
 
-    run_genmc "$harness" "$WORK/$name.log" "$language"
+    run_genmc "$harness" "$WORK/$name.log" "$language" "$@"
     (( GENMC_STATUS == 0 )) || { cat "$WORK/$name.log"; sce_gate_fail "$name: GenMC found an error in the runtime (status $GENMC_STATUS)"; }
     require_threads "$WORK/$name.log" "$threads"
     grep -q 'No errors were detected' "$WORK/$name.log" || sce_gate_fail "$name: GenMC did not say it found no errors"
@@ -228,10 +230,41 @@ done
 (( checked > 0 )) || sce_gate_fail "no GenMC harness found under $HARNESS_DIR"
 
 # The C++ harnesses, when there are any; the C ones above are required.
+#
+# A harness that carries `/* CXX_STRONG_CAS */` is run, baseline and mutants alike,
+# against a copy of the queue headers whose `compare_exchange_weak` is rewritten to
+# `compare_exchange_strong`. A weak compare-and-swap may fail spuriously, and GenMC
+# makes every spurious failure an execution of its own: a loop that retries one,
+# which the LSCQ's `catch_up` is, has an execution for each number of failures, and
+# the ones past the unroll bound are KILLed, after which GenMC stops with an
+# internal failure (`Internal check failed: it != result.end()` in
+# `calculateReplaySchedule`) before it has explored what the harness is for
+# (measured 2026-10-11, the C++ LSCQ with a single thread and no concurrency at
+# all). GenMC strengthens a weak compare-and-swap itself only in the simple loop
+# shape it recognises, and says when it could not. The copy is what the harness
+# then judges, so what is NOT judged is a spurious failure: a strong compare-and-swap
+# never fails without cause, and every loop here retries one, so the orderings the
+# harness checks are the same, and a hand-over that only a spurious failure could
+# break is not seen. The harness says so in its own header. Only a harness that
+# needs it declares it: the others are read as they ship.
 for harness in "$CXX_HARNESS_DIR"/*.cpp; do
     [[ -e "$harness" ]] || continue
     name="$(harness_name "$harness")"
-    check_baseline "$harness" cxx
+
+    source_dir="$CXX_INCLUDE_DIR"
+    baseline_flags=()
+    if grep -q '^/\* CXX_STRONG_CAS \*/' "$harness"; then
+        mkdir -p "$WORK/inc_strong_$name/sce/forge"
+        changed=0
+        for header in "${CXX_MUTATED_HEADERS[@]}"; do
+            sed 's/compare_exchange_weak/compare_exchange_strong/g' "$CXX_INCLUDE_DIR/sce/forge/$header" >"$WORK/inc_strong_$name/sce/forge/$header"
+            cmp -s "$CXX_INCLUDE_DIR/sce/forge/$header" "$WORK/inc_strong_$name/sce/forge/$header" || changed=1
+        done
+        (( changed == 1 )) || sce_gate_fail "$name declares CXX_STRONG_CAS, but ${CXX_MUTATED_HEADERS[*]} hold no compare_exchange_weak: the declaration is stale"
+        source_dir="$WORK/inc_strong_$name"
+        baseline_flags=(-I "$source_dir")
+    fi
+    check_baseline "$harness" cxx "${baseline_flags[@]+"${baseline_flags[@]}"}"
 
     for mutant in "${CXX_MUTANTS[@]}"; do
         label="${mutant%%|*}"
@@ -239,15 +272,17 @@ for harness in "$CXX_HARNESS_DIR"/*.cpp; do
         # A copy of the queue headers under `sce/forge/`, found ahead of the real
         # include directory, with the orderings rewritten. At least one of them
         # must have changed, or the program no longer matches what the runtime
-        # writes and the mutant is a copy.
-        mkdir -p "$WORK/inc_$label/sce/forge"
+        # writes and the mutant is a copy. A harness that reads the strengthened
+        # copy has its mutants made from that copy, so the baseline and the mutant
+        # differ in the ordering and in nothing else.
+        mkdir -p "$WORK/inc_${name}_$label/sce/forge"
         changed=0
         for header in "${CXX_MUTATED_HEADERS[@]}"; do
-            sed "$program" "$CXX_INCLUDE_DIR/sce/forge/$header" >"$WORK/inc_$label/sce/forge/$header"
-            cmp -s "$CXX_INCLUDE_DIR/sce/forge/$header" "$WORK/inc_$label/sce/forge/$header" || changed=1
+            sed "$program" "$source_dir/sce/forge/$header" >"$WORK/inc_${name}_$label/sce/forge/$header"
+            cmp -s "$source_dir/sce/forge/$header" "$WORK/inc_${name}_$label/sce/forge/$header" || changed=1
         done
         (( changed == 1 )) || sce_gate_fail "C++ mutant $label changed nothing in ${CXX_MUTATED_HEADERS[*]}: its sed program no longer matches the headers"
-        run_genmc "$harness" "$WORK/${name}_$label.log" cxx -I "$WORK/inc_$label"
+        run_genmc "$harness" "$WORK/${name}_$label.log" cxx -I "$WORK/inc_${name}_$label"
         judge_mutant "$harness" "$label" "$WORK/${name}_$label.log"
     done
     checked=$((checked + 1))
