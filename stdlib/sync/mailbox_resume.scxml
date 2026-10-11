@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/sync/mailbox_resume.scxml — the `counter` a mailbox resumes issuing
+  from when a server takes it over from a restored copy: the greatest id any
+  record of the restored copy or any device has seen.
+
+  mailbox_assign gives a new message one more than `counter`, and a reader
+  pages with "after the last id I saw", so an id must never be issued twice
+  and `counter` must never go back. A restored copy can be older than what
+  the old server last issued: the counter it holds then lies below ids that
+  devices already hold, and the next message would be given an id a reader
+  has read past and never be seen. So the new server does not trust the
+  counter it was given. It takes the greatest of three things, none of which
+  can be an id that was not issued:
+  - `restored`, the counter the copy holds;
+  - `held`, the ids of the messages the copy still holds;
+  - `cursors`, the ids the devices report they have read.
+  Whatever the old server issued after the copy was taken and no device has
+  read is not known here, and is not claimed: a device that still holds it
+  sends it again, and it is given a new id like any message offered again
+  (mailbox_assign).
+
+  The answer is at least every id it was given and is one of them, so it
+  skips nothing it need not and goes back nowhere. Resuming from its own
+  answer changes nothing. `counter` must leave room for one more, as it does
+  for mailbox_assign.
+
+  An id below 0, or an answer with no room for one more, fails `precondition`.
+
+  restored 4, held [2, 3], cursors [6, 5] → 6 · restored 9, held [], cursors []
+  → 9 · restored 0, held [], cursors [] → 0.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="mailbox_resume" version="1.0">
+  <sce:signature>
+    <sce:param name="restored" type="int64"/>
+    <sce:param name="held" type="list&lt;int64&gt;"/>
+    <sce:param name="cursors" type="list&lt;int64&gt;"/>
+    <sce:return type="int64" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:require cond="restored &gt;= 0"/>
+    <sce:var name="next" type="int64" init="restored"/>
+    <sce:var name="i" type="uint32" init="0"/>
+    <sce:while cond="i &lt; len(held)">
+      <sce:require cond="held[i] &gt;= 0"/>
+      <sce:if cond="held[i] &gt; next">
+        <sce:assign target="next" expr="held[i]"/>
+      </sce:if>
+      <sce:assign target="i" expr="i + 1"/>
+    </sce:while>
+    <sce:assign target="i" expr="0"/>
+    <sce:while cond="i &lt; len(cursors)">
+      <sce:require cond="cursors[i] &gt;= 0"/>
+      <sce:if cond="cursors[i] &gt; next">
+        <sce:assign target="next" expr="cursors[i]"/>
+      </sce:if>
+      <sce:assign target="i" expr="i + 1"/>
+    </sce:while>
+    <sce:require cond="next &lt; 9223372036854775807"/>
+    <sce:return expr="next"/>
+  </sce:body>
+</scxml>

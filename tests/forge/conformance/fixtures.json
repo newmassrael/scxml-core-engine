@@ -1552,6 +1552,22 @@
       }
     },
     {
+      "name": "mailbox_resume",
+      "document": "sce:std/sync/mailbox_resume.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "mailbox_resume",
+      "args": [
+        "i64",
+        { "list_of": "i64" },
+        { "list_of": "i64" }
+      ],
+      "output": {
+        "type": "i64",
+        "compare": "equality"
+      }
+    },
+    {
       "name": "mailbox_insert",
       "document": "sce:std/sync/mailbox_insert.scxml",
       "kind": "algorithm",

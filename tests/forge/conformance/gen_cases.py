@@ -1173,6 +1173,15 @@ def mailbox_assign(queue: list, counter: int, hi: int, lo: int):
     return ("ok", ident)
 
 
+def mailbox_resume(restored: int, held: list, cursors: list):
+    """sce:std/sync/mailbox_resume — the greatest id the restored copy or a device
+    has seen, which must be an id (not below 0) and leave room for one more."""
+    seen = [restored] + held + cursors
+    if min(seen) < 0 or max(seen) >= I64_MAX:
+        return ("fails", "precondition")
+    return ("ok", max(seen))
+
+
 def mailbox_insert(queue: list, counter: int, hi: int, lo: int):
     """sce:std/sync/mailbox_insert — unchanged when the message is held, else
     with it appended under `counter + 1`; ids must ascend and stay within counter."""
@@ -2351,6 +2360,33 @@ def mailbox_ack_args(rng: SplitMix64):
     return [queue, shuffled(rng, acked)]
 
 
+#: Ids a copy or a device may report: small ones, where the greatest is told from
+#: the rest, a 53-bit edge, and the edges of an int64 where the room for one more ends.
+RESUME_EDGES = [0, 1, 2, 3, 7, 9, 2**32, 2**53, I64_MAX - 2, I64_MAX - 1]
+
+
+def mailbox_resume_args(rng: SplitMix64):
+    """A restored counter, the ids the copy holds and the cursors the devices
+    report. A copy older than a device (a counter below a cursor) is the case the
+    document exists for, so the counter is drawn below the others as often as above.
+    Now and then one value is not an id (below 0) or leaves no room (at the end of
+    an int64)."""
+    def draw():
+        return rng.pick(RESUME_EDGES) if rng.below(3) == 0 else rng.between(0, 20)
+
+    restored = draw()
+    held = [draw() for _ in range(rng.pick([0, 0, 1, 2, 3, 5]))]
+    cursors = [draw() for _ in range(rng.pick([0, 1, 1, 2, 3, 4]))]
+    kind = rng.below(14)
+    if kind == 0:
+        restored = rng.pick([-1, I64_MIN, I64_MAX])
+    elif kind == 1 and held:
+        held[rng.below(len(held))] = rng.pick([-1, I64_MIN, I64_MAX])
+    elif kind == 2 and cursors:
+        cursors[rng.below(len(cursors))] = rng.pick([-1, I64_MIN, I64_MAX])
+    return [restored, held, cursors]
+
+
 def mailbox_assign_args(rng: SplitMix64):
     queue = mailbox_queue(rng)
     key = message_key(rng, queue)
@@ -2733,6 +2769,7 @@ FIXTURES = {
     "stable_point": (lambda args: stable_point(*args), stable_point_args, 500, 0xE110_0041),
     "utf8_length": (lambda args: utf8_length(*args), utf8_args, 600, 0xE110_0042),
     "utf8_within": (lambda args: utf8_within(*args), utf8_within_args, 400, 0xE110_0043),
+    "mailbox_resume": (lambda args: mailbox_resume(*args), mailbox_resume_args, 500, 0xE110_0044),
 }
 
 
@@ -3049,6 +3086,45 @@ def validate_laws() -> None:
             utf8_cut_law.holds(utf8_length(text[:-1]) == ("fails", "precondition"), inputs)
 
     for law in (utf8_sum_law, utf8_chars_law, utf8_cut_law, utf8_within_law, utf8_bytes_law):
+        law.was_asked()
+
+    # The counter a server resumes from, held to what issuing ids needs of it: it
+    # is never below an id that was given out, it names one of them, a later look
+    # at more devices cannot lower it, resuming from it changes nothing, and the id
+    # mailbox_assign gives next is above every one.
+    resume_floor_law = Law("mailbox_resume is not below any id it was given")
+    resume_named_law = Law("mailbox_resume is one of the ids it was given")
+    resume_order_law = Law("mailbox_resume does not depend on the order of the ids")
+    resume_more_law = Law("mailbox_resume is never lowered by a device that reports more")
+    resume_again_law = Law("mailbox_resume of its own answer is that answer")
+    resume_next_law = Law("the id mailbox_assign gives after mailbox_resume is above every id seen")
+    for _ in range(LAW_RUNS):
+        restored, held, cursors = mailbox_resume_args(rng)
+        inputs = [restored, held, cursors]
+        answer = answer_of(mailbox_resume(restored, held, cursors))
+        reordered = mailbox_resume(restored, shuffled(rng, held), shuffled(rng, cursors))
+        resume_order_law.holds(reordered == mailbox_resume(restored, held, cursors), inputs)
+        if answer is None:
+            continue
+        seen = [restored] + held + cursors
+        resume_floor_law.holds(all(answer >= value for value in seen), inputs)
+        resume_named_law.holds(answer in seen, inputs)
+        resume_again_law.holds(answer_of(mailbox_resume(answer, held, cursors)) == answer, inputs)
+        extra = rng.pick(RESUME_EDGES)
+        more = answer_of(mailbox_resume(restored, held, cursors + [extra]))
+        resume_more_law.holds(more is not None and more >= answer, inputs + [extra])
+        key = envelope_id(rng)
+        issued = answer_of(mailbox_assign([], answer, key["hi"], key["lo"]))
+        resume_next_law.holds(issued is not None and issued > max(seen), inputs)
+
+    for law in (
+        resume_floor_law,
+        resume_named_law,
+        resume_order_law,
+        resume_more_law,
+        resume_again_law,
+        resume_next_law,
+    ):
         law.was_asked()
 
     # A remove, as the documents of an observed-remove set spell it: it tombstones
