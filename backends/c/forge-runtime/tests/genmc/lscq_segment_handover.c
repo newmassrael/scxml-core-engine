@@ -39,7 +39,13 @@
  * segment another participant retires needs a second producer, and that scenario,
  * two producers and a consumer, did not finish under GenMC (a bound of ten
  * minutes on the build machine, 312,819 graphs explored, measured 2026-10-11).
- * The handshake is checked on the domain by itself, in
+ * A smaller form of it, one element pushed before the threads start (so the
+ * segment is full), two producers pushing one element each and a consumer popping
+ * twice, did not finish in fifty minutes either (`timeout 3000`, exit status 124,
+ * 93 MB, estimation disabled, so how far it had come is not known; measured
+ * 2026-10-11 on the pc2 build machine). It is not a result about the algorithm: it
+ * is two bounds met, and a smaller scenario or a run with estimation on is the
+ * next thing to try. The handshake is checked on the domain by itself, in
  * hazard_keeps_a_named_node.c.
  *
  * Every element the consumer is given must be exactly one of the three written,
