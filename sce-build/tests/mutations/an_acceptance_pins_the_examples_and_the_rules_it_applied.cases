@@ -38,10 +38,14 @@ edit("sce-build/src/acceptance_record.rs",
      "    let mut applied: Vec<AppliedRule> = cited[..0]\n        .iter()")
 PY
 
+# ⚠ The mutated tree has to COMPILE under `-D warnings`: `places: 1` left the closure's `places`
+# unused, which rustc 1.99 reports as `unused_variables`, and the round read INCONCLUSIVE ("the
+# mutated tree does not compile") on the first push that reached this casefile after the toolchain
+# moved. `min(1)` keeps the variable read and records one for any rule cited at a place.
 mutation_case "a rule cited at several places is recorded at one" <<'PY'
 edit("sce-build/src/acceptance_record.rs",
      "                    places: *places,",
-     "                    places: 1,")
+     "                    places: (*places).min(1),")
 PY
 
 mutation_case "a marker that cites no house rule is counted as applying one" <<'PY'
