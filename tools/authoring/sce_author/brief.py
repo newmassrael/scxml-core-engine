@@ -432,6 +432,15 @@ written from your own candidates. A comment is not a way out: nothing reads it.
 A mark that cites the owner's decision or a house rule may sit anywhere (`check`
 takes the decision record and the profile).
 
+Where the owner's answer is a VALUE (the record's decision has `candidates` and
+`chosen`), write the decision where `decisions` can read it: as the decision
+region or the decision variable above, with the record's candidates as the child
+states' ids (or the variable's values) and the chosen one as `initial` (or
+`expr`), marked `sce:assumed="<the decision's id>"`. Write it ONCE and have the
+logic read it. A mark on any other element holds no value to compare, so
+`decisions` can only say `answer-not-read` and leave a person to read the
+document against the answer.
+
 Give each decided value its own `<data>` -- a decision variable -- whose
 `expr` is that value alone, mark IT `sce:assumed`, and have the logic read it:
 

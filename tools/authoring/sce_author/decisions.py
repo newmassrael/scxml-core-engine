@@ -239,7 +239,9 @@ def _value_findings(marker: dict, decision: Decision, declared) -> Finding:
             f"{ident} was answered {decision.chosen!r}, and the draft cites it "
             f"on a {marker.get('node_type', 'node')}, where no value is read: "
             f"read {_where(marker)} against the answer, or give the value a "
-            f"<data> of its own that the logic reads",
+            f"<data> of its own that the logic reads, or a decision region (a state whose "
+            f"child states are named {' and '.join(decision.candidates or ['the candidates'])} "
+            f"and whose initial is {decision.chosen!r})",
             marker=ident, decision=ident)
     for data in sites:
         listed = declared.assumed_candidates.get(data)

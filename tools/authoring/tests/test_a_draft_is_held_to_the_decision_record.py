@@ -186,6 +186,25 @@ class ADraftIsHeldToTheDecisionRecord(unittest.TestCase):
         self.assertEqual("holds", verdict)
         self.assertFalse(self.findings(answer)[("answer-not-read", "D2")]["refuses"])
 
+    def test_an_unread_answer_says_where_it_could_be_read(self):
+        # Measured 2026-10-12: five writers handed a record whose answers were values each wrote
+        # the guess where nothing could be read, and the note that said so was all they got. The
+        # note names the two places a value can be read, in the record's own candidate names.
+        valued = dict(D2, candidates=["always", "never"], chosen="always")
+        _, answer = self.held(DOOR, record(D1, valued))
+        message = self.findings(answer)[("answer-not-read", "D2")]["message"]
+        self.assertIn("<data>", message)
+        self.assertIn("decision region", message)
+        self.assertIn("always and never", message)
+        self.assertIn("'always'", message)
+
+    def test_the_brief_tells_a_writer_where_an_answer_that_is_a_value_must_sit(self):
+        from sce_author import brief
+        text = brief._DECIDING
+        self.assertIn("answer is a VALUE", text)
+        self.assertIn("`answer-not-read`", text)
+        self.assertIn("decision\nregion or the decision variable", text)
+
     # ------------------------------------------------- a decision region is read
 
     def test_a_decision_region_starting_in_the_answer_holds(self):
