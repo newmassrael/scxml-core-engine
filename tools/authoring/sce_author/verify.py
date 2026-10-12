@@ -40,7 +40,7 @@ from dataclasses import dataclass, field
 from types import SimpleNamespace
 
 from . import delivery, landing, process, sandbox
-from .check import (STATECHART_KINDS, activation_in_force, activation_unsaid,
+from .check import (STATECHART_KINDS, Finding, activation_in_force, activation_unsaid,
                     addresses_of, clock_refusals, driving_refusals, imports_of,
                     read_binding)
 from .errors import AuthoringError, VerifyError
@@ -845,6 +845,51 @@ def open_matters(manifest: dict) -> list[str]:
     the same words, so a manifest that carries none yields none here.
     """
     return [matter["message"] for matter in manifest.get("open") or []]
+
+
+def product_findings_of_binding(binding_path: pathlib.Path,
+                                codegen: pathlib.Path | None = None) -> tuple[list[Finding], str]:
+    """`product_findings` of the document a binding names."""
+    binding_path = pathlib.Path(binding_path)
+    document = (binding_path.parent / read_binding(binding_path)["document"]).resolve()
+    return product_findings(document, codegen)
+
+
+def product_findings(document: pathlib.Path,
+                     codegen: pathlib.Path | None = None) -> tuple[list[Finding], str]:
+    """What the product itself refuses in a document, as findings of `check`, and a notice
+    when the product could not be asked.
+
+    `check` judges a binding against a pack, in this package. The product judges the document
+    -- its structure, and the design-time lints (`check --lint`, as `validate_scxml` runs it)
+    -- and a writer who is told only the first cannot know the second exists: a document
+    armed a ten-second wait as `delay="10000"`, `check` said "0 refusals", and the product's
+    lint, run by a tool the writer was not told to call, would have refused it (measured
+    2026-10-12, a Qwen draft of `Washer_Low_Warning`). So the two answers are one, here.
+
+    ⚠ Each record the product wrote is a finding, with the code it carries and the line it
+    names, because the code is what a repair is looked up by. A document the product accepts
+    has none.
+
+    ⚠ A product that cannot be asked is a NOTICE and not a finding, and never silence: a tree
+    with no generator built still checks bindings, and a caller told nothing would read "0
+    refusals" as the product's agreement. The notice is returned to be shown beside them."""
+    try:
+        report, refusal = _product_answer(["check", str(document), "--lint"], codegen,
+                                          answer="manifest", read=_json_line,
+                                          verdicts=("accepted", "refused"))
+    except AuthoringError as exc:
+        return [], f"the product's own check was not run, so its lints say nothing here: {exc}"
+    if report:
+        return [], ""
+    findings = []
+    for record in json.loads(refusal).get("diagnostics") or []:
+        code = record.get("code") or "unparsed"
+        said = record.get("message") or record.get("unparsed") or ""
+        line = (record.get("location") or {}).get("line")
+        where = f"document {document.name}" + (f" line {line}" if line else "")
+        findings.append(Finding(where, f"{code}: {said}"))
+    return findings, ""
 
 
 def _with_open_matters(report: str) -> str:

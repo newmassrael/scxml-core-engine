@@ -1321,6 +1321,24 @@ the specification; see "Starting a binding from the model" below.
 declares must exist, every output it writes must be a real field, and every
 literal it compares against must be in that field's value space.
 
+It also says what the PRODUCT refuses in the document (`check --lint`, as
+`validate_scxml` runs it): the document's structure, and the design-time lints
+-- an unreachable state, a sibling that does not handle an event, a `<send>` the
+machine sends itself and discards, a `delay` that is not a time. Each is a
+refusal with the product's own code and the line it names, added to the
+binding's, by the tool and by the command alike (`--codegen` names the
+generator, else `SCE_CODEGEN`, else this tree's build). ⚠ Before, only
+`validate_scxml` said so, and a writer is told to iterate on `check` until it is
+clean: a document armed a ten-second wait as `delay="10000"` -- no unit, so every
+backend raises the argument error at the send and schedules nothing -- `check`
+said "0 refusals", and the position it guarded was written at 0 ms (measured
+2026-10-12). Of the 541 documents the survey's writers had passed and that still
+exist, none is refused by the product's lints. ⚠ A product that cannot be asked
+(no generator built) is a notice beside the answer -- "the product's own check was
+not run" -- and never silence and never a refusal: a tree with no generator still
+checks bindings, and a caller told nothing would read "0 refusals" as the
+product's agreement.
+
 **coverage** is the only command handed more than one binding, and therefore
 the only one that can say anything about the SET. Every other command here is
 given one document and is right about that document — so a conversion that

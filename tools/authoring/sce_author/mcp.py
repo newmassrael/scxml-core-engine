@@ -110,7 +110,7 @@ from .verify import (accept_design, acceptance_delta, acceptance_holds, acceptan
                      acceptance_page,
                      design_requirement_records, diagram_figures, kind_catalog,
                      requirement_records, unresolved_markers, validate_scxml_set)
-from .verify import page_provenance, pseudo_page, verify as run_verify
+from .verify import page_provenance, product_findings_of_binding, pseudo_page, verify as run_verify
 from .prose import load_prose
 from .questions import ask
 from .review import review as run_review
@@ -1882,7 +1882,11 @@ TOOLS = [
         "description": (
             "Judge a written document and its binding against the interface "
             "model: every address must exist, every field must be real, and "
-            "every symbol must be one the field admits. Refusals are listed; "
+            "every symbol must be one the field admits. The product's own "
+            "refusals of the document (its structure and its design-time "
+            "lints, as `validate_scxml` runs them) are listed with these, each "
+            "with its code and line; when the product cannot be asked, a "
+            "notice says so. Refusals are listed; "
             "an empty list means the document can reach the platform, which "
             "is a weaker claim than being correct. Give `prose` too, and a "
             "precondition the specification states that the document never "
@@ -4299,7 +4303,14 @@ def call_tool(name: str, args: dict, *, remote: bool = False,
             if refused:
                 return _failure(refused)
             findings = check(pack, pathlib.Path(binding), prose, cited)
-            notice = picture_notice(unnamed_pictures_of(pathlib.Path(binding), prose))
+            # ⚠ The product's own refusals are this tool's too (`product_findings`): the tool a
+            # writer is told to call until it says "no refusals" must not say it while the
+            # product, asked by another tool, would refuse the document.
+            from_product, unasked = product_findings_of_binding(pathlib.Path(binding))
+            findings = [*findings, *from_product]
+            notice = "\n".join(
+                n for n in (picture_notice(unnamed_pictures_of(pathlib.Path(binding), prose)),
+                            unasked) if n)
             if not findings:
                 return _text("no refusals: every address, field and symbol exists."
                              + (f"\n{notice}" if notice else ""))

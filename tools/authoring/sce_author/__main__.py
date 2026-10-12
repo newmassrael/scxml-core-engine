@@ -40,6 +40,7 @@ from .revision_gate import hold as hold_revision
 from .revision_gate import judge as judge_revision
 from .scaffold import KINDS
 from .scaffold import write as write_scaffold
+from .verify import product_findings_of_binding
 from .verify import verify as run_verify
 
 
@@ -120,12 +121,17 @@ def cmd_check(args) -> int:
         print(f"refused: {refused}", file=sys.stderr)
         return 1
     findings = check(pack, pathlib.Path(args.binding), prose, cited)
+    # The product's own refusals (`product_findings`), so this command and the `check` tool say
+    # the same of a document; `--codegen` names the generator, else `SCE_CODEGEN`, else this tree's.
+    from_product, unasked = product_findings_of_binding(
+        pathlib.Path(args.binding), pathlib.Path(args.codegen) if args.codegen else None)
+    findings = [*findings, *from_product]
     for f in findings:
         print(f"  {f}")
     print(f"  {len(findings)} refusal(s)")
-    notice = picture_notice(unnamed_pictures_of(pathlib.Path(args.binding), prose))
-    if notice:
-        print(f"  {notice}")
+    for notice in (picture_notice(unnamed_pictures_of(pathlib.Path(args.binding), prose)), unasked):
+        if notice:
+            print(f"  {notice}")
     return 1 if findings else 0
 
 
@@ -617,6 +623,10 @@ def main(argv=None) -> int:
                    help="the owner's decision record: a mark citing one of its ids may sit on any element")
     c.add_argument("--profile",
                    help="the owner's authoring profile: a mark citing one of its house rules may sit on any element")
+    c.add_argument("--codegen",
+                   help="the product's code generator, whose own refusals of the document (its "
+                        "structure and its design-time lints) are added to these "
+                        "(default: SCE_CODEGEN, else the one in this tree)")
     c.set_defaults(fn=cmd_check)
 
     v = with_pack(sub.add_parser(
