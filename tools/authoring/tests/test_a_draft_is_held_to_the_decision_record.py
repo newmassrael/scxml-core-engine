@@ -180,16 +180,14 @@ class ADraftIsHeldToTheDecisionRecord(unittest.TestCase):
         self.assertEqual("refused", verdict)
         self.assertIn(("not-a-candidate", "D1"), self.findings(answer))
 
-    def test_a_value_answer_on_a_marker_with_no_value_is_left_to_a_person(self):
+    def test_a_value_answer_on_a_marker_with_no_value_is_refused(self):
         valued = dict(D2, candidates=["always", "never"], chosen="always")
         verdict, answer = self.held(DOOR, record(D1, valued))
-        self.assertEqual("holds", verdict)
-        self.assertFalse(self.findings(answer)[("answer-not-read", "D2")]["refuses"])
+        self.assertEqual("refused", verdict)
+        self.assertTrue(self.findings(answer)[("answer-not-read", "D2")]["refuses"])
 
     def test_an_unread_answer_says_where_it_could_be_read(self):
-        # Measured 2026-10-12: five writers handed a record whose answers were values each wrote
-        # the guess where nothing could be read, and the note that said so was all they got. The
-        # note names the two places a value can be read, in the record's own candidate names.
+        # The refusal names the two places a value can be read, in the record's own candidate names.
         valued = dict(D2, candidates=["always", "never"], chosen="always")
         _, answer = self.held(DOOR, record(D1, valued))
         message = self.findings(answer)[("answer-not-read", "D2")]["message"]
@@ -228,13 +226,13 @@ class ADraftIsHeldToTheDecisionRecord(unittest.TestCase):
         self.assertEqual("refused", verdict)
         self.assertIn(("not-a-candidate", "D3"), self.findings(answer))
 
-    def test_a_state_that_is_not_a_region_is_still_left_to_a_person(self):
+    def test_a_state_that_is_not_a_region_is_refused_as_unread(self):
         # One of the two alternatives is not a child state, so the marked state is not a region:
         # no `initial` is the chosen one, and nothing is read.
         lopsided = gate(region("r", "start_a", children=("start_a",)))
         verdict, answer = self.held(lopsided, record(D3))
-        self.assertEqual("holds", verdict)
-        self.assertFalse(self.findings(answer)[("answer-not-read", "D3")]["refuses"])
+        self.assertEqual("refused", verdict)
+        self.assertTrue(self.findings(answer)[("answer-not-read", "D3")]["refuses"])
 
     def test_two_regions_cannot_both_hold_one_answer(self):
         # State ids are unique, so the answer is an alternative of one region at most: the other

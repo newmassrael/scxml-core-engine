@@ -684,7 +684,8 @@ whose `initial` is the one chosen. Its `initial` is compared with `chosen`, and 
 starting in another alternative is refused as `holds-another-value`. State ids are unique
 in a document, so the record names the alternatives as the draft's child states are named.
 A marker on anything else (a transition, a state that is not such a region) holds no value
-a check can read, and is reported as `answer-not-read` for the owner to read against the answer.
+a check can read, and is refused as `answer-not-read` until the answer sits in a decision
+variable or a decision region.
 It reports, and never refuses, a new question the record has not seen,
 shown beside every recorded question on the same clause, since whether two
 sentences ask the same thing is the owner's reading; and an answer no

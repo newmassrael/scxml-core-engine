@@ -438,8 +438,7 @@ region or the decision variable above, with the record's candidates as the child
 states' ids (or the variable's values) and the chosen one as `initial` (or
 `expr`), marked `sce:assumed="<the decision's id>"`. Write it ONCE and have the
 logic read it. A mark on any other element holds no value to compare, so
-`decisions` can only say `answer-not-read` and leave a person to read the
-document against the answer.
+`decisions` refuses it as `answer-not-read`.
 
 Give each decided value its own `<data>` -- a decision variable -- whose
 `expr` is that value alone, mark IT `sce:assumed`, and have the logic read it:

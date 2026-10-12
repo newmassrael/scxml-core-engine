@@ -22,6 +22,13 @@ record. What it REFUSES is a draft that guessed where no answer licenses it:
                                the draft lists for it
     holds-another-value        the draft's decision variable holds a value
                                other than the one the owner chose
+    answer-not-read            the answer is a value and the draft keeps it where
+                               no value can be read (a transition, a state that is
+                               not a decision region, a `<data>` listing no
+                               candidates): a check cannot compare it, so the draft
+                               puts it in a decision variable or a decision region
+                               (a `<state>` whose child states are the alternatives
+                               and whose `initial` is the one chosen)
 
 What it only REPORTS is what a person has to read:
 
@@ -36,11 +43,6 @@ What it only REPORTS is what a person has to read:
                      profile the draft is held to -- the owner's standing
                      answer to a gap that recurs, marked by the product, so
                      not an uncited guess; a decision of the same id wins
-    answer-not-read  the answer is a value and the draft keeps it where no
-                     value can be read, so a person reads it against the answer.
-                     A decision variable and a decision region (a `<state>` whose
-                     child states are the alternatives and whose `initial` is the
-                     one chosen) are read, not left here
     uncited-answer   an answered decision no marker cites -- the draft either
                      needed no guess there or applied it without saying so
 
@@ -66,9 +68,8 @@ from .verify import requirement_records, unresolved_markers
 RECORD_SCHEMA = "decisions.v1.schema.json"
 
 REFUSING = ("uncited-guess", "guess-on-an-open-question", "answered-left-open",
-            "not-a-candidate", "holds-another-value")
-REPORTED = ("new-question", "still-open", "applied", "house-rule", "answer-not-read",
-            "uncited-answer")
+            "not-a-candidate", "holds-another-value", "answer-not-read")
+REPORTED = ("new-question", "still-open", "applied", "house-rule", "uncited-answer")
 
 
 class DecisionRecordError(AuthoringError):
@@ -237,10 +238,10 @@ def _value_findings(marker: dict, decision: Decision, declared) -> Finding:
         return Finding(
             "answer-not-read",
             f"{ident} was answered {decision.chosen!r}, and the draft cites it "
-            f"on a {marker.get('node_type', 'node')}, where no value is read: "
-            f"read {_where(marker)} against the answer, or give the value a "
-            f"<data> of its own that the logic reads, or a decision region (a state whose "
-            f"child states are named {' and '.join(decision.candidates or ['the candidates'])} "
+            f"on a {marker.get('node_type', 'node')} ({_where(marker)}), where no value is read: "
+            f"give the value a <data> of its own that the logic reads, or a decision region (a "
+            f"state whose child states are named "
+            f"{' and '.join(decision.candidates or ['the candidates'])} "
             f"and whose initial is {decision.chosen!r})",
             marker=ident, decision=ident)
     for data in sites:
