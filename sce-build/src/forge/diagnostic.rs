@@ -1080,6 +1080,12 @@ pub enum DiagnosticCode {
     /// author's — name the receiver, or add the transition that takes it.
     #[serde(rename = "scxml/self-send-discarded")]
     ScxmlSelfSendDiscarded,
+    /// A `<send>` whose literal `delay` is not a CSS2 time (§scxml-6.2.4), so
+    /// every backend raises the argument error at the send and nothing is
+    /// scheduled. A `--lint` finding, NeutralOrDeterministic: which unit the
+    /// author meant is the specification's to say, so no repair is named.
+    #[serde(rename = "scxml/send-delay-invalid")]
+    ScxmlSendDelayInvalid,
     // ── SCE Protocol-Synthesis RFC §synth-5-E sample-callback SCXML on-sample family ──
     // Author-facing rules for `<sce:on-sample>` SCE extension: the
     // structural diagnostics (placement, uniqueness,
@@ -3541,6 +3547,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ScxmlShadowedTransition,
         ScxmlRecordingIntercepted,
         ScxmlSelfSendDiscarded,
+        ScxmlSendDelayInvalid,
         ScxmlOnSampleInvalidParent,
         ScxmlOnSampleLinkDuplicateInState,
         ScxmlOnSampleEventNameConflict,
@@ -4837,6 +4844,7 @@ impl DiagnosticCode {
             // the rule being followed rather than a rule being broken.
             ScxmlRecordingIntercepted => Some("W3C SCXML §3.13"),
             ScxmlSelfSendDiscarded => Some("W3C SCXML §6.2.4"),
+            ScxmlSendDelayInvalid => Some("W3C SCXML §6.2.4"),
             // The reassembly declared-consumption invariant carries the spec anchor
             // that lived in the diagnostic.rs:1170 placeholder comment.
             ReassemblyPerPeerQuotaBuildInvariantViolated => {
@@ -4992,6 +5000,7 @@ impl DiagnosticCode {
             ScxmlShadowedTransition => "scxml/shadowed-transition",
             ScxmlRecordingIntercepted => "scxml/recording-intercepted",
             ScxmlSelfSendDiscarded => "scxml/self-send-discarded",
+            ScxmlSendDelayInvalid => "scxml/send-delay-invalid",
             ScxmlOnSampleInvalidParent => "scxml/on-sample-invalid-parent",
             ScxmlOnSampleLinkDuplicateInState => "scxml/on-sample-link-duplicate-in-state",
             ScxmlOnSampleEventNameConflict => "scxml/on-sample-event-name-conflict",
@@ -10704,6 +10713,21 @@ fn scxml_semantic_fields(e: &crate::scxml_semantic::ScxmlSemanticError) -> Diagn
                 event.clone(),
             ],
         },
+        ScxmlSemanticError::SendDelayInvalid { delay, state } => DiagnosticPayload {
+            // `actual` is the delay as written; no repair is named because the
+            // unit (`10000` is ten seconds or ten thousand milliseconds) is the
+            // specification's to state. The state and the text key the record.
+            code: DiagnosticCode::ScxmlSendDelayInvalid,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(delay.clone()),
+            fix: None,
+            key_fragments: vec![
+                format!("scxml-state:{state}"),
+                "send-delay-invalid".to_string(),
+                delay.clone(),
+            ],
+        },
         ScxmlSemanticError::NonExhaustiveEventHandling {
             parent,
             event,
@@ -12082,6 +12106,16 @@ mod tests {
                 }
                 .into(),
                 r##"{"v":1,"id":"fnv1a:519547a92d98d38e","code":"scxml/self-send-discarded","stage":"validation","spec":"W3C SCXML §6.2.4","message":"State 'waiting' sends 'announce' to its own session and no transition takes it, so the machine discards it: a <send> with neither target nor type goes to the machine's own queue. To send it out, give it its receiver — the type of an Event I/O Processor the host serves, or target=\"#_parent\" when the specification names the statechart that invokes this one; to act on it, add a transition that takes it.","actual":"announce"}"##,
+            ),
+            (
+                // A wait armed with a number and no unit.
+                "forge/scxml-send-delay-invalid",
+                crate::scxml_semantic::ScxmlSemanticError::SendDelayInvalid {
+                    delay: "10000".into(),
+                    state: "waiting".into(),
+                }
+                .into(),
+                r##"{"v":1,"id":"fnv1a:49109c5dcd64e166","code":"scxml/send-delay-invalid","stage":"validation","spec":"W3C SCXML §6.2.4","message":"State 'waiting' sends with delay=\"10000\", which is not a time: a delay is a number followed directly by ms or s, such as 500ms or 1.5s, and anything else raises an error at the <send> and schedules nothing, so the wait it was meant to arm never starts. Write the unit the specification gives.","actual":"10000"}"##,
             ),
             (
                 // SCE Protocol-Synthesis RFC §synth-5-E sample-callback placement rule
@@ -17497,6 +17531,9 @@ mod tests {
             // Name the receiver or add the transition that takes it:
             // which receiver is the specification's, not a candidate set.
             | ScxmlSelfSendDiscarded
+            // Write the unit: which one is the specification's, not a
+            // candidate set.
+            | ScxmlSendDelayInvalid
             // NL→IR Item C1 Path A: Enum kind invariants. The five
             // codes don't carry author-actionable closed candidate
             // lists (variant names/values are author-defined; the
@@ -17828,6 +17865,7 @@ mod tests {
                 | ScxmlShadowedTransition
                 | ScxmlRecordingIntercepted
                 | ScxmlSelfSendDiscarded
+                | ScxmlSendDelayInvalid
                 | ScxmlOnSampleInvalidParent
                 | ScxmlOnSampleLinkDuplicateInState
                 | ScxmlOnSampleEventNameConflict
@@ -18139,9 +18177,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            435,
+            436,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 435 distinct variants to match the DiagnosticCode \
+             expected 436 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -18589,7 +18627,8 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ScxmlAlwaysFalseGuard
             | ScxmlShadowedTransition
             | ScxmlRecordingIntercepted
-            | ScxmlSelfSendDiscarded => Carries,
+            | ScxmlSelfSendDiscarded
+            | ScxmlSendDelayInvalid => Carries,
 
             // Judged by the document-set compile, which locates it on the
             // `<send target="#_parent">` and resolves the enclosing anchor
@@ -20499,6 +20538,20 @@ mod anchor_contract_tests {
                      <state id="live" sce:provenance="OEM-DIAG-SPEC@D#3.4.2:112">
                        <onentry><send event="announce"/></onentry>
                        <transition event="stop" target="live"/>
+                     </state>
+                   </scxml>"#,
+            ),
+            // `scxml/send-delay-invalid` — the anchored state arms a wait
+            // with a number and no unit; the record points at that `<send>`,
+            // inside the anchor.
+            (
+                "scxml/send-delay-invalid",
+                r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                         xmlns:sce="http://sce.dev/ext"
+                         version="1.0" initial="live">
+                     <state id="live" sce:provenance="OEM-DIAG-SPEC@D#3.4.2:112">
+                       <onentry><send event="later" delay="10000"/></onentry>
+                       <transition event="later" target="live"/>
                      </state>
                    </scxml>"#,
             ),

@@ -23,6 +23,16 @@
 // undeclared. The first is a property of the document (so `corpus`
 // excludes fragments), and the other two were repaired rather than
 // exempted.
+//
+// ⚠ THE ONE KIND OF DOCUMENT THAT CANNOT BE REPAIRED is a probe whose
+// SUBJECT is what a lint flags: `a_delay_is_a_css2_time` writes a bare-number
+// `delay` because proving that every backend raises the argument error at
+// such a send takes a document that writes one (2026-10-12, when
+// `scxml/send-delay-invalid` was added and this sweep refused it). That is the
+// excuse the W3C corpus has for its illegal expressions, so it is named, in
+// `PROBES`, with the exact codes it must be refused by and the reason. The
+// entry is checked both ways: a probe refused by anything else, or by nothing,
+// fails here, so an exemption cannot outlive the thing it excuses.
 
 mod common;
 
@@ -37,6 +47,30 @@ struct Run {
     exit: Option<i32>,
     stdout: String,
     stderr: String,
+}
+
+/// Authored machines the lints refuse on purpose: the document, the exact
+/// codes it must be refused by, and why that is its point.
+const PROBES: &[(&str, &[&str], &str)] = &[(
+    "integration_resources/a_delay_is_a_css2_time/a_delay_is_a_css2_time.scxml",
+    &["scxml/send-delay-invalid"],
+    "its subject is the bare-number delay: every backend must raise the argument \
+     error at that send, and only a document that writes one can show it",
+)];
+
+/// The `code` of every record on a `--error-format=json` stderr, in order.
+fn wire_codes(stderr: &str) -> Vec<String> {
+    stderr
+        .lines()
+        .filter(|line| line.starts_with('{'))
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .filter_map(|record| {
+            record
+                .get("code")
+                .and_then(|c| c.as_str())
+                .map(str::to_string)
+        })
+        .collect()
 }
 
 fn check(document: &str, lint: bool) -> Run {
@@ -85,43 +119,77 @@ fn every_authored_machine_is_lint_clean() {
 
     let threads = std::thread::available_parallelism().map_or(4, std::num::NonZeroUsize::get);
     let chunk = documents.len().div_ceil(threads).max(1);
-    let (judged, violations): (usize, Vec<String>) = std::thread::scope(|scope| {
-        let handles: Vec<_> = documents
-            .chunks(chunk)
-            .map(|slice| {
-                scope.spawn(move || {
-                    let mut judged = 0usize;
-                    let mut found = Vec::new();
-                    for document in slice {
-                        if check(document, false).exit != Some(0) {
-                            continue;
+    let (judged, mut violations, probed): (usize, Vec<String>, Vec<String>) =
+        std::thread::scope(|scope| {
+            let handles: Vec<_> = documents
+                .chunks(chunk)
+                .map(|slice| {
+                    scope.spawn(move || {
+                        let mut judged = 0usize;
+                        let mut found = Vec::new();
+                        let mut probed = Vec::new();
+                        for document in slice {
+                            if check(document, false).exit != Some(0) {
+                                continue;
+                            }
+                            judged += 1;
+                            let linted = check(document, true);
+                            if linted.exit != Some(0) {
+                                let codes = wire_codes(&linted.stderr);
+                                match PROBES.iter().find(|(path, _, _)| *path == document) {
+                                    Some((_, expected, _)) => {
+                                        probed.push(document.clone());
+                                        if !codes
+                                            .iter()
+                                            .map(String::as_str)
+                                            .eq(expected.iter().copied())
+                                        {
+                                            found.push(format!(
+                                                "{document}: a probe the lints must refuse by \
+                                                 {expected:?}, refused by {codes:?}\n{}",
+                                                linted.stderr.trim()
+                                            ));
+                                        }
+                                    }
+                                    None => found.push(format!(
+                                        "{document}: --lint refuses it\n{}",
+                                        linted.stderr.trim()
+                                    )),
+                                }
+                            } else if !linted.stdout.contains("\"status\":\"ok\"") {
+                                found.push(format!(
+                                    "{document}: no backend accepts it\n{}",
+                                    linted.stdout.trim()
+                                ));
+                            }
                         }
-                        judged += 1;
-                        let linted = check(document, true);
-                        if linted.exit != Some(0) {
-                            found.push(format!(
-                                "{document}: --lint refuses it\n{}",
-                                linted.stderr.trim()
-                            ));
-                        } else if !linted.stdout.contains("\"status\":\"ok\"") {
-                            found.push(format!(
-                                "{document}: no backend accepts it\n{}",
-                                linted.stdout.trim()
-                            ));
-                        }
-                    }
-                    (judged, found)
+                        (judged, found, probed)
+                    })
                 })
-            })
-            .collect();
-        handles
-            .into_iter()
-            .map(|h| h.join().expect("sweep thread"))
-            .fold((0usize, Vec::new()), |(n, mut acc), (judged, found)| {
-                acc.extend(found);
-                (n + judged, acc)
-            })
-    });
+                .collect();
+            handles
+                .into_iter()
+                .map(|h| h.join().expect("sweep thread"))
+                .fold(
+                    (0usize, Vec::new(), Vec::new()),
+                    |(n, mut acc, mut seen), (judged, found, probed)| {
+                        acc.extend(found);
+                        seen.extend(probed);
+                        (n + judged, acc, seen)
+                    },
+                )
+        });
+
+    // An exemption is held to the thing it excuses: a probe the lints no longer
+    // refuse (the fixture changed, or the lint stopped firing) is a stale entry.
+    for (path, expected, reason) in PROBES {
+        if !probed.iter().any(|seen| seen == path) {
+            violations.push(format!(
+                "{path}: listed as a probe ({reason}) but --lint no longer refuses it by \
+                 {expected:?}; remove the entry or restore the probe"
+            ));
+        }
+    }
 
     assert!(
         judged >= 200,

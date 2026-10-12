@@ -6363,6 +6363,37 @@ Repair guidance:
 
 ---
 
+### A wait whose delay is not a time
+
+`scxml/send-delay-invalid` fires on a `<send>` that writes a literal
+`delay` and no `delayexpr`, when the text is not a CSS2 time. W3C SCXML
+§6.2.4 makes `delay` a time, and this subset reads one grammar: surrounding
+ASCII whitespace aside, a non-negative number (digits with an optional
+fraction of at least one digit, or a leading `.` and digits; no sign, no
+exponent) followed directly by `ms` or `s`, either case
+(ARCHITECTURE.md, "Durations"). A bare number is not a time. Every backend
+raises the argument error at the `<send>` instead of scheduling anything,
+as the Interpreter does, so the wait the author meant to arm never starts.
+
+The document is legal, which is why this is a `--lint` finding: the
+argument error is a run-time event the conformance suite requires, and a
+document that handles it is entitled to. It was added on a measurement: a
+drafted statechart armed a ten-second wait as `delay="10000"`, its own
+catch-all transition took the error event and answered like any other, and
+the position it guarded was written at 0 ms where ten seconds were
+expected. `check --lint` accepted it, and `verify` could say only where the
+write was, not why.
+
+Not flagged: a `delayexpr`, whose time is computed at run time; a `<send>`
+with no `delay`; and a text the grammar reads, however it is spelled
+(`500ms`, `1.5s`, `.5s`, ` 10S `).
+
+Repair guidance: write the unit the specification gives. No repair is
+named, because `10000` is ten seconds or ten thousand milliseconds and
+choosing between them is the specification's to decide, not this lint's.
+
+---
+
 ### Physical-quantity annotation (NL→IR Mapping Roadmap Item 4)
 
 `<sce:field>` and `<data>` elements may carry an
@@ -6978,6 +7009,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `scxml/shadowed-transition` | Validation |
 | `scxml/recording-intercepted` | Validation |
 | `scxml/self-send-discarded` | Validation |
+| `scxml/send-delay-invalid` | Validation |
 | `scxml/on-sample-invalid-parent` | Validation |
 | `scxml/on-sample-link-duplicate-in-state` | Validation |
 | `scxml/on-sample-event-name-conflict` | Validation |

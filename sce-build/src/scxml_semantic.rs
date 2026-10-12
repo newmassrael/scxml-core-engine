@@ -910,6 +910,28 @@ pub enum ScxmlSemanticError {
         /// The state whose executable content sends it.
         state: String,
     },
+
+    /// A `<send>` writes a literal `delay` that is not a CSS2 time, so every
+    /// backend raises the argument error at the send and schedules nothing.
+    ///
+    /// Legal SCXML with a defined meaning (§scxml-6.2.4 makes the error a run-time
+    /// event), which is why this is a lint; measured as the way a drafted
+    /// statechart armed a ten-second wait with `delay="10000"`. No repair is
+    /// named: `10000` is ten seconds or ten thousand, and the unit is the
+    /// specification's to state. See [`crate::scxml_send_delay`].
+    #[error(
+        "State '{state}' sends with delay=\"{delay}\", which is not a time: a \
+         delay is a number followed directly by ms or s, such as 500ms or \
+         1.5s, and anything else raises an error at the <send> and schedules \
+         nothing, so the wait it was meant to arm never starts. Write the \
+         unit the specification gives."
+    )]
+    SendDelayInvalid {
+        /// The `delay` as written.
+        delay: String,
+        /// The state whose executable content sends it.
+        state: String,
+    },
 }
 
 #[cfg(test)]
@@ -1160,6 +1182,10 @@ mod tests {
                 event: "announce".into(),
                 state: "waiting".into(),
             },
+            ScxmlSemanticError::SendDelayInvalid {
+                delay: "10000".into(),
+                state: "waiting".into(),
+            },
         ];
         // The list above is not self-checking: a new variant reaches
         // `ForgeError` through the blanket `From` impl, so omitting it
@@ -1189,7 +1215,7 @@ mod tests {
 
     /// Number of arms in [`variant_name`]. Kept next to it so the two
     /// move together.
-    const VARIANT_COUNT: usize = 21;
+    const VARIANT_COUNT: usize = 22;
 
     /// Exhaustive discriminant projection — the compile-time half of
     /// `every_variant_routes_through_forge_error`'s coverage claim.
@@ -1222,6 +1248,7 @@ mod tests {
             ScxmlSemanticError::ShadowedTransition { .. } => "ShadowedTransition",
             ScxmlSemanticError::RecordingIntercepted { .. } => "RecordingIntercepted",
             ScxmlSemanticError::SelfSendDiscarded { .. } => "SelfSendDiscarded",
+            ScxmlSemanticError::SendDelayInvalid { .. } => "SendDelayInvalid",
         }
     }
 

@@ -182,6 +182,22 @@ const CASES: &[(&str, &str, Option<&str>)] = &[
         Some("scxml/always-false-guard"),
     ),
     (
+        // A wait armed with a number and no unit: the document is legal
+        // SCXML, the send raises the argument error, and only the lint says so.
+        "send_delay_invalid",
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" name="send_delay_invalid" initial="idle">
+  <state id="idle">
+    <onentry><send event="go" delay="10000"/></onentry>
+    <transition event="go" target="done_state"/>
+  </state>
+  <final id="done_state"/>
+</scxml>
+"#,
+        Some("scxml/send-delay-invalid"),
+    ),
+    (
         "clean",
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
@@ -216,8 +232,8 @@ fn lint_flag_reaches_every_library_chain_lint() {
     // (e.g. every fixture drifting into acceptance) would otherwise
     // report success with zero rejections.
     assert!(
-        reached >= 4,
-        "expected at least 4 lint rejections, got {reached}"
+        reached >= 5,
+        "expected at least 5 lint rejections, got {reached}"
     );
 }
 
