@@ -321,6 +321,29 @@ class ADraftIsHeldToTheDecisionRecord(unittest.TestCase):
         self.assertEqual(("refused", [("holds-another-value", "D4")]), outcomes[0])
         self.assertEqual(outcomes[0], outcomes[1])
 
+    def test_a_region_marked_as_a_child_element_is_read_as_the_attribute_form_is(self):
+        def region_in(form: str, initial: str) -> str:
+            marked = (' sce:assumed="D4" sce:assumed-reason="r" '
+                      'sce:assumed-candidates="on_start on_stop"' if form == "attribute" else "")
+            child = ('<sce:assumed id="D4" reason="r" candidates="on_start on_stop"/>'
+                     if form == "element" else "")
+            return f"""<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" name="spelled" initial="g" datamodel="ecmascript">
+  <state id="g" initial="{initial}"{marked}>{child}
+    <state id="on_start"/><state id="on_stop"/>
+  </state>
+</scxml>
+"""
+        for initial, expected in (("on_start", ("holds", [("applied", "D4")])),
+                                  ("on_stop", ("refused", [("holds-another-value", "D4")]))):
+            outcomes = []
+            for form in ("attribute", "element"):
+                verdict, answer = self.held(region_in(form, initial), record(ON_START))
+                outcomes.append((verdict, sorted(self.findings(answer))))
+            self.assertEqual(expected, outcomes[0], initial)
+            self.assertEqual(outcomes[0], outcomes[1], initial)
+
     def test_a_forge_documents_markers_are_held_too(self):
         # The product reads a forge document's markers through its own
         # expansion; the check reads what the product reads.

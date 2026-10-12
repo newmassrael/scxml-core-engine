@@ -147,20 +147,21 @@ def _marks_of(root) -> tuple[Mark, ...]:
         if not element:
             continue
         ident = node.get("id") or ""
-        marker = node.get(f"{SCE_NS}assumed")
-        if marker:
-            candidates = tuple((node.get(f"{SCE_NS}assumed-candidates") or "").split())
-            children = {child.get("id") for child in node if child.tag == f"{SCXML_NS}state"}
+        children = {child.get("id") for child in node if child.tag == f"{SCXML_NS}state"}
+        written = []
+        if node.get(f"{SCE_NS}assumed"):
+            written.append((node.get(f"{SCE_NS}assumed"),
+                            node.get(f"{SCE_NS}assumed-reason") or "",
+                            node.get(f"{SCE_NS}assumed-candidates")))
+        written += [(child.get("id"), child.get("reason") or "", child.get("candidates"))
+                    for child in node if child.tag == f"{SCE_NS}assumed" and child.get("id")]
+        for marker, reason, listed in written:
+            candidates = tuple((listed or "").split())
+            # A region is the same region in either spelling of its marker.
             region = (node.tag == f"{SCXML_NS}state" and bool(ident) and bool(candidates)
                       and node.get("initial") in candidates and set(candidates) <= children)
-            found.append(Mark(element, ident, marker,
-                              node.get(f"{SCE_NS}assumed-reason") or "", candidates, region,
+            found.append(Mark(element, ident, marker, reason, candidates, region,
                               node.get("initial") or "" if region else ""))
-        for child in node:
-            if child.tag == f"{SCE_NS}assumed" and child.get("id"):
-                found.append(Mark(element, ident, child.get("id"),
-                                  child.get("reason") or "",
-                                  tuple((child.get("candidates") or "").split())))
     return tuple(found)
 
 
