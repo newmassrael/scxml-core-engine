@@ -174,17 +174,17 @@ class AFolderAboveThePackIsPointedAtThePack(unittest.TestCase):
         said = self.said()
         self.assertEqual(2, len(said), said)
         self.assertIn("no interface-model file", said[0])
-        self.assertIn("is in pack/ below it", said[0])
+        self.assertIn("is in the folder 'pack' below it", said[0])
         self.assertIn("pass that folder as the pack, for example 'pack'", said[0])
         self.assertIn("no conventions file", said[1])
-        self.assertIn("is in pack/ below it", said[1])
+        self.assertIn("is in the folder 'pack' below it", said[1])
 
     def test_the_loader_that_stops_at_the_first_problem_says_it_too(self):
         with self.assertRaises(PackError) as caught:
             load_pack(self.work)
-        self.assertIn("is in pack/ below it", str(caught.exception))
+        self.assertIn("is in the folder 'pack' below it", str(caught.exception))
 
-    def test_a_folder_with_no_pack_below_it_is_refused_as_before(self):
+    def test_a_folder_with_no_pack_below_it_is_refused_without_a_pointer(self):
         shutil.rmtree(self.work / "pack")
         said = self.said()
         self.assertIn("no interface-model file", said[0])

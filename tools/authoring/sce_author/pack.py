@@ -1070,7 +1070,8 @@ def _where_it_is(root: pathlib.Path, candidates: tuple[str, ...], what: str) -> 
                if any((p / c).is_file() for c in candidates) or (p / f"{what}.d").is_dir()]
     if not holders:
         return ""
-    return (f" The {what} file is in {', '.join(f'{name}/' for name in holders)} below it:"
+    named = ", ".join(repr(name) for name in holders)
+    return (f" The {what} file is in the folder {named} below it:"
             f" pass that folder as the pack, for example {holders[0]!r}.")
 
 
