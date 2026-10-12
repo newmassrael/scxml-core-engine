@@ -180,6 +180,27 @@ class AProtocolsValueReachesTheMachine(Fixture):
         self.assertEqual((3, 0, 0), (result.passed, result.failed, result.unjudged),
                          [(r.name, r.refusal, r.failures) for r in result.results])
 
+    def test_a_reading_that_did_not_move_is_not_told_again(self):
+        """Only a change of the reading is news. The machine counts a told `true` as a new edge,
+        so a second `on` counter moving while the supply stays on must not tell it again: the
+        lamp is bumped to 3 by each told `true`, and the second case expects it left at 3."""
+        (self.tmp / "lamp.scxml").write_text(
+            LAMP.replace('expr="_event.data.value ? 2 : 1"',
+                         'expr="_event.data.value ? lit + 1 : 1"')
+            .replace('expr="1"/>', 'expr="1"/>', 1), encoding="utf-8")
+        examples = copy.deepcopy(EXAMPLES)
+        examples["cases"] = [
+            {"name": "the supply comes on", "given": {"plant/on": 1, "plant/off": 0},
+             "drove": ["plant/on"], "expect": {"plant/out/lamp.value": 2}},
+            {"name": "the same reading again", "given": {"plant/on": 2, "plant/off": 0},
+             "drove": ["plant/on"], "expect": {"plant/out/lamp.value": 2}},
+        ]
+        (self.tmp / "examples.yaml").write_text(yaml.safe_dump(examples), encoding="utf-8")
+        result = self.verified(BINDING)
+        self.assertTrue(result.ran, result.refusal)
+        self.assertEqual((2, 0, 0), (result.passed, result.failed, result.unjudged),
+                         [(r.name, r.refusal, r.failures) for r in result.results])
+
     def test_a_case_that_expects_the_other_value_fails(self):
         """The control: the second case passes only because `false` arrived."""
         examples = copy.deepcopy(EXAMPLES)

@@ -2723,8 +2723,19 @@ class StatechartRun:
 
         The value is what a computation reading the same protocol would be handed
         (`input_value`), so a statechart and a transform read one ladder one way. True when sent.
+
+        ⚠ Only a CHANGE of that value is news, as for any carried value: a protocol's addresses
+        move more often than its reading does (a longer rung is reached while the supply stays
+        on), and a machine told "on" again reads a new edge, which restarts whatever it counts
+        from one. The first reading is always told.
         """
         value = bool(input_value(name, rule, case, latches, self.model))
+        told = self.__dict__.setdefault("protocol_told", {})
+        if told.get(name) is value:
+            # The component was called for an address the binding reads and the reading did not
+            # move: a round took place and the machine was told nothing.
+            return True
+        told[name] = value
         event, field_ = rule["event"], rule["carries"]
         self.event(event)
         why = self.module.procedure("send_with_data", engine=self.engine,
