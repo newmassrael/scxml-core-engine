@@ -642,3 +642,29 @@ fn two_candidates_of_one_stem_are_refused_by_name() {
         "the refusal names the stem: {text}"
     );
 }
+
+/// A bounded-collection is a kind of its own, run by every generated backend,
+/// but a `sce-static` statechart has no variable of it, so no statechart could
+/// hand the Interpreter's copy of an algorithm one to loop over. Lowering that
+/// loop would be code nothing reaches, so it is refused, and the refusal says
+/// why. The day a statechart can hold one, these three are the algorithms to
+/// lower with it.
+#[test]
+fn an_algorithm_looping_over_a_bounded_collection_is_refused_by_name() {
+    let resources = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/resources");
+    for name in [
+        "algorithm_keyexpr_match_first",
+        "algorithm_bc_iter_minimal",
+        "algorithm_keyexpr_field_match",
+    ] {
+        let path = resources.join(format!("{name}.scxml"));
+        let refusal = sce_build::forge::static_js::lower_algorithm_document(path.to_str().unwrap())
+            .expect_err("a loop over a bounded-collection has no lowering");
+        let text = format!("{refusal:?}");
+        assert!(
+            text.contains("UnsupportedFeature")
+                && text.contains("a loop over a bounded-collection import"),
+            "{name}: the refusal names the construct and the reason: {text}"
+        );
+    }
+}

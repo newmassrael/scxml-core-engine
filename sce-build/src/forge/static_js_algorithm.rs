@@ -320,6 +320,13 @@ impl Imports {
             .collect()
     }
 
+    /// Whether the import `alias` names a bounded-collection.
+    fn is_bounded_collection(&self, alias: &str) -> bool {
+        self.contexts
+            .iter()
+            .any(|context| context.alias == alias && context.kind == "bounded-collection")
+    }
+
     /// The record type the import `alias` names.
     fn record(&self, alias: &str) -> Option<&RecordImport> {
         self.contexts
@@ -644,6 +651,15 @@ impl Body<'_> {
             } => {
                 check_name(self.algorithm, item)?;
                 let source = source.trim();
+                if self.imports.is_bounded_collection(source) {
+                    // Not a gap to close: a `sce-static` statechart has no
+                    // variable of this kind, so nothing could hand the
+                    // function one to loop over.
+                    return Err(refuse(
+                        self.algorithm,
+                        format!("<sce:foreach item=\"{item}\" in=\"{source}\">, a loop over a bounded-collection import, which a sce-static statechart cannot hold"),
+                    ));
+                }
                 if !self.iterable.contains(source) {
                     return Err(refuse(
                         self.algorithm,

@@ -5227,6 +5227,17 @@ lowering refuses is reported with the construct it names, a case that fails
 reference has no form for is not asked; each count is printed, so a comparison
 that stopped being made shows as a number that fell.
 
+An algorithm that loops over a bounded-collection import
+(`<sce:foreach in="<alias>">`) is the one construct this lowering leaves out by
+decision and not for want of work. A bounded-collection is run by every
+generated backend, but a `sce-static` statechart has no variable of that kind,
+so nothing could hand the Interpreter's copy of such an algorithm a collection
+to loop over; lowering it would be code no statechart reaches. It is refused with
+`generate/unsupported-feature` naming the loop and this reason
+(`an_algorithm_looping_over_a_bounded_collection_is_refused_by_name`). The
+decision is reopened by the change that lets a statechart hold a
+bounded-collection, and the lowering of the loop belongs to that change.
+
 ### §2.16 A closed interface — `sce:interface="closed"`
 
 An event-schema types the payload of the one event it names; an event no
