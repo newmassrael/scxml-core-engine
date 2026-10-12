@@ -2540,9 +2540,21 @@ change of a fault input.
 ⚠⚠ **A statechart is handed the event, and a value only through `carries`.**
 The driver reads `event`, `address`, `becomes`, `carries`, `absent` and
 `when_absent` off an input rule (the last two are for a silent address, below),
-so any other key on a statechart's input rule — `equals`, `protocol` — computes
+so any other key on a statechart's input rule — `equals`, say — computes
 a value no part of the machine receives, and `check` and `verify` both refuse it
-in the same words. A `sce:direction="in"`
+in the same words. The exception is `protocol` (with its `parameters`) beside
+`carries`: the pack's reading over several addresses — a supply that is on when its
+on-counter moved last — is handed over as the event's data, a truth value, and the
+event is sent whenever a case moves one of the addresses the protocol draws on:
+
+    inputs:
+      ign1On: {protocol: last-incremented,
+               parameters: {on_counter: plant/on, off_counter: plant/off},
+               event: supply.set, carries: value}
+
+with `value` declared `bool` in the event-schema imported for `supply.set`. The machine
+reads `_event.data.value`, the same truth value a computation naming the protocol is
+handed. A `sce:direction="in"`
 declaration in a statechart is refused for the same reason: nothing outside the
 machine writes its datamodel, and the generated code offers the host a reader
 for each variable and a writer for none. Measured 2026-09-22: these were

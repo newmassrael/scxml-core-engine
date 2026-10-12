@@ -710,8 +710,10 @@ def driving_refusals(document: Document, inputs: dict) -> list[tuple[str, str]]:
       a declared input   nothing outside the machine writes its datamodel;
                          the generated code offers the host a reader for each
                          variable and a writer for none
-      a value key        (`equals`, `protocol`, `when_absent`, ...) computes
-                         something no part of the machine receives
+      a value key        (`equals`, `when_absent`, ...) computes something no
+                         part of the machine receives; `protocol` is read only
+                         beside `carries`, which hands its truth value over as
+                         the event's data
       no event           reaches no part of the machine at all
 
     ⚠ The first two used to be DROPPED by the run rather than refused, so a
@@ -791,11 +793,29 @@ def driving_refusals(document: Document, inputs: dict) -> list[tuple[str, str]]:
                             "`absent: true` fires the event when the address is not reporting, and "
                             "then there is no value to compare (`becomes`) or to hand over "
                             "(`carries`, `when_absent`): a rule that reads a value is another rule"))
-        extra = sorted(k for k in rule
-                       if k not in _STATECHART_DRIVER_READS | _ANNOTATIONS)
+        # A protocol rule that `carries` hands its truth value over as the event's data: the
+        # driver sends the event whenever one of the protocol's addresses is driven.
+        protocol_rule = bool(rule.get("protocol")) and "carries" in rule
+        if protocol_rule:
+            field_kind = _carried_kind(document, rule)
+            if field_kind and field_kind != "bool":
+                out.append((f"input {name}",
+                            f"`protocol` hands the machine a truth value, and the event-schema for "
+                            f"{rule['event']!r} declares {rule['carries']!r} a {field_kind}: "
+                            f"declare it `bool`"))
+        allowed = _STATECHART_DRIVER_READS | _ANNOTATIONS
+        if protocol_rule:
+            allowed = allowed | {"protocol", "parameters"}
+        extra = sorted(k for k in rule if k not in allowed)
         if extra:
             keys = ", ".join(f"`{k}`" for k in extra)
             one = len(extra) == 1
+            way_out = (
+                " Give the machine the value as the event's data: `carries: <field>` with an "
+                "event-schema for the event that declares <field>"
+                + (", beside `protocol`" if "protocol" in extra else "")
+                + ". A level the machine reads from several addresses can also be one rule per "
+                "address, each with its own event.")
             out.append((
                 f"input {name}",
                 f"{keys} {'computes' if one else 'compute'} a value for the "
@@ -803,8 +823,20 @@ def driving_refusals(document: Document, inputs: dict) -> list[tuple[str, str]]:
                 f"{rule['event']!r}, with no data: what "
                 f"{'it computes' if one else 'they compute'} reaches no part of "
                 f"the machine, so a guard comparing it compares whatever the "
-                f"variable started as"))
+                f"variable started as." + way_out))
     return out
+
+
+def _carried_kind(document: Document, rule: dict) -> str:
+    """The kind (`number`, `bool`, `text`) of the field a rule's `carries` fills, or '' where
+    the schema or the field is not there (`payload_refusal` says so) or is not one of them."""
+    declared = (document.payloads.get(rule.get("event")) or {}).get(rule.get("carries"))
+    if declared is None:
+        return ""
+    try:
+        return delivery.document_class(declared)
+    except delivery.DeliveryError:
+        return ""
 
 
 def payload_refusal(document: Document, rule: dict) -> str:
@@ -1176,14 +1208,16 @@ def unread_preconditions(pack: Pack, prose, declared_inputs: dict,
                 continue
             rule = conv.precondition_rules.get(needed)
             if needed in events and rule is not None:
-                watched = str(events[needed].get("address"))
-                if watched not in addresses_of(rule):
+                # The addresses the event rule watches: its own, or a `protocol`'s parameters.
+                watched = addresses_of(events[needed])
+                if not watched <= addresses_of(rule):
                     reported.add(needed)
                     out.append(Finding(
                         f"input {needed}",
                         f"takes the precondition the specification needs for "
-                        f"{key!r} {where} as events of {watched!r}, which the "
-                        f"pack's reading of {needed!r} does not watch: it "
+                        f"{key!r} {where} as events of "
+                        f"{', '.join(repr(a) for a in sorted(watched)) or 'no address'}, "
+                        f"which the pack's reading of {needed!r} does not watch: it "
                         f"reads {rule_text(rule)}. An event of another address "
                         f"is another condition."))
                 continue

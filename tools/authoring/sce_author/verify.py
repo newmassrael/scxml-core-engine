@@ -2003,6 +2003,21 @@ def first_announcement(model, history: History | None, produced: dict,
     return announced
 
 
+def rule_addresses(rule: dict, latches: Latches | None) -> set:
+    """The addresses whose movement tells a statechart's input rule to send its event: the
+    rule's own address, or for a `protocol` every address the protocol draws on -- its
+    parameters and the ladder and exclusive states it includes, as far as the component
+    receives them."""
+    if not rule.get("protocol"):
+        address = rule.get("address")
+        return {address} if address else set()
+    addresses = set((rule.get("parameters") or {}).values())
+    spec = ((latches.protocols.get(rule["protocol"]) or {}).get("latch") or {}) if latches else {}
+    for key in ("cumulative", "exclusive"):
+        addresses.update(latches.receives(spec.get(key) or []) if latches else ())
+    return addresses
+
+
 def input_value(name: str, rule: dict, case, latches: Latches | None = None,
                 model=None, history: History | None = None, conv=None,
                 sce_type: str | None = None, variants: dict | None = None):
@@ -2703,6 +2718,22 @@ class StatechartRun:
         self.check()
         return True
 
+    def drive_protocol(self, name: str, rule: dict, case, latches) -> bool:
+        """Send a `protocol` rule's event with the protocol's truth value as the event's data.
+
+        The value is what a computation reading the same protocol would be handed
+        (`input_value`), so a statechart and a transform read one ladder one way. True when sent.
+        """
+        value = bool(input_value(name, rule, case, latches, self.model))
+        event, field_ = rule["event"], rule["carries"]
+        self.event(event)
+        why = self.module.procedure("send_with_data", engine=self.engine,
+                                    event=event, data=json.dumps({field_: value}))
+        if why:
+            raise VerifyError(why)
+        self.check()
+        return True
+
     def send_carrying(self, rule: dict, case, field_) -> None:
         """Send the rule's event with the address's value as the event's data.
 
@@ -3052,6 +3083,8 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
     # Only `held` is read here: a statechart keeps its own memory in states,
     # and what the binding remembers for it is the slots `hold_last` names.
     history = History()
+    # The protocol state a `protocol` rule that `carries` reads, case to case (it needs an order).
+    latches = Latches(pack.conventions, pack.model) if examples.ordered else None
     failed: set = set()
     # What each address held after the rounds so far. Kept on every round,
     # judged or skipped: the platform's values move whether or not a case of
@@ -3161,13 +3194,25 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
             where = f"case {owner.name or '(unnamed)'!r}"
             lost = could_have_moved(where) if case.drove else ""
             moved = False
+            told: set = set()
             for address in dict.fromkeys(case.drove or ()):
                 if address in unchanged:
                     continue
-                for rule in driving.values():
+                for name, rule in driving.items():
                     if lost:
                         break
-                    if rule.get("address") == address and run.drive(rule, case):
+                    if address not in rule_addresses(rule, latches):
+                        continue
+                    if rule.get("protocol"):
+                        # One telling per case: the protocol reads every address it draws on
+                        # at once, so a case that drove two of them is told once.
+                        if name in told:
+                            continue
+                        told.add(name)
+                        if run.drive_protocol(name, rule, case, latches):
+                            moved = True
+                            lost = could_have_moved(where)
+                    elif run.drive(rule, case):
                         moved = True
                         lost = could_have_moved(where)
             if lost:

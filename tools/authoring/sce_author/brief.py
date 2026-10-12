@@ -239,6 +239,13 @@ def _parts(prose: Prose, pack: Pack) -> list[str]:
         for proto, spec in sorted(conv.protocols.items()):
             params = ", ".join(spec["parameters"])
             parts.append(f"- `{proto}` ({params})" + (f" — {spec['note']}" if spec.get("note") else ""))
+        parts.append("")
+        parts.append(
+            "A transform names the protocol in the rule and is handed its truth value. A "
+            "statechart is handed events: give the rule `event`, `protocol`, `parameters` and "
+            "`carries: <field>`, and import an event-schema for the event that declares "
+            "<field> `bool`; the machine reads `_event.data.<field>`. The event is sent "
+            "whenever one of the addresses the protocol draws on moves.")
 
     parts += ["", "## 5. What this specification does not answer", ""]
     if not questions:
