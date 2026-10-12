@@ -247,12 +247,16 @@ def departure_from_the_platforms_table(table: dict, values: dict | None) -> str:
       - every key is an integer and every key is one of the platform's own
         numbers for this field, and
       - it names at least `PLATFORM_TABLE_SHARE` of the field's symbols, and
+      - some symbol of the field has no entry, and
       - some number lands a symbol the model numbers otherwise.
 
-    Each of the three is what a copy looks like and an own numbering does not:
-    a document that numbers its values itself uses keys of its own (strings, a
-    signed level, a range the platform does not use) or names the few symbols
-    it can produce.
+    Each of the four is what a copy that lost an entry looks like and an own
+    numbering does not: a document that numbers its values itself uses keys of
+    its own (strings, a signed level, a range the platform does not use), names
+    the few symbols it can produce, or names EVERY symbol under the numbers it
+    chose -- a ramp whose steps are not the platform's signal numbers lands each
+    symbol once, and is a different numbering, not a lost entry. A lost entry
+    always leaves its symbol out.
 
     ⚠ Measured 2026-10-11 on the 7,090 distinct output maps of the authoring
     survey: 2,787 name 90% or more of their field, 2,770 of those agree with
@@ -274,17 +278,18 @@ def departure_from_the_platforms_table(table: dict, values: dict | None) -> str:
     named = {symbol for symbol in table.values() if isinstance(symbol, str) and symbol in values}
     if len(named) < PLATFORM_TABLE_SHARE * len(values):
         return ""
+    absent = [symbol for symbol in sorted(values, key=values.get) if symbol not in named]
+    if not absent:
+        return ""
     off = [(key, symbol) for key, symbol in table.items()
            if isinstance(symbol, str) and symbol in values and values[symbol] != key]
     if not off:
         return ""
-    absent = [symbol for symbol in sorted(values, key=values.get) if symbol not in named]
     shown = ", ".join(f"{key} lands {symbol}, which the model numbers {values[symbol]} "
                       f"(it numbers {key} {codes[key]})" for key, symbol in off[:_NAMED])
     more = f" and {len(off) - _NAMED} more" if len(off) > _NAMED else ""
     lacks = (f"; the map has no entry for {', '.join(absent[:_NAMED])}"
-             + (f" and {len(absent) - _NAMED} more" if len(absent) > _NAMED else "")
-             if absent else "")
+             + (f" and {len(absent) - _NAMED} more" if len(absent) > _NAMED else ""))
     return (f"has a `map` that reads as the platform's own table -- every key is one of the "
             f"platform's numbers and it names {len(named)} of the field's {len(values)} symbols "
             f"-- and disagrees with it: {shown}{more}{lacks}. A table copied by hand that "

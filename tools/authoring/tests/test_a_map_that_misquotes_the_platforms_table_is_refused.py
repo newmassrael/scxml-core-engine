@@ -81,15 +81,16 @@ class TheCheckAsksIt(Fixture):
         self.assertIn("Plant.Out.Lamp.Stat", got[0])
         self.assertIn("no entry for ON", got[0])
 
-    def test_a_table_the_platform_numbers_otherwise_is_refused_though_nothing_is_lost(self):
-        swapped = {c: s for s, c in VALUES.items()}
-        swapped[3], swapped[4] = swapped[4], swapped[3]
-        got = self.departures(swapped)
-        self.assertEqual(1, len(got), got)
-        self.assertIn("3 lands STEP_4", got[0])
-
     # The nearest maps that must NOT be refused: each is an own numbering, which
     # a document is free to have.
+    def test_a_table_that_names_every_symbol_under_numbers_of_its_own_is_an_own_numbering(self):
+        # A ramp whose steps are not the platform's signal numbers: every symbol lands once,
+        # nothing is lost, and the keys are numbers the platform also uses.
+        ramp = {c: s for s, c in VALUES.items()}
+        ramp[3], ramp[4] = ramp[4], ramp[3]
+        self.assertEqual([], self.departures(ramp))
+        self.assertEqual("", departure_from_the_platforms_table(ramp, VALUES))
+
     def test_a_map_of_a_few_symbols_is_the_documents_own_numbering(self):
         self.assertEqual([], self.departures({0: "OFF", 1: "ON"}))
 

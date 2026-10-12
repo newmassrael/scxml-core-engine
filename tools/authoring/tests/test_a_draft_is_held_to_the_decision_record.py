@@ -85,6 +85,10 @@ D3 = {"id": "D3", "question": "Must the other signal itself have changed, or onl
       "chosen": "r_start_a"}
 
 
+ON_START = {"id": "D4", "question": "Which edge starts the signal?", "answer": "The start edge.",
+            "candidates": ["on_start", "on_stop"], "chosen": "on_start"}
+
+
 @unittest.skipUnless(_default_codegen().exists(),
                      "the markers are the product's to read; build sce-codegen first")
 class ADraftIsHeldToTheDecisionRecord(unittest.TestCase):
@@ -255,6 +259,67 @@ class ADraftIsHeldToTheDecisionRecord(unittest.TestCase):
         found = self.findings(answer)
         self.assertIn(("applied", "D3"), found)
         self.assertNotIn(("holds-another-value", "D3"), found)
+
+    # ------------------------- one answer, cited by a variable and by a region
+
+    def test_a_decision_cited_by_a_variable_and_a_region_is_held_at_each(self):
+        # The variable holds the answer and the region starts in another alternative: the
+        # variable's agreement must not stand in for the region's.
+        both = self.cited_twice(variable="on_start", region_initial="on_stop")
+        verdict, answer = self.held(both, record(ON_START))
+        self.assertEqual("refused", verdict)
+        found = self.findings(answer)
+        self.assertIn(("holds-another-value", "D4"), found)
+        self.assertIn("<state id='g'>", found[("holds-another-value", "D4")]["message"])
+
+    def test_a_decision_cited_by_a_variable_and_a_region_holds_when_both_hold_it(self):
+        both = self.cited_twice(variable="on_start", region_initial="on_start")
+        verdict, answer = self.held(both, record(ON_START))
+        self.assertEqual("holds", verdict, answer)
+
+    def test_a_variable_that_holds_another_value_is_refused_beside_a_region_that_holds_it(self):
+        both = self.cited_twice(variable="on_stop", region_initial="on_start")
+        verdict, answer = self.held(both, record(ON_START))
+        self.assertEqual("refused", verdict)
+        self.assertIn("<data id='level'>", self.findings(answer)[("holds-another-value", "D4")]["message"])
+
+    @staticmethod
+    def cited_twice(variable: str, region_initial: str) -> str:
+        return f"""<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" name="mixed" initial="g" datamodel="ecmascript">
+  <datamodel>
+    <data id="level" sce:assumed="D4" sce:assumed-reason="r"
+          sce:assumed-candidates="on_start on_stop" expr="'{variable}'"/>
+  </datamodel>
+  <state id="g" initial="{region_initial}" sce:assumed="D4" sce:assumed-reason="r"
+         sce:assumed-candidates="on_start on_stop">
+    <state id="on_start"/><state id="on_stop"/>
+  </state>
+</scxml>
+"""
+
+    # ------------------------- the two spellings of a marker are one marker
+
+    def test_a_variable_marked_as_a_child_element_is_read_as_the_attribute_form_is(self):
+        def spelled(form: str) -> str:
+            return f"""<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" name="spelled" initial="s" datamodel="ecmascript">
+  <datamodel>{form}</datamodel>
+  <state id="s"/>
+</scxml>
+"""
+        attribute = ('<data id="level" sce:assumed="D4" sce:assumed-reason="r" '
+                     'sce:assumed-candidates="on_start on_stop" expr="\'on_stop\'"/>')
+        element = ('<data id="level" expr="\'on_stop\'">'
+                   '<sce:assumed id="D4" reason="r" candidates="on_start on_stop"/></data>')
+        outcomes = []
+        for form in (attribute, element):
+            verdict, answer = self.held(spelled(form), record(ON_START))
+            outcomes.append((verdict, sorted(self.findings(answer))))
+        self.assertEqual(("refused", [("holds-another-value", "D4")]), outcomes[0])
+        self.assertEqual(outcomes[0], outcomes[1])
 
     def test_a_forge_documents_markers_are_held_too(self):
         # The product reads a forge document's markers through its own

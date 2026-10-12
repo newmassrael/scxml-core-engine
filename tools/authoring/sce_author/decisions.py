@@ -226,15 +226,19 @@ def _value_findings(marker: dict, decision: Decision, declared) -> Finding:
             f"list the answer among them and hold it",
             marker=ident, decision=ident)
     sites = [data for data, cited in declared.assumed_marker.items() if cited == ident]
-    if not sites:
-        # The region THIS marker is: the product reports one record per marker, and a decision
-        # cited by two regions has two, each listing its own children (state ids are unique, so
-        # the lists differ) -- the one whose alternatives are this record's candidates.
-        regions = [mark for mark in declared.marks
-                   if mark.region and mark.marker == ident
-                   and set(mark.candidates) == set(marker.get("candidates") or mark.candidates)]
-        if regions:
-            return _region_findings(ident, decision, regions[0])
+    # The region THIS marker is: the product reports one record per marker, and a decision cited
+    # by two regions has two, each listing its own children (state ids are unique, so the lists
+    # differ) -- the one whose alternatives are this record's candidates. A decision cited by a
+    # `<data>` and by a region has a record for each too, and their candidates may be the same
+    # words: the state's record is judged against the region, the `<data>`'s against the `<data>`,
+    # so neither stands in for the other.
+    regions = [mark for mark in declared.marks
+               if mark.region and mark.marker == ident
+               and set(mark.candidates) == set(marker.get("candidates") or mark.candidates)]
+    on_a_state = marker.get("node_type") == "state"
+    if regions and (on_a_state or not sites):
+        return _region_findings(ident, decision, regions[0])
+    if on_a_state or not sites:
         return Finding(
             "answer-not-read",
             f"{ident} was answered {decision.chosen!r}, and the draft cites it "

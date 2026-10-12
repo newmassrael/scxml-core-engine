@@ -121,6 +121,25 @@ class Mark:
     initial: str = ""         # a region's chosen alternative: its `initial`
 
 
+def _assumption_of(data) -> tuple[str, str, tuple | None] | None:
+    """The `sce:assumed` a `<data>` carries -- `(marker, reason, candidates)` -- in either form.
+
+    The product reads the attribute form and the child-element form as one marker, so a value's
+    guess is read the same whichever way the author wrote it. `candidates` is None when the
+    marker lists none. The attribute form wins when a `<data>` carries both."""
+    marker = data.get(f"{SCE_NS}assumed")
+    if marker:
+        listed = data.get(f"{SCE_NS}assumed-candidates")
+        return (marker, data.get(f"{SCE_NS}assumed-reason") or "",
+                None if listed is None else tuple(listed.split()))
+    for child in data:
+        if child.tag == f"{SCE_NS}assumed" and child.get("id"):
+            listed = child.get("candidates")
+            return (child.get("id"), child.get("reason") or "",
+                    None if listed is None else tuple(listed.split()))
+    return None
+
+
 def _marks_of(root) -> tuple[Mark, ...]:
     found = []
     for node in root.iter():
@@ -457,14 +476,14 @@ def read_document(path: pathlib.Path) -> Document:
         # so nothing downstream ever mentioned it again, and a case that
         # refutes one used to read as "your document is wrong" rather than
         # "the thing you wrote down as a guess is the thing that failed".
-        if data.get(f"{SCE_NS}assumed"):
-            assumed[ident] = (data.get(f"{SCE_NS}assumed-reason")
-                              or data.get(f"{SCE_NS}assumed"))
-            assumed_marker[ident] = data.get(f"{SCE_NS}assumed")
-            if data.get(f"{SCE_NS}assumed-candidates") is not None:
+        guess = _assumption_of(data)
+        if guess:
+            marker, reason, listed = guess
+            assumed[ident] = reason or marker
+            assumed_marker[ident] = marker
+            if listed is not None:
                 assumed_candidates[ident] = (
-                    tuple(data.get(f"{SCE_NS}assumed-candidates").split()),
-                    data.get("expr") or "", data.get(f"{SCE_NS}initial"))
+                    listed, data.get("expr") or "", data.get(f"{SCE_NS}initial"))
         if direction == "out" and data.get(f"{SCE_NS}unresolved"):
             # Both halves: the marker is the question's handle, the reason is
             # what to go and ask. The product's refusal named both.
