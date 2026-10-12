@@ -648,7 +648,44 @@ def imports_of(path: pathlib.Path) -> list[pathlib.Path]:
     return found
 
 
-def read_binding(path: pathlib.Path) -> dict:
+def platform_table(model, rule: dict) -> tuple[dict | None, str]:
+    """The platform's table for the field an output rule lands on -- `({number: symbol}, '')`
+    -- or `(None, why)` when the model gives it none.
+
+    The table is read from the interface model, not written by anyone: a binding that says
+    `map: platform` cannot lose an entry or number one wrongly, which is the defect a table
+    typed by hand again can have."""
+    address = rule.get("address")
+    entry = model.by_address.get(address) if address else None
+    if entry is None:
+        return None, f"{address!r} is not in the interface model" if address else "it has no address"
+    fld = entry.field(rule.get("field", ""))
+    if fld is None:
+        return None, f"{address} has no field {rule.get('field', '')!r}"
+    if not fld.values:
+        return None, (f"{address}.{fld.name} is not an enumeration, so the model has no table "
+                      f"of numbers and symbols for it")
+    return {code: symbol for symbol, code in sorted(fld.values.items(), key=lambda kv: kv[1])}, ""
+
+
+def _resolve_platform_maps(doc: dict, model, path: pathlib.Path) -> None:
+    """Replace every `map: platform` of the binding by the platform's table, in place."""
+    for name, rule in ((doc or {}).get("outputs") or {}).items():
+        if isinstance(rule, dict) and rule.get("map") == landing.PLATFORM_MAP:
+            table, why = platform_table(model, rule)
+            if table is None:
+                raise PackError(f"{path}: output {name}: `map: {landing.PLATFORM_MAP}` cannot be read: {why}. "
+                                f"Write the table the document needs, or bind a field the model "
+                                f"enumerates")
+            rule["map"] = table
+
+
+def read_binding(path: pathlib.Path, pack=None) -> dict:
+    """The binding at `path`, checked against its schema.
+
+    With `pack`, an output's `map: platform` is read as the platform's own table for its field
+    (`platform_table`), so everything after it sees one kind of map. Without it the word stays,
+    which a caller that never reads a map has no need to resolve."""
     # ⚠ Pointing `--binding` at a document that is not one is the ordinary
     # mistake here, and it used to arrive as a YAML parser traceback whose
     # last line was a caret under a column number.
@@ -667,6 +704,8 @@ def read_binding(path: pathlib.Path) -> dict:
         raise PackError(f"{path}: not a well-formed binding ({first})") from exc
     _refuse_yaml_booleans(doc, path)
     _validate(doc, "binding.v1.schema.json", path)
+    if pack is not None:
+        _resolve_platform_maps(doc, pack.model, path)
     return doc
 
 
@@ -1481,7 +1520,7 @@ def check(pack: Pack, binding_path: pathlib.Path, prose=None,
     the pack's cases drive and no rule reads (`unread_driven_inputs`), and every
     picture the design names that no `sce:assumed` names (`unmarked_pictures`).
     """
-    binding = read_binding(binding_path)
+    binding = read_binding(binding_path, pack)
     document = read_document((binding_path.parent / binding["document"]).resolve())
     model, conv = pack.model, pack.conventions
     out: list[Finding] = []
@@ -1597,9 +1636,6 @@ def check(pack: Pack, binding_path: pathlib.Path, prose=None,
         for value in (rule.get("map") or {}).values():
             if isinstance(value, str) and not fld.admits(value):
                 out.append(Finding(f"output {name}", f"{address}.{fld.name} does not admit {value!r}"))
-        departure = landing.departure_from_the_platforms_table(rule.get("map") or {}, fld.values)
-        if departure:
-            out.append(Finding(f"output {name}", f"{address}.{fld.name} {departure}"))
         for group in list((rule.get("when") or {}).values()) + [rule.get("also") or {}]:
             for fname, value in group.items():
                 other = entry.field(fname)

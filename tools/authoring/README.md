@@ -2400,8 +2400,8 @@ that half, to a file that does not exist yet:
         --out controller.binding.yaml --activation on-change
 
 It writes `version` and `document`, one output rule per position the model
-declares -- its `address`, its `field`, and a `map` keyed by the platform's own
-numbers (`passthrough` for a field with no value space) -- and one input rule
+declares -- its `address`, its `field`, and `map: platform`, the platform's own
+table read from the model (`passthrough` for a field with no value space) -- and one input rule
 per address, with the value space as a comment. For the crossing fixture the
 output half is exactly the half of `controller.binding.yaml` above that is not a
 decision. `activation` is a fact about the deployment: where the pack's `host`
@@ -2418,21 +2418,25 @@ binding `check` can read, so each gap comes back as a refusal naming its rule.
 the ones that failed failed on the copied half -- a missing `version`, an
 output rule with no `field` -- and never reached the half that reads the prose.
 
-A writer who keeps the skeleton's `map` and renames the rule may still re-type
-it, and a long table loses an entry. `check` therefore holds a `map` to the
-model when the map reads as the platform's own table: every key is an integer
-that is one of the platform's numbers for the field, and it names at least nine
-tenths of the field's symbols. If some number then lands a symbol the model
-numbers otherwise, the rule is refused, naming the first numbers that disagree
-and the symbol the map has no entry for. A map keyed by tokens, by signed
-levels, by numbers the platform does not use, or naming only the few symbols the
-document produces is the document's own numbering, and is left alone.
-⚠ Measured 2026-10-11 on an enumeration of 54 symbols: the re-typed map lost
-one symbol, so every symbol after it landed one number early (240 cases failed)
-and the last symbol moved from 53 to 52, so the document's 53 had no entry (452
-cases could not be judged). `check` had passed it, because every
-NAME the map wrote was one the field admits. Over the 7,090 distinct output maps
-of the authoring survey the rule refuses these two and no other.
+`map: platform` is the platform's own table for the field -- the number each
+symbol has in the interface model -- read from the model when the binding is
+read, so a document that computes the platform's numbers lands them unchanged
+and nothing is typed that could be copied wrongly. A document that numbers its
+values otherwise writes the table it needs, and that table is its own numbering:
+`check` holds it to what the document produces (an output whose `expr` yields
+only literals must have an entry for each, below) and `verify` to the cases, and
+does not judge it by whether it looks like the platform's. The word needs an
+enumerated `field`: on a field the model does not enumerate, or an address or
+field it does not have, the binding is refused when it is read, naming the output.
+⚠ Measured 2026-10-11 on an enumeration of 54 symbols: a re-typed map lost one
+symbol, so every symbol after it landed one number early (240 cases failed) and
+the last symbol moved from 53 to 52, so the document's 53 had no entry (452
+cases could not be judged). `check` had passed it, because every NAME the map
+wrote was one the field admits. A rule that guessed from a map's shape whether
+it was such a copy refused sound bindings in two rounds running (a numbering
+shifted by one with a symbol unused; every symbol under the document's own
+numbers), because a shape cannot say what its author meant; what a writer means
+is now said in the binding.
 
 `--kind transform` also writes the document the binding names, beside it and
 only if it does not exist: the root declaring `sce:kind="transform"` in SCE's

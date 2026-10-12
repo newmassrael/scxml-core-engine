@@ -130,9 +130,17 @@
         },
         "field": {"type": "string"},
         "map": {
-          "type": "object",
-          "additionalProperties": {"type": ["string", "number", "boolean"]},
-          "description": "Document value to the symbol written at the address."
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": {"type": ["string", "number", "boolean"]},
+              "description": "Document value to the symbol written at the address."
+            },
+            {
+              "const": "platform",
+              "description": "The platform's own table for this field, read from the interface model: the document computes the platform's number and each number lands the symbol the model gives it. Nothing is typed, so nothing can be copied wrongly. Needs an enumerated `field`; a document that numbers its values otherwise writes its own table instead."
+            }
+          ]
         },
         "passthrough": {
           "type": "boolean",

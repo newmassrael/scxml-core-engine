@@ -13,8 +13,9 @@ So this writes that half and nothing else:
 
   - `version` and `document`;
   - one output rule per position the model declares, with its `address` and
-    `field`, landing through a `map` keyed by the platform's own numbers when
-    the field has a value space, and `passthrough` when it has none;
+    `field`, landing through `map: platform` -- the platform's own table, read
+    from the model rather than typed -- when the field has a value space, and
+    `passthrough` when it has none;
   - one input rule per address the model declares, with the value space
     beside it as a comment.
 
@@ -51,6 +52,7 @@ import re
 from dataclasses import dataclass
 
 from .errors import AuthoringError
+from .landing import PLATFORM_MAP
 from .pack import Entry, Field, Pack
 
 
@@ -64,8 +66,7 @@ KINDS = ("transform",)
 SCE_NAMESPACE = "http://sce.dev/ext"
 
 # The `sce:type` a document declares for a position of each model type. An
-# enumeration carries the platform's own number, which the binding's `map` is
-# keyed by. `number` is a model that does not say whole or fraction, so the
+# enumeration carries the platform's own number, which `map: platform` lands. `number` is a model that does not say whole or fraction, so the
 # type that holds both is written; a model that knows says `integer`.
 _SCE_TYPE = {"enum": "int64", "integer": "int64", "number": "float64",
              "text": "string", "boolean": "bool"}
@@ -198,12 +199,11 @@ def draft(pack: Pack, document: str, activation: str | None = None) -> str:
         if fld.name:
             lines.append(f"    field: {_scalar(fld.name)}")
         if fld.values:
-            # Keyed by the platform's own number: a document that computes
-            # the platform's code lands it unchanged. Re-key it to whatever
-            # the document produces.
-            pairs = ", ".join(f"{n}: {_scalar(s)}" for s, n in
-                              sorted(fld.values.items(), key=lambda kv: kv[1]))
-            lines.append(f"    map: {{{pairs}}}")
+            # The platform's own table, read from the model: a document that
+            # computes the platform's code lands it unchanged, and nothing is
+            # typed that could be copied wrongly. A document that numbers its
+            # values otherwise replaces this line with the table it needs.
+            lines.append(f"    map: {PLATFORM_MAP}")
         else:
             lines.append("    passthrough: true")
     return "\n".join(lines) + "\n"

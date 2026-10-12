@@ -72,13 +72,20 @@ class ABindingStartsFromTheModel(unittest.TestCase):
 
     def test_a_value_space_lands_by_the_platforms_own_numbers(self):
         """The reference binding beside this fixture was written by hand, and
-        its maps are keyed exactly so: the skeleton reproduces the half of a
-        correct binding that is not a decision."""
-        got = {r["address"]: r for r in self.skeleton()["outputs"].values()}
+        its maps are keyed by the platform's own numbers: the skeleton binds
+        `map: platform`, which is read as that same table, so it reproduces the
+        half of a correct binding that is not a decision without typing it."""
+        self.skeleton()
+        got = {r["address"]: r for r in read_binding(self.out, self.pack)["outputs"].values()}
         reference = read_binding(PACK / "controller.binding.yaml")["outputs"]
         for rule in reference.values():
             self.assertEqual(rule["field"], got[rule["address"]]["field"])
             self.assertEqual(rule["map"], got[rule["address"]]["map"])
+
+    def test_a_value_space_is_written_as_the_word_and_not_as_a_table(self):
+        for rule in self.skeleton()["outputs"].values():
+            if "map" in rule:
+                self.assertEqual("platform", rule["map"])
 
     def test_a_field_with_no_value_space_passes_through(self):
         pack = load_pack(PACK)

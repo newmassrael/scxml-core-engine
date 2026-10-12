@@ -351,7 +351,7 @@ def explore(pack, binding_path: pathlib.Path, base, run, max_runs: int = MAX_RUN
     from .check import read_binding, read_document
     from .verify import imports_made_absolute, mark_key
 
-    binding = read_binding(binding_path)
+    binding = read_binding(binding_path, pack)
     document = (binding_path.parent / binding["document"]).resolve()
     declared = read_document(document)
     texts = document_texts(document)

@@ -3433,7 +3433,7 @@ def _verify(pack: Pack, binding_path: pathlib.Path, codegen: pathlib.Path | None
             f"wire carrying each case's inputs in and each reading out. Until "
             f"those exist, running it would report a verdict about a program "
             f"nobody started."))
-    binding = read_binding(binding_path)
+    binding = read_binding(binding_path, pack)
     document = (binding_path.parent / binding["document"]).resolve()
     declared = read_document(document)
     if declared.kind not in (CALLABLE_KINDS | STATECHART_KINDS):

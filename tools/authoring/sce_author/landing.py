@@ -45,6 +45,11 @@ def names_value(key, value) -> bool:
     return str(key) == str(value)
 
 
+#: What an output's `map` says to mean the platform's own table for its field, read from the
+#: interface model (`check.platform_table`).
+PLATFORM_MAP = "platform"
+
+
 def mapped(table: dict, value) -> tuple[bool, object]:
     """The entry of a binding's `map` that names `value`: (True, what it
     writes), or (False, None) when no key names it."""
@@ -227,75 +232,6 @@ def produces(rule: dict, sce_type: str | None, sends, expr: str | None = None) -
     if sce_type == "bool":
         return [True, False]
     return None
-
-
-#: The share of a field's symbols a map must name before it is read as the platform's own table.
-PLATFORM_TABLE_SHARE = 0.9
-
-#: How many departures and missing symbols the message names; the count says the rest.
-_NAMED = 3
-
-
-def departure_from_the_platforms_table(table: dict, values: dict | None) -> str:
-    """Why this map claims to be the platform's own table and is not, or ''.
-
-    A map says which symbol each number the document produces lands. A
-    document may number its values as it likes, so a map that differs from the
-    platform's numbering is not wrong by being different. It is wrong when it
-    is a TRANSCRIPTION of the platform's table that disagrees with the table:
-
-      - every key is an integer and every key is one of the platform's own
-        numbers for this field, and
-      - it names at least `PLATFORM_TABLE_SHARE` of the field's symbols, and
-      - some symbol of the field has no entry, and
-      - some number lands a symbol the model numbers otherwise.
-
-    Each of the four is what a copy that lost an entry looks like and an own
-    numbering does not: a document that numbers its values itself uses keys of
-    its own (strings, a signed level, a range the platform does not use), names
-    the few symbols it can produce, or names EVERY symbol under the numbers it
-    chose -- a ramp whose steps are not the platform's signal numbers lands each
-    symbol once, and is a different numbering, not a lost entry. A lost entry
-    always leaves its symbol out.
-
-    ⚠ Measured 2026-10-11 on the 7,090 distinct output maps of the authoring
-    survey: 2,787 name 90% or more of their field, 2,770 of those agree with
-    the model everywhere, and of the 17 that do not, 15 are own numberings
-    (string tokens, negative levels) that this rule leaves alone. The two it
-    refuses are the same defect, found in one document: a writer re-typing a
-    54-symbol enumeration left one symbol out, so every symbol after it landed
-    one number early -- 240 cases failed on the value and 452 could not be
-    judged, because the last symbol moved from 53 to 52 and the document's 53
-    had no entry. `check` passed it: each NAME the map writes is one the field
-    admits, which is all it asked.
-    """
-    if not table or not values:
-        return ""
-    codes = {code: symbol for symbol, code in values.items()}
-    if not all(isinstance(key, int) and not isinstance(key, bool) and key in codes
-               for key in table):
-        return ""
-    named = {symbol for symbol in table.values() if isinstance(symbol, str) and symbol in values}
-    if len(named) < PLATFORM_TABLE_SHARE * len(values):
-        return ""
-    absent = [symbol for symbol in sorted(values, key=values.get) if symbol not in named]
-    if not absent:
-        return ""
-    off = [(key, symbol) for key, symbol in table.items()
-           if isinstance(symbol, str) and symbol in values and values[symbol] != key]
-    if not off:
-        return ""
-    shown = ", ".join(f"{key} lands {symbol}, which the model numbers {values[symbol]} "
-                      f"(it numbers {key} {codes[key]})" for key, symbol in off[:_NAMED])
-    more = f" and {len(off) - _NAMED} more" if len(off) > _NAMED else ""
-    lacks = (f"; the map has no entry for {', '.join(absent[:_NAMED])}"
-             + (f" and {len(absent) - _NAMED} more" if len(absent) > _NAMED else ""))
-    return (f"has a `map` that reads as the platform's own table -- every key is one of the "
-            f"platform's numbers and it names {len(named)} of the field's {len(values)} symbols "
-            f"-- and disagrees with it: {shown}{more}{lacks}. A table copied by hand that "
-            f"loses one entry moves every symbol after it by one number. Keep the table "
-            f"`scaffold` writes from the model, or key the map by numbers the document "
-            f"chooses itself that are not the platform's")
 
 
 def unmapped(rule: dict, values) -> list:
