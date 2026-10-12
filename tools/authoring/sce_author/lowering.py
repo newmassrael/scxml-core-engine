@@ -65,6 +65,26 @@ class SendRecorder:
         return taken
 
 
+class TraceRecorder:
+    """What a machine did, in the order it did it: the events it took, the transitions it
+    selected and the states it left and entered.
+
+    Given to `Engine.set_observer`, so it lives where the machine does, and what comes back
+    is plain data (`sandbox`). Each step is `{"kind": ..., **fields}` as the engine told it;
+    nothing here reads or changes the run."""
+
+    def __init__(self) -> None:
+        self.steps: list = []
+
+    def __call__(self, kind: str, fields: dict) -> None:
+        self.steps.append({"kind": kind, **fields})
+
+    def take(self) -> list:
+        """The steps since the last call, and reset. One case, one reading."""
+        taken, self.steps = self.steps, []
+        return taken
+
+
 #: The target a `<send>` names to reach the session that invoked this one. The
 #: engine delivers it itself, through the SCXML Event I/O Processor, so a route
 #: to it is never one a host serves (W3C SCXML C.1).

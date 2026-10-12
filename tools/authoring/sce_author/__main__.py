@@ -228,7 +228,7 @@ def cmd_verify(args) -> int:
             # Beside the verdict it explains, and printed for a passing case too: a case somebody
             # asked to see is shown whether or not it failed.
             print(f"  SHOW  {case.name}")
-            for part in ("inputs", "returned", "kept"):
+            for part in ("inputs", "happened", "returned", "kept"):
                 values = case.shown.get(part) or {}
                 print(f"          {part} ({len(values)}):")
                 for key in sorted(values):

@@ -1492,20 +1492,35 @@ every event condition was false in that round, so the identifier stayed on the
 first branch of a fallback chain. A document that keeps values (it reads
 `previous()`) returns every variable it declares; a pure computation shows the
 outputs its binding names and says it kept nothing. A **statechart** is shown in
-its own terms: the events the binding handed the machine, in order; every
-`<send>` it made, each with the instant after the drive the machine was read at
-(`send 01 read at 600 ms`), and the positions the binding landed from them; and
-the states active afterwards. A case that takes steps before its own round shows
-every step, setup first (`step 01 (setup)` … `step 03 (the case)`), because what
-the judged round reads is partly what the steps before it left. The datamodel's
-variables are not shown: the generator gives a reader only to what a document
-declares an output, and reaching past it would be this package helping itself to
-the runtime's insides. Measured 2026-10-12 on a document failing two cases at 0
-ms where 10 s was expected: the request was read and answered with nothing, no
-line and no refusal, and the trace found two defects the failure could not say --
-a `delay="10000"` with no unit, which the product reads as no time and raises as
-an argument error at the send (W3C SCXML 6.2), and a flag that was not set when
-the supply came on while the signal was off. Asking changes no verdict, costs
+its own terms, in four parts: the events the binding handed the machine, in order
+(`inputs`); what the machine DID with them (`happened`) -- each event it took,
+each transition it selected, named by the state it sits in and the descriptor it
+listens for (`in waiting, on * -> ...`), the states it left and entered, and an
+event nothing took (`discarded`); every `<send>` it made, each with the instant
+after the drive the machine was read at (`send 01 read at 600 ms`), and the
+positions the binding landed from them (`returned`); and the states active
+afterwards (`kept`). A case that takes steps before its own round shows every
+step, setup first (`step 01 (setup)` … `step 03 (the case)`), because what the
+judged round reads is partly what the steps before it left.
+
+`happened` is what a value could not say. It is the engine's own account of the
+microstep (`Engine.set_observer`: a read-only tap that is told names and plain
+values and is never asked anything), so an event the document never wrote -- the
+`error.execution` the platform raises -- appears among the events like any other,
+and so does the transition that answered it. The datamodel's variables are still
+not shown: the generator gives a reader only to what a document declares an
+output, and a trace of which transition fired says more than a variable's value
+(a variable cannot show that a catch-all answered an error) without handing an
+author a state to assert on. Measured 2026-10-12 on a document failing two cases
+at 0 ms where 10 s was expected: the request was read and answered with nothing,
+no line and no refusal; once answered, the states and sends found one defect (a
+flag not set when the supply came on while the signal was off) and hid the other,
+and `happened` showed it in one view -- `event ign.latched`, `take in off, on
+ign.latched -> waiting`, `enter waiting`, then `event error.execution` and
+`take in waiting, on * -> (stays; runs its content)`: a `delay="10000"` with no
+unit, which the product reads as no time and raises as an argument error at the
+send (W3C SCXML 6.2), taken by the document's own catch-all. Asking changes no
+verdict, costs
 nothing for the cases not asked about, and a `TEXT` matching no case shows
 nothing and is not an error.
 

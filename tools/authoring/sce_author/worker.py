@@ -19,6 +19,7 @@ a number for it; a request names an object by that number.
     call       {ref, args, kwargs}          call an object
     vars       {ref}                        a copy of an object's attributes
     recorder   {}                           a sink for the machine's host-served sends
+    trace_recorder {}                       a sink for what the machine did (`Engine.set_observer`)
     procedure  {ref, name, args}            one of `procedures.PROCEDURES` on a module
     ping       {}
 
@@ -145,6 +146,9 @@ class Worker:
     def recorder(self, request):
         return lowering.SendRecorder()
 
+    def trace_recorder(self, request):
+        return lowering.TraceRecorder()
+
     def procedure(self, request):
         """Run one of this package's procedures (`procedures.PROCEDURES`) on a
         module the parent holds, with plain arguments, and return its result."""
@@ -158,8 +162,8 @@ class Worker:
         return None
 
     OPERATIONS = {"load": "load", "getattr": "getattr_", "invoke": "invoke", "call": "call",
-                  "vars": "vars_", "recorder": "recorder", "procedure": "procedure",
-                  "ping": "ping"}
+                  "vars": "vars_", "recorder": "recorder", "trace_recorder": "trace_recorder",
+                  "procedure": "procedure", "ping": "ping"}
 
     # -- one request -------------------------------------------------------
 

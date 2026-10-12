@@ -76,6 +76,7 @@ from .microstep import (
     EnabledTransition,
     EntryTarget,
     EntryTransition,
+    StateTarget,
     enter_states,
     is_in_final_state,
     microstep,
@@ -250,6 +251,8 @@ class Engine(Generic[S, E]):
         # adapter (`microstep.Document` / `microstep.Run`), so the engine's
         # public surface does not carry the procedures' vocabulary.
         self._host: _MicrostepHost[S, E] = _MicrostepHost(self)
+        # A read-only tap on the run (`set_observer`); None unless a caller asked.
+        self._observer: Optional[Callable[[str, Dict[str, Any]], None]] = None
         self._internal_queue: "deque[EventWithMetadata[E]]" = deque()
         self._external_queue: "deque[EventWithMetadata[E]]" = deque()
         self._is_running: bool = False
@@ -2370,7 +2373,7 @@ class Engine(Generic[S, E]):
                 # stable one and only this counter says so.
                 self._record_truncated_macrostep()
                 return
-            microstep(self._host, transitions)
+            self._take_microstep(transitions)
             self._macrostep_microsteps_taken += 1
 
     def _bind_current_event(self, evt: EventWithMetadata[E]) -> None:
@@ -2390,6 +2393,8 @@ class Engine(Generic[S, E]):
         # bound this event itself, before `<finalize>` — once per event.
         if not already_bound:
             self._bind_current_event(evt)
+        if self._observer is not None:
+            self._observe("event", name=self._policy.get_event_name(evt.event))
         # §scxml-6.5 / 6.4.1 — the `<finalize>` and autoforward
         # preliminary steps belong to the external dequeue and run in
         # `_process_next_external_event`, which is the only caller that
@@ -2400,9 +2405,59 @@ class Engine(Generic[S, E]):
             # event is discarded." Reported rather than merely done, so
             # the external dequeue can count it; see
             # `discarded_external_events`.
+            if self._observer is not None:
+                self._observe("discarded", name=self._policy.get_event_name(evt.event))
             return False
-        microstep(self._host, transitions)
+        self._take_microstep(transitions)
         return True
+
+    def _take_microstep(self, transitions: Sequence[EnabledTransition[S]]) -> None:
+        """One microstep over the selected transitions, told to the observer first.
+
+        The one place a selection is turned into a microstep, so a trace sees
+        the eventless chain and the event-driven step alike and cannot miss one."""
+        if self._observer is not None:
+            for chosen in transitions:
+                self._observe(
+                    "transition",
+                    source=self._policy.get_state_name(chosen.source),
+                    event=chosen.event,
+                    targets=[self._target_name(target) for target in chosen.targets],
+                    internal=chosen.is_internal,
+                )
+        microstep(self._host, transitions)
+
+    def _target_name(self, target: EntryTarget) -> str:
+        """A target token as the document wrote it: a state's name, or `history:<id>`."""
+        if isinstance(target, StateTarget):
+            return self._policy.get_state_name(target.state)
+        return f"history:{target.history}"
+
+    def set_observer(
+        self, observer: Optional[Callable[[str, Dict[str, Any]], None]]
+    ) -> None:
+        """Attach a read-only tap on the run, or detach it with ``None``.
+
+        ``observer(kind, fields)`` is called as things happen, in order:
+
+        - ``"event"`` — an event is taken for processing (``name``);
+        - ``"discarded"`` — no transition of any active state matched it (``name``);
+        - ``"transition"`` — one was selected (``source``, ``event`` as the document
+          wrote it, ``targets``, ``internal``);
+        - ``"exit"`` / ``"enter"`` — a state leaves / joins the configuration (``state``).
+
+        A diagnostic and nothing more. It is given names and plain values and is never
+        asked anything, so a machine with none attached does exactly what it did, and
+        one with one attached reaches the same configurations and sends. It must not
+        call back into the engine. An exception it raises is not swallowed: a trace
+        that silently stopped would read as "nothing happened", which is the one thing
+        it exists to tell apart.
+        """
+        self._observer = observer
+
+    def _observe(self, kind: str, **fields: Any) -> None:
+        if self._observer is not None:
+            self._observer(kind, fields)
 
     def _mark_root_final_if_top_level(self, final_state: S) -> None:
         """If a `<final>` at the top of the document is entered, the engine
@@ -2607,6 +2662,8 @@ class _MicrostepHost(Generic[S, E]):
         # macrostep, which is §scxml-D-exitStates' `statesToInvoke.delete(s)`.
         self._policy.cancel_invokes_for_state(state, engine)
         engine._configuration.remove(state)
+        if engine._observer is not None:
+            engine._observe("exit", state=self._policy.get_state_name(state))
 
     def execute_transition_content(self, transition: EnabledTransition[S]) -> None:
         self._policy.execute_transition_content(
@@ -2619,6 +2676,8 @@ class _MicrostepHost(Generic[S, E]):
         # §scxml-D-enterStates: into the configuration first, so the state's
         # own `<onentry>` already finds it there.
         engine._configuration.append(state)
+        if engine._observer is not None:
+            engine._observe("enter", state=self._policy.get_state_name(state))
         # §scxml-D-enterStates, §scxml-5.3: late binding initialises a
         # state's `<datamodel>` on its first entry.
         if policy.is_late_binding() and state not in engine._initialized_states_data:

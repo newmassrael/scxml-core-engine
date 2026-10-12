@@ -41,3 +41,22 @@ There are two Python integrations for SCE:
 
 Both pass W3C SCXML 1.0 conformance in their respective modes — the
 interpreter channel today (202/202), the AOT channel as Atomic β / γ land.
+
+## Observing a run
+
+`engine.set_observer(observer)` attaches a read-only tap; `set_observer(None)`
+detaches it. `observer(kind, fields)` is called, in the order things happen, with:
+
+| `kind` | when | `fields` |
+|---|---|---|
+| `event` | an event is taken for processing | `name` |
+| `discarded` | no transition of any active state matched it | `name` |
+| `transition` | one was selected | `source`, `event` (the descriptor as the document wrote it; `""` eventless; `None` when the generated code predates the field), `targets`, `internal` |
+| `exit` / `enter` | a state leaves / joins the configuration | `state` |
+
+A diagnostic and nothing more: it is told names and plain values, never asked
+anything, and may not call back into the engine, so a machine with an observer
+reaches the same configurations and sends as one without. An exception it raises
+is not swallowed. This is how `sce_author verify --explain` says WHY a statechart
+wrote a position when it did — including the `error.execution` the platform
+raises, which no value of the document shows.

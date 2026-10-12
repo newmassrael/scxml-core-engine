@@ -192,6 +192,10 @@ class RemoteModule(Remote):
     def new_recorder(self) -> Remote:
         return self._worker.request("recorder")
 
+    def new_trace_recorder(self) -> Remote:
+        """A sink for what a machine does (`Engine.set_observer`); it has to live where the machine does."""
+        return self._worker.request("trace_recorder")
+
     def procedure(self, name: str, **arguments):
         """Run one of this package's procedures (`procedures.PROCEDURES`) next to
         the module, with plain arguments, and get its plain result in one

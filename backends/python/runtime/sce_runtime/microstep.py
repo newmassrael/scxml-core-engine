@@ -88,6 +88,13 @@ class EnabledTransition(Generic[S]):
     targets: Tuple[EntryTarget, ...] = ()
     transition_index: int = 0
     is_internal: bool = False
+    # The ``event`` attribute as the document wrote it ("" for an eventless
+    # transition) — or None when the generated code does not say, as code
+    # generated before this field existed does not. Nothing in the microstep
+    # reads it: it is carried so that an observer (``Engine.set_observer``) can
+    # name the transition by what it listens for, which ``transition_index``
+    # alone cannot say; None keeps "not recorded" from reading as "eventless".
+    event: Optional[str] = None
 
     @property
     def is_targetless(self) -> bool:

@@ -79,9 +79,9 @@ class _Drives:
 class AStatechartCaseCanBeShown(_Drives, unittest.TestCase):
     # ---------------------------------------------------------------- asked
 
-    def test_a_case_that_was_asked_for_carries_its_three_parts(self):
+    def test_a_case_that_was_asked_for_carries_its_four_parts(self):
         shown = self.cases(APPROACH)[APPROACH].shown
-        self.assertEqual({"inputs", "returned", "kept"}, set(shown))
+        self.assertEqual({"inputs", "happened", "returned", "kept"}, set(shown))
 
     def test_the_inputs_are_the_events_the_machine_was_handed(self):
         shown = self.cases(APPROACH)[APPROACH].shown
@@ -95,6 +95,22 @@ class AStatechartCaseCanBeShown(_Drives, unittest.TestCase):
     def test_the_kept_part_is_the_states_active_afterwards(self):
         shown = self.cases(APPROACH)[APPROACH].shown
         self.assertEqual({"active flashing": True}, shown["kept"])
+
+    def test_the_happened_part_is_the_event_the_transition_and_the_move_in_order(self):
+        happened = self.cases(APPROACH)[APPROACH].shown["happened"]
+        self.assertEqual({"001 event": "train.approaching",
+                          "002 take": "in dark, on train.approaching -> flashing",
+                          "003 exit": "dark",
+                          "004 enter": "flashing"}, happened)
+
+    def test_an_event_nothing_takes_is_told_as_discarded(self):
+        """Not handled and not silent: the event came in and no active state answered it."""
+        stray = [{"name": "a clear track at the start", "given": {ADDRESS: "CLEAR"},
+                  "drove": [ADDRESS], "expect": {POSITION: "DARK"}}]
+        happened = self.cases("clear track", cases=stray)["a clear track at the start"].shown["happened"]
+        self.assertEqual({"001 event": "train.cleared",
+                          "002 discarded": "train.cleared (no active state has a transition "
+                                           "that takes it)"}, happened)
 
     def test_a_case_that_sends_nothing_has_no_send_line(self):
         """Nothing sent is an answer too -- the position keeps what it held -- and the report does
@@ -120,6 +136,18 @@ class AStatechartCaseCanBeShown(_Drives, unittest.TestCase):
         shown = self.cases("after an approach", cases=self.SETUP)["it clears after an approach"].shown
         self.assertEqual({"step 01 (setup) active flashing": True,
                           "step 02 (the case) active dark": True}, shown["kept"])
+
+    def test_what_happened_in_each_step_is_told_beside_its_step(self):
+        shown = self.cases("after an approach", cases=self.SETUP)["it clears after an approach"].shown
+        self.assertEqual({
+            "step 01 (setup) 001 event": "train.approaching",
+            "step 01 (setup) 002 take": "in dark, on train.approaching -> flashing",
+            "step 01 (setup) 003 exit": "dark",
+            "step 01 (setup) 004 enter": "flashing",
+            "step 02 (the case) 001 event": "train.cleared",
+            "step 02 (the case) 002 take": "in flashing, on train.cleared -> dark",
+            "step 02 (the case) 003 exit": "flashing",
+            "step 02 (the case) 004 enter": "dark"}, shown["happened"])
 
     # ------------------------------------------------------------ not asked
 
@@ -181,6 +209,55 @@ class TheInstantAMachineWasReadAtIsShown(_Drives, unittest.TestCase):
         case = self.cases("is detected", cases=self.TIMED)["a train is detected"]
         self.assertEqual({}, self.sends(case))
         self.assertEqual({"active arming": True}, case.shown["kept"])
+
+
+# A wait armed with a number and no unit, and a catch-all that answers whatever comes: the
+# document measured on 2026-10-12. The argument error of the send is an event like any other,
+# and the catch-all took it -- which no value of the document and no send shows.
+UNITLESS = """<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" datamodel="ecmascript" initial="dark"
+       sce:kind="statechart">
+  <state id="dark">
+    <transition event="train.approaching" target="arming"/>
+  </state>
+  <state id="arming">
+    <onentry><send event="signal.flashing" type="x-sce-host" delay="500"/></onentry>
+    <transition event="*"><send event="signal.dark" type="x-sce-host"/></transition>
+  </state>
+</scxml>
+"""
+
+
+@unittest.skipUnless(codegen_is_built(), "the product's generator is not built; nothing can be run")
+class AnErrorTheMachineRaisedIsShownAsTheEventItIs(_Drives, unittest.TestCase):
+    document = UNITLESS
+
+    DETECTED = [{"name": "a train is detected", "given": {ADDRESS: "APPROACHING"}, "drove": [ADDRESS],
+                 "elapsed_ms": 100, "expect": {POSITION: "DARK"}}]
+
+    def happened(self) -> dict:
+        return self.cases("is detected", cases=self.DETECTED)["a train is detected"].shown["happened"]
+
+    def test_the_argument_error_is_an_event_in_the_order_the_round_took_it(self):
+        self.assertEqual({
+            "001 event": "train.approaching",
+            "002 take": "in dark, on train.approaching -> arming",
+            "003 exit": "dark",
+            "004 enter": "arming",
+            "005 event": "error.execution",
+            "006 take": "in arming, on * -> (stays; runs its content)"}, self.happened())
+
+    def test_the_catch_all_that_took_it_is_named_by_what_it_listens_for(self):
+        self.assertIn("on *", self.happened()["006 take"])
+
+    def test_a_wait_with_a_unit_raises_no_error_for_the_catch_all_to_take(self):
+        """The nearest document that must read differently: the same machine, the unit written."""
+        (self.tmp / "signal.scxml").write_text(UNITLESS.replace('delay="500"', 'delay="500ms"'),
+                                               encoding="utf-8")
+        events = [value for key, value in self.happened().items() if key.endswith("event")]
+        self.assertEqual(["train.approaching"], events)
 
 
 if __name__ == "__main__":

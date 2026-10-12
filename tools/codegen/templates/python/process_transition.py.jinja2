@@ -51,6 +51,7 @@
                     targets={{ et.entry_targets(transition.targets, model.history_states, machine_name) }},
                     transition_index={{ transition.transition_index }},
                     is_internal={{ 'True' if transition.type == 'internal' else 'False' }},
+                    event={{ transition.event | py_string_literal }},
                 )
 {% endfor %}
 {% endif %}

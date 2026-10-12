@@ -2658,7 +2658,7 @@ class StatechartRun:
     """
 
     def __init__(self, module, build: Build, model=None, payloads=None,
-                 absence_tokens=(), absent_addresses=frozenset()):
+                 absence_tokens=(), absent_addresses=frozenset(), trace: bool = False):
         # The addresses some rule reads the SILENCE of (`absent: true`): while one is not
         # reporting, only those rules fire for it.
         self.absent_addresses = frozenset(absent_addresses)
@@ -2694,6 +2694,13 @@ class StatechartRun:
         # Whatever the machine did on its way into the initial configuration
         # belongs to no case, because no record drove it.
         self.recorder.take()
+        # What the machine DOES, for `--explain` only (`Engine.set_observer`): attached after the
+        # start, which no case drove, and only when asked, so a run nobody asked to explain
+        # carries no tap and cannot differ from one that never could.
+        self.trace = None
+        if trace:
+            self.trace = module.new_trace_recorder()
+            self.engine.set_observer(self.trace)
         # How far real time may be ahead of the engine's clock, from the
         # windows records gave instead of numbers (`observe`).
         self.slack_ms = 0.0
@@ -2705,6 +2712,10 @@ class StatechartRun:
         """The events handed to the machine since the last call, and reset. One case, one reading."""
         taken, self.delivered = self.delivered, []
         return taken
+
+    def take_trace(self) -> list:
+        """What the machine did since the last call, and reset; empty when no one asked."""
+        return self.trace.take() if self.trace is not None else []
 
     def active_states(self, declared) -> dict:
         """Every state the document names that is active now, to SHOW and never to judge.
@@ -3086,8 +3097,34 @@ def _shown_statechart(run, declared, trace: list, read) -> dict:
             count += 1
             returned[f"send {count:02d} read at {moment:g} ms"] = _send_line(request)
     returned.update({f"wrote {address}": value for address, value in sorted(read.produced.items())})
-    return {"inputs": inputs, "returned": returned,
+    return {"inputs": inputs, "happened": _happened(run.take_trace()), "returned": returned,
             "kept": {f"active {state}": how for state, how in run.active_states(declared).items()}}
+
+
+def _happened(steps: list) -> dict:
+    """What the machine did, one line a step, in the order it did it.
+
+    An event it took, a transition it selected (named by the state it sits in and what it
+    listens for, then where it goes), the states it left and entered, and an event nothing
+    took. Numbered so the order survives being sorted by key."""
+    lines: dict = {}
+    for number, step in enumerate(steps, 1):
+        kind = step["kind"]
+        if kind == "event":
+            line = ("event", step["name"])
+        elif kind == "discarded":
+            line = ("discarded", f"{step['name']} (no active state has a transition that takes it)")
+        elif kind == "transition":
+            # "" is an eventless transition; None is generated code that did not record it.
+            listens = ("(not recorded by this generated code)" if step["event"] is None
+                       else step["event"] or "(eventless)")
+            goes = ", ".join(step["targets"]) if step["targets"] else "(stays; runs its content)"
+            line = ("take", f"in {step['source']}, on {listens} -> {goes}"
+                            + (" [internal]" if step["internal"] else ""))
+        else:
+            line = (kind, step["state"])
+        lines[f"{number:03d} {line[0]}"] = line[1]
+    return lines
 
 
 def _joined_steps(steps: list) -> dict:
@@ -3098,7 +3135,7 @@ def _joined_steps(steps: list) -> dict:
     step, setup first and the case itself last. A case of one step is shown as it is."""
     if len(steps) <= 1:
         return steps[0] if steps else {}
-    joined: dict = {"inputs": {}, "returned": {}, "kept": {}}
+    joined: dict = {part: {} for part in ("inputs", "happened", "returned", "kept")}
     for number, step in enumerate(steps, 1):
         label = f"step {number:02d} ({'the case' if number == len(steps) else 'setup'})"
         for part, values in step.items():
@@ -3203,7 +3240,8 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
         run = StatechartRun(module, build, pack.model, payloads=declared.payloads,
                             absence_tokens=pack.conventions.absence_tokens,
                             absent_addresses={r.get("address") for r in driving.values()
-                                              if r.get("absent")})
+                                              if r.get("absent")},
+                            trace=bool(explain))
     except VerifyError as exc:
         return Verification(refusal=str(exc))
 
@@ -3319,6 +3357,7 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
         # What this step's events were, and every send it made at each instant it was read at:
         # kept for `--explain` only, and begun clean so a step shows nothing of the one before.
         run.take_delivered()
+        run.take_trace()
         trace: list = []
         # (lo, hi, what arrived) when the first announcement came before the
         # window or never came in it.
