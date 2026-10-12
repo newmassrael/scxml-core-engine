@@ -159,7 +159,8 @@ class CaseResult:
     compared: list[str] = field(default_factory=list)
     # ⚠ What the document did in the round this case ran, kept ONLY when the caller asked to see
     # this case (`explain`): the inputs the binding handed it, every value it returned, and what
-    # it kept afterwards. A failure says what was expected and what was written at one position;
+    # it kept afterwards -- for a statechart, the events it was handed, the sends it made and the
+    # states active afterwards (`_shown_statechart`). A failure says what was expected and what was written at one position;
     # it cannot say WHY, and the why lives in the values in between, which an author cannot see
     # from outside the document. Empty for every case nobody asked about.
     shown: dict = field(default_factory=dict)
@@ -2651,6 +2652,31 @@ class StatechartRun:
         # How far real time may be ahead of the engine's clock, from the
         # windows records gave instead of numbers (`observe`).
         self.slack_ms = 0.0
+        # Every event this run handed the machine since the last `take_delivered`: `(name, data)`.
+        # Kept for `--explain` alone, which shows what a case was driven with; nothing is judged on it.
+        self.delivered: list = []
+
+    def take_delivered(self) -> list:
+        """The events handed to the machine since the last call, and reset. One case, one reading."""
+        taken, self.delivered = self.delivered, []
+        return taken
+
+    def active_states(self, declared) -> dict:
+        """Every state the document names that is active now, to SHOW and never to judge.
+
+        ⚠ Through `is_state_active`, the predicate W3C SCXML 5.9.2 gives the document as `In()`,
+        and for display only: a state is not an output (`declared_value`), so asserting on one
+        would break on a rename that changed nothing about what the document does. A state the
+        engine cannot be asked about is shown as unreadable, not left out, because a missing line
+        reads as inactive and the case was asked to be explained."""
+        active = {}
+        for state in declared.states:
+            try:
+                if self.engine.policy.is_state_active(state, self.engine):
+                    active[state] = True
+            except Exception as exc:  # noqa: BLE001 - shown, and it must not change a verdict
+                active[state] = f"unreadable: {type(exc).__name__}"
+        return active
 
     def check(self, when: str = "") -> None:
         """Say so, if the run has stopped being the design's behaviour.
@@ -2697,6 +2723,7 @@ class StatechartRun:
             if not absent:
                 return False
             self.engine.send_event(self.event(rule["event"]))
+            self.delivered.append((rule["event"], None))
             self.check()
             return True
         if absent and address in self.absent_addresses:
@@ -2715,6 +2742,7 @@ class StatechartRun:
             self.send_carrying(rule, case, field_)
         else:
             self.engine.send_event(self.event(rule["event"]))
+            self.delivered.append((rule["event"], None))
         self.check()
         return True
 
@@ -2742,6 +2770,7 @@ class StatechartRun:
                                     event=event, data=json.dumps({field_: value}))
         if why:
             raise VerifyError(why)
+        self.delivered.append((event, {field_: value}))
         self.check()
         return True
 
@@ -2779,6 +2808,7 @@ class StatechartRun:
                                     event=event, data=json.dumps({name: value}))
         if why:
             raise VerifyError(why)
+        self.delivered.append((event, {name: value}))
 
     def acting_on(self, event_name: str, declared) -> str | None:
         """An active state that could act on this event now, if any.
@@ -2975,9 +3005,68 @@ class StatechartRun:
             yield hi
 
 
+def _send_line(request) -> str:
+    """One `<send>` the machine made, as a line: the processor, the event and what it carried."""
+    params = {name: (values[0] if len(values) == 1 else list(values))
+              for name, values in (getattr(request, "params", None) or {}).items()}
+    line = f"{request.processor_type} {request.event_name}"
+    if params:
+        line += f" {params}"
+    content = getattr(request, "content", "")
+    return f"{line} content={content!r}" if content else line
+
+
+def _shown_statechart(run, declared, trace: list, read) -> dict:
+    """What `--explain` shows of a case a statechart was DRIVEN through.
+
+    The same three parts as for a computation (`CaseResult.shown`), in a statechart's terms: the
+    events the binding handed the machine, in order; every `<send>` it made, each with the age after
+    the drive the machine was READ at when the send was taken, and the positions the binding landed
+    from them; and the states that are active afterwards.
+
+    ⚠ The age is the point. A failure says a position was written at 0 ms where 10 s was expected,
+    and cannot say which send, in which round, from which state wrote it -- those are the values
+    between the drive and the position. It is the instant of the reading and not of the send: a
+    case read at one instant takes every send made on the way there, so a send made at 500 ms and
+    read at 600 ms shows 600. A case read as its first announcement visits each deadline, and
+    there the two agree. The datamodel's variables are not shown: the generator
+    gives a reader only to what the document declares an output, and reaching past it into the
+    engine would be this package helping itself to the runtime's insides (`declared_value`)."""
+    inputs = {f"{n:02d} event": name if data is None else f"{name} {data}"
+              for n, (name, data) in enumerate(run.take_delivered(), 1)}
+    returned: dict = {}
+    count = 0
+    for moment, sends in trace:
+        for request in sends:
+            count += 1
+            returned[f"send {count:02d} read at {moment:g} ms"] = _send_line(request)
+    returned.update({f"wrote {address}": value for address, value in sorted(read.produced.items())})
+    return {"inputs": inputs, "returned": returned,
+            "kept": {f"active {state}": how for state, how in run.active_states(declared).items()}}
+
+
+def _joined_steps(steps: list) -> dict:
+    """The steps of one explained case as the one `shown` it carries.
+
+    A case with setup steps is a sequence, and what its last step read is partly what the ones
+    before it left -- the active states and what was sent -- so each step's lines are labelled by
+    step, setup first and the case itself last. A case of one step is shown as it is."""
+    if len(steps) <= 1:
+        return steps[0] if steps else {}
+    joined: dict = {"inputs": {}, "returned": {}, "kept": {}}
+    for number, step in enumerate(steps, 1):
+        label = f"step {number:02d} ({'the case' if number == len(steps) else 'setup'})"
+        for part, values in step.items():
+            joined[part].update({f"{label} {key}": value for key, value in values.items()})
+    return joined
+
+
 def verify_statechart(pack: Pack, binding: dict, module, build: Build,
-                      declared) -> Verification:
-    """Replay the pack's cases through the document as one run."""
+                      declared, explain: tuple = ()) -> Verification:
+    """Replay the pack's cases through the document as one run.
+
+    `explain` names cases to be SHOWN as well as judged (`CaseResult.shown`); asking changes no
+    verdict, because what is shown is read after the case was judged on what it sent."""
     examples = pack.examples
     if not examples.ordered:
         return Verification(refusal=(
@@ -3097,6 +3186,8 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
     # The protocol state a `protocol` rule that `carries` reads, case to case (it needs an order).
     latches = Latches(pack.conventions, pack.model) if examples.ordered else None
     failed: set = set()
+    # Case -> what each of its steps showed so far, for the cases `explain` names (`_joined_steps`).
+    steps_shown: dict = {}
     # What each address held after the rounds so far. Kept on every round,
     # judged or skipped: the platform's values move whether or not a case of
     # ours is being judged.
@@ -3180,6 +3271,10 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
         if id(owner) in failed:
             continue
         result = CaseResult(name=owner.name)
+        # What this step's events were, and every send it made at each instant it was read at:
+        # kept for `--explain` only, and begun clean so a step shows nothing of the one before.
+        run.take_delivered()
+        trace: list = []
         # (lo, hi, what arrived) when the first announcement came before the
         # window or never came in it.
         arrival = None
@@ -3283,6 +3378,7 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
                 for moment in run.moments(case, from_drive=True):
                     step = run.recorder.take()
                     taken += step
+                    trace.append((moment, step))
                     read = read_round(taken, judged)
                     if read_round(step, judged).fresh & expected:
                         heard_at = moment
@@ -3298,15 +3394,19 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
                 # every one, the window's end.
                 taken: list = []
                 read = None
-                for _ in run.moments(case):
-                    taken += run.recorder.take()
+                for moment in run.moments(case):
+                    step = run.recorder.take()
+                    taken += step
+                    trace.append((moment, step))
                     read = read_round(taken, judged)
                     if meets(case, read):
                         break
                 run.settle()
             else:
                 run.observe(case)
-                read = read_round(run.recorder.take(), judged)
+                step = run.recorder.take()
+                trace.append((0, step))
+                read = read_round(step, judged)
             # Only the moment chosen is committed: what a slot holds and what
             # the record planted move once, as they do in the one run the
             # record describes.
@@ -3314,11 +3414,17 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
                 if value is not _NOT_WRITTEN:
                     history.held[name] = value
             planted.overwritten(read.fresh)
+            if explain and any(part in owner.name for part in explain if owner.name):
+                # Every step the case took that reached the machine, setup included: what a case
+                # reads is partly what the steps before it left, and that is the question asked.
+                steps_shown.setdefault(id(owner), []).append(
+                    _shown_statechart(run, declared, trace, read))
             if not judged:
                 # What the machine sent while being set up is not what the
                 # case is judged on: the case's own round starts clean.
                 continue
             produced, stood_in = read.produced, read.stood_in
+            result.shown = _joined_steps(steps_shown.pop(id(owner), []))
         except RunLost as exc:
             # Not this case's failure to be driven: the run itself stopped
             # being the design's, or knowable, as it does for an open event
@@ -3499,7 +3605,7 @@ def _verify(pack: Pack, binding_path: pathlib.Path, codegen: pathlib.Path | None
         return Verification(refusal=str(exc))
 
     if declared.kind in STATECHART_KINDS:
-        run = verify_statechart(pack, binding, module, build, declared)
+        run = verify_statechart(pack, binding, module, build, declared, explain)
         run.backend = backend
         return run
 

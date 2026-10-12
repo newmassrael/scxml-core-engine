@@ -1473,8 +1473,22 @@ why the wrong event was written, and running the document on that case did --
 every event condition was false in that round, so the identifier stayed on the
 first branch of a fallback chain. A document that keeps values (it reads
 `previous()`) returns every variable it declares; a pure computation shows the
-outputs its binding names and says it kept nothing. Asking changes no verdict,
-costs nothing for the cases not asked about, and a `TEXT` matching no case shows
+outputs its binding names and says it kept nothing. A **statechart** is shown in
+its own terms: the events the binding handed the machine, in order; every
+`<send>` it made, each with the instant after the drive the machine was read at
+(`send 01 read at 600 ms`), and the positions the binding landed from them; and
+the states active afterwards. A case that takes steps before its own round shows
+every step, setup first (`step 01 (setup)` … `step 03 (the case)`), because what
+the judged round reads is partly what the steps before it left. The datamodel's
+variables are not shown: the generator gives a reader only to what a document
+declares an output, and reaching past it would be this package helping itself to
+the runtime's insides. Measured 2026-10-12 on a document failing two cases at 0
+ms where 10 s was expected: the request was read and answered with nothing, no
+line and no refusal, and the trace found two defects the failure could not say --
+a `delay="10000"` with no unit, which the product reads as no time and raises as
+an argument error at the send (W3C SCXML 6.2), and a flag that was not set when
+the supply came on while the signal was off. Asking changes no verdict, costs
+nothing for the cases not asked about, and a `TEXT` matching no case shows
 nothing and is not an error.
 
 It drives two shapes, and they have nothing in common. A pure computation is

@@ -212,6 +212,10 @@ class Document:
     # (W3C SCXML 5.10). A state with no id is keyed `None`, because nothing
     # can ask whether it is active.
     listeners: dict = dataclasses.field(default_factory=dict)
+    # Every state the document names (`<state>`, `<parallel>`, `<final>` with an `id`), in document
+    # order. What `verify --explain` asks the engine about, one `In()` each, to SHOW the active
+    # configuration; nothing is judged on it (`StatechartRun.acting_on`).
+    states: tuple = ()
     # Input and output identifier -> the `sce:type` the document declares for
     # it. What a binding hands an input is read as this type (`delivery`).
     types: dict = dataclasses.field(default_factory=dict)
@@ -541,6 +545,9 @@ def read_document(path: pathlib.Path) -> Document:
         sends=tuple(sends),
         events=frozenset(events),
         listeners=_listeners(root),
+        states=tuple(node.get("id") for node in root.iter()
+                     if node.tag in (f"{SCXML_NS}state", f"{SCXML_NS}parallel", f"{SCXML_NS}final")
+                     and node.get("id")),
         types=types,
         enums=_imported_enums(root, path),
         payloads=_imported_payloads(root, path),
