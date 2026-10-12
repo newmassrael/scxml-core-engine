@@ -289,6 +289,7 @@ The generated sibling is the transform `climate_temperature`, in whatever shape 
 
 ```xml
 sce:type="uint8 | uint16 | uint32 | uint64 | int8 | int16 | int32 | int64 | float32 | float64 | bool | string | bytes"
+sce:type="enum:<alias>"          <!-- a value of an imported sce:kind="enum" document: §4.2 (a transform input), §4.6 (a codec entry) -->
 sce:direction="in | out | internal"
 sce:unit="celsius | rpm | ms | percent | ..."   <!-- documentation only, no codegen effect -->
 sce:default-endian="big | little | native"  <!-- document-level default, big if omitted -->
@@ -574,6 +575,31 @@ inline double computeTemperature(uint16_t raw) {
 ```rust
 pub fn compute_temperature(raw: u16) -> f64 {
     raw as f64 * 0.1 - 40.0
+}
+```
+
+**An enum-typed input.** An input may be `sce:type="enum:<alias>"`, where `<alias>` is the `as` of an
+`<sce:import kind="enum" src="…"/>` of the document. An expression names a variant as
+`<alias>.<variant>`, and the generated function takes the generated enum type, so a comparison reads
+as the variant's name and not as its number. The caller passes a value of the enum type.
+
+```xml
+<scxml sce:kind="transform">
+  <sce:import kind="enum" src="detail_set.scxml" as="Detail"/>
+  <datamodel>
+    <data id="detailSet" sce:type="enum:Detail" sce:direction="in"/>
+    <data id="variant" sce:type="int64" sce:direction="out"
+          expr="detailSet === Detail.AUTO ? 1 : detailSet === Detail.SELECT2 ? 2 : 0"/>
+  </datamodel>
+</scxml>
+```
+
+**Codegen** (C++):
+```cpp
+inline int64_t computeVariant(SCE::Generated::DetailSet::DetailSet detailSet) {
+    return detailSet == SCE::Generated::DetailSet::DetailSet::AUTO      ? 1
+           : detailSet == SCE::Generated::DetailSet::DetailSet::SELECT2 ? 2
+                                                                        : 0;
 }
 ```
 
