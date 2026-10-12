@@ -111,3 +111,73 @@ pub fn get_machine_name(scxml_content: &str) -> Result<String, JsValue> {
     let root = doc.root_element();
     Ok(root.attribute("name").unwrap_or("untitled").to_string())
 }
+
+/// What the Interpreter runs for `scxml_content`: the document itself or, for
+/// a `datamodel="sce-static"` one, the ECMAScript document that means the
+/// same ([`sce_build::forge::static_js::lower_source`]).
+///
+/// The Interpreter refuses a `sce-static` document because its script engine
+/// holds no types, so the visualizer lowers before it loads. The structure it
+/// draws still comes from [`gui_structure`] on the original text: lowering
+/// replaces expressions and nothing else, so the state ids and transition
+/// positions the live highlight joins on are the same in both. A document
+/// under any other data model is not parsed by this crate's reader and is
+/// returned as it is.
+///
+/// What the lowering cannot spell, and a document that reaches beside itself
+/// (an import, a hybrid `<invoke>`), is refused with the product's own
+/// message; nothing falls back to running it unlowered.
+fn lowered_for_interpreter(scxml_content: &str, scxml_name: &str) -> Result<String, String> {
+    let doc =
+        roxmltree::Document::parse(scxml_content).map_err(|e| format!("XML parse error: {e}"))?;
+    if doc.root_element().attribute("datamodel") != Some("sce-static") {
+        return Ok(scxml_content.to_string());
+    }
+    sce_build::forge::static_js::lower_source(scxml_content, scxml_name)
+        .map_err(|e| format!("{e:?}"))
+}
+
+/// The document the Interpreter runs for `scxml_content`; see
+/// [`lowered_for_interpreter`].
+#[wasm_bindgen]
+pub fn lower_for_interpreter(scxml_content: &str, scxml_name: &str) -> Result<String, JsValue> {
+    lowered_for_interpreter(scxml_content, scxml_name).map_err(|e| JsValue::from_str(&e))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::lowered_for_interpreter;
+
+    const COUNTER: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" datamodel="sce-static" initial="a" name="counter">
+  <datamodel><data id="n" sce:type="uint8" expr="0"/></datamodel>
+  <state id="a"><transition event="go" target="a"><assign location="n" expr="n + 1"/></transition></state>
+</scxml>"#;
+
+    #[test]
+    fn a_static_document_is_run_as_the_ecmascript_that_means_the_same() {
+        let lowered = lowered_for_interpreter(COUNTER, "counter").expect("lowers");
+        assert!(lowered.contains(r#"datamodel="ecmascript""#), "{lowered}");
+        assert!(lowered.contains("SceStatic.U8.add(n, 1)"), "{lowered}");
+        assert!(!lowered.contains(r#"datamodel="sce-static""#), "{lowered}");
+    }
+
+    #[test]
+    fn a_document_under_another_data_model_is_returned_as_it_is() {
+        let document = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="ecmascript"><final id="f"/></scxml>"#;
+        assert_eq!(
+            lowered_for_interpreter(document, "plain").unwrap(),
+            document
+        );
+    }
+
+    #[test]
+    fn a_document_it_cannot_lower_is_refused_by_name_not_passed_through() {
+        let document = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" datamodel="sce-static" initial="s">
+  <datamodel><data id="n" sce:type="uint32" expr="0"/></datamodel>
+  <state id="s"><transition event="go" target="d"/></state>
+  <final id="d"><donedata><content><result code="7">finished</result></content></donedata></final>
+</scxml>"#;
+        let refusal = lowered_for_interpreter(document, "refused").expect_err("refused");
+        assert!(refusal.contains("holding an element"), "{refusal}");
+    }
+}

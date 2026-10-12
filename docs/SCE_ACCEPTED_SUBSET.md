@@ -4986,7 +4986,10 @@ different questions.
 for every `sce-static` statechart under the shared fixture directory.
 
 **It runs once lowered.** `sce-codegen lower <document>` prints the document as
-a `datamodel="ecmascript"` one, and the Interpreter runs that. Only the
+a `datamodel="ecmascript"` one, and the Interpreter runs that. The visualizer
+does the same in the browser (`lower_for_interpreter` of the codegen WASM) for
+a document that needs nothing beside it, and draws the structure of the
+document as written, since lowering changes no state or transition. Only the
 document's expressions change: each is replaced, at the place the document
 wrote it, with the ECMAScript the typed expression means, and every other byte
 — comments, extension elements, formatting — is the author's. Each integer

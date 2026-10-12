@@ -2845,8 +2845,8 @@ enum Commands {
     ///
     /// An algorithm the document imports is read from beside it and installed
     /// by the same `<data>`, so a call of one runs. A construct with no
-    /// lowering yet (`<sce:action>`; an algorithm with a buffer, list or record
-    /// in it) is refused with `generate/unsupported-feature` naming it; the
+    /// lowering yet (an algorithm that loops over a bounded-collection import)
+    /// is refused with `generate/unsupported-feature` naming it; the
     /// document is never passed through half-lowered. A document under any
     /// other data model is printed as it is.
     ///

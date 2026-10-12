@@ -32,8 +32,9 @@
 //!
 //! # What it does not lower yet
 //!
-//! `<sce:action>`, an algorithm with a construct
-//! [`crate::forge::static_js_algorithm`] does not spell, an `<invoke>` that is
+//! An algorithm with a construct
+//! [`crate::forge::static_js_algorithm`] does not spell (a `<sce:foreach>` over
+//! a bounded-collection import), an `<invoke>` that is
 //! neither a child session written inline nor a hybrid one (one by `src`, a
 //! mesh or a host-run one) and the executable content the walk does not lower
 //! are refused with `generate/unsupported-feature` naming the

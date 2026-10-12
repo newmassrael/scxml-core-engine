@@ -38,7 +38,18 @@ const SceBuildWasm = (() => {
         return JSON.parse(module.gui_structure(scxmlContent, scxmlName || 'untitled'));
     }
 
-    return { load, guiStructure };
+    /**
+     * The document the Interpreter runs for `scxmlContent`: itself, or the
+     * ECMAScript lowering of a `datamodel="sce-static"` one. Throws with the
+     * product's own message when the document cannot be lowered — the
+     * Interpreter is never handed a typed document it would run untyped.
+     */
+    async function lowerForInterpreter(scxmlContent, scxmlName) {
+        const module = await load();
+        return module.lower_for_interpreter(scxmlContent, scxmlName || 'untitled');
+    }
+
+    return { load, guiStructure, lowerForInterpreter };
 })();
 
 if (typeof window !== 'undefined') {
