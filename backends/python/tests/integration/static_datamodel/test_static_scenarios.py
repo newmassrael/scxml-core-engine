@@ -265,6 +265,13 @@ def test_a_list_takes_what_an_algorithm_returns_whole() -> None:
     replay("static_list_assign")
 
 
+# A statechart hands the algorithms the records and lists it holds, and the
+# event's own payload, and takes back what they return, written only when the
+# call succeeded and held to the bound of the variable it is written to.
+def test_a_statechart_hands_its_state_to_an_algorithm_and_takes_it_back() -> None:
+    replay("static_state_algorithm")
+
+
 # An element is read by its index, and an index outside the list is a failure.
 def test_a_list_element_is_read_by_its_index() -> None:
     replay("static_list_index")

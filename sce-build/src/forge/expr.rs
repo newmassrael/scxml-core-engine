@@ -2339,6 +2339,92 @@ pub fn called_names(raw_expr: &str) -> Result<(Option<String>, Vec<String>), Ref
     Ok((whole, others))
 }
 
+/// What one argument of a call is, as far as a `sce-static` statechart's call of an
+/// algorithm that takes a record or a list needs to tell: such an argument is the
+/// NAME of a variable of the machine (or of a loop's item), or the payload of the
+/// event the transition is on, and never an expression that computes one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ArgShape {
+    /// A bare name: a variable, or a loop's item.
+    Name(String),
+    /// `_event.data`, taken whole.
+    EventData,
+    /// Anything else.
+    Other,
+}
+
+/// One argument of a call found by [`call_sites`]: the bytes of the expression it is
+/// written in, and what it is.
+#[derive(Debug, Clone)]
+pub struct ArgSite {
+    pub span: std::ops::Range<usize>,
+    pub shape: ArgShape,
+}
+
+/// One call by a bare name found by [`call_sites`].
+#[derive(Debug, Clone)]
+pub struct CallSite {
+    /// The callee's name, and the bytes it is written in.
+    pub callee: String,
+    pub callee_span: std::ops::Range<usize>,
+    pub args: Vec<ArgSite>,
+}
+
+/// Every call in `raw_expr` of a callee `wanted` accepts, outermost first, with the
+/// bytes of the callee and of each argument — what a statechart that calls an
+/// algorithm with state in a slot rewrites the call from (SCE Accepted Subset §2.15).
+/// The spans index `raw_expr` itself, whatever space leads it.
+pub fn call_sites(raw_expr: &str, wanted: &dyn Fn(&str) -> bool) -> Result<Vec<CallSite>, Refusal> {
+    fn walk(
+        node: &TypedExpr,
+        wanted: &dyn Fn(&str) -> bool,
+        offset: usize,
+        found: &mut Vec<CallSite>,
+    ) {
+        if let ExprKind::Call { callee, args, .. } = &node.kind {
+            if let ExprKind::Ident(name) = &callee.kind {
+                if wanted(name) {
+                    let shift =
+                        |span: &std::ops::Range<usize>| span.start + offset..span.end + offset;
+                    let shape = |arg: &TypedExpr| match &arg.kind {
+                        ExprKind::Ident(name) => ArgShape::Name(name.clone()),
+                        ExprKind::Member { object, property }
+                            if property == "data"
+                                && matches!(&object.kind, ExprKind::Ident(o) if o == "_event") =>
+                        {
+                            ArgShape::EventData
+                        }
+                        _ => ArgShape::Other,
+                    };
+                    if let (Some(callee_span), true) =
+                        (callee.span.as_ref(), args.iter().all(|a| a.span.is_some()))
+                    {
+                        found.push(CallSite {
+                            callee: name.clone(),
+                            callee_span: shift(callee_span),
+                            args: args
+                                .iter()
+                                .map(|a| ArgSite {
+                                    span: shift(a.span.as_ref().expect("checked above")),
+                                    shape: shape(a),
+                                })
+                                .collect(),
+                        });
+                    }
+                }
+            }
+        }
+        for child in node.children() {
+            walk(child, wanted, offset, found);
+        }
+    }
+    let offset = raw_expr.len() - raw_expr.trim_start().len();
+    let ast = parse_to_ast(raw_expr.trim())?;
+    let mut found = Vec::new();
+    walk(&ast, wanted, offset, &mut found);
+    Ok(found)
+}
+
 /// Replace the contents of every string literal with spaces of equal length,
 /// preserving expression length and non-string token positions.
 pub fn strip_string_literals(expr: &str) -> String {
@@ -7538,6 +7624,13 @@ fn is_pure_reference(expr: &TypedExpr) -> bool {
     }
 }
 
+/// What the name of the adapter a Go statechart declares for a call that hands an
+/// algorithm a record or a list begins with, so that [`pass_failure_on`] knows the
+/// callee answers an `Outcome` and not the `(value, error)` of a generated algorithm
+/// (SCE_FORGE.md §4.12). No algorithm's call begins with it: a package is imported as
+/// `sce_<snake_case document name>`, and this has a capital after `sce`.
+pub(crate) const STATE_ADAPTER_PREFIX: &str = "sceAdapt_";
+
 /// `call` — a call to a `may-fail` algorithm, spelled `symbol(args)` in
 /// `target` — as the calling `may-fail` body passes its failure on and keeps
 /// its value of type `ty` (SCE_FORGE.md §3.4.1). ONE spelling for the
@@ -7560,6 +7653,13 @@ pub(crate) fn pass_failure_on(
         ExprTarget::Cpp => format!("SCE::Forge::Checked::take(sce_failure_, {call})"),
         // The callee's header declares the unwrapping of its own result type.
         ExprTarget::C => format!("{symbol}_take(&sce_failure_, {call})"),
+        // A call of an adapter a statechart declares for an algorithm that takes or
+        // returns a record or a list answers in the statechart's own types, which
+        // this layer cannot spell (the lattice does not carry which record a list
+        // holds): it answers an `Outcome`, whose type `TakeOutcome` infers.
+        ExprTarget::Go if symbol.starts_with(STATE_ADAPTER_PREFIX) => {
+            format!("scealgorithm.TakeOutcome(&sceFailure, {call})")
+        }
         ExprTarget::Go => {
             let Some(value) = go_nameable_type(ty.strip_quantity()) else {
                 return Err(ExprError::UnsupportedConstruct {

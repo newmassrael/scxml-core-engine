@@ -1,0 +1,38 @@
+# Mutation cases for "a machine hands an algorithm the records and lists it holds and
+# takes back what it returns" under the Rust backend (docs/SCE_ACCEPTED_SUBSET.md §2.15,
+# "State an algorithm takes and gives back").
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_rust_a_machine_hands_its_state_to_an_algorithm_rust.cases`.
+#
+# `static_state_algorithm` puts lines in a ledger through `AddEntry` (a list of records
+# in, a list of records out), totals them through `TotalOf` (a list in, a record out),
+# and is replayed against the Rust machine by `static_scenarios`. A ninth line fills no
+# more room than the variable has, and a line that overflows the total is a failed
+# statement: the variable written by the statement before stays written, the one the
+# call would have written does not, and `error.execution` says so. The mutants take one
+# decision away each:
+#
+#   a list the call gave back is written without the variable's bound;
+#   a failure of the call is a panic and not a failed statement.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-tests --test static_scenarios
+mutation_targets sce-build/src/forge/static_lowering.rs
+mutation_targets backends/rust/tests/src/integration/static_datamodel/static_state_algorithm_sm.rs
+mutation_regen scripts/regen_static_datamodel_rust.sh
+mutation_oracles backends/rust/tests/tests/static_scenarios.rs sce-build/tests/fixtures/static_datamodel/scenarios/static_state_algorithm.json
+
+mutation_case "a list the call gave back is written without the variable's bound" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "                    if let Some((adapter, capacity)) = state_list {",
+     "                    if let Some((adapter, capacity)) = state_list.filter(|_| false) {")
+PY
+
+mutation_case "a failure of the call is a panic and not a failed statement" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "let r = {call}?;",
+     "let r = {call}.unwrap();")
+PY

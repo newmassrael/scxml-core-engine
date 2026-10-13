@@ -158,17 +158,33 @@ func Within[T any](f *Failure, items []T, capacity uint32) []T {
 // any other is a broken invariant, not a failure with a name to pass on.
 func Take[T any](f *Failure) func(T, error) T {
 	return func(value T, err error) T {
-		if err == nil {
-			return value
-		}
-		e, ok := err.(Error)
-		if !ok {
-			panic("scealgorithm.Take: a may-fail algorithm returned an error that is not an algorithm.Error: " + err.Error())
-		}
-		f.Fail(e)
-		var zero T
-		return zero
+		return TakeOutcome(f, Outcome[T]{Value: value, Err: err})
 	}
+}
+
+// Outcome is what a call answers as one value: its value, or the failure it
+// returned. A statechart that hands an algorithm a record or a list calls it
+// through a function of its own, which answers in the statechart's types; those
+// have no spelling the call site could write for Take, and an Outcome carries
+// its type for TakeOutcome to infer.
+type Outcome[T any] struct {
+	Value T
+	Err   error
+}
+
+// TakeOutcome is Take for an Outcome: the value, or its zero with the failure
+// recorded in f, which the statement around it returns.
+func TakeOutcome[T any](f *Failure, o Outcome[T]) T {
+	if o.Err == nil {
+		return o.Value
+	}
+	e, ok := o.Err.(Error)
+	if !ok {
+		panic("scealgorithm.Take: a may-fail algorithm returned an error that is not an algorithm.Error: " + o.Err.Error())
+	}
+	f.Fail(e)
+	var zero T
+	return zero
 }
 
 type narrow interface {

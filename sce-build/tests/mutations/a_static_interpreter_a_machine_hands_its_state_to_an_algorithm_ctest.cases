@@ -1,0 +1,25 @@
+# Mutation cases for "a machine hands an algorithm the records and lists it holds and
+# takes back what it returns" under the Interpreter (docs/SCE_ACCEPTED_SUBSET.md §2.15,
+# "State an algorithm takes and gives back").
+#
+# A lowered document calls the algorithm lowered to ecmascript with the variable the
+# document holds, and the payload of the event: the Interpreter's records and lists are
+# the algorithm's own and an algorithm only reads what it is handed, so nothing is
+# converted. `static_state_algorithm` is replayed by `static_datamodel_lowered`, which
+# also asserts that it is replayed and not left to a refusal. The mutant takes one
+# decision away:
+#
+#   the algorithm a call names is not the one the document imports.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^static_datamodel_lowered$'
+mutation_targets sce-build/src/forge/static_js.rs
+mutation_oracles tests/integration/AStaticDatamodelRunsLoweredUnderTheInterpreterTest.cpp sce-build/tests/fixtures/static_datamodel/static_state_algorithm.scxml sce-build/tests/fixtures/static_datamodel/scenarios/static_state_algorithm.json
+
+mutation_case "the algorithm a call names is not the one the document imports" <<'PY'
+edit("sce-build/src/forge/static_js.rs",
+     "        self.callee(&callee.document_name)\n            .expect(\"an algorithm the document imports travels in it\")\n            .call\n    }\n    fn state_list_within",
+     "        self.callee(&callee.document_name)\n            .expect(\"an algorithm the document imports travels in it\")\n            .call\n            .replace(\"ledger_\", \"nothing_\")\n    }\n    fn state_list_within")
+PY

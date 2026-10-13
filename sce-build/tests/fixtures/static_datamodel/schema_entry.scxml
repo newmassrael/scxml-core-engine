@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  One line of a ledger: an id and an amount. The record `static_state_algorithm.scxml`
+  keeps its lines in, hands to an algorithm and takes back (SCE Accepted Subset
+  §2.15, SCE_FORGE.md §4.12), and the payload of the event that adds one.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="schema_entry"
+       sce:event-name="ledger.entry">
+  <datamodel>
+    <data id="id" sce:type="uint32" sce:direction="in"/>
+    <data id="amount" sce:type="int32" sce:direction="in"/>
+  </datamodel>
+</scxml>

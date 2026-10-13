@@ -870,6 +870,11 @@ path = "tests/a_static_datamodel_holds_every_variable_to_a_type.rs"
 required-features = ["cli"]
 
 [[test]]
+name = "a_static_machine_hands_algorithms_the_state_it_holds"
+path = "tests/a_static_machine_hands_algorithms_the_state_it_holds.rs"
+required-features = ["cli"]
+
+[[test]]
 name = "a_send_idlocation_hands_a_distinct_id_for_each_execution"
 path = "tests/a_send_idlocation_hands_a_distinct_id_for_each_execution.rs"
 required-features = ["cli"]

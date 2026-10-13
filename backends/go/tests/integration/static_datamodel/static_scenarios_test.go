@@ -78,6 +78,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_send_params"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_send_target"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_send_type"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_state_algorithm"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_string_capacity"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_timers"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_whole_payload"
@@ -105,6 +106,37 @@ func daysJSON[R dayRecord](days []R) any {
 		out[i] = dayJSON(day)
 	}
 	return out
+}
+
+// entryRecord is a `record:Entry` as a host reads it: a line's id and amount.
+type entryRecord interface {
+	Id() uint32
+	Amount() int32
+}
+
+// entryJSON is a line as a scenario states it: its fields by the schema's ids.
+func entryJSON(entry entryRecord) any {
+	return map[string]any{"id": entry.Id(), "amount": entry.Amount()}
+}
+
+// entriesJSON is a list of such lines, in order.
+func entriesJSON[R entryRecord](entries []R) any {
+	out := make([]any, len(entries))
+	for i, entry := range entries {
+		out[i] = entryJSON(entry)
+	}
+	return out
+}
+
+// totalRecord is a `record:Total` as a host reads it: how many lines and their sum.
+type totalRecord interface {
+	Count() uint32
+	Sum() int32
+}
+
+// totalJSON is a total as a scenario states it: its fields by the schema's ids.
+func totalJSON(total totalRecord) any {
+	return map[string]any{"count": total.Count(), "sum": total.Sum()}
 }
 
 // readingRecord is a `record:Reading` as a host reads it: a small integer and a
@@ -582,6 +614,23 @@ func TestAListTakesWhatAnAlgorithmReturnsWhole(t *testing.T) {
 		"first":    func() any { return policy.First() },
 		"count":    func() any { return policy.Count() },
 		"size":     func() any { return policy.Size() },
+		"refusals": func() any { return policy.Refusals() },
+	}))
+}
+
+// A statechart hands the algorithms the records and lists it holds, and the
+// event's own payload, and takes back what they return, written only when the
+// call succeeded and held to the bound of the variable it is written to.
+func TestAStatechartHandsItsStateToAnAlgorithmAndTakesItBack(t *testing.T) {
+	policy := static_state_algorithm.NewStaticStateAlgorithmPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_state_algorithm", drive[static_state_algorithm.StaticStateAlgorithmState, static_state_algorithm.StaticStateAlgorithmEvent](&policy, map[string]func() any{
+		"entries":  func() any { return entriesJSON(policy.Entries()) },
+		"total":    func() any { return totalJSON(policy.Total()) },
+		"last":     func() any { return entryJSON(policy.Last()) },
+		"ids":      func() any { return policy.Ids() },
+		"idsum":    func() any { return policy.Idsum() },
+		"large":    func() any { return policy.Large() },
 		"refusals": func() any { return policy.Refusals() },
 	}))
 }

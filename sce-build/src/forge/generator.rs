@@ -29813,7 +29813,7 @@ fn emit_scalar_const(
 /// would not fit in `ShortArray` (signed 16-bit) for entries above
 /// `0x7FFF`. Unsigned arrays require `@OptIn(ExperimentalUnsignedTypes
 /// ::class)` at the file level (see Kotlin algorithm template).
-fn kotlin_array_type(elem: &SceType) -> &'static str {
+pub(crate) fn kotlin_array_type(elem: &SceType) -> &'static str {
     match elem {
         SceType::Uint8 => "UByteArray",
         SceType::Int8 => "ByteArray",

@@ -1,0 +1,32 @@
+# Mutation cases for "a machine hands an algorithm the records and lists it holds and
+# takes back what it returns" under the Python backend (docs/SCE_ACCEPTED_SUBSET.md
+# §2.15, "State an algorithm takes and gives back").
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_python_a_machine_hands_its_state_to_an_algorithm_python.cases`.
+#
+# `static_state_algorithm` puts lines in a ledger through `AddEntry` and is replayed
+# against the Python machine by `test_static_scenarios.py`. Python's algorithm lists grow
+# past their capacity, so the bound that keeps a ninth line out is the variable's. The
+# mutant takes that decision away:
+#
+#   a list the call gave back is written without the variable's bound.
+#
+# A call that fails raises in Python and the machine's own handling of a failed statement
+# receives it, as it does an overflow; that is the rule every checked operation of the
+# backend is held to by `static_overflow`, and an adapter that catches nothing adds no
+# decision of its own to take away.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_pytest backends/python/tests integration/static_datamodel/
+mutation_targets sce-build/src/forge/static_lowering.rs
+mutation_regen scripts/regen_static_datamodel_python.sh
+mutation_oracles backends/python/tests/integration/static_datamodel/test_static_scenarios.py sce-build/tests/fixtures/static_datamodel/scenarios/static_state_algorithm.json
+
+mutation_case "a list the call gave back is written without the variable's bound" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "                    if let Some((adapter, capacity)) = state_list {",
+     "                    if let Some((adapter, capacity)) = state_list.filter(|_| false) {")
+PY

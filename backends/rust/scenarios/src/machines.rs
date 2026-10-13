@@ -140,6 +140,7 @@ scenarios! {
     "static_send_params" => static_send_params_sm::{StaticSendParamsPolicy, StaticSendParamsPersist};
     "static_send_target" => static_send_target_sm::{StaticSendTargetPolicy, StaticSendTargetPersist};
     "static_send_type" => static_send_type_sm::{StaticSendTypePolicy, StaticSendTypePersist};
+    "static_state_algorithm" => static_state_algorithm_sm::{StaticStateAlgorithmPolicy, StaticStateAlgorithmPersist};
     "static_string_capacity" => static_string_capacity_sm::{StaticStringCapacityPolicy, StaticStringCapacityPersist};
     "static_timers" => static_timers_sm::{StaticTimersPolicy, StaticTimersPersist} @ Manual;
     "static_timers_stop" => static_timers_sm::{StaticTimersPolicy, StaticTimersPersist} @ Manual;

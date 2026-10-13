@@ -1,0 +1,35 @@
+# Mutation cases for "a machine hands an algorithm the records and lists it holds and
+# takes back what it returns" under the C++ backend (docs/SCE_ACCEPTED_SUBSET.md §2.15,
+# "State an algorithm takes and gives back").
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_cpp_a_machine_hands_its_state_to_an_algorithm_ctest.cases`.
+#
+# `static_state_algorithm` puts lines in a ledger through `AddEntry`, totals them through
+# `TotalOf`, and is replayed against the C++ machine by `static_datamodel_generated_cpp`.
+# C++'s algorithm lists grow past their capacity, so the bound that keeps a ninth line out
+# is the variable's. A line that overflows the total is a failed statement: the variable
+# written by the statement before stays written, the one the call would have written does
+# not, and `error.execution` says so. The mutants take one decision away each:
+#
+#   a list the call gave back is written without the variable's bound;
+#   the failure of a call is answered as a value of nothing.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^static_datamodel_generated_cpp$'
+mutation_targets sce-build/src/forge/static_lowering.rs
+mutation_oracles tests/integration/AStaticDatamodelRunsGeneratedCppTest.cpp sce-build/tests/fixtures/static_datamodel/scenarios/static_state_algorithm.json
+
+mutation_case "a list the call gave back is written without the variable's bound" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "                    if let Some((adapter, capacity)) = state_list {",
+     "                    if let Some((adapter, capacity)) = state_list.filter(|_| false) {")
+PY
+
+mutation_case "the failure of a call is answered as a value of nothing" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "return {result}::failure(r.error());",
+     "return {result}::success({returned_type}{{}});")
+PY

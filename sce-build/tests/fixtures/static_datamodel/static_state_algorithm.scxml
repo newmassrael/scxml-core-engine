@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "State an algorithm
+  takes and gives back"): a statechart hands an imported algorithm the state it
+  keeps and holds what the algorithm gives back, so the rule that works on the state
+  is written once, as an algorithm, and every backend runs the same one.
+
+  A ledger keeps its lines in `entries`, a list of records. Adding a line asks
+  `AddEntry` for the list with the line put in (a list of records in, a list of
+  records out), the total is asked of the list (`TotalOf`: a list in, a record out),
+  and `Bump` moves it one line on (a record in, a record out). `AmountOf` is asked of
+  the line an event brought (`_event.data`, a record in, a number out) in a guard,
+  and `IdSum` of a list of ids (a list of numbers in, a number out).
+
+  A ninth line does not fit the eight the list holds. `AddEntry` fails, and a failed
+  call is a failed statement like any other: nothing is written, the rest of the
+  block does not run, and error.execution says so (W3C SCXML 4.9) — the ledger is
+  as it was. `refusals` counts the error.execution events the document answers.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="open" datamodel="sce-static" name="static_state_algorithm">
+  <sce:import kind="event-schema" src="schema_entry.scxml" as="Entry"/>
+  <sce:import kind="event-schema" src="schema_total.scxml" as="Total"/>
+  <sce:import kind="algorithm" src="algorithm_ledger_add.scxml" as="AddEntry"/>
+  <sce:import kind="algorithm" src="algorithm_ledger_total.scxml" as="TotalOf"/>
+  <sce:import kind="algorithm" src="algorithm_ledger_amount.scxml" as="AmountOf"/>
+  <sce:import kind="algorithm" src="algorithm_ledger_bump.scxml" as="Bump"/>
+  <sce:import kind="algorithm" src="algorithm_ledger_ids.scxml" as="IdSum"/>
+  <datamodel>
+    <data id="entries" sce:type="list&lt;record:Entry&gt;" sce:capacity="8" sce:direction="out"/>
+    <data id="total" sce:type="record:Total" sce:direction="out">
+      <sce:set name="count" expr="0"/>
+      <sce:set name="sum" expr="0"/>
+    </data>
+    <data id="last" sce:type="record:Entry" sce:direction="out">
+      <sce:set name="id" expr="0"/>
+      <sce:set name="amount" expr="0"/>
+    </data>
+    <data id="ids" sce:type="list&lt;uint32&gt;" sce:capacity="8" sce:direction="out"/>
+    <data id="idsum" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="large" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="open">
+    <transition event="ledger.entry" type="internal">
+      <assign location="entries" expr="AddEntry(entries, _event.data.id, _event.data.amount)"/>
+      <assign location="total" expr="TotalOf(entries)"/>
+      <assign location="last" expr="_event.data"/>
+      <if cond="AmountOf(_event.data) &gt; 100">
+        <assign location="large" expr="large + 1"/>
+      </if>
+    </transition>
+    <transition event="bump" type="internal">
+      <assign location="total" expr="Bump(total, 1)"/>
+    </transition>
+    <transition event="track" type="internal">
+      <sce:append target="ids" expr="last.id"/>
+      <assign location="idsum" expr="IdSum(ids)"/>
+    </transition>
+    <transition event="error.execution" type="internal">
+      <assign location="refusals" expr="refusals + 1"/>
+    </transition>
+  </state>
+</scxml>

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A total with one more line of `delta` counted in: a record in, a record out. The
+  statechart holds the answer in the variable it handed in, so the total it keeps
+  moves one step at a time without being summed again.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm"
+       name="ledger_bump"
+       version="1.0">
+  <sce:import kind="event-schema" src="schema_total.scxml" as="Total"/>
+  <sce:signature>
+    <sce:param name="total" type="record:Total"/>
+    <sce:param name="delta" type="int32"/>
+    <sce:return type="record:Total" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="next" type="record:Total">
+      <sce:set name="count" expr="total.count + 1"/>
+      <sce:set name="sum" expr="total.sum + delta"/>
+    </sce:var>
+    <sce:return expr="next"/>
+  </sce:body>
+</scxml>

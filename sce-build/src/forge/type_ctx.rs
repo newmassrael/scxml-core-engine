@@ -147,6 +147,51 @@ pub struct StaticCallee {
     /// Why a statechart does not take the list it returns whole, when it returns
     /// one and `list_return` is `None`: what a refusal of the assignment says.
     pub list_refusal: Option<String>,
+    /// The signature when the algorithm takes or returns a record or a list in a
+    /// way a statechart can call: each such slot is a variable of the
+    /// statechart's, named at the call (docs/SCE_ACCEPTED_SUBSET.md §2.15). Set
+    /// instead of `host_only`; the list of numbers a statechart already takes whole
+    /// (`list_return`) is not this.
+    pub value: Option<StaticValueSignature>,
+}
+
+/// One slot of an imported algorithm's signature, as a `sce-static` statechart
+/// hands it a value or takes one back (docs/SCE_ACCEPTED_SUBSET.md §2.15,
+/// "State an algorithm takes and gives back").
+///
+/// A record and a list of records are named by the alias the STATECHART imports
+/// their schema under, which is how its own variables are typed: the algorithm
+/// names the schema by an alias of its own, and the two are one type only where
+/// they come from the same document (SCE_FORGE.md §4.12).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StaticSlot {
+    /// A fixed-width number, a bool, a string or bytes.
+    Scalar(SceType),
+    /// `record:<alias>`.
+    Record(String),
+    /// `list<T>` of numbers or bools.
+    ScalarList(SceType),
+    /// `list<record:<alias>>`.
+    RecordList(String),
+}
+
+impl StaticSlot {
+    /// Whether the slot holds a value the statechart keeps in a variable of its own
+    /// (a record or a list) and so passes by the name of that variable.
+    pub fn is_state(&self) -> bool {
+        !matches!(self, Self::Scalar(_))
+    }
+}
+
+/// The signature of an imported algorithm that takes or returns a record or a
+/// list, as a `sce-static` statechart calls it: the slots in order, and for a
+/// list returned the most it may hold.
+#[derive(Debug, Clone)]
+pub struct StaticValueSignature {
+    pub params: Vec<StaticSlot>,
+    pub ret: Option<StaticSlot>,
+    /// `sce:returns-max-size`, when the algorithm returns a list.
+    pub max_size: Option<u32>,
 }
 
 /// A list an imported algorithm returns, as a `sce-static` statechart takes it
@@ -686,6 +731,129 @@ pub struct StaticScope {
     record_string_bounds: Vec<(String, usize)>,
     /// Every imported algorithm, callable as `Alias(args)`.
     pub callees: Vec<StaticCallee>,
+    /// Each name a call of an algorithm with state in a slot can take
+    /// ([`StateCallName`]), registered with the signature the call is judged by.
+    state_calls: Vec<StateCallName>,
+}
+
+/// How a state argument — a record or a list a statechart hands an algorithm — is held
+/// where the call is, which decides how the call spells it: `v` a variable of the
+/// machine, `p` the payload of the event the transition is on (`_event.data`), `i` the
+/// item of a `<foreach>` over records.
+pub const STATE_CODES: [char; 3] = ['v', 'p', 'i'];
+
+/// The names the arguments of a call of an algorithm with state in a slot take in the
+/// expression a lowering reads instead of the one the author wrote (docs/SCE_ACCEPTED_SUBSET.md
+/// §2.15). There are as many as a call has state arguments in one expression.
+pub const STATE_PLACEHOLDERS: [&str; 8] = [
+    "__st0", "__st1", "__st2", "__st3", "__st4", "__st5", "__st6", "__st7",
+];
+
+/// A call of an algorithm with state in a slot, by the name the rewritten expression
+/// gives it: the algorithm's alias and one code per state slot that says how its
+/// argument is held, so that each way an argument is held has the one adapter a
+/// target writes it (`AddEntry__v`, `AmountOf__p`).
+#[derive(Debug, Clone)]
+pub struct StateCallName {
+    pub name: String,
+    pub alias: String,
+    /// One code ([`STATE_CODES`]) per state parameter, in order.
+    pub codes: Vec<char>,
+}
+
+/// One state argument of a call, as the rewrite names it.
+#[derive(Debug, Clone)]
+pub struct StateArg {
+    /// The name the rewritten expression holds in its place ([`STATE_PLACEHOLDERS`]).
+    pub placeholder: String,
+    pub code: char,
+    /// What the author wrote: a variable's or a loop item's name, or `_event.data`.
+    pub written: String,
+    pub slot: StaticSlot,
+    /// The alias of the algorithm it is an argument of.
+    pub callee: String,
+}
+
+/// An expression with its state calls rewritten ([`StaticScope::rewrite_state_calls`]).
+#[derive(Debug, Clone, Default)]
+pub struct StateRewrite {
+    /// The expression a judge and a lowering read: each state argument replaced by its
+    /// placeholder and each such callee by its [`StateCallName`].
+    pub text: String,
+    pub args: Vec<StateArg>,
+    /// The [`StateCallName`]s the expression calls.
+    pub calls: Vec<String>,
+}
+
+/// A call of an algorithm with state in a slot that the statechart cannot make, and why.
+#[derive(Debug, Clone)]
+pub struct StateCallRefusal {
+    pub callee: String,
+    pub reason: String,
+}
+
+/// Where a state argument may come from besides a variable of the machine.
+pub struct StateContext<'a> {
+    /// The record items of the `<foreach>`es the expression is inside, each with the
+    /// alias of the schema it holds.
+    pub loop_records: &'a [(String, String)],
+    /// The alias of the schema the triggering event carries, if it carries one — what
+    /// `_event.data` is a record of.
+    pub payload_alias: Option<&'a str>,
+}
+
+/// The signature a call of `callee` is judged by when its slots are scalars, a record or
+/// a list: a state slot is typed `Unknown` (the argument is replaced by a placeholder
+/// before the call is judged, and was checked against the slot when it was), a scalar
+/// slot as the algorithm declares it, and the return as what the judge needs of it.
+fn value_func_sig(callee: &StaticCallee) -> Option<FuncSig> {
+    let value = callee.value.as_ref()?;
+    let params = value
+        .params
+        .iter()
+        .map(|slot| match slot {
+            StaticSlot::Scalar(t) => InferredType::from_sce_type(t),
+            _ => InferredType::Unknown,
+        })
+        .collect();
+    let ret = match value.ret.as_ref()? {
+        StaticSlot::Scalar(t) => InferredType::from_sce_type(t),
+        StaticSlot::Record(_) => InferredType::Unknown,
+        StaticSlot::ScalarList(t) => InferredType::List(crate::forge::types::ListElem::of(t)?),
+        StaticSlot::RecordList(_) => InferredType::List(crate::forge::types::ListElem::Record),
+    };
+    Some(FuncSig {
+        may_fail: callee.may_fail,
+        ..FuncSig::new(params, ret)
+    })
+}
+
+/// The name of a call of `alias` whose state arguments are held as `codes`.
+pub fn state_call_name(alias: &str, codes: &[char]) -> String {
+    format!("{alias}__{}", codes.iter().collect::<String>())
+}
+
+/// Every way the state parameters of `value` can be held: a record parameter by
+/// a variable, a payload or a loop's item, a list parameter by a variable.
+fn state_code_combinations(value: &StaticValueSignature) -> Vec<Vec<char>> {
+    let mut combos: Vec<Vec<char>> = vec![Vec::new()];
+    for slot in value.params.iter().filter(|s| s.is_state()) {
+        let options: &[char] = match slot {
+            StaticSlot::Record(_) => &STATE_CODES,
+            _ => &['v'],
+        };
+        combos = combos
+            .into_iter()
+            .flat_map(|prefix| {
+                options.iter().map(move |code| {
+                    let mut next = prefix.clone();
+                    next.push(*code);
+                    next
+                })
+            })
+            .collect();
+    }
+    combos
 }
 
 impl StaticScope {
@@ -703,12 +871,232 @@ impl StaticScope {
         let record_paths = static_record_paths(variables.iter(), &model.imported_records);
         let record_string_bounds =
             static_record_string_bounds(variables.iter(), &model.imported_records);
+        let callees = model.imported_algorithms.clone();
+        let state_calls = callees
+            .iter()
+            .filter_map(|callee| Some((callee, callee.value.as_ref()?)))
+            .filter(|(_, value)| value.params.iter().any(StaticSlot::is_state))
+            .flat_map(|(callee, value)| {
+                state_code_combinations(value)
+                    .into_iter()
+                    .map(move |codes| StateCallName {
+                        name: state_call_name(&callee.alias, &codes),
+                        alias: callee.alias.clone(),
+                        codes,
+                    })
+            })
+            .collect();
         Some(Self {
             variables,
             record_paths,
             record_string_bounds,
-            callees: model.imported_algorithms.clone(),
+            callees,
+            state_calls,
         })
+    }
+
+    /// The call `alias` names in this scope, when it is of an algorithm whose slots
+    /// are scalars, a record or a list.
+    pub fn value_callee(&self, alias: &str) -> Option<&StaticCallee> {
+        self.callees
+            .iter()
+            .find(|c| c.alias == alias && c.value.is_some())
+    }
+
+    /// The imported callee `expr` is, taken whole, a call of — when its slots are
+    /// scalars, a record or a list ([`StaticCallee::value`]).
+    pub fn whole_value_call(&self, expr: &str) -> Option<&StaticCallee> {
+        let (whole, _) = crate::forge::expr::called_names(expr).ok()?;
+        self.value_callee(&whole?)
+    }
+
+    /// Whether `callee` returns a record or a list: a value that is the right side of
+    /// an assignment to a variable of its type and nothing else.
+    pub fn returns_state(callee: &StaticCallee) -> bool {
+        callee.value.as_ref().is_some_and(|v| {
+            matches!(
+                v.ret,
+                Some(StaticSlot::Record(_) | StaticSlot::ScalarList(_) | StaticSlot::RecordList(_))
+            )
+        })
+    }
+
+    /// The alias of a callee that returns a record or a list when `expr` calls one
+    /// anywhere but as its whole: such a value is held by an assignment and read from
+    /// the variable, never an operand, an argument or a condition.
+    pub fn state_returning_call_used_as_value(&self, expr: &str) -> Option<String> {
+        let (_, others) = crate::forge::expr::called_names(expr).ok()?;
+        others
+            .into_iter()
+            .find(|name| self.value_callee(name).is_some_and(Self::returns_state))
+    }
+
+    /// The call of an algorithm with state in a slot that `name` ([`state_call_name`])
+    /// stands for.
+    pub fn state_call(&self, name: &str) -> Option<&StateCallName> {
+        self.state_calls.iter().find(|c| c.name == name)
+    }
+
+    /// How the argument `shape` of a call is held, when it is one the slot `slot` takes.
+    fn classify_state_arg(
+        &self,
+        slot: &StaticSlot,
+        shape: &crate::forge::expr::ArgShape,
+        context: &StateContext<'_>,
+    ) -> Result<char, String> {
+        use crate::forge::expr::ArgShape;
+        let variable = |name: &str| self.variables.iter().find(|v| v.id == name);
+        let list_of = |name: &str| {
+            variable(name)
+                .and_then(|v| v.value_type.as_ref())
+                .and_then(AlgorithmValueType::list_elem)
+        };
+        match (slot, shape) {
+            (StaticSlot::Record(alias), ArgShape::Name(name)) => {
+                if let Some(var) = variable(name) {
+                    return match var
+                        .value_type
+                        .as_ref()
+                        .and_then(AlgorithmValueType::record_alias)
+                    {
+                        Some(held) if held == alias => Ok('v'),
+                        Some(held) => Err(format!(
+                            "`{name}` is a record of `{held}`, and the algorithm takes a record \
+                             of `{alias}`"
+                        )),
+                        None => Err(format!("`{name}` is not a record variable")),
+                    };
+                }
+                match context.loop_records.iter().find(|(item, _)| item == name) {
+                    Some((_, held)) if held == alias => Ok('i'),
+                    Some((_, held)) => Err(format!(
+                        "`{name}` is a record of `{held}`, and the algorithm takes a record of \
+                         `{alias}`"
+                    )),
+                    None => Err(format!(
+                        "`{name}` is neither a record variable nor the item of a <foreach> over \
+                         records"
+                    )),
+                }
+            }
+            (StaticSlot::Record(alias), ArgShape::EventData) => match context.payload_alias {
+                Some(held) if held == alias => Ok('p'),
+                Some(held) => Err(format!(
+                    "the payload of the event is a record of `{held}`, and the algorithm takes a \
+                     record of `{alias}`"
+                )),
+                None => Err("the event this transition is on carries no schema, so \
+                             `_event.data` is no record"
+                    .to_string()),
+            },
+            (StaticSlot::ScalarList(elem), ArgShape::Name(name)) => match list_of(name) {
+                Some(ListElemType::Scalar(held)) if held == elem => Ok('v'),
+                Some(ListElemType::Scalar(held)) => Err(format!(
+                    "`{name}` is a list of {}, and the algorithm takes a list of {}",
+                    held.as_attr(),
+                    elem.as_attr()
+                )),
+                Some(ListElemType::Record { .. }) => Err(format!(
+                    "`{name}` is a list of records, not of {}",
+                    elem.as_attr()
+                )),
+                None => Err(format!("`{name}` is not a list variable")),
+            },
+            (StaticSlot::RecordList(alias), ArgShape::Name(name)) => match list_of(name) {
+                Some(ListElemType::Record { alias: held }) if held == alias => Ok('v'),
+                Some(ListElemType::Record { alias: held }) => Err(format!(
+                    "`{name}` is a list of `{held}`, and the algorithm takes a list of `{alias}`"
+                )),
+                Some(ListElemType::Scalar(_)) => {
+                    Err(format!("`{name}` is a list of numbers, not of records"))
+                }
+                None => Err(format!("`{name}` is not a list variable")),
+            },
+            _ => Err(
+                "a record or a list is handed over by the name of the variable that holds \
+                      it, or `_event.data` for the payload of the event, and not by an \
+                      expression that computes one"
+                    .to_string(),
+            ),
+        }
+    }
+
+    /// `expr` with each call of an algorithm that takes a record or a list rewritten
+    /// into the call the judge and the lowering read: the argument in a state slot is
+    /// replaced by a placeholder ([`STATE_PLACEHOLDERS`]), checked to be the name of a
+    /// variable of the right type, and the callee takes the name that says how the
+    /// argument is held ([`state_call_name`]). An expression that calls no such
+    /// algorithm is returned as it is.
+    pub fn rewrite_state_calls(
+        &self,
+        expr: &str,
+        context: &StateContext<'_>,
+    ) -> Result<StateRewrite, StateCallRefusal> {
+        let wanted = |name: &str| {
+            self.value_callee(name)
+                .and_then(|c| c.value.as_ref())
+                .is_some_and(|v| v.params.iter().any(StaticSlot::is_state))
+        };
+        // A parse error is the judge's to report, in its own words.
+        let Ok(sites) = crate::forge::expr::call_sites(expr, &wanted) else {
+            return Ok(StateRewrite {
+                text: expr.to_string(),
+                ..StateRewrite::default()
+            });
+        };
+        let mut rewrite = StateRewrite::default();
+        let mut edits: Vec<(std::ops::Range<usize>, String)> = Vec::new();
+        for site in sites {
+            let callee = self
+                .value_callee(&site.callee)
+                .and_then(|c| c.value.as_ref())
+                .expect("call_sites answers a callee `wanted` accepted");
+            let refuse = |reason: String| StateCallRefusal {
+                callee: site.callee.clone(),
+                reason,
+            };
+            if site.args.len() != callee.params.len() {
+                return Err(refuse(format!(
+                    "it takes {} arguments, and the call gives {}",
+                    callee.params.len(),
+                    site.args.len()
+                )));
+            }
+            let mut codes = Vec::new();
+            for (slot, arg) in callee.params.iter().zip(&site.args) {
+                if !slot.is_state() {
+                    continue;
+                }
+                let code = self
+                    .classify_state_arg(slot, &arg.shape, context)
+                    .map_err(refuse)?;
+                let Some(placeholder) = STATE_PLACEHOLDERS.get(rewrite.args.len()) else {
+                    return Err(refuse(format!(
+                        "an expression hands at most {} records or lists to algorithms",
+                        STATE_PLACEHOLDERS.len()
+                    )));
+                };
+                edits.push((arg.span.clone(), (*placeholder).to_string()));
+                rewrite.args.push(StateArg {
+                    placeholder: (*placeholder).to_string(),
+                    code,
+                    written: expr[arg.span.clone()].trim().to_string(),
+                    slot: slot.clone(),
+                    callee: site.callee.clone(),
+                });
+                codes.push(code);
+            }
+            let name = state_call_name(&site.callee, &codes);
+            edits.push((site.callee_span.clone(), name.clone()));
+            rewrite.calls.push(name);
+        }
+        edits.sort_by_key(|edit| std::cmp::Reverse(edit.0.start));
+        let mut text = expr.to_string();
+        for (span, replacement) in edits {
+            text.replace_range(span, &replacement);
+        }
+        rewrite.text = text;
+        Ok(rewrite)
     }
 
     /// The `(variable, field)` of each string field of a record variable: the
@@ -816,7 +1204,36 @@ impl StaticScope {
         for (path, bound) in &self.record_string_bounds {
             ctx.insert_string_capacity(path.as_str(), *bound);
         }
+        // The names a record or a list handed to an algorithm takes in the expression
+        // read instead of the author's ([`Self::rewrite_state_calls`]): the placeholders,
+        // which stand for a value of the machine the call is lowered with, and each way
+        // of calling an algorithm that takes one.
+        for placeholder in STATE_PLACEHOLDERS {
+            ctx.insert_var(placeholder, InferredType::Unknown);
+        }
+        for call in &self.state_calls {
+            if let Some(sig) = self
+                .callees
+                .iter()
+                .find(|c| c.alias == call.alias)
+                .and_then(value_func_sig)
+            {
+                ctx.insert_func(call.name.as_str(), sig);
+            }
+        }
         for callee in &self.callees {
+            // An algorithm that takes no record or list but returns one is called by
+            // its own alias, and the whole of the call is the right side of an
+            // assignment.
+            if callee
+                .value
+                .as_ref()
+                .is_some_and(|v| !v.params.iter().any(StaticSlot::is_state))
+            {
+                if let Some(sig) = value_func_sig(callee) {
+                    ctx.insert_func(callee.alias.as_str(), sig);
+                }
+            }
             if let Some(sig) = imported_callee_sig(
                 &callee.params,
                 callee.ret.as_ref(),

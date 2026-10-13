@@ -28,7 +28,10 @@ use crate::forge::expr::{
 };
 use crate::forge::model::{EnumModel, EventSchemaModel, SceType};
 use crate::forge::static_datamodel::indexed_element;
-use crate::forge::type_ctx::{StaticEnum, StaticScope};
+use crate::forge::type_ctx::{
+    StateArg, StateCallRefusal, StateContext, StateRewrite, StaticCallee, StaticEnum, StaticScope,
+    StaticSlot,
+};
 use crate::forge::types::InferredType;
 use crate::generator::Language;
 use crate::model::{Action, SCXMLModel};
@@ -90,6 +93,11 @@ pub struct StaticLowering {
     /// event-schema a `record:<alias>` variable names, declared in the
     /// machine's own file the way its event payload types are.
     pub type_defs: Vec<String>,
+    /// One adapter for each way a call of an imported algorithm that takes or
+    /// returns a record or a list is made (docs/SCE_ACCEPTED_SUBSET.md §2.15), declared
+    /// after the machine's payload types, which an adapter that takes an event's
+    /// payload names.
+    pub adapter_defs: Vec<String>,
     /// The annotations the machine's file begins with, before its package, for
     /// what it uses of the code it calls — Kotlin's opt-in to the unsigned arrays
     /// an algorithm's list is returned in.
@@ -285,6 +293,52 @@ fn generated_callee(lang: Language, document_name: &str, go_module_prefix: Optio
     }
 }
 
+/// The schema the record `alias` of `spec` is of, when every field of it is a number or
+/// a truth value: the records a call hands an algorithm and takes back are of those,
+/// whose copy is the same on every backend. One with a string, a byte string or an enum
+/// field is refused where the algorithm is imported ([`crate::forge::static_imports`]).
+fn plain_schema<'a>(spec: &AdapterSpec<'a>, alias: &str) -> Option<&'a EventSchemaModel> {
+    spec.schemas
+        .get(alias)
+        .filter(|schema| schema.fields.iter().all(|f| plain_scalar(&f.sce_type)))
+}
+
+/// Whether `ty` is a number or a truth value (see [`plain_schema`]).
+pub(crate) fn plain_scalar(ty: &SceType) -> bool {
+    !matches!(ty, SceType::Enum(_) | SceType::String | SceType::Bytes)
+}
+
+/// One parameter of an adapter: a number the call hands the algorithm as it is, or the
+/// record or list the machine holds, as the machine spells it.
+pub enum AdapterParam<'a> {
+    Scalar(&'a SceType),
+    /// A state argument, held as `code` ([`crate::forge::type_ctx::STATE_CODES`]).
+    State {
+        slot: &'a StaticSlot,
+        code: char,
+    },
+}
+
+/// What a target needs to write the adapter of a call of an algorithm that takes or
+/// returns a record or a list.
+pub struct AdapterSpec<'a> {
+    /// The name the adapter is declared and called by ([`StaticTarget::state_adapter_name`]).
+    pub name: String,
+    pub machine: &'a str,
+    /// The algorithm's function, as the target calls it ([`Callee::call`]).
+    pub call: String,
+    pub callee: &'a StaticCallee,
+    pub params: Vec<AdapterParam<'a>>,
+    /// Every schema the document imports, by the alias it imports it under.
+    pub schemas: &'a std::collections::BTreeMap<String, EventSchemaModel>,
+    /// The alias of the schema of the event each payload is held as: the payload
+    /// struct of an argument held as `p` is that event's.
+    pub payload_events: &'a std::collections::BTreeMap<String, String>,
+    /// The largest bound any list of records of the schema `alias` has in the
+    /// machine, for a target that copies such a list into a buffer of a bound.
+    pub record_list_bounds: &'a std::collections::BTreeMap<String, u32>,
+}
+
 /// How one backend spells what a `sce-static` document says. The walk
 /// ([`lower`]) asks; the answer is the only thing that differs by backend.
 pub trait StaticTarget {
@@ -307,6 +361,53 @@ pub trait StaticTarget {
     /// algorithms yet, which refuses a document that calls one rather than
     /// leaving the name undefined.
     fn callee(&self, document_name: &str) -> Option<Callee>;
+    /// Whether this target lowers a call of an imported algorithm that takes or
+    /// returns a record or a list (docs/SCE_ACCEPTED_SUBSET.md §2.15, "State an
+    /// algorithm takes and gives back"). A target that does not refuses the
+    /// document that makes one, by name, rather than leave the call undefined.
+    fn lowers_state_calls(&self) -> bool {
+        false
+    }
+    /// How the state argument `arg` is handed to the adapter of its call, given
+    /// `held`: how this target spells the variable, payload or loop item that
+    /// holds it — the field a variable renames to, the payload accessor, the
+    /// loop's item.
+    fn state_argument(&self, _machine: &str, _arg: &StateArg, _held: &str) -> String {
+        unreachable!("asked of a target that lowers_state_calls() refused")
+    }
+    /// What an adapter gave back as a list — `value`, its failure already passed on —
+    /// as the list variable of `capacity` elements holds it, or the capacity failure
+    /// recorded where every checked operation records one ([`Self::list_within`], for a
+    /// list that is already the machine's own kind).
+    fn state_list_within(&self, _adapter: &str, _value: &str, _capacity: u32) -> String {
+        unreachable!("asked of a target that lowers_state_calls() refused")
+    }
+    /// Whether a call is made through an adapter this target declares
+    /// ([`Self::state_adapter`]). A target whose records and lists are already the
+    /// algorithm's (the Interpreter's ecmascript: plain objects and arrays) calls the
+    /// algorithm itself and declares none.
+    fn has_state_adapters(&self) -> bool {
+        true
+    }
+    /// The name the call named `coded` ([`state_call_name`]) of `callee` is called
+    /// by: its adapter's, declared with it, or the algorithm's own where the target
+    /// has no adapters.
+    fn state_adapter_name(&self, _callee: &StaticCallee, coded: &str) -> String {
+        coded.to_string()
+    }
+    /// The declaration of the adapter of one call: a function that takes the
+    /// machine's own values — its variables, its event payload — and the call's
+    /// scalars, converts what the algorithm's types differ in, calls it, and gives
+    /// the machine's own value back. `None` for a target with no such lowering.
+    fn state_adapter(&self, _spec: &AdapterSpec<'_>) -> Option<String> {
+        None
+    }
+    /// The line that brings the generated unit of the event-schema document
+    /// `schema_name` into scope, which an adapter names the algorithm's record type
+    /// through; empty for a target that needs none.
+    fn schema_import(&self, _schema_name: &str) -> Option<String> {
+        None
+    }
     /// The first construct of `model` this target has no lowering for yet,
     /// described for a refusal — or `None` when it lowers the whole document.
     /// Asked before the walk, so a target whose spellings for a construct are
@@ -688,7 +789,7 @@ pub trait StaticTarget {
     /// being [`Self::list_within`] of what an imported algorithm returns. The
     /// assignment by default, which is right where that is the list variable's own
     /// kind of value.
-    fn assign_list(&self, target: &str, value: &str, _elem: &SceType) -> String {
+    fn assign_list(&self, target: &str, value: &str) -> String {
         self.assign(target, value)
     }
     /// What an imported algorithm returned as a list — `value`, its failure
@@ -992,6 +1093,155 @@ impl StaticTarget for KotlinTarget {
     }
     fn callee(&self, document_name: &str) -> Option<Callee> {
         Some(generated_callee(Language::Kotlin, document_name, None))
+    }
+    fn lowers_state_calls(&self) -> bool {
+        true
+    }
+    fn state_argument(&self, _machine: &str, _arg: &StateArg, held: &str) -> String {
+        held.to_string()
+    }
+    fn state_adapter_name(&self, _callee: &StaticCallee, coded: &str) -> String {
+        format!("call_{coded}")
+    }
+    fn state_list_within(&self, _adapter: &str, value: &str, capacity: u32) -> String {
+        format!("com.sce.forge.runtime.SceChecked.within({value}, {capacity})")
+    }
+    fn schema_import(&self, schema_name: &str) -> Option<String> {
+        Some(
+            crate::forge::generator::forge_import_identity(
+                schema_name,
+                &Language::Kotlin,
+                false,
+                &crate::ForgeCompileOptions::default(),
+            )
+            .include_stmt,
+        )
+    }
+    // A function of the machine's file that takes the machine's values, builds the
+    // algorithm's from them, calls it, and builds the machine's own from what it
+    // returns, answering as the algorithm does: an `AlgorithmResult` where it may
+    // fail, which the expression the machine lowers takes the value of.
+    fn state_adapter(&self, spec: &AdapterSpec<'_>) -> Option<String> {
+        use crate::forge::generator::{
+            event_schema_field_ident, event_schema_payload_type, kotlin_array_type,
+        };
+        let value = spec.callee.value.as_ref()?;
+        let machine_record = |alias: &str| self.record_type(spec.machine, alias);
+        let algorithm_record = |alias: &str| {
+            plain_schema(spec, alias)
+                .map(|schema| event_schema_payload_type(&schema.name, Language::Kotlin))
+        };
+        // The algorithm's record built from `from`, a machine record or a payload.
+        let to_algorithm = |alias: &str, from: &str| -> Option<String> {
+            let schema = plain_schema(spec, alias)?;
+            let fields: Vec<String> = schema
+                .fields
+                .iter()
+                .map(|f| {
+                    let field = event_schema_field_ident(&f.id, Language::Kotlin);
+                    format!("{field} = {from}.{field}")
+                })
+                .collect();
+            Some(format!(
+                "{}({})",
+                algorithm_record(alias)?,
+                fields.join(", ")
+            ))
+        };
+        let from_algorithm = |alias: &str, from: &str| -> Option<String> {
+            let schema = plain_schema(spec, alias)?;
+            let fields: Vec<String> = schema
+                .fields
+                .iter()
+                .map(|f| {
+                    let field = event_schema_field_ident(&f.id, Language::Kotlin);
+                    format!("{field} = {from}.{field}")
+                })
+                .collect();
+            Some(format!("{}({})", machine_record(alias), fields.join(", ")))
+        };
+        let mut declarations = Vec::new();
+        let mut arguments = Vec::new();
+        for (index, param) in spec.params.iter().enumerate() {
+            let name = format!("p{index}");
+            match param {
+                AdapterParam::Scalar(ty) => {
+                    if !plain_scalar(ty) {
+                        return None;
+                    }
+                    declarations.push(format!("{name}: {}", self.scalar_type(ty)));
+                    arguments.push(name);
+                }
+                AdapterParam::State {
+                    slot: StaticSlot::Record(alias),
+                    code,
+                } => {
+                    let held = if *code == 'p' {
+                        let event = spec.payload_events.get(alias)?;
+                        format!(
+                            "{}{}Payload",
+                            spec.machine,
+                            filters::to_event_variant(event.to_string())
+                        )
+                    } else {
+                        machine_record(alias)
+                    };
+                    declarations.push(format!("{name}: {held}"));
+                    arguments.push(to_algorithm(alias, &name)?);
+                }
+                AdapterParam::State {
+                    slot: StaticSlot::ScalarList(ty),
+                    ..
+                } if plain_scalar(ty) => {
+                    declarations.push(format!("{name}: {}", self.list_type(ty)));
+                    arguments.push(format!("{name}.to{}()", kotlin_array_type(ty)));
+                }
+                AdapterParam::State {
+                    slot: StaticSlot::RecordList(alias),
+                    ..
+                } => {
+                    declarations.push(format!(
+                        "{name}: {}",
+                        self.record_list_type(&machine_record(alias))
+                    ));
+                    arguments.push(format!("{name}.map {{ {} }}", to_algorithm(alias, "it")?));
+                }
+                _ => return None,
+            }
+        }
+        let converted = |from: &str| -> Option<(String, String)> {
+            Some(match value.ret.as_ref()? {
+                StaticSlot::Scalar(ty) if plain_scalar(ty) => {
+                    (self.scalar_type(ty), from.to_string())
+                }
+                StaticSlot::Record(alias) => (machine_record(alias), from_algorithm(alias, from)?),
+                StaticSlot::ScalarList(ty) if plain_scalar(ty) => {
+                    (self.list_type(ty), format!("{from}.toList()"))
+                }
+                StaticSlot::RecordList(alias) => (
+                    self.record_list_type(&machine_record(alias)),
+                    format!("{from}.map {{ {} }}", from_algorithm(alias, "it")?),
+                ),
+                _ => return None,
+            })
+        };
+        let call = format!("{}({})", spec.call, arguments.join(", "));
+        let (returned_type, _) = converted("r")?;
+        Some(if spec.callee.may_fail {
+            let (_, from_ok) = converted("r.value")?;
+            format!(
+                "private fun {}({}): com.sce.forge.runtime.AlgorithmResult<{returned_type}> =\n    when (val r = {call}) {{\n        is com.sce.forge.runtime.AlgorithmResult.Ok -> com.sce.forge.runtime.AlgorithmResult.Ok({from_ok})\n        is com.sce.forge.runtime.AlgorithmResult.Failed -> r\n    }}",
+                spec.name,
+                declarations.join(", ")
+            )
+        } else {
+            let (_, from_value) = converted("r")?;
+            format!(
+                "private fun {}({}): {returned_type} {{\n    val r = {call}\n    return {from_value}\n}}",
+                spec.name,
+                declarations.join(", ")
+            )
+        })
     }
     fn expr_target(&self) -> ExprTarget {
         ExprTarget::Kotlin
@@ -1394,6 +1644,183 @@ impl StaticTarget for RustTarget {
     }
     fn callee(&self, document_name: &str) -> Option<Callee> {
         Some(generated_callee(Language::Rust, document_name, None))
+    }
+    fn lowers_state_calls(&self) -> bool {
+        true
+    }
+    // Lent to the adapter, which converts what the algorithm's types differ in and
+    // gives nothing back of it.
+    fn state_argument(&self, _machine: &str, _arg: &StateArg, held: &str) -> String {
+        format!("&{held}")
+    }
+    fn state_adapter_name(&self, _callee: &StaticCallee, coded: &str) -> String {
+        format!("call_{coded}")
+    }
+    fn state_list_within(&self, _adapter: &str, value: &str, capacity: u32) -> String {
+        format!("sce_forge_runtime::algorithm::within(({value}).as_slice(), {capacity})?.to_vec()")
+    }
+    // The line a forge kind importing the schema writes, which is where the
+    // algorithm's own generation put the record type the adapter names.
+    fn schema_import(&self, schema_name: &str) -> Option<String> {
+        let identity = crate::forge::generator::forge_import_identity(
+            schema_name,
+            &Language::Rust,
+            false,
+            &crate::ForgeCompileOptions::default(),
+        );
+        Some(identity.include_stmt)
+    }
+    // A function of the machine's file that takes the values the machine holds —
+    // a variable by reference, the event's payload by reference — and the call's
+    // numbers, builds the algorithm's records from them field by field, calls it,
+    // and builds the machine's own value from what it returns. The records and
+    // lists are plain data and the conversion is a copy; nothing is shared with the
+    // algorithm, so what it does cannot reach the machine's state except through
+    // what it returns, and a variable is replaced only when the call succeeded.
+    fn state_adapter(&self, spec: &AdapterSpec<'_>) -> Option<String> {
+        use crate::forge::generator::{event_schema_field_ident, event_schema_payload_type};
+        let value = spec.callee.value.as_ref()?;
+        let plain = |alias: &str| plain_schema(spec, alias);
+        let scalar_ok = plain_scalar;
+        let machine_record = |alias: &str| self.record_type(spec.machine, alias);
+        // The algorithm's record built from the machine's (or the payload's) value
+        // `from`, field by field. A payload is the schema's own struct, so its fields
+        // are named as the algorithm's are; a record the machine declares names them
+        // as the machine does.
+        let to_algorithm = |alias: &str, from: &str, payload: bool| -> Option<String> {
+            let schema = plain(alias)?;
+            let fields: Vec<String> = schema
+                .fields
+                .iter()
+                .map(|f| {
+                    let field = event_schema_field_ident(&f.id, Language::Rust);
+                    let held = if payload {
+                        field.clone()
+                    } else {
+                        self.record_field(&f.id)
+                    };
+                    format!("{field}: {from}.{held}")
+                })
+                .collect();
+            Some(format!(
+                "{} {{ {} }}",
+                event_schema_payload_type(&schema.name, Language::Rust),
+                fields.join(", ")
+            ))
+        };
+        // The machine's record built from what the algorithm returned, `from`.
+        let from_algorithm = |alias: &str, from: &str| -> Option<String> {
+            let schema = plain(alias)?;
+            let fields: Vec<String> = schema
+                .fields
+                .iter()
+                .map(|f| {
+                    format!(
+                        "{}: {from}.{}",
+                        self.record_field(&f.id),
+                        event_schema_field_ident(&f.id, Language::Rust)
+                    )
+                })
+                .collect();
+            Some(format!(
+                "{} {{ {} }}",
+                machine_record(alias),
+                fields.join(", ")
+            ))
+        };
+        let algorithm_record = |alias: &str| {
+            plain(alias).map(|schema| event_schema_payload_type(&schema.name, Language::Rust))
+        };
+        let mut declarations = Vec::new();
+        let mut prelude = Vec::new();
+        let mut arguments = Vec::new();
+        for (index, param) in spec.params.iter().enumerate() {
+            let name = format!("p{index}");
+            match param {
+                AdapterParam::Scalar(ty) => {
+                    if !scalar_ok(ty) {
+                        return None;
+                    }
+                    declarations.push(format!("{name}: {}", self.scalar_type(ty)));
+                    arguments.push(name);
+                }
+                AdapterParam::State {
+                    slot: StaticSlot::Record(alias),
+                    code,
+                } => {
+                    let held = if *code == 'p' {
+                        let event = spec.payload_events.get(alias)?;
+                        format!(
+                            "{}{}Payload",
+                            spec.machine,
+                            filters::to_event_variant(event.to_string())
+                        )
+                    } else {
+                        machine_record(alias)
+                    };
+                    declarations.push(format!("{name}: &{held}"));
+                    arguments.push(to_algorithm(alias, &name, *code == 'p')?);
+                }
+                AdapterParam::State {
+                    slot: StaticSlot::ScalarList(ty),
+                    ..
+                } => {
+                    if !scalar_ok(ty) {
+                        return None;
+                    }
+                    declarations.push(format!("{name}: &[{}]", self.scalar_type(ty)));
+                    arguments.push(name);
+                }
+                AdapterParam::State {
+                    slot: StaticSlot::RecordList(alias),
+                    ..
+                } => {
+                    declarations.push(format!("{name}: &[{}]", machine_record(alias)));
+                    prelude.push(format!(
+                        "    let {name}_algorithm: Vec<{}> = {name}.iter().map(|r| {}).collect();\n",
+                        algorithm_record(alias)?,
+                        to_algorithm(alias, "r", false)?
+                    ));
+                    arguments.push(format!("&{name}_algorithm"));
+                }
+                AdapterParam::State {
+                    slot: StaticSlot::Scalar(_),
+                    ..
+                } => return None,
+            }
+        }
+        let (returned_type, converted) = match value.ret.as_ref()? {
+            StaticSlot::Scalar(ty) if scalar_ok(ty) => (self.scalar_type(ty), "r".to_string()),
+            StaticSlot::Scalar(_) => return None,
+            StaticSlot::Record(alias) => (machine_record(alias), from_algorithm(alias, "r")?),
+            StaticSlot::ScalarList(ty) if scalar_ok(ty) => (
+                format!("Vec<{}>", self.scalar_type(ty)),
+                "r.to_vec()".to_string(),
+            ),
+            StaticSlot::ScalarList(_) => return None,
+            StaticSlot::RecordList(alias) => (
+                format!("Vec<{}>", machine_record(alias)),
+                format!(
+                    "r.iter().map(|r| {}).collect::<Vec<_>>()",
+                    from_algorithm(alias, "r")?
+                ),
+            ),
+        };
+        let call = format!("{}({})", spec.call, arguments.join(", "));
+        let prelude: String = prelude.concat();
+        Some(if spec.callee.may_fail {
+            format!(
+                "#[allow(non_snake_case)]\nfn {}({}) -> Result<{returned_type}, sce_forge_runtime::algorithm::AlgorithmError> {{\n{prelude}    let r = {call}?;\n    Ok({converted})\n}}",
+                spec.name,
+                declarations.join(", ")
+            )
+        } else {
+            format!(
+                "#[allow(non_snake_case)]\nfn {}({}) -> {returned_type} {{\n{prelude}    let r = {call};\n    {converted}\n}}",
+                spec.name,
+                declarations.join(", ")
+            )
+        })
     }
     fn expr_target(&self) -> ExprTarget {
         ExprTarget::Rust
@@ -1960,6 +2387,18 @@ pub fn lower(
             "{construct} has no {lang} lowering yet"
         )));
     }
+    // A call that hands an algorithm a record or a list, or takes one back, needs
+    // the target's adapter for it; a target without one refuses the document by
+    // name instead of leaving the call undefined where the machine runs.
+    if !target.lowers_state_calls() {
+        if let Some(callee) = scope.callees.iter().find(|c| c.value.is_some()) {
+            return Err(GenerateError::unsupported(format!(
+                "`{}(…)`: an imported algorithm that takes or returns a record or a list has \
+                 no {lang} lowering yet",
+                callee.alias
+            )));
+        }
+    }
     let names = names(&scope, target);
     let imports: Vec<String> = scope
         .callees
@@ -2022,6 +2461,9 @@ pub fn lower(
         machine,
         raises_error: model.events.contains("error.execution"),
         target,
+        scope: &scope,
+        payload_schema: Default::default(),
+        state_calls: Default::default(),
         sites: Default::default(),
         elements: Default::default(),
         next_if_ordinal: std::cell::Cell::new(max_if_ordinal(model) + 1),
@@ -2397,14 +2839,9 @@ pub fn lower(
                 && !transition.is_cpp_condition
                 && !transition.is_kt_condition
             {
-                let cond = transpile_into_receiving(
-                    &transition.cond,
-                    target.expr_target(),
-                    &ctx,
-                    &renames,
-                    InferredType::Bool,
-                )
-                .map_err(|r| refused("the condition", &transition.cond, r))?;
+                let cond = rewrites
+                    .receiving(&transition.cond, &ctx, &renames, InferredType::Bool)
+                    .map_err(|r| refused("the condition", &transition.cond, r))?;
                 rewrites.note(
                     &transition.cond,
                     transition.cond_spelling.as_ref(),
@@ -2518,15 +2955,101 @@ pub fn lower(
     // A machine that takes a list an algorithm returns holds, in the code that
     // calls it, the type the algorithm returns it in, which a target may have to
     // be told it may use.
-    let file_annotations = if scope.callees.iter().any(|c| c.list_return.is_some()) {
+    let file_annotations = if scope.callees.iter().any(|c| {
+        c.list_return.is_some()
+            || c.value.as_ref().is_some_and(|v| {
+                v.params
+                    .iter()
+                    .chain(v.ret.iter())
+                    .any(|slot| matches!(slot, StaticSlot::ScalarList(_)))
+            })
+    }) {
         target.file_annotation_for_list_call().into_iter().collect()
     } else {
         Vec::new()
     };
+    // One adapter for each way a call of an algorithm that takes or returns a record
+    // or a list was made (docs/SCE_ACCEPTED_SUBSET.md §2.15), and the unit of each
+    // schema it names a record of.
+    let type_defs = declarations.type_defs;
+    let mut adapter_defs = Vec::new();
+    let mut imports: BTreeSet<String> = imports.into_iter().collect();
+    let payload_events_by_alias: std::collections::BTreeMap<String, String> = records
+        .iter()
+        .map(|(alias, schema)| (alias.clone(), schema.event_name.clone()))
+        .collect();
+    let mut record_list_bounds: std::collections::BTreeMap<String, u32> = Default::default();
+    for (elem, capacity) in rewrites.lists.values() {
+        if let crate::forge::model::ListElemType::Record { alias } = elem {
+            let bound = record_list_bounds.entry(alias.clone()).or_default();
+            *bound = (*bound).max(*capacity);
+        }
+    }
+    let adapted: Vec<String> = if target.has_state_adapters() {
+        rewrites.state_calls.borrow().iter().cloned().collect()
+    } else {
+        Vec::new()
+    };
+    for coded in &adapted {
+        let call = scope
+            .state_call(coded)
+            .expect("a rewrite names a call the scope registered");
+        let callee = scope
+            .value_callee(&call.alias)
+            .expect("a state call is of a callee with a value signature");
+        let value = callee
+            .value
+            .as_ref()
+            .expect("value_callee answers a callee with a value signature");
+        let mut codes = call.codes.iter();
+        let params = value
+            .params
+            .iter()
+            .map(|slot| match slot {
+                StaticSlot::Scalar(ty) => AdapterParam::Scalar(ty),
+                state => AdapterParam::State {
+                    slot: state,
+                    code: *codes.next().expect("one code per state slot"),
+                },
+            })
+            .collect();
+        let spec = AdapterSpec {
+            name: target.state_adapter_name(callee, coded),
+            machine,
+            call: target
+                .callee(&callee.document_name)
+                .expect("checked when the callees were read")
+                .call,
+            callee,
+            params,
+            schemas: &records,
+            payload_events: &payload_events_by_alias,
+            record_list_bounds: &record_list_bounds,
+        };
+        adapter_defs.push(target.state_adapter(&spec).ok_or_else(|| {
+            GenerateError::unsupported(format!(
+                "`{}(…)`: an imported algorithm that takes or returns a record or a list has \
+                 no {lang} lowering yet",
+                callee.alias
+            ))
+        })?);
+        for slot in value.params.iter().chain(value.ret.iter()) {
+            if let StaticSlot::Record(alias) | StaticSlot::RecordList(alias) = slot {
+                if let Some(line) = records
+                    .get(alias)
+                    .and_then(|schema| target.schema_import(&schema.name))
+                {
+                    imports.insert(line);
+                }
+            }
+        }
+    }
+    let imports: Vec<String> = imports.into_iter().collect();
     Ok(StaticLowering {
         fields,
         payload_events,
-        type_defs: declarations.type_defs,
+        type_defs,
+        adapter_defs,
         file_annotations,
         imports,
         records: declarations.records,
@@ -3006,6 +3529,15 @@ struct Rewrites<'m> {
     machine: &'m str,
     raises_error: bool,
     target: &'m dyn StaticTarget,
+    /// The document's scope, which rewrites a call that hands an algorithm a record
+    /// or a list ([`StaticScope::rewrite_state_calls`]).
+    scope: &'m StaticScope,
+    /// The schema of the payload of the transition the walk is in
+    /// ([`Self::open_payload`]), which `_event.data` is a record of.
+    payload_schema: std::cell::RefCell<Option<EventSchemaModel>>,
+    /// The names ([`crate::forge::type_ctx::state_call_name`]) of the calls of an
+    /// algorithm with state in a slot the walk has lowered: the adapters to declare.
+    state_calls: std::cell::RefCell<BTreeSet<String>>,
     /// What the walk has lowered so far ([`StaticLowering::sites`]). Written
     /// through a shared reference because the walk reads `Rewrites` from
     /// closures.
@@ -3043,6 +3575,126 @@ impl Rewrites<'_> {
             .unwrap_or_default();
         *self.payload_fields.borrow_mut() =
             schema.map(|schema| schema.fields.iter().map(|f| f.id.clone()).collect());
+        *self.payload_schema.borrow_mut() = schema.cloned();
+    }
+
+    /// The adapter ([`StaticTarget::state_adapter_name`]) of the call `expr` is, taken
+    /// whole, when it is one of an algorithm that takes or returns a record or a
+    /// list; and what it gives back.
+    fn whole_state_call(&self, expr: &str) -> Option<(String, &StaticSlot)> {
+        let callee = self.scope.whole_value_call(expr)?;
+        let ret = callee.value.as_ref()?.ret.as_ref()?;
+        let rewrite = self.rewrite_state_calls(expr).ok()?;
+        let coded = rewrite.calls.first()?;
+        Some((self.target.state_adapter_name(callee, coded), ret))
+    }
+
+    /// The calls of `text` that hand an algorithm a record or a list, found in the
+    /// scope of the transition the walk is in ([`StaticScope::rewrite_state_calls`]).
+    fn rewrite_state_calls(&self, text: &str) -> Result<StateRewrite, StateCallRefusal> {
+        let loops = self.loop_records.borrow().clone();
+        let payload = self.payload_schema.borrow().clone();
+        let payload_alias = payload.as_ref().and_then(|schema| {
+            self.schemas
+                .iter()
+                .find(|(_, held)| held.name == schema.name)
+                .map(|(alias, _)| alias.as_str())
+        });
+        self.scope.rewrite_state_calls(
+            text,
+            &StateContext {
+                loop_records: &loops,
+                payload_alias,
+            },
+        )
+    }
+
+    /// `text` lowered by `lower`, with each call of an algorithm that takes a record
+    /// or a list rewritten first: the argument in a state slot becomes a placeholder
+    /// that renames to the value the target hands the call's adapter, and the callee
+    /// becomes the adapter. An expression with no such call is lowered as it stands.
+    fn with_state_calls<T>(
+        &self,
+        text: &str,
+        renames: &HashMap<&str, &str>,
+        lower: impl FnOnce(&str, &HashMap<&str, &str>) -> Result<T, Refusal>,
+    ) -> Result<T, Refusal> {
+        let rewrite = self.rewrite_state_calls(text).map_err(|refusal| {
+            crate::forge::error::ExprError::UnsupportedConstruct {
+                construct: format!("a call of `{}`: {}", refusal.callee, refusal.reason),
+                observed: Some(refusal.callee),
+            }
+            .at(None)
+        })?;
+        if rewrite.calls.is_empty() {
+            return lower(text, renames);
+        }
+        let held: Vec<String> = rewrite
+            .args
+            .iter()
+            .map(|arg| {
+                let key = if arg.code == 'p' {
+                    crate::forge::event_schema_check::EVENT_DATA_PATH
+                } else {
+                    arg.written.as_str()
+                };
+                let held = renames.get(key).copied().unwrap_or(key);
+                self.target.state_argument(self.machine, arg, held)
+            })
+            .collect();
+        let adapters: Vec<String> = rewrite
+            .calls
+            .iter()
+            .map(|coded| {
+                let callee = self
+                    .scope
+                    .state_call(coded)
+                    .and_then(|call| self.scope.value_callee(&call.alias))
+                    .expect("a rewrite names a call of a callee with a value signature");
+                self.target.state_adapter_name(callee, coded)
+            })
+            .collect();
+        let mut local = renames.clone();
+        for (arg, text) in rewrite.args.iter().zip(&held) {
+            local.insert(arg.placeholder.as_str(), text.as_str());
+        }
+        for (coded, adapter) in rewrite.calls.iter().zip(&adapters) {
+            local.insert(coded.as_str(), adapter.as_str());
+        }
+        self.state_calls
+            .borrow_mut()
+            .extend(rewrite.calls.iter().cloned());
+        lower(&rewrite.text, &local)
+    }
+
+    /// [`transpile_into_owned`] of `text`, with its state calls rewritten
+    /// ([`Self::with_state_calls`]).
+    fn owned(
+        &self,
+        text: &str,
+        ctx: &crate::forge::types::TypeCtx<'_>,
+        renames: &HashMap<&str, &str>,
+        slot: InferredType,
+    ) -> Result<Receiving, Refusal> {
+        let target = self.target.expr_target();
+        self.with_state_calls(text, renames, |text, renames| {
+            transpile_into_owned(text, target, ctx, renames, slot)
+        })
+    }
+
+    /// [`transpile_into_receiving`] of `text`, with its state calls rewritten
+    /// ([`Self::with_state_calls`]).
+    fn receiving(
+        &self,
+        text: &str,
+        ctx: &crate::forge::types::TypeCtx<'_>,
+        renames: &HashMap<&str, &str>,
+        slot: InferredType,
+    ) -> Result<Receiving, Refusal> {
+        let target = self.target.expr_target();
+        self.with_state_calls(text, renames, |text, renames| {
+            transpile_into_receiving(text, target, ctx, renames, slot)
+        })
     }
 
     /// The ids of the fields of the record a `<send>`'s `<content expr>` names:
@@ -3158,6 +3810,152 @@ impl StaticTarget for CppTarget {
     }
     fn callee(&self, document_name: &str) -> Option<Callee> {
         Some(generated_callee(Language::Cpp, document_name, None))
+    }
+    fn lowers_state_calls(&self) -> bool {
+        true
+    }
+    fn state_argument(&self, _machine: &str, _arg: &StateArg, held: &str) -> String {
+        held.to_string()
+    }
+    fn state_adapter_name(&self, _callee: &StaticCallee, coded: &str) -> String {
+        format!("call_{coded}")
+    }
+    // The machine's list is the `std::vector` the adapter answers, counted by its
+    // `size()` as a byte string is.
+    fn state_list_within(&self, _adapter: &str, value: &str, capacity: u32) -> String {
+        format!("SCE::Forge::Checked::bounded(sce_failure_, {value}, {capacity}u)")
+    }
+    fn schema_import(&self, schema_name: &str) -> Option<String> {
+        Some(
+            crate::forge::generator::forge_import_identity(
+                schema_name,
+                &Language::Cpp,
+                false,
+                &crate::ForgeCompileOptions::default(),
+            )
+            .include_stmt,
+        )
+    }
+    // A function of the machine's file that builds the algorithm's records from the
+    // machine's, calls it, and builds the machine's own from what it returns,
+    // answering as the algorithm does: an `AlgorithmResult` where it may fail, which
+    // the expression the machine lowers takes the value of. What the algorithm is
+    // handed is a copy, and what it returns is copied, so nothing it does reaches the
+    // machine's state.
+    fn state_adapter(&self, spec: &AdapterSpec<'_>) -> Option<String> {
+        use crate::forge::generator::{event_schema_field_ident, event_schema_payload_type};
+        let value = spec.callee.value.as_ref()?;
+        let machine_record = |alias: &str| self.record_type(spec.machine, alias);
+        let algorithm_record = |alias: &str| {
+            plain_schema(spec, alias)
+                .map(|schema| event_schema_payload_type(&schema.name, Language::Cpp))
+        };
+        // A record of `ty` made field by field from `from`.
+        let record_of = |alias: &str, ty: String, from: &str| -> Option<String> {
+            let schema = plain_schema(spec, alias)?;
+            let fields: Vec<String> = schema
+                .fields
+                .iter()
+                .map(|f| {
+                    let field = event_schema_field_ident(&f.id, Language::Cpp);
+                    format!(".{field} = {from}.{field}")
+                })
+                .collect();
+            Some(format!("{ty}{{{}}}", fields.join(", ")))
+        };
+        let mut declarations = Vec::new();
+        let mut prelude = String::new();
+        let mut arguments = Vec::new();
+        for (index, param) in spec.params.iter().enumerate() {
+            let name = format!("p{index}");
+            match param {
+                AdapterParam::Scalar(ty) => {
+                    if !plain_scalar(ty) {
+                        return None;
+                    }
+                    declarations.push(format!("{} {name}", self.scalar_type(ty)));
+                    arguments.push(name);
+                }
+                AdapterParam::State {
+                    slot: StaticSlot::Record(alias),
+                    code,
+                } => {
+                    let held = if *code == 'p' {
+                        let event = spec.payload_events.get(alias)?;
+                        format!(
+                            "{}{}Payload",
+                            spec.machine,
+                            filters::to_event_variant(event.to_string())
+                        )
+                    } else {
+                        machine_record(alias)
+                    };
+                    declarations.push(format!("const {held} &{name}"));
+                    arguments.push(record_of(alias, algorithm_record(alias)?, &name)?);
+                }
+                AdapterParam::State {
+                    slot: StaticSlot::ScalarList(ty),
+                    ..
+                } if plain_scalar(ty) => {
+                    declarations.push(format!("const {} &{name}", self.list_type(ty)));
+                    arguments.push(name);
+                }
+                AdapterParam::State {
+                    slot: StaticSlot::RecordList(alias),
+                    ..
+                } => {
+                    declarations.push(format!(
+                        "const {} &{name}",
+                        self.record_list_type(&machine_record(alias))
+                    ));
+                    let algorithm = algorithm_record(alias)?;
+                    prelude.push_str(&format!(
+                        "    std::vector<{algorithm}> a{index};\n    a{index}.reserve({name}.size());\n    for (const auto &e : {name}) {{\n        a{index}.push_back({});\n    }}\n",
+                        record_of(alias, algorithm.clone(), "e")?
+                    ));
+                    arguments.push(format!("a{index}"));
+                }
+                _ => return None,
+            }
+        }
+        let returned_type = match value.ret.as_ref()? {
+            StaticSlot::Scalar(ty) if plain_scalar(ty) => self.scalar_type(ty),
+            StaticSlot::Record(alias) => machine_record(alias),
+            StaticSlot::ScalarList(ty) if plain_scalar(ty) => self.list_type(ty),
+            StaticSlot::RecordList(alias) => self.record_list_type(&machine_record(alias)),
+            _ => return None,
+        };
+        // The machine's own value from the algorithm's, `from`.
+        let converted = |from: &str| -> Option<String> {
+            Some(match value.ret.as_ref()? {
+                StaticSlot::Scalar(_) | StaticSlot::ScalarList(_) => from.to_string(),
+                StaticSlot::Record(alias) => record_of(alias, machine_record(alias), from)?,
+                StaticSlot::RecordList(alias) => {
+                    let list = self.record_list_type(&machine_record(alias));
+                    let element = record_of(alias, machine_record(alias), "e")?;
+                    format!(
+                        "[&] {{ {list} out; out.reserve({from}.size()); for (const auto &e : {from}) {{ out.push_back({element}); }} return out; }}()"
+                    )
+                }
+            })
+        };
+        let call = format!("{}({})", spec.call, arguments.join(", "));
+        Some(if spec.callee.may_fail {
+            let result = format!("SCE::Forge::AlgorithmResult<{returned_type}>");
+            format!(
+                "inline {result} {}({}) {{\n{prelude}    const auto r = {call};\n    if (!r.ok()) {{\n        return {result}::failure(r.error());\n    }}\n    return {result}::success({});\n}}",
+                spec.name,
+                declarations.join(", "),
+                converted("r.value()")?
+            )
+        } else {
+            format!(
+                "inline {returned_type} {}({}) {{\n{prelude}    const auto r = {call};\n    return {};\n}}",
+                spec.name,
+                declarations.join(", "),
+                converted("r")?
+            )
+        })
     }
     fn unsupported(&self, model: &SCXMLModel, _scope: &StaticScope) -> Option<String> {
         for state in model.states.values() {
@@ -3712,6 +4510,189 @@ impl StaticTarget for GoTarget<'_> {
             self.import_root,
         ))
     }
+    fn lowers_state_calls(&self) -> bool {
+        true
+    }
+    fn state_argument(&self, _machine: &str, _arg: &StateArg, held: &str) -> String {
+        held.to_string()
+    }
+    // The prefix tells the expression layer the adapter answers an `Outcome`.
+    fn state_adapter_name(&self, _callee: &StaticCallee, coded: &str) -> String {
+        format!("{}{coded}", crate::forge::expr::STATE_ADAPTER_PREFIX)
+    }
+    fn state_list_within(&self, _adapter: &str, value: &str, capacity: u32) -> String {
+        format!("scealgorithm.Within(&sceFailure, {value}, {capacity})")
+    }
+    fn schema_import(&self, schema_name: &str) -> Option<String> {
+        let options = crate::ForgeCompileOptions {
+            go_module_prefix: self.import_root.map(str::to_owned),
+            ..Default::default()
+        };
+        Some(
+            crate::forge::generator::forge_import_identity(
+                schema_name,
+                &Language::Go,
+                false,
+                &options,
+            )
+            .include_stmt,
+        )
+    }
+    // A function of the machine's file that builds the algorithm's records from the
+    // machine's, calls it, and builds the machine's own record or list from what it
+    // gave back, answering an `Outcome` of the machine's type where the algorithm may
+    // fail. A record or a list it is handed is never one the machine keeps, and the
+    // one it returns is copied, so what it does to them cannot reach the machine's
+    // state.
+    fn state_adapter(&self, spec: &AdapterSpec<'_>) -> Option<String> {
+        use crate::forge::generator::{event_schema_field_ident, event_schema_payload_type};
+        let value = spec.callee.value.as_ref()?;
+        let machine_record = |alias: &str| self.record_type(spec.machine, alias);
+        let algorithm_record = |alias: &str| {
+            plain_schema(spec, alias)
+                .map(|schema| event_schema_payload_type(&schema.name, Language::Go))
+        };
+        let to_algorithm = |alias: &str, from: &str| -> Option<String> {
+            let schema = plain_schema(spec, alias)?;
+            let fields: Vec<String> = schema
+                .fields
+                .iter()
+                .map(|f| {
+                    format!(
+                        "{}: {from}.{}",
+                        event_schema_field_ident(&f.id, Language::Go),
+                        self.record_field(&f.id)
+                    )
+                })
+                .collect();
+            Some(format!(
+                "{}{{{}}}",
+                algorithm_record(alias)?,
+                fields.join(", ")
+            ))
+        };
+        let mut declarations = Vec::new();
+        let mut prelude = String::new();
+        let mut arguments = Vec::new();
+        for (index, param) in spec.params.iter().enumerate() {
+            let name = format!("p{index}");
+            match param {
+                AdapterParam::Scalar(ty) => {
+                    if !plain_scalar(ty) {
+                        return None;
+                    }
+                    declarations.push(format!("{name} {}", self.scalar_type(ty)));
+                    arguments.push(name);
+                }
+                AdapterParam::State {
+                    slot: StaticSlot::Record(alias),
+                    code,
+                } => {
+                    let held = if *code == 'p' {
+                        let event = spec.payload_events.get(alias)?;
+                        format!(
+                            "{}{}Payload",
+                            spec.machine,
+                            filters::to_event_variant(event.to_string())
+                        )
+                    } else {
+                        machine_record(alias)
+                    };
+                    declarations.push(format!("{name} {held}"));
+                    arguments.push(to_algorithm(alias, &name)?);
+                }
+                AdapterParam::State {
+                    slot: StaticSlot::ScalarList(ty),
+                    ..
+                } if plain_scalar(ty) => {
+                    declarations.push(format!("{name} {}", self.list_type(ty)));
+                    arguments.push(name);
+                }
+                AdapterParam::State {
+                    slot: StaticSlot::RecordList(alias),
+                    ..
+                } => {
+                    declarations.push(format!(
+                        "{name} {}",
+                        self.record_list_type(&machine_record(alias))
+                    ));
+                    prelude.push_str(&format!(
+                        "\ta{index} := make([]{}, len({name}))\n\tfor i, e := range {name} {{\n\t\ta{index}[i] = {}\n\t}}\n",
+                        algorithm_record(alias)?,
+                        to_algorithm(alias, "e")?
+                    ));
+                    arguments.push(format!("a{index}"));
+                }
+                _ => return None,
+            }
+        }
+        // The machine's own value from what the algorithm returned, `r`.
+        let from_algorithm = |alias: &str, from: &str| -> Option<String> {
+            let schema = plain_schema(spec, alias)?;
+            let fields: Vec<String> = schema
+                .fields
+                .iter()
+                .map(|f| {
+                    format!(
+                        "{}: {from}.{}",
+                        self.record_field(&f.id),
+                        event_schema_field_ident(&f.id, Language::Go)
+                    )
+                })
+                .collect();
+            Some(format!(
+                "{}{{{}}}",
+                machine_record(alias),
+                fields.join(", ")
+            ))
+        };
+        let (returned_type, converted) = match value.ret.as_ref()? {
+            StaticSlot::Scalar(ty) if plain_scalar(ty) => (self.scalar_type(ty), String::new()),
+            StaticSlot::Record(alias) => (
+                machine_record(alias),
+                format!("\tout := {}\n", from_algorithm(alias, "r")?),
+            ),
+            StaticSlot::ScalarList(ty) if plain_scalar(ty) => (
+                self.list_type(ty),
+                "\tout := append(r[:0:0], r...)\n".to_string(),
+            ),
+            StaticSlot::RecordList(alias) => {
+                let list = self.record_list_type(&machine_record(alias));
+                (
+                    list.clone(),
+                    format!(
+                        "\tout := make({list}, len(r))\n\tfor i, e := range r {{\n\t\tout[i] = {}\n\t}}\n",
+                        from_algorithm(alias, "e")?
+                    ),
+                )
+            }
+            _ => return None,
+        };
+        let call = format!("{}({})", spec.call, arguments.join(", "));
+        let scalar = converted.is_empty();
+        Some(match (spec.callee.may_fail, scalar) {
+            (true, true) => format!(
+                "func {}({}) scealgorithm.Outcome[{returned_type}] {{\n{prelude}\tr, err := {call}\n\treturn scealgorithm.Outcome[{returned_type}]{{Value: r, Err: err}}\n}}",
+                spec.name,
+                declarations.join(", ")
+            ),
+            (true, false) => format!(
+                "func {}({}) scealgorithm.Outcome[{returned_type}] {{\n{prelude}\tr, err := {call}\n\tif err != nil {{\n\t\treturn scealgorithm.Outcome[{returned_type}]{{Err: err}}\n\t}}\n{converted}\treturn scealgorithm.Outcome[{returned_type}]{{Value: out}}\n}}",
+                spec.name,
+                declarations.join(", ")
+            ),
+            (false, true) => format!(
+                "func {}({}) {returned_type} {{\n{prelude}\treturn {call}\n}}",
+                spec.name,
+                declarations.join(", ")
+            ),
+            (false, false) => format!(
+                "func {}({}) {returned_type} {{\n{prelude}\tr := {call}\n{converted}\treturn out\n}}",
+                spec.name,
+                declarations.join(", ")
+            ),
+        })
+    }
     fn unsupported(&self, model: &SCXMLModel, _scope: &StaticScope) -> Option<String> {
         // A record's field is named as the author wrote it, so one Go reserves
         // cannot be a field.
@@ -4239,6 +5220,113 @@ impl StaticTarget for PythonTarget {
     }
     fn callee(&self, document_name: &str) -> Option<Callee> {
         Some(generated_callee(Language::Python, document_name, None))
+    }
+    fn lowers_state_calls(&self) -> bool {
+        true
+    }
+    fn state_argument(&self, _machine: &str, _arg: &StateArg, held: &str) -> String {
+        held.to_string()
+    }
+    fn state_adapter_name(&self, _callee: &StaticCallee, coded: &str) -> String {
+        format!("_call_{coded}")
+    }
+    fn state_list_within(&self, _adapter: &str, value: &str, capacity: u32) -> String {
+        format!("sce_algorithm.bounded(list({value}), {capacity})")
+    }
+    fn schema_import(&self, schema_name: &str) -> Option<String> {
+        Some(
+            crate::forge::generator::forge_import_identity(
+                schema_name,
+                &Language::Python,
+                false,
+                &crate::ForgeCompileOptions::default(),
+            )
+            .include_stmt,
+        )
+    }
+    // A function of the machine's file that builds the algorithm's records from the
+    // machine's, calls it, and builds the machine's from what it returns. The
+    // algorithm raises where it fails, as the machine's own checked operations do,
+    // and a record or a list it is handed is never one the machine keeps: each is
+    // copied on the way in and on the way out, so what it does to its arguments
+    // cannot reach the machine's state.
+    fn state_adapter(&self, spec: &AdapterSpec<'_>) -> Option<String> {
+        use crate::forge::generator::{event_schema_field_ident, event_schema_payload_type};
+        let value = spec.callee.value.as_ref()?;
+        let to_algorithm = |alias: &str, from: &str| -> Option<String> {
+            let schema = plain_schema(spec, alias)?;
+            let fields: Vec<String> = schema
+                .fields
+                .iter()
+                .map(|f| {
+                    let field = event_schema_field_ident(&f.id, Language::Python);
+                    format!("{field}={from}.{field}")
+                })
+                .collect();
+            Some(format!(
+                "{}({})",
+                event_schema_payload_type(&schema.name, Language::Python),
+                fields.join(", ")
+            ))
+        };
+        let from_algorithm = |alias: &str, from: &str| -> Option<String> {
+            let schema = plain_schema(spec, alias)?;
+            let fields: Vec<String> = schema
+                .fields
+                .iter()
+                .map(|f| {
+                    let field = event_schema_field_ident(&f.id, Language::Python);
+                    format!("{field}={from}.{field}")
+                })
+                .collect();
+            Some(format!(
+                "{}({})",
+                self.record_type(spec.machine, alias),
+                fields.join(", ")
+            ))
+        };
+        let mut declarations = Vec::new();
+        let mut arguments = Vec::new();
+        for (index, param) in spec.params.iter().enumerate() {
+            let name = format!("p{index}");
+            match param {
+                AdapterParam::Scalar(ty) => {
+                    if !plain_scalar(ty) {
+                        return None;
+                    }
+                    arguments.push(name.clone());
+                }
+                AdapterParam::State {
+                    slot: StaticSlot::Record(alias),
+                    ..
+                } => arguments.push(to_algorithm(alias, &name)?),
+                AdapterParam::State {
+                    slot: StaticSlot::ScalarList(ty),
+                    ..
+                } if plain_scalar(ty) => arguments.push(format!("list({name})")),
+                AdapterParam::State {
+                    slot: StaticSlot::RecordList(alias),
+                    ..
+                } => arguments.push(format!("[{} for e in {name}]", to_algorithm(alias, "e")?)),
+                _ => return None,
+            }
+            declarations.push(name);
+        }
+        let call = format!("{}({})", spec.call, arguments.join(", "));
+        let converted = match value.ret.as_ref()? {
+            StaticSlot::Scalar(ty) if plain_scalar(ty) => "r".to_string(),
+            StaticSlot::Record(alias) => from_algorithm(alias, "r")?,
+            StaticSlot::ScalarList(ty) if plain_scalar(ty) => "list(r)".to_string(),
+            StaticSlot::RecordList(alias) => {
+                format!("[{} for e in r]", from_algorithm(alias, "e")?)
+            }
+            _ => return None,
+        };
+        Some(format!(
+            "def {}({}):\n    r = {call}\n    return {converted}",
+            spec.name,
+            declarations.join(", ")
+        ))
     }
     fn unsupported(&self, model: &SCXMLModel, _scope: &StaticScope) -> Option<String> {
         // A record's field is named as the author wrote it, so one Python
@@ -4840,6 +5928,194 @@ impl StaticTarget for CTarget {
     fn callee(&self, document_name: &str) -> Option<Callee> {
         Some(generated_callee(Language::C11, document_name, None))
     }
+    fn lowers_state_calls(&self) -> bool {
+        true
+    }
+    // A list is handed as the borrowed view of its elements, `{data, len}`, as the
+    // algorithm's own list parameter is; a record or a payload as the struct it is.
+    fn state_argument(&self, machine: &str, arg: &StateArg, held: &str) -> String {
+        match &arg.slot {
+            StaticSlot::ScalarList(ty) => format!(
+                "({}){{ .data = {held}.data, .len = {held}.len }}",
+                self.list_view(ty).unwrap_or_default()
+            ),
+            StaticSlot::RecordList(alias) => format!(
+                "({}){{ .data = {held}.data, .len = {held}.len }}",
+                self.record_list_view(&self.record_type(machine, alias))
+                    .unwrap_or_default()
+            ),
+            _ => held.to_string(),
+        }
+    }
+    fn state_adapter_name(&self, _callee: &StaticCallee, coded: &str) -> String {
+        format!("call_{coded}")
+    }
+    // The list an adapter gave back is its result struct, read from `items` and `len`,
+    // as an algorithm's is; the adapter declares the `_within` that holds it to the
+    // variable's bound.
+    fn state_list_within(&self, adapter: &str, value: &str, capacity: u32) -> String {
+        format!("{adapter}_within(&sce_failure_, {value}, {capacity}u)")
+    }
+    // A function of the machine's header that builds the algorithm's records from the
+    // machine's, calls it, and builds the machine's own from what it returns,
+    // answering as the algorithm does: a result struct and the `<name>_take` that
+    // receives it where the algorithm may fail, which is what the expression the
+    // machine lowers calls. What the algorithm is handed is a copy, and what it
+    // returns is copied, so nothing it does reaches the machine's state.
+    fn state_adapter(&self, spec: &AdapterSpec<'_>) -> Option<String> {
+        use crate::forge::generator::{event_schema_field_ident, event_schema_payload_type};
+        let value = spec.callee.value.as_ref()?;
+        let name = &spec.name;
+        let machine_record = |alias: &str| self.record_type(spec.machine, alias);
+        let algorithm_record = |alias: &str| {
+            plain_schema(spec, alias)
+                .map(|schema| event_schema_payload_type(&schema.name, Language::C11))
+        };
+        // A record of the type `ty` made field by field from `from`.
+        let record_of = |alias: &str, ty: String, from: &str| -> Option<String> {
+            let schema = plain_schema(spec, alias)?;
+            let fields: Vec<String> = schema
+                .fields
+                .iter()
+                .map(|f| {
+                    let field = event_schema_field_ident(&f.id, Language::C11);
+                    format!(".{field} = {from}.{field}")
+                })
+                .collect();
+            Some(format!("({ty}){{ {} }}", fields.join(", ")))
+        };
+        let mut declarations = Vec::new();
+        let mut prelude = String::new();
+        let mut arguments = Vec::new();
+        for (index, param) in spec.params.iter().enumerate() {
+            let p = format!("p{index}");
+            match param {
+                AdapterParam::Scalar(ty) => {
+                    if !plain_scalar(ty) {
+                        return None;
+                    }
+                    declarations.push(format!("{} {p}", self.scalar_type(ty)));
+                    arguments.push(p);
+                }
+                AdapterParam::State {
+                    slot: StaticSlot::Record(alias),
+                    code,
+                } => {
+                    let held = if *code == 'p' {
+                        let event = spec.payload_events.get(alias)?;
+                        format!(
+                            "{}_{}_payload_t",
+                            spec.machine,
+                            filters::to_c11_lower_ident(std::borrow::Cow::Borrowed(event.as_str()))
+                        )
+                    } else {
+                        machine_record(alias)
+                    };
+                    declarations.push(format!("{held} {p}"));
+                    arguments.push(record_of(alias, algorithm_record(alias)?, &p)?);
+                }
+                AdapterParam::State {
+                    slot: StaticSlot::ScalarList(ty),
+                    ..
+                } if plain_scalar(ty) => {
+                    declarations.push(format!("{} {p}", self.list_view(ty)?));
+                    arguments.push(p);
+                }
+                AdapterParam::State {
+                    slot: StaticSlot::RecordList(alias),
+                    ..
+                } => {
+                    let algorithm = algorithm_record(alias)?;
+                    // The list is copied into a buffer of the largest bound any list of
+                    // these records has in the machine, which the list handed in fits.
+                    let bound = spec
+                        .record_list_bounds
+                        .get(alias)
+                        .copied()
+                        .unwrap_or(1)
+                        .max(1);
+                    declarations.push(format!(
+                        "{} {p}",
+                        self.record_list_view(&machine_record(alias))?
+                    ));
+                    prelude.push_str(&format!(
+                        "    {algorithm} a{index}[{bound}u];\n    for (size_t i = 0; i < {p}.len && i < {bound}u; ++i) {{\n        a{index}[i] = {};\n    }}\n",
+                        record_of(alias, algorithm.clone(), &format!("{p}.data[i]"))?
+                    ));
+                    arguments.push(format!(
+                        "({}_view_t){{ .data = a{index}, .len = {p}.len }}",
+                        algorithm.trim_end_matches("_t")
+                    ));
+                }
+                _ => return None,
+            }
+        }
+        let call = format!("{}({})", spec.call, arguments.join(", "));
+        let result_type = format!("{name}_result_t");
+        // The machine's own element or value, and the bound the algorithm's list has.
+        enum Shape {
+            Value(String),
+            List(String, u32),
+        }
+        let shape = match value.ret.as_ref()? {
+            StaticSlot::Scalar(ty) if plain_scalar(ty) => Shape::Value(self.scalar_type(ty)),
+            StaticSlot::Record(alias) => Shape::Value(machine_record(alias)),
+            StaticSlot::ScalarList(ty) if plain_scalar(ty) => {
+                Shape::List(self.scalar_type(ty), value.max_size?)
+            }
+            StaticSlot::RecordList(alias) => Shape::List(machine_record(alias), value.max_size?),
+            _ => return None,
+        };
+        // From the algorithm's result `r`: the machine's value, or the statements
+        // that fill `out` with the machine's list.
+        let converted = |from: &str| -> Option<String> {
+            Some(match value.ret.as_ref()? {
+                StaticSlot::Scalar(_) => from.to_string(),
+                StaticSlot::Record(alias) => record_of(alias, machine_record(alias), from)?,
+                _ => String::new(),
+            })
+        };
+        let list_fill = match value.ret.as_ref()? {
+            StaticSlot::ScalarList(_) => "        out.items[i] = r.items[i];\n".to_string(),
+            StaticSlot::RecordList(alias) => format!(
+                "        out.items[i] = {};\n",
+                record_of(alias, machine_record(alias), "r.items[i]")?
+            ),
+            _ => String::new(),
+        };
+        let scalar_or_record_value = |from: &str| converted(from);
+        // The algorithm's own result struct.
+        let call_result = format!("{}_result_t", spec.call);
+        Some(match (spec.callee.may_fail, &shape) {
+            (true, Shape::Value(ty)) => format!(
+                "typedef struct {{\n    {ty} value;\n    bool ok;\n    sce_forge_algorithm_error_t why;\n}} {result_type};\n\n\
+                 static inline {ty} {name}_take(sce_forge_algorithm_failure_t *failure, {result_type} result) {{\n    if (!result.ok) {{\n        sce_forge_algorithm_fail(failure, result.why);\n        return ({ty}){{0}};\n    }}\n    return result.value;\n}}\n\n\
+                 static inline {result_type} {name}({}) {{\n{prelude}    {call_result} r = {call};\n    if (!r.ok) {{\n        return ({result_type}){{ .ok = false, .why = r.why }};\n    }}\n    return ({result_type}){{ .value = {}, .ok = true }};\n}}",
+                declarations.join(", "),
+                scalar_or_record_value("r.value")?,
+            ),
+            (true, Shape::List(ty, max)) => format!(
+                "typedef struct {{\n    {ty} items[{max}u];\n    size_t len;\n    bool ok;\n    sce_forge_algorithm_error_t why;\n}} {result_type};\n\n\
+                 static inline {result_type} {name}_take(sce_forge_algorithm_failure_t *failure, {result_type} result) {{\n    if (!result.ok) {{\n        sce_forge_algorithm_fail(failure, result.why);\n        return ({result_type}){{0}};\n    }}\n    return result;\n}}\n\n\
+                 static inline {result_type} {name}_within(sce_forge_algorithm_failure_t *failure, {result_type} result, uint32_t capacity) {{\n    if (result.len > capacity) {{\n        sce_forge_algorithm_fail(failure, SCE_FORGE_ALGORITHM_CAPACITY_EXCEEDED);\n        return ({result_type}){{0}};\n    }}\n    return result;\n}}\n\n\
+                 static inline {result_type} {name}({}) {{\n{prelude}    {call_result} r = {call};\n    if (!r.ok) {{\n        return ({result_type}){{ .ok = false, .why = r.why }};\n    }}\n    {result_type} out = {{ .ok = true }};\n    for (size_t i = 0; i < r.len && i < {max}u; ++i) {{\n{list_fill}    }}\n    out.len = r.len;\n    return out;\n}}",
+                declarations.join(", "),
+            ),
+            (false, Shape::Value(ty)) => {
+                // What the algorithm returns, in the algorithm's own type.
+                let returned = match value.ret.as_ref()? {
+                    StaticSlot::Record(alias) => algorithm_record(alias)?,
+                    _ => ty.clone(),
+                };
+                format!(
+                    "static inline {ty} {name}({}) {{\n{prelude}    {returned} r = {call};\n    return {};\n}}",
+                    declarations.join(", "),
+                    scalar_or_record_value("r")?
+                )
+            }
+            (false, Shape::List(..)) => return None,
+        })
+    }
     fn unsupported(&self, model: &SCXMLModel, scope: &StaticScope) -> Option<String> {
         // The integers, the bool and an enum: a `bool`, a number and an
         // enumerated type are the values the checked helpers and the policy
@@ -5356,7 +6632,7 @@ impl StaticTarget for CTarget {
     fn list_within(&self, value: &str, capacity: u32, symbol: &str, _elem: &SceType) -> String {
         format!("{symbol}_within(&sce_failure_, {value}, {capacity}u)")
     }
-    fn assign_list(&self, target: &str, value: &str, _elem: &SceType) -> String {
+    fn assign_list(&self, target: &str, value: &str) -> String {
         format!(
             "memcpy({target}.data, {value}.items, {value}.len * sizeof({target}.data[0])); \
              {target}.len = {value}.len;"
@@ -6038,7 +7314,7 @@ fn lower_action(
     // in. A condition's slot is `bool` and a logged value's is untyped, and
     // neither is a string slot, so they lower exactly as they did.
     let lower = |text: &str, slot: InferredType| {
-        transpile_into_owned(text, target.expr_target(), ctx, renames, slot).map_err(|r| {
+        rewrites.owned(text, ctx, renames, slot).map_err(|r| {
             GenerateError::unsupported(format!("`{text}` has no {lang} lowering: {}", r.error))
         })
     };
@@ -6225,9 +7501,32 @@ fn lower_action(
                             can_fail: true,
                         };
                     }
+                    // A call of an algorithm that takes or returns state, taken whole: what
+                    // an adapter gives back is the machine's own kind of value already. A
+                    // list is held to the bound of the variable it is written to all the
+                    // same: the algorithm's bound is advisory where lists grow, and the
+                    // machine holds the same list wherever it runs.
+                    let state_call = if returned_list.is_none() {
+                        rewrites.whole_state_call(&action.expr)
+                    } else {
+                        None
+                    };
+                    let state_list = state_call.as_ref().and_then(|(adapter, ret)| match ret {
+                        StaticSlot::ScalarList(_) | StaticSlot::RecordList(_) => rewrites
+                            .lists
+                            .get(location)
+                            .map(|(_, capacity)| (adapter.as_str(), *capacity)),
+                        _ => None,
+                    });
+                    if let Some((adapter, capacity)) = state_list {
+                        value = Receiving {
+                            text: target.state_list_within(adapter, &value.text, capacity),
+                            can_fail: true,
+                        };
+                    }
                     let write = |v: &str| {
-                        if let Some((elem, _, _)) = &returned_list {
-                            target.assign_list(name, v, elem)
+                        if returned_list.is_some() || state_list.is_some() {
+                            target.assign_list(name, v)
                         } else if is_string {
                             target.assign_string(name, v)
                         } else if is_bytes {
@@ -6238,10 +7537,31 @@ fn lower_action(
                     };
                     // A target that names the type of the local the returned list
                     // is held in while it is computed.
-                    let held_list = returned_list.as_ref().and_then(|(_, _, alias)| {
-                        target.list_result_type(renames.get(alias.as_str()).copied()?)
+                    let held_list = returned_list
+                        .as_ref()
+                        .and_then(|(_, _, alias)| {
+                            target.list_result_type(renames.get(alias.as_str()).copied()?)
+                        })
+                        .or_else(|| {
+                            state_list.and_then(|(adapter, _)| target.list_result_type(adapter))
+                        });
+                    // ... and the record an adapter gave back.
+                    let held_record = state_call.as_ref().and_then(|(_, ret)| match ret {
+                        StaticSlot::Record(alias) => {
+                            Some(target.record_type(rewrites.machine, alias))
+                        }
+                        _ => None,
                     });
                     match &whole_record {
+                        _ if held_record.is_some() && value.can_fail => (
+                            target.receiving_write_of(
+                                &write,
+                                &value.text,
+                                held_record.as_deref().unwrap_or_default(),
+                                &failed(construct),
+                            ),
+                            true,
+                        ),
                         _ if held_list.is_some() && value.can_fail => (
                             target.receiving_write_of(
                                 &write,
@@ -6758,14 +8078,9 @@ fn lower_wire_value(
     if let Some(alias) = crate::forge::static_enum::value_enum(written, ctx, &held_by_a_variable)
         .map_err(|r| refused(r.error.to_string()))?
     {
-        let value = transpile_into_owned(
-            written,
-            target.expr_target(),
-            ctx,
-            renames,
-            InferredType::Unknown,
-        )
-        .map_err(|r| refused(r.error.to_string()))?;
+        let value = rewrites
+            .owned(written, ctx, renames, InferredType::Unknown)
+            .map_err(|r| refused(r.error.to_string()))?;
         let name = target.enum_wire_name(&alias, &value.text).ok_or_else(|| {
             refused("a value of an enum has no wire spelling here yet".to_string())
         })?;
@@ -6788,7 +8103,8 @@ fn lower_wire_value(
     }
     // The value is read once and is its own: an owned string, for the typed
     // value that carries it.
-    let value = transpile_into_owned(written, target.expr_target(), ctx, renames, slot)
+    let value = rewrites
+        .owned(written, ctx, renames, slot)
         .map_err(|r| refused(r.error.to_string()))?;
     rewrites.note(written, param.spelling, &value.text);
     let wired = if bytes {
@@ -6839,16 +8155,14 @@ fn lower_host_request_strings(
                 "an <invoke> a host runs with a {attribute} has no {lang} lowering yet"
             )));
         }
-        let value = transpile_into_owned(
-            written,
-            target.expr_target(),
-            ctx,
-            renames,
-            InferredType::Str,
-        )
-        .map_err(|r| {
-            GenerateError::unsupported(format!("`{written}` has no {lang} lowering: {}", r.error))
-        })?;
+        let value = rewrites
+            .owned(written, ctx, renames, InferredType::Str)
+            .map_err(|r| {
+                GenerateError::unsupported(format!(
+                    "`{written}` has no {lang} lowering: {}",
+                    r.error
+                ))
+            })?;
         Ok((value.text, value.can_fail))
     };
     if !info.srcexpr.trim().is_empty() {
@@ -6884,16 +8198,14 @@ fn lower_mesh_request(
     let target = rewrites.target;
     if let crate::model::MeshRpcTarget::SrcExpr { srcexpr } = &info.target {
         let lang = target.name();
-        let value = transpile_into_owned(
-            srcexpr,
-            target.expr_target(),
-            ctx,
-            renames,
-            InferredType::Str,
-        )
-        .map_err(|r| {
-            GenerateError::unsupported(format!("`{srcexpr}` has no {lang} lowering: {}", r.error))
-        })?;
+        let value = rewrites
+            .owned(srcexpr, ctx, renames, InferredType::Str)
+            .map_err(|r| {
+                GenerateError::unsupported(format!(
+                    "`{srcexpr}` has no {lang} lowering: {}",
+                    r.error
+                ))
+            })?;
         info.native_src = value.text;
         info.native_src_fails = value.can_fail;
     }
@@ -6985,7 +8297,8 @@ fn lower_child_argument(
             "the child declares no variable it can be handed to".into(),
         ));
     };
-    let value = transpile_into_owned(&written, target.expr_target(), ctx, renames, slot)
+    let value = rewrites
+        .owned(&written, ctx, renames, slot)
         .map_err(|r| refused(r.error.to_string()))?;
     // A string handed to the child's variable is held to the bound the child
     // declared for it, whatever the value came from, as an `<assign>` to it
@@ -7031,19 +8344,14 @@ fn lower_hybrid_invoke(
             "a hybrid <invoke> has no {lang} lowering yet"
         )));
     }
-    let value = transpile_into_owned(
-        &info.srcexpr,
-        target.expr_target(),
-        ctx,
-        renames,
-        InferredType::Str,
-    )
-    .map_err(|r| {
-        GenerateError::unsupported(format!(
-            "`{}` has no {lang} lowering: {}",
-            info.srcexpr, r.error
-        ))
-    })?;
+    let value = rewrites
+        .owned(&info.srcexpr, ctx, renames, InferredType::Str)
+        .map_err(|r| {
+            GenerateError::unsupported(format!(
+                "`{}` has no {lang} lowering: {}",
+                info.srcexpr, r.error
+            ))
+        })?;
     let stems: Vec<&str> = info.candidates.iter().map(|c| c.stem.as_str()).collect();
     if let Some(site) = target.hybrid_src_site(&value.text, &stems) {
         rewrites.note(&info.srcexpr, info.srcexpr_spelling.as_ref(), &site);
@@ -7091,21 +8399,16 @@ fn lower_nested(
             continue;
         }
         reads_payload |= crate::forge::expr::references_event_data_lexically(&branch.cond);
-        let cond = transpile_into_receiving(
-            &branch.cond,
-            target.expr_target(),
-            ctx,
-            renames,
-            InferredType::Bool,
-        )
-        .map_err(|r| {
-            GenerateError::unsupported(format!(
-                "`{}` has no {} lowering: {}",
-                branch.cond,
-                target.name(),
-                r.error
-            ))
-        })?;
+        let cond = rewrites
+            .receiving(&branch.cond, ctx, renames, InferredType::Bool)
+            .map_err(|r| {
+                GenerateError::unsupported(format!(
+                    "`{}` has no {} lowering: {}",
+                    branch.cond,
+                    target.name(),
+                    r.error
+                ))
+            })?;
         rewrites.note(&branch.cond, branch.cond_spelling.as_ref(), &cond.text);
         branch.native_cond = if cond.can_fail {
             branch.native_cond_fails = true;

@@ -233,6 +233,11 @@ func (e {{ machine_name }}Event) String() string {
 {{ static_type_defs }}
 
 {% endif %}
+{% if static_adapter_defs %}
+// ── SCE Accepted Subset §2.15: calls of an algorithm that takes or returns state ──
+{{ static_adapter_defs }}
+
+{% endif %}
 {% if has_native_actions %}
 // ── W3C SCXML G.7: `<sce:action>` host dispatch ───────────────────────
 {{ native_actions_defs }}

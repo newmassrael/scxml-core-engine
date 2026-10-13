@@ -72,7 +72,10 @@ fi
 # algorithm_days_in_month: called from static_record's guard. algorithm_day_run:
 # its list is what static_list_assign takes whole. A machine's import names
 # each as `super::<name>`, so it is generated beside the machines.
-ALGORITHMS=(days_in_month day_run day_repeat)
+ALGORITHMS=(days_in_month day_run day_repeat ledger_add ledger_total ledger_amount ledger_bump ledger_ids)
+# The records static_state_algorithm hands those algorithms and takes back: an
+# algorithm names one as `super::schema_<name>`, so it is generated beside them.
+SCHEMAS=(schema_entry schema_total)
 # The standard algorithms sync_client imports, by their library names; each
 # is generated beside the machines under its own name, as a local one is.
 STD_ALGORITHMS=(sync/sync_failure sync/sync_retry_at sync/sync_delete_outcome sync/sync_upload_outcome)
@@ -82,6 +85,9 @@ trap 'rm -rf "$TMP"' EXIT
 
 for machine in "${MACHINES[@]}"; do
     "$CODEGEN" generate "$INPUT_ROOT/$machine.scxml" -l rust -o "$TMP/"
+done
+for schema in "${SCHEMAS[@]}"; do
+    "$CODEGEN" generate "$INPUT_ROOT/$schema.scxml" -l rust -o "$TMP/"
 done
 for algorithm in "${ALGORITHMS[@]}"; do
     "$CODEGEN" generate "$INPUT_ROOT/algorithm_$algorithm.scxml" -l rust -o "$TMP/"
@@ -111,4 +117,4 @@ MODRS="$GENERATED_DIR/mod.rs"
 source "$REPO_ROOT/scripts/lib/sce_rustfmt.sh"
 sce_rustfmt_dir "$GENERATED_DIR" "$REPO_ROOT"
 
-echo "Regenerated: ${MACHINES[*]}, ${ALGORITHMS[*]} and ${STD_ALGORITHMS[*]} under $GENERATED_DIR/ from $INPUT_ROOT"
+echo "Regenerated: ${MACHINES[*]}, ${SCHEMAS[*]}, ${ALGORITHMS[*]} and ${STD_ALGORITHMS[*]} under $GENERATED_DIR/ from $INPUT_ROOT"

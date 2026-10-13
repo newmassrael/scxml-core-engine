@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The amount of one ledger line: a record in, a number out. A statechart asks it of
+  the line an event brought, in a guard.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm"
+       name="ledger_amount"
+       version="1.0">
+  <sce:import kind="event-schema" src="schema_entry.scxml" as="Entry"/>
+  <sce:signature>
+    <sce:param name="line" type="record:Entry"/>
+    <sce:return type="int32"/>
+  </sce:signature>
+  <sce:body>
+    <sce:return expr="line.amount"/>
+  </sce:body>
+</scxml>

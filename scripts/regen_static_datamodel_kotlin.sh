@@ -125,7 +125,17 @@ done
 ALGORITHM_ROOT="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/generated"
 # algorithm_days_in_month: called from static_record's guard. algorithm_day_run:
 # its list is what static_list_assign takes whole.
-ALGORITHMS=(days_in_month day_run day_repeat)
+ALGORITHMS=(days_in_month day_run day_repeat ledger_add ledger_total ledger_amount ledger_bump ledger_ids)
+# The records static_state_algorithm hands those algorithms and takes back: an
+# algorithm's file imports the package of each, which is named for the schema.
+SCHEMAS=(schema_entry schema_total)
+for schema in "${SCHEMAS[@]}"; do
+    "$CODEGEN" generate "$INPUT_ROOT/$schema.scxml" -l kotlin -o "$TMP/$schema/"
+    dir="$ALGORITHM_ROOT/$schema"
+    mkdir -p "$dir"
+    find "$dir" -maxdepth 1 -name '*.kt' -delete
+    cp "$TMP/$schema"/*.kt "$dir/"
+done
 for algorithm in "${ALGORITHMS[@]}"; do
     "$CODEGEN" generate "$INPUT_ROOT/algorithm_$algorithm.scxml" -l kotlin -o "$TMP/algorithm_$algorithm/"
     dir="$ALGORITHM_ROOT/$algorithm"
@@ -145,4 +155,4 @@ for algorithm in "${STD_ALGORITHMS[@]}"; do
     cp "$TMP/std_$name"/*.kt "$dir/"
 done
 
-echo "Regenerated: ${MACHINES[*]} under $GENERATED_ROOT/ and ${ALGORITHMS[*]} ${STD_ALGORITHMS[*]} under $ALGORITHM_ROOT/ from $INPUT_ROOT"
+echo "Regenerated: ${MACHINES[*]} under $GENERATED_ROOT/ and ${SCHEMAS[*]} ${ALGORITHMS[*]} ${STD_ALGORITHMS[*]} under $ALGORITHM_ROOT/ from $INPUT_ROOT"

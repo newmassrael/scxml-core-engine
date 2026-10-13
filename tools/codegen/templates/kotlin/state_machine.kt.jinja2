@@ -46,6 +46,11 @@ import com.sce.runtime.*
 // ── SCE Accepted Subset §2.15: sce-static enum and record variable classes ─────
 {{ static_type_defs }}
 {% endif %}
+{% if static_adapter_defs %}
+// ── SCE Accepted Subset §2.15: calls of an algorithm that takes or returns state ──
+{{ static_adapter_defs }}
+
+{% endif %}
 // --- State Machine (W3C SCXML) ---
 
 {% if model.context_objects %}

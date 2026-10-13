@@ -111,7 +111,7 @@ use crate::forge::import_source::ImportSource;
 use crate::forge::model::{ForgeDocument, ForgeImport, ForgeKind, ParsedForge, SceType};
 use crate::forge::static_js_algorithm;
 use crate::forge::static_lowering::{lower, Callee, LoweredElement, LoweredSite, StaticTarget};
-use crate::forge::type_ctx::StaticScope;
+use crate::forge::type_ctx::{StateArg, StaticCallee, StaticScope};
 use crate::forge::types::InferredType;
 use crate::model::{Action, Datamodel, SCXMLModel, Variable};
 use crate::model::{DoneDataContent, HybridInvokeInfo, Invoke};
@@ -270,6 +270,28 @@ impl StaticTarget for JsTarget {
             // import.
             import: Some(String::new()),
         })
+    }
+    // The Interpreter's records are plain objects of their schema's fields and its
+    // lists arrays, which is what the algorithm lowered to ecmascript takes and
+    // returns: a call hands it the value the datamodel holds, and needs no adapter.
+    // An algorithm only reads what it is handed, so nothing of the machine's state is
+    // reached except through what the call returns.
+    fn lowers_state_calls(&self) -> bool {
+        true
+    }
+    fn has_state_adapters(&self) -> bool {
+        false
+    }
+    fn state_argument(&self, _machine: &str, _arg: &StateArg, held: &str) -> String {
+        held.to_string()
+    }
+    fn state_adapter_name(&self, callee: &StaticCallee, _coded: &str) -> String {
+        self.callee(&callee.document_name)
+            .expect("an algorithm the document imports travels in it")
+            .call
+    }
+    fn state_list_within(&self, _adapter: &str, value: &str, capacity: u32) -> String {
+        format!("{RUNTIME_GLOBAL}.within({value}, {capacity})")
     }
     fn unsupported(&self, model: &SCXMLModel, _scope: &StaticScope) -> Option<String> {
         if !model.global_scripts.is_empty() {

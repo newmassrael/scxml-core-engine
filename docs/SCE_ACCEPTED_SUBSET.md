@@ -4115,11 +4115,14 @@ kind does, `DaysInMonth(shown.year, shown.month)`, in a guard, an assignment
 or a host action's argument, judged against the signature the forge import
 pass discovers — its parameters' and return's types. An algorithm whose
 signature takes or returns a `list<T>` or a `record:` is not called from a
-statechart — a host calls it, and another algorithm when its slots are
-records (SCE_FORGE.md §4.12) — and is refused where it is called, with one
-exception: an algorithm that takes scalars only, declares `may-fail` and
+statechart unless the statechart can hand it what it takes and receive what it
+returns — a host calls it, and another algorithm when its slots are records
+(SCE_FORGE.md §4.12) — and is refused where it is called, with two
+exceptions: an algorithm that takes scalars only, declares `may-fail` and
 returns a `list<T>` of numbers or bools with a `returns-max-size` is taken
-whole by an `<assign>` to a list variable (below). The import is
+whole by an `<assign>` to a list variable (below), and an algorithm whose
+records are ones the statechart imports as event-schemas is handed the
+variables that hold them (State an algorithm takes and gives back, below). The import is
 read where the document is parsed and refused there if its file is missing
 or is not an algorithm (`import/file-not-found`, `import/kind-mismatch`,
 `import/not-forge`); under any other data model an algorithm import is
@@ -4170,6 +4173,54 @@ Kotlin an immutable `List`, C a `{len, data[bound]}` the library's view reads), 
 the algorithm's own. `scenarios/static_list_assign.json` holds all of this on every
 engine that runs the model, the Interpreter included, which holds the same bound
 through the library its lowered document installs.
+
+**State an algorithm takes and gives back.** A rule that works on what a statechart
+keeps is written once, as an algorithm, and every backend runs the same one:
+`AddEntry(entries, _event.data.id, _event.data.amount)` hands the algorithm the
+list of records `entries` and the two numbers the event carried, and
+`<assign location="entries" expr="AddEntry(…)"/>` replaces the list with what it
+returns. A slot of the algorithm that is a `record:` or a `list<T>` is filled by
+the **name** of a variable that holds one — a record variable, a list variable, the
+item of a `<foreach>` over records, or `_event.data` for the payload of the event
+the transition is on — and not by an expression that computes one
+(`expression/unsupported-construct`, naming the call and what it was handed). The
+other slots are scalar expressions as in any call. What the algorithm returns is a
+number, or a record or a list that the call hands over whole: an `<assign>` to a
+variable of that record or list is the only place one is taken; it is no operand,
+no field read (`Bump(total, 1).count`), no host action's argument.
+
+The types agree or the call is refused where it is written, naming both: a record
+slot takes a record of the SAME schema document the statechart imports
+(SCE_FORGE.md §4.12 — the document, not the fields), a list of numbers a list of the
+same element, a list of records a list of the same schema. An algorithm that returns
+a list declares `may-fail` and a `returns-max-size`, and the variable it is assigned
+to must be able to hold all of it (`sce:capacity` at least `returns-max-size`, naming
+both numbers), as for a list of numbers above. A record is handed over only when
+every field of its schema is a number or a truth value, the fields that copy the same
+on every backend: one with a string, a byte string or an enum field is refused where
+the algorithm is imported, naming the field.
+
+A call is a statement like any other. It reads the variables as they stand, and
+nothing the algorithm does reaches the machine's state: the machine hands over a copy
+of the record or list in the algorithm's own types and builds its own value from
+what comes back, so an algorithm that keeps, changes or returns what it was handed
+cannot leave the machine holding it. A call that fails — an overflow in the body, a
+list past its capacity, or a list that does not fit the variable — is a failed
+statement: the variable is left as it was, the rest of the block does not run, and
+`error.execution` says so (W3C SCXML 4.9). `scenarios/static_state_algorithm.json`
+holds all of this on every engine that runs the model, the Interpreter included, in
+which the algorithm is called with the variable the document holds. The machine does
+not copy to hand it over there: the Interpreter's records and lists are the
+algorithm's own and an algorithm only reads what it is handed.
+
+Each generated backend declares, beside the machine's other types, one function per
+way the call is made (`call_<callee>__<how each argument is held>`, in Go prefixed so
+the expression layer knows it answers an `Outcome`), which builds the algorithm's
+records from the machine's, calls the algorithm and builds the machine's value from
+what it returned, answering as the algorithm does — a result where it may fail — so
+that the failure is received by the one rule every checked call is. A backend whose
+data model has no such conversion refuses the document with
+`generate/unsupported-feature`, naming the call.
 
 **Code generation.** A backend lowers the model once its templates hold
 the variables as fields and route every expression through the forge

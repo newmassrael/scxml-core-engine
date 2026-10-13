@@ -163,6 +163,7 @@ pub fn check(
         payload_schema: Default::default(),
         diag_label,
         read: Default::default(),
+        whole_state_call_ok: Default::default(),
     };
     // Every record variable's fields, readable everywhere; a transition adds
     // its payload to these.
@@ -535,9 +536,42 @@ struct Judge<'a> {
     /// Every name an expression of the document reads or calls, so an
     /// imported algorithm nothing calls is found.
     read: std::cell::RefCell<std::collections::BTreeSet<String>>,
+    /// Set by the `<assign>` that takes what an algorithm returns as a record or a
+    /// list, around the judging of its right side: a call that returns one is a value
+    /// there and nowhere else.
+    whole_state_call_ok: std::cell::Cell<bool>,
 }
 
 impl<'a> Judge<'a> {
+    /// The alias this document imports the schema of the event the transition is on
+    /// under, which `_event.data` taken whole is a record of.
+    fn payload_alias(&self) -> Option<String> {
+        let payload = self.payload_schema.borrow();
+        let payload = payload.as_ref()?;
+        self.schemas
+            .iter()
+            .find(|(_, held)| held.name == payload.name)
+            .map(|(alias, _)| alias.clone())
+    }
+
+    /// `expr` with each call of an algorithm that takes a record or a list rewritten
+    /// into the call the rest of the judge reads ([`StaticScope::rewrite_state_calls`]).
+    fn rewrite_state(
+        &self,
+        expr: &str,
+    ) -> Result<crate::forge::type_ctx::StateRewrite, crate::forge::type_ctx::StateCallRefusal>
+    {
+        let loops = self.loop_records.borrow();
+        let payload = self.payload_alias();
+        self.scope.rewrite_state_calls(
+            expr,
+            &crate::forge::type_ctx::StateContext {
+                loop_records: &loops,
+                payload_alias: payload.as_deref(),
+            },
+        )
+    }
+
     fn ctx<'c>(&self, payload: &'c [(String, InferredType)]) -> TypeCtx<'c>
     where
         'a: 'c,
@@ -566,6 +600,47 @@ impl<'a> Judge<'a> {
             )
         };
         self.record_reads(expr);
+        // A record or a list a statechart hands an algorithm is named at the call, and
+        // the call is judged with each such name replaced by a placeholder, once the
+        // name is known to be a variable of the type the algorithm takes. What is
+        // judged below is that rewritten expression; the author's is the one a refusal
+        // is placed in.
+        let state = self.rewrite_state(expr).map_err(|refusal| {
+            place(
+                crate::forge::error::ExprError::UnsupportedConstruct {
+                    construct: format!("a call of `{}`: {}", refusal.callee, refusal.reason),
+                    observed: Some(refusal.callee),
+                }
+                .at(None),
+            )
+        })?;
+        // A record or a list an algorithm returns is the right side of the assignment
+        // that holds it, and is no value anywhere else.
+        let unfit = |callee: &str| {
+            place(
+                crate::forge::error::ExprError::UnsupportedConstruct {
+                    construct: format!(
+                        "the record or list `{callee}` returns, used as a value (it is taken \
+                         whole by an <assign> to a variable of its type)"
+                    ),
+                    observed: Some(callee.to_string()),
+                }
+                .at(None),
+            )
+        };
+        if let Some(callee) = self.scope.state_returning_call_used_as_value(expr) {
+            return Err(unfit(&callee));
+        }
+        if !self.whole_state_call_ok.get() {
+            if let Some(callee) = self
+                .scope
+                .whole_value_call(expr)
+                .filter(|c| StaticScope::returns_state(c))
+            {
+                return Err(unfit(&callee.alias));
+            }
+        }
+        let expr = state.text.as_str();
         if let Some(list) = self.scope.list_read_as_value(expr) {
             return Err(place(list_read_refusal(&list)));
         }
@@ -949,6 +1024,103 @@ impl<'a> Judge<'a> {
             Expected::Slot(InferredType::List(elem)),
         )?;
         Ok(())
+    }
+
+    /// An `<assign>` of what `callee` returns, a record or a list, to the variable
+    /// `target` that holds a value of that type. The call is the whole of the right
+    /// side; its arguments are judged by the rewrite every expression passes through
+    /// ([`Self::expr`]), and the type returned has to be the variable's own.
+    fn state_from_call(
+        &self,
+        ctx: &TypeCtx<'_>,
+        action: &Action,
+        target: &Variable,
+        callee: &crate::forge::type_ctx::StaticCallee,
+    ) -> Result<(), Located<ForgeError>> {
+        use crate::forge::model::{AlgorithmValueType, ListElemType};
+        use crate::forge::type_ctx::StaticSlot;
+        let value = callee
+            .value
+            .as_ref()
+            .expect("whole_value_call answers a callee with a value signature");
+        let place = |construct: String| {
+            Located::in_file(
+                ExpressionSite::new(&action.expr, action.spellings.get("expr")).place(
+                    crate::forge::error::ExprError::UnsupportedConstruct {
+                        construct,
+                        observed: Some(action.expr.trim().to_string()),
+                    }
+                    .at(None),
+                ),
+                self.diag_label,
+            )
+        };
+        let held = target.value_type.as_ref();
+        let expected = match (&value.ret, held) {
+            (Some(StaticSlot::Record(returned)), Some(AlgorithmValueType::Record { alias }))
+                if returned == alias =>
+            {
+                InferredType::Unknown
+            }
+            (
+                Some(StaticSlot::ScalarList(returned)),
+                Some(AlgorithmValueType::List {
+                    elem: ListElemType::Scalar(held),
+                }),
+            ) if returned == held => match crate::forge::types::ListElem::of(returned) {
+                Some(elem) => InferredType::List(elem),
+                None => {
+                    return Err(place(format!(
+                        "`{}` returns a list of {}, which a list variable does not hold",
+                        callee.alias,
+                        returned.as_attr()
+                    )))
+                }
+            },
+            (
+                Some(StaticSlot::RecordList(returned)),
+                Some(AlgorithmValueType::List {
+                    elem: ListElemType::Record { alias },
+                }),
+            ) if returned == alias => InferredType::List(crate::forge::types::ListElem::Record),
+            (Some(slot), _) => {
+                return Err(place(format!(
+                    "`{}` returns {}, which `{}` does not hold",
+                    callee.alias,
+                    match slot {
+                        StaticSlot::Record(alias) => format!("a record of `{alias}`"),
+                        StaticSlot::ScalarList(t) => format!("a list of {}", t.as_attr()),
+                        StaticSlot::RecordList(alias) => format!("a list of `{alias}`"),
+                        StaticSlot::Scalar(t) => format!("a {}", t.as_attr()),
+                    },
+                    target.id
+                )))
+            }
+            (None, _) => {
+                return Err(place(format!("`{}` returns nothing", callee.alias)));
+            }
+        };
+        // A machine holds the same list wherever it runs: a bound it could pass is
+        // refused when the document is built and not by an overflow later.
+        if let Some(max) = value.max_size {
+            let capacity = target.capacity.unwrap_or(0);
+            if max > capacity {
+                return Err(place(format!(
+                    "`{}` may return at most {max}, and `{}` holds at most {capacity} (its \
+                     sce:capacity)",
+                    callee.alias, target.id
+                )));
+            }
+        }
+        self.whole_state_call_ok.set(true);
+        let judged = self.expr(
+            ctx,
+            &action.expr,
+            action.spellings.get("expr"),
+            Expected::Hint(expected),
+        );
+        self.whole_state_call_ok.set(false);
+        judged.map(|_| ())
     }
 
     /// The `list<T>` variable `name` names, if it names one.
@@ -1645,6 +1817,21 @@ impl<'a> Judge<'a> {
                     .and_then(|v| v.value_type.as_ref())
                     .and_then(crate::forge::model::AlgorithmValueType::record_alias)
                 {
+                    // ... or from what an imported algorithm returns as a record of its
+                    // schema, the call being the whole of the right side.
+                    if let Some(callee) = self
+                        .scope
+                        .whole_value_call(&action.expr)
+                        .filter(|c| StaticScope::returns_state(c))
+                    {
+                        let target = self
+                            .scope
+                            .variables
+                            .iter()
+                            .find(|v| v.id == location)
+                            .expect("the location names a record variable");
+                        return self.state_from_call(ctx, action, target, callee);
+                    }
                     // ... or from the element of a list of its schema, by an index:
                     // the element is copied field by field, as a field of it is read.
                     if let Some((list, index)) = indexed_element(&action.expr) {
@@ -1659,10 +1846,17 @@ impl<'a> Judge<'a> {
                     );
                 }
                 if let Some(list) = self.list_var(location) {
-                    // The one list a statechart takes whole: what an imported
+                    // The lists a statechart takes whole: what an imported
                     // algorithm returns, when the variable can hold all it may.
                     if let Some(callee) = self.scope.whole_list_call(&action.expr) {
                         return self.list_from_call(ctx, action, list, callee);
+                    }
+                    if let Some(callee) = self
+                        .scope
+                        .whole_value_call(&action.expr)
+                        .filter(|c| StaticScope::returns_state(c))
+                    {
+                        return self.state_from_call(ctx, action, list, callee);
                     }
                     // A call of an algorithm that does return a list, refused for a
                     // reason the author can act on: say which, rather than that a list

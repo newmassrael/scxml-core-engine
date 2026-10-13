@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A ledger's lines after a line is put in: the line replaces the one with its id,
+  or comes last when none has it. The lines are handed in as a list of records and
+  come back as one, so a statechart that keeps a ledger asks for the new list and
+  holds it in one step. At most 8 lines; a ninth fails, it does not truncate.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm"
+       name="ledger_add"
+       version="1.0">
+  <sce:import kind="event-schema" src="schema_entry.scxml" as="Entry"/>
+  <sce:signature>
+    <sce:param name="entries" type="list&lt;record:Entry&gt;"/>
+    <sce:param name="id" type="uint32"/>
+    <sce:param name="amount" type="int32"/>
+    <sce:return type="list&lt;record:Entry&gt;" returns-max-size="8" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="fresh" type="record:Entry">
+      <sce:set name="id" expr="id"/>
+      <sce:set name="amount" expr="amount"/>
+    </sce:var>
+    <sce:var name="out" type="list&lt;record:Entry&gt;" capacity="8"/>
+    <sce:var name="seen" type="bool" init="false"/>
+    <sce:foreach item="e" in="entries">
+      <sce:if cond="e.id === id">
+        <sce:assign target="seen" expr="true"/>
+        <sce:append target="out" expr="fresh"/>
+        <sce:else>
+          <sce:append target="out" expr="e"/>
+        </sce:else>
+      </sce:if>
+    </sce:foreach>
+    <sce:if cond="!seen">
+      <sce:append target="out" expr="fresh"/>
+    </sce:if>
+    <sce:return expr="out"/>
+  </sce:body>
+</scxml>

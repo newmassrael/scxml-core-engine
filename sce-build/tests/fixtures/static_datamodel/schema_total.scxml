@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  What a ledger adds up to: how many lines and their sum. The record an algorithm
+  returns to `static_state_algorithm.scxml`, which holds it in a variable of its own
+  and hands it to another algorithm (SCE Accepted Subset §2.15, SCE_FORGE.md §4.12).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="schema_total"
+       sce:event-name="ledger.total">
+  <datamodel>
+    <data id="count" sce:type="uint32" sce:direction="in"/>
+    <data id="sum" sce:type="int32" sce:direction="in"/>
+  </datamodel>
+</scxml>

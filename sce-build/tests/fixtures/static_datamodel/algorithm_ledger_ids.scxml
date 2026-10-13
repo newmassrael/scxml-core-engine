@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The sum of a list of ids: a list of numbers in, a number out.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm"
+       name="ledger_ids"
+       version="1.0">
+  <sce:signature>
+    <sce:param name="ids" type="list&lt;uint32&gt;"/>
+    <sce:return type="uint32" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="sum" type="uint32" init="0"/>
+    <sce:foreach item="id" in="ids">
+      <sce:assign target="sum" expr="sum + id"/>
+    </sce:foreach>
+    <sce:return expr="sum"/>
+  </sce:body>
+</scxml>

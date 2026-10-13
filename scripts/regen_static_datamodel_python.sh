@@ -86,6 +86,24 @@ done
 if [ "${#ALGORITHMS[@]}" -gt 0 ]; then
     mapfile -t ALGORITHMS < <(printf '%s\n' "${ALGORITHMS[@]}" | sort -u)
 fi
+# The records an algorithm takes or returns are the payload classes of the
+# event-schemas it imports, which its module imports as siblings. Derived from the
+# algorithms, as they are from the machines, for the same reason; a standard one
+# keeps its own.
+SCHEMAS=()
+for algorithm in "${ALGORITHMS[@]}"; do
+    case "$algorithm" in
+        sce:*) ;;
+        *)
+            while IFS= read -r import; do
+                SCHEMAS+=("$(dirname "$algorithm")/$import")
+            done < <(grep 'kind="event-schema"' "$algorithm" | grep -o 'src="[^"]*"' | cut -d'"' -f2)
+            ;;
+    esac
+done
+if [ "${#SCHEMAS[@]}" -gt 0 ]; then
+    mapfile -t SCHEMAS < <(printf '%s\n' "${SCHEMAS[@]}" | sort -u)
+fi
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -95,6 +113,9 @@ for i in "${!MACHINES[@]}"; do
 done
 for i in "${!ALGORITHMS[@]}"; do
     "$CODEGEN" generate "${ALGORITHMS[$i]}" -l python -o "$TMP/algorithm_$i/"
+done
+for i in "${!SCHEMAS[@]}"; do
+    "$CODEGEN" generate "${SCHEMAS[$i]}" -l python -o "$TMP/schema_$i/"
 done
 
 # What this directory holds that is not generated is its package marker and its
@@ -109,6 +130,13 @@ done
 MODULES=()
 for i in "${!ALGORITHMS[@]}"; do
     for generated in "$TMP/algorithm_$i"/*.py; do
+        cp "$generated" "$GENERATED_DIR/"
+        MODULES+=("$(basename "$generated" .py)")
+    done
+done
+
+for i in "${!SCHEMAS[@]}"; do
+    for generated in "$TMP/schema_$i"/*.py; do
         cp "$generated" "$GENERATED_DIR/"
         MODULES+=("$(basename "$generated" .py)")
     done

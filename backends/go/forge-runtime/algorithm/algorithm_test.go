@@ -66,6 +66,28 @@ func TestTakePassesACalleeFailureOn(t *testing.T) {
 	}
 }
 
+// A call that answers an Outcome is taken as a Take is, its type inferred from
+// the Outcome: the value, or its zero with the failure recorded in the caller's
+// Failure.
+func TestTakeOutcomePassesAFailureOnAndInfersItsType(t *testing.T) {
+	type line struct{ id, amount uint32 }
+	callee := func(fail bool) Outcome[[]line] {
+		if fail {
+			var f Failure
+			f.Fail(CapacityExceeded)
+			return Outcome[[]line]{Err: f.Err()}
+		}
+		return Outcome[[]line]{Value: []line{{1, 2}}}
+	}
+	var f Failure
+	if got := TakeOutcome(&f, callee(false)); len(got) != 1 || got[0] != (line{1, 2}) || f.Failed() {
+		t.Errorf("got %v (err %v), want the line", got, f.Err())
+	}
+	if got := TakeOutcome(&f, callee(true)); got != nil || f.Err() == nil || f.Err().Error() != "capacity-exceeded" {
+		t.Errorf("got %v (err %v), want the callee's capacity-exceeded", got, f.Err())
+	}
+}
+
 // A conditional of two typed values answers the one its condition names, and its
 // type is the values' own.
 func TestChooseAnswersTheBranchTheConditionNames(t *testing.T) {

@@ -140,6 +140,7 @@
 #include "static_send_params_sm.h"
 #include "static_send_target_sm.h"
 #include "static_send_type_sm.h"
+#include "static_state_algorithm_sm.h"
 #include "static_string_capacity_sm.h"
 #include "static_timers_sm.h"
 #include "static_whole_payload_sm.h"
@@ -1285,6 +1286,35 @@ static const record_variable_t record_list_records[] = {RECORD_ROW(static_record
                                                         {NULL, NULL, NULL, NULL}};
 STATIC_SCENARIO(static_record_list, record_list_states, record_list_variables, NULL, no_lists, record_list_records)
 
+// static_state_algorithm: the algorithms are handed the records and lists the
+// machine holds and the event's own payload, and what they return is written only
+// when the call succeeded and held to the bound of the variable it is written to.
+#define ENTRY_FIELDS(N, E) N(id) N(amount)
+#define TOTAL_FIELDS(N, E) N(count) N(sum)
+VARIABLE_READER(static_state_algorithm, idsum)
+VARIABLE_READER(static_state_algorithm, large)
+VARIABLE_READER(static_state_algorithm, refusals)
+LIST_READER(static_state_algorithm, ids, sce_forge_uint32_view_t)
+RECORD_READER(static_state_algorithm, total, static_state_algorithm_record_total_t, TOTAL_FIELDS)
+RECORD_READER(static_state_algorithm, last, static_state_algorithm_record_entry_t, ENTRY_FIELDS)
+RECORD_LIST_READER(static_state_algorithm, entries, static_state_algorithm_record_entry_view_t,
+                   static_state_algorithm_record_entry_t, ENTRY_FIELDS)
+static const name_value_t state_algorithm_states[] = {
+    {"open", STATIC_STATE_ALGORITHM_STATE_OPEN},
+};
+static const variable_t state_algorithm_variables[] = {
+    {"idsum", static_state_algorithm_read_idsum},
+    {"large", static_state_algorithm_read_large},
+    {"refusals", static_state_algorithm_read_refusals},
+};
+static const list_variable_t state_algorithm_lists[] = {{"ids", static_state_algorithm_read_list_ids}, {NULL, NULL}};
+static const record_variable_t state_algorithm_records[] = {RECORD_ROW(static_state_algorithm, total),
+                                                            RECORD_ROW(static_state_algorithm, last),
+                                                            RECORD_LIST_ROW(static_state_algorithm, entries),
+                                                            {NULL, NULL, NULL, NULL}};
+STATIC_SCENARIO(static_state_algorithm, state_algorithm_states, state_algorithm_variables, NULL, state_algorithm_lists,
+                state_algorithm_records)
+
 // static_record_list_index: a field of the element a list of records is indexed
 // at, read in an assignment, an operand and a guard; an index outside the list
 // reads nothing and raises `error.execution`.
@@ -1855,6 +1885,7 @@ int main(void) {
     bad |= static_record_fields_scenario("static_record_fields", 9);
     bad |= static_record_scenario("static_record", 16);
     bad |= static_record_list_scenario("static_record_list", 14);
+    bad |= static_state_algorithm_scenario("static_state_algorithm", 17);
     bad |= static_record_list_index_scenario("static_record_list_index", 19);
     bad |= static_record_enum_scenario("static_record_enum", 29);
     bad |= static_whole_payload_scenario("static_whole_payload", 9);

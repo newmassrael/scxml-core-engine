@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  What a ledger's lines add up to, as one record: a list of records in, a record out.
+  The sum is checked like any integer operation, so lines that do not fit an int32
+  between them are a failure and not a wrapped number.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm"
+       name="ledger_total"
+       version="1.0">
+  <sce:import kind="event-schema" src="schema_entry.scxml" as="Entry"/>
+  <sce:import kind="event-schema" src="schema_total.scxml" as="Total"/>
+  <sce:signature>
+    <sce:param name="entries" type="list&lt;record:Entry&gt;"/>
+    <sce:return type="record:Total" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="t" type="record:Total">
+      <sce:set name="count" expr="0"/>
+      <sce:set name="sum" expr="0"/>
+    </sce:var>
+    <sce:foreach item="e" in="entries">
+      <sce:assign target="t.count" expr="t.count + 1"/>
+      <sce:assign target="t.sum" expr="t.sum + e.amount"/>
+    </sce:foreach>
+    <sce:return expr="t"/>
+  </sce:body>
+</scxml>

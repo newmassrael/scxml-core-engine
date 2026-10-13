@@ -2528,6 +2528,38 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_list_assign.scxml"
         STAGE_ALSO algorithm_day_run.scxml algorithm_day_repeat.scxml
     )
+    # A machine hands algorithms the records and lists it holds and takes back what
+    # they return. Each algorithm's header, and the header of each schema it names a
+    # record of, is generated once beside the machine that includes them.
+    sce_generate_static_integration_c_test(static_state_algorithm
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_state_algorithm.scxml"
+        STAGE_ALSO schema_entry.scxml schema_total.scxml
+                   algorithm_ledger_add.scxml algorithm_ledger_total.scxml algorithm_ledger_amount.scxml
+                   algorithm_ledger_bump.scxml algorithm_ledger_ids.scxml
+    )
+    set(_STATE_ALGORITHM_HEADERS "")
+    foreach(_STATE_HEADER schema_entry schema_total ledger_add ledger_total ledger_amount ledger_bump ledger_ids)
+        if(_STATE_HEADER MATCHES "^schema_")
+            set(_STATE_SOURCE
+                "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_STATE_HEADER}.scxml")
+        else()
+            set(_STATE_SOURCE
+                "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/algorithm_${_STATE_HEADER}.scxml")
+        endif()
+        set(_STATE_OUTPUT "${SCE_C_INTEGRATION_GENERATED_DIR}/${_STATE_HEADER}.h")
+        add_custom_command(
+            OUTPUT "${_STATE_OUTPUT}"
+            COMMAND "${SCE_CODEGEN}" generate "${_STATE_SOURCE}"
+                    -l c11 -o "${SCE_C_INTEGRATION_GENERATED_DIR}"
+                    --write-deps "${_STATE_OUTPUT}.d"
+            DEPENDS "${_STATE_SOURCE}" "${SCE_CODEGEN}"
+            DEPFILE "${_STATE_OUTPUT}.d"
+            COMMENT "Generating C11 header: ${_STATE_HEADER}.h"
+            VERBATIM
+        )
+        list(APPEND _STATE_ALGORITHM_HEADERS "${_STATE_OUTPUT}")
+    endforeach()
     # A record is a struct of its schema's fields, declared in the machine's own
     # header; the schema is the document the machine imports it from.
     foreach(_STATIC_RECORD_MACHINE static_record_fields static_record_list static_record_list_index)
@@ -2720,6 +2752,8 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_list_assign_SOURCES}
         ${_DAY_RUN_HEADER}
         ${_DAY_REPEAT_HEADER}
+        ${INTEGRATION_C_TEST_static_state_algorithm_SOURCES}
+        ${_STATE_ALGORITHM_HEADERS}
         ${INTEGRATION_C_TEST_static_record_fields_SOURCES}
         ${INTEGRATION_C_TEST_static_record_real_SOURCES}
         ${INTEGRATION_C_TEST_static_record_real32_SOURCES}

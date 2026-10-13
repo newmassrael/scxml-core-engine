@@ -99,6 +99,24 @@ done
 if [ "${#ALGORITHMS[@]}" -gt 0 ]; then
     mapfile -t ALGORITHMS < <(printf '%s\n' "${ALGORITHMS[@]}" | sort -u)
 fi
+# The records an algorithm takes or returns are the payload structs of the
+# event-schemas it imports, each a package of its own that the algorithm's package
+# imports. Derived from the algorithms, as they are from the machines; a standard
+# one keeps its own.
+SCHEMAS=()
+for algorithm in "${ALGORITHMS[@]}"; do
+    case "$algorithm" in
+        sce:*) ;;
+        *)
+            while IFS= read -r import; do
+                SCHEMAS+=("$(dirname "$algorithm")/$import")
+            done < <(grep 'kind="event-schema"' "$algorithm" | grep -o 'src="[^"]*"' | cut -d'"' -f2)
+            ;;
+    esac
+done
+if [ "${#SCHEMAS[@]}" -gt 0 ]; then
+    mapfile -t SCHEMAS < <(printf '%s\n' "${SCHEMAS[@]}" | sort -u)
+fi
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -121,6 +139,9 @@ done
 for i in "${!ALGORITHMS[@]}"; do
     "$CODEGEN" generate "${ALGORITHMS[$i]}" -l go -o "$TMP/algorithm_$i/" --go-module-prefix "$GO_MODULE_PREFIX"
 done
+for i in "${!SCHEMAS[@]}"; do
+    "$CODEGEN" generate "${SCHEMAS[$i]}" -l go -o "$TMP/schema_$i/" --go-module-prefix "$GO_MODULE_PREFIX"
+done
 
 mkdir -p "$GENERATED_DIR"
 find "$GENERATED_DIR" -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} +
@@ -131,6 +152,14 @@ done
 PACKAGES=()
 for i in "${!ALGORITHMS[@]}"; do
     for generated in "$TMP/algorithm_$i"/*.go; do
+        package="$(basename "$generated" .go)"
+        mkdir -p "$GENERATED_DIR/$package"
+        cp "$generated" "$GENERATED_DIR/$package/"
+        PACKAGES+=("$package")
+    done
+done
+for i in "${!SCHEMAS[@]}"; do
+    for generated in "$TMP/schema_$i"/*.go; do
         package="$(basename "$generated" .go)"
         mkdir -p "$GENERATED_DIR/$package"
         cp "$generated" "$GENERATED_DIR/$package/"

@@ -152,6 +152,9 @@ use sce_rust_tests::integration::static_datamodel::static_send_target_sm::{
 use sce_rust_tests::integration::static_datamodel::static_send_type_sm::{
     StaticSendTypePersist, StaticSendTypePolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_state_algorithm_sm::{
+    StaticStateAlgorithmPersist, StaticStateAlgorithmPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_string_capacity_sm::{
     StaticStringCapacityPersist, StaticStringCapacityPolicy,
 };
@@ -817,6 +820,20 @@ fn static_send_params_cross_as_the_typed_values_of_the_machine() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_send_params.json"
+        ),
+    );
+}
+
+// A statechart hands the algorithms the records and lists it holds, and the
+// event's own payload, and takes back what they return: a list or a record
+// whole, written only when the call succeeded.
+#[test]
+fn static_state_algorithm_hands_state_to_an_algorithm_and_takes_it_back() {
+    replay(
+        Engine::new(StaticStateAlgorithmPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_state_algorithm.json"
         ),
     );
 }

@@ -75,6 +75,7 @@
 #include "static_send_params_sm.h"
 #include "static_send_target_sm.h"
 #include "static_send_type_sm.h"
+#include "static_state_algorithm_sm.h"
 #include "static_string_capacity_sm.h"
 #include "static_timers_sm.h"
 #include "static_whole_payload_sm.h"
@@ -315,6 +316,25 @@ template <typename Day> json dayJson(const Day &day) {
     return json{{"year", day.year}, {"month", day.month}, {"dayOfMonth", day.dayOfMonth}};
 }
 
+/// A `record:Entry` value as a scenario states it: its fields by the schema's ids.
+template <typename Entry> json entryJson(const Entry &entry) {
+    return json{{"id", entry.id}, {"amount", entry.amount}};
+}
+
+/// A list of such values, in order.
+template <typename Entries> json entriesJson(const Entries &entries) {
+    json listed = json::array();
+    for (const auto &entry : entries) {
+        listed.push_back(entryJson(entry));
+    }
+    return listed;
+}
+
+/// A `record:Total` value as a scenario states it: its fields by the schema's ids.
+template <typename Total> json totalJson(const Total &total) {
+    return json{{"count", total.count}, {"sum", total.sum}};
+}
+
 /// A `record:Reading` value as a scenario states it: its fields by the schema's ids.
 template <typename Reading> json readingJson(const Reading &reading) {
     return json{{"sensor", reading.sensor}, {"value", reading.value}};
@@ -507,6 +527,23 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, AListTakesWhatAnAlgorithmReturnsWhole
         {"refusals", [](const Machine &m) { return json(m.refusals()); }},
     });
     replay("static_list_assign", driver);
+}
+
+// A statechart hands the algorithms the records and lists it holds, and the
+// event's own payload, and takes back what they return, written only when the
+// call succeeded and held to the bound of the variable it is written to.
+TEST(AStaticDatamodelRunsGeneratedCppTest, AStatechartHandsItsStateToAnAlgorithmAndTakesItBack) {
+    using Machine = G::static_state_algorithm::static_state_algorithm;
+    Driver<Machine> driver({
+        {"entries", [](const Machine &m) { return entriesJson(m.entries()); }},
+        {"total", [](const Machine &m) { return totalJson(m.total()); }},
+        {"last", [](const Machine &m) { return entryJson(m.last()); }},
+        {"ids", [](const Machine &m) { return json(m.ids()); }},
+        {"idsum", [](const Machine &m) { return json(m.idsum()); }},
+        {"large", [](const Machine &m) { return json(m.large()); }},
+        {"refusals", [](const Machine &m) { return json(m.refusals()); }},
+    });
+    replay("static_state_algorithm", driver);
 }
 
 // An element is read by its index like any number; an index below zero or not

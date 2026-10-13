@@ -340,6 +340,12 @@ template <typename T> ::std::vector<::std::pair<::std::uint32_t, T>> sceIndexed(
 // ── NL→IR Item C1 Path A: typed `_event.data` payload channel ─────────
 {{ event_payload_defs }}
 {% endif %}
+{% if static_adapter_defs %}
+// ── SCE Accepted Subset §2.15: calls of an algorithm that takes or returns state ──
+{# After the payload channel: an adapter that takes an event's payload names its type. #}
+{{ static_adapter_defs }}
+
+{% endif %}
 {% if has_native_actions %}
 // ── W3C SCXML G.7: `<sce:action>` host dispatch ───────────────────────
 {{ native_actions_defs }}

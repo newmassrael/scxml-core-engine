@@ -1,0 +1,37 @@
+# Mutation cases for "a machine hands an algorithm the records and lists it holds and
+# takes back what it returns" under the Kotlin backend (docs/SCE_ACCEPTED_SUBSET.md
+# §2.15, "State an algorithm takes and gives back").
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_kotlin_a_machine_hands_its_state_to_an_algorithm_kotlin.cases`.
+#
+# `static_state_algorithm` puts lines in a ledger through `AddEntry`, totals them through
+# `TotalOf`, and is replayed against the Kotlin machine by `StaticScenarioTest`. Kotlin's
+# algorithm lists grow past their capacity, so the bound that keeps a ninth line out is
+# the variable's. A line that overflows the total is a failed statement: the variable
+# written by the statement before stays written, the one the call would have written does
+# not, and `error.execution` says so. The mutants take one decision away each:
+#
+#   a list the call gave back is written without the variable's bound;
+#   a failed call is thrown past the machine's own handling of a failed statement.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_gradle . :sce-kotlin-tests:test --tests 'com.sce.integration.StaticScenarioTest'
+mutation_targets sce-build/src/forge/static_lowering.rs
+mutation_targets backends/kotlin/tests/src/main/kotlin/com/sce/integration/static_state_algorithm/static_state_algorithmSm.kt
+mutation_regen scripts/regen_static_datamodel_kotlin.sh
+mutation_oracles backends/kotlin/tests/src/test/kotlin/com/sce/integration/StaticScenarioTest.kt sce-build/tests/fixtures/static_datamodel/scenarios/static_state_algorithm.json
+
+mutation_case "a list the call gave back is written without the variable's bound" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "                    if let Some((adapter, capacity)) = state_list {",
+     "                    if let Some((adapter, capacity)) = state_list.filter(|_| false) {")
+PY
+
+mutation_case "a failed call is thrown past the machine's handling of a failed statement" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "is com.sce.forge.runtime.AlgorithmResult.Failed -> r",
+     "is com.sce.forge.runtime.AlgorithmResult.Failed -> throw IllegalStateException(\\\"the call failed\\\")")
+PY

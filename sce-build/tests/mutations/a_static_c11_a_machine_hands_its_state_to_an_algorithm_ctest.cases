@@ -1,0 +1,30 @@
+# Mutation cases for "a machine hands an algorithm the records and lists it holds and
+# takes back what it returns" under the C11 backend (docs/SCE_ACCEPTED_SUBSET.md §2.15,
+# "State an algorithm takes and gives back").
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_c11_a_machine_hands_its_state_to_an_algorithm_ctest.cases`.
+#
+# `static_state_algorithm` puts lines in a ledger through `AddEntry`, totals them through
+# `TotalOf`, and is replayed against the C11 machine by `c11_integration_static_scalars`.
+# A C algorithm's list is bounded by its own declaration, so a ninth line fails in the
+# algorithm and the variable's bound is a second hold on the same fact; the case that
+# takes it away is therefore not one this scenario can judge, and is left to the backends
+# whose lists grow. A line that overflows the total is a failed statement: the variable
+# written by the statement before stays written, the one the call would have written does
+# not, and `error.execution` says so. The mutant takes one decision away:
+#
+#   the failure of a call is answered as a value of nothing.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^c11_integration_static_scalars$'
+mutation_targets sce-build/src/forge/static_lowering.rs
+mutation_oracles backends/c/tests/integration/test_static_scalars.c sce-build/tests/fixtures/static_datamodel/scenarios/static_state_algorithm.json
+
+mutation_case "the failure of a call is answered as a value of nothing" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "    if (!r.ok) {{\\n        return ({result_type}){{ .ok = false, .why = r.why }};\\n    }}\\n    return ({result_type}){{ .value = {}, .ok = true }};",
+     "    if (!r.ok) {{\\n        return ({result_type}){{ .ok = true }};\\n    }}\\n    return ({result_type}){{ .value = {}, .ok = true }};")
+PY

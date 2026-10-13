@@ -66,6 +66,7 @@ import com.sce.integration.static_send_target.StaticSendTargetStateMachine
 import com.sce.integration.static_send_type.StaticSendTypeStateMachine
 import com.sce.integration.static_record_bytes.StaticRecordBytesStateMachine
 import com.sce.integration.static_record_string.StaticRecordStringStateMachine
+import com.sce.integration.static_state_algorithm.StaticStateAlgorithmStateMachine
 import com.sce.integration.static_string_capacity.StaticStringCapacityStateMachine
 import com.sce.integration.static_timers.StaticTimersStateMachine
 import com.sce.integration.static_whole_payload.StaticWholePayloadStateMachine
@@ -1127,6 +1128,26 @@ class StaticScenarioTest {
         try {
             replay(
                 scenario("static_send_params"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // A statechart hands the algorithms the records and lists it holds, and the
+    // event's own payload, and takes back what they return, written only when the
+    // call succeeded and held to the bound of the variable it is written to.
+    @Test
+    fun staticStateAlgorithmHandsStateToAnAlgorithmAndTakesItBack() {
+        val sm = StaticStateAlgorithmStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_state_algorithm"),
                 send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
                 tick = { sm.tick() },
                 save = { sm.save() },

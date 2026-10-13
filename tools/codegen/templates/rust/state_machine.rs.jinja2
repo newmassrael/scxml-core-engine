@@ -178,6 +178,11 @@ impl {{ machine_name }}Event {
 {{ static_type_defs }}
 
 {% endif %}
+{% if static_adapter_defs %}
+// ── SCE Accepted Subset §2.15: calls of an algorithm that takes or returns state ──
+{{ static_adapter_defs }}
+
+{% endif %}
 {% if static_datamodel %}
 // ── SCE Accepted Subset §2.15: what a host observes of a sce-static machine ──
 {% if static_published %}

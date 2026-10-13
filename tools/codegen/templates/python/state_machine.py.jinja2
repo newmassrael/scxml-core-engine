@@ -278,6 +278,11 @@ def _sce_log_name(value):
 
 
 {% endif %}
+{% if static_adapter_defs %}
+{{ static_adapter_defs }}
+
+
+{% endif %}
 {# A parent's `<param>` and `namelist` hand values to a child's top-level
    `<data>` of a scalar type (§scxml-6.4.1). A list, a record, an enum and bytes
    are not seeded; the static judge refuses a value handed to one. #}
