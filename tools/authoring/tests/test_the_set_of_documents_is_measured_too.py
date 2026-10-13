@@ -29,6 +29,7 @@ import yaml
 
 from sce_author.coverage import coverage
 from sce_author.pack import load_pack
+from sce_author.prose import load_prose
 from sce_author.verify import written_positions
 
 HERE = pathlib.Path(__file__).resolve().parent
@@ -192,6 +193,67 @@ class WhatABindingWritesIsCountedAsVerifyCountsIt(unittest.TestCase):
     def test_the_count_is_the_one_verify_judges_with(self):
         bound, _ = written_positions({"alarm": ALARM_RULE})
         self.assertEqual(bound, self.alarm_positions_written(ALARM_RULE))
+
+
+SPARE = ("\n  - address: plant/out/spare\n    role: output\n    names: [OUT_Spare, spare lamp]\n"
+         "    fields:\n      value: {values: {UNLIT: 0, LIT: 1}}\n")
+
+
+class AnUnwrittenOutputNothingAsksFor(unittest.TestCase):
+    """The pack declares an output the specification never names and no case expects.
+
+    A document could only invent a value for it, so leaving it unwritten is not a gap in
+    the document. ⚠ Both halves have to be missing: an output the specification names, or
+    one a case expects, is asked for whatever the other says.
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp = pathlib.Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+        for name in ("interface-model.yaml", "conventions.yaml", "examples.yaml"):
+            shutil.copy(CROSSING / name, self.tmp / name)
+        with (self.tmp / "interface-model.yaml").open("a", encoding="utf-8") as model:
+            model.write(SPARE)
+
+    def prose(self, text: str):
+        path = self.tmp / "specification.md"
+        path.write_text(text + "\n", encoding="utf-8")
+        return load_prose([path])
+
+    def test_with_the_specification_it_is_counted_apart(self):
+        got = coverage(load_pack(self.tmp), [WHOLE], self.prose("The road signal follows the train."))
+        self.assertEqual(["plant/out/spare.value"], got.unwritten)
+        self.assertEqual(["plant/out/spare.value"], got.unasked)
+        self.assertEqual([], got.required_unwritten)
+
+    def test_without_the_specification_nothing_is_known_to_be_unasked(self):
+        got = coverage(load_pack(self.tmp), [WHOLE])
+        self.assertEqual(["plant/out/spare.value"], got.required_unwritten)
+        self.assertEqual([], got.unasked)
+
+    def test_an_output_the_specification_names_is_asked_for(self):
+        got = coverage(load_pack(self.tmp), [WHOLE], self.prose("The spare lamp is lit while the bell rings."))
+        self.assertEqual([], got.unasked)
+        self.assertEqual(["plant/out/spare.value"], got.required_unwritten)
+
+    def test_an_output_a_case_expects_is_asked_for(self):
+        with (self.tmp / "examples.yaml").open("a", encoding="utf-8") as examples:
+            examples.write("\n  - name: the spare lamp\n    given:\n      plant/in/mains-power: OK\n"
+                           "    expect:\n      plant/out/spare.value: LIT\n")
+        got = coverage(load_pack(self.tmp), [WHOLE], self.prose("The road signal follows the train."))
+        self.assertEqual([], got.unasked)
+
+    def test_a_pack_without_cases_cannot_say_no_case_expects_it(self):
+        (self.tmp / "examples.yaml").unlink()
+        got = coverage(load_pack(self.tmp), [WHOLE], self.prose("The road signal follows the train."))
+        self.assertEqual([], got.unasked)
+        self.assertEqual(["plant/out/spare.value"], got.required_unwritten)
+
+    def test_a_written_output_is_never_unasked(self):
+        got = coverage(load_pack(CROSSING), [WHOLE], self.prose("Nothing is named here."))
+        self.assertEqual([], got.unwritten)
+        self.assertEqual([], got.unasked)
 
 
 if __name__ == "__main__":

@@ -1285,7 +1285,7 @@ interface-integration workflow.
     python3 -m sce_author questions --pack <dir> --prose <file>...
     python3 -m sce_author review    --pack <dir> --prose <file>...
     python3 -m sce_author check     --pack <dir> --binding <file> [--prose <file>...]
-    python3 -m sce_author coverage  --pack <dir> --binding <file>...
+    python3 -m sce_author coverage  --pack <dir> --binding <file>... [--prose <file>...]
     python3 -m sce_author pseudo                 --binding <file>
 
 **check-pack** lists everything wrong with a pack in one pass: a key written
@@ -1418,6 +1418,13 @@ position TWO documents write cannot be right whatever the platform turns out
 to be: one field would receive two answers, and which one stood would be
 settled by whichever component happened to run last. Only that raises the
 status.
+
+With `--prose`, an unwritten position the specification never names and no case
+expects is counted apart as **unasked**: there is nothing to write it from and
+nothing to judge it by, so a document could only invent a value for it. Both
+halves have to be missing — an output the specification names, or one a case
+expects, stays required — and without the specification, or a pack with no
+cases, nothing is called unasked.
 
 ⚠⚠ It is a third axis rather than a third spelling of one already here.
 `review` reports the model positions no EXAMPLE expects, and `verify` reports

@@ -426,12 +426,16 @@ def cmd_coverage(args) -> int:
     one, whatever the platform turns out to be.
     """
     pack = _pack(args)
-    got = run_coverage(pack, args.binding)
+    prose = load_prose([pathlib.Path(p) for p in args.prose]) if args.prose else None
+    got = run_coverage(pack, args.binding, prose)
     print(f"output positions {len(got.positions)}"
           f" · written by some document {got.covered}"
-          f" · unwritten {len(got.unwritten)}")
+          f" · unwritten {len(got.unwritten)}"
+          + (f" · unasked {len(got.unasked)}" if got.unasked else ""))
     for address in got.unwritten:
-        print(f"  unwritten: {address}")
+        print(f"  unwritten: {address}"
+              + ("  (unasked: the specification does not name it and no case expects it)"
+                 if address in got.unasked else ""))
     if got.undeclared:
         print(f"positions a binding writes that the model does not declare"
               f" {len(got.undeclared)} — `check` names them against theirs")
@@ -719,6 +723,9 @@ def main(argv=None) -> int:
         "coverage", help="what the set of documents reaches, and what it does not"))
     o.add_argument("--binding", required=True, nargs="+",
                    help="every binding in the subject matter")
+    o.add_argument("--prose", nargs="+",
+                   help="the specification files: with them, an unwritten position that the "
+                        "specification does not name and no case expects is reported as unasked")
     o.set_defaults(fn=cmd_coverage)
 
     f = with_pack(sub.add_parser(

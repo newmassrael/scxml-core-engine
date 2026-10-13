@@ -61,10 +61,20 @@ class Coverage:
     # as a mysterious addition to `unwritten`, where a reader would go looking
     # for a document that was never missing.
     undeclared: list[str] = field(default_factory=list)
+    # Unwritten positions nothing asks for: the specification never names the
+    # output, and no case expects the position. ⚠ Said only when the specification
+    # was handed over AND the pack has cases -- without either, "nothing asks for
+    # it" is not known, and a position is simply unwritten.
+    unasked: list[str] = field(default_factory=list)
 
     @property
     def unwritten(self) -> list[str]:
         return sorted(p for p in self.positions if p not in self.written)
+
+    @property
+    def required_unwritten(self) -> list[str]:
+        """The unwritten positions something asks for."""
+        return [p for p in self.unwritten if p not in set(self.unasked)]
 
     @property
     def covered(self) -> int:
@@ -81,7 +91,37 @@ class Coverage:
                 for p, who in self.contested()]
 
 
-def coverage(pack: Pack, binding_paths) -> Coverage:
+def unasked_positions(pack: Pack, prose, unwritten) -> list[str]:
+    """Which of these positions nothing asks for.
+
+    A declared output the specification never names and no case expects has no
+    statement to write it from and nothing to be judged against: a document
+    could only invent a value for it. Measured 2026-10-13: one component's pack
+    declares an output of the platform's model that its specification does not
+    mention, its product never writes and none of its 172 cases expects; every
+    document that passed all of them was refused for leaving it unwritten.
+
+    ⚠ An output counts as NAMED when any of the names the model gives it occurs
+    in the specification, and an output whose model gives it no name counts as
+    named: a name nobody recorded is not evidence that nobody wrote it.
+    """
+    if prose is None or not pack.examples.present:
+        return []
+    text = "\n".join(src.text for src in prose.sources)
+    expected = {a for case in pack.examples.cases for a in case.expect}
+    pending = set(unwritten)
+    found = []
+    for entry in pack.model.outputs():
+        if not entry.names or any(n and n in text for n in entry.names):
+            continue
+        for f in entry.fields:
+            p = position(entry.address, f.name)
+            if p in pending and p not in expected:
+                found.append(p)
+    return sorted(found)
+
+
+def coverage(pack: Pack, binding_paths, prose=None) -> Coverage:
     """Read every binding and say what the set of them reaches."""
     out = Coverage()
     out.positions = [position(entry.address, f.name)
@@ -108,4 +148,5 @@ def coverage(pack: Pack, binding_paths) -> Coverage:
                 continue
             out.written.setdefault(key, []).append(path.name)
     out.undeclared = sorted(undeclared)
+    out.unasked = unasked_positions(pack, prose, out.unwritten)
     return out

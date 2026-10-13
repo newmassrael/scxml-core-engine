@@ -1950,6 +1950,15 @@ TOOLS = [
                         "wrote, which is the thing this answers."
                     ),
                 },
+                "prose": {
+                    **_PROSE_ARG,
+                    "description": (
+                        "The specification files. With them, an unwritten "
+                        "position that the specification never names and no "
+                        "case expects is counted apart as `unasked`: there is "
+                        "nothing to write it from and nothing to judge it by."
+                    ),
+                },
             },
         },
     },
@@ -4344,7 +4353,8 @@ def call_tool(name: str, args: dict, *, remote: bool = False,
             if bad:
                 raise ToolArgumentError(
                     f"'bindings' holds {bad[0]!r}, which is not a path")
-            got = run_coverage(pack, [pathlib.Path(p) for p in bindings])
+            prose = load_prose(_prose_arg(args)) if args.get("prose") is not None else None
+            got = run_coverage(pack, [pathlib.Path(p) for p in bindings], prose)
             # ⚠ Same shape as `questions` and `verify`: versioned, an object,
             # counts beside the detail. A client drawing a bar reads the
             # counts; a model reads the names.
@@ -4353,8 +4363,10 @@ def call_tool(name: str, args: dict, *, remote: bool = False,
                 "counts": {"positions": len(got.positions),
                            "written": got.covered,
                            "unwritten": len(got.unwritten),
+                           "unasked": len(got.unasked),
                            "contested": len(got.contested())},
                 "unwritten": got.unwritten,
+                "unasked": got.unasked,
                 "contested": [{"position": p, "documents": who}
                               for p, who in got.contested()],
                 "undeclared": got.undeclared,
