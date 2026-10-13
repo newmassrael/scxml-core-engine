@@ -215,6 +215,15 @@ impl<T: Transport, E: Environment> Endpoint<T, E> {
         }
     }
 
+    /// When the earliest transmission waiting out its backoff is due, in the
+    /// environment's milliseconds: the time at which the host's next
+    /// [`tick`](Self::tick) has something to send. `None` when nothing waits,
+    /// which is what lets a host that owns time (a simulation) sleep until the
+    /// next thing happens and not poll.
+    pub fn next_retry_due_ms(&self) -> Option<i64> {
+        self.retries.iter().map(|retry| retry.due_ms).min()
+    }
+
     /// A transmission the transport accepted and then could not complete —
     /// an envelope still queued on a link that closed (SCE_MESH.md
     /// §mesh-18.3). It is that envelope's first failed send: sent again on

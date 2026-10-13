@@ -1,0 +1,40 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+
+[package]
+name = "sce-rust-world"
+version.workspace = true
+edition.workspace = true
+# Not the workspace's 1.75: `sce_build::compile_scxml`, which build.rs calls,
+# writes its rerun lines in the `cargo::` form that Cargo 1.77 introduced. This
+# crate is a test host that nothing ships or links, so it does not hold the
+# floor the runtimes do.
+rust-version = "1.77"
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "A deterministic simulation of several SCE machines and the network between them, for testing what no single machine's scenarios can"
+publish = false
+
+# Machines that talk to one another are tested one at a time by the scenarios
+# every backend replays, and that cannot say whether they agree once they share
+# a network that is slow, partitioned, or restarted. This crate runs the
+# generated machines of a deployment in one process, each on its own Mesh
+# endpoint (`sce-rust-mesh`), over a network it owns: time is virtual, every
+# random choice is drawn from a seed, and a run is the same run each time.
+#
+# It uses the seams the machines already have and adds none: a `<send>` to a
+# peer reaches the endpoint as the runtime's `HostSendRequest`, and what the
+# endpoint transmits goes through the `Transport` and `Environment` traits the
+# host core leaves open for exactly this.
+
+[dependencies]
+sce-rust-runtime = { path = "../runtime", default-features = false }
+sce-rust-mesh = { path = "../mesh" }
+sce-forge-runtime = { path = "../forge-runtime" }
+sce-portable-bytes = { path = "../portable-bytes" }
+
+# The machines under `machines/` are generated at build time, in-process, into
+# OUT_DIR (see build.rs); no generated code is committed for this crate.
+[build-dependencies]
+sce-build = { path = "../../../sce-build" }

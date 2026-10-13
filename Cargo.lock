@@ -1956,6 +1956,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "sce-rust-world"
+version = "0.1.0"
+dependencies = [
+ "sce-build",
+ "sce-forge-runtime",
+ "sce-portable-bytes",
+ "sce-rust-mesh",
+ "sce-rust-runtime",
+]
+
+[[package]]
 name = "schannel"
 version = "0.1.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"

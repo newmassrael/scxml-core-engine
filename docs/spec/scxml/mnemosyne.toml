@@ -200,6 +200,11 @@ scan_exclusions = [
     # declared out. The existence axis still reads it, so excluding the crate
     # swallows no section from this gate.
     "backends/rust/scenarios/",
+    # The world simulation (`sce-rust-world`): several generated machines on Mesh
+    # endpoints over a network it owns. It implements no clause of the Recommendation.
+    # Measured 2026-10-13: five citations, all of the Mesh ledger's namespace, none in
+    # this one, so excluding it swallows no section from this gate.
+    "backends/rust/world/",
     "sce-build/examples/",
     "sce-build/tests/",
     "tests/",

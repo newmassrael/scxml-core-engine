@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15): the asking half of
+  the smallest pair of machines that talk over a network, for the world
+  simulation (backends/rust/world). `ask` sends `ping` to the peer `server`,
+  and every `pong` that comes back is counted. It knows nothing of how the
+  bytes travel: a send to `#server` is the Mesh send every deployment uses
+  (the delivery rules of SCE_MESH.md), and the network it crosses is the
+  world's to make slow, partitioned or restarted.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static" name="echo_client">
+  <datamodel>
+    <data id="asked" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="heard" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="idle">
+    <transition event="ask" type="internal">
+      <assign location="asked" expr="asked + 1"/>
+      <send target="#server" event="ping"/>
+    </transition>
+    <transition event="pong" type="internal">
+      <assign location="heard" expr="heard + 1"/>
+    </transition>
+  </state>
+</scxml>

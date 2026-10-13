@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15): the answering half
+  of the pair `echo_client` begins, for the world simulation
+  (backends/rust/world). Every `ping` it is delivered is counted and answered
+  with a `pong` to the peer `client`. `served` is the machine's own count of
+  what reached it, so a run can ask how many pings the network delivered
+  without looking at the network.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="serving" datamodel="sce-static" name="echo_server">
+  <datamodel>
+    <data id="served" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="serving">
+    <transition event="ping" type="internal">
+      <assign location="served" expr="served + 1"/>
+      <send target="#client" event="pong"/>
+    </transition>
+  </state>
+</scxml>

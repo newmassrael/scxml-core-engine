@@ -160,6 +160,9 @@ scan_exclusions = [
     # `backends/rust/tests/` so the wasm32 build can run it. Measured 2026-10-08:
     # no §synth- cite in it; its one section citation is the SCXML ledger's.
     "backends/rust/scenarios/",
+    # The world simulation (`sce-rust-world`). Measured 2026-10-13: no §synth- cite
+    # in it; its five section citations are the Mesh ledger's.
+    "backends/rust/world/",
     "sce-build/examples/",
     "tests/forge/expected/",
     # The specification workbench (`app-core/` and `app/`). Measured 2026-10-03
