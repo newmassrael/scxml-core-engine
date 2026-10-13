@@ -1164,7 +1164,7 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
 {% if model.needs_event_name and model.needs_script_engine %}
         self.pending_event_arrival_name = metadata.name.clone();
 {% endif %}
-{% if model.needs_event_data %}
+{% if model.needs_event_data and model.needs_script_engine %}
         self.pending_event_data = metadata.data.clone();
 {% endif %}
 {% if model.needs_event_type %}
@@ -1193,7 +1193,7 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
 {% if model.needs_event_name and model.needs_script_engine %}
         self.pending_event_arrival_name.clear();
 {% endif %}
-{% if model.needs_event_data %}
+{% if model.needs_event_data and model.needs_script_engine %}
         self.pending_event_data.clear();
 {% endif %}
 {% if model.needs_event_type %}
