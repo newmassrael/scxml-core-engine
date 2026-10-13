@@ -2652,6 +2652,12 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_wire_enum.scxml"
         STAGE_ALSO schema_view.scxml enum_view_mode.scxml
     )
+    # A 64-bit integer as a `<param>` crosses as the text of its digits.
+    sce_generate_static_integration_c_test(static_wire_wide
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_wire_wide.scxml"
+        STAGE_ALSO schema_wide.scxml schema_wide_relayed.scxml
+    )
     # An enum variable's variants are the enum document's, imported by name.
     sce_generate_static_integration_c_test(static_enum
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
@@ -2765,6 +2771,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_record_list_index_SOURCES}
         ${INTEGRATION_C_TEST_static_record_enum_SOURCES}
         ${INTEGRATION_C_TEST_static_whole_payload_SOURCES}
+        ${INTEGRATION_C_TEST_static_wire_wide_SOURCES}
         ${INTEGRATION_C_TEST_static_wire_enum_SOURCES}
         ${INTEGRATION_C_TEST_static_record_SOURCES}
         ${_DAYS_IN_MONTH_HEADER}

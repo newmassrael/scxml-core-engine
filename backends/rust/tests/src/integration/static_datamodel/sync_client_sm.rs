@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: f016ee9d192c699fb820e15a05fbec9d1bb94662732752970d6af472a85b7efc
+// source-hash: 5d4270ae4c884e43e7a12f9a58bd5d012629cb9a3aef7240aa93f930de85d6c6
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -197,7 +197,7 @@ impl SyncClientInject for ::sce_rust_runtime::Engine<SyncClientPolicy> {
     }
     fn raise_sync_response(&mut self, payload: SyncClientSyncResponsePayload) {
         let data = ::sce_rust_runtime::payload_wire(format_args!(
-            "{{\"kind\":{}, \"status\":{}, \"create\":{}, \"davError\":{}, \"now\":{}, \"retryAfter\":{}}}", payload.kind, payload.status, payload.create, payload.davError, payload.now, payload.retryAfter
+            "{{\"kind\":{}, \"status\":{}, \"create\":{}, \"davError\":{}, \"now\":\"{}\", \"retryAfter\":\"{}\"}}", payload.kind, payload.status, payload.create, payload.davError, payload.now, payload.retryAfter
         ));
         self.raise_external_typed_with_data(
             SyncClientEvent::SyncResponse,
@@ -905,8 +905,8 @@ impl StatePolicy for SyncClientPolicy {
                         status: fields.signed::<i32>("status")?,
                         create: fields.truth("create")?,
                         davError: fields.truth("davError")?,
-                        now: fields.signed::<i64>("now")?,
-                        retryAfter: fields.signed::<i64>("retryAfter")?,
+                        now: fields.signed64("now")?,
+                        retryAfter: fields.signed64("retryAfter")?,
                     });
             }
             SyncClientEvent::SyncStart => {

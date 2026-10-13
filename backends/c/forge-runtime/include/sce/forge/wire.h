@@ -34,6 +34,10 @@ typedef enum {
     SCE_FORGE_WIRE_BOOL,
     SCE_FORGE_WIRE_INT,
     SCE_FORGE_WIRE_UINT,
+    /* A 64-bit integer: the text of its digits as JSON, a string, because a number
+     * past 2^53 is not exact on an engine that reads it through a double. */
+    SCE_FORGE_WIRE_WIDE_INT,
+    SCE_FORGE_WIRE_WIDE_UINT,
     SCE_FORGE_WIRE_REAL,
     SCE_FORGE_WIRE_STRING,
     SCE_FORGE_WIRE_BYTES
@@ -73,6 +77,23 @@ static inline sce_forge_wire_value_t sce_forge_wire_uint(uint64_t v) {
     sce_forge_wire_value_t value;
     memset(&value, 0, sizeof(value));
     value.kind = SCE_FORGE_WIRE_UINT;
+    value.as.u = v;
+    return value;
+}
+
+/* A 64-bit integer, which crosses as the text of its digits. */
+static inline sce_forge_wire_value_t sce_forge_wire_wide_int(int64_t v) {
+    sce_forge_wire_value_t value;
+    memset(&value, 0, sizeof(value));
+    value.kind = SCE_FORGE_WIRE_WIDE_INT;
+    value.as.i = v;
+    return value;
+}
+
+static inline sce_forge_wire_value_t sce_forge_wire_wide_uint(uint64_t v) {
+    sce_forge_wire_value_t value;
+    memset(&value, 0, sizeof(value));
+    value.kind = SCE_FORGE_WIRE_WIDE_UINT;
     value.as.u = v;
     return value;
 }
@@ -224,6 +245,14 @@ static inline void sce_forge_wire_put_value(sce_forge_wire_t *w, sce_forge_wire_
         (void)snprintf(number, sizeof(number), "%llu", (unsigned long long)value.as.u);
         sce_forge_wire_put(w, number, strlen(number));
         break;
+    case SCE_FORGE_WIRE_WIDE_INT:
+        (void)snprintf(number, sizeof(number), "\"%lld\"", (long long)value.as.i);
+        sce_forge_wire_put(w, number, strlen(number));
+        break;
+    case SCE_FORGE_WIRE_WIDE_UINT:
+        (void)snprintf(number, sizeof(number), "\"%llu\"", (unsigned long long)value.as.u);
+        sce_forge_wire_put(w, number, strlen(number));
+        break;
     case SCE_FORGE_WIRE_REAL:
         /* JSON has no spelling for a value that is not finite: it crosses as
          * `null`, and as `NaN` / `Infinity` / `-Infinity` where a request carries
@@ -341,9 +370,11 @@ static inline bool sce_forge_wire_text(sce_forge_wire_value_t value, char *buf, 
         written = snprintf(buf, cap, "%s", value.as.b ? "true" : "false");
         break;
     case SCE_FORGE_WIRE_INT:
+    case SCE_FORGE_WIRE_WIDE_INT:
         written = snprintf(buf, cap, "%lld", (long long)value.as.i);
         break;
     case SCE_FORGE_WIRE_UINT:
+    case SCE_FORGE_WIRE_WIDE_UINT:
         written = snprintf(buf, cap, "%llu", (unsigned long long)value.as.u);
         break;
     case SCE_FORGE_WIRE_REAL:

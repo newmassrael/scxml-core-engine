@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 )
 
@@ -85,6 +86,101 @@ func number(obj PayloadFields, name string) (json.Number, error) {
 	}
 	return n, nil
 }
+
+// exactInADouble is the largest whole number every engine holds exactly as a
+// number (2^53 - 1, ECMAScript's Number.MAX_SAFE_INTEGER), and so the largest a
+// JSON number may carry for a 64-bit field.
+const exactInADouble = 1<<53 - 1
+
+// isDecimal reports whether text is a whole number written as digits and
+// nothing else: no sign but `-` (and only where signed), no leading zero, no `-0`.
+func isDecimal(text string, signed bool) bool {
+	digits := text
+	if strings.HasPrefix(text, "-") {
+		if !signed {
+			return false
+		}
+		digits = text[1:]
+	}
+	if digits == "" || (digits == "0" && text != "0") {
+		return false
+	}
+	if digits != "0" && digits[0] == '0' {
+		return false
+	}
+	for i := 0; i < len(digits); i++ {
+		if digits[i] < '0' || digits[i] > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// wide is the digits of a 64-bit whole number field: written as a text of its
+// digits, or as a JSON number when it is exact in a double (|n| <= 2^53 - 1).
+//
+// A 64-bit integer crosses as a text because a reader that takes a JSON number
+// through a double carries one past 2^53 with its low bits wrong and no error;
+// a number past that is refused here on every engine, so the same payload gives
+// the same field wherever it is read.
+func wide(obj PayloadFields, name string, signed bool) (string, error) {
+	v, err := field(obj, name)
+	if err != nil {
+		return "", err
+	}
+	switch x := v.(type) {
+	case string:
+		if !isDecimal(x, signed) {
+			return "", fmt.Errorf("%q is not a whole number written as digits (%s)", name, x)
+		}
+		return x, nil
+	case json.Number:
+		n, err := strconv.ParseInt(x.String(), 10, 64)
+		if err != nil {
+			return "", fmt.Errorf("%q is not a whole number (%s)", name, x.String())
+		}
+		if n > exactInADouble || n < -exactInADouble {
+			return "", fmt.Errorf(
+				"%q is a number past 2^53 - 1, which is not exact everywhere (%s); a 64-bit integer "+
+					"that large is written as a text of its digits", name, x.String())
+		}
+		return x.String(), nil
+	default:
+		return "", fmt.Errorf("%q is not a number (%v)", name, v)
+	}
+}
+
+// PayloadSigned64 reads a 64-bit signed field (see wide).
+func PayloadSigned64(obj PayloadFields, name string) (int64, error) {
+	text, err := wide(obj, name, true)
+	if err != nil {
+		return 0, err
+	}
+	v, err := strconv.ParseInt(text, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("%q does not fit the width its schema declares (%s)", name, text)
+	}
+	return v, nil
+}
+
+// PayloadUnsigned64 reads a 64-bit unsigned field (see wide).
+func PayloadUnsigned64(obj PayloadFields, name string) (uint64, error) {
+	text, err := wide(obj, name, false)
+	if err != nil {
+		return 0, err
+	}
+	v, err := strconv.ParseUint(text, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("%q does not fit the width its schema declares (%s)", name, text)
+	}
+	return v, nil
+}
+
+// Int64PayloadText is the text of the digits a 64-bit signed integer crosses as.
+func Int64PayloadText(v int64) string { return strconv.FormatInt(v, 10) }
+
+// Uint64PayloadText is the text of the digits a 64-bit unsigned integer crosses as.
+func Uint64PayloadText(v uint64) string { return strconv.FormatUint(v, 10) }
 
 // PayloadSigned reads a signed whole number field at the width its schema
 // declared. A value the width cannot hold is refused rather than wrapped —

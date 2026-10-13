@@ -80,6 +80,7 @@
 #include "static_timers_sm.h"
 #include "static_whole_payload_sm.h"
 #include "static_wire_enum_sm.h"
+#include "static_wire_wide_sm.h"
 #include "sync_client_sm.h"
 
 #include <cstdint>
@@ -1333,6 +1334,22 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, ARecordHoldsAnEnumField) {
         {"leads", [](const Machine &m) { return json(m.leads()); }},
     });
     replay("static_record_enum", driver);
+}
+
+// A 64-bit integer crosses a `<send>`'s `<param>` as the text of its digits and is
+// read back from it: the low digits of a value past 2^53 are the ones that were
+// sent, and a number past 2^53 - 1 is refused where it is read.
+TEST(AStaticDatamodelRunsGeneratedCppTest, A64BitIntegerCrossesAsItsDigits) {
+    using Machine = G::static_wire_wide::static_wire_wide;
+    Driver<Machine> driver({
+        {"low", [](const Machine &m) { return json(m.low()); }},
+        {"smallLow", [](const Machine &m) { return json(m.smallLow()); }},
+        {"large", [](const Machine &m) { return json(m.large()); }},
+        {"negative", [](const Machine &m) { return json(m.negative()); }},
+        {"relays", [](const Machine &m) { return json(m.relays()); }},
+        {"refusals", [](const Machine &m) { return json(m.refusals()); }},
+    });
+    replay("static_wire_wide", driver);
 }
 
 // The payload of an event is a record of its schema taken whole: it replaces a

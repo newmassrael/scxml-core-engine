@@ -66,6 +66,11 @@ extern "C" {
 #define SCE_PAYLOAD_REFUSE_MISSING "is missing from the event's data"
 #define SCE_PAYLOAD_REFUSE_NOT_NUMBER "is not a number"
 #define SCE_PAYLOAD_REFUSE_NOT_WHOLE "is not a whole number"
+#define SCE_PAYLOAD_REFUSE_NOT_DIGITS "is not a whole number written as digits"
+#define SCE_PAYLOAD_REFUSE_PAST_2_53                                                                                   \
+    "is a number past 2^53 - 1, which is not exact everywhere; a 64-bit integer that large is written as a text of "   \
+    "its "                                                                                                             \
+    "digits"
 #define SCE_PAYLOAD_REFUSE_NOT_IN_WIDTH "does not fit the width its schema declares"
 #define SCE_PAYLOAD_REFUSE_NOT_TRUTH "is not a truth value"
 #define SCE_PAYLOAD_REFUSE_NOT_TEXT "is not a text"
@@ -275,14 +280,51 @@ SCE_C_UNUSED static inline const char *sce_payload_read_whole(const sce_payload_
     return NULL;
 }
 
-SCE_C_UNUSED static inline const char *sce_payload_read_signed(const sce_payload_fields_t *fields, const char *name,
-                                                               int64_t min, int64_t max, int64_t *out) {
-    bool negative = false;
-    uint64_t magnitude = 0;
-    const char *refusal = sce_payload_read_whole(fields, name, &negative, &magnitude);
-    if (refusal != NULL) {
+/* A 64-bit whole number: written as a text of its digits, or as a JSON number
+   when it is exact in a double (|n| <= 2^53).
+
+   A 64-bit integer crosses as a text because a reader that takes a JSON number
+   through a double carries one past 2^53 with its low bits wrong and no error; a
+   number past that is refused here on every engine, so the same payload gives
+   the same field wherever it is read. */
+SCE_C_UNUSED static inline const char *sce_payload_read_wide(const sce_payload_fields_t *fields, const char *name,
+                                                             bool is_signed, bool *negative, uint64_t *magnitude) {
+    const char *p = sce_payload_find(fields, name);
+    if (p == NULL) {
+        return SCE_PAYLOAD_REFUSE_MISSING;
+    }
+    if (*p != '"') {
+        const char *refusal = sce_payload_read_whole(fields, name, negative, magnitude);
+        if (refusal == NULL && *magnitude > (((uint64_t)1 << 53) - 1u)) {
+            return SCE_PAYLOAD_REFUSE_PAST_2_53;
+        }
         return refusal;
     }
+    p++;
+    *negative = (*p == '-');
+    if (*negative && !is_signed) {
+        return SCE_PAYLOAD_REFUSE_NOT_DIGITS;
+    }
+    const char *digits = *negative ? p + 1 : p;
+    uint64_t value = 0;
+    const char *d = digits;
+    for (; *d >= '0' && *d <= '9'; d++) {
+        const uint64_t digit = (uint64_t)(*d - '0');
+        if (value > (UINT64_MAX - digit) / 10u) {
+            return SCE_PAYLOAD_REFUSE_NOT_IN_WIDTH;
+        }
+        value = value * 10u + digit;
+    }
+    /* Canonical: at least one digit, no leading zero, no `-0`, then the closing quote. */
+    if (d == digits || *d != '"' || (*digits == '0' && d != digits + 1) || (*negative && value == 0u)) {
+        return SCE_PAYLOAD_REFUSE_NOT_DIGITS;
+    }
+    *magnitude = value;
+    return NULL;
+}
+
+SCE_C_UNUSED static inline const char *sce_payload_fit_signed(bool negative, uint64_t magnitude, int64_t min,
+                                                              int64_t max, int64_t *out) {
     if (negative) {
         /* -(min) does not fit an int64_t when min is its floor, so the
            comparison is made on the magnitude instead. */
@@ -298,6 +340,17 @@ SCE_C_UNUSED static inline const char *sce_payload_read_signed(const sce_payload
     }
     *out = (int64_t)magnitude;
     return NULL;
+}
+
+SCE_C_UNUSED static inline const char *sce_payload_read_signed(const sce_payload_fields_t *fields, const char *name,
+                                                               int64_t min, int64_t max, int64_t *out) {
+    bool negative = false;
+    uint64_t magnitude = 0;
+    const char *refusal = sce_payload_read_whole(fields, name, &negative, &magnitude);
+    if (refusal != NULL) {
+        return refusal;
+    }
+    return sce_payload_fit_signed(negative, magnitude, min, max, out);
 }
 
 SCE_C_UNUSED static inline const char *sce_payload_read_unsigned(const sce_payload_fields_t *fields, const char *name,
@@ -345,11 +398,37 @@ SCE_C_UNUSED static inline const char *sce_payload_read_unsigned(const sce_paylo
 SCE_PAYLOAD_SIGNED_READER(i8, int8_t, INT8_MIN, INT8_MAX)
 SCE_PAYLOAD_SIGNED_READER(i16, int16_t, INT16_MIN, INT16_MAX)
 SCE_PAYLOAD_SIGNED_READER(i32, int32_t, INT32_MIN, INT32_MAX)
-SCE_PAYLOAD_SIGNED_READER(i64, int64_t, INT64_MIN, INT64_MAX)
 SCE_PAYLOAD_UNSIGNED_READER(u8, uint8_t, UINT8_MAX)
 SCE_PAYLOAD_UNSIGNED_READER(u16, uint16_t, UINT16_MAX)
 SCE_PAYLOAD_UNSIGNED_READER(u32, uint32_t, UINT32_MAX)
-SCE_PAYLOAD_UNSIGNED_READER(u64, uint64_t, UINT64_MAX)
+
+/* The 64-bit readers read the text of the digits, or a number exact in a double
+   (`sce_payload_read_wide`). */
+SCE_C_UNUSED static inline const char *sce_payload_read_i64(const sce_payload_fields_t *fields, const char *name,
+                                                            int64_t *out) {
+    bool negative = false;
+    uint64_t magnitude = 0;
+    const char *refusal = sce_payload_read_wide(fields, name, true, &negative, &magnitude);
+    if (refusal != NULL) {
+        return refusal;
+    }
+    return sce_payload_fit_signed(negative, magnitude, INT64_MIN, INT64_MAX, out);
+}
+
+SCE_C_UNUSED static inline const char *sce_payload_read_u64(const sce_payload_fields_t *fields, const char *name,
+                                                            uint64_t *out) {
+    bool negative = false;
+    uint64_t magnitude = 0;
+    const char *refusal = sce_payload_read_wide(fields, name, false, &negative, &magnitude);
+    if (refusal != NULL) {
+        return refusal;
+    }
+    if (negative) {
+        return SCE_PAYLOAD_REFUSE_NOT_IN_WIDTH;
+    }
+    *out = magnitude;
+    return NULL;
+}
 
 SCE_C_UNUSED static inline const char *sce_payload_read_floating(const sce_payload_fields_t *fields, const char *name,
                                                                  double *out) {

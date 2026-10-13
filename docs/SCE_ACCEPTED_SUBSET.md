@@ -3134,7 +3134,7 @@ line of the element or attribute that breaks it:
 | `<invoke idlocation>` | Refused for want of a reader, not of a form: the id it would store is the one the build already wrote (the `id`, or `<state>.platform_N`), and this model reads no `_event.invokeid` — only `_event.data` — so a stored id has nothing to be compared with. A document that must name its invocation writes `id`, which `done.invoke.<id>` and `error.invoke.<id>` already match |
 | a `<param>` or a `namelist` name of an `<invoke type="scxml">` whose child is not a `sce-static` document this build read, does not declare the name as a top-level `<data>`, declares it as a list, a record, an enum or bytes, is handed it twice, or is handed a value not of the variable's type | See **Child sessions** below. Refused at the `<param>` as `scxml/static-datamodel-rule` (a value of the wrong type as the expression's own refusal) rather than accepted and never delivered |
 | a `<finalize>` of an `<invoke type="scxml">` | §6.5 runs it in the invoking machine before a child's event is processed, but the model keeps its body as one script text and the generated code hands that text to a script engine this model never builds (measured 2026-10-01: the Rust body is an empty block, Kotlin finds no engine): the assignment would be accepted and never run. Refused at the `<invoke>` as `scxml/static-datamodel-rule`; the invoking state takes what the child sent in a transition. An EMPTY `<finalize/>` beside a `<param location>` or a `namelist` is the same refusal: §6.5.2 gives it the meaning "update each from the event's data of that name", which the model writes out as that script text. Lowering a body is not the obstacle — a `<finalize>` runs before any child event is processed, to read that event's `_event.data`, and no type rule reaches a payload that arrives from whichever event comes next; a body that reads none has no consumer. Under `ecmascript` the same document runs it |
-| a `<param>` of a `<send>`, of a host-run `<invoke>` or of a `<donedata>` whose value is not a bool, a string, a byte string, an integer of at most 32 bits, a real or an enum value held by a variable, a field of a record variable or a field of the payload, or reads a payload that is not in scope | See **Params** below. Refused at the `<param>` as `scxml/static-datamodel-rule`. An `<invoke>` typed by `sce:request` takes only literals |
+| a `<param>` of a `<send>`, of a host-run `<invoke>` or of a `<donedata>` whose value is not a bool, a string, a byte string, an integer, a real or an enum value held by a variable, a field of a record variable or a field of the payload, or reads a payload that is not in scope | See **Params** below. Refused at the `<param>` as `scxml/static-datamodel-rule`. An `<invoke>` typed by `sce:request` takes only literals |
 
 **Expressions.** Every other expression is a forge expression judged
 against one closed scope — the declared variables at their `sce:type`, each
@@ -3243,7 +3243,7 @@ expr="record.f"/>` of each field the record's schema declares, held to the same
 rule; it takes no `<param>` or `namelist` beside it (§scxml-6.2.4: the element
 carries its data one way). Any other expression is the one value the event
 carries, whole: it is held to the rule a `<param>`'s value is (a bool, a string, an
-integer of at most 32 bits, a real or an enum value, read from the machine's fields
+integer, a real or an enum value, read from the machine's fields
 when the send runs; anything else is refused at the attribute, naming the
 `<content expr>`), and it is the event's data as the JSON the value is (`8`,
 `"busy"`) and, in the request a host serves, the `content` as the text it is (`8`,
@@ -3390,18 +3390,35 @@ crosses twice, as the text a form or a
 host's `params` carries and as a JSON value in `_event.data`, and both are
 rendered from one typed value: a bool is `true` / `false` and a JSON boolean, a
 string is itself and a JSON string, an integer is its decimal digits and a JSON
-number, a real is its decimal spelling and a JSON number. ⚠ The text of a real
+number (a 64-bit one a JSON string of them, below), a real is its decimal spelling
+and a JSON number. ⚠ The text of a real
 is the backend's own spelling, and the two differ where one writes an exponent
 (Kotlin `1.0E-5`, Rust `0.00001`): the wire helpers every `<param>` already
 crosses through have always done so, and a receiver reads the text as a number.
 Only the
-values every backend renders alike are admitted: a bool, a string, an integer of
-at most 32 bits (`int8` … `uint32`, widened to `i64` / `Long`, which a `double`
-holds exactly) and a real (`float32` widened to `f64` / `Double`, exactly). A
-64-bit integer is refused because a backend that reads a JSON number through a
-`double` carries one past 2^53 with its low bits wrong and no error, while
-another carries it exactly: two backends giving one document two values. Bytes,
-a list and a record have no spelling yet. An enum value is admitted as the name
+values every backend renders alike are admitted: a bool, a string, an integer
+(`int8` … `uint32` widened to `i64` / `Long`, which a `double` holds exactly; a
+64-bit one as below) and a real (`float32` widened to `f64` / `Double`, exactly).
+Bytes, a list and a record have no spelling yet.
+
+**A 64-bit integer.** `int64` and `uint64` cross as the text of their digits, a
+JSON string (`"9007199254740993"`, `"-5"`), and not as a JSON number: a backend
+that reads a JSON number through a `double` carries one past 2^53 with its low
+bits wrong and no error, while another carries it exactly — two backends giving
+one document two values. As text the value reaches every engine as it was sent,
+and the text of a `<param>` (a form's field, a host's `params`) is the same digits
+a number would have had. A typed payload field of those widths is read from that
+text, or from a JSON number whose magnitude is at most 2^53 - 1, the integers
+every engine holds exactly as a number; a number past that, digits that are no
+canonical whole number (`"007"`, `"-0"`, `"1.5"`, `"+3"`), a minus sign on an
+unsigned field, and a value past the width are refused as a field of another type
+is (`error.execution`), on every engine, so one payload gives one field wherever it
+is read. A host that raises a typed event (`raise<Event>`) writes the same text
+into the data beside the typed carrier. The Interpreter's data model holds an
+integer only where a Number holds it exactly, so a value past 2^53 - 1 is a value
+inside the expressions that compute with it there (a remainder, a comparison) and
+not one a variable keeps; `scenarios/static_wire_wide.json` holds the rest on every
+engine. An enum value is admitted as the name
 its enum document declares for it, a string and as a saved state holds one — a
 variable declared `enum:<alias>`, a field of a record variable, an
 `<alias>.<variant>`, or a conditional of two of them — written through the

@@ -527,9 +527,22 @@ impl StaticTarget for JsTarget {
         lowered.to_string()
     }
     // The Interpreter's own data model reads the lowered expression where the
-    // document wrote it, so a `<param>` has no typed value to build.
-    fn wire_value(&self, _ty: InferredType, value: &str) -> String {
-        value.to_string()
+    // document wrote it, so a `<param>` has no typed value to build. A 64-bit
+    // integer is a `BigInt` there, which the engine's data cannot carry as a
+    // number: it crosses as the text of its digits.
+    fn wire_value(&self, ty: InferredType, value: &str) -> String {
+        if ty.is_wide() {
+            // The `out` the expression was wrapped in refuses a `BigInt` the data
+            // model cannot hold; this one leaves as text, which it can.
+            let wrapper = format!("{RUNTIME_GLOBAL}.out(");
+            let inner = value
+                .strip_prefix(wrapper.as_str())
+                .and_then(|rest| rest.strip_suffix(')'))
+                .unwrap_or(value);
+            format!("String({inner})")
+        } else {
+            value.to_string()
+        }
     }
     // A byte string is already the text of its bytes there, one character to a
     // byte, which is what crosses.

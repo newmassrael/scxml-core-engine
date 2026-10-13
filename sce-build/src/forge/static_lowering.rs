@@ -1593,10 +1593,12 @@ impl StaticTarget for KotlinTarget {
     // The runtime's wire helpers read a `Boolean`, a `String`, or a number
     // through a `Double`, and Kotlin's unsigned types are not `Number`: so an
     // integer of at most 32 bits is widened to a `Long` (exact in a `Double`)
-    // and a `Float` to a `Double`.
+    // and a `Float` to a `Double`. A 64-bit integer is the text of its digits,
+    // which `Long` and `ULong` both spell exactly.
     fn wire_value(&self, ty: InferredType, value: &str) -> String {
         match ty {
             InferredType::Bool | InferredType::Str => value.to_string(),
+            InferredType::Int { bits: 64, .. } => format!("({value}).toString()"),
             InferredType::Int { .. } => format!("({value}).toLong()"),
             InferredType::Float { bits: 32 } => format!("({value}).toDouble()"),
             _ => value.to_string(),
@@ -2197,11 +2199,14 @@ impl StaticTarget for RustTarget {
     // The runtime's `ScriptValue` is what its wire helpers render both the
     // text and the JSON from, so a value built as one crosses exactly as a
     // script engine's would. A narrow integer widens to `i64` and a `float` to
-    // `f64`, both exactly.
+    // `f64`, both exactly; a 64-bit integer is the text of its digits.
     fn wire_value(&self, ty: InferredType, value: &str) -> String {
         match ty {
             InferredType::Bool => format!("::sce_rust_runtime::ScriptValue::Bool({value})"),
             InferredType::Str => format!("::sce_rust_runtime::ScriptValue::String({value})"),
+            InferredType::Int { bits: 64, .. } => {
+                format!("::sce_rust_runtime::ScriptValue::String(({value}).to_string())")
+            }
             InferredType::Int { .. } => {
                 format!("::sce_rust_runtime::ScriptValue::Int(i64::from({value}))")
             }
@@ -4343,12 +4348,16 @@ impl StaticTarget for CppTarget {
     }
     // The runtime's `ScriptValue`, which `DoneDataHelper::collectParams` writes
     // as the pair's JSON value, built as the alternative it names: a narrow
-    // integer widens to `int64_t` and a real to `double`, both exactly.
+    // integer widens to `int64_t` and a real to `double`, both exactly; a 64-bit
+    // integer is the text of its digits.
     fn wire_value(&self, ty: InferredType, value: &str) -> String {
         match ty {
             InferredType::Bool => format!("ScriptValue(std::in_place_type<bool>, {value})"),
             InferredType::Str => {
                 format!("ScriptValue(std::in_place_type<std::string>, {value})")
+            }
+            InferredType::Int { bits: 64, .. } => {
+                format!("ScriptValue(std::in_place_type<std::string>, std::to_string({value}))")
             }
             InferredType::Int { .. } => {
                 format!("ScriptValue(std::in_place_type<int64_t>, static_cast<int64_t>({value}))")
@@ -5107,10 +5116,17 @@ impl StaticTarget for GoTarget<'_> {
     }
     // What the runtime's `ScriptValueToJSON` writes as the pair's value: a bool
     // and a string as they are, a narrow integer widened to `int64` and a real
-    // to `float64`, both exactly.
+    // to `float64`, both exactly; a 64-bit integer is the text of its digits.
     fn wire_value(&self, ty: InferredType, value: &str) -> String {
         match ty {
             InferredType::Bool | InferredType::Str => value.to_string(),
+            InferredType::Int {
+                signed: true,
+                bits: 64,
+            } => format!("sce.Int64PayloadText(int64({value}))"),
+            InferredType::Int { bits: 64, .. } => {
+                format!("sce.Uint64PayloadText(uint64({value}))")
+            }
             InferredType::Int { .. } => format!("int64({value})"),
             _ => format!("float64({value})"),
         }
@@ -5687,9 +5703,10 @@ impl StaticTarget for PythonTarget {
     // What the runtime's `ScriptValue.to_json_literal` writes as the pair's
     // value: a bool, an integer and a string as Python holds them, and a real as
     // a float, so that one an integer-valued computation produced is still read
-    // as a real.
+    // as a real. A 64-bit integer is the text of its digits.
     fn wire_value(&self, ty: InferredType, value: &str) -> String {
         match ty {
+            InferredType::Int { bits: 64, .. } => format!("_ScriptValue.of(str({value}))"),
             InferredType::Bool | InferredType::Str | InferredType::Int { .. } => {
                 format!("_ScriptValue.of({value})")
             }
@@ -6899,6 +6916,15 @@ impl StaticTarget for CTarget {
         match ty {
             InferredType::Bool => format!("sce_forge_wire_bool({value})"),
             InferredType::Str => format!("sce_forge_wire_string({value})"),
+            // A 64-bit integer crosses as the text of its digits: the writer prints
+            // it quoted from the value it holds.
+            InferredType::Int {
+                signed: true,
+                bits: 64,
+            } => format!("sce_forge_wire_wide_int((int64_t)({value}))"),
+            InferredType::Int { bits: 64, .. } => {
+                format!("sce_forge_wire_wide_uint((uint64_t)({value}))")
+            }
             InferredType::Int { signed: true, .. } | InferredType::UntypedInt => {
                 format!("sce_forge_wire_int((int64_t)({value}))")
             }
@@ -8106,7 +8132,6 @@ fn lower_wire_value(
     let value = rewrites
         .owned(written, ctx, renames, slot)
         .map_err(|r| refused(r.error.to_string()))?;
-    rewrites.note(written, param.spelling, &value.text);
     let wired = if bytes {
         target
             .wire_bytes(&value.text)
@@ -8114,6 +8139,13 @@ fn lower_wire_value(
     } else {
         target.wire_value(slot, &value.text)
     };
+    // A target that leaves the expression in the document (the Interpreter) writes
+    // the value as it crosses: a 64-bit integer as the text of its digits.
+    if target.lowers_host_action_arguments() && !bytes {
+        rewrites.note(written, param.spelling, &wired);
+    } else {
+        rewrites.note(written, param.spelling, &value.text);
+    }
     Ok(Some((wired, value.can_fail)))
 }
 

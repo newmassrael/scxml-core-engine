@@ -1,0 +1,35 @@
+# Mutation cases for "a 64-bit integer crosses a `<param>` as the text of its digits and is
+# read back from it" under the Go backend (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A 64-bit
+# integer").
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_go_a_64_bit_integer_crosses_as_its_digits_go.cases`.
+#
+# `static_wire_wide` sends a uint64 and an int64 to itself and keeps their remainders by
+# 1000; it also hands the machine a number past 2^53 - 1, which every engine refuses where
+# it is read. The mutants take one decision away each:
+#
+#   a signed 64-bit `<param>` is written as a JSON number and not as its digits;
+#   a JSON number past 2^53 - 1 is read as a 64-bit field.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_go backends/go/tests ./integration/static_datamodel/
+mutation_targets sce-build/src/forge/static_lowering.rs
+mutation_targets backends/go/runtime/event_payload.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_wire_wide/static_wire_wide_sm.go
+mutation_regen scripts/regen_static_datamodel_go.sh
+mutation_oracles backends/go/tests/integration/static_datamodel/static_scenarios_test.go sce-build/tests/fixtures/static_datamodel/scenarios/static_wire_wide.json
+
+mutation_case "a signed 64-bit param is written as a JSON number" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "} => format!(\"sce.Int64PayloadText(int64({value}))\"),",
+     "} => format!(\"int64({value})\"),")
+PY
+
+mutation_case "a JSON number past 2^53 - 1 is read as a 64-bit field" <<'PY'
+edit("backends/go/runtime/event_payload.go",
+     "if n > exactInADouble || n < -exactInADouble {",
+     "if false {")
+PY

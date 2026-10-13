@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A 64-bit integer"): two
+  64-bit integers carried on as the <param>s of a <send>. `wide.in` brings a `big` and a
+  `small`; the machine sends them to itself as `wide.relayed`, `small` made one less,
+  and reads them back. A 64-bit integer crosses as the text of its digits, so the low
+  digits of a value past 2^53 are the ones that were sent, whichever engine reads them:
+  `low` and `smallLow` are the remainders by 1000, which a double that rounded the value
+  would get wrong.
+
+  A machine's variables are read back from the Interpreter's data model, which holds an
+  integer only where a Number holds it exactly, so what the machine keeps of a value past
+  2^53 is a remainder and a comparison and not the value itself.
+
+  A `small` of the signed minimum does not fit once it is made one less: that pair is
+  not carried, error.execution is raised and the message still goes (§scxml-5.7.1,
+  §scxml-6.2). The receiver reads the missing `small` and refuses the delivery: a second
+  refusal. The receiver reads `big` first, so what a refused delivery leaves in
+  the variables is the same for every engine (a generated machine lifts the whole
+  payload at the dequeue and writes nothing; the Interpreter fails the expression that
+  reads the field, and a block that fails writes nothing after it): `low` and `large`
+  are the ones the earlier delivery left.
+
+  A `big` written as a number past 2^53 - 1, or as digits that are not whole and
+  canonical, is refused when the event is read, as a field of another type is. Such a
+  value is handed to `wide.relayed` directly, where the field read first is the bad one.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="relaying" datamodel="sce-static" name="static_wire_wide">
+  <sce:import kind="event-schema" src="schema_wide.scxml" as="Wide"/>
+  <sce:import kind="event-schema" src="schema_wide_relayed.scxml" as="Relayed"/>
+  <datamodel>
+    <data id="low" sce:type="uint64" expr="0" sce:direction="out"/>
+    <data id="smallLow" sce:type="int64" expr="0" sce:direction="out"/>
+    <data id="large" sce:type="bool" expr="false" sce:direction="out"/>
+    <data id="negative" sce:type="bool" expr="false" sce:direction="out"/>
+    <data id="relays" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="relaying">
+    <transition event="wide.in" type="internal">
+      <send event="wide.relayed">
+        <param name="big" expr="_event.data.big"/>
+        <param name="small" expr="_event.data.small - 1"/>
+      </send>
+    </transition>
+    <transition event="wide.relayed" type="internal">
+      <assign location="low" expr="_event.data.big % 1000"/>
+      <assign location="large" expr="_event.data.big &gt; 9007199254740992"/>
+      <assign location="smallLow" expr="_event.data.small % 1000"/>
+      <assign location="negative" expr="_event.data.small &lt; 0"/>
+      <assign location="relays" expr="relays + 1"/>
+    </transition>
+    <transition event="error.execution" type="internal">
+      <assign location="refusals" expr="refusals + 1"/>
+    </transition>
+  </state>
+</scxml>

@@ -1,0 +1,35 @@
+# Mutation cases for "a 64-bit integer crosses a `<param>` as the text of its digits and is
+# read back from it" under the Rust backend (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A 64-bit
+# integer").
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_rust_a_64_bit_integer_crosses_as_its_digits_rust.cases`.
+#
+# `static_wire_wide` sends a uint64 and an int64 to itself and keeps their remainders by
+# 1000, which a value that was rounded on the way would get wrong; it also hands the
+# machine a number past 2^53 - 1, which every engine refuses where it is read. The
+# mutants take one decision away each:
+#
+#   a 64-bit `<param>` is written as a JSON number and not as its digits;
+#   a JSON number past 2^53 - 1 is read as a 64-bit field.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-tests --test static_scenarios
+mutation_targets sce-build/src/forge/static_lowering.rs
+mutation_targets backends/rust/runtime/src/event_payload.rs
+mutation_regen scripts/regen_static_datamodel_rust.sh
+mutation_oracles backends/rust/tests/tests/static_scenarios.rs sce-build/tests/fixtures/static_datamodel/scenarios/static_wire_wide.json
+
+mutation_case "a 64-bit param is written as a JSON number" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "format!(\"::sce_rust_runtime::ScriptValue::String(({value}).to_string())\")",
+     "format!(\"::sce_rust_runtime::ScriptValue::Int(({value}) as i64)\")")
+PY
+
+mutation_case "a JSON number past 2^53 - 1 is read as a 64-bit field" <<'PY'
+edit("backends/rust/runtime/src/event_payload.rs",
+     ".map(|n| n.unsigned_abs() <= EXACT_IN_A_DOUBLE)",
+     ".map(|n| n.unsigned_abs() <= u128::MAX)")
+PY

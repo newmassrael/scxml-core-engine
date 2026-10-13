@@ -33,6 +33,29 @@ object EventPayload {
     class Refusal(message: String) : Exception(message)
 
     /**
+     * The largest whole number every engine holds exactly as a number (`2^53 - 1`,
+     * ECMAScript's `Number.MAX_SAFE_INTEGER`): the largest a JSON number may carry
+     * for a 64-bit field.
+     */
+    private const val EXACT_IN_A_DOUBLE: Long = (1L shl 53) - 1
+
+    /**
+     * Whether [text] is a whole number written as digits and nothing else: no sign
+     * but `-` (and only where [signed]), no leading zero, no `-0`.
+     */
+    private fun isDecimal(text: String, signed: Boolean): Boolean {
+        val digits = if (text.startsWith("-")) {
+            if (!signed) return false
+            text.substring(1)
+        } else {
+            text
+        }
+        if (digits.isEmpty() || !digits.all { it in '0'..'9' }) return false
+        if (digits != "0" && digits.startsWith("0")) return false
+        return !(digits == "0" && text.startsWith("-"))
+    }
+
+    /**
      * The fields an event carries, each value still in the spelling it was
      * written in, so a whole number stays exact until it is read at the width
      * its schema declares.
@@ -83,7 +106,39 @@ object EventPayload {
         fun int32(name: String): Int =
             narrowed(name, whole(name), Int.MIN_VALUE.toLong(), Int.MAX_VALUE.toLong()) { it.toInt() }
 
-        fun int64(name: String): Long = whole(name)
+        /**
+         * A 64-bit whole number's digits: written as a text of them, or as a JSON
+         * number when it is exact in a double (`|n| <= 2^53 - 1`). A 64-bit integer
+         * crosses as a text because a reader that takes a JSON number through a
+         * double carries one past 2^53 with its low bits wrong and no error; a
+         * number past that is refused here on every engine, so the same payload
+         * gives the same field wherever it is read.
+         */
+        private fun wide(name: String, signed: Boolean): String =
+            when (val value = raw(name)) {
+                is String ->
+                    if (isDecimal(value, signed)) value
+                    else throw Refusal("'$name' is not a whole number written as digits ($value)")
+                is Json.Number -> {
+                    val n = value.text.toLongOrNull()
+                        ?: throw Refusal("'$name' is not a whole number (${value.text})")
+                    if (n > EXACT_IN_A_DOUBLE || n < -EXACT_IN_A_DOUBLE) {
+                        throw Refusal(
+                            "'$name' is a number past 2^53 - 1, which is not exact everywhere " +
+                                "(${value.text}); a 64-bit integer that large is written as a " +
+                                "text of its digits",
+                        )
+                    }
+                    value.text
+                }
+                else -> throw Refusal("'$name' is not a number ($value)")
+            }
+
+        fun int64(name: String): Long {
+            val text = wide(name, true)
+            return text.toLongOrNull()
+                ?: throw Refusal("'$name' does not fit the width its schema declares ($text)")
+        }
 
         fun uint8(name: String): UByte =
             narrowed(name, whole(name), 0L, UByte.MAX_VALUE.toLong()) { it.toUByte() }
@@ -99,9 +154,9 @@ object EventPayload {
          * text is read as unsigned rather than through [whole].
          */
         fun uint64(name: String): ULong {
-            val text = number(name)
+            val text = wide(name, false)
             return text.toULongOrNull()
-                ?: throw Refusal("'$name' is not a whole number at or above zero ($text)")
+                ?: throw Refusal("'$name' does not fit the width its schema declares ($text)")
         }
 
         /**
@@ -211,8 +266,10 @@ object EventPayload {
     private fun literal(value: Any?): String = when (value) {
         null -> "null"
         is Boolean -> value.toString()
-        is UByte, is UShort, is UInt, is ULong -> value.toString()
-        is Byte, is Short, is Int, is Long -> value.toString()
+        is UByte, is UShort, is UInt -> value.toString()
+        is Byte, is Short, is Int -> value.toString()
+        // A 64-bit integer crosses as the text of its digits.
+        is ULong, is Long -> Json.quote(value.toString())
         // JSON has no spelling for a double that is not finite. A float32 is
         // still written as the platform spells it: the contract pins the
         // 64-bit spelling (ARCHITECTURE.md, "JSON Number Text").

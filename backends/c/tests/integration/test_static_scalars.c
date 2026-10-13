@@ -145,6 +145,7 @@
 #include "static_timers_sm.h"
 #include "static_whole_payload_sm.h"
 #include "static_wire_enum_sm.h"
+#include "static_wire_wide_sm.h"
 #include "sync_client_sm.h"
 
 #include <sce/forge/wire.h>
@@ -1383,6 +1384,25 @@ static const record_variable_t whole_payload_records[] = {
 STATIC_SCENARIO(static_whole_payload, whole_payload_states, whole_payload_variables, NULL, no_lists,
                 whole_payload_records)
 
+// static_wire_wide: a 64-bit integer crosses a `<param>` as the text of its digits and
+// is read back from it; the machine keeps the remainders by 1000, which a value that was
+// rounded on the way would get wrong.
+VARIABLE_READER(static_wire_wide, low)
+VARIABLE_READER(static_wire_wide, smallLow)
+VARIABLE_READER(static_wire_wide, large)
+VARIABLE_READER(static_wire_wide, negative)
+VARIABLE_READER(static_wire_wide, relays)
+VARIABLE_READER(static_wire_wide, refusals)
+static const name_value_t wire_wide_states[] = {
+    {"relaying", STATIC_WIRE_WIDE_STATE_RELAYING},
+};
+static const variable_t wire_wide_variables[] = {
+    {"low", static_wire_wide_read_low},       {"smallLow", static_wire_wide_read_smallLow},
+    {"large", static_wire_wide_read_large},   {"negative", static_wire_wide_read_negative},
+    {"relays", static_wire_wide_read_relays}, {"refusals", static_wire_wide_read_refusals},
+};
+STATIC_SCENARIO(static_wire_wide, wire_wide_states, wire_wide_variables, NULL, no_lists, no_records)
+
 // static_wire_enum: an enum value as a `<param>` crosses as the name its enum
 // declares for it — a variable, a field of a record variable and a conditional,
 // sent and read back through the schema. A value is stated as the name its
@@ -1889,6 +1909,7 @@ int main(void) {
     bad |= static_record_list_index_scenario("static_record_list_index", 19);
     bad |= static_record_enum_scenario("static_record_enum", 29);
     bad |= static_whole_payload_scenario("static_whole_payload", 9);
+    bad |= static_wire_wide_scenario("static_wire_wide", 9);
     bad |= static_wire_enum_scenario("static_wire_enum", 7);
     bad |= static_payload_scenario("static_payload", 5);
     bad |= static_enum_scenario("static_enum", 11);

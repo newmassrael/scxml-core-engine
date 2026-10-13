@@ -1,0 +1,34 @@
+# Mutation cases for "a 64-bit integer crosses a `<param>` as the text of its digits and is
+# read back from it" under the Python backend (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A 64-bit
+# integer").
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_python_a_64_bit_integer_crosses_as_its_digits_python.cases`.
+#
+# `static_wire_wide` sends a uint64 and an int64 to itself and keeps their remainders by
+# 1000; it also hands the machine a number past 2^53 - 1, which every engine refuses where
+# it is read. The mutants take one decision away each:
+#
+#   a 64-bit `<param>` is written as a JSON number and not as its digits;
+#   a JSON number past 2^53 - 1 is read as a 64-bit field.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_pytest backends/python/tests integration/static_datamodel/
+mutation_targets sce-build/src/forge/static_lowering.rs
+mutation_targets backends/python/runtime/sce_runtime/event_payload.py
+mutation_regen scripts/regen_static_datamodel_python.sh
+mutation_oracles backends/python/tests/integration/static_datamodel/test_static_scenarios.py sce-build/tests/fixtures/static_datamodel/scenarios/static_wire_wide.json
+
+mutation_case "a 64-bit param is written as a JSON number" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "InferredType::Int { bits: 64, .. } => format!(\"_ScriptValue.of(str({value}))\"),",
+     "InferredType::Int { bits: 64, .. } => format!(\"_ScriptValue.of({value})\"),")
+PY
+
+mutation_case "a JSON number past 2^53 - 1 is read as a 64-bit field" <<'PY'
+edit("backends/python/runtime/sce_runtime/event_payload.py",
+     "if abs(value) > _EXACT_IN_A_DOUBLE:",
+     "if False:")
+PY

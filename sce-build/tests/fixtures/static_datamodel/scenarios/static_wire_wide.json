@@ -1,0 +1,40 @@
+{
+  "machine": "static_wire_wide",
+  "about": "A 64-bit integer is carried on as a <param> of a <send> as the text of its digits, and read back from it: `wide.in` brings a uint64 `big` and an int64 `small`, the machine sends them to itself as `wide.relayed` with `small` made one less, and keeps the remainders of the two by 1000, which a double that rounded a value past 2^53 would get wrong. A 64-bit field is read from a text of its digits, or from a JSON number up to 2^53 - 1; a number past that, digits with a leading zero and a minus sign on an unsigned field are refused on every engine, so a payload gives one field wherever it is read. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "note": "nothing has been relayed yet",
+      "expect": { "state": "relaying", "variables": { "low": 0, "smallLow": 0, "large": false, "negative": false, "relays": 0, "refusals": 0 } } },
+
+    { "note": "2^53 + 1 and -(2^53 + 1) arrive as digits and cross as digits: the low digits are the ones sent",
+      "event": "wide.in", "data": { "big": "9007199254740993", "small": "-9007199254740993" },
+      "expect": { "variables": { "low": 993, "smallLow": -994, "large": true, "negative": true, "relays": 1, "refusals": 0 } } },
+
+    { "note": "a number a double holds exactly is read as a number",
+      "event": "wide.in", "data": { "big": 5, "small": -5 },
+      "expect": { "variables": { "low": 5, "smallLow": -6, "large": false, "negative": true, "relays": 2, "refusals": 0 } } },
+
+    { "note": "the widest of each signedness: 2^64 - 1, and the signed minimum once it is made one less",
+      "event": "wide.in", "data": { "big": "18446744073709551615", "small": "-9223372036854775807" },
+      "expect": { "variables": { "low": 615, "smallLow": -808, "large": true, "negative": true, "relays": 3, "refusals": 0 } } },
+
+    { "note": "the signed minimum does not fit once it is made one less: the pair is left out, the message goes and its receiver refuses it",
+      "event": "wide.in", "data": { "big": "18446744073709551615", "small": "-9223372036854775808" },
+      "expect": { "variables": { "low": 615, "smallLow": -808, "large": true, "negative": true, "relays": 3, "refusals": 2 } } },
+
+    { "note": "a number past 2^53 - 1 is not exact everywhere, so it is refused where it is read",
+      "event": "wide.relayed", "data": { "big": 9007199254740993, "small": "0" },
+      "expect": { "variables": { "low": 615, "large": true, "relays": 3, "refusals": 3 } } },
+
+    { "note": "digits with a leading zero are no canonical spelling of a number",
+      "event": "wide.relayed", "data": { "big": "007", "small": "0" },
+      "expect": { "variables": { "low": 615, "large": true, "relays": 3, "refusals": 4 } } },
+
+    { "note": "an unsigned field has no minus sign",
+      "event": "wide.relayed", "data": { "big": "-1", "small": "0" },
+      "expect": { "variables": { "low": 615, "large": true, "relays": 3, "refusals": 5 } } },
+
+    { "note": "a good delivery after the refused ones is carried on as any other",
+      "event": "wide.in", "data": { "big": "0", "small": "0" },
+      "expect": { "variables": { "low": 0, "smallLow": -1, "large": false, "negative": true, "relays": 4, "refusals": 5 } } }
+  ]
+}

@@ -154,27 +154,40 @@ public:
         if (!refusal.empty()) {
             return std::string("'") + name + "' " + refusal;
         }
-        if (negative) {
-            if constexpr (std::is_signed_v<T>) {
-                // -(min) does not fit T when min is its floor, so the check is
-                // made on the magnitude instead.
-                const uint64_t floorMagnitude =
-                    static_cast<uint64_t>(-(static_cast<int64_t>(std::numeric_limits<T>::min()) + 1)) + 1u;
-                if (magnitude > floorMagnitude) {
-                    return width(name);
-                }
-                out = (magnitude == floorMagnitude) ? std::numeric_limits<T>::min()
-                                                    : static_cast<T>(-static_cast<int64_t>(magnitude));
-                return {};
-            } else {
-                return width(name);
+        return fit(name, negative, magnitude, out);
+    }
+
+    /**
+     * @brief A 64-bit whole-number field
+     *
+     * A 64-bit integer crosses as the text of its digits, because a reader that takes
+     * a JSON number through a double carries one past 2^53 with its low bits wrong
+     * and no error. It is read from that text, or from a number exact in a double
+     * (`|n| <= 2^53`); a number past that is refused here on every engine, so the
+     * same payload gives the same field wherever it is read.
+     */
+    template <typename T> std::string readWide(const char *name, T &out) const {
+        static_assert(std::is_integral_v<T> && sizeof(T) == 8, "readWide is for 64-bit whole-number fields");
+        const char *p = find(name);
+        if (p == nullptr) {
+            return missing(name);
+        }
+        bool negative = false;
+        uint64_t magnitude = 0;
+        std::string refusal;
+        if (*p == '"') {
+            refusal = readWholeText(p + 1, std::is_signed_v<T>, negative, magnitude);
+        } else {
+            refusal = readWhole(p, negative, magnitude);
+            if (refusal.empty() && magnitude > (uint64_t{1} << 53) - 1u) {
+                refusal = "is a number past 2^53 - 1, which is not exact everywhere; a 64-bit integer that large is "
+                          "written as a text of its digits";
             }
         }
-        if (magnitude > static_cast<uint64_t>(std::numeric_limits<T>::max())) {
-            return width(name);
+        if (!refusal.empty()) {
+            return std::string("'") + name + "' " + refusal;
         }
-        out = static_cast<T>(magnitude);
-        return {};
+        return fit(name, negative, magnitude, out);
     }
 
     /** @brief A fractional field, at the width its schema declares */
@@ -502,6 +515,56 @@ private:
             return "is not a whole number";
         }
         magnitude = value;
+        return {};
+    }
+
+    /** The digits of a 64-bit field written as a text, from just past its opening quote: whole, canonical, closed. */
+    static std::string readWholeText(const char *p, bool isSigned, bool &negative, uint64_t &magnitude) {
+        negative = (*p == '-');
+        const char *digits = negative ? p + 1 : p;
+        if (negative && !isSigned) {
+            return "is not a whole number written as digits";
+        }
+        const char *d = digits;
+        uint64_t value = 0;
+        for (; *d >= '0' && *d <= '9'; d++) {
+            const uint64_t digit = static_cast<uint64_t>(*d - '0');
+            if (value > (std::numeric_limits<uint64_t>::max() - digit) / 10u) {
+                return "does not fit the width its schema declares";
+            }
+            value = value * 10u + digit;
+        }
+        const bool canonical =
+            d != digits && *d == '"' && (*digits != '0' || d == digits + 1) && !(negative && value == 0);
+        if (!canonical) {
+            return "is not a whole number written as digits";
+        }
+        magnitude = value;
+        return {};
+    }
+
+    /** Whether a magnitude and sign fit `T`, writing it to `out` when they do. */
+    template <typename T> static std::string fit(const char *name, bool negative, uint64_t magnitude, T &out) {
+        if (negative) {
+            if constexpr (std::is_signed_v<T>) {
+                // -(min) does not fit T when min is its floor, so the check is
+                // made on the magnitude instead.
+                const uint64_t floorMagnitude =
+                    static_cast<uint64_t>(-(static_cast<int64_t>(std::numeric_limits<T>::min()) + 1)) + 1u;
+                if (magnitude > floorMagnitude) {
+                    return width(name);
+                }
+                out = (magnitude == floorMagnitude) ? std::numeric_limits<T>::min()
+                                                    : static_cast<T>(-static_cast<int64_t>(magnitude));
+                return {};
+            } else {
+                return width(name);
+            }
+        }
+        if (magnitude > static_cast<uint64_t>(std::numeric_limits<T>::max())) {
+            return width(name);
+        }
+        out = static_cast<T>(magnitude);
         return {};
     }
 

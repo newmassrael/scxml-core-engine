@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The payload `static_wire_wide.scxml` forwards: the fields of `schema_wide.scxml`
+  under the name of the event that carries them on (SCE Accepted Subset §2.15).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="schema_wide_relayed"
+       sce:event-name="wide.relayed">
+  <datamodel>
+    <data id="big" sce:type="uint64" sce:direction="in"/>
+    <data id="small" sce:type="int64" sce:direction="in"/>
+  </datamodel>
+</scxml>

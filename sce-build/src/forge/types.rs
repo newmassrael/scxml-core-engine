@@ -490,29 +490,36 @@ impl InferredType {
         }
     }
 
+    /// Whether this is a 64-bit integer, which crosses the wire as the text of its
+    /// digits (SCE Accepted Subset §2.15, "A 64-bit integer").
+    pub fn is_wide(self) -> bool {
+        matches!(self, Self::Int { bits: 64, .. })
+    }
+
     /// The type a `<param>`'s value is lowered as when it crosses to a host
     /// (SCE Accepted Subset §2.15), or `None` for one that has no wire spelling
     /// every backend reads alike.
     ///
     /// A `<param>` crosses twice, as text and as a JSON value in the event's
     /// data, and each backend renders both from its own native type. A bool, a
-    /// string, an integer of at most 32 bits and a real are carried exactly by
-    /// all of them. A 64-bit integer is not: Kotlin's wire helpers read a `Long`
-    /// through a `Double`, so one past 2^53 would cross with its low bits wrong
-    /// and no error, while Rust would carry it exactly — two backends giving one
+    /// string, an integer and a real are carried exactly by all of them. A
+    /// 64-bit integer is carried as the text of its digits ([`Self::is_wide`]), a
+    /// JSON string: written as a JSON number it would cross exactly on a backend
+    /// that keeps the digits and with its low bits wrong, and no error, on one
+    /// that reads the number through a `Double` — two backends giving one
     /// document two values. A byte string is carried exactly too, as its
     /// byte-exact Latin-1 text (docs/adr/0005, decision 2), each backend spelling
     /// the text its own way ([`StaticTarget::wire_bytes`]) and refusing by name
     /// until it does. A list and a record have no such spelling yet. A literal no
     /// context typed is the narrowest it can be (`int32`, `float64`) rather than
-    /// the widest ([`Self::to_sce_type`]'s choice), since here a wider one is the
-    /// one that is refused.
+    /// the widest ([`Self::to_sce_type`]'s choice).
     ///
     /// [`StaticTarget::wire_bytes`]: crate::forge::static_lowering::StaticTarget::wire_bytes
     pub fn wire_param_slot(self) -> Option<InferredType> {
         match self {
-            Self::Bool | Self::Str | Self::Bytes | Self::Float { .. } => Some(self),
-            Self::Int { bits, .. } if bits <= 32 => Some(self),
+            Self::Bool | Self::Str | Self::Bytes | Self::Float { .. } | Self::Int { .. } => {
+                Some(self)
+            }
             Self::UntypedInt => Some(Self::Int {
                 signed: true,
                 bits: 32,

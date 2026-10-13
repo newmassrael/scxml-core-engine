@@ -52,6 +52,54 @@ class Single(float):
     integer past its width."""
 
 
+class Wide(int):
+    """Names a payload field a schema declares `int64` or `uint64` in a field spec.
+
+    A 64-bit integer crosses as the text of its digits: a reader that takes a JSON
+    number through a double carries one past 2^53 with its low bits wrong and no
+    error. It is read from that text, or from a number exact in a double
+    (`|n| <= 2^53`); a number past that is refused here on every engine, so the
+    same payload gives the same field wherever it is read."""
+
+
+# The largest whole number every engine holds exactly as a number (`2^53 - 1`,
+# ECMAScript's `Number.MAX_SAFE_INTEGER`).
+_EXACT_IN_A_DOUBLE = (1 << 53) - 1
+
+
+def _is_decimal(text: str, signed: bool) -> bool:
+    """Whether `text` is a whole number written as digits and nothing else: no
+    sign but `-` (and only where `signed`), no leading zero, no `-0`."""
+    digits = text[1:] if text.startswith("-") else text
+    if text.startswith("-") and not signed:
+        return False
+    if not digits or not all("0" <= c <= "9" for c in digits):
+        return False
+    if digits != "0" and digits.startswith("0"):
+        return False
+    return not (digits == "0" and text.startswith("-"))
+
+
+def as_wide(name: str, value: Any, signed: bool) -> int:
+    """A 64-bit field's value: the text of its digits, or a whole number exact in a
+    double (`|n| <= 2^53 - 1`). A truth value is not a number here."""
+    if isinstance(value, bool):
+        raise TypedPayloadError(f"{name!r} is not a whole number ({value!r})")
+    if isinstance(value, str):
+        if not _is_decimal(value, signed):
+            raise TypedPayloadError(
+                f"{name!r} is not a whole number written as digits ({value!r})")
+        return int(value)
+    if isinstance(value, int):
+        if abs(value) > _EXACT_IN_A_DOUBLE:
+            raise TypedPayloadError(
+                f"{name!r} is a number past 2^53 - 1, which is not exact everywhere "
+                f"({value!r}); a 64-bit integer that large is written as a text of "
+                f"its digits")
+        return value
+    raise TypedPayloadError(f"{name!r} is not a whole number ({value!r})")
+
+
 def as_single(value: float) -> float:
     """`value` rounded to the nearest binary32, as the double that holds it
     exactly; a value past the single's range is the infinity it is there."""
@@ -190,7 +238,10 @@ def lift(data: Any, fields: Sequence[tuple]) -> list:
     for name, declared, *width in fields:
         if name not in decoded:
             raise TypedPayloadError(f"the event's data has no {name!r}")
-        value = _as(name, declared, decoded[name])
+        if declared is Wide:
+            value = as_wide(name, decoded[name], width[0] < 0)
+        else:
+            value = _as(name, declared, decoded[name])
         if width and not width[0] <= value <= width[1]:
             raise TypedPayloadError(
                 f"{name!r} does not fit the width its schema declares ({value!r})")

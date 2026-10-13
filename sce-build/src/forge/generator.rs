@@ -2559,10 +2559,14 @@ pub fn build_rust_event_payload(
             // type, so a field widened in its schema cannot keep being read at
             // the old width — the generated call stops compiling instead.
             let reader = match &f.sce_type {
-                SceType::Uint8 | SceType::Uint16 | SceType::Uint32 | SceType::Uint64 => {
+                // A 64-bit integer is read from its digits as a text, or from a number
+                // exact in a double (`PayloadFields::wide`).
+                SceType::Uint64 => format!("fields.unsigned64(\"{}\")?", f.id),
+                SceType::Int64 => format!("fields.signed64(\"{}\")?", f.id),
+                SceType::Uint8 | SceType::Uint16 | SceType::Uint32 => {
                     format!("fields.unsigned::<{ty}>(\"{}\")?", f.id)
                 }
-                SceType::Int8 | SceType::Int16 | SceType::Int32 | SceType::Int64 => {
+                SceType::Int8 | SceType::Int16 | SceType::Int32 => {
                     format!("fields.signed::<{ty}>(\"{}\")?", f.id)
                 }
                 SceType::Float32 => format!("fields.float32(\"{}\")?", f.id),
@@ -2819,7 +2823,13 @@ fn rust_record_wire_of(
         if !items.is_empty() {
             items.push_str(", ");
         }
-        items.push_str(&format!("\\\"{}\\\":{{}}", f.id));
+        // A 64-bit integer crosses as the text of its digits.
+        let value = if matches!(f.sce_type, SceType::Uint64 | SceType::Int64) {
+            "\\\"{}\\\""
+        } else {
+            "{}"
+        };
+        items.push_str(&format!("\\\"{}\\\":{value}", f.id));
         args.push_str(&format!(", {wire}"));
     }
     format!(
@@ -2968,8 +2978,9 @@ return false;\n    }}\n"
                 format.push_str(&format!("\\\"{id}\\\":%.17g"));
                 args.push_str(&format!(", (double){receiver}->{id}"));
             }
+            // A 64-bit integer crosses as the text of its digits.
             SceType::Uint64 => {
-                format.push_str(&format!("\\\"{id}\\\":%llu"));
+                format.push_str(&format!("\\\"{id}\\\":\\\"%llu\\\""));
                 args.push_str(&format!(", (unsigned long long){receiver}->{id}"));
             }
             SceType::Uint8 | SceType::Uint16 | SceType::Uint32 => {
@@ -2977,7 +2988,7 @@ return false;\n    }}\n"
                 args.push_str(&format!(", (unsigned long){receiver}->{id}"));
             }
             SceType::Int64 => {
-                format.push_str(&format!("\\\"{id}\\\":%lld"));
+                format.push_str(&format!("\\\"{id}\\\":\\\"%lld\\\""));
                 args.push_str(&format!(", (long long){receiver}->{id}"));
             }
             SceType::Int8 | SceType::Int16 | SceType::Int32 => {
@@ -3411,11 +3422,15 @@ fn go_payload_reader(
 ) -> String {
     let id = &f.id;
     match &f.sce_type {
-        SceType::Uint8 | SceType::Uint16 | SceType::Uint32 | SceType::Uint64 => format!(
+        // A 64-bit integer is read from the text of its digits, or from a number
+        // exact in a double.
+        SceType::Uint64 => format!("sce.PayloadUnsigned64({obj}, \"{id}\")"),
+        SceType::Int64 => format!("sce.PayloadSigned64({obj}, \"{id}\")"),
+        SceType::Uint8 | SceType::Uint16 | SceType::Uint32 => format!(
             "sce.PayloadUnsigned[{}]({obj}, \"{id}\")",
             go_type(&f.sce_type)
         ),
-        SceType::Int8 | SceType::Int16 | SceType::Int32 | SceType::Int64 => format!(
+        SceType::Int8 | SceType::Int16 | SceType::Int32 => format!(
             "sce.PayloadSigned[{}]({obj}, \"{id}\")",
             go_type(&f.sce_type)
         ),
@@ -3466,6 +3481,9 @@ fn go_payload_data_value(f: &ForgeField) -> String {
         // The name the enum document declares for the value, which is what
         // the enum's `String` answers.
         SceType::Enum(_) => format!("{}.String()", f.id),
+        // A 64-bit integer crosses as the text of its digits.
+        SceType::Uint64 => format!("sce.Uint64PayloadText({})", f.id),
+        SceType::Int64 => format!("sce.Int64PayloadText({})", f.id),
         _ => f.id.clone(),
     }
 }
@@ -3726,14 +3744,15 @@ fn cpp_event_enum_value(event: &str) -> String {
 fn cpp_payload_reader(f: &ForgeField, target: &str) -> String {
     let id = &f.id;
     let call = match &f.sce_type {
+        // A 64-bit integer is read from the text of its digits, or from a number
+        // exact in a double.
+        SceType::Uint64 | SceType::Int64 => "readWide",
         SceType::Uint8
         | SceType::Uint16
         | SceType::Uint32
-        | SceType::Uint64
         | SceType::Int8
         | SceType::Int16
-        | SceType::Int32
-        | SceType::Int64 => "readInteger",
+        | SceType::Int32 => "readInteger",
         SceType::Float32 | SceType::Float64 => "readFloating",
         SceType::Bool => "readBool",
         SceType::String => "readString",
@@ -3897,6 +3916,9 @@ if (!refusal.empty()) {{\n                return refusal;\n            }}\n",
             // which the enum's `sceLogName` answers.
             let written = if matches!(f.sce_type, SceType::Enum(_)) {
                 format!("::std::string(sceLogName({}))", f.id)
+            } else if matches!(f.sce_type, SceType::Uint64 | SceType::Int64) {
+                // A 64-bit integer crosses as the text of its digits.
+                format!("::std::to_string({})", f.id)
             } else {
                 f.id.clone()
             };
@@ -4365,6 +4387,9 @@ pub fn build_python_event_payload(
     // Whether a field a schema declares `float32` is read, so the module names
     // what rounds it to a single.
     let mut uses_single = false;
+    // Whether a 64-bit integer field is read, so the module names the marker that
+    // reads it from the text of its digits.
+    let mut uses_wide = false;
 
     let mut first = true;
     for event in &guarded_events {
@@ -4411,7 +4436,17 @@ pub fn build_python_event_payload(
                 .sce_type
                 .int_value_range()
                 .map_or(String::new(), |(low, high)| format!(", {low}, {high}"));
-            let declared = if single { "_Single" } else { ty.as_str() };
+            // A 64-bit integer is read from the text of its digits, or from a number
+            // exact in a double, and crosses as that text.
+            let wide = matches!(f.sce_type, SceType::Uint64 | SceType::Int64);
+            uses_wide |= wide;
+            let declared = if single {
+                "_Single"
+            } else if wide {
+                "_Wide"
+            } else {
+                ty.as_str()
+            };
             lift_fields.push_str(&format!("(\"{}\", {declared}{width}), ", f.id));
             // ⚠ JSON has no byte string, and `json.dumps` REFUSES one, so a
             // `bytes` field rides the wire as its byte-exact Latin-1 text (the
@@ -4424,6 +4459,8 @@ pub fn build_python_event_payload(
                 data_items.push_str(&format!("\"{}\": {}.sce_name", f.id, f.id));
             } else if single {
                 data_items.push_str(&format!("\"{}\": _as_single({})", f.id, f.id));
+            } else if wide {
+                data_items.push_str(&format!("\"{}\": str({})", f.id, f.id));
             } else {
                 data_items.push_str(&format!("\"{}\": {}", f.id, f.id));
             }
@@ -4489,6 +4526,12 @@ from sce_runtime.event_payload import as_single as _as_single\n"
     } else {
         ""
     };
+    let wide_import = if uses_wide {
+        "from sce_runtime.event_payload import Wide as _Wide\n"
+    } else {
+        ""
+    };
+    let single_import = format!("{single_import}{wide_import}");
     let defs = format!(
         "# NL\u{2192}IR Item C1 Path A (EventSchema MCU native lowering): typed\n\
 # `_event.data` payload dataclasses for the EventSchema-imported events whose\n\

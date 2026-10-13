@@ -2533,20 +2533,21 @@ fn every_value_a_param_can_carry_is_accepted() {
 }
 
 #[test]
-fn a_param_whose_value_has_no_wire_spelling_is_refused_on_its_line() {
+fn a_64_bit_integer_param_is_carried_as_the_text_of_its_digits() {
     // `big` is a 64-bit integer: a backend that reads numbers through a double
-    // would carry one past 2^53 with its low bits wrong, and say nothing.
-    let document = sending(r#"<param name="k" expr="big"/>"#).replace(
-        r#"<data id="ready" sce:type="bool" expr="false"/>"#,
-        r#"<data id="big" sce:type="int64" expr="0"/>"#,
-    );
-    let (ok, out) = run(&["check"], &document);
-    assert!(
-        !ok,
-        "a 64-bit integer has no wire spelling every backend shares:\n{out}"
-    );
-    assert_refused_at(&out, "scxml/static-datamodel-rule", 11);
-    assert!(out.contains("64-bit"), "it says why:\n{out}");
+    // would carry one past 2^53 with its low bits wrong, and say nothing, so it
+    // crosses as text and is accepted at either signedness.
+    for ty in ["int64", "uint64"] {
+        let document = sending(r#"<param name="k" expr="big"/>"#).replace(
+            r#"<data id="ready" sce:type="bool" expr="false"/>"#,
+            &format!(r#"<data id="big" sce:type="{ty}" expr="0"/>"#),
+        );
+        let (ok, out) = run(&["check"], &document);
+        assert!(
+            ok,
+            "a {ty} has a wire spelling, the text of its digits:\n{out}"
+        );
+    }
 }
 
 #[test]
@@ -2668,16 +2669,13 @@ fn a_send_namelist_name_is_held_to_the_rule_a_param_is() {
     assert!(!ok, "a name that is no variable is refused:\n{out}");
     assert!(out.contains("missing"), "it names the name:\n{out}");
 
-    // A 64-bit variable has no wire spelling every backend shares, and the
-    // refusal is placed at the attribute, which is where the name is written.
+    // A 64-bit variable crosses as the text of its digits.
     let document = sending_by_namelist("big").replace(
         r#"<data id="ready" sce:type="bool" expr="false"/>"#,
         r#"<data id="big" sce:type="int64" expr="0"/>"#,
     );
     let (ok, out) = run(&["check"], &document);
-    assert!(!ok, "a 64-bit variable crosses with no spelling:\n{out}");
-    assert_refused_at(&out, "scxml/static-datamodel-rule", 8);
-    assert!(out.contains("64-bit"), "it says why:\n{out}");
+    assert!(ok, "a 64-bit variable crosses as its digits:\n{out}");
 }
 
 // ── A `<send>`'s `<content expr>` names a record ────────────────────────
@@ -2760,20 +2758,14 @@ fn a_send_content_value_is_held_to_the_rule_a_param_is() {
     assert!(!ok, "a name that is no variable is refused:\n{out}");
     assert!(out.contains("missing"), "it names the name:\n{out}");
 
-    // A 64-bit variable has no wire spelling every backend shares, and the
-    // refusal is placed at the attribute and says it is the content it refuses.
+    // A 64-bit variable crosses as the text of its digits, the one value the
+    // event carries.
     let document = sending_content_of_a_value("big").replace(
         r#"<data id="ready" sce:type="bool" expr="false"/>"#,
         r#"<data id="big" sce:type="int64" expr="0"/>"#,
     );
     let (ok, out) = run(&["check"], &document);
-    assert!(!ok, "a 64-bit variable crosses with no spelling:\n{out}");
-    assert_refused_at(&out, "scxml/static-datamodel-rule", 8);
-    assert!(out.contains("64-bit"), "it says why:\n{out}");
-    assert!(
-        out.contains("<content expr=\\\"big\\\">"),
-        "it names the content, not a param:\n{out}"
-    );
+    assert!(ok, "a 64-bit variable crosses as its digits:\n{out}");
 }
 
 #[test]
@@ -3814,20 +3806,14 @@ fn a_donedata_content_value_is_held_to_the_rule_a_param_is() {
     assert!(!ok, "a name that is no variable is refused:\n{out}");
     assert!(out.contains("missing"), "it names the name:\n{out}");
 
-    // A 64-bit variable has no wire spelling every backend shares, and the
-    // refusal is placed at the attribute and says it is the content it refuses.
+    // A 64-bit variable crosses as the text of its digits, the one value the
+    // done event carries.
     let document = finishing(r#"<content expr="big"/>"#).replace(
         r#"<data id="ready" sce:type="bool" expr="false"/>"#,
         r#"<data id="big" sce:type="int64" expr="0"/>"#,
     );
     let (ok, out) = run(&["check"], &document);
-    assert!(!ok, "a 64-bit variable crosses with no spelling:\n{out}");
-    assert_refused_at(&out, "scxml/static-datamodel-rule", 11);
-    assert!(out.contains("64-bit"), "it says why:\n{out}");
-    assert!(
-        out.contains("<content expr=\\\"big\\\">"),
-        "it names the content, not a param:\n{out}"
-    );
+    assert!(ok, "a 64-bit variable crosses as its digits:\n{out}");
 }
 
 #[test]
@@ -3900,19 +3886,19 @@ fn every_value_a_donedata_param_can_carry_is_accepted() {
 }
 
 #[test]
-fn a_donedata_param_whose_value_has_no_wire_spelling_is_refused_on_its_line() {
+fn a_donedata_param_of_a_64_bit_integer_is_carried_as_the_text_of_its_digits() {
     // The rule is the one a `<send>`'s param is held to, stated once.
-    let document = finishing(r#"<param name="k" expr="big"/>"#).replace(
-        r#"<data id="ready" sce:type="bool" expr="false"/>"#,
-        r#"<data id="big" sce:type="int64" expr="0"/>"#,
-    );
-    let (ok, out) = run(&["check"], &document);
-    assert!(
-        !ok,
-        "a 64-bit integer has no wire spelling every backend shares:\n{out}"
-    );
-    assert_refused_at(&out, "scxml/static-datamodel-rule", 11);
-    assert!(out.contains("64-bit"), "it says why:\n{out}");
+    for ty in ["int64", "uint64"] {
+        let document = finishing(r#"<param name="k" expr="big"/>"#).replace(
+            r#"<data id="ready" sce:type="bool" expr="false"/>"#,
+            &format!(r#"<data id="big" sce:type="{ty}" expr="0"/>"#),
+        );
+        let (ok, out) = run(&["check"], &document);
+        assert!(
+            ok,
+            "a {ty} has a wire spelling, the text of its digits:\n{out}"
+        );
+    }
 }
 
 #[test]
@@ -4865,17 +4851,14 @@ fn a_host_run_invoke_namelist_name_is_held_to_the_rule_a_param_is() {
     assert!(!ok, "a name that is no variable is refused:\n{out}");
     assert!(out.contains("missing"), "it names the name:\n{out}");
 
-    // A 64-bit variable has no wire spelling every backend shares, and the
-    // refusal is placed at the invoke, where the name is written.
+    // A 64-bit variable crosses as the text of its digits.
     let document = invoking_the_host(r#"<invoke type="x-sce-host" id="h" namelist="big"/>"#)
         .replace(
             r#"<data id="ready" sce:type="bool" expr="false"/>"#,
             r#"<data id="big" sce:type="int64" expr="0"/>"#,
         );
     let (ok, out) = run(&["check"], &document);
-    assert!(!ok, "a 64-bit variable crosses with no spelling:\n{out}");
-    assert_refused_at(&out, "scxml/static-datamodel-rule", 9);
-    assert!(out.contains("64-bit"), "it says why:\n{out}");
+    assert!(ok, "a 64-bit variable crosses as its digits:\n{out}");
 }
 
 #[test]

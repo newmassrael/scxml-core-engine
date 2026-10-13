@@ -167,6 +167,9 @@ use sce_rust_tests::integration::static_datamodel::static_whole_payload_sm::{
 use sce_rust_tests::integration::static_datamodel::static_wire_enum_sm::{
     StaticWireEnumPersist, StaticWireEnumPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_wire_wide_sm::{
+    StaticWireWidePersist, StaticWireWidePolicy,
+};
 use sce_rust_tests::integration::static_datamodel::sync_client_sm::{
     SyncClientPersist, SyncClientPolicy,
 };
@@ -478,6 +481,20 @@ fn static_record_real_holds_a_real_field_to_the_bit() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_record_real.json"
+        ),
+    );
+}
+
+// A 64-bit integer crosses a `<send>`'s `<param>` as the text of its digits and is
+// read back from it: the low digits of a value past 2^53 are the ones that were
+// sent, and a number past 2^53 - 1 is refused where it is read.
+#[test]
+fn static_wire_wide_carries_a_64_bit_integer_as_its_digits() {
+    replay(
+        Engine::new(StaticWireWidePolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_wire_wide.json"
         ),
     );
 }

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: f016ee9d192c699fb820e15a05fbec9d1bb94662732752970d6af472a85b7efc
+// source-hash: 5d4270ae4c884e43e7a12f9a58bd5d012629cb9a3aef7240aa93f930de85d6c6
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -285,7 +285,7 @@ func RaiseSyncResponse(e *sce.Engine[SyncClientState, SyncClientEvent], kind uin
 			// and `Data`, which is what the script engine binds `_event.data`
 			// from. Filling only the first left an `<assign expr="_event.data.x">`
 			// on this event reading nothing, on every backend alike.
-			Data: sce.PayloadJSON(sce.Pair("kind", kind), sce.Pair("status", status), sce.Pair("create", create), sce.Pair("davError", davError), sce.Pair("now", now), sce.Pair("retryAfter", retryAfter)),
+			Data: sce.PayloadJSON(sce.Pair("kind", kind), sce.Pair("status", status), sce.Pair("create", create), sce.Pair("davError", davError), sce.Pair("now", sce.Int64PayloadText(now)), sce.Pair("retryAfter", sce.Int64PayloadText(retryAfter))),
 		},
 	})
 }
@@ -752,10 +752,10 @@ func (p *SyncClientPolicy) LiftTypedPayload(event SyncClientEvent, meta *sce.Eve
 		if payload.davError, err = sce.PayloadBool(fields, "davError"); err != nil {
 			return err
 		}
-		if payload.now, err = sce.PayloadSigned[int64](fields, "now"); err != nil {
+		if payload.now, err = sce.PayloadSigned64(fields, "now"); err != nil {
 			return err
 		}
-		if payload.retryAfter, err = sce.PayloadSigned[int64](fields, "retryAfter"); err != nil {
+		if payload.retryAfter, err = sce.PayloadSigned64(fields, "retryAfter"); err != nil {
 			return err
 		}
 		p.pendingSyncResponsePayload = payload

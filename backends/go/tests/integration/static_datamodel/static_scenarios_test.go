@@ -83,6 +83,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_timers"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_whole_payload"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_wire_enum"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_wire_wide"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/sync_client"
 )
 
@@ -910,6 +911,22 @@ func TestARecordHoldsAnEnumField(t *testing.T) {
 		"weeks": func() any { return policy.Weeks() },
 		"flips": func() any { return policy.Flips() },
 		"leads": func() any { return policy.Leads() },
+	}))
+}
+
+// A 64-bit integer crosses a `<send>`'s `<param>` as the text of its digits and is
+// read back from it: the low digits of a value past 2^53 are the ones that were
+// sent, and a number past 2^53 - 1 is refused where it is read.
+func TestA64BitIntegerCrossesAsItsDigits(t *testing.T) {
+	policy := static_wire_wide.NewStaticWireWidePolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_wire_wide", drive[static_wire_wide.StaticWireWideState, static_wire_wide.StaticWireWideEvent](&policy, map[string]func() any{
+		"low":      func() any { return policy.Low() },
+		"smallLow": func() any { return policy.SmallLow() },
+		"large":    func() any { return policy.Large() },
+		"negative": func() any { return policy.Negative() },
+		"relays":   func() any { return policy.Relays() },
+		"refusals": func() any { return policy.Refusals() },
 	}))
 }
 

@@ -1,0 +1,33 @@
+# Mutation cases for "a 64-bit integer crosses a `<param>` as the text of its digits and is
+# read back from it" under the C++ backend (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A 64-bit
+# integer").
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_cpp_a_64_bit_integer_crosses_as_its_digits_ctest.cases`.
+#
+# `static_wire_wide` sends a uint64 and an int64 to itself and keeps their remainders by
+# 1000; it also hands the machine a number past 2^53 - 1, which every engine refuses where
+# it is read. The mutants take one decision away each:
+#
+#   a 64-bit `<param>` is written as a JSON number and not as its digits;
+#   a JSON number past 2^53 - 1 is read as a 64-bit field.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^static_datamodel_generated_cpp$'
+mutation_targets sce-build/src/forge/static_lowering.rs
+mutation_targets sce/include/common/EventPayloadLift.h
+mutation_oracles tests/integration/AStaticDatamodelRunsGeneratedCppTest.cpp sce-build/tests/fixtures/static_datamodel/scenarios/static_wire_wide.json
+
+mutation_case "a 64-bit param is written as a JSON number" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "\"ScriptValue(std::in_place_type<std::string>, std::to_string({value}))\"",
+     "\"ScriptValue(std::in_place_type<int64_t>, static_cast<int64_t>({value}))\"")
+PY
+
+mutation_case "a JSON number past 2^53 - 1 is read as a 64-bit field" <<'PY'
+edit("sce/include/common/EventPayloadLift.h",
+     "if (refusal.empty() && magnitude > (uint64_t{1} << 53) - 1u) {",
+     "if (false) {")
+PY

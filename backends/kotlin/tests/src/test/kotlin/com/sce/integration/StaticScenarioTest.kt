@@ -70,6 +70,7 @@ import com.sce.integration.static_state_algorithm.StaticStateAlgorithmStateMachi
 import com.sce.integration.static_string_capacity.StaticStringCapacityStateMachine
 import com.sce.integration.static_timers.StaticTimersStateMachine
 import com.sce.integration.static_whole_payload.StaticWholePayloadStateMachine
+import com.sce.integration.static_wire_wide.StaticWireWideStateMachine
 import com.sce.integration.static_wire_enum.StaticWireEnumStateMachine
 import com.sce.integration.sync_client.SyncClientStateMachine
 import com.sce.runtime.EventMetadata
@@ -674,6 +675,26 @@ class StaticScenarioTest {
 
     // The payload of an event is a record of its schema taken whole: it replaces a
     // record variable in one assignment and is appended whole to a list.
+    // A 64-bit integer crosses a `<send>`'s `<param>` as the text of its digits and is
+    // read back from it: the low digits of a value past 2^53 are the ones that were
+    // sent, and a number past 2^53 - 1 is refused where it is read.
+    @Test
+    fun staticWireWideCarriesA64BitIntegerAsItsDigits() {
+        val sm = StaticWireWideStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_wire_wide"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
     @Test
     fun staticWholePayloadIsTakenWholeAsARecord() {
         val sm = StaticWholePayloadStateMachine()

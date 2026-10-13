@@ -194,16 +194,28 @@
     }
     var range = RANGES[type];
     if (range !== undefined) {
-      if (typeof value !== 'number') {
-        fail(name + ' is not a number');
+      var whole;
+      if ((type === 'int64' || type === 'uint64') && typeof value === 'string') {
+        /* A 64-bit integer crosses as the text of its digits: a number past
+           2^53 - 1 is not exact in the data a Number carries, so it is written
+           as text on every engine and read from it here. */
+        if (!(type === 'int64' ? /^(0|-?[1-9][0-9]*)$/ : /^(0|[1-9][0-9]*)$/).test(value)) {
+          fail(name + ' is not a whole number written as digits');
+        }
+        whole = BigInt(value);
+      } else {
+        if (typeof value !== 'number') {
+          fail(name + ' is not a number');
+        }
+        if (!Number.isSafeInteger(value)) {
+          fail(name + ' is not an integer a Number holds exactly');
+        }
+        whole = BigInt(value);
       }
-      if (!Number.isSafeInteger(value)) {
-        fail(name + ' is not an integer a Number holds exactly');
-      }
-      if (BigInt(value) < range.min || BigInt(value) > range.max) {
+      if (whole < range.min || whole > range.max) {
         fail(name + ' does not fit ' + type);
       }
-      return value;
+      return canonical(whole);
     }
     if (type === 'float32' || type === 'float64') {
       if (typeof value !== 'number') {

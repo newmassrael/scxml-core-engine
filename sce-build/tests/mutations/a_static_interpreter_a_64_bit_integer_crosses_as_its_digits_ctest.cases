@@ -1,0 +1,32 @@
+# Mutation cases for "a 64-bit integer crosses a `<param>` as the text of its digits and is
+# read back from it" under the Interpreter (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A 64-bit
+# integer").
+#
+# A lowered document sends a 64-bit value as `String(...)` of the integer its expression
+# computed exactly, and reads a 64-bit field from that text through `SceStatic.field`, whose
+# value is a `BigInt` while the expressions run. `static_wire_wide` is replayed by
+# `static_datamodel_lowered`, which also asserts that it is replayed and not left to a
+# refusal. The mutants take one decision away each:
+#
+#   a 64-bit `<param>` leaves as the integer and not as its text;
+#   digits with a leading zero are read as a number.
+#
+# The library is embedded in the generator, so the regeneration is the build the ctest
+# names. Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^static_datamodel_lowered$'
+mutation_targets sce-build/src/forge/static_js/sce_static.js sce-build/src/forge/static_js.rs
+mutation_oracles tests/integration/AStaticDatamodelRunsLoweredUnderTheInterpreterTest.cpp sce-build/tests/fixtures/static_datamodel/static_wire_wide.scxml sce-build/tests/fixtures/static_datamodel/scenarios/static_wire_wide.json
+
+mutation_case "a 64-bit param leaves as the integer and not as its text" <<'PY'
+edit("sce-build/src/forge/static_js.rs",
+     "format!(\"String({inner})\")",
+     "value.to_string()")
+PY
+
+mutation_case "digits with a leading zero are read as a number" <<'PY'
+edit("sce-build/src/forge/static_js/sce_static.js",
+     "/^(0|[1-9][0-9]*)$/",
+     "/^[0-9]+$/")
+PY

@@ -734,6 +734,18 @@ bits, so no engine's float parser is the one deciding), checked against Node's
 | Kotlin | `Json.numberText` over `shortestDigits` (`expect`, `BigDecimal` on the JVM); `valueToJson`, `valueToWireString`, `EventPayload.literal` use it | `backends/kotlin/tests/.../runtime/RealTextTest.kt` |
 | C11 | `sce_number_text` (`sce/number_text.h`, in the runtime's include directory so a machine with no `sce-static` datamodel reaches it): the typed payload a machine writes into an event's `data`, and in a `sce-static` machine the pair and the request's param text (`sce/forge/wire.h`); a script-engine machine's own values go through `JSON.stringify` of the shared Lua above | `backends/c/tests/unit/json_text_test.c`; `test_event_schema_real.c` for the payload's text; `test_static_host_params.c` for a machine's wire; the Lua half, loaded in chunks as C11 loads it, by `sce-build/tests/shared_lua_assets.rs` |
 
+A 64-bit integer (`int64`, `uint64`) is not written as a JSON number at all: it
+crosses as the text of its digits, a JSON string (`"9007199254740993"`), in a
+`<param>`, a `<donedata>` pair and the `data` a typed `raise<Event>` writes. A
+reader that takes a JSON number through a double carries one past 2^53 - 1 with
+its low bits wrong and no error, so no number could be written for it that every
+engine reads alike. A typed field of those widths is read from the digits, or from
+a JSON number whose magnitude is at most 2^53 - 1; a number past that, digits that
+are not canonical (`"007"`, `"-0"`, `"+3"`), a minus sign on an unsigned field and
+a value past the width are refused on every engine. `scenarios/static_wire_wide.json`
+holds all of it, and `backends/rust/runtime/tests/a_64_bit_payload_field_is_read_from_the_text_of_its_digits.rs`
+the reader.
+
 What the contract does not fix:
 
 - A `float32` is written as its platform spells it; only the 64-bit form is pinned.

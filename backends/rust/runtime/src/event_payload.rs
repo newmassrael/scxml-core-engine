@@ -155,6 +155,59 @@ impl PayloadFields {
         })
     }
 
+    /// A 64-bit whole number's written spelling: its decimal digits as a text,
+    /// or a JSON number when it is exact in a double (`|n| <= 2^53 - 1`).
+    ///
+    /// A 64-bit integer crosses as a text because a reader that takes a JSON
+    /// number through a double carries one past 2^53 with its low bits wrong and
+    /// no error; a number past that is refused here on every engine, so the
+    /// same payload gives the same field wherever it is read.
+    fn wide(&self, name: &str, signed: bool) -> Result<&str, PayloadRefusal> {
+        match self.find(name)? {
+            Value::Text(text) if is_decimal(text, signed) => Ok(text),
+            Value::Text(text) => Err(PayloadRefusal::new(format!(
+                "'{name}' is not a whole number written as digits ({text})"
+            ))),
+            Value::Number(text) => {
+                let exact = text
+                    .parse::<i128>()
+                    .map(|n| n.unsigned_abs() <= EXACT_IN_A_DOUBLE)
+                    .map_err(|_| {
+                        PayloadRefusal::new(format!("'{name}' is not a whole number ({text})"))
+                    })?;
+                if exact {
+                    Ok(text)
+                } else {
+                    Err(PayloadRefusal::new(format!(
+                        "'{name}' is a number past 2^53 - 1, which is not exact everywhere ({text}); \
+                         a 64-bit integer that large is written as a text of its digits"
+                    )))
+                }
+            }
+            _ => Err(PayloadRefusal::new(format!("'{name}' is not a number"))),
+        }
+    }
+
+    /// A 64-bit signed field ([`Self::wide`]).
+    pub fn signed64(&self, name: &str) -> Result<i64, PayloadRefusal> {
+        let text = self.wide(name, true)?;
+        text.parse().map_err(|_| {
+            PayloadRefusal::new(format!(
+                "'{name}' does not fit the width its schema declares ({text})"
+            ))
+        })
+    }
+
+    /// A 64-bit unsigned field ([`Self::wide`]).
+    pub fn unsigned64(&self, name: &str) -> Result<u64, PayloadRefusal> {
+        let text = self.wide(name, false)?;
+        text.parse().map_err(|_| {
+            PayloadRefusal::new(format!(
+                "'{name}' does not fit the width its schema declares ({text})"
+            ))
+        })
+    }
+
     /// A 32-bit fractional field: the binary32 nearest the number the payload
     /// carries.
     ///
@@ -235,6 +288,25 @@ impl PayloadFields {
             ))
         })
     }
+}
+
+/// The largest whole number every engine holds exactly as a number (`2^53 - 1`,
+/// ECMAScript's `Number.MAX_SAFE_INTEGER`), and so the largest a JSON number may
+/// carry for a 64-bit field.
+const EXACT_IN_A_DOUBLE: u128 = (1 << 53) - 1;
+
+/// Whether `text` is a whole number written as digits and nothing else: no
+/// sign but `-` (and only where `signed`), no leading zero, no `-0`.
+fn is_decimal(text: &str, signed: bool) -> bool {
+    let digits = match text.strip_prefix('-') {
+        Some(rest) if signed => rest,
+        Some(_) => return false,
+        None => text,
+    };
+    !digits.is_empty()
+        && digits.bytes().all(|b| b.is_ascii_digit())
+        && (digits == "0" || !digits.starts_with('0'))
+        && !(digits == "0" && text.starts_with('-'))
 }
 
 /// The wire spelling of one byte string, for the inject seam's `data`.

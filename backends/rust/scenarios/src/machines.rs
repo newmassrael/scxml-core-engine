@@ -146,5 +146,6 @@ scenarios! {
     "static_timers_stop" => static_timers_sm::{StaticTimersPolicy, StaticTimersPersist} @ Manual;
     "static_whole_payload" => static_whole_payload_sm::{StaticWholePayloadPolicy, StaticWholePayloadPersist};
     "static_wire_enum" => static_wire_enum_sm::{StaticWireEnumPolicy, StaticWireEnumPersist};
+    "static_wire_wide" => static_wire_wide_sm::{StaticWireWidePolicy, StaticWireWidePersist};
     "sync_client" => sync_client_sm::{SyncClientPolicy, SyncClientPersist};
 }

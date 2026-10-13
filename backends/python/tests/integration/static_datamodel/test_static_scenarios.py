@@ -382,6 +382,13 @@ def test_a_field_of_an_indexed_record_is_read() -> None:
     replay("static_record_list_index")
 
 
+# A 64-bit integer crosses a `<send>`'s `<param>` as the text of its digits and is
+# read back from it: the low digits of a value past 2^53 are the ones that were
+# sent, and a number past 2^53 - 1 is refused where it is read.
+def test_a_64_bit_integer_crosses_as_its_digits() -> None:
+    replay("static_wire_wide")
+
+
 # The payload of an event is a record of its schema taken whole: it replaces a
 # record variable in one assignment and is appended whole to a list.
 def test_the_payload_of_an_event_is_taken_whole_as_a_record() -> None:

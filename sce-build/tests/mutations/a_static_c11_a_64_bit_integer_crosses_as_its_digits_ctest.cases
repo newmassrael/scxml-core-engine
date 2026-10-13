@@ -1,0 +1,33 @@
+# Mutation cases for "a 64-bit integer crosses a `<param>` as the text of its digits and is
+# read back from it" under the C11 backend (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A 64-bit
+# integer").
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_c11_a_64_bit_integer_crosses_as_its_digits_ctest.cases`.
+#
+# `static_wire_wide` sends a uint64 and an int64 to itself and keeps their remainders by
+# 1000; it also hands the machine a number past 2^53 - 1, which every engine refuses where
+# it is read. The mutants take one decision away each:
+#
+#   a signed 64-bit `<param>` is written as a JSON number and not as its digits;
+#   a JSON number past 2^53 - 1 is read as a 64-bit field.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^c11_integration_static_scalars$'
+mutation_targets sce-build/src/forge/static_lowering.rs
+mutation_targets backends/c/runtime/include/sce/event_payload.h
+mutation_oracles backends/c/tests/integration/test_static_scalars.c sce-build/tests/fixtures/static_datamodel/scenarios/static_wire_wide.json
+
+mutation_case "a signed 64-bit param is written as a JSON number" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "} => format!(\"sce_forge_wire_wide_int((int64_t)({value}))\"),",
+     "} => format!(\"sce_forge_wire_int((int64_t)({value}))\"),")
+PY
+
+mutation_case "a JSON number past 2^53 - 1 is read as a 64-bit field" <<'PY'
+edit("backends/c/runtime/include/sce/event_payload.h",
+     "if (refusal == NULL && *magnitude > (((uint64_t)1 << 53) - 1u)) {",
+     "if (0) {")
+PY
