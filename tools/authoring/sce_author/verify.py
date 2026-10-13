@@ -1642,13 +1642,13 @@ def unaccounted_drives(case, model, read_addresses, independent: bool) -> list:
     return outside if any(a not in given for a in read_addresses) else []
 
 
-def withhold_unreceived(result, case, model, outside=None) -> bool:
+def withhold_unreceived(result, case, model, outside=None, note: str = "") -> bool:
     """Mark a judged case unjudged when it drove an address this component
     does not receive. True when it did. The round was still computed, so
     what the document keeps moves on exactly as it would have.
 
     `outside` is the drives that stay hidden (`unaccounted_drives`); left out, every
-    drive the component does not receive is."""
+    drive the component does not receive is. `note` is added to the reason."""
     outside = unreceived_drives(case, model) if outside is None else outside
     if not outside:
         return False
@@ -1657,7 +1657,7 @@ def withhold_unreceived(result, case, model, outside=None) -> bool:
         f"drove {', '.join(outside)}, which this component does not receive "
         f"(the interface model does not declare it as read). The drive never "
         f"reaches this document, so what the case expects may come from "
-        f"somewhere it cannot see")
+        f"somewhere it cannot see" + note)
     return True
 
 
@@ -2540,7 +2540,35 @@ class CaseJudge:
                 if "" in tails or any(position.endswith(t) for t in tails if t)]
 
     def judge(self, result: CaseResult, case, produced: dict,
-              undetermined=frozenset(), open_values=(), planted=frozenset()) -> None:
+              undetermined=frozenset(), open_values=(), planted=frozenset(),
+              released=()) -> None:
+        """`_judge`, and for a case whose drive upstream was released (`unaccounted_drives`)
+        only a pass stands.
+
+        ⚠ The record's `given` is what the platform's component held, but a drive upstream
+        may have changed a read input after it was written: one record states a speed of
+        0 beside a drive whose result, two components away, is 106. A document that
+        agrees is agreeing with more than it was given, and that stands. One that does
+        not may be wrong or may be right about what the record hides, and the two cannot
+        be told apart, so it is withheld as before -- never failed for it. Measured
+        2026-10-13: releasing every such case failed a document on exactly that value.
+        """
+        if not released:
+            return self._judge(result, case, produced, undetermined, open_values, planted)
+        refuted = dict(self.verification.refuted)
+        self._judge(result, case, produced, undetermined, open_values, planted)
+        if result.failures:
+            self.verification.refuted.clear()
+            self.verification.refuted.update(refuted)
+            result.failures, result.compared = [], []
+            result.unchecked, result.unwritten, result.undetermined = [], [], []
+            withhold_unreceived(result, case, self.model, list(released),
+                                "; the record states every input the document reads, but the "
+                                "document and the case disagree, and what the drive changed "
+                                "upstream is not in the record")
+
+    def _judge(self, result: CaseResult, case, produced: dict,
+               undetermined=frozenset(), open_values=(), planted=frozenset()) -> None:
         """Compare every position the case expects, and close the verdict.
 
         `undetermined` is what the run itself could not settle; `open_values`
@@ -3596,7 +3624,8 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
                 result.failures.append(("(first announcement)",
                                         f"between {lo:g} and {hi:g} ms after the drive",
                                         arrived))
-            judge.judge(result, case, produced, planted=stood_in)
+            judge.judge(result, case, produced, planted=stood_in,
+                        released=unreceived_drives(case, pack.model))
         verification.results.append(result)
     judge.attribute()
     return verification
@@ -4152,7 +4181,8 @@ def _verify(pack: Pack, binding_path: pathlib.Path, codegen: pathlib.Path | None
             read = (dict(produced, **first_announcement(pack.model, history, produced, undetermined))
                     if case.observed == "first" else produced)
             judge.judge(result, case, read, undetermined,
-                        open_values=unknown + sorted(withheld), planted=stood_in)
+                        open_values=unknown + sorted(withheld), planted=stood_in,
+                        released=unreceived_drives(case, pack.model))
         if history is not None:
             history.inputs = dict(values)
             history.published.update(produced)

@@ -162,6 +162,33 @@ class AWholeInputThatStatesWhatTheDocumentReadsHidesNothing(unittest.TestCase):
         self.assertFalse(results["one left out"].judged)
         self.assertFalse(results["not the whole input"].judged)
 
+    @unittest.skipUnless(codegen_is_built(), "the product's generator is not built")
+    def test_a_released_case_the_document_disagrees_with_is_withheld_not_failed(self):
+        """The drive may have changed a read input after the record wrote it: a document
+        that agrees stands, one that does not is not blamed for what the record hides."""
+        pack_dir = pathlib.Path(tempfile.mkdtemp(prefix="sce_released_test_"))
+        try:
+            for f in CROSSING.iterdir():
+                if f.is_file():
+                    shutil.copy(f, pack_dir / f.name)
+            examples = yaml.safe_load((CROSSING / "examples.yaml").read_text(encoding="utf-8"))
+            baseline = verify(load_pack(CROSSING), CROSSING / BINDING)
+            name = [r.name for r in baseline.results if r.passed][0]
+            case = {c["name"]: c for c in examples["cases"]}[name]
+            case["drove"] = ["plant/in/train-approach", ELSEWHERE]
+            case["given"]["plant/in/local-override"] = "OFF"
+            address, want = next(iter(case["expect"].items()))
+            other = {"STOP": "RAISE", "FLASHING": "DARK", "RINGING": "SILENT", "CAUTION": "CLEAR"}
+            case["expect"][address] = other.get(str(want), "DANGER")
+            (pack_dir / "examples.yaml").write_text(
+                yaml.safe_dump(examples, sort_keys=False), encoding="utf-8")
+            result = {r.name: r for r in verify(load_pack(pack_dir), pack_dir / BINDING).results}[name]
+        finally:
+            shutil.rmtree(pack_dir, ignore_errors=True)
+        self.assertFalse(result.judged)
+        self.assertEqual([], result.failures, "a disagreement is withheld, never a failure")
+        self.assertIn("disagree", result.refusal)
+
 
 if __name__ == "__main__":
     unittest.main()
