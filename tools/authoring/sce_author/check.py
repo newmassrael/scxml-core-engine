@@ -188,6 +188,10 @@ class Document:
     marks: tuple = ()
     # Every `cond` of the document, as written. A decision region is read through them (`In()`).
     conditions: tuple = ()
+    # Output identifier -> its `sce:initial`, the text it holds before the first activation.
+    # ⚠ Text, as the attribute writes it: inside an attribute `''` is two apostrophes, and the
+    # empty text is `""`.
+    initials: dict = dataclasses.field(default_factory=dict)
     # Output identifier -> the reason its author gave for leaving it
     # `sce:unresolved`: a value nobody has decided, written as a question
     # rather than a guess. The product refuses to BUILD such a document for
@@ -459,6 +463,7 @@ def read_document(path: pathlib.Path) -> Document:
     inputs, outputs, uncomputed, expressions = [], [], [], {}
     assumed, reads, unresolved, types = {}, {}, {}, {}
     assumed_marker, assumed_candidates = {}, {}
+    initials: dict = {}
     kept: set = set()
     for data in root.iter(f"{SCXML_NS}data"):
         ident = data.get("id")
@@ -475,6 +480,8 @@ def read_document(path: pathlib.Path) -> Document:
                 _STRING_LITERAL.sub("''", data.get("expr") or "")))
         if direction in ("in", "out") and data.get(f"{SCE_NS}type"):
             types[ident] = data.get(f"{SCE_NS}type")
+        if direction == "out" and data.get(f"{SCE_NS}initial") is not None:
+            initials[ident] = data.get(f"{SCE_NS}initial")
         # ⚠ The author's own record of what they had to decide without being
         # told. `sce:assumed` is the product's non-blocking marker -- the pair
         # of `sce:unresolved`, which refuses the build. An assumption compiles,
@@ -540,6 +547,7 @@ def read_document(path: pathlib.Path) -> Document:
         assumed_candidates=assumed_candidates,
         marks=_marks_of(root),
         conditions=tuple(node.get("cond") for node in root.iter() if node.get("cond")),
+        initials=initials,
         unresolved=unresolved,
         reads=reads,
         sends=tuple(sends),
@@ -1917,6 +1925,18 @@ def check(pack: Pack, binding_path: pathlib.Path, prose=None,
                     f"{keys}. A map is keyed by what the document sends, and `map: platform` "
                     f"is keyed by the platform's NUMBERS -- write the number, or add the "
                     f"entry."))
+        initial = document.initials.get(name)
+        if (initial is not None and document.types.get(name) == "string" and "map" in rule
+                and not rule.get("hold_last") and not landing.mapped(rule["map"], initial)[0]):
+            # What a string output holds before its first activation is the value of a case's
+            # first round, so the map has to land it. ⚠ Written in an attribute, `''` is TWO
+            # apostrophes: measured 2026-10-14, a draft wrote it for "empty", the map had
+            # `"": ""`, and all 18 cases of the component were unjudged.
+            out.append(Finding(
+                f"output {name}",
+                f"`sce:initial={initial!r}` is what the document holds before its first "
+                f"activation, and the map has no entry for it. Inside an attribute the empty "
+                f"text is `sce:initial=\"\"`; `''` is two apostrophes."))
 
     # A transform input no expression reads decides nothing, and a case that
     # does not drive it is still refused by `verify` for its missing value

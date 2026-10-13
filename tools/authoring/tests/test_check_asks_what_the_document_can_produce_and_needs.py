@@ -101,6 +101,43 @@ class AMapKeyedByWhatTheDocumentNeverProduces(ACheckedPair):
         self.assertNotIn("name no value", refused[0])
 
 
+class AStringOutputsInitialValue(ACheckedPair):
+    """What a string output holds before its first activation is the value of a case's first
+    round, so the map has to land it. Measured 2026-10-14: a draft wrote `sce:initial="''"` for
+    "empty" -- two apostrophes inside an attribute -- the map had `"": ""`, and every case of the
+    component was unjudged."""
+
+    def setUp(self):
+        super().setUp()
+        text = self.document.read_text(encoding="utf-8")
+        start = text.index('<data id="roadSignal"')
+        end = text.index("/>", start) + 2
+        self.document.write_text(
+            text[:start] + '<data id="roadSignal" sce:type="string" sce:direction="out" '
+            'sce:initial="INITIAL" expr="approaching ? \'FLASHING\' : \'DARK\'"/>' + text[end:],
+            encoding="utf-8")
+        self.replace(self.binding, "map: {0: DARK, 1: FLASHING, 2: STEADY}",
+                     "map: {DARK: DARK, FLASHING: FLASHING}")
+
+    def refused(self):
+        return [d for d in self.details() if "sce:initial" in d]
+
+    def test_an_initial_value_the_map_has_no_entry_for_is_refused_and_explained(self):
+        refused = self.refused()
+        self.assertEqual(1, len(refused), refused)
+        self.assertIn("'INITIAL'", refused[0])
+        self.assertIn("two apostrophes", refused[0])
+
+    def test_an_initial_value_the_map_lands_is_accepted(self):
+        self.replace(self.document, 'sce:initial="INITIAL"', 'sce:initial="DARK"')
+        self.assertEqual([], self.refused())
+
+    def test_a_hold_last_output_may_start_on_a_value_its_map_leaves_out(self):
+        self.replace(self.binding, "map: {DARK: DARK, FLASHING: FLASHING}",
+                     "map: {DARK: DARK, FLASHING: FLASHING}\n    hold_last: true")
+        self.assertEqual([], self.refused())
+
+
 class APreconditionTheSpecificationStates(ACheckedPair):
     """The fixture's specification writes "while the installation is powered",
     which the pack reads as `poweredUp`; the reference pair reads no such name."""
