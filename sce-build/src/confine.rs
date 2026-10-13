@@ -23,8 +23,15 @@
 //! No folder named is the generator as it always was: a person who runs it on their own
 //! documents has no reason to be held to a folder.
 
+//! A caller that has no file system to name — the codegen WASM in a browser — hands the
+//! documents over instead ([`with_documents`]). They are answered before the disk is asked, for
+//! the paths they were given under and nothing else, so a held document widens nothing: a path
+//! that is not one of them is still the disk's, and still confined.
+
+use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::ffi::OsStr;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::OnceLock;
 use std::{fs, io};
 
@@ -93,6 +100,52 @@ pub(crate) fn within_for_test<T>(root: Root, body: impl FnOnce() -> T) -> T {
     body()
 }
 
+thread_local! {
+    static HELD: RefCell<BTreeMap<PathBuf, String>> = const { RefCell::new(BTreeMap::new()) };
+}
+
+/// `path` with `.` and `..` read as they are written, so a document a caller held under one
+/// spelling is found under another: no file system is asked, as none may be there.
+fn lexical(path: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for part in path.components() {
+        match part {
+            Component::CurDir => {}
+            Component::ParentDir if out.file_name().is_some() => {
+                out.pop();
+            }
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
+}
+
+/// The document held under `path`, if one is.
+fn held(path: &Path) -> Option<String> {
+    HELD.with(|held| held.borrow().get(&lexical(path)).cloned())
+}
+
+/// Run `body` with `documents` answered from memory: each is found under the path it is given
+/// here, by [`exists`], [`read_to_string`] and [`read`], and a path that is not one of them is
+/// asked of the disk as before. What a caller held earlier is back when `body` ends.
+pub fn with_documents<T>(
+    documents: impl IntoIterator<Item = (PathBuf, String)>,
+    body: impl FnOnce() -> T,
+) -> T {
+    struct Restore(BTreeMap<PathBuf, String>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            HELD.with(|held| *held.borrow_mut() = std::mem::take(&mut self.0));
+        }
+    }
+    let now = documents
+        .into_iter()
+        .map(|(path, text)| (lexical(&path), text))
+        .collect();
+    let _restore = Restore(HELD.with(|held| held.replace(now)));
+    body()
+}
+
 /// Whether a file a document names may be opened here.
 pub fn permits(path: &Path) -> bool {
     #[cfg(test)]
@@ -105,7 +158,7 @@ pub fn permits(path: &Path) -> bool {
 /// Whether the file a document names is there, for a place that looks before it opens. A file
 /// that may not be opened is not.
 pub fn exists(path: &Path) -> bool {
-    permits(path) && path.exists()
+    held(path).is_some() || (permits(path) && path.exists())
 }
 
 /// What a file that may not be opened is answered with: the error the file system gives for one
@@ -120,7 +173,9 @@ fn not_there() -> io::Error {
 /// The text of the file a document names. A file that may not be opened is answered as one that
 /// is not there.
 pub fn read_to_string(path: &Path) -> io::Result<String> {
-    if permits(path) {
+    if let Some(text) = held(path) {
+        Ok(text)
+    } else if permits(path) {
         fs::read_to_string(path)
     } else {
         Err(not_there())
@@ -130,7 +185,9 @@ pub fn read_to_string(path: &Path) -> io::Result<String> {
 /// The bytes of the file a document names, for a place that copies it and does not read it as
 /// text. A file that may not be opened is answered as one that is not there.
 pub fn read(path: &Path) -> io::Result<Vec<u8>> {
-    if permits(path) {
+    if let Some(text) = held(path) {
+        Ok(text.into_bytes())
+    } else if permits(path) {
         fs::read(path)
     } else {
         Err(not_there())
@@ -277,6 +334,59 @@ mod tests {
             assert_eq!(refused, missing);
             assert_eq!(read(&inside.path().join("here.xml")).unwrap(), b"inside");
         });
+    }
+
+    #[test]
+    fn a_held_document_is_found_under_any_spelling_of_its_path() {
+        with_documents(
+            [(PathBuf::from("/held/a.scxml"), "held".to_string())],
+            || {
+                for spelling in ["/held/a.scxml", "/held/./a.scxml", "/held/sub/../a.scxml"] {
+                    let path = Path::new(spelling);
+                    assert!(exists(path), "{spelling}");
+                    assert_eq!(read_to_string(path).unwrap(), "held", "{spelling}");
+                    assert_eq!(read(path).unwrap(), b"held", "{spelling}");
+                }
+                assert!(!exists(Path::new("/held/b.scxml")));
+            },
+        );
+    }
+
+    #[test]
+    fn a_held_document_widens_nothing_the_folder_confines() {
+        let (inside, outside) = two_folders();
+        let there = outside.path().join("there.xml");
+
+        within_for_test(within(inside.path()), || {
+            with_documents(
+                [(PathBuf::from("/held/a.scxml"), "held".to_string())],
+                || {
+                    assert_eq!(read_to_string(Path::new("/held/a.scxml")).unwrap(), "held");
+                    // A path that was not held is the disk's, and the disk is confined.
+                    assert!(!exists(&there));
+                    assert_eq!(
+                        read_to_string(&there).unwrap_err().kind(),
+                        io::ErrorKind::NotFound
+                    );
+                },
+            );
+        });
+    }
+
+    #[test]
+    fn what_was_held_before_is_back_when_the_body_ends() {
+        let outer = || [(PathBuf::from("/held/outer.scxml"), "outer".to_string())];
+        let inner = || [(PathBuf::from("/held/inner.scxml"), "inner".to_string())];
+
+        with_documents(outer(), || {
+            with_documents(inner(), || {
+                assert!(exists(Path::new("/held/inner.scxml")));
+                assert!(!exists(Path::new("/held/outer.scxml")));
+            });
+            assert!(exists(Path::new("/held/outer.scxml")));
+            assert!(!exists(Path::new("/held/inner.scxml")));
+        });
+        assert!(!exists(Path::new("/held/outer.scxml")));
     }
 
     #[test]

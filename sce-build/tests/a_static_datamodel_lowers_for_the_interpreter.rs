@@ -18,7 +18,9 @@
 
 use std::path::{Path, PathBuf};
 
-use sce_build::forge::static_js::{lower_file, lower_file_set, lower_source, LoweredDocument};
+use sce_build::forge::static_js::{
+    lower_documents, lower_file, lower_file_set, lower_source, LoweredDocument,
+};
 
 fn fixtures() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/static_datamodel")
@@ -641,6 +643,67 @@ fn two_candidates_of_one_stem_are_refused_by_name() {
         text.contains("UnsupportedFeature") && text.contains("the one stem `a`"),
         "the refusal names the stem: {text}"
     );
+}
+
+/// A caller with no file system hands the documents over, and gets the lowering
+/// it would get from files: for every fixture, the set lowered from memory is the
+/// set lowered from the directory, byte for byte, and a fixture the directory
+/// refuses is refused from memory. The imported algorithms, the event-schemas and
+/// the candidates of a hybrid `<invoke>` all stand beside the fixtures, so none of
+/// them is a case this leaves out.
+#[test]
+fn documents_held_in_memory_lower_as_the_files_do() {
+    let mut held = std::collections::BTreeMap::new();
+    for entry in std::fs::read_dir(fixtures()).expect("the fixture directory") {
+        let path = entry.expect("an entry").path();
+        if path.extension().is_some_and(|ext| ext == "scxml") {
+            let name = path.file_name().unwrap().to_string_lossy().into_owned();
+            held.insert(name, std::fs::read_to_string(&path).expect("a fixture"));
+        }
+    }
+    let mut lowered_from_both = 0;
+    for statechart in static_statecharts() {
+        let name = statechart
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        let from_files = lower_file_set(statechart.to_str().unwrap(), Vec::new());
+        let from_memory = lower_documents(&name, &held);
+        match (from_files, from_memory) {
+            (Ok(files), Ok(memory)) => {
+                assert_eq!(files, memory, "{name}: lowered from memory as from files");
+                lowered_from_both += 1;
+            }
+            (Err(_), Err(_)) => {}
+            (files, memory) => panic!(
+                "{name}: files give {:?} and memory gives {:?}",
+                files.map(|set| set.len()),
+                memory.map(|set| set.len())
+            ),
+        }
+    }
+    assert!(
+        lowered_from_both >= 40,
+        "the comparison covered {lowered_from_both} fixtures: the scan is broken, not the lowering"
+    );
+}
+
+/// A name the set lacks is a file that is not there, and not a read of the disk:
+/// a set holding a statechart without the algorithm it imports refuses it.
+#[test]
+fn a_document_the_set_lacks_is_a_file_that_is_not_there() {
+    let text = std::fs::read_to_string(fixtures().join("static_payload.scxml")).expect("a fixture");
+    let held = std::collections::BTreeMap::from([("static_payload.scxml".to_string(), text)]);
+    // `schema_day.scxml` stands beside it on disk, and is not in the set.
+    assert!(fixtures().join("schema_day.scxml").exists());
+    lower_documents("static_payload.scxml", &held).expect_err("its schema is not in the set");
+
+    // The standard library is built in, so a statechart that imports only that
+    // needs nothing beside it.
+    let text = std::fs::read_to_string(fixtures().join("sync_client.scxml")).expect("a fixture");
+    let held = std::collections::BTreeMap::from([("sync_client.scxml".to_string(), text)]);
+    lower_documents("sync_client.scxml", &held).expect("the standard library needs no entry");
 }
 
 /// A bounded-collection is a kind of its own, run by every generated backend,

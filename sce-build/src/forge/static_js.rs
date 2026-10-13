@@ -1340,6 +1340,31 @@ pub fn lower_source(text: &str, name: &str) -> Result<String, Located<ForgeError
     lower_parsed(text, &model, name, None)
 }
 
+/// The directory a set of documents held in memory stands in for the lowering
+/// that reads them as files. It is a name and no place: nothing is opened there.
+const MEMORY_DIR: &str = "/sce-memory";
+
+/// The document `root` names, lowered as [`lower_file_set`] lowers a file, from
+/// `documents` held in memory: each is named by its path beside the others, and
+/// `root` is one of them. Everything the lowering reads beside the document — an
+/// imported algorithm, an include, a candidate of a hybrid `<invoke>` — is read
+/// from the set, so a caller with no file system (the codegen WASM) gets what a
+/// caller with one does. A name the set lacks is a file that is not there.
+///
+/// The standard library (`sce:std/...`) is built in and needs no entry.
+pub fn lower_documents(
+    root: &str,
+    documents: &BTreeMap<String, String>,
+) -> Result<Vec<LoweredDocument>, Located<ForgeError>> {
+    let base = Path::new(MEMORY_DIR);
+    let held = documents
+        .iter()
+        .map(|(name, text)| (base.join(name), text.clone()));
+    crate::confine::with_documents(held, || {
+        lower_file_set(&base.join(root).to_string_lossy(), Vec::new())
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

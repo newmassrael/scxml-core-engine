@@ -15,6 +15,9 @@
 
 use wasm_bindgen::prelude::*;
 
+use std::collections::BTreeMap;
+
+use sce_build::forge::static_js::LoweredDocument;
 use sce_build::generator::Language;
 use sce_build::template_registry;
 
@@ -112,9 +115,51 @@ pub fn get_machine_name(scxml_content: &str) -> Result<String, JsValue> {
     Ok(root.attribute("name").unwrap_or("untitled").to_string())
 }
 
+/// The namespace the extension elements and attributes are written in.
+const SCE_NAMESPACE: &str = "http://sce.dev/ext";
+
+/// The documents `scxml_content` names beside itself, by the path it writes: what
+/// an `<sce:import src>` imports and what `sce:candidates` lists. The built-in
+/// standard library (`sce:std/...`) is not beside anything and is left out.
+///
+/// Read from the elements and attributes by namespace and not by the prefix an
+/// author chose, and on any document of the kind, a statechart or an algorithm,
+/// so a caller that holds no file system can fetch what the lowering will ask for
+/// before it asks, a document at a time, down to the ones those name.
+fn documents_named_by_content(scxml_content: &str) -> Result<Vec<String>, String> {
+    let doc =
+        roxmltree::Document::parse(scxml_content).map_err(|e| format!("XML parse error: {e}"))?;
+    let mut named = Vec::new();
+    for node in doc.descendants().filter(|n| n.is_element()) {
+        let tag = node.tag_name();
+        if tag.namespace() == Some(SCE_NAMESPACE) && tag.name() == "import" {
+            if let Some(src) = node.attribute("src") {
+                named.push(src.to_string());
+            }
+        }
+        if let Some(list) = node.attribute((SCE_NAMESPACE, "candidates")) {
+            named.extend(list.split_whitespace().map(str::to_string));
+        }
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    named.retain(|name| !name.starts_with("sce:std/") && seen.insert(name.clone()));
+    Ok(named)
+}
+
+/// The documents `scxml_content` names beside itself, as a JSON array of paths;
+/// see [`documents_named_by_content`].
+#[wasm_bindgen]
+pub fn documents_named_by(scxml_content: &str) -> Result<String, JsValue> {
+    let named = documents_named_by_content(scxml_content).map_err(|e| JsValue::from_str(&e))?;
+    serde_json::to_string(&named).map_err(|e| JsValue::from_str(&format!("JSON error: {e}")))
+}
+
 /// What the Interpreter runs for `scxml_content`: the document itself or, for
 /// a `datamodel="sce-static"` one, the ECMAScript document that means the
-/// same ([`sce_build::forge::static_js::lower_source`]).
+/// same ([`sce_build::forge::static_js::lower_documents`]), with every
+/// document its hybrid `<invoke>`s may start. The first is the document asked
+/// for, under `<scxml_name>.scxml`; the rest stand beside it under the names the
+/// lowered document starts them by.
 ///
 /// The Interpreter refuses a `sce-static` document because its script engine
 /// holds no types, so the visualizer lowers before it loads. The structure it
@@ -124,29 +169,75 @@ pub fn get_machine_name(scxml_content: &str) -> Result<String, JsValue> {
 /// under any other data model is not parsed by this crate's reader and is
 /// returned as it is.
 ///
-/// What the lowering cannot spell, and a document that reaches beside itself
-/// (an import, a hybrid `<invoke>`), is refused with the product's own
-/// message; nothing falls back to running it unlowered.
-fn lowered_for_interpreter(scxml_content: &str, scxml_name: &str) -> Result<String, String> {
+/// `siblings` are the documents that stand beside it, by the name it reaches
+/// them under: an imported algorithm or schema, an include, a candidate. The
+/// built-in standard library (`sce:std/...`) needs none. A name that is not here
+/// is a file that is not there.
+///
+/// What the lowering cannot spell is refused with the product's own message;
+/// nothing falls back to running it unlowered.
+fn lowered_for_interpreter(
+    scxml_content: &str,
+    scxml_name: &str,
+    siblings: &BTreeMap<String, String>,
+) -> Result<Vec<LoweredDocument>, String> {
+    let file_name = format!("{scxml_name}.scxml");
     let doc =
         roxmltree::Document::parse(scxml_content).map_err(|e| format!("XML parse error: {e}"))?;
     if doc.root_element().attribute("datamodel") != Some("sce-static") {
-        return Ok(scxml_content.to_string());
+        return Ok(vec![LoweredDocument {
+            file_name,
+            text: scxml_content.to_string(),
+        }]);
     }
-    sce_build::forge::static_js::lower_source(scxml_content, scxml_name)
-        .map_err(|e| format!("{e:?}"))
+    let mut held = siblings.clone();
+    held.insert(file_name.clone(), scxml_content.to_string());
+    sce_build::forge::static_js::lower_documents(&file_name, &held).map_err(|e| format!("{e:?}"))
 }
 
-/// The document the Interpreter runs for `scxml_content`; see
+/// The documents the Interpreter runs for `scxml_content`, as JSON:
+/// `[{"file_name": ..., "text": ...}, ...]`, the document asked for first.
+/// `siblings_json` is an object of the documents beside it, by name. See
 /// [`lowered_for_interpreter`].
 #[wasm_bindgen]
-pub fn lower_for_interpreter(scxml_content: &str, scxml_name: &str) -> Result<String, JsValue> {
-    lowered_for_interpreter(scxml_content, scxml_name).map_err(|e| JsValue::from_str(&e))
+pub fn lower_for_interpreter(
+    scxml_content: &str,
+    scxml_name: &str,
+    siblings_json: &str,
+) -> Result<String, JsValue> {
+    let siblings: BTreeMap<String, String> = serde_json::from_str(siblings_json).map_err(|e| {
+        JsValue::from_str(&format!(
+            "the sibling documents are not an object of text: {e}"
+        ))
+    })?;
+    let lowered = lowered_for_interpreter(scxml_content, scxml_name, &siblings)
+        .map_err(|e| JsValue::from_str(&e))?;
+    let documents: Vec<_> = lowered
+        .into_iter()
+        .map(|d| serde_json::json!({ "file_name": d.file_name, "text": d.text }))
+        .collect();
+    serde_json::to_string(&documents).map_err(|e| JsValue::from_str(&format!("JSON error: {e}")))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::lowered_for_interpreter;
+    use std::collections::BTreeMap;
+
+    use sce_build::forge::static_js::LoweredDocument;
+
+    fn lowered_for_interpreter(content: &str, name: &str) -> Result<String, String> {
+        let mut set = lowered_with_siblings(content, name, &BTreeMap::new())?;
+        assert_eq!(set.len(), 1, "one document and nothing it starts");
+        Ok(set.remove(0).text)
+    }
+
+    fn lowered_with_siblings(
+        content: &str,
+        name: &str,
+        siblings: &BTreeMap<String, String>,
+    ) -> Result<Vec<LoweredDocument>, String> {
+        super::lowered_for_interpreter(content, name, siblings)
+    }
 
     const COUNTER: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" datamodel="sce-static" initial="a" name="counter">
   <datamodel><data id="n" sce:type="uint8" expr="0"/></datamodel>
@@ -179,5 +270,62 @@ mod tests {
 </scxml>"#;
         let refusal = lowered_for_interpreter(document, "refused").expect_err("refused");
         assert!(refusal.contains("holding an element"), "{refusal}");
+    }
+
+    const HYBRID: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" datamodel="sce-static" initial="s">
+  <datamodel><data id="pick" sce:type="string" sce:capacity="32" expr="'a.scxml'"/></datamodel>
+  <state id="s"><invoke type="scxml" id="c" srcexpr="pick" sce:candidates="a.scxml"/></state>
+</scxml>"#;
+
+    const CANDIDATE: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" datamodel="sce-static" initial="w">
+  <datamodel><data id="t" sce:type="uint8" expr="0"/></datamodel>
+  <state id="w"/>
+</scxml>"#;
+
+    #[test]
+    fn a_hybrid_invoke_brings_the_candidates_it_may_start_beside_the_document() {
+        let siblings = BTreeMap::from([("a.scxml".to_string(), CANDIDATE.to_string())]);
+        let set = lowered_with_siblings(HYBRID, "parent", &siblings).expect("lowers");
+        let names: Vec<_> = set.iter().map(|d| d.file_name.as_str()).collect();
+        assert_eq!(names, ["parent.scxml", "a.scxml"]);
+        assert!(set
+            .iter()
+            .all(|d| d.text.contains(r#"datamodel="ecmascript""#)));
+    }
+
+    #[test]
+    fn a_candidate_that_is_not_among_the_siblings_is_a_file_that_is_not_there() {
+        let refusal = lowered_with_siblings(HYBRID, "parent", &BTreeMap::new())
+            .expect_err("a.scxml is not here");
+        assert!(refusal.contains("a.scxml"), "{refusal}");
+    }
+
+    #[test]
+    fn the_documents_a_document_names_are_its_imports_and_candidates() {
+        let document = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:x="http://sce.dev/ext" version="1.0" datamodel="sce-static" initial="s">
+  <x:import kind="event-schema" src="schema_day.scxml" as="Day"/>
+  <x:import kind="algorithm" src="sce:std/time/days_in_month.scxml" as="Days"/>
+  <x:import kind="algorithm" src="sub/algo.scxml" as="Algo"/>
+  <state id="s"><invoke type="scxml" id="c" srcexpr="pick" x:candidates="a.scxml b.scxml"/></state>
+</scxml>"#;
+        assert_eq!(
+            super::documents_named_by_content(document).unwrap(),
+            ["schema_day.scxml", "sub/algo.scxml", "a.scxml", "b.scxml"]
+        );
+        // A document that names nothing beside itself asks for nothing.
+        assert!(super::documents_named_by_content(COUNTER)
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn the_standard_library_needs_no_sibling() {
+        let document = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" datamodel="sce-static" initial="s">
+  <sce:import kind="algorithm" src="sce:std/time/days_in_month.scxml" as="Days"/>
+  <datamodel><data id="n" sce:type="uint8" expr="0"/></datamodel>
+  <state id="s"><transition event="go" target="s"><assign location="n" expr="Days(2024, 2)"/></transition></state>
+</scxml>"#;
+        let lowered = lowered_for_interpreter(document, "days").expect("lowers");
+        assert!(lowered.contains("SceStatic.algorithms."), "{lowered}");
     }
 }
