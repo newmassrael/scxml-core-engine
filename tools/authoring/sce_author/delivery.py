@@ -128,7 +128,20 @@ def refusal(name: str, rule: dict, sce_type: str | None, field,
     input names, variant to number. `field` is the model's for the rule's
     address; None means the model does not declare it, which `check` reports
     on its own, so it is not a second reason here.
+
+    What the rule hands over is judged first, and only a handoff that is sound
+    has its `when_absent` judged: a value standing in for the wrong kind of
+    handoff is not the mistake to name.
     """
+    why = _handoff_refusal(name, rule, sce_type, field, remembered_type, variants)
+    if why or hands(rule) not in ("as-is", "number"):
+        return why
+    return absence_refusal(name, rule, sce_type, variants)
+
+
+def _handoff_refusal(name: str, rule: dict, sce_type: str | None, field,
+                     remembered_type: str | None, variants: dict | None) -> str:
+    """Why the kind of value this rule hands over is not one the input takes, or ''."""
     doc = document_class(sce_type)
     given = hands(rule)
     if given == "event" or doc is None:
@@ -191,6 +204,50 @@ def refusal(name: str, rule: dict, sce_type: str | None, field,
     return (f"names an address and nothing else, which hands the document what "
             f"the address carries -- {_carries(slot)} -- and it declares "
             f"{name!r} `{sce_type}`")
+
+
+def absence_refusal(name: str, rule: dict, sce_type: str | None,
+                    variants: dict | None = None) -> str:
+    """Why this rule's `when_absent` is not a value of the input it stands in for, or ''.
+
+    `when_absent` is handed to the document as it is written (`read_as_is`), in
+    place of what the address would have carried, so it has to be a value of
+    the document's own type: a number for a number, a truth value for a `bool`,
+    a text for a `string`, and an enumeration's NUMBER for an enumeration --
+    the same thing a reporting address hands it.
+
+    ⚠ A symbol of the address (`when_absent: OFF` on an `int32` input) used to
+    pass `check` and `verify` alike, and reached the document as a text where
+    it computes with a number. The product's connecting code refuses the same
+    binding, so the two judged different documents.
+    """
+    if "when_absent" not in rule:
+        return ""
+    doc = document_class(sce_type)
+    value = rule["when_absent"]
+    if doc == "number":
+        ok = isinstance(value, (int, float)) and not isinstance(value, bool)
+        wanted = "a number"
+    elif doc == "bool":
+        ok = isinstance(value, bool)
+        wanted = "a truth value (true or false)"
+    elif doc == "text":
+        ok = isinstance(value, str)
+        wanted = "a text"
+    elif doc == "enum":
+        numbers = sorted((variants or {}).values())
+        ok = (isinstance(value, int) and not isinstance(value, bool)
+              and (variants is None or value in numbers))
+        wanted = ("the number of one of its variants"
+                  + (f" ({', '.join(str(n) for n in numbers)})" if numbers else ""))
+    else:
+        return ""
+    if ok:
+        return ""
+    return (f"`when_absent: {value!r}` is what {name!r} reads while the address "
+            f"is not reporting, and the document declares {name!r} `{sce_type}`, "
+            f"so it must be {wanted} -- it is handed over as written, in place "
+            f"of what the address would have carried")
 
 
 def _carries(slot: str) -> str:

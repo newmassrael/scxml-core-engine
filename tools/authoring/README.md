@@ -2882,6 +2882,15 @@ that is already the answer — but a value read as it is has no such fallback,
 and folding absence into zero made seven cases on one corpus look as though the
 specification had been misread.
 
+⚠ It is handed over as written, in place of what the address would have
+carried, so it is a value of the input's own type: a number for a number, `true`
+or `false` for a `bool`, a text for a `string`, and the number of one of its
+variants for an enumeration. A symbol of the address (`when_absent: "OFF"` on an
+`int32` input) is refused by `check` and `verify` in the same words
+(`delivery.absence_refusal`); it used to pass both and reach the document as a
+text where it computes with a number, while a connecting host refused the same
+binding.
+
 ⚠⚠ Quote every symbol. YAML 1.1 reads a bare `ON`, `OFF`, `YES`, `NO`, `TRUE`
 and `FALSE` as booleans, so `equals: ON` becomes `equals: true` and a map of
 `{0: OFF}` becomes `{0: false}`. The loader refuses these and names the

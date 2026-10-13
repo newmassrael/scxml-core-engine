@@ -116,6 +116,40 @@ class TheDeclarationsMustAgree(unittest.TestCase):
     def test_an_enumeration_nobody_imported_is_refused(self):
         self.assertIn("no enumeration", refusal("mode", AT, "enum:Level", LEVEL))
 
+    def test_absence_reads_as_a_value_of_the_inputs_own_type(self):
+        """⚠ `when_absent` is handed over as written. A symbol of the address
+        into an `int32` input passed `check` and `verify`, and reached the
+        document as a text where it computes with a number; the product's
+        connecting code refused the same binding."""
+        why = refusal("level", {**AT, "when_absent": "LOW"}, "int32", LEVEL)
+        self.assertIn("`when_absent: 'LOW'`", why)
+        self.assertIn("a number", why)
+        self.assertEqual("", refusal("level", {**AT, "when_absent": 0}, "int32", LEVEL))
+        self.assertIn("a truth value", refusal("ready", {**AT, "when_absent": "false"},
+                                               "bool", TRUTH))
+        self.assertEqual("", refusal("ready", {**AT, "when_absent": False}, "bool", TRUTH))
+        self.assertIn("a text", refusal("caption", {**AT, "when_absent": 0}, "string", TEXT))
+        self.assertEqual("", refusal("caption", {**AT, "when_absent": ""}, "string", TEXT))
+        variants = {"LOW": 1, "HIGH": 2}
+        for wrong in ("LOW", 3, True):
+            self.assertIn("variants (1, 2)", refusal("mode", {**AT, "when_absent": wrong},
+                                                     "enum:Level", LEVEL, variants=variants))
+        self.assertEqual("", refusal("mode", {**AT, "when_absent": 1}, "enum:Level", LEVEL,
+                                     variants=variants))
+        self.assertIn("a number", refusal("age", {"clock": True, "when_absent": "never"},
+                                          "int32", None))
+
+    def test_the_handoff_is_named_before_the_value_standing_in_for_it(self):
+        """A text address into a `bool` input is refused for what it hands over;
+        its `when_absent` would be wrong for any `bool`, and saying so first
+        would send the author to fix the symptom."""
+        why = refusal("ready", {**AT, "when_absent": ""}, "bool", TEXT)
+        self.assertIn("`equals`", why)
+        self.assertNotIn("when_absent", why)
+        self.assertEqual("", refusal("ready", {**AT, "equals": "ON", "when_absent": "x"},
+                                     "bool", LEVEL),
+                         "a comparison never hands `when_absent` over")
+
 
 class TheValueIsRead(unittest.TestCase):
     def test_a_text_is_read_as_it_is(self):
