@@ -233,12 +233,7 @@ pub trait RequestLifeInject {
 impl RequestLifeInject for ::sce_rust_runtime::Engine<RequestLifePolicy> {
     fn raise_claim(&mut self, payload: RequestLifeClaimPayload) {
         let data = ::sce_rust_runtime::payload_wire(format_args!(
-            "{{\"holder\":{}, \"ttl\":{}, \"resume\":{}, \"offeredMatches\":{}, \"now\":{}}}",
-            ::sce_rust_runtime::event_payload::quote(&payload.holder),
-            payload.ttl,
-            payload.resume,
-            payload.offeredMatches,
-            payload.now
+            "{{\"holder\":{}, \"ttl\":\"{}\", \"resume\":{}, \"offeredMatches\":{}, \"now\":\"{}\"}}", ::sce_rust_runtime::event_payload::quote(&payload.holder), payload.ttl, payload.resume, payload.offeredMatches, payload.now
         ));
         self.raise_external_typed_with_data(
             RequestLifeEvent::Claim,
@@ -260,7 +255,7 @@ impl RequestLifeInject for ::sce_rust_runtime::Engine<RequestLifePolicy> {
     }
     fn raise_heartbeat(&mut self, payload: RequestLifeHeartbeatPayload) {
         let data = ::sce_rust_runtime::payload_wire(format_args!(
-            "{{\"holder\":{}, \"attempt\":{}, \"ttl\":{}, \"now\":{}}}",
+            "{{\"holder\":{}, \"attempt\":{}, \"ttl\":\"{}\", \"now\":\"{}\"}}",
             ::sce_rust_runtime::event_payload::quote(&payload.holder),
             payload.attempt,
             payload.ttl,
@@ -273,7 +268,8 @@ impl RequestLifeInject for ::sce_rust_runtime::Engine<RequestLifePolicy> {
         );
     }
     fn raise_normalize(&mut self, payload: RequestLifeNormalizePayload) {
-        let data = ::sce_rust_runtime::payload_wire(format_args!("{{\"now\":{}}}", payload.now));
+        let data =
+            ::sce_rust_runtime::payload_wire(format_args!("{{\"now\":\"{}\"}}", payload.now));
         self.raise_external_typed_with_data(
             RequestLifeEvent::Normalize,
             RequestLifePayload::Normalize(payload),
@@ -1052,10 +1048,10 @@ impl StatePolicy for RequestLifePolicy {
                 let fields = ::sce_rust_runtime::event_payload::PayloadFields::decode(data)?;
                 self.pending_payload = RequestLifePayload::Claim(RequestLifeClaimPayload {
                     holder: fields.text("holder")?,
-                    ttl: fields.unsigned::<u64>("ttl")?,
+                    ttl: fields.unsigned64("ttl")?,
                     resume: fields.truth("resume")?,
                     offeredMatches: fields.truth("offeredMatches")?,
-                    now: fields.unsigned::<u64>("now")?,
+                    now: fields.unsigned64("now")?,
                 });
             }
             RequestLifeEvent::Fail => {
@@ -1070,14 +1066,14 @@ impl StatePolicy for RequestLifePolicy {
                 self.pending_payload = RequestLifePayload::Heartbeat(RequestLifeHeartbeatPayload {
                     holder: fields.text("holder")?,
                     attempt: fields.unsigned::<u32>("attempt")?,
-                    ttl: fields.unsigned::<u64>("ttl")?,
-                    now: fields.unsigned::<u64>("now")?,
+                    ttl: fields.unsigned64("ttl")?,
+                    now: fields.unsigned64("now")?,
                 });
             }
             RequestLifeEvent::Normalize => {
                 let fields = ::sce_rust_runtime::event_payload::PayloadFields::decode(data)?;
                 self.pending_payload = RequestLifePayload::Normalize(RequestLifeNormalizePayload {
-                    now: fields.unsigned::<u64>("now")?,
+                    now: fields.unsigned64("now")?,
                 });
             }
             RequestLifeEvent::Publish => {

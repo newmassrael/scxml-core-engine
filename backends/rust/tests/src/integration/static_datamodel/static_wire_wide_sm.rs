@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 5d4270ae4c884e43e7a12f9a58bd5d012629cb9a3aef7240aa93f930de85d6c6
+// source-hash: 572a4258697cb4e5e72ff4c473f572e8103d28b7053d53f63dcb2a37167bc6ae
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -72,8 +72,8 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
-#![doc = "SCE-MAP: static_wire_wide.scxml:21 :: _machine"]
-// SCE-MAP: static_wire_wide.scxml:21 :: _machine
+#![doc = "SCE-MAP: static_wire_wide.scxml:28 :: _machine"]
+// SCE-MAP: static_wire_wide.scxml:28 :: _machine
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -782,8 +782,8 @@ impl StatePolicy for StaticWireWidePolicy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: static_wire_wide.scxml:21 :: _machine"]
-    // SCE-MAP: static_wire_wide.scxml:21 :: _machine
+    #[doc = "SCE-MAP: static_wire_wide.scxml:28 :: _machine"]
+    // SCE-MAP: static_wire_wide.scxml:28 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -799,8 +799,8 @@ impl StatePolicy for StaticWireWidePolicy {
     // recorded runs nothing.
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: static_wire_wide.scxml:21 :: _machine"]
-    // SCE-MAP: static_wire_wide.scxml:21 :: _machine
+    #[doc = "SCE-MAP: static_wire_wide.scxml:28 :: _machine"]
+    // SCE-MAP: static_wire_wide.scxml:28 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -816,8 +816,8 @@ impl StatePolicy for StaticWireWidePolicy {
     // the first of `state`'s own transitions, in document order, that `event`
     // enables. The engine walks the atomic states and their ancestors and
     // keeps the ordered set. `Event::Null` asks for eventless transitions.
-    #[doc = "SCE-MAP: static_wire_wide.scxml:21 :: _machine"]
-    // SCE-MAP: static_wire_wide.scxml:21 :: _machine
+    #[doc = "SCE-MAP: static_wire_wide.scxml:28 :: _machine"]
+    // SCE-MAP: static_wire_wide.scxml:28 :: _machine
     fn first_enabled_transition(
         &mut self,
         state: Self::State,
@@ -867,8 +867,8 @@ impl StatePolicy for StaticWireWidePolicy {
 
     // W3C SCXML 3.13: a transition's executable content, run by the engine
     // between the microstep's exits and its entries.
-    #[doc = "SCE-MAP: static_wire_wide.scxml:21 :: _machine"]
-    // SCE-MAP: static_wire_wide.scxml:21 :: _machine
+    #[doc = "SCE-MAP: static_wire_wide.scxml:28 :: _machine"]
+    // SCE-MAP: static_wire_wide.scxml:28 :: _machine
     fn execute_transition_content(
         &mut self,
         source: Self::State,
@@ -879,7 +879,7 @@ impl StatePolicy for StaticWireWidePolicy {
             StaticWireWideState::Relaying => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: static_wire_wide.scxml:34 :: relaying :: _transition_0
+                        // SCE-MAP: static_wire_wide.scxml:41 :: relaying :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
                         let ev = match &self.pending_payload {
                             StaticWireWidePayload::WideIn(ev) => ev.clone(),
@@ -961,7 +961,7 @@ impl StatePolicy for StaticWireWidePolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: static_wire_wide.scxml:40 :: relaying :: _transition_1
+                        // SCE-MAP: static_wire_wide.scxml:47 :: relaying :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
                         let ev = match &self.pending_payload {
                             StaticWireWidePayload::WideRelayed(ev) => ev.clone(),
@@ -969,24 +969,6 @@ impl StatePolicy for StaticWireWidePolicy {
                         };
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
-                            // W3C SCXML 5.3: <assign location="smallLow">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.small_low = sce_forge_runtime::algorithm::rem::<i64>(ev.small, 1000)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticWireWideEvent::ErrorExecution, "<assign location='smallLow'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-
-                            // W3C SCXML 5.3: <assign location="negative">
-                            self.negative = ev.small < 0;
-
                             // W3C SCXML 5.3: <assign location="low">
                             let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     self.low = sce_forge_runtime::algorithm::rem::<u64>(ev.big, 1000)?;
@@ -1005,6 +987,24 @@ impl StatePolicy for StaticWireWidePolicy {
                             // W3C SCXML 5.3: <assign location="large">
                             self.large = ev.big > 9007199254740992;
 
+                            // W3C SCXML 5.3: <assign location="smallLow">
+                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.small_low = sce_forge_runtime::algorithm::rem::<i64>(ev.small, 1000)?;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticWireWideEvent::ErrorExecution, "<assign location='smallLow'>: an integer operation overflowed or failed"));
+        true
+    }
+};
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                            }
+
+                            // W3C SCXML 5.3: <assign location="negative">
+                            self.negative = ev.small < 0;
+
                             // W3C SCXML 5.3: <assign location="relays">
                             let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     self.relays = sce_forge_runtime::algorithm::add::<u32>(self.relays, 1)?;
@@ -1022,7 +1022,7 @@ impl StatePolicy for StaticWireWidePolicy {
                         }
                     }
                     2 => {
-                        // SCE-MAP: static_wire_wide.scxml:47 :: relaying :: _transition_2
+                        // SCE-MAP: static_wire_wide.scxml:54 :: relaying :: _transition_2
                         // W3C SCXML 3.13: Transition 2 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {

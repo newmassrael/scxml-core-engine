@@ -50,8 +50,8 @@ PY
 
 mutation_case "the spec names the field a float, not a Single" <<'PY'
 edit("sce-build/src/forge/generator.rs",
-     "            let declared = if single { \"_Single\" } else { ty.as_str() };",
-     "            let declared = ty.as_str();")
+     "            let declared = if single {\n                \"_Single\"\n            } else if wide {",
+     "            let declared = if false && single {\n                \"_Single\"\n            } else if wide {")
 PY
 
 mutation_case "the typed seam hands the carrier the number as it was given" <<'PY'

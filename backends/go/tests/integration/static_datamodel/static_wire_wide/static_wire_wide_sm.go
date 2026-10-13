@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 5d4270ae4c884e43e7a12f9a58bd5d012629cb9a3aef7240aa93f930de85d6c6
+// source-hash: 572a4258697cb4e5e72ff4c473f572e8103d28b7053d53f63dcb2a37167bc6ae
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -20,7 +20,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: static_wire_wide.scxml:21 :: _machine
+// SCE-MAP: static_wire_wide.scxml:28 :: _machine
 
 package static_wire_wide
 
@@ -625,7 +625,7 @@ func (p *StaticWireWidePolicy) ClearEventMetadata() {
 // ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
 // configuration, runs its <onentry>, and its <initial> transition's content when
 // its initial state is entered by default.
-//line static_wire_wide.scxml:21
+//line static_wire_wide.scxml:28
 func (p *StaticWireWidePolicy) ExecuteEntryActions(state StaticWireWideState, engine *sce.Engine[StaticWireWideState, StaticWireWideEvent], isDefaultEntry bool) {
 	switch state {
 	default:
@@ -638,7 +638,7 @@ func (p *StaticWireWidePolicy) ExecuteEntryActions(state StaticWireWideState, en
 // <initial> content) when the history was taken with nothing recorded. The
 // engine asks for it by the entry set's defaultHistoryContent answer; a history
 // that restored what it recorded runs nothing.
-//line static_wire_wide.scxml:21
+//line static_wire_wide.scxml:28
 func (p *StaticWireWidePolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[StaticWireWideState, StaticWireWideEvent]) {
 	// W3C SCXML 3.10.2: no <history> in this document has default content.
 }
@@ -646,7 +646,7 @@ func (p *StaticWireWidePolicy) ExecuteHistoryDefaultContent(history sce.HistoryI
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
 // runs its <onexit>, cancels its invocations and removes it from the
 // configuration — §scxml-D-exitStates's order.
-//line static_wire_wide.scxml:21
+//line static_wire_wide.scxml:28
 func (p *StaticWireWidePolicy) ExecuteExitActions(state StaticWireWideState, engine *sce.Engine[StaticWireWideState, StaticWireWideEvent], configurationBeforeExit []StaticWireWideState) {
 	// §scxml-D-exitStates orders one state's exit as onexit, then
 	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
@@ -663,7 +663,7 @@ func (p *StaticWireWidePolicy) ExecuteExitActions(state StaticWireWideState, eng
 // BindCurrentEvent binds the event whose transitions are about to be selected as
 // the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
 // and not for an eventless selection, which has no event of its own.
-//line static_wire_wide.scxml:21
+//line static_wire_wide.scxml:28
 func (p *StaticWireWidePolicy) BindCurrentEvent(event StaticWireWideEvent, engine *sce.Engine[StaticWireWideState, StaticWireWideEvent]) {
 	// This document's guards never read _event, so there is nothing to bind.
 }
@@ -673,7 +673,7 @@ func (p *StaticWireWidePolicy) BindCurrentEvent(event StaticWireWideEvent, engin
 // that event enables and whose guard holds. The engine walks the atomic states
 // and their ancestors and keeps the ordered set; the null event asks for
 // eventless transitions.
-//line static_wire_wide.scxml:21
+//line static_wire_wide.scxml:28
 func (p *StaticWireWidePolicy) FirstEnabledTransition(state StaticWireWideState, event StaticWireWideEvent, engine *sce.Engine[StaticWireWideState, StaticWireWideEvent]) (sce.EnabledTransition[StaticWireWideState, sce.HistoryID], bool) {
 	switch state {
 	case StaticWireWideStateRelaying:
@@ -713,13 +713,13 @@ func (p *StaticWireWidePolicy) FirstEnabledTransition(state StaticWireWideState,
 
 // ExecuteTransitionContent runs one transition's executable content (W3C SCXML
 // 3.13), between the microstep's exits and its entries.
-//line static_wire_wide.scxml:21
+//line static_wire_wide.scxml:28
 func (p *StaticWireWidePolicy) ExecuteTransitionContent(source StaticWireWideState, transitionIndex int, engine *sce.Engine[StaticWireWideState, StaticWireWideEvent]) {
 	switch source {
 	case StaticWireWideStateRelaying:
 		switch transitionIndex {
 		case 0:
-			//line static_wire_wide.scxml:34
+			//line static_wire_wide.scxml:41
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticWireWidePayloadTagWideIn {
@@ -771,22 +771,12 @@ func (p *StaticWireWidePolicy) ExecuteTransitionContent(source StaticWireWideSta
 	}
 			}()
 		case 1:
-			//line static_wire_wide.scxml:40
+			//line static_wire_wide.scxml:47
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticWireWidePayloadTagWideRelayed {
 					return
 				}
-
-
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.RemInt64(&sceFailure, p.pendingWideRelayedPayload.small, 1000); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticWireWideEventErrorExecution, "<assign location='smallLow'>: an integer operation overflowed or failed")); return true }; p.vSmallLow = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
-
-
-	p.vNegative = p.pendingWideRelayedPayload.small < 0
-
 
 
 	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.RemUint64(&sceFailure, p.pendingWideRelayedPayload.big, 1000); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticWireWideEventErrorExecution, "<assign location='low'>: an integer operation overflowed or failed")); return true }; p.vLow = sceValue; return false }() {
@@ -799,13 +789,23 @@ func (p *StaticWireWidePolicy) ExecuteTransitionContent(source StaticWireWideSta
 
 
 
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.RemInt64(&sceFailure, p.pendingWideRelayedPayload.small, 1000); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticWireWideEventErrorExecution, "<assign location='smallLow'>: an integer operation overflowed or failed")); return true }; p.vSmallLow = sceValue; return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+
+
+	p.vNegative = p.pendingWideRelayedPayload.small < 0
+
+
+
 	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vRelays, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticWireWideEventErrorExecution, "<assign location='relays'>: an integer operation overflowed or failed")); return true }; p.vRelays = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 			}()
 		case 2:
-			//line static_wire_wide.scxml:47
+			//line static_wire_wide.scxml:54
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

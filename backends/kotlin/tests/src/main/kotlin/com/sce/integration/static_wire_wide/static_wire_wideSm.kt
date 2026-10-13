@@ -1,10 +1,10 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 5d4270ae4c884e43e7a12f9a58bd5d012629cb9a3aef7240aa93f930de85d6c6
+// source-hash: 572a4258697cb4e5e72ff4c473f572e8103d28b7053d53f63dcb2a37167bc6ae
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_wire_wide.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: static_wire_wide.scxml:21 :: _machine
+// SCE-MAP: static_wire_wide.scxml:28 :: _machine
 
 package com.sce.integration.static_wire_wide
 
@@ -393,33 +393,33 @@ class StaticWireWideStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: static_wire_wide.scxml:21 :: _machine
+    // SCE-MAP: static_wire_wide.scxml:28 :: _machine
     override fun onEntry(state: StaticWireWideState, isDefaultEntry: Boolean) {
         when (state) {
             is StaticWireWideState.Relaying -> {
-                // SCE-MAP: static_wire_wide.scxml:33 :: relaying :: _state_body
+                // SCE-MAP: static_wire_wide.scxml:40 :: relaying :: _state_body
             }
         }
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: static_wire_wide.scxml:21 :: _machine
+    // SCE-MAP: static_wire_wide.scxml:28 :: _machine
     override fun onExit(state: StaticWireWideState) {
         when (state) {
             is StaticWireWideState.Relaying -> {
-                // SCE-MAP: static_wire_wide.scxml:33 :: relaying :: _state_body
+                // SCE-MAP: static_wire_wide.scxml:40 :: relaying :: _state_body
             }
         }
     }
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: static_wire_wide.scxml:21 :: _machine
+    // SCE-MAP: static_wire_wide.scxml:28 :: _machine
     override fun executeTransitionContent(source: StaticWireWideState, transitionIndex: Int) {
         when (source) {
         is StaticWireWideState.Relaying -> when (transitionIndex) {
             0 -> {
-                // SCE-MAP: static_wire_wide.scxml:34 :: relaying :: _transition_0
+                // SCE-MAP: static_wire_wide.scxml:41 :: relaying :: _transition_0
                 if (pendingWideInPayload == null) {
                     return
                 }
@@ -448,16 +448,10 @@ class StaticWireWideStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             1 -> {
-                // SCE-MAP: static_wire_wide.scxml:40 :: relaying :: _transition_1
+                // SCE-MAP: static_wire_wide.scxml:47 :: relaying :: _transition_1
                 if (pendingWideRelayedPayload == null) {
                     return
                 }
-
-            if (try { smallLow = com.sce.forge.runtime.SceChecked.rem(pendingWideRelayedPayload!!.small, 1000); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticWireWideEvent.Error.Execution, "<assign location='smallLow'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
-
-            negative = pendingWideRelayedPayload!!.small < 0
 
             if (try { low = com.sce.forge.runtime.SceChecked.rem(pendingWideRelayedPayload!!.big, 1000.toULong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticWireWideEvent.Error.Execution, "<assign location='low'>: an integer operation overflowed or failed"); true }) {
                 return
@@ -465,12 +459,18 @@ class StaticWireWideStateMachine(
 
             large = pendingWideRelayedPayload!!.big > 9007199254740992.toULong()
 
+            if (try { smallLow = com.sce.forge.runtime.SceChecked.rem(pendingWideRelayedPayload!!.small, 1000); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticWireWideEvent.Error.Execution, "<assign location='smallLow'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+
+            negative = pendingWideRelayedPayload!!.small < 0
+
             if (try { relays = com.sce.forge.runtime.SceChecked.add(relays, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticWireWideEvent.Error.Execution, "<assign location='relays'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             2 -> {
-                // SCE-MAP: static_wire_wide.scxml:47 :: relaying :: _transition_2
+                // SCE-MAP: static_wire_wide.scxml:54 :: relaying :: _transition_2
 
             if (try { refusals = com.sce.forge.runtime.SceChecked.add(refusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticWireWideEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
