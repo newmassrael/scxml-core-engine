@@ -146,4 +146,20 @@ mapfile -t STRUCTURES < <(grep -vE '^\s*(#|$)' "$STRUCTURE_LIST")
 node web/visualizer/measure/structure-parity.js "${STRUCTURES[@]}" \
     || sce_gate_fail "the Rust structure and the C++ engine's disagree beyond what is declared; its output above names where"
 
+# The scenario half. A `sce-static` statechart reaches the browser's Interpreter
+# by being lowered in the codegen WASM first, and every other lane that replays
+# the scenario corpus runs a native binary. This runs the pair the page runs —
+# the lowering as the page calls it, on the engine as the page loads it — on the
+# scenarios every backend replays, so a change that broke only the browser's path
+# is not left to a person who opens the page. What the runner cannot replay (time,
+# a dispatcher, a host) is skipped by name and counted, and the replayed count has
+# a floor.
+#
+# ⚠ It needs the engine built from THIS tree. A `web/visualizer/visualizer.wasm`
+# left from an earlier build failed five of the 31 scenarios it replays (measured
+# 2026-10-13, an engine 64 commits behind), for the engine's age and not for the
+# lowering; the lane builds the engine in the step before this gate.
+node web/visualizer/measure/scenario-replay.js \
+    || sce_gate_fail "the browser's Interpreter disagrees with the scenarios every backend replays; its output above names which"
+
 printf 'visualizer-layout: OK\n'

@@ -4987,9 +4987,13 @@ for every `sce-static` statechart under the shared fixture directory.
 
 **It runs once lowered.** `sce-codegen lower <document>` prints the document as
 a `datamodel="ecmascript"` one, and the Interpreter runs that. The visualizer
-does the same in the browser (`lower_for_interpreter` of the codegen WASM) for
-a document that needs nothing beside it, and draws the structure of the
-document as written, since lowering changes no state or transition. Only the
+does the same in the browser (`lower_for_interpreter` of the codegen WASM), with
+the documents the page fetched from beside it — an imported algorithm or schema,
+the candidates of a hybrid `<invoke>`; `sce:std/...` is built in — and draws the
+structure of the document as written, since lowering changes no state or
+transition. The scenarios every backend replays are replayed on that pair by the
+`visualizer-layout` lane (`web/visualizer/measure/scenario-replay.js`); those
+that need time, a dispatcher or a host are skipped there by name and counted. Only the
 document's expressions change: each is replaced, at the place the document
 wrote it, with the ECMAScript the typed expression means, and every other byte
 — comments, extension elements, formatting — is the author's. Each integer

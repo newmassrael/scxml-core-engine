@@ -1242,8 +1242,12 @@ GATES: dict[str, dict] = {
         # that replays 25 seeded gestures per fixture over all ten. The seed
         # is pinned in the gate script, so the cost is stable and a red is
         # reproducible.
+        # The scenario half (2026-10-13) replays 31 scenarios of the shared
+        # corpus on the browser's engine; the gate's cost is unmeasured since,
+        # and a hosted run is what measures it.
         "cost_s": 22,
-        "summary": "diagram layout invariants, and drag/collapse/stress survival",
+        "summary": "diagram layout invariants, drag/collapse/stress survival, "
+                   "and the shared scenarios on the browser's engine",
     },
     "visualizer-wasm": {
         "workflows": ["deploy-visualizer.yml"],
