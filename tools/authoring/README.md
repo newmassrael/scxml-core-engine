@@ -507,6 +507,70 @@ and a deployment that needs one will ask for it by name and be refused where it
 is absent. A memory-safety defect in the Lua binding is contained by none of what
 is here.
 
+#### Showing a statechart to a reader who is not a programmer: `views`
+
+Boxes and arrows are one way to read a statechart and a poor one once several states point at each other
+(five states with fifteen arrows is already a tangle). **views** (`sce_author views`) draws three other readings of the SAME
+document, in one self-contained HTML file each, with no server:
+
+```
+sce_author views --document D.scxml --out out/ [--scenarios D.scenarios.json] [--labels D.labels.json]
+                 [--lang ko|en] [--show-internal] [--no-simulator] [--codegen PATH]
+```
+
+| page | what it is | where it comes from |
+|---|---|---|
+| `table.html` | for each container, a table: the state you are in, the signal that arrives, where it goes, what entering does, the condition | the document's own structure, read from the XML |
+| `timeline.html` | what happened, step by step, in each scenario: the state of every lane that moved, the data, what was sent | the owner's scenario set, played on the real engine; the sentence above each is the specification's own |
+| `simulator.html` | buttons for every signal a person can send (and for time passing, when the design has a timer) | the real engine's behaviour, written down by `views_explore` and played against the engine before it is offered |
+
+Nothing in it knows what a document is about, and the module is held to that by `test_core_is_domain_free`. The
+words a reader sees come from three places only: the document's own names, an optional **labels file**
+(`{"title", "states", "events", "outputs", "lanes", "data"}`, JSON) that whoever owns the words writes, and the
+scenario set. A name nobody labelled is shown as the document wrote it, and a label never replaces the document's
+name: the name stays on the page as the label's tooltip. A renderer that invented plain words for a state would be
+putting a reading of its own into the owner's picture. A state may be labelled `{"label": ..., "note": ...}`; the
+note is one line saying what being in it MEANS, which a table cannot say (it says where a state goes).
+
+What a table leaves out is chosen so that the one fact each cell is for is what the eye lands on. What the machine
+says to itself (a `<raise>`) is in every cell of a machine that does it and says nothing a reader asked, so it is
+left out unless `--show-internal`. A cell that leaves the machine where it is, with nothing else to say, is a quiet
+word, and a cell that moves it is marked. A region that only watches and acts (no transition of it leaves a state) is
+listed as a rule, "when this holds, do that", because a state-by-signal table has nothing to say about it.
+
+An output is named `processor:event` (`x-host:on`), because three processors can each send an event called `on`; the
+event alone is shown unless two outputs share one. A signal the machine gives itself (a `<raise>`, a `<send>` with no
+target, a timer's own event) is a column in the table and never a button: the product lists it as one a caller could
+deliver, and pressing it would make the page do what the machine never does on its own.
+
+⚠ The simulator is the one part that could be wrong in a way a reader cannot see, so it is built to refuse.
+
+- A situation is the configuration, every data item the generated module can read, whether the machine has finished
+  and how long until its next timer. Exploring is breadth first from the start, replaying each path on a fresh engine
+  (an engine cannot be copied) in a child with the kernel's limits (`process.run_isolated`).
+- Three ways out, each a refusal and never a table cut short, because a table with an edge missing would answer a
+  button with "nothing happens": more than `max_nodes` situations; a situation deeper than `max_depth` signals (a counter
+  nothing resets keeps finding new ones, and the table "never closes"); more than `seconds` of exploring.
+- Before it is offered, `walks` random walks are played on the engine and on the table and every step must agree on
+  the configuration, the data, the time to the next timer, whether it finished and what was sent. What the harness
+  cannot see (a history state's memory, a second timer's remaining time) is exactly what this catches: a design with
+  a history state, where two pasts look identical and `resume` answers each differently, is refused with "disagreed".
+  Measured on the two documents of the review deck, 3,000 random steps each, 0 differences.
+- Exploring takes minutes for a few hundred situations: a design of four independent five-state lanes has 625, and
+  exploring it took between 100 and 180 s on the development machine; a design with seven situations took seconds.
+
+A scenario that waits on a decision (`awaiting-decision`, `blocked`) is not drawn: it describes behaviour the owner has
+not settled, and a picture of it would show a machine doing what nobody has said it should. The command says so, per
+scenario, instead of leaving it out silently, and a page that cannot be made is reported without taking the others
+with it.
+
+The child that plays the design is started in one place only (`views._in_the_engine`) and runs `views_explore`, which
+plays a design and so is on the short list of modules allowed to `load` one
+(`test_the_server_side_modules_import_no_generated_code`). It is not `scenario_play`, whose trace names an output by
+its event alone and carries neither the data nor the time to the next timer. The rules about what makes a run
+unreliable (an error no state answered, a macrostep cut short, a chain of events that did not end) are the same ones
+and are asked through `lowering`; time is moved through `lowering.advance`.
+
 `verify` and `compare` hold to the same rule, and the way they do it differs
 because they drive one machine through many small steps, where a scenario is one
 process per example. The generated module is imported by a worker process

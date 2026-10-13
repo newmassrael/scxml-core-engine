@@ -138,14 +138,15 @@ class CoreIsDomainFree(unittest.TestCase):
 
     def test_the_server_side_modules_import_no_generated_code(self):
         """The modules a server process loads must not import what plays a
-        design. `worker`, `scenario_play` and `procedures` do, and they run only
+        design. `worker`, `scenario_play`, `views_explore` and `procedures` do, and they run only
         in the processes `process` starts; `lowering` is theirs and `verify` keeps
         a few of its names for old callers, which is why `verify` may import it
         but must not CALL `load` itself."""
         loaders = {"importlib", "runpy"}
         offences = []
         for path in sources():
-            if path.name in {"lowering.py", "worker.py", "procedures.py", "scenario_play.py"}:
+            if path.name in {"lowering.py", "worker.py", "procedures.py", "scenario_play.py",
+                             "views_explore.py"}:
                 continue
             tree = ast.parse(path.read_text(encoding="utf-8"))
             for node in ast.walk(tree):

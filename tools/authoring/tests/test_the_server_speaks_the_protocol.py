@@ -211,7 +211,11 @@ class TheServerSpeaksTheProtocol(unittest.TestCase):
         # AROUND its client (judge, hand the violations back, judge again), so over MCP, where the
         # client is the caller, it would be a tool the client may decline to call, which is the
         # failure it exists to close. A name listed here has to be a command that exists.
-        cli_only = {"revise-gate"}
+        # `views` writes HTML files into a directory the caller names, and its simulator walks the engine through
+        # every situation, which takes minutes for a few hundred of them: longer than a tool call is meant to run,
+        # and a page of a few hundred kilobytes is not an answer a client reads. Whether and how an owner's client
+        # should be handed these pages is not decided, so the command has no tool yet.
+        cli_only = {"revise-gate", "views"}
         self.assertLessEqual(cli_only, commands, "a command-line-only name that is not a command")
         self.assertEqual(commands - cli_only, {t["name"] for t in mcp.TOOLS} - mcp_only)
 

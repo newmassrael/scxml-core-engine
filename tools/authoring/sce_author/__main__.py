@@ -110,6 +110,23 @@ def cmd_pseudo(args) -> int:
     return 0
 
 
+def cmd_views(args) -> int:
+    from .views import ViewError, build
+
+    try:
+        lines = build(pathlib.Path(args.document), pathlib.Path(args.out),
+                      scenario_set=pathlib.Path(args.scenarios) if args.scenarios else None,
+                      labels_path=pathlib.Path(args.labels) if args.labels else None,
+                      codegen=pathlib.Path(args.codegen) if args.codegen else None,
+                      lang=args.lang, simulator=not args.no_simulator, internal=args.show_internal)
+    except ViewError as exc:
+        print(f"refused: {exc}", file=sys.stderr)
+        return 1
+    for line in lines:
+        print(line)
+    return 0
+
+
 def cmd_check(args) -> int:
     pack = _pack(args)
     prose = load_prose([pathlib.Path(p) for p in args.prose]) if args.prose else None
@@ -561,6 +578,28 @@ def main(argv=None) -> int:
                         "default) or 'ko'; what the document wrote is never "
                         "translated")
     s.set_defaults(fn=cmd_pseudo)
+
+    # ⚠ No `--pack`: the views read the document and, optionally, what its owner wrote about it. The
+    # words a reader sees come from `--labels` and `--scenarios` and from nowhere else.
+    w = sub.add_parser(
+        "views", help="show a statechart as a table, a timeline and a simulator, for a reader who is not a programmer")
+    w.add_argument("--document", required=True, help="the statechart")
+    w.add_argument("--out", required=True, help="the directory the pages are written into")
+    w.add_argument("--scenarios",
+                   help="a scenario set (sce-scenario-set.v1): each runnable example becomes a timeline, under the "
+                        "specification's own sentence")
+    w.add_argument("--labels",
+                   help="plain words for the document's names (JSON: title, states, events, outputs, lanes, data); "
+                        "what is left out is shown as the document wrote it")
+    w.add_argument("--codegen",
+                   help="the product's code generator (default: the one in this tree)")
+    w.add_argument("--lang", choices=("ko", "en"), default="ko", help="the words the pages use for themselves")
+    w.add_argument("--show-internal", action="store_true",
+                   help="show what the machine says to itself (`<raise>`) in the tables; left out by default, "
+                        "because it is in every cell and buries the one fact each cell is for")
+    w.add_argument("--no-simulator", action="store_true",
+                   help="skip the simulator, which walks the engine through every situation and can take minutes")
+    w.set_defaults(fn=cmd_views)
 
     # ⚠ No `--pack` either: the drafts are compared with one another and
     # with nothing outside them.
