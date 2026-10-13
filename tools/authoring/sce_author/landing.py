@@ -244,3 +244,19 @@ def unmapped(rule: dict, values) -> list:
     if "map" not in rule or values is None or rule.get("hold_last"):
         return []
     return [v for v in values if not mapped(rule["map"], v)[0]]
+
+
+def unmapped_default(rule: dict) -> list:
+    """The rule's `when_nothing_sent`, as a one-item list, when its map has no entry for it.
+
+    The host answers a round in which nothing was sent with this value, and it goes through
+    the map like any other. ⚠ Known whatever the document sends: `produces` cannot list the
+    values of a send's `param`, so `unmapped` never asked about this one, and a binding that
+    wrote the platform's SYMBOL beside `map: platform` -- whose keys are the platform's
+    NUMBERS -- passed `check` and was refused by `verify` on every round that sent nothing.
+    Empty under `hold_last`, where a value with no entry keeps what the position held.
+    """
+    if "map" not in rule or rule.get("hold_last") or "when_nothing_sent" not in rule:
+        return []
+    value = rule["when_nothing_sent"]
+    return [] if mapped(rule["map"], value)[0] else [value]

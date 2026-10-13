@@ -1906,6 +1906,17 @@ def check(pack: Pack, binding_path: pathlib.Path, prose=None,
                 f"the map has no entry for {', '.join(map(repr, missing))}, "
                 f"which the document can produce, so a case producing it has "
                 f"nowhere to land.{stray}"))
+        elif values is None:
+            default = landing.unmapped_default(rule)
+            if default:
+                keys = ", ".join(map(repr, rule["map"]))
+                out.append(Finding(
+                    f"output {name}",
+                    f"`when_nothing_sent: {default[0]!r}` is what the host writes in a round "
+                    f"where nothing is sent, and the map has no entry for it: its keys are "
+                    f"{keys}. A map is keyed by what the document sends, and `map: platform` "
+                    f"is keyed by the platform's NUMBERS -- write the number, or add the "
+                    f"entry."))
 
     # A transform input no expression reads decides nothing, and a case that
     # does not drive it is still refused by `verify` for its missing value
