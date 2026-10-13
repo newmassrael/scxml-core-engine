@@ -83,6 +83,33 @@ export function compile_scxml_lang(scxml_content, scxml_name, language) {
 }
 
 /**
+ * The documents `scxml_content` names beside itself, as a JSON array of paths;
+ * see [`documents_named_by_content`].
+ * @param {string} scxml_content
+ * @returns {string}
+ */
+export function documents_named_by(scxml_content) {
+    let deferred3_0;
+    let deferred3_1;
+    try {
+        const ptr0 = passStringToWasm0(scxml_content, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.documents_named_by(ptr0, len0);
+        var ptr2 = ret[0];
+        var len2 = ret[1];
+        if (ret[3]) {
+            ptr2 = 0; len2 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred3_0 = ptr2;
+        deferred3_1 = len2;
+        return getStringFromWasm0(ptr2, len2);
+    } finally {
+        wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
+    }
+}
+
+/**
  * Extract the state machine name from SCXML content.
  * @param {string} scxml_content
  * @returns {string}
@@ -141,32 +168,37 @@ export function gui_structure(scxml_content, scxml_name) {
 }
 
 /**
- * The document the Interpreter runs for `scxml_content`; see
+ * The documents the Interpreter runs for `scxml_content`, as JSON:
+ * `[{"file_name": ..., "text": ...}, ...]`, the document asked for first.
+ * `siblings_json` is an object of the documents beside it, by name. See
  * [`lowered_for_interpreter`].
  * @param {string} scxml_content
  * @param {string} scxml_name
+ * @param {string} siblings_json
  * @returns {string}
  */
-export function lower_for_interpreter(scxml_content, scxml_name) {
-    let deferred4_0;
-    let deferred4_1;
+export function lower_for_interpreter(scxml_content, scxml_name, siblings_json) {
+    let deferred5_0;
+    let deferred5_1;
     try {
         const ptr0 = passStringToWasm0(scxml_content, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
         const ptr1 = passStringToWasm0(scxml_name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len1 = WASM_VECTOR_LEN;
-        const ret = wasm.lower_for_interpreter(ptr0, len0, ptr1, len1);
-        var ptr3 = ret[0];
-        var len3 = ret[1];
+        const ptr2 = passStringToWasm0(siblings_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len2 = WASM_VECTOR_LEN;
+        const ret = wasm.lower_for_interpreter(ptr0, len0, ptr1, len1, ptr2, len2);
+        var ptr4 = ret[0];
+        var len4 = ret[1];
         if (ret[3]) {
-            ptr3 = 0; len3 = 0;
+            ptr4 = 0; len4 = 0;
             throw takeFromExternrefTable0(ret[2]);
         }
-        deferred4_0 = ptr3;
-        deferred4_1 = len3;
-        return getStringFromWasm0(ptr3, len3);
+        deferred5_0 = ptr4;
+        deferred5_1 = len4;
+        return getStringFromWasm0(ptr4, len4);
     } finally {
-        wasm.__wbindgen_free(deferred4_0, deferred4_1, 1);
+        wasm.__wbindgen_free(deferred5_0, deferred5_1, 1);
     }
 }
 

@@ -33,6 +33,12 @@ export function annotation_overlay(scxml_content: string, scxml_name: string): s
 export function compile_scxml_lang(scxml_content: string, scxml_name: string, language: string): string;
 
 /**
+ * The documents `scxml_content` names beside itself, as a JSON array of paths;
+ * see [`documents_named_by_content`].
+ */
+export function documents_named_by(scxml_content: string): string;
+
+/**
  * Extract the state machine name from SCXML content.
  */
 export function get_machine_name(scxml_content: string): string;
@@ -46,10 +52,12 @@ export function get_machine_name(scxml_content: string): string;
 export function gui_structure(scxml_content: string, scxml_name: string): string;
 
 /**
- * The document the Interpreter runs for `scxml_content`; see
+ * The documents the Interpreter runs for `scxml_content`, as JSON:
+ * `[{"file_name": ..., "text": ...}, ...]`, the document asked for first.
+ * `siblings_json` is an object of the documents beside it, by name. See
  * [`lowered_for_interpreter`].
  */
-export function lower_for_interpreter(scxml_content: string, scxml_name: string): string;
+export function lower_for_interpreter(scxml_content: string, scxml_name: string, siblings_json: string): string;
 
 /**
  * Languages this build can generate, as the identifiers
@@ -68,9 +76,10 @@ export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly annotation_overlay: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly compile_scxml_lang: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
+    readonly documents_named_by: (a: number, b: number) => [number, number, number, number];
     readonly get_machine_name: (a: number, b: number) => [number, number, number, number];
     readonly gui_structure: (a: number, b: number, c: number, d: number) => [number, number, number, number];
-    readonly lower_for_interpreter: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+    readonly lower_for_interpreter: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly supported_languages: () => [number, number];
     readonly __wbindgen_externrefs: WebAssembly.Table;
     readonly __wbindgen_malloc: (a: number, b: number) => number;

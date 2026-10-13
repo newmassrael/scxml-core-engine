@@ -80,6 +80,35 @@ async function loadSCXMLContent() {
 }
 
 /**
+ * Answer the documents a document names beside itself, which the lowering of a
+ * typed (sce-static) one reads: an imported algorithm or schema, a candidate of
+ * a hybrid invoke. They stand beside the document where it was loaded from; a
+ * document given inline (#scxml=) has no place to be beside.
+ * @param {Object} params - The hash parameters the page was opened with
+ * @returns {function(string): Promise<string|null>} The text, or null if it is not there
+ */
+function siblingFetcher(params) {
+    let base = null;
+    if (params.test) {
+        base = `${getResourcesPath()}/${params.test}/`;
+    } else if (params.url) {
+        base = new URL('./', new URL(params.url, window.location.href)).href;
+    }
+    return async (path) => {
+        if (base === null) {
+            return null;
+        }
+        try {
+            const response = await fetch(new URL(path, new URL(base, window.location.href)).href);
+            return response.ok ? await response.text() : null;
+        } catch (e) {
+            logger.debug(`Sibling document ${path} not fetched: ${e.message}`);
+            return null;
+        }
+    };
+}
+
+/**
  * Create a validation error message for <script> element violations
  * @param {string} violation - Description of the violation
  * @param {string} details - Specific details about what was found
@@ -219,8 +248,12 @@ async function initVisualizer(scxmlContent) {
         // only, so their ids and positions are the same.
         const params = parseHashParams();
         let runnableContent;
+        let startedDocuments;
         try {
-            runnableContent = await SceBuildWasm.lowerForInterpreter(scxmlContent, params.test || 'untitled');
+            const lowered = await SceBuildWasm.lowerForInterpreter(
+                scxmlContent, params.test || 'untitled', siblingFetcher(params));
+            runnableContent = lowered[0].text;
+            startedDocuments = lowered.slice(1);
         } catch (error) {
             showLoading(false);
             showFatalError(`The product cannot lower this document for the Interpreter: ${error}`);
@@ -251,6 +284,14 @@ async function initVisualizer(scxmlContent) {
             // Write parent SCXML to virtual FS
             Module.FS.writeFile(`/resources/${testId}/test${testId}.scxml`, runnableContent);
             logger.debug(`Created virtual FS: /resources/${testId}/test${testId}.scxml`);
+
+            // The documents a lowered hybrid invoke may start, under the names
+            // the lowered document starts them by (written beside the parent,
+            // which is where the engine loads a child from).
+            for (const started of startedDocuments) {
+                Module.FS.writeFile(`/resources/${testId}/${started.file_name}`, started.text);
+                logger.debug(`Created virtual FS: /resources/${testId}/${started.file_name}`);
+            }
 
             // W3C SCXML 6.3/6.4: Extract child SCXML files from invoke src/srcexpr attributes
             // W3C SCXML 5.2: Extract external data files from data src attributes
@@ -343,6 +384,11 @@ async function initVisualizer(scxmlContent) {
                     // Load detected/potential child files
                     let loadedCount = 0;
                     for (const childFile of childFiles) {
+                        // A document the lowering already wrote is the one the
+                        // engine runs; the file as authored is not.
+                        if (startedDocuments.some((started) => started.file_name === childFile)) {
+                            continue;
+                        }
                         try {
                             const childResponse = await fetch(`${basePath}${childFile}`);
                             if (childResponse.ok) {
