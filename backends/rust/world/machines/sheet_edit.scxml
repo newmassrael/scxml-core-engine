@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A person's edit of one cell, as the host hands it to a replica: where, the number,
+  and `now`, the host's wall clock in milliseconds. A machine reads no clock of its
+  own, so the time an edit is stamped with is the one its host says the edit was
+  made at; the replica turns it into a stamp that sorts after everything it has seen.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="sheet_edit"
+       sce:event-name="sheet.edit">
+  <datamodel>
+    <data id="row" sce:type="uint32" sce:direction="in"/>
+    <data id="col" sce:type="uint32" sce:direction="in"/>
+    <data id="value" sce:type="int32" sce:direction="in"/>
+    <data id="now" sce:type="int64" sce:direction="in"/>
+  </datamodel>
+</scxml>

@@ -34,6 +34,11 @@ sce-rust-mesh = { path = "../mesh" }
 sce-forge-runtime = { path = "../forge-runtime" }
 sce-portable-bytes = { path = "../portable-bytes" }
 
+# What a test reads a machine's variables with, and the envelopes it reads the
+# network's record back with.
+[dev-dependencies]
+serde_json = "1"
+
 # The machines under `machines/` are generated at build time, in-process, into
 # OUT_DIR (see build.rs); no generated code is committed for this crate.
 [build-dependencies]

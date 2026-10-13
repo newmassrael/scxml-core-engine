@@ -509,18 +509,25 @@ impl World {
         self.actors.push(Box::new(actor));
     }
 
-    /// Join `a` and `b` by a link up in both directions, `latency_ms` each way.
+    /// Join `a` and `b` by a link up in both directions, `latency_ms` each way. Each
+    /// side is told its peer is ready, as a transport tells its endpoint when a
+    /// connection is made: an endpoint that keeps what it sends while a peer is not
+    /// ready would otherwise keep it for good.
     pub fn link(&mut self, a: &str, b: &str, latency_ms: i64) {
-        let mut net = self.net.lock();
-        for key in [(a, b), (b, a)] {
-            net.links.insert(
-                (key.0.to_string(), key.1.to_string()),
-                Link {
-                    latency_ms,
-                    ..Link::default()
-                },
-            );
+        {
+            let mut net = self.net.lock();
+            for key in [(a, b), (b, a)] {
+                net.links.insert(
+                    (key.0.to_string(), key.1.to_string()),
+                    Link {
+                        latency_ms,
+                        ..Link::default()
+                    },
+                );
+            }
         }
+        self.with_actor(a, |actor| actor.peer_ready(b));
+        self.with_actor(b, |actor| actor.peer_ready(a));
     }
 
     /// Spread the delay of every envelope between `a` and `b` over
@@ -704,6 +711,24 @@ impl World {
         self.clock.set(to_ms);
         for actor in &mut self.actors {
             actor.advance(delta);
+        }
+    }
+
+    /// Let `ms` of virtual time pass, running everything that falls due in it. Unlike
+    /// [`run_until_quiet`](Self::run_until_quiet) it does not stop early when nothing
+    /// is left to happen: an edit made later by the clock needs the time to have gone.
+    pub fn advance_ms(&mut self, ms: i64) {
+        let deadline = self.clock.now_ms() + ms;
+        loop {
+            self.settle();
+            match self.next_due_ms() {
+                Some(at) if at <= deadline => self.advance_to(at.max(self.clock.now_ms())),
+                _ => {
+                    self.advance_to(deadline);
+                    self.settle();
+                    return;
+                }
+            }
         }
     }
 

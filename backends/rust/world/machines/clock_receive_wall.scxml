@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The wall time of the stamp a node moves to on receiving the stamp (`msgWall`,
+  `msgCounter`, `msgNode`) after its own (`wall`, `counter`), when its host says it is
+  `now`: hlc_receive's `wallTime`, as a number. See clock_send_wall for why a stamp
+  is given as numbers and asked for in halves.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="clock_receive_wall" version="1.0">
+  <sce:import kind="event-schema" src="sce:std/merge/hlc_timestamp.scxml" as="Hlc"/>
+  <sce:import kind="algorithm" src="sce:std/merge/hlc_receive.scxml" as="receive"/>
+  <sce:signature>
+    <sce:param name="wall" type="int64"/>
+    <sce:param name="counter" type="uint32"/>
+    <sce:param name="msgWall" type="int64"/>
+    <sce:param name="msgCounter" type="uint32"/>
+    <sce:param name="msgNode" type="uint64"/>
+    <sce:param name="now" type="int64"/>
+    <sce:param name="node" type="uint64"/>
+    <sce:return type="int64" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="prev" type="record:Hlc">
+      <sce:set name="wallTime" expr="wall"/>
+      <sce:set name="counter" expr="counter"/>
+      <sce:set name="nodeId" expr="node"/>
+    </sce:var>
+    <sce:var name="msg" type="record:Hlc">
+      <sce:set name="wallTime" expr="msgWall"/>
+      <sce:set name="counter" expr="msgCounter"/>
+      <sce:set name="nodeId" expr="msgNode"/>
+    </sce:var>
+    <sce:var name="next" type="record:Hlc" init="receive(prev, msg, now, node)"/>
+    <sce:return expr="next.wallTime"/>
+  </sce:body>
+</scxml>

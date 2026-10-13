@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Whether the stamp A (`aWall`, `aCounter`, `aNode`) is later than the stamp B: hlc_compare's
+  order, as 1 when it is and 0 when it is not (the same stamp, or an earlier one). A
+  statechart hands an algorithm numbers, so two stamps are given as their six, and
+  the answer is hlc_compare's and not a second copy of its rule.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="stamp_later" version="1.0">
+  <sce:import kind="event-schema" src="sce:std/merge/hlc_timestamp.scxml" as="Hlc"/>
+  <sce:import kind="algorithm" src="sce:std/merge/hlc_compare.scxml" as="order"/>
+  <sce:signature>
+    <sce:param name="aWall" type="int64"/>
+    <sce:param name="aCounter" type="uint32"/>
+    <sce:param name="aNode" type="uint64"/>
+    <sce:param name="bWall" type="int64"/>
+    <sce:param name="bCounter" type="uint32"/>
+    <sce:param name="bNode" type="uint64"/>
+    <sce:return type="uint8"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="a" type="record:Hlc">
+      <sce:set name="wallTime" expr="aWall"/>
+      <sce:set name="counter" expr="aCounter"/>
+      <sce:set name="nodeId" expr="aNode"/>
+    </sce:var>
+    <sce:var name="b" type="record:Hlc">
+      <sce:set name="wallTime" expr="bWall"/>
+      <sce:set name="counter" expr="bCounter"/>
+      <sce:set name="nodeId" expr="bNode"/>
+    </sce:var>
+    <sce:if cond="order(a, b) &gt; 0">
+      <sce:return expr="1"/>
+    </sce:if>
+    <sce:return expr="0"/>
+  </sce:body>
+</scxml>

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A copy of the sheet is told who it is when it opens: the node id its stamps carry,
+  which breaks the last tie between two writes at the same instant, so it has to
+  differ from every other copy of the sheet; and whether it is the hub the others
+  send to, which passes on to the other copies what it is sent. One document serves
+  every copy, which is why both are given to it and not written in it.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="sheet_join"
+       sce:event-name="sheet.join">
+  <datamodel>
+    <data id="node" sce:type="uint64" sce:direction="in"/>
+    <data id="hub" sce:type="bool" sce:direction="in"/>
+  </datamodel>
+</scxml>

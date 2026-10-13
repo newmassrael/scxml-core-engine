@@ -1964,6 +1964,7 @@ dependencies = [
  "sce-portable-bytes",
  "sce-rust-mesh",
  "sce-rust-runtime",
+ "serde_json",
 ]
 
 [[package]]

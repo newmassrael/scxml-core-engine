@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15): one copy of a shared
+  sheet of numbers, for the world simulation (backends/rust/world). The same document
+  is a person's copy and the hub the copies send to; `sheet.join` says which.
+
+  An edit is applied to this copy at once and sent to the hub, so typing never waits
+  for the network. A write that arrives, from the hub or, at the hub, from a person,
+  is applied the same way, and the hub passes it on to the other copies. Applying a
+  write keeps the later of two writes to a cell by their hybrid logical clock
+  stamps, so every copy ends with the same cells whatever order the writes reach it
+  in and however many times each does.
+
+  The clock is moved by what a copy sees as well as by what it does (hlc_receive):
+  an edit made after reading someone else's write sorts after it, which is what a
+  person who saw the number and typed over it meant. The machine reads no clock of
+  its own, so a write that arrives is received at the latest time the copy has
+  already stamped, and an edit is stamped at the time its host says (`now`). The
+  counter of a new stamp is asked for before its wall time, because it continues
+  the reading the wall time replaces.
+
+  The merge is written out here and not in an algorithm that takes the cells and
+  returns them: a statechart hands an algorithm numbers and not a list or a record,
+  and takes a number or a list back and not a record. The only thing asked of an
+  algorithm is the order of two stamps (stamp_later).
+
+  The hub passes a write on to `alice` and `bob`, the two people of the simulated
+  sheet, except to the one whose node id is the write's: a copy that sent a write
+  does not need it back.
+
+  `cells` is the whole sheet and is what a run compares across copies.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="open" datamodel="sce-static" name="sheet_peer">
+  <sce:import kind="event-schema" src="sheet_cell.scxml" as="Cell"/>
+  <sce:import kind="event-schema" src="sheet_edit.scxml" as="Edit"/>
+  <sce:import kind="event-schema" src="sheet_join.scxml" as="Join"/>
+  <sce:import kind="event-schema" src="sce:std/merge/hlc_timestamp.scxml" as="Hlc"/>
+  <sce:import kind="algorithm" src="stamp_later.scxml" as="StampLater"/>
+  <sce:import kind="algorithm" src="clock_send_wall.scxml" as="SendWall"/>
+  <sce:import kind="algorithm" src="clock_send_counter.scxml" as="SendCounter"/>
+  <sce:import kind="algorithm" src="clock_receive_wall.scxml" as="ReceiveWall"/>
+  <sce:import kind="algorithm" src="clock_receive_counter.scxml" as="ReceiveCounter"/>
+  <datamodel>
+    <data id="node" sce:type="uint64" expr="0" sce:direction="out"/>
+    <data id="hub" sce:type="bool" expr="false" sce:direction="out"/>
+    <data id="clock" sce:type="record:Hlc" sce:direction="out">
+      <sce:set name="wallTime" expr="0"/>
+      <sce:set name="counter" expr="0"/>
+      <sce:set name="nodeId" expr="0"/>
+    </data>
+    <data id="cells" sce:type="list&lt;record:Cell&gt;" sce:capacity="64" sce:direction="out"/>
+    <data id="rebuilt" sce:type="list&lt;record:Cell&gt;" sce:capacity="64"/>
+    <data id="found" sce:type="bool" expr="false"/>
+    <data id="wall32" sce:type="uint32" expr="0"/>
+    <data id="node32" sce:type="uint32" expr="0"/>
+    <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="open">
+    <transition event="sheet.join" type="internal">
+      <assign location="node" expr="_event.data.node"/>
+      <assign location="hub" expr="_event.data.hub"/>
+    </transition>
+
+    <!-- A person's edit: stamped, then handled as any write is, and sent to the hub. -->
+    <transition event="sheet.edit" type="internal">
+      <assign location="clock.counter"
+              expr="SendCounter(clock.wallTime, clock.counter, _event.data.now, node)"/>
+      <assign location="clock.wallTime"
+              expr="SendWall(clock.wallTime, clock.counter, _event.data.now, node)"/>
+      <assign location="wall32" expr="clock.wallTime"/>
+      <assign location="node32" expr="node"/>
+      <send target="#_internal" event="sheet.cell">
+        <param name="row" expr="_event.data.row"/>
+        <param name="col" expr="_event.data.col"/>
+        <param name="value" expr="_event.data.value"/>
+        <param name="wallTime" expr="wall32"/>
+        <param name="counter" expr="clock.counter"/>
+        <param name="nodeId" expr="node32"/>
+      </send>
+      <send target="#server" event="sheet.cell">
+        <param name="row" expr="_event.data.row"/>
+        <param name="col" expr="_event.data.col"/>
+        <param name="value" expr="_event.data.value"/>
+        <param name="wallTime" expr="wall32"/>
+        <param name="counter" expr="clock.counter"/>
+        <param name="nodeId" expr="node32"/>
+      </send>
+    </transition>
+
+    <!-- A write to a cell, from a person here or from elsewhere. -->
+    <transition event="sheet.cell" type="internal">
+      <if cond="_event.data.nodeId !== node">
+        <assign location="clock.counter"
+                expr="ReceiveCounter(clock.wallTime, clock.counter, _event.data.wallTime, _event.data.counter, _event.data.nodeId, clock.wallTime, node)"/>
+        <assign location="clock.wallTime"
+                expr="ReceiveWall(clock.wallTime, clock.counter, _event.data.wallTime, _event.data.counter, _event.data.nodeId, clock.wallTime, node)"/>
+      </if>
+      <assign location="found" expr="false"/>
+      <sce:clear target="rebuilt"/>
+      <foreach array="cells" item="c">
+        <if cond="c.row === _event.data.row &amp;&amp; c.col === _event.data.col">
+          <assign location="found" expr="true"/>
+          <if cond="StampLater(_event.data.wallTime, _event.data.counter, _event.data.nodeId, c.wallTime, c.counter, c.nodeId) === 1">
+            <sce:append target="rebuilt" expr="_event.data"/>
+          <else/>
+            <sce:append target="rebuilt" expr="c"/>
+          </if>
+        <else/>
+          <sce:append target="rebuilt" expr="c"/>
+        </if>
+      </foreach>
+      <if cond="!found">
+        <sce:append target="rebuilt" expr="_event.data"/>
+      </if>
+      <sce:clear target="cells"/>
+      <foreach array="rebuilt" item="c">
+        <sce:append target="cells" expr="c"/>
+      </foreach>
+      <if cond="hub &amp;&amp; _event.data.nodeId !== 1">
+        <send target="#alice" event="sheet.cell">
+          <param name="row" expr="_event.data.row"/>
+          <param name="col" expr="_event.data.col"/>
+          <param name="value" expr="_event.data.value"/>
+          <param name="wallTime" expr="_event.data.wallTime"/>
+          <param name="counter" expr="_event.data.counter"/>
+          <param name="nodeId" expr="_event.data.nodeId"/>
+        </send>
+      </if>
+      <if cond="hub &amp;&amp; _event.data.nodeId !== 2">
+        <send target="#bob" event="sheet.cell">
+          <param name="row" expr="_event.data.row"/>
+          <param name="col" expr="_event.data.col"/>
+          <param name="value" expr="_event.data.value"/>
+          <param name="wallTime" expr="_event.data.wallTime"/>
+          <param name="counter" expr="_event.data.counter"/>
+          <param name="nodeId" expr="_event.data.nodeId"/>
+        </send>
+      </if>
+    </transition>
+
+    <transition event="error.execution" type="internal">
+      <assign location="refusals" expr="refusals + 1"/>
+    </transition>
+  </state>
+</scxml>
