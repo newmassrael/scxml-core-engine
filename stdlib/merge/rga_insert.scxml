@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/merge/rga_insert.scxml — the elements of a replicated growable
+  array after one is inserted (Roh et al. 2011): `node` is placed directly
+  after the element its `after` names, or at the front when that is 0, but
+  past every element already there with a larger id. That is the rule that
+  makes two replicas put concurrent insertions after one element in the same
+  order whatever order the insertions reached them in.
+
+  An element already held is held once, so an insertion that arrives twice
+  changes nothing. An element whose predecessor is not held cannot happen
+  where the insertions of a replica arrive after the ones they follow; it is
+  put at the end rather than lost, and a host that wants to count it asks
+  rga_holds before it inserts.
+
+  The result holds at most 256 elements (SCE_FORGE.md §4.12); past that the
+  bounded backends fail and the heap backends grow, so a host keeps its
+  array within it.
+
+  nodes {1 after 0}, node 2 after 1 → {1, 2} · node 3 after 1 → {1, 3, 2}
+  (3 is larger than 2) · node 2 again → unchanged.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="rga_insert" version="1.0">
+  <sce:import kind="event-schema" src="rga_node.scxml" as="Node"/>
+  <sce:signature>
+    <sce:param name="nodes" type="list&lt;record:Node&gt;"/>
+    <sce:param name="node" type="record:Node"/>
+    <sce:return type="list&lt;record:Node&gt;" may-fail="true" returns-max-size="256"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="out" type="list&lt;record:Node&gt;" capacity="256"/>
+    <sce:var name="held" type="bool" init="false"/>
+    <sce:foreach item="probe" in="nodes">
+      <sce:if cond="probe.key === node.key">
+        <sce:assign target="held" expr="true"/>
+      </sce:if>
+    </sce:foreach>
+    <sce:if cond="held">
+      <sce:foreach item="same" in="nodes">
+        <sce:append target="out" expr="same"/>
+      </sce:foreach>
+      <sce:return expr="out"/>
+    </sce:if>
+    <sce:var name="phase" type="uint8" init="node.after === 0 ? 1 : 0"/>
+    <sce:foreach item="n" in="nodes">
+      <sce:if cond="phase === 0">
+        <sce:append target="out" expr="n"/>
+        <sce:if cond="n.key === node.after">
+          <sce:assign target="phase" expr="1"/>
+        </sce:if>
+        <sce:else>
+          <sce:if cond="phase === 1">
+            <sce:if cond="n.key &gt; node.key">
+              <sce:append target="out" expr="n"/>
+              <sce:else>
+                <sce:append target="out" expr="node"/>
+                <sce:append target="out" expr="n"/>
+                <sce:assign target="phase" expr="2"/>
+              </sce:else>
+            </sce:if>
+            <sce:else>
+              <sce:append target="out" expr="n"/>
+            </sce:else>
+          </sce:if>
+        </sce:else>
+      </sce:if>
+    </sce:foreach>
+    <sce:if cond="phase !== 2">
+      <sce:append target="out" expr="node"/>
+    </sce:if>
+    <sce:return expr="out"/>
+  </sce:body>
+</scxml>

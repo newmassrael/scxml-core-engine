@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/merge/lww_write.scxml — the cells a replica holds after a write to
+  one of them, in a grid of last-writer-wins registers: the cell at the
+  write's (row, col) is replaced by the write when the write's stamp is later
+  by hlc_compare's order, kept when it is not, and a write to a place no cell
+  holds adds one. Every other cell is carried over, in order.
+
+  The cell a place holds is the one whose stamp is the latest of the writes
+  it has been given, so the cells do not depend on the order the writes
+  arrived in, nor on how many times each did: applying a write twice is
+  applying it once, and two writes to one place in either order leave the
+  later. That is what lets every replica end with the same cells.
+
+  The result holds at most 256 cells (SCE_FORGE.md §4.12); past that the
+  bounded backends fail and the heap backends grow, so a host keeps its grid
+  within it.
+
+  cells {(1,1)=5@100/0/7}, write (1,1)=9@150/0/9 → {(1,1)=9@150/0/9} ·
+  write (1,1)=9@90/0/9 → {(1,1)=5@100/0/7} · write (2,1)=9@90/0/9 → both.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="lww_write" version="1.0">
+  <sce:import kind="event-schema" src="lww_cell.scxml" as="Cell"/>
+  <sce:import kind="event-schema" src="hlc_timestamp.scxml" as="Hlc"/>
+  <sce:import kind="algorithm" src="hlc_compare.scxml" as="order"/>
+  <sce:signature>
+    <sce:param name="cells" type="list&lt;record:Cell&gt;"/>
+    <sce:param name="write" type="record:Cell"/>
+    <sce:return type="list&lt;record:Cell&gt;" may-fail="true" returns-max-size="256"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="out" type="list&lt;record:Cell&gt;" capacity="256"/>
+    <sce:var name="held" type="bool" init="false"/>
+    <sce:var name="incoming" type="record:Hlc">
+      <sce:set name="wallTime" expr="write.wallTime"/>
+      <sce:set name="counter" expr="write.counter"/>
+      <sce:set name="nodeId" expr="write.nodeId"/>
+    </sce:var>
+    <sce:foreach item="c" in="cells">
+      <sce:if cond="c.row === write.row &amp;&amp; c.col === write.col">
+        <sce:assign target="held" expr="true"/>
+        <sce:var name="stored" type="record:Hlc">
+          <sce:set name="wallTime" expr="c.wallTime"/>
+          <sce:set name="counter" expr="c.counter"/>
+          <sce:set name="nodeId" expr="c.nodeId"/>
+        </sce:var>
+        <sce:if cond="order(incoming, stored) &gt; 0">
+          <sce:append target="out" expr="write"/>
+          <sce:else>
+            <sce:append target="out" expr="c"/>
+          </sce:else>
+        </sce:if>
+        <sce:else>
+          <sce:append target="out" expr="c"/>
+        </sce:else>
+      </sce:if>
+    </sce:foreach>
+    <sce:if cond="!held">
+      <sce:append target="out" expr="write"/>
+    </sce:if>
+    <sce:return expr="out"/>
+  </sce:body>
+</scxml>

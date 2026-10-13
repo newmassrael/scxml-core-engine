@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/merge/rga_node.scxml — one element of a replicated growable array
+  (Roh et al. 2011, "Replicated abstract data types"): the id the replica that
+  inserted it issued, and the id of the element it was inserted directly
+  after, 0 for the front. The record type rga_insert and rga_holds take and
+  return (SCE_FORGE.md §4.12).
+
+  An id is unique and its order is the tie-break between two elements
+  inserted after the same one: the larger id stands first. A replica makes
+  its ids larger than every id it has seen, which is what keeps an element
+  after the one it was inserted after.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="rga_node"
+       sce:event-name="merge.rga_node">
+  <datamodel>
+    <data id="key" sce:type="uint64" sce:direction="in"/>
+    <data id="after" sce:type="uint64" sce:direction="in"/>
+  </datamodel>
+</scxml>

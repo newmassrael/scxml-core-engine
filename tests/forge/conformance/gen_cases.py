@@ -714,6 +714,71 @@ def orset_union(a: list, b: list):
     return ("ok", a + [other for other in b if other not in a])
 
 
+def cell(row: int, col: int, value: int, stamp: dict) -> dict:
+    return {"row": row, "col": col, "value": value, **stamp}
+
+
+def lww_write(cells: list, write: dict):
+    """sce:std/merge/lww_write — the cell at the write's place is the write when
+    its stamp is later, and the cell when it is not; a place no cell holds gains
+    one."""
+    out, held = [], False
+    for stored in cells:
+        if (stored["row"], stored["col"]) == (write["row"], write["col"]):
+            held = True
+            out.append(write if hlc_key(write) > hlc_key(stored) else stored)
+        else:
+            out.append(stored)
+    if not held:
+        out.append(write)
+    return ("ok", out)
+
+
+def rga_node(key: int, after: int) -> dict:
+    return {"key": key, "after": after}
+
+
+def rga_insert(nodes: list, node: dict):
+    """sce:std/merge/rga_insert — directly after the element `after` names (the
+    front for 0), past every element there with a larger id; an element already
+    held changes nothing; one whose predecessor is not held goes last."""
+    if any(held["key"] == node["key"] for held in nodes):
+        return ("ok", list(nodes))
+    out, phase = [], 1 if node["after"] == 0 else 0
+    for held in nodes:
+        if phase == 0:
+            out.append(held)
+            if held["key"] == node["after"]:
+                phase = 1
+        elif phase == 1:
+            if held["key"] > node["key"]:
+                out.append(held)
+            else:
+                out += [node, held]
+                phase = 2
+        else:
+            out.append(held)
+    if phase != 2:
+        out.append(node)
+    return ("ok", out)
+
+
+def rga_holds(nodes: list, key: int):
+    """sce:std/merge/rga_holds — whether an element has the id."""
+    return ("ok", any(held["key"] == key for held in nodes))
+
+
+def rga_gone(key: int, by: int) -> dict:
+    return {"key": key, "by": by}
+
+
+def rga_remove(gone: list, removal: dict):
+    """sce:std/merge/rga_remove — the marks, and the removal unless its id is
+    already marked."""
+    marked = any(held["key"] == removal["key"] for held in gone)
+    return ("ok", list(gone) + ([] if marked else [removal]))
+
+
 def hlc_text(stamp: dict):
     """sce:std/merge/hlc_text — the 46 ASCII bytes of a stamp's canonical text."""
     wall, counter, node = stamp["wallTime"], stamp["counter"], stamp["nodeId"]
@@ -1672,6 +1737,109 @@ def entry_sample(rng: SplitMix64, pool: list) -> list:
 def union_args(rng: SplitMix64):
     pool = entry_pool(rng)
     return [entry_sample(rng, pool), entry_sample(rng, pool)]
+
+
+#: Row and column ids a grid hands out, a number's worth of values, and the ids of
+#: a replicated array: the edges of the widths they are carried in.
+PLACE_EDGES = [0, 1, 2, 255, 2**31, U32_MAX, 2**32, 2**53, 2**63, U64_MAX]
+VALUE_EDGES = [I64_MIN, I64_MIN + 1, -1, 0, 1, 2**53, I64_MAX - 1, I64_MAX]
+KEY_EDGES = [1, 2, 255, 256, 257, 2**32, 2**53, 2**63, U64_MAX - 1, U64_MAX]
+
+
+def place_id(rng: SplitMix64) -> int:
+    return rng.pick(PLACE_EDGES) if rng.below(2) == 0 else rng.between(0, U64_MAX)
+
+
+def cell_value(rng: SplitMix64) -> int:
+    return rng.pick(VALUE_EDGES) if rng.below(3) == 0 else rng.between(-1000, 1000)
+
+
+def stamp_of(held: dict) -> dict:
+    return hlc(held["wallTime"], held["counter"], held["nodeId"])
+
+
+def lww_cells(rng: SplitMix64) -> list:
+    """Cells at distinct places whose stamps share fields with one another, so
+    that two writes tie on the wall time and are told apart by the counter, or
+    tie on both and are told apart by the node."""
+    places: list = []
+    for _ in range(rng.pick([0, 1, 1, 2, 2, 3, 4, 5])):
+        place = (place_id(rng), place_id(rng))
+        if place not in places:
+            places.append(place)
+    base = stamp_value(rng)
+    return [
+        cell(row, col, cell_value(rng), near_stamp(rng, base) if rng.below(3) else stamp_value(rng))
+        for row, col in places
+    ]
+
+
+def lww_write_args(rng: SplitMix64):
+    cells = lww_cells(rng)
+    if cells and rng.below(3):
+        held = rng.pick(cells)
+        place = (held["row"], held["col"])
+        stamp = stamp_of(held) if rng.below(8) == 0 else near_stamp(rng, stamp_of(held))
+    else:
+        place, stamp = (place_id(rng), place_id(rng)), stamp_value(rng)
+    return [cells, cell(place[0], place[1], cell_value(rng), stamp)]
+
+
+def rga_key(rng: SplitMix64) -> int:
+    return rng.pick(KEY_EDGES) if rng.below(2) == 0 else rng.between(1, U64_MAX)
+
+
+def rga_array(rng: SplitMix64, count: int) -> list:
+    """An array built the way a replica builds one: by inserting, each element
+    after one already there or at the front."""
+    nodes: list = []
+    for _ in range(count):
+        key = rga_key(rng)
+        if any(held["key"] == key for held in nodes):
+            continue
+        after = 0 if not nodes or rng.below(4) == 0 else rng.pick(nodes)["key"]
+        nodes = rga_insert(nodes, rga_node(key, after))[1]
+    return nodes
+
+
+def rga_insert_args(rng: SplitMix64):
+    nodes = rga_array(rng, rng.pick([0, 1, 2, 3, 4, 6, 8]))
+    held = [node["key"] for node in nodes]
+    key = rng.pick(held) if held and rng.below(6) == 0 else rga_key(rng)
+    kind = rng.below(10)
+    if kind < 2 or not held:
+        after = 0
+    elif kind < 8:
+        after = rng.pick(held)
+    else:
+        after = rga_key(rng)
+    return [nodes, rga_node(key, after)]
+
+
+def rga_holds_args(rng: SplitMix64):
+    nodes = rga_array(rng, rng.pick([0, 1, 2, 3, 4, 6, 8]))
+    held = [node["key"] for node in nodes]
+    kind = rng.below(6)
+    if kind < 3 and held:
+        key = rng.pick(held)
+    elif kind == 3:
+        key = 0
+    else:
+        key = rga_key(rng)
+    return [nodes, key]
+
+
+def rga_remove_args(rng: SplitMix64):
+    gone: list = []
+    for _ in range(rng.pick([0, 1, 2, 3, 4, 6])):
+        key = rga_key(rng)
+        if all(held["key"] != key for held in gone):
+            gone.append(rga_gone(key, rng.pick(NODE_EDGES)))
+    if gone and rng.below(3) == 0:
+        key = rng.pick(gone)["key"]
+    else:
+        key = rga_key(rng)
+    return [gone, rga_gone(key, rng.pick(NODE_EDGES))]
 
 
 def text_args(rng: SplitMix64):
@@ -2770,6 +2938,10 @@ FIXTURES = {
     "utf8_length": (lambda args: utf8_length(*args), utf8_args, 600, 0xE110_0042),
     "utf8_within": (lambda args: utf8_within(*args), utf8_within_args, 400, 0xE110_0043),
     "mailbox_resume": (lambda args: mailbox_resume(*args), mailbox_resume_args, 500, 0xE110_0044),
+    "lww_write": (lambda args: lww_write(*args), lww_write_args, 400, 0xE110_0045),
+    "rga_insert": (lambda args: rga_insert(*args), rga_insert_args, 500, 0xE110_0046),
+    "rga_holds": (lambda args: rga_holds(*args), rga_holds_args, 250, 0xE110_0047),
+    "rga_remove": (lambda args: rga_remove(*args), rga_remove_args, 250, 0xE110_0048),
 }
 
 
@@ -2813,6 +2985,19 @@ def validate_laws() -> None:
     order_laws = [Law(f"hlc_compare {name}") for name in ("is antisymmetric", "is transitive", "ties only the same stamp")]
     clock_laws = [Law("hlc_send sorts after prev"), Law("hlc_receive sorts after prev and msg")]
     classify_law = Law("lww_classify does not depend on the order logged")
+    write_laws = [
+        Law("lww_write: the order the writes arrive in does not matter"),
+        Law("lww_write is idempotent"),
+    ]
+    rga_laws = [
+        Law("rga_insert: any delivery order that follows the predecessors gives one array"),
+        Law("rga_insert is idempotent"),
+        Law("rga_insert holds exactly the ids inserted"),
+    ]
+    remove_laws = [
+        Law("rga_remove: the order the removals arrive in does not matter"),
+        Law("rga_remove is idempotent"),
+    ]
     apply_laws = [Law("changes_apply: where the log is cut does not matter"), Law("changes_apply is idempotent")]
     ack_laws = [Law("mailbox_ack is idempotent"), Law("mailbox_ack ignores the order acknowledged")]
     page_law = Law("mailbox_page: pages from the last id read the whole queue")
@@ -2870,6 +3055,74 @@ def validate_laws() -> None:
         classify_law.holds(
             lww_classify(logged, stamped) == lww_classify(shuffled(rng, logged), stamped), [logged, stamped]
         )
+
+        # Writes whose stamps all differ, as the stamps of distinct writes do, to a
+        # few places so that several of them meet.
+        stamp_base = stamp_value(rng)
+        writes, stamps = [], set()
+        for _ in range(rng.between(1, 7)):
+            stamp = near_stamp(rng, stamp_base) if rng.below(3) else stamp_value(rng)
+            if hlc_key(stamp) not in stamps:
+                stamps.add(hlc_key(stamp))
+                writes.append(cell(rng.pick([0, 1, 2]), rng.pick([0, 1]), cell_value(rng), stamp))
+
+        def written(sequence):
+            held: list = []
+            for write in sequence:
+                held = lww_write(held, write)[1]
+            return sorted(json.dumps(held_cell, sort_keys=True) for held_cell in held)
+
+        write_laws[0].holds(written(writes) == written(shuffled(rng, writes)), writes)
+        write_laws[1].holds(written(writes + shuffled(rng, writes)) == written(writes), writes)
+
+        # Insertions of an array, each after the front or after an earlier one, and
+        # larger than the one it follows, which is the id a replica issues.
+        inserts, used = [], set()
+        id_offset = rng.pick([0, 0, 2**32, 2**53, 2**63])
+        for _ in range(rng.between(1, 8)):
+            parent = rng.pick(inserts) if inserts and rng.below(4) else None
+            after = parent["key"] if parent else 0
+            key = rng.between(after + 1, after + 6) if parent else id_offset + rng.between(1, 6)
+            if key not in used:
+                used.add(key)
+                inserts.append(rga_node(key, after))
+
+        def delivered(operations):
+            """An order the insertions can arrive in: each after the one it follows."""
+            pending, placed, order = shuffled(rng, operations), {0}, []
+            while pending:
+                op = rng.pick([candidate for candidate in pending if candidate["after"] in placed])
+                pending.remove(op)
+                placed.add(op["key"])
+                order.append(op)
+            return order
+
+        def arranged(order, start=()):
+            nodes = list(start)
+            for op in order:
+                nodes = rga_insert(nodes, op)[1]
+            return nodes
+
+        first_array = arranged(delivered(inserts))
+        rga_laws[0].holds(first_array == arranged(delivered(inserts)), inserts)
+        rga_laws[1].holds(arranged(shuffled(rng, inserts), first_array) == first_array, inserts)
+        rga_laws[2].holds(sorted(op["key"] for op in first_array) == sorted(used), inserts)
+
+        removals = [rga_gone(rng.pick([1, 2, 3, 4]), rng.pick(NODE_EDGES)) for _ in range(rng.between(0, 6))]
+
+        def marked(sequence):
+            marks: list = []
+            for removal in sequence:
+                marks = rga_remove(marks, removal)[1]
+            return marks
+
+        keys_of = lambda marks: sorted(mark["key"] for mark in marks)  # noqa: E731
+        remove_laws[0].holds(
+            keys_of(marked(removals)) == keys_of(marked(shuffled(rng, removals)))
+            and len(marked(removals)) == len({removal["key"] for removal in removals}),
+            removals,
+        )
+        remove_laws[1].holds(marked(marked(removals) + removals) == marked(removals), removals)
 
     for _ in range(LAW_RUNS):
         items = change_items(rng)
@@ -3187,6 +3440,7 @@ def validate_laws() -> None:
         + [insert_order_law, cancel_law, prune_keeps_law, diff_bound_law, diff_pruned_law, membership_law]
         + [stable_order_law, stable_idle_law, stable_join_law, stable_least_law]
         + [remove_law, remove_only_law, add_wins_law, contains_law, text_order_law, diff_minute_law]
+        + write_laws + rga_laws + remove_laws
     )
     for law in every_law:
         law.was_asked()

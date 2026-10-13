@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/merge/lww_cell.scxml — one cell of a grid of last-writer-wins
+  registers, as a replica holds it and as a write to it travels: where it is
+  (`row`, `col`), the number it holds, and the stamp of the write that put it
+  there. The record type lww_write takes and returns (SCE_FORGE.md §4.12).
+
+  `row` and `col` are the ids a grid gave its rows and columns, not their
+  places: a place is decided by the order the rows and columns stand in
+  (rga_insert), and an id does not move when another is inserted before it.
+  They are as wide as an rga_node id, so an id rga_insert was given names a
+  row or a column without narrowing.
+
+  The stamp's three fields are hlc_timestamp's, spelled out rather than held
+  as one: a record's fields are fixed-width scalars, so a record does not hold
+  a record. A cell is stamped with the same widths a clock is, so a stamp read
+  off a cell is a stamp hlc_compare orders.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="lww_cell"
+       sce:event-name="merge.lww_cell">
+  <datamodel>
+    <data id="row" sce:type="uint64" sce:direction="in"/>
+    <data id="col" sce:type="uint64" sce:direction="in"/>
+    <data id="value" sce:type="int64" sce:direction="in"/>
+    <data id="wallTime" sce:type="int64" sce:direction="in"/>
+    <data id="counter" sce:type="uint32" sce:direction="in"/>
+    <data id="nodeId" sce:type="uint64" sce:direction="in"/>
+  </datamodel>
+</scxml>

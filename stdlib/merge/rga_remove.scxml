@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/merge/rga_remove.scxml — the removals a replica holds after one
+  more arrives, for a replicated growable array: `gone` with `removal`
+  appended, unless an element with the removal's id is already marked. Taking
+  an element out twice is taking it out once, so the marks do not depend on
+  how many times a removal reached the replica, nor on the order.
+
+  The marks are a set of ids. A host shows the elements of the array whose id
+  is not in it.
+
+  The result holds at most 256 marks (SCE_FORGE.md §4.12); past that the
+  bounded backends fail and the heap backends grow, so a host keeps its
+  marks within it.
+
+  gone {5}, removal 7 → {5, 7} · removal 5 → {5}.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="rga_remove" version="1.0">
+  <sce:import kind="event-schema" src="rga_gone.scxml" as="Gone"/>
+  <sce:signature>
+    <sce:param name="gone" type="list&lt;record:Gone&gt;"/>
+    <sce:param name="removal" type="record:Gone"/>
+    <sce:return type="list&lt;record:Gone&gt;" may-fail="true" returns-max-size="256"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="out" type="list&lt;record:Gone&gt;" capacity="256"/>
+    <sce:var name="held" type="bool" init="false"/>
+    <sce:foreach item="g" in="gone">
+      <sce:append target="out" expr="g"/>
+      <sce:if cond="g.key === removal.key">
+        <sce:assign target="held" expr="true"/>
+      </sce:if>
+    </sce:foreach>
+    <sce:if cond="!held">
+      <sce:append target="out" expr="removal"/>
+    </sce:if>
+    <sce:return expr="out"/>
+  </sce:body>
+</scxml>

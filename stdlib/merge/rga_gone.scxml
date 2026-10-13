@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/merge/rga_gone.scxml — the removal of one element of a replicated
+  growable array: the id of the element, and the node that removed it. The
+  record type rga_remove takes and returns (SCE_FORGE.md §4.12).
+
+  An element removed is not taken out of the array, because an element
+  inserted after it still names it: it is marked, and left in its place. The
+  node is kept for a host that passes a removal on to everyone but the node
+  that made it.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="rga_gone"
+       sce:event-name="merge.rga_gone">
+  <datamodel>
+    <data id="key" sce:type="uint64" sce:direction="in"/>
+    <data id="by" sce:type="uint64" sce:direction="in"/>
+  </datamodel>
+</scxml>

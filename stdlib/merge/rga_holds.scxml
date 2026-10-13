@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/merge/rga_holds.scxml — whether a replicated growable array holds
+  the element with id `key`: true when some element of `nodes` has it. The
+  front of an array, id 0, is not an element and is not held.
+
+  A host asks it of the id an insertion names as its predecessor: an element
+  whose predecessor is not held reached the replica before the element it
+  follows, which a link that delivers in order never does.
+
+  nodes {7, 9}, key 9 → true · key 8 → false · key 0 → false.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="rga_holds" version="1.0">
+  <sce:import kind="event-schema" src="rga_node.scxml" as="Node"/>
+  <sce:signature>
+    <sce:param name="nodes" type="list&lt;record:Node&gt;"/>
+    <sce:param name="key" type="uint64"/>
+    <sce:return type="bool"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="found" type="bool" init="false"/>
+    <sce:foreach item="n" in="nodes">
+      <sce:if cond="n.key === key">
+        <sce:assign target="found" expr="true"/>
+      </sce:if>
+    </sce:foreach>
+    <sce:return expr="found"/>
+  </sce:body>
+</scxml>
