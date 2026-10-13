@@ -21,6 +21,8 @@
 //! drives the projection is resolved from `element_type_candidates` —
 //! only the multi-doc orchestrator carries it.
 
+mod common;
+
 use sce_build::toolchain;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -828,15 +830,21 @@ fn rust_field_match_multi_file_compiles() {
 
     // Isolated target dir so this build never contends with the parent
     // `cargo test` invocation's target lock. DEFAULT features → no `alloc`.
-    let output = Command::new(&cargo)
-        .arg("build")
-        .arg("--manifest-path")
-        .arg(crate_dir.join("Cargo.toml"))
-        .env("CARGO_TARGET_DIR", dir.path().join("target"))
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .expect("run cargo build");
+    // The crate carries no `Cargo.lock`, so a bare `cargo build` resolves
+    // from scratch and asks the registry index even when `heapless` is
+    // already in the local cache; offline first keeps this gate from
+    // depending on a service being up.
+    let run = common::run_cargo_offline_first(|| {
+        let mut cmd = Command::new(&cargo);
+        cmd.arg("build")
+            .arg("--manifest-path")
+            .arg(crate_dir.join("Cargo.toml"))
+            .env("CARGO_TARGET_DIR", dir.path().join("target"))
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        cmd
+    });
+    let output = run.output;
     assert!(
         output.status.success(),
         "no-alloc cargo build of the keyexpr field-match crate failed\nstderr: {}",

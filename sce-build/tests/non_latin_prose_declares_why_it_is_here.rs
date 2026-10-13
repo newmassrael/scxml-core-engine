@@ -148,6 +148,21 @@ const THE_SCRIPT_IS_THE_SUBJECT: &[(&str, &str)] = &[
          would be the English table a second time, not the Korean one",
     ),
     (
+        "tools/authoring/sce_author/views.py",
+        "holds the table, timeline and simulator pages' Korean strings, \
+         whose spellings ARE the locale a Korean reader is shown, beside the \
+         English table of the same keys: a translation is checked by reading \
+         it, which an escape would hide, and an English paraphrase would be \
+         the English table a second time, not the Korean one",
+    ),
+    (
+        "tools/authoring/tests/test_a_statechart_is_shown_as_a_table_a_timeline_and_a_simulator.py",
+        "asserts what the Korean pages print and that a Korean label is shown \
+         beside the document's name: the expected spellings ARE the locale \
+         views.py holds, so an escape would hide the one thing the assertion \
+         compares, and an English paraphrase would test the English table",
+    ),
+    (
         "sce-build/src/diagram/words.rs",
         "holds the print figure's Korean phrases beside page.rs's lexicon: \
          each spelling is what the figure prints for that lexicon, and its \

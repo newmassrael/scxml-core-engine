@@ -117,8 +117,8 @@ fn a_cache_that_cannot_answer_is_retried_online_and_says_so() {
 /// every day the network is up.
 ///
 /// The check is per FILE rather than per line: after the repair the command
-/// is still built with `Command::new("cargo")`, only inside the closure the
-/// helper drives. What distinguishes a routed call from a bare one is whether
+/// is still built with `Command::new("cargo")` (or from a path located with
+/// `toolchain::locate("cargo")`), only inside the closure the helper drives. What distinguishes a routed call from a bare one is whether
 /// the file names the helper at all.
 ///
 /// The lower bound is the half that keeps this from passing vacuously — a
@@ -146,7 +146,11 @@ fn every_suite_that_invokes_cargo_routes_it_through_the_helper() {
             continue;
         }
         let source = std::fs::read_to_string(&path).expect("read test source");
-        if !source.contains(r#"Command::new("cargo")"#) {
+        // Two spellings reach cargo: the bare name, and a path found with
+        // `toolchain::locate`. The second was missed when this walk looked
+        // for the first alone, and the suite that used it was the one that
+        // went to the registry on a day the network was down.
+        if !source.contains(r#"Command::new("cargo")"#) && !source.contains(r#"locate("cargo")"#) {
             continue;
         }
         if source.contains("run_cargo_offline_first") {

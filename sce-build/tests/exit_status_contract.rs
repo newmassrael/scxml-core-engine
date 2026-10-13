@@ -1250,18 +1250,21 @@ fn a_reader_that_stops_reading_is_not_a_way_out_of_the_table() {
             .expect("run sce-codegen with its reader intact");
         let wrote_something = !control.stdout.is_empty();
 
-        let mut child = Command::new(sce_codegen_bin())
+        // The read end is closed before the child exists, so its first
+        // write fails whatever the scheduler does. Closing it after
+        // `spawn` left a window in which a loaded machine ran the child
+        // to completion first, wrote into the open pipe and exited 0.
+        let (reader, writer) = std::io::pipe().expect("create a pipe");
+        drop(reader);
+        let child = Command::new(sce_codegen_bin())
             .arg("--error-format=json")
             .args(argv)
             .current_dir(repo_root())
             .stdin(Stdio::null())
-            .stdout(Stdio::piped())
+            .stdout(writer)
             .stderr(Stdio::piped())
             .spawn()
             .expect("spawn sce-codegen");
-        // Close the read end before the child writes. Everything after
-        // this is the child answering a question it cannot avoid.
-        drop(child.stdout.take().expect("piped stdout"));
         let out = child.wait_with_output().expect("await sce-codegen");
         let status = out.status.code().expect("terminated by signal");
         let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
