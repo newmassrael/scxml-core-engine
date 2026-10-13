@@ -10,6 +10,6 @@
        name="sheet_add_row"
        sce:event-name="sheet.add_row">
   <datamodel>
-    <data id="after" sce:type="uint32" sce:direction="in"/>
+    <data id="after" sce:type="uint64" sce:direction="in"/>
   </datamodel>
 </scxml>

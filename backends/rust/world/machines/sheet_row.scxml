@@ -11,7 +11,8 @@
   it names, except that it steps over the rows already there with a larger id.
   That is what puts two rows inserted after the same row in the same order on every
   copy, whichever reaches it first.
-  Every field is at most 32 bits wide because a `<send>` carries no wider integer.
+  The fields are rga_node's (sce:std/merge), which the placement is done by, at the
+  width of that record: a 64-bit id crosses a `<send>` as the text of its digits.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -20,7 +21,7 @@
        name="sheet_row"
        sce:event-name="sheet.row">
   <datamodel>
-    <data id="key" sce:type="uint32" sce:direction="in"/>
-    <data id="after" sce:type="uint32" sce:direction="in"/>
+    <data id="key" sce:type="uint64" sce:direction="in"/>
+    <data id="after" sce:type="uint64" sce:direction="in"/>
   </datamodel>
 </scxml>

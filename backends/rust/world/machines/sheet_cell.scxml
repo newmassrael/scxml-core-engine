@@ -9,9 +9,10 @@
   two writes to it stays.
   The world simulation (backends/rust/world) uses it as the event-schema of a write
   and as the record of a replica's cell list, so the two cannot disagree on a field.
-  Every field is at most 32 bits wide because a `<send>` carries no wider integer
-  (docs/SCE_ACCEPTED_SUBSET.md §2.15): the wall time is the world's virtual
-  milliseconds, which hold 49 days, and a node id is a small number.
+  The fields are lww_cell's (sce:std/merge), which the write is applied by, at the
+  width of that record: the wall time is the world's virtual milliseconds, as wide as
+  a clock reads them, and a 64-bit integer crosses a `<send>` as the text of its
+  digits.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -20,11 +21,11 @@
        name="sheet_cell"
        sce:event-name="sheet.cell">
   <datamodel>
-    <data id="row" sce:type="uint32" sce:direction="in"/>
-    <data id="col" sce:type="uint32" sce:direction="in"/>
-    <data id="value" sce:type="int32" sce:direction="in"/>
-    <data id="wallTime" sce:type="uint32" sce:direction="in"/>
+    <data id="row" sce:type="uint64" sce:direction="in"/>
+    <data id="col" sce:type="uint64" sce:direction="in"/>
+    <data id="value" sce:type="int64" sce:direction="in"/>
+    <data id="wallTime" sce:type="int64" sce:direction="in"/>
     <data id="counter" sce:type="uint32" sce:direction="in"/>
-    <data id="nodeId" sce:type="uint32" sce:direction="in"/>
+    <data id="nodeId" sce:type="uint64" sce:direction="in"/>
   </datamodel>
 </scxml>

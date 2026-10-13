@@ -7,7 +7,7 @@
 // generated is committed, so there is no tree to regenerate or to drift.
 //
 // A generated statechart calls the algorithms it imports as siblings of its own
-// (`super::stamp_later`), and an algorithm the record schemas and algorithms it
+// (`super::lww_write`), and an algorithm the record schemas and algorithms it
 // imports the same way, so every module is mounted side by side in one file, under
 // the name of its source (a statechart's `_sm` suffix is left off). A generated file
 // opens with inner attributes and doc comments, which `include!` cannot take, so each
@@ -33,6 +33,13 @@ const FORGE: &[&str] = &[
     "../../../stdlib/merge/hlc_compare.scxml",
     "../../../stdlib/merge/hlc_send.scxml",
     "../../../stdlib/merge/hlc_receive.scxml",
+    "../../../stdlib/merge/lww_cell.scxml",
+    "../../../stdlib/merge/lww_write.scxml",
+    "../../../stdlib/merge/rga_node.scxml",
+    "../../../stdlib/merge/rga_gone.scxml",
+    "../../../stdlib/merge/rga_insert.scxml",
+    "../../../stdlib/merge/rga_holds.scxml",
+    "../../../stdlib/merge/rga_remove.scxml",
     "machines/sheet_cell.scxml",
     "machines/sheet_edit.scxml",
     "machines/sheet_join.scxml",
@@ -40,11 +47,10 @@ const FORGE: &[&str] = &[
     "machines/sheet_gone.scxml",
     "machines/sheet_add_row.scxml",
     "machines/sheet_drop_row.scxml",
-    "machines/stamp_later.scxml",
-    "machines/clock_send_wall.scxml",
-    "machines/clock_send_counter.scxml",
-    "machines/clock_receive_wall.scxml",
-    "machines/clock_receive_counter.scxml",
+    "machines/sheet_col.scxml",
+    "machines/sheet_gone_col.scxml",
+    "machines/sheet_add_col.scxml",
+    "machines/sheet_drop_col.scxml",
 ];
 
 fn main() {

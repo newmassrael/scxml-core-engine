@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A person's request for a new column, as the host hands it to a copy: the id of the
+  column it goes after (0 for the left edge). The copy gives the new column its id.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="sheet_add_col"
+       sce:event-name="sheet.add_col">
+  <datamodel>
+    <data id="after" sce:type="uint64" sce:direction="in"/>
+  </datamodel>
+</scxml>

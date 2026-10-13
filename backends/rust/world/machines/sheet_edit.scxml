@@ -12,9 +12,9 @@
        name="sheet_edit"
        sce:event-name="sheet.edit">
   <datamodel>
-    <data id="row" sce:type="uint32" sce:direction="in"/>
-    <data id="col" sce:type="uint32" sce:direction="in"/>
-    <data id="value" sce:type="int32" sce:direction="in"/>
+    <data id="row" sce:type="uint64" sce:direction="in"/>
+    <data id="col" sce:type="uint64" sce:direction="in"/>
+    <data id="value" sce:type="int64" sce:direction="in"/>
     <data id="now" sce:type="int64" sce:direction="in"/>
   </datamodel>
 </scxml>

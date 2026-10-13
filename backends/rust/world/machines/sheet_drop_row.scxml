@@ -10,6 +10,6 @@
        name="sheet_drop_row"
        sce:event-name="sheet.drop_row">
   <datamodel>
-    <data id="row" sce:type="uint32" sce:direction="in"/>
+    <data id="row" sce:type="uint64" sce:direction="in"/>
   </datamodel>
 </scxml>

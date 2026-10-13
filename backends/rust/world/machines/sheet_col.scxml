@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A column put into the sheet, as a copy holds it in its order of columns and as the
+  write that put it there travels: its id (`key`) and the id of the column it stands
+  after (`after`, 0 for the left edge of the sheet). Columns are ordered by the same
+  rule rows are (sheet_row): a column goes directly after the column it names, except
+  that it steps over the columns already there with a larger id. The ids are issued
+  from the same counter as a row's, so they are packed the same way.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="sheet_col"
+       sce:event-name="sheet.col">
+  <datamodel>
+    <data id="key" sce:type="uint64" sce:direction="in"/>
+    <data id="after" sce:type="uint64" sce:direction="in"/>
+  </datamodel>
+</scxml>

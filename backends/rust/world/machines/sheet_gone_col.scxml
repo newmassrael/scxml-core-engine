@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A column taken out of the sheet: its id (`key`, as sheet_col gives it) and the node
+  that took it out (`by`), which the hub uses to pass the removal on to the other
+  copies and not back to the one that made it. As with a row (sheet_gone), the column
+  is marked and left where it stands, and removing it twice is removing it once.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="sheet_gone_col"
+       sce:event-name="sheet.gone_col">
+  <datamodel>
+    <data id="key" sce:type="uint64" sce:direction="in"/>
+    <data id="by" sce:type="uint64" sce:direction="in"/>
+  </datamodel>
+</scxml>

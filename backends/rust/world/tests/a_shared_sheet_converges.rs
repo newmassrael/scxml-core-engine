@@ -108,6 +108,53 @@ fn edits_made_offline_are_merged_when_the_link_is_back() {
     assert!(world.host_errors().is_empty());
 }
 
+/// A clock that reads past what a double holds exactly: 2^53 + 1 and 2^53 are one
+/// number to a double and two to a stamp. Alice's host says the first and bob's the
+/// second, so alice's write is the later, and it is the one every copy keeps; a
+/// stamp that lost its last bit on the way would tie them and let the node id pick
+/// bob's. The stamp is read back from the copies exactly.
+#[test]
+fn a_clock_reading_past_two_to_the_53rd_is_kept_to_the_millisecond() {
+    let beyond: i64 = (1 << 53) + 1;
+    let mut world = sheet(1, 20);
+    type_into_at(&mut world, "alice", 0, 0, 1, beyond);
+    type_into_at(&mut world, "bob", 0, 0, 2, beyond - 1);
+
+    assert_eq!(world.run_until_quiet(10_000), Outcome::Quiet);
+
+    let sheet = agreed(&mut world);
+    assert_eq!(sheet[&(0, 0)], (1, (beyond as u64, 0, 1)));
+    assert_eq!(sheet, oracle(&world));
+    assert!(world.host_errors().is_empty());
+}
+
+/// The widest cell address and number a cell holds: row and column ids as large as
+/// an id can be, a number at either end of an int64, and the largest wall time.
+#[test]
+fn the_widest_ids_and_numbers_a_cell_holds_are_kept_exactly() {
+    let mut world = sheet(1, 20);
+    type_into_at(
+        &mut world,
+        "alice",
+        u64::MAX,
+        u64::MAX - 1,
+        i64::MIN,
+        i64::MAX,
+    );
+    type_into_at(&mut world, "bob", 0, u64::MAX, i64::MAX, 7);
+
+    assert_eq!(world.run_until_quiet(10_000), Outcome::Quiet);
+
+    let sheet = agreed(&mut world);
+    assert_eq!(
+        sheet[&(u64::MAX, u64::MAX - 1)],
+        (i64::MIN, (i64::MAX as u64, 0, 1))
+    );
+    assert_eq!(sheet[&(0, u64::MAX)], (i64::MAX, (7, 0, 2)));
+    assert_eq!(sheet, oracle(&world));
+    assert!(world.host_errors().is_empty());
+}
+
 /// Many people-minutes in a few milliseconds: random edits to a small sheet at
 /// random times, links cut and restored, delays spread out and envelopes delivered
 /// twice, and for every seed the three copies end alike and as the oracle says.
@@ -130,9 +177,9 @@ fn a_random_afternoon_of_edits_ends_with_one_sheet() {
             type_into(
                 &mut world,
                 who,
-                u32::try_from(rng.below(4)).unwrap(),
-                u32::try_from(rng.below(4)).unwrap(),
-                i32::try_from(rng.below(1_000)).unwrap(),
+                rng.below(4),
+                rng.below(4),
+                i64::try_from(rng.below(1_000)).unwrap(),
             );
             if rng.below(6) == 0 {
                 let which = usize::from(rng.below(2) == 1);

@@ -23,53 +23,20 @@ mod common;
 use common::*;
 use sce_rust_world::{Outcome, Rng};
 
-/// The rule, over a vector: a row goes directly after the row it names, except that
-/// it steps over the rows already there with a larger id. A row already there is not
-/// put in again.
-fn place(order: &mut Vec<u32>, key: u32, after: u32) {
-    if order.contains(&key) {
-        return;
-    }
-    let mut at = if after == 0 {
-        0
-    } else {
-        order
-            .iter()
-            .position(|&held| held == after)
-            .unwrap_or_else(|| panic!("row {after} is not there to be inserted after"))
-            + 1
-    };
-    while at < order.len() && order[at] > key {
-        at += 1;
-    }
-    order.insert(at, key);
-}
-
-/// The rows the people's inserts make, by the rule above, and the ids they removed;
-/// read from the network and not from any copy.
-fn oracle_rows(world: &sce_rust_world::World) -> (Vec<u32>, Vec<u32>) {
-    let mut order = Vec::new();
-    let mut gone = Vec::new();
-    for (event, data) in sent_to_the_hub(world) {
-        let number = |field: &str| data[field].as_u64().expect("a number") as u32;
-        match event.as_str() {
-            "sheet.row" => place(&mut order, number("key"), number("after")),
-            "sheet.gone" if !gone.contains(&number("key")) => gone.push(number("key")),
-            _ => {}
-        }
-    }
-    gone.sort_unstable();
-    (order, gone)
+/// The rows the people's inserts make, by the rule `common::place` states over a
+/// vector, and the ids they removed; read from the network and not from any copy.
+fn oracle_rows(world: &sce_rust_world::World) -> (Vec<u64>, Vec<u64>) {
+    oracle_order(world, "sheet.row", "sheet.gone")
 }
 
 /// Every row stands after the row it was inserted after.
-fn assert_each_row_follows_its_predecessor(world: &sce_rust_world::World, order: &[u32]) {
+fn assert_each_row_follows_its_predecessor(world: &sce_rust_world::World, order: &[u64]) {
     for (event, data) in sent_to_the_hub(world) {
         if event != "sheet.row" {
             continue;
         }
-        let key = data["key"].as_u64().unwrap() as u32;
-        let after = data["after"].as_u64().unwrap() as u32;
+        let key = whole(&data["key"]) as u64;
+        let after = whole(&data["after"]) as u64;
         let here = order.iter().position(|&held| held == key).expect("the row");
         if after != 0 {
             let there = order
@@ -177,7 +144,7 @@ fn a_row_that_arrives_twice_in_two_envelopes_is_held_once() {
     assert_eq!(world.run_until_quiet(10_000), Outcome::Quiet);
 
     for who in ["alice", "bob", "server"] {
-        let again = format!(r#"{{"key":{second},"after":{top}}}"#);
+        let again = format!(r#"{{"key":"{second}","after":"{top}"}}"#);
         world.raise(who, "sheet.row", &again);
         world.raise(who, "sheet.row", &again);
     }
@@ -209,10 +176,10 @@ fn rows_added_offline_take_their_place_when_the_link_is_back() {
     assert_eq!(rows.len(), 4);
     assert_each_row_follows_its_predecessor(&world, &rows);
     // Alice's pair stays together and in order wherever bob's row goes between.
-    let at = |key: u32| rows.iter().position(|&held| held == key).unwrap();
+    let at = |key: u64| rows.iter().position(|&held| held == key).unwrap();
     assert!(at(a1) < at(a2));
     assert!(rows.contains(&b1));
-    assert_eq!((rows, Vec::<u32>::new()), oracle_rows(&world));
+    assert_eq!((rows, Vec::<u64>::new()), oracle_rows(&world));
 }
 
 /// An afternoon of inserts and removals at random places, links cut and restored,

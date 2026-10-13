@@ -6,23 +6,24 @@
 
   An edit is applied to this copy at once and sent to the hub, so typing never waits
   for the network. A write that arrives, from the hub or, at the hub, from a person,
-  is applied the same way, and the hub passes it on to the other copies. Applying a
-  write keeps the later of two writes to a cell by their hybrid logical clock
-  stamps, so every copy ends with the same cells whatever order the writes reach it
-  in and however many times each does.
+  is applied the same way, and the hub passes it on to the other copies.
 
-  The clock is moved by what a copy sees as well as by what it does (hlc_receive):
-  an edit made after reading someone else's write sorts after it, which is what a
-  person who saw the number and typed over it meant. The machine reads no clock of
-  its own, so a write that arrives is received at the latest time the copy has
-  already stamped, and an edit is stamped at the time its host says (`now`). The
-  counter of a new stamp is asked for before its wall time, because it continues
-  the reading the wall time replaces.
-
-  The merge is written out here and not in an algorithm that takes the cells and
-  returns them: a statechart hands an algorithm numbers and not a list or a record,
-  and takes a number or a list back and not a record. The only thing asked of an
-  algorithm is the order of two stamps (stamp_later).
+  The merging is done by the standard library of this repository (sce:std/merge), and
+  the statechart only decides when to ask for it and who to tell:
+    - a write to a cell is applied by lww_write, which keeps the later of two writes
+      to a cell by their hybrid logical clock stamps, so every copy ends with the same
+      cells whatever order the writes reach it in and however many times each does;
+    - a row or a column put in is placed by rga_insert, the replicated growable array
+      rule, so two inserted after the same one stand the same way on every copy;
+    - a row or a column taken out is marked by rga_remove and left in its place;
+    - the clock is moved by hlc_send for what a copy does and by hlc_receive for what
+      it sees: an edit made after reading someone else's write sorts after it, which
+      is what a person who saw the number and typed over it meant.
+  The statechart hands each of them the lists and records it holds and takes the
+  list or record back whole (docs/SCE_ACCEPTED_SUBSET.md §2.15, "State an algorithm
+  takes and gives back"). It reads no clock of its own, so a write that arrives is
+  received at the latest time the copy has already stamped, and an edit is stamped
+  at the time its host says (`now`).
 
   The hub passes a write on to `alice` and `bob`, the two people of the simulated
   sheet, except to the one whose node id is the write's: a copy that sent a write
@@ -39,12 +40,20 @@
   <sce:import kind="event-schema" src="sheet_gone.scxml" as="Gone"/>
   <sce:import kind="event-schema" src="sheet_add_row.scxml" as="AddRow"/>
   <sce:import kind="event-schema" src="sheet_drop_row.scxml" as="DropRow"/>
+  <sce:import kind="event-schema" src="sheet_col.scxml" as="Col"/>
+  <sce:import kind="event-schema" src="sheet_gone_col.scxml" as="GoneCol"/>
+  <sce:import kind="event-schema" src="sheet_add_col.scxml" as="AddCol"/>
+  <sce:import kind="event-schema" src="sheet_drop_col.scxml" as="DropCol"/>
   <sce:import kind="event-schema" src="sce:std/merge/hlc_timestamp.scxml" as="Hlc"/>
-  <sce:import kind="algorithm" src="stamp_later.scxml" as="StampLater"/>
-  <sce:import kind="algorithm" src="clock_send_wall.scxml" as="SendWall"/>
-  <sce:import kind="algorithm" src="clock_send_counter.scxml" as="SendCounter"/>
-  <sce:import kind="algorithm" src="clock_receive_wall.scxml" as="ReceiveWall"/>
-  <sce:import kind="algorithm" src="clock_receive_counter.scxml" as="ReceiveCounter"/>
+  <sce:import kind="event-schema" src="sce:std/merge/lww_cell.scxml" as="LwwCell"/>
+  <sce:import kind="event-schema" src="sce:std/merge/rga_node.scxml" as="RgaNode"/>
+  <sce:import kind="event-schema" src="sce:std/merge/rga_gone.scxml" as="RgaGone"/>
+  <sce:import kind="algorithm" src="sce:std/merge/hlc_send.scxml" as="HlcSend"/>
+  <sce:import kind="algorithm" src="sce:std/merge/hlc_receive.scxml" as="HlcReceive"/>
+  <sce:import kind="algorithm" src="sce:std/merge/lww_write.scxml" as="LwwWrite"/>
+  <sce:import kind="algorithm" src="sce:std/merge/rga_insert.scxml" as="RgaInsert"/>
+  <sce:import kind="algorithm" src="sce:std/merge/rga_holds.scxml" as="RgaHolds"/>
+  <sce:import kind="algorithm" src="sce:std/merge/rga_remove.scxml" as="RgaRemove"/>
   <datamodel>
     <data id="node" sce:type="uint64" expr="0" sce:direction="out"/>
     <data id="hub" sce:type="bool" expr="false" sce:direction="out"/>
@@ -53,17 +62,38 @@
       <sce:set name="counter" expr="0"/>
       <sce:set name="nodeId" expr="0"/>
     </data>
-    <data id="cells" sce:type="list&lt;record:Cell&gt;" sce:capacity="64" sce:direction="out"/>
-    <data id="rebuilt" sce:type="list&lt;record:Cell&gt;" sce:capacity="64"/>
-    <data id="found" sce:type="bool" expr="false"/>
-    <data id="wall32" sce:type="uint32" expr="0"/>
-    <data id="node32" sce:type="uint32" expr="0"/>
-    <data id="rows" sce:type="list&lt;record:Row&gt;" sce:capacity="64" sce:direction="out"/>
-    <data id="aligned" sce:type="list&lt;record:Row&gt;" sce:capacity="64"/>
-    <data id="gone" sce:type="list&lt;record:Gone&gt;" sce:capacity="64" sce:direction="out"/>
-    <data id="lamport" sce:type="uint32" expr="0" sce:direction="out"/>
-    <data id="newKey" sce:type="uint32" expr="0"/>
-    <data id="phase" sce:type="uint8" expr="0"/>
+    <data id="stamp" sce:type="record:Hlc">
+      <sce:set name="wallTime" expr="0"/>
+      <sce:set name="counter" expr="0"/>
+      <sce:set name="nodeId" expr="0"/>
+    </data>
+    <!-- What a copy holds is the library's own records (sce:std/merge), because an
+         algorithm takes a list of the record of its own schema; what travels is the
+         sheet's events, whose payloads are copied into a record of the library's before
+         a call and so keep the sheet's names. -->
+    <data id="cells" sce:type="list&lt;record:LwwCell&gt;" sce:capacity="256" sce:direction="out"/>
+    <data id="rows" sce:type="list&lt;record:RgaNode&gt;" sce:capacity="256" sce:direction="out"/>
+    <data id="gone" sce:type="list&lt;record:RgaGone&gt;" sce:capacity="256" sce:direction="out"/>
+    <data id="cols" sce:type="list&lt;record:RgaNode&gt;" sce:capacity="256" sce:direction="out"/>
+    <data id="goneCols" sce:type="list&lt;record:RgaGone&gt;" sce:capacity="256" sce:direction="out"/>
+    <data id="write" sce:type="record:LwwCell">
+      <sce:set name="row" expr="0"/>
+      <sce:set name="col" expr="0"/>
+      <sce:set name="value" expr="0"/>
+      <sce:set name="wallTime" expr="0"/>
+      <sce:set name="counter" expr="0"/>
+      <sce:set name="nodeId" expr="0"/>
+    </data>
+    <data id="placed" sce:type="record:RgaNode">
+      <sce:set name="key" expr="0"/>
+      <sce:set name="after" expr="0"/>
+    </data>
+    <data id="removal" sce:type="record:RgaGone">
+      <sce:set name="key" expr="0"/>
+      <sce:set name="by" expr="0"/>
+    </data>
+    <data id="lamport" sce:type="uint64" expr="0" sce:direction="out"/>
+    <data id="newKey" sce:type="uint64" expr="0"/>
     <data id="orphans" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>
   </datamodel>
@@ -75,59 +105,40 @@
 
     <!-- A person's edit: stamped, then handled as any write is, and sent to the hub. -->
     <transition event="sheet.edit" type="internal">
-      <assign location="clock.counter"
-              expr="SendCounter(clock.wallTime, clock.counter, _event.data.now, node)"/>
-      <assign location="clock.wallTime"
-              expr="SendWall(clock.wallTime, clock.counter, _event.data.now, node)"/>
-      <assign location="wall32" expr="clock.wallTime"/>
-      <assign location="node32" expr="node"/>
+      <assign location="clock" expr="HlcSend(clock, _event.data.now, node)"/>
       <send target="#_internal" event="sheet.cell">
         <param name="row" expr="_event.data.row"/>
         <param name="col" expr="_event.data.col"/>
         <param name="value" expr="_event.data.value"/>
-        <param name="wallTime" expr="wall32"/>
+        <param name="wallTime" expr="clock.wallTime"/>
         <param name="counter" expr="clock.counter"/>
-        <param name="nodeId" expr="node32"/>
+        <param name="nodeId" expr="node"/>
       </send>
       <send target="#server" event="sheet.cell">
         <param name="row" expr="_event.data.row"/>
         <param name="col" expr="_event.data.col"/>
         <param name="value" expr="_event.data.value"/>
-        <param name="wallTime" expr="wall32"/>
+        <param name="wallTime" expr="clock.wallTime"/>
         <param name="counter" expr="clock.counter"/>
-        <param name="nodeId" expr="node32"/>
+        <param name="nodeId" expr="node"/>
       </send>
     </transition>
 
     <!-- A write to a cell, from a person here or from elsewhere. -->
     <transition event="sheet.cell" type="internal">
       <if cond="_event.data.nodeId !== node">
-        <assign location="clock.counter"
-                expr="ReceiveCounter(clock.wallTime, clock.counter, _event.data.wallTime, _event.data.counter, _event.data.nodeId, clock.wallTime, node)"/>
-        <assign location="clock.wallTime"
-                expr="ReceiveWall(clock.wallTime, clock.counter, _event.data.wallTime, _event.data.counter, _event.data.nodeId, clock.wallTime, node)"/>
+        <assign location="stamp.wallTime" expr="_event.data.wallTime"/>
+        <assign location="stamp.counter" expr="_event.data.counter"/>
+        <assign location="stamp.nodeId" expr="_event.data.nodeId"/>
+        <assign location="clock" expr="HlcReceive(clock, stamp, clock.wallTime, node)"/>
       </if>
-      <assign location="found" expr="false"/>
-      <sce:clear target="rebuilt"/>
-      <foreach array="cells" item="c">
-        <if cond="c.row === _event.data.row &amp;&amp; c.col === _event.data.col">
-          <assign location="found" expr="true"/>
-          <if cond="StampLater(_event.data.wallTime, _event.data.counter, _event.data.nodeId, c.wallTime, c.counter, c.nodeId) === 1">
-            <sce:append target="rebuilt" expr="_event.data"/>
-          <else/>
-            <sce:append target="rebuilt" expr="c"/>
-          </if>
-        <else/>
-          <sce:append target="rebuilt" expr="c"/>
-        </if>
-      </foreach>
-      <if cond="!found">
-        <sce:append target="rebuilt" expr="_event.data"/>
-      </if>
-      <sce:clear target="cells"/>
-      <foreach array="rebuilt" item="c">
-        <sce:append target="cells" expr="c"/>
-      </foreach>
+      <assign location="write.row" expr="_event.data.row"/>
+      <assign location="write.col" expr="_event.data.col"/>
+      <assign location="write.value" expr="_event.data.value"/>
+      <assign location="write.wallTime" expr="_event.data.wallTime"/>
+      <assign location="write.counter" expr="_event.data.counter"/>
+      <assign location="write.nodeId" expr="_event.data.nodeId"/>
+      <assign location="cells" expr="LwwWrite(cells, write)"/>
       <if cond="hub &amp;&amp; _event.data.nodeId !== 1">
         <send target="#alice" event="sheet.cell">
           <param name="row" expr="_event.data.row"/>
@@ -165,57 +176,20 @@
       </send>
     </transition>
 
-    <!-- A row put into the sheet, from a person here or from elsewhere: placed directly
-         after the row it names, past the rows already there with a larger id (the
-         replicated growable array rule). A row already held is held once, so a row
-         that arrives twice changes nothing. A row whose predecessor is not held cannot
+    <!-- A row put into the sheet, from a person here or from elsewhere: placed by the
+         replicated growable array rule. A row already held is held once, so a row that
+         arrives twice changes nothing. A row whose predecessor is not held cannot
          happen where a link delivers in order, and is counted and put at the end. -->
     <transition event="sheet.row" type="internal">
       <if cond="_event.data.key / 256 &gt; lamport">
         <assign location="lamport" expr="_event.data.key / 256"/>
       </if>
-      <assign location="found" expr="false"/>
-      <foreach array="rows" item="r">
-        <if cond="r.key === _event.data.key">
-          <assign location="found" expr="true"/>
-        </if>
-      </foreach>
-      <if cond="!found">
-        <sce:clear target="aligned"/>
-        <if cond="_event.data.after === 0">
-          <assign location="phase" expr="1"/>
-        <else/>
-          <assign location="phase" expr="0"/>
-        </if>
-        <foreach array="rows" item="r">
-          <if cond="phase === 0">
-            <sce:append target="aligned" expr="r"/>
-            <if cond="r.key === _event.data.after">
-              <assign location="phase" expr="1"/>
-            </if>
-          <elseif cond="phase === 1"/>
-            <if cond="r.key &gt; _event.data.key">
-              <sce:append target="aligned" expr="r"/>
-            <else/>
-              <sce:append target="aligned" expr="_event.data"/>
-              <sce:append target="aligned" expr="r"/>
-              <assign location="phase" expr="2"/>
-            </if>
-          <else/>
-            <sce:append target="aligned" expr="r"/>
-          </if>
-        </foreach>
-        <if cond="phase !== 2">
-          <if cond="phase === 0">
-            <assign location="orphans" expr="orphans + 1"/>
-          </if>
-          <sce:append target="aligned" expr="_event.data"/>
-        </if>
-        <sce:clear target="rows"/>
-        <foreach array="aligned" item="r">
-          <sce:append target="rows" expr="r"/>
-        </foreach>
+      <assign location="placed.key" expr="_event.data.key"/>
+      <assign location="placed.after" expr="_event.data.after"/>
+      <if cond="_event.data.after !== 0 &amp;&amp; !RgaHolds(rows, _event.data.key) &amp;&amp; !RgaHolds(rows, _event.data.after)">
+        <assign location="orphans" expr="orphans + 1"/>
       </if>
+      <assign location="rows" expr="RgaInsert(rows, placed)"/>
       <if cond="hub &amp;&amp; _event.data.key % 256 !== 1">
         <send target="#alice" event="sheet.row">
           <param name="key" expr="_event.data.key"/>
@@ -232,29 +206,22 @@
 
     <!-- A person's removal of a row. -->
     <transition event="sheet.drop_row" type="internal">
-      <assign location="node32" expr="node"/>
       <send target="#_internal" event="sheet.gone">
         <param name="key" expr="_event.data.row"/>
-        <param name="by" expr="node32"/>
+        <param name="by" expr="node"/>
       </send>
       <send target="#server" event="sheet.gone">
         <param name="key" expr="_event.data.row"/>
-        <param name="by" expr="node32"/>
+        <param name="by" expr="node"/>
       </send>
     </transition>
 
     <!-- A row taken out of the sheet: marked, and left in its place. Taking it out
          twice is taking it out once. -->
     <transition event="sheet.gone" type="internal">
-      <assign location="found" expr="false"/>
-      <foreach array="gone" item="g">
-        <if cond="g.key === _event.data.key">
-          <assign location="found" expr="true"/>
-        </if>
-      </foreach>
-      <if cond="!found">
-        <sce:append target="gone" expr="_event.data"/>
-      </if>
+      <assign location="removal.key" expr="_event.data.key"/>
+      <assign location="removal.by" expr="_event.data.by"/>
+      <assign location="gone" expr="RgaRemove(gone, removal)"/>
       <if cond="hub &amp;&amp; _event.data.by !== 1">
         <send target="#alice" event="sheet.gone">
           <param name="key" expr="_event.data.key"/>
@@ -263,6 +230,75 @@
       </if>
       <if cond="hub &amp;&amp; _event.data.by !== 2">
         <send target="#bob" event="sheet.gone">
+          <param name="key" expr="_event.data.key"/>
+          <param name="by" expr="_event.data.by"/>
+        </send>
+      </if>
+    </transition>
+
+    <!-- Columns are kept in order and removed the way rows are, from the same counter
+         of ids: they differ from rows in the lists they are held in and the events that
+         carry them. -->
+    <transition event="sheet.add_col" type="internal">
+      <assign location="lamport" expr="lamport + 1"/>
+      <assign location="newKey" expr="lamport * 256 + node"/>
+      <send target="#_internal" event="sheet.col">
+        <param name="key" expr="newKey"/>
+        <param name="after" expr="_event.data.after"/>
+      </send>
+      <send target="#server" event="sheet.col">
+        <param name="key" expr="newKey"/>
+        <param name="after" expr="_event.data.after"/>
+      </send>
+    </transition>
+
+    <transition event="sheet.col" type="internal">
+      <if cond="_event.data.key / 256 &gt; lamport">
+        <assign location="lamport" expr="_event.data.key / 256"/>
+      </if>
+      <assign location="placed.key" expr="_event.data.key"/>
+      <assign location="placed.after" expr="_event.data.after"/>
+      <if cond="_event.data.after !== 0 &amp;&amp; !RgaHolds(cols, _event.data.key) &amp;&amp; !RgaHolds(cols, _event.data.after)">
+        <assign location="orphans" expr="orphans + 1"/>
+      </if>
+      <assign location="cols" expr="RgaInsert(cols, placed)"/>
+      <if cond="hub &amp;&amp; _event.data.key % 256 !== 1">
+        <send target="#alice" event="sheet.col">
+          <param name="key" expr="_event.data.key"/>
+          <param name="after" expr="_event.data.after"/>
+        </send>
+      </if>
+      <if cond="hub &amp;&amp; _event.data.key % 256 !== 2">
+        <send target="#bob" event="sheet.col">
+          <param name="key" expr="_event.data.key"/>
+          <param name="after" expr="_event.data.after"/>
+        </send>
+      </if>
+    </transition>
+
+    <transition event="sheet.drop_col" type="internal">
+      <send target="#_internal" event="sheet.gone_col">
+        <param name="key" expr="_event.data.col"/>
+        <param name="by" expr="node"/>
+      </send>
+      <send target="#server" event="sheet.gone_col">
+        <param name="key" expr="_event.data.col"/>
+        <param name="by" expr="node"/>
+      </send>
+    </transition>
+
+    <transition event="sheet.gone_col" type="internal">
+      <assign location="removal.key" expr="_event.data.key"/>
+      <assign location="removal.by" expr="_event.data.by"/>
+      <assign location="goneCols" expr="RgaRemove(goneCols, removal)"/>
+      <if cond="hub &amp;&amp; _event.data.by !== 1">
+        <send target="#alice" event="sheet.gone_col">
+          <param name="key" expr="_event.data.key"/>
+          <param name="by" expr="_event.data.by"/>
+        </send>
+      </if>
+      <if cond="hub &amp;&amp; _event.data.by !== 2">
+        <send target="#bob" event="sheet.gone_col">
           <param name="key" expr="_event.data.key"/>
           <param name="by" expr="_event.data.by"/>
         </send>

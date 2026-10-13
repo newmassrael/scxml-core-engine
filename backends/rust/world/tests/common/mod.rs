@@ -95,8 +95,24 @@ fn sheet_over(seed: u64, latency_ms: i64, ordered: bool) -> World {
     world
 }
 
+/// An integer as a copy's variables and the wire carry it: a JSON number, or, for a
+/// 64-bit integer, the text of its digits (docs/SCE_ACCEPTED_SUBSET.md §2.15).
+pub fn whole(value: &Value) -> i128 {
+    match value {
+        Value::Number(n) => n
+            .as_i64()
+            .map(i128::from)
+            .or_else(|| n.as_u64().map(i128::from))
+            .unwrap_or_else(|| panic!("{n} is not a whole number")),
+        Value::String(digits) => digits
+            .parse()
+            .unwrap_or_else(|_| panic!("{digits:?} is not the digits of an integer")),
+        other => panic!("{other} is not a number"),
+    }
+}
+
 /// The node id a person's stamps carry.
-pub fn node_of(who: &str) -> u32 {
+pub fn node_of(who: &str) -> u64 {
     match who {
         "alice" => 1,
         "bob" => 2,
@@ -106,12 +122,19 @@ pub fn node_of(who: &str) -> u32 {
 
 /// A person types `value` into the cell at (`row`, `col`), when the host's clock
 /// reads the world's time.
-pub fn type_into(world: &mut World, who: &str, row: u32, col: u32, value: i32) {
+pub fn type_into(world: &mut World, who: &str, row: u64, col: u64, value: i64) {
     let now = world.now_ms();
+    type_into_at(world, who, row, col, value, now);
+}
+
+/// The same, when the host's clock reads `now` and not the world's time: a clock that
+/// reads past what a double holds exactly is how a 64-bit stamp is exercised.
+pub fn type_into_at(world: &mut World, who: &str, row: u64, col: u64, value: i64, now: i64) {
+    // A 64-bit integer is written as the text of its digits, as it is on the wire.
     world.raise(
         who,
         "sheet.edit",
-        &format!(r#"{{"row":{row},"col":{col},"value":{value},"now":{now}}}"#),
+        &format!(r#"{{"row":"{row}","col":"{col}","value":"{value}","now":"{now}"}}"#),
     );
 }
 
@@ -134,11 +157,7 @@ pub fn sheet_of(world: &mut World, who: &str) -> BTreeMap<(u64, u64), Held> {
     let variables = variables_of(world, who);
     let mut cells = BTreeMap::new();
     for cell in variables["cells"].as_array().expect("the cells are a list") {
-        let number = |field: &str| {
-            cell[field]
-                .as_i64()
-                .unwrap_or_else(|| panic!("{field} of {cell}"))
-        };
+        let number = |field: &str| whole(&cell[field]);
         let key = (number("row") as u64, number("col") as u64);
         let stamp = (
             number("wallTime") as u64,
@@ -146,7 +165,7 @@ pub fn sheet_of(world: &mut World, who: &str) -> BTreeMap<(u64, u64), Held> {
             number("nodeId") as u64,
         );
         assert!(
-            cells.insert(key, (number("value"), stamp)).is_none(),
+            cells.insert(key, (number("value") as i64, stamp)).is_none(),
             "{who} holds {key:?} twice"
         );
     }
@@ -187,14 +206,14 @@ pub fn oracle(world: &World) -> BTreeMap<(u64, u64), Held> {
         if event != "sheet.cell" {
             continue;
         }
-        let number = |field: &str| write[field].as_i64().expect("a number");
+        let number = |field: &str| whole(&write[field]);
         let key = (number("row") as u64, number("col") as u64);
         let stamp = (
             number("wallTime") as u64,
             number("counter") as u64,
             number("nodeId") as u64,
         );
-        let held = (number("value"), stamp);
+        let held = (number("value") as i64, stamp);
         match expected.get(&key) {
             Some((_, latest)) if *latest >= stamp => {}
             _ => {
@@ -207,48 +226,79 @@ pub fn oracle(world: &World) -> BTreeMap<(u64, u64), Held> {
 
 /// The id the next row a person adds will have: one more than the largest counter
 /// their copy has seen, with their node below it.
-pub fn next_row_key(world: &mut World, who: &str) -> u32 {
-    let lamport = variables_of(world, who)["lamport"]
-        .as_u64()
-        .expect("the counter is a number") as u32;
+pub fn next_row_key(world: &mut World, who: &str) -> u64 {
+    let lamport = whole(&variables_of(world, who)["lamport"]) as u64;
     (lamport + 1) * 256 + node_of(who)
 }
 
 /// A person adds a row after the row `after` (0 for the top), and the id it gets.
 /// What their copy does with it at once is run before this returns, so the next row
 /// they add is issued the id after this one's and not the same.
-pub fn add_row(world: &mut World, who: &str, after: u32) -> u32 {
+pub fn add_row(world: &mut World, who: &str, after: u64) -> u64 {
     let key = next_row_key(world, who);
-    world.raise(who, "sheet.add_row", &format!(r#"{{"after":{after}}}"#));
+    world.raise(who, "sheet.add_row", &format!(r#"{{"after":"{after}"}}"#));
     world.advance_ms(0);
     key
 }
 
 /// A person removes the row `row`.
-pub fn drop_row(world: &mut World, who: &str, row: u32) {
-    world.raise(who, "sheet.drop_row", &format!(r#"{{"row":{row}}}"#));
+pub fn drop_row(world: &mut World, who: &str, row: u64) {
+    world.raise(who, "sheet.drop_row", &format!(r#"{{"row":"{row}"}}"#));
+}
+
+/// A person adds a column after the column `after` (0 for the left edge), and the id
+/// it gets: ids are issued from one counter, whichever list they go in.
+pub fn add_col(world: &mut World, who: &str, after: u64) -> u64 {
+    let key = next_row_key(world, who);
+    world.raise(who, "sheet.add_col", &format!(r#"{{"after":"{after}"}}"#));
+    world.advance_ms(0);
+    key
+}
+
+/// A person removes the column `col`.
+pub fn drop_col(world: &mut World, who: &str, col: u64) {
+    world.raise(who, "sheet.drop_col", &format!(r#"{{"col":"{col}"}}"#));
 }
 
 /// Every row a copy holds in the order it holds them, removed ones included, and the
 /// ids of the removed.
-pub fn rows_of(world: &mut World, who: &str) -> (Vec<u32>, Vec<u32>) {
+pub fn rows_of(world: &mut World, who: &str) -> (Vec<u64>, Vec<u64>) {
+    order_in(world, who, "rows", "gone")
+}
+
+/// The same for the columns: every column a copy holds in its order, and the ids of
+/// the removed.
+pub fn cols_of(world: &mut World, who: &str) -> (Vec<u64>, Vec<u64>) {
+    order_in(world, who, "cols", "goneCols")
+}
+
+fn order_in(world: &mut World, who: &str, order: &str, marks: &str) -> (Vec<u64>, Vec<u64>) {
     let variables = variables_of(world, who);
-    let keys = |name: &str| -> Vec<u32> {
+    let keys = |name: &str| -> Vec<u64> {
         variables[name]
             .as_array()
             .unwrap_or_else(|| panic!("{name} is a list"))
             .iter()
-            .map(|row| row["key"].as_u64().expect("a key") as u32)
+            .map(|node| whole(&node["key"]) as u64)
             .collect()
     };
-    (keys("rows"), keys("gone"))
+    (keys(order), keys(marks))
 }
 
 /// The rows a copy shows: its rows in order, without the removed.
-pub fn shown_by(world: &mut World, who: &str) -> Vec<u32> {
+pub fn shown_by(world: &mut World, who: &str) -> Vec<u64> {
     let (rows, mut gone) = rows_of(world, who);
     gone.sort_unstable();
     rows.into_iter()
+        .filter(|key| gone.binary_search(key).is_err())
+        .collect()
+}
+
+/// The columns a copy shows: its columns in order, without the removed.
+pub fn columns_shown_by(world: &mut World, who: &str) -> Vec<u64> {
+    let (cols, mut gone) = cols_of(world, who);
+    gone.sort_unstable();
+    cols.into_iter()
         .filter(|key| gone.binary_search(key).is_err())
         .collect()
 }
@@ -307,7 +357,7 @@ pub fn diagnosis(world: &mut World) -> String {
             let Ok(data) = serde_json::from_slice::<Value>(envelope.data) else {
                 continue;
             };
-            if envelope.event_type == "sheet.row" && data["key"] == *key {
+            if envelope.event_type == "sheet.row" && whole(&data["key"]) == i128::from(*key) {
                 missing.push_str(&format!(
                     " [t={} {}->{} seq={:?} {:?}]",
                     line.at_ms, line.from, line.to, envelope.sequence_no, line.fate
@@ -321,15 +371,75 @@ pub fn diagnosis(world: &mut World) -> String {
     )
 }
 
+/// The rule of a replicated growable array, over a vector: an element goes directly
+/// after the element it names, except that it steps over the elements already there
+/// with a larger id. An element already there is not put in again. Written here
+/// beside the library's algorithm so that a run is held to a second statement of it.
+pub fn place(order: &mut Vec<u64>, key: u64, after: u64) {
+    if order.contains(&key) {
+        return;
+    }
+    let mut at = if after == 0 {
+        0
+    } else {
+        order
+            .iter()
+            .position(|&held| held == after)
+            .unwrap_or_else(|| panic!("{after} is not there to be inserted after"))
+            + 1
+    };
+    while at < order.len() && order[at] > key {
+        at += 1;
+    }
+    order.insert(at, key);
+}
+
+/// The order the people's inserts make by that rule, and the ids they removed, read
+/// from the network and not from any copy: `insert` names the event that puts an
+/// element in and `remove` the one that takes it out.
+pub fn oracle_order(world: &World, insert: &str, remove: &str) -> (Vec<u64>, Vec<u64>) {
+    let mut order = Vec::new();
+    let mut gone = Vec::new();
+    for (event, data) in sent_to_the_hub(world) {
+        let number = |field: &str| whole(&data[field]) as u64;
+        if event == insert {
+            place(&mut order, number("key"), number("after"));
+        } else if event == remove && !gone.contains(&number("key")) {
+            gone.push(number("key"));
+        }
+    }
+    gone.sort_unstable();
+    (order, gone)
+}
+
 /// The three copies hold one order of rows and one set of removed rows; which.
-pub fn agreed_rows(world: &mut World) -> (Vec<u32>, Vec<u32>) {
-    let (rows, mut gone) = rows_of(world, "server");
+pub fn agreed_rows(world: &mut World) -> (Vec<u64>, Vec<u64>) {
+    agreed_order(world, rows_of, "row")
+}
+
+/// The three copies hold one order of columns and one set of removed columns; which.
+pub fn agreed_cols(world: &mut World) -> (Vec<u64>, Vec<u64>) {
+    agreed_order(world, cols_of, "column")
+}
+
+fn agreed_order(
+    world: &mut World,
+    order_of: fn(&mut World, &str) -> (Vec<u64>, Vec<u64>),
+    what: &str,
+) -> (Vec<u64>, Vec<u64>) {
+    let (order, mut gone) = order_of(world, "server");
     gone.sort_unstable();
     for who in ["alice", "bob"] {
-        let (theirs, mut their_gone) = rows_of(world, who);
+        let (theirs, mut their_gone) = order_of(world, who);
         their_gone.sort_unstable();
-        assert_eq!(theirs, rows, "{who} and the hub hold different row orders");
-        assert_eq!(their_gone, gone, "{who} and the hub removed different rows");
+        assert_eq!(
+            theirs, order,
+            "{who} and the hub hold different {what} orders"
+        );
+        assert_eq!(
+            their_gone, gone,
+            "{who} and the hub removed different {what}s"
+        );
     }
-    (rows, gone)
+    (order, gone)
 }

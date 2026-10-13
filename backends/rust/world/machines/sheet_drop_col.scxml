@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A person's request to remove a column, as the host hands it to a copy: the id of
+  the column to remove.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="sheet_drop_col"
+       sce:event-name="sheet.drop_col">
+  <datamodel>
+    <data id="col" sce:type="uint64" sce:direction="in"/>
+  </datamodel>
+</scxml>

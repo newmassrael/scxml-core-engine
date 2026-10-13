@@ -14,7 +14,7 @@
        name="sheet_gone"
        sce:event-name="sheet.gone">
   <datamodel>
-    <data id="key" sce:type="uint32" sce:direction="in"/>
-    <data id="by" sce:type="uint32" sce:direction="in"/>
+    <data id="key" sce:type="uint64" sce:direction="in"/>
+    <data id="by" sce:type="uint64" sce:direction="in"/>
   </datamodel>
 </scxml>
