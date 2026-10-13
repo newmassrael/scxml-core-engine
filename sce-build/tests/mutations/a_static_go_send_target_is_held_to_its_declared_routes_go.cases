@@ -31,8 +31,16 @@ edit("tools/codegen/templates/go/actions/send.go.jinja2",
      "\t\tswitch sceRoute {\n\t\tdefault:\n\t\t\tsendTargetVal = sceRoute\n\t\t\tsendTarget = sceRoute\n")
 PY
 
+# A value in none of the routes leaves `sendTarget` empty, and an empty target is
+# refused twice over: by the guard before the payload is built, and by the delivery
+# itself, which classifies it unreachable. Taking away one of the two changes nothing
+# a test can see — the same single error is raised by the other, which is why this
+# case used to survive — so the decision is taken away at both places.
 mutation_case "a value that names no route raises nothing" <<'PY'
 edit("tools/codegen/templates/go/actions/send.go.jinja2",
      "\tif sendArgError == \"\" && (sendTargetVal == nil || sce.IsUnreachableTarget(sendTarget)) {",
      "\tif false && sendArgError == \"\" && (sendTargetVal == nil || sce.IsUnreachableTarget(sendTarget)) {")
+edit("tools/codegen/templates/go/actions/send.go.jinja2",
+     "\t\tif routed == sce.TargetNotReachable {",
+     "\t\tif false && routed == sce.TargetNotReachable {")
 PY

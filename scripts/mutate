@@ -1807,6 +1807,24 @@ mutation_go_run() {
         failed="$(printf '%s\n' "$out" | grep -cE '^--- FAIL: ' || true)"
         printf '%s\n' "$out" | mutation_failures_from_go >> "$MUTATION_FAILING"
         printf '%s\n' "$out" | mutation_detail_from_go >> "$MUTATION_FAILURE_DETAIL"
+        # A panic ends the whole binary, not the test that raised it, so the tests
+        # after it print nothing. They exist, and they did not pass: counting only
+        # the verdict lines would make a mutation that crashes the suite look like
+        # one that changed which tests exist, and read INCONCLUSIVE where the tests
+        # are as red as they can be. Each test the binary lists and never started is
+        # counted as run and failed, and named.
+        if [[ "$rc" != "0" ]] && printf '%s\n' "$out" | grep -qE '^(panic: |fatal error: )'; then
+            local listed started unreached n
+            listed="$(cd "$dir/${pkg#./}" 2>/dev/null || cd "$dir"; "$binary" -test.list '.*' 2>/dev/null)"
+            started="$(printf '%s\n' "$out" | sed -n 's/^=== RUN   \([^/]*\)$/\1/p')"
+            unreached="$(printf '%s\n' "$listed" | grep -vxFf <(printf '%s\n' "$started") | grep . || true)"
+            if [[ -n "$unreached" ]]; then
+                printf '%s (not reached: the binary died in a panic)\n' $unreached >> "$MUTATION_FAILING"
+                n="$(printf '%s\n' "$unreached" | grep -c .)"
+                run=$((${run:-0} + n))
+                failed=$((${failed:-0} + n))
+            fi
+        fi
         total_run=$((total_run + ${run:-0}))
         total_failed=$((total_failed + ${failed:-0}))
     done < <(mutation_go_packages)
