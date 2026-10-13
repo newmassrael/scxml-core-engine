@@ -91,7 +91,7 @@ fn main() {
     let mut mounted = String::new();
     for (module, path) in &modules {
         mounted.push_str(&format!(
-            "#[path = {path:?}]\n#[allow(dead_code, unused)]\npub mod {module};\n"
+            "#[path = {path:?}]\n#[allow(unused)]\npub mod {module};\n"
         ));
     }
     std::fs::write(Path::new(&out_dir).join("machines.rs"), mounted).expect("write machines.rs");
