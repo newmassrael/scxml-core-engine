@@ -213,8 +213,21 @@ async function initVisualizer(scxmlContent) {
             return;
         }
 
-        // Setup Emscripten virtual file system for invoke resolution
+        // The Interpreter refuses a typed (sce-static) document, so what it
+        // runs is the lowering of one. The structure and the overlay below are
+        // read from the document as written: lowering changes expressions
+        // only, so their ids and positions are the same.
         const params = parseHashParams();
+        let runnableContent;
+        try {
+            runnableContent = await SceBuildWasm.lowerForInterpreter(scxmlContent, params.test || 'untitled');
+        } catch (error) {
+            showLoading(false);
+            showFatalError(`The product cannot lower this document for the Interpreter: ${error}`);
+            return;
+        }
+
+        // Setup Emscripten virtual file system for invoke resolution
         if (params.test) {
             const testId = params.test;
 
@@ -236,7 +249,7 @@ async function initVisualizer(scxmlContent) {
             }
             
             // Write parent SCXML to virtual FS
-            Module.FS.writeFile(`/resources/${testId}/test${testId}.scxml`, scxmlContent);
+            Module.FS.writeFile(`/resources/${testId}/test${testId}.scxml`, runnableContent);
             logger.debug(`Created virtual FS: /resources/${testId}/test${testId}.scxml`);
 
             // W3C SCXML 6.3/6.4: Extract child SCXML files from invoke src/srcexpr attributes
@@ -366,7 +379,7 @@ async function initVisualizer(scxmlContent) {
             logger.debug(`Base path set for invoke resolution: /resources/${params.test}/`);
         }
 
-        if (!runner.loadSCXML(scxmlContent, false)) {
+        if (!runner.loadSCXML(runnableContent, false)) {
             throw new Error('Failed to load SCXML content');
         }
 

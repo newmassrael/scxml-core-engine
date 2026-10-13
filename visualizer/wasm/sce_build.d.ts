@@ -46,6 +46,12 @@ export function get_machine_name(scxml_content: string): string;
 export function gui_structure(scxml_content: string, scxml_name: string): string;
 
 /**
+ * The document the Interpreter runs for `scxml_content`; see
+ * [`lowered_for_interpreter`].
+ */
+export function lower_for_interpreter(scxml_content: string, scxml_name: string): string;
+
+/**
  * Languages this build can generate, as the identifiers
  * [`compile_scxml_lang`] accepts.
  *
@@ -64,6 +70,7 @@ export interface InitOutput {
     readonly compile_scxml_lang: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly get_machine_name: (a: number, b: number) => [number, number, number, number];
     readonly gui_structure: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+    readonly lower_for_interpreter: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly supported_languages: () => [number, number];
     readonly __wbindgen_externrefs: WebAssembly.Table;
     readonly __wbindgen_malloc: (a: number, b: number) => number;

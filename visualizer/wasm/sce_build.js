@@ -141,6 +141,36 @@ export function gui_structure(scxml_content, scxml_name) {
 }
 
 /**
+ * The document the Interpreter runs for `scxml_content`; see
+ * [`lowered_for_interpreter`].
+ * @param {string} scxml_content
+ * @param {string} scxml_name
+ * @returns {string}
+ */
+export function lower_for_interpreter(scxml_content, scxml_name) {
+    let deferred4_0;
+    let deferred4_1;
+    try {
+        const ptr0 = passStringToWasm0(scxml_content, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(scxml_name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.lower_for_interpreter(ptr0, len0, ptr1, len1);
+        var ptr3 = ret[0];
+        var len3 = ret[1];
+        if (ret[3]) {
+            ptr3 = 0; len3 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred4_0 = ptr3;
+        deferred4_1 = len3;
+        return getStringFromWasm0(ptr3, len3);
+    } finally {
+        wasm.__wbindgen_free(deferred4_0, deferred4_1, 1);
+    }
+}
+
+/**
  * Languages this build can generate, as the identifiers
  * [`compile_scxml_lang`] accepts.
  *
