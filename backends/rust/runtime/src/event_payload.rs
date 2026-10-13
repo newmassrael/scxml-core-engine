@@ -188,7 +188,8 @@ impl PayloadFields {
         }
     }
 
-    /// A 64-bit signed field ([`Self::wide`]).
+    /// A 64-bit signed field: the canonical text of its digits, or a JSON
+    /// number no larger than 2^53 - 1 in magnitude.
     pub fn signed64(&self, name: &str) -> Result<i64, PayloadRefusal> {
         let text = self.wide(name, true)?;
         text.parse().map_err(|_| {
@@ -198,7 +199,8 @@ impl PayloadFields {
         })
     }
 
-    /// A 64-bit unsigned field ([`Self::wide`]).
+    /// A 64-bit unsigned field: the canonical text of its digits, or a JSON
+    /// number no larger than 2^53 - 1.
     pub fn unsigned64(&self, name: &str) -> Result<u64, PayloadRefusal> {
         let text = self.wide(name, false)?;
         text.parse().map_err(|_| {
