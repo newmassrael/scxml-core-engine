@@ -553,9 +553,10 @@ class Conventions:
     def phrase_expression(self, phrase: str) -> str | None:
         return self.precondition_phrases.get(self.normalise_phrase(phrase))
 
-    def precondition_mentions(self, prose) -> dict[str, tuple[str, int, int]]:
-        """Every precondition the prose writes where this kind of document
-        writes one, by its table spelling: (file, first line, times written).
+    def precondition_sites(self, prose) -> dict[str, list[tuple[str, int, str]]]:
+        """Every place the prose writes a precondition where this kind of document
+        writes one, by its table spelling: (file, line, the text of that line), once
+        per time it is written.
 
         Empty when the pack has no pattern for where preconditions are written;
         a caller that must not read that as "none" asks `precondition_pattern`.
@@ -567,11 +568,21 @@ class Conventions:
             for lineno, line in enumerate(src.text.splitlines(), 1):
                 for match in self.precondition_pattern.finditer(line):
                     key = self.normalise_phrase(match.group("phrase"))
-                    if not key:
-                        continue
-                    entry = seen.setdefault(key, [str(src.path), lineno, 0])
-                    entry[2] += 1
-        return {key: tuple(entry) for key, entry in seen.items()}
+                    if key:
+                        seen.setdefault(key, []).append((str(src.path), lineno, line))
+        return seen
+
+    def precondition_mentions(self, prose) -> dict[str, tuple[str, int, int]]:
+        """Every precondition the prose writes where this kind of document
+        writes one, by its table spelling: (file, first line, times written)."""
+        return {key: (sites[0][0], sites[0][1], len(sites))
+                for key, sites in self.precondition_sites(prose).items()}
+
+    def outputs_named_in(self, text: str) -> list[str]:
+        """The names in `text` that the pack classes as outputs of the document
+        (`own_output` in `name_classes`)."""
+        return [match.group(0) for nc in self.name_classes if nc.role == "own_output"
+                for match in nc.pattern.finditer(text)]
 
     def precondition_reads(self, expression: str) -> set[str]:
         """The precondition inputs an expression from the table names."""

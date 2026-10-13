@@ -1225,6 +1225,30 @@ def addresses_of(rule: dict) -> set:
     return found
 
 
+def _gates_only_outputs_the_pack_lacks(conv, model, sites) -> bool:
+    """Whether every line that writes a precondition names outputs of the document,
+    and none of the outputs it names is in the interface model.
+
+    A condition written on a line about an output the platform does not have gates
+    nothing a document can write: the output has no address, so a binding cannot
+    reach it, and asking for the condition would refuse every document for a row
+    nobody can implement. Measured 2026-10-13: one component's specification writes
+    its supply condition once, on the row of an output no case expects and the
+    product does not have; a document that passed every case was refused for it.
+
+    ⚠ Only a line that NAMES an output counts, as the pack classes names
+    (`own_output`). A line that names none (a continuation row, a sentence about a
+    state) gates something the prose leaves unsaid, and the condition is still asked
+    for. And one declared output on the line is enough to ask for it.
+    """
+    declared_leaves = {address.rsplit(".", 1)[-1] for address in model.by_address}
+    for _path, _lineno, text in sites:
+        named = conv.outputs_named_in(text)
+        if not named or any(model.resolve(name) or name in declared_leaves for name in named):
+            return False
+    return True
+
+
 def unread_preconditions(pack: Pack, prose, declared_inputs: dict,
                          document_inputs) -> list[Finding]:
     """Every precondition the prose states that nothing in the pair reads.
@@ -1264,10 +1288,13 @@ def unread_preconditions(pack: Pack, prose, declared_inputs: dict,
     readings = {name: _reading(rule) for name, rule in declared_inputs.items()
                 if isinstance(rule, dict) and name not in events}
     reported: set = set()
+    sites = conv.precondition_sites(prose)
     for key, (path, lineno, count) in sorted(conv.precondition_mentions(prose).items()):
         expression = conv.precondition_phrases.get(key)
         if expression is None:
             continue  # not in the table: `questions` asks about it
+        if _gates_only_outputs_the_pack_lacks(conv, pack.model, sites[key]):
+            continue
         where = f"({pathlib.Path(path).name}:{lineno}, {count} time(s))"
         for needed in sorted(conv.precondition_reads(expression)):
             if needed in reported:

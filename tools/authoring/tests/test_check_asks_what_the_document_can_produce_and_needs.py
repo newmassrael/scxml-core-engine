@@ -135,6 +135,38 @@ class APreconditionTheSpecificationStates(ACheckedPair):
         self.assertTrue(result.get("isError"))
         self.assertIn("poweredUp", result["content"][0]["text"])
 
+    def prose_of(self, *lines):
+        path = self.dir / "other_specification.md"
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return load_prose([path])
+
+    def test_a_condition_written_only_on_a_line_about_an_output_the_pack_lacks_is_not_asked(self):
+        # OUT_Phantom is classed an output of the document by the pack's name classes, and
+        # the interface model has no such address: nothing a document writes can be gated.
+        prose = self.prose_of("While the installation is powered, OUT_Phantom follows the approach.")
+        self.assertEqual([], self.unread(prose))
+
+    def test_a_line_naming_an_output_the_pack_declares_still_asks_for_it(self):
+        prose = self.prose_of("While the installation is powered, OUT_RoadSignal follows the approach.")
+        refused = self.unread(prose)
+        self.assertEqual(1, len(refused), refused)
+        self.assertIn("poweredUp", refused[0])
+
+    def test_one_declared_output_among_the_names_is_enough_to_ask(self):
+        prose = self.prose_of("While the installation is powered, OUT_Phantom and OUT_Bell follow it.")
+        self.assertEqual(1, len(self.unread(prose)))
+
+    def test_a_line_that_names_no_output_still_asks_for_it(self):
+        prose = self.prose_of("While the installation is powered, nothing else is shown.")
+        self.assertEqual(1, len(self.unread(prose)))
+
+    def test_every_place_the_condition_is_written_has_to_be_about_a_missing_output(self):
+        prose = self.prose_of("While the installation is powered, OUT_Phantom follows the approach.",
+                              "While the installation is powered, the bell is silent.")
+        refused = self.unread(prose)
+        self.assertEqual(1, len(refused), refused)
+        self.assertIn("2 time(s)", refused[0])
+
 
 if __name__ == "__main__":
     unittest.main()
