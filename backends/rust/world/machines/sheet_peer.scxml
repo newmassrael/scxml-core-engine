@@ -35,6 +35,10 @@
   <sce:import kind="event-schema" src="sheet_cell.scxml" as="Cell"/>
   <sce:import kind="event-schema" src="sheet_edit.scxml" as="Edit"/>
   <sce:import kind="event-schema" src="sheet_join.scxml" as="Join"/>
+  <sce:import kind="event-schema" src="sheet_row.scxml" as="Row"/>
+  <sce:import kind="event-schema" src="sheet_gone.scxml" as="Gone"/>
+  <sce:import kind="event-schema" src="sheet_add_row.scxml" as="AddRow"/>
+  <sce:import kind="event-schema" src="sheet_drop_row.scxml" as="DropRow"/>
   <sce:import kind="event-schema" src="sce:std/merge/hlc_timestamp.scxml" as="Hlc"/>
   <sce:import kind="algorithm" src="stamp_later.scxml" as="StampLater"/>
   <sce:import kind="algorithm" src="clock_send_wall.scxml" as="SendWall"/>
@@ -54,6 +58,13 @@
     <data id="found" sce:type="bool" expr="false"/>
     <data id="wall32" sce:type="uint32" expr="0"/>
     <data id="node32" sce:type="uint32" expr="0"/>
+    <data id="rows" sce:type="list&lt;record:Row&gt;" sce:capacity="64" sce:direction="out"/>
+    <data id="aligned" sce:type="list&lt;record:Row&gt;" sce:capacity="64"/>
+    <data id="gone" sce:type="list&lt;record:Gone&gt;" sce:capacity="64" sce:direction="out"/>
+    <data id="lamport" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="newKey" sce:type="uint32" expr="0"/>
+    <data id="phase" sce:type="uint8" expr="0"/>
+    <data id="orphans" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>
   </datamodel>
   <state id="open">
@@ -135,6 +146,125 @@
           <param name="wallTime" expr="_event.data.wallTime"/>
           <param name="counter" expr="_event.data.counter"/>
           <param name="nodeId" expr="_event.data.nodeId"/>
+        </send>
+      </if>
+    </transition>
+
+    <!-- A person's new row: it takes the next id this copy can issue, which is larger
+         than every id it has seen, and is handled as any row is and sent to the hub. -->
+    <transition event="sheet.add_row" type="internal">
+      <assign location="lamport" expr="lamport + 1"/>
+      <assign location="newKey" expr="lamport * 256 + node"/>
+      <send target="#_internal" event="sheet.row">
+        <param name="key" expr="newKey"/>
+        <param name="after" expr="_event.data.after"/>
+      </send>
+      <send target="#server" event="sheet.row">
+        <param name="key" expr="newKey"/>
+        <param name="after" expr="_event.data.after"/>
+      </send>
+    </transition>
+
+    <!-- A row put into the sheet, from a person here or from elsewhere: placed directly
+         after the row it names, past the rows already there with a larger id (the
+         replicated growable array rule). A row already held is held once, so a row
+         that arrives twice changes nothing. A row whose predecessor is not held cannot
+         happen where a link delivers in order, and is counted and put at the end. -->
+    <transition event="sheet.row" type="internal">
+      <if cond="_event.data.key / 256 &gt; lamport">
+        <assign location="lamport" expr="_event.data.key / 256"/>
+      </if>
+      <assign location="found" expr="false"/>
+      <foreach array="rows" item="r">
+        <if cond="r.key === _event.data.key">
+          <assign location="found" expr="true"/>
+        </if>
+      </foreach>
+      <if cond="!found">
+        <sce:clear target="aligned"/>
+        <if cond="_event.data.after === 0">
+          <assign location="phase" expr="1"/>
+        <else/>
+          <assign location="phase" expr="0"/>
+        </if>
+        <foreach array="rows" item="r">
+          <if cond="phase === 0">
+            <sce:append target="aligned" expr="r"/>
+            <if cond="r.key === _event.data.after">
+              <assign location="phase" expr="1"/>
+            </if>
+          <elseif cond="phase === 1"/>
+            <if cond="r.key &gt; _event.data.key">
+              <sce:append target="aligned" expr="r"/>
+            <else/>
+              <sce:append target="aligned" expr="_event.data"/>
+              <sce:append target="aligned" expr="r"/>
+              <assign location="phase" expr="2"/>
+            </if>
+          <else/>
+            <sce:append target="aligned" expr="r"/>
+          </if>
+        </foreach>
+        <if cond="phase !== 2">
+          <if cond="phase === 0">
+            <assign location="orphans" expr="orphans + 1"/>
+          </if>
+          <sce:append target="aligned" expr="_event.data"/>
+        </if>
+        <sce:clear target="rows"/>
+        <foreach array="aligned" item="r">
+          <sce:append target="rows" expr="r"/>
+        </foreach>
+      </if>
+      <if cond="hub &amp;&amp; _event.data.key % 256 !== 1">
+        <send target="#alice" event="sheet.row">
+          <param name="key" expr="_event.data.key"/>
+          <param name="after" expr="_event.data.after"/>
+        </send>
+      </if>
+      <if cond="hub &amp;&amp; _event.data.key % 256 !== 2">
+        <send target="#bob" event="sheet.row">
+          <param name="key" expr="_event.data.key"/>
+          <param name="after" expr="_event.data.after"/>
+        </send>
+      </if>
+    </transition>
+
+    <!-- A person's removal of a row. -->
+    <transition event="sheet.drop_row" type="internal">
+      <assign location="node32" expr="node"/>
+      <send target="#_internal" event="sheet.gone">
+        <param name="key" expr="_event.data.row"/>
+        <param name="by" expr="node32"/>
+      </send>
+      <send target="#server" event="sheet.gone">
+        <param name="key" expr="_event.data.row"/>
+        <param name="by" expr="node32"/>
+      </send>
+    </transition>
+
+    <!-- A row taken out of the sheet: marked, and left in its place. Taking it out
+         twice is taking it out once. -->
+    <transition event="sheet.gone" type="internal">
+      <assign location="found" expr="false"/>
+      <foreach array="gone" item="g">
+        <if cond="g.key === _event.data.key">
+          <assign location="found" expr="true"/>
+        </if>
+      </foreach>
+      <if cond="!found">
+        <sce:append target="gone" expr="_event.data"/>
+      </if>
+      <if cond="hub &amp;&amp; _event.data.by !== 1">
+        <send target="#alice" event="sheet.gone">
+          <param name="key" expr="_event.data.key"/>
+          <param name="by" expr="_event.data.by"/>
+        </send>
+      </if>
+      <if cond="hub &amp;&amp; _event.data.by !== 2">
+        <send target="#bob" event="sheet.gone">
+          <param name="key" expr="_event.data.key"/>
+          <param name="by" expr="_event.data.by"/>
         </send>
       </if>
     </transition>

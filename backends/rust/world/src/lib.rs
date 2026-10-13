@@ -28,7 +28,15 @@
 //! down is failed back to its sender as a closed link fails one (§mesh-18.3).
 //! A link may also lose or duplicate an envelope silently, as a transport that
 //! does not order or deliver once does, which is what the core's duplicate
-//! suppression (§mesh-10.5) answers.
+//! suppression (§mesh-10.5) answers. A link keeps the order its envelopes were
+//! sent in, as a WebSocket does, however much their delays are spread; one that
+//! does not ([`World::reorder`]) is the case the Mesh core orders for.
+//!
+//! ⚠ The Mesh core takes the first sequence number it sees from a sender as the
+//! start of that sender's stream. An envelope cut in flight before any other has
+//! arrived, and sent again later, is below that start by then and is dropped for
+//! good, so a run that orders its bindings begins by delivering one envelope each
+//! way (the row tests do).
 //!
 //! ⚠ Not modelled yet: a request's deadline and an ordering gap's timeout are
 //! observed when the world's time reaches them by another thing happening; a
@@ -142,6 +150,11 @@ struct Link {
     up: bool,
     latency_ms: i64,
     jitter_ms: i64,
+    /// Whether envelopes arrive in the order they were sent, however much the delay
+    /// of each is spread: a WebSocket does, and so does any transport that is one
+    /// ordered stream. A link that does not is one a deployment has to tell the Mesh
+    /// core to order for it.
+    fifo: bool,
     /// Percent of envelopes lost silently.
     loss_pct: u64,
     /// Percent of envelopes delivered twice.
@@ -154,6 +167,7 @@ impl Default for Link {
             up: true,
             latency_ms: 1,
             jitter_ms: 0,
+            fifo: true,
             loss_pct: 0,
             duplicate_pct: 0,
         }
@@ -163,6 +177,9 @@ impl Default for Link {
 struct NetState {
     flights: Vec<Flight>,
     links: BTreeMap<(String, String), Link>,
+    /// When the last envelope put on each directed link is due, so the next one on a
+    /// link that keeps order is due no earlier.
+    last_due: BTreeMap<(String, String), i64>,
     rng: Rng,
     next_seq: u64,
     trace: Vec<Traced>,
@@ -177,6 +194,7 @@ impl Network {
         Self(Arc::new(Mutex::new(NetState {
             flights: Vec::new(),
             links: BTreeMap::new(),
+            last_due: BTreeMap::new(),
             rng: Rng::new(seed),
             next_seq: 0,
             trace: Vec::new(),
@@ -234,7 +252,12 @@ impl Transport for SimTransport {
                     .below(u64::try_from(link.jitter_ms + 1).unwrap_or(1)),
             )
             .unwrap_or(0);
-            let due_ms = now + link.latency_ms + jitter;
+            let mut due_ms = now + link.latency_ms + jitter;
+            let direction = (self.from.clone(), peer.to_string());
+            if link.fifo {
+                due_ms = due_ms.max(net.last_due.get(&direction).copied().unwrap_or(0));
+            }
+            net.last_due.insert(direction, due_ms);
             let seq = net.next_seq;
             net.next_seq += 1;
             net.flights.push(Flight {
@@ -531,9 +554,17 @@ impl World {
     }
 
     /// Spread the delay of every envelope between `a` and `b` over
-    /// `0..=jitter_ms` more, drawn from the seed, in both directions.
+    /// `0..=jitter_ms` more, drawn from the seed, in both directions. A link keeps
+    /// the order its envelopes were sent in unless it is told otherwise
+    /// ([`reorder`](Self::reorder)): a later envelope waits for the one before.
     pub fn jitter(&mut self, a: &str, b: &str, jitter_ms: i64) {
         self.edit_both(a, b, |link| link.jitter_ms = jitter_ms);
+    }
+
+    /// Let the link between `a` and `b` deliver envelopes out of the order they were
+    /// sent in, as a transport that is more than one stream or datagrams do.
+    pub fn reorder(&mut self, a: &str, b: &str) {
+        self.edit_both(a, b, |link| link.fifo = false);
     }
 
     /// Make the link between `a` and `b` lose `loss_pct` percent of envelopes

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A person's request to remove a row, as the host hands it to a copy: the id of the
+  row to remove.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="sheet_drop_row"
+       sce:event-name="sheet.drop_row">
+  <datamodel>
+    <data id="row" sce:type="uint32" sce:direction="in"/>
+  </datamodel>
+</scxml>

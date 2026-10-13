@@ -11,157 +11,10 @@
 // also held to an oracle that does not read the copies: of all the writes the
 // people sent, the one with the latest stamp is the cell's value.
 
-use std::collections::BTreeMap;
+mod common;
 
-use sce_forge_runtime::codec::SceCursor;
-use sce_rust_mesh::generated::envelope::Envelope;
-use sce_rust_mesh::inbound::Delivery;
-use sce_rust_mesh::outbound::{OutboundBuffer, RetryPolicy};
-use sce_rust_mesh::router::{PeerConfig, Router};
-use sce_rust_world::{Fate, Outcome, Rng, World};
-use serde_json::Value;
-
-include!(concat!(env!("OUT_DIR"), "/machines.rs"));
-
-use sheet_peer::{SheetPeerPersist, SheetPeerPolicy as Peer};
-
-/// How the binding to a peer is configured: a WebSocket that delivers once, with
-/// the envelopes written while the link is down kept until it is back.
-fn peer(responders: &'static [&'static str]) -> PeerConfig {
-    PeerConfig {
-        transport: "wss",
-        buffer: Some(OutboundBuffer {
-            max_pending: 1_024,
-            max_age_ms: 0,
-        }),
-        retry: Some(RetryPolicy {
-            max_retries: 5,
-            initial_backoff_ms: 100,
-            backoff_multiplier: 2.0,
-            max_backoff_ms: 1_000,
-            jitter_pct: 0,
-        }),
-        stamp_sequence: false,
-        delivery: Delivery {
-            dedup: true,
-            ordered: false,
-        },
-        responders,
-        deadline_ms: None,
-        reply_events: &[],
-    }
-}
-
-fn person(name: &str) -> Router {
-    let mut router = Router::new(name, 256, 50).expect("a window the core can hold");
-    router.add_peer("server", peer(&["server"]));
-    router
-}
-
-fn hub() -> Router {
-    let mut router = Router::new("server", 256, 50).expect("a window the core can hold");
-    router.add_peer("alice", peer(&["alice"]));
-    router.add_peer("bob", peer(&["bob"]));
-    router
-}
-
-/// The sheet's world: alice (node 1) and bob (node 2), each `latency_ms` from the hub.
-fn sheet(seed: u64, latency_ms: i64) -> World {
-    let mut world = World::new(seed);
-    world.add("alice", Peer::new(), person("alice"));
-    world.add("bob", Peer::new(), person("bob"));
-    world.add("server", Peer::new(), hub());
-    world.link("alice", "server", latency_ms);
-    world.link("bob", "server", latency_ms);
-    world.raise("alice", "sheet.join", r#"{"node":1,"hub":false}"#);
-    world.raise("bob", "sheet.join", r#"{"node":2,"hub":false}"#);
-    world.raise("server", "sheet.join", r#"{"node":100,"hub":true}"#);
-    world
-}
-
-/// A person types `value` into the cell at (`row`, `col`), when the host's clock
-/// reads the world's time.
-fn type_into(world: &mut World, who: &str, row: u32, col: u32, value: i32) {
-    let now = world.now_ms();
-    world.raise(
-        who,
-        "sheet.edit",
-        &format!(r#"{{"row":{row},"col":{col},"value":{value},"now":{now}}}"#),
-    );
-}
-
-/// One cell as a copy holds it: the number, and the stamp that put it there.
-type Held = (i64, (u64, u64, u64));
-
-/// The sheet a copy holds, by cell.
-fn sheet_of(world: &mut World, who: &str) -> BTreeMap<(u64, u64), Held> {
-    let saved = world
-        .actor::<Peer>(who)
-        .engine()
-        .save_at(0)
-        .expect("a running machine saves");
-    let saved: Value = serde_json::from_str(&saved.to_json()).expect("a saved state is JSON");
-    let mut cells = BTreeMap::new();
-    for cell in saved["variables"]["cells"]
-        .as_array()
-        .expect("the cells are a list")
-    {
-        let number = |field: &str| {
-            cell[field]
-                .as_i64()
-                .unwrap_or_else(|| panic!("{field} of {cell}"))
-        };
-        let key = (number("row") as u64, number("col") as u64);
-        let stamp = (
-            number("wallTime") as u64,
-            number("counter") as u64,
-            number("nodeId") as u64,
-        );
-        assert!(
-            cells.insert(key, (number("value"), stamp)).is_none(),
-            "{who} holds {key:?} twice"
-        );
-    }
-    cells
-}
-
-/// The three copies hold one sheet; which.
-fn agreed(world: &mut World) -> BTreeMap<(u64, u64), Held> {
-    let alice = sheet_of(world, "alice");
-    let bob = sheet_of(world, "bob");
-    let server = sheet_of(world, "server");
-    assert_eq!(alice, server, "alice and the hub hold different sheets");
-    assert_eq!(bob, server, "bob and the hub hold different sheets");
-    server
-}
-
-/// What the sheet should hold, read from the network and not from the copies: of
-/// every write a person sent the hub, the one with the latest stamp wins its cell.
-fn oracle(world: &World) -> BTreeMap<(u64, u64), Held> {
-    let mut expected: BTreeMap<(u64, u64), Held> = BTreeMap::new();
-    for line in world.trace() {
-        if !matches!(line.fate, Fate::Sent { .. }) || line.to != "server" {
-            continue;
-        }
-        let envelope = Envelope::decode(&mut SceCursor::new(&line.bytes)).expect("an envelope");
-        let write: Value = serde_json::from_slice(envelope.data).expect("a write is JSON");
-        let number = |field: &str| write[field].as_i64().expect("a number");
-        let key = (number("row") as u64, number("col") as u64);
-        let stamp = (
-            number("wallTime") as u64,
-            number("counter") as u64,
-            number("nodeId") as u64,
-        );
-        let held = (number("value"), stamp);
-        match expected.get(&key) {
-            Some((_, latest)) if *latest >= stamp => {}
-            _ => {
-                expected.insert(key, held);
-            }
-        }
-    }
-    expected
-}
+use common::*;
+use sce_rust_world::{Outcome, Rng};
 
 #[test]
 fn edits_to_different_cells_made_at_once_are_all_kept() {
@@ -265,6 +118,10 @@ fn a_random_afternoon_of_edits_ends_with_one_sheet() {
         let mut world = sheet(seed, 5);
         world.jitter("alice", "server", 40);
         world.jitter("bob", "server", 40);
+        // Links that do not keep order: a cell's value does not depend on the writes
+        // before it, so a copy may take them in any order.
+        world.reorder("alice", "server");
+        world.reorder("bob", "server");
         world.degrade("alice", "server", 0, 20);
         world.degrade("bob", "server", 0, 20);
         let mut cut = [false, false];

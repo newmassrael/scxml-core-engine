@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A row put into the sheet, as a copy holds it in its order of rows and as the
+  write that put it there travels: its id (`key`) and the id of the row it stands
+  after (`after`, 0 for the top of the sheet).
+  An id is a Lamport counter and the node that issued it, packed in one number
+  (`counter * 256 + node`, the node below 256), so ids compare as numbers do:
+  a later insertion, made by a copy that had seen the earlier, has the larger id,
+  and of two made without seeing each other the larger node wins the tie. Rows are
+  placed by the replicated growable array rule: a row goes directly after the row
+  it names, except that it steps over the rows already there with a larger id.
+  That is what puts two rows inserted after the same row in the same order on every
+  copy, whichever reaches it first.
+  Every field is at most 32 bits wide because a `<send>` carries no wider integer.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="sheet_row"
+       sce:event-name="sheet.row">
+  <datamodel>
+    <data id="key" sce:type="uint32" sce:direction="in"/>
+    <data id="after" sce:type="uint32" sce:direction="in"/>
+  </datamodel>
+</scxml>

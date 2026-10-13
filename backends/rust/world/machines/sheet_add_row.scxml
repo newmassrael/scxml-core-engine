@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A person's request for a new row, as the host hands it to a copy: the id of the
+  row it goes after (0 for the top). The copy gives the new row its id.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="sheet_add_row"
+       sce:event-name="sheet.add_row">
+  <datamodel>
+    <data id="after" sce:type="uint32" sce:direction="in"/>
+  </datamodel>
+</scxml>

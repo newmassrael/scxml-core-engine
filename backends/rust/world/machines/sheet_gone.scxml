@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A row taken out of the sheet: its id (`key`, as sheet_row gives it) and the node
+  that took it out (`by`), which the hub uses to pass the removal on to the other
+  copies and not back to the one that made it.
+  A removal leaves the row where it stands, marked, because another copy may be
+  inserting a row after it at that moment and has to find it: the sheet shows the
+  rows that are not marked. Removing a row twice is removing it once.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="sheet_gone"
+       sce:event-name="sheet.gone">
+  <datamodel>
+    <data id="key" sce:type="uint32" sce:direction="in"/>
+    <data id="by" sce:type="uint32" sce:direction="in"/>
+  </datamodel>
+</scxml>
