@@ -1593,11 +1593,63 @@ def unreceived_drives(case, model) -> list:
                   if not received_by(model, a) and not own_output(a))
 
 
-def withhold_unreceived(result, case, model) -> bool:
+def upstream_effects(case, last_given: dict, model, read_addresses, independent: bool) -> list:
+    """The addresses this component reads that the record shows MOVED in this case
+    although the case did not drive them: how a drive upstream reaches here.
+
+    A drive this component does not receive is withheld because what the case expects
+    may come from somewhere the document cannot see (`unreceived_drives`). That holds
+    unless the record also states, as a value of an input the component DOES read,
+    what that drive came to. A case whose `given` is the whole input (`independent`)
+    and whose read input holds another value than the case before gives the document
+    everything the platform's component had, and the drive upstream is only how the
+    platform got there. Measured 2026-10-13 over every pack: nine components have such
+    cases, 13 of 26 for one and 60 of 855 for another, and no document could be judged
+    on them.
+
+    ⚠ Needs a value to compare with: the first time an address is seen is not shown to
+    have moved, so a case with nothing before it stays withheld. And a drive that
+    changed no read input leaves the case withheld, whatever else `given` states.
+    """
+    if not independent or not unreceived_drives(case, model):
+        return []
+    driven = set(case.drove or ())
+    return sorted(a for a, value in (case.given or {}).items()
+                  if a in read_addresses and a not in driven and a in last_given
+                  and not _same(last_given[a], value, _field_at(model, a)))
+
+
+def unaccounted_drives(case, model, read_addresses, independent: bool) -> list:
+    """The drives this component does not receive whose effect the record leaves hidden.
+
+    Without `independent` (the pack says each case's `given` is the WHOLE input) every
+    such drive is hidden, as `unreceived_drives` says. With it, a drive upstream is only
+    how the platform came to the inputs the record then states, and when the case states
+    every address the document reads, the document is handed what the platform's
+    component held and nothing is hidden. ⚠ One read address the case does not state
+    keeps every such drive hidden: what the case expects may come from the value nobody
+    gave.
+
+    Measured 2026-10-13 over every pack: nine components have cases that drive an
+    upstream input, all of them with a whole-input `given`; for one component each of
+    its 13 judged cases is preceded by a setup step that states the effect, and none
+    could be judged.
+    """
+    outside = unreceived_drives(case, model)
+    if not outside or not independent:
+        return outside
+    given = case.given or {}
+    return outside if any(a not in given for a in read_addresses) else []
+
+
+def withhold_unreceived(result, case, model, outside=None) -> bool:
     """Mark a judged case unjudged when it drove an address this component
     does not receive. True when it did. The round was still computed, so
-    what the document keeps moves on exactly as it would have."""
-    outside = unreceived_drives(case, model)
+    what the document keeps moves on exactly as it would have.
+
+    `outside` is the drives that stay hidden (`unaccounted_drives`); left out, every
+    drive the component does not receive is."""
+    outside = unreceived_drives(case, model) if outside is None else outside
     if not outside:
         return False
     result.undetermined = sorted(case.expect)
@@ -3337,6 +3389,7 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
                    and _same(want, read.produced[address], _field_at(pack.model, address))
                    for address, want in case.expect.items())
 
+    machine_reads = set().union(*(rule_addresses(rule, latches) for rule in driving.values()))
     for case, owner, judged in rounds_of(examples.cases):
         # Under `on-change` the host runs the component only for an input
         # that changed; a record restating a value delivers nothing.
@@ -3347,6 +3400,10 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
         # A binding that does not say `activation` never gets here with a
         # restatement -- the run is refused before it starts.
         unchanged = unchanged_drives(case, last_given, pack.model)
+        # A drive upstream that the record shows reaching an input the machine reads is told
+        # to the machine as that input's change (`upstream_effects`).
+        effects = upstream_effects(case, last_given, pack.model, machine_reads, examples.independent)
+        hidden = unaccounted_drives(case, pack.model, machine_reads, examples.independent)
         remember_given(case, last_given)
         # Before the round: the record's writes land first, the document's
         # after them.
@@ -3382,10 +3439,10 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
             # passes through while being driven: before the first send and
             # after each one.
             where = f"case {owner.name or '(unnamed)'!r}"
-            lost = could_have_moved(where) if case.drove else ""
+            lost = could_have_moved(where) if (case.drove or effects) else ""
             moved = False
             told: set = set()
-            for address in dict.fromkeys(case.drove or ()):
+            for address in dict.fromkeys([*(case.drove or ()), *effects]):
                 if address in unchanged:
                     continue
                 for name, rule in driving.items():
@@ -3529,7 +3586,7 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
             continue
         # After the round was driven, observed and its sends taken, so the
         # machine is where the record left it either way.
-        if not withhold_unreceived(result, case, pack.model):
+        if not withhold_unreceived(result, case, pack.model, hidden):
             if arrival is not None:
                 # A failure of WHEN, beside any of what: the harness asserts
                 # the arrival time too, and an answer before the window is
@@ -3875,6 +3932,7 @@ def _verify(pack: Pack, binding_path: pathlib.Path, codegen: pathlib.Path | None
         # after them.
         planted.plant(case, owner)
         result = CaseResult(name=owner.name or "(unnamed)")
+        hidden = unaccounted_drives(case, pack.model, read_addresses, examples.independent)
         if rounds_are_known:
             if not examples.ordered and case is (owner.before[0] if owner.before else owner):
                 # ⚠ Cases that do not declare an order do not say what ran
@@ -4087,7 +4145,7 @@ def _verify(pack: Pack, binding_path: pathlib.Path, codegen: pathlib.Path | None
         # Computed either way, so what the document keeps moves on as the
         # platform's would; only the claim about this case is withheld.
         stood_in = planted.stand_in(produced, undetermined)
-        if not (judged and withhold_unreceived(result, case, pack.model)):
+        if not (judged and withhold_unreceived(result, case, pack.model, hidden)):
             # ⚠ A case read as its FIRST announcement is judged on what the host publishes first,
             # which for a slot that `announces_old_off` is the old event off, not the state the
             # round ends in. The state itself is what the document kept and `history` carries on.
