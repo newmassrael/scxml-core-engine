@@ -3310,6 +3310,22 @@ changed which tests exist, so the verdict is not comparable"
         mutation_stop_round "restore did not reproduce the baseline files"
     fi
 
+    # What a bridge wrote while the mutation stood is not among the declared
+    # files, so restoring those leaves it as the mutated generator wrote it: a
+    # generator mutation changes the output for every machine it reaches, and a
+    # casefile names the machines it reads, not every one the generator writes. The
+    # pytest runner regenerates inside its build, and so repairs this by
+    # construction; the Go and Rust runners compile what the bridge left, and
+    # rebuilt a tree whose undeclared machines still carried the mutation — which
+    # read as a binary that moved for no reason, and a baseline retaken red.
+    # Regenerating once more, from the restored generator, is what puts those files
+    # back; with no bridge declared it does nothing.
+    if ! mutation_regenerate; then
+        red "              restore left a bridge that no longer regenerates"
+        red "$(printf '%s\n' "$MUTATION_REGEN_ERROR" | sed 's/^/              /')"
+        mutation_stop_round "restore left a bridge that no longer regenerates"
+    fi
+
     local restored
     if ! restored="$(mutation_build_and_hash)"; then
         red "              restore left a tree that does not build"

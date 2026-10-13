@@ -31,5 +31,5 @@ PY
 mutation_case "a JSON number past 2^53 - 1 is read as a 64-bit field" <<'PY'
 edit("backends/go/runtime/event_payload.go",
      "if n > exactInADouble || n < -exactInADouble {",
-     "if false {")
+     "if (n > exactInADouble || n < -exactInADouble) && false {")
 PY
