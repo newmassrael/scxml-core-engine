@@ -14,13 +14,13 @@
 //! The connection is kept apart from the works (see `store::connection_store`) and a request
 //! pins it by its [`ConnectionId`] and the revision it had when the request was made.
 
-use std::fmt;
-
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::error::StoreError;
+use crate::requests::{ConnectionId, Pin};
+use crate::revision::Revision;
 
-const ID_MAX: usize = 40;
 const NAME_MAX: usize = 80;
 const MODEL_MAX: usize = 200;
 const EXECUTABLE_MAX: usize = 1_024;
@@ -40,55 +40,7 @@ pub const HANDOFF_PERCENT_MIN: u32 = 10;
 pub const HANDOFF_PERCENT_MAX: u32 = 95;
 
 fn bad(message: impl Into<String>) -> StoreError {
-    StoreError::refused("bad-connection", message, serde_json::Value::Null)
-}
-
-/// What names a connection: 1 to 40 lowercase letters, digits and hyphens, none at either end.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(try_from = "String", into = "String")]
-pub struct ConnectionId(String);
-
-impl ConnectionId {
-    pub fn parse(text: &str) -> Result<Self, StoreError> {
-        let well_formed = (1..=ID_MAX).contains(&text.len())
-            && !text.starts_with('-')
-            && !text.ends_with('-')
-            && text
-                .bytes()
-                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-');
-        if well_formed {
-            Ok(ConnectionId(text.to_string()))
-        } else {
-            Err(bad(format!(
-                "`{text}` is not a connection id: 1 to {ID_MAX} lowercase letters, digits and hyphens, \
-                 with no hyphen at either end"
-            )))
-        }
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl fmt::Display for ConnectionId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
-impl TryFrom<String> for ConnectionId {
-    type Error = StoreError;
-
-    fn try_from(text: String) -> Result<Self, Self::Error> {
-        ConnectionId::parse(&text)
-    }
-}
-
-impl From<ConnectionId> for String {
-    fn from(id: ConnectionId) -> String {
-        id.0
-    }
+    StoreError::refused("bad-connection", message, Value::Null)
 }
 
 /// Which kind of client or server a connection reaches. Each is its own adapter: they take
@@ -309,6 +261,52 @@ impl Connection {
         let mut bytes = serde_json::to_vec_pretty(self).expect("a connection is plain data");
         bytes.push(b'\n');
         bytes
+    }
+
+    /// The pin of a request made for this connection while it is at `revision`.
+    pub fn pin(&self, revision: Revision) -> Pin {
+        PinnedRun::of(self).pin(self.id.clone(), revision)
+    }
+}
+
+/// What a request made for a connection carries for the executor that runs it: which client,
+/// which model, what it may spend, copied from the settings when the request was made.
+///
+/// The works keep it inside the request's [`Pin`] and do not read it: which clients there are is
+/// this application's to say. This is where it is read, and a pin that says more than this knows
+/// is not read, so that a run is never made on half of what its request asked for.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PinnedRun {
+    pub adapter: AdapterKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Limits::is_empty")]
+    pub limits: Limits,
+}
+
+impl PinnedRun {
+    /// What a run of `connection` needs to be the same run.
+    pub fn of(connection: &Connection) -> Self {
+        PinnedRun {
+            adapter: connection.adapter,
+            model: connection.model.clone(),
+            limits: connection.limits.clone(),
+        }
+    }
+
+    /// The pin of `connection` at `revision` that carries this.
+    pub fn pin(&self, connection: ConnectionId, revision: Revision) -> Pin {
+        let Ok(Value::Object(run)) = serde_json::to_value(self) else {
+            unreachable!("a pinned run is a struct of plain data, so it is a JSON object")
+        };
+        Pin::new(connection, revision, run)
+            .expect("a pinned run names no field of the pin's own (`connection`, `revision`)")
+    }
+
+    /// What `pin` carries for its executor, or why this application cannot read it.
+    pub fn read(pin: &Pin) -> Result<Self, serde_json::Error> {
+        serde_json::from_value(Value::Object(pin.run().clone()))
     }
 }
 

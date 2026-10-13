@@ -23,8 +23,8 @@ use sce_app_core::claude_code::{AuthorServer, Search};
 use sce_app_core::directory::{ClaudeLaunch, Connections};
 use sce_app_core::requests::Pin;
 use sce_app_core::{
-    call_in, CommandError, ConnectionId, ConnectionStore, Context, Entrance, Policy, Revision,
-    WorkStore,
+    call_in, CommandError, ConnectionId, ConnectionStore, Context, Entrance, PinnedRun, Policy,
+    Revision, WorkStore,
 };
 use serde_json::{json, Value};
 
@@ -590,13 +590,12 @@ fn a_connection_of_another_kind_is_refused_and_one_not_kept_yet_is_asked_as_none
 fn pin_of(rig: &Rig, executable: Option<&Path>) -> Pin {
     let saved = rig.desktop("save_connection", claude_json(executable));
     let revision = Revision::parse(saved["revision"].as_str().unwrap()).unwrap();
-    Pin {
-        connection: ConnectionId::parse("claude").unwrap(),
-        revision,
+    PinnedRun {
         adapter: sce_app_core::AdapterKind::ClaudeCode,
         model: Some("opus".to_string()),
         limits: sce_app_core::Limits::default(),
     }
+    .pin(ConnectionId::parse("claude").unwrap(), revision)
 }
 
 fn directory(rig: &Rig, launch: &Path) -> Connections {

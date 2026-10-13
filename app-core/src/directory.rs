@@ -8,7 +8,10 @@
 //!
 //! 1. **The adapter.** This build can run Claude Code, Codex and a model server of the person's
 //!    (`local`). A request is written by the kind of connection it was made for and by no other,
-//!    so that it is not taken by a client that is not the one the person chose.
+//!    so that it is not taken by a client that is not the one the person chose. The works keep
+//!    what a request asks of its run without reading it (`connection::PinnedRun`), so it is read
+//!    here, and a request that asks for more than this build reads (one made by a newer build)
+//!    is said to be so and not run on the part of it this build does read.
 //! 2. **The settings, at the revision the request pinned.** A connection changes after a request
 //!    is made, and the request is about what it was when it was made. Settings the request was
 //!    made with and this computer does not have (a works folder that came from another computer)
@@ -36,7 +39,7 @@ use crate::claude_code::{
     claude_version_of, observe_auth, AuthorServer, ClaudeCode, ClaudeCodeConfig, SAY_WHAT_IT_IS,
 };
 use crate::codex::{Codex, CodexConfig, CodexLaunch};
-use crate::connection::{AdapterKind, AuthSource};
+use crate::connection::{AdapterKind, AuthSource, PinnedRun};
 use crate::error::StoreError;
 use crate::http_client::Endpoint;
 use crate::local::{Local, LocalConfig};
@@ -172,7 +175,7 @@ impl Connections {
     }
 
     /// The settings `pin` was made with, as they were then, or why they cannot be had.
-    fn stored_for(&self, pin: &Pin) -> Result<StoredConnection, Unrunnable> {
+    fn stored_for(&self, pin: &Pin, run: &PinnedRun) -> Result<StoredConnection, Unrunnable> {
         let stored = match self.settings.read(&pin.connection, Some(&pin.revision)) {
             Ok(Some(stored)) => stored,
             Ok(None) | Err(StoreError::NotFound { .. }) => {
@@ -192,7 +195,7 @@ impl Connections {
                 )))
             }
         };
-        if stored.connection.adapter != pin.adapter {
+        if stored.connection.adapter != run.adapter {
             return Err(Unrunnable::new(format!(
                 "the settings of `{}` at the revision the request names are for another kind of \
                  connection than the request says",
@@ -204,10 +207,14 @@ impl Connections {
 
     /// The Claude Code that runs for `pin`, or why it cannot.
     pub fn claude_for(&self, pin: &Pin) -> Result<ClaudeCode, Unrunnable> {
-        if pin.adapter != AdapterKind::ClaudeCode {
-            return Err(wrong_adapter(AdapterKind::ClaudeCode, pin.adapter));
+        self.claude(pin, &run_of(pin)?)
+    }
+
+    fn claude(&self, pin: &Pin, run: &PinnedRun) -> Result<ClaudeCode, Unrunnable> {
+        if run.adapter != AdapterKind::ClaudeCode {
+            return Err(wrong_adapter(AdapterKind::ClaudeCode, run.adapter));
         }
-        let stored = self.stored_for(pin)?;
+        let stored = self.stored_for(pin, run)?;
         let Some(launch) = self.launches.claude() else {
             return Err(claude_not_found());
         };
@@ -255,10 +262,10 @@ impl Connections {
         }
         let defaults = ClaudeCodeConfig::default();
         let config = ClaudeCodeConfig {
-            model: pin.model.clone(),
-            max_turns: pin.limits.turns.unwrap_or(defaults.max_turns),
+            model: run.model.clone(),
+            max_turns: run.limits.turns.unwrap_or(defaults.max_turns),
             max_budget_usd: launch.max_budget_usd,
-            timeout: pin
+            timeout: run
                 .limits
                 .seconds
                 .map_or(defaults.timeout, |s| Duration::from_secs(u64::from(s))),
@@ -269,10 +276,14 @@ impl Connections {
     /// The Codex that runs for `pin`, or why it cannot. Every sentence of a reason names no path and
     /// nothing Codex printed: it is kept in the works folder, which is shared.
     pub fn codex_for(&self, pin: &Pin) -> Result<Codex, Unrunnable> {
-        if pin.adapter != AdapterKind::Codex {
-            return Err(wrong_adapter(AdapterKind::Codex, pin.adapter));
+        self.codex(pin, &run_of(pin)?)
+    }
+
+    fn codex(&self, pin: &Pin, run: &PinnedRun) -> Result<Codex, Unrunnable> {
+        if run.adapter != AdapterKind::Codex {
+            return Err(wrong_adapter(AdapterKind::Codex, run.adapter));
         }
-        let stored = self.stored_for(pin)?;
+        let stored = self.stored_for(pin, run)?;
         let Some(launch) = self.launches.codex() else {
             return Err(codex_not_found());
         };
@@ -286,8 +297,8 @@ impl Connections {
             .map_err(Unrunnable::new)?;
         let defaults = CodexConfig::default();
         Ok(ready.with_config(CodexConfig {
-            model: pin.model.clone(),
-            timeout: pin
+            model: run.model.clone(),
+            timeout: run
                 .limits
                 .seconds
                 .map_or(defaults.timeout, |s| Duration::from_secs(u64::from(s))),
@@ -298,10 +309,14 @@ impl Connections {
     /// connection by what the person called it and nothing of where it is: it is kept in the works
     /// folder, which is shared, and an address can be a name on a network that is not the reader's.
     pub fn local_for(&self, pin: &Pin) -> Result<Local, Unrunnable> {
-        if pin.adapter != AdapterKind::Local {
-            return Err(wrong_adapter(AdapterKind::Local, pin.adapter));
+        self.local(pin, &run_of(pin)?)
+    }
+
+    fn local(&self, pin: &Pin, run: &PinnedRun) -> Result<Local, Unrunnable> {
+        if run.adapter != AdapterKind::Local {
+            return Err(wrong_adapter(AdapterKind::Local, run.adapter));
         }
-        let stored = self.stored_for(pin)?;
+        let stored = self.stored_for(pin, run)?;
         let connection = &stored.connection;
         let called = connection
             .display_name
@@ -329,7 +344,7 @@ impl Connections {
                 reason,
             )));
         }
-        let Some(model) = pin.model.clone() else {
+        let Some(model) = run.model.clone() else {
             return Err(Unrunnable::new(format!(
                 "no model is chosen for the server `{called}`: choose one under AI connection, then \
                  ask again"
@@ -354,17 +369,17 @@ impl Connections {
             })?;
         let defaults = LocalConfig::for_model(model);
         let config = LocalConfig {
-            max_turns: pin.limits.turns.unwrap_or(defaults.max_turns),
-            timeout: pin
+            max_turns: run.limits.turns.unwrap_or(defaults.max_turns),
+            timeout: run
                 .limits
                 .seconds
                 .map_or(defaults.timeout, |s| Duration::from_secs(u64::from(s))),
             // What a person who knows the model says of its context: how many times to begin
             // again, how big the context is, and how full it may be. Nothing is assumed of a
             // model that was not described.
-            handoffs: pin.limits.handoffs.unwrap_or(defaults.handoffs),
-            context_tokens: pin.limits.context_tokens,
-            handoff_percent: pin
+            handoffs: run.limits.handoffs.unwrap_or(defaults.handoffs),
+            context_tokens: run.limits.context_tokens,
+            handoff_percent: run
                 .limits
                 .handoff_percent
                 .unwrap_or(defaults.handoff_percent),
@@ -452,18 +467,31 @@ impl Connections {
 
 impl Directory for Connections {
     fn generator_for(&self, pin: &Pin) -> Result<Arc<dyn Generator>, Unrunnable> {
-        match pin.adapter {
+        let run = run_of(pin)?;
+        match run.adapter {
             AdapterKind::ClaudeCode => self
-                .claude_for(pin)
+                .claude(pin, &run)
                 .map(|client| Arc::new(client) as Arc<dyn Generator>),
             AdapterKind::Codex => self
-                .codex_for(pin)
+                .codex(pin, &run)
                 .map(|client| Arc::new(client) as Arc<dyn Generator>),
             AdapterKind::Local => self
-                .local_for(pin)
+                .local(pin, &run)
                 .map(|server| Arc::new(server) as Arc<dyn Generator>),
         }
     }
+}
+
+/// What `pin` asks of its run, or why this build does not read it, in a sentence of ours: a reason
+/// is kept in the works folder, which is shared.
+fn run_of(pin: &Pin) -> Result<PinnedRun, Unrunnable> {
+    PinnedRun::read(pin).map_err(|_| {
+        Unrunnable::new(format!(
+            "this request asks to be run for `{}` in a way this build does not know (a newer build \
+             made it): run it with that build, or ask again here",
+            pin.connection
+        ))
+    })
 }
 
 fn claude_not_found() -> Unrunnable {

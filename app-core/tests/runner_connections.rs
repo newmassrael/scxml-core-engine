@@ -22,8 +22,8 @@ use sce_app_core::runner::{
     Unrunnable,
 };
 use sce_app_core::{
-    ConnectionId, Limits, ManualClock, ModelFiles, Registration, Requirements, Revision, WorkId,
-    WorkStore,
+    ConnectionId, Limits, ManualClock, ModelFiles, PinnedRun, Registration, Requirements, Revision,
+    WorkId, WorkStore,
 };
 
 use common::FakeRenderer;
@@ -121,9 +121,7 @@ fn fixture(label: &str) -> Fixture {
 }
 
 fn pin(connection: &str, revision: &str) -> Pin {
-    Pin {
-        connection: ConnectionId::parse(connection).unwrap(),
-        revision: Revision::of(revision.as_bytes()),
+    PinnedRun {
         adapter: AdapterKind::ClaudeCode,
         model: Some("opus".to_string()),
         limits: Limits {
@@ -132,6 +130,10 @@ fn pin(connection: &str, revision: &str) -> Pin {
             ..Limits::default()
         },
     }
+    .pin(
+        ConnectionId::parse(connection).unwrap(),
+        Revision::of(revision.as_bytes()),
+    )
 }
 
 impl Fixture {

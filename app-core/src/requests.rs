@@ -34,9 +34,12 @@
 //! the moments) and the words a caller acts on when a request refuses. `request_life` is the seam:
 //! it stands a machine where a request stands, says one event to it and reads the answer back.
 
-use serde::{Deserialize, Serialize};
+use std::fmt;
 
-use crate::connection::{AdapterKind, ConnectionId, Limits};
+use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
+
+use crate::error::StoreError;
 use crate::request_life::{self, Answer, Event, Standing, Verdict};
 use crate::revision::Revision;
 
@@ -122,6 +125,64 @@ pub struct Inputs {
     pub answers: Option<Revision>,
 }
 
+const CONNECTION_ID_MAX: usize = 40;
+
+/// What names a connection: 1 to 40 lowercase letters, digits and hyphens, none at either end.
+///
+/// It is here and not with the connection's settings because it is what a request is held to:
+/// the works compare the connection a request was made for with the one an executor offers, and
+/// read nothing else of a connection.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct ConnectionId(String);
+
+impl ConnectionId {
+    pub fn parse(text: &str) -> Result<Self, StoreError> {
+        let well_formed = (1..=CONNECTION_ID_MAX).contains(&text.len())
+            && !text.starts_with('-')
+            && !text.ends_with('-')
+            && text
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-');
+        if well_formed {
+            Ok(ConnectionId(text.to_string()))
+        } else {
+            Err(StoreError::refused(
+                "bad-connection",
+                format!(
+                    "`{text}` is not a connection id: 1 to {CONNECTION_ID_MAX} lowercase letters, \
+                     digits and hyphens, with no hyphen at either end"
+                ),
+                Value::Null,
+            ))
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for ConnectionId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl TryFrom<String> for ConnectionId {
+    type Error = StoreError;
+
+    fn try_from(text: String) -> Result<Self, Self::Error> {
+        ConnectionId::parse(&text)
+    }
+}
+
+impl From<ConnectionId> for String {
+    fn from(id: ConnectionId) -> String {
+        id.0
+    }
+}
+
 /// A connection as an executor or a screen names it: which one, and the revision it has seen.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -138,18 +199,51 @@ pub struct ConnectionRef {
 /// where or as whom (a server's address, what the person calls it, the path of a program):
 /// the works folder is shared, and an executor that needs those reads the connection at this
 /// revision, from the settings of whoever is running it.
+///
+/// The works read two things of a pin: which connection, and at which revision. That is what an
+/// executor offers when it claims ([`ConnectionRef`]) and what a claim is refused by
+/// (`wrong-connection`). What a run needs is the application's: it says which clients it can
+/// run, and the works keep what it wrote, beside the two fields and in its own words, and write
+/// it back as they read it. So a client an application learns to run is not something the works
+/// have to learn too. The application reads it (`connection::PinnedRun`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Pin {
     pub connection: ConnectionId,
     pub revision: Revision,
-    pub adapter: AdapterKind,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub model: Option<String>,
-    #[serde(default, skip_serializing_if = "Limits::is_empty")]
-    pub limits: Limits,
+    #[serde(flatten)]
+    run: Map<String, Value>,
 }
 
 impl Pin {
+    /// The pin of `connection` at `revision`, carrying `run` for the executor. Refused when `run`
+    /// names a field of the pin's own: written out, the record would say it twice.
+    pub fn new(
+        connection: ConnectionId,
+        revision: Revision,
+        run: Map<String, Value>,
+    ) -> Result<Self, StoreError> {
+        if let Some(taken) = ["connection", "revision"]
+            .into_iter()
+            .find(|field| run.contains_key(*field))
+        {
+            return Err(StoreError::refused(
+                "bad-pin",
+                format!("what a pin carries for its executor cannot name `{taken}`, which is the pin's own"),
+                Value::Null,
+            ));
+        }
+        Ok(Pin {
+            connection,
+            revision,
+            run,
+        })
+    }
+
+    /// What the application that made the request wrote for its executor, as it wrote it.
+    pub fn run(&self) -> &Map<String, Value> {
+        &self.run
+    }
+
     /// The connection this pins, as an executor offers it.
     pub fn reference(&self) -> ConnectionRef {
         ConnectionRef {
@@ -1041,5 +1135,56 @@ mod tests {
             (read.state, read.inputs.answers, read.lease),
             (State::Queued, None, None)
         );
+    }
+
+    #[test]
+    fn a_pin_keeps_what_it_carries_for_its_executor_without_reading_it() {
+        // A client no build of the works has heard of, and a field no build of them has: what
+        // the application wrote is the application's, and it comes back as it was written.
+        let written = serde_json::json!({
+            "connection": "main",
+            "revision": revision("settings"),
+            "adapter": "a-client-of-tomorrow",
+            "budget": { "usd": 3 },
+        });
+
+        let pin: Pin = serde_json::from_value(written.clone()).unwrap();
+
+        assert_eq!(pin.connection.as_str(), "main");
+        assert_eq!(
+            pin.run().get("adapter"),
+            Some(&serde_json::json!("a-client-of-tomorrow"))
+        );
+        assert_eq!(serde_json::to_value(&pin).unwrap(), written);
+        assert_eq!(
+            pin.reference(),
+            ConnectionRef {
+                id: ConnectionId::parse("main").unwrap(),
+                revision: revision("settings"),
+            }
+        );
+    }
+
+    #[test]
+    fn a_pin_does_not_carry_a_field_of_its_own_for_its_executor() {
+        for field in ["connection", "revision"] {
+            let mut run = Map::new();
+            run.insert(field.to_string(), Value::from("again"));
+
+            let refused = Pin::new(
+                ConnectionId::parse("main").unwrap(),
+                revision("settings"),
+                run,
+            )
+            .unwrap_err();
+
+            match refused {
+                StoreError::Refused { kind, message, .. } => {
+                    assert_eq!(kind, "bad-pin", "{field}");
+                    assert!(message.contains(&format!("`{field}`")), "{message}");
+                }
+                other => panic!("{field}: {other:?}"),
+            }
+        }
     }
 }

@@ -78,13 +78,14 @@ pub use answers::{Answers, AnswersError};
 pub use auth_policy::{Decision, Observed, Policy, Reason, Route, Status};
 pub use clock::{Clock, FixedClock, ManualClock, SystemClock};
 pub use commands::{call, call_in, CommandError, Context, Entrance, COMMANDS, COMMAND_SET_VERSION};
-pub use connection::{AdapterKind, AuthSource, Connection, ConnectionId, Limits};
+pub use connection::{AdapterKind, AuthSource, Connection, Limits, PinnedRun};
 pub use error::StoreError;
 pub use figures::{
     default_renderer, renderer_with_bundle, FigureRenderer, FigureRequest, FigureSet, NoRenderer,
     RenderError, SceCodegen, Sheet,
 };
 pub use model_set::{Document, ModelError, ModelFiles};
+pub use requests::ConnectionId;
 pub use requirements::{Requirements, RequirementsError};
 pub use review::{
     Check, ModelReviewer, PageRefusal, Product, Record, Review, ReviewRequest, Unresolved, Verdict,

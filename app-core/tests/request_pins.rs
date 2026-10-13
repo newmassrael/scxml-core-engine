@@ -14,9 +14,10 @@
 
 mod common;
 
-use sce_app_core::requests::Request;
+use sce_app_core::requests::{Inputs, Pin, Request};
 use sce_app_core::{
-    call, call_in, CommandError, ConnectionStore, Context, Entrance, Policy, SystemClock, WorkStore,
+    call, call_in, AdapterKind, CommandError, ConnectionStore, Context, Entrance, Limits,
+    PinnedRun, Policy, Registration, Revision, SystemClock, WorkId, WorkStore,
 };
 use serde_json::{json, Value};
 
@@ -417,4 +418,78 @@ fn a_request_written_before_connections_existed_still_reads() {
     // And it is written back as it was: no pin, no new field in a file nobody changed.
     let written = serde_json::to_value(&request).unwrap();
     assert!(written.get("pin").is_none(), "{written}");
+}
+
+#[test]
+fn the_works_hold_a_request_to_its_connection_and_keep_what_it_asks_of_its_run_unread() {
+    // Which clients there are is the application's to say. A request one made for a client the
+    // works have never heard of, with a field they do not have, is held to its connection as any
+    // other, and what it asks of its run is in its record as it was written, after the works
+    // have taken it, kept it and written it again.
+    let rig = Rig::new("pin-unread");
+    let work = rig.work();
+    let settings = "c".repeat(64);
+    let pin = json!({
+        "connection": "main", "revision": settings,
+        "adapter": "a-client-of-tomorrow", "budget": { "usd": 3 },
+    });
+    let made = rig
+        .works
+        .register_request_with(
+            &WorkId::parse(&work.0).unwrap(),
+            Registration {
+                key: "press-1",
+                origin: "gui",
+                expect: Inputs {
+                    source: Revision::parse(&work.1).unwrap(),
+                    answers: None,
+                },
+                supersede: false,
+            },
+            Some(serde_json::from_value::<Pin>(pin.clone()).unwrap()),
+            false,
+        )
+        .unwrap();
+    let request = made.request.id;
+    let claim = |connection: Option<Value>| {
+        let mut args = json!({ "id": work.0, "request": request, "holder": "desktop" });
+        if let Some(connection) = connection {
+            args["connection"] = connection;
+        }
+        rig.ask("claim_request", args)
+    };
+
+    let refused = claim(None).unwrap_err();
+    assert_eq!(refused.kind, "wrong-connection");
+    let taken = claim(Some(reference("main", &settings))).unwrap();
+    assert_eq!(taken["request"]["state"], json!("running"));
+
+    let read = rig.ok("read_request", json!({ "id": work.0, "request": request }));
+    assert_eq!(read["request"]["pin"], pin);
+}
+
+#[test]
+fn a_request_written_before_its_run_was_the_applications_reads_as_it_was_made() {
+    // The record a request made by an earlier build keeps: the same fields at the same level, so
+    // what the application reads of it is what that build pinned.
+    let earlier = json!({
+        "connection": "main", "revision": "d".repeat(64), "adapter": "local",
+        "model": "qwen3-coder:30b", "limits": { "turns": 40, "handoffs": 2 },
+    });
+
+    let pin: Pin = serde_json::from_value(earlier.clone()).unwrap();
+
+    assert_eq!(
+        PinnedRun::read(&pin).unwrap(),
+        PinnedRun {
+            adapter: AdapterKind::Local,
+            model: Some("qwen3-coder:30b".to_string()),
+            limits: Limits {
+                turns: Some(40),
+                handoffs: Some(2),
+                ..Limits::default()
+            },
+        }
+    );
+    assert_eq!(serde_json::to_value(&pin).unwrap(), earlier);
 }

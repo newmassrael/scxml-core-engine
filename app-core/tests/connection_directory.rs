@@ -191,13 +191,7 @@ impl Rig {
             sce_app_core::Saved::Saved { revision, .. }
             | sce_app_core::Saved::Unchanged { revision } => revision,
         };
-        Pin {
-            connection: connection.id.clone(),
-            revision,
-            adapter: connection.adapter,
-            model: connection.model.clone(),
-            limits: connection.limits.clone(),
-        }
+        connection.pin(revision)
     }
 }
 
@@ -568,4 +562,34 @@ fn no_client_to_run_is_said_so() {
     let said = refused(directory.claude_for(&pin));
 
     assert!(said.contains("Claude Code was not found"), "{said}");
+}
+
+#[test]
+fn a_request_that_asks_for_a_run_this_build_does_not_read_is_said_so_and_not_run() {
+    // The works keep what a request asks of its run without reading it, so a request a newer
+    // build made reaches this one as it was written: a client this build has never heard of, or
+    // one it has with something more asked of it. Neither is run on the part this build reads.
+    let rig = Rig::new("dir-unread-run", SUBSCRIPTION);
+    let directory = rig.directory(Policy::shipped());
+    let written = serde_json::to_value(rig.pin(&claude())).unwrap();
+    let mut another_client = written.clone();
+    another_client["adapter"] = serde_json::json!("a-client-of-tomorrow");
+    let mut more_asked = written;
+    more_asked["budget"] = serde_json::json!({ "usd": 3 });
+
+    for (label, newer) in [
+        ("another client", another_client),
+        ("more asked", more_asked),
+    ] {
+        let pin: Pin = serde_json::from_value(newer).unwrap();
+        for said in [
+            refused(directory.generator_for(&pin)),
+            refused(directory.claude_for(&pin)),
+        ] {
+            assert!(
+                said.contains("`main` in a way this build does not know"),
+                "{label}: {said}"
+            );
+        }
+    }
 }

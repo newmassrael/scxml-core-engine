@@ -30,9 +30,10 @@ use serde::Serialize;
 use serde_json::json;
 
 use super::{atomic_write, Saved, Unreadable, LOCK_WAIT};
-use crate::connection::{Connection, ConnectionId};
+use crate::connection::Connection;
 use crate::error::StoreError;
 use crate::lock;
+use crate::requests::ConnectionId;
 use crate::revision::Revision;
 
 const CONNECTIONS_DIR: &str = "connections";

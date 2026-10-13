@@ -508,13 +508,7 @@ mod hosting {
         let revision = match settings.save(&connection, None).unwrap() {
             Saved::Saved { revision, .. } | Saved::Unchanged { revision } => revision,
         };
-        let pin = Pin {
-            connection: connection.id,
-            revision,
-            adapter: connection.adapter,
-            model: connection.model,
-            limits: connection.limits,
-        };
+        let pin = connection.pin(revision);
         (settings, pin)
     }
 

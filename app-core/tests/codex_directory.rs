@@ -196,13 +196,7 @@ impl Rig {
             sce_app_core::Saved::Saved { revision, .. }
             | sce_app_core::Saved::Unchanged { revision } => revision,
         };
-        Pin {
-            connection: connection.id.clone(),
-            revision,
-            adapter: connection.adapter,
-            model: connection.model.clone(),
-            limits: connection.limits.clone(),
-        }
+        connection.pin(revision)
     }
 
     fn launch(&self, support: Support, environment: &[(&str, &str)]) -> CodexLaunch {

@@ -73,13 +73,7 @@ fn register(settings: &ConnectionStore, connection: &Connection) -> Pin {
     let revision = match settings.save(connection, None).unwrap() {
         Saved::Saved { revision, .. } | Saved::Unchanged { revision } => revision,
     };
-    Pin {
-        connection: connection.id.clone(),
-        revision,
-        adapter: connection.adapter,
-        model: connection.model.clone(),
-        limits: connection.limits.clone(),
-    }
+    connection.pin(revision)
 }
 
 fn ask_for(store: &WorkStore<Arc<ManualClock>>, id: &WorkId, pin: Pin) -> String {

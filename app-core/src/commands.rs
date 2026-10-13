@@ -30,11 +30,11 @@ use crate::clock::{utc_timestamp, Clock};
 use crate::codex;
 use crate::codex_status;
 use crate::codex_support::Support;
-use crate::connection::{AdapterKind, Connection, ConnectionId};
+use crate::connection::{AdapterKind, Connection};
 use crate::error::StoreError;
 use crate::figures::{FigureRequest, RenderError};
 use crate::model_set::{Document, ModelError, ModelFiles};
-use crate::requests::{ConnectionRef, Inputs, Lease, Pin};
+use crate::requests::{ConnectionId, ConnectionRef, Inputs, Lease, Pin};
 use crate::requirements::{Requirements, RequirementsError};
 use crate::review::{Product, Review, ReviewRequest, Verdict};
 use crate::revision::Revision;
@@ -1440,14 +1440,7 @@ fn pin_for(
             }),
         )));
     }
-    let connection = current.connection;
-    Ok(Pin {
-        connection: connection.id,
-        revision: current.revision,
-        adapter: connection.adapter,
-        model: connection.model,
-        limits: connection.limits,
-    })
+    Ok(current.connection.pin(current.revision))
 }
 
 #[derive(Deserialize)]
