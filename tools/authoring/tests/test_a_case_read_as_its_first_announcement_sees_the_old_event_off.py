@@ -91,6 +91,29 @@ class ACaseReadAsItsFirstAnnouncementSeesTheOldEventOff(unittest.TestCase):
     def test_a_document_run_with_no_history_is_read_as_it_ends(self):
         self.assertEqual(first_announcement(self.model(), None, {ID: "E2", STAT: "ON"}), {})
 
+    def test_an_identifier_the_record_set_is_what_the_host_cached(self):
+        """The test set the slot to the identifier the round ends on: nothing moves, so the
+        first announcement is the new event on -- not the document's own earlier event off."""
+        history = self.after({ID: "E1", STAT: "ON"})
+
+        first = first_announcement(self.model(), history, {ID: "E2", STAT: "ON"}, planted={ID: "E2"})
+
+        self.assertEqual(first, {})
+
+    def test_an_identifier_the_record_set_to_another_event_is_the_one_announced_off(self):
+        history = self.after({ID: "E1", STAT: "ON"})
+
+        first = first_announcement(self.model(), history, {ID: "E3", STAT: "ON"}, planted={ID: "E2"})
+
+        self.assertEqual(first, {ID: "E2", STAT: "OFF"})
+
+    def test_a_position_the_record_did_not_set_keeps_the_documents_own_history(self):
+        history = self.after({ID: "E1", STAT: "ON"})
+
+        first = first_announcement(self.model(), history, {ID: "E2", STAT: "ON"}, planted={"Plant.Other.ID": "X"})
+
+        self.assertEqual(first, {ID: "E1", STAT: "OFF"})
+
 
 if __name__ == "__main__":
     unittest.main()

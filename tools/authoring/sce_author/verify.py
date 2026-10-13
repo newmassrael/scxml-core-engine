@@ -2066,8 +2066,16 @@ _EVENT_OFF = "OFF"
 
 
 def first_announcement(model, history: History | None, produced: dict,
-                       undetermined=frozenset()) -> dict:
+                       undetermined=frozenset(), planted=None) -> dict:
     """What a round's FIRST announcement says, for a case read as `observed: first`.
+
+    `planted` is what the record wrote into the slots before this round (`Planted.values`,
+    taken before the round's own writes): the slot holds THAT, not what the document last
+    wrote there. ⚠ A record that sets an event's identifier by itself and then moves the
+    input leaves the host's cache at the identifier the test chose: set to the identifier the
+    round ends on, nothing moves and the first announcement is the new event on. Measured
+    2026-10-14: the document's own earlier identifier was read instead, and a document that
+    behaved as the component does failed three cases of one component.
 
     A document computes where a slot stands AFTER a round; the host announces the round's
     writes in order. For a component that `announces_old_off`, a round that moves an event
@@ -2088,7 +2096,8 @@ def first_announcement(model, history: History | None, produced: dict,
         if not entry.announces_old_off:
             continue
         identity, status = f"{entry.address}.ID", f"{entry.address}.Stat"
-        now, before = produced.get(identity), history.published.get(identity)
+        now = produced.get(identity)
+        before = (planted or {}).get(identity, history.published.get(identity))
         shown = history.published.get(status)
         stat_field = entry.field("Stat")
         if (identity in undetermined or status in undetermined
@@ -3960,6 +3969,10 @@ def _verify(pack: Pack, binding_path: pathlib.Path, codegen: pathlib.Path | None
         # Before the round: the record's writes land first, the document's
         # after them.
         planted.plant(case, owner)
+        # What the slots hold as the round starts: the document's own writes of this round
+        # will take a planted value away (`Planted.overwritten`), and the host's cache was
+        # the planted one when it decided whether to announce the old event off.
+        slots_before = dict(planted.values)
         result = CaseResult(name=owner.name or "(unnamed)")
         hidden = unaccounted_drives(case, pack.model, read_addresses, examples.independent)
         if rounds_are_known:
@@ -4178,7 +4191,8 @@ def _verify(pack: Pack, binding_path: pathlib.Path, codegen: pathlib.Path | None
             # ⚠ A case read as its FIRST announcement is judged on what the host publishes first,
             # which for a slot that `announces_old_off` is the old event off, not the state the
             # round ends in. The state itself is what the document kept and `history` carries on.
-            read = (dict(produced, **first_announcement(pack.model, history, produced, undetermined))
+            read = (dict(produced, **first_announcement(pack.model, history, produced, undetermined,
+                                                        slots_before))
                     if case.observed == "first" else produced)
             judge.judge(result, case, read, undetermined,
                         open_values=unknown + sorted(withheld), planted=stood_in,
