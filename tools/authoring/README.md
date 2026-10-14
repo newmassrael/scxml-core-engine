@@ -2263,16 +2263,19 @@ announces only in a round the document sends it a mapped value — a delayed act
 included. A window nothing writes in is a wait the harness saw go unanswered,
 and fails as one.
 
-A pure document (a transform) answers where a slot stands AFTER the round, and a
+A document, a transform or a statechart, answers where a slot stands AFTER the round, and a
 component that `announces_old_off` publishes the OLD event off before the new one,
 so the first announcement of a round that moves such a slot to another identifier,
 while the old event was shown, is `(old ID, OFF)`. `verify` reads a case
 `observed: first` that way (`first_announcement`), and only that way: a slot that
 was already off, one never written, an identifier that did not change, and a
 position the run could not settle are read as the round ends. A case that reads
-`any` keeps the state the round ends in, as before. Before this the transform path
-judged the end state for every case, and a document that behaved as the component
-does failed the cases that expect the old event off.
+`any` keeps the state the round ends in, as before. What a slot held before the
+round is what the rounds before it left there, a setup round included, or what the
+record planted. A path that judged the end state for every case failed a document
+that behaved as the component does on each case that expects the old event off:
+the transform path did until it read the first announcement, and the statechart
+path until it was given the same reading (20 of 270 cases of one component).
 
 Where the pack states both — `activation: on-change` and `writes` — a round is
 something `verify` knows happened or did not: a case whose drives reach no

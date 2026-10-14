@@ -3502,24 +3502,34 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
                     and rule.get("hold_last")}
         fresh = unreadable.union(
             *(positions_written_now(outputs[n], v) for n, v in now.items()))
+        # What the document left in each position, read for a setup round too: a component
+        # that `announces_old_off` publishes what its slot held before the round, and a setup
+        # round is where the slot was moved to the event the judged round moves it from. A
+        # position that cannot be read in a setup round is not a claim, so it is left out.
+        published: dict = {}
+        for name, rule in outputs.items():
+            if rule.get("unresolved") or rule.get("internal") or name not in now:
+                continue
+            if name in held_now:
+                if held_now[name] is _NOT_WRITTEN:
+                    # Nothing held yet: the slot is not written at all.
+                    continue
+                value = held_now[name]
+            else:
+                value = now[name]
+            try:
+                published.update(output_values(name, rule, value))
+            except VerifyError:
+                if judged:
+                    raise
         produced: dict = {}
         stood_in: set = set()
         if judged:
-            for name, rule in outputs.items():
-                if rule.get("unresolved") or rule.get("internal"):
-                    continue
-                if name in held_now:
-                    if held_now[name] is _NOT_WRITTEN:
-                        # Nothing held yet: the slot is not written at all.
-                        continue
-                    value = held_now[name]
-                else:
-                    value = now[name]
-                produced.update(output_values(name, rule, value))
+            produced.update(published)
             surviving = planted.surviving(fresh)
             produced.update(surviving)
             stood_in = set(surviving)
-        return SimpleNamespace(held_now=held_now, fresh=fresh,
+        return SimpleNamespace(held_now=held_now, fresh=fresh, published=published,
                                produced=produced, stood_in=stood_in)
 
     def meets(case, read) -> bool:
@@ -3552,6 +3562,9 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
         # Before the round: the record's writes land first, the document's
         # after them.
         planted.plant(case, owner)
+        # What the slots hold as the round starts: the host's cache was the planted one when it
+        # decided whether to announce the old event off (`first_announcement`).
+        slots_before = dict(planted.values)
         if id(owner) in failed:
             continue
         result = CaseResult(name=owner.name)
@@ -3711,9 +3724,23 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
                     _shown_statechart(run, declared, trace, read))
             if not judged:
                 # What the machine sent while being set up is not what the
-                # case is judged on: the case's own round starts clean.
+                # case is judged on: the case's own round starts clean. What it left in
+                # the slots is what the judged round moves them from.
+                history.published.update(read.published)
+                history.started = True
                 continue
             produced, stood_in = read.produced, read.stood_in
+            if case.observed == "first":
+                # ⚠ A case read as its FIRST announcement is judged on what the host
+                # publishes first, and for a slot that `announces_old_off` that is the old
+                # event off, not the state the round ends in. The pure path read this
+                # (`first_announcement`); a statechart's slots move the same way, and
+                # judging only the end state failed each case of a component whose event
+                # slot changes from one event to another (measured 2026-10-14: 20 of 270).
+                produced = dict(produced, **first_announcement(
+                    pack.model, history, produced, frozenset(), slots_before))
+            history.published.update(read.published)
+            history.started = True
             result.shown = _joined_steps(steps_shown.pop(id(owner), []))
         except RunLost as exc:
             # Not this case's failure to be driven: the run itself stopped
