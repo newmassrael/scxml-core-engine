@@ -4,7 +4,7 @@
 # sce-revision -- the judgment of a revision of a requirement list.
 #
 # ADR 0011 (D1 (c)) puts the judgment of a revision in the product: the application and the
-# generator both have to say, in the same words, whether a lineage continues the one a work
+# generator both have to say, in the same words, whether a lineage continues the one a spec
 # holds, whether it is the lineage of the list beside it, and what became of each requirement's
 # words between two states. That is one implementation here, so the store that refuses a save and
 # the command that reports a revision cannot disagree. It reads and writes nothing; it takes

@@ -483,7 +483,7 @@ def compose_record(doc_id: str, markers: list[dict], answers: dict,
     for ident, held in answers.items():
         entry = decisions.setdefault(ident, {
             "id": ident,
-            "question": "Asked of an earlier model of this work; the current one does not ask it",
+            "question": "Asked of an earlier model of this spec; the current one does not ask it",
         })
         entry["answer"] = held["answer"]
         # The schema's `answered` is a date, and the workbench stamps a moment.

@@ -5,7 +5,7 @@
   client did and did not measure is under "What was not measured"
 - Date: 2026-10-09
 - Scope: `tools/authoring/sce_author/requirement_lineage.py` (`advance`, `first`),
-  `requirement_set.py` (`build`), the `scxml_requirement_set` tool, `sce-works/src/store.rs`
+  `requirement_set.py` (`build`), the `scxml_requirement_set` tool, `sce-specs/src/store.rs`
   (in `app-core` when this was decided; moved 2026-10-14)
   (`refuse_a_lineage_not_kept`: one refusal for a lineage the work holds and this build cannot
   read; `refuse_a_carried_id`: a list that carries an id the owner asked to retire), the request
@@ -67,7 +67,7 @@ sidecar of a list that predates lineages). Then:
   report says every requirement of the accepted list was retired and every one of the list now is
   new, because that is what happened to the ids; it does not claim the words carried.
 - Nothing about the stored form changes: a lineage made with `fresh` is an ordinary lineage that
-  continues the one it was made from, and `sce-works` judges and keeps it as it judges and keeps any.
+  continues the one it was made from, and `sce-specs` judges and keeps it as it judges and keeps any.
 
 ## The owner's ask, through the application
 
@@ -152,8 +152,8 @@ reference. What was done is the core adopting, and the client no longer having t
   adopting it makes (`sce_revision::of_list`, the judgment `read_revision_report` already used).
   It is derived and stored nowhere: the same bytes are the same lineage, and the list stays as it
   was, so an acceptance that pins it still does.
-* `read_requirements` (and so `works_read`) gives it as the list's `lineage` with
-  `lineage_adopted` set to `true` (command set 24). The task text is unchanged: "when works_read
+* `read_requirements` (and so `specs_read`) gives it as the list's `lineage` with
+  `lineage_adopted` set to `true` (command set 24). The task text is unchanged: "when specs_read
   gave `requirements.lineage_text`, build against it" now holds for such a work too, and the Codex
   record needs no new verification.
 * The store holds the next list to it as to a kept one: a list without a lineage is refused

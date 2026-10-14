@@ -81,7 +81,7 @@ fn reading_a_lineage_refuses_what_the_python_refuses_in_its_words() {
 }
 
 #[test]
-fn a_lineage_that_does_not_continue_the_works_is_refused_in_the_pythons_words() {
+fn a_lineage_that_does_not_continue_the_specs_is_refused_in_the_pythons_words() {
     held_to_the_python("extends", |case, table| {
         verdict(extends(
             lineage(case, "previous", table),

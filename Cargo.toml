@@ -23,7 +23,7 @@ members = [
     "backends/rust/scenarios",
     "backends/rust/world",
     "sce-revision",
-    "sce-works",
+    "sce-specs",
 ]
 
 [workspace.package]

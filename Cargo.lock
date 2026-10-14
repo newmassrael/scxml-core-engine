@@ -1927,7 +1927,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "sce-works"
+name = "sce-specs"
 version = "0.1.0"
 dependencies = [
  "clap",
@@ -1935,7 +1935,7 @@ dependencies = [
  "sce-forge-runtime",
  "sce-revision",
  "sce-rust-runtime",
- "sce-works",
+ "sce-specs",
  "serde",
  "serde_json",
  "sha2",

@@ -145,11 +145,11 @@ scan_exclusions = [
     "backends/rust/world/",
     "sce-build/examples/",
     "tests/forge/expected/",
-    # The works folder (`sce-works/`), which the workbench (a repository of its own) links
-    # and the authoring MCP reaches through `sce-work`. Measured 2026-10-14 over its 48 Rust
+    # The works folder (`sce-specs/`), which the workbench (a repository of its own) links
+    # and the authoring MCP reaches through `sce-spec`. Measured 2026-10-14 over its 48 Rust
     # sources: the one file with a `§` is the generated request machine, whose section marks
     # the generator's templates write (the Accepted Subset's 2.15, W3C's 5.10).
-    "sce-works/",
+    "sce-specs/",
     # The judgment of a revision of a requirement list (`sce-revision/`). Measured
     # 2026-10-09 over its 4 Rust sources: no `§` citation of any ledger.
     "sce-revision/",

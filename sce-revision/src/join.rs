@@ -66,7 +66,7 @@ fn classify(words: &str, evidence: Option<&str>) -> (&'static str, &'static str)
 
 /// The lines `acceptance-delta` writes (a line per requirement, the rows that claim nothing, a
 /// summary) as the one object [`join`] reads, whoever asked the product: the generator run on a
-/// tree, or the application's command layer asking it of a work.
+/// tree, or the application's command layer asking it of a spec.
 ///
 /// Gathered, not read again: what each requirement's evidence did is the product's to say.
 pub fn delta_object(lines: &Value) -> Value {

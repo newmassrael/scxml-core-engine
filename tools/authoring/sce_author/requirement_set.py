@@ -134,7 +134,7 @@ def build(specification: str, items: object, *, doc_id: str = "spec",
     the id it continues, for a rewording too large to recognise. `fresh` carries no id: every id
     the lineage had live is retired and every requirement is issued a new one from where the
     numbering left off (never from R1: a retired id is never issued again). `next_at_least` is
-    where new ids start when that is past where the lineage's own numbering would: a work whose
+    where new ids start when that is past where the lineage's own numbering would: a spec whose
     lineage this build cannot read says it (`lineage-numbers-reused`) when a list would issue an
     id its lists already carried."""
     if next_at_least is not None and (

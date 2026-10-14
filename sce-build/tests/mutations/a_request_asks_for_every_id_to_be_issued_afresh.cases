@@ -8,7 +8,7 @@
 # the request (and it is an input of the key, so a press that asked is not the press that did not),
 # the request says it in its record only when it was made, and the command both takes it and says
 # it back. Each case below takes one of those away and must make a test of
-# `sce-works/tests/{requests,request_commands}.rs` red.
+# `sce-specs/tests/{requests,request_commands}.rs` red.
 #
 # What an application's runner does with the ask (hands it to the generator in the job, and fails
 # the request whose list carries an id the owner asked to retire) is judged where the runner is:
@@ -21,36 +21,36 @@
 # Anchors are literal slices of the source; an edit that moves one is reported INCONCLUSIVE with
 # the anchor quoted, never as a pass.
 
-mutation_tests -p sce-works --test requests --test request_commands
-mutation_targets sce-works/src/store/request_store.rs sce-works/src/requests.rs sce-works/src/commands.rs
-mutation_oracles sce-works/tests/requests.rs sce-works/tests/request_commands.rs
+mutation_tests -p sce-specs --test requests --test request_commands
+mutation_targets sce-specs/src/store/request_store.rs sce-specs/src/requests.rs sce-specs/src/commands.rs
+mutation_oracles sce-specs/tests/requests.rs sce-specs/tests/request_commands.rs
 
 mutation_case "a press that asked is taken for the press that did not" <<'PY'
-edit("sce-works/src/store/request_store.rs",
+edit("sce-specs/src/store/request_store.rs",
      "            if same.inputs != registration.expect || same.fresh_ids != fresh_ids {",
      "            if same.inputs != registration.expect {")
 PY
 
 mutation_case "a request does not keep what the owner asked" <<'PY'
-edit("sce-works/src/requests.rs",
+edit("sce-specs/src/requests.rs",
      "        Request { fresh_ids, ..self }",
      "        Request { fresh_ids: fresh_ids && false, ..self }")
 PY
 
 mutation_case "a request that asked for nothing writes the ask all the same" <<'PY'
-edit("sce-works/src/requests.rs",
+edit("sce-specs/src/requests.rs",
      "    #[serde(default, skip_serializing_if = \"std::ops::Not::not\")]\n    pub fresh_ids: bool,",
      "    #[serde(default)]\n    pub fresh_ids: bool,")
 PY
 
 mutation_case "the command does not pass the ask on to the registration" <<'PY'
-edit("sce-works/src/commands.rs",
+edit("sce-specs/src/commands.rs",
      "                pin,\n                fresh_ids,\n            )?;",
      "                pin,\n                false && fresh_ids,\n            )?;")
 PY
 
 mutation_case "the request is said without what was asked" <<'PY'
-edit("sce-works/src/commands.rs",
+edit("sce-specs/src/commands.rs",
      "        \"fresh_ids\": request.fresh_ids,",
      "        \"fresh_ids\": false,")
 PY

@@ -1,0 +1,539 @@
+"""The specs folder, as the authoring tools reach it.
+
+The workbench application keeps a specification as a *spec*: its text, its
+saved revisions, and the model an authoring client wrote from it. This module is
+how the tools read a spec and save a model to it, and it does so by running
+`sce-spec`, never by opening the folder.
+
+⚠ One writer of the folder. A save is a compare-and-swap on the revision the
+caller read, taken under a lock, and the desktop application and this server
+both save. A second implementation here -- read the files, write the files --
+would be a second definition of what a save is and of when two saves conflict,
+without the first one's lock: the day they disagreed an owner would lose text.
+`sce-spec` is the specs' own command layer (`sce-specs`), the one the
+application links too, so there is one.
+
+The refusals keep their words. `sce-spec` answers a refusal as a JSON line with a
+`kind` a program branches on and a sentence for a person, and `SpecsError`
+carries both: a client that is refused a save as a `conflict` is told what the
+spec is at now and reads again, instead of retrying the same bytes.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import pathlib
+import threading
+import uuid
+
+from . import process
+from .errors import AuthoringError
+
+# `sce-spec` waits up to thirty seconds for another save of the same spec and a
+# draw of a model is not done here, so a call that has not answered in twice
+# that is stuck rather than slow.
+SPEC_SECONDS = 60.0
+
+
+class SpecsError(AuthoringError):
+    """The specs folder would not do what was asked.
+
+    `kind` is the word the command layer gave the refusal (`conflict`,
+    `not-found`, `invalid-id`, ...), or one of this module's own: `unavailable`
+    (no `sce-spec` to run), `timeout`, `failed` (it said something that is not a
+    refusal). `detail` is the facts a caller acts on, when there are any: for a
+    `conflict`, the revision the caller wrote from and the one that is current.
+    """
+
+    def __init__(self, kind: str, message: str, detail: object = None):
+        super().__init__(message)
+        self.kind = kind
+        self.detail = detail
+
+
+def default_spec_binary() -> pathlib.Path:
+    """Where `sce-spec` is, by default: `SCE_SPEC` when the environment names
+    one, else this tree's own build.
+
+    The environment first, for the reason the generator's is (`verify`): an
+    installed bundle has no tree, and its launcher names the binary it ships.
+    Resolved to an absolute path so a call that starts in another directory
+    does not read a relative name from there.
+    """
+    named = os.environ.get("SCE_SPEC")
+    if named:
+        return pathlib.Path(named).resolve()
+    root = pathlib.Path(__file__).resolve().parents[3]
+    return root / "target" / "debug" / "sce-spec"
+
+
+def call_spec(command: str, args: dict | None = None,
+              binary: pathlib.Path | None = None) -> dict:
+    """Run the command layer's `command` with `args`; its one JSON answer.
+
+    The arguments travel on standard input: a specification is larger than an
+    operating system lets a command line be. Which folder is the specs folder is
+    `sce-spec`'s own answer (`SCE_SPECS_DIR`, else the per-user data directory),
+    the same one the application opens, so the two cannot be pointed at
+    different folders by this module.
+    """
+    binary = default_spec_binary() if binary is None else binary
+    if not binary.is_file():
+        raise SpecsError(
+            "unavailable",
+            f"sce-spec is not at {binary}: the specs folder is reached through it. Build it "
+            f"(cargo build -p sce-specs --features cli --bin sce-spec), or name it "
+            f"with SCE_SPEC")
+    try:
+        done = process.run([str(binary), "call", command, "--args-stdin"],
+                           timeout=SPEC_SECONDS,
+                           stdin_text=json.dumps(args if args is not None else {}))
+    except process.ProcessTimeout as exc:
+        raise SpecsError("timeout", f"the specs folder did not answer: {exc}") from exc
+    if done.returncode == 0:
+        try:
+            return json.loads(done.stdout)
+        except json.JSONDecodeError as exc:
+            raise SpecsError(
+                "failed", f"sce-spec answered something that is not JSON: {exc}") from exc
+    raise _refusal(done.stderr, done.returncode)
+
+
+def _refusal(stderr: str, returncode: int) -> SpecsError:
+    """The refusal `sce-spec` wrote on its standard error, or what it said when it
+    did not write one (a command line it could not read)."""
+    try:
+        error = json.loads(stderr.strip().splitlines()[-1])["error"]
+        return SpecsError(str(error["kind"]), str(error["message"]), error.get("detail"))
+    except (IndexError, KeyError, TypeError, ValueError):
+        said = stderr.strip() or "nothing"
+        return SpecsError("failed", f"sce-spec stopped with status {returncode} and said: {said}")
+
+
+def list_specs() -> dict:
+    """Every spec, oldest first, and any folder that should have been one and
+    could not be read."""
+    return call_spec("list_specs")
+
+
+def read_spec(spec: str) -> dict:
+    """A spec as an authoring client needs it: who it is, its text now, its model
+    with where that stands to the text, the owner's answers to what the model left
+    open, the requirement list the text was read into, and whether the owner has
+    accepted the design (`acceptance`, only for a spec that has a list and a model).
+
+    The text, the model, the answers and the list are ONE state of the spec
+    (`read_spec_snapshot`), so a save or a publication cannot land between them: a
+    model of one generation is never read beside a list of another. `bundle` is the
+    bundle they are the ones of, for a spec that keeps bundles, and `request` is
+    where the spec's latest request stands (the owner may have asked for a model that
+    nobody has taken yet). The acceptance is the product's to answer and is asked
+    after, so it is the one part that is not of the same moment; each `standing` is
+    the command layer's own comparison of a `written_for` with the text's head.
+    """
+    state = call_spec("read_spec_snapshot", {"id": spec})
+    source = state["source"]
+    source_head = source["revision"] if source is not None else None
+    requirements = _requirements_of(state["requirements"], state["requirements_standing"],
+                                    source_head)
+    return {"spec": state["spec"], "source": source,
+            "model": _model_of({"model": state["model"], "standing": state["model_standing"],
+                                "source_head": source_head}),
+            "answers": state["answers"], "requirements": requirements,
+            "acceptance": (read_acceptance(spec)
+                           if requirements is not None and state["model"] is not None else None),
+            "bundle": state["bundle"],
+            "request": call_spec("read_spec_heads", {"id": spec})["request"]}
+
+
+def read_answers(spec: str) -> dict | None:
+    """The owner's answers to the questions the model left open, `{"revision",
+    "entries": {question id: {"answer", "answered_at"}}}`, or None when they have
+    answered nothing. The owner writes them in the application; nothing here does."""
+    return call_spec("read_answers", {"id": spec})["answers"]
+
+
+def read_requirements(spec: str) -> dict | None:
+    """The requirement list the spec's text was read into, or None when it has none.
+
+    `manifest_text` and `sidecar_text` are the two files exactly as they were saved
+    (the names the requirement tools take them under), `written_for` the text
+    revision the list says it was read from, and `standing` the command layer's own
+    comparison of that with the text's head: `current`, `behind` or `unstated`. The
+    sidecar is left out for a list that came without one.
+    """
+    answer = call_spec("read_requirements", {"id": spec})
+    return _requirements_of(answer["requirements"], answer["standing"], answer["source_head"])
+
+
+def read_requirements_at(spec: str, revision: str) -> dict | None:
+    """The requirement list the spec had at `revision` (a revision of its list chain, such as the
+    one an acceptance names in its basis), as `read_requirements` gives the current one.
+
+    The list as it was kept, not as the spec stands: its `standing` is said against the text's
+    head now, which is of the revision read and not a claim about the list's own text."""
+    answer = call_spec("read_requirements", {"id": spec, "revision": revision})
+    return _requirements_of(answer["requirements"], answer["standing"], answer["source_head"])
+
+
+def read_acceptance_delta(spec: str) -> dict:
+    """What moved in the spec's design since the owner accepted it, requirement by requirement,
+    asked of the product (`sce-codegen acceptance-delta`) by the application's command layer.
+
+    One state of the spec: `acceptance` (its `basis` names the list it was taken of), `now`
+    (the revisions it is compared with), `manifest` (the pin the product's record holds of the
+    list: document, revision and digest) and `lines` (the product's own, `None` for a spec
+    nobody accepted). A report and not a verdict: the acceptance lapses by its bytes
+    (`read_acceptance`), and `unchanged` is the product's closure of what a requirement depends
+    on reading the same. A record the product cannot compare is refused in its words, and a
+    spec whose text was changed after its design or list was written for it is held back
+    (`revision-not-current`): what they say "has not moved" would be of the earlier text."""
+    return call_spec("read_acceptance_delta", {"id": spec})
+
+
+def read_revision_report(spec: str, sentences: bool = False) -> dict:
+    """What the revision of the spec did, requirement by requirement, judged by the product
+    (`read_revision_report`): the words of each requirement from the spec's own lineages beside
+    what the design's evidence did, whether the revision stayed within the reach of what
+    changed, and the page an owner reads (`report.page`; with `sentences`, carrying the
+    specification's sentences). `report` is `None` for a spec nobody accepted. A list the product
+    can say nothing of the words of is refused as `revision-not-judged`, and a spec whose text was
+    changed after its model or list was written for it as `revision-not-current` (there is
+    nothing to compare yet), each in the sentence a person is told."""
+    return call_spec("read_revision_report", {"id": spec, "sentences": sentences})
+
+
+def _requirements_of(held: dict | None, standing: str | None,
+                     source_head: str | None) -> dict | None:
+    """The requirement list as a client reads it, from what the command layer answered."""
+    if held is None:
+        return None
+    read = {"revision": held["revision"], "written_for": held["written_for"],
+            "standing": standing, "source_head": source_head,
+            "manifest_text": held["manifest"]}
+    if held["sidecar"] is not None:
+        read["sidecar_text"] = held["sidecar"]
+    # Present for a list that has one, and for one made before lineages that can be adopted: the
+    # core derives the lineage adopting it makes (`lineage_adopted`) and stores it nowhere. What
+    # the next revision of the text is built against, so that an id is issued once: give it back as
+    # `lineage` to scxml_requirement_set. A list with no sidecar cannot be adopted and has none.
+    if held.get("lineage") is not None:
+        read["lineage_text"] = held["lineage"]
+        if held.get("lineage_adopted"):
+            read["lineage_adopted"] = True
+    return read
+
+
+def read_acceptance(spec: str) -> dict:
+    """Whether the owner has accepted this spec's design, and whether it still holds.
+
+    `standing` is `none` (nothing accepted), `holds`, or `lapsed`; a lapse carries the
+    product's own sentence of what moved (`lapse`). An acceptance says when it was
+    made (`accepted_at`), the `channel` it was stated on (`direct`: the owner's own
+    press in the application; an acceptance relayed by a client says `relayed`), and
+    what the design left open when it was accepted (`open`).
+
+    ⚠ Read here and never written: the owner accepts in the application. The command
+    layer states every acceptance it records as the application's own, so a client
+    that could call it would be stating, as the owner's press, what the owner never
+    pressed.
+
+    The product answers whether it holds, so the product not answering (`sce-*`) is
+    reported as `unavailable` with its words and does not stop a spec being read.
+    """
+    try:
+        answer = call_spec("read_acceptance", {"id": spec})
+    except SpecsError as exc:
+        if not exc.kind.startswith("sce-"):
+            raise
+        return {"standing": "unavailable", "kind": exc.kind, "message": str(exc)}
+    held = answer["acceptance"]
+    if held is None:
+        return {"standing": "none"}
+    read = {"standing": answer["standing"], "accepted_at": held["accepted_at"],
+            "channel": held["channel"], "open": held["open"]}
+    if answer["lapse"] is not None:
+        read["lapse"] = answer["lapse"]
+    return read
+
+
+def save_requirements(spec: str, base: str | None, written_for: str | None, *,
+                      manifest: str, sidecar: str | None = None,
+                      lineage: str | None = None) -> dict:
+    """Save the spec's next requirement list: the `manifest` (coordinates), the
+    `sidecar` (the quoted sentences) and the `lineage` (which id was issued for which
+    requirement, across the revisions of the text), each as the text
+    `scxml_requirement_set` made.
+
+    `base` is the list revision the writer read (None for a spec's first list); a base
+    that is no longer current is refused as a `conflict` and nothing is written.
+    `written_for` is the text revision the list was read from, or None when the writer
+    cannot say -- which the application shows as unstated, and not as current.
+
+    A list saved without a lineage onto a spec that holds one is refused
+    (`lineage-dropped`): the next revision would issue an id that was retired again.
+    """
+    return call_spec("save_requirements", {
+        "id": spec, "base": base, "written_for": written_for, "manifest": manifest,
+        **({"sidecar": sidecar} if sidecar is not None else {}),
+        **({"lineage": lineage} if lineage is not None else {})})
+
+
+def _model_of(answer: dict) -> dict | None:
+    """The model as a client reads it. A model of ONE document is `text`, as it has
+    always been; a model of several is `entry` (the file the product is asked about)
+    and `documents` (each under the file name its imports know it by), and no `text`:
+    a second copy of the entry would be tokens spent twice on a statechart's worth."""
+    model = answer["model"]
+    if model is None:
+        return None
+    standing = {"standing": answer["standing"], "source_head": answer["source_head"]}
+    if len(model["documents"]) <= 1:
+        return {key: value for key, value in model.items()
+                if key not in ("entry", "documents")} | standing
+    return {key: value for key, value in model.items() if key != "text"} | standing
+
+
+def save_model(spec: str, base: str | None, written_for: str | None, *,
+               text: str | None = None, documents: list[dict] | None = None,
+               entry: str | None = None) -> dict:
+    """Save the spec's next model: `text` (one document), or `documents` (several that
+    name each other, as `{"name", "text"}`) with the `entry` the product is asked about.
+
+    `base` is the model revision the writer read (None for a spec's first model);
+    a base that is no longer current is refused as a `conflict` and nothing is
+    written. `written_for` is the text revision the writer read, or None when it
+    cannot say -- which the screen shows as "unstated", and not as current.
+    """
+    model = ({"text": text} if documents is None else
+             {"documents": documents, **({"entry": entry} if entry is not None else {})})
+    return call_spec("save_model", {"id": spec, "base": base,
+                                    "written_for": written_for, **model})
+
+
+# What a request's holder is told when the request is no longer its to work on: the owner
+# called it off, a save moved the text it was asked about, or somebody took it.
+_ENDED_KINDS = frozenset({"request-ended", "not-holder", "request-held", "not-found"})
+
+# A lease is sixty seconds unless asked otherwise. A quarter of it is time enough for three
+# renewals to fail before the request is read as let go of.
+HEARTBEAT_SECONDS = 15.0
+
+# How many requests that ended under a client are remembered, to tell it at its next word.
+_LOST_KEPT = 64
+
+
+class Generation:
+    """A request this process holds for an authoring client: whose it is to work on, which
+    attempt, and what was said of the spec along the way."""
+
+    def __init__(self, spec: str, request: str, attempt: int, source: str):
+        self.spec = spec
+        self.request = request
+        self.attempt = attempt
+        # The text revision the request was asked about: what a model written for it is
+        # written for, whatever the client says.
+        self.source = source
+        # Checks only the client's side ran, kept as it reports them when the generation
+        # is finished (the core runs its own check of the model at that step).
+        self.checks: list[dict] = []
+
+
+class Generations:
+    """The generations begun through this process, and the renewing of their leases.
+
+    A request is held for a lease that runs out. A client in a person's own terminal
+    thinks, drafts and checks for longer than a lease, and never says it is still there:
+    the only thing that can is this process, which is why it renews them itself. A
+    request whose lease is not renewed is read as interrupted, by the clock, by every
+    screen of the owner -- so a process that dies leaves the owner told, and a process
+    that lives leaves the request running.
+
+    What ends a generation is the core's word: a renewal or a save that is refused
+    because the request ended (the owner called it off, the text it was asked about was
+    saved) or is somebody else's. It is remembered and told at the client's next word,
+    and nothing is renewed for it again.
+    """
+
+    def __init__(self, call=None, interval: float = HEARTBEAT_SECONDS,
+                 holder: str | None = None):
+        self._call = call_spec if call is None else call
+        self._interval = interval
+        # The name every word to the core is said under; a request names its holder.
+        self.holder = holder if holder is not None else f"mcp-{os.getpid()}"
+        self._held: dict[str, Generation] = {}
+        self._lost: dict[str, SpecsError] = {}
+        self._lock = threading.Lock()
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def begin(self, spec: str) -> Generation:
+        """Take the spec's request for this process, or ask for one when there is none.
+
+        The request the owner made is the one taken (`queued`, or `interrupted` as the
+        next attempt); one held by somebody else is refused as the core refuses it
+        (`request-held`). A spec nobody asked a model for is asked for one here, from
+        the text and the answers as they are now, so that every model written to a spec
+        is the answer to a request and the owner sees it as one. Beginning again for a
+        spec this process already holds is the generation it holds.
+        """
+        with self._lock:
+            for held in self._held.values():
+                if held.spec == spec:
+                    return held
+        state = self._call("read_spec_snapshot", {"id": spec})
+        source = state["source"]
+        if source is None:
+            raise SpecsError(
+                "no-text", f"spec `{spec}` has no text yet: there is nothing to write a model "
+                           f"from, and the owner writes it in the application")
+        latest = self._call("read_spec_heads", {"id": spec})["request"]
+        resume = False
+        if latest is not None and latest["state"] in ("queued", "running", "interrupted"):
+            request = latest["id"]
+            resume = latest["state"] == "interrupted"
+        else:
+            answers = state["answers"]
+            made = self._call("request_generation", {
+                "id": spec, "key": f"mcp-{uuid.uuid4().hex}", "origin": "mcp",
+                "expect": {"source": source["revision"],
+                           "answers": answers["revision"] if answers is not None else None}})
+            request = made["request"]["id"]
+        try:
+            claimed = self._call("claim_request", {
+                "id": spec, "request": request, "holder": self.holder,
+                "resume": resume})["request"]
+        except SpecsError as exc:
+            if exc.kind != "wrong-connection":
+                raise
+            # The request was made in the application for a connection the owner chose, and only
+            # that connection's executor takes it. This server runs for none, and does not offer
+            # one it has not got: what is to be done is the owner's, in the application.
+            raise SpecsError(
+                "wrong-connection",
+                f"{exc} This server runs for no connection, so it does not take a request that "
+                f"was made for one: if the owner wants this client to write instead, they call "
+                f"that request off in the application, and this client begins again.",
+                exc.detail) from exc
+        generation = Generation(spec, request, claimed["attempt"], claimed["inputs"]["source"])
+        with self._lock:
+            self._held[request] = generation
+            self._lost.pop(request, None)
+            self._start()
+        return generation
+
+    def get(self, request: str) -> Generation:
+        """The generation of `request`, or why it is not this process's to speak for."""
+        with self._lock:
+            held = self._held.get(request)
+            lost = self._lost.get(request)
+        if held is not None:
+            return held
+        if lost is not None:
+            raise SpecsError(
+                "generation-ended",
+                f"request {request} is no longer yours to work on ({lost}): read the spec "
+                f"again, and begin another generation if the owner still wants one",
+                {"reason": lost.kind, **(lost.detail if isinstance(lost.detail, dict) else {})})
+        raise SpecsError(
+            "unknown-generation",
+            f"this server did not begin request {request}, or let go of it: begin it with "
+            f"specs_begin_generation (a request that was let go of is taken again there)")
+
+    def save_candidate(self, request: str, model: dict | None = None,
+                       requirements: dict | None = None,
+                       instructions: str | None = None) -> dict:
+        """Write the model, the requirement list, or both for the request, as its holder.
+        What is written is the request's and not the spec's: it becomes the spec's when
+        the generation is finished. `instructions` names the version of what the client
+        was told to do (its server's own instructions), which the bundle records so that a
+        result can be told apart from one made to other instructions."""
+        generation = self.get(request)
+        return self._said(generation, "save_request_candidate", {
+            **(model or {}), **(requirements or {}),
+            **({"instructions": instructions} if instructions is not None else {})})
+
+    def finish(self, request: str) -> dict:
+        """Say the generation is done: the core checks the model itself and, when it
+        accepts, publishes the model and the list together as one bundle. A refusal leaves
+        the generation held, to be said again once the candidate is fixed."""
+        generation = self.get(request)
+        done = self._said(generation, "complete_request", {"checks": list(generation.checks)})
+        self._release(request)
+        return done
+
+    def fail(self, request: str, reason: str) -> dict:
+        """Say the generation could not be done, and why, and let go of it."""
+        generation = self.get(request)
+        failed = self._said(generation, "fail_request", {"reason": reason})
+        self._release(request)
+        return failed
+
+    def _said(self, generation: Generation, command: str, extra: dict) -> dict:
+        try:
+            return self._call(command, {"id": generation.spec, "request": generation.request,
+                                        "holder": self.holder, "attempt": generation.attempt,
+                                        **extra})
+        except SpecsError as exc:
+            if exc.kind in _ENDED_KINDS:
+                self._lose(generation.request, exc)
+            raise
+
+    def beat(self) -> None:
+        """Renew every held generation once. A renewal the core did not answer is tried
+        again at the next beat: the lease runs out only if it keeps not answering."""
+        if self._stop.is_set():
+            return
+        with self._lock:
+            held = list(self._held.values())
+        for generation in held:
+            try:
+                self._call("heartbeat_request", {
+                    "id": generation.spec, "request": generation.request,
+                    "holder": self.holder, "attempt": generation.attempt})
+            except SpecsError as exc:
+                if exc.kind in _ENDED_KINDS:
+                    self._lose(generation.request, exc)
+
+    def close(self) -> None:
+        """Stop renewing. What is held is let go of by the lease running out."""
+        self._stop.set()
+        thread = self._thread
+        if thread is not None and thread is not threading.current_thread():
+            thread.join(timeout=5)
+
+    def _lose(self, request: str, why: SpecsError) -> None:
+        with self._lock:
+            if self._held.pop(request, None) is not None:
+                self._lost[request] = why
+                while len(self._lost) > _LOST_KEPT:
+                    del self._lost[next(iter(self._lost))]
+
+    def _release(self, request: str) -> None:
+        with self._lock:
+            self._held.pop(request, None)
+
+    def _start(self) -> None:
+        """Start the renewing, once. Called with the lock held."""
+        if self._thread is None and not self._stop.is_set():
+            self._thread = threading.Thread(target=self._run, name="generation-leases",
+                                            daemon=True)
+            self._thread.start()
+
+    def _run(self) -> None:
+        while not self._stop.wait(self._interval):
+            self.beat()
+
+
+_GENERATIONS: Generations | None = None
+_GENERATIONS_LOCK = threading.Lock()
+
+
+def generations() -> Generations:
+    """The generations of this process: one set, because one process is one holder."""
+    global _GENERATIONS
+    with _GENERATIONS_LOCK:
+        if _GENERATIONS is None:
+            _GENERATIONS = Generations()
+        return _GENERATIONS

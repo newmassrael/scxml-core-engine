@@ -118,9 +118,9 @@ and sameness are two facts, kept apart.**
    `manifest_text` and `sidecar_text`, and returns a delta in the vocabulary above plus the
    sentence-level change (added / removed, by position and digest). It writes nothing, as it
    writes nothing today. ⚠ Not built in this step: keeping the lineage with a work in the
-   application. `works_save_requirements` stores a manifest and a sidecar under a
-   compare-and-swap, and whether `sce-work`'s folder format takes a third file is the
-   application's to say. Until it does, a revision of a work is built by adoption: `works_read`
+   application. `specs_save_requirements` stores a manifest and a sidecar under a
+   compare-and-swap, and whether `sce-spec`'s folder format takes a third file is the
+   application's to say. Until it does, a revision of a work is built by adoption: `specs_read`
    returns the saved manifest and sidecar, and they are enough to keep the ids (not to tell
    an unchanged text from a changed one).
 7. **Sections stay revision-local.** `S<n>` remains a positional label inside one revision,

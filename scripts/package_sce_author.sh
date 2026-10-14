@@ -4,16 +4,16 @@
 #
 # Build the authoring MCP server as a bundle that runs where this tree is not.
 #
-#   scripts/package_sce_author.sh OUT_DIR [--codegen PATH] [--work PATH]
+#   scripts/package_sce_author.sh OUT_DIR [--codegen PATH] [--spec PATH]
 #
 # Writes OUT_DIR/sce-author/ and OUT_DIR/sce-author-<commit>-<os>-<arch>.tar.gz:
 #
 #   bin/sce-author-mcp      the launcher an AI client registers (stdio), or
 #                           runs with --http HOST:PORT for a remote client
 #   bin/sce-codegen         the code generator every tool answers from
-#   bin/sce-work            with --work: the workbench application's own command
-#                           layer, which the works tools read and save a work
-#                           through (SCE_WORK); without it those tools say so
+#   bin/sce-spec            with --spec: the workbench application's own command
+#                           layer, which the specs tools read and save a spec
+#                           through (SCE_SPEC); without it those tools say so
 #   share/sce/templates/    the templates it renders; an installed binary
 #                           has no source tree to find them in
 #   python/sce_author/      the MCP server
@@ -35,7 +35,7 @@
 set -euo pipefail
 
 usage() {
-    printf 'usage: %s OUT_DIR [--codegen PATH] [--work PATH]\n' "$0" >&2
+    printf 'usage: %s OUT_DIR [--codegen PATH] [--spec PATH]\n' "$0" >&2
     exit 2
 }
 
@@ -43,11 +43,11 @@ usage() {
 out="$1"
 shift
 codegen=""
-work=""
+spec=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --codegen) [[ $# -ge 2 ]] || usage; codegen="$2"; shift 2 ;;
-        --work) [[ $# -ge 2 ]] || usage; work="$2"; shift 2 ;;
+        --spec) [[ $# -ge 2 ]] || usage; spec="$2"; shift 2 ;;
         *) usage ;;
     esac
 done
@@ -62,11 +62,11 @@ if [[ -z "$codegen" ]]; then
     codegen="$(sce_codegen_require "$repo_root")"
 fi
 [[ -x "$codegen" ]] || { printf 'package: %s is not an executable generator\n' "$codegen" >&2; exit 1; }
-# The works command is named, never built here: it is the works crate's
-# (`cargo build -p sce-works --features cli --bin sce-work`), and a
+# The specs command is named, never built here: it is the specs crate's
+# (`cargo build -p sce-specs --features cli --bin sce-spec`), and a
 # bundle that quietly carried a stale one would be the second writer of the folder.
-if [[ -n "$work" && ! -x "$work" ]]; then
-    printf 'package: %s is not an executable sce-work\n' "$work" >&2
+if [[ -n "$spec" && ! -x "$spec" ]]; then
+    printf 'package: %s is not an executable sce-spec\n' "$spec" >&2
     exit 1
 fi
 
@@ -77,8 +77,8 @@ rm -rf "$bundle"
 mkdir -p "$bundle/bin" "$bundle/share/sce" "$bundle/python"
 
 cp "$codegen" "$bundle/bin/sce-codegen"
-if [[ -n "$work" ]]; then
-    cp "$work" "$bundle/bin/sce-work"
+if [[ -n "$spec" ]]; then
+    cp "$spec" "$bundle/bin/sce-spec"
 fi
 cp -R "$repo_root/tools/codegen/templates" "$bundle/share/sce/templates"
 cp -R "$repo_root/tools/authoring/sce_author" "$bundle/python/sce_author"
@@ -94,8 +94,8 @@ cat > "$bundle/bin/sce-author-mcp" <<'LAUNCHER'
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export SCE_CODEGEN="$here/bin/sce-codegen"
-if [[ -x "$here/bin/sce-work" ]]; then
-    export SCE_WORK="$here/bin/sce-work"
+if [[ -x "$here/bin/sce-spec" ]]; then
+    export SCE_SPEC="$here/bin/sce-spec"
 fi
 export SCE_TEMPLATE_DIR="$here/share/sce/templates"
 export PYTHONPATH="$here/python${PYTHONPATH:+:$PYTHONPATH}"
@@ -120,11 +120,11 @@ and point the client at http://HOST:8765/mcp with the header
 "Authorization: Bearer <the token>". A remote client hands every document
 over as text (document_text); a path is refused.
 
-works_list, works_read, works_save_model and works_save_requirements read the
+specs_list, specs_read, specs_save_model and specs_save_requirements read the
 specification the owner keeps in the workbench application and save the model
 and the requirement list written for it. They run
-bin/sce-work when this bundle carries one, on the works folder the application
-opens (SCE_WORKS_DIR, else the per-user data directory), and are never offered
+bin/sce-spec when this bundle carries one, on the specs folder the application
+opens (SCE_SPECS_DIR, else the per-user data directory), and are never offered
 to a remote client.
 
 Needs Python 3.10 or later with PyYAML, and jsonschema to read a decision

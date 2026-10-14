@@ -15,13 +15,13 @@ from __future__ import annotations
 
 import unittest
 
-from sce_author import works
+from sce_author import specs
 
 from tests.test_a_generation_is_kept_alive_by_the_process_that_holds_it import Core, request
 
 
-def pinned_refusal() -> works.WorksError:
-    return works.WorksError(
+def pinned_refusal() -> specs.SpecsError:
+    return specs.SpecsError(
         "wrong-connection",
         "the request req-pinned is for connection `main` at 5ce2a9ebc304, and the caller runs for "
         "no connection: it is taken by the executor of the connection it was made for and by no "
@@ -31,19 +31,19 @@ def pinned_refusal() -> works.WorksError:
 
 
 class ARequestMadeForAConnection(unittest.TestCase):
-    def keeper(self) -> tuple[works.Generations, Core]:
+    def keeper(self) -> tuple[specs.Generations, Core]:
         core = Core(
-            read_work_heads={"request": request("req-pinned", "queued", 0)},
+            read_spec_heads={"request": request("req-pinned", "queued", 0)},
             claim_request=pinned_refusal(),
         )
-        keeper = works.Generations(call=core, interval=3600.0, holder="mcp-test")
+        keeper = specs.Generations(call=core, interval=3600.0, holder="mcp-test")
         self.addCleanup(keeper.close)
         return keeper, core
 
     def test_is_refused_with_what_the_client_can_say_to_the_owner(self):
         keeper, _ = self.keeper()
 
-        with self.assertRaises(works.WorksError) as refused:
+        with self.assertRaises(specs.SpecsError) as refused:
             keeper.begin("alpha")
 
         error = refused.exception
@@ -57,7 +57,7 @@ class ARequestMadeForAConnection(unittest.TestCase):
     def test_is_not_asked_for_by_offering_a_connection_this_server_has_not_got(self):
         keeper, core = self.keeper()
 
-        with self.assertRaises(works.WorksError):
+        with self.assertRaises(specs.SpecsError):
             keeper.begin("alpha")
 
         claims = core.asked("claim_request")
@@ -67,7 +67,7 @@ class ARequestMadeForAConnection(unittest.TestCase):
     def test_is_not_made_another_request_over_and_not_held(self):
         keeper, core = self.keeper()
 
-        with self.assertRaises(works.WorksError):
+        with self.assertRaises(specs.SpecsError):
             keeper.begin("alpha")
 
         # Nothing was registered in its place, and nothing is held that would be renewed.
@@ -77,13 +77,13 @@ class ARequestMadeForAConnection(unittest.TestCase):
 
     def test_another_refusal_of_a_claim_is_not_reworded(self):
         core = Core(
-            read_work_heads={"request": request("req-new", "running", 1)},
-            claim_request=works.WorksError("request-held", "held by somebody else", {}),
+            read_spec_heads={"request": request("req-new", "running", 1)},
+            claim_request=specs.SpecsError("request-held", "held by somebody else", {}),
         )
-        keeper = works.Generations(call=core, interval=3600.0, holder="mcp-test")
+        keeper = specs.Generations(call=core, interval=3600.0, holder="mcp-test")
         self.addCleanup(keeper.close)
 
-        with self.assertRaises(works.WorksError) as refused:
+        with self.assertRaises(specs.SpecsError) as refused:
             keeper.begin("alpha")
 
         self.assertEqual("request-held", refused.exception.kind)

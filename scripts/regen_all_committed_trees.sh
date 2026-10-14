@@ -231,13 +231,13 @@ sce/src/mesh/generate_envelope.sh
 stage "Mesh Kotlin tree"
 backends/kotlin/mesh/generate.sh
 
-# The works folder's request machine is generated from the document that holds the
-# rules of a generation request, and it lives in the works crate, outside
+# The specs folder's request machine is generated from the document that holds the
+# rules of a generation request, and it lives in the specs crate, outside
 # `backends/`. Named here so that a change to the generator or to the document
 # is carried into it by "regenerate everything", and so that `regen-reproduces`,
 # which compares the whole tree after this script has run, judges it.
-stage "Works request machine"
-sce-works/machines/generate.sh
+stage "Specs request machine"
+sce-specs/machines/generate.sh
 
 # The committed Rust trees are generator output *as rustfmt leaves it*, not
 # as the emitter writes it. `backends/rust/tests` is a workspace member, so

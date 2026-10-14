@@ -104,13 +104,13 @@ def run(argv: list, *, cwd=None, timeout: float | None = None,
     page (a Korean Windows one is not UTF-8) would otherwise turn a specification
     into other characters on the way in.
 
-    ⚠ For a Workbench generation (`SCE_AUTHOR_WORK`) the folder the program runs in is the one
+    ⚠ For a Workbench generation (`SCE_AUTHOR_SPEC`) the folder the program runs in is the one
     folder it may open files in (`SCE_FILE_ROOT`, read by the generator): what it is handed was
     written by a model, and a document that names a file elsewhere (an import, a template, an
     include) is a way to ask the machine about its files. The generator holds that where it opens
     a file, so it holds for a place nobody listed; the staged folder is the one this is run in."""
     added = dict(env or {})
-    if os.environ.get("SCE_AUTHOR_WORK") and cwd is not None:
+    if os.environ.get("SCE_AUTHOR_SPEC") and cwd is not None:
         added["SCE_FILE_ROOT"] = str(cwd)
     environment = {**os.environ, **added} if added else None
     if own_group:

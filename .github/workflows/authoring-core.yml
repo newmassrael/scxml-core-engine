@@ -1,6 +1,6 @@
 name: Authoring Core (domain-free)
 
-# The authoring core is the half of prose-to-SCXML that must work for every
+# The authoring core is the half of prose-to-SCXML that must spec for every
 # subject matter. Everything a subject matter knows arrives as data, in a pack;
 # nothing about a subject matter may live in the package itself.
 #
@@ -20,11 +20,11 @@ name: Authoring Core (domain-free)
 # 86 ran nowhere on a generator change — the push selected this gate only for
 # `tools/authoring/**` — so the paths below include what they run through.
 #
-# The works tools (`works_list`, `works_read`, `works_save_model`,
-# `works_save_requirements`) run a second
-# product binary, the works folder's `sce-work` (`sce-works`), and the
+# The specs tools (`specs_list`, `specs_read`, `specs_save_model`,
+# `specs_save_requirements`) run a second
+# product binary, the specs folder's `sce-spec` (`sce-specs`), and the
 # cases that drive them skip the same way where it is not built. So that job
-# builds it too and refuses to run without it, and `sce-works/**` is among the
+# builds it too and refuses to run without it, and `sce-specs/**` is among the
 # paths: a change to the command layer reaches the one caller that is not Rust.
 # `scripts/package_sce_author.sh` is too, since the bundle cases run it.
 
@@ -36,7 +36,7 @@ on:
       - '.github/workflows/authoring-core.yml'
       - 'scripts/gates/authoring-core.sh'
       - 'scripts/package_sce_author.sh'
-      - 'sce-works/**'
+      - 'sce-specs/**'
       - 'sce-build/**'
       - 'tools/codegen/templates/**'
       - 'backends/python/runtime/**'
@@ -50,7 +50,7 @@ on:
       - '.github/workflows/authoring-core.yml'
       - 'scripts/gates/authoring-core.sh'
       - 'scripts/package_sce_author.sh'
-      - 'sce-works/**'
+      - 'sce-specs/**'
       - 'sce-build/**'
       - 'tools/codegen/templates/**'
       - 'backends/python/runtime/**'
@@ -100,7 +100,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-codegen-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'sce-build/**/*.rs', 'sce-build/Cargo.toml', 'sce-works/**/*.rs', 'sce-works/Cargo.toml') }}
+          key: ${{ runner.os }}-cargo-codegen-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'sce-build/**/*.rs', 'sce-build/Cargo.toml', 'sce-specs/**/*.rs', 'sce-specs/Cargo.toml') }}
           restore-keys: |
             ${{ runner.os }}-cargo-codegen-
       - name: Build sce-codegen
@@ -108,15 +108,15 @@ jobs:
           source scripts/lib/sce_codegen.sh
           sce_codegen_drop_stale_release
           cargo build --bin sce-codegen --features cli -p sce-build
-      - name: Build sce-work
-        # The works folder's command layer, which the works tools run to read a
-        # work and save its model. Its own step, as the generator's is.
-        run: cargo build -p sce-works --features cli --bin sce-work
-      - name: Refuse to run the suite without the generator and sce-work
+      - name: Build sce-spec
+        # The specs folder's command layer, which the specs tools run to read a
+        # spec and save its model. Its own step, as the generator's is.
+        run: cargo build -p sce-specs --features cli --bin sce-spec
+      - name: Refuse to run the suite without the generator and sce-spec
         # The 86 run-driven cases skip when the generator is absent, and the
-        # works cases when sce-work is, and a skip reads as a pass. Built one
+        # specs cases when sce-spec is, and a skip reads as a pass. Built one
         # step up, so absence is a broken build step, not a reason to judge less.
-        run: test -x target/debug/sce-codegen && test -x target/debug/sce-work
+        run: test -x target/debug/sce-codegen && test -x target/debug/sce-spec
       - uses: actions/setup-python@v7
         with:
           python-version: '3.x'

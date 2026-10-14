@@ -17,7 +17,7 @@ BUILT = unittest.skipUnless(_default_codegen().exists(),
                             "the product's code generator is not built")
 
 # The cases the application's reader of the answer an AI ends with is held to as well
-# (sce-works/src/document_files.rs): one rule in two languages.
+# (sce-specs/src/document_files.rs): one rule in two languages.
 FILE_REFERENCES = pathlib.Path(__file__).resolve().parent / "fixtures" / "file_references.json"
 
 NS ='xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"'
@@ -27,7 +27,7 @@ AN_IMPORT_OF_A_PRIVATE_FILE = (
 
 class WorkbenchScope(unittest.TestCase):
     def setUp(self):
-        self.env = patch.dict(os.environ, {"SCE_AUTHOR_WORK": "assigned-work"})
+        self.env = patch.dict(os.environ, {"SCE_AUTHOR_SPEC": "assigned-spec"})
         self.env.start()
         self.addCleanup(self.env.stop)
 
@@ -37,14 +37,14 @@ class WorkbenchScope(unittest.TestCase):
                          {t["name"] for t in answer["result"]["tools"]})
 
     def test_an_unadvertised_mutation_is_refused_before_dispatch(self):
-        with patch.object(mcp.works, "read_work") as read:
-            answer = mcp.call_tool("works_save_model", {"work": "assigned-work"})
+        with patch.object(mcp.specs, "read_spec") as read:
+            answer = mcp.call_tool("specs_save_model", {"spec": "assigned-spec"})
             self.assertTrue(answer["isError"])
             read.assert_not_called()
 
-    def test_another_work_is_refused_before_it_is_read(self):
-        with patch.object(mcp.works, "read_work") as read:
-            answer = mcp.call_tool("works_read", {"work": "other-work"})
+    def test_another_spec_is_refused_before_it_is_read(self):
+        with patch.object(mcp.specs, "read_spec") as read:
+            answer = mcp.call_tool("specs_read", {"spec": "other-spec"})
             self.assertTrue(answer["isError"])
             read.assert_not_called()
 
@@ -99,11 +99,11 @@ class WorkbenchScope(unittest.TestCase):
         self.assertTrue(answer["isError"])
         self.assertIn("document type", answer["content"][0]["text"])
 
-    def test_the_assigned_work_is_read_normally(self):
-        with patch.object(mcp, "_work_reading", return_value={"source": None}) as read:
-            answer = mcp.call_tool("works_read", {"work": "assigned-work"})
+    def test_the_assigned_spec_is_read_normally(self):
+        with patch.object(mcp, "_spec_reading", return_value={"source": None}) as read:
+            answer = mcp.call_tool("specs_read", {"spec": "assigned-spec"})
             self.assertFalse(answer.get("isError", False))
-            self.assertEqual("assigned-work", read.call_args.args[0])
+            self.assertEqual("assigned-spec", read.call_args.args[0])
 
     def test_what_a_document_is_called_does_not_decide_whether_it_is_checked(self):
         # The caller names the file, and the product reads it as SCXML whatever it is called:
@@ -206,7 +206,7 @@ class WorkbenchScope(unittest.TestCase):
             self.assertEqual(os.path.realpath(said), os.path.realpath(folder))
             # Not a generation: nothing is confined, as for a person who runs it on their own files.
             with patch.dict(os.environ):
-                os.environ.pop("SCE_AUTHOR_WORK")
+                os.environ.pop("SCE_AUTHOR_SPEC")
                 os.environ.pop("SCE_FILE_ROOT", None)
                 self.assertEqual(process.run(report, cwd=folder).stdout.strip(), "None")
 

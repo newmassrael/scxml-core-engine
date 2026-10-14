@@ -45,7 +45,7 @@ class TheServerSaysWhetherItCanStart(unittest.TestCase):
 
     def test_a_server_with_what_it_needs_says_it_is_ready_and_exits_cleanly(self):
         status, out, err = check({"SCE_CODEGEN": self.program("sce-codegen"),
-                                  "SCE_WORK": self.program("sce-work")})
+                                  "SCE_SPEC": self.program("sce-spec")})
 
         self.assertEqual(0, status, err)
         self.assertIn("ready", out)
@@ -53,30 +53,30 @@ class TheServerSaysWhetherItCanStart(unittest.TestCase):
 
     def test_a_generator_that_is_not_there_is_named_with_the_way_to_set_it(self):
         status, _, err = check({"SCE_CODEGEN": str(self.dir / "nowhere" / "sce-codegen"),
-                                "SCE_WORK": self.program("sce-work")})
+                                "SCE_SPEC": self.program("sce-spec")})
 
         self.assertEqual(1, status)
         self.assertIn("generator", err)
         self.assertIn("SCE_CODEGEN", err)
         self.assertIn(str(self.dir / "nowhere" / "sce-codegen"), err)
 
-    def test_a_works_command_that_is_not_there_is_named_with_the_way_to_set_it(self):
+    def test_a_specs_command_that_is_not_there_is_named_with_the_way_to_set_it(self):
         status, _, err = check({"SCE_CODEGEN": self.program("sce-codegen"),
-                                "SCE_WORK": str(self.dir / "nowhere" / "sce-work")})
+                                "SCE_SPEC": str(self.dir / "nowhere" / "sce-spec")})
 
         self.assertEqual(1, status)
-        self.assertIn("sce-work", err)
-        self.assertIn("SCE_WORK", err)
+        self.assertIn("sce-spec", err)
+        self.assertIn("SCE_SPEC", err)
 
     def test_every_problem_is_said_not_only_the_first(self):
-        status, _, err = check({"SCE_CODEGEN": str(self.dir / "a"), "SCE_WORK": str(self.dir / "b")})
+        status, _, err = check({"SCE_CODEGEN": str(self.dir / "a"), "SCE_SPEC": str(self.dir / "b")})
 
         self.assertEqual(1, status)
         self.assertEqual(2, len([line for line in err.splitlines() if line.strip()]))
 
     def check_without(self, *modules: str) -> tuple[int, str]:
-        """`--check` on a machine that has the generator and `sce-work` and not these modules."""
-        env = {"SCE_CODEGEN": self.program("sce-codegen"), "SCE_WORK": self.program("sce-work")}
+        """`--check` on a machine that has the generator and `sce-spec` and not these modules."""
+        env = {"SCE_CODEGEN": self.program("sce-codegen"), "SCE_SPEC": self.program("sce-spec")}
         with unittest.mock.patch.object(needs, "_can_import", lambda name: name not in modules):
             status, _, err = check(env)
         return status, err

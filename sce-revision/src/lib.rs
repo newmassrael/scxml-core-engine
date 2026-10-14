@@ -5,7 +5,7 @@
 //!
 //! A requirement keeps its id when its specification is revised because a lineage remembers which
 //! id was issued for which requirement (`docs/adr/0006-a-requirement-keeps-its-id-across-a-
-//! revision.md`), and a work keeps that lineage beside its list (`docs/adr/0011-a-work-keeps-its-
+//! revision.md`), and a spec keeps that lineage beside its list (`docs/adr/0011-a-work-keeps-its-
 //! requirement-lineage-with-its-requirement-list.md`). What the lineage means is judged here:
 //!
 //! * [`parse`] and [`check`]: is this a lineage?

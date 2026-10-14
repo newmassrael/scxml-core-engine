@@ -91,7 +91,7 @@ and takes the same `--http` flags.
 
 `--check` (on either launcher) starts nothing and asks whether the server could do its work:
 it exits 0 and says `ready`, or exits 1 and says, one line each, what is missing (the
-generator and how to point at it, `sce-work`, each Python module of `sce_author/needs.py` that
+generator and how to point at it, `sce-spec`, each Python module of `sce_author/needs.py` that
 is not installed). An application that starts an AI client with this server asks first, so that
 a server that cannot start is told to the owner in these words and not as an AI that never
 answers. It goes with no other option. That file is the one list of what the server needs of its
@@ -313,7 +313,7 @@ over with `fresh: true`: nothing is carried, every id that was live is retired i
 revision of its own, and each requirement is issued a new id from where the numbering
 left off, never from R1 (`docs/adr/0012-the-ids-are-started-over-by-retiring-them-not-by-resetting-them.md`).
 `next_at_least` says where new ids start when that is past where the lineage's own numbering
-would: a work whose lineage the store cannot read refuses a list that would issue an id its
+would: a spec whose lineage the store cannot read refuses a list that would issue an id its
 lists already carried (`lineage-numbers-reused`) and names the number to give.
 The answer's `delta`
 says which ids were carried, changed, new or retired and which sentences were
@@ -323,7 +323,7 @@ replaced one when the new sentence is nearly the old, and then it lists it
 `changed` so a person reads it. The figures, the constraints behind the design
 and the steps it opens are in
 `docs/adr/0006-a-requirement-keeps-its-id-across-a-revision.md`. Not done: keeping
-the lineage with a work in the application.
+the lineage with a spec in the application.
 
 An acceptance record also keeps, per requirement, digests of the rows the report
 showed the owner for it (`evidence`, with `unclaimed` for the rows that claim
@@ -1118,26 +1118,26 @@ written in its file). An algorithm has no picture of its own: it is reviewed
 on the pseudocode page, whose steps are the reading, and in its field table.
 The review artefact follows the kind's shape.
 
-**Works: the specification the owner keeps in the workbench application.**
-`works_list`, `works_read`, `works_save_model`, `works_save_requirements` and
-the three that take, finish and give up a generation (`works_begin_generation`,
-`works_finish_generation`, `works_fail_generation`)
+**Specs: the specification the owner keeps in the workbench application.**
+`specs_list`, `specs_read`, `specs_save_model`, `specs_save_requirements` and
+the three that take, finish and give up a generation (`specs_begin_generation`,
+`specs_finish_generation`, `specs_fail_generation`)
 connect this server to the application (the `sce-spec-workbench` repository). The owner writes the
 specification there and
-asks an AI client to model it; the client reads the text from the work, writes
+asks an AI client to model it; the client reads the text from the spec, writes
 and checks the model as above, and saves it back, where the owner sees the
-figures SCE draws of it beside their text. They do it by running `sce-work`,
-the works folder's own command layer (`sce-works`, which the application links
+figures SCE draws of it beside their text. They do it by running `sce-spec`,
+the specs folder's own command layer (`sce-specs`, which the application links
 too), and never by opening the folder: the
 desktop application and this server both save, a save is a compare-and-swap on
 the revision the writer read under a lock, and a second implementation of that
-here would be a second definition of when two saves conflict. `sce-work` is
-found as `SCE_WORK` names it, else `target/debug/sce-work` of the tree
-(`cargo build -p sce-works --features cli --bin sce-work`), and a bundle
-carries it when packaged with `--work PATH`. The works folder is the one the
-application opens (`SCE_WORKS_DIR`, else the per-user data directory).
+here would be a second definition of when two saves conflict. `sce-spec` is
+found as `SCE_SPEC` names it, else `target/debug/sce-spec` of the tree
+(`cargo build -p sce-specs --features cli --bin sce-spec`), and a bundle
+carries it when packaged with `--spec PATH`. The specs folder is the one the
+application opens (`SCE_SPECS_DIR`, else the per-user data directory).
 
-- `works_read` gives the text with its `revision` and the model with its
+- `specs_read` gives the text with its `revision` and the model with its
   `revision`, the text revision it was `written_for`, and its `standing`
   (`current`, `behind` or `unstated`: the command layer's own word, which the
   application shows the same way). A model of one document is its `text`; a model of
@@ -1154,34 +1154,34 @@ application opens (`SCE_WORKS_DIR`, else the per-user data directory).
   next draft may cite it. The workbench keeps a plain map of ids to words, and
   this package writes the record from it, so the format of that record stays where
   it is read (`decisions.v1.schema.json`).
-- `works_save_model` takes `model_text` (one document) or `documents_text` with an
+- `specs_save_model` takes `model_text` (one document) or `documents_text` with an
   `entry_name` (several), never both. It runs the product's check first, exactly
   as `validate_scxml` does for one document and `validate_scxml_set` for several
   (and takes the owner's `profile` the same way): a model it refuses is not
-  saved and comes back with the product's records, so a work's model chain holds
+  saved and comes back with the product's records, so a spec's model chain holds
   documents SCE accepts. When the owner has answered anything, the draft is also
   held to those answers by the product's own `decisions` check, as the tool of
   that name runs it: a draft that leaves an answered question `sce:unresolved`
   (`answered-left-open`) or guesses with `sce:assumed` where no answer licenses it
   is not saved either, and what the check only REPORTS (a question nobody had
   asked, `new-question`) comes back as `decisions` for the client to put to the
-  owner. A work the owner has answered nothing of is not held to a record that
+  owner. A spec the owner has answered nothing of is not held to a record that
   does not exist. A save from a `base` that is no longer the current model is a
   `conflict` and writes nothing. The client says which text it wrote the model
   from (`source_revision`); without it the application can only say that nobody
   recorded it.
-- `works_save_requirements` takes the `manifest_text` and `sidecar_text` that
-  `scxml_requirement_set` made from the work's text, unchanged, with the
+- `specs_save_requirements` takes the `manifest_text` and `sidecar_text` that
+  `scxml_requirement_set` made from the spec's text, unchanged, with the
   `source_revision` they were read from and the `base` (the `requirements.revision`
-  `works_read` returned; none for a first list). The product's own loader runs
+  `specs_read` returned; none for a first list). The product's own loader runs
   first, against an empty statechart because loading a list does not look at a
   design: a manifest it refuses is not saved and comes back in its words, so a
-  work's list chain holds lists the product loads. A stale `base` is a `conflict`.
-  `works_read` gives the list back as `requirements`: `manifest_text` and
+  spec's list chain holds lists the product loads. A stale `base` is a `conflict`.
+  `specs_read` gives the list back as `requirements`: `manifest_text` and
   `sidecar_text` byte for byte (the owner's acceptance pins their hash), the text
   revision it was `written_for`, and its `standing` against the text, so a list
   read from an earlier text is `behind` and the client is told to build it again.
-  **The work keeps the lineage of its list** (`lineage_text`, which `works_read`
+  **The spec keeps the lineage of its list** (`lineage_text`, which `specs_read`
   gives back when the list has one): which id was issued for which requirement
   across the revisions of the text, hashes and numbers and no word of it. A client
   that builds the next list gives `scxml_requirement_set` the `lineage_text` and the
@@ -1190,13 +1190,13 @@ application opens (`SCE_WORKS_DIR`, else the per-user data directory).
   texts it returns together, so every requirement keeps its id and an id that was
   retired is never issued again; measured on three revisions of a three-sentence
   text, a manifest and a sidecar alone gave the new sentence the dropped one's id.
-  `works_save_requirements` refuses, and writes nothing, for a list that would lose
-  the lineage the work holds (`lineage-dropped`; a generation's is told at once and
+  `specs_save_requirements` refuses, and writes nothing, for a list that would lose
+  the lineage the spec holds (`lineage-dropped`; a generation's is told at once and
   not when it is finished), for a lineage that is not the lineage of this list (the
   digests of its last revision's manifest AND sidecar, its document and revision are
   compared: a manifest is coordinates only, so another specification's list of the same
   shape has its digest, and a list saved with a lineage has to come with the sidecar the
-  lineage names), and for one that does not continue the work's (an id is never forgotten,
+  lineage names), and for one that does not continue the spec's (an id is never forgotten,
   a retired one never lives again, a requirement's history is only added to, the
   ids issued since are numbered from where the last left off). The core holds all of these
   now, for a client that does not go through this package as well (the application's own
@@ -1205,15 +1205,15 @@ application opens (`SCE_WORKS_DIR`, else the per-user data directory).
   `eval/revision_judgment_cases.py`), sentence for sentence, and this package asks the same
   question first so that a client is told in these words before it saves
   (`docs/adr/0011-a-work-keeps-its-requirement-lineage-with-its-requirement-list.md`).
-- **`works_revision_check` and `works_revision_report` say what a revision of a work did**,
-  given only the `work`. Once the owner has accepted a design in the application and revised
+- **`specs_revision_check` and `specs_revision_report` say what a revision of a spec did**,
+  given only the `spec`. Once the owner has accepted a design in the application and revised
   the text, the words of each requirement (carried, changed, new or retired) are derived from
-  the lineage of the list the owner accepted and the lineage of the list the work has now, so
+  the lineage of the list the owner accepted and the lineage of the list the spec has now, so
   any two revisions can be compared however many lie between; the evidence (unchanged,
   changed, new or dropped) is the product's own comparison of the rows the owner was shown
   with the design as it is now. Both are ONE command of the application's command layer,
-  `read_revision_report`, which lays the work out as it always does, reads the acceptance and
-  the design as one state of the work, and judges the revision itself (the crate
+  `read_revision_report`, which lays the spec out as it always does, reads the acceptance and
+  the design as one state of the spec, and judges the revision itself (the crate
   `sce-revision`, so the screen and these tools say the same thing with one implementation);
   these tools only hand its answer on. The join and its verdict are those of
   `scxml_revision_check` (`within-reach` or `outside-reach`, with `uncited` requirements
@@ -1222,39 +1222,39 @@ application opens (`SCE_WORKS_DIR`, else the per-user data directory).
   words (`revision-not-judged`), and so is an acceptance that pinned another manifest or
   another sidecar than the list it was taken of. A text changed after the model or the list was
   written for it is held back (`revision-not-current`, naming which is behind): the list the
-  work holds is then the accepted one, and comparing it with itself would call a revision
-  nobody made "all carried over". `works_revision_report` is the page the owner
+  spec holds is then the accepted one, and comparing it with itself would call a revision
+  nobody made "all carried over". `specs_revision_report` is the page the owner
   reads, with a requirement's sentence printed only with `sentences: true`. Nothing is accepted
   by either, and both are for local servers.
 - **A model can be asked for, and written for the request.** The owner asks for a
-  model in the application (`works_read` gives `request`: `queued` means nobody
-  has taken it). `works_begin_generation` takes that request, or makes one for a
-  work nobody asked for, and answers with the work as `works_read` gives it and
+  model in the application (`specs_read` gives `request`: `queued` means nobody
+  has taken it). `specs_begin_generation` takes that request, or makes one for a
+  spec nobody asked for, and answers with the spec as `specs_read` gives it and
   `generation` (`request`, `attempt`, and the `source` revision the request is about).
-  `works_save_model` and `works_save_requirements` then take that `request`: what
-  they save is written for the request and is not the work's model until
-  `works_finish_generation`, which has SCE check the model itself and publishes the
+  `specs_save_model` and `specs_save_requirements` then take that `request`: what
+  they save is written for the request and is not the spec's model until
+  `specs_finish_generation`, which has SCE check the model itself and publishes the
   model and the requirement list together as one bundle, so the owner never sees a
   model of one draft beside a list of another. What the client ran that the core
   cannot (the decisions the draft was held to) is kept beside the core's check as
   the client reported it. A draft is written for the text its request is about:
-  a `source_revision` that says another is refused. `works_fail_generation` says
+  a `source_revision` that says another is refused. `specs_fail_generation` says
   the model could not be written and why, and the owner is told in the application.
   - **This process keeps the claim alive.** A request is held for a lease that runs
     out, and a client that thinks for longer never says it is still there; the
-    server renews the lease itself (`works.Generations`, a thread, every fifteen
+    server renews the lease itself (`specs.Generations`, a thread, every fifteen
     seconds of a sixty-second lease) for as long as it runs, so the owner reads
     the request as running, and as interrupted if the process dies. A request the
     owner called off, or whose text was saved, is refused at the client's next word
     (`request-ended`, then `generation-ended`), and nothing is renewed for it again.
     A request the application's own executor holds is refused (`request-held`).
-  - **A work that has had a model published this way refuses the plain saves**
-    (`bundled-work`): one half saved alone is the pair the bundle exists to keep
-    from being read. A work that never asked for a generation is saved to as it
-    always was. `works_read` reads the text, model, answers and list as one state of
-    the work, and says the `bundle` they are the ones of.
-- **The owner's acceptance is read and never written here.** `works_read` gives
-  `acceptance` for a work that has a list and a model: `standing` is `none`,
+  - **A spec that has had a model published this way refuses the plain saves**
+    (`bundled-spec`): one half saved alone is the pair the bundle exists to keep
+    from being read. A spec that never asked for a generation is saved to as it
+    always was. `specs_read` reads the text, model, answers and list as one state of
+    the spec, and says the `bundle` they are the ones of.
+- **The owner's acceptance is read and never written here.** `specs_read` gives
+  `acceptance` for a spec that has a list and a model: `standing` is `none`,
   `holds`, or `lapsed`, with the product's own sentence of what moved (`lapse`,
   one sentence passed on whole: the product joins its lapses with `; ` and a
   single lapse can contain one, so it is not split), when (`accepted_at`), the
@@ -1263,17 +1263,17 @@ application opens (`SCE_WORKS_DIR`, else the per-user data directory).
   the command layer states every acceptance it records as the application's own
   (`direct`), so a tool that called it for a client would state, as the owner's
   press, what the owner never pressed, and none does. An acceptance that holds is
-  the owner having said yes to THIS design, and `works_read` withdraws the
+  the owner having said yes to THIS design, and `specs_read` withdraws the
   instruction to write a new draft; one that lapsed is told as what it is, and the
   owner accepts again themselves. The product not answering (`sce-*`) is reported
-  as `standing: unavailable` and does not stop a work being read.
+  as `standing: unavailable` and does not stop a spec being read.
 - The owner's text and answers are the owner's: no tool writes either, and none
-  removes a work. The works tools are refused to a remote caller, like a path:
+  removes a spec. The specs tools are refused to a remote caller, like a path:
   the folder is the machine this server runs on.
 
-`tests/test_the_works_folder_is_reached_through_the_applications_own_command.py`
-drives them against the real `sce-work` and generator, including a text of
-three-byte scalars across both pipes; the authoring lane builds `sce-work` and
+`tests/test_the_specs_folder_is_reached_through_the_applications_own_command.py`
+drives them against the real `sce-spec` and generator, including a text of
+three-byte scalars across both pipes; the authoring lane builds `sce-spec` and
 refuses to run without it, so there a skip is a broken build step.
 
 None of these checks whether the SCXML agrees with the prose specification;
@@ -1414,7 +1414,7 @@ there was no list. A missing document has no binding, so no command runs
 against it, and the failure looks exactly like success.
 
 ⚠ Its two figures are different in kind and the exit status tells them apart.
-A position no document writes is a STATUS — unfinished work looks precisely
+A position no document writes is a STATUS — unfinished spec looks precisely
 like that, and an alarm on it would fire on every conversion in progress. A
 position TWO documents write cannot be right whatever the platform turns out
 to be: one field would receive two answers, and which one stood would be
@@ -1911,7 +1911,7 @@ should have had. Three wrote a correct region on their first document, from the 
 that was no decision region, were refused with the skeleton, and rewrote it as one on the
 next call. All five ended with a region reading every candidate, none moved the mark into a
 comment, and all five passed the eight cases. `gaps --counterfactual` then said, of all five,
-that no case tells the two readings apart. So the guidance does most of the work and the
+that no case tells the two readings apart. So the guidance does most of the spec and the
 refusal catches the writers it misses; that split is two of five, and five is too few to
 say it will hold.
 
@@ -2034,7 +2034,7 @@ A pack is a directory containing
     examples.yaml            (optional, and the tool is much weaker without it)
 
 and nothing else that the core reads. Getting a platform's own model into
-`interface-model.yaml` is the pack author's work and belongs with the pack, not
+`interface-model.yaml` is the pack author's spec and belongs with the pack, not
 here — a converter script for one subject matter is domain knowledge, which is
 exactly what may not live in this directory.
 

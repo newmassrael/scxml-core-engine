@@ -35,15 +35,15 @@ So the shape a caller gets is:
     scxml_acceptance_delta  what moved in a design since it was accepted, per requirement
     scxml_revision_check    whether a revised design stayed within the reach of what changed
     scxml_revision_report   the page the owner reads for a revision: only what to look at again
-    works_list            the specifications the owner keeps in the workbench application
-    works_read              one work: its text now, the model saved for it, its requirements, and the owner's acceptance
-    works_save_model        save the model written for it, once the product accepts it
-    works_save_requirements save the requirement list read from its text, once the product loads it
-    works_revision_check    what a revision of a work did to each requirement, and whether it stayed in reach
-    works_revision_report   the page the owner reads of that revision: only what to look at again
-    works_begin_generation  take the work's request for a model (or make one), and hold it while you write
-    works_finish_generation say it is done: the model and the list become the work's together
-    works_fail_generation   say it could not be done, and why
+    specs_list            the specifications the owner keeps in the workbench application
+    specs_read              one spec: its text now, the model saved for it, its requirements, and the owner's acceptance
+    specs_save_model        save the model written for it, once the product accepts it
+    specs_save_requirements save the requirement list read from its text, once the product loads it
+    specs_revision_check    what a revision of a spec did to each requirement, and whether it stayed in reach
+    specs_revision_report   the page the owner reads of that revision: only what to look at again
+    specs_begin_generation  take the spec's request for a model (or make one), and hold it while you write
+    specs_finish_generation say it is done: the model and the list become the spec's together
+    specs_fail_generation   say it could not be done, and why
 
 ⚠⚠ `review` reached this transport later than the rest, and the gap is worth
 recording rather than quietly closing: a caller reaching this core over MCP
@@ -74,10 +74,10 @@ from . import brief as brief_sections
 from .brief import assemble
 from .ingest import picture_names_held, read_pictures
 
-# A headless Workbench generation is scoped to one work, with inline drafts only. The
+# A headless Workbench generation is scoped to one spec, with inline drafts only. The
 # application sets this in the server's environment; specification text cannot change it.
 WORKBENCH_TOOLS = frozenset({
-    "works_read", "scxml_kinds", "validate_scxml", "validate_scxml_set",
+    "specs_read", "scxml_kinds", "validate_scxml", "validate_scxml_set",
     "scxml_unresolved", "decisions", "scxml_requirement_set", "scxml_requirements",
     "render_scxml_pseudocode",
 })
@@ -101,7 +101,7 @@ from .gaps import ORDER as GAP_ORDER
 from .gaps import report as gap_report
 from .pack import check_pack, load_pack
 from .pseudo import render as render_pseudo
-from . import house_rule, requirement_lineage, requirement_set, revision, revision_gate, works
+from . import house_rule, requirement_lineage, requirement_set, revision, revision_gate, specs
 from .scenario_driver import answer as scenario_answer
 from .scenario_driver import read_set as read_scenario_set
 from .scenario_driver import run as run_scenarios
@@ -263,46 +263,46 @@ SERVER_INSTRUCTIONS = (
     "its sources, and the profile it is held to. No pack or binding is "
     "needed for this flow. "
     "When the owner keeps the specification in the workbench application, "
-    "read it from there: works_list names their works and works_read gives "
+    "read it from there: specs_list names their specs and specs_read gives "
     "the text as it is now with its revision. Write and check the model as "
-    "above, then save it with works_save_model, giving the revision you read "
+    "above, then save it with specs_save_model, giving the revision you read "
     "as source_revision, so the owner sees the figures SCE draws of it beside "
-    "their text. The text is the owner's: nothing here writes it, and a work "
+    "their text. The text is the owner's: nothing here writes it, and a spec "
     "whose text moved after your model was written reads as `behind` until "
     "you read it again and save the model again. The owner answers the "
-    "questions the model leaves open in the application: works_read gives "
+    "questions the model leaves open in the application: specs_read gives "
     "their answers and `decisions_text`, the decision record they make. "
     "Apply each answer in the model and cite it as sce:assumed=\"<id>\", "
     "never leave an answered question sce:unresolved, never answer one for "
-    "the owner, and put every new question works_save_model reports to them. "
-    "works_save_model refuses a draft that does not keep to their answers. "
-    "The requirements a work's text states are kept with the work: build them "
-    "with scxml_requirement_set from the text works_read gave you and save "
-    "them with works_save_requirements (source_revision = source.revision), "
-    "and works_read gives them back as manifest_text and sidecar_text for "
-    "scxml_requirements and scxml_acceptance_report. When the work already "
+    "the owner, and put every new question specs_save_model reports to them. "
+    "specs_save_model refuses a draft that does not keep to their answers. "
+    "The requirements a spec's text states are kept with the spec: build them "
+    "with scxml_requirement_set from the text specs_read gave you and save "
+    "them with specs_save_requirements (source_revision = source.revision), "
+    "and specs_read gives them back as manifest_text and sidecar_text for "
+    "scxml_requirements and scxml_acceptance_report. When the spec already "
     "holds a list, build the next one against it: give scxml_requirement_set "
-    "works_read's requirements.lineage_text as lineage_text and its "
+    "specs_read's requirements.lineage_text as lineage_text and its "
     "sidecar_text as previous_sidecar_text (a list that has no lineage yet: its "
     "manifest_text as previous_manifest_text), and save the manifest_text, "
     "sidecar_text and lineage_text it returns together; the lineage is what "
-    "keeps an id from being issued twice, and a work that holds one refuses a "
+    "keeps an id from being issued twice, and a spec that holds one refuses a "
     "list without it. The owner accepts a "
     "design in the application, on the page SCE writes there: nothing here "
-    "records that acceptance, and works_read only tells you whether one "
+    "records that acceptance, and specs_read only tells you whether one "
     "exists (`acceptance`) and whether it still holds. When it holds, the "
     "owner has accepted this design: do not write a new draft unless they "
     "ask for one, because a new draft of the same specification is never "
     "the same document. When it lapsed, tell the owner what SCE says moved. "
-    "The owner can also ask for a model in the application (works_read "
+    "The owner can also ask for a model in the application (specs_read "
     "gives `request`: queued means nobody has taken it). Take it with "
-    "works_begin_generation, which this server then keeps alive while you "
-    "write; save the model and the requirement list with works_save_model "
-    "and works_save_requirements giving that `request`, and say "
-    "works_finish_generation: SCE checks the model itself and the model and "
-    "the list become the work's together, as one. A work that has had a "
-    "model published that way refuses the plain saves (`bundled-work`): "
-    "begin a generation. If you cannot finish, say works_fail_generation "
+    "specs_begin_generation, which this server then keeps alive while you "
+    "write; save the model and the requirement list with specs_save_model "
+    "and specs_save_requirements giving that `request`, and say "
+    "specs_finish_generation: SCE checks the model itself and the model and "
+    "the list become the spec's together, as one. A spec that has had a "
+    "model published that way refuses the plain saves (`bundled-spec`): "
+    "begin a generation. If you cannot finish, say specs_fail_generation "
     "with the reason, so the owner is told."
 )
 
@@ -1524,24 +1524,24 @@ TOOLS = [
         },
     },
     {
-        "name": "works_list",
+        "name": "specs_list",
         "description": (
-            "List the works the owner keeps in the workbench application: each "
-            "one's `id` and title. A work is a specification the owner wrote "
+            "List the specs the owner keeps in the workbench application: each "
+            "one's `id` and title. A spec is a specification the owner wrote "
             "there, and the model you write from it is saved back to the same "
-            "work, where the owner sees it drawn beside the text. Use it when the "
-            "owner names a work, or asks you to work on 'the specification in "
+            "spec, where the owner sees it drawn beside the text. Use it when the "
+            "owner names a spec, or asks you to work on 'the specification in "
             "the workbench'; ask them which when several could be meant. "
-            "`unreadable` lists folders that should have been works and could "
-            "not be read. Local servers only: the works folder is on the machine "
+            "`unreadable` lists folders that should have been specs and could "
+            "not be read. Local servers only: the specs folder is on the machine "
             "this server runs on."
         ),
         "inputSchema": {"type": "object", "properties": {}},
     },
     {
-        "name": "works_read",
+        "name": "specs_read",
         "description": (
-            "Read a work: the specification text as it is now (`source`, with "
+            "Read a spec: the specification text as it is now (`source`, with "
             "its `revision`) and the model saved for it, if any (`model`, with "
             "its `revision`, the text revision it was `written_for`, its "
             "`standing` -- `current`, `behind` or `unstated` -- and its SCXML: "
@@ -1554,7 +1554,7 @@ TOOLS = [
             "it in the application, and `source.revision` is the version you "
             "are about to write a model for. When `model.standing` is `behind` "
             "the text moved on after that model was written: read the text "
-            "again and write the model again from it. A work that has no text "
+            "again and write the model again from it. A spec that has no text "
             "yet has `source` null: tell the owner, and write nothing. "
             "`requirements` is the list the text was read into, when one was "
             "saved (`manifest_text`, `sidecar_text` and, when it has one, "
@@ -1577,16 +1577,16 @@ TOOLS = [
         ),
         "inputSchema": {
             "type": "object",
-            "required": ["work"],
+            "required": ["spec"],
             "properties": {
-                "work": {"type": "string", "description": "The work's `id`, from works_list."},
+                "spec": {"type": "string", "description": "The spec's `id`, from specs_list."},
             },
         },
     },
     {
-        "name": "works_save_model",
+        "name": "specs_save_model",
         "description": (
-            "Save the SCXML model you wrote as the work's model, so the owner "
+            "Save the SCXML model you wrote as the spec's model, so the owner "
             "sees what SCE draws of it in the application. A model of one "
             "document is `model_text`; a model of several documents that name "
             "each other (a statechart and the event schemas it imports) is "
@@ -1594,10 +1594,10 @@ TOOLS = [
             "imports know it by, with `entry_name` naming the one the product "
             "is asked about (the first when you leave it out): the whole set is "
             "checked together, as validate_scxml_set checks it. Give `source_revision` "
-            "= the `source.revision` works_read returned for the text you wrote "
+            "= the `source.revision` specs_read returned for the text you wrote "
             "this model from (without it the application can only say that nobody "
             "recorded which text the model is about), and `base` = the "
-            "`model.revision` works_read returned (omit it for a work with no "
+            "`model.revision` specs_read returned (omit it for a spec with no "
             "model yet). The product's own check runs first, exactly as "
             "validate_scxml runs it: a model it REFUSES is not saved, and the "
             "answer is its refusal, to fix in the draft. When the owner has "
@@ -1607,7 +1607,7 @@ TOOLS = [
             "either, and what it only reports (a question nobody asked yet) comes "
             "back as `decisions`, to put to the owner. A save from a `base` "
             "that is no longer the current model is refused as a conflict and "
-            "writes nothing: read the work again, and decide what your model "
+            "writes nothing: read the spec again, and decide what your model "
             "becomes now. An accepted model that leaves something open comes "
             "back with `open`: tell the owner each line. Saving is not the "
             "owner's acceptance of the design, and nothing here records one. "
@@ -1615,9 +1615,9 @@ TOOLS = [
         ),
         "inputSchema": {
             "type": "object",
-            "required": ["work"],
+            "required": ["spec"],
             "properties": {
-                "work": {"type": "string", "description": "The work's `id`, from works_list."},
+                "spec": {"type": "string", "description": "The spec's `id`, from specs_list."},
                 "model_text": {"type": "string", "description": (
                     "The SCXML document, exactly as you checked it. Give this OR "
                     "`documents_text`, not both.")},
@@ -1639,14 +1639,14 @@ TOOLS = [
                     "The `source.revision` of the specification text the model was "
                     "written from.")},
                 "base": {"type": "string", "description": (
-                    "The `model.revision` read from the work; omit for a first model. "
+                    "The `model.revision` read from the spec; omit for a first model. "
                     "Not used with `request`.")},
                 "request": {"type": "string", "description": (
-                    "The `request.id` works_begin_generation returned. With it the model is "
-                    "written for that request and is not the work's until "
-                    "works_finish_generation; without it the model is saved as the work's "
-                    "now, which a work that has had a model published by a generation "
-                    "refuses (`bundled-work`).")},
+                    "The `request.id` specs_begin_generation returned. With it the model is "
+                    "written for that request and is not the spec's until "
+                    "specs_finish_generation; without it the model is saved as the spec's "
+                    "now, which a spec that has had a model published by a generation "
+                    "refuses (`bundled-spec`).")},
                 # The check that gates the save is validate_scxml's, so it is held
                 # to the owner's profile the same way.
                 **_PROFILE_INPUT,
@@ -1654,32 +1654,32 @@ TOOLS = [
         },
     },
     {
-        "name": "works_save_requirements",
+        "name": "specs_save_requirements",
         "description": (
-            "Save the requirement list you read from a work's text, so the owner "
+            "Save the requirement list you read from a spec's text, so the owner "
             "can accept a design against it in the application. Build the list "
-            "with scxml_requirement_set from the `source.text` works_read gave "
+            "with scxml_requirement_set from the `source.text` specs_read gave "
             "you and pass its `manifest_text`, `sidecar_text` and `lineage_text` "
-            "here unchanged (when the work already holds a list, give "
-            "scxml_requirement_set the `requirements.lineage_text` works_read "
+            "here unchanged (when the spec already holds a list, give "
+            "scxml_requirement_set the `requirements.lineage_text` specs_read "
             "returned as its `lineage_text`, and its `sidecar_text` as "
             "`previous_sidecar_text`, so each requirement keeps its id); "
             "give `source_revision` = the `source.revision` you read (without it "
             "the application can only say that nobody recorded which text the "
-            "list is about), and `base` = the `requirements.revision` works_read "
-            "returned (omit it for a work with no list yet). The product's own "
+            "list is about), and `base` = the `requirements.revision` specs_read "
+            "returned (omit it for a spec with no list yet). The product's own "
             "loader runs first: a manifest it REFUSES is not saved, and the "
             "answer is its refusal. A save from a `base` that is no longer the "
             "current list is refused as a conflict and writes nothing: read the "
-            "work again. A list written for an earlier text reads as `behind` "
+            "spec again. A list written for an earlier text reads as `behind` "
             "until you read the text again and save the list again. Saving a "
             "list is not the owner's acceptance of anything. Local servers only."
         ),
         "inputSchema": {
             "type": "object",
-            "required": ["work", "manifest_text"],
+            "required": ["spec", "manifest_text"],
             "properties": {
-                "work": {"type": "string", "description": "The work's `id`, from works_list."},
+                "spec": {"type": "string", "description": "The spec's `id`, from specs_list."},
                 "manifest_text": {"type": "string", "description": (
                     "The manifest scxml_requirement_set returned, exactly as it returned it.")},
                 "sidecar_text": {"type": "string", "description": (
@@ -1689,34 +1689,34 @@ TOOLS = [
                     "The lineage scxml_requirement_set returned (which id was issued for "
                     "which requirement, across the revisions of the text; hashes and "
                     "numbers, no word of the text), exactly as it returned it, from the "
-                    "same call as the manifest. Give it whenever you have it: a work that "
+                    "same call as the manifest. Give it whenever you have it: a spec that "
                     "holds one refuses a list without (`lineage-dropped`), because the next "
                     "revision would issue an id that was retired again, to another "
                     "requirement. It has to be the lineage of this manifest and to continue "
-                    "the one the work holds.")},
+                    "the one the spec holds.")},
                 "source_revision": {"type": "string", "description": (
                     "The `source.revision` of the specification text the list was read from.")},
                 "base": {"type": "string", "description": (
-                    "The `requirements.revision` read from the work; omit for a first list. "
+                    "The `requirements.revision` read from the spec; omit for a first list. "
                     "Not used with `request`.")},
                 "request": {"type": "string", "description": (
-                    "The `request.id` works_begin_generation returned. With it the list is "
-                    "written for that request and is not the work's until "
-                    "works_finish_generation; without it the list is saved as the work's "
-                    "now, which a work that has had a model published by a generation "
-                    "refuses (`bundled-work`).")},
+                    "The `request.id` specs_begin_generation returned. With it the list is "
+                    "written for that request and is not the spec's until "
+                    "specs_finish_generation; without it the list is saved as the spec's "
+                    "now, which a spec that has had a model published by a generation "
+                    "refuses (`bundled-spec`).")},
             },
         },
     },
     {
-        "name": "works_revision_check",
+        "name": "specs_revision_check",
         "description": (
-            "What a revision of a work did, requirement by requirement, and whether it "
-            "stayed within the reach of what changed. Give only the `work`: the owner's "
-            "acceptance and the design and requirement list the work has now are read as "
-            "one state, and the two sides of the join are the work's own. The WORDS of "
+            "What a revision of a spec did, requirement by requirement, and whether it "
+            "stayed within the reach of what changed. Give only the `spec`: the owner's "
+            "acceptance and the design and requirement list the spec has now are read as "
+            "one state, and the two sides of the join are the spec's own. The WORDS of "
             "each requirement (carried, changed, new or retired) are derived from the "
-            "lineage of the list the owner accepted and the lineage of the list the work "
+            "lineage of the list the owner accepted and the lineage of the list the spec "
             "has now, so any two revisions can be compared, however many lie between; the "
             "EVIDENCE (unchanged, changed, new or dropped) is the product's own comparison "
             "of the rows the owner was shown with the design as it is now. Returns JSON "
@@ -1727,7 +1727,7 @@ TOOLS = [
             "requirement that no node cites is `uncited` and was not compared; when "
             "`summary.seen` is 0 the verdict says nothing about the design, and you must "
             "say so. A report and not a verdict on the owner's acceptance: it lapses by "
-            "its bytes (works_read says whether it holds), `within-reach` is not `right`, "
+            "its bytes (specs_read says whether it holds), `within-reach` is not `right`, "
             "and nothing is accepted by this tool. Refused, in words, when nothing was "
             "accepted, when either list has no lineage and no sidecar to make one from, or "
             "when the acceptance was taken under an older evidence rule (take it again). "
@@ -1735,82 +1735,82 @@ TOOLS = [
         ),
         "inputSchema": {
             "type": "object",
-            "required": ["work"],
+            "required": ["spec"],
             "properties": {
-                "work": {"type": "string", "description": "The work's `id`, from works_list."},
+                "spec": {"type": "string", "description": "The spec's `id`, from specs_list."},
             },
         },
     },
     {
-        "name": "works_revision_report",
+        "name": "specs_revision_report",
         "description": (
-            "The page the owner reads of a revision of a work: only what to look at again, "
+            "The page the owner reads of a revision of a spec: only what to look at again, "
             "with the requirements whose words and evidence both read the same folded into "
-            "one line. The same join as works_revision_check. Give `sentences: true` to "
-            "print each requirement's sentence from the work's own list; the page then "
+            "one line. The same join as specs_revision_check. Give `sentences: true` to "
+            "print each requirement's sentence from the spec's own list; the page then "
             "carries the owner's sentences and says so. Returns JSON: `verdict`, `summary` "
             "and `page` -- show the page verbatim. Nothing is accepted by this tool. "
             "Local servers only."
         ),
         "inputSchema": {
             "type": "object",
-            "required": ["work"],
+            "required": ["spec"],
             "properties": {
-                "work": {"type": "string", "description": "The work's `id`, from works_list."},
+                "spec": {"type": "string", "description": "The spec's `id`, from specs_list."},
                 "sentences": {"type": "boolean", "description": (
                     "Print each listed requirement's sentence. Default false.")},
             },
         },
     },
     {
-        "name": "works_begin_generation",
+        "name": "specs_begin_generation",
         "description": (
-            "Take a work's request for a model, and hold it while you write one. The "
-            "owner asks for a model in the application (works_read says so: `request` "
+            "Take a spec's request for a model, and hold it while you write one. The "
+            "owner asks for a model in the application (specs_read says so: `request` "
             "is queued); this takes that request, or makes one when none is open, so "
-            "that the owner sees the work being written and what comes of it. The "
-            "answer is the work as works_read gives it, and `generation`: the request "
-            "you hold (`generation.request`: give it as `request` to works_save_model, "
-            "works_save_requirements and works_finish_generation) and the text it was "
+            "that the owner sees the spec being written and what comes of it. The "
+            "answer is the spec as specs_read gives it, and `generation`: the request "
+            "you hold (`generation.request`: give it as `request` to specs_save_model, "
+            "specs_save_requirements and specs_finish_generation) and the text it was "
             "asked about (`generation.source`). This server renews the claim itself while "
             "it runs, so the owner reads the request as running and not as let go of; "
             "when the owner calls it off, or saves the text it was asked about, your "
-            "next word is refused (`generation-ended`) and you read the work again. A "
+            "next word is refused (`generation-ended`) and you read the spec again. A "
             "request the owner's own application is working on is refused "
             "(`request-held`): say so, and write nothing. Local servers only."
         ),
         "inputSchema": {
             "type": "object",
-            "required": ["work"],
+            "required": ["spec"],
             "properties": {
-                "work": {"type": "string", "description": "The work's `id`, from works_list."},
+                "spec": {"type": "string", "description": "The spec's `id`, from specs_list."},
             },
         },
     },
     {
-        "name": "works_finish_generation",
+        "name": "specs_finish_generation",
         "description": (
             "Say the generation is done: SCE checks the model you saved for the request, "
-            "and when it accepts, the model and the requirement list become the work's "
+            "and when it accepts, the model and the requirement list become the spec's "
             "together, as one bundle (`bundle`), so the owner never sees a model of one "
-            "draft beside a list of another. Save both first, with works_save_model and "
-            "works_save_requirements giving `request`: a request with only one of them is "
+            "draft beside a list of another. Save both first, with specs_save_model and "
+            "specs_save_requirements giving `request`: a request with only one of them is "
             "refused (`no-candidate`). A model SCE refuses is not published, and the "
             "generation is still yours to fix and finish again (`check-refused`). Saying "
             "it again is the same publication. Local servers only."
         ),
         "inputSchema": {
             "type": "object",
-            "required": ["work", "request"],
+            "required": ["spec", "request"],
             "properties": {
-                "work": {"type": "string", "description": "The work's `id`, from works_list."},
+                "spec": {"type": "string", "description": "The spec's `id`, from specs_list."},
                 "request": {"type": "string", "description": (
-                    "The `request.id` works_begin_generation returned.")},
+                    "The `request.id` specs_begin_generation returned.")},
             },
         },
     },
     {
-        "name": "works_fail_generation",
+        "name": "specs_fail_generation",
         "description": (
             "Say the generation could not be done, and why, so the owner is told in the "
             "application and nothing is left running that is not. Use it when the "
@@ -1820,11 +1820,11 @@ TOOLS = [
         ),
         "inputSchema": {
             "type": "object",
-            "required": ["work", "request", "reason"],
+            "required": ["spec", "request", "reason"],
             "properties": {
-                "work": {"type": "string", "description": "The work's `id`, from works_list."},
+                "spec": {"type": "string", "description": "The spec's `id`, from specs_list."},
                 "request": {"type": "string", "description": (
-                    "The `request.id` works_begin_generation returned.")},
+                    "The `request.id` specs_begin_generation returned.")},
                 "reason": {"type": "string", "description": (
                     "Why, in a sentence the owner reads.")},
             },
@@ -1938,7 +1938,7 @@ TOOLS = [
             "nobody wrote are absent from no list, because there was no "
             "list. Positions two documents both write are an error: one "
             "field cannot take two answers. Positions nobody writes are "
-            "reported as a figure, because unfinished work looks exactly "
+            "reported as a figure, because unfinished spec looks exactly "
             "like that."
         ),
         "inputSchema": {
@@ -2277,9 +2277,9 @@ _FILE_ATTRIBUTES = frozenset({"src", "href", "template"})
 _FILE_LIST_ATTRIBUTES = frozenset({"{http://sce.dev/ext}candidates"})
 _XML_BASE = "{http://www.w3.org/XML/1998/namespace}base"
 
-# The longest a document's file name is in the works (`MAX_NAME_CHARS`,
-# sce-works/src/model_set.rs): a longer reference names no document of a draft. The application
-# reads the answer it ends with by the same rule (sce-works/src/document_files.rs), and the cases
+# The longest a document's file name is in the specs (`MAX_NAME_CHARS`,
+# sce-specs/src/model_set.rs): a longer reference names no document of a draft. The application
+# reads the answer it ends with by the same rule (sce-specs/src/document_files.rs), and the cases
 # in tests/fixtures/file_references.json hold the two to it.
 _MAX_NAME_CHARS = 100
 
@@ -2366,7 +2366,7 @@ class _Staging:
             raise ToolArgumentError(
                 f"'{key}_name' has to be a plain file name such as door.scxml, "
                 f"not {name!r}")
-        if os.environ.get("SCE_AUTHOR_WORK") and key in _SCXML_KEYS:
+        if os.environ.get("SCE_AUTHOR_SPEC") and key in _SCXML_KEYS:
             _refuse_file_access_in(text)
         if (directory, name) in self._names:
             raise ToolArgumentError(f"two files are named {name!r}")
@@ -2446,7 +2446,7 @@ class _Staging:
         return pathlib.Path("asked") / name
 
     def refuse_path(self, key: str) -> None:
-        if os.environ.get("SCE_AUTHOR_WORK"):
+        if os.environ.get("SCE_AUTHOR_SPEC"):
             raise ToolArgumentError(
                 f"'{key}' names a local file; Workbench generation accepts only '{key}_text'")
         if self.remote:
@@ -2454,12 +2454,12 @@ class _Staging:
                 f"'{key}' names a file on the machine this server runs on, "
                 f"which a remote caller cannot reach; send it as '{key}_text'")
 
-    def refuse_works(self, tool: str) -> None:
-        """The works folder is this machine's, like a path: a remote caller is
+    def refuse_specs(self, tool: str) -> None:
+        """The specs folder is this machine's, like a path: a remote caller is
         not offered it."""
         if self.remote:
             raise ToolArgumentError(
-                f"'{tool}' reads the works folder of the machine this server runs on, "
+                f"'{tool}' reads the specs folder of the machine this server runs on, "
                 f"which a remote caller cannot reach")
 
     def local_path(self, args: dict, key: str, what: str) -> pathlib.Path | None:
@@ -3485,83 +3485,83 @@ def _accepted_for_tool(args: dict, staging: _Staging) -> dict:
 
 
 # What a client does about a refusal that is not a mistake in its arguments: the state of
-# the work is not what it assumed, and the next step is a read or a different tool.
-_WORKS_REFUSED_NEXT = {
-    "bundled-work": (
-        "this work's model and requirement list are published by a generation, and are not "
-        "saved one half at a time: take the request with works_begin_generation, save both "
-        "with works_save_model and works_save_requirements giving its `request`, then say "
-        "works_finish_generation"),
+# the spec is not what it assumed, and the next step is a read or a different tool.
+_SPECS_REFUSED_NEXT = {
+    "bundled-spec": (
+        "this spec's model and requirement list are published by a generation, and are not "
+        "saved one half at a time: take the request with specs_begin_generation, save both "
+        "with specs_save_model and specs_save_requirements giving its `request`, then say "
+        "specs_finish_generation"),
     "generation-ended": (
-        "the request is not yours any more: read the work again with works_read, and begin "
+        "the request is not yours any more: read the spec again with specs_read, and begin "
         "another generation only if the owner still wants one"),
     "request-ended": (
         "the request ended (the owner called it off, or the text it was asked about was "
-        "saved): read the work again with works_read"),
+        "saved): read the spec again with specs_read"),
     "request-held": (
         "the owner's application, or another client, is working on this request: write nothing, "
         "and tell the owner"),
     "no-candidate": (
         "save both the model and the requirement list giving the request, then say "
-        "works_finish_generation again"),
+        "specs_finish_generation again"),
     "check-refused": (
         "SCE refused what was written for the request, and it is still yours: fix the draft, "
-        "save it again giving the request, and say works_finish_generation again"),
+        "save it again giving the request, and say specs_finish_generation again"),
     "candidate-moved": (
-        "the request was written to after the check ran: say works_finish_generation again"),
+        "the request was written to after the check ran: say specs_finish_generation again"),
     "lineage-dropped": (
-        "this work keeps the lineage its requirement list was built against, and a list without "
+        "this spec keeps the lineage its requirement list was built against, and a list without "
         "it would let an id that was retired be issued again to another requirement: read the "
-        "work with works_read, build the list again with scxml_requirement_set giving it "
+        "spec with specs_read, build the list again with scxml_requirement_set giving it "
         "`requirements.lineage_text` as `lineage_text` and `requirements.sidecar_text` as "
         "`previous_sidecar_text`, and save the manifest_text, sidecar_text and lineage_text it "
         "returns together"),
     "fresh-ids-not-issued": (
         "the owner asked for every requirement of this request to be issued a new id, and the "
-        "list you saved carries an id the work already had: build the list again with "
+        "list you saved carries an id the spec already had: build the list again with "
         "scxml_requirement_set giving `fresh` set to true beside `requirements.lineage_text` "
         "and `requirements.sidecar_text` as `previous_sidecar_text`, save the manifest_text, "
-        "sidecar_text and lineage_text it returns together, and say works_finish_generation "
+        "sidecar_text and lineage_text it returns together, and say specs_finish_generation "
         "again"),
     "lineage-numbers-reused": (
-        "the lineage this work keeps cannot be read by this build, and the one you gave numbers "
-        "its next id from one a list of this work has already carried: build the list again "
+        "the lineage this spec keeps cannot be read by this build, and the one you gave numbers "
+        "its next id from one a list of this spec has already carried: build the list again "
         "with scxml_requirement_set giving `next_at_least` the number the message says "
         "(`detail.floor` plus one), and save the manifest_text, sidecar_text and lineage_text "
         "it returns together"),
 }
 
 
-def _works_refused(exc: works.WorksError) -> dict:
-    """A refusal of the works folder, as the data a client branches on and the
+def _specs_refused(exc: specs.SpecsError) -> dict:
+    """A refusal of the specs folder, as the data a client branches on and the
     sentence it reads: the command layer's `kind`, its words, and its facts."""
     answer = {"refused": exc.kind, "message": str(exc)}
     if exc.detail is not None:
         answer["detail"] = exc.detail
-    if exc.kind in _WORKS_REFUSED_NEXT:
-        answer["next"] = _WORKS_REFUSED_NEXT[exc.kind]
+    if exc.kind in _SPECS_REFUSED_NEXT:
+        answer["next"] = _SPECS_REFUSED_NEXT[exc.kind]
     return _failure(json.dumps(answer, indent=2, ensure_ascii=False) + "\n")
 
 
 def _revision_arg(args: dict, key: str) -> str | None:
-    """A revision as works_read returned it, or None when the caller left it out.
-    Its shape only: whether a work has such a revision is the folder's to say."""
+    """A revision as specs_read returned it, or None when the caller left it out.
+    Its shape only: whether a spec has such a revision is the folder's to say."""
     value = args.get(key)
     if value is None:
         return None
     if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{64}", value):
         raise ToolArgumentError(
-            f"'{key}' has to be a revision exactly as works_read returned it "
+            f"'{key}' has to be a revision exactly as specs_read returned it "
             f"(64 lowercase hexadecimal digits), not {value!r}")
     return value
 
 
-def _works_list_tool(args: dict, staging: _Staging) -> dict:
-    staging.refuse_works("works_list")
+def _specs_list_tool(args: dict, staging: _Staging) -> dict:
+    staging.refuse_specs("specs_list")
     try:
-        listing = works.list_works()
-    except works.WorksError as exc:
-        return _works_refused(exc)
+        listing = specs.list_specs()
+    except specs.SpecsError as exc:
+        return _specs_refused(exc)
     return _text(json.dumps({"version": 1, **listing}, indent=2, ensure_ascii=False) + "\n")
 
 
@@ -3574,22 +3574,22 @@ def _markers_of(document: pathlib.Path, staging: _Staging) -> tuple[list[dict], 
     return json.loads(report)["markers"] or [], ""
 
 
-def _works_read_tool(args: dict, staging: _Staging) -> dict:
-    staging.refuse_works("works_read")
-    work = _name_arg(args, "work", "a work's id", required=True)
+def _specs_read_tool(args: dict, staging: _Staging) -> dict:
+    staging.refuse_specs("specs_read")
+    spec = _name_arg(args, "spec", "a spec's id", required=True)
     try:
-        read = _work_reading(work, staging)
-    except works.WorksError as exc:
-        return _works_refused(exc)
+        read = _spec_reading(spec, staging)
+    except specs.SpecsError as exc:
+        return _specs_refused(exc)
     return _text(json.dumps({"version": 1, **read}, indent=2, ensure_ascii=False) + "\n")
 
 
-def _work_reading(work: str, staging: _Staging,
-                  generation: works.Generation | None = None) -> dict:
-    """A work as a client reads it, and what to do next: the one reading `works_read` and
-    `works_begin_generation` give, so that what a client is told when it begins is what it
+def _spec_reading(spec: str, staging: _Staging,
+                  generation: specs.Generation | None = None) -> dict:
+    """A spec as a client reads it, and what to do next: the one reading `specs_read` and
+    `specs_begin_generation` give, so that what a client is told when it begins is what it
     would have been told by reading. `generation` is the one this call is the beginning of."""
-    read = works.read_work(work)
+    read = specs.read_spec(spec)
     answers = (read["answers"] or {}).get("entries") or {}
     markers: list[dict] = []
     if read["model"] is not None:
@@ -3607,11 +3607,11 @@ def _work_reading(work: str, staging: _Staging,
         # hold a draft to. Written here, by this package, from the plain map the
         # application keeps: the application never writes a decision record.
         source = read["source"]
-        record = compose_record(work, markers, answers,
+        record = compose_record(spec, markers, answers,
                                 rev=source["revision"][:12] if source else None)
         read["decisions_text"] = json.dumps(record, indent=2, ensure_ascii=False) + "\n"
     if read["source"] is None:
-        read["next"] = "this work has no text yet: tell the owner, and write no model"
+        read["next"] = "this spec has no text yet: tell the owner, and write no model"
     else:
         read["next"] = ("write the model from `source.text`, check it with validate_scxml, then "
                         + _saving_next(read, generation))
@@ -3620,7 +3620,7 @@ def _work_reading(work: str, staging: _Staging,
                 "; the owner has answered " + str(len(answers)) + " question(s) (`answers`): "
                 "apply each answer in the model and cite it as sce:assumed=\"<id>\", never "
                 "leave an answered question sce:unresolved, and hand `decisions_text` to "
-                "validate_scxml and decisions as the decision record. works_save_model "
+                "validate_scxml and decisions as the decision record. specs_save_model "
                 "holds the draft to these answers")
         read["next"] += _requirements_next(read["requirements"], generation is not None
                                            or _by_generation(read))
@@ -3629,64 +3629,64 @@ def _work_reading(work: str, staging: _Staging,
 
 
 def _by_generation(read: dict) -> bool:
-    """Whether a work's model is written for a request and published, and not saved as it
-    is: the work has had one published, or the owner has asked for one nobody has finished."""
+    """Whether a spec's model is written for a request and published, and not saved as it
+    is: the spec has had one published, or the owner has asked for one nobody has finished."""
     request = read.get("request")
     return read.get("bundle") is not None or (
         request is not None and request["state"] in ("queued", "running", "interrupted"))
 
 
-def _saving_next(read: dict, generation: works.Generation | None) -> str:
-    """How the model gets to the work: written for a request and published with the
-    requirement list, or saved as it is for a work that has only ever been written to so."""
+def _saving_next(read: dict, generation: specs.Generation | None) -> str:
+    """How the model gets to the spec: written for a request and published with the
+    requirement list, or saved as it is for a spec that has only ever been written to so."""
     if generation is not None:
-        return (f"save it with works_save_model giving request = {generation.request}, save "
-                f"the requirement list with works_save_requirements giving the same request, "
-                f"then say works_finish_generation: SCE checks the model, and the model and the "
-                f"list become the work's together")
+        return (f"save it with specs_save_model giving request = {generation.request}, save "
+                f"the requirement list with specs_save_requirements giving the same request, "
+                f"then say specs_finish_generation: SCE checks the model, and the model and the "
+                f"list become the spec's together")
     if _by_generation(read):
-        return ("begin a generation with works_begin_generation (the owner's request for a "
+        return ("begin a generation with specs_begin_generation (the owner's request for a "
                 "model, or one made for you), save the model and the requirement list giving "
-                "its request, then say works_finish_generation; a work that has had a model "
+                "its request, then say specs_finish_generation; a spec that has had a model "
                 "published refuses the plain saves")
-    return ("save it with works_save_model giving source_revision = source.revision"
+    return ("save it with specs_save_model giving source_revision = source.revision"
             + (" and base = model.revision" if read["model"] is not None else ""))
 
 
 def _requirements_next(requirements: dict | None, by_generation: bool = False) -> str:
-    """What a client is told to do about a work's requirement list: save one when there
+    """What a client is told to do about a spec's requirement list: save one when there
     is none, and again when the text moved on after the list was read from it."""
     # A generation publishes the model and the list together, so the list is part of what it
     # makes, whatever the list now is, and a plain save of one half is not what is asked.
     if by_generation:
         return ("; the requirement list is written with the model, for the same request: build "
                 "it from `source.text` with scxml_requirement_set and save it with "
-                "works_save_requirements giving the request, so the owner can accept a design "
+                "specs_save_requirements giving the request, so the owner can accept a design "
                 "against it" + _built_against(requirements))
     if requirements is None:
-        return ("; this work keeps no requirement list yet: build one from `source.text` with "
-                "scxml_requirement_set and save it with works_save_requirements, so the owner "
+        return ("; this spec keeps no requirement list yet: build one from `source.text` with "
+                "scxml_requirement_set and save it with specs_save_requirements, so the owner "
                 "can accept a design against it")
     if requirements["standing"] != "current":
         return (f"; the requirement list is `{requirements['standing']}` against the text: build "
-                "it again from `source.text` and save it with works_save_requirements, giving "
+                "it again from `source.text` and save it with specs_save_requirements, giving "
                 "base = requirements.revision" + _built_against(requirements))
     return ""
 
 
 def _built_against(requirements: dict | None) -> str:
-    """How a list that follows one the work already holds is built, so that every requirement
-    keeps its id: against the lineage the work keeps (or, for a list that has none yet, against
+    """How a list that follows one the spec already holds is built, so that every requirement
+    keeps its id: against the lineage the spec keeps (or, for a list that has none yet, against
     the list itself, from which one is made)."""
     if requirements is None:
         return ""
     if "lineage_text" in requirements:
-        return ("; build it against the list the work holds: give scxml_requirement_set "
+        return ("; build it against the list the spec holds: give scxml_requirement_set "
                 "`requirements.lineage_text` as `lineage_text` and `requirements.sidecar_text` "
                 "as `previous_sidecar_text`, and save the `lineage_text` it returns with the "
                 "list, so that each requirement keeps its id and a retired id is not issued "
                 "again")
-    return ("; build it against the list the work holds: give scxml_requirement_set "
+    return ("; build it against the list the spec holds: give scxml_requirement_set "
             "`requirements.manifest_text` as `previous_manifest_text` and "
             "`requirements.sidecar_text` as `previous_sidecar_text`, and save the "
             "`lineage_text` it returns with the list, so that each requirement keeps its id")
@@ -3707,29 +3707,29 @@ def _acceptance_next(acceptance: dict | None, otherwise: str) -> str:
             "accept again in the application; nothing here records an acceptance")
 
 
-def _works_save_model_tool(args: dict, staging: _Staging) -> dict:
-    """Save a model to a work, after the product's own check has accepted it.
+def _specs_save_model_tool(args: dict, staging: _Staging) -> dict:
+    """Save a model to a spec, after the product's own check has accepted it.
 
     ⚠ The check comes first and is the product's, the one `validate_scxml` runs: a
-    work's model chain holds documents SCE accepts, because everything the owner
+    spec's model chain holds documents SCE accepts, because everything the owner
     does with a model afterwards (the figures, an acceptance) reads it through the
     same product and a refused document would make each of them refuse in turn.
     A model that is refused is told back, with the product's own records, and the
-    work keeps the model it had.
+    spec keeps the model it had.
     """
-    staging.refuse_works("works_save_model")
-    work = _name_arg(args, "work", "a work's id", required=True)
+    staging.refuse_specs("specs_save_model")
+    spec = _name_arg(args, "spec", "a spec's id", required=True)
     source_revision = _revision_arg(args, "source_revision")
     base = _revision_arg(args, "base")
-    request = _name_arg(args, "request", "the request id works_begin_generation returned")
+    request = _name_arg(args, "request", "the request id specs_begin_generation returned")
     generation = None
     if request is not None:
         # Before the product is asked anything: a request that is no longer this process's
         # makes everything after it work for nobody.
         try:
-            generation = _generation_for(work, request, source_revision)
-        except works.WorksError as exc:
-            return _works_refused(exc)
+            generation = _generation_for(spec, request, source_revision)
+        except specs.SpecsError as exc:
+            return _specs_refused(exc)
         source_revision = generation.source
     documents, document, model = _model_given(args, staging)
     profile = _profile_file(args, staging)
@@ -3740,21 +3740,21 @@ def _works_save_model_tool(args: dict, staging: _Staging) -> dict:
     else:
         report, refusal = validate_scxml_set(documents, profile=profile, cwd=staging.dir)
     if refusal:
-        return _failure("not saved: the product's check refuses this model, so the work "
+        return _failure("not saved: the product's check refuses this model, so the spec "
                         "keeps the model it has. Fix the draft and save again.\n" + refusal)
     try:
-        held, refused = _held_to_the_answers(work, document, source_revision, args, staging)
+        held, refused = _held_to_the_answers(spec, document, source_revision, args, staging)
         if refused:
             return _failure(refused)
         if generation is None:
-            saved = works.save_model(work, base, source_revision, **model)
+            saved = specs.save_model(spec, base, source_revision, **model)
         else:
-            saved = works.generations().save_candidate(
+            saved = specs.generations().save_candidate(
                 request, model=model, instructions=INSTRUCTIONS_VERSION)
             _note_decisions(generation, held)
-    except works.WorksError as exc:
-        return _works_refused(exc)
-    answer = {"version": 1, "work": work, **saved}
+    except specs.SpecsError as exc:
+        return _specs_refused(exc)
+    answer = {"version": 1, "spec": spec, **saved}
     if held is not None:
         answer["decisions"] = held
     matters = json.loads(report).get("open")
@@ -3767,22 +3767,22 @@ def _works_save_model_tool(args: dict, staging: _Staging) -> dict:
     return _text(json.dumps(answer, indent=2, ensure_ascii=False) + "\n")
 
 
-def _generation_for(work: str, request: str, source_revision: str | None) -> works.Generation:
-    """The generation a client names, when it is this process's, for this work, and about
+def _generation_for(spec: str, request: str, source_revision: str | None) -> specs.Generation:
+    """The generation a client names, when it is this process's, for this spec, and about
     the text the client says it wrote from."""
-    generation = works.generations().get(request)
-    if generation.work != work:
+    generation = specs.generations().get(request)
+    if generation.spec != spec:
         raise ToolArgumentError(
-            f"request {request} is a request of work `{generation.work}`, not of `{work}`")
+            f"request {request} is a request of spec `{generation.spec}`, not of `{spec}`")
     if source_revision is not None and source_revision != generation.source:
         raise ToolArgumentError(
             f"request {request} was asked about the text {generation.source}, and "
             f"'source_revision' says the draft was written from {source_revision}: read the "
-            f"work again; a draft is written for the text its request is about")
+            f"spec again; a draft is written for the text its request is about")
     return generation
 
 
-def _note_decisions(generation: works.Generation, held: dict | None) -> None:
+def _note_decisions(generation: specs.Generation, held: dict | None) -> None:
     """Keep what is said of the owner's answers for the generation's finish: the draft that
     was just saved was held to them, or the owner has answered nothing to hold it to."""
     generation.checks[:] = [c for c in generation.checks if c["name"] != "decisions"]
@@ -3794,13 +3794,13 @@ def _candidate_next(request: dict, before: str | None) -> str:
     """What a client is told after it wrote for a request: the half that is still missing,
     or that it can say it is done."""
     candidate = request.get("candidate") or {}
-    missing = [what for key, what in (("model", "the model (works_save_model)"),
+    missing = [what for key, what in (("model", "the model (specs_save_model)"),
                                       ("requirements",
-                                       "the requirement list (works_save_requirements)"))
+                                       "the requirement list (specs_save_requirements)"))
                if candidate.get(key) is None]
     after = (f"still to write for the request: {' and '.join(missing)}, giving "
              f"request = {request['id']}" if missing else
-             "both halves are written: say works_finish_generation, and SCE checks the model "
+             "both halves are written: say specs_finish_generation, and SCE checks the model "
              "and publishes it with the list")
     return f"{before}; {after}" if before else after
 
@@ -3812,75 +3812,75 @@ _STUB_DESIGN = ('<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" in
                 '<state id="s"/></scxml>\n')
 
 
-def _work_revision_report(work: str, sentences: bool) -> tuple[dict | None, dict | None]:
-    """What the revision of a work did, judged by the product: `(report, failure to return)`.
+def _spec_revision_report(spec: str, sentences: bool) -> tuple[dict | None, dict | None]:
+    """What the revision of a spec did, judged by the product: `(report, failure to return)`.
 
-    The words are derived from two states of the work's own chain (the list the owner's
-    acceptance was taken of and the list the work has now, each with its lineage), the evidence
+    The words are derived from two states of the spec's own chain (the list the owner's
+    acceptance was taken of and the list the spec has now, each with its lineage), the evidence
     is the product's own comparison of the design now with what the owner was shown, and the two
     are joined by the product (`read_revision_report`, which is `sce-revision`: the same words as
     `requirement_lineage` and `revision` here, held to them by the shared cases). Both are the
-    work's, so nothing here can be handed another specification's delta, and the step between
+    spec's, so nothing here can be handed another specification's delta, and the step between
     them is whatever happened between those two revisions, however many there were."""
     try:
-        read = works.read_revision_report(work, sentences)
-    except works.WorksError as exc:
+        read = specs.read_revision_report(spec, sentences)
+    except specs.SpecsError as exc:
         if exc.kind in ("revision-not-judged", "revision-not-current"):
             # The sentence a person is told, as the judgment gave it.
             return None, _failure(str(exc))
-        return None, _works_refused(exc)
+        return None, _specs_refused(exc)
     if read["report"] is None:
         return None, _failure(
-            "this work has no acceptance: nothing was accepted, so there is nothing to compare "
+            "this spec has no acceptance: nothing was accepted, so there is nothing to compare "
             "the design with. The owner accepts a design in the application")
     return read["report"], None
 
 
-def _works_revision_check_tool(args: dict, staging: _Staging) -> dict:
-    """What a revision of a work did, per requirement: its words (from the work's lineage) beside
+def _specs_revision_check_tool(args: dict, staging: _Staging) -> dict:
+    """What a revision of a spec did, per requirement: its words (from the spec's lineage) beside
     its evidence (from the product), and whether it stayed within the reach of what changed."""
-    staging.refuse_works("works_revision_check")
-    work = _name_arg(args, "work", "a work's id", required=True)
-    report, failure = _work_revision_report(work, False)
+    staging.refuse_specs("specs_revision_check")
+    spec = _name_arg(args, "spec", "a spec's id", required=True)
+    report, failure = _spec_revision_report(spec, False)
     if failure:
         return failure
     result = {key: value for key, value in report.items() if key != "page"}
     return _text(json.dumps(result, indent=2, ensure_ascii=False) + "\n")
 
 
-def _works_revision_report_tool(args: dict, staging: _Staging) -> dict:
-    """The page the owner reads of a revision of a work: only what to look at again."""
-    staging.refuse_works("works_revision_report")
-    work = _name_arg(args, "work", "a work's id", required=True)
-    report, failure = _work_revision_report(work, args.get("sentences") is True)
+def _specs_revision_report_tool(args: dict, staging: _Staging) -> dict:
+    """The page the owner reads of a revision of a spec: only what to look at again."""
+    staging.refuse_specs("specs_revision_report")
+    spec = _name_arg(args, "spec", "a spec's id", required=True)
+    report, failure = _spec_revision_report(spec, args.get("sentences") is True)
     if failure:
         return failure
     answer = {"verdict": report["verdict"], "summary": report["summary"], "page": report["page"]}
     return _text(json.dumps(answer, indent=2, ensure_ascii=False) + "\n")
 
 
-def _lineage_refusal(work: str, base: str | None, by_generation: bool, manifest_text: str,
+def _lineage_refusal(spec: str, base: str | None, by_generation: bool, manifest_text: str,
                      sidecar_text: str | None, lineage_text: str | None) -> str | None:
-    """Why the lineage handed to works_save_requirements cannot be kept with this list, or None.
+    """Why the lineage handed to specs_save_requirements cannot be kept with this list, or None.
 
     A list and the lineage it was built against are saved as one record
     (`docs/adr/0011-a-work-keeps-its-requirement-lineage-with-its-requirement-list.md`), and
     this is where what the core does not judge is judged: that the lineage is the lineage of THIS
-    list (its manifest and its sidecar), and that it continues the one the work holds (an id is
+    list (its manifest and its sidecar), and that it continues the one the spec holds (an id is
     issued once, and a retired one never lives again). The core refuses only what it can see
-    without knowing what a lineage means: that a lineage the work holds is not dropped.
+    without knowing what a lineage means: that a lineage the spec holds is not dropped.
 
     A direct save from a `base` that is not the list's head is the core's to refuse as a
     conflict, and is not judged here: the lineage is judged against the head it would replace."""
-    held = works.read_requirements(work)
+    held = specs.read_requirements(spec)
     held_lineage = held.get("lineage_text") if held else None
     if lineage_text is None:
         if held_lineage is not None and by_generation:
             # A direct save is refused by the core at once; a generation's list is only judged
             # when it is published, which is late to be told.
-            return ("not saved: this work keeps a requirement lineage, and the list has none. Build "
+            return ("not saved: this spec keeps a requirement lineage, and the list has none. Build "
                     "the list again with scxml_requirement_set, giving it `requirements.lineage_text` "
-                    "from works_read as `lineage_text` and the sidecar as `previous_sidecar_text`, "
+                    "from specs_read as `lineage_text` and the sidecar as `previous_sidecar_text`, "
                     "and save the `lineage_text` it returns with the list: without it the next "
                     "revision would issue an id that was retired again")
         return None
@@ -3890,34 +3890,34 @@ def _lineage_refusal(work: str, base: str | None, by_generation: bool, manifest_
         if held_lineage is not None and (by_generation or base == held["revision"]):
             requirement_lineage.extends(requirement_lineage.parse(held_lineage), following)
     except requirement_lineage.LineageError as error:
-        return ("not saved: the lineage cannot be kept with this list, so the work keeps what it "
+        return ("not saved: the lineage cannot be kept with this list, so the spec keeps what it "
                 f"has: {error}. Build the list again with scxml_requirement_set from the "
-                "lineage works_read gave you and save the manifest_text, sidecar_text and "
+                "lineage specs_read gave you and save the manifest_text, sidecar_text and "
                 "lineage_text it returns together, unchanged")
     return None
 
 
-def _works_save_requirements_tool(args: dict, staging: _Staging) -> dict:
-    """Save a requirement list to a work, after the product's own loader has accepted it.
+def _specs_save_requirements_tool(args: dict, staging: _Staging) -> dict:
+    """Save a requirement list to a spec, after the product's own loader has accepted it.
 
-    ⚠ The product's check comes first, as for a model: a work's list chain holds lists
+    ⚠ The product's check comes first, as for a model: a spec's list chain holds lists
     the product loads, because the acceptance page and the owner's acceptance read
     the list through the same product and a list it refuses would make each of them
     refuse in turn. A list that is refused is told back in the product's words and
-    the work keeps the list it had. Saving is not the owner's acceptance of anything:
+    the spec keeps the list it had. Saving is not the owner's acceptance of anything:
     that is stated in the application, and nothing here can state it.
     """
-    staging.refuse_works("works_save_requirements")
-    work = _name_arg(args, "work", "a work's id", required=True)
+    staging.refuse_specs("specs_save_requirements")
+    spec = _name_arg(args, "spec", "a spec's id", required=True)
     source_revision = _revision_arg(args, "source_revision")
     base = _revision_arg(args, "base")
-    request = _name_arg(args, "request", "the request id works_begin_generation returned")
+    request = _name_arg(args, "request", "the request id specs_begin_generation returned")
     generation = None
     if request is not None:
         try:
-            generation = _generation_for(work, request, source_revision)
-        except works.WorksError as exc:
-            return _works_refused(exc)
+            generation = _generation_for(spec, request, source_revision)
+        except specs.SpecsError as exc:
+            return _specs_refused(exc)
     manifest_text, sidecar_text = args.get("manifest_text"), args.get("sidecar_text")
     if not isinstance(manifest_text, str) or not manifest_text.strip():
         raise ToolArgumentError(
@@ -3934,25 +3934,25 @@ def _works_save_requirements_tool(args: dict, staging: _Staging) -> dict:
     _, refusal = requirement_records(document, manifest, cwd=staging.dir)
     if refusal:
         return _failure("not saved: the product does not load this requirement list, so the "
-                        "work keeps the list it has. Build it again with scxml_requirement_set "
+                        "spec keeps the list it has. Build it again with scxml_requirement_set "
                         "and save it unchanged.\n" + refusal)
     try:
-        lineage_refusal = _lineage_refusal(work, base, generation is not None,
+        lineage_refusal = _lineage_refusal(spec, base, generation is not None,
                                            manifest_text, sidecar_text, lineage_text)
         if lineage_refusal:
             return _failure(lineage_refusal)
         if generation is None:
-            saved = works.save_requirements(work, base, source_revision, manifest=manifest_text,
+            saved = specs.save_requirements(spec, base, source_revision, manifest=manifest_text,
                                             sidecar=sidecar_text, lineage=lineage_text)
         else:
-            saved = works.generations().save_candidate(
+            saved = specs.generations().save_candidate(
                 request, instructions=INSTRUCTIONS_VERSION, requirements={
                 "manifest": manifest_text,
                 **({"sidecar": sidecar_text} if sidecar_text is not None else {}),
                 **({"lineage": lineage_text} if lineage_text is not None else {})})
-    except works.WorksError as exc:
-        return _works_refused(exc)
-    answer = {"version": 1, "work": work, **saved,
+    except specs.SpecsError as exc:
+        return _specs_refused(exc)
+    answer = {"version": 1, "spec": spec, **saved,
               "next": "saved is not accepted: the owner accepts a design against this list "
                       "in the application, and nothing here records it"}
     if generation is not None:
@@ -3960,72 +3960,72 @@ def _works_save_requirements_tool(args: dict, staging: _Staging) -> dict:
     return _text(json.dumps(answer, indent=2, ensure_ascii=False) + "\n")
 
 
-def _works_begin_generation_tool(args: dict, staging: _Staging) -> dict:
-    """Take a work's request for this client, and hold it while the client writes.
+def _specs_begin_generation_tool(args: dict, staging: _Staging) -> dict:
+    """Take a spec's request for this client, and hold it while the client writes.
 
     ⚠ The claim is this process's to keep: a client that thinks for longer than a lease
     never says it is still there, and the owner's application would read the request as
-    let go of while it is being worked on. `works.generations()` renews it from a thread,
+    let go of while it is being worked on. `specs.generations()` renews it from a thread,
     for as long as this server runs.
     """
-    staging.refuse_works("works_begin_generation")
-    work = _name_arg(args, "work", "a work's id", required=True)
+    staging.refuse_specs("specs_begin_generation")
+    spec = _name_arg(args, "spec", "a spec's id", required=True)
     try:
-        generation = works.generations().begin(work)
-        read = _work_reading(work, staging, generation)
-    except works.WorksError as exc:
-        return _works_refused(exc)
+        generation = specs.generations().begin(spec)
+        read = _spec_reading(spec, staging, generation)
+    except specs.SpecsError as exc:
+        return _specs_refused(exc)
     read["generation"] = {"request": generation.request, "attempt": generation.attempt,
                           "source": generation.source}
     return _text(json.dumps({"version": 1, **read}, indent=2, ensure_ascii=False) + "\n")
 
 
 def _generation_of(args: dict, tool: str, staging: _Staging) -> tuple[str, str]:
-    """The `work` and the `request` a generation tool names."""
-    staging.refuse_works(tool)
-    work = _name_arg(args, "work", "a work's id", required=True)
-    request = _name_arg(args, "request", "the request id works_begin_generation returned",
+    """The `spec` and the `request` a generation tool names."""
+    staging.refuse_specs(tool)
+    spec = _name_arg(args, "spec", "a spec's id", required=True)
+    request = _name_arg(args, "request", "the request id specs_begin_generation returned",
                         required=True)
-    return work, request
+    return spec, request
 
 
-def _works_finish_generation_tool(args: dict, staging: _Staging) -> dict:
+def _specs_finish_generation_tool(args: dict, staging: _Staging) -> dict:
     """Say a generation is done, and let the core check what was written and publish it.
 
     ⚠ The check that decides is the core's own, run on the model as it is stored for the
     request: what this client says it ran (the decisions it held the draft to) is kept
     beside it as reported, and is not what makes a bundle.
     """
-    work, request = _generation_of(args, "works_finish_generation", staging)
+    spec, request = _generation_of(args, "specs_finish_generation", staging)
     try:
-        _generation_for(work, request, None)
-        done = works.generations().finish(request)
-    except works.WorksError as exc:
-        return _works_refused(exc)
-    answer = {"version": 1, "work": work, **done,
-              "next": "published: the model and the requirement list are the work's now. Tell "
+        _generation_for(spec, request, None)
+        done = specs.generations().finish(request)
+    except specs.SpecsError as exc:
+        return _specs_refused(exc)
+    answer = {"version": 1, "spec": spec, **done,
+              "next": "published: the model and the requirement list are the spec's now. Tell "
                       "the owner; the acceptance of the design is theirs, in the application"}
     return _text(json.dumps(answer, indent=2, ensure_ascii=False) + "\n")
 
 
-def _works_fail_generation_tool(args: dict, staging: _Staging) -> dict:
-    work, request = _generation_of(args, "works_fail_generation", staging)
+def _specs_fail_generation_tool(args: dict, staging: _Staging) -> dict:
+    spec, request = _generation_of(args, "specs_fail_generation", staging)
     reason = args.get("reason")
     if not isinstance(reason, str) or not reason.strip():
         raise ToolArgumentError("'reason' has to be a sentence the owner reads, as a string")
     try:
-        _generation_for(work, request, None)
-        failed = works.generations().fail(request, reason.strip())
-    except works.WorksError as exc:
-        return _works_refused(exc)
-    return _text(json.dumps({"version": 1, "work": work, **failed}, indent=2,
+        _generation_for(spec, request, None)
+        failed = specs.generations().fail(request, reason.strip())
+    except specs.SpecsError as exc:
+        return _specs_refused(exc)
+    return _text(json.dumps({"version": 1, "spec": spec, **failed}, indent=2,
                             ensure_ascii=False) + "\n")
 
 
 def _model_given(args: dict, staging: _Staging) -> tuple[list[pathlib.Path], pathlib.Path, dict]:
     """The model a caller handed over, staged for the product: every document's
     path, the entry's, and what to save it with (`text`, or `documents` and `entry`
-    for `works.save_model`).
+    for `specs.save_model`).
 
     A model is `model_text` (one document) or `documents_text` (several that name
     each other), never both and never neither: what to save would be a guess.
@@ -4058,7 +4058,7 @@ def _model_given(args: dict, staging: _Staging) -> tuple[list[pathlib.Path], pat
     return list(staged.values()), staged[entry_name], {"documents": saved, "entry": entry_name}
 
 
-def _held_to_the_answers(work: str, document: pathlib.Path, source_revision: str | None,
+def _held_to_the_answers(spec: str, document: pathlib.Path, source_revision: str | None,
                          args: dict, staging: _Staging) -> tuple[dict | None, str]:
     """What the owner has answered, held against the draft about to be saved.
 
@@ -4066,11 +4066,11 @@ def _held_to_the_answers(work: str, document: pathlib.Path, source_revision: str
     draft to, and a draft is not refused for a record that does not exist. Otherwise
     the product's own `decisions` check, exactly as the tool of that name runs it, on
     the record the answers make: a draft that leaves an answered question open, or
-    guesses where no answer licenses it, is NOT saved, so a work's model keeps to
+    guesses where no answer licenses it, is NOT saved, so a spec's model keeps to
     what its owner said. What the check only reports (a question nobody had asked)
     comes back as `decisions`, for the client to put to the owner.
     """
-    answers = (works.read_answers(work) or {}).get("entries") or {}
+    answers = (specs.read_answers(spec) or {}).get("entries") or {}
     if not answers:
         return None, ""
     markers, refusal = _markers_of(document, staging)
@@ -4079,7 +4079,7 @@ def _held_to_the_answers(work: str, document: pathlib.Path, source_revision: str
     # Only the answered questions' markers lend their words to the record: a question
     # the owner has not answered is not in it, so the check reports it as a NEW
     # question (for the client to put to the owner), which is what it is to them.
-    record = compose_record(work, [m for m in markers if m.get("id") in answers], answers,
+    record = compose_record(spec, [m for m in markers if m.get("id") in answers], answers,
                             rev=source_revision[:12] if source_revision else None)
     record_file = staging.write("decisions.json",
                                 json.dumps(record, indent=2, ensure_ascii=False) + "\n",
@@ -4087,7 +4087,7 @@ def _held_to_the_answers(work: str, document: pathlib.Path, source_revision: str
     report, refusal = hold_decisions(document, record_file,
                                      profile=_profile_file(args, staging), cwd=staging.dir)
     if refusal:
-        return None, ("not saved: the draft does not keep to the owner's answers, so the work "
+        return None, ("not saved: the draft does not keep to the owner's answers, so the spec "
                       "keeps the model it has. Apply each refused finding and save again.\n"
                       + refusal)
     held = json.loads(report)
@@ -4097,15 +4097,15 @@ def _held_to_the_answers(work: str, document: pathlib.Path, source_revision: str
 
 # The tools that need no pack: each takes its files by path or as text.
 _PACK_FREE = {
-    "works_list": _works_list_tool,
-    "works_read": _works_read_tool,
-    "works_save_model": _works_save_model_tool,
-    "works_save_requirements": _works_save_requirements_tool,
-    "works_revision_check": _works_revision_check_tool,
-    "works_revision_report": _works_revision_report_tool,
-    "works_begin_generation": _works_begin_generation_tool,
-    "works_finish_generation": _works_finish_generation_tool,
-    "works_fail_generation": _works_fail_generation_tool,
+    "specs_list": _specs_list_tool,
+    "specs_read": _specs_read_tool,
+    "specs_save_model": _specs_save_model_tool,
+    "specs_save_requirements": _specs_save_requirements_tool,
+    "specs_revision_check": _specs_revision_check_tool,
+    "specs_revision_report": _specs_revision_report_tool,
+    "specs_begin_generation": _specs_begin_generation_tool,
+    "specs_finish_generation": _specs_finish_generation_tool,
+    "specs_fail_generation": _specs_fail_generation_tool,
     "scxml_kinds": _kinds_tool,
     "validate_scxml": _validate_tool,
     "validate_scxml_set": _validate_set_tool,
@@ -4157,12 +4157,12 @@ def call_tool(name: str, args: dict, *, remote: bool = False,
     """
     if designs_withheld is _NOT_STATED:
         designs_withheld = DESIGNS_WITHHELD if remote else None
-    work = os.environ.get("SCE_AUTHOR_WORK")
-    if work:
+    spec = os.environ.get("SCE_AUTHOR_SPEC")
+    if spec:
         if name not in WORKBENCH_TOOLS:
             return _failure(f"'{name}' is not available during Workbench generation")
-        if name == "works_read" and args.get("work") != work:
-            return _failure("Workbench generation may read only its assigned work")
+        if name == "specs_read" and args.get("spec") != spec:
+            return _failure("Workbench generation may read only its assigned spec")
     try:
         if name in _PACK_FREE:
             staging = _Staging(remote, designs_withheld)
@@ -4496,7 +4496,7 @@ def handle(message, *, remote: bool = False, designs_withheld=_NOT_STATED) -> di
         }
     elif method == "tools/list":
         result = {"tools": [t for t in TOOLS if t["name"] in WORKBENCH_TOOLS]
-                  if os.environ.get("SCE_AUTHOR_WORK") else TOOLS}
+                  if os.environ.get("SCE_AUTHOR_SPEC") else TOOLS}
     elif method == "tools/call":
         params = message.get("params") or {}
         if not isinstance(params, dict):
@@ -4575,10 +4575,10 @@ def readiness() -> list[str]:
     codegen = _default_codegen()
     if not codegen.is_file():
         problems.append(f"the product's generator is not at {codegen}: set SCE_CODEGEN to it")
-    work = works.default_work_binary()
+    spec = specs.default_spec_binary()
     if not work.is_file():
-        problems.append(f"sce-work is not at {work}, so the works tools cannot reach the works "
-                        f"folder: set SCE_WORK to it")
+        problems.append(f"sce-spec is not at {spec}, so the specs tools cannot reach the specs "
+                        f"folder: set SCE_SPEC to it")
     problems.extend(needs.sentence(need) for need in needs.missing())
     return problems
 

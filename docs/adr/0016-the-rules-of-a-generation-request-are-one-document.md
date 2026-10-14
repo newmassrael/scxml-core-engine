@@ -2,7 +2,7 @@
 
 - Status: Accepted and implemented (the owner asked for it on 2026-10-10, after the trial below)
 - Date: 2026-10-10
-- Scope: `sce-works` (`src/requests.rs`, `src/request_life/`, `machines/`; in `app-core` when this
+- Scope: `sce-specs` (`src/requests.rs`, `src/request_life/`, `machines/`; in `app-core` when this
   was decided, moved 2026-10-14), the regeneration
   procedure (`scripts/regen_all_committed_trees.sh`)
 - Related: `docs/adr/0011-a-work-keeps-its-requirement-lineage-with-its-requirement-list.md`
@@ -17,21 +17,21 @@ asked, and by whom, is a set of rules: it is queued until an executor takes it u
 runs while the executor renews the lease; a lease that ran out is not a revocation, so the same
 executor may come back, and anybody else must say it resumes; an attempt that is not the current
 one is fenced out of everything it says; a word said twice by the same attempt is one word; an
-ended request takes nothing more. They were written by hand in `sce-works/src/requests.rs`, in
+ended request takes nothing more. They were written by hand in `sce-specs/src/requests.rs`, in
 about 280 lines, each with a test.
 
 The application keeps one implementation of what a folder holds so that the desktop app and the
-authoring server cannot disagree (`sce-work`). Rules written by hand are one implementation as
+authoring server cannot disagree (`sce-spec`). Rules written by hand are one implementation as
 long as everything calls that one. The question this decision answers is a different one: what
 the source of truth for such rules is when they are the kind SCXML writes, and whether the product
 that generates code from SCXML should hold its own application to it.
 
 ## Decision
 
-The rules are a document, `sce-works/machines/request_life/request_life.scxml`: a statechart of
+The rules are a document, `sce-specs/machines/request_life/request_life.scxml`: a statechart of
 seven states (`queued`, `running`, `interrupted`, and the four that ended), eight events, and
-eight event schemas. `sce-works/machines/generate.sh` generates the Rust machine from it into
-`sce-works/src/request_life/generated/`, and the regeneration procedure carries that script, so
+eight event schemas. `sce-specs/machines/generate.sh` generates the Rust machine from it into
+`sce-specs/src/request_life/generated/`, and the regeneration procedure carries that script, so
 `regen-reproduces` judges the committed file.
 
 `requests.rs` keeps what is not a rule: the record (the inputs a request was made from, its pin,
@@ -67,7 +67,7 @@ On 2026-10-10, in a scratch directory with no change to the tree:
 - The rules have one source, and the tools that read a document read them: `sce-codegen pseudo`
   writes the page an owner reads, and the checker's reachability and interface rules apply to the
   application's own life (the first run reported an interface left open, which is now closed).
-- `sce-works` depends on `sce-rust-runtime` and `sce-forge-runtime` (neither with default
+- `sce-specs` depends on `sce-rust-runtime` and `sce-forge-runtime` (neither with default
   features). They compile into the application and its browser shell; nothing opens a socket or a
   scripting engine for them.
 - A caller that hands the machine a holder or a bundle of more than 64 bytes is refused with a
@@ -85,6 +85,6 @@ On 2026-10-10, in a scratch directory with no change to the tree:
 - The rule of what a plain file name is (written in Rust in `model_set::check_name` and in Python
   in the authoring server) was generated for six languages in the same trial and matched on
   390,000 names, and is left as it is: it is 12 lines, and its callers are not changed by it.
-- The authoring server (Python) keeps calling `sce-work`; none of this reaches it. A Python
+- The authoring server (Python) keeps calling `sce-spec`; none of this reaches it. A Python
   consumer of the machine would need the interpreter package `lupa`, which the engine imports for
   its scripting even for a machine that uses none; that is the cost to weigh if one is ever added.

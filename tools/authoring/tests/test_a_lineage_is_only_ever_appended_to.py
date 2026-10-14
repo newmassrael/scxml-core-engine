@@ -1,6 +1,6 @@
 """A lineage is only ever appended to, and is the lineage of the list beside it.
 
-A work keeps the lineage a requirement list was built against, in the same record as the list
+A spec keeps the lineage a requirement list was built against, in the same record as the list
 (`docs/adr/0011-a-work-keeps-its-requirement-lineage-with-its-requirement-list.md`), and the core
 refuses to lose it. What the core does not know is what a lineage MEANS, so two more questions
 are the authoring package's, asked before a list is saved:
@@ -9,7 +9,7 @@ are the authoring package's, asked before a list is saved:
   its lineage are one fact, and a lineage whose last revision names another list would be stored
   beside this one. The manifest is coordinates only, so it cannot tell two lists of one shape
   apart; the sidecar, the words behind the ids, does;
-* `extends`: does it continue the lineage the work holds? Nothing a lineage said is taken back: an
+* `extends`: does it continue the lineage the spec holds? Nothing a lineage said is taken back: an
   id once issued is still there with the words it had, a retired id stays retired, revisions are
   the same revisions with more after them, and ids issued since are numbered from where the last
   left off, so that none is issued twice.
@@ -107,8 +107,8 @@ class ALineageThatTakesSomethingBackIsRefused(Histories):
     def test_a_next_that_is_behind(self):
         behind = self.broken(self.third, lambda l: l.update(next=self.first.lineage["next"] - 1))
         # `_checked` refuses a next that is not past every id; lower the ids with it is not the
-        # point, so judge it against the work's lineage directly.
-        self.refused(self.third.lineage, behind, "is behind the work's")
+        # point, so judge it against the spec's lineage directly.
+        self.refused(self.third.lineage, behind, "is behind the spec's")
 
     def test_fewer_revisions(self):
         fewer = self.broken(self.third, lambda l: l["revisions"].pop())
@@ -128,7 +128,7 @@ class ALineageThatTakesSomethingBackIsRefused(Histories):
     def test_an_id_forgotten(self):
         def forget(lineage):
             lineage["requirements"] = [r for r in lineage["requirements"] if r["id"] != "R5"]
-        self.refused(self.second.lineage, self.broken(self.third, forget), "R5 is in the work's lineage")
+        self.refused(self.second.lineage, self.broken(self.third, forget), "R5 is in the spec's lineage")
 
     def test_an_id_first_issued_in_another_revision(self):
         def move(lineage):
@@ -155,7 +155,7 @@ class ALineageThatTakesSomethingBackIsRefused(Histories):
             QUOTES[:3] + ["After 45 seconds on, it turns itself off.", QUOTES[4],
                           "A reset key clears it."], built), rewrite), "history is only added to")
 
-    def test_a_new_id_numbered_below_the_works_next(self):
+    def test_a_new_id_numbered_below_the_specs_next(self):
         def add(lineage):
             lineage["requirements"].append({"id": "R1x", "first_rev": "2", "retired_rev": None,
                                             "quotes": [{"rev": "2", "sha256": "0" * 64}]})
@@ -174,9 +174,9 @@ def kinds(delta):
             "new": wanted["new"], "retired": wanted["retired"]}
 
 
-class TheWordsBetweenTwoStatesOfAWorkAreDerivedFromTheirLineages(Histories):
+class TheWordsBetweenTwoStatesOfASpecAreDerivedFromTheirLineages(Histories):
     """The words delta of a revision, derived from the lineage of the list that was accepted and the
-    lineage of the list the work has now: any two states, however many revisions lie between."""
+    lineage of the list the spec has now: any two states, however many revisions lie between."""
 
     def test_a_state_between_itself_carries_everything_over(self):
         self.assertEqual({"carried": ["R1", "R2", "R3", "R4", "R5"], "changed": [], "new": [],

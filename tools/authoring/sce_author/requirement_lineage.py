@@ -127,7 +127,7 @@ class Advance:
 def first(doc_id: str, spec: Spec, quotes: list[str], rev: str = "1", start: int = 1) -> Advance:
     """The first list of a specification: ids in reading order, as the tool has
     always given them, so a list built once is the list it always was. `start` is the number
-    the first id is issued from (`R<start>`): `1` unless the work has already used numbers
+    the first id is issued from (`R<start>`): `1` unless the spec has already used numbers
     past it (`next_at_least`)."""
     ids = [f"R{n}" for n in range(start, start + len(quotes))]
     lineage = _checked({
@@ -182,7 +182,7 @@ def adopt(doc_id: str, manifest: dict, texts: dict[str, str],
 
 
 def of_list(held: dict, what: str) -> dict:
-    """The lineage of a list a work kept: the one saved with it, or, for a list made before
+    """The lineage of a list a spec kept: the one saved with it, or, for a list made before
     lineages, the one adopting it makes (the ids it has, the words behind them from its sidecar),
     which is what a later list built against it was given in the first place. Refuses a list that
     gives neither, saying what to do. `what` names the list in the sentence."""
@@ -225,7 +225,7 @@ def advance(prev: dict, doc_id: str, spec: Spec, quotes: list[str], *,
     IN a revision and the new ones issued in it, and one row on which an id is both issued and
     retired would say nothing about when either happened.
 
-    `next_at_least` moves where NEW ids start when it is past the lineage's own `next`: a work
+    `next_at_least` moves where NEW ids start when it is past the lineage's own `next`: a spec
     whose held lineage this build cannot read is refused a list that numbers from an id its lists
     already carried, and a client has no other way to choose where the numbering starts. It never
     moves a carried id, and a floor at or below `next` changes nothing."""
@@ -390,12 +390,12 @@ def pin_list(lineage: dict, manifest_text: str, sidecar_text: str) -> None:
 
 
 def between(older: dict, newer: dict) -> dict:
-    """What happened to each requirement's WORDS between two states of one work's lineage: the
+    """What happened to each requirement's WORDS between two states of one spec's lineage: the
     `delta` that `scxml_requirement_set` would have returned had the revisions been built one
     after the other, derived from the two lineages alone.
 
     `older` is the lineage of the list an acceptance was taken of and `newer` the lineage of the
-    list the work has now. `newer` has to continue `older` (`extends`): a lineage of another
+    list the spec has now. `newer` has to continue `older` (`extends`): a lineage of another
     history says nothing about what became of the requirements of this one. An id that is live in
     both is `carried` when the words it last had are the same and `changed` when they are not; one
     live in `older` and retired in `newer` is `retired`; one live in `newer` and not in `older` is
@@ -490,36 +490,36 @@ def extends(previous: dict, following: dict) -> None:
     still there, with the words it had, and a retired id stays retired and never lives again;
     the revisions are the same revisions with more after them; and the ids issued since are
     numbered from where `previous` left off, so that none is issued twice. A save is held to this
-    by the authoring tool before it goes to the work, because a lineage of another history that
-    happens to be well formed would otherwise replace the one the work holds. What `previous`
-    was is the work's; nothing here reads it from a file.
+    by the authoring tool before it goes to the spec, because a lineage of another history that
+    happens to be well formed would otherwise replace the one the spec holds. What `previous`
+    was is the spec's; nothing here reads it from a file.
 
     Two things may change in the last revision's row and the quotes it made, and only there: the
     same text re-read into a different list is the same revision with another manifest (so the
     digest differs), and a requirement re-quoted within it has its last quote replaced."""
     if previous["doc_id"] != following["doc_id"]:
-        raise LineageError(f"the lineage is of '{following['doc_id']}' and the work's is of "
+        raise LineageError(f"the lineage is of '{following['doc_id']}' and the spec's is of "
                            f"'{previous['doc_id']}': one lineage follows one specification")
     if following["next"] < previous["next"]:
-        raise LineageError(f"the lineage's next ({following['next']}) is behind the work's "
+        raise LineageError(f"the lineage's next ({following['next']}) is behind the spec's "
                            f"({previous['next']}): ids already issued would be issued again")
     before, after = previous["revisions"], following["revisions"]
     if len(after) < len(before):
-        raise LineageError(f"the lineage has {len(after)} revision(s) and the work's has "
+        raise LineageError(f"the lineage has {len(after)} revision(s) and the spec's has "
                            f"{len(before)}: revisions are never taken back")
     for position, row in enumerate(before):
         now = after[position]
         same_text_again = (position == len(before) - 1 and len(after) == len(before))
         kept = {k: v for k, v in row.items() if not (same_text_again and k in _LIST_DIGESTS)}
         if {k: v for k, v in now.items() if k in kept} != kept:
-            raise LineageError(f"revision {row['rev']} of the lineage is not the revision the work "
+            raise LineageError(f"revision {row['rev']} of the lineage is not the revision the spec "
                                "holds: a revision is not rewritten")
     last_rev = before[-1]["rev"]
     held = {row["id"]: row for row in following["requirements"]}
     for row in previous["requirements"]:
         id_, now = row["id"], held.get(row["id"])
         if now is None:
-            raise LineageError(f"{id_} is in the work's lineage and not in this one: an id is "
+            raise LineageError(f"{id_} is in the spec's lineage and not in this one: an id is "
                                "never forgotten")
         if now["first_rev"] != row["first_rev"]:
             raise LineageError(f"{id_} was first issued in revision {row['first_rev']} and this "
@@ -529,17 +529,17 @@ def extends(previous: dict, following: dict) -> None:
                                "lineage makes it live again: a retired id is never issued again")
         old, new = row["quotes"], now["quotes"]
         if len(new) < len(old) or old[:-1] != new[:len(old) - 1]:
-            raise LineageError(f"the words {id_} has had are not the ones the work holds: a "
+            raise LineageError(f"the words {id_} has had are not the ones the spec holds: a "
                                "requirement's history is only added to")
         edge, edge_now = old[-1], new[len(old) - 1]
         if edge != edge_now and not (edge["rev"] == edge_now["rev"] == last_rev):
             raise LineageError(f"the last words {id_} had in revision {edge['rev']} are not the "
-                               "ones the work holds")
+                               "ones the spec holds")
     for id_ in held.keys() - {row["id"] for row in previous["requirements"]}:
         found = _ID.fullmatch(id_)
         if not found or int(found.group(1)) < previous["next"]:
             raise LineageError(f"{id_} is new in this lineage and is not an id issued from the "
-                               f"work's next (R{previous['next']}): an id would be issued twice")
+                               f"spec's next (R{previous['next']}): an id would be issued twice")
 
 
 def _set_quote(row: dict, rev: str, digest: str) -> None:

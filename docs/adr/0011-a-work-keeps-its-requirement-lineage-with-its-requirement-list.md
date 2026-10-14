@@ -3,15 +3,15 @@
 - Status: Accepted for stages 1 to 3 (implemented and tested, see "What stage 1 / 2 / 3 measured");
   D1 decided (c) on 2026-10-09 and stage 4a is under way; D2 is the owner's: see "Open decisions"
 - Date: 2026-10-08
-- Scope: `sce-works` (part of `app-core` when this was decided; moved 2026-10-14) (the requirement list's record, `save_requirements`, `read_requirements`,
-  `save_request_candidate`, bundles), the `sce-work` command layer, the authoring MCP's
-  `works_*` tools, and a pure `between` / `extends` in `tools/authoring/sce_author/requirement_lineage.py`.
+- Scope: `sce-specs` (part of `app-core` when this was decided; moved 2026-10-14) (the requirement list's record, `save_requirements`, `read_requirements`,
+  `save_request_candidate`, bundles), the `sce-spec` command layer, the authoring MCP's
+  `specs_*` tools, and a pure `between` / `extends` in `tools/authoring/sce_author/requirement_lineage.py`.
   Step 6 of the chain begun in ADR 0006
 - Related: `docs/adr/0006-a-requirement-keeps-its-id-across-a-revision.md`,
   `docs/adr/0007-an-acceptance-keeps-what-each-requirement-rests-on.md`,
   `docs/adr/0008-an-acceptance-says-what-moved-since-it-was-taken.md`,
   `docs/adr/0009-a-revision-stays-within-the-reach-of-what-changed.md`,
-  `sce-works/src/store.rs`, `sce-works/src/requirements.rs`, `sce-works/src/acceptance.rs`
+  `sce-specs/src/store.rs`, `sce-specs/src/requirements.rs`, `sce-specs/src/acceptance.rs`
 
 ## Context
 
@@ -22,8 +22,8 @@ id is issued once and never again. It is a file the CALLER keeps and hands back
 
 A work in the workbench is the application's own unit: its text, its model, the owner's
 answers, its requirement list and its acceptances, five chains in one folder that ONE
-implementation writes (`sce-works/src/store.rs`). The folder has no place for the lineage. A
-client that revises a work reads `manifest_text` and `sidecar_text` from `works_read`, and
+implementation writes (`sce-specs/src/store.rs`). The folder has no place for the lineage. A
+client that revises a work reads `manifest_text` and `sidecar_text` from `specs_read`, and
 those are all it can give back: `previous_manifest` and `previous_sidecar`, the path ADR 0006
 calls adoption.
 
@@ -48,12 +48,12 @@ tell" and restarts at `R1`.
 - A requirement list is ONE record in the requirements chain: `{format, v, manifest, sidecar}`,
   a save is a compare-and-swap on the revision the writer read, taken under the folder's lock,
   and every revision is kept and can be read by name (`read_requirements(id, revision)`).
-- A work is read as one state (`read_work_snapshot`), so the text, the model, the list and the
+- A work is read as one state (`read_spec_snapshot`), so the text, the model, the list and the
   acceptance a screen shows belong together.
 - An acceptance names the revisions it was taken from (`Basis.requirements`).
 - A request for a model is answered through a candidate that carries the list as a stored text,
   and `complete_request` publishes model and list together as a bundle; a work that keeps
-  bundles refuses `save_requirements` with `bundled-work`. The request flow is the workbench's
+  bundles refuses `save_requirements` with `bundled-spec`. The request flow is the workbench's
   main path, and any place the lineage lives has to be on it.
 
 ## Decision
@@ -91,9 +91,9 @@ same compare-and-swap.**
    and a revision list that is not a continuation. The authoring tool runs it after reading the
    head and before saving; the compare-and-swap on `base` guarantees the head it checked is the
    head that is replaced. The core does not run it (see "What this does not claim").
-5. **The tools carry it.** `works_read` returns `requirements.lineage_text`;
-   `works_save_requirements` takes `lineage_text` (and the candidate command takes `lineage`);
-   the instructions say to build with `lineage` and `previous_sidecar` from `works_read`.
+5. **The tools carry it.** `specs_read` returns `requirements.lineage_text`;
+   `specs_save_requirements` takes `lineage_text` (and the candidate command takes `lineage`);
+   the instructions say to build with `lineage` and `previous_sidecar` from `specs_read`.
 6. **The words delta of a work is derived from two states of its own chain, not carried.**
    `between(older, newer)` is a pure function of two lineages: an id live in `older` and live in
    `newer` with the same latest quote is `carried`, with another is `changed`, and live in
@@ -120,11 +120,11 @@ same compare-and-swap.**
 
 - **D1. Where the join lives once two surfaces need it.** ADR 0009 put the join of words and
   evidence in Python because it needed no product change, and the workbench's report needs the
-  same join while `sce-works` is Rust. A second table written in Rust would be two definitions
+  same join while `sce-specs` is Rust. A second table written in Rust would be two definitions
   of what a revision finding is, and they would drift. The choices: (a) keep one in Python and
-  have the application reach it through the authoring package, (b) port it to `sce-works`, (c)
+  have the application reach it through the authoring package, (b) port it to `sce-specs`, (c)
   move it into the product as one command (`revision-join`, with its schema registered in
-  `SCE_WIRE_CONTRACTS.md`) that the Python tools and `sce-work` both call. **Recommendation: (c).**
+  `SCE_WIRE_CONTRACTS.md`) that the Python tools and `sce-spec` both call. **Recommendation: (c).**
   It changes where ADR 0009's table lives and adds a wire surface, so it is not done by this
   ADR. Stages 1 to 3 do not depend on it.
 
@@ -146,7 +146,7 @@ same compare-and-swap.**
   **Decided (c), 2026-10-09, by the owner**, who asked for the answer that is right in the long
   run whatever it costs, was told it is larger than the table alone and that making a lineage
   stays in Python, and said to confirm it and go on. Stage 4a below builds it: the product reads
-  two lineages and the acceptance record and judges, and the Python tools and `sce-work` call it.
+  two lineages and the acceptance record and judges, and the Python tools and `sce-spec` call it.
   The order is the safe one: first the cases both implementations must pass (4a-1), then the
   product's command (4a-2), then the callers (4a-3), so the Python version stays the reference
   until a second implementation has been held to the same cases.
@@ -160,7 +160,7 @@ same compare-and-swap.**
 
 - **The lineage is as good as its similarity.** ADR 0006's limits stand: a wrong succession is
   listed `changed`, never `same`, and a very short identifier may be retired and issued again.
-- **The core does not understand a lineage.** A direct `sce-work save_requirements` can store
+- **The core does not understand a lineage.** A direct `sce-spec save_requirements` can store
   any lineage object that has the right marker. Only `lineage-dropped` is structural enough
   for the core to enforce; `extends` is the authoring package's, because it owns what a lineage
   means, and two implementations of that would be two definitions.
@@ -178,21 +178,21 @@ same compare-and-swap.**
 
 Criteria set before code. Each stage ends with a push; none needs the next.
 
-1. **The record and the commands (`sce-works`).** Done when: a list saved with a lineage reads
+1. **The record and the commands (`sce-specs`).** Done when: a list saved with a lineage reads
    back byte for byte, and one saved without is the same bytes (the same digest) as today; a save
    without a lineage onto a head that has one is refused `lineage-dropped`; a candidate carries
    the lineage and `complete_request` publishes it with the list; a core that predates the field
    refuses a `v: 2` record and does not read it as a list without one; the command layer's
    version has moved; the breaks (the field not written, not read, not carried by the candidate,
    the drop not refused) are each caught. **Done**: see "What stage 1 measured".
-2. **The tools (`tools/authoring`).** Done when: through the real `sce-work`, three revisions of a
-   work that hands the client back only what `works_read` gave keep their ids with no
+2. **The tools (`tools/authoring`).** Done when: through the real `sce-spec`, three revisions of a
+   work that hands the client back only what `specs_read` gave keep their ids with no
    `lineage_text` passed by hand, and the measurement above gives `R4`, not `R3`; a save whose
    lineage does not extend the head's is refused with the reason; `extends` has a refusal for each
    rule of decision 4 and a break that removes it. **Done** for the tools: see "What stage 2
    measured"; the application's own generation is "Stage 2b" there, and is not done.
-3. **The derived delta and a check by work.** `between`, and a `works_revision_check` that joins
-   it with the product's evidence over the staged work (`sce-works/src/acceptance.rs` already
+3. **The derived delta and a check by work.** `between`, and a `specs_revision_check` that joins
+   it with the product's evidence over the staged work (`sce-specs/src/acceptance.rs` already
    stages a work for the product, `Snapshot::stage`). Done when: the check of a work agrees with
    `scxml_revision_check` given the same two lineages, and a delta of a later step needs no
    composition. The join's home is D1.
@@ -214,26 +214,26 @@ Criteria set before code. Each stage ends with a push; none needs the next.
         manifest pin and the `acceptance-delta` lines in, the judgment (and the page) out; its
         schema registered in `SCE_WIRE_CONTRACTS.md`. Done when it reproduces every case of 1 and
         the breaks of its rules are each caught.
-     3. *The callers.* `works_revision_check/report` and `read_acceptance_delta` call it; the
+     3. *The callers.* `specs_revision_check/report` and `read_acceptance_delta` call it; the
         Python join stays as the reference the cases are generated from, or is removed, whichever
         the cases show to be safe.
 
 ## What stage 3 measured
 
 Implemented as `requirement_lineage.between` (the words of a revision, from two lineages),
-`works.read_requirements_at` and `works.read_acceptance_delta`, the tools `works_revision_check`
-and `works_revision_report` (`mcp._work_revision_join`), and, in `sce-works`, a new command
+`works.read_requirements_at` and `works.read_acceptance_delta`, the tools `specs_revision_check`
+and `specs_revision_report` (`mcp._spec_revision_join`), and, in `sce-specs`, a new command
 `read_acceptance_delta` (command set 20) over a new method of the acceptor,
 `delta_acceptance`, which stages the work as the product is always shown one and runs
 `acceptance-delta`. The acceptance and the design and list it is compared with are read as ONE
 state of the work, and the manifest the record pinned is passed on beside the lines. The join
 stays where ADR 0009 put it (D1 is not decided by this stage). Held by
-`sce-works/tests/what_moved_in_a_work_since_it_was_accepted.rs` (6 tests), the stand-in and the
+`sce-specs/tests/what_moved_in_a_spec_since_it_was_accepted.rs` (6 tests), the stand-in and the
 real generator in `tests/acceptance_product.rs`, the contract file, the screen's guard
 (`parseReadAcceptanceDelta`, 2 tests; the screen does not show the report yet),
 `tests/test_a_lineage_is_only_ever_appended_to.py` (10 tests of `between`) and
-`tests/test_a_revision_of_a_work_is_checked_against_what_its_owner_accepted.py` (12 tests
-against the real `sce-work` and generator):
+`tests/test_a_revision_of_a_spec_is_checked_against_what_its_owner_accepted.py` (12 tests
+against the real `sce-spec` and generator):
 
 1. **Met.** A work nothing was done to carries every requirement over; a sentence dropped with
    its citation taken off is `retired-cleanly`; dropped and still cited is `outside-reach`
@@ -265,13 +265,13 @@ says nothing for a silent failure, as the real product does.
 
 Implemented in `tools/authoring`: `requirement_lineage.extends` and `belongs_to_manifest` (the two
 judgements the core leaves to this package), `works.read_requirements` and `works.save_requirements`
-(the lineage in and out), and `mcp._lineage_refusal` with `works_save_requirements` taking
-`lineage_text` on both its paths, the direct save and a generation's candidate, and `works_read`
+(the lineage in and out), and `mcp._lineage_refusal` with `specs_save_requirements` taking
+`lineage_text` on both its paths, the direct save and a generation's candidate, and `specs_read`
 giving it back. Held by `tests/test_a_lineage_is_only_ever_appended_to.py` (22 tests, no binary
-needed) and `tests/test_a_work_keeps_the_ids_of_its_requirements_across_its_revisions.py` (11
-tests, against the real `sce-work` and generator):
+needed) and `tests/test_a_spec_keeps_the_ids_of_its_requirements_across_its_revisions.py` (11
+tests, against the real `sce-spec` and generator):
 
-1. **Met.** Three revisions of a work, each built from what `works_read` gave with nothing handed
+1. **Met.** Three revisions of a work, each built from what `specs_read` gave with nothing handed
    over by hand, keep `R1` and `R2` and issue the new requirement `R4`; the dropped sentence's `R3`
    is not issued again. The control, built from the manifest and the sidecar alone, gives `R3`:
    the measurement of the Context, now reproduced through the tools and kept as a test so that the
@@ -292,7 +292,7 @@ tests, against the real `sce-work` and generator):
 
 Twenty-three ways of breaking it (each rule of `extends` and of `belongs_to_manifest` switched off,
 the tool not asking either question, the tool judging a stale base, a generation not told, the
-lineage not passed on by either save path, `works_read` not giving it back, the works layer not
+lineage not passed on by either save path, `specs_read` not giving it back, the works layer not
 sending it) were put to those tests and each was caught.
 
 ### Stage 2b: the application's own generation
@@ -305,13 +305,13 @@ the gap is loud and a lineage cannot be lost silently. What is done and what is 
   (`client_run::draft_from`), and the local model path takes the lineage from the very call of
   `scxml_requirement_set` that gave the manifest (`local::Listed`), so a model is never asked to
   copy one and one from another call is never stored beside this list. The client is told what to
-  do by the tools' own words (`works_read`'s `next`), which are not part of the application's
+  do by the tools' own words (`specs_read`'s `next`), which are not part of the application's
   instructions. Three breaks (the draft not reading the lineage, the tool's answer not read for
   one, the list not written back with it) were each caught by the tests meant for them.
 - **Closed.** The form a Claude Code or Codex client answers in asks for `lineage_text` (a string
   or null, as a strict form lists every property as required), and the task tells the client
   to build the list against `requirements.lineage_text` and `requirements.sidecar_text` that
-  `works_read` gave, and to answer with the `lineage_text` the tool returned. A generation on a
+  `specs_read` gave, and to answer with the `lineage_text` the tool returned. A generation on a
   work that holds a lineage therefore no longer ends in `lineage-dropped` for want of one.
 - **Why the Codex entry changed.** Changing the shared task or form is a new execution contract
   for Codex: `tests/codex_support.rs` holds that the verification the application ships names
@@ -320,7 +320,7 @@ the gap is loud and a lineage cannot be lost silently. What is done and what is 
   written to attack it (`tests/codex_live.rs`). With the owner's approval both live tests (the
   plain run and the attack run) were run with `SCE_CODEX_VERIFY=1` against Codex 0.159.0 on
   2026-10-09 and passed, and the shipped entry names the new contract, `codex/7465c0fb9357`.
-  Of `sce-works`'s tests the change moved exactly two: the schema's list of required properties
+  Of `sce-specs`'s tests the change moved exactly two: the schema's list of required properties
   in `tests/claude_code.rs` and the Codex contract.
 - **What the live run did not measure.** It used the synthetic indicator specification, a
   work that holds no lineage, so it verifies the sandbox, the tools and the answer form under
@@ -329,13 +329,13 @@ the gap is loud and a lineage cannot be lost silently. What is done and what is 
 
 ## What stage 1 measured
 
-Implemented in `sce-works/src/requirements.rs` (the record), `sce-works/src/store.rs` and
+Implemented in `sce-specs/src/requirements.rs` (the record), `sce-specs/src/store.rs` and
 `store/bundle_store.rs` (`refuse_a_dropped_lineage`, called by a direct save and by a bundle's
-publication, under the work's lock), and `sce-works/src/commands.rs` (`lineage` of
+publication, under the work's lock), and `sce-specs/src/commands.rs` (`lineage` of
 `save_requirements` and `save_request_candidate`, `lineage` in what `read_requirements` and the
 snapshot return, `COMMAND_SET_VERSION` 19 with the screen's `SUPPORTED_COMMAND_SET_VERSION` and
 `contract/replies.json` moved with it). Held by
-`sce-works/tests/a_work_keeps_the_lineage_of_its_requirement_list.rs` (12 tests), the record's own
+`sce-specs/tests/a_spec_keeps_the_lineage_of_its_requirement_list.rs` (12 tests), the record's own
 unit tests (10) and `tests/contract.rs`:
 
 1. **Met.** A list with a lineage reads back with it byte for byte as a `v` 2 record, and a list
@@ -364,13 +364,13 @@ Seven ways of breaking it were put to those tests and each was caught by the tes
 the refusal removed from a direct save, the refusal removed from a publication, the reply
 carrying a `null` lineage, the lineage's kind not checked, the save command ignoring `lineage`,
 the candidate command ignoring it, and the record always written as `v` 1. The screen's tests
-(17 files, 546 tests) pass with the new version, run with node 22 as CI does; `sce-works`'s tests
+(17 files, 546 tests) pass with the new version, run with node 22 as CI does; `sce-specs`'s tests
 pass and clippy with warnings denied is clean. One test of the MCP client
 (`a_server_that_closes_its_input_and_lives_on_is_said_to_be_gone_and_not_waited_for`) timed out
 once in the whole-crate run on a loaded build machine and passes alone; it does not touch lists.
 
 Not done in this stage, by design: nothing in `tools/authoring` gives or reads a lineage through
-`works_*` yet (stage 2), and the in-application generation (`client_run`, `runner`) does not hand
+`specs_*` yet (stage 2), and the in-application generation (`client_run`, `runner`) does not hand
 a client the previous list's lineage, so a generation in the application still builds its ids
 without one. That is the larger half of the main path and is named here so that stage 2 is not
 read as closing it.
@@ -437,7 +437,7 @@ changed, and each is a case of a judgment that was made in one place and not in 
    after the model or the list was written for it (the list the work holds is then the accepted
    one, and comparing it with itself would call a revision nobody made "all carried over"; only
    a part known to be written for an earlier text is held back, and the refusal names which).
-   `works_revision_check` and `works_revision_report` are
+   `specs_revision_check` and `specs_revision_report` are
    now that command and nothing more, so the screen and the tools judge a revision with one
    implementation. The Python `revision.py` and `requirement_lineage.py` stay as the reference
    the cases are written from, and as the judgment of the tools that are handed a delta and a
