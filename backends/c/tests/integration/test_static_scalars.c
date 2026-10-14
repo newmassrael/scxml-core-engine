@@ -1915,16 +1915,29 @@ static const char *wide_signed_digits(int64_t value) {
     E(wallTime, wide_signed_digits)                                                                                    \
     N(counter)                                                                                                         \
     E(nodeId, wide_digits)
+#define ORSET_ENTRY_FIELDS(N, E)                                                                                       \
+    E(element, wide_digits)                                                                                            \
+    E(wallTime, wide_signed_digits)                                                                                    \
+    N(counter)                                                                                                         \
+    E(nodeId, wide_digits)
 #define RGA_NODE_FIELDS(N, E) E(key, wide_digits) E(after, wide_digits)
 #define RGA_GONE_FIELDS(N, E) E(key, wide_digits) E(by, wide_digits)
 
 // todo_peer: one copy of a shared to-do list, replayed through the afternoon the
 // world simulation ran it through, as each of the three that took part saw it.
-// Each field of a to-do is a last-writer-wins register merged by the standard
-// `lww_write`, its stamps 64-bit and crossing as their digits; a title is the text
-// of the write its cell kept; and what a copy sends the hub, and the hub the other
-// copies, is held send by send.
-#define TODO_TEXT_FIELDS(N, E) E(id, wide_digits) E(field, wide_digits) E(text, todo_peer_text_text)
+// A to-do's fields are values the copy keeps, each stamped; an observed-remove set
+// of entries (`adds`, `tombstones`) decides which stamp of a field is live, merged
+// by the standard `orset_union`, `orset_live` and `orset_observed`. Stamps are
+// 64-bit and cross as their digits; a field's text travels with its value; and
+// what a copy sends the hub, and the hub the other copies, is held send by send.
+#define TODO_VALUE_FIELDS(N, E)                                                                                        \
+    E(id, wide_digits)                                                                                                 \
+    E(field, wide_digits)                                                                                              \
+    E(value, wide_signed_digits)                                                                                       \
+    E(text, todo_peer_text_text)                                                                                       \
+    E(wallTime, wide_signed_digits)                                                                                    \
+    N(counter)                                                                                                         \
+    E(nodeId, wide_digits)
 VARIABLE_READER(todo_peer, hub)
 VARIABLE_READER(todo_peer, refusals)
 
@@ -1935,8 +1948,9 @@ static const char *todo_peer_text_text(sce_static_string_32_t text) {
 }
 
 RECORD_READER(todo_peer, clock, todo_peer_record_hlc_t, HLC_FIELDS)
-RECORD_LIST_READER(todo_peer, cells, todo_peer_record_lww_cell_view_t, todo_peer_record_lww_cell_t, LWW_CELL_FIELDS)
-RECORD_LIST_READER(todo_peer, texts, todo_peer_record_text_view_t, todo_peer_record_text_t, TODO_TEXT_FIELDS)
+RECORD_LIST_READER(todo_peer, adds, todo_peer_record_entry_view_t, todo_peer_record_entry_t, ORSET_ENTRY_FIELDS)
+RECORD_LIST_READER(todo_peer, tombstones, todo_peer_record_entry_view_t, todo_peer_record_entry_t, ORSET_ENTRY_FIELDS)
+RECORD_LIST_READER(todo_peer, values, todo_peer_record_value_view_t, todo_peer_record_value_t, TODO_VALUE_FIELDS)
 
 static const char *todo_peer_text(void *sm, const char *name) {
     if (strcmp(name, "node") == 0) {
@@ -1953,8 +1967,9 @@ static const variable_t todo_peer_variables[] = {
     {"refusals", todo_peer_read_refusals},
 };
 static const record_variable_t todo_peer_records[] = {RECORD_ROW(todo_peer, clock),
-                                                      RECORD_LIST_ROW(todo_peer, cells),
-                                                      RECORD_LIST_ROW(todo_peer, texts),
+                                                      RECORD_LIST_ROW(todo_peer, adds),
+                                                      RECORD_LIST_ROW(todo_peer, tombstones),
+                                                      RECORD_LIST_ROW(todo_peer, values),
                                                       {NULL, NULL, NULL, NULL}};
 STATIC_SCENARIO_PEERED(todo_peer, todo_peer_states, todo_peer_variables, todo_peer_text, no_lists, todo_peer_records)
 

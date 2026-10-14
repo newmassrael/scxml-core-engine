@@ -2699,6 +2699,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     foreach(_MERGE_HEADER
             hlc_timestamp hlc_compare hlc_send hlc_receive
             lww_cell lww_write
+            orset_entry orset_union orset_live orset_observed
             rga_node rga_gone rga_insert rga_holds rga_remove)
         set(_HEADER "${SCE_C_INTEGRATION_GENERATED_DIR}/${_MERGE_HEADER}.h")
         add_custom_command(
@@ -2716,7 +2717,8 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     sce_generate_static_integration_c_test(todo_peer
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/todo_peer.scxml"
-        STAGE_ALSO todo_join.scxml todo_edit.scxml todo_write.scxml todo_text.scxml
+        STAGE_ALSO todo_join.scxml todo_edit.scxml todo_write.scxml todo_supersede.scxml
+                   todo_value.scxml
     )
     sce_generate_static_integration_c_test(sheet_peer
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
