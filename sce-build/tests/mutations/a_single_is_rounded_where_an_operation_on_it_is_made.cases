@@ -85,8 +85,8 @@ PY
 
 mutation_case "a context does not round by default" <<'PY'
 edit("sce-build/src/forge/types.rs",
-     "            rounds_to_single: true,\n        }",
-     "            rounds_to_single: false,\n        }")
+     "            rounds_to_single: true,\n            record_text:",
+     "            rounds_to_single: false,\n            record_text:")
 PY
 
 # ── C holds a float ─────────────────────────────────────────────────
