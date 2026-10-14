@@ -458,6 +458,18 @@ pub(crate) fn is_reserved_word(language: Language, spelled: &str) -> bool {
     }
 }
 
+/// Whether a reader function spelled `spelled` cannot be written on the type
+/// generated for `machine` in `language`: a word the language reserves, or a
+/// member the type already carries (`reserved`). The decision a
+/// `datamodel="sce-static"` machine takes for the readers of its published
+/// variables is the one [`assign`] takes for every other document's, so a
+/// variable called `initial_state` or `accept_params` is refused a reader here
+/// as it is there, and not given one that redeclares the policy's own method
+/// (Go, C++) or replaces it without a word (Python).
+pub(crate) fn reader_is_taken(language: Language, spelled: &str, machine: &str) -> bool {
+    is_reserved_word(language, spelled) || reserved(language).covers(spelled, machine)
+}
+
 /// One way a backend folds a declared name into an identifier — the folds a
 /// keyword could come out equal to.
 ///

@@ -6037,3 +6037,78 @@ fn a_kotlin_variable_does_not_meet_a_member_of_the_engine_it_extends() {
         "and so does a saved state:\n{source}"
     );
 }
+
+/// Every backend that reads a published variable through a function of the
+/// author's spelling keeps that function from the members the generated types
+/// already carry. A variable called `initial_state` was a Go policy that
+/// declared `InitialState` twice, a Python policy whose `initial_state` was
+/// silently the variable's and not the engine's (so the machine started from a
+/// number), and a C++ machine whose `initialize` hid the engine's own; the
+/// document generated in all three without a word.
+#[test]
+fn a_variable_does_not_meet_a_member_of_the_type_that_reads_it() {
+    let data = r#"<data id="initial_state" sce:type="uint32" expr="2" sce:direction="out"/>
+    <data id="accept_params" sce:type="uint32" expr="3" sce:direction="out"/>
+    <data id="initialize" sce:type="uint32" expr="4" sce:direction="out"/>
+    <data id="count" sce:type="uint32" expr="0" sce:direction="out"/>"#;
+    let generate = |language: &str, extension: &str| -> String {
+        let out_dir = tempdir().expect("tempdir");
+        let (ok, out) = run(
+            &[
+                "generate",
+                "-l",
+                language,
+                "-o",
+                out_dir.path().to_str().expect("a path"),
+            ],
+            &doc("sce-static", data),
+        );
+        assert!(ok, "the machine generates in {language}:\n{out}");
+        std::fs::read_dir(out_dir.path())
+            .expect("the output directory")
+            .map(|entry| entry.expect("an entry").path())
+            .filter(|path| path.extension().is_some_and(|e| e == extension))
+            .map(|path| std::fs::read_to_string(path).expect("a generated file"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let times = |source: &str, member: &str| source.matches(member).count();
+
+    let go = generate("go", "go");
+    for member in ["Policy) InitialState(", "Policy) AcceptParams("] {
+        assert_eq!(
+            times(&go, member),
+            1,
+            "`{member}` is declared once, by the policy:\n{go}"
+        );
+    }
+    assert_eq!(
+        times(&go, "Policy) Count("),
+        1,
+        "a free name is read:\n{go}"
+    );
+
+    let python = generate("python", "py");
+    for member in ["    def initial_state(", "    def accept_params("] {
+        assert_eq!(
+            times(&python, member),
+            1,
+            "`{member}` is defined once, by the policy:\n{python}"
+        );
+    }
+    assert_eq!(
+        times(&python, "    def count("),
+        1,
+        "a free name is read:\n{python}"
+    );
+
+    let cpp = generate("cpp", "h");
+    assert!(
+        !cpp.contains("uint32_t initialize() const"),
+        "a reader hides the engine's `initialize`:\n{cpp}"
+    );
+    assert!(
+        cpp.contains("uint32_t count() const"),
+        "a free name is read:\n{cpp}"
+    );
+}

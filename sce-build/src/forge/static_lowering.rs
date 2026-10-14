@@ -545,7 +545,7 @@ pub trait StaticTarget {
     /// the host's reader, and the author's spelling for one whose member
     /// carries a prefix. `None` for a name this target cannot spell a reader
     /// with.
-    fn reader_name(&self, id: &str) -> Option<String> {
+    fn reader_name(&self, id: &str, _machine: &str) -> Option<String> {
         Some(self.field_name(id))
     }
     /// How a statement or a guard reaches the field named `name`.
@@ -1254,7 +1254,7 @@ impl StaticTarget for KotlinTarget {
     }
     // The author's name in the case a Kotlin property is written in, and none
     // for a name the language reserves or the class already holds a property by.
-    fn reader_name(&self, id: &str) -> Option<String> {
+    fn reader_name(&self, id: &str, _machine: &str) -> Option<String> {
         let spelled = filters::to_camel_case(id.to_string());
         (!crate::reader_names::is_reserved_word(Language::Kotlin, &spelled)
             && !crate::reader_names::kotlin_machine_holds_property(&spelled))
@@ -2722,7 +2722,7 @@ pub fn lower(
     // The name a host reads each published field through, asked once the
     // fields are declared: a target whose member is not the reader says so.
     for field in &mut fields {
-        field.reader = target.reader_name(&field.id);
+        field.reader = target.reader_name(&field.id, &model.name);
     }
 
     let mut payload_events = BTreeSet::new();
@@ -4011,10 +4011,10 @@ impl StaticTarget for CppTarget {
     }
     // C++ keeps the author's spelling for a reader, as every typed reader of
     // the language does (`crate::reader_names`), and gives none to a name the
-    // language reserves.
-    fn reader_name(&self, id: &str) -> Option<String> {
+    // language reserves or the policy or the machine already has a member by.
+    fn reader_name(&self, id: &str, machine: &str) -> Option<String> {
         let spelled = id.replace(['.', '-'], "_");
-        (!crate::reader_names::is_reserved_word(Language::Cpp, &spelled)).then_some(spelled)
+        (!crate::reader_names::reader_is_taken(Language::Cpp, &spelled, machine)).then_some(spelled)
     }
     fn field_ref(&self, name: &str) -> String {
         name.to_string()
@@ -4765,9 +4765,9 @@ impl StaticTarget for GoTarget<'_> {
     }
     // The author's name with its first letter raised, as an exported method
     // must be, and none for a name the language or the policy already holds.
-    fn reader_name(&self, id: &str) -> Option<String> {
+    fn reader_name(&self, id: &str, machine: &str) -> Option<String> {
         let spelled = filters::to_pascal_case(id.to_string());
-        (!crate::reader_names::is_reserved_word(Language::Go, &spelled)).then_some(spelled)
+        (!crate::reader_names::reader_is_taken(Language::Go, &spelled, machine)).then_some(spelled)
     }
     fn field_ref(&self, name: &str) -> String {
         format!("p.{name}")
@@ -5407,9 +5407,10 @@ impl StaticTarget for PythonTarget {
     }
     // The author's spelling, as every typed reader of the language has it
     // (`crate::reader_names`), and none for a name the language reserves.
-    fn reader_name(&self, id: &str) -> Option<String> {
+    fn reader_name(&self, id: &str, machine: &str) -> Option<String> {
         let spelled = id.replace(['.', '-'], "_");
-        (!crate::reader_names::is_reserved_word(Language::Python, &spelled)).then_some(spelled)
+        (!crate::reader_names::reader_is_taken(Language::Python, &spelled, machine))
+            .then_some(spelled)
     }
     fn field_ref(&self, name: &str) -> String {
         format!("self.{name}")
@@ -6305,7 +6306,7 @@ impl StaticTarget for CTarget {
     // A free function of the machine, as every typed reader of the backend is;
     // the `get_` keeps it from meeting `_init`, `_step` or `_raise`, which a
     // bare name could.
-    fn reader_name(&self, id: &str) -> Option<String> {
+    fn reader_name(&self, id: &str, _machine: &str) -> Option<String> {
         Some(format!("get_{}", id.replace(['.', '-'], "_")))
     }
     fn field_ref(&self, name: &str) -> String {

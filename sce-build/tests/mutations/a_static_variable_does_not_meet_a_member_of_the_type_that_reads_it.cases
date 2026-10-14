@@ -1,0 +1,52 @@
+# Mutation cases for "a published variable of a `datamodel="sce-static"` machine is
+# read through a function of the author's spelling, and gets none where that
+# spelling is a member the generated type already carries"
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A published variable"; the decision is the
+# one `reader_names::assign` takes for every other document's readers).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_variable_does_not_meet_a_member_of_the_type_that_reads_it.cases`.
+#
+# `a_variable_does_not_meet_a_member_of_the_type_that_reads_it` generates a document
+# whose variables are called `initial_state`, `accept_params` and `initialize` beside
+# a free `count`, in Go, Python and C++, and expects the policy's own `InitialState`,
+# `AcceptParams` and `initial_state` to be declared once and the engine's `initialize`
+# not to be hidden, while `count` is still read. The mutants take one decision away
+# each:
+#
+#   no backend asks the members a type carries, only its keywords;
+#   Go asks only its keywords;
+#   Python asks only its keywords;
+#   C++ asks only its keywords.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test a_static_datamodel_holds_every_variable_to_a_type
+mutation_targets sce-build/src/reader_names.rs
+mutation_targets sce-build/src/forge/static_lowering.rs
+mutation_oracles sce-build/tests/a_static_datamodel_holds_every_variable_to_a_type.rs
+
+mutation_case "no backend asks the members a type carries, only its keywords" <<'PY'
+edit("sce-build/src/reader_names.rs",
+     "    is_reserved_word(language, spelled) || reserved(language).covers(spelled, machine)",
+     "    is_reserved_word(language, spelled) || (false && reserved(language).covers(spelled, machine))")
+PY
+
+mutation_case "Go asks only its keywords" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "(!crate::reader_names::reader_is_taken(Language::Go, &spelled, machine)).then_some(spelled)",
+     "(!crate::reader_names::is_reserved_word(Language::Go, &spelled)).then_some(spelled)")
+PY
+
+mutation_case "Python asks only its keywords" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "(!crate::reader_names::reader_is_taken(Language::Python, &spelled, machine))",
+     "(!crate::reader_names::is_reserved_word(Language::Python, &spelled))")
+PY
+
+mutation_case "C++ asks only its keywords" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "(!crate::reader_names::reader_is_taken(Language::Cpp, &spelled, machine)).then_some(spelled)",
+     "(!crate::reader_names::is_reserved_word(Language::Cpp, &spelled)).then_some(spelled)")
+PY
