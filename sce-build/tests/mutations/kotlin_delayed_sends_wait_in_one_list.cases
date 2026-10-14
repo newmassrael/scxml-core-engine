@@ -52,8 +52,8 @@ PY
 
 mutation_case "a send under an id still waiting does not replace it" <<'PY'
 edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-     "        route: ScheduledRoute?,\n    ) {\n        cancelSend(sendId)\n",
-     "        route: ScheduledRoute?,\n    ) {\n")
+     "BUILD_SEND_ID_PREFIX)) {\n            cancelSend(sendId)\n",
+     "BUILD_SEND_ID_PREFIX)) {\n")
 PY
 
 # ── One at a time, with a macrostep between ─────────────────────────
