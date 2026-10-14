@@ -5259,10 +5259,14 @@ writes the send down and delivers it to no one: `sent` holds a step to what the
 machine asked to be sent, with the data as the engine serialised it for the event,
 compared as a value. The peer is not there, so nothing answers. A send to
 `#_internal`, to `#_parent` or to a session is the SCXML processor's own and is not
-in `sent`. A machine with a peer send that is given no router is not left alone by
-the engines in the same way (five refuse the send as `error.execution`; the
-generated C++ and the Interpreter hand the event back to the machine that sent it),
-which is one more reason every driver registers one.
+in `sent`. A machine with a peer send that is given no router has the send refused
+as `error.execution` by every engine (SCE_MESH.md, Errors), the generated C++ and
+the Interpreter included: the event does not come back to the machine that sent it,
+which would take a peer's event for its own. No scenario can say so, because every
+driver registers a router; each engine's tests hold it to that apart from the
+scenarios (the `a_peer_named_at_run_time_reaches_the_router` tests of Rust, Kotlin,
+Python, Go and C11, and `ASendToAMeshPeerWithNoRouterRegisteredIsErrorExecution`
+in each of the two C++ ones).
 
 **A run of several machines, one machine at a time.** The scenarios of `todo_peer`
 and `sheet_peer` (`todo_peer_alice.json`, `todo_peer_bob.json`,

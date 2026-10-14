@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 #include "events/EventDispatcherImpl.h"
+#include "common/SendHelper.h"
 #include "common/StringUtils.h"
 #include "core/LogMacros.h"
 #include "events/EventRaiserService.h"
@@ -87,8 +88,15 @@ std::future<SendResult> EventDispatcherImpl::sendEvent(const EventDescriptor &ev
         auto target = targetFactory_->createTarget(event.target, event.sessionId);
         if (!target) {
             std::promise<SendResult> errorPromise;
-            errorPromise.set_value(SendResult::error("Failed to create target for: " + event.target,
-                                                     SendResult::ErrorType::TARGET_NOT_FOUND));
+            // A Mesh peer the factory holds no router for is a fault of how the
+            // host was set up, not of the address: error.execution, where a
+            // session that does not exist is error.communication. Told apart here,
+            // before a delay, so a delayed send is refused when it is made.
+            const bool unrouted = SendHelper::isMeshTarget(event.target);
+            errorPromise.set_value(SendResult::error(
+                (unrouted ? "No Mesh router is registered for target: " : "Failed to create target for: ") +
+                    event.target,
+                unrouted ? SendResult::ErrorType::NOT_CONFIGURED : SendResult::ErrorType::TARGET_NOT_FOUND));
             return errorPromise.get_future();
         }
 

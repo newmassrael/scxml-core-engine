@@ -166,8 +166,8 @@ public:
     /// time a step names (`advance`) and not the time the test happened to take.
     ///
     /// What the machine sends a Mesh peer (`<send target="#name">`) is handed to
-    /// the callback its host registers, and a machine with none takes the send
-    /// into its own external queue. A replay is every machine's host, so it
+    /// the callback its host registers, and a machine with none has the send
+    /// refused as error.execution (a test below holds it to that). A replay is every machine's host, so it
     /// registers one that only writes the send down and accepts it: the peer is
     /// not there, and what a scenario holds a step to is that the machine asked
     /// for the send. It is registered before the machine starts, because the
@@ -1634,6 +1634,21 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, AnArgumentThatOverflowsStopsTheCallAn
     machine.step();
     EXPECT_EQ(host.calls, (Calls{"251"})) << "250 + 10 does not fit, so the host is not called with 4";
     EXPECT_EQ(machine.errors(), 1) << "error.execution was raised and the machine saw it";
+}
+
+// SCE_MESH.md, Errors: a send to a peer from a machine whose host registered no Mesh
+// router is a configuration fault of the host and raises error.execution, as it does
+// on every other backend. It does not go to the sender's own queue: todo_peer takes
+// what a peer sends it as a write to its own list, so an event that came back would
+// be taken for the peer's, and the one the machine sent itself over `#_internal` is
+// the only write it holds.
+TEST(AStaticDatamodelRunsGeneratedCppTest, ASendToAMeshPeerWithNoRouterRegisteredIsErrorExecution) {
+    G::todo_peer::todo_peer machine;
+    machine.initialize();
+    machine.raiseExternal("todo.join", R"({"node":"1","hub":false})");
+    machine.raiseExternal("todo.edit", R"({"id":"7","field":"1","value":"0","text":"buy milk","now":"0"})");
+    machine.step();
+    EXPECT_EQ(machine.refusals(), 1u) << "the send to #server was refused, once, as error.execution";
 }
 
 }  // namespace Tests

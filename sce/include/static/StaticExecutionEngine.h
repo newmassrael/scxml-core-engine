@@ -1072,10 +1072,21 @@ public:
         // SCE Mesh: route cross-machine targets through the mesh callback before
         // they reach the external queue. Matches the §scxml-C-2 BasicHTTP
         // split — HTTP targets are dispatched via performHttpSend(), mesh
-        // targets via performMeshSend(). Applications that do not wire a mesh
-        // transport leave onMeshSend_ unset and the event falls through to
-        // the external queue (legacy behavior, preserves W3C conformance).
+        // targets via performMeshSend(). A machine whose host wired no mesh
+        // transport leaves onMeshSend_ unset; that is a configuration fault of
+        // the host and raises error.execution, as on every other backend
+        // (SCE_MESH.md, Errors) — it is not a send to the sender's own queue,
+        // which is a peer's event answered by the sender. No W3C test names a
+        // `#<peer>` target (`#_internal`, `#_parent` and the session and invoke
+        // addresses all start `#_`), so no conformance depends on the old route.
         if (::SCE::SendHelper::isMeshTarget(eventWithMetadata.target)) {
+            if (!onMeshSend_) {
+                if (auto error = policy_.getEventFromName("error.execution")) {
+                    raise(EventWithMetadata(*error, "<send target='" + eventWithMetadata.target +
+                                                        "'>: no Mesh router is registered for this peer"));
+                }
+                return;
+            }
             // SCE_MESH.md §mesh-9.5: the metadata's invokeId is authoritative
             // when set (send.jinja2 full-metadata path calls
             // engine.currentEventInvokeId() explicitly). The engine-level

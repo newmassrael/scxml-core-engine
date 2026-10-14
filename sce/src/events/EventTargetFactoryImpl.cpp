@@ -112,8 +112,19 @@ std::shared_ptr<IEventTarget> EventTargetFactoryImpl::createTarget(const std::st
         return createInvokeTarget(invokeId, sessionId);
     }
 
+    // SCE_MESH.md: `#<name>` addresses a Mesh peer, which this factory reaches only
+    // through a router the host registered under SendHelper::MESH_TARGET_SCHEME.
+    // With none the target is not created, and the dispatcher reports it as not
+    // configured: it is no internal target, which is what an address with no
+    // scheme falls to below, and a peer's event is not the sender's own.
+    const bool meshPeer = SendHelper::isMeshTarget(targetUri);
+    if (meshPeer && targetCreators_.find(SendHelper::MESH_TARGET_SCHEME) == targetCreators_.end()) {
+        SCE_LOG_ERROR("EventTargetFactoryImpl: no Mesh router is registered for target: {}", targetUri);
+        return nullptr;
+    }
+
     // Extract scheme and find appropriate creator
-    std::string scheme = extractScheme(targetUri);
+    std::string scheme = meshPeer ? std::string(SendHelper::MESH_TARGET_SCHEME) : extractScheme(targetUri);
 
     auto creatorIt = targetCreators_.find(scheme);
     if (creatorIt != targetCreators_.end()) {

@@ -312,6 +312,11 @@ public:
     /// The prefix [isReservedHostType] reserves.
     static constexpr const char *RESERVED_HOST_TYPE_PREFIX = "sce:";
 
+    /// The key a Mesh router is registered under with a target factory, which
+    /// creates a target for a `#<peer>` address only through one. The Mesh
+    /// processor's own type (SCE_MESH.md, Registration).
+    static constexpr const char *MESH_TARGET_SCHEME = "sce:mesh";
+
     /**
      * @brief Validate send target according to §scxml-6.2.4
      *

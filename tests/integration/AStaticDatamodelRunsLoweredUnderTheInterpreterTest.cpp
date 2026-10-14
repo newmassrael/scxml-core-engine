@@ -262,45 +262,6 @@ private:
     std::string peer_;
 };
 
-/// A target factory that answers a Mesh target with a `PeerTarget` and leaves
-/// every other target to the factory it wraps.
-///
-/// The Interpreter has no Mesh transport to hand a send to: its own factory
-/// reads `#name` as a target with no scheme, which it takes for the sending
-/// session's internal queue, so a machine would take what it sent a peer
-/// itself. The send is caught at the target and not at the dispatcher, because
-/// the target is where a send is delivered: at once for an immediate one, and
-/// when it is due for a delayed one.
-class PeerRecordingTargetFactory : public IEventTargetFactory {
-public:
-    PeerRecordingTargetFactory(std::shared_ptr<IEventTargetFactory> inner, std::shared_ptr<SentToPeers> sent)
-        : inner_(std::move(inner)), sent_(std::move(sent)) {}
-
-    std::shared_ptr<IEventTarget> createTarget(const std::string &targetUri, const std::string &sessionId) override {
-        if (SendHelper::isMeshTarget(targetUri)) {
-            return std::make_shared<PeerTarget>(sent_, targetUri);
-        }
-        return inner_->createTarget(targetUri, sessionId);
-    }
-
-    void registerTargetType(const std::string &scheme,
-                            std::function<std::shared_ptr<IEventTarget>(const std::string &)> creator) override {
-        inner_->registerTargetType(scheme, std::move(creator));
-    }
-
-    bool isSchemeSupported(const std::string &scheme) const override {
-        return inner_->isSchemeSupported(scheme);
-    }
-
-    std::vector<std::string> getSupportedSchemes() const override {
-        return inner_->getSupportedSchemes();
-    }
-
-private:
-    std::shared_ptr<IEventTargetFactory> inner_;
-    std::shared_ptr<SentToPeers> sent_;
-};
-
 /// A host that performs every operation and records each call as the JSON of
 /// its arguments. A child session performs its actions on a thread of its own
 /// once it has been started, so the calls are read under the lock they are
@@ -384,7 +345,8 @@ protected:
     /// events a machine sends itself are queued, and run when the raiser is
     /// asked to; the raiser is returned for that. A replay hands in the list its
     /// machine's sends to Mesh peers are written to, and those are delivered to
-    /// no one; without one a target is the Interpreter's own to resolve.
+    /// no one; without one the Interpreter has no router for a peer, and the send
+    /// is refused as error.execution.
     std::shared_ptr<EventRaiserImpl> wire(StateMachine &machine, std::shared_ptr<SentToPeers> sentToPeers = nullptr) {
         auto scheduler = std::make_shared<EventSchedulerImpl>(
             [](const EventDescriptor &event, std::shared_ptr<IEventTarget> target, const std::string &) -> bool {
@@ -400,7 +362,14 @@ protected:
         machine.setEventRaiser(eventRaiser);
         std::shared_ptr<IEventTargetFactory> targets = std::make_shared<EventTargetFactoryImpl>(eventRaiser);
         if (sentToPeers) {
-            targets = std::make_shared<PeerRecordingTargetFactory>(std::move(targets), std::move(sentToPeers));
+            // The Interpreter has no Mesh transport of its own: the factory creates
+            // a target for `#name` only through a router the host registers under
+            // the Mesh scheme. The send is caught at the target and not at the
+            // dispatcher, because the target is where a send is delivered: at once
+            // for an immediate one, and when it is due for a delayed one.
+            targets->registerTargetType(SendHelper::MESH_TARGET_SCHEME, [sentToPeers](const std::string &peer) {
+                return std::make_shared<PeerTarget>(sentToPeers, peer);
+            });
         }
         machine.setEventDispatcher(std::make_shared<EventDispatcherImpl>(scheduler, std::move(targets)));
         return eventRaiser;
@@ -941,6 +910,25 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheLibraryReducesAVal
         EXPECT_FALSE(other.isSuccess()) << "a value naming a document the invoke does not declare";
     }
     engine_->destroySession(session);
+}
+
+// SCE_MESH.md, Errors: a send to a peer from a machine whose host registered no Mesh
+// router is a configuration fault of the host and raises error.execution, as it does
+// on every other backend. It is not an event the sender takes from itself:
+// `todo_peer` takes what a peer sends it as a write to its own list, so an event that
+// came back would be the peer's, and the one the machine sent itself over
+// `#_internal` is the only write it holds.
+TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, ASendToAMeshPeerWithNoRouterRegisteredIsErrorExecution) {
+    const Lowered lowered = lower(kFixtures / "todo_peer.scxml");
+    ASSERT_TRUE(lowered.ok) << lowered.refusal.dump();
+    const auto machine = std::make_shared<StateMachine>(*engine_);
+    const auto raiser = wire(*machine);
+    ASSERT_TRUE(machine->loadSCXMLFromString(lowered.document)) << "the Interpreter does not load the document";
+    ASSERT_TRUE(machine->start());
+    machine->processEvent("todo.join", R"({"node":"1","hub":false})");
+    machine->processEvent("todo.edit", R"({"id":"7","field":"1","value":"0","text":"buy milk","now":"0"})");
+    EXPECT_TRUE(settles(raiser, [&] { return variable(*machine, "refusals") == 1; }))
+        << "the send to #server was not refused as error.execution, once";
 }
 
 }  // namespace Tests

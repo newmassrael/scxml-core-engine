@@ -112,6 +112,11 @@ struct SendResult {
         NONE,
         VALIDATION_ERROR,
         TARGET_NOT_FOUND,
+        /// The host wired nothing that serves the target (a Mesh peer with no
+        /// Mesh router registered): a configuration fault of the host, which
+        /// raises error.execution as a host-served send with no handler does
+        /// (SCE_MESH.md, Errors), not error.communication.
+        NOT_CONFIGURED,
         NETWORK_ERROR,
         TIMEOUT,
         CANCELLED,

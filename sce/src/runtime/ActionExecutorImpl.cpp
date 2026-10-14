@@ -1118,6 +1118,13 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
                         eventRaiser_->raiseEvent("error.communication", result.errorMessage, sendId,
                                                  false /* overload discriminator for sendId variant */);
                     }
+                    // A Mesh peer with no router registered is the host's
+                    // configuration fault, not a dead address (SCE_MESH.md,
+                    // Errors): error.execution, as every other backend raises it.
+                    if (result.errorType == SendResult::ErrorType::NOT_CONFIGURED && eventRaiser_) {
+                        eventRaiser_->raiseEvent("error.execution", result.errorMessage, sendId,
+                                                 false /* overload discriminator for sendId variant */);
+                    }
                 }
             } catch (const std::exception &e) {
                 SCE_LOG_ERROR("ActionExecutorImpl: Exception while getting send result: {}", e.what());
