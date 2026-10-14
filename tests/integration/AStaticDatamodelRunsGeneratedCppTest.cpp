@@ -519,17 +519,6 @@ template <typename Shown> json sheetShownJson(const Shown &shown) {
     });
 }
 
-/// A list of `record:Entry` values (sce:std/merge/orset_entry), in order: the element and the
-/// stamp of the add that put it there.
-template <typename Entries> json orsetEntriesJson(const Entries &entries) {
-    return listedJson(entries, [](const auto &entry) {
-        return json{{"element", wideText(entry.element)},
-                    {"wallTime", wideText(entry.wallTime)},
-                    {"counter", entry.counter},
-                    {"nodeId", wideText(entry.nodeId)}};
-    });
-}
-
 /// A list of `record:Value` values (todo_value), in order.
 template <typename Values> json todoValuesJson(const Values &values) {
     return listedJson(values, [](const auto &held) {
@@ -560,31 +549,6 @@ template <typename Nodes> json rgaNodesJson(const Nodes &nodes) {
 template <typename Gones> json rgaGonesJson(const Gones &gones) {
     return listedJson(gones,
                       [](const auto &gone) { return json{{"key", wideText(gone.key)}, {"by", wideText(gone.by)}}; });
-}
-
-/// A list of `record:Entry` values (sce:std/merge/orset_entry), in order: an element
-/// of an observed-remove set and the dot that adds or names it.
-template <typename Entries> json orsetEntriesJson(const Entries &entries) {
-    return listedJson(entries, [](const auto &entry) {
-        return json{{"element", wideText(entry.element)},
-                    {"wallTime", wideText(entry.wallTime)},
-                    {"counter", entry.counter},
-                    {"nodeId", wideText(entry.nodeId)}};
-    });
-}
-
-/// A list of `record:Value` (todo_value.scxml), in order: a value a field of a to-do
-/// holds, with the stamp of the write that gave it.
-template <typename Values> json todoValuesJson(const Values &values) {
-    return listedJson(values, [](const auto &held) {
-        return json{{"id", wideText(held.id)},
-                    {"field", wideText(held.field)},
-                    {"value", wideText(held.value)},
-                    {"text", held.text},
-                    {"wallTime", wideText(held.wallTime)},
-                    {"counter", held.counter},
-                    {"nodeId", wideText(held.nodeId)}};
-    });
 }
 
 /// A list of `record:Seen` (presence_seen.scxml), in order: a client an entry of the

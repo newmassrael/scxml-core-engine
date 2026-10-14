@@ -117,6 +117,21 @@ fn script_of(c: char) -> Option<&'static str> {
 /// belongs here.
 const THE_SCRIPT_IS_THE_SUBJECT: &[(&str, &str)] = &[
     (
+        "tests/forge/conformance/gen_cases.py",
+        "draws the texts the text_slot cases try against a bound counted in UTF-8 \
+         bytes: Hangul syllables are three bytes each, so a text of eleven of \
+         them is past a bound of thirty-two that eleven ASCII letters are well \
+         within, and only such characters show that a byte count and a \
+         character count differ",
+    ),
+    (
+        "tests/forge/conformance/numerical_reference.json",
+        "the cases gen_cases.py draws, written out for the six backends to \
+         run: a text that is exactly thirty-two bytes in multi-byte characters \
+         is the argument of a case, so an escape would hide the one thing \
+         each backend's harness has to read back byte for byte",
+    ),
+    (
         "sce-build/src/template.rs",
         "a negative fixture for the parameter-name rule: a non-ASCII name \
          must be refused, and only a non-ASCII name can show that",
