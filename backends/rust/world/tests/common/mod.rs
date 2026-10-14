@@ -409,7 +409,9 @@ pub fn agreed_shown(world: &mut World) -> BTreeMap<(u64, u64), Shown> {
 /// What the cells should hold, read from the network: of every write a person sent
 /// the hub, the one with the latest stamp wins its cell, formula and all.
 pub fn oracle_contents(world: &World) -> BTreeMap<(u64, u64), Content> {
-    let mut latest: BTreeMap<(u64, u64), ((u64, u64, u64), Content)> = BTreeMap::new();
+    // A cell's content and the stamp of the write that gave it.
+    type Stamped = ((u64, u64, u64), Content);
+    let mut latest: BTreeMap<(u64, u64), Stamped> = BTreeMap::new();
     for (event, write) in sent_to_the_hub(world) {
         if event != "sheet.cell" {
             continue;
