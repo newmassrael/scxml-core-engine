@@ -52,6 +52,10 @@ use core::ptr;
 use super::sync::{AtomicBool, AtomicPtr, AtomicUsize, Ordering, UnsafeCell};
 use super::Padded;
 
+/// What frees a retired object: given its header and the `context` the header
+/// carries, it returns the object's memory to what allocated it.
+pub type Reclaim = unsafe fn(*mut Retired, *const ());
+
 /// The header a retired object carries so the domain can chain it and, once no
 /// hazard names it, hand it back to what allocated it.
 ///
@@ -69,7 +73,7 @@ pub struct Retired {
     /// reference promises that the bytes it covers are not written: only a cell's
     /// are free of that promise. The hazard keeps the object from being freed, not
     /// from being retired, and the write is the retirement's.
-    reclaim: UnsafeCell<Option<unsafe fn(*mut Retired, *const ())>>,
+    reclaim: UnsafeCell<Option<Reclaim>>,
     /// The value `reclaim` is called with: the allocator that gave the object.
     context: UnsafeCell<*const ()>,
 }
@@ -183,12 +187,7 @@ impl<const H: usize> HazardDomain<H> {
     /// is no longer reachable except through a hazard already published; it is
     /// retired once; `reclaim` frees exactly that object; and `context` stays
     /// valid until it has.
-    pub unsafe fn retire(
-        &self,
-        node: *mut Retired,
-        reclaim: unsafe fn(*mut Retired, *const ()),
-        context: *const (),
-    ) {
+    pub unsafe fn retire(&self, node: *mut Retired, reclaim: Reclaim, context: *const ()) {
         // SAFETY: the caller's contract makes the header live and, before it is
         // published below, ours alone.
         unsafe {
