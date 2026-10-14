@@ -359,7 +359,12 @@ this one imports (`<sce:import as="<Alias>" src="..." kind="enum"/>`), and write
 are the platform's names, or through a map keyed by the variant names when they are not;
 an input is handed the variant named as the symbol the address carries. `scaffold --kind
 transform` writes those enumerations. A number there (`x = on ? 2 : 1`, `request == 0`)
-is one platform's code for a symbol, and `check` refuses it."""
+is one platform's code for a symbol, and `check` refuses it.
+
+Two spellings, by where the value sits. In an expression a variant is `<Alias>.<NAME>`. In
+`sce:initial` it is the bare `<NAME>`: that attribute holds a value of the field's type, not
+an expression, and the product refuses the alias there. `sce:assumed-candidates` are written
+as the place they replace is written -- bare where the decision is the `sce:initial`."""
 
 
 _REMEMBERING = """\

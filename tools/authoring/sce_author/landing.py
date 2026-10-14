@@ -55,23 +55,30 @@ def document_name(value, sce_type: str | None, variants: dict | None):
 
     A closed set of values crosses the boundary by NAME (`check.closed_value_refusal`), so a
     document's `enum:` output lands through the variant it chose, never through its number:
-    the number is the document's own and means nothing to a platform. A member arrives as
-    itself (it has a `name`), or as the number the lowering keeps it as, read back through the
-    document's own table. Any other output is what it is.
+    the number is the document's own and means nothing to a platform. A member arrives as an
+    object of the lowering or as the number the lowering keeps it as; either way it is read
+    back through the document's own table, by its NUMBER. Any other output is what it is.
 
     ⚠ Before this a member was compared with the map's keys as it came -- an object of the
     process that played the design -- and matched none: an enumeration-typed output passed
     `check` and left every case of `verify` unjudged.
+
+    ⚠ Not by the member's own `name`: a lowering spells a member its language's way (a
+    variant declared `Lit_On` is the member `LIT_ON`), and that spelling is not the
+    document's. Measured 2026-10-14: with a mixed-case variant `check` passed and every case
+    of `verify` was unjudged, "the binding's map has no entry" for the upper-cased name.
+    The member's name is the answer only when the table has no variant numbered so.
     """
     if not (sce_type or "").startswith("enum:") or value is None:
         return value
+    held = getattr(value, "value", value)
+    if isinstance(held, int) and not isinstance(held, bool) and variants:
+        for variant, number in variants.items():
+            if number == held:
+                return variant
     name = getattr(value, "name", None)
     if isinstance(name, str):
         return name
-    if isinstance(value, int) and not isinstance(value, bool) and variants:
-        for variant, number in variants.items():
-            if number == value:
-                return variant
     return value
 
 

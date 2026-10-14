@@ -21,13 +21,14 @@ Every case that must be refused is paired with the nearest one that must not be.
 from __future__ import annotations
 
 import copy
+import unittest
 
 import yaml
 
 from sce_author.check import PackError, platform_table, read_binding
 from sce_author.landing import PLATFORM_MAP
 from sce_author.scaffold import draft
-from sce_author.verify import verify
+from sce_author.verify import _default_codegen, verify
 
 from tests.test_refusals_actually_fire import BINDING, CONVENTIONS, DOCUMENT, MODEL, Fixture
 
@@ -170,6 +171,24 @@ class TheCheckJudgesWhatTheDocumentProduces(Fixture):
         own = {"DARK": "OFF", "LIT": "ON"}
         self.assertEqual([], self.bind_with(lamp_rule(map=own), enumerated(on="LIT", off="DARK"),
                                             variants=("DARK", "LIT")))
+
+    @unittest.skipUnless(_default_codegen().exists(), "the product's code generator is not built")
+    def test_a_variant_lands_by_the_name_the_document_declares_not_the_lowerings(self):
+        """⚠ A lowering spells a member its language's way: a variant declared `Lit_On` is
+        the member `LIT_ON` of the played design. The name that lands is the document's, read
+        back through its own table by number. Taken from the member, `check` passed this
+        binding and `verify` judged no case: "the binding's map has no entry for 'LIT_ON'"."""
+        own = {"Dark_Off": "OFF", "Lit_On": "ON"}
+        document = enumerated(on="Lit_On", off="Dark_Off")
+        self.assertEqual([], self.bind_with(lamp_rule(map=own), document,
+                                            variants=("Dark_Off", "Lit_On")))
+        result = verify(self.pack(), self.root / "fixture.binding.yaml")
+        self.assertTrue(result.ran, result.refusal)
+        said = [r.refusal for r in result.results if r.refusal]
+        self.assertEqual([], said)
+        self.assertEqual(0, result.unjudged)
+        self.assertGreater(result.passed, 0)
+        self.assertEqual(0, result.failed)
 
     def test_a_text_the_document_names_its_values_by_is_the_documents_own(self):
         self.assertEqual([], self.bind_with(lamp_rule(map={"off": "OFF", "on": "ON"}), DOCUMENT))
