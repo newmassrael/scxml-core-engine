@@ -158,6 +158,9 @@ use sce_rust_tests::integration::static_datamodel::static_state_algorithm_sm::{
 use sce_rust_tests::integration::static_datamodel::static_string_capacity_sm::{
     StaticStringCapacityPersist, StaticStringCapacityPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_text_record_sm::{
+    StaticTextRecordPersist, StaticTextRecordPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_timers_sm::{
     StaticTimersPersist, StaticTimersPolicy,
 };
@@ -851,6 +854,20 @@ fn static_state_algorithm_hands_state_to_an_algorithm_and_takes_it_back() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_state_algorithm.json"
+        ),
+    );
+}
+
+// A statechart hands the standard text algorithms the record and the list of
+// records it holds, whose text is bounded, and takes back what they return: a
+// text past the bound is refused where the payload is taken, the state as it was.
+#[test]
+fn static_text_record_hands_bounded_text_to_an_algorithm_and_takes_it_back() {
+    replay(
+        Engine::new(StaticTextRecordPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_text_record.json"
         ),
     );
 }

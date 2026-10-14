@@ -86,6 +86,9 @@ STD_ALGORITHMS+=(merge/hlc_timestamp merge/hlc_compare merge/hlc_send merge/hlc_
 STD_ALGORITHMS+=(merge/lww_cell merge/lww_write)
 STD_ALGORITHMS+=(merge/rga_node merge/rga_gone merge/rga_insert merge/rga_holds merge/rga_remove)
 STD_ALGORITHMS+=(merge/orset_entry merge/orset_union merge/orset_live merge/orset_observed)
+# The standard text rules static_text_record hands a record that holds text, and
+# the record's own schema.
+STD_ALGORITHMS+=(text/text_slot text/text_slot_latest text/text_slot_retitled text/text_slot_holds)
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
