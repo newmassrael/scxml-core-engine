@@ -6,10 +6,13 @@
 # The owner can ask, with a request, for every requirement of the list it makes to be issued a new
 # id (`request_generation`'s `fresh_ids`, ADR 0012). The ask travels: the registration keeps it on
 # the request (and it is an input of the key, so a press that asked is not the press that did not),
-# the request says it in its record only when it was made, the runner hands it to the generator in
-# the job, and the command both takes it and says it back. Each case below takes one of those away
-# and must make a test of `sce-works/tests/{requests,request_commands}.rs` or
-# `app-core/tests/runner.rs` red.
+# the request says it in its record only when it was made, and the command both takes it and says
+# it back. Each case below takes one of those away and must make a test of
+# `sce-works/tests/{requests,request_commands}.rs` red.
+#
+# What an application's runner does with the ask (hands it to the generator in the job, and fails
+# the request whose list carries an id the owner asked to retire) is judged where the runner is:
+# it left for the workbench's own repository, and what took it away went with it.
 #
 # ⚠ A mutated tree is built under `-D warnings`, so every case keeps each binding it had in
 # use: a mutation that stops reading one is an unused-variable ERROR, the tree does not
@@ -18,20 +21,14 @@
 # Anchors are literal slices of the source; an edit that moves one is reported INCONCLUSIVE with
 # the anchor quoted, never as a pass.
 
-mutation_tests -p sce-works --test requests --test request_commands -p sce-app-core --test runner
-mutation_targets sce-works/src/store/request_store.rs sce-works/src/requests.rs app-core/src/runner.rs sce-works/src/commands.rs
-mutation_oracles sce-works/tests/requests.rs app-core/tests/runner.rs sce-works/tests/request_commands.rs
+mutation_tests -p sce-works --test requests --test request_commands
+mutation_targets sce-works/src/store/request_store.rs sce-works/src/requests.rs sce-works/src/commands.rs
+mutation_oracles sce-works/tests/requests.rs sce-works/tests/request_commands.rs
 
 mutation_case "a press that asked is taken for the press that did not" <<'PY'
 edit("sce-works/src/store/request_store.rs",
      "            if same.inputs != registration.expect || same.fresh_ids != fresh_ids {",
      "            if same.inputs != registration.expect {")
-PY
-
-mutation_case "a list that carries an id the owner asked to retire fails the request" <<'PY'
-edit("app-core/src/runner.rs",
-     "                    if refused.kind == \"check-refused\"\n                        || refused.kind == \"fresh-ids-not-issued\" =>",
-     "                    if refused.kind == \"check-refused\" =>")
 PY
 
 mutation_case "a request does not keep what the owner asked" <<'PY'
@@ -44,12 +41,6 @@ mutation_case "a request that asked for nothing writes the ask all the same" <<'
 edit("sce-works/src/requests.rs",
      "    #[serde(default, skip_serializing_if = \"std::ops::Not::not\")]\n    pub fresh_ids: bool,",
      "    #[serde(default)]\n    pub fresh_ids: bool,")
-PY
-
-mutation_case "the generator is not told what the owner asked" <<'PY'
-edit("app-core/src/runner.rs",
-     "            fresh_ids: view.request.fresh_ids,",
-     "            fresh_ids: false,")
 PY
 
 mutation_case "the command does not pass the ask on to the registration" <<'PY'

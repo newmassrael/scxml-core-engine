@@ -95,8 +95,8 @@ generator and how to point at it, `sce-work`, each Python module of `sce_author/
 is not installed). An application that starts an AI client with this server asks first, so that
 a server that cannot start is told to the owner in these words and not as an AI that never
 answers. It goes with no other option. That file is the one list of what the server needs of its
-Python: the workbench's `.deb` declares a package for each (`app/src-tauri/tauri.conf.json`), and
-`scripts/verify_installed_app.sh` holds the `.deb` that was built to it.
+Python: the workbench (the `sce-spec-workbench` repository, which builds against this one at one
+revision) declares a package for each in its `.deb` and holds the `.deb` it built to this file.
 
 The launcher and MCP server run locally, but the AI client may send the prose,
 SCXML, tool results, and pseudocode to its model service. Local MCP does not
@@ -1122,16 +1122,18 @@ The review artefact follows the kind's shape.
 `works_list`, `works_read`, `works_save_model`, `works_save_requirements` and
 the three that take, finish and give up a generation (`works_begin_generation`,
 `works_finish_generation`, `works_fail_generation`)
-connect this server to the application (`app/`, `app-core/`). The owner writes the specification there and
+connect this server to the application (the `sce-spec-workbench` repository). The owner writes the
+specification there and
 asks an AI client to model it; the client reads the text from the work, writes
 and checks the model as above, and saves it back, where the owner sees the
 figures SCE draws of it beside their text. They do it by running `sce-work`,
-the application's own command layer, and never by opening the folder: the
+the works folder's own command layer (`sce-works`, which the application links
+too), and never by opening the folder: the
 desktop application and this server both save, a save is a compare-and-swap on
 the revision the writer read under a lock, and a second implementation of that
 here would be a second definition of when two saves conflict. `sce-work` is
 found as `SCE_WORK` names it, else `target/debug/sce-work` of the tree
-(`cargo build -p sce-app-core --features cli --bin sce-work`), and a bundle
+(`cargo build -p sce-works --features cli --bin sce-work`), and a bundle
 carries it when packaged with `--work PATH`. The works folder is the one the
 application opens (`SCE_WORKS_DIR`, else the per-user data directory).
 

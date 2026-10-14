@@ -141,13 +141,6 @@ const THE_SCRIPT_IS_THE_SUBJECT: &[(&str, &str)] = &[
          paraphrase would not be that lexicon but a different one",
     ),
     (
-        "app/ui/src/i18n.ts",
-        "holds the workbench screen's Korean strings, whose spellings ARE \
-         the locale a Korean reader is shown: a translation is checked by \
-         reading it, which an escape would hide, and an English paraphrase \
-         would be the English table a second time, not the Korean one",
-    ),
-    (
         "tools/authoring/sce_author/views.py",
         "holds the table, timeline and simulator pages' Korean strings, \
          whose spellings ARE the locale a Korean reader is shown, beside the \

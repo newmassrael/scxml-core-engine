@@ -3,7 +3,6 @@
 import json
 import os
 import pathlib
-import re
 import sys
 import tempfile
 import unittest
@@ -249,31 +248,3 @@ class WorkbenchScope(unittest.TestCase):
             "companions_text": [{"name": "shared.xml", "text": template}],
         })
         self.assertFalse(answer.get("isError", False), answer["content"][0]["text"][:400])
-
-    def test_the_tools_a_generation_may_use_are_the_ones_the_application_approves(self):
-        # The application names these in Rust, to approve them unattended and to enable them in
-        # the client, and this server names them again to advertise and to refuse the rest. Two
-        # lists kept by hand: they are the same one only for as long as this test says so.
-        source = (pathlib.Path(__file__).resolve().parents[3]
-                  / "app-core" / "src" / "client_run.rs").read_text(encoding="utf-8")
-        declared = re.search(r"pub const AUTHOR_TOOLS: \[&str; \d+\] = \[(.*?)\];", source, re.S)
-        self.assertIsNotNone(declared, "AUTHOR_TOOLS is not where this test looks for it")
-        approved = set(re.findall(r'"([a-z_]+)"', declared.group(1)))
-        self.assertEqual(approved, set(mcp.WORKBENCH_TOOLS))
-
-    def test_the_variable_every_client_sets_is_the_one_that_scopes_this_server(self):
-        # The application tells the server which work a run is for by a variable it names in Rust
-        # (`client_run::scoped_to`, for Claude Code, Codex and a model server alike), and this
-        # server reads one by name. A name that drifted on one side leaves a server that answers
-        # for every work of the folder and says nothing: the guard of a file named in a document
-        # and the folder the generator is held to are both behind it.
-        source = (pathlib.Path(__file__).resolve().parents[3]
-                  / "app-core" / "src" / "client_run.rs").read_text(encoding="utf-8")
-        declared = re.search(r'const WORK_SCOPE: &str = "([A-Z_]+)";', source)
-        self.assertIsNotNone(declared, "WORK_SCOPE is not where this test looks for it")
-        with patch.dict(os.environ):
-            os.environ.pop("SCE_AUTHOR_WORK", None)
-            os.environ[declared.group(1)] = "assigned-work"
-            answer = mcp.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
-        self.assertEqual(mcp.WORKBENCH_TOOLS,
-                         {t["name"] for t in answer["result"]["tools"]})

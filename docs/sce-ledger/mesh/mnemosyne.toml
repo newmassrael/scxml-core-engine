@@ -197,15 +197,11 @@ scan_exclusions = [
     "backends/",
     "sce-build/",
     "tests/",
-    # The specification workbench (`app-core/` and `app/`): no Mesh code and, measured
-    # 2026-10-03 over its 23 Rust sources, no `§` citation of any ledger.
-    "app-core/",
-    "app/",
-    # The works folder (`sce-works/`), which the workbench links and the authoring MCP
-    # reaches through `sce-work`: no Mesh code. Measured 2026-10-14 over its 48 Rust
-    # sources: the one file with a `§` is the generated request machine, whose section marks
-    # the generator's templates write (the Accepted Subset's 2.15, W3C's 5.10), as when it
-    # lived in `app-core/`.
+    # The works folder (`sce-works/`), which the workbench (a repository of its own) links
+    # and the authoring MCP reaches through `sce-work`: no Mesh code. Measured 2026-10-14
+    # over its 48 Rust sources: the one file with a `§` is the generated request machine,
+    # whose section marks the generator's templates write (the Accepted Subset's 2.15, W3C's
+    # 5.10).
     "sce-works/",
     # The judgment of a revision of a requirement list (`sce-revision/`): no Mesh code and,
     # measured 2026-10-09 over its 4 Rust sources, no `§` citation of any ledger.

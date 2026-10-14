@@ -3,9 +3,10 @@
 The server is the authority on what it needs, and other places have to agree with it: the question
 an application asks before it starts the server (`--check`), the packages an installer declares
 (the workbench's `.deb`), and the packages a CI machine is given to try the installer with. They
-agree because each reads this list or is held to it (`tests/test_the_installer_declares_what_the_
-server_needs.py`, `scripts/verify_installed_app.sh`), and not because somebody copied it: a list
-written in four places is four lists, and the one that is out of date reads like the others.
+agree because each reads this list or is held to it (the workbench, a repository of its own that
+builds against this one at one revision, holds its `.deb` and its CI machine to this file), and
+not because somebody copied it: a list written in four places is four lists, and the one that is
+out of date reads like the others.
 """
 
 from __future__ import annotations
