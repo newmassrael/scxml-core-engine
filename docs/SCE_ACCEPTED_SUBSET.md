@@ -5316,8 +5316,24 @@ seven drivers are held to that without any of the other six having to run in the
 world. `a_world_run_is_what_every_backend_replays.rs` holds the committed files to
 the run and writes them again when asked (`SCE_WORLD_SCENARIOS=write`); the expected
 values are what the Rust engine did, and the same test holds the run to oracles that
-read the network and not the copies. A machine that waits on a clock is not recorded
-this way yet: its record would have to hold when its time moved.
+read the network and not the copies. A machine that waits on a clock is recorded
+with its waits: the world's time that moved between two events a machine took is a
+step of its own (`advance_ms`, `Taken::advance_ms`), written when the machine is next
+given an event or the record is read, so the three scenarios of `presence_peer`
+(`presence_peer_alice.json`, `presence_peer_bob.json`, `presence_peer_server.json`)
+hold the hub's delayed `presence.expire` as the wait it came due in. A wait is one
+step however many times the world's time moved in it, so a delayed send whose
+delivery arms another that falls due in the same wait is not replayed as the world
+ran it; the machines of this world arm a delayed send from an event and none from a
+delivery. A run on the Interpreter's wall clock needs every timer that changes what a
+step reads half a second or more from that step, which the afternoon of
+`presence_peer` is chosen to keep (a copy's own expiries are all for entries the hub's
+`presence.left` has already ended, and change nothing wherever they fall). The world
+reaches a hub's many copies by `World::topic`, one name a machine sends to that every
+subscriber receives (`#room`), the way a Zenoh key or a DDS topic does; the copies are
+lost, repeated and delayed by each subscriber's own link, and one on a link that is
+down is not sent again, which a soft-state document such as `presence_peer` repairs by
+its next heartbeat.
 
 The to-do afternoon includes changes a link dropped for good, which no retry
 repairs, and the copies finding them again: the host raises `todo.resync` on a copy

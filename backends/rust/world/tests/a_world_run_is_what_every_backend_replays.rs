@@ -43,6 +43,11 @@ const TODO_PUBLISHED: &[&str] = &[
     "refusals",
 ];
 
+/// The variables a copy of the presence list publishes.
+const PRESENCE_PUBLISHED: &[&str] = &[
+    "node", "hub", "ttl", "lease", "online", "serial", "lost", "refusals",
+];
+
 /// The variables a copy of the sheet publishes.
 const SHEET_PUBLISHED: &[&str] = &[
     "node", "hub", "clock", "cells", "rows", "gone", "cols", "goneCols", "lamport", "orphans",
@@ -92,6 +97,9 @@ fn step_of(taken: &Taken, published: &[&str]) -> Value {
         if taken.dropped {
             step.insert("dropped".into(), json!(true));
         }
+    }
+    if taken.advance_ms > 0 {
+        step.insert("advance_ms".into(), json!(taken.advance_ms));
     }
     step.insert(
         "expect".into(),
@@ -314,6 +322,102 @@ fn a_morning_of_the_shared_sheet_is_three_scenarios() {
                 &about("A morning of a shared sheet", who),
                 &record,
                 SHEET_PUBLISHED,
+            ),
+        );
+    }
+}
+
+/// How long the hub keeps an entry in the afternoon, and how much longer a copy does.
+/// The times of the afternoon are chosen against these: nothing the hub's own timer
+/// changes is due within half a second of a step that reads it, which the Interpreter,
+/// whose scheduler runs on the wall clock, needs of a scenario.
+const AFTERNOON_LEASE: presence::Lease = presence::Lease {
+    ttl_ms: 2_000,
+    slack_ms: 1_000,
+};
+
+/// An afternoon of the presence list: two people say they are here, one goes on for a
+/// while and one does not, both are let go when their heartbeats run out, and one comes
+/// back. The world's time is what moves the hub's expiries, so each copy's record holds
+/// the waits as well as the events.
+fn presence_afternoon() -> World {
+    let names = ["alice", "bob"];
+    let mut world = presence::presence_world(3, &names, 20, AFTERNOON_LEASE, true);
+    let holds = |world: &World| -> Vec<u32> {
+        presence::who_the_hub_holds(world, 2_000)
+            .into_keys()
+            .collect()
+    };
+    let (alice, bob) = (1, 2);
+
+    presence::beat(&mut world, "alice");
+    presence::beat(&mut world, "bob");
+    world.advance_ms(700);
+    presence::beat(&mut world, "alice");
+    world.advance_ms(700);
+    presence::beat(&mut world, "alice");
+    world.advance_ms(100);
+    assert_eq!(holds(&world), [alice, bob]);
+
+    // Bob's heartbeat reached the hub at 20 ms, so he is let go at 2_020.
+    world.advance_ms(600);
+    assert_eq!(holds(&world), [alice]);
+    // And alice, whose last reached it at 1_420, at 3_420.
+    world.advance_ms(1_400);
+    assert!(holds(&world).is_empty());
+
+    world.advance_ms(500);
+    presence::beat(&mut world, "bob");
+    world.advance_ms(500);
+    assert_eq!(holds(&world), [bob]);
+    world.advance_ms(3_100);
+    assert!(holds(&world).is_empty());
+    world
+}
+
+#[test]
+fn an_afternoon_of_the_presence_list_is_three_scenarios() {
+    let mut world = presence_afternoon();
+    // What the hub holds is what its heartbeats and the clock say, at the end as in the
+    // middle (above), and every copy agrees that nobody is left.
+    for who in ["alice", "bob", "server"] {
+        assert!(presence::entries_of(&mut world, who).is_empty(), "{who}");
+        let variables = presence::variables_of(&mut world, who);
+        assert_eq!(variables["refusals"], json!(0), "{who} refused nothing");
+        assert_eq!(variables["lost"], json!(0), "{who} lost nothing");
+    }
+    assert_eq!(
+        presence::renewals_at_the_hub(&world, 2_000).len(),
+        5,
+        "every heartbeat the hub was given renewed an entry"
+    );
+    assert!(world.host_errors().is_empty());
+
+    for who in ["alice", "bob", "server"] {
+        let record = world.record_of::<presence::Presence>(who);
+        assert!(
+            record.len() > 5,
+            "{who} took part in the afternoon: {} steps",
+            record.len()
+        );
+        if who == "server" {
+            // What the hub's own timers change is half a second or more from every
+            // step. A copy's timers are all for entries that the hub's word has ended
+            // by the time they are due, so they change nothing wherever they fall.
+            for taken in &record {
+                assert!(
+                    taken.next_due_ms.unwrap_or(u64::MAX) >= 500,
+                    "a step of the hub stands within half a second of a timer: {taken:?}"
+                );
+            }
+        }
+        hold(
+            &format!("presence_peer_{who}"),
+            &scenario_of(
+                "presence_peer",
+                &about("An afternoon of a presence list", who),
+                &record,
+                PRESENCE_PUBLISHED,
             ),
         );
     }

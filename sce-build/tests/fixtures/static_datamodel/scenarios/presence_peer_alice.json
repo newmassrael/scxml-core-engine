@@ -1,0 +1,29 @@
+{
+  "machine": "presence_peer",
+  "about": "An afternoon of a presence list, as alice took part in it: every event alice was given, by its host or by a peer, in the order it took them, with what it held and what it sent its peers after each. Written by backends/rust/world/tests/a_world_run_is_what_every_backend_replays.rs from a run of the Rust machines (SCE_WORLD_SCENARIOS=write) and not by hand: the expected values are what the Rust engine did, which that test holds to oracles that read the network, and every other backend is held to them here.",
+  "steps": [
+    {"expect":{"sent":[],"state":"open","variables":{"hub":false,"lease":0,"lost":0,"node":0,"online":[],"refusals":0,"serial":0,"ttl":0}}},
+    {"data":{"hub":false,"node":1,"slack":1000,"ttl":2000},"event":"presence.join","expect":{"sent":[],"state":"open","variables":{"hub":false,"lease":3000,"lost":0,"node":1,"online":[],"refusals":0,"serial":0,"ttl":2000}}},
+    {"data":{"now":"0"},"event":"presence.beat","expect":{"sent":[{"data":{"at":"0","client":1},"event":"presence.alive","target":"#server"}],"state":"open","variables":{"hub":false,"lease":3000,"lost":0,"node":1,"online":[],"refusals":0,"serial":0,"ttl":2000}}},
+    {"advance_ms":40,"expect":{"sent":[],"state":"open","variables":{"hub":false,"lease":3000,"lost":0,"node":1,"online":[],"refusals":0,"serial":0,"ttl":2000}}},
+    {"data":{"client":1,"gen":0,"last":"0"},"event":"presence.seen","expect":{"sent":[],"state":"open","variables":{"hub":false,"lease":3000,"lost":0,"node":1,"online":[{"client":1,"gen":1,"last":"0"}],"refusals":0,"serial":1,"ttl":2000}}},
+    {"data":{"client":2,"gen":0,"last":"0"},"event":"presence.seen","expect":{"sent":[],"state":"open","variables":{"hub":false,"lease":3000,"lost":0,"node":1,"online":[{"client":1,"gen":1,"last":"0"},{"client":2,"gen":2,"last":"0"}],"refusals":0,"serial":2,"ttl":2000}}},
+    {"advance_ms":660,"expect":{"sent":[],"state":"open","variables":{"hub":false,"lease":3000,"lost":0,"node":1,"online":[{"client":1,"gen":1,"last":"0"},{"client":2,"gen":2,"last":"0"}],"refusals":0,"serial":2,"ttl":2000}}},
+    {"data":{"now":"700"},"event":"presence.beat","expect":{"sent":[{"data":{"at":"700","client":1},"event":"presence.alive","target":"#server"}],"state":"open","variables":{"hub":false,"lease":3000,"lost":0,"node":1,"online":[{"client":1,"gen":1,"last":"0"},{"client":2,"gen":2,"last":"0"}],"refusals":0,"serial":2,"ttl":2000}}},
+    {"advance_ms":40,"expect":{"sent":[],"state":"open","variables":{"hub":false,"lease":3000,"lost":0,"node":1,"online":[{"client":1,"gen":1,"last":"0"},{"client":2,"gen":2,"last":"0"}],"refusals":0,"serial":2,"ttl":2000}}},
+    {"data":{"client":1,"gen":0,"last":"700"},"event":"presence.seen","expect":{"sent":[],"state":"open","variables":{"hub":false,"lease":3000,"lost":0,"node":1,"online":[{"client":2,"gen":2,"last":"0"},{"client":1,"gen":3,"last":"700"}],"refusals":0,"serial":3,"ttl":2000}}},
+    {"advance_ms":660,"expect":{"sent":[],"state":"open","variables":{"hub":false,"lease":3000,"lost":0,"node":1,"online":[{"client":2,"gen":2,"last":"0"},{"client":1,"gen":3,"last":"700"}],"refusals":0,"serial":3,"ttl":2000}}},
+    {"data":{"now":"1400"},"event":"presence.beat","expect":{"sent":[{"data":{"at":"1400","client":1},"event":"presence.alive","target":"#server"}],"state":"open","variables":{"hub":false,"lease":3000,"lost":0,"node":1,"online":[{"client":2,"gen":2,"last":"0"},{"client":1,"gen":3,"last":"700"}],"refusals":0,"serial":3,"ttl":2000}}},
+    {"advance_ms":40,"expect":{"sent":[],"state":"open","variables":{"hub":false,"lease":3000,"lost":0,"node":1,"online":[{"client":2,"gen":2,"last":"0"},{"client":1,"gen":3,"last":"700"}],"refusals":0,"serial":3,"ttl":2000}}},
+    {"data":{"client":1,"gen":0,"last":"1400"},"event":"presence.seen","expect":{"sent":[],"state":"open","variables":{"hub":false,"lease":3000,"lost":0,"node":1,"online":[{"client":2,"gen":2,"last":"0"},{"client":1,"gen":4,"last":"1400"}],"refusals":0,"serial":4,"ttl":2000}}},
+    {"advance_ms":600,"expect":{"sent":[],"state":"open","variables":{"hub":false,"lease":3000,"lost":0,"node":1,"online":[{"client":2,"gen":2,"last":"0"},{"client":1,"gen":4,"last":"1400"}],"refusals":0,"serial":4,"ttl":2000}}},
+    {"data":{"client":2,"last":"0"},"event":"presence.left","expect":{"sent":[],"state":"open","variables":{"hub":false,"lease":3000,"lost":0,"node":1,"online":[{"client":1,"gen":4,"last":"1400"}],"refusals":0,"serial":4,"ttl":2000}}},
+    {"advance_ms":1400,"expect":{"sent":[],"state":"open","variables":{"hub":false,"lease":3000,"lost":0,"node":1,"online":[{"client":1,"gen":4,"last":"1400"}],"refusals":0,"serial":4,"ttl":2000}}},
+    {"data":{"client":1,"last":"1400"},"event":"presence.left","expect":{"sent":[],"state":"open","variables":{"hub":false,"lease":3000,"lost":0,"node":1,"online":[],"refusals":0,"serial":4,"ttl":2000}}},
+    {"advance_ms":600,"expect":{"sent":[],"state":"open","variables":{"hub":false,"lease":3000,"lost":0,"node":1,"online":[],"refusals":0,"serial":4,"ttl":2000}}},
+    {"data":{"client":2,"gen":0,"last":"4000"},"event":"presence.seen","expect":{"sent":[],"state":"open","variables":{"hub":false,"lease":3000,"lost":0,"node":1,"online":[{"client":2,"gen":5,"last":"4000"}],"refusals":0,"serial":5,"ttl":2000}}},
+    {"advance_ms":2000,"expect":{"sent":[],"state":"open","variables":{"hub":false,"lease":3000,"lost":0,"node":1,"online":[{"client":2,"gen":5,"last":"4000"}],"refusals":0,"serial":5,"ttl":2000}}},
+    {"data":{"client":2,"last":"4000"},"event":"presence.left","expect":{"sent":[],"state":"open","variables":{"hub":false,"lease":3000,"lost":0,"node":1,"online":[],"refusals":0,"serial":5,"ttl":2000}}},
+    {"advance_ms":1560,"expect":{"sent":[],"state":"open","variables":{"hub":false,"lease":3000,"lost":0,"node":1,"online":[],"refusals":0,"serial":5,"ttl":2000}}}
+  ]
+}
