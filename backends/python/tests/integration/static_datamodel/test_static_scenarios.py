@@ -338,6 +338,13 @@ def test_a_statechart_hands_its_state_to_an_algorithm_and_takes_it_back() -> Non
     replay("static_state_algorithm")
 
 
+# A statechart hands the standard text algorithms the record and the list of
+# records it holds, whose text is bounded, and takes back what they return: a
+# text past the bound is refused where the payload is taken, the state as it was.
+def test_a_statechart_hands_bounded_text_to_an_algorithm_and_takes_it_back() -> None:
+    replay("static_text_record")
+
+
 # An element is read by its index, and an index outside the list is a failure.
 def test_a_list_element_is_read_by_its_index() -> None:
     replay("static_list_index")
