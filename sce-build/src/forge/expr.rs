@@ -5450,6 +5450,18 @@ fn emit_cpp(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprErro
             });
         }
     }
+    // Push-down: `len(x)` is a `size_t`, so against a signed integer it is a sign
+    // comparison the build refuses under `-Werror` (`i < len(xs)` with `i: int64`).
+    // In a signed context the length is cast to that width where the context is
+    // known, as the Rust, Go and C pushes-down of the same builtin do.
+    if let ExprKind::Call { callee, args, .. } = &expr.kind {
+        if is_len_builtin(callee, args) && matches!(expr.ty, InferredType::UntypedInt) {
+            if let InferredType::Int { signed: true, bits } = expected {
+                let size = format!("({}).size()", emit_cpp(&args[0], InferredType::Unknown)?);
+                return Ok(format!("static_cast<std::int{bits}_t>({size})"));
+            }
+        }
+    }
     let raw = cpp_emit_node(expr)?;
     Ok(cpp_coerce(raw, expr.ty, expected, expr))
 }
@@ -8656,6 +8668,19 @@ fn emit_c(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError>
             } else {
                 format!("{}{inner}", cpp_unary(*op))
             });
+        }
+    }
+    // Push-down: `len(x)` is a `size_t`, so against a signed integer it is a sign
+    // comparison C refuses under `-Werror` (`i < len(xs)` with `i: int64`). In a
+    // signed context the length is cast to that width where the context is known,
+    // as the Rust and Go push-downs of the same builtin do; an unsigned one meets
+    // `size_t` without a diagnostic and is left as it is written.
+    if let ExprKind::Call { callee, args, .. } = &expr.kind {
+        if is_len_builtin(callee, args) && matches!(expr.ty, InferredType::UntypedInt) {
+            if let InferredType::Int { signed: true, bits } = expected {
+                let len = format!("({}).len", emit_c(&args[0], InferredType::Unknown)?);
+                return Ok(format!("(int{bits}_t){len}"));
+            }
         }
     }
     let raw = c_emit_node(expr)?;
