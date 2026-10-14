@@ -419,6 +419,14 @@ pub trait StaticTarget {
     fn schema_import(&self, _schema_name: &str) -> Option<String> {
         None
     }
+    /// Whether an adapter names the type the algorithm's unit gives a record it
+    /// RETURNS, so that the unit of a schema only a return names is imported. Go
+    /// reads such a record by its fields and builds the machine's own type, so it
+    /// imports a package it would not use, which Go refuses; the others write the
+    /// type or may import more than they name.
+    fn adapter_names_returned_schema(&self) -> bool {
+        true
+    }
     /// The first construct of `model` this target has no lowering for yet,
     /// described for a refusal — or `None` when it lowers the whole document.
     /// Asked before the walk, so a target whose spellings for a construct are
@@ -3072,7 +3080,11 @@ pub fn lower(
                 callee.alias
             ))
         })?);
-        for slot in value.params.iter().chain(value.ret.iter()) {
+        let returned = value
+            .ret
+            .iter()
+            .filter(|_| target.adapter_names_returned_schema());
+        for slot in value.params.iter().chain(returned) {
             if let StaticSlot::Record(alias) | StaticSlot::RecordList(alias) = slot {
                 if let Some(line) = records
                     .get(alias)
@@ -4587,6 +4599,12 @@ impl StaticTarget for GoTarget<'_> {
             )
             .include_stmt,
         )
+    }
+    // The adapter reads what the algorithm returns by its fields (`e.Row`) and writes
+    // the machine's own type, so the package of a record only a return names would be
+    // an import nothing uses.
+    fn adapter_names_returned_schema(&self) -> bool {
+        false
     }
     // A function of the machine's file that builds the algorithm's records from the
     // machine's, calls it, and builds the machine's own record or list from what it
@@ -7559,9 +7577,15 @@ fn lower_action(
                     // A list variable takes what an imported algorithm returns
                     // as a list, whole — the judge held the right side to that
                     // call and the variable to its bound.
+                    //
+                    // A call that takes or returns state is the adapter's, not the
+                    // algorithm's own: what it gives back is the adapter's result,
+                    // which the algorithm's `_within` does not take.
+                    let state_call = rewrites.whole_state_call(&action.expr);
                     let returned_list = rewrites
                         .lists
                         .get(location)
+                        .filter(|_| state_call.is_none())
                         .and_then(|(elem, capacity)| match elem {
                             crate::forge::model::ListElemType::Scalar(elem) => {
                                 Some((elem.clone(), *capacity))
@@ -7586,11 +7610,6 @@ fn lower_action(
                     // list is held to the bound of the variable it is written to all the
                     // same: the algorithm's bound is advisory where lists grow, and the
                     // machine holds the same list wherever it runs.
-                    let state_call = if returned_list.is_none() {
-                        rewrites.whole_state_call(&action.expr)
-                    } else {
-                        None
-                    };
                     let state_list = state_call.as_ref().and_then(|(adapter, ret)| match ret {
                         StaticSlot::ScalarList(_) | StaticSlot::RecordList(_) => rewrites
                             .lists
