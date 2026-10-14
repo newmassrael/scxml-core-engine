@@ -490,8 +490,10 @@ def test_a_sync_run_is_composed_of_the_standard_sync_rules() -> None:
 # One copy of a shared to-do list, as each of the three that took part in one run
 # of it was driven: a person's copy stamps a change with its clock and sends it to
 # the hub, the hub passes a write on to every copy but the one it came from, and
-# each field of each to-do keeps the later write whatever order the writes arrive
-# in. Every step states what the copy sent its peers.
+# each to-do is an element of an add set and a tombstone set, and each of its
+# fields a stamped value, so the copies agree whatever order the writes arrive in.
+# Every step states what the copy sent its peers and the `adds`, `tombstones` and
+# `values` it holds.
 def test_a_shared_list_as_alice_took_part_in_it() -> None:
     replay("todo_peer_alice")
 
