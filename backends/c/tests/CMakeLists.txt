@@ -2751,6 +2751,12 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
                    sheet_add_row.scxml sheet_row.scxml sheet_drop_row.scxml sheet_gone.scxml
                    sheet_add_col.scxml sheet_col.scxml sheet_drop_col.scxml sheet_gone_col.scxml
     )
+    sce_generate_static_integration_c_test(presence_peer
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/presence_peer.scxml"
+        STAGE_ALSO presence_join.scxml presence_beat.scxml presence_alive.scxml
+                   presence_seen.scxml presence_left.scxml
+    )
 
     # The delayed-send machine of `static_timers` is generated once and used by two
     # executables: the scenarios below, and its own save-and-restore cases further
@@ -2846,6 +2852,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${_STATIC_SYNC_ALGORITHM_HEADERS}
         ${INTEGRATION_C_TEST_todo_peer_SOURCES}
         ${INTEGRATION_C_TEST_sheet_peer_SOURCES}
+        ${INTEGRATION_C_TEST_presence_peer_SOURCES}
         ${_STATIC_MERGE_HEADERS}
         ${INTEGRATION_C_TEST_static_text_record_SOURCES}
         ${_STATIC_TEXT_HEADERS}

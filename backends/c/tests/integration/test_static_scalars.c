@@ -84,6 +84,9 @@
 //   * `static_enum`: an enum variable starts at a variant, is compared with `===`
 //     and `!==`, takes a conditional of two variants, and is observed as the name
 //     its document declares, not as the constant C spells for it.
+//   * `presence_peer`: a machine whose entries expire by its own delayed send, so
+//     it runs on a manual clock the scenario moves on, and sends its Mesh peers
+//     through the same router.
 //   * `todo_peer`, `sheet_peer`: a machine made of the standard merge rules
 //     (sce:std/merge) holds, after every event of a run it took part in, the cells,
 //     texts, rows and clock the scenario states — a 64-bit field as the text of its
@@ -100,6 +103,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "presence_peer_sm.h"
 #include "sheet_peer_sm.h"
 #include "static_block_ends_list_sm.h"
 #include "static_block_ends_sm.h"
@@ -535,6 +539,28 @@ static const char *peers_sent(void *sm) {
     }                                                                                                                  \
     STATIC_SCENARIO_CORE(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, NULL, NULL, NULL, NULL,                           \
                          M##_init_with_clock(&sm, sce_clock_manual(0u)), M##_advance_clock, NULL, NULL)
+
+// A machine that does both: it sends to Mesh peers and its delayed sends wait on a
+// clock the scenario owns. It is started with the router installed and on a manual
+// clock in one call, because neither single-seam init installs the other: its first
+// entry can already send, and a send that arms a delayed one reads the clock.
+#define STATIC_SCENARIO_PEERED_TIMED(M, STATES, VARIABLES, TEXT, LISTS, RECORDS)                                       \
+    static void M##_start_with_router_and_clock(M##_t *sm) {                                                           \
+        sce_host_processor_registry_t wiring;                                                                          \
+        memset(&wiring, 0, sizeof(wiring));                                                                            \
+        peers_forget();                                                                                                \
+        if (!sce_host_registry_register_mesh_router(&wiring, peers_router, NULL)) {                                    \
+            (void)fprintf(stderr, "%s: FAIL - the router door refused the router\n", #M);                              \
+        }                                                                                                              \
+        M##_init_with_clock_and_host_processors(sm, sce_clock_manual(0u), &wiring);                                    \
+    }                                                                                                                  \
+    static bool M##_advance_clock(void *sm, int64_t ms) {                                                              \
+        M##_advance_time_ms((M##_t *)sm, (uint64_t)ms);                                                                \
+        M##_run((M##_t *)sm);                                                                                          \
+        return true;                                                                                                   \
+    }                                                                                                                  \
+    STATIC_SCENARIO_CORE(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, NULL, NULL, NULL, NULL,                           \
+                         M##_start_with_router_and_clock(&sm), M##_advance_clock, NULL, peers_sent)
 
 // A machine that publishes no real: DONE as above, and REAL, REAL_LIST and
 // RECORD_REAL — the readers of a real variable, of a list of reals and of a real
@@ -2045,6 +2071,36 @@ static const record_variable_t sheet_peer_records[] = {
 STATIC_SCENARIO_PEERED(sheet_peer, sheet_peer_states, sheet_peer_variables, sheet_peer_text, no_lists,
                        sheet_peer_records)
 
+// presence_peer: one copy of the list of who is online, replayed through the
+// afternoon the world simulation ran it through, as each of the three that took
+// part saw it. An entry is kept for a lease, by the machine's own delayed send,
+// so the copy runs on a manual clock the scenario's `advance_ms` steps move on,
+// and what it sends the hub and the hub the others is held send by send. The
+// last time an entry was heard from is 64-bit and crosses as its digits.
+#define PRESENCE_SEEN_FIELDS(N, E) N(client) E(last, wide_signed_digits) N(gen)
+VARIABLE_READER(presence_peer, node)
+VARIABLE_READER(presence_peer, hub)
+VARIABLE_READER(presence_peer, ttl)
+VARIABLE_READER(presence_peer, lease)
+VARIABLE_READER(presence_peer, serial)
+VARIABLE_READER(presence_peer, lost)
+VARIABLE_READER(presence_peer, refusals)
+RECORD_LIST_READER(presence_peer, online, presence_peer_record_seen_view_t, presence_peer_record_seen_t,
+                   PRESENCE_SEEN_FIELDS)
+
+static const name_value_t presence_peer_states[] = {
+    {"open", PRESENCE_PEER_STATE_OPEN},
+};
+static const variable_t presence_peer_variables[] = {
+    {"node", presence_peer_read_node},         {"hub", presence_peer_read_hub},       {"ttl", presence_peer_read_ttl},
+    {"lease", presence_peer_read_lease},       {"serial", presence_peer_read_serial}, {"lost", presence_peer_read_lost},
+    {"refusals", presence_peer_read_refusals},
+};
+static const record_variable_t presence_peer_records[] = {RECORD_LIST_ROW(presence_peer, online),
+                                                          {NULL, NULL, NULL, NULL}};
+STATIC_SCENARIO_PEERED_TIMED(presence_peer, presence_peer_states, presence_peer_variables, NULL, no_lists,
+                             presence_peer_records)
+
 // What no scenario can state, because a scenario's event carries its data or is
 // a different event: a delivery that carried no payload. Content that reads one
 // runs for a payload and for nothing else — against the zeroed buffer of a
@@ -2213,6 +2269,9 @@ int main(void) {
     bad |= sheet_peer_scenario("sheet_peer_alice", 18);
     bad |= sheet_peer_scenario("sheet_peer_bob", 19);
     bad |= sheet_peer_scenario("sheet_peer_server", 19);
+    bad |= presence_peer_scenario("presence_peer_alice", 23);
+    bad |= presence_peer_scenario("presence_peer_bob", 21);
+    bad |= presence_peer_scenario("presence_peer_server", 12);
     bad |= content_that_reads_a_payload_does_not_run_for_a_delivery_without_one();
     bad |= a_payload_enum_field_is_written_as_the_name_its_enum_declares();
     bad |= the_wire_writer_escapes_text_and_refuses_a_full_buffer();
