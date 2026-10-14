@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 1fab0875c123b16cada78bb7c68d0118503c2b233220460cbbcb60e94e05d8f0
+// source-hash: 63d8a2a082a19d1554025076e46fc78cfae3009b81ba27d2c900116fefc6df03
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -20,7 +20,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: todo_peer.scxml:30 :: _machine
+// SCE-MAP: todo_peer.scxml:57 :: _machine
 
 package todo_peer
 
@@ -35,6 +35,8 @@ import (
 	sce_hlc_receive "github.com/newmassrael/sce-go-tests/integration/static_datamodel/hlc_receive"
 	sce_hlc_send "github.com/newmassrael/sce-go-tests/integration/static_datamodel/hlc_send"
 	sce_hlc_timestamp "github.com/newmassrael/sce-go-tests/integration/static_datamodel/hlc_timestamp"
+	sce_merkle_insert "github.com/newmassrael/sce-go-tests/integration/static_datamodel/merkle_insert"
+	sce_merkle_node "github.com/newmassrael/sce-go-tests/integration/static_datamodel/merkle_node"
 	sce_orset_entry "github.com/newmassrael/sce-go-tests/integration/static_datamodel/orset_entry"
 	sce_orset_live "github.com/newmassrael/sce-go-tests/integration/static_datamodel/orset_live"
 	sce_orset_observed "github.com/newmassrael/sce-go-tests/integration/static_datamodel/orset_observed"
@@ -146,10 +148,15 @@ const (
 	TodoPeerEventErrorExecution TodoPeerEvent = 0
 	TodoPeerEventTodoEdit TodoPeerEvent = 1
 	TodoPeerEventTodoJoin TodoPeerEvent = 2
-	TodoPeerEventTodoSupersede TodoPeerEvent = 3
-	TodoPeerEventTodoWrite TodoPeerEvent = 4
+	TodoPeerEventTodoKeep TodoPeerEvent = 3
+	TodoPeerEventTodoNode TodoPeerEvent = 4
+	TodoPeerEventTodoResync TodoPeerEvent = 5
+	TodoPeerEventTodoShare TodoPeerEvent = 6
+	TodoPeerEventTodoSupersede TodoPeerEvent = 7
+	TodoPeerEventTodoVisit TodoPeerEvent = 8
+	TodoPeerEventTodoWrite TodoPeerEvent = 9
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	TodoPeerEventNull TodoPeerEvent = 5
+	TodoPeerEventNull TodoPeerEvent = 10
 )
 
 func (e TodoPeerEvent) String() string {
@@ -160,8 +167,18 @@ func (e TodoPeerEvent) String() string {
 		return "todo.edit"
 	case TodoPeerEventTodoJoin:
 		return "todo.join"
+	case TodoPeerEventTodoKeep:
+		return "todo.keep"
+	case TodoPeerEventTodoNode:
+		return "todo.node"
+	case TodoPeerEventTodoResync:
+		return "todo.resync"
+	case TodoPeerEventTodoShare:
+		return "todo.share"
 	case TodoPeerEventTodoSupersede:
 		return "todo.supersede"
+	case TodoPeerEventTodoVisit:
+		return "todo.visit"
 	case TodoPeerEventTodoWrite:
 		return "todo.write"
 	case TodoPeerEventNull:
@@ -182,7 +199,11 @@ const (
 	TodoPeerPayloadTagNone TodoPeerPayloadTag = iota
 	TodoPeerPayloadTagTodoEdit
 	TodoPeerPayloadTagTodoJoin
+	TodoPeerPayloadTagTodoKeep
+	TodoPeerPayloadTagTodoNode
+	TodoPeerPayloadTagTodoShare
 	TodoPeerPayloadTagTodoSupersede
+	TodoPeerPayloadTagTodoVisit
 	TodoPeerPayloadTagTodoWrite
 )
 
@@ -205,6 +226,37 @@ type TodoPeerTodoJoinPayload struct {
 	hub bool
 }
 
+// TodoPeerTodoKeepPayload is the NL→IR Item C1 Path A typed `_event.data`
+// payload for `todo.keep`. Internal to the package; consumers inject it via
+// the `RaiseTodoKeep` seam below (fields are unexported by design).
+type TodoPeerTodoKeepPayload struct {
+	kind uint8
+	id uint64
+	field uint64
+	wallTime int64
+	counter uint32
+	nodeId uint64
+}
+
+// TodoPeerTodoNodePayload is the NL→IR Item C1 Path A typed `_event.data`
+// payload for `todo.node`. Internal to the package; consumers inject it via
+// the `RaiseTodoNode` seam below (fields are unexported by design).
+type TodoPeerTodoNodePayload struct {
+	sender uint64
+	depth uint8
+	prefix uint64
+	hash uint32
+	reply bool
+}
+
+// TodoPeerTodoSharePayload is the NL→IR Item C1 Path A typed `_event.data`
+// payload for `todo.share`. Internal to the package; consumers inject it via
+// the `RaiseTodoShare` seam below (fields are unexported by design).
+type TodoPeerTodoSharePayload struct {
+	to uint64
+	minute uint64
+}
+
 // TodoPeerTodoSupersedePayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `todo.supersede`. Internal to the package; consumers inject it via
 // the `RaiseTodoSupersede` seam below (fields are unexported by design).
@@ -215,6 +267,16 @@ type TodoPeerTodoSupersedePayload struct {
 	counter uint32
 	nodeId uint64
 	by uint64
+}
+
+// TodoPeerTodoVisitPayload is the NL→IR Item C1 Path A typed `_event.data`
+// payload for `todo.visit`. Internal to the package; consumers inject it via
+// the `RaiseTodoVisit` seam below (fields are unexported by design).
+type TodoPeerTodoVisitPayload struct {
+	to uint64
+	depth uint8
+	prefix uint64
+	reply bool
 }
 
 // TodoPeerTodoWritePayload is the NL→IR Item C1 Path A typed `_event.data`
@@ -270,6 +332,66 @@ func RaiseTodoJoin(e *sce.Engine[TodoPeerState, TodoPeerEvent], node uint64, hub
 	})
 }
 
+// RaiseTodoKeep is the NL→IR Item C1 Path A per-event typed `_event.data`
+// inject seam for `todo.keep` — binds the event name and the payload field
+// values in one call so the name↔type pairing cannot be constructed
+// inconsistently. Twin of the Rust `RaiseTodoKeep` extension-trait method
+// and the C11 `raise_<event>_typed` entry.
+func RaiseTodoKeep(e *sce.Engine[TodoPeerState, TodoPeerEvent], kind uint8, id uint64, field uint64, wallTime int64, counter uint32, nodeId uint64) {
+	e.RaiseExternalWithMeta(sce.EventWithMetadata[TodoPeerEvent]{
+		Event:    TodoPeerEventTodoKeep,
+		Metadata: sce.EventMetadata{
+			EventType:    sce.EventTypeExternal,
+			TypedPayload: TodoPeerTodoKeepPayload{kind: kind, id: id, field: field, wallTime: wallTime, counter: counter, nodeId: nodeId, },
+			// Both carriers are filled: the typed one a native guard reads,
+			// and `Data`, which is what the script engine binds `_event.data`
+			// from. Filling only the first left an `<assign expr="_event.data.x">`
+			// on this event reading nothing, on every backend alike.
+			Data: sce.PayloadJSON(sce.Pair("kind", kind), sce.Pair("id", sce.Uint64PayloadText(id)), sce.Pair("field", sce.Uint64PayloadText(field)), sce.Pair("wallTime", sce.Int64PayloadText(wallTime)), sce.Pair("counter", counter), sce.Pair("nodeId", sce.Uint64PayloadText(nodeId))),
+		},
+	})
+}
+
+// RaiseTodoNode is the NL→IR Item C1 Path A per-event typed `_event.data`
+// inject seam for `todo.node` — binds the event name and the payload field
+// values in one call so the name↔type pairing cannot be constructed
+// inconsistently. Twin of the Rust `RaiseTodoNode` extension-trait method
+// and the C11 `raise_<event>_typed` entry.
+func RaiseTodoNode(e *sce.Engine[TodoPeerState, TodoPeerEvent], sender uint64, depth uint8, prefix uint64, hash uint32, reply bool) {
+	e.RaiseExternalWithMeta(sce.EventWithMetadata[TodoPeerEvent]{
+		Event:    TodoPeerEventTodoNode,
+		Metadata: sce.EventMetadata{
+			EventType:    sce.EventTypeExternal,
+			TypedPayload: TodoPeerTodoNodePayload{sender: sender, depth: depth, prefix: prefix, hash: hash, reply: reply, },
+			// Both carriers are filled: the typed one a native guard reads,
+			// and `Data`, which is what the script engine binds `_event.data`
+			// from. Filling only the first left an `<assign expr="_event.data.x">`
+			// on this event reading nothing, on every backend alike.
+			Data: sce.PayloadJSON(sce.Pair("sender", sce.Uint64PayloadText(sender)), sce.Pair("depth", depth), sce.Pair("prefix", sce.Uint64PayloadText(prefix)), sce.Pair("hash", hash), sce.Pair("reply", reply)),
+		},
+	})
+}
+
+// RaiseTodoShare is the NL→IR Item C1 Path A per-event typed `_event.data`
+// inject seam for `todo.share` — binds the event name and the payload field
+// values in one call so the name↔type pairing cannot be constructed
+// inconsistently. Twin of the Rust `RaiseTodoShare` extension-trait method
+// and the C11 `raise_<event>_typed` entry.
+func RaiseTodoShare(e *sce.Engine[TodoPeerState, TodoPeerEvent], to uint64, minute uint64) {
+	e.RaiseExternalWithMeta(sce.EventWithMetadata[TodoPeerEvent]{
+		Event:    TodoPeerEventTodoShare,
+		Metadata: sce.EventMetadata{
+			EventType:    sce.EventTypeExternal,
+			TypedPayload: TodoPeerTodoSharePayload{to: to, minute: minute, },
+			// Both carriers are filled: the typed one a native guard reads,
+			// and `Data`, which is what the script engine binds `_event.data`
+			// from. Filling only the first left an `<assign expr="_event.data.x">`
+			// on this event reading nothing, on every backend alike.
+			Data: sce.PayloadJSON(sce.Pair("to", sce.Uint64PayloadText(to)), sce.Pair("minute", sce.Uint64PayloadText(minute))),
+		},
+	})
+}
+
 // RaiseTodoSupersede is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `todo.supersede` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
@@ -286,6 +408,26 @@ func RaiseTodoSupersede(e *sce.Engine[TodoPeerState, TodoPeerEvent], id uint64, 
 			// from. Filling only the first left an `<assign expr="_event.data.x">`
 			// on this event reading nothing, on every backend alike.
 			Data: sce.PayloadJSON(sce.Pair("id", sce.Uint64PayloadText(id)), sce.Pair("field", sce.Uint64PayloadText(field)), sce.Pair("wallTime", sce.Int64PayloadText(wallTime)), sce.Pair("counter", counter), sce.Pair("nodeId", sce.Uint64PayloadText(nodeId)), sce.Pair("by", sce.Uint64PayloadText(by))),
+		},
+	})
+}
+
+// RaiseTodoVisit is the NL→IR Item C1 Path A per-event typed `_event.data`
+// inject seam for `todo.visit` — binds the event name and the payload field
+// values in one call so the name↔type pairing cannot be constructed
+// inconsistently. Twin of the Rust `RaiseTodoVisit` extension-trait method
+// and the C11 `raise_<event>_typed` entry.
+func RaiseTodoVisit(e *sce.Engine[TodoPeerState, TodoPeerEvent], to uint64, depth uint8, prefix uint64, reply bool) {
+	e.RaiseExternalWithMeta(sce.EventWithMetadata[TodoPeerEvent]{
+		Event:    TodoPeerEventTodoVisit,
+		Metadata: sce.EventMetadata{
+			EventType:    sce.EventTypeExternal,
+			TypedPayload: TodoPeerTodoVisitPayload{to: to, depth: depth, prefix: prefix, reply: reply, },
+			// Both carriers are filled: the typed one a native guard reads,
+			// and `Data`, which is what the script engine binds `_event.data`
+			// from. Filling only the first left an `<assign expr="_event.data.x">`
+			// on this event reading nothing, on every backend alike.
+			Data: sce.PayloadJSON(sce.Pair("to", sce.Uint64PayloadText(to)), sce.Pair("depth", depth), sce.Pair("prefix", sce.Uint64PayloadText(prefix)), sce.Pair("reply", reply)),
 		},
 	})
 }
@@ -411,6 +553,29 @@ func (r TodoPeerValueRecord) NodeId() uint64 {
 }
 
 
+// SCE Accepted Subset §2.15: a `record:Node` datamodel value.
+type TodoPeerNodeRecord struct {
+	depth uint8
+	prefix uint64
+	hash uint32
+}
+
+// Depth reports the `depth` field.
+func (r TodoPeerNodeRecord) Depth() uint8 {
+	return r.depth
+}
+
+// Prefix reports the `prefix` field.
+func (r TodoPeerNodeRecord) Prefix() uint64 {
+	return r.prefix
+}
+
+// Hash reports the `hash` field.
+func (r TodoPeerNodeRecord) Hash() uint32 {
+	return r.hash
+}
+
+
 // ── SCE Accepted Subset §2.15: calls of an algorithm that takes or returns state ──
 func sceAdapt_HlcReceive__vv(p0 TodoPeerHlcRecord, p1 TodoPeerHlcRecord, p2 int64, p3 uint64) scealgorithm.Outcome[TodoPeerHlcRecord] {
 	r, err := sce_hlc_receive.HlcReceive(sce_hlc_timestamp.HlcTimestampPayload{WallTime: p0.wallTime, Counter: p0.counter, NodeId: p0.nodeId}, sce_hlc_timestamp.HlcTimestampPayload{WallTime: p1.wallTime, Counter: p1.counter, NodeId: p1.nodeId}, p2, p3)
@@ -428,6 +593,22 @@ func sceAdapt_HlcSend__v(p0 TodoPeerHlcRecord, p1 int64, p2 uint64) scealgorithm
 	}
 	out := TodoPeerHlcRecord{wallTime: r.WallTime, counter: r.Counter, nodeId: r.NodeId}
 	return scealgorithm.Outcome[TodoPeerHlcRecord]{Value: out}
+}
+
+func sceAdapt_MerkleInsert__v(p0 []TodoPeerNodeRecord, p1 int64, p2 uint32) scealgorithm.Outcome[[]TodoPeerNodeRecord] {
+	a0 := make([]sce_merkle_node.MerkleNodePayload, len(p0))
+	for i, e := range p0 {
+		a0[i] = sce_merkle_node.MerkleNodePayload{Depth: e.depth, Prefix: e.prefix, Hash: e.hash}
+	}
+	r, err := sce_merkle_insert.MerkleInsert(a0, p1, p2)
+	if err != nil {
+		return scealgorithm.Outcome[[]TodoPeerNodeRecord]{Err: err}
+	}
+	out := make([]TodoPeerNodeRecord, len(r))
+	for i, e := range r {
+		out[i] = TodoPeerNodeRecord{depth: e.Depth, prefix: e.Prefix, hash: e.Hash}
+	}
+	return scealgorithm.Outcome[[]TodoPeerNodeRecord]{Value: out}
 }
 
 func sceAdapt_OrsetLive__vv(p0 []TodoPeerEntryRecord, p1 []TodoPeerEntryRecord) scealgorithm.Outcome[[]TodoPeerEntryRecord] {
@@ -498,7 +679,11 @@ type TodoPeerPolicy struct {
 	pendingPayloadTag TodoPeerPayloadTag
 	pendingTodoEditPayload TodoPeerTodoEditPayload
 	pendingTodoJoinPayload TodoPeerTodoJoinPayload
+	pendingTodoKeepPayload TodoPeerTodoKeepPayload
+	pendingTodoNodePayload TodoPeerTodoNodePayload
+	pendingTodoSharePayload TodoPeerTodoSharePayload
 	pendingTodoSupersedePayload TodoPeerTodoSupersedePayload
+	pendingTodoVisitPayload TodoPeerTodoVisitPayload
 	pendingTodoWritePayload TodoPeerTodoWritePayload
 
 	pendingEventData string
@@ -532,6 +717,16 @@ type TodoPeerPolicy struct {
 	vRebuilt []TodoPeerValueRecord
 	// W3C SCXML 5.2: the `held` datamodel variable.
 	vHeld TodoPeerValueRecord
+	// W3C SCXML 5.2: the `digest` datamodel variable, published (`sce:direction="out"`).
+	vDigest []TodoPeerNodeRecord
+	// W3C SCXML 5.2: the `mine` datamodel variable.
+	vMine uint32
+	// W3C SCXML 5.2: the `mixed` datamodel variable.
+	vMixed int64
+	// W3C SCXML 5.2: the `known` datamodel variable.
+	vKnown bool
+	// W3C SCXML 5.2: the `wasLive` datamodel variable.
+	vWasLive bool
 	// W3C SCXML 5.2: the `isLive` datamodel variable.
 	vIsLive bool
 	// W3C SCXML 5.2: the `present` datamodel variable.
@@ -563,6 +758,11 @@ func NewTodoPeerPolicy() TodoPeerPolicy {
 		vValues: nil,
 		vRebuilt: nil,
 		vHeld: TodoPeerValueRecord{id: 0, field: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0},
+		vDigest: nil,
+		vMine: 0,
+		vMixed: 0,
+		vKnown: false,
+		vWasLive: false,
 		vIsLive: false,
 		vPresent: false,
 		vRefusals: 0,
@@ -605,6 +805,12 @@ func (p *TodoPeerPolicy) Values() []TodoPeerValueRecord {
 	return p.vValues
 }
 
+// Digest reports what the published `digest` datamodel
+// variable holds now (W3C SCXML 5.2). Only the machine writes it.
+func (p *TodoPeerPolicy) Digest() []TodoPeerNodeRecord {
+	return p.vDigest
+}
+
 // Refusals reports what the published `refusals` datamodel
 // variable holds now (W3C SCXML 5.2). Only the machine writes it.
 func (p *TodoPeerPolicy) Refusals() uint32 {
@@ -617,6 +823,10 @@ func (p *TodoPeerPolicy) Refusals() uint32 {
 type TodoPeerInvokeParams struct {
 	VNode *uint64
 	VHub *bool
+	VMine *uint32
+	VMixed *int64
+	VKnown *bool
+	VWasLive *bool
 	VIsLive *bool
 	VPresent *bool
 	VRefusals *uint32
@@ -630,6 +840,18 @@ func (p *TodoPeerPolicy) AcceptParams(params TodoPeerInvokeParams) {
 	}
 	if params.VHub != nil {
 		p.vHub = *params.VHub
+	}
+	if params.VMine != nil {
+		p.vMine = *params.VMine
+	}
+	if params.VMixed != nil {
+		p.vMixed = *params.VMixed
+	}
+	if params.VKnown != nil {
+		p.vKnown = *params.VKnown
+	}
+	if params.VWasLive != nil {
+		p.vWasLive = *params.VWasLive
 	}
 	if params.VIsLive != nil {
 		p.vIsLive = *params.VIsLive
@@ -764,8 +986,18 @@ func (p *TodoPeerPolicy) GetEventFromName(name string) (TodoPeerEvent, bool) {
 		return TodoPeerEventTodoEdit, true
 	case "todo.join":
 		return TodoPeerEventTodoJoin, true
+	case "todo.keep":
+		return TodoPeerEventTodoKeep, true
+	case "todo.node":
+		return TodoPeerEventTodoNode, true
+	case "todo.resync":
+		return TodoPeerEventTodoResync, true
+	case "todo.share":
+		return TodoPeerEventTodoShare, true
 	case "todo.supersede":
 		return TodoPeerEventTodoSupersede, true
+	case "todo.visit":
+		return TodoPeerEventTodoVisit, true
 	case "todo.write":
 		return TodoPeerEventTodoWrite, true
 	}
@@ -853,9 +1085,21 @@ func (p *TodoPeerPolicy) PopulateEventMetadata(meta *sce.EventMetadata) {
 	case TodoPeerTodoJoinPayload:
 		p.pendingPayloadTag = TodoPeerPayloadTagTodoJoin
 		p.pendingTodoJoinPayload = v
+	case TodoPeerTodoKeepPayload:
+		p.pendingPayloadTag = TodoPeerPayloadTagTodoKeep
+		p.pendingTodoKeepPayload = v
+	case TodoPeerTodoNodePayload:
+		p.pendingPayloadTag = TodoPeerPayloadTagTodoNode
+		p.pendingTodoNodePayload = v
+	case TodoPeerTodoSharePayload:
+		p.pendingPayloadTag = TodoPeerPayloadTagTodoShare
+		p.pendingTodoSharePayload = v
 	case TodoPeerTodoSupersedePayload:
 		p.pendingPayloadTag = TodoPeerPayloadTagTodoSupersede
 		p.pendingTodoSupersedePayload = v
+	case TodoPeerTodoVisitPayload:
+		p.pendingPayloadTag = TodoPeerPayloadTagTodoVisit
+		p.pendingTodoVisitPayload = v
 	case TodoPeerTodoWritePayload:
 		p.pendingPayloadTag = TodoPeerPayloadTagTodoWrite
 		p.pendingTodoWritePayload = v
@@ -918,6 +1162,69 @@ func (p *TodoPeerPolicy) LiftTypedPayload(event TodoPeerEvent, meta *sce.EventMe
 		}
 		p.pendingTodoJoinPayload = payload
 		p.pendingPayloadTag = TodoPeerPayloadTagTodoJoin
+	case TodoPeerEventTodoKeep:
+		fields, err := sce.LiftPayload(meta.Data)
+		if err != nil {
+			return err
+		}
+		var payload TodoPeerTodoKeepPayload
+		if payload.kind, err = sce.PayloadUnsigned[uint8](fields, "kind"); err != nil {
+			return err
+		}
+		if payload.id, err = sce.PayloadUnsigned64(fields, "id"); err != nil {
+			return err
+		}
+		if payload.field, err = sce.PayloadUnsigned64(fields, "field"); err != nil {
+			return err
+		}
+		if payload.wallTime, err = sce.PayloadSigned64(fields, "wallTime"); err != nil {
+			return err
+		}
+		if payload.counter, err = sce.PayloadUnsigned[uint32](fields, "counter"); err != nil {
+			return err
+		}
+		if payload.nodeId, err = sce.PayloadUnsigned64(fields, "nodeId"); err != nil {
+			return err
+		}
+		p.pendingTodoKeepPayload = payload
+		p.pendingPayloadTag = TodoPeerPayloadTagTodoKeep
+	case TodoPeerEventTodoNode:
+		fields, err := sce.LiftPayload(meta.Data)
+		if err != nil {
+			return err
+		}
+		var payload TodoPeerTodoNodePayload
+		if payload.sender, err = sce.PayloadUnsigned64(fields, "sender"); err != nil {
+			return err
+		}
+		if payload.depth, err = sce.PayloadUnsigned[uint8](fields, "depth"); err != nil {
+			return err
+		}
+		if payload.prefix, err = sce.PayloadUnsigned64(fields, "prefix"); err != nil {
+			return err
+		}
+		if payload.hash, err = sce.PayloadUnsigned[uint32](fields, "hash"); err != nil {
+			return err
+		}
+		if payload.reply, err = sce.PayloadBool(fields, "reply"); err != nil {
+			return err
+		}
+		p.pendingTodoNodePayload = payload
+		p.pendingPayloadTag = TodoPeerPayloadTagTodoNode
+	case TodoPeerEventTodoShare:
+		fields, err := sce.LiftPayload(meta.Data)
+		if err != nil {
+			return err
+		}
+		var payload TodoPeerTodoSharePayload
+		if payload.to, err = sce.PayloadUnsigned64(fields, "to"); err != nil {
+			return err
+		}
+		if payload.minute, err = sce.PayloadUnsigned64(fields, "minute"); err != nil {
+			return err
+		}
+		p.pendingTodoSharePayload = payload
+		p.pendingPayloadTag = TodoPeerPayloadTagTodoShare
 	case TodoPeerEventTodoSupersede:
 		fields, err := sce.LiftPayload(meta.Data)
 		if err != nil {
@@ -944,6 +1251,26 @@ func (p *TodoPeerPolicy) LiftTypedPayload(event TodoPeerEvent, meta *sce.EventMe
 		}
 		p.pendingTodoSupersedePayload = payload
 		p.pendingPayloadTag = TodoPeerPayloadTagTodoSupersede
+	case TodoPeerEventTodoVisit:
+		fields, err := sce.LiftPayload(meta.Data)
+		if err != nil {
+			return err
+		}
+		var payload TodoPeerTodoVisitPayload
+		if payload.to, err = sce.PayloadUnsigned64(fields, "to"); err != nil {
+			return err
+		}
+		if payload.depth, err = sce.PayloadUnsigned[uint8](fields, "depth"); err != nil {
+			return err
+		}
+		if payload.prefix, err = sce.PayloadUnsigned64(fields, "prefix"); err != nil {
+			return err
+		}
+		if payload.reply, err = sce.PayloadBool(fields, "reply"); err != nil {
+			return err
+		}
+		p.pendingTodoVisitPayload = payload
+		p.pendingPayloadTag = TodoPeerPayloadTagTodoVisit
 	case TodoPeerEventTodoWrite:
 		fields, err := sce.LiftPayload(meta.Data)
 		if err != nil {
@@ -994,7 +1321,7 @@ func (p *TodoPeerPolicy) ClearEventMetadata() {
 // ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
 // configuration, runs its <onentry>, and its <initial> transition's content when
 // its initial state is entered by default.
-//line todo_peer.scxml:30
+//line todo_peer.scxml:57
 func (p *TodoPeerPolicy) ExecuteEntryActions(state TodoPeerState, engine *sce.Engine[TodoPeerState, TodoPeerEvent], isDefaultEntry bool) {
 	switch state {
 	default:
@@ -1007,7 +1334,7 @@ func (p *TodoPeerPolicy) ExecuteEntryActions(state TodoPeerState, engine *sce.En
 // <initial> content) when the history was taken with nothing recorded. The
 // engine asks for it by the entry set's defaultHistoryContent answer; a history
 // that restored what it recorded runs nothing.
-//line todo_peer.scxml:30
+//line todo_peer.scxml:57
 func (p *TodoPeerPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[TodoPeerState, TodoPeerEvent]) {
 	// W3C SCXML 3.10.2: no <history> in this document has default content.
 }
@@ -1015,7 +1342,7 @@ func (p *TodoPeerPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, eng
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
 // runs its <onexit>, cancels its invocations and removes it from the
 // configuration — §scxml-D-exitStates's order.
-//line todo_peer.scxml:30
+//line todo_peer.scxml:57
 func (p *TodoPeerPolicy) ExecuteExitActions(state TodoPeerState, engine *sce.Engine[TodoPeerState, TodoPeerEvent], configurationBeforeExit []TodoPeerState) {
 	// §scxml-D-exitStates orders one state's exit as onexit, then
 	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
@@ -1032,7 +1359,7 @@ func (p *TodoPeerPolicy) ExecuteExitActions(state TodoPeerState, engine *sce.Eng
 // BindCurrentEvent binds the event whose transitions are about to be selected as
 // the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
 // and not for an eventless selection, which has no event of its own.
-//line todo_peer.scxml:30
+//line todo_peer.scxml:57
 func (p *TodoPeerPolicy) BindCurrentEvent(event TodoPeerEvent, engine *sce.Engine[TodoPeerState, TodoPeerEvent]) {
 	// This document's guards never read _event, so there is nothing to bind.
 }
@@ -1042,7 +1369,7 @@ func (p *TodoPeerPolicy) BindCurrentEvent(event TodoPeerEvent, engine *sce.Engin
 // that event enables and whose guard holds. The engine walks the atomic states
 // and their ancestors and keeps the ordered set; the null event asks for
 // eventless transitions.
-//line todo_peer.scxml:30
+//line todo_peer.scxml:57
 func (p *TodoPeerPolicy) FirstEnabledTransition(state TodoPeerState, event TodoPeerEvent, engine *sce.Engine[TodoPeerState, TodoPeerEvent]) (sce.EnabledTransition[TodoPeerState, sce.HistoryID], bool) {
 	switch state {
 	case TodoPeerStateOpen:
@@ -1086,11 +1413,61 @@ func (p *TodoPeerPolicy) FirstEnabledTransition(state TodoPeerState, event TodoP
 				}, true
 			}
 		}
-		if event == TodoPeerEventErrorExecution {
+		if event == TodoPeerEventTodoKeep {
 			{
 				return sce.EnabledTransition[TodoPeerState, sce.HistoryID]{
 					Source:          state,
 					TransitionIndex: 4,
+					HasActions:      true,
+					IsInternal:      true,
+				}, true
+			}
+		}
+		if event == TodoPeerEventTodoResync {
+			{
+				return sce.EnabledTransition[TodoPeerState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 5,
+					HasActions:      true,
+					IsInternal:      true,
+				}, true
+			}
+		}
+		if event == TodoPeerEventTodoVisit {
+			{
+				return sce.EnabledTransition[TodoPeerState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 6,
+					HasActions:      true,
+					IsInternal:      true,
+				}, true
+			}
+		}
+		if event == TodoPeerEventTodoNode {
+			{
+				return sce.EnabledTransition[TodoPeerState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 7,
+					HasActions:      true,
+					IsInternal:      true,
+				}, true
+			}
+		}
+		if event == TodoPeerEventTodoShare {
+			{
+				return sce.EnabledTransition[TodoPeerState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 8,
+					HasActions:      true,
+					IsInternal:      true,
+				}, true
+			}
+		}
+		if event == TodoPeerEventErrorExecution {
+			{
+				return sce.EnabledTransition[TodoPeerState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 9,
 					HasActions:      true,
 					IsInternal:      true,
 				}, true
@@ -1102,13 +1479,13 @@ func (p *TodoPeerPolicy) FirstEnabledTransition(state TodoPeerState, event TodoP
 
 // ExecuteTransitionContent runs one transition's executable content (W3C SCXML
 // 3.13), between the microstep's exits and its entries.
-//line todo_peer.scxml:30
+//line todo_peer.scxml:57
 func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transitionIndex int, engine *sce.Engine[TodoPeerState, TodoPeerEvent]) {
 	switch source {
 	case TodoPeerStateOpen:
 		switch transitionIndex {
 		case 0:
-			//line todo_peer.scxml:84
+			//line todo_peer.scxml:122
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != TodoPeerPayloadTagTodoJoin {
@@ -1124,7 +1501,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 
 			}()
 		case 1:
-			//line todo_peer.scxml:92
+			//line todo_peer.scxml:130
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != TodoPeerPayloadTagTodoEdit {
@@ -1438,7 +1815,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 	}
 			}()
 		case 2:
-			//line todo_peer.scxml:139
+			//line todo_peer.scxml:177
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != TodoPeerPayloadTagTodoWrite {
@@ -1469,6 +1846,18 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_HlcReceive__vv(p.vClock, p.vStamp, p.vClock.wallTime, p.vNode)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='clock'>: an integer operation overflowed or failed")); return true }; p.vClock = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
+
+	}
+
+
+	if p.pendingTodoWritePayload.nodeId == p.vNode && (p.pendingTodoWritePayload.wallTime > p.vClock.wallTime || p.pendingTodoWritePayload.wallTime == p.vClock.wallTime && p.pendingTodoWritePayload.counter > p.vClock.counter) {
+
+
+	p.vClock.wallTime = p.pendingTodoWritePayload.wallTime
+
+
+
+	p.vClock.counter = p.pendingTodoWritePayload.counter
 
 	}
 
@@ -1583,10 +1972,6 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
-	}
-
-
-	if p.vHub && p.pendingTodoWritePayload.nodeId != 1 {
 
 	// W3C SCXML 6.2: send id="__send_4"
 	{
@@ -1602,20 +1987,16 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 		// `_event.data.value === 42` finds the string "42" unequal.
 		parts := make([]sce.EventDataParam, 0)
 		{
+			sceValue := int64(0)
+			parts = append(parts, sce.EventDataParam{Name: "kind", Value: sceValue})
+		}
+		{
 			sceValue := sce.Uint64PayloadText(uint64(p.pendingTodoWritePayload.id))
 			parts = append(parts, sce.EventDataParam{Name: "id", Value: sceValue})
 		}
 		{
 			sceValue := sce.Uint64PayloadText(uint64(p.pendingTodoWritePayload.field))
 			parts = append(parts, sce.EventDataParam{Name: "field", Value: sceValue})
-		}
-		{
-			sceValue := sce.Int64PayloadText(int64(p.pendingTodoWritePayload.value))
-			parts = append(parts, sce.EventDataParam{Name: "value", Value: sceValue})
-		}
-		{
-			sceValue := p.pendingTodoWritePayload.text
-			parts = append(parts, sce.EventDataParam{Name: "text", Value: sceValue})
 		}
 		{
 			sceValue := sce.Int64PayloadText(int64(p.pendingTodoWritePayload.wallTime))
@@ -1631,38 +2012,12 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 		}
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)
 		_ = eventDataStr
-	// §scxml-6.2.5: "sce:mesh" is served by the host, which
-	// declared it to this build. Dispatch rather than refuse — and take the
-	// whole send, because a processor the host serves owns delivery; falling
-	// through would also enqueue the event locally and the document would see
-	// the act twice.
+	// W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
+	// and does not change the queue.
 	{
-		hostParams := sce.WireParamsFromTypedParams(parts)
-		hostRequest := sce.HostSendRequest{
-			ProcessorType: "sce:mesh",
-			EventName:     "todo.write",
-			Target:        "#alice",
-			Content:       "",
-			Params:        hostParams,
-			SendID:        "__send_4",
-			// W3C SCXML 5.10: the payload computed above, once, for every arm.
-			EventData: eventDataStr,
-			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
-			// processed now, carried back out as a W3C child's send to its
-			// parent carries it (§scxml-6.4.1). Analysis keeps the field on
-			// every machine with a host-served send.
-			InvokeID: p.pendingEventInvokeid,
-		}
-		_, hostServed := engine.PerformHostSend(hostRequest)
-		// W3C SCXML 6.2: a declared type with no handler registered is, from
-		// the document's side, a processor the platform does not support — the
-		// act it asked for was performed by nobody. Same event as an
-		// undeclared type, so a wiring mistake cannot read as success.
-		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
-			errEvt := sce.NewPlatformError(TodoPeerEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
-			errEvt.Metadata.SendID = "__send_4"
-			engine.Raise(errEvt)
-		}
+		meta := sce.NewEventWithMetadata(TodoPeerEventTodoKeep)
+		meta.Metadata.Data = eventDataStr
+		engine.Raise(meta)
 	}
 		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
 		// <foreach> it came — the block is its own function.
@@ -1674,7 +2029,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 	}
 
 
-	if p.vHub && p.pendingTodoWritePayload.nodeId != 2 {
+	if p.vHub && p.pendingTodoWritePayload.nodeId != 1 {
 
 	// W3C SCXML 6.2: send id="__send_5"
 	{
@@ -1729,7 +2084,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 		hostRequest := sce.HostSendRequest{
 			ProcessorType: "sce:mesh",
 			EventName:     "todo.write",
-			Target:        "#bob",
+			Target:        "#alice",
 			Content:       "",
 			Params:        hostParams,
 			SendID:        "__send_5",
@@ -1761,9 +2116,97 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 	}
 	}
 
+
+	if p.vHub && p.pendingTodoWritePayload.nodeId != 2 {
+
+	// W3C SCXML 6.2: send id="__send_6"
+	{
+	// W3C SCXML 6.2: Evaluate <param> expressions at send time
+	{
+		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
+		// and its pair left out, and the message still goes; the error ends
+		// the block once it has. Read at the end of this element.
+		paramFailed := false
+		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
+		// delivered, so this is an ordered list rather than a map. The typed
+		// value is kept rather than its text — a receiver reading
+		// `_event.data.value === 42` finds the string "42" unequal.
+		parts := make([]sce.EventDataParam, 0)
+		{
+			sceValue := sce.Uint64PayloadText(uint64(p.pendingTodoWritePayload.id))
+			parts = append(parts, sce.EventDataParam{Name: "id", Value: sceValue})
+		}
+		{
+			sceValue := sce.Uint64PayloadText(uint64(p.pendingTodoWritePayload.field))
+			parts = append(parts, sce.EventDataParam{Name: "field", Value: sceValue})
+		}
+		{
+			sceValue := sce.Int64PayloadText(int64(p.pendingTodoWritePayload.value))
+			parts = append(parts, sce.EventDataParam{Name: "value", Value: sceValue})
+		}
+		{
+			sceValue := p.pendingTodoWritePayload.text
+			parts = append(parts, sce.EventDataParam{Name: "text", Value: sceValue})
+		}
+		{
+			sceValue := sce.Int64PayloadText(int64(p.pendingTodoWritePayload.wallTime))
+			parts = append(parts, sce.EventDataParam{Name: "wallTime", Value: sceValue})
+		}
+		{
+			sceValue := int64(p.pendingTodoWritePayload.counter)
+			parts = append(parts, sce.EventDataParam{Name: "counter", Value: sceValue})
+		}
+		{
+			sceValue := sce.Uint64PayloadText(uint64(p.pendingTodoWritePayload.nodeId))
+			parts = append(parts, sce.EventDataParam{Name: "nodeId", Value: sceValue})
+		}
+		eventDataStr := sce.BuildJSONFromTypedParams(parts)
+		_ = eventDataStr
+	// §scxml-6.2.5: "sce:mesh" is served by the host, which
+	// declared it to this build. Dispatch rather than refuse — and take the
+	// whole send, because a processor the host serves owns delivery; falling
+	// through would also enqueue the event locally and the document would see
+	// the act twice.
+	{
+		hostParams := sce.WireParamsFromTypedParams(parts)
+		hostRequest := sce.HostSendRequest{
+			ProcessorType: "sce:mesh",
+			EventName:     "todo.write",
+			Target:        "#bob",
+			Content:       "",
+			Params:        hostParams,
+			SendID:        "__send_6",
+			// W3C SCXML 5.10: the payload computed above, once, for every arm.
+			EventData: eventDataStr,
+			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
+			// processed now, carried back out as a W3C child's send to its
+			// parent carries it (§scxml-6.4.1). Analysis keeps the field on
+			// every machine with a host-served send.
+			InvokeID: p.pendingEventInvokeid,
+		}
+		_, hostServed := engine.PerformHostSend(hostRequest)
+		// W3C SCXML 6.2: a declared type with no handler registered is, from
+		// the document's side, a processor the platform does not support — the
+		// act it asked for was performed by nobody. Same event as an
+		// undeclared type, so a wiring mistake cannot read as success.
+		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
+			errEvt := sce.NewPlatformError(TodoPeerEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
+			errEvt.Metadata.SendID = "__send_6"
+			engine.Raise(errEvt)
+		}
+	}
+		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
+		// <foreach> it came — the block is its own function.
+		if paramFailed {
+			return
+		}
+	}
+	}
+	}
+
 			}()
 		case 3:
-			//line todo_peer.scxml:209
+			//line todo_peer.scxml:264
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != TodoPeerPayloadTagTodoSupersede {
@@ -1788,6 +2231,24 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 	p.vEntry.nodeId = p.pendingTodoSupersedePayload.nodeId
 
 
+
+	p.vKnown = false
+
+
+	// W3C SCXML 4.6: <foreach array="tombstones" item="t">, a native loop over a sce-static list
+	for _, t := range append(p.vTombstones[:0:0], p.vTombstones...) {
+		_ = t
+
+	if t.element == p.vEntry.element && t.wallTime == p.vEntry.wallTime && t.counter == p.vEntry.counter && t.nodeId == p.vEntry.nodeId {
+
+
+	p.vKnown = true
+
+	}
+
+	}
+
+
 	// SCE Accepted Subset §2.15: <sce:clear target="one">
 
 	p.vOne = p.vOne[:0]
@@ -1806,6 +2267,10 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 	}
 
 
+
+	p.vWasLive = false
+
+
 	// SCE Accepted Subset §2.15: <sce:clear target="rebuilt">
 
 	p.vRebuilt = p.vRebuilt[:0]
@@ -1822,6 +2287,11 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vRebuilt) >= 128 { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<sce:append target='rebuilt'>: the list already holds its capacity of 128")); return true }; sceValue := scealgorithm.ElementOf(p.vRebuilt, v); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<sce:append target='rebuilt'>: an integer operation overflowed or failed")); return true }; p.vRebuilt = append(p.vRebuilt, sceValue); return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
+
+	} else {
+
+
+	p.vWasLive = true
 
 	}
 
@@ -1846,9 +2316,125 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 	}
 
 
+	if !p.vKnown {
+
+	// W3C SCXML 6.2: send id="__send_7"
+	{
+	// W3C SCXML 6.2: Evaluate <param> expressions at send time
+	{
+		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
+		// and its pair left out, and the message still goes; the error ends
+		// the block once it has. Read at the end of this element.
+		paramFailed := false
+		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
+		// delivered, so this is an ordered list rather than a map. The typed
+		// value is kept rather than its text — a receiver reading
+		// `_event.data.value === 42` finds the string "42" unequal.
+		parts := make([]sce.EventDataParam, 0)
+		{
+			sceValue := int64(1)
+			parts = append(parts, sce.EventDataParam{Name: "kind", Value: sceValue})
+		}
+		{
+			sceValue := sce.Uint64PayloadText(uint64(p.pendingTodoSupersedePayload.id))
+			parts = append(parts, sce.EventDataParam{Name: "id", Value: sceValue})
+		}
+		{
+			sceValue := sce.Uint64PayloadText(uint64(p.pendingTodoSupersedePayload.field))
+			parts = append(parts, sce.EventDataParam{Name: "field", Value: sceValue})
+		}
+		{
+			sceValue := sce.Int64PayloadText(int64(p.pendingTodoSupersedePayload.wallTime))
+			parts = append(parts, sce.EventDataParam{Name: "wallTime", Value: sceValue})
+		}
+		{
+			sceValue := int64(p.pendingTodoSupersedePayload.counter)
+			parts = append(parts, sce.EventDataParam{Name: "counter", Value: sceValue})
+		}
+		{
+			sceValue := sce.Uint64PayloadText(uint64(p.pendingTodoSupersedePayload.nodeId))
+			parts = append(parts, sce.EventDataParam{Name: "nodeId", Value: sceValue})
+		}
+		eventDataStr := sce.BuildJSONFromTypedParams(parts)
+		_ = eventDataStr
+	// W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
+	// and does not change the queue.
+	{
+		meta := sce.NewEventWithMetadata(TodoPeerEventTodoKeep)
+		meta.Metadata.Data = eventDataStr
+		engine.Raise(meta)
+	}
+		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
+		// <foreach> it came — the block is its own function.
+		if paramFailed {
+			return
+		}
+	}
+	}
+	}
+
+
+	if p.vWasLive {
+
+	// W3C SCXML 6.2: send id="__send_8"
+	{
+	// W3C SCXML 6.2: Evaluate <param> expressions at send time
+	{
+		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
+		// and its pair left out, and the message still goes; the error ends
+		// the block once it has. Read at the end of this element.
+		paramFailed := false
+		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
+		// delivered, so this is an ordered list rather than a map. The typed
+		// value is kept rather than its text — a receiver reading
+		// `_event.data.value === 42` finds the string "42" unequal.
+		parts := make([]sce.EventDataParam, 0)
+		{
+			sceValue := int64(0)
+			parts = append(parts, sce.EventDataParam{Name: "kind", Value: sceValue})
+		}
+		{
+			sceValue := sce.Uint64PayloadText(uint64(p.pendingTodoSupersedePayload.id))
+			parts = append(parts, sce.EventDataParam{Name: "id", Value: sceValue})
+		}
+		{
+			sceValue := sce.Uint64PayloadText(uint64(p.pendingTodoSupersedePayload.field))
+			parts = append(parts, sce.EventDataParam{Name: "field", Value: sceValue})
+		}
+		{
+			sceValue := sce.Int64PayloadText(int64(p.pendingTodoSupersedePayload.wallTime))
+			parts = append(parts, sce.EventDataParam{Name: "wallTime", Value: sceValue})
+		}
+		{
+			sceValue := int64(p.pendingTodoSupersedePayload.counter)
+			parts = append(parts, sce.EventDataParam{Name: "counter", Value: sceValue})
+		}
+		{
+			sceValue := sce.Uint64PayloadText(uint64(p.pendingTodoSupersedePayload.nodeId))
+			parts = append(parts, sce.EventDataParam{Name: "nodeId", Value: sceValue})
+		}
+		eventDataStr := sce.BuildJSONFromTypedParams(parts)
+		_ = eventDataStr
+	// W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
+	// and does not change the queue.
+	{
+		meta := sce.NewEventWithMetadata(TodoPeerEventTodoKeep)
+		meta.Metadata.Data = eventDataStr
+		engine.Raise(meta)
+	}
+		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
+		// <foreach> it came — the block is its own function.
+		if paramFailed {
+			return
+		}
+	}
+	}
+	}
+
+
 	if p.vHub && p.pendingTodoSupersedePayload.by != 1 {
 
-	// W3C SCXML 6.2: send id="__send_6"
+	// W3C SCXML 6.2: send id="__send_9"
 	{
 	// W3C SCXML 6.2: Evaluate <param> expressions at send time
 	{
@@ -1900,7 +2486,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 			Target:        "#alice",
 			Content:       "",
 			Params:        hostParams,
-			SendID:        "__send_6",
+			SendID:        "__send_9",
 			// W3C SCXML 5.10: the payload computed above, once, for every arm.
 			EventData: eventDataStr,
 			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
@@ -1916,7 +2502,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
 			errEvt := sce.NewPlatformError(TodoPeerEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
-			errEvt.Metadata.SendID = "__send_6"
+			errEvt.Metadata.SendID = "__send_9"
 			engine.Raise(errEvt)
 		}
 	}
@@ -1932,7 +2518,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 
 	if p.vHub && p.pendingTodoSupersedePayload.by != 2 {
 
-	// W3C SCXML 6.2: send id="__send_7"
+	// W3C SCXML 6.2: send id="__send_10"
 	{
 	// W3C SCXML 6.2: Evaluate <param> expressions at send time
 	{
@@ -1984,7 +2570,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 			Target:        "#bob",
 			Content:       "",
 			Params:        hostParams,
-			SendID:        "__send_7",
+			SendID:        "__send_10",
 			// W3C SCXML 5.10: the payload computed above, once, for every arm.
 			EventData: eventDataStr,
 			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
@@ -2000,7 +2586,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
 			errEvt := sce.NewPlatformError(TodoPeerEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
-			errEvt.Metadata.SendID = "__send_7"
+			errEvt.Metadata.SendID = "__send_10"
 			engine.Raise(errEvt)
 		}
 	}
@@ -2015,7 +2601,1380 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 
 			}()
 		case 4:
-			//line todo_peer.scxml:250
+			//line todo_peer.scxml:342
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
+				if p.pendingPayloadTag != TodoPeerPayloadTagTodoKeep {
+					return
+				}
+
+
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.NarrowInt64FromUint(&sceFailure, uint64(scealgorithm.RemUint64(&sceFailure, scealgorithm.AddUint64(&sceFailure, scealgorithm.MulUint64(&sceFailure, p.pendingTodoKeepPayload.id, 16), p.pendingTodoKeepPayload.field), 4294967296))); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='mixed'>: an integer operation overflowed or failed")); return true }; p.vMixed = sceValue; return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+
+
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.RemInt64(&sceFailure, scealgorithm.AddInt64(&sceFailure, scealgorithm.MulInt64(&sceFailure, p.vMixed, 1000003), scealgorithm.RemInt64(&sceFailure, p.pendingTodoKeepPayload.wallTime, 4294967296)), 4294967296); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='mixed'>: an integer operation overflowed or failed")); return true }; p.vMixed = sceValue; return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+
+
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.RemInt64(&sceFailure, scealgorithm.AddInt64(&sceFailure, scealgorithm.MulInt64(&sceFailure, p.vMixed, 1000003), int64(p.pendingTodoKeepPayload.counter)), 4294967296); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='mixed'>: an integer operation overflowed or failed")); return true }; p.vMixed = sceValue; return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+
+
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.RemInt64(&sceFailure, scealgorithm.AddInt64(&sceFailure, scealgorithm.MulInt64(&sceFailure, p.vMixed, 1000003), int64(scealgorithm.RemUint64(&sceFailure, p.pendingTodoKeepPayload.nodeId, 4294967296))), 4294967296); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='mixed'>: an integer operation overflowed or failed")); return true }; p.vMixed = sceValue; return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+
+
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.RemInt64(&sceFailure, scealgorithm.AddInt64(&sceFailure, scealgorithm.AddInt64(&sceFailure, scealgorithm.MulInt64(&sceFailure, p.vMixed, 1000003), int64(p.pendingTodoKeepPayload.kind)), 1), 4294967296); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='mixed'>: an integer operation overflowed or failed")); return true }; p.vMixed = sceValue; return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+
+
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := p.vMixed ^ scealgorithm.DivInt64(&sceFailure, p.vMixed, 65536); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='mixed'>: an integer operation overflowed or failed")); return true }; p.vMixed = sceValue; return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+
+
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.RemInt64(&sceFailure, scealgorithm.AddInt64(&sceFailure, scealgorithm.MulInt64(&sceFailure, p.vMixed, 69069), 12345), 4294967296); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='mixed'>: an integer operation overflowed or failed")); return true }; p.vMixed = sceValue; return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+
+
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := p.vMixed ^ scealgorithm.DivInt64(&sceFailure, p.vMixed, 8192); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='mixed'>: an integer operation overflowed or failed")); return true }; p.vMixed = sceValue; return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+
+
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.NarrowUint32FromInt(&sceFailure, int64(p.vMixed)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='mine'>: an integer operation overflowed or failed")); return true }; p.vMine = sceValue; return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+
+
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_MerkleInsert__v(p.vDigest, scealgorithm.DivInt64(&sceFailure, p.pendingTodoKeepPayload.wallTime, 60000), p.vMine)), 1024); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='digest'>: an integer operation overflowed or failed")); return true }; p.vDigest = sceValue; return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+			}()
+		case 5:
+			//line todo_peer.scxml:358
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
+
+	if !p.vHub {
+
+	// W3C SCXML 6.2: send id="__send_11"
+	{
+	// W3C SCXML 6.2: Evaluate <param> expressions at send time
+	{
+		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
+		// and its pair left out, and the message still goes; the error ends
+		// the block once it has. Read at the end of this element.
+		paramFailed := false
+		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
+		// delivered, so this is an ordered list rather than a map. The typed
+		// value is kept rather than its text — a receiver reading
+		// `_event.data.value === 42` finds the string "42" unequal.
+		parts := make([]sce.EventDataParam, 0)
+		{
+			sceValue := int64(0)
+			parts = append(parts, sce.EventDataParam{Name: "to", Value: sceValue})
+		}
+		{
+			sceValue := int64(0)
+			parts = append(parts, sce.EventDataParam{Name: "depth", Value: sceValue})
+		}
+		{
+			sceValue := int64(0)
+			parts = append(parts, sce.EventDataParam{Name: "prefix", Value: sceValue})
+		}
+		{
+			sceValue := false
+			parts = append(parts, sce.EventDataParam{Name: "reply", Value: sceValue})
+		}
+		eventDataStr := sce.BuildJSONFromTypedParams(parts)
+		_ = eventDataStr
+	// W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
+	// and does not change the queue.
+	{
+		meta := sce.NewEventWithMetadata(TodoPeerEventTodoVisit)
+		meta.Metadata.Data = eventDataStr
+		engine.Raise(meta)
+	}
+		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
+		// <foreach> it came — the block is its own function.
+		if paramFailed {
+			return
+		}
+	}
+	}
+	}
+
+
+	if p.vHub {
+
+	// W3C SCXML 6.2: send id="__send_12"
+	{
+	// W3C SCXML 6.2: Evaluate <param> expressions at send time
+	{
+		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
+		// and its pair left out, and the message still goes; the error ends
+		// the block once it has. Read at the end of this element.
+		paramFailed := false
+		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
+		// delivered, so this is an ordered list rather than a map. The typed
+		// value is kept rather than its text — a receiver reading
+		// `_event.data.value === 42` finds the string "42" unequal.
+		parts := make([]sce.EventDataParam, 0)
+		{
+			sceValue := int64(1)
+			parts = append(parts, sce.EventDataParam{Name: "to", Value: sceValue})
+		}
+		{
+			sceValue := int64(0)
+			parts = append(parts, sce.EventDataParam{Name: "depth", Value: sceValue})
+		}
+		{
+			sceValue := int64(0)
+			parts = append(parts, sce.EventDataParam{Name: "prefix", Value: sceValue})
+		}
+		{
+			sceValue := false
+			parts = append(parts, sce.EventDataParam{Name: "reply", Value: sceValue})
+		}
+		eventDataStr := sce.BuildJSONFromTypedParams(parts)
+		_ = eventDataStr
+	// W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
+	// and does not change the queue.
+	{
+		meta := sce.NewEventWithMetadata(TodoPeerEventTodoVisit)
+		meta.Metadata.Data = eventDataStr
+		engine.Raise(meta)
+	}
+		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
+		// <foreach> it came — the block is its own function.
+		if paramFailed {
+			return
+		}
+	}
+	}
+
+	// W3C SCXML 6.2: send id="__send_13"
+	{
+	// W3C SCXML 6.2: Evaluate <param> expressions at send time
+	{
+		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
+		// and its pair left out, and the message still goes; the error ends
+		// the block once it has. Read at the end of this element.
+		paramFailed := false
+		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
+		// delivered, so this is an ordered list rather than a map. The typed
+		// value is kept rather than its text — a receiver reading
+		// `_event.data.value === 42` finds the string "42" unequal.
+		parts := make([]sce.EventDataParam, 0)
+		{
+			sceValue := int64(2)
+			parts = append(parts, sce.EventDataParam{Name: "to", Value: sceValue})
+		}
+		{
+			sceValue := int64(0)
+			parts = append(parts, sce.EventDataParam{Name: "depth", Value: sceValue})
+		}
+		{
+			sceValue := int64(0)
+			parts = append(parts, sce.EventDataParam{Name: "prefix", Value: sceValue})
+		}
+		{
+			sceValue := false
+			parts = append(parts, sce.EventDataParam{Name: "reply", Value: sceValue})
+		}
+		eventDataStr := sce.BuildJSONFromTypedParams(parts)
+		_ = eventDataStr
+	// W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
+	// and does not change the queue.
+	{
+		meta := sce.NewEventWithMetadata(TodoPeerEventTodoVisit)
+		meta.Metadata.Data = eventDataStr
+		engine.Raise(meta)
+	}
+		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
+		// <foreach> it came — the block is its own function.
+		if paramFailed {
+			return
+		}
+	}
+	}
+	}
+
+			}()
+		case 6:
+			//line todo_peer.scxml:385
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
+				if p.pendingPayloadTag != TodoPeerPayloadTagTodoVisit {
+					return
+				}
+
+
+	p.vMine = 0
+
+
+	// W3C SCXML 4.6: <foreach array="digest" item="n">, a native loop over a sce-static list
+	for _, n := range append(p.vDigest[:0:0], p.vDigest...) {
+		_ = n
+
+	if n.depth == p.pendingTodoVisitPayload.depth && n.prefix == p.pendingTodoVisitPayload.prefix {
+
+
+	p.vMine = n.hash
+
+	}
+
+	}
+
+
+	if !p.vHub {
+
+	// W3C SCXML 6.2: send id="__send_14"
+	{
+	// W3C SCXML 6.2: Evaluate <param> expressions at send time
+	{
+		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
+		// and its pair left out, and the message still goes; the error ends
+		// the block once it has. Read at the end of this element.
+		paramFailed := false
+		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
+		// delivered, so this is an ordered list rather than a map. The typed
+		// value is kept rather than its text — a receiver reading
+		// `_event.data.value === 42` finds the string "42" unequal.
+		parts := make([]sce.EventDataParam, 0)
+		{
+			sceValue := sce.Uint64PayloadText(uint64(p.vNode))
+			parts = append(parts, sce.EventDataParam{Name: "sender", Value: sceValue})
+		}
+		{
+			sceValue := int64(p.pendingTodoVisitPayload.depth)
+			parts = append(parts, sce.EventDataParam{Name: "depth", Value: sceValue})
+		}
+		{
+			sceValue := sce.Uint64PayloadText(uint64(p.pendingTodoVisitPayload.prefix))
+			parts = append(parts, sce.EventDataParam{Name: "prefix", Value: sceValue})
+		}
+		{
+			sceValue := int64(p.vMine)
+			parts = append(parts, sce.EventDataParam{Name: "hash", Value: sceValue})
+		}
+		{
+			sceValue := p.pendingTodoVisitPayload.reply
+			parts = append(parts, sce.EventDataParam{Name: "reply", Value: sceValue})
+		}
+		eventDataStr := sce.BuildJSONFromTypedParams(parts)
+		_ = eventDataStr
+	// §scxml-6.2.5: "sce:mesh" is served by the host, which
+	// declared it to this build. Dispatch rather than refuse — and take the
+	// whole send, because a processor the host serves owns delivery; falling
+	// through would also enqueue the event locally and the document would see
+	// the act twice.
+	{
+		hostParams := sce.WireParamsFromTypedParams(parts)
+		hostRequest := sce.HostSendRequest{
+			ProcessorType: "sce:mesh",
+			EventName:     "todo.node",
+			Target:        "#server",
+			Content:       "",
+			Params:        hostParams,
+			SendID:        "__send_14",
+			// W3C SCXML 5.10: the payload computed above, once, for every arm.
+			EventData: eventDataStr,
+			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
+			// processed now, carried back out as a W3C child's send to its
+			// parent carries it (§scxml-6.4.1). Analysis keeps the field on
+			// every machine with a host-served send.
+			InvokeID: p.pendingEventInvokeid,
+		}
+		_, hostServed := engine.PerformHostSend(hostRequest)
+		// W3C SCXML 6.2: a declared type with no handler registered is, from
+		// the document's side, a processor the platform does not support — the
+		// act it asked for was performed by nobody. Same event as an
+		// undeclared type, so a wiring mistake cannot read as success.
+		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
+			errEvt := sce.NewPlatformError(TodoPeerEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
+			errEvt.Metadata.SendID = "__send_14"
+			engine.Raise(errEvt)
+		}
+	}
+		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
+		// <foreach> it came — the block is its own function.
+		if paramFailed {
+			return
+		}
+	}
+	}
+	}
+
+
+	if p.vHub && p.pendingTodoVisitPayload.to == 1 {
+
+	// W3C SCXML 6.2: send id="__send_15"
+	{
+	// W3C SCXML 6.2: Evaluate <param> expressions at send time
+	{
+		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
+		// and its pair left out, and the message still goes; the error ends
+		// the block once it has. Read at the end of this element.
+		paramFailed := false
+		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
+		// delivered, so this is an ordered list rather than a map. The typed
+		// value is kept rather than its text — a receiver reading
+		// `_event.data.value === 42` finds the string "42" unequal.
+		parts := make([]sce.EventDataParam, 0)
+		{
+			sceValue := sce.Uint64PayloadText(uint64(p.vNode))
+			parts = append(parts, sce.EventDataParam{Name: "sender", Value: sceValue})
+		}
+		{
+			sceValue := int64(p.pendingTodoVisitPayload.depth)
+			parts = append(parts, sce.EventDataParam{Name: "depth", Value: sceValue})
+		}
+		{
+			sceValue := sce.Uint64PayloadText(uint64(p.pendingTodoVisitPayload.prefix))
+			parts = append(parts, sce.EventDataParam{Name: "prefix", Value: sceValue})
+		}
+		{
+			sceValue := int64(p.vMine)
+			parts = append(parts, sce.EventDataParam{Name: "hash", Value: sceValue})
+		}
+		{
+			sceValue := p.pendingTodoVisitPayload.reply
+			parts = append(parts, sce.EventDataParam{Name: "reply", Value: sceValue})
+		}
+		eventDataStr := sce.BuildJSONFromTypedParams(parts)
+		_ = eventDataStr
+	// §scxml-6.2.5: "sce:mesh" is served by the host, which
+	// declared it to this build. Dispatch rather than refuse — and take the
+	// whole send, because a processor the host serves owns delivery; falling
+	// through would also enqueue the event locally and the document would see
+	// the act twice.
+	{
+		hostParams := sce.WireParamsFromTypedParams(parts)
+		hostRequest := sce.HostSendRequest{
+			ProcessorType: "sce:mesh",
+			EventName:     "todo.node",
+			Target:        "#alice",
+			Content:       "",
+			Params:        hostParams,
+			SendID:        "__send_15",
+			// W3C SCXML 5.10: the payload computed above, once, for every arm.
+			EventData: eventDataStr,
+			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
+			// processed now, carried back out as a W3C child's send to its
+			// parent carries it (§scxml-6.4.1). Analysis keeps the field on
+			// every machine with a host-served send.
+			InvokeID: p.pendingEventInvokeid,
+		}
+		_, hostServed := engine.PerformHostSend(hostRequest)
+		// W3C SCXML 6.2: a declared type with no handler registered is, from
+		// the document's side, a processor the platform does not support — the
+		// act it asked for was performed by nobody. Same event as an
+		// undeclared type, so a wiring mistake cannot read as success.
+		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
+			errEvt := sce.NewPlatformError(TodoPeerEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
+			errEvt.Metadata.SendID = "__send_15"
+			engine.Raise(errEvt)
+		}
+	}
+		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
+		// <foreach> it came — the block is its own function.
+		if paramFailed {
+			return
+		}
+	}
+	}
+	}
+
+
+	if p.vHub && p.pendingTodoVisitPayload.to == 2 {
+
+	// W3C SCXML 6.2: send id="__send_16"
+	{
+	// W3C SCXML 6.2: Evaluate <param> expressions at send time
+	{
+		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
+		// and its pair left out, and the message still goes; the error ends
+		// the block once it has. Read at the end of this element.
+		paramFailed := false
+		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
+		// delivered, so this is an ordered list rather than a map. The typed
+		// value is kept rather than its text — a receiver reading
+		// `_event.data.value === 42` finds the string "42" unequal.
+		parts := make([]sce.EventDataParam, 0)
+		{
+			sceValue := sce.Uint64PayloadText(uint64(p.vNode))
+			parts = append(parts, sce.EventDataParam{Name: "sender", Value: sceValue})
+		}
+		{
+			sceValue := int64(p.pendingTodoVisitPayload.depth)
+			parts = append(parts, sce.EventDataParam{Name: "depth", Value: sceValue})
+		}
+		{
+			sceValue := sce.Uint64PayloadText(uint64(p.pendingTodoVisitPayload.prefix))
+			parts = append(parts, sce.EventDataParam{Name: "prefix", Value: sceValue})
+		}
+		{
+			sceValue := int64(p.vMine)
+			parts = append(parts, sce.EventDataParam{Name: "hash", Value: sceValue})
+		}
+		{
+			sceValue := p.pendingTodoVisitPayload.reply
+			parts = append(parts, sce.EventDataParam{Name: "reply", Value: sceValue})
+		}
+		eventDataStr := sce.BuildJSONFromTypedParams(parts)
+		_ = eventDataStr
+	// §scxml-6.2.5: "sce:mesh" is served by the host, which
+	// declared it to this build. Dispatch rather than refuse — and take the
+	// whole send, because a processor the host serves owns delivery; falling
+	// through would also enqueue the event locally and the document would see
+	// the act twice.
+	{
+		hostParams := sce.WireParamsFromTypedParams(parts)
+		hostRequest := sce.HostSendRequest{
+			ProcessorType: "sce:mesh",
+			EventName:     "todo.node",
+			Target:        "#bob",
+			Content:       "",
+			Params:        hostParams,
+			SendID:        "__send_16",
+			// W3C SCXML 5.10: the payload computed above, once, for every arm.
+			EventData: eventDataStr,
+			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
+			// processed now, carried back out as a W3C child's send to its
+			// parent carries it (§scxml-6.4.1). Analysis keeps the field on
+			// every machine with a host-served send.
+			InvokeID: p.pendingEventInvokeid,
+		}
+		_, hostServed := engine.PerformHostSend(hostRequest)
+		// W3C SCXML 6.2: a declared type with no handler registered is, from
+		// the document's side, a processor the platform does not support — the
+		// act it asked for was performed by nobody. Same event as an
+		// undeclared type, so a wiring mistake cannot read as success.
+		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
+			errEvt := sce.NewPlatformError(TodoPeerEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
+			errEvt.Metadata.SendID = "__send_16"
+			engine.Raise(errEvt)
+		}
+	}
+		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
+		// <foreach> it came — the block is its own function.
+		if paramFailed {
+			return
+		}
+	}
+	}
+	}
+
+			}()
+		case 7:
+			//line todo_peer.scxml:426
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
+				if p.pendingPayloadTag != TodoPeerPayloadTagTodoNode {
+					return
+				}
+
+
+	p.vMine = 0
+
+
+	// W3C SCXML 4.6: <foreach array="digest" item="n">, a native loop over a sce-static list
+	for _, n := range append(p.vDigest[:0:0], p.vDigest...) {
+		_ = n
+
+	if n.depth == p.pendingTodoNodePayload.depth && n.prefix == p.pendingTodoNodePayload.prefix {
+
+
+	p.vMine = n.hash
+
+	}
+
+	}
+
+
+	if p.vMine != p.pendingTodoNodePayload.hash && p.pendingTodoNodePayload.depth < 16 {
+
+	// W3C SCXML 6.2: send id="__send_17"
+	{
+	// W3C SCXML 6.2: Evaluate <param> expressions at send time
+	{
+		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
+		// and its pair left out, and the message still goes; the error ends
+		// the block once it has. Read at the end of this element.
+		paramFailed := false
+		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
+		// delivered, so this is an ordered list rather than a map. The typed
+		// value is kept rather than its text — a receiver reading
+		// `_event.data.value === 42` finds the string "42" unequal.
+		parts := make([]sce.EventDataParam, 0)
+		{
+			sceValue := sce.Uint64PayloadText(uint64(p.pendingTodoNodePayload.sender))
+			parts = append(parts, sce.EventDataParam{Name: "to", Value: sceValue})
+		}
+		{
+			var sceFailure scealgorithm.Failure
+			sceValue := int64(scealgorithm.AddUint8(&sceFailure, p.pendingTodoNodePayload.depth, 1))
+			if !sceFailure.Failed() {
+				parts = append(parts, sce.EventDataParam{Name: "depth", Value: sceValue})
+			} else {
+				engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<send> <param name='depth'> failed to evaluate"))
+				paramFailed = true
+			}
+		}
+		{
+			var sceFailure scealgorithm.Failure
+			sceValue := sce.Uint64PayloadText(uint64(scealgorithm.MulUint64(&sceFailure, p.pendingTodoNodePayload.prefix, 3)))
+			if !sceFailure.Failed() {
+				parts = append(parts, sce.EventDataParam{Name: "prefix", Value: sceValue})
+			} else {
+				engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<send> <param name='prefix'> failed to evaluate"))
+				paramFailed = true
+			}
+		}
+		{
+			sceValue := false
+			parts = append(parts, sce.EventDataParam{Name: "reply", Value: sceValue})
+		}
+		eventDataStr := sce.BuildJSONFromTypedParams(parts)
+		_ = eventDataStr
+	// W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
+	// and does not change the queue.
+	{
+		meta := sce.NewEventWithMetadata(TodoPeerEventTodoVisit)
+		meta.Metadata.Data = eventDataStr
+		engine.Raise(meta)
+	}
+		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
+		// <foreach> it came — the block is its own function.
+		if paramFailed {
+			return
+		}
+	}
+	}
+
+	// W3C SCXML 6.2: send id="__send_18"
+	{
+	// W3C SCXML 6.2: Evaluate <param> expressions at send time
+	{
+		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
+		// and its pair left out, and the message still goes; the error ends
+		// the block once it has. Read at the end of this element.
+		paramFailed := false
+		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
+		// delivered, so this is an ordered list rather than a map. The typed
+		// value is kept rather than its text — a receiver reading
+		// `_event.data.value === 42` finds the string "42" unequal.
+		parts := make([]sce.EventDataParam, 0)
+		{
+			sceValue := sce.Uint64PayloadText(uint64(p.pendingTodoNodePayload.sender))
+			parts = append(parts, sce.EventDataParam{Name: "to", Value: sceValue})
+		}
+		{
+			var sceFailure scealgorithm.Failure
+			sceValue := int64(scealgorithm.AddUint8(&sceFailure, p.pendingTodoNodePayload.depth, 1))
+			if !sceFailure.Failed() {
+				parts = append(parts, sce.EventDataParam{Name: "depth", Value: sceValue})
+			} else {
+				engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<send> <param name='depth'> failed to evaluate"))
+				paramFailed = true
+			}
+		}
+		{
+			var sceFailure scealgorithm.Failure
+			sceValue := sce.Uint64PayloadText(uint64(scealgorithm.AddUint64(&sceFailure, scealgorithm.MulUint64(&sceFailure, p.pendingTodoNodePayload.prefix, 3), 1)))
+			if !sceFailure.Failed() {
+				parts = append(parts, sce.EventDataParam{Name: "prefix", Value: sceValue})
+			} else {
+				engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<send> <param name='prefix'> failed to evaluate"))
+				paramFailed = true
+			}
+		}
+		{
+			sceValue := false
+			parts = append(parts, sce.EventDataParam{Name: "reply", Value: sceValue})
+		}
+		eventDataStr := sce.BuildJSONFromTypedParams(parts)
+		_ = eventDataStr
+	// W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
+	// and does not change the queue.
+	{
+		meta := sce.NewEventWithMetadata(TodoPeerEventTodoVisit)
+		meta.Metadata.Data = eventDataStr
+		engine.Raise(meta)
+	}
+		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
+		// <foreach> it came — the block is its own function.
+		if paramFailed {
+			return
+		}
+	}
+	}
+
+	// W3C SCXML 6.2: send id="__send_19"
+	{
+	// W3C SCXML 6.2: Evaluate <param> expressions at send time
+	{
+		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
+		// and its pair left out, and the message still goes; the error ends
+		// the block once it has. Read at the end of this element.
+		paramFailed := false
+		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
+		// delivered, so this is an ordered list rather than a map. The typed
+		// value is kept rather than its text — a receiver reading
+		// `_event.data.value === 42` finds the string "42" unequal.
+		parts := make([]sce.EventDataParam, 0)
+		{
+			sceValue := sce.Uint64PayloadText(uint64(p.pendingTodoNodePayload.sender))
+			parts = append(parts, sce.EventDataParam{Name: "to", Value: sceValue})
+		}
+		{
+			var sceFailure scealgorithm.Failure
+			sceValue := int64(scealgorithm.AddUint8(&sceFailure, p.pendingTodoNodePayload.depth, 1))
+			if !sceFailure.Failed() {
+				parts = append(parts, sce.EventDataParam{Name: "depth", Value: sceValue})
+			} else {
+				engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<send> <param name='depth'> failed to evaluate"))
+				paramFailed = true
+			}
+		}
+		{
+			var sceFailure scealgorithm.Failure
+			sceValue := sce.Uint64PayloadText(uint64(scealgorithm.AddUint64(&sceFailure, scealgorithm.MulUint64(&sceFailure, p.pendingTodoNodePayload.prefix, 3), 2)))
+			if !sceFailure.Failed() {
+				parts = append(parts, sce.EventDataParam{Name: "prefix", Value: sceValue})
+			} else {
+				engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<send> <param name='prefix'> failed to evaluate"))
+				paramFailed = true
+			}
+		}
+		{
+			sceValue := false
+			parts = append(parts, sce.EventDataParam{Name: "reply", Value: sceValue})
+		}
+		eventDataStr := sce.BuildJSONFromTypedParams(parts)
+		_ = eventDataStr
+	// W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
+	// and does not change the queue.
+	{
+		meta := sce.NewEventWithMetadata(TodoPeerEventTodoVisit)
+		meta.Metadata.Data = eventDataStr
+		engine.Raise(meta)
+	}
+		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
+		// <foreach> it came — the block is its own function.
+		if paramFailed {
+			return
+		}
+	}
+	}
+	}
+
+
+	if p.vMine != p.pendingTodoNodePayload.hash && p.pendingTodoNodePayload.depth == 16 {
+
+	// W3C SCXML 6.2: send id="__send_20"
+	{
+	// W3C SCXML 6.2: Evaluate <param> expressions at send time
+	{
+		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
+		// and its pair left out, and the message still goes; the error ends
+		// the block once it has. Read at the end of this element.
+		paramFailed := false
+		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
+		// delivered, so this is an ordered list rather than a map. The typed
+		// value is kept rather than its text — a receiver reading
+		// `_event.data.value === 42` finds the string "42" unequal.
+		parts := make([]sce.EventDataParam, 0)
+		{
+			sceValue := sce.Uint64PayloadText(uint64(p.pendingTodoNodePayload.sender))
+			parts = append(parts, sce.EventDataParam{Name: "to", Value: sceValue})
+		}
+		{
+			sceValue := sce.Uint64PayloadText(uint64(p.pendingTodoNodePayload.prefix))
+			parts = append(parts, sce.EventDataParam{Name: "minute", Value: sceValue})
+		}
+		eventDataStr := sce.BuildJSONFromTypedParams(parts)
+		_ = eventDataStr
+	// W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
+	// and does not change the queue.
+	{
+		meta := sce.NewEventWithMetadata(TodoPeerEventTodoShare)
+		meta.Metadata.Data = eventDataStr
+		engine.Raise(meta)
+	}
+		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
+		// <foreach> it came — the block is its own function.
+		if paramFailed {
+			return
+		}
+	}
+	}
+	}
+
+
+	if p.vMine != p.pendingTodoNodePayload.hash && p.pendingTodoNodePayload.depth == 16 && !p.pendingTodoNodePayload.reply {
+
+	// W3C SCXML 6.2: send id="__send_21"
+	{
+	// W3C SCXML 6.2: Evaluate <param> expressions at send time
+	{
+		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
+		// and its pair left out, and the message still goes; the error ends
+		// the block once it has. Read at the end of this element.
+		paramFailed := false
+		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
+		// delivered, so this is an ordered list rather than a map. The typed
+		// value is kept rather than its text — a receiver reading
+		// `_event.data.value === 42` finds the string "42" unequal.
+		parts := make([]sce.EventDataParam, 0)
+		{
+			sceValue := sce.Uint64PayloadText(uint64(p.pendingTodoNodePayload.sender))
+			parts = append(parts, sce.EventDataParam{Name: "to", Value: sceValue})
+		}
+		{
+			sceValue := int64(16)
+			parts = append(parts, sce.EventDataParam{Name: "depth", Value: sceValue})
+		}
+		{
+			sceValue := sce.Uint64PayloadText(uint64(p.pendingTodoNodePayload.prefix))
+			parts = append(parts, sce.EventDataParam{Name: "prefix", Value: sceValue})
+		}
+		{
+			sceValue := true
+			parts = append(parts, sce.EventDataParam{Name: "reply", Value: sceValue})
+		}
+		eventDataStr := sce.BuildJSONFromTypedParams(parts)
+		_ = eventDataStr
+	// W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
+	// and does not change the queue.
+	{
+		meta := sce.NewEventWithMetadata(TodoPeerEventTodoVisit)
+		meta.Metadata.Data = eventDataStr
+		engine.Raise(meta)
+	}
+		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
+		// <foreach> it came — the block is its own function.
+		if paramFailed {
+			return
+		}
+	}
+	}
+	}
+
+			}()
+		case 8:
+			//line todo_peer.scxml:473
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
+				if p.pendingPayloadTag != TodoPeerPayloadTagTodoShare {
+					return
+				}
+
+	// W3C SCXML 4.6: <foreach array="values" item="v">, a native loop over a sce-static list
+	for _, v := range append(p.vValues[:0:0], p.vValues...) {
+		_ = v
+
+	{
+	var ifCondFailed24 bool
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.DivInt64(&sceFailure, v.wallTime, 60000) == int64(p.pendingTodoSharePayload.minute); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<if cond='v.wallTime / 60000 === _event.data.minute'>: an integer operation overflowed or failed")); ifCondFailed24 = true; return false }; return sceValue }() {
+
+	if !p.vHub {
+
+	// W3C SCXML 6.2: send id="__send_22"
+	{
+	// W3C SCXML 6.2: Evaluate <param> expressions at send time
+	{
+		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
+		// and its pair left out, and the message still goes; the error ends
+		// the block once it has. Read at the end of this element.
+		paramFailed := false
+		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
+		// delivered, so this is an ordered list rather than a map. The typed
+		// value is kept rather than its text — a receiver reading
+		// `_event.data.value === 42` finds the string "42" unequal.
+		parts := make([]sce.EventDataParam, 0)
+		{
+			sceValue := sce.Uint64PayloadText(uint64(v.id))
+			parts = append(parts, sce.EventDataParam{Name: "id", Value: sceValue})
+		}
+		{
+			sceValue := sce.Uint64PayloadText(uint64(v.field))
+			parts = append(parts, sce.EventDataParam{Name: "field", Value: sceValue})
+		}
+		{
+			sceValue := sce.Int64PayloadText(int64(v.value))
+			parts = append(parts, sce.EventDataParam{Name: "value", Value: sceValue})
+		}
+		{
+			sceValue := v.text
+			parts = append(parts, sce.EventDataParam{Name: "text", Value: sceValue})
+		}
+		{
+			sceValue := sce.Int64PayloadText(int64(v.wallTime))
+			parts = append(parts, sce.EventDataParam{Name: "wallTime", Value: sceValue})
+		}
+		{
+			sceValue := int64(v.counter)
+			parts = append(parts, sce.EventDataParam{Name: "counter", Value: sceValue})
+		}
+		{
+			sceValue := sce.Uint64PayloadText(uint64(v.nodeId))
+			parts = append(parts, sce.EventDataParam{Name: "nodeId", Value: sceValue})
+		}
+		eventDataStr := sce.BuildJSONFromTypedParams(parts)
+		_ = eventDataStr
+	// §scxml-6.2.5: "sce:mesh" is served by the host, which
+	// declared it to this build. Dispatch rather than refuse — and take the
+	// whole send, because a processor the host serves owns delivery; falling
+	// through would also enqueue the event locally and the document would see
+	// the act twice.
+	{
+		hostParams := sce.WireParamsFromTypedParams(parts)
+		hostRequest := sce.HostSendRequest{
+			ProcessorType: "sce:mesh",
+			EventName:     "todo.write",
+			Target:        "#server",
+			Content:       "",
+			Params:        hostParams,
+			SendID:        "__send_22",
+			// W3C SCXML 5.10: the payload computed above, once, for every arm.
+			EventData: eventDataStr,
+			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
+			// processed now, carried back out as a W3C child's send to its
+			// parent carries it (§scxml-6.4.1). Analysis keeps the field on
+			// every machine with a host-served send.
+			InvokeID: p.pendingEventInvokeid,
+		}
+		_, hostServed := engine.PerformHostSend(hostRequest)
+		// W3C SCXML 6.2: a declared type with no handler registered is, from
+		// the document's side, a processor the platform does not support — the
+		// act it asked for was performed by nobody. Same event as an
+		// undeclared type, so a wiring mistake cannot read as success.
+		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
+			errEvt := sce.NewPlatformError(TodoPeerEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
+			errEvt.Metadata.SendID = "__send_22"
+			engine.Raise(errEvt)
+		}
+	}
+		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
+		// <foreach> it came — the block is its own function.
+		if paramFailed {
+			return
+		}
+	}
+	}
+	}
+
+
+	if p.vHub && p.pendingTodoSharePayload.to == 1 {
+
+	// W3C SCXML 6.2: send id="__send_23"
+	{
+	// W3C SCXML 6.2: Evaluate <param> expressions at send time
+	{
+		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
+		// and its pair left out, and the message still goes; the error ends
+		// the block once it has. Read at the end of this element.
+		paramFailed := false
+		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
+		// delivered, so this is an ordered list rather than a map. The typed
+		// value is kept rather than its text — a receiver reading
+		// `_event.data.value === 42` finds the string "42" unequal.
+		parts := make([]sce.EventDataParam, 0)
+		{
+			sceValue := sce.Uint64PayloadText(uint64(v.id))
+			parts = append(parts, sce.EventDataParam{Name: "id", Value: sceValue})
+		}
+		{
+			sceValue := sce.Uint64PayloadText(uint64(v.field))
+			parts = append(parts, sce.EventDataParam{Name: "field", Value: sceValue})
+		}
+		{
+			sceValue := sce.Int64PayloadText(int64(v.value))
+			parts = append(parts, sce.EventDataParam{Name: "value", Value: sceValue})
+		}
+		{
+			sceValue := v.text
+			parts = append(parts, sce.EventDataParam{Name: "text", Value: sceValue})
+		}
+		{
+			sceValue := sce.Int64PayloadText(int64(v.wallTime))
+			parts = append(parts, sce.EventDataParam{Name: "wallTime", Value: sceValue})
+		}
+		{
+			sceValue := int64(v.counter)
+			parts = append(parts, sce.EventDataParam{Name: "counter", Value: sceValue})
+		}
+		{
+			sceValue := sce.Uint64PayloadText(uint64(v.nodeId))
+			parts = append(parts, sce.EventDataParam{Name: "nodeId", Value: sceValue})
+		}
+		eventDataStr := sce.BuildJSONFromTypedParams(parts)
+		_ = eventDataStr
+	// §scxml-6.2.5: "sce:mesh" is served by the host, which
+	// declared it to this build. Dispatch rather than refuse — and take the
+	// whole send, because a processor the host serves owns delivery; falling
+	// through would also enqueue the event locally and the document would see
+	// the act twice.
+	{
+		hostParams := sce.WireParamsFromTypedParams(parts)
+		hostRequest := sce.HostSendRequest{
+			ProcessorType: "sce:mesh",
+			EventName:     "todo.write",
+			Target:        "#alice",
+			Content:       "",
+			Params:        hostParams,
+			SendID:        "__send_23",
+			// W3C SCXML 5.10: the payload computed above, once, for every arm.
+			EventData: eventDataStr,
+			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
+			// processed now, carried back out as a W3C child's send to its
+			// parent carries it (§scxml-6.4.1). Analysis keeps the field on
+			// every machine with a host-served send.
+			InvokeID: p.pendingEventInvokeid,
+		}
+		_, hostServed := engine.PerformHostSend(hostRequest)
+		// W3C SCXML 6.2: a declared type with no handler registered is, from
+		// the document's side, a processor the platform does not support — the
+		// act it asked for was performed by nobody. Same event as an
+		// undeclared type, so a wiring mistake cannot read as success.
+		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
+			errEvt := sce.NewPlatformError(TodoPeerEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
+			errEvt.Metadata.SendID = "__send_23"
+			engine.Raise(errEvt)
+		}
+	}
+		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
+		// <foreach> it came — the block is its own function.
+		if paramFailed {
+			return
+		}
+	}
+	}
+	}
+
+
+	if p.vHub && p.pendingTodoSharePayload.to == 2 {
+
+	// W3C SCXML 6.2: send id="__send_24"
+	{
+	// W3C SCXML 6.2: Evaluate <param> expressions at send time
+	{
+		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
+		// and its pair left out, and the message still goes; the error ends
+		// the block once it has. Read at the end of this element.
+		paramFailed := false
+		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
+		// delivered, so this is an ordered list rather than a map. The typed
+		// value is kept rather than its text — a receiver reading
+		// `_event.data.value === 42` finds the string "42" unequal.
+		parts := make([]sce.EventDataParam, 0)
+		{
+			sceValue := sce.Uint64PayloadText(uint64(v.id))
+			parts = append(parts, sce.EventDataParam{Name: "id", Value: sceValue})
+		}
+		{
+			sceValue := sce.Uint64PayloadText(uint64(v.field))
+			parts = append(parts, sce.EventDataParam{Name: "field", Value: sceValue})
+		}
+		{
+			sceValue := sce.Int64PayloadText(int64(v.value))
+			parts = append(parts, sce.EventDataParam{Name: "value", Value: sceValue})
+		}
+		{
+			sceValue := v.text
+			parts = append(parts, sce.EventDataParam{Name: "text", Value: sceValue})
+		}
+		{
+			sceValue := sce.Int64PayloadText(int64(v.wallTime))
+			parts = append(parts, sce.EventDataParam{Name: "wallTime", Value: sceValue})
+		}
+		{
+			sceValue := int64(v.counter)
+			parts = append(parts, sce.EventDataParam{Name: "counter", Value: sceValue})
+		}
+		{
+			sceValue := sce.Uint64PayloadText(uint64(v.nodeId))
+			parts = append(parts, sce.EventDataParam{Name: "nodeId", Value: sceValue})
+		}
+		eventDataStr := sce.BuildJSONFromTypedParams(parts)
+		_ = eventDataStr
+	// §scxml-6.2.5: "sce:mesh" is served by the host, which
+	// declared it to this build. Dispatch rather than refuse — and take the
+	// whole send, because a processor the host serves owns delivery; falling
+	// through would also enqueue the event locally and the document would see
+	// the act twice.
+	{
+		hostParams := sce.WireParamsFromTypedParams(parts)
+		hostRequest := sce.HostSendRequest{
+			ProcessorType: "sce:mesh",
+			EventName:     "todo.write",
+			Target:        "#bob",
+			Content:       "",
+			Params:        hostParams,
+			SendID:        "__send_24",
+			// W3C SCXML 5.10: the payload computed above, once, for every arm.
+			EventData: eventDataStr,
+			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
+			// processed now, carried back out as a W3C child's send to its
+			// parent carries it (§scxml-6.4.1). Analysis keeps the field on
+			// every machine with a host-served send.
+			InvokeID: p.pendingEventInvokeid,
+		}
+		_, hostServed := engine.PerformHostSend(hostRequest)
+		// W3C SCXML 6.2: a declared type with no handler registered is, from
+		// the document's side, a processor the platform does not support — the
+		// act it asked for was performed by nobody. Same event as an
+		// undeclared type, so a wiring mistake cannot read as success.
+		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
+			errEvt := sce.NewPlatformError(TodoPeerEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
+			errEvt.Metadata.SendID = "__send_24"
+			engine.Raise(errEvt)
+		}
+	}
+		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
+		// <foreach> it came — the block is its own function.
+		if paramFailed {
+			return
+		}
+	}
+	}
+	}
+
+	}
+	if ifCondFailed24 {
+		return // W3C SCXML 4.9: the error ends the block
+	}
+	}
+
+	}
+
+
+	// W3C SCXML 4.6: <foreach array="tombstones" item="t">, a native loop over a sce-static list
+	for _, t := range append(p.vTombstones[:0:0], p.vTombstones...) {
+		_ = t
+
+	{
+	var ifCondFailed28 bool
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.DivInt64(&sceFailure, t.wallTime, 60000) == int64(p.pendingTodoSharePayload.minute); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<if cond='t.wallTime / 60000 === _event.data.minute'>: an integer operation overflowed or failed")); ifCondFailed28 = true; return false }; return sceValue }() {
+
+	if !p.vHub {
+
+	// W3C SCXML 6.2: send id="__send_25"
+	{
+	// W3C SCXML 6.2: Evaluate <param> expressions at send time
+	{
+		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
+		// and its pair left out, and the message still goes; the error ends
+		// the block once it has. Read at the end of this element.
+		paramFailed := false
+		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
+		// delivered, so this is an ordered list rather than a map. The typed
+		// value is kept rather than its text — a receiver reading
+		// `_event.data.value === 42` finds the string "42" unequal.
+		parts := make([]sce.EventDataParam, 0)
+		{
+			var sceFailure scealgorithm.Failure
+			sceValue := sce.Uint64PayloadText(uint64(scealgorithm.DivUint64(&sceFailure, t.element, 16)))
+			if !sceFailure.Failed() {
+				parts = append(parts, sce.EventDataParam{Name: "id", Value: sceValue})
+			} else {
+				engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<send> <param name='id'> failed to evaluate"))
+				paramFailed = true
+			}
+		}
+		{
+			var sceFailure scealgorithm.Failure
+			sceValue := sce.Uint64PayloadText(uint64(scealgorithm.RemUint64(&sceFailure, t.element, 16)))
+			if !sceFailure.Failed() {
+				parts = append(parts, sce.EventDataParam{Name: "field", Value: sceValue})
+			} else {
+				engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<send> <param name='field'> failed to evaluate"))
+				paramFailed = true
+			}
+		}
+		{
+			sceValue := sce.Int64PayloadText(int64(t.wallTime))
+			parts = append(parts, sce.EventDataParam{Name: "wallTime", Value: sceValue})
+		}
+		{
+			sceValue := int64(t.counter)
+			parts = append(parts, sce.EventDataParam{Name: "counter", Value: sceValue})
+		}
+		{
+			sceValue := sce.Uint64PayloadText(uint64(t.nodeId))
+			parts = append(parts, sce.EventDataParam{Name: "nodeId", Value: sceValue})
+		}
+		{
+			sceValue := sce.Uint64PayloadText(uint64(p.vNode))
+			parts = append(parts, sce.EventDataParam{Name: "by", Value: sceValue})
+		}
+		eventDataStr := sce.BuildJSONFromTypedParams(parts)
+		_ = eventDataStr
+	// §scxml-6.2.5: "sce:mesh" is served by the host, which
+	// declared it to this build. Dispatch rather than refuse — and take the
+	// whole send, because a processor the host serves owns delivery; falling
+	// through would also enqueue the event locally and the document would see
+	// the act twice.
+	{
+		hostParams := sce.WireParamsFromTypedParams(parts)
+		hostRequest := sce.HostSendRequest{
+			ProcessorType: "sce:mesh",
+			EventName:     "todo.supersede",
+			Target:        "#server",
+			Content:       "",
+			Params:        hostParams,
+			SendID:        "__send_25",
+			// W3C SCXML 5.10: the payload computed above, once, for every arm.
+			EventData: eventDataStr,
+			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
+			// processed now, carried back out as a W3C child's send to its
+			// parent carries it (§scxml-6.4.1). Analysis keeps the field on
+			// every machine with a host-served send.
+			InvokeID: p.pendingEventInvokeid,
+		}
+		_, hostServed := engine.PerformHostSend(hostRequest)
+		// W3C SCXML 6.2: a declared type with no handler registered is, from
+		// the document's side, a processor the platform does not support — the
+		// act it asked for was performed by nobody. Same event as an
+		// undeclared type, so a wiring mistake cannot read as success.
+		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
+			errEvt := sce.NewPlatformError(TodoPeerEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
+			errEvt.Metadata.SendID = "__send_25"
+			engine.Raise(errEvt)
+		}
+	}
+		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
+		// <foreach> it came — the block is its own function.
+		if paramFailed {
+			return
+		}
+	}
+	}
+	}
+
+
+	if p.vHub && p.pendingTodoSharePayload.to == 1 {
+
+	// W3C SCXML 6.2: send id="__send_26"
+	{
+	// W3C SCXML 6.2: Evaluate <param> expressions at send time
+	{
+		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
+		// and its pair left out, and the message still goes; the error ends
+		// the block once it has. Read at the end of this element.
+		paramFailed := false
+		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
+		// delivered, so this is an ordered list rather than a map. The typed
+		// value is kept rather than its text — a receiver reading
+		// `_event.data.value === 42` finds the string "42" unequal.
+		parts := make([]sce.EventDataParam, 0)
+		{
+			var sceFailure scealgorithm.Failure
+			sceValue := sce.Uint64PayloadText(uint64(scealgorithm.DivUint64(&sceFailure, t.element, 16)))
+			if !sceFailure.Failed() {
+				parts = append(parts, sce.EventDataParam{Name: "id", Value: sceValue})
+			} else {
+				engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<send> <param name='id'> failed to evaluate"))
+				paramFailed = true
+			}
+		}
+		{
+			var sceFailure scealgorithm.Failure
+			sceValue := sce.Uint64PayloadText(uint64(scealgorithm.RemUint64(&sceFailure, t.element, 16)))
+			if !sceFailure.Failed() {
+				parts = append(parts, sce.EventDataParam{Name: "field", Value: sceValue})
+			} else {
+				engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<send> <param name='field'> failed to evaluate"))
+				paramFailed = true
+			}
+		}
+		{
+			sceValue := sce.Int64PayloadText(int64(t.wallTime))
+			parts = append(parts, sce.EventDataParam{Name: "wallTime", Value: sceValue})
+		}
+		{
+			sceValue := int64(t.counter)
+			parts = append(parts, sce.EventDataParam{Name: "counter", Value: sceValue})
+		}
+		{
+			sceValue := sce.Uint64PayloadText(uint64(t.nodeId))
+			parts = append(parts, sce.EventDataParam{Name: "nodeId", Value: sceValue})
+		}
+		{
+			sceValue := sce.Uint64PayloadText(uint64(p.vNode))
+			parts = append(parts, sce.EventDataParam{Name: "by", Value: sceValue})
+		}
+		eventDataStr := sce.BuildJSONFromTypedParams(parts)
+		_ = eventDataStr
+	// §scxml-6.2.5: "sce:mesh" is served by the host, which
+	// declared it to this build. Dispatch rather than refuse — and take the
+	// whole send, because a processor the host serves owns delivery; falling
+	// through would also enqueue the event locally and the document would see
+	// the act twice.
+	{
+		hostParams := sce.WireParamsFromTypedParams(parts)
+		hostRequest := sce.HostSendRequest{
+			ProcessorType: "sce:mesh",
+			EventName:     "todo.supersede",
+			Target:        "#alice",
+			Content:       "",
+			Params:        hostParams,
+			SendID:        "__send_26",
+			// W3C SCXML 5.10: the payload computed above, once, for every arm.
+			EventData: eventDataStr,
+			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
+			// processed now, carried back out as a W3C child's send to its
+			// parent carries it (§scxml-6.4.1). Analysis keeps the field on
+			// every machine with a host-served send.
+			InvokeID: p.pendingEventInvokeid,
+		}
+		_, hostServed := engine.PerformHostSend(hostRequest)
+		// W3C SCXML 6.2: a declared type with no handler registered is, from
+		// the document's side, a processor the platform does not support — the
+		// act it asked for was performed by nobody. Same event as an
+		// undeclared type, so a wiring mistake cannot read as success.
+		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
+			errEvt := sce.NewPlatformError(TodoPeerEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
+			errEvt.Metadata.SendID = "__send_26"
+			engine.Raise(errEvt)
+		}
+	}
+		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
+		// <foreach> it came — the block is its own function.
+		if paramFailed {
+			return
+		}
+	}
+	}
+	}
+
+
+	if p.vHub && p.pendingTodoSharePayload.to == 2 {
+
+	// W3C SCXML 6.2: send id="__send_27"
+	{
+	// W3C SCXML 6.2: Evaluate <param> expressions at send time
+	{
+		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
+		// and its pair left out, and the message still goes; the error ends
+		// the block once it has. Read at the end of this element.
+		paramFailed := false
+		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
+		// delivered, so this is an ordered list rather than a map. The typed
+		// value is kept rather than its text — a receiver reading
+		// `_event.data.value === 42` finds the string "42" unequal.
+		parts := make([]sce.EventDataParam, 0)
+		{
+			var sceFailure scealgorithm.Failure
+			sceValue := sce.Uint64PayloadText(uint64(scealgorithm.DivUint64(&sceFailure, t.element, 16)))
+			if !sceFailure.Failed() {
+				parts = append(parts, sce.EventDataParam{Name: "id", Value: sceValue})
+			} else {
+				engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<send> <param name='id'> failed to evaluate"))
+				paramFailed = true
+			}
+		}
+		{
+			var sceFailure scealgorithm.Failure
+			sceValue := sce.Uint64PayloadText(uint64(scealgorithm.RemUint64(&sceFailure, t.element, 16)))
+			if !sceFailure.Failed() {
+				parts = append(parts, sce.EventDataParam{Name: "field", Value: sceValue})
+			} else {
+				engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<send> <param name='field'> failed to evaluate"))
+				paramFailed = true
+			}
+		}
+		{
+			sceValue := sce.Int64PayloadText(int64(t.wallTime))
+			parts = append(parts, sce.EventDataParam{Name: "wallTime", Value: sceValue})
+		}
+		{
+			sceValue := int64(t.counter)
+			parts = append(parts, sce.EventDataParam{Name: "counter", Value: sceValue})
+		}
+		{
+			sceValue := sce.Uint64PayloadText(uint64(t.nodeId))
+			parts = append(parts, sce.EventDataParam{Name: "nodeId", Value: sceValue})
+		}
+		{
+			sceValue := sce.Uint64PayloadText(uint64(p.vNode))
+			parts = append(parts, sce.EventDataParam{Name: "by", Value: sceValue})
+		}
+		eventDataStr := sce.BuildJSONFromTypedParams(parts)
+		_ = eventDataStr
+	// §scxml-6.2.5: "sce:mesh" is served by the host, which
+	// declared it to this build. Dispatch rather than refuse — and take the
+	// whole send, because a processor the host serves owns delivery; falling
+	// through would also enqueue the event locally and the document would see
+	// the act twice.
+	{
+		hostParams := sce.WireParamsFromTypedParams(parts)
+		hostRequest := sce.HostSendRequest{
+			ProcessorType: "sce:mesh",
+			EventName:     "todo.supersede",
+			Target:        "#bob",
+			Content:       "",
+			Params:        hostParams,
+			SendID:        "__send_27",
+			// W3C SCXML 5.10: the payload computed above, once, for every arm.
+			EventData: eventDataStr,
+			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
+			// processed now, carried back out as a W3C child's send to its
+			// parent carries it (§scxml-6.4.1). Analysis keeps the field on
+			// every machine with a host-served send.
+			InvokeID: p.pendingEventInvokeid,
+		}
+		_, hostServed := engine.PerformHostSend(hostRequest)
+		// W3C SCXML 6.2: a declared type with no handler registered is, from
+		// the document's side, a processor the platform does not support — the
+		// act it asked for was performed by nobody. Same event as an
+		// undeclared type, so a wiring mistake cannot read as success.
+		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
+			errEvt := sce.NewPlatformError(TodoPeerEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
+			errEvt.Metadata.SendID = "__send_27"
+			engine.Raise(errEvt)
+		}
+	}
+		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
+		// <foreach> it came — the block is its own function.
+		if paramFailed {
+			return
+		}
+	}
+	}
+	}
+
+	}
+	if ifCondFailed28 {
+		return // W3C SCXML 4.9: the error ends the block
+	}
+	}
+
+	}
+
+			}()
+		case 9:
+			//line todo_peer.scxml:547
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
