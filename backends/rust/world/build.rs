@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-// build.rs for the world simulation: the documents under `machines/`, the two shared
-// documents every backend replays (`sheet_peer`, `todo_peer`, with their schemas,
+// build.rs for the world simulation: the documents under `machines/`, the shared
+// documents every backend replays (`sheet_peer`, `todo_peer`, `presence_peer`, with their schemas,
 // under `sce-build/tests/fixtures/static_datamodel/`), and the standard ones they
 // import, are generated in-process by sce_build into OUT_DIR, and a tests file mounts
 // them through `machines.rs`, which this script writes. Nothing generated is
@@ -32,6 +32,7 @@ const STATECHARTS: &[&str] = &[
     "machines/echo_server.scxml",
     "../../../sce-build/tests/fixtures/static_datamodel/sheet_peer.scxml",
     "../../../sce-build/tests/fixtures/static_datamodel/todo_peer.scxml",
+    "../../../sce-build/tests/fixtures/static_datamodel/presence_peer.scxml",
     "machines/todo_wide_sender.scxml",
 ];
 
@@ -76,6 +77,11 @@ const FORGE: &[&str] = &[
     "../../../sce-build/tests/fixtures/static_datamodel/todo_node.scxml",
     "../../../sce-build/tests/fixtures/static_datamodel/todo_visit.scxml",
     "../../../sce-build/tests/fixtures/static_datamodel/todo_share.scxml",
+    "../../../sce-build/tests/fixtures/static_datamodel/presence_join.scxml",
+    "../../../sce-build/tests/fixtures/static_datamodel/presence_beat.scxml",
+    "../../../sce-build/tests/fixtures/static_datamodel/presence_alive.scxml",
+    "../../../sce-build/tests/fixtures/static_datamodel/presence_seen.scxml",
+    "../../../sce-build/tests/fixtures/static_datamodel/presence_left.scxml",
     "machines/todo_shout.scxml",
 ];
 

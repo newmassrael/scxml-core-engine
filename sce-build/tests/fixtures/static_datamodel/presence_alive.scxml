@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A client's heartbeat as it reaches the hub: who it is (`client`, the node it was told)
+  and when it said so, by its own clock (`at`). A heartbeat that is older than one the
+  hub has already kept for that client, which a link that repeats or reorders delivers,
+  renews nothing.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="presence_alive"
+       sce:event-name="presence.alive">
+  <datamodel>
+    <data id="client" sce:type="uint32" sce:direction="in"/>
+    <data id="at" sce:type="int64" sce:direction="in"/>
+  </datamodel>
+</scxml>

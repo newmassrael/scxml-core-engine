@@ -1,0 +1,202 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15): one copy of the list of who
+  is online in a shared document, for the world simulation (backends/rust/world). The
+  same document is a client and the hub the clients send to; `presence.join` says which.
+
+  Presence is SOFT STATE. An entry is not a fact somebody wrote and has to retract, it
+  is a claim that expires unless it is renewed, so there is nothing to keep once a
+  client is gone: no tombstone, no record that it left. Every message can be lost and
+  the list still comes right, because the next heartbeat says again what the lost one
+  said:
+
+  * A client says it is here by sending the hub a heartbeat (`presence.alive`) each time
+    its host tells it to (`presence.beat`). A heartbeat that is lost is made up for by the
+    next one, as long as the ttl is longer than the beat period by more than the
+    heartbeats a deployment expects to lose in a row.
+  * The hub keeps, for each client, the latest heartbeat it was given (`last`, the
+    client's own stamp: a stamp is only compared with the same client's earlier ones, so
+    the clocks of two clients need not agree). A heartbeat older than that, which a link
+    that repeats or reorders delivers, renews nothing.
+  * Every kept heartbeat arms the entry's expiry with the machine's own delayed send:
+    `presence.expire` to itself, after the lease. The entry is numbered with the renewal
+    it was armed for (`gen`, counted by `serial`), and a delayed send of one delay is
+    delivered in the order it was sent in (docs/SCE_ACCEPTED_SUBSET.md §2.15, the
+    `static_timers` scenario), so the nth expiry to come due is the nth renewal's: `due`
+    counts them, and the entry numbered `due` is the one whose time has run out, if it
+    is still held. A heartbeat that renews an entry gives it a later number, so the
+    expiry armed for the earlier one finds no entry and does nothing. That is the whole
+    of "a heartbeat extends a client's life": no <cancel>, no expiry to find and remove,
+    and nothing for the delayed send to carry, which a backend with no script engine
+    does not carry on one.
+  * The hub tells every copy, on the one topic `#room`, each heartbeat it was given
+    (`presence.seen`), so a client that joins is announced by its first and a client that
+    is still here is renewed by every one. A copy keeps an entry as the hub does, with an
+    expiry of its own that is `slack` longer, so a copy that was told "seen" and then
+    nothing, because the hub's message about the client leaving was lost, forgets the
+    client when that runs out. `presence.left` is what ends an entry in the ordinary
+    case, `slack` before the copy's own expiry would, and it names the heartbeat it is
+    about, so a client that came back first is not let go by a hint that arrives after.
+
+  A copy's list is therefore the hub's, up to the messages in flight and the ttl, and
+  equals it once the links have been quiet for as long as one message takes. What the
+  hub holds is exact: a client is online from the heartbeat the hub kept until `ttl`
+  after it, on the hub's clock, and not a moment beyond.
+
+  What a copy counts is its own: `serial` and `due` are not carried between copies, and
+  the expiry of a copy and of the hub are different delays (`lease`), each in the order
+  of its own machine.
+
+  `online` is what a run compares across copies: the entries, the one heard from
+  longest ago first on the hub, and in the order the copy heard them on a copy.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="open" datamodel="sce-static" name="presence_peer">
+  <sce:import kind="event-schema" src="presence_join.scxml" as="Join"/>
+  <sce:import kind="event-schema" src="presence_beat.scxml" as="Beat"/>
+  <sce:import kind="event-schema" src="presence_alive.scxml" as="Alive"/>
+  <sce:import kind="event-schema" src="presence_seen.scxml" as="Seen"/>
+  <sce:import kind="event-schema" src="presence_left.scxml" as="Left"/>
+  <datamodel>
+    <data id="node" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="hub" sce:type="bool" expr="false" sce:direction="out"/>
+    <data id="ttl" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="lease" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="online" sce:type="list&lt;record:Seen&gt;" sce:capacity="128" sce:direction="out"/>
+    <data id="rebuilt" sce:type="list&lt;record:Seen&gt;" sce:capacity="128"/>
+    <data id="entry" sce:type="record:Seen">
+      <sce:set name="client" expr="0"/>
+      <sce:set name="last" expr="0"/>
+      <sce:set name="gen" expr="0"/>
+    </data>
+    <data id="serial" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="due" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="known" sce:type="bool" expr="false"/>
+    <data id="fresh" sce:type="bool" expr="false"/>
+    <data id="lost" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="open">
+    <transition event="presence.join" type="internal">
+      <assign location="node" expr="_event.data.node"/>
+      <assign location="hub" expr="_event.data.hub"/>
+      <assign location="ttl" expr="_event.data.ttl"/>
+      <!-- How long this copy keeps an entry it was not told to let go: the hub's own
+           ttl for the hub, which is the one that decides, and `slack` more for a client's
+           copy, which only backs the hub's word up. -->
+      <assign location="lease" expr="_event.data.ttl"/>
+      <if cond="!_event.data.hub">
+        <assign location="lease" expr="_event.data.ttl + _event.data.slack"/>
+      </if>
+    </transition>
+
+    <!-- A client's host says it is time to say it is here. -->
+    <transition event="presence.beat" type="internal">
+      <send target="#server" event="presence.alive">
+        <param name="client" expr="node"/>
+        <param name="at" expr="_event.data.now"/>
+      </send>
+    </transition>
+
+    <!-- A heartbeat reaches the hub. It is held as every copy holds what it is told,
+         and told to every copy on the topic, a heartbeat that renews nothing included:
+         a copy decides that for itself by the same rule the hub does. -->
+    <transition event="presence.alive" cond="hub" type="internal">
+      <send target="#_internal" event="presence.seen">
+        <param name="client" expr="_event.data.client"/>
+        <param name="last" expr="_event.data.at"/>
+        <param name="gen" expr="0"/>
+      </send>
+      <send target="#room" event="presence.seen">
+        <param name="client" expr="_event.data.client"/>
+        <param name="last" expr="_event.data.at"/>
+        <param name="gen" expr="0"/>
+      </send>
+    </transition>
+
+    <!-- A client was heard from, by the hub or by a copy the hub told. The entry is
+         renewed unless one this machine holds is no older, and a renewal moves the
+         entry to the end, so the front is the entry nearest its expiry. -->
+    <transition event="presence.seen" type="internal">
+      <assign location="fresh" expr="true"/>
+      <sce:clear target="rebuilt"/>
+      <foreach array="online" item="m">
+        <if cond="m.client === _event.data.client &amp;&amp; _event.data.last &lt;= m.last">
+          <assign location="fresh" expr="false"/>
+        </if>
+        <if cond="m.client !== _event.data.client">
+          <sce:append target="rebuilt" expr="m"/>
+        </if>
+      </foreach>
+      <if cond="fresh">
+        <assign location="entry.client" expr="_event.data.client"/>
+        <assign location="entry.last" expr="_event.data.last"/>
+        <assign location="entry.gen" expr="serial + 1"/>
+        <sce:append target="rebuilt" expr="entry"/>
+        <sce:clear target="online"/>
+        <foreach array="rebuilt" item="r">
+          <sce:append target="online" expr="r"/>
+        </foreach>
+        <!-- Counted and armed together, after everything that can fail, so a renewal
+             that did not complete leaves the count of renewals and the expiries armed
+             as many as each other. -->
+        <assign location="serial" expr="serial + 1"/>
+        <send event="presence.expire" delayexpr="lease + 'ms'"/>
+      </if>
+    </transition>
+
+    <!-- The time given to the nth renewal has run out: the nth expiry to come due is
+         its, since they are delivered in the order they were armed in. It is let go
+         only if it is still that renewal, and the hub then tells the copies. -->
+    <transition event="presence.expire" type="internal">
+      <assign location="due" expr="due + 1"/>
+      <assign location="known" expr="false"/>
+      <sce:clear target="rebuilt"/>
+      <foreach array="online" item="m">
+        <if cond="m.gen === due">
+          <assign location="known" expr="true"/>
+          <assign location="entry" expr="m"/>
+        </if>
+        <if cond="m.gen !== due">
+          <sce:append target="rebuilt" expr="m"/>
+        </if>
+      </foreach>
+      <if cond="known">
+        <sce:clear target="online"/>
+        <foreach array="rebuilt" item="r">
+          <sce:append target="online" expr="r"/>
+        </foreach>
+        <if cond="hub">
+          <send target="#room" event="presence.left">
+            <param name="client" expr="entry.client"/>
+            <param name="last" expr="entry.last"/>
+          </send>
+        </if>
+      </if>
+    </transition>
+
+    <!-- The hub let a client go: so does this copy, unless it has heard the client
+         since. -->
+    <transition event="presence.left" type="internal">
+      <sce:clear target="rebuilt"/>
+      <foreach array="online" item="m">
+        <if cond="m.client !== _event.data.client || m.last &gt; _event.data.last">
+          <sce:append target="rebuilt" expr="m"/>
+        </if>
+      </foreach>
+      <sce:clear target="online"/>
+      <foreach array="rebuilt" item="r">
+        <sce:append target="online" expr="r"/>
+      </foreach>
+    </transition>
+
+    <!-- A send that did not go is not sent again: the next heartbeat is the retry. -->
+    <transition event="error.communication" type="internal">
+      <assign location="lost" expr="lost + 1"/>
+    </transition>
+
+    <transition event="error.execution" type="internal">
+      <assign location="refusals" expr="refusals + 1"/>
+    </transition>
+  </state>
+</scxml>

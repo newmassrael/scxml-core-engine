@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A client was let go: which (`client`) and the latest heartbeat the hub had kept for it
+  (`last`). It is a hint that spares a copy waiting out its own expiry, and a copy takes
+  it only for an entry that is no newer than `last`: a client that came back before the
+  hint arrived is not let go by it.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="presence_left"
+       sce:event-name="presence.left">
+  <datamodel>
+    <data id="client" sce:type="uint32" sce:direction="in"/>
+    <data id="last" sce:type="int64" sce:direction="in"/>
+  </datamodel>
+</scxml>

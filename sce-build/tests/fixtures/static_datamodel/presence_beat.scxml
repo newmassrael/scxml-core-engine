@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The host's heartbeat: it is time for this client to say it is here. `now` is the host's
+  clock in milliseconds, which the client stamps its heartbeat with. A client's stamps are
+  only ever compared with that client's own earlier ones, so two clients' clocks need not
+  agree.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="presence_beat"
+       sce:event-name="presence.beat">
+  <datamodel>
+    <data id="now" sce:type="int64" sce:direction="in"/>
+  </datamodel>
+</scxml>

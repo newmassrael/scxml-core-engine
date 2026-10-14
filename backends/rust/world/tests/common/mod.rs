@@ -22,6 +22,8 @@ include!(concat!(env!("OUT_DIR"), "/machines.rs"));
 pub use sheet_peer::{SheetPeerPersist, SheetPeerPolicy as Peer};
 pub use todo_peer::{TodoPeerPersist, TodoPeerPolicy as TodoPeer};
 
+pub mod presence;
+
 /// How the binding to a peer is configured: envelopes delivered once, with those
 /// written while the link is down kept until it is back. `ordered` asks the Mesh
 /// core to number what it sends and to release what it receives in that order

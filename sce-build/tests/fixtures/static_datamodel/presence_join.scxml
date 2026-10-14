@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  What the host tells a copy of the presence list when it starts: the number its
+  heartbeats carry (`node`), whether this copy is the hub the others send to (`hub`),
+  how long the hub keeps an entry without a heartbeat (`ttl`, in milliseconds), and how
+  much longer than that a client's copy keeps one (`slack`). Every copy is given the same
+  two: the hub lets go of a client at `ttl` and tells the copies, and a copy that was not
+  told, because the hub's message was lost, forgets the client by its own expiry `slack`
+  later. The hub is given a `slack` and does not use it.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="presence_join"
+       sce:event-name="presence.join">
+  <datamodel>
+    <data id="node" sce:type="uint32" sce:direction="in"/>
+    <data id="hub" sce:type="bool" sce:direction="in"/>
+    <data id="ttl" sce:type="uint32" sce:direction="in"/>
+    <data id="slack" sce:type="uint32" sce:direction="in"/>
+  </datamodel>
+</scxml>
