@@ -436,6 +436,18 @@ template <typename List, typename One> json listedJson(const List &list, One one
     return listed;
 }
 
+/// A machine that publishes a variable named `clock`. The engine already has a member of
+/// that name (`StaticExecutionEngine::clock()`), so the generator gives the variable no
+/// reader of its own; the value is read from the policy that holds it.
+template <typename Machine> class ClockPeeking : public Machine {
+public:
+    using Machine::Machine;
+
+    const auto &publishedClock() const {
+        return this->policy_.v_clock;
+    }
+};
+
 /// A `record:Hlc` value (sce:std/merge/hlc_timestamp) as a scenario states it.
 template <typename Hlc> json hlcJson(const Hlc &stamp) {
     return json{{"wallTime", wideText(stamp.wallTime)}, {"counter", stamp.counter}, {"nodeId", wideText(stamp.nodeId)}};
@@ -447,6 +459,29 @@ template <typename Cells> json lwwCellsJson(const Cells &cells) {
         return json{{"row", wideText(cell.row)},     {"col", wideText(cell.col)},
                     {"value", wideText(cell.value)}, {"wallTime", wideText(cell.wallTime)},
                     {"counter", cell.counter},       {"nodeId", wideText(cell.nodeId)}};
+    });
+}
+
+/// A list of `record:Entry` values (sce:std/merge/orset_entry), in order.
+template <typename Entries> json orsetEntriesJson(const Entries &entries) {
+    return listedJson(entries, [](const auto &entry) {
+        return json{{"element", wideText(entry.element)},
+                    {"wallTime", wideText(entry.wallTime)},
+                    {"counter", entry.counter},
+                    {"nodeId", wideText(entry.nodeId)}};
+    });
+}
+
+/// A list of `record:Value` values (todo_value), in order.
+template <typename Values> json todoValuesJson(const Values &values) {
+    return listedJson(values, [](const auto &held) {
+        return json{{"id", wideText(held.id)},
+                    {"field", wideText(held.field)},
+                    {"value", wideText(held.value)},
+                    {"text", held.text},
+                    {"wallTime", wideText(held.wallTime)},
+                    {"counter", held.counter},
+                    {"nodeId", wideText(held.nodeId)}};
     });
 }
 
@@ -1365,19 +1400,15 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, ASyncRunIsComposedOfTheStandardAlgori
 
 /// One copy of the shared to-do list as a host reads it. One machine, three
 /// scenarios: a person's copy twice and the hub's.
-Driver<G::todo_peer::todo_peer> todoPeerDriver() {
-    using Machine = G::todo_peer::todo_peer;
+Driver<ClockPeeking<G::todo_peer::todo_peer>> todoPeerDriver() {
+    using Machine = ClockPeeking<G::todo_peer::todo_peer>;
     return Driver<Machine>({
         {"node", [](const Machine &m) { return wideText(m.node()); }},
         {"hub", [](const Machine &m) { return json(m.hub()); }},
-        {"clock", [](const Machine &m) { return hlcJson(m.clock()); }},
-        {"cells", [](const Machine &m) { return lwwCellsJson(m.cells()); }},
-        {"texts",
-         [](const Machine &m) {
-             return listedJson(m.texts(), [](const auto &text) {
-                 return json{{"id", wideText(text.id)}, {"field", wideText(text.field)}, {"text", text.text}};
-             });
-         }},
+        {"clock", [](const Machine &m) { return hlcJson(m.publishedClock()); }},
+        {"adds", [](const Machine &m) { return orsetEntriesJson(m.adds()); }},
+        {"tombstones", [](const Machine &m) { return orsetEntriesJson(m.tombstones()); }},
+        {"values", [](const Machine &m) { return todoValuesJson(m.values()); }},
         {"refusals", [](const Machine &m) { return json(m.refusals()); }},
     });
 }
@@ -1406,12 +1437,12 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, TheHubOfASharedListPassesEachWriteOn)
 
 /// One copy of the shared sheet as a host reads it. One machine, three
 /// scenarios: a person's copy twice and the hub's.
-Driver<G::sheet_peer::sheet_peer> sheetPeerDriver() {
-    using Machine = G::sheet_peer::sheet_peer;
+Driver<ClockPeeking<G::sheet_peer::sheet_peer>> sheetPeerDriver() {
+    using Machine = ClockPeeking<G::sheet_peer::sheet_peer>;
     return Driver<Machine>({
         {"node", [](const Machine &m) { return wideText(m.node()); }},
         {"hub", [](const Machine &m) { return json(m.hub()); }},
-        {"clock", [](const Machine &m) { return hlcJson(m.clock()); }},
+        {"clock", [](const Machine &m) { return hlcJson(m.publishedClock()); }},
         {"cells", [](const Machine &m) { return lwwCellsJson(m.cells()); }},
         {"rows", [](const Machine &m) { return rgaNodesJson(m.rows()); }},
         {"gone", [](const Machine &m) { return rgaGonesJson(m.gone()); }},
