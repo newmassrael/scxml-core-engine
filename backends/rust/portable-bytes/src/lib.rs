@@ -107,7 +107,7 @@ pub type SceBytes<const N: usize> = HeapBytes<N>;
 pub type SceBytes<const N: usize> = InlineBytes<N>;
 
 #[cfg(feature = "alloc")]
-impl<T: Copy, const N: usize> HeapList<T, N> {
+impl<T: Clone, const N: usize> HeapList<T, N> {
     /// Copy a borrowed `&[T]` view into the owned form. The heap copy is
     /// unbounded (`N` advisory), but the return stays a `Result` so a
     /// generated `try_into_owned` threads one `?` on every profile and the
@@ -145,7 +145,7 @@ impl<T: Copy, const N: usize> HeapList<T, N> {
     }
 }
 
-impl<T: Copy, const N: usize> InlineList<T, N> {
+impl<T: Clone, const N: usize> InlineList<T, N> {
     /// Copy a borrowed `&[T]` view into the fixed-capacity form, raising
     /// [`CapacityExceeded`] past `N`.
     pub fn from_slice(s: &[T]) -> Result<Self, CapacityExceeded> {
@@ -215,6 +215,169 @@ macro_rules! byte_view_parity {
 #[cfg(feature = "alloc")]
 byte_view_parity!(HeapList);
 byte_view_parity!(InlineList);
+
+// ── text containers ──────────────────────────────────────────────
+
+/// Growable owned text storage: wraps `String`, so `N` is advisory. `N` still
+/// rides on the type so a hand-assembled owned value infers the cap from the
+/// field it is being placed in, and so the value can be transcoded into
+/// [`InlineStr`] of the matching capacity.
+#[cfg(feature = "alloc")]
+#[repr(transparent)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct HeapStr<const N: usize>(alloc::string::String, core::marker::PhantomData<[u8; N]>);
+
+/// Fixed-capacity owned text storage: wraps `heapless::String<N>`, so the
+/// value never allocates and `N` is a hard bound. Compiled on every profile,
+/// including alongside [`HeapStr`].
+#[repr(transparent)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct InlineStr<const N: usize>(heapless::String<N>);
+
+/// The text storage profile this build treats as the default — the sibling of
+/// [`SceBytes`] for `string` fields.
+#[cfg(feature = "alloc")]
+pub type SceString<const N: usize> = HeapStr<N>;
+/// no-alloc build: the default text profile is the fixed-capacity form.
+#[cfg(not(feature = "alloc"))]
+pub type SceString<const N: usize> = InlineStr<N>;
+
+/// The compile-time judgement that text of at most `FROM` bytes fits a buffer
+/// of `TO`: naming `Fits::<FROM, TO>::OK` makes a copy that could overflow a
+/// build error where it is written, which is what lets [`SceString::widened`]
+/// and [`sce_text!`] be total functions.
+#[doc(hidden)]
+pub struct Fits<const FROM: usize, const TO: usize>;
+
+impl<const FROM: usize, const TO: usize> Fits<FROM, TO> {
+    #[doc(hidden)]
+    pub const OK: () = assert!(
+        FROM <= TO,
+        "a text is copied into a buffer smaller than the one it was held in"
+    );
+}
+
+/// The longest prefix of `s` that is at most `n` bytes and ends on a character
+/// boundary — what a text past its bound is cut to by [`SceString::held`].
+fn prefix_within(s: &str, n: usize) -> &str {
+    if s.len() <= n {
+        return s;
+    }
+    let mut end = n;
+    while !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
+}
+
+#[cfg(feature = "alloc")]
+impl<const N: usize> HeapStr<N> {
+    /// Copy a borrowed `&str` into owned storage. The heap copy is unbounded
+    /// (`N` advisory); the `Result` matches [`InlineStr::from_text`] so one
+    /// call shape serves both profiles.
+    pub fn from_text(s: &str) -> Result<Self, CapacityExceeded> {
+        Ok(Self(
+            alloc::string::String::from(s),
+            core::marker::PhantomData,
+        ))
+    }
+
+    /// Borrow the owned text back as `&str`.
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+
+    /// The text of `s`, which the caller has already held to `N` bytes.
+    ///
+    /// Total: a text past `N` is cut at the last character boundary that fits
+    /// rather than reported, because the callers are the ones that proved the
+    /// fit — a generated body whose every write was judged against this bound,
+    /// and a machine that holds the text within it. Use [`Self::from_text`]
+    /// for text nothing has judged.
+    pub fn held(s: &str) -> Self {
+        Self(
+            alloc::string::String::from(prefix_within(s, N)),
+            core::marker::PhantomData,
+        )
+    }
+
+    /// The text of a buffer of at most `N` bytes, in one of `N`. The fit is a
+    /// build error where it does not hold ([`Fits`]), so nothing is cut.
+    pub fn widened<const M: usize>(from: &HeapStr<M>) -> Self {
+        let () = Fits::<M, N>::OK;
+        Self::held(from.as_str())
+    }
+}
+
+impl<const N: usize> InlineStr<N> {
+    /// Copy a borrowed `&str` into fixed-capacity storage, raising
+    /// [`CapacityExceeded`] past `N` bytes.
+    pub fn from_text(s: &str) -> Result<Self, CapacityExceeded> {
+        heapless::String::try_from(s)
+            .map(Self)
+            .map_err(|_| CapacityExceeded)
+    }
+
+    /// Borrow the owned text back as `&str`.
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+
+    /// The text of `s`, which the caller has already held to `N` bytes. See
+    /// [`HeapStr::held`].
+    pub fn held(s: &str) -> Self {
+        // The prefix is at most `N` bytes, so the conversion cannot refuse it;
+        // the empty text is the answer for a refusal that cannot occur.
+        Self(heapless::String::try_from(prefix_within(s, N)).unwrap_or_default())
+    }
+
+    /// The text of a buffer of at most `N` bytes, in one of `N`. See
+    /// [`HeapStr::widened`].
+    pub fn widened<const M: usize>(from: &InlineStr<M>) -> Self {
+        let () = Fits::<M, N>::OK;
+        Self::held(from.as_str())
+    }
+}
+
+/// Text-view parity surface, written once for both profiles so the growable
+/// and fixed forms cannot drift apart in how they are read or compared.
+///
+/// `Deref<Target = str>` gives the whole `&str` surface; the `PartialEq<&str>`
+/// arm lets a consumer write `assert_eq!(owned.locator, "abc")` without an
+/// explicit `.as_str()`. Only the `&str` form is implemented — string literals
+/// are `&str`, and the unsized right-hand side has no consumer.
+macro_rules! str_view_parity {
+    ($storage:ident) => {
+        impl<const N: usize> core::ops::Deref for $storage<N> {
+            type Target = str;
+            fn deref(&self) -> &str {
+                self.0.as_str()
+            }
+        }
+
+        impl<const N: usize> PartialEq<&str> for $storage<N> {
+            fn eq(&self, other: &&str) -> bool {
+                self.as_str() == *other
+            }
+        }
+    };
+}
+
+#[cfg(feature = "alloc")]
+str_view_parity!(HeapStr);
+str_view_parity!(InlineStr);
+
+/// A text of the default profile ([`SceString`]) written as a literal, in a
+/// buffer of `$n` bytes. The literal's length against `$n` is judged at build
+/// time, so a literal that does not fit is a compile error where it is
+/// written and the value needs no `Result`.
+#[macro_export]
+macro_rules! sce_text {
+    ($n:expr, $lit:literal) => {{
+        const _: () = $crate::Fits::<{ $lit.len() }, { $n }>::OK;
+        $crate::SceString::<{ $n }>::held($lit)
+    }};
+}
 
 #[cfg(test)]
 mod tests {
@@ -296,6 +459,35 @@ mod tests {
         let mut default = SceOwnedList::<i64, 4>::new();
         assert!(default.extend_from_slice(&[1, -2, 3]).is_ok());
         assert_eq!(default, &[1i64, -2, 3]);
+    }
+
+    // The fixed text profile refuses past its bound on every build and keeps
+    // nothing; the default profile holds what it is given.
+    #[test]
+    fn inline_text_is_bounded_and_from_text_reports_it() {
+        assert_eq!(InlineStr::<3>::from_text("abc").unwrap().as_str(), "abc");
+        assert_eq!(InlineStr::<3>::from_text("abcd"), Err(CapacityExceeded));
+        assert_eq!(SceString::<3>::from_text("ab").unwrap(), "ab");
+    }
+
+    // `held` is total: a text past the bound is cut on a character boundary,
+    // never in the middle of one.
+    #[test]
+    fn held_cuts_at_a_character_boundary() {
+        assert_eq!(InlineStr::<4>::held("ab").as_str(), "ab");
+        // `é` is two bytes, so three bytes of room keep `aé` and drop the rest.
+        assert_eq!(InlineStr::<3>::held("aéb").as_str(), "aé");
+        assert_eq!(InlineStr::<2>::held("aé").as_str(), "a");
+    }
+
+    // A text widens into a buffer at least as large, by type; the literal macro
+    // judges its own length against the bound before the program runs.
+    #[test]
+    fn a_text_widens_and_a_literal_is_judged_at_build_time() {
+        let small = sce_text!(4, "abcd");
+        let wide = SceString::<9>::widened(&small);
+        assert_eq!(wide, "abcd");
+        assert_eq!(sce_text!(2, "é"), "é");
     }
 
     // Both profiles coexist in one binary and carry the same bytes — the

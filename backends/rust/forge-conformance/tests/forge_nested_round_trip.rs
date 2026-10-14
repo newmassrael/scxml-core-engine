@@ -211,7 +211,7 @@ fn transcode_to_inline_rejects_a_value_past_its_declared_capacity() {
     let oversized = "l".repeat(200);
     let locs: Vec<CodecZenohLocatorOwned<Heap>> = vec![CodecZenohLocatorOwned {
         locator_len: oversized.len() as u64,
-        locator: HeapStr::from_view(&oversized).expect("the growable profile has no ceiling"),
+        locator: HeapStr::from_text(&oversized).expect("the growable profile has no ceiling"),
     }];
     let body = CodecNestedBodyOwned::<Heap> { n: 1, locs };
 
@@ -240,7 +240,7 @@ fn nested_projection_rejects_overflowing_list() {
                 // through the same SSOT ctor codegen emits. `N` infers from
                 // the field type (`String` on the growable profile,
                 // `heapless::String<128>` on the inline one).
-                locator: sce_forge_runtime::codec::SceString::from_view("a").unwrap(),
+                locator: sce_forge_runtime::codec::SceString::from_text("a").unwrap(),
             }],
         }
     }

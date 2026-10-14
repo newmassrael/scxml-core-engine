@@ -263,100 +263,32 @@ impl<T, const N: usize> SceList<T> for heapless::Vec<T, N> {
 
 // ── text containers ──────────────────────────────────────────────
 
-/// Growable owned text storage: wraps `String`, so `N` is advisory. `N` still
-/// rides on the type so a hand-assembled owned value infers the cap from the
-/// field it is being placed in, and so the value can be transcoded into
-/// [`InlineStr`] of the matching capacity.
+// The containers are `sce-portable-bytes`' (the algorithm kind's record text
+// field is the same type); only the codec's reading of them as a [`SceStr`] is
+// this crate's.
 #[cfg(feature = "alloc")]
-#[repr(transparent)]
-#[derive(Debug, Clone, PartialEq)]
-pub struct HeapStr<const N: usize>(alloc::string::String, core::marker::PhantomData<[u8; N]>);
+pub use sce_portable_bytes::HeapStr;
+pub use sce_portable_bytes::{InlineStr, SceString};
 
-/// Fixed-capacity owned text storage: wraps `heapless::String<N>`, so the
-/// value never allocates and `N` is a hard bound. Compiled on every profile,
-/// including alongside [`HeapStr`].
-#[repr(transparent)]
-#[derive(Debug, Clone, PartialEq)]
-pub struct InlineStr<const N: usize>(heapless::String<N>);
-
-/// The text storage profile this build treats as the default — the sibling of
-/// [`SceBytes`] for `string` fields.
-#[cfg(feature = "alloc")]
-pub type SceString<const N: usize> = HeapStr<N>;
-/// no-alloc build: the default text profile is the fixed-capacity form.
-#[cfg(not(feature = "alloc"))]
-pub type SceString<const N: usize> = InlineStr<N>;
-
-#[cfg(feature = "alloc")]
-impl<const N: usize> HeapStr<N> {
-    /// Copy a borrowed `&str` decode view into owned storage. The heap copy is
-    /// unbounded (`N` advisory); the `Result` matches [`InlineStr::from_view`]
-    /// so generated code threads one `?` on every profile.
-    pub fn from_view(s: &str) -> Result<Self, CodecError> {
-        Ok(Self(
-            alloc::string::String::from(s),
-            core::marker::PhantomData,
-        ))
-    }
-
-    /// Borrow the owned text back as `&str`.
-    pub fn as_str(&self) -> &str {
-        self.0.as_str()
-    }
-}
-
-impl<const N: usize> InlineStr<N> {
-    /// Copy a borrowed `&str` decode view into fixed-capacity storage, raising
-    /// [`CodecError::TooManyElements`] past `N`.
-    pub fn from_view(s: &str) -> Result<Self, CodecError> {
-        heapless::String::try_from(s)
-            .map(Self)
-            .map_err(|_| CodecError::TooManyElements)
-    }
-
-    /// Borrow the owned text back as `&str`.
-    pub fn as_str(&self) -> &str {
-        self.0.as_str()
-    }
-}
-
-/// Text-view parity surface, written once for both profiles so the growable
-/// and fixed forms cannot drift apart in how they are read or compared.
-///
-/// `Deref<Target = str>` gives the whole `&str` surface; the `PartialEq<&str>`
-/// arm lets a consumer write `assert_eq!(owned.locator, "abc")` without an
-/// explicit `.as_str()`. Only the `&str` form is implemented — string literals
-/// are `&str`, and the unsized right-hand side has no consumer.
-macro_rules! str_view_parity {
+/// The codec's reading of a text container: the copy-in is the container's own
+/// fallible `from_text`, its capacity error relabelled as the codec's.
+macro_rules! sce_str_impl {
     ($storage:ident) => {
         impl<const N: usize> SceStr for $storage<N> {
             fn from_view(s: &str) -> Result<Self, CodecError> {
-                Self::from_view(s)
+                Self::from_text(s).map_err(CodecError::from)
             }
 
             fn as_str(&self) -> &str {
                 Self::as_str(self)
             }
         }
-
-        impl<const N: usize> core::ops::Deref for $storage<N> {
-            type Target = str;
-            fn deref(&self) -> &str {
-                self.0.as_str()
-            }
-        }
-
-        impl<const N: usize> PartialEq<&str> for $storage<N> {
-            fn eq(&self, other: &&str) -> bool {
-                self.as_str() == *other
-            }
-        }
     };
 }
 
 #[cfg(feature = "alloc")]
-str_view_parity!(HeapStr);
-str_view_parity!(InlineStr);
+sce_str_impl!(HeapStr);
+sce_str_impl!(InlineStr);
 
 // ── byte containers ──────────────────────────────────────────────
 
