@@ -82,6 +82,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_send_type"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_state_algorithm"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_string_capacity"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_text_record"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_timers"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_whole_payload"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_wire_enum"
@@ -217,6 +218,30 @@ func labelledsJSON[R labelledRecord](labelleds []R) any {
 func digits(value uint64) string { return strconv.FormatUint(value, 10) }
 
 func signedDigits(value int64) string { return strconv.FormatInt(value, 10) }
+
+// slotRecord is a `record:Slot` (sce:std/text/text_slot) as a host reads it: a
+// place, the version of the write that put its text there, and a text of at most
+// thirty-two UTF-8 bytes.
+type slotRecord interface {
+	Slot() uint32
+	Version() int64
+	Text() string
+}
+
+// slotJSON is a slot record as a scenario states it: its fields by the schema's
+// ids, the version as the text of its digits.
+func slotJSON(slot slotRecord) any {
+	return map[string]any{"slot": slot.Slot(), "version": signedDigits(slot.Version()), "text": slot.Text()}
+}
+
+// slotsJSON is a list of such records, in order.
+func slotsJSON[R slotRecord](slots []R) any {
+	out := make([]any, len(slots))
+	for i, slot := range slots {
+		out[i] = slotJSON(slot)
+	}
+	return out
+}
 
 // hlcRecord is a `record:Hlc` (sce:std/merge/hlc_timestamp) as a host reads it: a
 // hybrid logical clock's wall time, counter and node.
@@ -806,6 +831,21 @@ func TestAStatechartHandsItsStateToAnAlgorithmAndTakesItBack(t *testing.T) {
 		"ids":      func() any { return policy.Ids() },
 		"idsum":    func() any { return policy.Idsum() },
 		"large":    func() any { return policy.Large() },
+		"refusals": func() any { return policy.Refusals() },
+	}))
+}
+
+// A statechart hands the standard text algorithms the record and the list of
+// records it holds, whose text is bounded, and takes back what they return: a
+// text past the bound is refused where the payload is taken, the state as it was.
+func TestAStatechartHandsBoundedTextToAnAlgorithmAndTakesItBack(t *testing.T) {
+	policy := static_text_record.NewStaticTextRecordPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_text_record", drive[static_text_record.StaticTextRecordState, static_text_record.StaticTextRecordEvent](&policy, map[string]func() any{
+		"slots":    func() any { return slotsJSON(policy.Slots()) },
+		"held":     func() any { return slotJSON(policy.Held()) },
+		"incoming": func() any { return slotJSON(policy.Incoming()) },
+		"known":    func() any { return policy.Known() },
 		"refusals": func() any { return policy.Refusals() },
 	}))
 }

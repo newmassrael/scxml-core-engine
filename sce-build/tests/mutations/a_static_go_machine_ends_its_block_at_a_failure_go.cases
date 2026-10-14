@@ -100,6 +100,7 @@ mutation_targets backends/go/tests/integration/static_datamodel/static_send_targ
 mutation_targets backends/go/tests/integration/static_datamodel/static_send_type/static_send_type_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_state_algorithm/static_state_algorithm_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_string_capacity/static_string_capacity_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_text_record/static_text_record_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_timers/static_timers_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_whole_payload/static_whole_payload_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_wire_enum/static_wire_enum_sm.go
