@@ -1,0 +1,14 @@
+# A synthetic pack for the targets' tests of a statechart. It is made up, and nothing in it is
+# anyone's. One input that is an event (a button), one output that leaves as a send (a lamp).
+version: 1
+entries:
+  - address: desk/in/button
+    role: input
+    names: [IN_Button]
+    values: {RELEASED: 0, PRESSED: 1}
+
+  - address: desk/out/lamp
+    role: output
+    names: [OUT_Lamp]
+    fields:
+      value: {values: {DARK: 0, LIT: 1}}

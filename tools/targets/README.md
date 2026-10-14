@@ -41,9 +41,12 @@ fails reads the interface differently from the core. The gate (`scripts/gate tar
 product's generator and a C++ library, and refuses to run without either, because a case that cannot
 run skips and a skip reads as a pass.
 
-The tests use one made-up pack (`tests/fixtures/pump`). Nothing in a test is a platform's, and
-`tests/test_the_targets_are_domain_free.py` holds the sources to the authoring core's own vocabulary
-guard.
+The tests use two made-up packs: `tests/fixtures/pump`, a transform, and `tests/fixtures/lamp`, the
+smallest statechart (a button whose press and release reach the machine as events, a lamp that leaves
+as a send). A statechart is judged the same way (`tests/test_a_statechart_is_carried_as_a_transform_is.py`),
+and its library also links the three runtime sources the generator copies beside it. Nothing in a test
+is a platform's, and `tests/test_the_targets_are_domain_free.py` holds the sources to the authoring
+core's own vocabulary guard.
 
 ## What is not here
 

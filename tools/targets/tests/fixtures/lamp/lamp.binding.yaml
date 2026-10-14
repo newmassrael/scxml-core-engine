@@ -1,0 +1,20 @@
+version: 1
+document: lamp.scxml
+
+inputs:
+  pressed:
+    address: desk/in/button
+    becomes: PRESSED
+    event: button.pressed
+  released:
+    address: desk/in/button
+    becomes: RELEASED
+    event: button.released
+
+outputs:
+  bulb:
+    address: desk/out/lamp
+    field: value
+    sent: {processor: x-sce-host}
+    when_nothing_sent: lamp.dark
+    map: {lamp.dark: DARK, lamp.lit: LIT}

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" datamodel="null" initial="dark" sce:kind="statechart" name="lamp">
+  <state id="dark">
+    <transition event="button.pressed" target="lit">
+      <send event="lamp.lit" type="x-sce-host"/>
+    </transition>
+    <transition event="button.released">
+      <send event="lamp.dark" type="x-sce-host"/>
+    </transition>
+  </state>
+  <state id="lit">
+    <transition event="button.pressed" target="dark">
+      <send event="lamp.dark" type="x-sce-host"/>
+    </transition>
+    <transition event="button.released">
+      <send event="lamp.lit" type="x-sce-host"/>
+    </transition>
+  </state>
+</scxml>

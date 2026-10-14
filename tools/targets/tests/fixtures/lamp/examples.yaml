@@ -1,0 +1,30 @@
+version: 1
+origin: made up for the targets' tests
+independent_cases: true
+# A statechart is replayed, not recomputed: each case starts where the one before it ended.
+ordered: true
+cases:
+  - name: the first press lights the lamp
+    given: {desk/in/button: PRESSED}
+    drove: [desk/in/button]
+    expect: {desk/out/lamp.value: LIT}
+
+  - name: releasing changes nothing
+    given: {desk/in/button: RELEASED}
+    drove: [desk/in/button]
+    expect: {desk/out/lamp.value: LIT}
+
+  - name: the second press darkens it
+    given: {desk/in/button: PRESSED}
+    drove: [desk/in/button]
+    expect: {desk/out/lamp.value: DARK}
+
+  - name: releasing a dark lamp changes nothing either
+    given: {desk/in/button: RELEASED}
+    drove: [desk/in/button]
+    expect: {desk/out/lamp.value: DARK}
+
+  - name: the third press lights it again
+    given: {desk/in/button: PRESSED}
+    drove: [desk/in/button]
+    expect: {desk/out/lamp.value: LIT}
