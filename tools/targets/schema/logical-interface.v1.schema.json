@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sce.dev/schemas/targets/logical-interface.v1.schema.json",
+  "title": "Logical interface",
+  "description": "What every target of one document shares: the signals the specification names, the rules that turn a signal into what the document reads, and the outputs as the document produces them. A binding is split into this and a target profile (`sce_targets.split`), and a target builds from the two. Nothing in it is a platform's: no address, no record field, no counter protocol, and no number for a symbol. A closed set crosses by name, so a signal lists its symbols and an output lists the document's own values; a number for a symbol is a platform's code and lives in the platform's interface model.",
+  "type": "object",
+  "required": ["interface", "component", "kind", "document", "signals", "inputs", "outputs"],
+  "additionalProperties": false,
+  "properties": {
+    "interface": {"const": 1},
+    "component": {"type": "string", "minLength": 1},
+    "kind": {"enum": ["statechart", "transform"]},
+    "document": {
+      "type": "string",
+      "description": "Path to the SCXML this interface is for, relative to the interface file."
+    },
+    "signals": {
+      "type": "object",
+      "additionalProperties": {"$ref": "#/$defs/signal"}
+    },
+    "inputs": {
+      "type": "object",
+      "additionalProperties": {"$ref": "#/$defs/input"}
+    },
+    "outputs": {
+      "type": "object",
+      "additionalProperties": {"$ref": "#/$defs/output"}
+    }
+  },
+  "$defs": {
+    "symbol": {
+      "type": "string",
+      "minLength": 1
+    },
+    "producedValue": {
+      "type": ["string", "number", "boolean"],
+      "description": "A value the document produces for an output: the name of one of its own enumeration's variants, or a literal of a text, number or truth-value output (which may be the empty text). It is the document's own, never a platform's number for a symbol."
+    },
+    "signal": {
+      "description": "An input from the surroundings, by the name the specification uses: a closed set of symbols, or a number, a text or a truth value.",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["values"],
+          "additionalProperties": false,
+          "properties": {
+            "values": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {"$ref": "#/$defs/symbol"},
+              "description": "The symbols, and nothing the platform numbers them by."
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type"],
+          "additionalProperties": false,
+          "properties": {"type": {"enum": ["number", "text", "bool"]}}
+        }
+      ]
+    },
+    "input": {
+      "oneOf": [
+        {"$ref": "#/$defs/statechartInput"},
+        {"$ref": "#/$defs/transformInput"},
+        {"$ref": "#/$defs/logicalInput"}
+      ]
+    },
+    "statechartInput": {
+      "description": "A signal that changes to `becomes` sends `event`.",
+      "type": "object",
+      "required": ["signal", "becomes", "event"],
+      "additionalProperties": false,
+      "properties": {
+        "signal": {"type": "string"},
+        "becomes": {"$ref": "#/$defs/symbol"},
+        "event": {"type": "string"},
+        "assumed": {"type": "string"},
+        "note": {"type": "string"}
+      }
+    },
+    "transformInput": {
+      "description": "What the document reads from a signal: a comparison of its symbol, or the signal itself handed over as the document's type. A signal that is not reporting reads as `when_absent`, and without one the round cannot be computed. A closed set is handed to a document input of an enumeration type, by name; it is never handed as a number.",
+      "type": "object",
+      "required": ["signal"],
+      "additionalProperties": false,
+      "properties": {
+        "signal": {"type": "string"},
+        "equals": {"$ref": "#/$defs/symbol"},
+        "equals_any": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/symbol"}},
+        "not_equals": {"$ref": "#/$defs/symbol"},
+        "absent": {"const": true},
+        "when_absent": {"type": ["string", "number", "boolean"]},
+        "range": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "number"}},
+        "assumed": {"type": "string"},
+        "note": {"type": "string"}
+      }
+    },
+    "logicalInput": {
+      "description": "A state the specification names and a platform encodes however it does (the target profile's `protocols`); here it is a plain true or false.",
+      "type": "object",
+      "required": ["logical"],
+      "additionalProperties": false,
+      "properties": {
+        "logical": {"const": true},
+        "assumed": {"type": "string"},
+        "note": {"type": "string"}
+      }
+    },
+    "output": {
+      "oneOf": [
+        {"$ref": "#/$defs/statechartOutput"},
+        {"$ref": "#/$defs/transformOutput"}
+      ]
+    },
+    "statechartOutput": {
+      "description": "The last send to `sent.processor` in a round names the value; else `when_nothing_sent`; else the output is not written that round.",
+      "type": "object",
+      "required": ["sent", "values"],
+      "additionalProperties": false,
+      "properties": {
+        "sent": {
+          "type": "object",
+          "required": ["processor"],
+          "additionalProperties": false,
+          "properties": {"processor": {"type": "string"}}
+        },
+        "values": {"type": "array", "items": {"$ref": "#/$defs/producedValue"}},
+        "when_nothing_sent": {"$ref": "#/$defs/producedValue"},
+        "attributes": {
+          "type": "object",
+          "description": "Constants the specification states for the output, by a logical name.",
+          "additionalProperties": {"type": ["string", "number", "boolean"]}
+        },
+        "assumed": {"type": "string"},
+        "note": {"type": "string"}
+      }
+    },
+    "transformOutput": {
+      "description": "What the document computes: one of `values` (a closed set, by the document's own names), the value as it is (`passthrough`), or a value the document keeps to itself (`internal`).",
+      "type": "object",
+      "additionalProperties": false,
+      "oneOf": [
+        {"required": ["values"]},
+        {"required": ["passthrough"]},
+        {"required": ["internal"]}
+      ],
+      "properties": {
+        "values": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/producedValue"}},
+        "passthrough": {"const": true},
+        "internal": {"const": true},
+        "assumed": {"type": "string"},
+        "note": {"type": "string"}
+      }
+    }
+  }
+}

@@ -204,6 +204,9 @@ COST_MEASURED: dict[str, str] = {
     # 72s with the opt-1 one `Cargo.toml` now builds, under load 23. The
     # figure is a stopwatch read of the gate's own work, not paced.
     "authoring-core": "2026-09-24",
+    # The suite run directly (`python3 -m unittest discover`) with the pinned generator, warm, 34
+    # cases, 81s. The first runner time will replace it.
+    "targets": "2026-10-14",
     # The gate script run once end to end through `bx --local` on 2026-10-08,
     # with Node and Chrome both replaying: 107s with the dependencies built,
     # under load 5. The run before Chrome was added read 128s on a first
@@ -1032,6 +1035,18 @@ GATES: dict[str, dict] = {
                    "so the 86 run-driven cases are judged, not skipped.",
         "cost_s": 72,
         "summary": "authoring core is domain-free, and its refusals still fire",
+    },
+    # The logical interface every target shares, and the library built from it. The generator and
+    # a compiler are needed (the parity cases build and run C++), so unlike authoring-core's
+    # Python-only job this one has no run without them: the gate refuses to start.
+    "targets": {
+        "workflows": ["targets.yml"],
+        "runner_workflow": True,
+        "ci_only": "81s with the generator built at opt 1: the interface cases are seconds each, "
+                   "the three parity cases build and run a C++ library. Not taken by "
+                   "`scripts/gate --measure`, which is refused locally for this repository.",
+        "cost_s": 81,
+        "summary": "the logical interface is platform-free, and the library judges as verify does",
     },
     # The gate whose absence let a stale verifies-catalog reach CI red:
     # `ledger-citations` runs mnemosyne-cli, this workflow runs a separate

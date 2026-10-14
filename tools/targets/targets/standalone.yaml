@@ -1,0 +1,12 @@
+# The standalone target: a C++ library with no platform behind it.
+# One file for the target, not one per component: everything a component needs beyond this is in
+# its logical interface. A component-specific line here would be per-component work.
+target: standalone
+namespace: standalone
+# When the outputs are landed:
+#   batch      -- the caller delivers any number of signals, then commit() lands them as one round
+#                 (a platform's callback is this shape)
+#   per-signal -- every setter is a round of its own
+round: batch
+# The host's delivery rule: an unchanged value reaches nothing.
+activation: on-change

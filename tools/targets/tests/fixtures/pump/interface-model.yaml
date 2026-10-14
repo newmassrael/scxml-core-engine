@@ -1,0 +1,39 @@
+# A synthetic pack for the targets' tests. It is made up, and nothing in it is anyone's.
+# One input of each shape the logical interface carries: a closed set the document reads by
+# name (mode), a closed set it compares (float), a number with a range (level); and one output
+# of each landing: a closed set (pump), a value passed as it is (fill), and a text the binding
+# maps to the platform's symbols (label).
+version: 1
+entries:
+  - address: tank/in/mode
+    role: input
+    names: [IN_Mode]
+    values: {AUTO: 0, MANUAL: 1, "OFF": 2}
+
+  - address: tank/in/level
+    role: input
+    names: [IN_Level]
+    type: number
+
+  - address: tank/in/float
+    role: input
+    names: [IN_Float]
+    values: {LOW: 0, HIGH: 1}
+
+  - address: tank/out/pump
+    role: output
+    names: [OUT_Pump]
+    fields:
+      value: {values: {IDLE: 0, RUN: 1}}
+
+  - address: tank/out/fill
+    role: output
+    names: [OUT_Fill]
+    fields:
+      value: {type: number}
+
+  - address: tank/out/label
+    role: output
+    names: [OUT_Label]
+    fields:
+      value: {values: {AUTO_MODE: 0, HAND_MODE: 1}}

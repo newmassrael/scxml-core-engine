@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="transform" name="pump">
+  <sce:import as="Mode" src="mode_values.scxml" kind="enum"/>
+  <sce:import as="Pump" src="pump_values.scxml" kind="enum"/>
+  <datamodel>
+    <data id="mode" sce:type="enum:Mode" sce:direction="in"/>
+    <data id="level" sce:type="int32" sce:direction="in"/>
+    <data id="floatHigh" sce:type="bool" sce:direction="in"/>
+
+    <data id="pump" sce:type="enum:Pump" sce:direction="out"
+          expr="(mode === Mode.MANUAL || (mode === Mode.AUTO &amp;&amp; level &lt; 20 &amp;&amp; !floatHigh))
+                ? Pump.RUN : Pump.IDLE"/>
+    <data id="fill" sce:type="int32" sce:direction="out"
+          expr="level &gt; 100 ? 100 : level"/>
+    <data id="label" sce:type="string" sce:direction="out"
+          expr="(mode === Mode.AUTO) ? 'auto' : 'hand'"/>
+  </datamodel>
+</scxml>

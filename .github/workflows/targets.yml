@@ -1,0 +1,81 @@
+name: Targets (logical interface + standalone library)
+
+# A binding is split into a logical interface that every target shares and a profile that only one
+# platform needs. The standalone target builds a C++ library from the interface alone, and this lane
+# holds two things: the interface carries nothing of a platform, and the library fails the same
+# cases `verify` fails.
+#
+# The second needs the product's generator and a compiler. A case that cannot run skips, and a skip
+# reads as a pass, so the generator is built one step up and the gate refuses to run without it.
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'tools/targets/**'
+      - 'tools/authoring/**'
+      - '.github/workflows/targets.yml'
+      - 'scripts/gates/targets.sh'
+      - 'sce-build/**'
+      - 'tools/codegen/templates/**'
+      - 'schemas/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'tools/targets/**'
+      - 'tools/authoring/**'
+      - '.github/workflows/targets.yml'
+      - 'scripts/gates/targets.sh'
+      - 'sce-build/**'
+      - 'tools/codegen/templates/**'
+      - 'schemas/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  targets:
+    name: Interface is platform-free, library judges as verify does
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install Dependencies
+        # libxml2-dev: the `libxml` crate behind sce-build's XSD validator
+        # needs the dev headers at build time (see forge-conformance.yml).
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxml2-dev pkg-config g++
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+      - name: Cache Cargo
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-targets-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'sce-build/**/*.rs', 'sce-build/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-targets-
+      - name: Build sce-codegen
+        run: |
+          source scripts/lib/sce_codegen.sh
+          sce_codegen_drop_stale_release
+          cargo build --bin sce-codegen --features cli -p sce-build
+      - name: Refuse to run the suite without the generator
+        run: test -x target/debug/sce-codegen
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.x'
+      - name: Install the two libraries a pack is parsed and validated with
+        run: python3 -m pip install --upgrade pyyaml jsonschema
+      - name: Targets gate
+        run: scripts/gate targets

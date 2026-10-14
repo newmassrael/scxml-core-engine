@@ -1,0 +1,32 @@
+version: 1
+document: pump.scxml
+activation: on-change
+
+inputs:
+  # A closed set handed to an enumeration of the document's own: by name. Silent, it reads as
+  # the document's variant numbered 30 (OFF): the number is the document's, never the platform's.
+  mode:
+    address: tank/in/mode
+    when_absent: 30
+  # A number, read only inside its range; outside it, or silent, it is 0.
+  level:
+    address: tank/in/level
+    range: [0, 120]
+    when_absent: 0
+  floatHigh:
+    address: tank/in/float
+    equals: HIGH
+
+outputs:
+  pump:
+    address: tank/out/pump
+    field: value
+    map: platform
+  fill:
+    address: tank/out/fill
+    field: value
+    passthrough: true
+  label:
+    address: tank/out/label
+    field: value
+    map: {auto: AUTO_MODE, hand: HAND_MODE}

@@ -260,6 +260,12 @@ const LANES: &[(&str, f64, u32, u32, u32)] = &[
     // `ecma262-lowered-kotlin.yml` was replaced, and delete this paragraph
     // when the number is its own.
     ("authoring-core.yml", 8.5, 0, 0, 0),
+    // ⚠ STAND-IN, borrowed 2026-10-14 for a lane of no history: it builds `sce-codegen` and then runs
+    // `scripts/gate`, as `authoring-core.yml` does (8.5). Its own work is a 34-case suite measured at
+    // 81s locally, three of them building and running a C++ library, so the true median may sit a minute
+    // or two above 8.5; both are far under the 17.6-minute push gap, so no plausible correction changes
+    // the classification. Replace it after 25 runs of its own and delete this paragraph.
+    ("targets.yml", 8.5, 0, 0, 0),
     ("clang-format-check.yml", 0.8, 0, 25, 0),
     ("clippy-check.yml", 7.7, 0, 22, 1),
     // 12 of its last 25 cancelled while declaring `false`, and that is the

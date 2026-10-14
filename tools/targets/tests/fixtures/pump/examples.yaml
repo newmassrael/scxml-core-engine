@@ -1,0 +1,36 @@
+version: 1
+origin: made up for the targets' tests
+independent_cases: true
+ordered: true
+cases:
+  - name: automatic, low level, float low
+    given: {tank/in/mode: AUTO, tank/in/level: 15, tank/in/float: LOW}
+    expect: {tank/out/pump.value: RUN, tank/out/fill.value: 15, tank/out/label.value: AUTO_MODE}
+
+  - name: automatic, float high
+    given: {tank/in/mode: AUTO, tank/in/level: 15, tank/in/float: HIGH}
+    expect: {tank/out/pump.value: IDLE, tank/out/fill.value: 15}
+
+  - name: automatic, level high enough
+    given: {tank/in/mode: AUTO, tank/in/level: 60, tank/in/float: LOW}
+    expect: {tank/out/pump.value: IDLE, tank/out/fill.value: 60}
+
+  - name: manual runs whatever the level
+    given: {tank/in/mode: MANUAL, tank/in/level: 90, tank/in/float: HIGH}
+    expect: {tank/out/pump.value: RUN, tank/out/label.value: HAND_MODE}
+
+  - name: off is idle
+    given: {tank/in/mode: "OFF", tank/in/level: 5, tank/in/float: LOW}
+    expect: {tank/out/pump.value: IDLE, tank/out/label.value: HAND_MODE}
+
+  - name: a level outside its range reads as 0
+    given: {tank/in/mode: AUTO, tank/in/level: 150, tank/in/float: LOW}
+    expect: {tank/out/pump.value: RUN, tank/out/fill.value: 0}
+
+  - name: a silent mode reads as off
+    given: {tank/in/mode: NO_SIGNAL, tank/in/level: 5, tank/in/float: LOW}
+    expect: {tank/out/pump.value: IDLE, tank/out/label.value: HAND_MODE}
+
+  - name: a silent float is not high
+    given: {tank/in/mode: AUTO, tank/in/level: 5, tank/in/float: NO_SIGNAL}
+    expect: {tank/out/pump.value: RUN}

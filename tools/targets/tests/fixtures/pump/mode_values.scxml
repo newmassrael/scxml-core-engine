@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="enum" name="mode_values" sce:underlying-type="uint8">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="AUTO" value="10"/>
+      <sce:variant name="MANUAL" value="20"/>
+      <sce:variant name="OFF" value="30"/>
+    </data>
+  </datamodel>
+</scxml>

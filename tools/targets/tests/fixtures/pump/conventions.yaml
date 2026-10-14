@@ -1,0 +1,10 @@
+version: 1
+name_classes:
+  - pattern: '\bIN_[A-Za-z0-9_]+\b'
+    role: supplied
+  - pattern: '\bOUT_[A-Za-z0-9_]+\b'
+    role: own_output
+gate_off:
+  - {when: always, use: first}
+neutral_symbols: []
+absence_tokens: [NO_SIGNAL]
