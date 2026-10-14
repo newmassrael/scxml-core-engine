@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 183f18491c5dd45b374c3b2c08bfc767695163bf7baba7ce864677f0441a634f
+// source-hash: f6a25f05d9c6710c575a8a02095451e4b3efae7e36c47b7681b1beb92894445e
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/presence_peer.scxml
