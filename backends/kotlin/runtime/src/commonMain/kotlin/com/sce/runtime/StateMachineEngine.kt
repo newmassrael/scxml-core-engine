@@ -323,6 +323,13 @@ private const val MAX_MACROSTEP_MICROSTEPS = 1000
  */
 private const val DEFAULT_MAX_EXTERNAL_EVENTS_PER_CALL = 10_000
 
+/**
+ * What the id of a `<send>` the document wrote none for begins with: the build
+ * names the element `__send_<n>` (`SCXMLParser::send_counter`), once, whatever the
+ * number of times it runs.
+ */
+private const val BUILD_SEND_ID_PREFIX = "__send_"
+
 abstract class StateMachineEngine<S : State, E : Event>(
     protected val scriptEngine: ScxmlScriptEngine? = null
 ) {
@@ -3596,7 +3603,15 @@ abstract class StateMachineEngine<S : State, E : Event>(
 
     /**
      * Queue a waiting send in [scheduledSends], replacing any send of the same
-     * id. [route] is `null` for an event of this machine's own external queue.
+     * id the document wrote. [route] is `null` for an event of this machine's own
+     * external queue.
+     *
+     * A send the document gave no id is known by one the build made up for the
+     * element (`__send_<n>`), the same for every execution of it, so it names no
+     * send the document can cancel and says nothing about which of its
+     * executions replaces which: each is its own waiting send. A machine that
+     * arms the same `<send delay>` for one client after another, each to expire
+     * its own entry, has them all pending, as it does on every other engine.
      */
     private fun queueScheduledSend(
         sendId: String,
@@ -3605,7 +3620,9 @@ abstract class StateMachineEngine<S : State, E : Event>(
         metadata: EventMetadata,
         route: ScheduledRoute?,
     ) {
-        cancelSend(sendId)
+        if (!sendId.startsWith(BUILD_SEND_ID_PREFIX)) {
+            cancelSend(sendId)
+        }
         scheduledSends.add(ScheduledSendEntry(
             fireTimeMs = engineElapsedMs() + delayMs,
             sequenceNum = schedulerSequence++,
