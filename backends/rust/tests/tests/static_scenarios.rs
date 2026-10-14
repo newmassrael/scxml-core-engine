@@ -935,3 +935,35 @@ fn static_payload_reads_the_fields_of_its_event() {
         ),
     );
 }
+
+// A run of several machines, one machine at a time. The scenarios below are a
+// run of the world simulation (`backends/rust/world`), written out by
+// `a_world_run_is_what_every_backend_replays.rs` as what each copy of a shared
+// document was given, held and sent its peers (`sent`). The Rust machine made
+// them, so here they say only that the committed machine is the one that ran;
+// what they are for is the other six drivers, held to the same steps.
+macro_rules! a_copy_does_what_it_did_in_the_world {
+    ($($test:ident: $module:ident::{$policy:ident, $persist:ident} => $scenario:literal;)*) => {$(
+        #[test]
+        fn $test() {
+            use sce_rust_tests::integration::static_datamodel::$module::{$persist, $policy};
+            replay(
+                Engine::new($policy::new()),
+                |engine| engine.save().expect("saves"),
+                include_str!(concat!(
+                    "../../../../sce-build/tests/fixtures/",
+                    $scenario
+                )),
+            );
+        }
+    )*};
+}
+
+a_copy_does_what_it_did_in_the_world! {
+    todo_peer_does_what_alice_did: todo_peer_sm::{TodoPeerPolicy, TodoPeerPersist} => "static_datamodel/scenarios/todo_peer_alice.json";
+    todo_peer_does_what_bob_did: todo_peer_sm::{TodoPeerPolicy, TodoPeerPersist} => "static_datamodel/scenarios/todo_peer_bob.json";
+    todo_peer_does_what_the_hub_did: todo_peer_sm::{TodoPeerPolicy, TodoPeerPersist} => "static_datamodel/scenarios/todo_peer_server.json";
+    sheet_peer_does_what_alice_did: sheet_peer_sm::{SheetPeerPolicy, SheetPeerPersist} => "static_datamodel/scenarios/sheet_peer_alice.json";
+    sheet_peer_does_what_bob_did: sheet_peer_sm::{SheetPeerPolicy, SheetPeerPersist} => "static_datamodel/scenarios/sheet_peer_bob.json";
+    sheet_peer_does_what_the_hub_did: sheet_peer_sm::{SheetPeerPolicy, SheetPeerPersist} => "static_datamodel/scenarios/sheet_peer_server.json";
+}

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 572a4258697cb4e5e72ff4c473f572e8103d28b7053d53f63dcb2a37167bc6ae
+// source-hash: a92737f3147f50ca2cf6319055f29d7afe2c17766723037ae46a81e73e7a66df
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_record.scxml
@@ -60,11 +60,15 @@ class StaticRecordStateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `shown` datamodel variable, published (`sce:direction="out"`). */
-    var shown: StaticRecordDayRecord = StaticRecordDayRecord(year = 2026.toUShort(), month = 9.toUByte(), dayOfMonth = 24.toUByte())
-        private set
+    private var vShown: StaticRecordDayRecord = StaticRecordDayRecord(year = 2026.toUShort(), month = 9.toUByte(), dayOfMonth = 24.toUByte())
+
+    /** What the published `shown` holds. */
+    val shown: StaticRecordDayRecord get() = vShown
     /** W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`). */
-    var refusals: UInt = 0.toUInt()
-        private set
+    private var vRefusals: UInt = 0.toUInt()
+
+    /** What the published `refusals` holds. */
+    val refusals: UInt get() = vRefusals
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -77,7 +81,7 @@ class StaticRecordStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.refusals?.let { refusals = it }
+        params.refusals?.let { vRefusals = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -100,8 +104,8 @@ class StaticRecordStateMachine(
     )
 
     private fun currentData(): Data = Data(
-        shown = shown,
-        refusals = refusals,
+        shown = vShown,
+        refusals = vRefusals,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -144,8 +148,8 @@ class StaticRecordStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "shown" to shown.toSaved(),
-            "refusals" to SavedValues.of(refusals),
+            "shown" to vShown.toSaved(),
+            "refusals" to SavedValues.of(vRefusals),
         ),
         wallNowMs,
     )
@@ -173,8 +177,8 @@ class StaticRecordStateMachine(
         beginRestore(saved, savedShape)
         val saved1 = StaticRecordDayRecord.fromSaved(saved.variable("shown"), "shown")
         val saved2 = SavedValues.uint32(saved.variable("refusals"), "refusals")
-        shown = saved1
-        refusals = saved2
+        vShown = saved1
+        vRefusals = saved2
         enterSaved(saved, wallNowMs)
     }
 
@@ -327,7 +331,7 @@ class StaticRecordStateMachine(
         event: StaticRecordEvent?
     ): EnabledTransition<StaticRecordState, HistoryId>? = when (state) {
         is StaticRecordState.Showing -> when {
-            event is StaticRecordEvent.Next && shown.dayOfMonth < daysInMonth(shown.year, shown.month) -> transitionShowingAt0
+            event is StaticRecordEvent.Next && vShown.dayOfMonth < daysInMonth(vShown.year, vShown.month) -> transitionShowingAt0
             event is StaticRecordEvent.Day.Picked -> transitionShowingAt1
             event is StaticRecordEvent.Error.Execution -> transitionShowingAt2
             else -> null
@@ -364,7 +368,7 @@ class StaticRecordStateMachine(
             0 -> {
                 // SCE-MAP: static_record.scxml:26 :: showing :: _transition_0
 
-            if (try { shown = shown.copy(dayOfMonth = com.sce.forge.runtime.SceChecked.add(shown.dayOfMonth, 1.toUByte())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordEvent.Error.Execution, "<assign location='shown.dayOfMonth'>: an integer operation overflowed or failed"); true }) {
+            if (try { vShown = vShown.copy(dayOfMonth = com.sce.forge.runtime.SceChecked.add(vShown.dayOfMonth, 1.toUByte())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordEvent.Error.Execution, "<assign location='shown.dayOfMonth'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -374,16 +378,16 @@ class StaticRecordStateMachine(
                     return
                 }
 
-            shown = shown.copy(year = pendingDayPickedPayload!!.year)
+            vShown = vShown.copy(year = pendingDayPickedPayload!!.year)
 
-            shown = shown.copy(month = pendingDayPickedPayload!!.month)
+            vShown = vShown.copy(month = pendingDayPickedPayload!!.month)
 
-            shown = shown.copy(dayOfMonth = pendingDayPickedPayload!!.dayOfMonth)
+            vShown = vShown.copy(dayOfMonth = pendingDayPickedPayload!!.dayOfMonth)
             }
             2 -> {
                 // SCE-MAP: static_record.scxml:36 :: showing :: _transition_2
 
-            if (try { refusals = com.sce.forge.runtime.SceChecked.add(refusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }

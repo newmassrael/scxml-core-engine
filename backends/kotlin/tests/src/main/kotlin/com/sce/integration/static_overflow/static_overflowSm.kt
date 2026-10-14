@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 572a4258697cb4e5e72ff4c473f572e8103d28b7053d53f63dcb2a37167bc6ae
+// source-hash: a92737f3147f50ca2cf6319055f29d7afe2c17766723037ae46a81e73e7a66df
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_overflow.scxml
@@ -34,11 +34,15 @@ class StaticOverflowStateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `level` datamodel variable, published (`sce:direction="out"`). */
-    var level: UByte = 250.toUByte()
-        private set
+    private var vLevel: UByte = 250.toUByte()
+
+    /** What the published `level` holds. */
+    val level: UByte get() = vLevel
     /** W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`). */
-    var refusals: UInt = 0.toUInt()
-        private set
+    private var vRefusals: UInt = 0.toUInt()
+
+    /** What the published `refusals` holds. */
+    val refusals: UInt get() = vRefusals
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -52,8 +56,8 @@ class StaticOverflowStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.level?.let { level = it }
-        params.refusals?.let { refusals = it }
+        params.level?.let { vLevel = it }
+        params.refusals?.let { vRefusals = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -76,8 +80,8 @@ class StaticOverflowStateMachine(
     )
 
     private fun currentData(): Data = Data(
-        level = level,
-        refusals = refusals,
+        level = vLevel,
+        refusals = vRefusals,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -120,8 +124,8 @@ class StaticOverflowStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "level" to SavedValues.of(level),
-            "refusals" to SavedValues.of(refusals),
+            "level" to SavedValues.of(vLevel),
+            "refusals" to SavedValues.of(vRefusals),
         ),
         wallNowMs,
     )
@@ -149,8 +153,8 @@ class StaticOverflowStateMachine(
         beginRestore(saved, savedShape)
         val saved1 = SavedValues.uint8(saved.variable("level"), "level")
         val saved2 = SavedValues.uint32(saved.variable("refusals"), "refusals")
-        level = saved1
-        refusals = saved2
+        vLevel = saved1
+        vRefusals = saved2
         enterSaved(saved, wallNowMs)
     }
 
@@ -266,7 +270,7 @@ class StaticOverflowStateMachine(
     ): EnabledTransition<StaticOverflowState, HistoryId>? = when (state) {
         is StaticOverflowState.Waiting -> when {
             event is StaticOverflowEvent.Up -> transitionWaitingAt0
-            event is StaticOverflowEvent.Probe && (try { com.sce.forge.runtime.SceChecked.add(level, 10.toUByte()) > 0.toUByte() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOverflowEvent.Error.Execution, "<transition cond='level + 10 > 0'>: an integer operation overflowed or failed"); false }) -> transitionWaitingAt1
+            event is StaticOverflowEvent.Probe && (try { com.sce.forge.runtime.SceChecked.add(vLevel, 10.toUByte()) > 0.toUByte() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOverflowEvent.Error.Execution, "<transition cond='level + 10 > 0'>: an integer operation overflowed or failed"); false }) -> transitionWaitingAt1
             event is StaticOverflowEvent.Error.Execution -> transitionWaitingAt2
             else -> null
         }
@@ -311,14 +315,14 @@ class StaticOverflowStateMachine(
             0 -> {
                 // SCE-MAP: static_overflow.scxml:22 :: waiting :: _transition_0
 
-            if (try { level = com.sce.forge.runtime.SceChecked.add(level, 3.toUByte()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOverflowEvent.Error.Execution, "<assign location='level'>: an integer operation overflowed or failed"); true }) {
+            if (try { vLevel = com.sce.forge.runtime.SceChecked.add(vLevel, 3.toUByte()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOverflowEvent.Error.Execution, "<assign location='level'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             2 -> {
                 // SCE-MAP: static_overflow.scxml:26 :: waiting :: _transition_2
 
-            if (try { refusals = com.sce.forge.runtime.SceChecked.add(refusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOverflowEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOverflowEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }

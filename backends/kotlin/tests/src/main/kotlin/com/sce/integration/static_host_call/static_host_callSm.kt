@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 572a4258697cb4e5e72ff4c473f572e8103d28b7053d53f63dcb2a37167bc6ae
+// source-hash: a92737f3147f50ca2cf6319055f29d7afe2c17766723037ae46a81e73e7a66df
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_host_call.scxml
@@ -78,7 +78,7 @@ class StaticHostCallStateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `attempts` datamodel variable, the machine's own. */
-    private var attempts: UInt = 0.toUInt()
+    private var vAttempts: UInt = 0.toUInt()
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -91,7 +91,7 @@ class StaticHostCallStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.attempts?.let { attempts = it }
+        params.attempts?.let { vAttempts = it }
     }
 
     /**
@@ -145,7 +145,7 @@ class StaticHostCallStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "attempts" to SavedValues.of(attempts),
+            "attempts" to SavedValues.of(vAttempts),
         ),
         wallNowMs,
     )
@@ -172,7 +172,7 @@ class StaticHostCallStateMachine(
     fun restore(saved: SavedState, wallNowMs: Long) {
         beginRestore(saved, savedShape)
         val saved1 = SavedValues.uint32(saved.variable("attempts"), "attempts")
-        attempts = saved1
+        vAttempts = saved1
         enterSaved(saved, wallNowMs)
     }
 
@@ -256,7 +256,7 @@ class StaticHostCallStateMachine(
         event: StaticHostCallEvent?
     ): EnabledTransition<StaticHostCallState, HistoryId>? = when (state) {
         is StaticHostCallState.Idle -> when {
-            event is StaticHostCallEvent.Retry && attempts < 3.toUInt() -> transitionIdleAt0
+            event is StaticHostCallEvent.Retry && vAttempts < 3.toUInt() -> transitionIdleAt0
             else -> null
         }
     }
@@ -272,7 +272,7 @@ class StaticHostCallStateMachine(
                 run {
 
             // W3C SCXML G.7: <sce:action name="showAttempts">
-            actions.showAttempts(attempts, attempts >= 3.toUInt())
+            actions.showAttempts(vAttempts, vAttempts >= 3.toUInt())
                 }
             }
         }
@@ -297,7 +297,7 @@ class StaticHostCallStateMachine(
             0 -> {
                 // SCE-MAP: static_host_call.scxml:25 :: idle :: _transition_0
 
-            if (try { attempts = com.sce.forge.runtime.SceChecked.add(attempts, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
+            if (try { vAttempts = com.sce.forge.runtime.SceChecked.add(vAttempts, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
             }

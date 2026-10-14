@@ -1246,8 +1246,19 @@ impl StaticTarget for KotlinTarget {
     fn expr_target(&self) -> ExprTarget {
         ExprTarget::Kotlin
     }
+    // A prefix keeps a variable's field from meeting another member of the
+    // class, which a bare name could: the generated machine extends the engine,
+    // and a variable named `clock` under its own name hides the engine's.
     fn field_name(&self, id: &str) -> String {
-        filters::to_camel_case(id.to_string())
+        format!("v{}", filters::to_pascal_case(id.to_string()))
+    }
+    // The author's name in the case a Kotlin property is written in, and none
+    // for a name the language reserves or the class already holds a property by.
+    fn reader_name(&self, id: &str) -> Option<String> {
+        let spelled = filters::to_camel_case(id.to_string());
+        (!crate::reader_names::is_reserved_word(Language::Kotlin, &spelled)
+            && !crate::reader_names::kotlin_machine_holds_property(&spelled))
+        .then_some(spelled)
     }
     fn field_ref(&self, name: &str) -> String {
         name.to_string()

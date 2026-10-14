@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 572a4258697cb4e5e72ff4c473f572e8103d28b7053d53f63dcb2a37167bc6ae
+// source-hash: a92737f3147f50ca2cf6319055f29d7afe2c17766723037ae46a81e73e7a66df
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_history.scxml
@@ -51,8 +51,10 @@ class StaticHistoryStateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `resumed` datamodel variable, published (`sce:direction="out"`). */
-    var resumed: UByte = 0.toUByte()
-        private set
+    private var vResumed: UByte = 0.toUByte()
+
+    /** What the published `resumed` holds. */
+    val resumed: UByte get() = vResumed
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -65,7 +67,7 @@ class StaticHistoryStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.resumed?.let { resumed = it }
+        params.resumed?.let { vResumed = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -87,7 +89,7 @@ class StaticHistoryStateMachine(
     )
 
     private fun currentData(): Data = Data(
-        resumed = resumed,
+        resumed = vResumed,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -130,7 +132,7 @@ class StaticHistoryStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "resumed" to SavedValues.of(resumed),
+            "resumed" to SavedValues.of(vResumed),
         ),
         wallNowMs,
     )
@@ -157,7 +159,7 @@ class StaticHistoryStateMachine(
     fun restore(saved: SavedState, wallNowMs: Long) {
         beginRestore(saved, savedShape)
         val saved1 = SavedValues.uint8(saved.variable("resumed"), "resumed")
-        resumed = saved1
+        vResumed = saved1
         enterSaved(saved, wallNowMs)
     }
 
@@ -629,7 +631,7 @@ class StaticHistoryStateMachine(
             1 -> {
                 // SCE-MAP: static_history.scxml:78 :: paused :: _transition_1
 
-            if (try { resumed = com.sce.forge.runtime.SceChecked.add(resumed, 1.toUByte()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
+            if (try { vResumed = com.sce.forge.runtime.SceChecked.add(vResumed, 1.toUByte()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
             }

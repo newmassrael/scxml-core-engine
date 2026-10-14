@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 572a4258697cb4e5e72ff4c473f572e8103d28b7053d53f63dcb2a37167bc6ae
+// source-hash: a92737f3147f50ca2cf6319055f29d7afe2c17766723037ae46a81e73e7a66df
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_payload.scxml
@@ -47,17 +47,25 @@ class StaticPayloadStateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `day` datamodel variable, published (`sce:direction="out"`). */
-    var day: UByte = 0.toUByte()
-        private set
+    private var vDay: UByte = 0.toUByte()
+
+    /** What the published `day` holds. */
+    val day: UByte get() = vDay
     /** W3C SCXML 5.2: the `late` datamodel variable, published (`sce:direction="out"`). */
-    var late: Boolean = false
-        private set
+    private var vLate: Boolean = false
+
+    /** What the published `late` holds. */
+    val late: Boolean get() = vLate
     /** W3C SCXML 5.2: the `sinceEpoch` datamodel variable, published (`sce:direction="out"`). */
-    var sinceEpoch: UShort = 0.toUShort()
-        private set
+    private var vSinceEpoch: UShort = 0.toUShort()
+
+    /** What the published `sinceEpoch` holds. */
+    val sinceEpoch: UShort get() = vSinceEpoch
     /** W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`). */
-    var refusals: UInt = 0.toUInt()
-        private set
+    private var vRefusals: UInt = 0.toUInt()
+
+    /** What the published `refusals` holds. */
+    val refusals: UInt get() = vRefusals
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -73,10 +81,10 @@ class StaticPayloadStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.day?.let { day = it }
-        params.late?.let { late = it }
-        params.sinceEpoch?.let { sinceEpoch = it }
-        params.refusals?.let { refusals = it }
+        params.day?.let { vDay = it }
+        params.late?.let { vLate = it }
+        params.sinceEpoch?.let { vSinceEpoch = it }
+        params.refusals?.let { vRefusals = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -101,10 +109,10 @@ class StaticPayloadStateMachine(
     )
 
     private fun currentData(): Data = Data(
-        day = day,
-        late = late,
-        sinceEpoch = sinceEpoch,
-        refusals = refusals,
+        day = vDay,
+        late = vLate,
+        sinceEpoch = vSinceEpoch,
+        refusals = vRefusals,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -147,10 +155,10 @@ class StaticPayloadStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "day" to SavedValues.of(day),
-            "late" to SavedValues.of(late),
-            "sinceEpoch" to SavedValues.of(sinceEpoch),
-            "refusals" to SavedValues.of(refusals),
+            "day" to SavedValues.of(vDay),
+            "late" to SavedValues.of(vLate),
+            "sinceEpoch" to SavedValues.of(vSinceEpoch),
+            "refusals" to SavedValues.of(vRefusals),
         ),
         wallNowMs,
     )
@@ -180,10 +188,10 @@ class StaticPayloadStateMachine(
         val saved2 = SavedValues.bool(saved.variable("late"), "late")
         val saved3 = SavedValues.uint16(saved.variable("sinceEpoch"), "sinceEpoch")
         val saved4 = SavedValues.uint32(saved.variable("refusals"), "refusals")
-        day = saved1
-        late = saved2
-        sinceEpoch = saved3
-        refusals = saved4
+        vDay = saved1
+        vLate = saved2
+        vSinceEpoch = saved3
+        vRefusals = saved4
         enterSaved(saved, wallNowMs)
     }
 
@@ -374,11 +382,11 @@ class StaticPayloadStateMachine(
                     return
                 }
 
-            late = true
+            vLate = true
 
-            day = pendingDayPickedPayload!!.dayOfMonth
+            vDay = pendingDayPickedPayload!!.dayOfMonth
 
-            if (try { sinceEpoch = com.sce.forge.runtime.SceChecked.sub(pendingDayPickedPayload!!.year, 2000.toUShort()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticPayloadEvent.Error.Execution, "<assign location='sinceEpoch'>: an integer operation overflowed or failed"); true }) {
+            if (try { vSinceEpoch = com.sce.forge.runtime.SceChecked.sub(pendingDayPickedPayload!!.year, 2000.toUShort()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticPayloadEvent.Error.Execution, "<assign location='sinceEpoch'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -388,18 +396,18 @@ class StaticPayloadStateMachine(
                     return
                 }
 
-            late = false
+            vLate = false
 
-            day = pendingDayPickedPayload!!.dayOfMonth
+            vDay = pendingDayPickedPayload!!.dayOfMonth
 
-            if (try { sinceEpoch = com.sce.forge.runtime.SceChecked.sub(pendingDayPickedPayload!!.year, 2000.toUShort()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticPayloadEvent.Error.Execution, "<assign location='sinceEpoch'>: an integer operation overflowed or failed"); true }) {
+            if (try { vSinceEpoch = com.sce.forge.runtime.SceChecked.sub(pendingDayPickedPayload!!.year, 2000.toUShort()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticPayloadEvent.Error.Execution, "<assign location='sinceEpoch'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             2 -> {
                 // SCE-MAP: static_payload.scxml:34 :: waiting :: _transition_2
 
-            if (try { refusals = com.sce.forge.runtime.SceChecked.add(refusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticPayloadEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticPayloadEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }

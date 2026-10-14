@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 572a4258697cb4e5e72ff4c473f572e8103d28b7053d53f63dcb2a37167bc6ae
+// source-hash: a92737f3147f50ca2cf6319055f29d7afe2c17766723037ae46a81e73e7a66df
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_list.scxml
@@ -50,14 +50,20 @@ class StaticListStateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `picked` datamodel variable, published (`sce:direction="out"`). */
-    var picked: List<UByte> = emptyList()
-        private set
+    private var vPicked: List<UByte> = emptyList()
+
+    /** What the published `picked` holds. */
+    val picked: List<UByte> get() = vPicked
     /** W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`). */
-    var refusals: UInt = 0.toUInt()
-        private set
+    private var vRefusals: UInt = 0.toUInt()
+
+    /** What the published `refusals` holds. */
+    val refusals: UInt get() = vRefusals
     /** W3C SCXML 5.2: the `count` datamodel variable, published (`sce:direction="out"`). */
-    var count: UInt = 0.toUInt()
-        private set
+    private var vCount: UInt = 0.toUInt()
+
+    /** What the published `count` holds. */
+    val count: UInt get() = vCount
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -71,8 +77,8 @@ class StaticListStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.refusals?.let { refusals = it }
-        params.count?.let { count = it }
+        params.refusals?.let { vRefusals = it }
+        params.count?.let { vCount = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -96,9 +102,9 @@ class StaticListStateMachine(
     )
 
     private fun currentData(): Data = Data(
-        picked = picked,
-        refusals = refusals,
-        count = count,
+        picked = vPicked,
+        refusals = vRefusals,
+        count = vCount,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -141,9 +147,9 @@ class StaticListStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "picked" to SavedValues.list(picked) { SavedValues.of(it) },
-            "refusals" to SavedValues.of(refusals),
-            "count" to SavedValues.of(count),
+            "picked" to SavedValues.list(vPicked) { SavedValues.of(it) },
+            "refusals" to SavedValues.of(vRefusals),
+            "count" to SavedValues.of(vCount),
         ),
         wallNowMs,
     )
@@ -172,9 +178,9 @@ class StaticListStateMachine(
         val saved1 = SavedValues.list(saved.variable("picked"), "picked", 3) { e, w -> SavedValues.uint8(e, w) }
         val saved2 = SavedValues.uint32(saved.variable("refusals"), "refusals")
         val saved3 = SavedValues.uint32(saved.variable("count"), "count")
-        picked = saved1
-        refusals = saved2
-        count = saved3
+        vPicked = saved1
+        vRefusals = saved2
+        vCount = saved3
         enterSaved(saved, wallNowMs)
     }
 
@@ -348,7 +354,7 @@ class StaticListStateMachine(
     ): EnabledTransition<StaticListState, HistoryId>? = when (state) {
         is StaticListState.Collecting -> when {
             event is StaticListEvent.Day.Picked -> transitionCollectingAt0
-            event is StaticListEvent.Full && (picked).size.toUInt() == 3.toUInt() -> transitionCollectingAt1
+            event is StaticListEvent.Full && (vPicked).size.toUInt() == 3.toUInt() -> transitionCollectingAt1
             event is StaticListEvent.Reset -> transitionCollectingAt2
             event is StaticListEvent.Error.Execution -> transitionCollectingAt3
             else -> null
@@ -397,21 +403,21 @@ class StaticListStateMachine(
                     return
                 }
 
-            if (if (picked.size < 3) { picked = picked + (pendingDayPickedPayload!!.dayOfMonth); false } else { raisePlatformError(StaticListEvent.Error.Execution, "<sce:append target='picked'>: the list already holds its capacity of 3"); true }) {
+            if (if (vPicked.size < 3) { vPicked = vPicked + (pendingDayPickedPayload!!.dayOfMonth); false } else { raisePlatformError(StaticListEvent.Error.Execution, "<sce:append target='picked'>: the list already holds its capacity of 3"); true }) {
                 return
             }
 
-            count = (picked).size.toUInt()
+            vCount = (vPicked).size.toUInt()
             }
             2 -> {
                 // SCE-MAP: static_list.scxml:27 :: collecting :: _transition_2
 
-            picked = emptyList()
+            vPicked = emptyList()
             }
             3 -> {
                 // SCE-MAP: static_list.scxml:30 :: collecting :: _transition_3
 
-            if (try { refusals = com.sce.forge.runtime.SceChecked.add(refusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }

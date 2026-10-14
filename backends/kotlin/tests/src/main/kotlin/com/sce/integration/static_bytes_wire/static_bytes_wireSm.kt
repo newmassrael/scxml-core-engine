@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 572a4258697cb4e5e72ff4c473f572e8103d28b7053d53f63dcb2a37167bc6ae
+// source-hash: a92737f3147f50ca2cf6319055f29d7afe2c17766723037ae46a81e73e7a66df
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_bytes_wire.scxml
@@ -56,23 +56,25 @@ class StaticBytesWireStateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `held` datamodel variable, published (`sce:direction="out"`). */
-    var held: ByteArray = "ab".toByteArray()
-        // A byte string is handed out as a copy: the array is the machine's own,
-        // and a host that wrote into it would change the variable behind its bound.
-        get() = field.copyOf()
-        private set
+    private var vHeld: ByteArray = "ab".toByteArray()
+
+    /** What the published `held` holds. */
+    val held: ByteArray get() = vHeld.copyOf()
     /** W3C SCXML 5.2: the `echo` datamodel variable, published (`sce:direction="out"`). */
-    var echo: ByteArray = "".toByteArray()
-        // A byte string is handed out as a copy: the array is the machine's own,
-        // and a host that wrote into it would change the variable behind its bound.
-        get() = field.copyOf()
-        private set
+    private var vEcho: ByteArray = "".toByteArray()
+
+    /** What the published `echo` holds. */
+    val echo: ByteArray get() = vEcho.copyOf()
     /** W3C SCXML 5.2: the `relays` datamodel variable, published (`sce:direction="out"`). */
-    var relays: UInt = 0.toUInt()
-        private set
+    private var vRelays: UInt = 0.toUInt()
+
+    /** What the published `relays` holds. */
+    val relays: UInt get() = vRelays
     /** W3C SCXML 5.2: the `errors` datamodel variable, published (`sce:direction="out"`). */
-    var errors: UInt = 0.toUInt()
-        private set
+    private var vErrors: UInt = 0.toUInt()
+
+    /** What the published `errors` holds. */
+    val errors: UInt get() = vErrors
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -86,8 +88,8 @@ class StaticBytesWireStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.relays?.let { relays = it }
-        params.errors?.let { errors = it }
+        params.relays?.let { vRelays = it }
+        params.errors?.let { vErrors = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -112,10 +114,10 @@ class StaticBytesWireStateMachine(
     )
 
     private fun currentData(): Data = Data(
-        held = held,
-        echo = echo,
-        relays = relays,
-        errors = errors,
+        held = vHeld.copyOf(),
+        echo = vEcho.copyOf(),
+        relays = vRelays,
+        errors = vErrors,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -158,10 +160,10 @@ class StaticBytesWireStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "held" to SavedValues.of(held),
-            "echo" to SavedValues.of(echo),
-            "relays" to SavedValues.of(relays),
-            "errors" to SavedValues.of(errors),
+            "held" to SavedValues.of(vHeld),
+            "echo" to SavedValues.of(vEcho),
+            "relays" to SavedValues.of(vRelays),
+            "errors" to SavedValues.of(vErrors),
         ),
         wallNowMs,
     )
@@ -191,10 +193,10 @@ class StaticBytesWireStateMachine(
         val saved2 = SavedValues.bytes(saved.variable("echo"), "echo", 8)
         val saved3 = SavedValues.uint32(saved.variable("relays"), "relays")
         val saved4 = SavedValues.uint32(saved.variable("errors"), "errors")
-        held = saved1
-        echo = saved2
-        relays = saved3
-        errors = saved4
+        vHeld = saved1
+        vEcho = saved2
+        vRelays = saved3
+        vErrors = saved4
         enterSaved(saved, wallNowMs)
     }
 
@@ -422,7 +424,7 @@ class StaticBytesWireStateMachine(
                     var doneEventData = ""
                     // W3C SCXML 5.5: Evaluate <param> elements (C++ DoneDataHelper::evaluateParams pattern)
                     val doneParams = mutableMapOf<String, Any?>()
-                    doneParams["frame"] = com.sce.runtime.EventPayload.bytesAsText(echo)
+                    doneParams["frame"] = com.sce.runtime.EventPayload.bytesAsText(vEcho)
                     // §scxml-5.5: the pairs that survived, `{}` when none did
                     // (C++ DoneDataHelper::evaluateParams). Not left to
                     // buildJsonFromParams, whose empty answer is a <send>'s.
@@ -466,7 +468,7 @@ class StaticBytesWireStateMachine(
                     return
                 }
 
-            if (try { held = com.sce.forge.runtime.SceChecked.bounded(pendingFramedTakenPayload!!.frame, 8); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBytesWireEvent.Error.Execution, "<assign location='held'>: an integer operation overflowed or failed"); true }) {
+            if (try { vHeld = com.sce.forge.runtime.SceChecked.bounded(pendingFramedTakenPayload!!.frame, 8); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBytesWireEvent.Error.Execution, "<assign location='held'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -478,7 +480,7 @@ class StaticBytesWireStateMachine(
             val sendPayload = mutableMapOf<String, Any?>()
             putParam(sendPayload, "sensor", (3).toLong())
 
-            putParam(sendPayload, "frame", com.sce.runtime.EventPayload.bytesAsText(held))
+            putParam(sendPayload, "frame", com.sce.runtime.EventPayload.bytesAsText(vHeld))
 
             val sendData = buildJsonFromParams(sendPayload)
             // W3C SCXML 6.2: send to this session's external queue
@@ -496,18 +498,18 @@ class StaticBytesWireStateMachine(
                     return
                 }
 
-            if (try { echo = com.sce.forge.runtime.SceChecked.bounded(pendingFramedRelayedPayload!!.frame, 8); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBytesWireEvent.Error.Execution, "<assign location='echo'>: an integer operation overflowed or failed"); true }) {
+            if (try { vEcho = com.sce.forge.runtime.SceChecked.bounded(pendingFramedRelayedPayload!!.frame, 8); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBytesWireEvent.Error.Execution, "<assign location='echo'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { relays = com.sce.forge.runtime.SceChecked.add(relays, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBytesWireEvent.Error.Execution, "<assign location='relays'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRelays = com.sce.forge.runtime.SceChecked.add(vRelays, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBytesWireEvent.Error.Execution, "<assign location='relays'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             4 -> {
                 // SCE-MAP: static_bytes_wire.scxml:40 :: idle :: _transition_4
 
-            if (try { errors = com.sce.forge.runtime.SceChecked.add(errors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBytesWireEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
+            if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBytesWireEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }

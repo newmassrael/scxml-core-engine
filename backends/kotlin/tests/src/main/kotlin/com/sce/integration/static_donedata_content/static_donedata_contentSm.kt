@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 572a4258697cb4e5e72ff4c473f572e8103d28b7053d53f63dcb2a37167bc6ae
+// source-hash: a92737f3147f50ca2cf6319055f29d7afe2c17766723037ae46a81e73e7a66df
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_donedata_content.scxml
@@ -40,10 +40,12 @@ class StaticDonedataContentStateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `count` datamodel variable, published (`sce:direction="out"`). */
-    var count: UInt = 0.toUInt()
-        private set
+    private var vCount: UInt = 0.toUInt()
+
+    /** What the published `count` holds. */
+    val count: UInt get() = vCount
     /** W3C SCXML 5.2: the `label` datamodel variable, the machine's own. */
-    private var label: String = "tally"
+    private var vLabel: String = "tally"
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -57,8 +59,8 @@ class StaticDonedataContentStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.count?.let { count = it }
-        params.label?.let { label = it }
+        params.count?.let { vCount = it }
+        params.label?.let { vLabel = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -80,7 +82,7 @@ class StaticDonedataContentStateMachine(
     )
 
     private fun currentData(): Data = Data(
-        count = count,
+        count = vCount,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -123,8 +125,8 @@ class StaticDonedataContentStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "count" to SavedValues.of(count),
-            "label" to SavedValues.of(label),
+            "count" to SavedValues.of(vCount),
+            "label" to SavedValues.of(vLabel),
         ),
         wallNowMs,
     )
@@ -152,8 +154,8 @@ class StaticDonedataContentStateMachine(
         beginRestore(saved, savedShape)
         val saved1 = SavedValues.uint32(saved.variable("count"), "count")
         val saved2 = SavedValues.string(saved.variable("label"), "label", 16)
-        count = saved1
-        label = saved2
+        vCount = saved1
+        vLabel = saved2
         enterSaved(saved, wallNowMs)
     }
 
@@ -341,7 +343,7 @@ class StaticDonedataContentStateMachine(
                     var doneEventData = ""
                     // W3C SCXML 5.5: the value of <content expr> is the done event's data.
                     doneEventData = try {
-                        valueToJson((com.sce.forge.runtime.SceChecked.mul(count, 2000000000.toUInt())).toLong())
+                        valueToJson((com.sce.forge.runtime.SceChecked.mul(vCount, 2000000000.toUInt())).toLong())
                     } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
                         raisePlatformError(StaticDonedataContentEvent.Error.Execution, "<donedata> <content expr> failed to evaluate")
                         valueToJson("")
@@ -360,7 +362,7 @@ class StaticDonedataContentStateMachine(
                 run {
                     var doneEventData = ""
                     // W3C SCXML 5.5: the value of <content expr> is the done event's data.
-                    doneEventData = valueToJson(label)
+                    doneEventData = valueToJson(vLabel)
                     // W3C SCXML 5.5 + 6.3.1: stash onto the engine so the invoking parent's
                     // startInvoke completion callback can lift the payload onto
                     // done.invoke.<id>._event.data. Mirrors C++ AOT stashDonedataAtFinal.
@@ -376,7 +378,7 @@ class StaticDonedataContentStateMachine(
                     var doneEventData = ""
                     // W3C SCXML 5.5: the value of <content expr> is the done event's data.
                     doneEventData = try {
-                        valueToJson((com.sce.forge.runtime.SceChecked.mul(count, 2.toUInt())).toLong())
+                        valueToJson((com.sce.forge.runtime.SceChecked.mul(vCount, 2.toUInt())).toLong())
                     } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
                         raisePlatformError(StaticDonedataContentEvent.Error.Execution, "<donedata> <content expr> failed to evaluate")
                         valueToJson("")
@@ -423,7 +425,7 @@ class StaticDonedataContentStateMachine(
             0 -> {
                 // SCE-MAP: static_donedata_content.scxml:29 :: counting :: _transition_0
 
-            if (try { count = com.sce.forge.runtime.SceChecked.add(count, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticDonedataContentEvent.Error.Execution, "<assign location='count'>: an integer operation overflowed or failed"); true }) {
+            if (try { vCount = com.sce.forge.runtime.SceChecked.add(vCount, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticDonedataContentEvent.Error.Execution, "<assign location='count'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }

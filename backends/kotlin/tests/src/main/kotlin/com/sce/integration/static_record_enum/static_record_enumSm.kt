@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 572a4258697cb4e5e72ff4c473f572e8103d28b7053d53f63dcb2a37167bc6ae
+// source-hash: a92737f3147f50ca2cf6319055f29d7afe2c17766723037ae46a81e73e7a66df
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_record_enum.scxml
@@ -71,20 +71,30 @@ class StaticRecordEnumStateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `shown` datamodel variable, published (`sce:direction="out"`). */
-    var shown: StaticRecordEnumViewRecord = StaticRecordEnumViewRecord(layout = StaticRecordEnumViewModeEnum.MONTH, zoom = 1.toUByte())
-        private set
+    private var vShown: StaticRecordEnumViewRecord = StaticRecordEnumViewRecord(layout = StaticRecordEnumViewModeEnum.MONTH, zoom = 1.toUByte())
+
+    /** What the published `shown` holds. */
+    val shown: StaticRecordEnumViewRecord get() = vShown
     /** W3C SCXML 5.2: the `seen` datamodel variable, published (`sce:direction="out"`). */
-    var seen: List<StaticRecordEnumViewRecord> = emptyList()
-        private set
+    private var vSeen: List<StaticRecordEnumViewRecord> = emptyList()
+
+    /** What the published `seen` holds. */
+    val seen: List<StaticRecordEnumViewRecord> get() = vSeen
     /** W3C SCXML 5.2: the `weeks` datamodel variable, published (`sce:direction="out"`). */
-    var weeks: UInt = 0.toUInt()
-        private set
+    private var vWeeks: UInt = 0.toUInt()
+
+    /** What the published `weeks` holds. */
+    val weeks: UInt get() = vWeeks
     /** W3C SCXML 5.2: the `flips` datamodel variable, published (`sce:direction="out"`). */
-    var flips: UInt = 0.toUInt()
-        private set
+    private var vFlips: UInt = 0.toUInt()
+
+    /** What the published `flips` holds. */
+    val flips: UInt get() = vFlips
     /** W3C SCXML 5.2: the `leads` datamodel variable, published (`sce:direction="out"`). */
-    var leads: UInt = 0.toUInt()
-        private set
+    private var vLeads: UInt = 0.toUInt()
+
+    /** What the published `leads` holds. */
+    val leads: UInt get() = vLeads
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -99,9 +109,9 @@ class StaticRecordEnumStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.weeks?.let { weeks = it }
-        params.flips?.let { flips = it }
-        params.leads?.let { leads = it }
+        params.weeks?.let { vWeeks = it }
+        params.flips?.let { vFlips = it }
+        params.leads?.let { vLeads = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -127,11 +137,11 @@ class StaticRecordEnumStateMachine(
     )
 
     private fun currentData(): Data = Data(
-        shown = shown,
-        seen = seen,
-        weeks = weeks,
-        flips = flips,
-        leads = leads,
+        shown = vShown,
+        seen = vSeen,
+        weeks = vWeeks,
+        flips = vFlips,
+        leads = vLeads,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -174,11 +184,11 @@ class StaticRecordEnumStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "shown" to shown.toSaved(),
-            "seen" to SavedValues.list(seen) { it.toSaved() },
-            "weeks" to SavedValues.of(weeks),
-            "flips" to SavedValues.of(flips),
-            "leads" to SavedValues.of(leads),
+            "shown" to vShown.toSaved(),
+            "seen" to SavedValues.list(vSeen) { it.toSaved() },
+            "weeks" to SavedValues.of(vWeeks),
+            "flips" to SavedValues.of(vFlips),
+            "leads" to SavedValues.of(vLeads),
         ),
         wallNowMs,
     )
@@ -209,11 +219,11 @@ class StaticRecordEnumStateMachine(
         val saved3 = SavedValues.uint32(saved.variable("weeks"), "weeks")
         val saved4 = SavedValues.uint32(saved.variable("flips"), "flips")
         val saved5 = SavedValues.uint32(saved.variable("leads"), "leads")
-        shown = saved1
-        seen = saved2
-        weeks = saved3
-        flips = saved4
-        leads = saved5
+        vShown = saved1
+        vSeen = saved2
+        vWeeks = saved3
+        vFlips = saved4
+        vLeads = saved5
         enterSaved(saved, wallNowMs)
     }
 
@@ -438,8 +448,8 @@ class StaticRecordEnumStateMachine(
         event: StaticRecordEnumEvent?
     ): EnabledTransition<StaticRecordEnumState, HistoryId>? = when (state) {
         is StaticRecordEnumState.Viewing -> when {
-            event is StaticRecordEnumEvent.Toggle && shown.layout == StaticRecordEnumViewModeEnum.MONTH -> transitionViewingAt0
-            event is StaticRecordEnumEvent.Toggle && shown.layout == StaticRecordEnumViewModeEnum.WEEK -> transitionViewingAt1
+            event is StaticRecordEnumEvent.Toggle && vShown.layout == StaticRecordEnumViewModeEnum.MONTH -> transitionViewingAt0
+            event is StaticRecordEnumEvent.Toggle && vShown.layout == StaticRecordEnumViewModeEnum.WEEK -> transitionViewingAt1
             event is StaticRecordEnumEvent.Agenda -> transitionViewingAt2
             event is StaticRecordEnumEvent.Month -> transitionViewingAt3
             event is StaticRecordEnumEvent.Zoom -> transitionViewingAt4
@@ -448,7 +458,7 @@ class StaticRecordEnumStateMachine(
             event is StaticRecordEnumEvent.Recall -> transitionViewingAt7
             event is StaticRecordEnumEvent.Peek -> transitionViewingAt8
             event is StaticRecordEnumEvent.Peeklast -> transitionViewingAt9
-            event is StaticRecordEnumEvent.Lead && (try { com.sce.forge.runtime.SceChecked.at(seen, (0).toLong()).layout == StaticRecordEnumViewModeEnum.WEEK } catch (_: com.sce.forge.runtime.AlgorithmFailure) { false }) -> transitionViewingAt10
+            event is StaticRecordEnumEvent.Lead && (try { com.sce.forge.runtime.SceChecked.at(vSeen, (0).toLong()).layout == StaticRecordEnumViewModeEnum.WEEK } catch (_: com.sce.forge.runtime.AlgorithmFailure) { false }) -> transitionViewingAt10
             event is StaticRecordEnumEvent.Take -> transitionViewingAt11
             event is StaticRecordEnumEvent.Takelast -> transitionViewingAt12
             event is StaticRecordEnumEvent.Forget -> transitionViewingAt13
@@ -486,57 +496,57 @@ class StaticRecordEnumStateMachine(
             0 -> {
                 // SCE-MAP: static_record_enum.scxml:30 :: viewing :: _transition_0
 
-            shown = shown.copy(layout = StaticRecordEnumViewModeEnum.WEEK)
+            vShown = vShown.copy(layout = StaticRecordEnumViewModeEnum.WEEK)
 
-            if (try { flips = com.sce.forge.runtime.SceChecked.add(flips, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
+            if (try { vFlips = com.sce.forge.runtime.SceChecked.add(vFlips, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
             }
             1 -> {
                 // SCE-MAP: static_record_enum.scxml:34 :: viewing :: _transition_1
 
-            shown = shown.copy(layout = StaticRecordEnumViewModeEnum.MONTH)
+            vShown = vShown.copy(layout = StaticRecordEnumViewModeEnum.MONTH)
 
-            if (try { flips = com.sce.forge.runtime.SceChecked.add(flips, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
+            if (try { vFlips = com.sce.forge.runtime.SceChecked.add(vFlips, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
             }
             2 -> {
                 // SCE-MAP: static_record_enum.scxml:38 :: viewing :: _transition_2
 
-            shown = shown.copy(layout = StaticRecordEnumViewModeEnum.AGENDA_LIST)
+            vShown = vShown.copy(layout = StaticRecordEnumViewModeEnum.AGENDA_LIST)
             }
             3 -> {
                 // SCE-MAP: static_record_enum.scxml:41 :: viewing :: _transition_3
 
-            shown = shown.copy(layout = StaticRecordEnumViewModeEnum.MONTH)
+            vShown = vShown.copy(layout = StaticRecordEnumViewModeEnum.MONTH)
             }
             4 -> {
                 // SCE-MAP: static_record_enum.scxml:44 :: viewing :: _transition_4
 
-            if (try { shown = shown.copy(zoom = com.sce.forge.runtime.SceChecked.add(shown.zoom, 1.toUByte())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
+            if (try { vShown = vShown.copy(zoom = com.sce.forge.runtime.SceChecked.add(vShown.zoom, 1.toUByte())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
             }
             5 -> {
                 // SCE-MAP: static_record_enum.scxml:48 :: viewing :: _transition_5
 
-            if (if (seen.size < 4) { seen = seen + (shown); false } else { true }) {
+            if (if (vSeen.size < 4) { vSeen = vSeen + (vShown); false } else { true }) {
                 return
             }
             }
             6 -> {
                 // SCE-MAP: static_record_enum.scxml:52 :: viewing :: _transition_6
 
-            weeks = 0.toUInt()
+            vWeeks = 0.toUInt()
 
 
-            for (v in seen) {
+            for (v in vSeen) {
 
 
             if (v.layout == StaticRecordEnumViewModeEnum.WEEK) {
 
-            if (try { weeks = com.sce.forge.runtime.SceChecked.add(weeks, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
+            if (try { vWeeks = com.sce.forge.runtime.SceChecked.add(vWeeks, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
             }
@@ -546,50 +556,50 @@ class StaticRecordEnumStateMachine(
                 // SCE-MAP: static_record_enum.scxml:61 :: viewing :: _transition_7
 
 
-            for (v in seen) {
+            for (v in vSeen) {
 
-            shown = v
+            vShown = v
             }
             }
             8 -> {
                 // SCE-MAP: static_record_enum.scxml:71 :: viewing :: _transition_8
 
-            if (try { shown = shown.copy(layout = com.sce.forge.runtime.SceChecked.at(seen, (0).toLong()).layout); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
+            if (try { vShown = vShown.copy(layout = com.sce.forge.runtime.SceChecked.at(vSeen, (0).toLong()).layout); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
             }
             9 -> {
                 // SCE-MAP: static_record_enum.scxml:74 :: viewing :: _transition_9
 
-            if (try { shown = shown.copy(layout = com.sce.forge.runtime.SceChecked.at(seen, (com.sce.forge.runtime.SceChecked.sub((seen).size.toUInt(), 1.toUInt())).toLong()).layout); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
+            if (try { vShown = vShown.copy(layout = com.sce.forge.runtime.SceChecked.at(vSeen, (com.sce.forge.runtime.SceChecked.sub((vSeen).size.toUInt(), 1.toUInt())).toLong()).layout); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
             }
             10 -> {
                 // SCE-MAP: static_record_enum.scxml:77 :: viewing :: _transition_10
 
-            if (try { leads = com.sce.forge.runtime.SceChecked.add(leads, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
+            if (try { vLeads = com.sce.forge.runtime.SceChecked.add(vLeads, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
             }
             11 -> {
                 // SCE-MAP: static_record_enum.scxml:84 :: viewing :: _transition_11
 
-            if ((try { shown = shown.copy(layout = com.sce.forge.runtime.SceChecked.at(seen, (0).toLong()).layout); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) || (try { shown = shown.copy(zoom = com.sce.forge.runtime.SceChecked.at(seen, (0).toLong()).zoom); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true })) {
+            if ((try { vShown = vShown.copy(layout = com.sce.forge.runtime.SceChecked.at(vSeen, (0).toLong()).layout); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) || (try { vShown = vShown.copy(zoom = com.sce.forge.runtime.SceChecked.at(vSeen, (0).toLong()).zoom); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true })) {
                 return
             }
             }
             12 -> {
                 // SCE-MAP: static_record_enum.scxml:87 :: viewing :: _transition_12
 
-            if ((try { shown = shown.copy(layout = com.sce.forge.runtime.SceChecked.at(seen, (com.sce.forge.runtime.SceChecked.sub((seen).size.toUInt(), 1.toUInt())).toLong()).layout); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) || (try { shown = shown.copy(zoom = com.sce.forge.runtime.SceChecked.at(seen, (com.sce.forge.runtime.SceChecked.sub((seen).size.toUInt(), 1.toUInt())).toLong()).zoom); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true })) {
+            if ((try { vShown = vShown.copy(layout = com.sce.forge.runtime.SceChecked.at(vSeen, (com.sce.forge.runtime.SceChecked.sub((vSeen).size.toUInt(), 1.toUInt())).toLong()).layout); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) || (try { vShown = vShown.copy(zoom = com.sce.forge.runtime.SceChecked.at(vSeen, (com.sce.forge.runtime.SceChecked.sub((vSeen).size.toUInt(), 1.toUInt())).toLong()).zoom); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true })) {
                 return
             }
             }
             13 -> {
                 // SCE-MAP: static_record_enum.scxml:90 :: viewing :: _transition_13
 
-            seen = emptyList()
+            vSeen = emptyList()
             }
             else -> {}
         }

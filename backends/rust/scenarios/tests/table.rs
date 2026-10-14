@@ -159,6 +159,30 @@ fn each_rule_of_the_vocabulary_refuses_what_it_is_for() {
             json!({"machine": "m", "steps": [{"expect": {"host_calls": [{"action": "a", "args": [], "x": 1}]}}]}),
             "a host call carries `x`",
         ),
+        (
+            json!({"machine": "m", "steps": [{"expect": {"sent": {}}}]}),
+            "`sent` is an array",
+        ),
+        (
+            json!({"machine": "m", "steps": [{"expect": {"sent": [{"event": "e"}]}}]}),
+            "a send names its `target`",
+        ),
+        (
+            json!({"machine": "m", "steps": [{"expect": {"sent": [{"target": "#peer"}]}}]}),
+            "a send names its `event`",
+        ),
+        (
+            json!({"machine": "m", "steps": [{"expect": {"sent": [{"target": "peer", "event": "e"}]}}]}),
+            "a peer as the document writes it",
+        ),
+        (
+            json!({"machine": "m", "steps": [{"expect": {"sent": [{"target": "#_internal", "event": "e"}]}}]}),
+            "a peer as the document writes it",
+        ),
+        (
+            json!({"machine": "m", "steps": [{"expect": {"sent": [{"target": "#peer", "event": "e", "delay": 5}]}}]}),
+            "a send carries `delay`",
+        ),
     ];
     for (scenario, reason) in cases {
         match vocabulary::check(&scenario) {

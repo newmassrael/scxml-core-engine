@@ -16,8 +16,8 @@
 // `expect` for any other object that spelled `state`. It reads what a step
 // carries — `event`, an event's `data` as the compact JSON text every producer
 // fills it with, whether the step `dropped` it, `expect.state`, `expect.ended`,
-// `expect.variables` — and stops, naming it, at what it does not, rather than
-// passing a scenario it did not replay.
+// `expect.variables`, `expect.host_calls`, `expect.sent` — and stops, naming it,
+// at what it does not, rather than passing a scenario it did not replay.
 //
 // A number spelled with a fraction or an exponent (`0.0`, `0.5`, `1e21`) is a
 // real, and one without is an integer, so `0` and `0.0` are two different
@@ -55,7 +55,9 @@ typedef struct {
     bool (*variable)(void *sm, const char *name, int64_t *out);
     // The name a variable of an enum holds, as its document declares it; NULL
     // for a variable that is not one. A scenario states such a value as a
-    // string, and a driver with no enum may leave this unset.
+    // string, and a driver with no enum may leave this unset. A string variable
+    // answers its text here, and a 64-bit integer a scenario states as the text
+    // of its digits answers those digits.
     const char *(*text)(void *sm, const char *name);
     // The elements of a list variable as numbers — at most `cap` of them written
     // to `out` — and how many it holds in `*len`. False for a name the machine
@@ -115,6 +117,17 @@ typedef struct {
     // the two be compared as text. NULL for a machine whose host is not one that
     // records: a step that states `host_calls` then fails.
     const char *(*host_calls)(void *sm);
+    // What the machine sent its Mesh peers (a `<send target="#name">`) since this
+    // was last called, as the compact JSON array a scenario's `sent` is: each send
+    // `{"target":"#name","event":"<name>","data":{…}}` — the target as the
+    // document writes it, the event's name, and the event's data where it has any —
+    // oldest first, and `[]` for none. Called once per step, so a step is judged on
+    // the sends of that step alone. The two are compared as JSON values, so the
+    // order the driver spells an object's members in is its own. NULL from the
+    // call is a driver whose record could not hold the step's sends, which fails
+    // the step whatever it states. Unset for a machine whose driver records none: a
+    // step that states `sent` then fails.
+    const char *(*sent)(void *sm);
 } sce_scenario_driver_t;
 
 // `index` of a record that is a variable of its own, not an element of a list.
@@ -395,6 +408,130 @@ static bool sce_scenario_compact(const char *from, const char *to, char *out, si
     return true;
 }
 
+static bool sce_scenario_same_json(sce_scenario_cursor_t *a, sce_scenario_cursor_t *b);
+
+// The value of member `key` in the object `object` is at (its `{`), with `value`
+// left at it. False when the object has no such member, or is not well formed.
+static bool sce_scenario_member(const char *object, const char *key, sce_scenario_cursor_t *value) {
+    sce_scenario_cursor_t c = {object};
+    char name[64];
+    if (!sce_scenario_take(&c, '{') || sce_scenario_take(&c, '}')) {
+        return false;
+    }
+    for (;;) {
+        if (!sce_scenario_string(&c, name, sizeof(name)) || !sce_scenario_take(&c, ':')) {
+            return false;
+        }
+        if (strcmp(name, key) == 0) {
+            sce_scenario_space(&c);
+            *value = c;
+            return true;
+        }
+        if (!sce_scenario_skip_value(&c) || !sce_scenario_take(&c, ',')) {
+            return false;
+        }
+    }
+}
+
+// Whether every member of the object at `a` is a member of the object `b` is at:
+// by its name alone when `values` is false, and holding the same value when it is
+// true. `a` is left after its object. False for an object that is not well formed.
+static bool sce_scenario_members_within(sce_scenario_cursor_t *a, const char *b, bool values) {
+    char name[64];
+    if (!sce_scenario_take(a, '{')) {
+        return false;
+    }
+    if (sce_scenario_take(a, '}')) {
+        return true;
+    }
+    for (;;) {
+        sce_scenario_cursor_t other = {NULL};
+        if (!sce_scenario_string(a, name, sizeof(name)) || !sce_scenario_take(a, ':') ||
+            !sce_scenario_member(b, name, &other)) {
+            return false;
+        }
+        if (values ? !sce_scenario_same_json(a, &other) : !sce_scenario_skip_value(a)) {
+            return false;
+        }
+        if (sce_scenario_take(a, '}')) {
+            return true;
+        }
+        if (!sce_scenario_take(a, ',')) {
+            return false;
+        }
+    }
+}
+
+// Whether the JSON value at `a` and the one at `b` are the same value, each cursor
+// left after its own when they are. An object is the same whatever order spells
+// its members, an array only in the order of its elements, and a string by the
+// text it spells, whatever escapes spell it. A number is compared as a step's
+// other numbers are: a real with a real, by its 64 bits, and an integer with an
+// integer, by its digits. A name or a string longer than the reader keeps is the
+// same as nothing, so a value it could not read is a mismatch and never a pass.
+static bool sce_scenario_same_json(sce_scenario_cursor_t *a, sce_scenario_cursor_t *b) {
+    sce_scenario_space(a);
+    sce_scenario_space(b);
+    if (*a->at == '{' || *b->at == '{') {
+        if (*a->at != *b->at) {
+            return false;
+        }
+        // Each member of the one is a member of the other with the same value, and
+        // the other names no member besides.
+        const char *a_object = a->at;
+        const char *b_object = b->at;
+        return sce_scenario_members_within(a, b_object, true) && sce_scenario_members_within(b, a_object, false);
+    }
+    if (*a->at == '[' || *b->at == '[') {
+        if (!sce_scenario_take(a, '[') || !sce_scenario_take(b, '[')) {
+            return false;
+        }
+        const bool a_empty = sce_scenario_take(a, ']');
+        const bool b_empty = sce_scenario_take(b, ']');
+        if (a_empty || b_empty) {
+            return a_empty && b_empty;
+        }
+        for (;;) {
+            if (!sce_scenario_same_json(a, b)) {
+                return false;
+            }
+            const bool a_ended = sce_scenario_take(a, ']');
+            const bool b_ended = sce_scenario_take(b, ']');
+            if (a_ended || b_ended) {
+                return a_ended && b_ended;
+            }
+            if (!sce_scenario_take(a, ',') || !sce_scenario_take(b, ',')) {
+                return false;
+            }
+        }
+    }
+    if (*a->at == '"' || *b->at == '"') {
+        char a_text[256];
+        char b_text[256];
+        return sce_scenario_string(a, a_text, sizeof(a_text)) && sce_scenario_string(b, b_text, sizeof(b_text)) &&
+               strcmp(a_text, b_text) == 0;
+    }
+    const bool a_real = sce_scenario_is_real(a);
+    const bool b_real = sce_scenario_is_real(b);
+    if (a_real != b_real) {
+        return false;
+    }
+    if (a_real) {
+        double a_value = 0;
+        double b_value = 0;
+        return sce_scenario_real(a, &a_value) && sce_scenario_real(b, &b_value) &&
+               sce_scenario_same_real(a_value, b_value);
+    }
+    // An integer, true, false or null: one spelling each.
+    const char *a_from = a->at;
+    const char *b_from = b->at;
+    if (!sce_scenario_skip_value(a) || !sce_scenario_skip_value(b)) {
+        return false;
+    }
+    const size_t size = (size_t)(a->at - a_from);
+    return size > 0u && size == (size_t)(b->at - b_from) && memcmp(a_from, b_from, size) == 0;
+}
+
 static int sce_scenario_fail(const sce_scenario_driver_t *d, int step, const char *what) {
     (void)fprintf(stderr, "%s: FAIL [step %d] - %s\n", d->machine, step, what);
     return 1;
@@ -609,8 +746,9 @@ static int sce_scenario_expect_record(sce_scenario_cursor_t *c, const sce_scenar
 
 // What a step expects, read from its `expect` object — the object `c` is at.
 // `asked` is what the machine told its host in this step, or NULL for a driver
-// that records none.
-static int sce_scenario_expect(sce_scenario_cursor_t *c, const sce_scenario_driver_t *d, int step, const char *asked) {
+// that records none, and `sent` what it sent its Mesh peers, or NULL likewise.
+static int sce_scenario_expect(sce_scenario_cursor_t *c, const sce_scenario_driver_t *d, int step, const char *asked,
+                               const char *sent) {
     int bad = 0;
     char key[64];
     char message[256];
@@ -686,6 +824,35 @@ static int sce_scenario_expect(sce_scenario_cursor_t *c, const sce_scenario_driv
             } else if (strcmp(asked, want) != 0) {
                 (void)snprintf(message, sizeof(message), "the machine asked its host %.100s, not %.100s", asked, want);
                 bad |= sce_scenario_fail(d, step, message);
+            }
+        } else if (strcmp(key, "sent") == 0) {
+            // The sends the machine made to its Mesh peers in this step, oldest
+            // first. The order of the sends is part of the answer; the order a
+            // send's data spells its members in is not, so the two are compared as
+            // the values they are and neither is copied to be.
+            sce_scenario_space(c);
+            const char *from = c->at;
+            if (!sce_scenario_skip_value(c)) {
+                return sce_scenario_fail(d, step, "`sent` is not well formed");
+            }
+            if (sent == NULL) {
+                bad |= sce_scenario_fail(d, step,
+                                         "this driver records no sends to peers, so it cannot hold a step to them");
+            } else {
+                sce_scenario_cursor_t want = {from};
+                sce_scenario_cursor_t got = {sent};
+                bool same = sce_scenario_same_json(&got, &want);
+                // Nothing may follow the array the driver wrote.
+                sce_scenario_space(&got);
+                same = same && *got.at == '\0';
+                if (!same) {
+                    // Written whole, not through the bounded message: a send is
+                    // longer than that holds, and the part cut off is the part
+                    // that differs as often as not.
+                    (void)fprintf(stderr, "%s: FAIL [step %d] - the machine sent its peers %s, not %.*s\n", d->machine,
+                                  step, sent, (int)(c->at - from), from);
+                    bad = 1;
+                }
             }
         } else if (strcmp(key, "donedata") == 0) {
             const int mismatch = sce_scenario_expect_done_data(c, d, step);
@@ -1044,22 +1211,41 @@ static int sce_scenario_step(sce_scenario_cursor_t *c, const sce_scenario_driver
     // What the machine asked of its host in this step. Read on every step, so that
     // a step which states nothing does not hand its calls to the next.
     const char *asked = d->host_calls == NULL ? NULL : d->host_calls(d->sm);
-    return expect.at == NULL ? 0 : sce_scenario_expect(&expect, d, step, asked);
+    // What it sent its Mesh peers, read on every step for the same reason. A
+    // driver that records them and could not keep this step's has nothing true to
+    // compare, which is a failure of the step whether or not it states `sent`.
+    const char *sent = NULL;
+    if (d->sent != NULL) {
+        sent = d->sent(d->sm);
+        if (sent == NULL) {
+            return sce_scenario_fail(d, step, "the sends of this step did not fit the driver's record of them");
+        }
+    }
+    return expect.at == NULL ? 0 : sce_scenario_expect(&expect, d, step, asked, sent);
 }
 
 // Replay the scenario at `path` against `d`: the number of steps that failed,
 // and the count of steps it replayed in `*replayed`, so a scenario that lost its
 // steps cannot pass by having none.
 static int sce_scenario_replay(const char *path, const sce_scenario_driver_t *d, int *replayed) {
-    static char text[16384];
+    // The longest scenario is a run a machine took part in, a step a line with all
+    // it held after it: some 13 KB. A file past the buffer is refused, since the
+    // part of it that was read would replay as a shorter scenario that passes.
+    static char text[32768];
     FILE *file = fopen(path, "rb");
     if (file == NULL) {
         (void)fprintf(stderr, "%s: FAIL - cannot read %s\n", d->machine, path);
         return 1;
     }
     const size_t len = fread(text, 1, sizeof(text) - 1, file);
+    const bool whole = len < sizeof(text) - 1 || fgetc(file) == EOF;
     (void)fclose(file);
     text[len] = '\0';
+    if (!whole) {
+        (void)fprintf(stderr, "%s: FAIL - %s is longer than the %zu bytes the reader keeps of a scenario\n", d->machine,
+                      path, sizeof(text) - 1);
+        return 1;
+    }
 
     sce_scenario_cursor_t c = {text};
     char key[64];

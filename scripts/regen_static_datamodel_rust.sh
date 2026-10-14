@@ -79,6 +79,12 @@ SCHEMAS=(schema_entry schema_total)
 # The standard algorithms sync_client imports, by their library names; each
 # is generated beside the machines under its own name, as a local one is.
 STD_ALGORITHMS=(sync/sync_failure sync/sync_retry_at sync/sync_delete_outcome sync/sync_upload_outcome)
+# The standard merge rules todo_peer and sheet_peer are made of: the algorithms the
+# two import, the one those call (hlc_compare), and the records they take and give
+# back, which a machine and an algorithm both name as `super::<name>`.
+STD_ALGORITHMS+=(merge/hlc_timestamp merge/hlc_compare merge/hlc_send merge/hlc_receive)
+STD_ALGORITHMS+=(merge/lww_cell merge/lww_write)
+STD_ALGORITHMS+=(merge/rga_node merge/rga_gone merge/rga_insert merge/rga_holds merge/rga_remove)
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 572a4258697cb4e5e72ff4c473f572e8103d28b7053d53f63dcb2a37167bc6ae
+// source-hash: a92737f3147f50ca2cf6319055f29d7afe2c17766723037ae46a81e73e7a66df
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_record_real32.scxml
@@ -59,14 +59,20 @@ class StaticRecordReal32StateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `last` datamodel variable, published (`sce:direction="out"`). */
-    var last: StaticRecordReal32Reading32Record = StaticRecordReal32Reading32Record(sensor = 1.toUByte(), value = 0.5f)
-        private set
+    private var vLast: StaticRecordReal32Reading32Record = StaticRecordReal32Reading32Record(sensor = 1.toUByte(), value = 0.5f)
+
+    /** What the published `last` holds. */
+    val last: StaticRecordReal32Reading32Record get() = vLast
     /** W3C SCXML 5.2: the `sum` datamodel variable, published (`sce:direction="out"`). */
-    var sum: Float = 0.0f
-        private set
+    private var vSum: Float = 0.0f
+
+    /** What the published `sum` holds. */
+    val sum: Float get() = vSum
     /** W3C SCXML 5.2: the `errors` datamodel variable, published (`sce:direction="out"`). */
-    var errors: UInt = 0.toUInt()
-        private set
+    private var vErrors: UInt = 0.toUInt()
+
+    /** What the published `errors` holds. */
+    val errors: UInt get() = vErrors
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -80,8 +86,8 @@ class StaticRecordReal32StateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.sum?.let { sum = it }
-        params.errors?.let { errors = it }
+        params.sum?.let { vSum = it }
+        params.errors?.let { vErrors = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -105,9 +111,9 @@ class StaticRecordReal32StateMachine(
     )
 
     private fun currentData(): Data = Data(
-        last = last,
-        sum = sum,
-        errors = errors,
+        last = vLast,
+        sum = vSum,
+        errors = vErrors,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -150,9 +156,9 @@ class StaticRecordReal32StateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "last" to last.toSaved(),
-            "sum" to SavedValues.of(sum),
-            "errors" to SavedValues.of(errors),
+            "last" to vLast.toSaved(),
+            "sum" to SavedValues.of(vSum),
+            "errors" to SavedValues.of(vErrors),
         ),
         wallNowMs,
     )
@@ -181,9 +187,9 @@ class StaticRecordReal32StateMachine(
         val saved1 = StaticRecordReal32Reading32Record.fromSaved(saved.variable("last"), "last")
         val saved2 = SavedValues.float32(saved.variable("sum"), "sum")
         val saved3 = SavedValues.uint32(saved.variable("errors"), "errors")
-        last = saved1
-        sum = saved2
-        errors = saved3
+        vLast = saved1
+        vSum = saved2
+        vErrors = saved3
         enterSaved(saved, wallNowMs)
     }
 
@@ -373,9 +379,9 @@ class StaticRecordReal32StateMachine(
             0 -> {
                 // SCE-MAP: static_record_real32.scxml:29 :: idle :: _transition_0
 
-            last = last.copy(value = last.value * 2.0f + 1.5f)
+            vLast = vLast.copy(value = vLast.value * 2.0f + 1.5f)
 
-            sum = sum + last.value
+            vSum = vSum + vLast.value
             }
             1 -> {
                 // SCE-MAP: static_record_real32.scxml:33 :: idle :: _transition_1
@@ -383,14 +389,14 @@ class StaticRecordReal32StateMachine(
                     return
                 }
 
-            last = last.copy(value = pendingReading32TakenPayload!!.value)
+            vLast = vLast.copy(value = pendingReading32TakenPayload!!.value)
 
-            last = last.copy(sensor = pendingReading32TakenPayload!!.sensor)
+            vLast = vLast.copy(sensor = pendingReading32TakenPayload!!.sensor)
             }
             2 -> {
                 // SCE-MAP: static_record_real32.scxml:44 :: idle :: _transition_2
 
-            if (try { errors = com.sce.forge.runtime.SceChecked.add(errors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordReal32Event.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
+            if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordReal32Event.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }

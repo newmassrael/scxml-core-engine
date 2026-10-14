@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 572a4258697cb4e5e72ff4c473f572e8103d28b7053d53f63dcb2a37167bc6ae
+// source-hash: a92737f3147f50ca2cf6319055f29d7afe2c17766723037ae46a81e73e7a66df
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/sync_client.scxml
@@ -70,32 +70,50 @@ class SyncClientStateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `byToken` datamodel variable, published (`sce:direction="out"`). */
-    var byToken: Boolean = false
-        private set
+    private var vByToken: Boolean = false
+
+    /** What the published `byToken` holds. */
+    val byToken: Boolean get() = vByToken
     /** W3C SCXML 5.2: the `fullListing` datamodel variable, published (`sce:direction="out"`). */
-    var fullListing: Boolean = true
-        private set
+    private var vFullListing: Boolean = true
+
+    /** What the published `fullListing` holds. */
+    val fullListing: Boolean get() = vFullListing
     /** W3C SCXML 5.2: the `outcome` datamodel variable, published (`sce:direction="out"`). */
-    var outcome: UByte = 0.toUByte()
-        private set
+    private var vOutcome: UByte = 0.toUByte()
+
+    /** What the published `outcome` holds. */
+    val outcome: UByte get() = vOutcome
     /** W3C SCXML 5.2: the `retryAt` datamodel variable, published (`sce:direction="out"`). */
-    var retryAt: Long = 0
-        private set
+    private var vRetryAt: Long = 0
+
+    /** What the published `retryAt` holds. */
+    val retryAt: Long get() = vRetryAt
     /** W3C SCXML 5.2: the `deleted` datamodel variable, published (`sce:direction="out"`). */
-    var deleted: UInt = 0.toUInt()
-        private set
+    private var vDeleted: UInt = 0.toUInt()
+
+    /** What the published `deleted` holds. */
+    val deleted: UInt get() = vDeleted
     /** W3C SCXML 5.2: the `uploaded` datamodel variable, published (`sce:direction="out"`). */
-    var uploaded: UInt = 0.toUInt()
-        private set
+    private var vUploaded: UInt = 0.toUInt()
+
+    /** What the published `uploaded` holds. */
+    val uploaded: UInt get() = vUploaded
     /** W3C SCXML 5.2: the `discarded` datamodel variable, published (`sce:direction="out"`). */
-    var discarded: UInt = 0.toUInt()
-        private set
+    private var vDiscarded: UInt = 0.toUInt()
+
+    /** What the published `discarded` holds. */
+    val discarded: UInt get() = vDiscarded
     /** W3C SCXML 5.2: the `pages` datamodel variable, published (`sce:direction="out"`). */
-    var pages: UInt = 0.toUInt()
-        private set
+    private var vPages: UInt = 0.toUInt()
+
+    /** What the published `pages` holds. */
+    val pages: UInt get() = vPages
     /** W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`). */
-    var refusals: UInt = 0.toUInt()
-        private set
+    private var vRefusals: UInt = 0.toUInt()
+
+    /** What the published `refusals` holds. */
+    val refusals: UInt get() = vRefusals
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -116,15 +134,15 @@ class SyncClientStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.byToken?.let { byToken = it }
-        params.fullListing?.let { fullListing = it }
-        params.outcome?.let { outcome = it }
-        params.retryAt?.let { retryAt = it }
-        params.deleted?.let { deleted = it }
-        params.uploaded?.let { uploaded = it }
-        params.discarded?.let { discarded = it }
-        params.pages?.let { pages = it }
-        params.refusals?.let { refusals = it }
+        params.byToken?.let { vByToken = it }
+        params.fullListing?.let { vFullListing = it }
+        params.outcome?.let { vOutcome = it }
+        params.retryAt?.let { vRetryAt = it }
+        params.deleted?.let { vDeleted = it }
+        params.uploaded?.let { vUploaded = it }
+        params.discarded?.let { vDiscarded = it }
+        params.pages?.let { vPages = it }
+        params.refusals?.let { vRefusals = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -154,15 +172,15 @@ class SyncClientStateMachine(
     )
 
     private fun currentData(): Data = Data(
-        byToken = byToken,
-        fullListing = fullListing,
-        outcome = outcome,
-        retryAt = retryAt,
-        deleted = deleted,
-        uploaded = uploaded,
-        discarded = discarded,
-        pages = pages,
-        refusals = refusals,
+        byToken = vByToken,
+        fullListing = vFullListing,
+        outcome = vOutcome,
+        retryAt = vRetryAt,
+        deleted = vDeleted,
+        uploaded = vUploaded,
+        discarded = vDiscarded,
+        pages = vPages,
+        refusals = vRefusals,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -205,15 +223,15 @@ class SyncClientStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "byToken" to SavedValues.of(byToken),
-            "fullListing" to SavedValues.of(fullListing),
-            "outcome" to SavedValues.of(outcome),
-            "retryAt" to SavedValues.of(retryAt),
-            "deleted" to SavedValues.of(deleted),
-            "uploaded" to SavedValues.of(uploaded),
-            "discarded" to SavedValues.of(discarded),
-            "pages" to SavedValues.of(pages),
-            "refusals" to SavedValues.of(refusals),
+            "byToken" to SavedValues.of(vByToken),
+            "fullListing" to SavedValues.of(vFullListing),
+            "outcome" to SavedValues.of(vOutcome),
+            "retryAt" to SavedValues.of(vRetryAt),
+            "deleted" to SavedValues.of(vDeleted),
+            "uploaded" to SavedValues.of(vUploaded),
+            "discarded" to SavedValues.of(vDiscarded),
+            "pages" to SavedValues.of(vPages),
+            "refusals" to SavedValues.of(vRefusals),
         ),
         wallNowMs,
     )
@@ -248,15 +266,15 @@ class SyncClientStateMachine(
         val saved7 = SavedValues.uint32(saved.variable("discarded"), "discarded")
         val saved8 = SavedValues.uint32(saved.variable("pages"), "pages")
         val saved9 = SavedValues.uint32(saved.variable("refusals"), "refusals")
-        byToken = saved1
-        fullListing = saved2
-        outcome = saved3
-        retryAt = saved4
-        deleted = saved5
-        uploaded = saved6
-        discarded = saved7
-        pages = saved8
-        refusals = saved9
+        vByToken = saved1
+        vFullListing = saved2
+        vOutcome = saved3
+        vRetryAt = saved4
+        vDeleted = saved5
+        vUploaded = saved6
+        vDiscarded = saved7
+        vPages = saved8
+        vRefusals = saved9
         enterSaved(saved, wallNowMs)
     }
 
@@ -627,7 +645,7 @@ class SyncClientStateMachine(
         is SyncClientState.Listing -> when {
             event is SyncClientEvent.Sync.Page && pendingSyncPagePayload != null && (pendingSyncPagePayload!!.more) -> transitionListingAt0
             event is SyncClientEvent.Sync.Page -> transitionListingAt1
-            event is SyncClientEvent.Sync.Response && pendingSyncResponsePayload != null && (byToken && pendingSyncResponsePayload!!.kind == 4.toUByte() && pendingSyncResponsePayload!!.davError && (pendingSyncResponsePayload!!.status == 403 || pendingSyncResponsePayload!!.status == 409)) -> transitionListingAt2
+            event is SyncClientEvent.Sync.Response && pendingSyncResponsePayload != null && (vByToken && pendingSyncResponsePayload!!.kind == 4.toUByte() && pendingSyncResponsePayload!!.davError && (pendingSyncResponsePayload!!.status == 403 || pendingSyncResponsePayload!!.status == 409)) -> transitionListingAt2
             event is SyncClientEvent.Sync.Response -> transitionListingAt3
             else -> null
         }
@@ -695,7 +713,7 @@ class SyncClientStateMachine(
             0 -> {
                 // SCE-MAP: sync_client.scxml:141 :: client :: _transition_0
 
-            if (try { refusals = com.sce.forge.runtime.SceChecked.add(refusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SyncClientEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SyncClientEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -705,16 +723,16 @@ class SyncClientStateMachine(
             0 -> {
                 // SCE-MAP: sync_client.scxml:69 :: deleting :: _transition_0
 
-            if (try { deleted = com.sce.forge.runtime.SceChecked.add(deleted, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SyncClientEvent.Error.Execution, "<assign location='deleted'>: an integer operation overflowed or failed"); true }) {
+            if (try { vDeleted = com.sce.forge.runtime.SceChecked.add(vDeleted, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SyncClientEvent.Error.Execution, "<assign location='deleted'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             1 -> {
                 // SCE-MAP: sync_client.scxml:75 :: deleting :: _transition_1
 
-            fullListing = true
+            vFullListing = true
 
-            byToken = false
+            vByToken = false
             }
             2 -> {
                 // SCE-MAP: sync_client.scxml:80 :: deleting :: _transition_2
@@ -722,11 +740,11 @@ class SyncClientStateMachine(
                     return
                 }
 
-            if (try { outcome = com.sce.forge.runtime.SceChecked.take(syncFailure(pendingSyncResponsePayload!!.kind, pendingSyncResponsePayload!!.status)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SyncClientEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
+            if (try { vOutcome = com.sce.forge.runtime.SceChecked.take(syncFailure(pendingSyncResponsePayload!!.kind, pendingSyncResponsePayload!!.status)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SyncClientEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { retryAt = com.sce.forge.runtime.SceChecked.take(syncRetryAt(retryAt, pendingSyncResponsePayload!!.kind, pendingSyncResponsePayload!!.status, pendingSyncResponsePayload!!.now, pendingSyncResponsePayload!!.retryAfter)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SyncClientEvent.Error.Execution, "<assign location='retryAt'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRetryAt = com.sce.forge.runtime.SceChecked.take(syncRetryAt(vRetryAt, pendingSyncResponsePayload!!.kind, pendingSyncResponsePayload!!.status, pendingSyncResponsePayload!!.now, pendingSyncResponsePayload!!.retryAfter)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SyncClientEvent.Error.Execution, "<assign location='retryAt'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -739,17 +757,17 @@ class SyncClientStateMachine(
                     return
                 }
 
-            byToken = pendingSyncStartPayload!!.byToken && !fullListing
+            vByToken = pendingSyncStartPayload!!.byToken && !vFullListing
 
-            outcome = 0.toUByte()
+            vOutcome = 0.toUByte()
 
-            deleted = 0.toUInt()
+            vDeleted = 0.toUInt()
 
-            uploaded = 0.toUInt()
+            vUploaded = 0.toUInt()
 
-            discarded = 0.toUInt()
+            vDiscarded = 0.toUInt()
 
-            pages = 0.toUInt()
+            vPages = 0.toUInt()
             }
             else -> {}
         }
@@ -757,23 +775,23 @@ class SyncClientStateMachine(
             0 -> {
                 // SCE-MAP: sync_client.scxml:117 :: listing :: _transition_0
 
-            if (try { pages = com.sce.forge.runtime.SceChecked.add(pages, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SyncClientEvent.Error.Execution, "<assign location='pages'>: an integer operation overflowed or failed"); true }) {
+            if (try { vPages = com.sce.forge.runtime.SceChecked.add(vPages, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SyncClientEvent.Error.Execution, "<assign location='pages'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             1 -> {
                 // SCE-MAP: sync_client.scxml:122 :: listing :: _transition_1
 
-            if (try { pages = com.sce.forge.runtime.SceChecked.add(pages, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SyncClientEvent.Error.Execution, "<assign location='pages'>: an integer operation overflowed or failed"); true }) {
+            if (try { vPages = com.sce.forge.runtime.SceChecked.add(vPages, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SyncClientEvent.Error.Execution, "<assign location='pages'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            fullListing = false
+            vFullListing = false
             }
             2 -> {
                 // SCE-MAP: sync_client.scxml:127 :: listing :: _transition_2
 
-            byToken = false
+            vByToken = false
             }
             3 -> {
                 // SCE-MAP: sync_client.scxml:132 :: listing :: _transition_3
@@ -781,11 +799,11 @@ class SyncClientStateMachine(
                     return
                 }
 
-            if (try { outcome = com.sce.forge.runtime.SceChecked.take(syncFailure(pendingSyncResponsePayload!!.kind, pendingSyncResponsePayload!!.status)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SyncClientEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
+            if (try { vOutcome = com.sce.forge.runtime.SceChecked.take(syncFailure(pendingSyncResponsePayload!!.kind, pendingSyncResponsePayload!!.status)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SyncClientEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { retryAt = com.sce.forge.runtime.SceChecked.take(syncRetryAt(retryAt, pendingSyncResponsePayload!!.kind, pendingSyncResponsePayload!!.status, pendingSyncResponsePayload!!.now, pendingSyncResponsePayload!!.retryAfter)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SyncClientEvent.Error.Execution, "<assign location='retryAt'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRetryAt = com.sce.forge.runtime.SceChecked.take(syncRetryAt(vRetryAt, pendingSyncResponsePayload!!.kind, pendingSyncResponsePayload!!.status, pendingSyncResponsePayload!!.now, pendingSyncResponsePayload!!.retryAfter)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SyncClientEvent.Error.Execution, "<assign location='retryAt'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -798,31 +816,31 @@ class SyncClientStateMachine(
                     return
                 }
 
-            if (try { outcome = com.sce.forge.runtime.SceChecked.take(syncFailure(pendingSyncResponsePayload!!.kind, pendingSyncResponsePayload!!.status)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SyncClientEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
+            if (try { vOutcome = com.sce.forge.runtime.SceChecked.take(syncFailure(pendingSyncResponsePayload!!.kind, pendingSyncResponsePayload!!.status)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SyncClientEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { retryAt = com.sce.forge.runtime.SceChecked.take(syncRetryAt(retryAt, pendingSyncResponsePayload!!.kind, pendingSyncResponsePayload!!.status, pendingSyncResponsePayload!!.now, pendingSyncResponsePayload!!.retryAfter)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SyncClientEvent.Error.Execution, "<assign location='retryAt'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRetryAt = com.sce.forge.runtime.SceChecked.take(syncRetryAt(vRetryAt, pendingSyncResponsePayload!!.kind, pendingSyncResponsePayload!!.status, pendingSyncResponsePayload!!.now, pendingSyncResponsePayload!!.retryAfter)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SyncClientEvent.Error.Execution, "<assign location='retryAt'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             1 -> {
                 // SCE-MAP: sync_client.scxml:96 :: uploading :: _transition_1
 
-            if (try { uploaded = com.sce.forge.runtime.SceChecked.add(uploaded, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SyncClientEvent.Error.Execution, "<assign location='uploaded'>: an integer operation overflowed or failed"); true }) {
+            if (try { vUploaded = com.sce.forge.runtime.SceChecked.add(vUploaded, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SyncClientEvent.Error.Execution, "<assign location='uploaded'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             2 -> {
                 // SCE-MAP: sync_client.scxml:101 :: uploading :: _transition_2
 
-            if (try { discarded = com.sce.forge.runtime.SceChecked.add(discarded, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SyncClientEvent.Error.Execution, "<assign location='discarded'>: an integer operation overflowed or failed"); true }) {
+            if (try { vDiscarded = com.sce.forge.runtime.SceChecked.add(vDiscarded, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SyncClientEvent.Error.Execution, "<assign location='discarded'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            fullListing = true
+            vFullListing = true
 
-            byToken = false
+            vByToken = false
             }
             3 -> {
                 // SCE-MAP: sync_client.scxml:108 :: uploading :: _transition_3
@@ -830,11 +848,11 @@ class SyncClientStateMachine(
                     return
                 }
 
-            if (try { outcome = com.sce.forge.runtime.SceChecked.take(syncFailure(4.toUByte(), pendingSyncResponsePayload!!.status)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SyncClientEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
+            if (try { vOutcome = com.sce.forge.runtime.SceChecked.take(syncFailure(4.toUByte(), pendingSyncResponsePayload!!.status)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SyncClientEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { retryAt = com.sce.forge.runtime.SceChecked.take(syncRetryAt(retryAt, 4.toUByte(), pendingSyncResponsePayload!!.status, pendingSyncResponsePayload!!.now, pendingSyncResponsePayload!!.retryAfter)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SyncClientEvent.Error.Execution, "<assign location='retryAt'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRetryAt = com.sce.forge.runtime.SceChecked.take(syncRetryAt(vRetryAt, 4.toUByte(), pendingSyncResponsePayload!!.status, pendingSyncResponsePayload!!.now, pendingSyncResponsePayload!!.retryAfter)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SyncClientEvent.Error.Execution, "<assign location='retryAt'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }

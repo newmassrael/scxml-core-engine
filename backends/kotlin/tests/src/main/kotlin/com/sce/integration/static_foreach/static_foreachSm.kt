@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 572a4258697cb4e5e72ff4c473f572e8103d28b7053d53f63dcb2a37167bc6ae
+// source-hash: a92737f3147f50ca2cf6319055f29d7afe2c17766723037ae46a81e73e7a66df
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_foreach.scxml
@@ -41,29 +41,45 @@ class StaticForeachStateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `picked` datamodel variable, published (`sce:direction="out"`). */
-    var picked: List<UByte> = emptyList()
-        private set
+    private var vPicked: List<UByte> = emptyList()
+
+    /** What the published `picked` holds. */
+    val picked: List<UByte> get() = vPicked
     /** W3C SCXML 5.2: the `total` datamodel variable, published (`sce:direction="out"`). */
-    var total: UInt = 0.toUInt()
-        private set
+    private var vTotal: UInt = 0.toUInt()
+
+    /** What the published `total` holds. */
+    val total: UInt get() = vTotal
     /** W3C SCXML 5.2: the `weighted` datamodel variable, published (`sce:direction="out"`). */
-    var weighted: UInt = 0.toUInt()
-        private set
+    private var vWeighted: UInt = 0.toUInt()
+
+    /** What the published `weighted` holds. */
+    val weighted: UInt get() = vWeighted
     /** W3C SCXML 5.2: the `small` datamodel variable, published (`sce:direction="out"`). */
-    var small: UByte = 0.toUByte()
-        private set
+    private var vSmall: UByte = 0.toUByte()
+
+    /** What the published `small` holds. */
+    val small: UByte get() = vSmall
     /** W3C SCXML 5.2: the `crossings` datamodel variable, published (`sce:direction="out"`). */
-    var crossings: UInt = 0.toUInt()
-        private set
+    private var vCrossings: UInt = 0.toUInt()
+
+    /** What the published `crossings` holds. */
+    val crossings: UInt get() = vCrossings
     /** W3C SCXML 5.2: the `visited` datamodel variable, published (`sce:direction="out"`). */
-    var visited: UInt = 0.toUInt()
-        private set
+    private var vVisited: UInt = 0.toUInt()
+
+    /** What the published `visited` holds. */
+    val visited: UInt get() = vVisited
     /** W3C SCXML 5.2: the `finished` datamodel variable, published (`sce:direction="out"`). */
-    var finished: UInt = 0.toUInt()
-        private set
+    private var vFinished: UInt = 0.toUInt()
+
+    /** What the published `finished` holds. */
+    val finished: UInt get() = vFinished
     /** W3C SCXML 5.2: the `errors` datamodel variable, published (`sce:direction="out"`). */
-    var errors: UInt = 0.toUInt()
-        private set
+    private var vErrors: UInt = 0.toUInt()
+
+    /** What the published `errors` holds. */
+    val errors: UInt get() = vErrors
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -82,13 +98,13 @@ class StaticForeachStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.total?.let { total = it }
-        params.weighted?.let { weighted = it }
-        params.small?.let { small = it }
-        params.crossings?.let { crossings = it }
-        params.visited?.let { visited = it }
-        params.finished?.let { finished = it }
-        params.errors?.let { errors = it }
+        params.total?.let { vTotal = it }
+        params.weighted?.let { vWeighted = it }
+        params.small?.let { vSmall = it }
+        params.crossings?.let { vCrossings = it }
+        params.visited?.let { vVisited = it }
+        params.finished?.let { vFinished = it }
+        params.errors?.let { vErrors = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -117,14 +133,14 @@ class StaticForeachStateMachine(
     )
 
     private fun currentData(): Data = Data(
-        picked = picked,
-        total = total,
-        weighted = weighted,
-        small = small,
-        crossings = crossings,
-        visited = visited,
-        finished = finished,
-        errors = errors,
+        picked = vPicked,
+        total = vTotal,
+        weighted = vWeighted,
+        small = vSmall,
+        crossings = vCrossings,
+        visited = vVisited,
+        finished = vFinished,
+        errors = vErrors,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -167,14 +183,14 @@ class StaticForeachStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "picked" to SavedValues.list(picked) { SavedValues.of(it) },
-            "total" to SavedValues.of(total),
-            "weighted" to SavedValues.of(weighted),
-            "small" to SavedValues.of(small),
-            "crossings" to SavedValues.of(crossings),
-            "visited" to SavedValues.of(visited),
-            "finished" to SavedValues.of(finished),
-            "errors" to SavedValues.of(errors),
+            "picked" to SavedValues.list(vPicked) { SavedValues.of(it) },
+            "total" to SavedValues.of(vTotal),
+            "weighted" to SavedValues.of(vWeighted),
+            "small" to SavedValues.of(vSmall),
+            "crossings" to SavedValues.of(vCrossings),
+            "visited" to SavedValues.of(vVisited),
+            "finished" to SavedValues.of(vFinished),
+            "errors" to SavedValues.of(vErrors),
         ),
         wallNowMs,
     )
@@ -208,14 +224,14 @@ class StaticForeachStateMachine(
         val saved6 = SavedValues.uint32(saved.variable("visited"), "visited")
         val saved7 = SavedValues.uint32(saved.variable("finished"), "finished")
         val saved8 = SavedValues.uint32(saved.variable("errors"), "errors")
-        picked = saved1
-        total = saved2
-        weighted = saved3
-        small = saved4
-        crossings = saved5
-        visited = saved6
-        finished = saved7
-        errors = saved8
+        vPicked = saved1
+        vTotal = saved2
+        vWeighted = saved3
+        vSmall = saved4
+        vCrossings = saved5
+        vVisited = saved6
+        vFinished = saved7
+        vErrors = saved8
         enterSaved(saved, wallNowMs)
     }
 
@@ -454,78 +470,78 @@ class StaticForeachStateMachine(
             0 -> {
                 // SCE-MAP: static_foreach.scxml:26 :: working :: _transition_0
 
-            if (if (picked.size < 4) { picked = picked + (100.toUByte()); false } else { raisePlatformError(StaticForeachEvent.Error.Execution, "<sce:append target='picked'>: the list already holds its capacity of 4"); true }) {
+            if (if (vPicked.size < 4) { vPicked = vPicked + (100.toUByte()); false } else { raisePlatformError(StaticForeachEvent.Error.Execution, "<sce:append target='picked'>: the list already holds its capacity of 4"); true }) {
                 return
             }
             }
             1 -> {
                 // SCE-MAP: static_foreach.scxml:27 :: working :: _transition_1
 
-            if (if (picked.size < 4) { picked = picked + (200.toUByte()); false } else { raisePlatformError(StaticForeachEvent.Error.Execution, "<sce:append target='picked'>: the list already holds its capacity of 4"); true }) {
+            if (if (vPicked.size < 4) { vPicked = vPicked + (200.toUByte()); false } else { raisePlatformError(StaticForeachEvent.Error.Execution, "<sce:append target='picked'>: the list already holds its capacity of 4"); true }) {
                 return
             }
             }
             2 -> {
                 // SCE-MAP: static_foreach.scxml:28 :: working :: _transition_2
 
-            if (if (picked.size < 4) { picked = picked + (5.toUByte()); false } else { raisePlatformError(StaticForeachEvent.Error.Execution, "<sce:append target='picked'>: the list already holds its capacity of 4"); true }) {
+            if (if (vPicked.size < 4) { vPicked = vPicked + (5.toUByte()); false } else { raisePlatformError(StaticForeachEvent.Error.Execution, "<sce:append target='picked'>: the list already holds its capacity of 4"); true }) {
                 return
             }
             }
             3 -> {
                 // SCE-MAP: static_foreach.scxml:29 :: working :: _transition_3
 
-            picked = emptyList()
+            vPicked = emptyList()
             }
             4 -> {
                 // SCE-MAP: static_foreach.scxml:31 :: working :: _transition_4
 
-            total = 0.toUInt()
+            vTotal = 0.toUInt()
 
 
-            for (v in picked) {
+            for (v in vPicked) {
 
-            if (try { total = com.sce.forge.runtime.SceChecked.add(total, v.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForeachEvent.Error.Execution, "<assign location='total'>: an integer operation overflowed or failed"); true }) {
+            if (try { vTotal = com.sce.forge.runtime.SceChecked.add(vTotal, v.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForeachEvent.Error.Execution, "<assign location='total'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
 
-            if (try { finished = com.sce.forge.runtime.SceChecked.add(finished, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForeachEvent.Error.Execution, "<assign location='finished'>: an integer operation overflowed or failed"); true }) {
+            if (try { vFinished = com.sce.forge.runtime.SceChecked.add(vFinished, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForeachEvent.Error.Execution, "<assign location='finished'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             5 -> {
                 // SCE-MAP: static_foreach.scxml:39 :: working :: _transition_5
 
-            weighted = 0.toUInt()
+            vWeighted = 0.toUInt()
 
 
-            for ((sce_position_of_i, v) in picked.withIndex()) {
+            for ((sce_position_of_i, v) in vPicked.withIndex()) {
                 @Suppress("UNUSED_VARIABLE") val i = sce_position_of_i.toUInt()
 
-            if (try { weighted = com.sce.forge.runtime.SceChecked.add(weighted, com.sce.forge.runtime.SceChecked.mul(v.toUInt(), com.sce.forge.runtime.SceChecked.add(i, 1.toUInt()))); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForeachEvent.Error.Execution, "<assign location='weighted'>: an integer operation overflowed or failed"); true }) {
+            if (try { vWeighted = com.sce.forge.runtime.SceChecked.add(vWeighted, com.sce.forge.runtime.SceChecked.mul(v.toUInt(), com.sce.forge.runtime.SceChecked.add(i, 1.toUInt()))); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForeachEvent.Error.Execution, "<assign location='weighted'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
 
-            if (try { finished = com.sce.forge.runtime.SceChecked.add(finished, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForeachEvent.Error.Execution, "<assign location='finished'>: an integer operation overflowed or failed"); true }) {
+            if (try { vFinished = com.sce.forge.runtime.SceChecked.add(vFinished, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForeachEvent.Error.Execution, "<assign location='finished'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             6 -> {
                 // SCE-MAP: static_foreach.scxml:49 :: working :: _transition_6
 
-            small = 0.toUByte()
+            vSmall = 0.toUByte()
 
 
-            for (v in picked) {
+            for (v in vPicked) {
 
-            if (try { small = com.sce.forge.runtime.SceChecked.add(small, v); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForeachEvent.Error.Execution, "<assign location='small'>: an integer operation overflowed or failed"); true }) {
+            if (try { vSmall = com.sce.forge.runtime.SceChecked.add(vSmall, v); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForeachEvent.Error.Execution, "<assign location='small'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
 
-            if (try { finished = com.sce.forge.runtime.SceChecked.add(finished, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForeachEvent.Error.Execution, "<assign location='finished'>: an integer operation overflowed or failed"); true }) {
+            if (try { vFinished = com.sce.forge.runtime.SceChecked.add(vFinished, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForeachEvent.Error.Execution, "<assign location='finished'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -533,30 +549,30 @@ class StaticForeachStateMachine(
                 // SCE-MAP: static_foreach.scxml:58 :: working :: _transition_7
 
 
-            for (v in picked) {
+            for (v in vPicked) {
 
-            if (if (picked.size < 4) { picked = picked + (v); false } else { raisePlatformError(StaticForeachEvent.Error.Execution, "<sce:append target='picked'>: the list already holds its capacity of 4"); true }) {
+            if (if (vPicked.size < 4) { vPicked = vPicked + (v); false } else { raisePlatformError(StaticForeachEvent.Error.Execution, "<sce:append target='picked'>: the list already holds its capacity of 4"); true }) {
                 return
             }
             }
 
-            if (try { finished = com.sce.forge.runtime.SceChecked.add(finished, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForeachEvent.Error.Execution, "<assign location='finished'>: an integer operation overflowed or failed"); true }) {
+            if (try { vFinished = com.sce.forge.runtime.SceChecked.add(vFinished, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForeachEvent.Error.Execution, "<assign location='finished'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             8 -> {
                 // SCE-MAP: static_foreach.scxml:65 :: working :: _transition_8
 
-            crossings = 0.toUInt()
+            vCrossings = 0.toUInt()
 
 
-            for ((sce_position_of_i, v) in picked.withIndex()) {
+            for ((sce_position_of_i, v) in vPicked.withIndex()) {
                 @Suppress("UNUSED_VARIABLE") val i = sce_position_of_i.toUInt()
 
 
-            for (w in picked) {
+            for (w in vPicked) {
 
-            if (try { crossings = com.sce.forge.runtime.SceChecked.add(crossings, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForeachEvent.Error.Execution, "<assign location='crossings'>: an integer operation overflowed or failed"); true }) {
+            if (try { vCrossings = com.sce.forge.runtime.SceChecked.add(vCrossings, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForeachEvent.Error.Execution, "<assign location='crossings'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -565,13 +581,13 @@ class StaticForeachStateMachine(
             9 -> {
                 // SCE-MAP: static_foreach.scxml:74 :: working :: _transition_9
 
-            visited = 0.toUInt()
+            vVisited = 0.toUInt()
 
 
-            for ((sce_position_of_i, v) in picked.withIndex()) {
+            for ((sce_position_of_i, v) in vPicked.withIndex()) {
                 @Suppress("UNUSED_VARIABLE") val i = sce_position_of_i.toUInt()
 
-            if (try { visited = com.sce.forge.runtime.SceChecked.add(visited, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForeachEvent.Error.Execution, "<assign location='visited'>: an integer operation overflowed or failed"); true }) {
+            if (try { vVisited = com.sce.forge.runtime.SceChecked.add(vVisited, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForeachEvent.Error.Execution, "<assign location='visited'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -579,7 +595,7 @@ class StaticForeachStateMachine(
             10 -> {
                 // SCE-MAP: static_foreach.scxml:80 :: working :: _transition_10
 
-            if (try { errors = com.sce.forge.runtime.SceChecked.add(errors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForeachEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
+            if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForeachEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }

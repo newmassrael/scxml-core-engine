@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 572a4258697cb4e5e72ff4c473f572e8103d28b7053d53f63dcb2a37167bc6ae
+// source-hash: a92737f3147f50ca2cf6319055f29d7afe2c17766723037ae46a81e73e7a66df
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_send_delay.scxml
@@ -36,14 +36,20 @@ class StaticSendDelayStateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `wait` datamodel variable, published (`sce:direction="out"`). */
-    var wait: UInt = 100.toUInt()
-        private set
+    private var vWait: UInt = 100.toUInt()
+
+    /** What the published `wait` holds. */
+    val wait: UInt get() = vWait
     /** W3C SCXML 5.2: the `beats` datamodel variable, published (`sce:direction="out"`). */
-    var beats: UInt = 0.toUInt()
-        private set
+    private var vBeats: UInt = 0.toUInt()
+
+    /** What the published `beats` holds. */
+    val beats: UInt get() = vBeats
     /** W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`). */
-    var refusals: UInt = 0.toUInt()
-        private set
+    private var vRefusals: UInt = 0.toUInt()
+
+    /** What the published `refusals` holds. */
+    val refusals: UInt get() = vRefusals
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -58,9 +64,9 @@ class StaticSendDelayStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.wait?.let { wait = it }
-        params.beats?.let { beats = it }
-        params.refusals?.let { refusals = it }
+        params.wait?.let { vWait = it }
+        params.beats?.let { vBeats = it }
+        params.refusals?.let { vRefusals = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -84,9 +90,9 @@ class StaticSendDelayStateMachine(
     )
 
     private fun currentData(): Data = Data(
-        wait = wait,
-        beats = beats,
-        refusals = refusals,
+        wait = vWait,
+        beats = vBeats,
+        refusals = vRefusals,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -129,9 +135,9 @@ class StaticSendDelayStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "wait" to SavedValues.of(wait),
-            "beats" to SavedValues.of(beats),
-            "refusals" to SavedValues.of(refusals),
+            "wait" to SavedValues.of(vWait),
+            "beats" to SavedValues.of(vBeats),
+            "refusals" to SavedValues.of(vRefusals),
         ),
         wallNowMs,
     )
@@ -160,9 +166,9 @@ class StaticSendDelayStateMachine(
         val saved1 = SavedValues.uint32(saved.variable("wait"), "wait")
         val saved2 = SavedValues.uint32(saved.variable("beats"), "beats")
         val saved3 = SavedValues.uint32(saved.variable("refusals"), "refusals")
-        wait = saved1
-        beats = saved2
-        refusals = saved3
+        vWait = saved1
+        vBeats = saved2
+        vRefusals = saved3
         enterSaved(saved, wallNowMs)
     }
 
@@ -348,7 +354,7 @@ class StaticSendDelayStateMachine(
             // an operation that fails, or a value that is no time, is the
             // argument error, and the message is not scheduled under some
             // default wait.
-            val sendDelayText: String = wait.toString() + "ms"
+            val sendDelayText: String = vWait.toString() + "ms"
             val sendDelayMs = com.sce.runtime.SendHelper.parseDelayMs(sendDelayText) ?: run {
                 raisePlatformError(StaticSendDelayEvent.Error.Execution, "<send> delayexpr is not a CSS2 time", "__send_0")
                 return@send true
@@ -366,7 +372,7 @@ class StaticSendDelayStateMachine(
             1 -> {
                 // SCE-MAP: static_send_delay.scxml:25 :: idle :: _transition_1
 
-            if (try { wait = com.sce.forge.runtime.SceChecked.mul(wait, 2.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendDelayEvent.Error.Execution, "<assign location='wait'>: an integer operation overflowed or failed"); true }) {
+            if (try { vWait = com.sce.forge.runtime.SceChecked.mul(vWait, 2.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendDelayEvent.Error.Execution, "<assign location='wait'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -406,7 +412,7 @@ class StaticSendDelayStateMachine(
             // argument error, and the message is not scheduled under some
             // default wait.
             val sendDelayText: String = try {
-                com.sce.forge.runtime.SceChecked.mul(wait, 100000000.toUInt()).toString() + "ms"
+                com.sce.forge.runtime.SceChecked.mul(vWait, 100000000.toUInt()).toString() + "ms"
             } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
                 raisePlatformError(StaticSendDelayEvent.Error.Execution, "<send> delayexpr could not be evaluated", "__send_2")
                 return@send true
@@ -428,14 +434,14 @@ class StaticSendDelayStateMachine(
             4 -> {
                 // SCE-MAP: static_send_delay.scxml:34 :: idle :: _transition_4
 
-            if (try { beats = com.sce.forge.runtime.SceChecked.add(beats, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendDelayEvent.Error.Execution, "<assign location='beats'>: an integer operation overflowed or failed"); true }) {
+            if (try { vBeats = com.sce.forge.runtime.SceChecked.add(vBeats, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendDelayEvent.Error.Execution, "<assign location='beats'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             5 -> {
                 // SCE-MAP: static_send_delay.scxml:37 :: idle :: _transition_5
 
-            if (try { refusals = com.sce.forge.runtime.SceChecked.add(refusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendDelayEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendDelayEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }

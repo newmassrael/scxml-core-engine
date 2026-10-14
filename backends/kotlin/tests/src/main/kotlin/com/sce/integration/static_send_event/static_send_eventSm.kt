@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 572a4258697cb4e5e72ff4c473f572e8103d28b7053d53f63dcb2a37167bc6ae
+// source-hash: a92737f3147f50ca2cf6319055f29d7afe2c17766723037ae46a81e73e7a66df
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_send_event.scxml
@@ -40,18 +40,24 @@ class StaticSendEventStateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `name` datamodel variable, the machine's own. */
-    private var name: String = "ping"
+    private var vName: String = "ping"
     /** W3C SCXML 5.2: the `scale` datamodel variable, the machine's own. */
-    private var scale: UInt = 3.toUInt()
+    private var vScale: UInt = 3.toUInt()
     /** W3C SCXML 5.2: the `pings` datamodel variable, published (`sce:direction="out"`). */
-    var pings: UInt = 0.toUInt()
-        private set
+    private var vPings: UInt = 0.toUInt()
+
+    /** What the published `pings` holds. */
+    val pings: UInt get() = vPings
     /** W3C SCXML 5.2: the `pongs` datamodel variable, published (`sce:direction="out"`). */
-    var pongs: UInt = 0.toUInt()
-        private set
+    private var vPongs: UInt = 0.toUInt()
+
+    /** What the published `pongs` holds. */
+    val pongs: UInt get() = vPongs
     /** W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`). */
-    var refusals: UInt = 0.toUInt()
-        private set
+    private var vRefusals: UInt = 0.toUInt()
+
+    /** What the published `refusals` holds. */
+    val refusals: UInt get() = vRefusals
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -68,11 +74,11 @@ class StaticSendEventStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.name?.let { name = it }
-        params.scale?.let { scale = it }
-        params.pings?.let { pings = it }
-        params.pongs?.let { pongs = it }
-        params.refusals?.let { refusals = it }
+        params.name?.let { vName = it }
+        params.scale?.let { vScale = it }
+        params.pings?.let { vPings = it }
+        params.pongs?.let { vPongs = it }
+        params.refusals?.let { vRefusals = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -96,9 +102,9 @@ class StaticSendEventStateMachine(
     )
 
     private fun currentData(): Data = Data(
-        pings = pings,
-        pongs = pongs,
-        refusals = refusals,
+        pings = vPings,
+        pongs = vPongs,
+        refusals = vRefusals,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -141,11 +147,11 @@ class StaticSendEventStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "name" to SavedValues.of(name),
-            "scale" to SavedValues.of(scale),
-            "pings" to SavedValues.of(pings),
-            "pongs" to SavedValues.of(pongs),
-            "refusals" to SavedValues.of(refusals),
+            "name" to SavedValues.of(vName),
+            "scale" to SavedValues.of(vScale),
+            "pings" to SavedValues.of(vPings),
+            "pongs" to SavedValues.of(vPongs),
+            "refusals" to SavedValues.of(vRefusals),
         ),
         wallNowMs,
     )
@@ -176,11 +182,11 @@ class StaticSendEventStateMachine(
         val saved3 = SavedValues.uint32(saved.variable("pings"), "pings")
         val saved4 = SavedValues.uint32(saved.variable("pongs"), "pongs")
         val saved5 = SavedValues.uint32(saved.variable("refusals"), "refusals")
-        name = saved1
-        scale = saved2
-        pings = saved3
-        pongs = saved4
-        refusals = saved5
+        vName = saved1
+        vScale = saved2
+        vPings = saved3
+        vPongs = saved4
+        vRefusals = saved5
         enterSaved(saved, wallNowMs)
     }
 
@@ -388,7 +394,7 @@ class StaticSendEventStateMachine(
             // The event's name is a string computed from the machine's fields now.
             // A name that evaluates to nothing names no event, and an operation
             // that fails cannot be evaluated: either is the argument error.
-            val sendEventName: String = name
+            val sendEventName: String = vName
             if (sendEventName.isEmpty()) {
                 raisePlatformError(StaticSendEventEvent.Error.Execution, "<send> eventexpr could not be evaluated to an event name", "__send_0")
                 return@send true
@@ -417,7 +423,7 @@ class StaticSendEventStateMachine(
             // A name that evaluates to nothing names no event, and an operation
             // that fails cannot be evaluated: either is the argument error.
             val sendEventName: String = try {
-                if (com.sce.forge.runtime.SceChecked.mul(scale, 2000000000.toUInt()) > 1.toUInt()) "big" else "small"
+                if (com.sce.forge.runtime.SceChecked.mul(vScale, 2000000000.toUInt()) > 1.toUInt()) "big" else "small"
             } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
                 ""
             }
@@ -443,42 +449,42 @@ class StaticSendEventStateMachine(
             2 -> {
                 // SCE-MAP: static_send_event.scxml:32 :: idle :: _transition_2
 
-            if (try { name = com.sce.forge.runtime.SceChecked.bounded("pong", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendEventEvent.Error.Execution, "<assign location='name'>: an integer operation overflowed or failed"); true }) {
+            if (try { vName = com.sce.forge.runtime.SceChecked.bounded("pong", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendEventEvent.Error.Execution, "<assign location='name'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             3 -> {
                 // SCE-MAP: static_send_event.scxml:35 :: idle :: _transition_3
 
-            if (try { name = com.sce.forge.runtime.SceChecked.bounded("ping", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendEventEvent.Error.Execution, "<assign location='name'>: an integer operation overflowed or failed"); true }) {
+            if (try { vName = com.sce.forge.runtime.SceChecked.bounded("ping", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendEventEvent.Error.Execution, "<assign location='name'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             4 -> {
                 // SCE-MAP: static_send_event.scxml:38 :: idle :: _transition_4
 
-            if (try { name = com.sce.forge.runtime.SceChecked.bounded("", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendEventEvent.Error.Execution, "<assign location='name'>: an integer operation overflowed or failed"); true }) {
+            if (try { vName = com.sce.forge.runtime.SceChecked.bounded("", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendEventEvent.Error.Execution, "<assign location='name'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             5 -> {
                 // SCE-MAP: static_send_event.scxml:41 :: idle :: _transition_5
 
-            if (try { pings = com.sce.forge.runtime.SceChecked.add(pings, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendEventEvent.Error.Execution, "<assign location='pings'>: an integer operation overflowed or failed"); true }) {
+            if (try { vPings = com.sce.forge.runtime.SceChecked.add(vPings, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendEventEvent.Error.Execution, "<assign location='pings'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             6 -> {
                 // SCE-MAP: static_send_event.scxml:44 :: idle :: _transition_6
 
-            if (try { pongs = com.sce.forge.runtime.SceChecked.add(pongs, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendEventEvent.Error.Execution, "<assign location='pongs'>: an integer operation overflowed or failed"); true }) {
+            if (try { vPongs = com.sce.forge.runtime.SceChecked.add(vPongs, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendEventEvent.Error.Execution, "<assign location='pongs'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             7 -> {
                 // SCE-MAP: static_send_event.scxml:47 :: idle :: _transition_7
 
-            if (try { refusals = com.sce.forge.runtime.SceChecked.add(refusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendEventEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendEventEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }

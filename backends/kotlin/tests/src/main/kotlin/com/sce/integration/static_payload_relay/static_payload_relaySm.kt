@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 572a4258697cb4e5e72ff4c473f572e8103d28b7053d53f63dcb2a37167bc6ae
+// source-hash: a92737f3147f50ca2cf6319055f29d7afe2c17766723037ae46a81e73e7a66df
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_payload_relay.scxml
@@ -73,17 +73,25 @@ class StaticPayloadRelayStateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `layout` datamodel variable, published (`sce:direction="out"`). */
-    var layout: StaticPayloadRelayViewModeEnum = StaticPayloadRelayViewModeEnum.MONTH
-        private set
+    private var vLayout: StaticPayloadRelayViewModeEnum = StaticPayloadRelayViewModeEnum.MONTH
+
+    /** What the published `layout` holds. */
+    val layout: StaticPayloadRelayViewModeEnum get() = vLayout
     /** W3C SCXML 5.2: the `zoom` datamodel variable, published (`sce:direction="out"`). */
-    var zoom: UByte = 0.toUByte()
-        private set
+    private var vZoom: UByte = 0.toUByte()
+
+    /** What the published `zoom` holds. */
+    val zoom: UByte get() = vZoom
     /** W3C SCXML 5.2: the `relays` datamodel variable, published (`sce:direction="out"`). */
-    var relays: UInt = 0.toUInt()
-        private set
+    private var vRelays: UInt = 0.toUInt()
+
+    /** What the published `relays` holds. */
+    val relays: UInt get() = vRelays
     /** W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`). */
-    var refusals: UInt = 0.toUInt()
-        private set
+    private var vRefusals: UInt = 0.toUInt()
+
+    /** What the published `refusals` holds. */
+    val refusals: UInt get() = vRefusals
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -98,9 +106,9 @@ class StaticPayloadRelayStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.zoom?.let { zoom = it }
-        params.relays?.let { relays = it }
-        params.refusals?.let { refusals = it }
+        params.zoom?.let { vZoom = it }
+        params.relays?.let { vRelays = it }
+        params.refusals?.let { vRefusals = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -125,10 +133,10 @@ class StaticPayloadRelayStateMachine(
     )
 
     private fun currentData(): Data = Data(
-        layout = layout,
-        zoom = zoom,
-        relays = relays,
-        refusals = refusals,
+        layout = vLayout,
+        zoom = vZoom,
+        relays = vRelays,
+        refusals = vRefusals,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -171,10 +179,10 @@ class StaticPayloadRelayStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "layout" to layout.toSaved(),
-            "zoom" to SavedValues.of(zoom),
-            "relays" to SavedValues.of(relays),
-            "refusals" to SavedValues.of(refusals),
+            "layout" to vLayout.toSaved(),
+            "zoom" to SavedValues.of(vZoom),
+            "relays" to SavedValues.of(vRelays),
+            "refusals" to SavedValues.of(vRefusals),
         ),
         wallNowMs,
     )
@@ -204,10 +212,10 @@ class StaticPayloadRelayStateMachine(
         val saved2 = SavedValues.uint8(saved.variable("zoom"), "zoom")
         val saved3 = SavedValues.uint32(saved.variable("relays"), "relays")
         val saved4 = SavedValues.uint32(saved.variable("refusals"), "refusals")
-        layout = saved1
-        zoom = saved2
-        relays = saved3
-        refusals = saved4
+        vLayout = saved1
+        vZoom = saved2
+        vRelays = saved3
+        vRefusals = saved4
         enterSaved(saved, wallNowMs)
     }
 
@@ -451,18 +459,18 @@ class StaticPayloadRelayStateMachine(
                     return
                 }
 
-            zoom = pendingViewRelayedPayload!!.zoom
+            vZoom = pendingViewRelayedPayload!!.zoom
 
-            layout = pendingViewRelayedPayload!!.layout
+            vLayout = pendingViewRelayedPayload!!.layout
 
-            if (try { relays = com.sce.forge.runtime.SceChecked.add(relays, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticPayloadRelayEvent.Error.Execution, "<assign location='relays'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRelays = com.sce.forge.runtime.SceChecked.add(vRelays, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticPayloadRelayEvent.Error.Execution, "<assign location='relays'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             2 -> {
                 // SCE-MAP: static_payload_relay.scxml:41 :: relaying :: _transition_2
 
-            if (try { refusals = com.sce.forge.runtime.SceChecked.add(refusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticPayloadRelayEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticPayloadRelayEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }

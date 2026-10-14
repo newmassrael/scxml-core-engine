@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 572a4258697cb4e5e72ff4c473f572e8103d28b7053d53f63dcb2a37167bc6ae
+// source-hash: a92737f3147f50ca2cf6319055f29d7afe2c17766723037ae46a81e73e7a66df
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_send_target.scxml
@@ -40,13 +40,17 @@ class StaticSendTargetStateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `route` datamodel variable, the machine's own. */
-    private var route: String = "#_internal"
+    private var vRoute: String = "#_internal"
     /** W3C SCXML 5.2: the `landed` datamodel variable, published (`sce:direction="out"`). */
-    var landed: UInt = 0.toUInt()
-        private set
+    private var vLanded: UInt = 0.toUInt()
+
+    /** What the published `landed` holds. */
+    val landed: UInt get() = vLanded
     /** W3C SCXML 5.2: the `refused` datamodel variable, published (`sce:direction="out"`). */
-    var refused: UInt = 0.toUInt()
-        private set
+    private var vRefused: UInt = 0.toUInt()
+
+    /** What the published `refused` holds. */
+    val refused: UInt get() = vRefused
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -61,9 +65,9 @@ class StaticSendTargetStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.route?.let { route = it }
-        params.landed?.let { landed = it }
-        params.refused?.let { refused = it }
+        params.route?.let { vRoute = it }
+        params.landed?.let { vLanded = it }
+        params.refused?.let { vRefused = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -86,8 +90,8 @@ class StaticSendTargetStateMachine(
     )
 
     private fun currentData(): Data = Data(
-        landed = landed,
-        refused = refused,
+        landed = vLanded,
+        refused = vRefused,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -130,9 +134,9 @@ class StaticSendTargetStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "route" to SavedValues.of(route),
-            "landed" to SavedValues.of(landed),
-            "refused" to SavedValues.of(refused),
+            "route" to SavedValues.of(vRoute),
+            "landed" to SavedValues.of(vLanded),
+            "refused" to SavedValues.of(vRefused),
         ),
         wallNowMs,
     )
@@ -161,9 +165,9 @@ class StaticSendTargetStateMachine(
         val saved1 = SavedValues.string(saved.variable("route"), "route", 24)
         val saved2 = SavedValues.uint32(saved.variable("landed"), "landed")
         val saved3 = SavedValues.uint32(saved.variable("refused"), "refused")
-        route = saved1
-        landed = saved2
-        refused = saved3
+        vRoute = saved1
+        vLanded = saved2
+        vRefused = saved3
         enterSaved(saved, wallNowMs)
     }
 
@@ -364,7 +368,7 @@ class StaticSendTargetStateMachine(
             // send may take — an address nobody answers at, which is reported below as
             // error.communication (W3C SCXML C.1) — and an operation that fails cannot
             // be evaluated, the argument error.
-            val _computed: String = route
+            val _computed: String = vRoute
             val _rt: String = if (_computed == "#_internal" || _computed == "#_parent") _computed else ""
             if (com.sce.runtime.SendHelper.isUnreachableTarget(_rt)) {
                 // W3C SCXML C.1 (test496): a target that names nothing is not
@@ -415,7 +419,7 @@ StaticSendTargetEvent.Landed,
             // send may take — an address nobody answers at, which is reported below as
             // error.communication (W3C SCXML C.1) — and an operation that fails cannot
             // be evaluated, the argument error.
-            val _computed: String = route
+            val _computed: String = vRoute
             val _rt: String = if (_computed == "#_parent") _computed else ""
             if (com.sce.runtime.SendHelper.isUnreachableTarget(_rt)) {
                 // W3C SCXML C.1 (test496): a target that names nothing is not
@@ -458,35 +462,35 @@ StaticSendTargetEvent.Landed,
             2 -> {
                 // SCE-MAP: static_send_target.scxml:32 :: idle :: _transition_2
 
-            if (try { route = com.sce.forge.runtime.SceChecked.bounded("#_internal", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendTargetEvent.Error.Execution, "<assign location='route'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRoute = com.sce.forge.runtime.SceChecked.bounded("#_internal", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendTargetEvent.Error.Execution, "<assign location='route'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             3 -> {
                 // SCE-MAP: static_send_target.scxml:35 :: idle :: _transition_3
 
-            if (try { route = com.sce.forge.runtime.SceChecked.bounded("#_parent", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendTargetEvent.Error.Execution, "<assign location='route'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRoute = com.sce.forge.runtime.SceChecked.bounded("#_parent", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendTargetEvent.Error.Execution, "<assign location='route'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             4 -> {
                 // SCE-MAP: static_send_target.scxml:38 :: idle :: _transition_4
 
-            if (try { route = com.sce.forge.runtime.SceChecked.bounded("#_scxml_stranger", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendTargetEvent.Error.Execution, "<assign location='route'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRoute = com.sce.forge.runtime.SceChecked.bounded("#_scxml_stranger", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendTargetEvent.Error.Execution, "<assign location='route'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             5 -> {
                 // SCE-MAP: static_send_target.scxml:41 :: idle :: _transition_5
 
-            if (try { landed = com.sce.forge.runtime.SceChecked.add(landed, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendTargetEvent.Error.Execution, "<assign location='landed'>: an integer operation overflowed or failed"); true }) {
+            if (try { vLanded = com.sce.forge.runtime.SceChecked.add(vLanded, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendTargetEvent.Error.Execution, "<assign location='landed'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             6 -> {
                 // SCE-MAP: static_send_target.scxml:44 :: idle :: _transition_6
 
-            if (try { refused = com.sce.forge.runtime.SceChecked.add(refused, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendTargetEvent.Error.Execution, "<assign location='refused'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRefused = com.sce.forge.runtime.SceChecked.add(vRefused, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendTargetEvent.Error.Execution, "<assign location='refused'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 572a4258697cb4e5e72ff4c473f572e8103d28b7053d53f63dcb2a37167bc6ae
+// source-hash: a92737f3147f50ca2cf6319055f29d7afe2c17766723037ae46a81e73e7a66df
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_whole_payload.scxml
@@ -75,20 +75,30 @@ class StaticWholePayloadStateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `shown` datamodel variable, published (`sce:direction="out"`). */
-    var shown: StaticWholePayloadViewRecord = StaticWholePayloadViewRecord(layout = StaticWholePayloadViewModeEnum.MONTH, zoom = 1.toUByte())
-        private set
+    private var vShown: StaticWholePayloadViewRecord = StaticWholePayloadViewRecord(layout = StaticWholePayloadViewModeEnum.MONTH, zoom = 1.toUByte())
+
+    /** What the published `shown` holds. */
+    val shown: StaticWholePayloadViewRecord get() = vShown
     /** W3C SCXML 5.2: the `seen` datamodel variable, published (`sce:direction="out"`). */
-    var seen: List<StaticWholePayloadViewRecord> = emptyList()
-        private set
+    private var vSeen: List<StaticWholePayloadViewRecord> = emptyList()
+
+    /** What the published `seen` holds. */
+    val seen: List<StaticWholePayloadViewRecord> get() = vSeen
     /** W3C SCXML 5.2: the `updates` datamodel variable, published (`sce:direction="out"`). */
-    var updates: UInt = 0.toUInt()
-        private set
+    private var vUpdates: UInt = 0.toUInt()
+
+    /** What the published `updates` holds. */
+    val updates: UInt get() = vUpdates
     /** W3C SCXML 5.2: the `agendas` datamodel variable, published (`sce:direction="out"`). */
-    var agendas: UInt = 0.toUInt()
-        private set
+    private var vAgendas: UInt = 0.toUInt()
+
+    /** What the published `agendas` holds. */
+    val agendas: UInt get() = vAgendas
     /** W3C SCXML 5.2: the `others` datamodel variable, published (`sce:direction="out"`). */
-    var others: UInt = 0.toUInt()
-        private set
+    private var vOthers: UInt = 0.toUInt()
+
+    /** What the published `others` holds. */
+    val others: UInt get() = vOthers
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -103,9 +113,9 @@ class StaticWholePayloadStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.updates?.let { updates = it }
-        params.agendas?.let { agendas = it }
-        params.others?.let { others = it }
+        params.updates?.let { vUpdates = it }
+        params.agendas?.let { vAgendas = it }
+        params.others?.let { vOthers = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -131,11 +141,11 @@ class StaticWholePayloadStateMachine(
     )
 
     private fun currentData(): Data = Data(
-        shown = shown,
-        seen = seen,
-        updates = updates,
-        agendas = agendas,
-        others = others,
+        shown = vShown,
+        seen = vSeen,
+        updates = vUpdates,
+        agendas = vAgendas,
+        others = vOthers,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -178,11 +188,11 @@ class StaticWholePayloadStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "shown" to shown.toSaved(),
-            "seen" to SavedValues.list(seen) { it.toSaved() },
-            "updates" to SavedValues.of(updates),
-            "agendas" to SavedValues.of(agendas),
-            "others" to SavedValues.of(others),
+            "shown" to vShown.toSaved(),
+            "seen" to SavedValues.list(vSeen) { it.toSaved() },
+            "updates" to SavedValues.of(vUpdates),
+            "agendas" to SavedValues.of(vAgendas),
+            "others" to SavedValues.of(vOthers),
         ),
         wallNowMs,
     )
@@ -213,11 +223,11 @@ class StaticWholePayloadStateMachine(
         val saved3 = SavedValues.uint32(saved.variable("updates"), "updates")
         val saved4 = SavedValues.uint32(saved.variable("agendas"), "agendas")
         val saved5 = SavedValues.uint32(saved.variable("others"), "others")
-        shown = saved1
-        seen = saved2
-        updates = saved3
-        agendas = saved4
-        others = saved5
+        vShown = saved1
+        vSeen = saved2
+        vUpdates = saved3
+        vAgendas = saved4
+        vOthers = saved5
         enterSaved(saved, wallNowMs)
     }
 
@@ -369,7 +379,7 @@ class StaticWholePayloadStateMachine(
     ): EnabledTransition<StaticWholePayloadState, HistoryId>? = when (state) {
         is StaticWholePayloadState.Viewing -> when {
             event is StaticWholePayloadEvent.View.Shown -> transitionViewingAt0
-            event is StaticWholePayloadEvent.Peek && shown.layout == StaticWholePayloadViewModeEnum.AGENDA_LIST -> transitionViewingAt1
+            event is StaticWholePayloadEvent.Peek && vShown.layout == StaticWholePayloadViewModeEnum.AGENDA_LIST -> transitionViewingAt1
             event is StaticWholePayloadEvent.Peek -> transitionViewingAt2
             else -> null
         }
@@ -408,27 +418,27 @@ class StaticWholePayloadStateMachine(
                     return
                 }
 
-            shown = StaticWholePayloadViewRecord(layout = pendingViewShownPayload!!.layout, zoom = pendingViewShownPayload!!.zoom)
+            vShown = StaticWholePayloadViewRecord(layout = pendingViewShownPayload!!.layout, zoom = pendingViewShownPayload!!.zoom)
 
-            if (if (seen.size < 4) { seen = seen + (StaticWholePayloadViewRecord(layout = pendingViewShownPayload!!.layout, zoom = pendingViewShownPayload!!.zoom)); false } else { true }) {
+            if (if (vSeen.size < 4) { vSeen = vSeen + (StaticWholePayloadViewRecord(layout = pendingViewShownPayload!!.layout, zoom = pendingViewShownPayload!!.zoom)); false } else { true }) {
                 return
             }
 
-            if (try { updates = com.sce.forge.runtime.SceChecked.add(updates, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
+            if (try { vUpdates = com.sce.forge.runtime.SceChecked.add(vUpdates, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
             }
             1 -> {
                 // SCE-MAP: static_whole_payload.scxml:37 :: viewing :: _transition_1
 
-            if (try { agendas = com.sce.forge.runtime.SceChecked.add(agendas, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
+            if (try { vAgendas = com.sce.forge.runtime.SceChecked.add(vAgendas, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
             }
             2 -> {
                 // SCE-MAP: static_whole_payload.scxml:40 :: viewing :: _transition_2
 
-            if (try { others = com.sce.forge.runtime.SceChecked.add(others, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
+            if (try { vOthers = com.sce.forge.runtime.SceChecked.add(vOthers, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
             }

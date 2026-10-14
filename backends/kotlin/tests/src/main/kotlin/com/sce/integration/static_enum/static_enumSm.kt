@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 572a4258697cb4e5e72ff4c473f572e8103d28b7053d53f63dcb2a37167bc6ae
+// source-hash: a92737f3147f50ca2cf6319055f29d7afe2c17766723037ae46a81e73e7a66df
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_enum.scxml
@@ -52,13 +52,17 @@ class StaticEnumStateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `layout` datamodel variable, published (`sce:direction="out"`). */
-    var layout: StaticEnumViewModeEnum = StaticEnumViewModeEnum.MONTH
-        private set
+    private var vLayout: StaticEnumViewModeEnum = StaticEnumViewModeEnum.MONTH
+
+    /** What the published `layout` holds. */
+    val layout: StaticEnumViewModeEnum get() = vLayout
     /** W3C SCXML 5.2: the `previous` datamodel variable, the machine's own. */
-    private var previous: StaticEnumViewModeEnum = StaticEnumViewModeEnum.MONTH
+    private var vPrevious: StaticEnumViewModeEnum = StaticEnumViewModeEnum.MONTH
     /** W3C SCXML 5.2: the `changes` datamodel variable, published (`sce:direction="out"`). */
-    var changes: UInt = 0.toUInt()
-        private set
+    private var vChanges: UInt = 0.toUInt()
+
+    /** What the published `changes` holds. */
+    val changes: UInt get() = vChanges
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -71,7 +75,7 @@ class StaticEnumStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.changes?.let { changes = it }
+        params.changes?.let { vChanges = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -94,8 +98,8 @@ class StaticEnumStateMachine(
     )
 
     private fun currentData(): Data = Data(
-        layout = layout,
-        changes = changes,
+        layout = vLayout,
+        changes = vChanges,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -138,9 +142,9 @@ class StaticEnumStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "layout" to layout.toSaved(),
-            "previous" to previous.toSaved(),
-            "changes" to SavedValues.of(changes),
+            "layout" to vLayout.toSaved(),
+            "previous" to vPrevious.toSaved(),
+            "changes" to SavedValues.of(vChanges),
         ),
         wallNowMs,
     )
@@ -169,9 +173,9 @@ class StaticEnumStateMachine(
         val saved1 = StaticEnumViewModeEnum.fromSaved(saved.variable("layout"), "layout")
         val saved2 = StaticEnumViewModeEnum.fromSaved(saved.variable("previous"), "previous")
         val saved3 = SavedValues.uint32(saved.variable("changes"), "changes")
-        layout = saved1
-        previous = saved2
-        changes = saved3
+        vLayout = saved1
+        vPrevious = saved2
+        vChanges = saved3
         enterSaved(saved, wallNowMs)
     }
 
@@ -297,9 +301,9 @@ class StaticEnumStateMachine(
         event: StaticEnumEvent?
     ): EnabledTransition<StaticEnumState, HistoryId>? = when (state) {
         is StaticEnumState.Browsing -> when {
-            event is StaticEnumEvent.Zoom && layout == StaticEnumViewModeEnum.MONTH -> transitionBrowsingAt0
-            event is StaticEnumEvent.Zoom && layout == StaticEnumViewModeEnum.WEEK -> transitionBrowsingAt1
-            event is StaticEnumEvent.Back && layout != previous -> transitionBrowsingAt2
+            event is StaticEnumEvent.Zoom && vLayout == StaticEnumViewModeEnum.MONTH -> transitionBrowsingAt0
+            event is StaticEnumEvent.Zoom && vLayout == StaticEnumViewModeEnum.WEEK -> transitionBrowsingAt1
+            event is StaticEnumEvent.Back && vLayout != vPrevious -> transitionBrowsingAt2
             event is StaticEnumEvent.Swap -> transitionBrowsingAt3
             event is StaticEnumEvent.Agenda -> transitionBrowsingAt4
             else -> null
@@ -336,57 +340,57 @@ class StaticEnumStateMachine(
             0 -> {
                 // SCE-MAP: static_enum.scxml:22 :: browsing :: _transition_0
 
-            previous = layout
+            vPrevious = vLayout
 
-            layout = StaticEnumViewModeEnum.DAY
+            vLayout = StaticEnumViewModeEnum.DAY
 
-            if (try { changes = com.sce.forge.runtime.SceChecked.add(changes, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
+            if (try { vChanges = com.sce.forge.runtime.SceChecked.add(vChanges, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
             }
             1 -> {
                 // SCE-MAP: static_enum.scxml:27 :: browsing :: _transition_1
 
-            previous = layout
+            vPrevious = vLayout
 
-            layout = StaticEnumViewModeEnum.DAY
+            vLayout = StaticEnumViewModeEnum.DAY
 
-            if (try { changes = com.sce.forge.runtime.SceChecked.add(changes, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
+            if (try { vChanges = com.sce.forge.runtime.SceChecked.add(vChanges, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
             }
             2 -> {
                 // SCE-MAP: static_enum.scxml:33 :: browsing :: _transition_2
 
-            layout = previous
+            vLayout = vPrevious
 
-            if (try { changes = com.sce.forge.runtime.SceChecked.add(changes, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
+            if (try { vChanges = com.sce.forge.runtime.SceChecked.add(vChanges, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
             }
             3 -> {
                 // SCE-MAP: static_enum.scxml:38 :: browsing :: _transition_3
 
-            previous = layout
+            vPrevious = vLayout
 
-            layout = if (layout == StaticEnumViewModeEnum.WEEK) StaticEnumViewModeEnum.MONTH else StaticEnumViewModeEnum.WEEK
+            vLayout = if (vLayout == StaticEnumViewModeEnum.WEEK) StaticEnumViewModeEnum.MONTH else StaticEnumViewModeEnum.WEEK
 
-            if (try { changes = com.sce.forge.runtime.SceChecked.add(changes, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
+            if (try { vChanges = com.sce.forge.runtime.SceChecked.add(vChanges, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
             }
             4 -> {
                 // SCE-MAP: static_enum.scxml:43 :: browsing :: _transition_4
 
-            previous = layout
+            vPrevious = vLayout
 
-            layout = StaticEnumViewModeEnum.AGENDA_LIST
+            vLayout = StaticEnumViewModeEnum.AGENDA_LIST
 
-            if (try { changes = com.sce.forge.runtime.SceChecked.add(changes, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
+            if (try { vChanges = com.sce.forge.runtime.SceChecked.add(vChanges, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
 
-            println("layout: " + layout)
+            println("layout: " + vLayout)
             }
             else -> {}
         }

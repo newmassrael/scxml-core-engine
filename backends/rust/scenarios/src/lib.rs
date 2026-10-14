@@ -7,8 +7,8 @@
 //! A scenario (`sce-build/tests/fixtures/static_datamodel/scenarios/*.json`) is
 //! data: a list of steps, each an external event with its payload and what the
 //! machine must hold after it runs to quiescence — its current state, the set of
-//! its active states (`configuration`), any of its variables and what it asked of
-//! its host (`host_calls`). What the
+//! its active states (`configuration`), any of its variables, what it asked of
+//! its host (`host_calls`) and what it sent its Mesh peers (`sent`). What the
 //! machine holds is read from its saved state, the text
 //! every backend saves byte for byte, so one scenario judges every backend by the
 //! same answer and needs no per-type glue.
@@ -94,6 +94,28 @@ fn replay_recording<P: StatePolicy>(
     let scenario: Value = serde_json::from_str(scenario).expect("a scenario is JSON");
     let steps = scenario["steps"].as_array().expect("steps");
     assert!(!steps.is_empty(), "a scenario with no steps judges nothing");
+    // What the machine sends a Mesh peer (`<send target="#name">`) reaches its host
+    // through the router the host registers, and a machine with no router has the
+    // send refused as error.execution. A replay is every machine's host, so it
+    // registers one that only writes the send down: the peer is not there, and what
+    // a scenario holds a step to is that the machine asked for the send.
+    let sent = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let log = std::sync::Arc::clone(&sent);
+    engine.register_mesh_router(move |request| {
+        let mut send = serde_json::Map::new();
+        send.insert("target".into(), Value::String(request.target));
+        send.insert("event".into(), Value::String(request.event_name));
+        if !request.event_data.is_empty() {
+            send.insert(
+                "data".into(),
+                serde_json::from_str(&request.event_data).expect("the data of a send is JSON"),
+            );
+        }
+        log.lock()
+            .expect("the list of what was sent is never left mid-update")
+            .push(Value::Object(send));
+        Vec::new()
+    });
     engine.initialize();
     // A machine that starts a child session in its first state has that child
     // running, and maybe ended, before any event arrives; it is read as the
@@ -135,6 +157,20 @@ fn replay_recording<P: StatePolicy>(
                 "step {n} ({note}): this driver records no host calls, so it cannot hold a step to them"
             ),
             (None, _) => {}
+        }
+        // What the machine sent its peers in this step, taken on every step for the
+        // same reason.
+        let sends = std::mem::take(
+            &mut *sent
+                .lock()
+                .expect("the list of what was sent is never left mid-update"),
+        );
+        if let Some(want) = expect.get("sent") {
+            assert_eq!(
+                &Value::Array(sends),
+                want,
+                "step {n} ({note}): what the machine sent its peers"
+            );
         }
         // A machine that ended in a top-level <final> has no saved state to
         // read — the save refuses one — so what a scenario can say of it is

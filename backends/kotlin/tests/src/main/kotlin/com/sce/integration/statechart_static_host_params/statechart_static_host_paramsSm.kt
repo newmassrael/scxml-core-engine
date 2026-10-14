@@ -48,22 +48,24 @@ class StatechartStaticHostParamsStateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `count` datamodel variable, the machine's own. */
-    private var count: UInt = 3.toUInt()
+    private var vCount: UInt = 3.toUInt()
     /** W3C SCXML 5.2: the `ready` datamodel variable, the machine's own. */
-    private var ready: Boolean = false
+    private var vReady: Boolean = false
     /** W3C SCXML 5.2: the `label` datamodel variable, the machine's own. */
-    private var label: String = "idle"
+    private var vLabel: String = "idle"
     /** W3C SCXML 5.2: the `delta` datamodel variable, the machine's own. */
-    private var delta: Short = -5
+    private var vDelta: Short = -5
     /** W3C SCXML 5.2: the `ratio` datamodel variable, the machine's own. */
-    private var ratio: Double = 1.5
+    private var vRatio: Double = 1.5
     /** W3C SCXML 5.2: the `tag` datamodel variable, the machine's own. */
-    private var tag: String = "job://params"
+    private var vTag: String = "job://params"
     /** W3C SCXML 5.2: the `huge` datamodel variable, the machine's own. */
-    private var huge: UInt = 1.toUInt()
+    private var vHuge: UInt = 1.toUInt()
     /** W3C SCXML 5.2: the `errors` datamodel variable, published (`sce:direction="out"`). */
-    var errors: UInt = 0.toUInt()
-        private set
+    private var vErrors: UInt = 0.toUInt()
+
+    /** What the published `errors` holds. */
+    val errors: UInt get() = vErrors
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -83,14 +85,14 @@ class StatechartStaticHostParamsStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.count?.let { count = it }
-        params.ready?.let { ready = it }
-        params.label?.let { label = it }
-        params.delta?.let { delta = it }
-        params.ratio?.let { ratio = it }
-        params.tag?.let { tag = it }
-        params.huge?.let { huge = it }
-        params.errors?.let { errors = it }
+        params.count?.let { vCount = it }
+        params.ready?.let { vReady = it }
+        params.label?.let { vLabel = it }
+        params.delta?.let { vDelta = it }
+        params.ratio?.let { vRatio = it }
+        params.tag?.let { vTag = it }
+        params.huge?.let { vHuge = it }
+        params.errors?.let { vErrors = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -112,7 +114,7 @@ class StatechartStaticHostParamsStateMachine(
     )
 
     private fun currentData(): Data = Data(
-        errors = errors,
+        errors = vErrors,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -155,14 +157,14 @@ class StatechartStaticHostParamsStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "count" to SavedValues.of(count),
-            "ready" to SavedValues.of(ready),
-            "label" to SavedValues.of(label),
-            "delta" to SavedValues.of(delta),
-            "ratio" to SavedValues.of(ratio),
-            "tag" to SavedValues.of(tag),
-            "huge" to SavedValues.of(huge),
-            "errors" to SavedValues.of(errors),
+            "count" to SavedValues.of(vCount),
+            "ready" to SavedValues.of(vReady),
+            "label" to SavedValues.of(vLabel),
+            "delta" to SavedValues.of(vDelta),
+            "ratio" to SavedValues.of(vRatio),
+            "tag" to SavedValues.of(vTag),
+            "huge" to SavedValues.of(vHuge),
+            "errors" to SavedValues.of(vErrors),
         ),
         wallNowMs,
     )
@@ -196,14 +198,14 @@ class StatechartStaticHostParamsStateMachine(
         val saved6 = SavedValues.string(saved.variable("tag"), "tag", 16)
         val saved7 = SavedValues.uint32(saved.variable("huge"), "huge")
         val saved8 = SavedValues.uint32(saved.variable("errors"), "errors")
-        count = saved1
-        ready = saved2
-        label = saved3
-        delta = saved4
-        ratio = saved5
-        tag = saved6
-        huge = saved7
-        errors = saved8
+        vCount = saved1
+        vReady = saved2
+        vLabel = saved3
+        vDelta = saved4
+        vRatio = saved5
+        vTag = saved6
+        vHuge = saved7
+        vErrors = saved8
         enterSaved(saved, wallNowMs)
     }
 
@@ -415,25 +417,25 @@ class StatechartStaticHostParamsStateMachine(
             if (run send@{
             var paramFailed = false
             val sendPayload = mutableMapOf<String, Any?>()
-            putParam(sendPayload, "count", (count).toLong())
+            putParam(sendPayload, "count", (vCount).toLong())
 
-            putParam(sendPayload, "ready", ready)
+            putParam(sendPayload, "ready", vReady)
 
-            putParam(sendPayload, "label", label)
+            putParam(sendPayload, "label", vLabel)
 
             try {
-                putParam(sendPayload, "twice", (com.sce.forge.runtime.SceChecked.mul(count, 2.toUInt())).toLong())
+                putParam(sendPayload, "twice", (com.sce.forge.runtime.SceChecked.mul(vCount, 2.toUInt())).toLong())
             } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
                 raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, "<send> <param name='twice'> could not be read")
                 paramFailed = true
             }
 
-            putParam(sendPayload, "delta", (delta).toLong())
+            putParam(sendPayload, "delta", (vDelta).toLong())
 
-            putParam(sendPayload, "ratio", ratio)
+            putParam(sendPayload, "ratio", vRatio)
 
             try {
-                putParam(sendPayload, "boom", (com.sce.forge.runtime.SceChecked.mul(count, 2000000000.toUInt())).toLong())
+                putParam(sendPayload, "boom", (com.sce.forge.runtime.SceChecked.mul(vCount, 2000000000.toUInt())).toLong())
             } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
                 raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, "<send> <param name='boom'> could not be read")
                 paramFailed = true
@@ -494,7 +496,7 @@ class StatechartStaticHostParamsStateMachine(
             // error.execution in the internal event queue and use the empty
             // string as the value of the <content> element."
             val sendContentValue: Any = try {
-                (com.sce.forge.runtime.SceChecked.mul(count, 2.toUInt())).toLong()
+                (com.sce.forge.runtime.SceChecked.mul(vCount, 2.toUInt())).toLong()
             } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
                 raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, "<send> contentexpr failed to evaluate", "__send_1")
                 paramFailed = true
@@ -546,7 +548,7 @@ class StatechartStaticHostParamsStateMachine(
             // of 'expr' produces an error, the Processor MUST place
             // error.execution in the internal event queue and use the empty
             // string as the value of the <content> element."
-            val sendContentValue: Any = label
+            val sendContentValue: Any = vLabel
             val sendData = valueToJson(sendContentValue)
             val sendWireParams = emptyMap<String, List<String>>()
             // W3C SCXML 6.2.5: "x-sce-host" is served by the host,
@@ -598,7 +600,7 @@ class StatechartStaticHostParamsStateMachine(
             // error.execution in the internal event queue and use the empty
             // string as the value of the <content> element."
             val sendContentValue: Any = try {
-                (com.sce.forge.runtime.SceChecked.mul(count, 2000000000.toUInt())).toLong()
+                (com.sce.forge.runtime.SceChecked.mul(vCount, 2000000000.toUInt())).toLong()
             } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
                 raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, "<send> contentexpr failed to evaluate", "__send_3")
                 paramFailed = true
@@ -650,7 +652,7 @@ class StatechartStaticHostParamsStateMachine(
             // of 'expr' produces an error, the Processor MUST place
             // error.execution in the internal event queue and use the empty
             // string as the value of the <content> element."
-            val sendContentValue: Any = (count).toLong()
+            val sendContentValue: Any = (vCount).toLong()
             val sendData = valueToJson(sendContentValue)
             val sendWireParams = emptyMap<String, List<String>>()
             // W3C SCXML 6.2.5: "x-sce-host" is served by the host,
@@ -701,13 +703,13 @@ class StatechartStaticHostParamsStateMachine(
                     val generatedInvokeId = "working.${System.identityHashCode(this)}.h"
                     deferInvoke(state, generatedInvokeId) {
                         val hostInvokeSrc: String = try {
-                            if (com.sce.forge.runtime.SceChecked.mul(count, 2.toUInt()) > 0.toUInt()) tag else tag
+                            if (com.sce.forge.runtime.SceChecked.mul(vCount, 2.toUInt()) > 0.toUInt()) vTag else vTag
                         } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
                             raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, "<invoke> srcexpr failed to evaluate")
                             return@deferInvoke
                         }
                         val hostInvokeContent: String = try {
-                            if (com.sce.forge.runtime.SceChecked.mul(huge, 2.toUInt()) > 0.toUInt()) label else label
+                            if (com.sce.forge.runtime.SceChecked.mul(vHuge, 2.toUInt()) > 0.toUInt()) vLabel else vLabel
                         } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
                             raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, "<invoke> content expr failed to evaluate")
                             return@deferInvoke
@@ -718,25 +720,25 @@ class StatechartStaticHostParamsStateMachine(
                         // params and typed for the JSON.
                         val hostInvokePayload = mutableMapOf<String, Any?>()
                         run {
-                            val v: Any? = (count).toLong()
+                            val v: Any? = (vCount).toLong()
                             hostInvokeParams["count"] =
                                 (hostInvokeParams["count"] ?: emptyList()) + valueToWireString(v)
                             putParam(hostInvokePayload, "count", v)
                         }
                         run {
-                            val v: Any? = ready
+                            val v: Any? = vReady
                             hostInvokeParams["ready"] =
                                 (hostInvokeParams["ready"] ?: emptyList()) + valueToWireString(v)
                             putParam(hostInvokePayload, "ready", v)
                         }
                         run {
-                            val v: Any? = label
+                            val v: Any? = vLabel
                             hostInvokeParams["label"] =
                                 (hostInvokeParams["label"] ?: emptyList()) + valueToWireString(v)
                             putParam(hostInvokePayload, "label", v)
                         }
                         try {
-                            val v: Any? = (com.sce.forge.runtime.SceChecked.mul(count, 2.toUInt())).toLong()
+                            val v: Any? = (com.sce.forge.runtime.SceChecked.mul(vCount, 2.toUInt())).toLong()
                             hostInvokeParams["twice"] =
                                 (hostInvokeParams["twice"] ?: emptyList()) + valueToWireString(v)
                             putParam(hostInvokePayload, "twice", v)
@@ -745,7 +747,7 @@ class StatechartStaticHostParamsStateMachine(
                             raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, "<invoke> <param name='twice'> expr failed to evaluate")
                         }
                         try {
-                            val v: Any? = (com.sce.forge.runtime.SceChecked.mul(count, 2000000000.toUInt())).toLong()
+                            val v: Any? = (com.sce.forge.runtime.SceChecked.mul(vCount, 2000000000.toUInt())).toLong()
                             hostInvokeParams["boom"] =
                                 (hostInvokeParams["boom"] ?: emptyList()) + valueToWireString(v)
                             putParam(hostInvokePayload, "boom", v)
@@ -754,13 +756,13 @@ class StatechartStaticHostParamsStateMachine(
                             raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, "<invoke> <param name='boom'> expr failed to evaluate")
                         }
                         run {
-                            val v: Any? = (delta).toLong()
+                            val v: Any? = (vDelta).toLong()
                             hostInvokeParams["delta"] =
                                 (hostInvokeParams["delta"] ?: emptyList()) + valueToWireString(v)
                             putParam(hostInvokePayload, "delta", v)
                         }
                         run {
-                            val v: Any? = ratio
+                            val v: Any? = vRatio
                             hostInvokeParams["ratio"] =
                                 (hostInvokeParams["ratio"] ?: emptyList()) + valueToWireString(v)
                             putParam(hostInvokePayload, "ratio", v)
@@ -820,25 +822,25 @@ class StatechartStaticHostParamsStateMachine(
             0 -> {
                 // SCE-MAP: statechart_static_host_params.scxml:95 :: idle :: _transition_0
 
-            if (try { count = com.sce.forge.runtime.SceChecked.add(count, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, "<assign location='count'>: an integer operation overflowed or failed"); true }) {
+            if (try { vCount = com.sce.forge.runtime.SceChecked.add(vCount, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, "<assign location='count'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            ready = true
+            vReady = true
 
-            if (try { label = com.sce.forge.runtime.SceChecked.bounded("busy", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, "<assign location='label'>: an integer operation overflowed or failed"); true }) {
+            if (try { vLabel = com.sce.forge.runtime.SceChecked.bounded("busy", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, "<assign location='label'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             1 -> {
                 // SCE-MAP: statechart_static_host_params.scxml:100 :: idle :: _transition_1
 
-            count = 3000000000.toUInt()
+            vCount = 3000000000.toUInt()
             }
             2 -> {
                 // SCE-MAP: statechart_static_host_params.scxml:103 :: idle :: _transition_2
 
-            huge = 3000000000.toUInt()
+            vHuge = 3000000000.toUInt()
             }
             else -> {}
         }
@@ -846,7 +848,7 @@ class StatechartStaticHostParamsStateMachine(
             0 -> {
                 // SCE-MAP: statechart_static_host_params.scxml:146 :: working :: _transition_0
 
-            if (try { errors = com.sce.forge.runtime.SceChecked.add(errors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
+            if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }

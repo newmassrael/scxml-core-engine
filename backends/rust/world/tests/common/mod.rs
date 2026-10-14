@@ -21,7 +21,6 @@ include!(concat!(env!("OUT_DIR"), "/machines.rs"));
 
 pub use sheet_peer::{SheetPeerPersist, SheetPeerPolicy as Peer};
 pub use todo_peer::{TodoPeerPersist, TodoPeerPolicy as TodoPeer};
-pub use todo_wide_sender::TodoWideSenderPolicy as WideSender;
 
 /// How the binding to a peer is configured: envelopes delivered once, with those
 /// written while the link is down kept until it is back. `ordered` asks the Mesh
@@ -84,11 +83,45 @@ pub fn ordered_sheet(seed: u64, latency_ms: i64) -> World {
     sheet_over(seed, latency_ms, true)
 }
 
+/// The sheet's world over ordered bindings, with every copy keeping a record of what
+/// it was given, held and sent ([`World::record_of`]).
+pub fn recorded_sheet(seed: u64, latency_ms: i64) -> World {
+    sheet_with(seed, latency_ms, true, true)
+}
+
 fn sheet_over(seed: u64, latency_ms: i64, ordered: bool) -> World {
+    sheet_with(seed, latency_ms, ordered, false)
+}
+
+/// The text a copy of the sheet saves of itself.
+fn saved_sheet(engine: &sce_rust_runtime::Engine<Peer>) -> String {
+    engine
+        .save_at(0)
+        .expect("a running machine saves")
+        .to_json()
+}
+
+/// The text a copy of the to-do list saves of itself.
+fn saved_todos(engine: &sce_rust_runtime::Engine<TodoPeer>) -> String {
+    engine
+        .save_at(0)
+        .expect("a running machine saves")
+        .to_json()
+}
+
+fn sheet_with(seed: u64, latency_ms: i64, ordered: bool, recorded: bool) -> World {
     let mut world = World::new(seed);
-    world.add("alice", Peer::new(), person("alice", ordered));
-    world.add("bob", Peer::new(), person("bob", ordered));
-    world.add("server", Peer::new(), hub(ordered));
+    for (who, router) in [
+        ("alice", person("alice", ordered)),
+        ("bob", person("bob", ordered)),
+        ("server", hub(ordered)),
+    ] {
+        if recorded {
+            world.add_read(who, Peer::new(), router, saved_sheet);
+        } else {
+            world.add(who, Peer::new(), router);
+        }
+    }
     world.link("alice", "server", latency_ms);
     world.link("bob", "server", latency_ms);
     world.raise("alice", "sheet.join", r#"{"node":1,"hub":false}"#);
@@ -424,11 +457,11 @@ pub fn agreed_cols(world: &mut World) -> (Vec<u64>, Vec<u64>) {
     agreed_order(world, cols_of, "column")
 }
 
-fn agreed_order(
-    world: &mut World,
-    order_of: fn(&mut World, &str) -> (Vec<u64>, Vec<u64>),
-    what: &str,
-) -> (Vec<u64>, Vec<u64>) {
+/// How one copy's order is read: every element in the order it holds them, and the
+/// ids of the removed.
+type OrderOf = fn(&mut World, &str) -> (Vec<u64>, Vec<u64>);
+
+fn agreed_order(world: &mut World, order_of: OrderOf, what: &str) -> (Vec<u64>, Vec<u64>) {
     let (order, mut gone) = order_of(world, "server");
     gone.sort_unstable();
     for who in ["alice", "bob"] {
@@ -446,16 +479,34 @@ fn agreed_order(
     (order, gone)
 }
 
-// ── The shared to-do list (`machines/todo_peer.scxml`) ──────────────────────
+// ── The shared to-do list (the fixture `todo_peer.scxml`) ───────────────────
 
 /// The world of the to-do list: alice (node 1) and bob (node 2), each `latency_ms` from
 /// the hub, over links that may reorder what they carry. Writes to a field do not depend
 /// on the ones before it, so no binding orders.
 pub fn todo_world(seed: u64, latency_ms: i64) -> World {
+    todo_world_with(seed, latency_ms, false)
+}
+
+/// The world of the to-do list, with every copy keeping a record of what it was
+/// given, held and sent ([`World::record_of`]).
+pub fn recorded_todo_world(seed: u64, latency_ms: i64) -> World {
+    todo_world_with(seed, latency_ms, true)
+}
+
+fn todo_world_with(seed: u64, latency_ms: i64, recorded: bool) -> World {
     let mut world = World::new(seed);
-    world.add("alice", TodoPeer::new(), person("alice", false));
-    world.add("bob", TodoPeer::new(), person("bob", false));
-    world.add("server", TodoPeer::new(), hub(false));
+    for (who, router) in [
+        ("alice", person("alice", false)),
+        ("bob", person("bob", false)),
+        ("server", hub(false)),
+    ] {
+        if recorded {
+            world.add_read(who, TodoPeer::new(), router, saved_todos);
+        } else {
+            world.add(who, TodoPeer::new(), router);
+        }
+    }
     world.link("alice", "server", latency_ms);
     world.link("bob", "server", latency_ms);
     world.raise("alice", "todo.join", r#"{"node":"1","hub":false}"#);

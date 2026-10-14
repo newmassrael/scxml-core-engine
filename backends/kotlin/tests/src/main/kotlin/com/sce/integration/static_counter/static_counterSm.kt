@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 572a4258697cb4e5e72ff4c473f572e8103d28b7053d53f63dcb2a37167bc6ae
+// source-hash: a92737f3147f50ca2cf6319055f29d7afe2c17766723037ae46a81e73e7a66df
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_counter.scxml
@@ -31,13 +31,17 @@ class StaticCounterStateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `count` datamodel variable, published (`sce:direction="out"`). */
-    var count: UInt = 0.toUInt()
-        private set
+    private var vCount: UInt = 0.toUInt()
+
+    /** What the published `count` holds. */
+    val count: UInt get() = vCount
     /** W3C SCXML 5.2: the `ready` datamodel variable, published (`sce:direction="out"`). */
-    var ready: Boolean = false
-        private set
+    private var vReady: Boolean = false
+
+    /** What the published `ready` holds. */
+    val ready: Boolean get() = vReady
     /** W3C SCXML 5.2: the `step` datamodel variable, the machine's own. */
-    private var step: UInt = 1.toUInt()
+    private var vStep: UInt = 1.toUInt()
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -52,9 +56,9 @@ class StaticCounterStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.count?.let { count = it }
-        params.ready?.let { ready = it }
-        params.step?.let { step = it }
+        params.count?.let { vCount = it }
+        params.ready?.let { vReady = it }
+        params.step?.let { vStep = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -77,8 +81,8 @@ class StaticCounterStateMachine(
     )
 
     private fun currentData(): Data = Data(
-        count = count,
-        ready = ready,
+        count = vCount,
+        ready = vReady,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -121,9 +125,9 @@ class StaticCounterStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "count" to SavedValues.of(count),
-            "ready" to SavedValues.of(ready),
-            "step" to SavedValues.of(step),
+            "count" to SavedValues.of(vCount),
+            "ready" to SavedValues.of(vReady),
+            "step" to SavedValues.of(vStep),
         ),
         wallNowMs,
     )
@@ -152,9 +156,9 @@ class StaticCounterStateMachine(
         val saved1 = SavedValues.uint32(saved.variable("count"), "count")
         val saved2 = SavedValues.bool(saved.variable("ready"), "ready")
         val saved3 = SavedValues.uint32(saved.variable("step"), "step")
-        count = saved1
-        ready = saved2
-        step = saved3
+        vCount = saved1
+        vReady = saved2
+        vStep = saved3
         enterSaved(saved, wallNowMs)
     }
 
@@ -258,8 +262,8 @@ class StaticCounterStateMachine(
         event: StaticCounterEvent?
     ): EnabledTransition<StaticCounterState, HistoryId>? = when (state) {
         is StaticCounterState.Counting -> when {
-            event is StaticCounterEvent.Tick && count < 10.toUInt() && isStateActive("counting") -> transitionCountingAt0
-            event is StaticCounterEvent.Go && ready -> transitionCountingAt1
+            event is StaticCounterEvent.Tick && vCount < 10.toUInt() && isStateActive("counting") -> transitionCountingAt0
+            event is StaticCounterEvent.Go && vReady -> transitionCountingAt1
             else -> null
         }
         else -> null
@@ -275,7 +279,7 @@ class StaticCounterStateMachine(
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
-            println("count: " + count)
+            println("count: " + vCount)
                 }
             }
             is StaticCounterState.Done -> {
@@ -308,17 +312,17 @@ class StaticCounterStateMachine(
             0 -> {
                 // SCE-MAP: static_counter.scxml:22 :: counting :: _transition_0
 
-            if (try { count = com.sce.forge.runtime.SceChecked.add(count, step); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
+            if (try { vCount = com.sce.forge.runtime.SceChecked.add(vCount, vStep); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
 
 
-            if (count == 5.toUInt()) {
+            if (vCount == 5.toUInt()) {
 
-            ready = true
-            } else if (count > 7.toUInt()) {
+            vReady = true
+            } else if (vCount > 7.toUInt()) {
 
-            ready = false
+            vReady = false
             }
             }
             else -> {}

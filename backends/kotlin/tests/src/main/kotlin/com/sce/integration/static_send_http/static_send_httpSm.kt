@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 572a4258697cb4e5e72ff4c473f572e8103d28b7053d53f63dcb2a37167bc6ae
+// source-hash: a92737f3147f50ca2cf6319055f29d7afe2c17766723037ae46a81e73e7a66df
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_send_http.scxml
@@ -35,18 +35,20 @@ class StaticSendHttpStateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `count` datamodel variable, the machine's own. */
-    private var count: UInt = 3.toUInt()
+    private var vCount: UInt = 3.toUInt()
     /** W3C SCXML 5.2: the `ready` datamodel variable, the machine's own. */
-    private var ready: Boolean = false
+    private var vReady: Boolean = false
     /** W3C SCXML 5.2: the `label` datamodel variable, the machine's own. */
-    private var label: String = "idle"
+    private var vLabel: String = "idle"
     /** W3C SCXML 5.2: the `delta` datamodel variable, the machine's own. */
-    private var delta: Short = -5
+    private var vDelta: Short = -5
     /** W3C SCXML 5.2: the `ratio` datamodel variable, the machine's own. */
-    private var ratio: Double = 1.5
+    private var vRatio: Double = 1.5
     /** W3C SCXML 5.2: the `errors` datamodel variable, published (`sce:direction="out"`). */
-    var errors: UInt = 0.toUInt()
-        private set
+    private var vErrors: UInt = 0.toUInt()
+
+    /** What the published `errors` holds. */
+    val errors: UInt get() = vErrors
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -64,12 +66,12 @@ class StaticSendHttpStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.count?.let { count = it }
-        params.ready?.let { ready = it }
-        params.label?.let { label = it }
-        params.delta?.let { delta = it }
-        params.ratio?.let { ratio = it }
-        params.errors?.let { errors = it }
+        params.count?.let { vCount = it }
+        params.ready?.let { vReady = it }
+        params.label?.let { vLabel = it }
+        params.delta?.let { vDelta = it }
+        params.ratio?.let { vRatio = it }
+        params.errors?.let { vErrors = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -91,7 +93,7 @@ class StaticSendHttpStateMachine(
     )
 
     private fun currentData(): Data = Data(
-        errors = errors,
+        errors = vErrors,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -134,12 +136,12 @@ class StaticSendHttpStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "count" to SavedValues.of(count),
-            "ready" to SavedValues.of(ready),
-            "label" to SavedValues.of(label),
-            "delta" to SavedValues.of(delta),
-            "ratio" to SavedValues.of(ratio),
-            "errors" to SavedValues.of(errors),
+            "count" to SavedValues.of(vCount),
+            "ready" to SavedValues.of(vReady),
+            "label" to SavedValues.of(vLabel),
+            "delta" to SavedValues.of(vDelta),
+            "ratio" to SavedValues.of(vRatio),
+            "errors" to SavedValues.of(vErrors),
         ),
         wallNowMs,
     )
@@ -171,12 +173,12 @@ class StaticSendHttpStateMachine(
         val saved4 = SavedValues.int16(saved.variable("delta"), "delta")
         val saved5 = SavedValues.float64(saved.variable("ratio"), "ratio")
         val saved6 = SavedValues.uint32(saved.variable("errors"), "errors")
-        count = saved1
-        ready = saved2
-        label = saved3
-        delta = saved4
-        ratio = saved5
-        errors = saved6
+        vCount = saved1
+        vReady = saved2
+        vLabel = saved3
+        vDelta = saved4
+        vRatio = saved5
+        vErrors = saved6
         enterSaved(saved, wallNowMs)
     }
 
@@ -333,11 +335,11 @@ class StaticSendHttpStateMachine(
             0 -> {
                 // SCE-MAP: static_send_http.scxml:45 :: idle :: _transition_0
 
-            count = 4.toUInt()
+            vCount = 4.toUInt()
 
-            ready = true
+            vReady = true
 
-            if (try { label = com.sce.forge.runtime.SceChecked.bounded("busy", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendHttpEvent.Error.Execution, "<assign location='label'>: an integer operation overflowed or failed"); true }) {
+            if (try { vLabel = com.sce.forge.runtime.SceChecked.bounded("busy", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendHttpEvent.Error.Execution, "<assign location='label'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -348,22 +350,22 @@ class StaticSendHttpStateMachine(
             if (run send@{
             var paramFailed = false
             val sendPayload = mutableMapOf<String, Any?>()
-            putParam(sendPayload, "count", (count).toLong())
+            putParam(sendPayload, "count", (vCount).toLong())
 
-            putParam(sendPayload, "ready", ready)
+            putParam(sendPayload, "ready", vReady)
 
-            putParam(sendPayload, "label", label)
+            putParam(sendPayload, "label", vLabel)
 
             try {
-                putParam(sendPayload, "twice", (com.sce.forge.runtime.SceChecked.mul(count, 2.toUInt())).toLong())
+                putParam(sendPayload, "twice", (com.sce.forge.runtime.SceChecked.mul(vCount, 2.toUInt())).toLong())
             } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
                 raisePlatformError(StaticSendHttpEvent.Error.Execution, "<send> <param name='twice'> could not be read")
                 paramFailed = true
             }
 
-            putParam(sendPayload, "delta", (delta).toLong())
+            putParam(sendPayload, "delta", (vDelta).toLong())
 
-            putParam(sendPayload, "ratio", ratio)
+            putParam(sendPayload, "ratio", vRatio)
 
             val sendData = buildJsonFromParams(sendPayload)
             // The same pairs as the text a form carries (W3C SCXML C.2), so no
@@ -388,10 +390,10 @@ class StaticSendHttpStateMachine(
             if (run send@{
             var paramFailed = false
             val sendPayload = mutableMapOf<String, Any?>()
-            putParam(sendPayload, "count", (count).toLong())
+            putParam(sendPayload, "count", (vCount).toLong())
 
             try {
-                putParam(sendPayload, "big", (com.sce.forge.runtime.SceChecked.mul(count, 2000000000.toUInt())).toLong())
+                putParam(sendPayload, "big", (com.sce.forge.runtime.SceChecked.mul(vCount, 2000000000.toUInt())).toLong())
             } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
                 raisePlatformError(StaticSendHttpEvent.Error.Execution, "<send> <param name='big'> could not be read")
                 paramFailed = true
@@ -416,7 +418,7 @@ class StaticSendHttpStateMachine(
             3 -> {
                 // SCE-MAP: static_send_http.scxml:66 :: idle :: _transition_3
 
-            if (try { errors = com.sce.forge.runtime.SceChecked.add(errors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendHttpEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
+            if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendHttpEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }

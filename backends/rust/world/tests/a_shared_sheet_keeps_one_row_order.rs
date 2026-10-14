@@ -8,7 +8,7 @@
 // Cells are values and a copy keeps the later of two writes to one; rows are an
 // ORDER, and two rows inserted after the same row have no later: both stay, and they
 // have to stand the same way on every copy whichever reached it first. That is what
-// the replicated growable array rule in `machines/sheet_peer.scxml` is for, and what
+// the replicated growable array rule in the fixture `sheet_peer.scxml` is for, and what
 // this holds it to.
 //
 // Equality of the copies says they agree, not that they are right, so each run is

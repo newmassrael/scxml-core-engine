@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 572a4258697cb4e5e72ff4c473f572e8103d28b7053d53f63dcb2a37167bc6ae
+// source-hash: a92737f3147f50ca2cf6319055f29d7afe2c17766723037ae46a81e73e7a66df
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_send_idlocation.scxml
@@ -43,20 +43,26 @@ class StaticSendIdlocationStateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `first` datamodel variable, the machine's own. */
-    private var first: String = ""
+    private var vFirst: String = ""
     /** W3C SCXML 5.2: the `second` datamodel variable, the machine's own. */
-    private var second: String = ""
+    private var vSecond: String = ""
     /** W3C SCXML 5.2: the `scale` datamodel variable, the machine's own. */
-    private var scale: UInt = 3.toUInt()
+    private var vScale: UInt = 3.toUInt()
     /** W3C SCXML 5.2: the `first_fired` datamodel variable, published (`sce:direction="out"`). */
-    var firstFired: UInt = 0.toUInt()
-        private set
+    private var vFirstFired: UInt = 0.toUInt()
+
+    /** What the published `first_fired` holds. */
+    val firstFired: UInt get() = vFirstFired
     /** W3C SCXML 5.2: the `second_fired` datamodel variable, published (`sce:direction="out"`). */
-    var secondFired: UInt = 0.toUInt()
-        private set
+    private var vSecondFired: UInt = 0.toUInt()
+
+    /** What the published `second_fired` holds. */
+    val secondFired: UInt get() = vSecondFired
     /** W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`). */
-    var refusals: UInt = 0.toUInt()
-        private set
+    private var vRefusals: UInt = 0.toUInt()
+
+    /** What the published `refusals` holds. */
+    val refusals: UInt get() = vRefusals
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -74,12 +80,12 @@ class StaticSendIdlocationStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.first?.let { first = it }
-        params.second?.let { second = it }
-        params.scale?.let { scale = it }
-        params.firstFired?.let { firstFired = it }
-        params.secondFired?.let { secondFired = it }
-        params.refusals?.let { refusals = it }
+        params.first?.let { vFirst = it }
+        params.second?.let { vSecond = it }
+        params.scale?.let { vScale = it }
+        params.firstFired?.let { vFirstFired = it }
+        params.secondFired?.let { vSecondFired = it }
+        params.refusals?.let { vRefusals = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -103,9 +109,9 @@ class StaticSendIdlocationStateMachine(
     )
 
     private fun currentData(): Data = Data(
-        firstFired = firstFired,
-        secondFired = secondFired,
-        refusals = refusals,
+        firstFired = vFirstFired,
+        secondFired = vSecondFired,
+        refusals = vRefusals,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -148,12 +154,12 @@ class StaticSendIdlocationStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "first" to SavedValues.of(first),
-            "second" to SavedValues.of(second),
-            "scale" to SavedValues.of(scale),
-            "first_fired" to SavedValues.of(firstFired),
-            "second_fired" to SavedValues.of(secondFired),
-            "refusals" to SavedValues.of(refusals),
+            "first" to SavedValues.of(vFirst),
+            "second" to SavedValues.of(vSecond),
+            "scale" to SavedValues.of(vScale),
+            "first_fired" to SavedValues.of(vFirstFired),
+            "second_fired" to SavedValues.of(vSecondFired),
+            "refusals" to SavedValues.of(vRefusals),
         ),
         wallNowMs,
     )
@@ -185,12 +191,12 @@ class StaticSendIdlocationStateMachine(
         val saved4 = SavedValues.uint32(saved.variable("first_fired"), "first_fired")
         val saved5 = SavedValues.uint32(saved.variable("second_fired"), "second_fired")
         val saved6 = SavedValues.uint32(saved.variable("refusals"), "refusals")
-        first = saved1
-        second = saved2
-        scale = saved3
-        firstFired = saved4
-        secondFired = saved5
-        refusals = saved6
+        vFirst = saved1
+        vSecond = saved2
+        vScale = saved3
+        vFirstFired = saved4
+        vSecondFired = saved5
+        vRefusals = saved6
         enterSaved(saved, wallNowMs)
     }
 
@@ -387,8 +393,8 @@ class StaticSendIdlocationStateMachine(
             // the id and writes it to the variable `idlocation` names before it
             // reads any other argument (`Action::native_idlocation`); that variable
             // is then the id the send is known by (`Action::native_sendid`).
-            first = nextAutoSendId()
-            val sendIdGenerated: String = first
+            vFirst = nextAutoSendId()
+            val sendIdGenerated: String = vFirst
             val sendData = ""
             // W3C SCXML 6.2: Delayed send
             scheduleSend(sendIdGenerated, 200L, StaticSendIdlocationEvent.First.Due, EventMetadata.external(sendId = sendIdGenerated, origin = scriptSessionId ?: "", data = sendData))
@@ -405,8 +411,8 @@ class StaticSendIdlocationStateMachine(
             // the id and writes it to the variable `idlocation` names before it
             // reads any other argument (`Action::native_idlocation`); that variable
             // is then the id the send is known by (`Action::native_sendid`).
-            second = nextAutoSendId()
-            val sendIdGenerated: String = second
+            vSecond = nextAutoSendId()
+            val sendIdGenerated: String = vSecond
             val sendData = ""
             // W3C SCXML 6.2: Delayed send
             scheduleSend(sendIdGenerated, 200L, StaticSendIdlocationEvent.Second.Due, EventMetadata.external(sendId = sendIdGenerated, origin = scriptSessionId ?: "", data = sendData))
@@ -426,15 +432,15 @@ class StaticSendIdlocationStateMachine(
             // the id and writes it to the variable `idlocation` names before it
             // reads any other argument (`Action::native_idlocation`); that variable
             // is then the id the send is known by (`Action::native_sendid`).
-            first = nextAutoSendId()
-            val sendIdGenerated: String = first
+            vFirst = nextAutoSendId()
+            val sendIdGenerated: String = vFirst
             // The delay is a string computed from the machine's fields now, and
             // read as the CSS2 time it must be (ARCHITECTURE.md, "Durations"):
             // an operation that fails, or a value that is no time, is the
             // argument error, and the message is not scheduled under some
             // default wait.
             val sendDelayText: String = try {
-                if (com.sce.forge.runtime.SceChecked.mul(scale, 2000000000.toUInt()) > 1.toUInt()) "200ms" else "300ms"
+                if (com.sce.forge.runtime.SceChecked.mul(vScale, 2000000000.toUInt()) > 1.toUInt()) "200ms" else "300ms"
             } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
                 raisePlatformError(StaticSendIdlocationEvent.Error.Execution, "<send> delayexpr could not be evaluated", sendIdGenerated)
                 return@send true
@@ -461,7 +467,7 @@ class StaticSendIdlocationStateMachine(
             // machine's fields now (`Action::native_sendid`); no script engine is
             // asked. An id no send holds cancels nothing; an operation that fails
             // cannot be evaluated, which raises error.execution and ends the block.
-            cancelSend(first)
+            cancelSend(vFirst)
             }
             3 -> {
                 // SCE-MAP: static_send_idlocation.scxml:47 :: idle :: _transition_3
@@ -471,26 +477,26 @@ class StaticSendIdlocationStateMachine(
             // machine's fields now (`Action::native_sendid`); no script engine is
             // asked. An id no send holds cancels nothing; an operation that fails
             // cannot be evaluated, which raises error.execution and ends the block.
-            cancelSend(second)
+            cancelSend(vSecond)
             }
             4 -> {
                 // SCE-MAP: static_send_idlocation.scxml:50 :: idle :: _transition_4
 
-            if (try { firstFired = com.sce.forge.runtime.SceChecked.add(firstFired, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendIdlocationEvent.Error.Execution, "<assign location='first_fired'>: an integer operation overflowed or failed"); true }) {
+            if (try { vFirstFired = com.sce.forge.runtime.SceChecked.add(vFirstFired, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendIdlocationEvent.Error.Execution, "<assign location='first_fired'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             5 -> {
                 // SCE-MAP: static_send_idlocation.scxml:53 :: idle :: _transition_5
 
-            if (try { secondFired = com.sce.forge.runtime.SceChecked.add(secondFired, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendIdlocationEvent.Error.Execution, "<assign location='second_fired'>: an integer operation overflowed or failed"); true }) {
+            if (try { vSecondFired = com.sce.forge.runtime.SceChecked.add(vSecondFired, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendIdlocationEvent.Error.Execution, "<assign location='second_fired'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             6 -> {
                 // SCE-MAP: static_send_idlocation.scxml:56 :: idle :: _transition_6
 
-            if (try { refusals = com.sce.forge.runtime.SceChecked.add(refusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendIdlocationEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendIdlocationEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }

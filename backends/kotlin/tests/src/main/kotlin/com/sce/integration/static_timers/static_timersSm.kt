@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 572a4258697cb4e5e72ff4c473f572e8103d28b7053d53f63dcb2a37167bc6ae
+// source-hash: a92737f3147f50ca2cf6319055f29d7afe2c17766723037ae46a81e73e7a66df
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_timers.scxml
@@ -37,8 +37,10 @@ class StaticTimersStateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `trace` datamodel variable, published (`sce:direction="out"`). */
-    var trace: UInt = 0.toUInt()
-        private set
+    private var vTrace: UInt = 0.toUInt()
+
+    /** What the published `trace` holds. */
+    val trace: UInt get() = vTrace
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -51,7 +53,7 @@ class StaticTimersStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.trace?.let { trace = it }
+        params.trace?.let { vTrace = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -73,7 +75,7 @@ class StaticTimersStateMachine(
     )
 
     private fun currentData(): Data = Data(
-        trace = trace,
+        trace = vTrace,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -116,7 +118,7 @@ class StaticTimersStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "trace" to SavedValues.of(trace),
+            "trace" to SavedValues.of(vTrace),
         ),
         wallNowMs,
     )
@@ -143,7 +145,7 @@ class StaticTimersStateMachine(
     fun restore(saved: SavedState, wallNowMs: Long) {
         beginRestore(saved, savedShape)
         val saved1 = SavedValues.uint32(saved.variable("trace"), "trace")
-        trace = saved1
+        vTrace = saved1
         enterSaved(saved, wallNowMs)
     }
 
@@ -384,28 +386,28 @@ class StaticTimersStateMachine(
             0 -> {
                 // SCE-MAP: static_timers.scxml:34 :: waiting :: _transition_0
 
-            if (try { trace = com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.mul(trace, 10.toUInt()), 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticTimersEvent.Error.Execution, "<assign location='trace'>: an integer operation overflowed or failed"); true }) {
+            if (try { vTrace = com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.mul(vTrace, 10.toUInt()), 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticTimersEvent.Error.Execution, "<assign location='trace'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             1 -> {
                 // SCE-MAP: static_timers.scxml:37 :: waiting :: _transition_1
 
-            if (try { trace = com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.mul(trace, 10.toUInt()), 2.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticTimersEvent.Error.Execution, "<assign location='trace'>: an integer operation overflowed or failed"); true }) {
+            if (try { vTrace = com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.mul(vTrace, 10.toUInt()), 2.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticTimersEvent.Error.Execution, "<assign location='trace'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             2 -> {
                 // SCE-MAP: static_timers.scxml:40 :: waiting :: _transition_2
 
-            if (try { trace = com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.mul(trace, 10.toUInt()), 4.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticTimersEvent.Error.Execution, "<assign location='trace'>: an integer operation overflowed or failed"); true }) {
+            if (try { vTrace = com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.mul(vTrace, 10.toUInt()), 4.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticTimersEvent.Error.Execution, "<assign location='trace'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             3 -> {
                 // SCE-MAP: static_timers.scxml:43 :: waiting :: _transition_3
 
-            if (try { trace = com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.mul(trace, 10.toUInt()), 3.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticTimersEvent.Error.Execution, "<assign location='trace'>: an integer operation overflowed or failed"); true }) {
+            if (try { vTrace = com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.mul(vTrace, 10.toUInt()), 3.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticTimersEvent.Error.Execution, "<assign location='trace'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }

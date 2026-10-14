@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 572a4258697cb4e5e72ff4c473f572e8103d28b7053d53f63dcb2a37167bc6ae
+// source-hash: a92737f3147f50ca2cf6319055f29d7afe2c17766723037ae46a81e73e7a66df
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_block_ends_list.scxml
@@ -32,14 +32,20 @@ class StaticBlockEndsListStateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `picked` datamodel variable, published (`sce:direction="out"`). */
-    var picked: List<UByte> = emptyList()
-        private set
+    private var vPicked: List<UByte> = emptyList()
+
+    /** What the published `picked` holds. */
+    val picked: List<UByte> get() = vPicked
     /** W3C SCXML 5.2: the `afterAppend` datamodel variable, published (`sce:direction="out"`). */
-    var afterAppend: UByte = 0.toUByte()
-        private set
+    private var vAfterAppend: UByte = 0.toUByte()
+
+    /** What the published `afterAppend` holds. */
+    val afterAppend: UByte get() = vAfterAppend
     /** W3C SCXML 5.2: the `errors` datamodel variable, published (`sce:direction="out"`). */
-    var errors: UByte = 0.toUByte()
-        private set
+    private var vErrors: UByte = 0.toUByte()
+
+    /** What the published `errors` holds. */
+    val errors: UByte get() = vErrors
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -53,8 +59,8 @@ class StaticBlockEndsListStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.afterAppend?.let { afterAppend = it }
-        params.errors?.let { errors = it }
+        params.afterAppend?.let { vAfterAppend = it }
+        params.errors?.let { vErrors = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -78,9 +84,9 @@ class StaticBlockEndsListStateMachine(
     )
 
     private fun currentData(): Data = Data(
-        picked = picked,
-        afterAppend = afterAppend,
-        errors = errors,
+        picked = vPicked,
+        afterAppend = vAfterAppend,
+        errors = vErrors,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -123,9 +129,9 @@ class StaticBlockEndsListStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "picked" to SavedValues.list(picked) { SavedValues.of(it) },
-            "afterAppend" to SavedValues.of(afterAppend),
-            "errors" to SavedValues.of(errors),
+            "picked" to SavedValues.list(vPicked) { SavedValues.of(it) },
+            "afterAppend" to SavedValues.of(vAfterAppend),
+            "errors" to SavedValues.of(vErrors),
         ),
         wallNowMs,
     )
@@ -154,9 +160,9 @@ class StaticBlockEndsListStateMachine(
         val saved1 = SavedValues.list(saved.variable("picked"), "picked", 2) { e, w -> SavedValues.uint8(e, w) }
         val saved2 = SavedValues.uint8(saved.variable("afterAppend"), "afterAppend")
         val saved3 = SavedValues.uint8(saved.variable("errors"), "errors")
-        picked = saved1
-        afterAppend = saved2
-        errors = saved3
+        vPicked = saved1
+        vAfterAppend = saved2
+        vErrors = saved3
         enterSaved(saved, wallNowMs)
     }
 
@@ -287,18 +293,18 @@ class StaticBlockEndsListStateMachine(
             0 -> {
                 // SCE-MAP: static_block_ends_list.scxml:25 :: waiting :: _transition_0
 
-            if (if (picked.size < 2) { picked = picked + (7.toUByte()); false } else { raisePlatformError(StaticBlockEndsListEvent.Error.Execution, "<sce:append target='picked'>: the list already holds its capacity of 2"); true }) {
+            if (if (vPicked.size < 2) { vPicked = vPicked + (7.toUByte()); false } else { raisePlatformError(StaticBlockEndsListEvent.Error.Execution, "<sce:append target='picked'>: the list already holds its capacity of 2"); true }) {
                 return
             }
 
-            if (try { afterAppend = com.sce.forge.runtime.SceChecked.add(afterAppend, 1.toUByte()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBlockEndsListEvent.Error.Execution, "<assign location='afterAppend'>: an integer operation overflowed or failed"); true }) {
+            if (try { vAfterAppend = com.sce.forge.runtime.SceChecked.add(vAfterAppend, 1.toUByte()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBlockEndsListEvent.Error.Execution, "<assign location='afterAppend'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             1 -> {
                 // SCE-MAP: static_block_ends_list.scxml:29 :: waiting :: _transition_1
 
-            if (try { errors = com.sce.forge.runtime.SceChecked.add(errors, 1.toUByte()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBlockEndsListEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
+            if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUByte()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBlockEndsListEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 572a4258697cb4e5e72ff4c473f572e8103d28b7053d53f63dcb2a37167bc6ae
+// source-hash: a92737f3147f50ca2cf6319055f29d7afe2c17766723037ae46a81e73e7a66df
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_wire_wide.scxml
@@ -53,23 +53,35 @@ class StaticWireWideStateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `low` datamodel variable, published (`sce:direction="out"`). */
-    var low: ULong = 0.toULong()
-        private set
+    private var vLow: ULong = 0.toULong()
+
+    /** What the published `low` holds. */
+    val low: ULong get() = vLow
     /** W3C SCXML 5.2: the `smallLow` datamodel variable, published (`sce:direction="out"`). */
-    var smallLow: Long = 0
-        private set
+    private var vSmallLow: Long = 0
+
+    /** What the published `smallLow` holds. */
+    val smallLow: Long get() = vSmallLow
     /** W3C SCXML 5.2: the `large` datamodel variable, published (`sce:direction="out"`). */
-    var large: Boolean = false
-        private set
+    private var vLarge: Boolean = false
+
+    /** What the published `large` holds. */
+    val large: Boolean get() = vLarge
     /** W3C SCXML 5.2: the `negative` datamodel variable, published (`sce:direction="out"`). */
-    var negative: Boolean = false
-        private set
+    private var vNegative: Boolean = false
+
+    /** What the published `negative` holds. */
+    val negative: Boolean get() = vNegative
     /** W3C SCXML 5.2: the `relays` datamodel variable, published (`sce:direction="out"`). */
-    var relays: UInt = 0.toUInt()
-        private set
+    private var vRelays: UInt = 0.toUInt()
+
+    /** What the published `relays` holds. */
+    val relays: UInt get() = vRelays
     /** W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`). */
-    var refusals: UInt = 0.toUInt()
-        private set
+    private var vRefusals: UInt = 0.toUInt()
+
+    /** What the published `refusals` holds. */
+    val refusals: UInt get() = vRefusals
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -87,12 +99,12 @@ class StaticWireWideStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.low?.let { low = it }
-        params.smallLow?.let { smallLow = it }
-        params.large?.let { large = it }
-        params.negative?.let { negative = it }
-        params.relays?.let { relays = it }
-        params.refusals?.let { refusals = it }
+        params.low?.let { vLow = it }
+        params.smallLow?.let { vSmallLow = it }
+        params.large?.let { vLarge = it }
+        params.negative?.let { vNegative = it }
+        params.relays?.let { vRelays = it }
+        params.refusals?.let { vRefusals = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -119,12 +131,12 @@ class StaticWireWideStateMachine(
     )
 
     private fun currentData(): Data = Data(
-        low = low,
-        smallLow = smallLow,
-        large = large,
-        negative = negative,
-        relays = relays,
-        refusals = refusals,
+        low = vLow,
+        smallLow = vSmallLow,
+        large = vLarge,
+        negative = vNegative,
+        relays = vRelays,
+        refusals = vRefusals,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -167,12 +179,12 @@ class StaticWireWideStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "low" to SavedValues.of(low),
-            "smallLow" to SavedValues.of(smallLow),
-            "large" to SavedValues.of(large),
-            "negative" to SavedValues.of(negative),
-            "relays" to SavedValues.of(relays),
-            "refusals" to SavedValues.of(refusals),
+            "low" to SavedValues.of(vLow),
+            "smallLow" to SavedValues.of(vSmallLow),
+            "large" to SavedValues.of(vLarge),
+            "negative" to SavedValues.of(vNegative),
+            "relays" to SavedValues.of(vRelays),
+            "refusals" to SavedValues.of(vRefusals),
         ),
         wallNowMs,
     )
@@ -204,12 +216,12 @@ class StaticWireWideStateMachine(
         val saved4 = SavedValues.bool(saved.variable("negative"), "negative")
         val saved5 = SavedValues.uint32(saved.variable("relays"), "relays")
         val saved6 = SavedValues.uint32(saved.variable("refusals"), "refusals")
-        low = saved1
-        smallLow = saved2
-        large = saved3
-        negative = saved4
-        relays = saved5
-        refusals = saved6
+        vLow = saved1
+        vSmallLow = saved2
+        vLarge = saved3
+        vNegative = saved4
+        vRelays = saved5
+        vRefusals = saved6
         enterSaved(saved, wallNowMs)
     }
 
@@ -453,26 +465,26 @@ class StaticWireWideStateMachine(
                     return
                 }
 
-            if (try { low = com.sce.forge.runtime.SceChecked.rem(pendingWideRelayedPayload!!.big, 1000.toULong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticWireWideEvent.Error.Execution, "<assign location='low'>: an integer operation overflowed or failed"); true }) {
+            if (try { vLow = com.sce.forge.runtime.SceChecked.rem(pendingWideRelayedPayload!!.big, 1000.toULong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticWireWideEvent.Error.Execution, "<assign location='low'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            large = pendingWideRelayedPayload!!.big > 9007199254740992.toULong()
+            vLarge = pendingWideRelayedPayload!!.big > 9007199254740992.toULong()
 
-            if (try { smallLow = com.sce.forge.runtime.SceChecked.rem(pendingWideRelayedPayload!!.small, 1000); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticWireWideEvent.Error.Execution, "<assign location='smallLow'>: an integer operation overflowed or failed"); true }) {
+            if (try { vSmallLow = com.sce.forge.runtime.SceChecked.rem(pendingWideRelayedPayload!!.small, 1000); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticWireWideEvent.Error.Execution, "<assign location='smallLow'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            negative = pendingWideRelayedPayload!!.small < 0
+            vNegative = pendingWideRelayedPayload!!.small < 0
 
-            if (try { relays = com.sce.forge.runtime.SceChecked.add(relays, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticWireWideEvent.Error.Execution, "<assign location='relays'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRelays = com.sce.forge.runtime.SceChecked.add(vRelays, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticWireWideEvent.Error.Execution, "<assign location='relays'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             2 -> {
                 // SCE-MAP: static_wire_wide.scxml:54 :: relaying :: _transition_2
 
-            if (try { refusals = com.sce.forge.runtime.SceChecked.add(refusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticWireWideEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticWireWideEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }

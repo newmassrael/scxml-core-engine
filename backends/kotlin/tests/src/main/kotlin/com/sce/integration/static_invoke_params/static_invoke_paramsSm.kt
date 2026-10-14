@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 572a4258697cb4e5e72ff4c473f572e8103d28b7053d53f63dcb2a37167bc6ae
+// source-hash: a92737f3147f50ca2cf6319055f29d7afe2c17766723037ae46a81e73e7a66df
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_invoke_params.scxml
@@ -41,12 +41,14 @@ class StaticInvokeParamsStateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `base` datamodel variable, the machine's own. */
-    private var base: UInt = 4.toUInt()
+    private var vBase: UInt = 4.toUInt()
     /** W3C SCXML 5.2: the `enabled` datamodel variable, the machine's own. */
-    private var enabled: Boolean = true
+    private var vEnabled: Boolean = true
     /** W3C SCXML 5.2: the `completed` datamodel variable, published (`sce:direction="out"`). */
-    var completed: UInt = 0.toUInt()
-        private set
+    private var vCompleted: UInt = 0.toUInt()
+
+    /** What the published `completed` holds. */
+    val completed: UInt get() = vCompleted
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -61,9 +63,9 @@ class StaticInvokeParamsStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.base?.let { base = it }
-        params.enabled?.let { enabled = it }
-        params.completed?.let { completed = it }
+        params.base?.let { vBase = it }
+        params.enabled?.let { vEnabled = it }
+        params.completed?.let { vCompleted = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -85,7 +87,7 @@ class StaticInvokeParamsStateMachine(
     )
 
     private fun currentData(): Data = Data(
-        completed = completed,
+        completed = vCompleted,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -128,9 +130,9 @@ class StaticInvokeParamsStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "base" to SavedValues.of(base),
-            "enabled" to SavedValues.of(enabled),
-            "completed" to SavedValues.of(completed),
+            "base" to SavedValues.of(vBase),
+            "enabled" to SavedValues.of(vEnabled),
+            "completed" to SavedValues.of(vCompleted),
         ),
         wallNowMs,
     )
@@ -159,9 +161,9 @@ class StaticInvokeParamsStateMachine(
         val saved1 = SavedValues.uint32(saved.variable("base"), "base")
         val saved2 = SavedValues.bool(saved.variable("enabled"), "enabled")
         val saved3 = SavedValues.uint32(saved.variable("completed"), "completed")
-        base = saved1
-        enabled = saved2
-        completed = saved3
+        vBase = saved1
+        vEnabled = saved2
+        vCompleted = saved3
         enterSaved(saved, wallNowMs)
     }
 
@@ -325,7 +327,7 @@ class StaticInvokeParamsStateMachine(
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
-            if (try { base = com.sce.forge.runtime.SceChecked.add(base, 3.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeParamsEvent.Error.Execution, "<assign location='base'>: an integer operation overflowed or failed"); true }) {
+            if (try { vBase = com.sce.forge.runtime.SceChecked.add(vBase, 3.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeParamsEvent.Error.Execution, "<assign location='base'>: an integer operation overflowed or failed"); true }) {
                 return@run
             }
                 }
@@ -366,7 +368,7 @@ class StaticInvokeParamsStateMachine(
                     val childSM = StaticInvokeParamsSceSynthInvokeWatcherStateMachine()
                     // W3C SCXML 6.4.1: hand the child the values this invoke names
                     val childSeed = StaticInvokeParamsSceSynthInvokeWatcherStateMachine.InvokeParams()
-                    childSeed.start = base
+                    childSeed.start = vBase
                     childSM.acceptParams(childSeed)
 
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
@@ -381,8 +383,8 @@ class StaticInvokeParamsStateMachine(
                     val childSM = StaticInvokeParamsSceSynthInvokeWorkerStateMachine()
                     // W3C SCXML 6.4.1: hand the child the values this invoke names
                     val childSeed = StaticInvokeParamsSceSynthInvokeWorkerStateMachine.InvokeParams()
-                    childSeed.start = base
-                    childSeed.enabled = enabled
+                    childSeed.start = vBase
+                    childSeed.enabled = vEnabled
                     childSM.acceptParams(childSeed)
 
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
@@ -425,21 +427,21 @@ class StaticInvokeParamsStateMachine(
             0 -> {
                 // SCE-MAP: static_invoke_params.scxml:80 :: plain :: _transition_0
 
-            if (try { completed = com.sce.forge.runtime.SceChecked.add(completed, 100.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeParamsEvent.Error.Execution, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
+            if (try { vCompleted = com.sce.forge.runtime.SceChecked.add(vCompleted, 100.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeParamsEvent.Error.Execution, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             1 -> {
                 // SCE-MAP: static_invoke_params.scxml:98 :: plain :: _transition_1
 
-            if (try { base = com.sce.forge.runtime.SceChecked.add(base, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeParamsEvent.Error.Execution, "<assign location='base'>: an integer operation overflowed or failed"); true }) {
+            if (try { vBase = com.sce.forge.runtime.SceChecked.add(vBase, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeParamsEvent.Error.Execution, "<assign location='base'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             2 -> {
                 // SCE-MAP: static_invoke_params.scxml:101 :: plain :: _transition_2
 
-            if (try { completed = com.sce.forge.runtime.SceChecked.add(completed, 10.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeParamsEvent.Error.Execution, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
+            if (try { vCompleted = com.sce.forge.runtime.SceChecked.add(vCompleted, 10.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeParamsEvent.Error.Execution, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -449,7 +451,7 @@ class StaticInvokeParamsStateMachine(
             0 -> {
                 // SCE-MAP: static_invoke_params.scxml:60 :: working :: _transition_0
 
-            if (try { completed = com.sce.forge.runtime.SceChecked.add(completed, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeParamsEvent.Error.Execution, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
+            if (try { vCompleted = com.sce.forge.runtime.SceChecked.add(vCompleted, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeParamsEvent.Error.Execution, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }

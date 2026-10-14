@@ -27,15 +27,19 @@ pub const EXPECT: &[&str] = &[
     "ended",
     "donedata",
     "host_calls",
+    "sent",
 ];
 
 /// What a step that expects the machine ended may still state: a machine that
 /// ended in a top-level `<final>` has no saved state, so no state, configuration
 /// or variable can be read from it.
-const AFTER_END: &[&str] = &["ended", "donedata", "host_calls"];
+const AFTER_END: &[&str] = &["ended", "donedata", "host_calls", "sent"];
 
 /// The members of one entry of `host_calls`.
 const HOST_CALL: &[&str] = &["action", "args"];
+
+/// The members of one entry of `sent`.
+const SENT: &[&str] = &["target", "event", "data"];
 
 /// Why `scenario` is not one every driver replays the same way, or `Ok` when it is.
 pub fn check(scenario: &Value) -> Result<(), String> {
@@ -99,6 +103,27 @@ fn check_expect(expect: &Map<String, Value>) -> Result<(), String> {
             call.get("args")
                 .and_then(Value::as_array)
                 .ok_or("a host call carries its `args` as an array")?;
+        }
+    }
+    if let Some(sends) = expect.get("sent") {
+        for send in sends.as_array().ok_or("`sent` is an array")? {
+            let send = send.as_object().ok_or("a send is an object")?;
+            unknown(send, SENT, "a send")?;
+            // A peer is named `#name`; `#_internal`, `#_parent` and a session's
+            // `#_scxml_<id>` are the SCXML processor's own, and what goes to them is
+            // no host's to see.
+            let target = send
+                .get("target")
+                .and_then(Value::as_str)
+                .ok_or("a send names its `target`")?;
+            if !target.starts_with('#') || target.len() < 2 || target.starts_with("#_") {
+                return Err(format!(
+                    "a send's `target` is a peer as the document writes it (`#name`), not `{target}`"
+                ));
+            }
+            send.get("event")
+                .and_then(Value::as_str)
+                .ok_or("a send names its `event`")?;
         }
     }
     Ok(())

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 572a4258697cb4e5e72ff4c473f572e8103d28b7053d53f63dcb2a37167bc6ae
+// source-hash: a92737f3147f50ca2cf6319055f29d7afe2c17766723037ae46a81e73e7a66df
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_child_host_hybrid.scxml
@@ -97,10 +97,12 @@ class StaticChildHostHybridStateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `pick` datamodel variable, the machine's own. */
-    private var pick: String = "static_hosted_first.scxml"
+    private var vPick: String = "static_hosted_first.scxml"
     /** W3C SCXML 5.2: the `completed` datamodel variable, published (`sce:direction="out"`). */
-    var completed: UInt = 0.toUInt()
-        private set
+    private var vCompleted: UInt = 0.toUInt()
+
+    /** What the published `completed` holds. */
+    val completed: UInt get() = vCompleted
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -114,8 +116,8 @@ class StaticChildHostHybridStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.pick?.let { pick = it }
-        params.completed?.let { completed = it }
+        params.pick?.let { vPick = it }
+        params.completed?.let { vCompleted = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -137,7 +139,7 @@ class StaticChildHostHybridStateMachine(
     )
 
     private fun currentData(): Data = Data(
-        completed = completed,
+        completed = vCompleted,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -180,8 +182,8 @@ class StaticChildHostHybridStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "pick" to SavedValues.of(pick),
-            "completed" to SavedValues.of(completed),
+            "pick" to SavedValues.of(vPick),
+            "completed" to SavedValues.of(vCompleted),
         ),
         wallNowMs,
     )
@@ -209,8 +211,8 @@ class StaticChildHostHybridStateMachine(
         beginRestore(saved, savedShape)
         val saved1 = SavedValues.string(saved.variable("pick"), "pick", 48)
         val saved2 = SavedValues.uint32(saved.variable("completed"), "completed")
-        pick = saved1
-        completed = saved2
+        vPick = saved1
+        vCompleted = saved2
         enterSaved(saved, wallNowMs)
     }
 
@@ -377,7 +379,7 @@ class StaticChildHostHybridStateMachine(
                     deferInvoke(state, generatedInvokeId) {
                         try {
                             // §scxml-6.4: the `srcexpr` names the document to start.
-                            val filePath: String = pick
+                            val filePath: String = vPick
                             // §scxml-6.4 + SCE_ACCEPTED_SUBSET.md §2.13: the value
                             // chooses among the declared candidates, matched on the
                             // document stem so `file:x.scxml` and `./x.scxml` name
@@ -433,14 +435,14 @@ class StaticChildHostHybridStateMachine(
             0 -> {
                 // SCE-MAP: static_child_host_hybrid.scxml:28 :: working :: _transition_0
 
-            if (try { completed = com.sce.forge.runtime.SceChecked.add(completed, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
+            if (try { vCompleted = com.sce.forge.runtime.SceChecked.add(vCompleted, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
             }
             1 -> {
                 // SCE-MAP: static_child_host_hybrid.scxml:31 :: working :: _transition_1
 
-            if (try { pick = com.sce.forge.runtime.SceChecked.bounded("static_hosted_second.scxml", 48); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
+            if (try { vPick = com.sce.forge.runtime.SceChecked.bounded("static_hosted_second.scxml", 48); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
             }

@@ -38,6 +38,14 @@
 //! good, so a run that orders its bindings begins by delivering one envelope each
 //! way (the row tests do).
 //!
+//! A run can be read back one machine at a time ([`World::add_read`],
+//! [`World::record_of`]): every event a machine was given from outside, by its host
+//! or by a peer, in the order it took them, with what it held and what it sent its
+//! peers after each. That is the form of the scenarios every backend replays
+//! (docs/SCE_ACCEPTED_SUBSET.md §2.15), so a run of several machines becomes one
+//! scenario for each of them, and the engines that cannot run in this world are
+//! held to what the machines did in it.
+//!
 //! ⚠ Not modelled yet: a request's deadline and an ordering gap's timeout are
 //! observed when the world's time reaches them by another thing happening; a
 //! world that is otherwise quiet does not wake for them.
@@ -48,7 +56,7 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use sce_rust_mesh::endpoint::{
-    self, Endpoint, Environment, SharedEndpoint, Transport, TransportFailure,
+    self, Endpoint, EngineCall, Environment, SharedEndpoint, Transport, TransportFailure,
 };
 use sce_rust_mesh::router::Router;
 use sce_rust_runtime::{Engine, SceClock, StatePolicy};
@@ -327,11 +335,50 @@ fn hash_name(name: &str) -> u64 {
 
 type ActorEndpoint = SharedEndpoint<SimTransport, SimEnvironment>;
 
+/// What a machine sent a peer: the target and the event as its document writes them,
+/// and the data as the engine serialised it for the event (JSON, or empty).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Sent {
+    pub target: String,
+    pub event: String,
+    pub data: String,
+}
+
+/// One step of a machine's record: an event it was given from outside, and what the
+/// machine was once the macrostep that event started had run to quiescence.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Taken {
+    /// The event's name and its data (JSON, or empty); `None` for the first step,
+    /// which is the machine as its start left it.
+    pub event: Option<(String, String)>,
+    /// Whether the machine dropped the event because none of its events matches the
+    /// name (§scxml-3.12.1).
+    pub dropped: bool,
+    /// What the machine sent its peers in this step, oldest first.
+    pub sent: Vec<Sent>,
+    /// The machine as its reader gave it back after the step: its saved state.
+    pub saved: String,
+}
+
+/// How a recorded machine is read back after each step.
+type Reader<P> = Box<dyn Fn(&Engine<P>) -> String>;
+
+/// The record of one machine: how it is read, what it sent since it was last read,
+/// and the steps so far.
+struct Record<P: StatePolicy> {
+    read: Reader<P>,
+    sent: Arc<Mutex<Vec<Sent>>>,
+    steps: Vec<Taken>,
+}
+
 /// One machine of a world: its engine, and the Mesh endpoint it is served by.
 pub struct Actor<P: StatePolicy> {
     name: String,
     engine: Engine<P>,
     endpoint: ActorEndpoint,
+    /// What the host gave the machine that it has not taken yet, oldest first.
+    given: Vec<(String, String)>,
+    record: Option<Record<P>>,
 }
 
 impl<P: StatePolicy> Actor<P> {
@@ -351,22 +398,80 @@ impl<P: StatePolicy> Actor<P> {
             .expect("a Mesh endpoint is never left mid-update")
     }
 
-    /// Let the machine take what it was given: drain its queues, hand its
-    /// endpoint's news to it, and repeat until neither has more.
+    /// Run the machine until it has nothing more to do at the present time. The
+    /// generator says which call a machine needs: `step` drains the queues and
+    /// nothing else, and a machine with a delayed send or a child session is driven
+    /// by `tick`.
+    fn rest(&mut self) {
+        if P::NEEDS_EVENT_SCHEDULER {
+            for _ in 0..SETTLE_TICKS {
+                self.engine.tick();
+            }
+        } else {
+            self.engine.step();
+        }
+    }
+
+    /// Write the step that just ran into the machine's record, when it keeps one.
+    fn note(&mut self, event: Option<(String, String)>) {
+        let Some(record) = &mut self.record else {
+            return;
+        };
+        let dropped = event
+            .as_ref()
+            .is_some_and(|(name, _)| P::resolve_event_by_name(name).is_none());
+        let sent = std::mem::take(
+            &mut *record
+                .sent
+                .lock()
+                .expect("the list of what was sent is never left mid-update"),
+        );
+        let saved = (record.read)(&self.engine);
+        record.steps.push(Taken {
+            event,
+            dropped,
+            sent,
+            saved,
+        });
+    }
+
+    /// Let the machine take what it was given, one event at a time and each to
+    /// quiescence before the next, as the steps of a scenario are replayed: first
+    /// what its host gave it, then its endpoint's news, and again until neither has
+    /// more.
     fn pump(&mut self) {
         for _ in 0..PUMP_LIMIT {
-            if P::NEEDS_EVENT_SCHEDULER {
-                for _ in 0..SETTLE_TICKS {
-                    self.engine.tick();
-                }
-            } else {
-                self.engine.step();
-            }
+            self.rest();
+            let given = std::mem::take(&mut self.given);
             let calls = self.lock_endpoint().take_calls();
-            if calls.is_empty() {
+            if given.is_empty() && calls.is_empty() {
                 return;
             }
-            endpoint::apply_to(&mut self.engine, calls);
+            for (event, data) in given {
+                self.engine.raise_external_by_name(&event, &data);
+                self.rest();
+                self.note(Some((event, data)));
+            }
+            for call in calls {
+                let event = match &call {
+                    EngineCall::Raise(event) => {
+                        Some((event.name.clone(), event.metadata.data.to_string()))
+                    }
+                    EngineCall::EndInvoke { .. } => {
+                        assert!(
+                            self.record.is_none(),
+                            "{} is recorded, and the end of a Mesh request is not an event a scenario can give a machine",
+                            self.name
+                        );
+                        None
+                    }
+                };
+                endpoint::apply_to(&mut self.engine, vec![call]);
+                self.rest();
+                if event.is_some() {
+                    self.note(event);
+                }
+            }
         }
         panic!(
             "{} did not come to rest after {PUMP_LIMIT} rounds: it answers itself without end",
@@ -425,7 +530,7 @@ impl<P: StatePolicy + 'static> Participant for Actor<P> {
     }
 
     fn raise(&mut self, event: &str, data: &str) {
-        self.engine.raise_external_by_name(event, data);
+        self.given.push((event.to_string(), data.to_string()));
     }
 
     fn tick(&mut self) {
@@ -502,6 +607,51 @@ impl World {
     /// Add the machine `policy` under `name`, served by an endpoint that holds
     /// `router`. The machine is started and left at rest.
     pub fn add<P: StatePolicy + 'static>(&mut self, name: &str, policy: P, router: Router) {
+        self.add_actor(name, policy, router, None);
+    }
+
+    /// [`add`](Self::add), keeping a record of the machine
+    /// ([`record_of`](Self::record_of)): `read` gives the machine back after each
+    /// step, as the text it saves of itself. A generated machine saves through a
+    /// trait of its own, which is why the reader is the caller's to write.
+    ///
+    /// # Panics
+    ///
+    /// For a machine that needs the event scheduler: what such a machine does
+    /// depends on when its time was moved, which a record of the events it was given
+    /// does not hold.
+    pub fn add_read<P: StatePolicy + 'static>(
+        &mut self,
+        name: &str,
+        policy: P,
+        router: Router,
+        read: impl Fn(&Engine<P>) -> String + 'static,
+    ) {
+        assert!(
+            !P::NEEDS_EVENT_SCHEDULER,
+            "{name} runs on a scheduler: its record would have to hold when its time moved, and does not"
+        );
+        self.add_actor(name, policy, router, Some(Box::new(read)));
+    }
+
+    /// The record of the machine `name`, which was added by
+    /// [`add_read`](Self::add_read): every step so far, the start first.
+    pub fn record_of<P: StatePolicy + 'static>(&mut self, name: &str) -> Vec<Taken> {
+        self.actor::<P>(name)
+            .record
+            .as_ref()
+            .unwrap_or_else(|| panic!("{name} keeps no record: it was not added to be read"))
+            .steps
+            .clone()
+    }
+
+    fn add_actor<P: StatePolicy + 'static>(
+        &mut self,
+        name: &str,
+        policy: P,
+        router: Router,
+        read: Option<Reader<P>>,
+    ) {
         assert!(
             self.actors.iter().all(|actor| actor.name() != name),
             "the world already holds an actor named {name}"
@@ -522,13 +672,42 @@ impl World {
             u64::try_from(self.clock.now_ms()).unwrap_or(0),
         ));
         endpoint::register(&mut engine, &endpoint);
+        let record = read.map(|read| {
+            // The router the endpoint registered is replaced by one that writes the
+            // send down before handing it on: the record holds what the machine asked
+            // to be sent, whatever the network then does with it.
+            let sent = Arc::new(Mutex::new(Vec::new()));
+            let (log, sender) = (Arc::clone(&sent), Arc::clone(&endpoint));
+            engine.register_mesh_router(move |request| {
+                log.lock()
+                    .expect("the list of what was sent is never left mid-update")
+                    .push(Sent {
+                        target: request.target.clone(),
+                        event: request.event_name.clone(),
+                        data: request.event_data.clone(),
+                    });
+                sender
+                    .lock()
+                    .expect("a Mesh endpoint is never left mid-update")
+                    .send(&request);
+                Vec::new()
+            });
+            Record {
+                read,
+                sent,
+                steps: Vec::new(),
+            }
+        });
         engine.initialize();
         let mut actor = Actor {
             name: name.to_string(),
             engine,
             endpoint,
+            given: Vec::new(),
+            record,
         };
         actor.pump();
+        actor.note(None);
         self.actors.push(Box::new(actor));
     }
 

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 572a4258697cb4e5e72ff4c473f572e8103d28b7053d53f63dcb2a37167bc6ae
+// source-hash: a92737f3147f50ca2cf6319055f29d7afe2c17766723037ae46a81e73e7a66df
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_state_algorithm.scxml
@@ -104,26 +104,40 @@ class StaticStateAlgorithmStateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `entries` datamodel variable, published (`sce:direction="out"`). */
-    var entries: List<StaticStateAlgorithmEntryRecord> = emptyList()
-        private set
+    private var vEntries: List<StaticStateAlgorithmEntryRecord> = emptyList()
+
+    /** What the published `entries` holds. */
+    val entries: List<StaticStateAlgorithmEntryRecord> get() = vEntries
     /** W3C SCXML 5.2: the `total` datamodel variable, published (`sce:direction="out"`). */
-    var total: StaticStateAlgorithmTotalRecord = StaticStateAlgorithmTotalRecord(count = 0.toUInt(), sum = 0)
-        private set
+    private var vTotal: StaticStateAlgorithmTotalRecord = StaticStateAlgorithmTotalRecord(count = 0.toUInt(), sum = 0)
+
+    /** What the published `total` holds. */
+    val total: StaticStateAlgorithmTotalRecord get() = vTotal
     /** W3C SCXML 5.2: the `last` datamodel variable, published (`sce:direction="out"`). */
-    var last: StaticStateAlgorithmEntryRecord = StaticStateAlgorithmEntryRecord(id = 0.toUInt(), amount = 0)
-        private set
+    private var vLast: StaticStateAlgorithmEntryRecord = StaticStateAlgorithmEntryRecord(id = 0.toUInt(), amount = 0)
+
+    /** What the published `last` holds. */
+    val last: StaticStateAlgorithmEntryRecord get() = vLast
     /** W3C SCXML 5.2: the `ids` datamodel variable, published (`sce:direction="out"`). */
-    var ids: List<UInt> = emptyList()
-        private set
+    private var vIds: List<UInt> = emptyList()
+
+    /** What the published `ids` holds. */
+    val ids: List<UInt> get() = vIds
     /** W3C SCXML 5.2: the `idsum` datamodel variable, published (`sce:direction="out"`). */
-    var idsum: UInt = 0.toUInt()
-        private set
+    private var vIdsum: UInt = 0.toUInt()
+
+    /** What the published `idsum` holds. */
+    val idsum: UInt get() = vIdsum
     /** W3C SCXML 5.2: the `large` datamodel variable, published (`sce:direction="out"`). */
-    var large: UInt = 0.toUInt()
-        private set
+    private var vLarge: UInt = 0.toUInt()
+
+    /** What the published `large` holds. */
+    val large: UInt get() = vLarge
     /** W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`). */
-    var refusals: UInt = 0.toUInt()
-        private set
+    private var vRefusals: UInt = 0.toUInt()
+
+    /** What the published `refusals` holds. */
+    val refusals: UInt get() = vRefusals
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -138,9 +152,9 @@ class StaticStateAlgorithmStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.idsum?.let { idsum = it }
-        params.large?.let { large = it }
-        params.refusals?.let { refusals = it }
+        params.idsum?.let { vIdsum = it }
+        params.large?.let { vLarge = it }
+        params.refusals?.let { vRefusals = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -168,13 +182,13 @@ class StaticStateAlgorithmStateMachine(
     )
 
     private fun currentData(): Data = Data(
-        entries = entries,
-        total = total,
-        last = last,
-        ids = ids,
-        idsum = idsum,
-        large = large,
-        refusals = refusals,
+        entries = vEntries,
+        total = vTotal,
+        last = vLast,
+        ids = vIds,
+        idsum = vIdsum,
+        large = vLarge,
+        refusals = vRefusals,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -217,13 +231,13 @@ class StaticStateAlgorithmStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "entries" to SavedValues.list(entries) { it.toSaved() },
-            "total" to total.toSaved(),
-            "last" to last.toSaved(),
-            "ids" to SavedValues.list(ids) { SavedValues.of(it) },
-            "idsum" to SavedValues.of(idsum),
-            "large" to SavedValues.of(large),
-            "refusals" to SavedValues.of(refusals),
+            "entries" to SavedValues.list(vEntries) { it.toSaved() },
+            "total" to vTotal.toSaved(),
+            "last" to vLast.toSaved(),
+            "ids" to SavedValues.list(vIds) { SavedValues.of(it) },
+            "idsum" to SavedValues.of(vIdsum),
+            "large" to SavedValues.of(vLarge),
+            "refusals" to SavedValues.of(vRefusals),
         ),
         wallNowMs,
     )
@@ -256,13 +270,13 @@ class StaticStateAlgorithmStateMachine(
         val saved5 = SavedValues.uint32(saved.variable("idsum"), "idsum")
         val saved6 = SavedValues.uint32(saved.variable("large"), "large")
         val saved7 = SavedValues.uint32(saved.variable("refusals"), "refusals")
-        entries = saved1
-        total = saved2
-        last = saved3
-        ids = saved4
-        idsum = saved5
-        large = saved6
-        refusals = saved7
+        vEntries = saved1
+        vTotal = saved2
+        vLast = saved3
+        vIds = saved4
+        vIdsum = saved5
+        vLarge = saved6
+        vRefusals = saved7
         enterSaved(saved, wallNowMs)
     }
 
@@ -467,20 +481,20 @@ class StaticStateAlgorithmStateMachine(
                     return
                 }
 
-            if (try { entries = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_AddEntry__v(entries, pendingLedgerEntryPayload!!.id, pendingLedgerEntryPayload!!.amount)), 8); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmEvent.Error.Execution, "<assign location='entries'>: an integer operation overflowed or failed"); true }) {
+            if (try { vEntries = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_AddEntry__v(vEntries, pendingLedgerEntryPayload!!.id, pendingLedgerEntryPayload!!.amount)), 8); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmEvent.Error.Execution, "<assign location='entries'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { total = com.sce.forge.runtime.SceChecked.take(call_TotalOf__v(entries)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmEvent.Error.Execution, "<assign location='total'>: an integer operation overflowed or failed"); true }) {
+            if (try { vTotal = com.sce.forge.runtime.SceChecked.take(call_TotalOf__v(vEntries)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmEvent.Error.Execution, "<assign location='total'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            last = StaticStateAlgorithmEntryRecord(id = pendingLedgerEntryPayload!!.id, amount = pendingLedgerEntryPayload!!.amount)
+            vLast = StaticStateAlgorithmEntryRecord(id = pendingLedgerEntryPayload!!.id, amount = pendingLedgerEntryPayload!!.amount)
 
 
             if (call_AmountOf__p(pendingLedgerEntryPayload!!) > 100) {
 
-            if (try { large = com.sce.forge.runtime.SceChecked.add(large, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmEvent.Error.Execution, "<assign location='large'>: an integer operation overflowed or failed"); true }) {
+            if (try { vLarge = com.sce.forge.runtime.SceChecked.add(vLarge, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmEvent.Error.Execution, "<assign location='large'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -488,25 +502,25 @@ class StaticStateAlgorithmStateMachine(
             1 -> {
                 // SCE-MAP: static_state_algorithm.scxml:53 :: open :: _transition_1
 
-            if (try { total = com.sce.forge.runtime.SceChecked.take(call_Bump__v(total, 1)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmEvent.Error.Execution, "<assign location='total'>: an integer operation overflowed or failed"); true }) {
+            if (try { vTotal = com.sce.forge.runtime.SceChecked.take(call_Bump__v(vTotal, 1)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmEvent.Error.Execution, "<assign location='total'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             2 -> {
                 // SCE-MAP: static_state_algorithm.scxml:56 :: open :: _transition_2
 
-            if (if (ids.size < 8) { ids = ids + (last.id); false } else { raisePlatformError(StaticStateAlgorithmEvent.Error.Execution, "<sce:append target='ids'>: the list already holds its capacity of 8"); true }) {
+            if (if (vIds.size < 8) { vIds = vIds + (vLast.id); false } else { raisePlatformError(StaticStateAlgorithmEvent.Error.Execution, "<sce:append target='ids'>: the list already holds its capacity of 8"); true }) {
                 return
             }
 
-            if (try { idsum = com.sce.forge.runtime.SceChecked.take(call_IdSum__v(ids)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmEvent.Error.Execution, "<assign location='idsum'>: an integer operation overflowed or failed"); true }) {
+            if (try { vIdsum = com.sce.forge.runtime.SceChecked.take(call_IdSum__v(vIds)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmEvent.Error.Execution, "<assign location='idsum'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             3 -> {
                 // SCE-MAP: static_state_algorithm.scxml:60 :: open :: _transition_3
 
-            if (try { refusals = com.sce.forge.runtime.SceChecked.add(refusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }

@@ -47,14 +47,16 @@ class StatechartStaticHostInvokeStateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `job` datamodel variable, the machine's own. */
-    private var job: UInt = 7.toUInt()
+    private var vJob: UInt = 7.toUInt()
     /** W3C SCXML 5.2: the `label` datamodel variable, the machine's own. */
-    private var label: String = "report"
+    private var vLabel: String = "report"
     /** W3C SCXML 5.2: the `place` datamodel variable, the machine's own. */
-    private var place: String = "job://report"
+    private var vPlace: String = "job://report"
     /** W3C SCXML 5.2: the `seen` datamodel variable, published (`sce:direction="out"`). */
-    var seen: UInt = 0.toUInt()
-        private set
+    private var vSeen: UInt = 0.toUInt()
+
+    /** What the published `seen` holds. */
+    val seen: UInt get() = vSeen
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -70,10 +72,10 @@ class StatechartStaticHostInvokeStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.job?.let { job = it }
-        params.label?.let { label = it }
-        params.place?.let { place = it }
-        params.seen?.let { seen = it }
+        params.job?.let { vJob = it }
+        params.label?.let { vLabel = it }
+        params.place?.let { vPlace = it }
+        params.seen?.let { vSeen = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -95,7 +97,7 @@ class StatechartStaticHostInvokeStateMachine(
     )
 
     private fun currentData(): Data = Data(
-        seen = seen,
+        seen = vSeen,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -138,10 +140,10 @@ class StatechartStaticHostInvokeStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "job" to SavedValues.of(job),
-            "label" to SavedValues.of(label),
-            "place" to SavedValues.of(place),
-            "seen" to SavedValues.of(seen),
+            "job" to SavedValues.of(vJob),
+            "label" to SavedValues.of(vLabel),
+            "place" to SavedValues.of(vPlace),
+            "seen" to SavedValues.of(vSeen),
         ),
         wallNowMs,
     )
@@ -171,10 +173,10 @@ class StatechartStaticHostInvokeStateMachine(
         val saved2 = SavedValues.string(saved.variable("label"), "label", 16)
         val saved3 = SavedValues.string(saved.variable("place"), "place", 16)
         val saved4 = SavedValues.uint32(saved.variable("seen"), "seen")
-        job = saved1
-        label = saved2
-        place = saved3
-        seen = saved4
+        vJob = saved1
+        vLabel = saved2
+        vPlace = saved3
+        vSeen = saved4
         enterSaved(saved, wallNowMs)
     }
 
@@ -382,7 +384,7 @@ class StatechartStaticHostInvokeStateMachine(
                 run {
                     val generatedInvokeId = "working.${System.identityHashCode(this)}.h"
                     deferInvoke(state, generatedInvokeId) {
-                        val hostInvokeSrc: String = place
+                        val hostInvokeSrc: String = vPlace
                         val hostInvokeParams = mutableMapOf<String, List<String>>()
                         // The same pairs as the data model holds them, for the
                         // request's eventData: one evaluation, read as text for
@@ -395,13 +397,13 @@ class StatechartStaticHostInvokeStateMachine(
                             putParam(hostInvokePayload, "_sce_deadline_ms", v)
                         }
                         run {
-                            val v: Any? = label
+                            val v: Any? = vLabel
                             hostInvokeParams["label"] =
                                 (hostInvokeParams["label"] ?: emptyList()) + valueToWireString(v)
                             putParam(hostInvokePayload, "label", v)
                         }
                         run {
-                            val v: Any? = (job).toLong()
+                            val v: Any? = (vJob).toLong()
                             hostInvokeParams["job"] =
                                 (hostInvokeParams["job"] ?: emptyList()) + valueToWireString(v)
                             putParam(hostInvokePayload, "job", v)
@@ -464,7 +466,7 @@ class StatechartStaticHostInvokeStateMachine(
             0 -> {
                 // SCE-MAP: statechart_static_host_invoke.scxml:55 :: idle :: _transition_0
 
-            if (try { job = com.sce.forge.runtime.SceChecked.add(job, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticHostInvokeEvent.Error.Execution, "<assign location='job'>: an integer operation overflowed or failed"); true }) {
+            if (try { vJob = com.sce.forge.runtime.SceChecked.add(vJob, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticHostInvokeEvent.Error.Execution, "<assign location='job'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -474,21 +476,21 @@ class StatechartStaticHostInvokeStateMachine(
             0 -> {
                 // SCE-MAP: statechart_static_host_invoke.scxml:68 :: working :: _transition_0
 
-            if (try { job = com.sce.forge.runtime.SceChecked.add(job, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticHostInvokeEvent.Error.Execution, "<assign location='job'>: an integer operation overflowed or failed"); true }) {
+            if (try { vJob = com.sce.forge.runtime.SceChecked.add(vJob, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticHostInvokeEvent.Error.Execution, "<assign location='job'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             1 -> {
                 // SCE-MAP: statechart_static_host_invoke.scxml:71 :: working :: _transition_1
 
-            if (try { seen = com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.mul(seen, 10.toUInt()), 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticHostInvokeEvent.Error.Execution, "<assign location='seen'>: an integer operation overflowed or failed"); true }) {
+            if (try { vSeen = com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.mul(vSeen, 10.toUInt()), 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticHostInvokeEvent.Error.Execution, "<assign location='seen'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             2 -> {
                 // SCE-MAP: statechart_static_host_invoke.scxml:74 :: working :: _transition_2
 
-            if (try { seen = com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.mul(seen, 10.toUInt()), 2.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticHostInvokeEvent.Error.Execution, "<assign location='seen'>: an integer operation overflowed or failed"); true }) {
+            if (try { vSeen = com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.mul(vSeen, 10.toUInt()), 2.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticHostInvokeEvent.Error.Execution, "<assign location='seen'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }

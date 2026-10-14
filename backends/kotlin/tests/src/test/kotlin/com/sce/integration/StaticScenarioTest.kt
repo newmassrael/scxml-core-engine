@@ -72,10 +72,13 @@ import com.sce.integration.static_timers.StaticTimersStateMachine
 import com.sce.integration.static_whole_payload.StaticWholePayloadStateMachine
 import com.sce.integration.static_wire_wide.StaticWireWideStateMachine
 import com.sce.integration.static_wire_enum.StaticWireEnumStateMachine
+import com.sce.integration.sheet_peer.SheetPeerStateMachine
 import com.sce.integration.sync_client.SyncClientStateMachine
+import com.sce.integration.todo_peer.TodoPeerStateMachine
 import com.sce.runtime.EventMetadata
 import com.sce.runtime.ManualClock
 import com.sce.runtime.SavedState
+import com.sce.runtime.StateMachineEngine
 import java.io.File
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -166,9 +169,46 @@ class StaticScenarioTest {
     }
 
     /**
+     * What a machine sent its Mesh peers — a `<send>` whose target is `#name` —
+     * as the router a host registers is handed it. Registered before the machine
+     * starts, so that what its start sends is recorded too; with no router
+     * registered such a send is `error.execution` and reaches nobody.
+     */
+    private class RecordedSends {
+        private val requests = mutableListOf<StateMachineEngine.HostSendRequest>()
+
+        val router: (StateMachineEngine.HostSendRequest) -> List<StateMachineEngine.HostSendResponse> = { request ->
+            requests += request
+            emptyList()
+        }
+
+        /**
+         * The sends made since this was last called, oldest first, each as a
+         * scenario's `sent` writes it: the target as the document writes it, the
+         * event's name, and the event's data as the JSON value its text spells,
+         * left out when the send carried none.
+         */
+        fun take(): List<JsonElement> {
+            val fresh =
+                requests.map { request ->
+                    buildJsonObject {
+                        put("target", request.target)
+                        put("event", request.eventName)
+                        if (request.eventData.isNotEmpty()) {
+                            put("data", Json.parseToJsonElement(request.eventData))
+                        }
+                    }
+                }
+            requests.clear()
+            return fresh
+        }
+    }
+
+    /**
      * Replay [scenario] against a machine driven by [send] and [tick], read
      * back with [save] after every step, and asked whether it has [ended]. A
-     * machine with a host that records its `<sce:action>`s gives [hostCalls].
+     * machine with a host that records its `<sce:action>`s gives [hostCalls],
+     * and one whose sends to its Mesh peers are recorded gives [sent].
      */
     private fun replay(
         scenario: JsonObject,
@@ -179,6 +219,7 @@ class StaticScenarioTest {
         donedata: () -> String = { "" },
         advance: (Long) -> Unit = { error("this machine runs on no manual clock to advance") },
         hostCalls: (() -> List<JsonElement>)? = null,
+        sent: (() -> List<JsonElement>)? = null,
     ) {
         val steps = scenario.getValue("steps").jsonArray
         assertTrue(steps.isNotEmpty(), "a scenario with no steps judges nothing")
@@ -208,6 +249,17 @@ class StaticScenarioTest {
                     "step $n ($note): this driver records no host calls, so it cannot hold a step to them",
                 )
                 assertEquals(want, JsonArray(asked!!), "step $n ($note): what the machine asked of its host")
+            }
+            // What the machine sent its Mesh peers in this step, read and held to
+            // the step the same way: every step takes its own, so none is handed
+            // on, and a step that states some needs a driver that records them.
+            val sends = sent?.invoke()
+            expect["sent"]?.let { want ->
+                assertTrue(
+                    sends != null,
+                    "step $n ($note): this driver records no sends to Mesh peers, so it cannot hold a step to them",
+                )
+                assertEquals(want, JsonArray(sends!!), "step $n ($note): what the machine sent its Mesh peers")
             }
             // A machine that ended in a top-level <final> has no saved state to
             // read — the save refuses one — so what a scenario can say of it is
@@ -1317,6 +1369,86 @@ class StaticScenarioTest {
                 tick = { sm.tick() },
                 save = { sm.save() },
                 ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // One copy of a shared to-do list, as each of the three that took part in one
+    // run of it was driven: a person's copy stamps a change with its clock and
+    // sends it to the hub, the hub passes a write on to every copy but the one it
+    // came from, and each field of each to-do keeps the later write whatever order
+    // the writes arrive in. Every step states what the copy sent its peers.
+    @Test
+    fun todoPeerIsAlicesCopyOfASharedList() {
+        replayTodoPeer(scenario("todo_peer_alice"))
+    }
+
+    @Test
+    fun todoPeerIsBobsCopyOfASharedList() {
+        replayTodoPeer(scenario("todo_peer_bob"))
+    }
+
+    @Test
+    fun todoPeerIsTheHubTheCopiesOfASharedListSendTo() {
+        replayTodoPeer(scenario("todo_peer_server"))
+    }
+
+    /** One run of `todo_peer`, on a machine of its own whose sends to its peers are recorded. */
+    private fun replayTodoPeer(scenario: JsonObject) {
+        val sends = RecordedSends()
+        val sm = TodoPeerStateMachine()
+        sm.registerMeshRouter(sends.router)
+        sm.initialize()
+        try {
+            replay(
+                scenario,
+                send = { event, data -> sm.sendEventByName(event, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+                sent = { sends.take() },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // One copy of a shared sheet, as each of the three that took part in one run
+    // of it was driven: its cells merge as the to-do list's fields do, and its
+    // rows and columns are sequences every copy orders alike, with what was
+    // removed kept apart from what was placed. Every step states what the copy
+    // sent its peers.
+    @Test
+    fun sheetPeerIsAlicesCopyOfASharedSheet() {
+        replaySheetPeer(scenario("sheet_peer_alice"))
+    }
+
+    @Test
+    fun sheetPeerIsBobsCopyOfASharedSheet() {
+        replaySheetPeer(scenario("sheet_peer_bob"))
+    }
+
+    @Test
+    fun sheetPeerIsTheHubTheCopiesOfASharedSheetSendTo() {
+        replaySheetPeer(scenario("sheet_peer_server"))
+    }
+
+    /** One run of `sheet_peer`, on a machine of its own whose sends to its peers are recorded. */
+    private fun replaySheetPeer(scenario: JsonObject) {
+        val sends = RecordedSends()
+        val sm = SheetPeerStateMachine()
+        sm.registerMeshRouter(sends.router)
+        sm.initialize()
+        try {
+            replay(
+                scenario,
+                send = { event, data -> sm.sendEventByName(event, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+                sent = { sends.take() },
             )
         } finally {
             sm.cleanup()

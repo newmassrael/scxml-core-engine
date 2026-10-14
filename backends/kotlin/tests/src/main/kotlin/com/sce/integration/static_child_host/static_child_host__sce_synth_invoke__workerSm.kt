@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 572a4258697cb4e5e72ff4c473f572e8103d28b7053d53f63dcb2a37167bc6ae
+// source-hash: a92737f3147f50ca2cf6319055f29d7afe2c17766723037ae46a81e73e7a66df
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_child_host__sce_synth_invoke__worker.scxml
@@ -86,7 +86,7 @@ class StaticChildHostSceSynthInvokeWorkerStateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `steps` datamodel variable, the machine's own. */
-    private var steps: UInt = 0.toUInt()
+    private var vSteps: UInt = 0.toUInt()
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -99,7 +99,7 @@ class StaticChildHostSceSynthInvokeWorkerStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.steps?.let { steps = it }
+        params.steps?.let { vSteps = it }
     }
 
     /**
@@ -153,7 +153,7 @@ class StaticChildHostSceSynthInvokeWorkerStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "steps" to SavedValues.of(steps),
+            "steps" to SavedValues.of(vSteps),
         ),
         wallNowMs,
     )
@@ -180,7 +180,7 @@ class StaticChildHostSceSynthInvokeWorkerStateMachine(
     fun restore(saved: SavedState, wallNowMs: Long) {
         beginRestore(saved, savedShape)
         val saved1 = SavedValues.uint32(saved.variable("steps"), "steps")
-        steps = saved1
+        vSteps = saved1
         enterSaved(saved, wallNowMs)
     }
 
@@ -347,7 +347,7 @@ class StaticChildHostSceSynthInvokeWorkerStateMachine(
             0 -> {
                 // SCE-MAP: static_child_host__sce_synth_invoke__worker.scxml:12 :: first :: _transition_0
 
-            if (try { steps = com.sce.forge.runtime.SceChecked.add(steps, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
+            if (try { vSteps = com.sce.forge.runtime.SceChecked.add(vSteps, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
             }
@@ -357,12 +357,12 @@ class StaticChildHostSceSynthInvokeWorkerStateMachine(
             0 -> {
                 // SCE-MAP: static_child_host__sce_synth_invoke__worker.scxml:17 :: second :: _transition_0
 
-            if (try { steps = com.sce.forge.runtime.SceChecked.add(steps, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
+            if (try { vSteps = com.sce.forge.runtime.SceChecked.add(vSteps, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
 
             // W3C SCXML G.7: <sce:action name="finished">
-            actions.finished(steps)
+            actions.finished(vSteps)
             }
             else -> {}
         }

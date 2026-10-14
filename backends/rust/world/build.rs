@@ -1,10 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-// build.rs for the world simulation: the documents under `machines/`, and the
-// standard ones they import, are generated in-process by sce_build into OUT_DIR, and
-// a tests file mounts them through `machines.rs`, which this script writes. Nothing
-// generated is committed, so there is no tree to regenerate or to drift.
+// build.rs for the world simulation: the documents under `machines/`, the two shared
+// documents every backend replays (`sheet_peer`, `todo_peer`, with their schemas,
+// under `sce-build/tests/fixtures/static_datamodel/`), and the standard ones they
+// import, are generated in-process by sce_build into OUT_DIR, and a tests file mounts
+// them through `machines.rs`, which this script writes. Nothing generated is
+// committed, so there is no tree to regenerate or to drift.
+//
+// The shared documents are read from the fixture directory and not kept here as well:
+// a run of this world is written out as the scenarios the other backends replay
+// (tests/a_world_run_is_what_every_backend_replays.rs), and they replay the machines
+// of that directory, so the machine that ran and the machine that is replayed are one
+// file.
 //
 // A generated statechart calls the algorithms it imports as siblings of its own
 // (`super::lww_write`), and an algorithm the record schemas and algorithms it
@@ -22,8 +30,8 @@ use sce_build::{compile_forge_with_imports, DocumentLabel, ForgeCompileOptions};
 const STATECHARTS: &[&str] = &[
     "machines/echo_client.scxml",
     "machines/echo_server.scxml",
-    "machines/sheet_peer.scxml",
-    "machines/todo_peer.scxml",
+    "../../../sce-build/tests/fixtures/static_datamodel/sheet_peer.scxml",
+    "../../../sce-build/tests/fixtures/static_datamodel/todo_peer.scxml",
     "machines/todo_wide_sender.scxml",
 ];
 
@@ -42,21 +50,21 @@ const FORGE: &[&str] = &[
     "../../../stdlib/merge/rga_insert.scxml",
     "../../../stdlib/merge/rga_holds.scxml",
     "../../../stdlib/merge/rga_remove.scxml",
-    "machines/sheet_cell.scxml",
-    "machines/sheet_edit.scxml",
-    "machines/sheet_join.scxml",
-    "machines/sheet_row.scxml",
-    "machines/sheet_gone.scxml",
-    "machines/sheet_add_row.scxml",
-    "machines/sheet_drop_row.scxml",
-    "machines/sheet_col.scxml",
-    "machines/sheet_gone_col.scxml",
-    "machines/sheet_add_col.scxml",
-    "machines/sheet_drop_col.scxml",
-    "machines/todo_join.scxml",
-    "machines/todo_edit.scxml",
-    "machines/todo_write.scxml",
-    "machines/todo_text.scxml",
+    "../../../sce-build/tests/fixtures/static_datamodel/sheet_cell.scxml",
+    "../../../sce-build/tests/fixtures/static_datamodel/sheet_edit.scxml",
+    "../../../sce-build/tests/fixtures/static_datamodel/sheet_join.scxml",
+    "../../../sce-build/tests/fixtures/static_datamodel/sheet_row.scxml",
+    "../../../sce-build/tests/fixtures/static_datamodel/sheet_gone.scxml",
+    "../../../sce-build/tests/fixtures/static_datamodel/sheet_add_row.scxml",
+    "../../../sce-build/tests/fixtures/static_datamodel/sheet_drop_row.scxml",
+    "../../../sce-build/tests/fixtures/static_datamodel/sheet_col.scxml",
+    "../../../sce-build/tests/fixtures/static_datamodel/sheet_gone_col.scxml",
+    "../../../sce-build/tests/fixtures/static_datamodel/sheet_add_col.scxml",
+    "../../../sce-build/tests/fixtures/static_datamodel/sheet_drop_col.scxml",
+    "../../../sce-build/tests/fixtures/static_datamodel/todo_join.scxml",
+    "../../../sce-build/tests/fixtures/static_datamodel/todo_edit.scxml",
+    "../../../sce-build/tests/fixtures/static_datamodel/todo_write.scxml",
+    "../../../sce-build/tests/fixtures/static_datamodel/todo_text.scxml",
     "machines/todo_shout.scxml",
 ];
 

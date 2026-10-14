@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 572a4258697cb4e5e72ff4c473f572e8103d28b7053d53f63dcb2a37167bc6ae
+// source-hash: a92737f3147f50ca2cf6319055f29d7afe2c17766723037ae46a81e73e7a66df
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_invoke_hybrid.scxml
@@ -44,17 +44,21 @@ class StaticInvokeHybridStateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `pick` datamodel variable, the machine's own. */
-    private var pick: String = "file:static_hybrid_first.scxml"
+    private var vPick: String = "file:static_hybrid_first.scxml"
     /** W3C SCXML 5.2: the `base` datamodel variable, the machine's own. */
-    private var base: UInt = 4.toUInt()
+    private var vBase: UInt = 4.toUInt()
     /** W3C SCXML 5.2: the `enabled` datamodel variable, the machine's own. */
-    private var enabled: Boolean = true
+    private var vEnabled: Boolean = true
     /** W3C SCXML 5.2: the `completed` datamodel variable, published (`sce:direction="out"`). */
-    var completed: UInt = 0.toUInt()
-        private set
+    private var vCompleted: UInt = 0.toUInt()
+
+    /** What the published `completed` holds. */
+    val completed: UInt get() = vCompleted
     /** W3C SCXML 5.2: the `errors` datamodel variable, published (`sce:direction="out"`). */
-    var errors: UInt = 0.toUInt()
-        private set
+    private var vErrors: UInt = 0.toUInt()
+
+    /** What the published `errors` holds. */
+    val errors: UInt get() = vErrors
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -71,11 +75,11 @@ class StaticInvokeHybridStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.pick?.let { pick = it }
-        params.base?.let { base = it }
-        params.enabled?.let { enabled = it }
-        params.completed?.let { completed = it }
-        params.errors?.let { errors = it }
+        params.pick?.let { vPick = it }
+        params.base?.let { vBase = it }
+        params.enabled?.let { vEnabled = it }
+        params.completed?.let { vCompleted = it }
+        params.errors?.let { vErrors = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -98,8 +102,8 @@ class StaticInvokeHybridStateMachine(
     )
 
     private fun currentData(): Data = Data(
-        completed = completed,
-        errors = errors,
+        completed = vCompleted,
+        errors = vErrors,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -142,11 +146,11 @@ class StaticInvokeHybridStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "pick" to SavedValues.of(pick),
-            "base" to SavedValues.of(base),
-            "enabled" to SavedValues.of(enabled),
-            "completed" to SavedValues.of(completed),
-            "errors" to SavedValues.of(errors),
+            "pick" to SavedValues.of(vPick),
+            "base" to SavedValues.of(vBase),
+            "enabled" to SavedValues.of(vEnabled),
+            "completed" to SavedValues.of(vCompleted),
+            "errors" to SavedValues.of(vErrors),
         ),
         wallNowMs,
     )
@@ -177,11 +181,11 @@ class StaticInvokeHybridStateMachine(
         val saved3 = SavedValues.bool(saved.variable("enabled"), "enabled")
         val saved4 = SavedValues.uint32(saved.variable("completed"), "completed")
         val saved5 = SavedValues.uint32(saved.variable("errors"), "errors")
-        pick = saved1
-        base = saved2
-        enabled = saved3
-        completed = saved4
-        errors = saved5
+        vPick = saved1
+        vBase = saved2
+        vEnabled = saved3
+        vCompleted = saved4
+        vErrors = saved5
         enterSaved(saved, wallNowMs)
     }
 
@@ -418,7 +422,7 @@ class StaticInvokeHybridStateMachine(
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
-            if (try { base = com.sce.forge.runtime.SceChecked.add(base, 3.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<assign location='base'>: an integer operation overflowed or failed"); true }) {
+            if (try { vBase = com.sce.forge.runtime.SceChecked.add(vBase, 3.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<assign location='base'>: an integer operation overflowed or failed"); true }) {
                 return@run
             }
                 }
@@ -432,7 +436,7 @@ class StaticInvokeHybridStateMachine(
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
-            if (try { pick = com.sce.forge.runtime.SceChecked.bounded("./static_hybrid_first.scxml", 48); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<assign location='pick'>: an integer operation overflowed or failed"); true }) {
+            if (try { vPick = com.sce.forge.runtime.SceChecked.bounded("./static_hybrid_first.scxml", 48); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<assign location='pick'>: an integer operation overflowed or failed"); true }) {
                 return@run
             }
                 }
@@ -446,7 +450,7 @@ class StaticInvokeHybridStateMachine(
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
-            if (try { pick = com.sce.forge.runtime.SceChecked.bounded("static_hybrid_missing.scxml", 48); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<assign location='pick'>: an integer operation overflowed or failed"); true }) {
+            if (try { vPick = com.sce.forge.runtime.SceChecked.bounded("static_hybrid_missing.scxml", 48); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<assign location='pick'>: an integer operation overflowed or failed"); true }) {
                 return@run
             }
                 }
@@ -468,7 +472,7 @@ class StaticInvokeHybridStateMachine(
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
-            if (try { pick = com.sce.forge.runtime.SceChecked.bounded("/opt/charts/static_hybrid_second.scxml", 48); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<assign location='pick'>: an integer operation overflowed or failed"); true }) {
+            if (try { vPick = com.sce.forge.runtime.SceChecked.bounded("/opt/charts/static_hybrid_second.scxml", 48); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<assign location='pick'>: an integer operation overflowed or failed"); true }) {
                 return@run
             }
                 }
@@ -500,7 +504,7 @@ class StaticInvokeHybridStateMachine(
                     deferInvoke(state, generatedInvokeId) {
                         try {
                             // §scxml-6.4: the `srcexpr` names the document to start.
-                            val filePath: String = pick
+                            val filePath: String = vPick
                             // §scxml-6.4 + SCE_ACCEPTED_SUBSET.md §2.13: the value
                             // chooses among the declared candidates, matched on the
                             // document stem so `file:x.scxml` and `./x.scxml` name
@@ -511,14 +515,14 @@ class StaticInvokeHybridStateMachine(
                                 "static_hybrid_first" -> StaticHybridFirstStateMachine().also { child ->
                                     // W3C SCXML 6.4.1: hand the child the values this invoke names
                                     val childSeed = StaticHybridFirstStateMachine.InvokeParams()
-                                    childSeed.start = base
-                                    childSeed.enabled = enabled
+                                    childSeed.start = vBase
+                                    childSeed.enabled = vEnabled
                                     child.acceptParams(childSeed)
                                     // W3C SCXML 6.4.3: the child declares no `extra`, so the Processor MUST NOT
                                     // add it to its data model — but the argument is still the invoke's,
                                     // evaluated, and a failure of it is reported (W3C SCXML 5.7.1).
                                     try {
-                                        (com.sce.forge.runtime.SceChecked.sub(base, 4.toUInt())).toLong()
+                                        (com.sce.forge.runtime.SceChecked.sub(vBase, 4.toUInt())).toLong()
                                     } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
                                         raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<invoke> <param name='extra'> expr failed to evaluate")
                                     }
@@ -527,9 +531,9 @@ class StaticInvokeHybridStateMachine(
                                 "static_hybrid_second" -> StaticHybridSecondStateMachine().also { child ->
                                     // W3C SCXML 6.4.1: hand the child the values this invoke names
                                     val childSeed = StaticHybridSecondStateMachine.InvokeParams()
-                                    childSeed.start = base
+                                    childSeed.start = vBase
                                     try {
-                                        childSeed.extra = com.sce.forge.runtime.SceChecked.sub(base, 4.toUInt())
+                                        childSeed.extra = com.sce.forge.runtime.SceChecked.sub(vBase, 4.toUInt())
                                     } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
                                         // W3C SCXML 5.7.1: report the failure and leave the value out.
                                         raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<invoke> <param name='extra'> expr failed to evaluate")
@@ -563,7 +567,7 @@ class StaticInvokeHybridStateMachine(
                     deferInvoke(state, generatedInvokeId) {
                         try {
                             // §scxml-6.4: the `srcexpr` names the document to start.
-                            val filePath: String = pick
+                            val filePath: String = vPick
                             // §scxml-6.4 + SCE_ACCEPTED_SUBSET.md §2.13: the value
                             // chooses among the declared candidates, matched on the
                             // document stem so `file:x.scxml` and `./x.scxml` name
@@ -574,14 +578,14 @@ class StaticInvokeHybridStateMachine(
                                 "static_hybrid_first" -> StaticHybridFirstStateMachine().also { child ->
                                     // W3C SCXML 6.4.1: hand the child the values this invoke names
                                     val childSeed = StaticHybridFirstStateMachine.InvokeParams()
-                                    childSeed.start = base
-                                    childSeed.enabled = enabled
+                                    childSeed.start = vBase
+                                    childSeed.enabled = vEnabled
                                     child.acceptParams(childSeed)
                                     // W3C SCXML 6.4.3: the child declares no `extra`, so the Processor MUST NOT
                                     // add it to its data model — but the argument is still the invoke's,
                                     // evaluated, and a failure of it is reported (W3C SCXML 5.7.1).
                                     try {
-                                        (com.sce.forge.runtime.SceChecked.mul(base, 2000000000.toUInt())).toLong()
+                                        (com.sce.forge.runtime.SceChecked.mul(vBase, 2000000000.toUInt())).toLong()
                                     } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
                                         raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<invoke> <param name='extra'> expr failed to evaluate")
                                     }
@@ -590,9 +594,9 @@ class StaticInvokeHybridStateMachine(
                                 "static_hybrid_second" -> StaticHybridSecondStateMachine().also { child ->
                                     // W3C SCXML 6.4.1: hand the child the values this invoke names
                                     val childSeed = StaticHybridSecondStateMachine.InvokeParams()
-                                    childSeed.start = base
+                                    childSeed.start = vBase
                                     try {
-                                        childSeed.extra = com.sce.forge.runtime.SceChecked.mul(base, 2000000000.toUInt())
+                                        childSeed.extra = com.sce.forge.runtime.SceChecked.mul(vBase, 2000000000.toUInt())
                                     } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
                                         // W3C SCXML 5.7.1: report the failure and leave the value out.
                                         raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<invoke> <param name='extra'> expr failed to evaluate")
@@ -626,7 +630,7 @@ class StaticInvokeHybridStateMachine(
                     deferInvoke(state, generatedInvokeId) {
                         try {
                             // §scxml-6.4: the `srcexpr` names the document to start.
-                            val filePath: String = pick
+                            val filePath: String = vPick
                             // §scxml-6.4 + SCE_ACCEPTED_SUBSET.md §2.13: the value
                             // chooses among the declared candidates, matched on the
                             // document stem so `file:x.scxml` and `./x.scxml` name
@@ -637,15 +641,15 @@ class StaticInvokeHybridStateMachine(
                                 "static_hybrid_first" -> StaticHybridFirstStateMachine().also { child ->
                                     // W3C SCXML 6.4.1: hand the child the values this invoke names
                                     val childSeed = StaticHybridFirstStateMachine.InvokeParams()
-                                    childSeed.start = base
-                                    childSeed.enabled = enabled
+                                    childSeed.start = vBase
+                                    childSeed.enabled = vEnabled
                                     child.acceptParams(childSeed)
 
                                 }
                                 "static_hybrid_second" -> StaticHybridSecondStateMachine().also { child ->
                                     // W3C SCXML 6.4.1: hand the child the values this invoke names
                                     val childSeed = StaticHybridSecondStateMachine.InvokeParams()
-                                    childSeed.start = base
+                                    childSeed.start = vBase
                                     child.acceptParams(childSeed)
 
                                 }
@@ -675,7 +679,7 @@ class StaticInvokeHybridStateMachine(
                     deferInvoke(state, generatedInvokeId) {
                         try {
                             // §scxml-6.4: the `srcexpr` names the document to start.
-                            val filePath: String = pick
+                            val filePath: String = vPick
                             // §scxml-6.4 + SCE_ACCEPTED_SUBSET.md §2.13: the value
                             // chooses among the declared candidates, matched on the
                             // document stem so `file:x.scxml` and `./x.scxml` name
@@ -686,14 +690,14 @@ class StaticInvokeHybridStateMachine(
                                 "static_hybrid_first" -> StaticHybridFirstStateMachine().also { child ->
                                     // W3C SCXML 6.4.1: hand the child the values this invoke names
                                     val childSeed = StaticHybridFirstStateMachine.InvokeParams()
-                                    childSeed.start = base
-                                    childSeed.enabled = enabled
+                                    childSeed.start = vBase
+                                    childSeed.enabled = vEnabled
                                     child.acceptParams(childSeed)
                                     // W3C SCXML 6.4.3: the child declares no `extra`, so the Processor MUST NOT
                                     // add it to its data model — but the argument is still the invoke's,
                                     // evaluated, and a failure of it is reported (W3C SCXML 5.7.1).
                                     try {
-                                        (com.sce.forge.runtime.SceChecked.sub(base, 4.toUInt())).toLong()
+                                        (com.sce.forge.runtime.SceChecked.sub(vBase, 4.toUInt())).toLong()
                                     } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
                                         raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<invoke> <param name='extra'> expr failed to evaluate")
                                     }
@@ -702,9 +706,9 @@ class StaticInvokeHybridStateMachine(
                                 "static_hybrid_second" -> StaticHybridSecondStateMachine().also { child ->
                                     // W3C SCXML 6.4.1: hand the child the values this invoke names
                                     val childSeed = StaticHybridSecondStateMachine.InvokeParams()
-                                    childSeed.start = base
+                                    childSeed.start = vBase
                                     try {
-                                        childSeed.extra = com.sce.forge.runtime.SceChecked.sub(base, 4.toUInt())
+                                        childSeed.extra = com.sce.forge.runtime.SceChecked.sub(vBase, 4.toUInt())
                                     } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
                                         // W3C SCXML 5.7.1: report the failure and leave the value out.
                                         raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<invoke> <param name='extra'> expr failed to evaluate")
@@ -784,7 +788,7 @@ class StaticInvokeHybridStateMachine(
             0 -> {
                 // SCE-MAP: static_invoke_hybrid.scxml:55 :: first :: _transition_0
 
-            if (try { completed = com.sce.forge.runtime.SceChecked.add(completed, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
+            if (try { vCompleted = com.sce.forge.runtime.SceChecked.add(vCompleted, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -794,7 +798,7 @@ class StaticInvokeHybridStateMachine(
             0 -> {
                 // SCE-MAP: static_invoke_hybrid.scxml:81 :: lossy :: _transition_0
 
-            if (try { completed = com.sce.forge.runtime.SceChecked.add(completed, 100.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
+            if (try { vCompleted = com.sce.forge.runtime.SceChecked.add(vCompleted, 100.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -804,14 +808,14 @@ class StaticInvokeHybridStateMachine(
             0 -> {
                 // SCE-MAP: static_invoke_hybrid.scxml:93 :: missing :: _transition_0
 
-            if (try { completed = com.sce.forge.runtime.SceChecked.add(completed, 1000.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
+            if (try { vCompleted = com.sce.forge.runtime.SceChecked.add(vCompleted, 1000.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             1 -> {
                 // SCE-MAP: static_invoke_hybrid.scxml:96 :: missing :: _transition_1
 
-            if (try { errors = com.sce.forge.runtime.SceChecked.add(errors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
+            if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -821,7 +825,7 @@ class StaticInvokeHybridStateMachine(
             0 -> {
                 // SCE-MAP: static_invoke_hybrid.scxml:43 :: run :: _transition_0
 
-            if (try { errors = com.sce.forge.runtime.SceChecked.add(errors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
+            if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -831,7 +835,7 @@ class StaticInvokeHybridStateMachine(
             0 -> {
                 // SCE-MAP: static_invoke_hybrid.scxml:68 :: second :: _transition_0
 
-            if (try { completed = com.sce.forge.runtime.SceChecked.add(completed, 10.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
+            if (try { vCompleted = com.sce.forge.runtime.SceChecked.add(vCompleted, 10.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }

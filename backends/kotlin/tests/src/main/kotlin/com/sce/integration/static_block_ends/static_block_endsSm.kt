@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 572a4258697cb4e5e72ff4c473f572e8103d28b7053d53f63dcb2a37167bc6ae
+// source-hash: a92737f3147f50ca2cf6319055f29d7afe2c17766723037ae46a81e73e7a66df
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_block_ends.scxml
@@ -37,35 +37,55 @@ class StaticBlockEndsStateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `a` datamodel variable, published (`sce:direction="out"`). */
-    var a: UByte = 250.toUByte()
-        private set
+    private var vA: UByte = 250.toUByte()
+
+    /** What the published `a` holds. */
+    val a: UByte get() = vA
     /** W3C SCXML 5.2: the `b` datamodel variable, published (`sce:direction="out"`). */
-    var b: UByte = 0.toUByte()
-        private set
+    private var vB: UByte = 0.toUByte()
+
+    /** What the published `b` holds. */
+    val b: UByte get() = vB
     /** W3C SCXML 5.2: the `afterAssign` datamodel variable, published (`sce:direction="out"`). */
-    var afterAssign: UByte = 0.toUByte()
-        private set
+    private var vAfterAssign: UByte = 0.toUByte()
+
+    /** What the published `afterAssign` holds. */
+    val afterAssign: UByte get() = vAfterAssign
     /** W3C SCXML 5.2: the `thenRan` datamodel variable, published (`sce:direction="out"`). */
-    var thenRan: UByte = 0.toUByte()
-        private set
+    private var vThenRan: UByte = 0.toUByte()
+
+    /** What the published `thenRan` holds. */
+    val thenRan: UByte get() = vThenRan
     /** W3C SCXML 5.2: the `elseRan` datamodel variable, published (`sce:direction="out"`). */
-    var elseRan: UByte = 0.toUByte()
-        private set
+    private var vElseRan: UByte = 0.toUByte()
+
+    /** What the published `elseRan` holds. */
+    val elseRan: UByte get() = vElseRan
     /** W3C SCXML 5.2: the `afterIf` datamodel variable, published (`sce:direction="out"`). */
-    var afterIf: UByte = 0.toUByte()
-        private set
+    private var vAfterIf: UByte = 0.toUByte()
+
+    /** What the published `afterIf` holds. */
+    val afterIf: UByte get() = vAfterIf
     /** W3C SCXML 5.2: the `inBranch` datamodel variable, published (`sce:direction="out"`). */
-    var inBranch: UByte = 0.toUByte()
-        private set
+    private var vInBranch: UByte = 0.toUByte()
+
+    /** What the published `inBranch` holds. */
+    val inBranch: UByte get() = vInBranch
     /** W3C SCXML 5.2: the `afterBranch` datamodel variable, published (`sce:direction="out"`). */
-    var afterBranch: UByte = 0.toUByte()
-        private set
+    private var vAfterBranch: UByte = 0.toUByte()
+
+    /** What the published `afterBranch` holds. */
+    val afterBranch: UByte get() = vAfterBranch
     /** W3C SCXML 5.2: the `afterOk` datamodel variable, published (`sce:direction="out"`). */
-    var afterOk: UByte = 0.toUByte()
-        private set
+    private var vAfterOk: UByte = 0.toUByte()
+
+    /** What the published `afterOk` holds. */
+    val afterOk: UByte get() = vAfterOk
     /** W3C SCXML 5.2: the `errors` datamodel variable, published (`sce:direction="out"`). */
-    var errors: UByte = 0.toUByte()
-        private set
+    private var vErrors: UByte = 0.toUByte()
+
+    /** What the published `errors` holds. */
+    val errors: UByte get() = vErrors
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -87,16 +107,16 @@ class StaticBlockEndsStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.a?.let { a = it }
-        params.b?.let { b = it }
-        params.afterAssign?.let { afterAssign = it }
-        params.thenRan?.let { thenRan = it }
-        params.elseRan?.let { elseRan = it }
-        params.afterIf?.let { afterIf = it }
-        params.inBranch?.let { inBranch = it }
-        params.afterBranch?.let { afterBranch = it }
-        params.afterOk?.let { afterOk = it }
-        params.errors?.let { errors = it }
+        params.a?.let { vA = it }
+        params.b?.let { vB = it }
+        params.afterAssign?.let { vAfterAssign = it }
+        params.thenRan?.let { vThenRan = it }
+        params.elseRan?.let { vElseRan = it }
+        params.afterIf?.let { vAfterIf = it }
+        params.inBranch?.let { vInBranch = it }
+        params.afterBranch?.let { vAfterBranch = it }
+        params.afterOk?.let { vAfterOk = it }
+        params.errors?.let { vErrors = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -127,16 +147,16 @@ class StaticBlockEndsStateMachine(
     )
 
     private fun currentData(): Data = Data(
-        a = a,
-        b = b,
-        afterAssign = afterAssign,
-        thenRan = thenRan,
-        elseRan = elseRan,
-        afterIf = afterIf,
-        inBranch = inBranch,
-        afterBranch = afterBranch,
-        afterOk = afterOk,
-        errors = errors,
+        a = vA,
+        b = vB,
+        afterAssign = vAfterAssign,
+        thenRan = vThenRan,
+        elseRan = vElseRan,
+        afterIf = vAfterIf,
+        inBranch = vInBranch,
+        afterBranch = vAfterBranch,
+        afterOk = vAfterOk,
+        errors = vErrors,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -179,16 +199,16 @@ class StaticBlockEndsStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "a" to SavedValues.of(a),
-            "b" to SavedValues.of(b),
-            "afterAssign" to SavedValues.of(afterAssign),
-            "thenRan" to SavedValues.of(thenRan),
-            "elseRan" to SavedValues.of(elseRan),
-            "afterIf" to SavedValues.of(afterIf),
-            "inBranch" to SavedValues.of(inBranch),
-            "afterBranch" to SavedValues.of(afterBranch),
-            "afterOk" to SavedValues.of(afterOk),
-            "errors" to SavedValues.of(errors),
+            "a" to SavedValues.of(vA),
+            "b" to SavedValues.of(vB),
+            "afterAssign" to SavedValues.of(vAfterAssign),
+            "thenRan" to SavedValues.of(vThenRan),
+            "elseRan" to SavedValues.of(vElseRan),
+            "afterIf" to SavedValues.of(vAfterIf),
+            "inBranch" to SavedValues.of(vInBranch),
+            "afterBranch" to SavedValues.of(vAfterBranch),
+            "afterOk" to SavedValues.of(vAfterOk),
+            "errors" to SavedValues.of(vErrors),
         ),
         wallNowMs,
     )
@@ -224,16 +244,16 @@ class StaticBlockEndsStateMachine(
         val saved8 = SavedValues.uint8(saved.variable("afterBranch"), "afterBranch")
         val saved9 = SavedValues.uint8(saved.variable("afterOk"), "afterOk")
         val saved10 = SavedValues.uint8(saved.variable("errors"), "errors")
-        a = saved1
-        b = saved2
-        afterAssign = saved3
-        thenRan = saved4
-        elseRan = saved5
-        afterIf = saved6
-        inBranch = saved7
-        afterBranch = saved8
-        afterOk = saved9
-        errors = saved10
+        vA = saved1
+        vB = saved2
+        vAfterAssign = saved3
+        vThenRan = saved4
+        vElseRan = saved5
+        vAfterIf = saved6
+        vInBranch = saved7
+        vAfterBranch = saved8
+        vAfterOk = saved9
+        vErrors = saved10
         enterSaved(saved, wallNowMs)
     }
 
@@ -400,58 +420,58 @@ class StaticBlockEndsStateMachine(
             0 -> {
                 // SCE-MAP: static_block_ends.scxml:39 :: waiting :: _transition_0
 
-            if (try { a = com.sce.forge.runtime.SceChecked.add(a, 10.toUByte()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBlockEndsEvent.Error.Execution, "<assign location='a'>: an integer operation overflowed or failed"); true }) {
+            if (try { vA = com.sce.forge.runtime.SceChecked.add(vA, 10.toUByte()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBlockEndsEvent.Error.Execution, "<assign location='a'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            afterAssign = 1.toUByte()
+            vAfterAssign = 1.toUByte()
             }
             1 -> {
                 // SCE-MAP: static_block_ends.scxml:43 :: waiting :: _transition_1
 
 
             var ifCondFailed1 = false
-            if ((try { com.sce.forge.runtime.SceChecked.add(a, 10.toUByte()) > 0.toUByte() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBlockEndsEvent.Error.Execution, "<if cond='a + 10 > 0'>: an integer operation overflowed or failed"); ifCondFailed1 = true; false })) {
+            if ((try { com.sce.forge.runtime.SceChecked.add(vA, 10.toUByte()) > 0.toUByte() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBlockEndsEvent.Error.Execution, "<if cond='a + 10 > 0'>: an integer operation overflowed or failed"); ifCondFailed1 = true; false })) {
 
-            thenRan = 1.toUByte()
+            vThenRan = 1.toUByte()
             } else {
 
-            elseRan = 1.toUByte()
+            vElseRan = 1.toUByte()
             }
             if (ifCondFailed1) {
                 return
             }
 
-            afterIf = 1.toUByte()
+            vAfterIf = 1.toUByte()
             }
             2 -> {
                 // SCE-MAP: static_block_ends.scxml:51 :: waiting :: _transition_2
 
 
-            if (a > 0.toUByte()) {
+            if (vA > 0.toUByte()) {
 
-            if (try { a = com.sce.forge.runtime.SceChecked.add(a, 10.toUByte()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBlockEndsEvent.Error.Execution, "<assign location='a'>: an integer operation overflowed or failed"); true }) {
+            if (try { vA = com.sce.forge.runtime.SceChecked.add(vA, 10.toUByte()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBlockEndsEvent.Error.Execution, "<assign location='a'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            inBranch = 1.toUByte()
+            vInBranch = 1.toUByte()
             }
 
-            afterBranch = 1.toUByte()
+            vAfterBranch = 1.toUByte()
             }
             3 -> {
                 // SCE-MAP: static_block_ends.scxml:58 :: waiting :: _transition_3
 
-            if (try { b = com.sce.forge.runtime.SceChecked.add(b, 1.toUByte()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBlockEndsEvent.Error.Execution, "<assign location='b'>: an integer operation overflowed or failed"); true }) {
+            if (try { vB = com.sce.forge.runtime.SceChecked.add(vB, 1.toUByte()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBlockEndsEvent.Error.Execution, "<assign location='b'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            afterOk = 1.toUByte()
+            vAfterOk = 1.toUByte()
             }
             4 -> {
                 // SCE-MAP: static_block_ends.scxml:62 :: waiting :: _transition_4
 
-            if (try { errors = com.sce.forge.runtime.SceChecked.add(errors, 1.toUByte()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBlockEndsEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
+            if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUByte()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBlockEndsEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }

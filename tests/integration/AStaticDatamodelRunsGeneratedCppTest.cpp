@@ -26,6 +26,7 @@
 //     argument that overflows stops the call and raises `error.execution`.
 
 #include "common/SceClock.h"
+#include "sheet_peer_sm.h"
 #include "static_block_ends_list_sm.h"
 #include "static_block_ends_sm.h"
 #include "static_bytes_sm.h"
@@ -82,6 +83,7 @@
 #include "static_wire_enum_sm.h"
 #include "static_wire_wide_sm.h"
 #include "sync_client_sm.h"
+#include "todo_peer_sm.h"
 
 #include <cstdint>
 #include <filesystem>
@@ -89,6 +91,7 @@
 #include <functional>
 #include <gtest/gtest.h>
 #include <map>
+#include <memory>
 #include <nlohmann/json.hpp>
 #include <set>
 #include <sstream>
@@ -161,8 +164,25 @@ public:
 
     /// The machine runs on a manual clock, so a delayed send waits exactly the
     /// time a step names (`advance`) and not the time the test happened to take.
+    ///
+    /// What the machine sends a Mesh peer (`<send target="#name">`) is handed to
+    /// the callback its host registers, and a machine with none takes the send
+    /// into its own external queue. A replay is every machine's host, so it
+    /// registers one that only writes the send down and accepts it: the peer is
+    /// not there, and what a scenario holds a step to is that the machine asked
+    /// for the send. It is registered before the machine starts, because the
+    /// first entry can already send.
     void start() {
         machine_.setClock(std::make_shared<SCE::ManualClock>(0));
+        machine_.setMeshSendCallback([sent = sent_](const std::string &target, const std::string &event,
+                                                    const std::string &data, const std::string &, const std::string &) {
+            json send = {{"target", target}, {"event", event}};
+            if (!data.empty()) {
+                send["data"] = json::parse(data);
+            }
+            sent->push_back(std::move(send));
+            return true;
+        });
         machine_.initialize();
         // A machine that starts a child session in its first state has that child
         // running, and maybe ended, before any event arrives; it is read as the
@@ -232,6 +252,16 @@ public:
         return hostCalls_ ? hostCalls_() : json();
     }
 
+    /// What the machine sent its Mesh peers since this was last called, oldest
+    /// first, each as a scenario's `sent` writes it: `{"target": …, "event": …,
+    /// "data": …}`, the target as the document writes it, and the data the JSON
+    /// value of the text the send carried, left out when it carried none.
+    json sent() {
+        json taken = std::move(*sent_);
+        *sent_ = json::array();
+        return taken;
+    }
+
 private:
     /// The rounds the machine needs before it is read back. The generated policy
     /// says which call it needs: `step` drains the queues and nothing else, and a
@@ -252,6 +282,9 @@ private:
     Machine machine_;
     std::map<std::string, Reader> variables_;
     HostCalls hostCalls_;
+    /// Shared with the callback the machine holds, so that it stays the list the
+    /// machine writes to wherever the driver is moved.
+    std::shared_ptr<json> sent_ = std::make_shared<json>(json::array());
 };
 
 /// Replay `machine`'s scenario file against `driver`. Every step names an event
@@ -284,6 +317,13 @@ template <typename Machine> void replay(const std::string &machine, Driver<Machi
             EXPECT_TRUE(driver.recordsHostCalls())
                 << "this driver records no host calls, so it cannot hold a step to them";
             EXPECT_EQ(asked, expect["host_calls"]) << "what the machine asked of its host";
+        }
+        // What the machine sent its Mesh peers in this step, taken on every step
+        // for the same reason. Every driver records them, so a step that states
+        // some is always held to them; compared as values, in the order sent.
+        const json sent = driver.sent();
+        if (expect.contains("sent")) {
+            EXPECT_EQ(sent, expect["sent"]) << "what the machine sent its peers";
         }
         if (expect.value("ended", false)) {
             EXPECT_TRUE(driver.ended());
@@ -377,6 +417,49 @@ template <typename Labelleds> json labelledsJson(const Labelleds &labelleds) {
         listed.push_back(labelledJson(labelled));
     }
     return listed;
+}
+
+/// A 64-bit integer as a scenario of the shared copies states it: the text of
+/// its digits, which is how a saved state writes one (a JSON number past 2^53 is
+/// not exact everywhere).
+template <typename Wide> json wideText(Wide value) {
+    static_assert(sizeof(Wide) == 8 && std::is_integral_v<Wide>, "a 64-bit integer");
+    return std::to_string(value);
+}
+
+/// Each element of a list as `one` writes it, in order.
+template <typename List, typename One> json listedJson(const List &list, One one) {
+    json listed = json::array();
+    for (const auto &element : list) {
+        listed.push_back(one(element));
+    }
+    return listed;
+}
+
+/// A `record:Hlc` value (sce:std/merge/hlc_timestamp) as a scenario states it.
+template <typename Hlc> json hlcJson(const Hlc &stamp) {
+    return json{{"wallTime", wideText(stamp.wallTime)}, {"counter", stamp.counter}, {"nodeId", wideText(stamp.nodeId)}};
+}
+
+/// A list of `record:LwwCell` values (sce:std/merge/lww_cell), in order.
+template <typename Cells> json lwwCellsJson(const Cells &cells) {
+    return listedJson(cells, [](const auto &cell) {
+        return json{{"row", wideText(cell.row)},     {"col", wideText(cell.col)},
+                    {"value", wideText(cell.value)}, {"wallTime", wideText(cell.wallTime)},
+                    {"counter", cell.counter},       {"nodeId", wideText(cell.nodeId)}};
+    });
+}
+
+/// A list of `record:RgaNode` values (sce:std/merge/rga_node), in order.
+template <typename Nodes> json rgaNodesJson(const Nodes &nodes) {
+    return listedJson(
+        nodes, [](const auto &node) { return json{{"key", wideText(node.key)}, {"after", wideText(node.after)}}; });
+}
+
+/// A list of `record:RgaGone` values (sce:std/merge/rga_gone), in order.
+template <typename Gones> json rgaGonesJson(const Gones &gones) {
+    return listedJson(gones,
+                      [](const auto &gone) { return json{{"key", wideText(gone.key)}, {"by", wideText(gone.by)}}; });
 }
 
 }  // namespace
@@ -1278,6 +1361,88 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, ASyncRunIsComposedOfTheStandardAlgori
         {"refusals", [](const Machine &m) { return json(m.refusals()); }},
     });
     replay("sync_client", driver);
+}
+
+/// One copy of the shared to-do list as a host reads it. One machine, three
+/// scenarios: a person's copy twice and the hub's.
+Driver<G::todo_peer::todo_peer> todoPeerDriver() {
+    using Machine = G::todo_peer::todo_peer;
+    return Driver<Machine>({
+        {"node", [](const Machine &m) { return wideText(m.node()); }},
+        {"hub", [](const Machine &m) { return json(m.hub()); }},
+        {"clock", [](const Machine &m) { return hlcJson(m.clock()); }},
+        {"cells", [](const Machine &m) { return lwwCellsJson(m.cells()); }},
+        {"texts",
+         [](const Machine &m) {
+             return listedJson(m.texts(), [](const auto &text) {
+                 return json{{"id", wideText(text.id)}, {"field", wideText(text.field)}, {"text", text.text}};
+             });
+         }},
+        {"refusals", [](const Machine &m) { return json(m.refusals()); }},
+    });
+}
+
+// A copy of a shared to-do list merges the writes it is given with the standard
+// merge rules, holds a title beside the cell that decides which write of it
+// stays, and sends a person's change to the hub. The scenario is what one copy
+// was given through a run of three, and states what it sent its peers at each
+// step: the copy of a person who edits...
+TEST(AStaticDatamodelRunsGeneratedCppTest, ACopyOfASharedListHoldsAndSendsWhatAliceDid) {
+    auto driver = todoPeerDriver();
+    replay("todo_peer_alice", driver);
+}
+
+// ...the copy of the other person, who takes the first one's writes from the hub...
+TEST(AStaticDatamodelRunsGeneratedCppTest, ACopyOfASharedListHoldsAndSendsWhatBobDid) {
+    auto driver = todoPeerDriver();
+    replay("todo_peer_bob", driver);
+}
+
+// ...and the hub, which passes each write on to every copy but the one it came from.
+TEST(AStaticDatamodelRunsGeneratedCppTest, TheHubOfASharedListPassesEachWriteOn) {
+    auto driver = todoPeerDriver();
+    replay("todo_peer_server", driver);
+}
+
+/// One copy of the shared sheet as a host reads it. One machine, three
+/// scenarios: a person's copy twice and the hub's.
+Driver<G::sheet_peer::sheet_peer> sheetPeerDriver() {
+    using Machine = G::sheet_peer::sheet_peer;
+    return Driver<Machine>({
+        {"node", [](const Machine &m) { return wideText(m.node()); }},
+        {"hub", [](const Machine &m) { return json(m.hub()); }},
+        {"clock", [](const Machine &m) { return hlcJson(m.clock()); }},
+        {"cells", [](const Machine &m) { return lwwCellsJson(m.cells()); }},
+        {"rows", [](const Machine &m) { return rgaNodesJson(m.rows()); }},
+        {"gone", [](const Machine &m) { return rgaGonesJson(m.gone()); }},
+        {"cols", [](const Machine &m) { return rgaNodesJson(m.cols()); }},
+        {"goneCols", [](const Machine &m) { return rgaGonesJson(m.goneCols()); }},
+        {"lamport", [](const Machine &m) { return wideText(m.lamport()); }},
+        {"orphans", [](const Machine &m) { return json(m.orphans()); }},
+        {"refusals", [](const Machine &m) { return json(m.refusals()); }},
+    });
+}
+
+// A copy of a shared sheet keeps its cells, rows and columns with the standard
+// merge rules, handing them the lists it holds and taking each back whole, and
+// sends a person's edit to the hub. The scenario is what one copy was given
+// through a run of three, and states what it sent its peers at each step: the
+// copy of a person who edits...
+TEST(AStaticDatamodelRunsGeneratedCppTest, ACopyOfASharedSheetHoldsAndSendsWhatAliceDid) {
+    auto driver = sheetPeerDriver();
+    replay("sheet_peer_alice", driver);
+}
+
+// ...the copy of the other person...
+TEST(AStaticDatamodelRunsGeneratedCppTest, ACopyOfASharedSheetHoldsAndSendsWhatBobDid) {
+    auto driver = sheetPeerDriver();
+    replay("sheet_peer_bob", driver);
+}
+
+// ...and the hub, which passes each write on to every copy but the one it came from.
+TEST(AStaticDatamodelRunsGeneratedCppTest, TheHubOfASharedSheetPassesEachWriteOn) {
+    auto driver = sheetPeerDriver();
+    replay("sheet_peer_server", driver);
 }
 
 // A list of records is filled by name from a record variable or a loop's item,

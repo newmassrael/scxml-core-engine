@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
 // A shared to-do list: two people, `alice` and `bob`, each with a copy
-// (`machines/todo_peer.scxml`), and the hub both send to. They change each other's
+// (the fixture `todo_peer.scxml`), and the hub both send to. They change each other's
 // to-dos at the same time — one retitles what the other ticks off — on links that
 // delay, reorder, repeat and cut what they carry, and the question is the one a
 // shared list answers: do the three copies end with the same list, and is it the list
@@ -18,6 +18,9 @@
 
 mod common;
 
+// Named here and not among what `common` hands every test: a test file that did not
+// use it would be told it imports something it does not use.
+use common::todo_wide_sender::TodoWideSenderPolicy as WideSender;
 use common::*;
 use sce_rust_world::{Outcome, Rng};
 

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 572a4258697cb4e5e72ff4c473f572e8103d28b7053d53f63dcb2a37167bc6ae
+// source-hash: a92737f3147f50ca2cf6319055f29d7afe2c17766723037ae46a81e73e7a66df
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_send_type.scxml
@@ -38,13 +38,17 @@ class StaticSendTypeStateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `kind` datamodel variable, the machine's own. */
-    private var kind: String = "http://www.w3.org/TR/scxml/#SCXMLEventProcessor"
+    private var vKind: String = "http://www.w3.org/TR/scxml/#SCXMLEventProcessor"
     /** W3C SCXML 5.2: the `landed` datamodel variable, published (`sce:direction="out"`). */
-    var landed: UInt = 0.toUInt()
-        private set
+    private var vLanded: UInt = 0.toUInt()
+
+    /** What the published `landed` holds. */
+    val landed: UInt get() = vLanded
     /** W3C SCXML 5.2: the `refused` datamodel variable, published (`sce:direction="out"`). */
-    var refused: UInt = 0.toUInt()
-        private set
+    private var vRefused: UInt = 0.toUInt()
+
+    /** What the published `refused` holds. */
+    val refused: UInt get() = vRefused
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -59,9 +63,9 @@ class StaticSendTypeStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.kind?.let { kind = it }
-        params.landed?.let { landed = it }
-        params.refused?.let { refused = it }
+        params.kind?.let { vKind = it }
+        params.landed?.let { vLanded = it }
+        params.refused?.let { vRefused = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -84,8 +88,8 @@ class StaticSendTypeStateMachine(
     )
 
     private fun currentData(): Data = Data(
-        landed = landed,
-        refused = refused,
+        landed = vLanded,
+        refused = vRefused,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -128,9 +132,9 @@ class StaticSendTypeStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "kind" to SavedValues.of(kind),
-            "landed" to SavedValues.of(landed),
-            "refused" to SavedValues.of(refused),
+            "kind" to SavedValues.of(vKind),
+            "landed" to SavedValues.of(vLanded),
+            "refused" to SavedValues.of(vRefused),
         ),
         wallNowMs,
     )
@@ -159,9 +163,9 @@ class StaticSendTypeStateMachine(
         val saved1 = SavedValues.string(saved.variable("kind"), "kind", 64)
         val saved2 = SavedValues.uint32(saved.variable("landed"), "landed")
         val saved3 = SavedValues.uint32(saved.variable("refused"), "refused")
-        kind = saved1
-        landed = saved2
-        refused = saved3
+        vKind = saved1
+        vLanded = saved2
+        vRefused = saved3
         enterSaved(saved, wallNowMs)
     }
 
@@ -341,7 +345,7 @@ class StaticSendTypeStateMachine(
                 // SCE-MAP: static_send_type.scxml:25 :: idle :: _transition_0
 
 
-            if (kind == "http://www.w3.org/TR/scxml/#SCXMLEventProcessor") {
+            if (vKind == "http://www.w3.org/TR/scxml/#SCXMLEventProcessor") {
 
 
             if (run send@{
@@ -371,35 +375,35 @@ class StaticSendTypeStateMachine(
             1 -> {
                 // SCE-MAP: static_send_type.scxml:28 :: idle :: _transition_1
 
-            if (try { kind = com.sce.forge.runtime.SceChecked.bounded("http://www.w3.org/TR/scxml/#SCXMLEventProcessor", 64); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendTypeEvent.Error.Execution, "<assign location='kind'>: an integer operation overflowed or failed"); true }) {
+            if (try { vKind = com.sce.forge.runtime.SceChecked.bounded("http://www.w3.org/TR/scxml/#SCXMLEventProcessor", 64); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendTypeEvent.Error.Execution, "<assign location='kind'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             2 -> {
                 // SCE-MAP: static_send_type.scxml:31 :: idle :: _transition_2
 
-            if (try { kind = com.sce.forge.runtime.SceChecked.bounded("urn:example:no-such-processor", 64); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendTypeEvent.Error.Execution, "<assign location='kind'>: an integer operation overflowed or failed"); true }) {
+            if (try { vKind = com.sce.forge.runtime.SceChecked.bounded("urn:example:no-such-processor", 64); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendTypeEvent.Error.Execution, "<assign location='kind'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             3 -> {
                 // SCE-MAP: static_send_type.scxml:34 :: idle :: _transition_3
 
-            if (try { kind = com.sce.forge.runtime.SceChecked.bounded("http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor", 64); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendTypeEvent.Error.Execution, "<assign location='kind'>: an integer operation overflowed or failed"); true }) {
+            if (try { vKind = com.sce.forge.runtime.SceChecked.bounded("http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor", 64); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendTypeEvent.Error.Execution, "<assign location='kind'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             4 -> {
                 // SCE-MAP: static_send_type.scxml:37 :: idle :: _transition_4
 
-            if (try { landed = com.sce.forge.runtime.SceChecked.add(landed, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendTypeEvent.Error.Execution, "<assign location='landed'>: an integer operation overflowed or failed"); true }) {
+            if (try { vLanded = com.sce.forge.runtime.SceChecked.add(vLanded, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendTypeEvent.Error.Execution, "<assign location='landed'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             5 -> {
                 // SCE-MAP: static_send_type.scxml:40 :: idle :: _transition_5
 
-            if (try { refused = com.sce.forge.runtime.SceChecked.add(refused, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendTypeEvent.Error.Execution, "<assign location='refused'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRefused = com.sce.forge.runtime.SceChecked.add(vRefused, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendTypeEvent.Error.Execution, "<assign location='refused'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }

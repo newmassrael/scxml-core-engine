@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 572a4258697cb4e5e72ff4c473f572e8103d28b7053d53f63dcb2a37167bc6ae
+// source-hash: a92737f3147f50ca2cf6319055f29d7afe2c17766723037ae46a81e73e7a66df
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_donedata_record.scxml
@@ -64,8 +64,10 @@ class StaticDonedataRecordStateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `shown` datamodel variable, published (`sce:direction="out"`). */
-    var shown: StaticDonedataRecordViewRecord = StaticDonedataRecordViewRecord(layout = StaticDonedataRecordViewModeEnum.DAY, zoom = 2.toUByte())
-        private set
+    private var vShown: StaticDonedataRecordViewRecord = StaticDonedataRecordViewRecord(layout = StaticDonedataRecordViewModeEnum.DAY, zoom = 2.toUByte())
+
+    /** What the published `shown` holds. */
+    val shown: StaticDonedataRecordViewRecord get() = vShown
 
     /** The published variables as one immutable value, in declaration order. */
     data class Data(
@@ -86,7 +88,7 @@ class StaticDonedataRecordStateMachine(
     )
 
     private fun currentData(): Data = Data(
-        shown = shown,
+        shown = vShown,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -129,7 +131,7 @@ class StaticDonedataRecordStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "shown" to shown.toSaved(),
+            "shown" to vShown.toSaved(),
         ),
         wallNowMs,
     )
@@ -156,7 +158,7 @@ class StaticDonedataRecordStateMachine(
     fun restore(saved: SavedState, wallNowMs: Long) {
         beginRestore(saved, savedShape)
         val saved1 = StaticDonedataRecordViewRecord.fromSaved(saved.variable("shown"), "shown")
-        shown = saved1
+        vShown = saved1
         enterSaved(saved, wallNowMs)
     }
 
@@ -284,8 +286,8 @@ class StaticDonedataRecordStateMachine(
                     var doneEventData = ""
                     // W3C SCXML 5.5: Evaluate <param> elements (C++ DoneDataHelper::evaluateParams pattern)
                     val doneParams = mutableMapOf<String, Any?>()
-                    doneParams["layout"] = (shown.layout).declaredName
-                    doneParams["zoom"] = (shown.zoom).toLong()
+                    doneParams["layout"] = (vShown.layout).declaredName
+                    doneParams["zoom"] = (vShown.zoom).toLong()
                     // §scxml-5.5: the pairs that survived, `{}` when none did
                     // (C++ DoneDataHelper::evaluateParams). Not left to
                     // buildJsonFromParams, whose empty answer is a <send>'s.
@@ -323,11 +325,11 @@ class StaticDonedataRecordStateMachine(
             0 -> {
                 // SCE-MAP: static_donedata_record.scxml:24 :: counting :: _transition_0
 
-            if (try { shown = shown.copy(zoom = com.sce.forge.runtime.SceChecked.add(shown.zoom, 1.toUByte())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticDonedataRecordEvent.Error.Execution, "<assign location='shown.zoom'>: an integer operation overflowed or failed"); true }) {
+            if (try { vShown = vShown.copy(zoom = com.sce.forge.runtime.SceChecked.add(vShown.zoom, 1.toUByte())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticDonedataRecordEvent.Error.Execution, "<assign location='shown.zoom'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            shown = shown.copy(layout = StaticDonedataRecordViewModeEnum.AGENDA_LIST)
+            vShown = vShown.copy(layout = StaticDonedataRecordViewModeEnum.AGENDA_LIST)
             }
             else -> {}
         }

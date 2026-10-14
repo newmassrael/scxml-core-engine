@@ -3615,7 +3615,7 @@ fn a_send_idlocation_is_lowered_to_a_write_of_the_machines_own_count_and_needs_n
         (
             "kotlin",
             "nextAutoSendId()",
-            "val sendIdGenerated: String = id",
+            "val sendIdGenerated: String = vId",
             "storeIdInLocation",
         ),
         (
@@ -4668,7 +4668,7 @@ fn a_host_run_invoke_content_expr_is_lowered_to_the_string_it_computes_and_needs
         ),
         (
             "kotlin",
-            "val hostInvokeContent: String = place",
+            "val hostInvokeContent: String = vPlace",
             "val hostInvokeContent = try",
         ),
         (
@@ -4951,7 +4951,7 @@ fn a_host_run_invoke_srcexpr_is_lowered_to_the_string_it_computes_and_needs_no_e
         ),
         (
             "kotlin",
-            "val hostInvokeSrc: String = place",
+            "val hostInvokeSrc: String = vPlace",
             "val hostInvokeSrc = try",
         ),
         (
@@ -5969,4 +5969,71 @@ fn every_scenario_is_replayed_on_every_backend_that_lowers_its_machine() {
             );
         }
     }
+}
+
+/// The generated Kotlin machine extends the engine, so a variable held under the
+/// author's bare name hides whatever the engine already calls by it: a variable
+/// named `clock` was a machine that did not compile, in a document every other
+/// backend built. The field is the machine's own under a prefixed name, a
+/// published variable is read through a property of the author's spelling, and
+/// a name the class already holds a property by is given none, while the
+/// snapshot and the saved state carry it under the author's name all the same.
+#[test]
+fn a_kotlin_variable_does_not_meet_a_member_of_the_engine_it_extends() {
+    let out_dir = tempdir().expect("tempdir");
+    let (ok, out) = run(
+        &[
+            "generate",
+            "-l",
+            "kotlin",
+            "-o",
+            out_dir.path().to_str().expect("a path"),
+        ],
+        &doc(
+            "sce-static",
+            r#"<data id="clock" sce:type="uint32" expr="7" sce:direction="out"/>
+    <data id="count" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="terminalState" sce:type="bool" expr="false"/>"#,
+        ),
+    );
+    assert!(ok, "the machine generates:\n{out}");
+    let generated: Vec<_> = std::fs::read_dir(out_dir.path())
+        .expect("the output directory")
+        .map(|entry| entry.expect("an entry").path())
+        .filter(|path| path.extension().is_some_and(|e| e == "kt"))
+        .collect();
+    assert_eq!(generated.len(), 1, "one machine: {generated:?}");
+    let source = std::fs::read_to_string(&generated[0]).expect("a generated machine");
+    for field in [
+        "    private var vClock: UInt",
+        "    private var vCount: UInt",
+        "    private var vTerminalState: Boolean",
+    ] {
+        assert!(
+            source.contains(field),
+            "`{field}` is the machine's own:\n{source}"
+        );
+    }
+    assert!(
+        source.contains("    val count: UInt get() = vCount"),
+        "a published variable is read by the author's name:\n{source}"
+    );
+    // Indented as a member of the class: the snapshot's `Data` declares a `clock`
+    // of its own, one level in, and that one is no member of the engine's subclass.
+    for hidden in ["    val clock", "    var clock", "    private var clock"] {
+        assert!(
+            !source
+                .lines()
+                .any(|line| line.starts_with(hidden) && !line.starts_with("     ")),
+            "the machine declares `{hidden}` over the engine's:\n{source}"
+        );
+    }
+    assert!(
+        source.contains("        val clock: UInt,") && source.contains("clock = vClock,"),
+        "the snapshot carries the variable under the author's name:\n{source}"
+    );
+    assert!(
+        source.contains("\"clock\" to SavedValues.of(vClock)"),
+        "and so does a saved state:\n{source}"
+    );
 }

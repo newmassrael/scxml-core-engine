@@ -2689,6 +2689,43 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/sync_client.scxml"
     )
 
+    # Two machines made of the standard merge rules: a copy of a shared to-do list
+    # and a copy of a shared sheet. The rules are the standard library's, named by
+    # the generator as the sync rules above are, and each header is generated
+    # once: an algorithm's, the one it calls in its turn (`hlc_compare`, from
+    # `lww_write`), and the schema of each record they take and give back. The
+    # events of each machine carry its own schemas, which travel beside it.
+    set(_STATIC_MERGE_HEADERS "")
+    foreach(_MERGE_HEADER
+            hlc_timestamp hlc_compare hlc_send hlc_receive
+            lww_cell lww_write
+            rga_node rga_gone rga_insert rga_holds rga_remove)
+        set(_HEADER "${SCE_C_INTEGRATION_GENERATED_DIR}/${_MERGE_HEADER}.h")
+        add_custom_command(
+            OUTPUT "${_HEADER}"
+            COMMAND "${SCE_CODEGEN}" generate "sce:std/merge/${_MERGE_HEADER}.scxml"
+                    -l c11 -o "${SCE_C_INTEGRATION_GENERATED_DIR}"
+                    --write-deps "${_HEADER}.d"
+            DEPENDS "${SCE_CODEGEN}"
+            DEPFILE "${_HEADER}.d"
+            COMMENT "Generating C11 header: ${_MERGE_HEADER}.h"
+            VERBATIM
+        )
+        list(APPEND _STATIC_MERGE_HEADERS "${_HEADER}")
+    endforeach()
+    sce_generate_static_integration_c_test(todo_peer
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/todo_peer.scxml"
+        STAGE_ALSO todo_join.scxml todo_edit.scxml todo_write.scxml todo_text.scxml
+    )
+    sce_generate_static_integration_c_test(sheet_peer
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/sheet_peer.scxml"
+        STAGE_ALSO sheet_join.scxml sheet_edit.scxml sheet_cell.scxml
+                   sheet_add_row.scxml sheet_row.scxml sheet_drop_row.scxml sheet_gone.scxml
+                   sheet_add_col.scxml sheet_col.scxml sheet_drop_col.scxml sheet_gone_col.scxml
+    )
+
     # The delayed-send machine of `static_timers` is generated once and used by two
     # executables: the scenarios below, and its own save-and-restore cases further
     # down.
@@ -2781,6 +2818,9 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_enum_SOURCES}
         ${INTEGRATION_C_TEST_sync_client_SOURCES}
         ${_STATIC_SYNC_ALGORITHM_HEADERS}
+        ${INTEGRATION_C_TEST_todo_peer_SOURCES}
+        ${INTEGRATION_C_TEST_sheet_peer_SOURCES}
+        ${_STATIC_MERGE_HEADERS}
     )
     target_link_libraries(sce_c_integration_static_scalars PRIVATE
         sce_c_runtime sce_c_runtime_posix sce_c_base

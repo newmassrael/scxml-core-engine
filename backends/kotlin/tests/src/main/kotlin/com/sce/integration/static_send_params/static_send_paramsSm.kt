@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 572a4258697cb4e5e72ff4c473f572e8103d28b7053d53f63dcb2a37167bc6ae
+// source-hash: a92737f3147f50ca2cf6319055f29d7afe2c17766723037ae46a81e73e7a66df
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_send_params.scxml
@@ -53,28 +53,38 @@ class StaticSendParamsStateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `count` datamodel variable, the machine's own. */
-    private var count: UInt = 3.toUInt()
+    private var vCount: UInt = 3.toUInt()
     /** W3C SCXML 5.2: the `small` datamodel variable, the machine's own. */
-    private var small: UByte = 250.toUByte()
+    private var vSmall: UByte = 250.toUByte()
     /** W3C SCXML 5.2: the `label` datamodel variable, the machine's own. */
-    private var label: String = "tally"
+    private var vLabel: String = "tally"
     /** W3C SCXML 5.2: the `total` datamodel variable, published (`sce:direction="out"`). */
-    var total: UInt = 0.toUInt()
-        private set
+    private var vTotal: UInt = 0.toUInt()
+
+    /** What the published `total` holds. */
+    val total: UInt get() = vTotal
     /** W3C SCXML 5.2: the `ok` datamodel variable, published (`sce:direction="out"`). */
-    var ok: Boolean = false
-        private set
+    private var vOk: Boolean = false
+
+    /** What the published `ok` holds. */
+    val ok: Boolean get() = vOk
     /** W3C SCXML 5.2: the `tag` datamodel variable, published (`sce:direction="out"`). */
-    var tag: String = ""
-        private set
+    private var vTag: String = ""
+
+    /** What the published `tag` holds. */
+    val tag: String get() = vTag
     /** W3C SCXML 5.2: the `partialTotal` datamodel variable, published (`sce:direction="out"`). */
-    var partialTotal: UInt = 0.toUInt()
-        private set
+    private var vPartialTotal: UInt = 0.toUInt()
+
+    /** What the published `partialTotal` holds. */
+    val partialTotal: UInt get() = vPartialTotal
     /** W3C SCXML 5.2: the `partialPart` datamodel variable, the machine's own. */
-    private var partialPart: UByte = 0.toUByte()
+    private var vPartialPart: UByte = 0.toUByte()
     /** W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`). */
-    var refusals: UInt = 0.toUInt()
-        private set
+    private var vRefusals: UInt = 0.toUInt()
+
+    /** What the published `refusals` holds. */
+    val refusals: UInt get() = vRefusals
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -95,15 +105,15 @@ class StaticSendParamsStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.count?.let { count = it }
-        params.small?.let { small = it }
-        params.label?.let { label = it }
-        params.total?.let { total = it }
-        params.ok?.let { ok = it }
-        params.tag?.let { tag = it }
-        params.partialTotal?.let { partialTotal = it }
-        params.partialPart?.let { partialPart = it }
-        params.refusals?.let { refusals = it }
+        params.count?.let { vCount = it }
+        params.small?.let { vSmall = it }
+        params.label?.let { vLabel = it }
+        params.total?.let { vTotal = it }
+        params.ok?.let { vOk = it }
+        params.tag?.let { vTag = it }
+        params.partialTotal?.let { vPartialTotal = it }
+        params.partialPart?.let { vPartialPart = it }
+        params.refusals?.let { vRefusals = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -129,11 +139,11 @@ class StaticSendParamsStateMachine(
     )
 
     private fun currentData(): Data = Data(
-        total = total,
-        ok = ok,
-        tag = tag,
-        partialTotal = partialTotal,
-        refusals = refusals,
+        total = vTotal,
+        ok = vOk,
+        tag = vTag,
+        partialTotal = vPartialTotal,
+        refusals = vRefusals,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -176,15 +186,15 @@ class StaticSendParamsStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "count" to SavedValues.of(count),
-            "small" to SavedValues.of(small),
-            "label" to SavedValues.of(label),
-            "total" to SavedValues.of(total),
-            "ok" to SavedValues.of(ok),
-            "tag" to SavedValues.of(tag),
-            "partialTotal" to SavedValues.of(partialTotal),
-            "partialPart" to SavedValues.of(partialPart),
-            "refusals" to SavedValues.of(refusals),
+            "count" to SavedValues.of(vCount),
+            "small" to SavedValues.of(vSmall),
+            "label" to SavedValues.of(vLabel),
+            "total" to SavedValues.of(vTotal),
+            "ok" to SavedValues.of(vOk),
+            "tag" to SavedValues.of(vTag),
+            "partialTotal" to SavedValues.of(vPartialTotal),
+            "partialPart" to SavedValues.of(vPartialPart),
+            "refusals" to SavedValues.of(vRefusals),
         ),
         wallNowMs,
     )
@@ -219,15 +229,15 @@ class StaticSendParamsStateMachine(
         val saved7 = SavedValues.uint32(saved.variable("partialTotal"), "partialTotal")
         val saved8 = SavedValues.uint8(saved.variable("partialPart"), "partialPart")
         val saved9 = SavedValues.uint32(saved.variable("refusals"), "refusals")
-        count = saved1
-        small = saved2
-        label = saved3
-        total = saved4
-        ok = saved5
-        tag = saved6
-        partialTotal = saved7
-        partialPart = saved8
-        refusals = saved9
+        vCount = saved1
+        vSmall = saved2
+        vLabel = saved3
+        vTotal = saved4
+        vOk = saved5
+        vTag = saved6
+        vPartialTotal = saved7
+        vPartialPart = saved8
+        vRefusals = saved9
         enterSaved(saved, wallNowMs)
     }
 
@@ -468,15 +478,15 @@ class StaticSendParamsStateMachine(
             var paramFailed = false
             val sendPayload = mutableMapOf<String, Any?>()
             try {
-                putParam(sendPayload, "total", (com.sce.forge.runtime.SceChecked.mul(count, 2.toUInt())).toLong())
+                putParam(sendPayload, "total", (com.sce.forge.runtime.SceChecked.mul(vCount, 2.toUInt())).toLong())
             } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
                 raisePlatformError(StaticSendParamsEvent.Error.Execution, "<send> <param name='total'> could not be read")
                 paramFailed = true
             }
 
-            putParam(sendPayload, "ok", count > 2.toUInt())
+            putParam(sendPayload, "ok", vCount > 2.toUInt())
 
-            putParam(sendPayload, "tag", label)
+            putParam(sendPayload, "tag", vLabel)
 
             val sendData = buildJsonFromParams(sendPayload)
             // W3C SCXML 6.2: send to this session's external queue
@@ -496,14 +506,14 @@ class StaticSendParamsStateMachine(
             var paramFailed = false
             val sendPayload = mutableMapOf<String, Any?>()
             try {
-                putParam(sendPayload, "total", (com.sce.forge.runtime.SceChecked.mul(count, 2.toUInt())).toLong())
+                putParam(sendPayload, "total", (com.sce.forge.runtime.SceChecked.mul(vCount, 2.toUInt())).toLong())
             } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
                 raisePlatformError(StaticSendParamsEvent.Error.Execution, "<send> <param name='total'> could not be read")
                 paramFailed = true
             }
 
             try {
-                putParam(sendPayload, "part", (com.sce.forge.runtime.SceChecked.add(small, small)).toLong())
+                putParam(sendPayload, "part", (com.sce.forge.runtime.SceChecked.add(vSmall, vSmall)).toLong())
             } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
                 raisePlatformError(StaticSendParamsEvent.Error.Execution, "<send> <param name='part'> could not be read")
                 paramFailed = true
@@ -525,11 +535,11 @@ class StaticSendParamsStateMachine(
                     return
                 }
 
-            total = pendingEchoPayload!!.total
+            vTotal = pendingEchoPayload!!.total
 
-            ok = pendingEchoPayload!!.ok
+            vOk = pendingEchoPayload!!.ok
 
-            if (try { tag = com.sce.forge.runtime.SceChecked.bounded(pendingEchoPayload!!.tag, 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendParamsEvent.Error.Execution, "<assign location='tag'>: an integer operation overflowed or failed"); true }) {
+            if (try { vTag = com.sce.forge.runtime.SceChecked.bounded(pendingEchoPayload!!.tag, 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendParamsEvent.Error.Execution, "<assign location='tag'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -539,14 +549,14 @@ class StaticSendParamsStateMachine(
                     return
                 }
 
-            partialPart = pendingPartialPayload!!.part
+            vPartialPart = pendingPartialPayload!!.part
 
-            partialTotal = pendingPartialPayload!!.total
+            vPartialTotal = pendingPartialPayload!!.total
             }
             4 -> {
                 // SCE-MAP: static_send_params.scxml:61 :: idle :: _transition_4
 
-            if (try { refusals = com.sce.forge.runtime.SceChecked.add(refusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendParamsEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendParamsEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }

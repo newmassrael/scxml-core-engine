@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 572a4258697cb4e5e72ff4c473f572e8103d28b7053d53f63dcb2a37167bc6ae
+// source-hash: a92737f3147f50ca2cf6319055f29d7afe2c17766723037ae46a81e73e7a66df
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_record_list.scxml
@@ -63,23 +63,35 @@ class StaticRecordListStateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `draft` datamodel variable, published (`sce:direction="out"`). */
-    var draft: StaticRecordListDayRecord = StaticRecordListDayRecord(year = 2026.toUShort(), month = 1.toUByte(), dayOfMonth = 1.toUByte())
-        private set
+    private var vDraft: StaticRecordListDayRecord = StaticRecordListDayRecord(year = 2026.toUShort(), month = 1.toUByte(), dayOfMonth = 1.toUByte())
+
+    /** What the published `draft` holds. */
+    val draft: StaticRecordListDayRecord get() = vDraft
     /** W3C SCXML 5.2: the `last` datamodel variable, published (`sce:direction="out"`). */
-    var last: StaticRecordListDayRecord = StaticRecordListDayRecord(year = 2000.toUShort(), month = 1.toUByte(), dayOfMonth = 1.toUByte())
-        private set
+    private var vLast: StaticRecordListDayRecord = StaticRecordListDayRecord(year = 2000.toUShort(), month = 1.toUByte(), dayOfMonth = 1.toUByte())
+
+    /** What the published `last` holds. */
+    val last: StaticRecordListDayRecord get() = vLast
     /** W3C SCXML 5.2: the `days` datamodel variable, published (`sce:direction="out"`). */
-    var days: List<StaticRecordListDayRecord> = emptyList()
-        private set
+    private var vDays: List<StaticRecordListDayRecord> = emptyList()
+
+    /** What the published `days` holds. */
+    val days: List<StaticRecordListDayRecord> get() = vDays
     /** W3C SCXML 5.2: the `copies` datamodel variable, published (`sce:direction="out"`). */
-    var copies: List<StaticRecordListDayRecord> = emptyList()
-        private set
+    private var vCopies: List<StaticRecordListDayRecord> = emptyList()
+
+    /** What the published `copies` holds. */
+    val copies: List<StaticRecordListDayRecord> get() = vCopies
     /** W3C SCXML 5.2: the `total` datamodel variable, published (`sce:direction="out"`). */
-    var total: UInt = 0.toUInt()
-        private set
+    private var vTotal: UInt = 0.toUInt()
+
+    /** What the published `total` holds. */
+    val total: UInt get() = vTotal
     /** W3C SCXML 5.2: the `errors` datamodel variable, published (`sce:direction="out"`). */
-    var errors: UInt = 0.toUInt()
-        private set
+    private var vErrors: UInt = 0.toUInt()
+
+    /** What the published `errors` holds. */
+    val errors: UInt get() = vErrors
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -93,8 +105,8 @@ class StaticRecordListStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.total?.let { total = it }
-        params.errors?.let { errors = it }
+        params.total?.let { vTotal = it }
+        params.errors?.let { vErrors = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -121,12 +133,12 @@ class StaticRecordListStateMachine(
     )
 
     private fun currentData(): Data = Data(
-        draft = draft,
-        last = last,
-        days = days,
-        copies = copies,
-        total = total,
-        errors = errors,
+        draft = vDraft,
+        last = vLast,
+        days = vDays,
+        copies = vCopies,
+        total = vTotal,
+        errors = vErrors,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -169,12 +181,12 @@ class StaticRecordListStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "draft" to draft.toSaved(),
-            "last" to last.toSaved(),
-            "days" to SavedValues.list(days) { it.toSaved() },
-            "copies" to SavedValues.list(copies) { it.toSaved() },
-            "total" to SavedValues.of(total),
-            "errors" to SavedValues.of(errors),
+            "draft" to vDraft.toSaved(),
+            "last" to vLast.toSaved(),
+            "days" to SavedValues.list(vDays) { it.toSaved() },
+            "copies" to SavedValues.list(vCopies) { it.toSaved() },
+            "total" to SavedValues.of(vTotal),
+            "errors" to SavedValues.of(vErrors),
         ),
         wallNowMs,
     )
@@ -206,12 +218,12 @@ class StaticRecordListStateMachine(
         val saved4 = SavedValues.list(saved.variable("copies"), "copies", 3) { e, w -> StaticRecordListDayRecord.fromSaved(e, w) }
         val saved5 = SavedValues.uint32(saved.variable("total"), "total")
         val saved6 = SavedValues.uint32(saved.variable("errors"), "errors")
-        draft = saved1
-        last = saved2
-        days = saved3
-        copies = saved4
-        total = saved5
-        errors = saved6
+        vDraft = saved1
+        vLast = saved2
+        vDays = saved3
+        vCopies = saved4
+        vTotal = saved5
+        vErrors = saved6
         enterSaved(saved, wallNowMs)
     }
 
@@ -452,25 +464,25 @@ class StaticRecordListStateMachine(
                     return
                 }
 
-            draft = draft.copy(year = pendingDayPickedPayload!!.year)
+            vDraft = vDraft.copy(year = pendingDayPickedPayload!!.year)
 
-            draft = draft.copy(month = pendingDayPickedPayload!!.month)
+            vDraft = vDraft.copy(month = pendingDayPickedPayload!!.month)
 
-            draft = draft.copy(dayOfMonth = pendingDayPickedPayload!!.dayOfMonth)
+            vDraft = vDraft.copy(dayOfMonth = pendingDayPickedPayload!!.dayOfMonth)
 
-            if (if (days.size < 3) { days = days + (draft); false } else { raisePlatformError(StaticRecordListEvent.Error.Execution, "<sce:append target='days'>: the list already holds its capacity of 3"); true }) {
+            if (if (vDays.size < 3) { vDays = vDays + (vDraft); false } else { raisePlatformError(StaticRecordListEvent.Error.Execution, "<sce:append target='days'>: the list already holds its capacity of 3"); true }) {
                 return
             }
             }
             1 -> {
                 // SCE-MAP: static_record_list.scxml:45 :: collecting :: _transition_1
 
-            total = 0.toUInt()
+            vTotal = 0.toUInt()
 
 
-            for (d in days) {
+            for (d in vDays) {
 
-            if (try { total = com.sce.forge.runtime.SceChecked.add(total, d.dayOfMonth.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordListEvent.Error.Execution, "<assign location='total'>: an integer operation overflowed or failed"); true }) {
+            if (try { vTotal = com.sce.forge.runtime.SceChecked.add(vTotal, d.dayOfMonth.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordListEvent.Error.Execution, "<assign location='total'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -478,13 +490,13 @@ class StaticRecordListStateMachine(
             2 -> {
                 // SCE-MAP: static_record_list.scxml:52 :: collecting :: _transition_2
 
-            copies = emptyList()
+            vCopies = emptyList()
 
 
-            for ((sce_position_of_i, d) in days.withIndex()) {
+            for ((sce_position_of_i, d) in vDays.withIndex()) {
                 @Suppress("UNUSED_VARIABLE") val i = sce_position_of_i.toUInt()
 
-            if (if (copies.size < 3) { copies = copies + (d); false } else { raisePlatformError(StaticRecordListEvent.Error.Execution, "<sce:append target='copies'>: the list already holds its capacity of 3"); true }) {
+            if (if (vCopies.size < 3) { vCopies = vCopies + (d); false } else { raisePlatformError(StaticRecordListEvent.Error.Execution, "<sce:append target='copies'>: the list already holds its capacity of 3"); true }) {
                 return
             }
             }
@@ -493,25 +505,25 @@ class StaticRecordListStateMachine(
                 // SCE-MAP: static_record_list.scxml:60 :: collecting :: _transition_3
 
 
-            for (d in days) {
+            for (d in vDays) {
 
-            last = d
+            vLast = d
             }
             }
             4 -> {
                 // SCE-MAP: static_record_list.scxml:66 :: collecting :: _transition_4
 
-            draft = last
+            vDraft = vLast
             }
             5 -> {
                 // SCE-MAP: static_record_list.scxml:69 :: collecting :: _transition_5
 
-            days = emptyList()
+            vDays = emptyList()
             }
             6 -> {
                 // SCE-MAP: static_record_list.scxml:72 :: collecting :: _transition_6
 
-            if (try { errors = com.sce.forge.runtime.SceChecked.add(errors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordListEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
+            if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordListEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }

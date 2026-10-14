@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 572a4258697cb4e5e72ff4c473f572e8103d28b7053d53f63dcb2a37167bc6ae
+// source-hash: a92737f3147f50ca2cf6319055f29d7afe2c17766723037ae46a81e73e7a66df
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_donedata.scxml
@@ -55,14 +55,16 @@ class StaticDonedataStateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `count` datamodel variable, published (`sce:direction="out"`). */
-    var count: UInt = 0.toUInt()
-        private set
+    private var vCount: UInt = 0.toUInt()
+
+    /** What the published `count` holds. */
+    val count: UInt get() = vCount
     /** W3C SCXML 5.2: the `small` datamodel variable, the machine's own. */
-    private var small: UByte = 250.toUByte()
+    private var vSmall: UByte = 250.toUByte()
     /** W3C SCXML 5.2: the `label` datamodel variable, the machine's own. */
-    private var label: String = "tally"
+    private var vLabel: String = "tally"
     /** W3C SCXML 5.2: the `layout` datamodel variable, the machine's own. */
-    private var layout: StaticDonedataViewModeEnum = StaticDonedataViewModeEnum.MONTH
+    private var vLayout: StaticDonedataViewModeEnum = StaticDonedataViewModeEnum.MONTH
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -77,9 +79,9 @@ class StaticDonedataStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.count?.let { count = it }
-        params.small?.let { small = it }
-        params.label?.let { label = it }
+        params.count?.let { vCount = it }
+        params.small?.let { vSmall = it }
+        params.label?.let { vLabel = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -101,7 +103,7 @@ class StaticDonedataStateMachine(
     )
 
     private fun currentData(): Data = Data(
-        count = count,
+        count = vCount,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -144,10 +146,10 @@ class StaticDonedataStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "count" to SavedValues.of(count),
-            "small" to SavedValues.of(small),
-            "label" to SavedValues.of(label),
-            "layout" to layout.toSaved(),
+            "count" to SavedValues.of(vCount),
+            "small" to SavedValues.of(vSmall),
+            "label" to SavedValues.of(vLabel),
+            "layout" to vLayout.toSaved(),
         ),
         wallNowMs,
     )
@@ -177,10 +179,10 @@ class StaticDonedataStateMachine(
         val saved2 = SavedValues.uint8(saved.variable("small"), "small")
         val saved3 = SavedValues.string(saved.variable("label"), "label", 16)
         val saved4 = StaticDonedataViewModeEnum.fromSaved(saved.variable("layout"), "layout")
-        count = saved1
-        small = saved2
-        label = saved3
-        layout = saved4
+        vCount = saved1
+        vSmall = saved2
+        vLabel = saved3
+        vLayout = saved4
         enterSaved(saved, wallNowMs)
     }
 
@@ -321,15 +323,15 @@ class StaticDonedataStateMachine(
                     // W3C SCXML 5.5: Evaluate <param> elements (C++ DoneDataHelper::evaluateParams pattern)
                     val doneParams = mutableMapOf<String, Any?>()
                     try {
-                        doneParams["total"] = (com.sce.forge.runtime.SceChecked.mul(count, 2.toUInt())).toLong()
+                        doneParams["total"] = (com.sce.forge.runtime.SceChecked.mul(vCount, 2.toUInt())).toLong()
                     } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
                         raisePlatformError(StaticDonedataEvent.Error.Execution, "<donedata> <param name='total'> failed to evaluate")
                     }
-                    doneParams["many"] = count > 2.toUInt()
-                    doneParams["name"] = label
-                    doneParams["layout"] = (layout).declaredName
+                    doneParams["many"] = vCount > 2.toUInt()
+                    doneParams["name"] = vLabel
+                    doneParams["layout"] = (vLayout).declaredName
                     try {
-                        doneParams["overflow"] = (com.sce.forge.runtime.SceChecked.add(small, small)).toLong()
+                        doneParams["overflow"] = (com.sce.forge.runtime.SceChecked.add(vSmall, vSmall)).toLong()
                     } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
                         raisePlatformError(StaticDonedataEvent.Error.Execution, "<donedata> <param name='overflow'> failed to evaluate")
                     }
@@ -370,14 +372,14 @@ class StaticDonedataStateMachine(
             0 -> {
                 // SCE-MAP: static_donedata.scxml:26 :: counting :: _transition_0
 
-            if (try { count = com.sce.forge.runtime.SceChecked.add(count, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticDonedataEvent.Error.Execution, "<assign location='count'>: an integer operation overflowed or failed"); true }) {
+            if (try { vCount = com.sce.forge.runtime.SceChecked.add(vCount, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticDonedataEvent.Error.Execution, "<assign location='count'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             1 -> {
                 // SCE-MAP: static_donedata.scxml:29 :: counting :: _transition_1
 
-            layout = StaticDonedataViewModeEnum.AGENDA_LIST
+            vLayout = StaticDonedataViewModeEnum.AGENDA_LIST
             }
             else -> {}
         }

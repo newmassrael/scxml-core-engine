@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 572a4258697cb4e5e72ff4c473f572e8103d28b7053d53f63dcb2a37167bc6ae
+// source-hash: a92737f3147f50ca2cf6319055f29d7afe2c17766723037ae46a81e73e7a66df
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_invoke_string.scxml
@@ -39,13 +39,17 @@ class StaticInvokeStringStateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `lengthy` datamodel variable, the machine's own. */
-    private var lengthy: String = "abcdefgh"
+    private var vLengthy: String = "abcdefgh"
     /** W3C SCXML 5.2: the `completed` datamodel variable, published (`sce:direction="out"`). */
-    var completed: UInt = 0.toUInt()
-        private set
+    private var vCompleted: UInt = 0.toUInt()
+
+    /** What the published `completed` holds. */
+    val completed: UInt get() = vCompleted
     /** W3C SCXML 5.2: the `errors` datamodel variable, published (`sce:direction="out"`). */
-    var errors: UInt = 0.toUInt()
-        private set
+    private var vErrors: UInt = 0.toUInt()
+
+    /** What the published `errors` holds. */
+    val errors: UInt get() = vErrors
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -60,9 +64,9 @@ class StaticInvokeStringStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.lengthy?.let { lengthy = it }
-        params.completed?.let { completed = it }
-        params.errors?.let { errors = it }
+        params.lengthy?.let { vLengthy = it }
+        params.completed?.let { vCompleted = it }
+        params.errors?.let { vErrors = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -85,8 +89,8 @@ class StaticInvokeStringStateMachine(
     )
 
     private fun currentData(): Data = Data(
-        completed = completed,
-        errors = errors,
+        completed = vCompleted,
+        errors = vErrors,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -129,9 +133,9 @@ class StaticInvokeStringStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "lengthy" to SavedValues.of(lengthy),
-            "completed" to SavedValues.of(completed),
-            "errors" to SavedValues.of(errors),
+            "lengthy" to SavedValues.of(vLengthy),
+            "completed" to SavedValues.of(vCompleted),
+            "errors" to SavedValues.of(vErrors),
         ),
         wallNowMs,
     )
@@ -160,9 +164,9 @@ class StaticInvokeStringStateMachine(
         val saved1 = SavedValues.string(saved.variable("lengthy"), "lengthy", 8)
         val saved2 = SavedValues.uint32(saved.variable("completed"), "completed")
         val saved3 = SavedValues.uint32(saved.variable("errors"), "errors")
-        lengthy = saved1
-        completed = saved2
-        errors = saved3
+        vLengthy = saved1
+        vCompleted = saved2
+        vErrors = saved3
         enterSaved(saved, wallNowMs)
     }
 
@@ -359,7 +363,7 @@ class StaticInvokeStringStateMachine(
                     // W3C SCXML 6.4.1: hand the child the values this invoke names
                     val childSeed = StaticInvokeStringSceSynthInvokeOverStateMachine.InvokeParams()
                     try {
-                        childSeed.title = com.sce.forge.runtime.SceChecked.bounded(lengthy, 4)
+                        childSeed.title = com.sce.forge.runtime.SceChecked.bounded(vLengthy, 4)
                     } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
                         // W3C SCXML 5.7.1: report the failure and leave the value out.
                         raisePlatformError(StaticInvokeStringEvent.Error.Execution, "<invoke> <param name='title'> expr failed to evaluate")
@@ -421,28 +425,28 @@ class StaticInvokeStringStateMachine(
             0 -> {
                 // SCE-MAP: static_invoke_string.scxml:76 :: running :: _transition_0
 
-            if (try { completed = com.sce.forge.runtime.SceChecked.add(completed, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeStringEvent.Error.Execution, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
+            if (try { vCompleted = com.sce.forge.runtime.SceChecked.add(vCompleted, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeStringEvent.Error.Execution, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             1 -> {
                 // SCE-MAP: static_invoke_string.scxml:79 :: running :: _transition_1
 
-            if (try { completed = com.sce.forge.runtime.SceChecked.add(completed, 10.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeStringEvent.Error.Execution, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
+            if (try { vCompleted = com.sce.forge.runtime.SceChecked.add(vCompleted, 10.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeStringEvent.Error.Execution, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             2 -> {
                 // SCE-MAP: static_invoke_string.scxml:82 :: running :: _transition_2
 
-            if (try { completed = com.sce.forge.runtime.SceChecked.add(completed, 100.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeStringEvent.Error.Execution, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
+            if (try { vCompleted = com.sce.forge.runtime.SceChecked.add(vCompleted, 100.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeStringEvent.Error.Execution, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             3 -> {
                 // SCE-MAP: static_invoke_string.scxml:85 :: running :: _transition_3
 
-            if (try { errors = com.sce.forge.runtime.SceChecked.add(errors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeStringEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
+            if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeStringEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }

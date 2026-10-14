@@ -782,6 +782,53 @@ pub fn emitted_members(language: Language, model: &crate::model::SCXMLModel) -> 
     rendered_members(language, &code, &format!("{}_", model.name))
 }
 
+/// Whether a generated Kotlin machine already holds a property named `name`: one
+/// the engine it extends declares for a subclass to see, or one its own template
+/// writes into the class.
+///
+/// Kotlin keeps properties and functions apart, so [`reserved`], which reads the
+/// functions, does not answer this: a `datamodel="sce-static"` variable published
+/// as the property `clock` hides the engine's `clock` and does not compile, while
+/// a reader function of that name would have. Read from the same two sources
+/// [`reserved`] reads, so a property the engine gains is held here by itself.
+pub(crate) fn kotlin_machine_holds_property(name: &str) -> bool {
+    static HELD: LazyLock<BTreeSet<String>> = LazyLock::new(|| {
+        // A member of the class body: indented one level, `val` or `var`, after
+        // modifiers. The engine's `private` ones are not a subclass's to meet and
+        // are left out by not being among the modifiers; the template's are
+        // members of the generated class itself, so they count.
+        let inherited = regex(
+            r"(?m)^    (?:(?:open|protected|internal|public|override|lateinit|abstract|final)\s+)*(?:val|var)\s+([A-Za-z_][A-Za-z0-9_]*)\b",
+        );
+        let own = regex(
+            r"(?m)^    (?:(?:private|open|protected|internal|public|override|lateinit|final)\s+)*(?:val|var)\s+([A-Za-z_][A-Za-z0-9_]*)\b",
+        );
+        let syntax = crate::template_lexing::Syntax::of_language(Language::Kotlin);
+        let mut held = BTreeSet::new();
+        // The engine's file opens with other declarations, whose constructor
+        // parameters are written the way a member is; the class is the last of it.
+        let engine = KOTLIN_RUNTIME_ENGINE
+            .find("abstract class StateMachineEngine")
+            .map(|at| &KOTLIN_RUNTIME_ENGINE[at..])
+            .expect("the Kotlin runtime declares StateMachineEngine");
+        let code = code_only(engine, &crate::template_lexing::classify(engine, syntax));
+        for caps in inherited.captures_iter(&code) {
+            held.insert(caps[1].to_string());
+        }
+        for template in backend_templates(Language::Kotlin) {
+            let code = code_only(
+                template,
+                &crate::template_lexing::classify_template(template, syntax),
+            );
+            for caps in own.captures_iter(&code) {
+                held.insert(caps[1].to_string());
+            }
+        }
+        held
+    });
+    HELD.contains(name)
+}
+
 /// A spelling, or why there is none.
 enum Spelling {
     Name(String),
@@ -931,6 +978,28 @@ mod tests {
         match spell(id, language) {
             Spelling::Name(n) => Some(n),
             Spelling::Refused(..) => None,
+        }
+    }
+
+    #[test]
+    fn a_kotlin_machine_holds_the_properties_of_its_engine_and_its_template() {
+        // The engine's, which a variable published under the same name would hide.
+        for held in ["clock", "currentState", "isInFinalState", "transitions"] {
+            assert!(
+                kotlin_machine_holds_property(held),
+                "`{held}` is a property of the Kotlin engine"
+            );
+        }
+        // The template's own, written into the generated class.
+        assert!(kotlin_machine_holds_property("snapshot"));
+        // A name the class does not hold, a function of the engine (Kotlin keeps
+        // functions apart from properties), a parameter of a declaration above the
+        // engine in its file, and a local of a method are none of them held.
+        for free in ["count", "tick", "sendId", "handler"] {
+            assert!(
+                !kotlin_machine_holds_property(free),
+                "`{free}` is no property of a generated Kotlin machine"
+            );
         }
     }
 

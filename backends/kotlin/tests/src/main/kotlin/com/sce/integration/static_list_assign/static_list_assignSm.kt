@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 572a4258697cb4e5e72ff4c473f572e8103d28b7053d53f63dcb2a37167bc6ae
+// source-hash: a92737f3147f50ca2cf6319055f29d7afe2c17766723037ae46a81e73e7a66df
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_list_assign.scxml
@@ -40,23 +40,35 @@ class StaticListAssignStateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `shown` datamodel variable, published (`sce:direction="out"`). */
-    var shown: List<UByte> = emptyList()
-        private set
+    private var vShown: List<UByte> = emptyList()
+
+    /** What the published `shown` holds. */
+    val shown: List<UByte> get() = vShown
     /** W3C SCXML 5.2: the `first` datamodel variable, published (`sce:direction="out"`). */
-    var first: UByte = 10.toUByte()
-        private set
+    private var vFirst: UByte = 10.toUByte()
+
+    /** What the published `first` holds. */
+    val first: UByte get() = vFirst
     /** W3C SCXML 5.2: the `few` datamodel variable, published (`sce:direction="out"`). */
-    var few: List<UByte> = emptyList()
-        private set
+    private var vFew: List<UByte> = emptyList()
+
+    /** What the published `few` holds. */
+    val few: List<UByte> get() = vFew
     /** W3C SCXML 5.2: the `count` datamodel variable, published (`sce:direction="out"`). */
-    var count: UInt = 0.toUInt()
-        private set
+    private var vCount: UInt = 0.toUInt()
+
+    /** What the published `count` holds. */
+    val count: UInt get() = vCount
     /** W3C SCXML 5.2: the `size` datamodel variable, published (`sce:direction="out"`). */
-    var size: UInt = 0.toUInt()
-        private set
+    private var vSize: UInt = 0.toUInt()
+
+    /** What the published `size` holds. */
+    val size: UInt get() = vSize
     /** W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`). */
-    var refusals: UInt = 0.toUInt()
-        private set
+    private var vRefusals: UInt = 0.toUInt()
+
+    /** What the published `refusals` holds. */
+    val refusals: UInt get() = vRefusals
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -72,10 +84,10 @@ class StaticListAssignStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.first?.let { first = it }
-        params.count?.let { count = it }
-        params.size?.let { size = it }
-        params.refusals?.let { refusals = it }
+        params.first?.let { vFirst = it }
+        params.count?.let { vCount = it }
+        params.size?.let { vSize = it }
+        params.refusals?.let { vRefusals = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -102,12 +114,12 @@ class StaticListAssignStateMachine(
     )
 
     private fun currentData(): Data = Data(
-        shown = shown,
-        first = first,
-        few = few,
-        count = count,
-        size = size,
-        refusals = refusals,
+        shown = vShown,
+        first = vFirst,
+        few = vFew,
+        count = vCount,
+        size = vSize,
+        refusals = vRefusals,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -150,12 +162,12 @@ class StaticListAssignStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "shown" to SavedValues.list(shown) { SavedValues.of(it) },
-            "first" to SavedValues.of(first),
-            "few" to SavedValues.list(few) { SavedValues.of(it) },
-            "count" to SavedValues.of(count),
-            "size" to SavedValues.of(size),
-            "refusals" to SavedValues.of(refusals),
+            "shown" to SavedValues.list(vShown) { SavedValues.of(it) },
+            "first" to SavedValues.of(vFirst),
+            "few" to SavedValues.list(vFew) { SavedValues.of(it) },
+            "count" to SavedValues.of(vCount),
+            "size" to SavedValues.of(vSize),
+            "refusals" to SavedValues.of(vRefusals),
         ),
         wallNowMs,
     )
@@ -187,12 +199,12 @@ class StaticListAssignStateMachine(
         val saved4 = SavedValues.uint32(saved.variable("count"), "count")
         val saved5 = SavedValues.uint32(saved.variable("size"), "size")
         val saved6 = SavedValues.uint32(saved.variable("refusals"), "refusals")
-        shown = saved1
-        first = saved2
-        few = saved3
-        count = saved4
-        size = saved5
-        refusals = saved6
+        vShown = saved1
+        vFirst = saved2
+        vFew = saved3
+        vCount = saved4
+        vSize = saved5
+        vRefusals = saved6
         enterSaved(saved, wallNowMs)
     }
 
@@ -383,57 +395,57 @@ class StaticListAssignStateMachine(
             0 -> {
                 // SCE-MAP: static_list_assign.scxml:34 :: showing :: _transition_0
 
-            if (try { shown = com.sce.forge.runtime.SceChecked.within((com.sce.forge.runtime.SceChecked.take(dayRun(first, 3.toUByte()))).toList(), 8); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListAssignEvent.Error.Execution, "<assign location='shown'>: an integer operation overflowed or failed"); true }) {
+            if (try { vShown = com.sce.forge.runtime.SceChecked.within((com.sce.forge.runtime.SceChecked.take(dayRun(vFirst, 3.toUByte()))).toList(), 8); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListAssignEvent.Error.Execution, "<assign location='shown'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            size = (shown).size.toUInt()
+            vSize = (vShown).size.toUInt()
             }
             1 -> {
                 // SCE-MAP: static_list_assign.scxml:38 :: showing :: _transition_1
 
-            if (try { shown = com.sce.forge.runtime.SceChecked.within((com.sce.forge.runtime.SceChecked.take(dayRun(first, 8.toUByte()))).toList(), 8); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListAssignEvent.Error.Execution, "<assign location='shown'>: an integer operation overflowed or failed"); true }) {
+            if (try { vShown = com.sce.forge.runtime.SceChecked.within((com.sce.forge.runtime.SceChecked.take(dayRun(vFirst, 8.toUByte()))).toList(), 8); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListAssignEvent.Error.Execution, "<assign location='shown'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            size = (shown).size.toUInt()
+            vSize = (vShown).size.toUInt()
             }
             2 -> {
                 // SCE-MAP: static_list_assign.scxml:42 :: showing :: _transition_2
 
-            if (try { shown = com.sce.forge.runtime.SceChecked.within((com.sce.forge.runtime.SceChecked.take(dayRun(first, 0.toUByte()))).toList(), 8); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListAssignEvent.Error.Execution, "<assign location='shown'>: an integer operation overflowed or failed"); true }) {
+            if (try { vShown = com.sce.forge.runtime.SceChecked.within((com.sce.forge.runtime.SceChecked.take(dayRun(vFirst, 0.toUByte()))).toList(), 8); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListAssignEvent.Error.Execution, "<assign location='shown'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            size = (shown).size.toUInt()
+            vSize = (vShown).size.toUInt()
             }
             3 -> {
                 // SCE-MAP: static_list_assign.scxml:46 :: showing :: _transition_3
 
-            if (try { few = com.sce.forge.runtime.SceChecked.within((com.sce.forge.runtime.SceChecked.take(dayRepeat(first, 3.toUByte()))).toList(), 4); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListAssignEvent.Error.Execution, "<assign location='few'>: an integer operation overflowed or failed"); true }) {
+            if (try { vFew = com.sce.forge.runtime.SceChecked.within((com.sce.forge.runtime.SceChecked.take(dayRepeat(vFirst, 3.toUByte()))).toList(), 4); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListAssignEvent.Error.Execution, "<assign location='few'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            count = (few).size.toUInt()
+            vCount = (vFew).size.toUInt()
             }
             4 -> {
                 // SCE-MAP: static_list_assign.scxml:50 :: showing :: _transition_4
 
-            if (try { few = com.sce.forge.runtime.SceChecked.within((com.sce.forge.runtime.SceChecked.take(dayRepeat(first, 5.toUByte()))).toList(), 4); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListAssignEvent.Error.Execution, "<assign location='few'>: an integer operation overflowed or failed"); true }) {
+            if (try { vFew = com.sce.forge.runtime.SceChecked.within((com.sce.forge.runtime.SceChecked.take(dayRepeat(vFirst, 5.toUByte()))).toList(), 4); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListAssignEvent.Error.Execution, "<assign location='few'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            count = (few).size.toUInt()
+            vCount = (vFew).size.toUInt()
             }
             5 -> {
                 // SCE-MAP: static_list_assign.scxml:54 :: showing :: _transition_5
 
-            first = 253.toUByte()
+            vFirst = 253.toUByte()
             }
             6 -> {
                 // SCE-MAP: static_list_assign.scxml:57 :: showing :: _transition_6
 
-            if (try { refusals = com.sce.forge.runtime.SceChecked.add(refusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListAssignEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListAssignEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }

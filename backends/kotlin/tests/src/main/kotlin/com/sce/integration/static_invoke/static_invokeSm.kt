@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 572a4258697cb4e5e72ff4c473f572e8103d28b7053d53f63dcb2a37167bc6ae
+// source-hash: a92737f3147f50ca2cf6319055f29d7afe2c17766723037ae46a81e73e7a66df
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_invoke.scxml
@@ -43,8 +43,10 @@ class StaticInvokeStateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `completed` datamodel variable, published (`sce:direction="out"`). */
-    var completed: UInt = 0.toUInt()
-        private set
+    private var vCompleted: UInt = 0.toUInt()
+
+    /** What the published `completed` holds. */
+    val completed: UInt get() = vCompleted
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -57,7 +59,7 @@ class StaticInvokeStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.completed?.let { completed = it }
+        params.completed?.let { vCompleted = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -79,7 +81,7 @@ class StaticInvokeStateMachine(
     )
 
     private fun currentData(): Data = Data(
-        completed = completed,
+        completed = vCompleted,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -122,7 +124,7 @@ class StaticInvokeStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "completed" to SavedValues.of(completed),
+            "completed" to SavedValues.of(vCompleted),
         ),
         wallNowMs,
     )
@@ -149,7 +151,7 @@ class StaticInvokeStateMachine(
     fun restore(saved: SavedState, wallNowMs: Long) {
         beginRestore(saved, savedShape)
         val saved1 = SavedValues.uint32(saved.variable("completed"), "completed")
-        completed = saved1
+        vCompleted = saved1
         enterSaved(saved, wallNowMs)
     }
 
@@ -390,7 +392,7 @@ class StaticInvokeStateMachine(
             2 -> {
                 // SCE-MAP: static_invoke.scxml:46 :: working :: _transition_2
 
-            if (try { completed = com.sce.forge.runtime.SceChecked.add(completed, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeEvent.Error.Execution, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
+            if (try { vCompleted = com.sce.forge.runtime.SceChecked.add(vCompleted, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeEvent.Error.Execution, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }

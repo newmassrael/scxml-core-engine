@@ -4249,10 +4249,17 @@ forge-language expressions in Lua or QuickJS — a language the document
 never declared. Which backends lower it is `STATIC_DATAMODEL_BACKENDS` in
 `sce-build/src/generator.rs`.
 
-Kotlin lowers it (`crate::forge::static_lowering`): each variable is a field
-of the generated machine, written only by the machine — `var <name>: <type>
-= <init>` with a private setter when it is published, a `private var` when it
-is the machine's own — and each expression is lowered through
+Kotlin lowers it (`crate::forge::static_lowering`): each variable is a private
+field of the generated machine, `v<PascalCase id>`, written only by the machine,
+and a published one has a property of the author's spelling that reads it
+(`val count: UInt get() = vCount`). The prefix is there because the machine
+extends the engine: a field under the author's bare name would hide whatever the
+engine already calls by it, and a variable named `clock` did not compile. A
+published variable whose name the class already holds a property by has no such
+property (`reader_names::kotlin_machine_holds_property` reads the engine and the
+templates for them) and is read from the snapshot's `data` and from a saved
+state, which carry every published variable under the author's name. Each
+expression is lowered through
 the forge expression lowerer into the slot the Kotlin templates already
 render as native code — a condition as a native guard (`In(id)` as the
 machine's active-state test), an `<assign>` or `<log>` value as the text the
@@ -5235,15 +5242,44 @@ the Interpreter. These are the first three of the six steps of
 | `state` | expect | the atomic state the machine is in |
 | `configuration` | expect | the set of every active state, a compound or a parallel one with the atomic ones below it, by the id the document gives it; the order is not part of the answer |
 | `variables` | expect | variable to value, for the variables the document publishes (`sce:direction="out"`): a number, a bool, an enum by its declared name, a string, a record as an object of its fields, a list as an array, a real written with a fraction or an exponent |
-| `ended` | expect | `true` when the machine ended in a top-level `<final>`; such a machine has no saved state, so the step states nothing but `ended`, `donedata` and `host_calls` |
+| `ended` | expect | `true` when the machine ended in a top-level `<final>`; such a machine has no saved state, so the step states nothing but `ended`, `donedata`, `host_calls` and `sent` |
 | `donedata` | expect | with `ended`, the data the final's `<donedata>` left for an invoking parent, as JSON, compared as a value |
 | `host_calls` | expect | the calls the machine made of its host in this step, oldest first: `{"action": <the name the document gives the <sce:action>>, "args": [<each <sce:arg>, in the document's order>]}`; the start's calls belong to the first step, a step that states none is not judged on them, and they are not carried into the next |
+| `sent` | expect | what the machine sent its Mesh peers in this step, oldest first: `{"target": <the peer as the document writes it, "#server">, "event": <the event's name>, "data": <the event's data, as JSON>}`, `data` left out when the send carried none; the start's sends belong to the first step, a step that states none is not judged on them, and they are not carried into the next |
 
 A step sends an event or moves time and does not do both: the drivers do not agree
 on which comes first, and no scenario needs it. A machine that publishes no
 variable, such as `static_host_call`, is read from what it told its host, which is
 why `host_calls` exists; a driver whose machine records no host refuses a step
 that states it rather than pass it.
+
+A `<send target="#name">` leaves the machine through the Mesh router its host
+registers, and each driver is its machine's host, so each registers a router that
+writes the send down and delivers it to no one: `sent` holds a step to what the
+machine asked to be sent, with the data as the engine serialised it for the event,
+compared as a value. The peer is not there, so nothing answers. A send to
+`#_internal`, to `#_parent` or to a session is the SCXML processor's own and is not
+in `sent`. A machine with a peer send that is given no router is not left alone by
+the engines in the same way (five refuse the send as `error.execution`; the
+generated C++ and the Interpreter hand the event back to the machine that sent it),
+which is one more reason every driver registers one.
+
+**A run of several machines, one machine at a time.** The scenarios of `todo_peer`
+and `sheet_peer` (`todo_peer_alice.json`, `todo_peer_bob.json`,
+`todo_peer_server.json` and the three of `sheet_peer`) are not written by hand. The
+world simulation (`backends/rust/world`) runs three copies of a shared document, two
+people and the hub they send to, over a network that delays and cuts what it
+carries, and each copy keeps a record of every event it was given, by its host or
+by a peer, in the order it took them, with what it held and what it sent after each
+(`World::add_read`, `World::record_of`). That record is a scenario. A machine is a
+function of the events it is given, so a backend whose machine holds and sends at
+every step what the Rust one did would have stood in for it in the run, and the
+seven drivers are held to that without any of the other six having to run in the
+world. `a_world_run_is_what_every_backend_replays.rs` holds the committed files to
+the run and writes them again when asked (`SCE_WORLD_SCENARIOS=write`); the expected
+values are what the Rust engine did, and the same test holds the run to oracles that
+read the network and not the copies. A machine that waits on a clock is not recorded
+this way yet: its record would have to hold when its time moved.
 
 A step is read after the macrostep its event started has run to quiescence, and
 the first step, which may send none, after the machine has started and settled.

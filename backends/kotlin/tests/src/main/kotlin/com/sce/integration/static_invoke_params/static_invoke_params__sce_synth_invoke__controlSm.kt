@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 572a4258697cb4e5e72ff4c473f572e8103d28b7053d53f63dcb2a37167bc6ae
+// source-hash: a92737f3147f50ca2cf6319055f29d7afe2c17766723037ae46a81e73e7a66df
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_invoke_params__sce_synth_invoke__control.scxml
@@ -30,9 +30,9 @@ class StaticInvokeParamsSceSynthInvokeControlStateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `start` datamodel variable, the machine's own. */
-    private var start: UInt = 0.toUInt()
+    private var vStart: UInt = 0.toUInt()
     /** W3C SCXML 5.2: the `enabled` datamodel variable, the machine's own. */
-    private var enabled: Boolean = false
+    private var vEnabled: Boolean = false
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -46,8 +46,8 @@ class StaticInvokeParamsSceSynthInvokeControlStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.start?.let { start = it }
-        params.enabled?.let { enabled = it }
+        params.start?.let { vStart = it }
+        params.enabled?.let { vEnabled = it }
     }
 
     /**
@@ -101,8 +101,8 @@ class StaticInvokeParamsSceSynthInvokeControlStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "start" to SavedValues.of(start),
-            "enabled" to SavedValues.of(enabled),
+            "start" to SavedValues.of(vStart),
+            "enabled" to SavedValues.of(vEnabled),
         ),
         wallNowMs,
     )
@@ -130,8 +130,8 @@ class StaticInvokeParamsSceSynthInvokeControlStateMachine(
         beginRestore(saved, savedShape)
         val saved1 = SavedValues.uint32(saved.variable("start"), "start")
         val saved2 = SavedValues.bool(saved.variable("enabled"), "enabled")
-        start = saved1
-        enabled = saved2
+        vStart = saved1
+        vEnabled = saved2
         enterSaved(saved, wallNowMs)
     }
 
@@ -228,7 +228,7 @@ class StaticInvokeParamsSceSynthInvokeControlStateMachine(
         event: StaticInvokeParamsSceSynthInvokeControlEvent?
     ): EnabledTransition<StaticInvokeParamsSceSynthInvokeControlState, HistoryId>? = when (state) {
         is StaticInvokeParamsSceSynthInvokeControlState.Waiting -> when {
-            event == null && start == 7.toUInt() && enabled -> transitionWaitingAt0
+            event == null && vStart == 7.toUInt() && vEnabled -> transitionWaitingAt0
             else -> null
         }
         else -> null

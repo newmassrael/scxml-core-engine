@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 572a4258697cb4e5e72ff4c473f572e8103d28b7053d53f63dcb2a37167bc6ae
+// source-hash: a92737f3147f50ca2cf6319055f29d7afe2c17766723037ae46a81e73e7a66df
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_invoke_params__sce_synth_invoke__watcher.scxml
@@ -30,7 +30,7 @@ class StaticInvokeParamsSceSynthInvokeWatcherStateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `start` datamodel variable, the machine's own. */
-    private var start: UInt = 0.toUInt()
+    private var vStart: UInt = 0.toUInt()
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -43,7 +43,7 @@ class StaticInvokeParamsSceSynthInvokeWatcherStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.start?.let { start = it }
+        params.start?.let { vStart = it }
     }
 
     /**
@@ -97,7 +97,7 @@ class StaticInvokeParamsSceSynthInvokeWatcherStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "start" to SavedValues.of(start),
+            "start" to SavedValues.of(vStart),
         ),
         wallNowMs,
     )
@@ -124,7 +124,7 @@ class StaticInvokeParamsSceSynthInvokeWatcherStateMachine(
     fun restore(saved: SavedState, wallNowMs: Long) {
         beginRestore(saved, savedShape)
         val saved1 = SavedValues.uint32(saved.variable("start"), "start")
-        start = saved1
+        vStart = saved1
         enterSaved(saved, wallNowMs)
     }
 
@@ -221,7 +221,7 @@ class StaticInvokeParamsSceSynthInvokeWatcherStateMachine(
         event: StaticInvokeParamsSceSynthInvokeWatcherEvent?
     ): EnabledTransition<StaticInvokeParamsSceSynthInvokeWatcherState, HistoryId>? = when (state) {
         is StaticInvokeParamsSceSynthInvokeWatcherState.Waiting -> when {
-            event == null && start == 8.toUInt() -> transitionWaitingAt0
+            event == null && vStart == 8.toUInt() -> transitionWaitingAt0
             else -> null
         }
         else -> null

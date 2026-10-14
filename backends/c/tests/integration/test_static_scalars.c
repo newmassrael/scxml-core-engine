@@ -84,6 +84,11 @@
 //   * `static_enum`: an enum variable starts at a variant, is compared with `===`
 //     and `!==`, takes a conditional of two variants, and is observed as the name
 //     its document declares, not as the constant C spells for it.
+//   * `todo_peer`, `sheet_peer`: a machine made of the standard merge rules
+//     (sce:std/merge) holds, after every event of a run it took part in, the cells,
+//     texts, rows and clock the scenario states — a 64-bit field as the text of its
+//     digits — and sent its Mesh peers the sends the scenario states, in their
+//     order, through the router a host installs before the machine starts.
 //
 // Linked WITHOUT `sce_c_scripting` and `lua54` on purpose: these machines carry
 // no script engine, so the link is the proof. If the emit ever reached for one,
@@ -95,6 +100,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "sheet_peer_sm.h"
 #include "static_block_ends_list_sm.h"
 #include "static_block_ends_sm.h"
 #include "static_bytes_sm.h"
@@ -147,6 +153,7 @@
 #include "static_wire_enum_sm.h"
 #include "static_wire_wide_sm.h"
 #include "sync_client_sm.h"
+#include "todo_peer_sm.h"
 
 #include <sce/forge/wire.h>
 
@@ -221,7 +228,10 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
 // A record's fields as a reader tells them by name — which is how a field is told
 // from a typo. FIELDS names every field a scenario can state, as `N(field)` for a
 // number or a bool and `E(field, declared_name)` for an enum, `declared_name` being
-// the function its document declares for the name of a value.
+// the function its document declares for the name of a value. A field a scenario
+// states as any other string is an `E` too, with the function that answers its
+// text: a string's, or the digits of a 64-bit integer. A record may have no field
+// of the one kind, which is what the reader's unused names are voided for.
 #define RECORD_NUMBER(FIELD)                                                                                           \
     if (strcmp(field, #FIELD) == 0) {                                                                                  \
         *out = (int64_t)rec->FIELD;                                                                                    \
@@ -240,6 +250,9 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
         const RECORD value = M##_get_##VAR((const M##_t *)sm);                                                         \
         const RECORD *rec = &value;                                                                                    \
         (void)index;                                                                                                   \
+        (void)rec;                                                                                                     \
+        (void)field;                                                                                                   \
+        (void)out;                                                                                                     \
         FIELDS(RECORD_NUMBER, RECORD_NOT_NUMBER)                                                                       \
         return false;                                                                                                  \
     }                                                                                                                  \
@@ -261,6 +274,9 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
             return false;                                                                                              \
         }                                                                                                              \
         const RECORD *rec = &view.data[index];                                                                         \
+        (void)rec;                                                                                                     \
+        (void)field;                                                                                                   \
+        (void)out;                                                                                                     \
         FIELDS(RECORD_NUMBER, RECORD_NOT_NUMBER)                                                                       \
         return false;                                                                                                  \
     }                                                                                                                  \
@@ -290,9 +306,11 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
 // variable by its, the lists and records by theirs, and the replay of its
 // scenario. DONE answers the data its final's `<donedata>` wrote, for a machine
 // that has one. INIT starts the machine in `sm`, and ADVANCE moves the clock of a
-// machine that waits on one, or is NULL for a machine that does not.
+// machine that waits on one, or is NULL for a machine that does not. HOST_CALLS
+// answers what the machine asked of its host and SENT what it sent its Mesh
+// peers, each since it was last asked, or is NULL for a machine with neither.
 #define STATIC_SCENARIO_CORE(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, DONE, REAL, REAL_LIST, RECORD_REAL, INIT,     \
-                             ADVANCE, HOST_CALLS)                                                                      \
+                             ADVANCE, HOST_CALLS, SENT)                                                                \
     static bool M##_read_record_field(void *sm, const char *name, size_t index, const char *field, int64_t *out) {     \
         for (size_t i = 0; RECORDS[i].name != NULL; ++i) {                                                             \
             if (strcmp(RECORDS[i].name, name) == 0) {                                                                  \
@@ -393,7 +411,8 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
                                               RECORD_REAL,                                                             \
                                               ADVANCE,                                                                 \
                                               M##_active_count,                                                        \
-                                              HOST_CALLS};                                                             \
+                                              HOST_CALLS,                                                              \
+                                              SENT};                                                                   \
         char path[512];                                                                                                \
         (void)snprintf(path, sizeof(path), "%s/%s.json", SCE_STATIC_SCENARIO_DIR, scenario);                           \
         int replayed = 0;                                                                                              \
@@ -410,14 +429,100 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
 // A machine that waits on no clock, started as `_init` starts it.
 #define STATIC_SCENARIO_FULL(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, DONE, REAL, REAL_LIST, RECORD_REAL)           \
     STATIC_SCENARIO_CORE(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, DONE, REAL, REAL_LIST, RECORD_REAL,               \
-                         M##_init(&sm), NULL, NULL)
+                         M##_init(&sm), NULL, NULL, NULL)
 
 // A machine whose `<sce:action>`s go to a host that records them: INIT starts it
 // with that host installed, which it must be before the first entry runs, and
 // HOST_CALLS answers what the host heard since it was last asked.
 #define STATIC_SCENARIO_HOSTED(M, STATES, VARIABLES, INIT, HOST_CALLS)                                                 \
     STATIC_SCENARIO_CORE(M, STATES, VARIABLES, NULL, no_lists, no_records, NULL, NULL, NULL, NULL, INIT, NULL,         \
-                         HOST_CALLS)
+                         HOST_CALLS, NULL)
+
+// What the machines below sent their Mesh peers, kept by the router installed
+// here as the compact JSON a scenario's `sent` states: each send its target, its
+// event and — where the event has any — its data, which is the engine's own
+// serialisation and is put in as it came. One record serves every machine, since
+// one scenario is replayed at a time and a start empties it.
+//
+// A request's pointers are the sender's frame, valid for the call alone, so the
+// send is copied where it is heard. One send is at most its target and its event
+// name, each an id of the document, and the data of an event, with the names and
+// the punctuation around them; a step of these machines sends two at the most —
+// the hub, to the two copies — and the record is sized for four times that. What
+// does not fit is not cut short: the record is marked as having lost a send, and
+// the step it was heard in fails.
+enum {
+    PEER_SEND_SIZE = 2 * SCE_MAX_ID_LEN + SCE_MAX_DATA_LEN + 48,
+    PEER_SENDS_KEPT = 8,
+};
+
+static struct {
+    char text[PEER_SENDS_KEPT * PEER_SEND_SIZE];
+    size_t len;
+    bool lost;
+} peers_heard;
+
+static void peers_router(void *user_data, const sce_host_send_request_t *request, sce_host_send_response_list_t *out) {
+    (void)user_data;
+    (void)out;
+    char send[PEER_SEND_SIZE];
+    sce_forge_wire_t wire;
+    sce_forge_wire_begin(&wire, send, sizeof(send));
+    sce_forge_wire_pair(&wire, "\"target\"", sce_forge_wire_string(request->target));
+    sce_forge_wire_pair(&wire, "\"event\"", sce_forge_wire_string(request->event_name));
+    if (request->event_data[0] != '\0') {
+        static const char data_key[] = ",\"data\":";
+        sce_forge_wire_put(&wire, data_key, sizeof(data_key) - 1u);
+        sce_forge_wire_put(&wire, request->event_data, strlen(request->event_data));
+    }
+    if (!sce_forge_wire_end(&wire)) {
+        peers_heard.lost = true;
+        return;
+    }
+    const size_t size = strlen(send);
+    if (peers_heard.len + size + 2u >= sizeof(peers_heard.text)) {
+        peers_heard.lost = true;
+        return;
+    }
+    if (peers_heard.len > 0u) {
+        peers_heard.text[peers_heard.len++] = ',';
+    }
+    memcpy(peers_heard.text + peers_heard.len, send, size + 1u);
+    peers_heard.len += size;
+}
+
+static void peers_forget(void) {
+    peers_heard.len = 0u;
+    peers_heard.text[0] = '\0';
+    peers_heard.lost = false;
+}
+
+/* The sends since it was last asked, or NULL when one of them was lost. */
+static const char *peers_sent(void *sm) {
+    static char taken[sizeof(peers_heard.text) + 2u];
+    (void)sm;
+    const bool lost = peers_heard.lost;
+    (void)snprintf(taken, sizeof(taken), "[%s]", peers_heard.text);
+    peers_forget();
+    return lost ? NULL : taken;
+}
+
+// A machine that sends to Mesh peers (`<send target="#name">`), which a machine
+// with no router fails as `error.execution`: it is started with the router above
+// installed, which it must be before its first entry runs, so that what its start
+// sends is heard as the first step's.
+#define STATIC_SCENARIO_PEERED(M, STATES, VARIABLES, TEXT, LISTS, RECORDS)                                             \
+    static void M##_start_with_router(M##_t *sm) {                                                                     \
+        sce_host_processor_registry_t wiring;                                                                          \
+        memset(&wiring, 0, sizeof(wiring));                                                                            \
+        peers_forget();                                                                                                \
+        if (!sce_host_registry_register_mesh_router(&wiring, peers_router, NULL)) {                                    \
+            (void)fprintf(stderr, "%s: FAIL - the router door refused the router\n", #M);                              \
+        }                                                                                                              \
+        M##_init_with_host_processors(sm, &wiring);                                                                    \
+    }                                                                                                                  \
+    STATIC_SCENARIO_CORE(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, NULL, NULL, NULL, NULL,                           \
+                         M##_start_with_router(&sm), NULL, NULL, peers_sent)
 
 // A machine whose delayed sends wait on a clock the scenario owns: it is started
 // on a manual one, and an `advance_ms` step moves it on and runs what came due.
@@ -428,7 +533,7 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
         return true;                                                                                                   \
     }                                                                                                                  \
     STATIC_SCENARIO_CORE(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, NULL, NULL, NULL, NULL,                           \
-                         M##_init_with_clock(&sm, sce_clock_manual(0u)), M##_advance_clock, NULL)
+                         M##_init_with_clock(&sm, sce_clock_manual(0u)), M##_advance_clock, NULL, NULL)
 
 // A machine that publishes no real: DONE as above, and REAL, REAL_LIST and
 // RECORD_REAL — the readers of a real variable, of a list of reals and of a real
@@ -1783,6 +1888,115 @@ static const record_variable_t donedata_record_records[] = {RECORD_ROW(static_do
 STATIC_SCENARIO_DONE(static_donedata_record, donedata_record_states, donedata_record_variables, NULL, no_lists,
                      donedata_record_records, static_donedata_record_done)
 
+// A 64-bit integer as a scenario states it, the text of its digits: a JSON number
+// past 2^53 is not the integer it spells in every reader, so a variable or a
+// record's field of that width is stated, and answered, as a string. The text is
+// compared before the next is asked for.
+static const char *wide_digits(uint64_t value) {
+    static char text[24];
+    (void)snprintf(text, sizeof(text), "%llu", (unsigned long long)value);
+    return text;
+}
+
+static const char *wide_signed_digits(int64_t value) {
+    static char text[24];
+    (void)snprintf(text, sizeof(text), "%lld", (long long)value);
+    return text;
+}
+
+// The records of the standard merge rules (sce:std/merge), as the two machines
+// below hold them: a hybrid logical clock's stamp, a last-writer-wins cell, an
+// element of a replicated growable array and the mark of one taken out.
+#define HLC_FIELDS(N, E) E(wallTime, wide_signed_digits) N(counter) E(nodeId, wide_digits)
+#define LWW_CELL_FIELDS(N, E)                                                                                          \
+    E(row, wide_digits)                                                                                                \
+    E(col, wide_digits)                                                                                                \
+    E(value, wide_signed_digits)                                                                                       \
+    E(wallTime, wide_signed_digits)                                                                                    \
+    N(counter)                                                                                                         \
+    E(nodeId, wide_digits)
+#define RGA_NODE_FIELDS(N, E) E(key, wide_digits) E(after, wide_digits)
+#define RGA_GONE_FIELDS(N, E) E(key, wide_digits) E(by, wide_digits)
+
+// todo_peer: one copy of a shared to-do list, replayed through the afternoon the
+// world simulation ran it through, as each of the three that took part saw it.
+// Each field of a to-do is a last-writer-wins register merged by the standard
+// `lww_write`, its stamps 64-bit and crossing as their digits; a title is the text
+// of the write its cell kept; and what a copy sends the hub, and the hub the other
+// copies, is held send by send.
+#define TODO_TEXT_FIELDS(N, E) E(id, wide_digits) E(field, wide_digits) E(text, todo_peer_text_text)
+VARIABLE_READER(todo_peer, hub)
+VARIABLE_READER(todo_peer, refusals)
+
+static const char *todo_peer_text_text(sce_static_string_32_t text) {
+    static char copy[sizeof(text.data)];
+    memcpy(copy, text.data, sizeof(copy));
+    return copy;
+}
+
+RECORD_READER(todo_peer, clock, todo_peer_record_hlc_t, HLC_FIELDS)
+RECORD_LIST_READER(todo_peer, cells, todo_peer_record_lww_cell_view_t, todo_peer_record_lww_cell_t, LWW_CELL_FIELDS)
+RECORD_LIST_READER(todo_peer, texts, todo_peer_record_text_view_t, todo_peer_record_text_t, TODO_TEXT_FIELDS)
+
+static const char *todo_peer_text(void *sm, const char *name) {
+    if (strcmp(name, "node") == 0) {
+        return wide_digits(todo_peer_get_node((const todo_peer_t *)sm));
+    }
+    return NULL;
+}
+
+static const name_value_t todo_peer_states[] = {
+    {"open", TODO_PEER_STATE_OPEN},
+};
+static const variable_t todo_peer_variables[] = {
+    {"hub", todo_peer_read_hub},
+    {"refusals", todo_peer_read_refusals},
+};
+static const record_variable_t todo_peer_records[] = {RECORD_ROW(todo_peer, clock),
+                                                      RECORD_LIST_ROW(todo_peer, cells),
+                                                      RECORD_LIST_ROW(todo_peer, texts),
+                                                      {NULL, NULL, NULL, NULL}};
+STATIC_SCENARIO_PEERED(todo_peer, todo_peer_states, todo_peer_variables, todo_peer_text, no_lists, todo_peer_records)
+
+// sheet_peer: one copy of a shared sheet of numbers, replayed the same way: its
+// cells merged by `lww_write`, its rows and columns placed by `rga_insert` and
+// taken out by `rga_remove`, and its clock moved by `hlc_send` and `hlc_receive`.
+VARIABLE_READER(sheet_peer, hub)
+VARIABLE_READER(sheet_peer, orphans)
+VARIABLE_READER(sheet_peer, refusals)
+RECORD_READER(sheet_peer, clock, sheet_peer_record_hlc_t, HLC_FIELDS)
+RECORD_LIST_READER(sheet_peer, cells, sheet_peer_record_lww_cell_view_t, sheet_peer_record_lww_cell_t, LWW_CELL_FIELDS)
+RECORD_LIST_READER(sheet_peer, rows, sheet_peer_record_rga_node_view_t, sheet_peer_record_rga_node_t, RGA_NODE_FIELDS)
+RECORD_LIST_READER(sheet_peer, gone, sheet_peer_record_rga_gone_view_t, sheet_peer_record_rga_gone_t, RGA_GONE_FIELDS)
+RECORD_LIST_READER(sheet_peer, cols, sheet_peer_record_rga_node_view_t, sheet_peer_record_rga_node_t, RGA_NODE_FIELDS)
+RECORD_LIST_READER(sheet_peer, goneCols, sheet_peer_record_rga_gone_view_t, sheet_peer_record_rga_gone_t,
+                   RGA_GONE_FIELDS)
+
+static const char *sheet_peer_text(void *sm, const char *name) {
+    if (strcmp(name, "node") == 0) {
+        return wide_digits(sheet_peer_get_node((const sheet_peer_t *)sm));
+    }
+    if (strcmp(name, "lamport") == 0) {
+        return wide_digits(sheet_peer_get_lamport((const sheet_peer_t *)sm));
+    }
+    return NULL;
+}
+
+static const name_value_t sheet_peer_states[] = {
+    {"open", SHEET_PEER_STATE_OPEN},
+};
+static const variable_t sheet_peer_variables[] = {
+    {"hub", sheet_peer_read_hub},
+    {"orphans", sheet_peer_read_orphans},
+    {"refusals", sheet_peer_read_refusals},
+};
+static const record_variable_t sheet_peer_records[] = {
+    RECORD_ROW(sheet_peer, clock),     RECORD_LIST_ROW(sheet_peer, cells), RECORD_LIST_ROW(sheet_peer, rows),
+    RECORD_LIST_ROW(sheet_peer, gone), RECORD_LIST_ROW(sheet_peer, cols),  RECORD_LIST_ROW(sheet_peer, goneCols),
+    {NULL, NULL, NULL, NULL}};
+STATIC_SCENARIO_PEERED(sheet_peer, sheet_peer_states, sheet_peer_variables, sheet_peer_text, no_lists,
+                       sheet_peer_records)
+
 // What no scenario can state, because a scenario's event carries its data or is
 // a different event: a delivery that carried no payload. Content that reads one
 // runs for a payload and for nothing else — against the zeroed buffer of a
@@ -1944,6 +2158,12 @@ int main(void) {
     bad |= static_timers_scenario("static_timers", 6);
     bad |= static_timers_scenario("static_timers_stop", 5);
     bad |= sync_client_scenario("sync_client", 30);
+    bad |= todo_peer_scenario("todo_peer_alice", 13);
+    bad |= todo_peer_scenario("todo_peer_bob", 13);
+    bad |= todo_peer_scenario("todo_peer_server", 13);
+    bad |= sheet_peer_scenario("sheet_peer_alice", 18);
+    bad |= sheet_peer_scenario("sheet_peer_bob", 19);
+    bad |= sheet_peer_scenario("sheet_peer_server", 19);
     bad |= content_that_reads_a_payload_does_not_run_for_a_delivery_without_one();
     bad |= a_payload_enum_field_is_written_as_the_name_its_enum_declares();
     bad |= the_wire_writer_escapes_text_and_refuses_a_full_buffer();

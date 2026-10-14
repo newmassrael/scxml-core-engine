@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 572a4258697cb4e5e72ff4c473f572e8103d28b7053d53f63dcb2a37167bc6ae
+// source-hash: a92737f3147f50ca2cf6319055f29d7afe2c17766723037ae46a81e73e7a66df
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_real32.scxml
@@ -36,22 +36,32 @@ class StaticReal32StateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `level` datamodel variable, published (`sce:direction="out"`). */
-    var level: Float = 16777216.0f
-        private set
+    private var vLevel: Float = 16777216.0f
+
+    /** What the published `level` holds. */
+    val level: Float get() = vLevel
     /** W3C SCXML 5.2: the `tenth` datamodel variable, the machine's own. */
-    private var tenth: Float = 0.1f
+    private var vTenth: Float = 0.1f
     /** W3C SCXML 5.2: the `drift` datamodel variable, published (`sce:direction="out"`). */
-    var drift: Float = 0.0f
-        private set
+    private var vDrift: Float = 0.0f
+
+    /** What the published `drift` holds. */
+    val drift: Float get() = vDrift
     /** W3C SCXML 5.2: the `wide` datamodel variable, published (`sce:direction="out"`). */
-    var wide: Double = 0.0
-        private set
+    private var vWide: Double = 0.0
+
+    /** What the published `wide` holds. */
+    val wide: Double get() = vWide
     /** W3C SCXML 5.2: the `samples` datamodel variable, published (`sce:direction="out"`). */
-    var samples: List<Float> = emptyList()
-        private set
+    private var vSamples: List<Float> = emptyList()
+
+    /** What the published `samples` holds. */
+    val samples: List<Float> get() = vSamples
     /** W3C SCXML 5.2: the `total` datamodel variable, published (`sce:direction="out"`). */
-    var total: Float = 0.0f
-        private set
+    private var vTotal: Float = 0.0f
+
+    /** What the published `total` holds. */
+    val total: Float get() = vTotal
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -68,11 +78,11 @@ class StaticReal32StateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.level?.let { level = it }
-        params.tenth?.let { tenth = it }
-        params.drift?.let { drift = it }
-        params.wide?.let { wide = it }
-        params.total?.let { total = it }
+        params.level?.let { vLevel = it }
+        params.tenth?.let { vTenth = it }
+        params.drift?.let { vDrift = it }
+        params.wide?.let { vWide = it }
+        params.total?.let { vTotal = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -98,11 +108,11 @@ class StaticReal32StateMachine(
     )
 
     private fun currentData(): Data = Data(
-        level = level,
-        drift = drift,
-        wide = wide,
-        samples = samples,
-        total = total,
+        level = vLevel,
+        drift = vDrift,
+        wide = vWide,
+        samples = vSamples,
+        total = vTotal,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -145,12 +155,12 @@ class StaticReal32StateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "level" to SavedValues.of(level),
-            "tenth" to SavedValues.of(tenth),
-            "drift" to SavedValues.of(drift),
-            "wide" to SavedValues.of(wide),
-            "samples" to SavedValues.list(samples) { SavedValues.of(it) },
-            "total" to SavedValues.of(total),
+            "level" to SavedValues.of(vLevel),
+            "tenth" to SavedValues.of(vTenth),
+            "drift" to SavedValues.of(vDrift),
+            "wide" to SavedValues.of(vWide),
+            "samples" to SavedValues.list(vSamples) { SavedValues.of(it) },
+            "total" to SavedValues.of(vTotal),
         ),
         wallNowMs,
     )
@@ -182,12 +192,12 @@ class StaticReal32StateMachine(
         val saved4 = SavedValues.float64(saved.variable("wide"), "wide")
         val saved5 = SavedValues.list(saved.variable("samples"), "samples", 3) { e, w -> SavedValues.float32(e, w) }
         val saved6 = SavedValues.float32(saved.variable("total"), "total")
-        level = saved1
-        tenth = saved2
-        drift = saved3
-        wide = saved4
-        samples = saved5
-        total = saved6
+        vLevel = saved1
+        vTenth = saved2
+        vDrift = saved3
+        vWide = saved4
+        vSamples = saved5
+        vTotal = saved6
         enterSaved(saved, wallNowMs)
     }
 
@@ -390,51 +400,51 @@ class StaticReal32StateMachine(
             0 -> {
                 // SCE-MAP: static_real32.scxml:42 :: idle :: _transition_0
 
-            level = level + 1.0f
+            vLevel = vLevel + 1.0f
             }
             1 -> {
                 // SCE-MAP: static_real32.scxml:46 :: idle :: _transition_1
 
-            level = level / 2.0f
+            vLevel = vLevel / 2.0f
             }
             2 -> {
                 // SCE-MAP: static_real32.scxml:50 :: idle :: _transition_2
 
-            drift = tenth + 0.2f
+            vDrift = vTenth + 0.2f
             }
             3 -> {
                 // SCE-MAP: static_real32.scxml:54 :: idle :: _transition_3
 
-            wide = tenth.toDouble()
+            vWide = vTenth.toDouble()
             }
             4 -> {
                 // SCE-MAP: static_real32.scxml:61 :: idle :: _transition_4
 
-            wide = tenth.toDouble() + 0.2
+            vWide = vTenth.toDouble() + 0.2
             }
             5 -> {
                 // SCE-MAP: static_real32.scxml:65 :: idle :: _transition_5
 
-            if (if (samples.size < 3) { samples = samples + (tenth + 0.2f); false } else { true }) {
+            if (if (vSamples.size < 3) { vSamples = vSamples + (vTenth + 0.2f); false } else { true }) {
                 return
             }
             }
             6 -> {
                 // SCE-MAP: static_real32.scxml:70 :: idle :: _transition_6
 
-            if (if (samples.size < 3) { samples = samples + (wide.toFloat()); false } else { true }) {
+            if (if (vSamples.size < 3) { vSamples = vSamples + (vWide.toFloat()); false } else { true }) {
                 return
             }
             }
             7 -> {
                 // SCE-MAP: static_real32.scxml:74 :: idle :: _transition_7
 
-            total = 0.0f
+            vTotal = 0.0f
 
 
-            for (v in samples) {
+            for (v in vSamples) {
 
-            total = total + v
+            vTotal = vTotal + v
             }
             }
             else -> {}

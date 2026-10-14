@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 572a4258697cb4e5e72ff4c473f572e8103d28b7053d53f63dcb2a37167bc6ae
+// source-hash: a92737f3147f50ca2cf6319055f29d7afe2c17766723037ae46a81e73e7a66df
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_send_namelist.scxml
@@ -72,20 +72,30 @@ class StaticSendNamelistStateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `layout` datamodel variable, published (`sce:direction="out"`). */
-    var layout: StaticSendNamelistViewModeEnum = StaticSendNamelistViewModeEnum.WEEK
-        private set
+    private var vLayout: StaticSendNamelistViewModeEnum = StaticSendNamelistViewModeEnum.WEEK
+
+    /** What the published `layout` holds. */
+    val layout: StaticSendNamelistViewModeEnum get() = vLayout
     /** W3C SCXML 5.2: the `zoom` datamodel variable, published (`sce:direction="out"`). */
-    var zoom: UByte = 3.toUByte()
-        private set
+    private var vZoom: UByte = 3.toUByte()
+
+    /** What the published `zoom` holds. */
+    val zoom: UByte get() = vZoom
     /** W3C SCXML 5.2: the `received` datamodel variable, published (`sce:direction="out"`). */
-    var received: StaticSendNamelistViewModeEnum = StaticSendNamelistViewModeEnum.MONTH
-        private set
+    private var vReceived: StaticSendNamelistViewModeEnum = StaticSendNamelistViewModeEnum.MONTH
+
+    /** What the published `received` holds. */
+    val received: StaticSendNamelistViewModeEnum get() = vReceived
     /** W3C SCXML 5.2: the `level` datamodel variable, published (`sce:direction="out"`). */
-    var level: UByte = 0.toUByte()
-        private set
+    private var vLevel: UByte = 0.toUByte()
+
+    /** What the published `level` holds. */
+    val level: UByte get() = vLevel
     /** W3C SCXML 5.2: the `deliveries` datamodel variable, published (`sce:direction="out"`). */
-    var deliveries: UInt = 0.toUInt()
-        private set
+    private var vDeliveries: UInt = 0.toUInt()
+
+    /** What the published `deliveries` holds. */
+    val deliveries: UInt get() = vDeliveries
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -100,9 +110,9 @@ class StaticSendNamelistStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.zoom?.let { zoom = it }
-        params.level?.let { level = it }
-        params.deliveries?.let { deliveries = it }
+        params.zoom?.let { vZoom = it }
+        params.level?.let { vLevel = it }
+        params.deliveries?.let { vDeliveries = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -128,11 +138,11 @@ class StaticSendNamelistStateMachine(
     )
 
     private fun currentData(): Data = Data(
-        layout = layout,
-        zoom = zoom,
-        received = received,
-        level = level,
-        deliveries = deliveries,
+        layout = vLayout,
+        zoom = vZoom,
+        received = vReceived,
+        level = vLevel,
+        deliveries = vDeliveries,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -175,11 +185,11 @@ class StaticSendNamelistStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "layout" to layout.toSaved(),
-            "zoom" to SavedValues.of(zoom),
-            "received" to received.toSaved(),
-            "level" to SavedValues.of(level),
-            "deliveries" to SavedValues.of(deliveries),
+            "layout" to vLayout.toSaved(),
+            "zoom" to SavedValues.of(vZoom),
+            "received" to vReceived.toSaved(),
+            "level" to SavedValues.of(vLevel),
+            "deliveries" to SavedValues.of(vDeliveries),
         ),
         wallNowMs,
     )
@@ -210,11 +220,11 @@ class StaticSendNamelistStateMachine(
         val saved3 = StaticSendNamelistViewModeEnum.fromSaved(saved.variable("received"), "received")
         val saved4 = SavedValues.uint8(saved.variable("level"), "level")
         val saved5 = SavedValues.uint32(saved.variable("deliveries"), "deliveries")
-        layout = saved1
-        zoom = saved2
-        received = saved3
-        level = saved4
-        deliveries = saved5
+        vLayout = saved1
+        vZoom = saved2
+        vReceived = saved3
+        vLevel = saved4
+        vDeliveries = saved5
         enterSaved(saved, wallNowMs)
     }
 
@@ -418,9 +428,9 @@ class StaticSendNamelistStateMachine(
             0 -> {
                 // SCE-MAP: static_send_namelist.scxml:25 :: viewing :: _transition_0
 
-            layout = StaticSendNamelistViewModeEnum.AGENDA_LIST
+            vLayout = StaticSendNamelistViewModeEnum.AGENDA_LIST
 
-            zoom = 9.toUByte()
+            vZoom = 9.toUByte()
             }
             1 -> {
                 // SCE-MAP: static_send_namelist.scxml:29 :: viewing :: _transition_1
@@ -428,9 +438,9 @@ class StaticSendNamelistStateMachine(
 
             if (run send@{
             val sendPayload = mutableMapOf<String, Any?>()
-            putParam(sendPayload, "layout", (layout).declaredName)
+            putParam(sendPayload, "layout", (vLayout).declaredName)
 
-            putParam(sendPayload, "zoom", (zoom).toLong())
+            putParam(sendPayload, "zoom", (vZoom).toLong())
 
             val sendData = buildJsonFromParams(sendPayload)
             // W3C SCXML 6.2: send to this session's external queue
@@ -450,13 +460,13 @@ class StaticSendNamelistStateMachine(
             var paramFailed = false
             val sendPayload = mutableMapOf<String, Any?>()
             try {
-                putParam(sendPayload, "zoom", (com.sce.forge.runtime.SceChecked.add(zoom, 1.toUByte())).toLong())
+                putParam(sendPayload, "zoom", (com.sce.forge.runtime.SceChecked.add(vZoom, 1.toUByte())).toLong())
             } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
                 raisePlatformError(StaticSendNamelistEvent.Error.Execution, "<send> <param name='zoom'> could not be read")
                 paramFailed = true
             }
 
-            putParam(sendPayload, "layout", (layout).declaredName)
+            putParam(sendPayload, "layout", (vLayout).declaredName)
 
             val sendData = buildJsonFromParams(sendPayload)
             // W3C SCXML 6.2: send to this session's external queue
@@ -474,11 +484,11 @@ class StaticSendNamelistStateMachine(
                     return
                 }
 
-            received = pendingViewShownPayload!!.layout
+            vReceived = pendingViewShownPayload!!.layout
 
-            level = pendingViewShownPayload!!.zoom
+            vLevel = pendingViewShownPayload!!.zoom
 
-            if (try { deliveries = com.sce.forge.runtime.SceChecked.add(deliveries, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendNamelistEvent.Error.Execution, "<assign location='deliveries'>: an integer operation overflowed or failed"); true }) {
+            if (try { vDeliveries = com.sce.forge.runtime.SceChecked.add(vDeliveries, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendNamelistEvent.Error.Execution, "<assign location='deliveries'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }

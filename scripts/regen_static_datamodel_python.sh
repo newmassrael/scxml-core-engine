@@ -72,34 +72,67 @@ fi
 # are: a list here is one more place a new algorithm has to be remembered, and
 # one left out is a machine that imports a module nothing generated. Each
 # algorithm a machine calls is generated beside the machines as a module of its
-# own — a local one is named by its path beside the machine, a standard one by
-# its library name (`sce:std/...`).
-ALGORITHMS=()
-for source in "${SOURCES[@]}"; do
+# own. A document is named as the generator takes it — a local one by its path, a
+# standard one by its library name (`sce:std/...`) — and read for its own imports
+# where it lies: a standard one under stdlib/.
+
+# The file a document named as the generator takes it is read from.
+document_file() {
+    case "$1" in
+        sce:std/*) printf '%s\n' "stdlib/${1#sce:std/}" ;;
+        *) printf '%s\n' "$1" ;;
+    esac
+}
+
+# The documents of kind $1 that document $2 imports, each named as the generator
+# takes it: a standard one as it is written, any other beside the document that
+# imports it — which, for a standard document, is the library again.
+imports_of() {
+    local kind="$1" document="$2" import
     while IFS= read -r import; do
         case "$import" in
-            sce:*) ALGORITHMS+=("$import") ;;
-            *) ALGORITHMS+=("$(dirname "$source")/$import") ;;
+            sce:*) printf '%s\n' "$import" ;;
+            *) printf '%s\n' "$(dirname "$document")/$import" ;;
         esac
-    done < <(grep 'kind="algorithm"' "$source" | grep -o 'src="[^"]*"' | cut -d'"' -f2)
+    done < <(grep "<sce:import kind=\"$kind\"" "$(document_file "$document")" | grep -o 'src="[^"]*"' | cut -d'"' -f2)
+}
+
+# Every algorithm a machine calls, and every algorithm one of those calls in its
+# turn: an algorithm's module imports each it calls as a sibling, as a machine's
+# does.
+ALGORITHMS=()
+declare -A REACHED=()
+PENDING=()
+for source in "${SOURCES[@]}"; do
+    while IFS= read -r algorithm; do
+        PENDING+=("$algorithm")
+    done < <(imports_of algorithm "$source")
+done
+while [ "${#PENDING[@]}" -gt 0 ]; do
+    algorithm="${PENDING[0]}"
+    PENDING=("${PENDING[@]:1}")
+    if [ -n "${REACHED[$algorithm]:-}" ]; then
+        continue
+    fi
+    REACHED[$algorithm]=1
+    ALGORITHMS+=("$algorithm")
+    while IFS= read -r called; do
+        PENDING+=("$called")
+    done < <(imports_of algorithm "$algorithm")
 done
 if [ "${#ALGORITHMS[@]}" -gt 0 ]; then
     mapfile -t ALGORITHMS < <(printf '%s\n' "${ALGORITHMS[@]}" | sort -u)
 fi
 # The records an algorithm takes or returns are the payload classes of the
-# event-schemas it imports, which its module imports as siblings. Derived from the
-# algorithms, as they are from the machines, for the same reason; a standard one
-# keeps its own.
+# event-schemas it imports, which its module imports as siblings, and so does the
+# machine that holds one. Derived from the algorithms, as they are from the
+# machines, for the same reason, a standard one's as a local one's: generating a
+# standard algorithm generates none of what it imports.
 SCHEMAS=()
 for algorithm in "${ALGORITHMS[@]}"; do
-    case "$algorithm" in
-        sce:*) ;;
-        *)
-            while IFS= read -r import; do
-                SCHEMAS+=("$(dirname "$algorithm")/$import")
-            done < <(grep 'kind="event-schema"' "$algorithm" | grep -o 'src="[^"]*"' | cut -d'"' -f2)
-            ;;
-    esac
+    while IFS= read -r schema; do
+        SCHEMAS+=("$schema")
+    done < <(imports_of event-schema "$algorithm")
 done
 if [ "${#SCHEMAS[@]}" -gt 0 ]; then
     mapfile -t SCHEMAS < <(printf '%s\n' "${SCHEMAS[@]}" | sort -u)

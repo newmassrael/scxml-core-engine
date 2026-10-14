@@ -98,26 +98,30 @@ class {{ machine_name }}StateMachine(
 {# Under `sce-static` this class IS the datamodel's home: there is no engine,
    and every expression was lowered to Kotlin reading and writing these fields
    (`crate::forge::static_lowering`). Only the machine's own statements write
-   them. A variable declared `sce:direction="out"` is published — the host
-   reads it, and the snapshot carries it; every other one is private, so
-   renaming it never changes what a host was written against. #}
+   them, so every one is private, under a name of its own (`v<PascalCase id>`):
+   this class extends the engine, and a field under the author's bare name
+   would hide whatever the engine already calls by it (`clock`). A variable
+   declared `sce:direction="out"` is published — the host reads it through a
+   property of the author's spelling, and the snapshot carries it. The
+   generator gives no such property to a name the class already holds
+   (`field.reader` is none); the snapshot and a saved state carry the variable
+   all the same. #}
+{# What a host is handed of a published field: a byte string as a copy, because
+   the array is the machine's own and a host that wrote into it would change the
+   variable behind its bound; a record with a copy of each byte string it holds,
+   for the same reason; and so each record of a list. #}
+{% macro handed_out(field) -%}
+{% if field.saved_type == "bytes" %}{{ field.name }}.copyOf(){% elif field.holds_bytes and field.saved_kind == "record" %}{{ field.name }}.detached(){% elif field.holds_bytes and field.saved_kind == "record_list" %}{{ field.name }}.map { it.detached() }{% else %}{{ field.name }}{% endif %}
+{%- endmacro %}
 {% for field in static_fields %}
 {% if field.published %}
     /** W3C SCXML 5.2: the `{{ field.id }}` datamodel variable, published (`sce:direction="out"`). */
-    var {{ field.name }}: {{ field.ty }} = {{ field.init }}
-{% if field.saved_type == "bytes" %}
-        // A byte string is handed out as a copy: the array is the machine's own,
-        // and a host that wrote into it would change the variable behind its bound.
-        get() = field.copyOf()
-{% elif field.holds_bytes and field.saved_kind == "record" %}
-        // A record is handed out with a copy of each byte string it holds, for the
-        // same reason.
-        get() = field.detached()
-{% elif field.holds_bytes and field.saved_kind == "record_list" %}
-        // ... and so is each record of a list.
-        get() = field.map { it.detached() }
+    private var {{ field.name }}: {{ field.ty }} = {{ field.init }}
+{% if field.reader %}
+
+    /** What the published `{{ field.id }}` holds. */
+    val {{ field.reader }}: {{ field.ty }} get() = {{ handed_out(field) }}
 {% endif %}
-        private set
 {% else %}
     /** W3C SCXML 5.2: the `{{ field.id }}` datamodel variable, the machine's own. */
     private var {{ field.name }}: {{ field.ty }} = {{ field.init }}
@@ -142,7 +146,7 @@ class {{ machine_name }}StateMachine(
     class InvokeParams {
 {% for field in static_fields %}
 {% if field.saved_kind == 'scalar' and field.saved_type != 'bytes' %}
-        var {{ field.name }}: {{ field.ty }}? = null
+        var {{ field.id | to_camel_case }}: {{ field.ty }}? = null
 {% endif %}
 {% endfor %}
     }
@@ -151,7 +155,7 @@ class {{ machine_name }}StateMachine(
     fun acceptParams(params: InvokeParams) {
 {% for field in static_fields %}
 {% if field.saved_kind == 'scalar' and field.saved_type != 'bytes' %}
-        params.{{ field.name }}?.let { {{ field.name }} = it }
+        params.{{ field.id | to_camel_case }}?.let { {{ field.name }} = it }
 {% endif %}
 {% endfor %}
     }
@@ -161,7 +165,7 @@ class {{ machine_name }}StateMachine(
     /** The published variables as one immutable value, in declaration order. */
     data class Data(
 {% for field in static_published %}
-        val {{ field.name }}: {{ field.ty }},
+        val {{ field.id | to_camel_case }}: {{ field.ty }},
 {% endfor %}
     )
 {% endif %}
@@ -184,7 +188,7 @@ class {{ machine_name }}StateMachine(
 
     private fun currentData(): Data = Data(
 {% for field in static_published %}
-        {{ field.name }} = {{ field.name }},
+        {{ field.id | to_camel_case }} = {{ handed_out(field) }},
 {% endfor %}
     )
 {% endif %}

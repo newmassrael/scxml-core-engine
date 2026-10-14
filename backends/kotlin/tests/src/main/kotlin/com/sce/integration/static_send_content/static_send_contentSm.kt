@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 572a4258697cb4e5e72ff4c473f572e8103d28b7053d53f63dcb2a37167bc6ae
+// source-hash: a92737f3147f50ca2cf6319055f29d7afe2c17766723037ae46a81e73e7a66df
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_send_content.scxml
@@ -87,17 +87,25 @@ class StaticSendContentStateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `shown` datamodel variable, published (`sce:direction="out"`). */
-    var shown: StaticSendContentViewRecord = StaticSendContentViewRecord(layout = StaticSendContentViewModeEnum.DAY, zoom = 2.toUByte())
-        private set
+    private var vShown: StaticSendContentViewRecord = StaticSendContentViewRecord(layout = StaticSendContentViewModeEnum.DAY, zoom = 2.toUByte())
+
+    /** What the published `shown` holds. */
+    val shown: StaticSendContentViewRecord get() = vShown
     /** W3C SCXML 5.2: the `received` datamodel variable, published (`sce:direction="out"`). */
-    var received: StaticSendContentViewModeEnum = StaticSendContentViewModeEnum.MONTH
-        private set
+    private var vReceived: StaticSendContentViewModeEnum = StaticSendContentViewModeEnum.MONTH
+
+    /** What the published `received` holds. */
+    val received: StaticSendContentViewModeEnum get() = vReceived
     /** W3C SCXML 5.2: the `level` datamodel variable, published (`sce:direction="out"`). */
-    var level: UByte = 0.toUByte()
-        private set
+    private var vLevel: UByte = 0.toUByte()
+
+    /** What the published `level` holds. */
+    val level: UByte get() = vLevel
     /** W3C SCXML 5.2: the `relays` datamodel variable, published (`sce:direction="out"`). */
-    var relays: UInt = 0.toUInt()
-        private set
+    private var vRelays: UInt = 0.toUInt()
+
+    /** What the published `relays` holds. */
+    val relays: UInt get() = vRelays
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -111,8 +119,8 @@ class StaticSendContentStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.level?.let { level = it }
-        params.relays?.let { relays = it }
+        params.level?.let { vLevel = it }
+        params.relays?.let { vRelays = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -137,10 +145,10 @@ class StaticSendContentStateMachine(
     )
 
     private fun currentData(): Data = Data(
-        shown = shown,
-        received = received,
-        level = level,
-        relays = relays,
+        shown = vShown,
+        received = vReceived,
+        level = vLevel,
+        relays = vRelays,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -183,10 +191,10 @@ class StaticSendContentStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "shown" to shown.toSaved(),
-            "received" to received.toSaved(),
-            "level" to SavedValues.of(level),
-            "relays" to SavedValues.of(relays),
+            "shown" to vShown.toSaved(),
+            "received" to vReceived.toSaved(),
+            "level" to SavedValues.of(vLevel),
+            "relays" to SavedValues.of(vRelays),
         ),
         wallNowMs,
     )
@@ -216,10 +224,10 @@ class StaticSendContentStateMachine(
         val saved2 = StaticSendContentViewModeEnum.fromSaved(saved.variable("received"), "received")
         val saved3 = SavedValues.uint8(saved.variable("level"), "level")
         val saved4 = SavedValues.uint32(saved.variable("relays"), "relays")
-        shown = saved1
-        received = saved2
-        level = saved3
-        relays = saved4
+        vShown = saved1
+        vReceived = saved2
+        vLevel = saved3
+        vRelays = saved4
         enterSaved(saved, wallNowMs)
     }
 
@@ -445,11 +453,11 @@ class StaticSendContentStateMachine(
             0 -> {
                 // SCE-MAP: static_send_content.scxml:29 :: viewing :: _transition_0
 
-            if (try { shown = shown.copy(zoom = com.sce.forge.runtime.SceChecked.add(shown.zoom, 1.toUByte())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendContentEvent.Error.Execution, "<assign location='shown.zoom'>: an integer operation overflowed or failed"); true }) {
+            if (try { vShown = vShown.copy(zoom = com.sce.forge.runtime.SceChecked.add(vShown.zoom, 1.toUByte())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendContentEvent.Error.Execution, "<assign location='shown.zoom'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            shown = shown.copy(layout = StaticSendContentViewModeEnum.WEEK)
+            vShown = vShown.copy(layout = StaticSendContentViewModeEnum.WEEK)
             }
             1 -> {
                 // SCE-MAP: static_send_content.scxml:33 :: viewing :: _transition_1
@@ -457,9 +465,9 @@ class StaticSendContentStateMachine(
 
             if (run send@{
             val sendPayload = mutableMapOf<String, Any?>()
-            putParam(sendPayload, "layout", (shown.layout).declaredName)
+            putParam(sendPayload, "layout", (vShown.layout).declaredName)
 
-            putParam(sendPayload, "zoom", (shown.zoom).toLong())
+            putParam(sendPayload, "zoom", (vShown.zoom).toLong())
 
             val sendData = buildJsonFromParams(sendPayload)
             // W3C SCXML 6.2: send to this session's external queue
@@ -500,11 +508,11 @@ class StaticSendContentStateMachine(
                     return
                 }
 
-            received = pendingViewRelayedPayload!!.layout
+            vReceived = pendingViewRelayedPayload!!.layout
 
-            level = pendingViewRelayedPayload!!.zoom
+            vLevel = pendingViewRelayedPayload!!.zoom
 
-            if (try { relays = com.sce.forge.runtime.SceChecked.add(relays, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendContentEvent.Error.Execution, "<assign location='relays'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRelays = com.sce.forge.runtime.SceChecked.add(vRelays, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendContentEvent.Error.Execution, "<assign location='relays'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }

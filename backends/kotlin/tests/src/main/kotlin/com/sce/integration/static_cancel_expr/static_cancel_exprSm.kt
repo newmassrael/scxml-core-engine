@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 572a4258697cb4e5e72ff4c473f572e8103d28b7053d53f63dcb2a37167bc6ae
+// source-hash: a92737f3147f50ca2cf6319055f29d7afe2c17766723037ae46a81e73e7a66df
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_cancel_expr.scxml
@@ -44,18 +44,24 @@ class StaticCancelExprStateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `which` datamodel variable, the machine's own. */
-    private var which: String = "a"
+    private var vWhich: String = "a"
     /** W3C SCXML 5.2: the `scale` datamodel variable, the machine's own. */
-    private var scale: UInt = 3.toUInt()
+    private var vScale: UInt = 3.toUInt()
     /** W3C SCXML 5.2: the `a_fired` datamodel variable, published (`sce:direction="out"`). */
-    var aFired: UInt = 0.toUInt()
-        private set
+    private var vAFired: UInt = 0.toUInt()
+
+    /** What the published `a_fired` holds. */
+    val aFired: UInt get() = vAFired
     /** W3C SCXML 5.2: the `b_fired` datamodel variable, published (`sce:direction="out"`). */
-    var bFired: UInt = 0.toUInt()
-        private set
+    private var vBFired: UInt = 0.toUInt()
+
+    /** What the published `b_fired` holds. */
+    val bFired: UInt get() = vBFired
     /** W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`). */
-    var refusals: UInt = 0.toUInt()
-        private set
+    private var vRefusals: UInt = 0.toUInt()
+
+    /** What the published `refusals` holds. */
+    val refusals: UInt get() = vRefusals
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -72,11 +78,11 @@ class StaticCancelExprStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.which?.let { which = it }
-        params.scale?.let { scale = it }
-        params.aFired?.let { aFired = it }
-        params.bFired?.let { bFired = it }
-        params.refusals?.let { refusals = it }
+        params.which?.let { vWhich = it }
+        params.scale?.let { vScale = it }
+        params.aFired?.let { vAFired = it }
+        params.bFired?.let { vBFired = it }
+        params.refusals?.let { vRefusals = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -100,9 +106,9 @@ class StaticCancelExprStateMachine(
     )
 
     private fun currentData(): Data = Data(
-        aFired = aFired,
-        bFired = bFired,
-        refusals = refusals,
+        aFired = vAFired,
+        bFired = vBFired,
+        refusals = vRefusals,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -145,11 +151,11 @@ class StaticCancelExprStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "which" to SavedValues.of(which),
-            "scale" to SavedValues.of(scale),
-            "a_fired" to SavedValues.of(aFired),
-            "b_fired" to SavedValues.of(bFired),
-            "refusals" to SavedValues.of(refusals),
+            "which" to SavedValues.of(vWhich),
+            "scale" to SavedValues.of(vScale),
+            "a_fired" to SavedValues.of(vAFired),
+            "b_fired" to SavedValues.of(vBFired),
+            "refusals" to SavedValues.of(vRefusals),
         ),
         wallNowMs,
     )
@@ -180,11 +186,11 @@ class StaticCancelExprStateMachine(
         val saved3 = SavedValues.uint32(saved.variable("a_fired"), "a_fired")
         val saved4 = SavedValues.uint32(saved.variable("b_fired"), "b_fired")
         val saved5 = SavedValues.uint32(saved.variable("refusals"), "refusals")
-        which = saved1
-        scale = saved2
-        aFired = saved3
-        bFired = saved4
-        refusals = saved5
+        vWhich = saved1
+        vScale = saved2
+        vAFired = saved3
+        vBFired = saved4
+        vRefusals = saved5
         enterSaved(saved, wallNowMs)
     }
 
@@ -419,7 +425,7 @@ class StaticCancelExprStateMachine(
             // machine's fields now (`Action::native_sendid`); no script engine is
             // asked. An id no send holds cancels nothing; an operation that fails
             // cannot be evaluated, which raises error.execution and ends the block.
-            cancelSend(which)
+            cancelSend(vWhich)
             }
             2 -> {
                 // SCE-MAP: static_cancel_expr.scxml:36 :: idle :: _transition_2
@@ -431,7 +437,7 @@ class StaticCancelExprStateMachine(
             // cannot be evaluated, which raises error.execution and ends the block.
             if (run cancel@{
                 val sendidToCancel: String? = try {
-                    if (com.sce.forge.runtime.SceChecked.mul(scale, 2000000000.toUInt()) > 1.toUInt()) "a" else "b"
+                    if (com.sce.forge.runtime.SceChecked.mul(vScale, 2000000000.toUInt()) > 1.toUInt()) "a" else "b"
                 } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
                     null
                 }
@@ -449,35 +455,35 @@ class StaticCancelExprStateMachine(
             3 -> {
                 // SCE-MAP: static_cancel_expr.scxml:39 :: idle :: _transition_3
 
-            if (try { which = com.sce.forge.runtime.SceChecked.bounded("b", 8); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticCancelExprEvent.Error.Execution, "<assign location='which'>: an integer operation overflowed or failed"); true }) {
+            if (try { vWhich = com.sce.forge.runtime.SceChecked.bounded("b", 8); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticCancelExprEvent.Error.Execution, "<assign location='which'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             4 -> {
                 // SCE-MAP: static_cancel_expr.scxml:42 :: idle :: _transition_4
 
-            if (try { which = com.sce.forge.runtime.SceChecked.bounded("", 8); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticCancelExprEvent.Error.Execution, "<assign location='which'>: an integer operation overflowed or failed"); true }) {
+            if (try { vWhich = com.sce.forge.runtime.SceChecked.bounded("", 8); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticCancelExprEvent.Error.Execution, "<assign location='which'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             5 -> {
                 // SCE-MAP: static_cancel_expr.scxml:45 :: idle :: _transition_5
 
-            if (try { aFired = com.sce.forge.runtime.SceChecked.add(aFired, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticCancelExprEvent.Error.Execution, "<assign location='a_fired'>: an integer operation overflowed or failed"); true }) {
+            if (try { vAFired = com.sce.forge.runtime.SceChecked.add(vAFired, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticCancelExprEvent.Error.Execution, "<assign location='a_fired'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             6 -> {
                 // SCE-MAP: static_cancel_expr.scxml:48 :: idle :: _transition_6
 
-            if (try { bFired = com.sce.forge.runtime.SceChecked.add(bFired, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticCancelExprEvent.Error.Execution, "<assign location='b_fired'>: an integer operation overflowed or failed"); true }) {
+            if (try { vBFired = com.sce.forge.runtime.SceChecked.add(vBFired, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticCancelExprEvent.Error.Execution, "<assign location='b_fired'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             7 -> {
                 // SCE-MAP: static_cancel_expr.scxml:51 :: idle :: _transition_7
 
-            if (try { refusals = com.sce.forge.runtime.SceChecked.add(refusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticCancelExprEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticCancelExprEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 572a4258697cb4e5e72ff4c473f572e8103d28b7053d53f63dcb2a37167bc6ae
+// source-hash: a92737f3147f50ca2cf6319055f29d7afe2c17766723037ae46a81e73e7a66df
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_event_wildcard.scxml
@@ -30,11 +30,15 @@ class StaticEventWildcardStateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `requests` datamodel variable, published (`sce:direction="out"`). */
-    var requests: UInt = 0.toUInt()
-        private set
+    private var vRequests: UInt = 0.toUInt()
+
+    /** What the published `requests` holds. */
+    val requests: UInt get() = vRequests
     /** W3C SCXML 5.2: the `strays` datamodel variable, published (`sce:direction="out"`). */
-    var strays: UInt = 0.toUInt()
-        private set
+    private var vStrays: UInt = 0.toUInt()
+
+    /** What the published `strays` holds. */
+    val strays: UInt get() = vStrays
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -48,8 +52,8 @@ class StaticEventWildcardStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.requests?.let { requests = it }
-        params.strays?.let { strays = it }
+        params.requests?.let { vRequests = it }
+        params.strays?.let { vStrays = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -72,8 +76,8 @@ class StaticEventWildcardStateMachine(
     )
 
     private fun currentData(): Data = Data(
-        requests = requests,
-        strays = strays,
+        requests = vRequests,
+        strays = vStrays,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -116,8 +120,8 @@ class StaticEventWildcardStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "requests" to SavedValues.of(requests),
-            "strays" to SavedValues.of(strays),
+            "requests" to SavedValues.of(vRequests),
+            "strays" to SavedValues.of(vStrays),
         ),
         wallNowMs,
     )
@@ -145,8 +149,8 @@ class StaticEventWildcardStateMachine(
         beginRestore(saved, savedShape)
         val saved1 = SavedValues.uint32(saved.variable("requests"), "requests")
         val saved2 = SavedValues.uint32(saved.variable("strays"), "strays")
-        requests = saved1
-        strays = saved2
+        vRequests = saved1
+        vStrays = saved2
         enterSaved(saved, wallNowMs)
     }
 
@@ -277,14 +281,14 @@ class StaticEventWildcardStateMachine(
             0 -> {
                 // SCE-MAP: static_event_wildcard.scxml:28 :: listening :: _transition_0
 
-            if (try { requests = com.sce.forge.runtime.SceChecked.add(requests, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
+            if (try { vRequests = com.sce.forge.runtime.SceChecked.add(vRequests, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
             }
             1 -> {
                 // SCE-MAP: static_event_wildcard.scxml:31 :: listening :: _transition_1
 
-            if (try { strays = com.sce.forge.runtime.SceChecked.add(strays, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
+            if (try { vStrays = com.sce.forge.runtime.SceChecked.add(vStrays, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
             }

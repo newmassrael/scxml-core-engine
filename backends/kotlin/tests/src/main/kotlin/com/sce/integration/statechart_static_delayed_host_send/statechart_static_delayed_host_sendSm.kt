@@ -37,9 +37,9 @@ class StatechartStaticDelayedHostSendStateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `job` datamodel variable, the machine's own. */
-    private var job: UInt = 7.toUInt()
+    private var vJob: UInt = 7.toUInt()
     /** W3C SCXML 5.2: the `label` datamodel variable, the machine's own. */
-    private var label: String = "report"
+    private var vLabel: String = "report"
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -53,8 +53,8 @@ class StatechartStaticDelayedHostSendStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.job?.let { job = it }
-        params.label?.let { label = it }
+        params.job?.let { vJob = it }
+        params.label?.let { vLabel = it }
     }
 
     /**
@@ -108,8 +108,8 @@ class StatechartStaticDelayedHostSendStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "job" to SavedValues.of(job),
-            "label" to SavedValues.of(label),
+            "job" to SavedValues.of(vJob),
+            "label" to SavedValues.of(vLabel),
         ),
         wallNowMs,
     )
@@ -137,8 +137,8 @@ class StatechartStaticDelayedHostSendStateMachine(
         beginRestore(saved, savedShape)
         val saved1 = SavedValues.uint32(saved.variable("job"), "job")
         val saved2 = SavedValues.string(saved.variable("label"), "label", 16)
-        job = saved1
-        label = saved2
+        vJob = saved1
+        vLabel = saved2
         enterSaved(saved, wallNowMs)
     }
 
@@ -299,9 +299,9 @@ class StatechartStaticDelayedHostSendStateMachine(
 
             if (run send@{
             val sendPayload = mutableMapOf<String, Any?>()
-            putParam(sendPayload, "label", label)
+            putParam(sendPayload, "label", vLabel)
 
-            putParam(sendPayload, "job", (job).toLong())
+            putParam(sendPayload, "job", (vJob).toLong())
 
             val sendData = buildJsonFromParams(sendPayload)
             // The same pairs as the text a form carries (W3C SCXML C.2), so no
@@ -367,7 +367,7 @@ class StatechartStaticDelayedHostSendStateMachine(
             0 -> {
                 // SCE-MAP: statechart_static_delayed_host_send.scxml:47 :: idle :: _transition_0
 
-            if (try { job = com.sce.forge.runtime.SceChecked.add(job, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticDelayedHostSendEvent.Error.Execution, "<assign location='job'>: an integer operation overflowed or failed"); true }) {
+            if (try { vJob = com.sce.forge.runtime.SceChecked.add(vJob, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticDelayedHostSendEvent.Error.Execution, "<assign location='job'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -377,7 +377,7 @@ class StatechartStaticDelayedHostSendStateMachine(
             0 -> {
                 // SCE-MAP: statechart_static_delayed_host_send.scxml:60 :: waiting :: _transition_0
 
-            if (try { job = com.sce.forge.runtime.SceChecked.add(job, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticDelayedHostSendEvent.Error.Execution, "<assign location='job'>: an integer operation overflowed or failed"); true }) {
+            if (try { vJob = com.sce.forge.runtime.SceChecked.add(vJob, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticDelayedHostSendEvent.Error.Execution, "<assign location='job'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }

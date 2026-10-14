@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 572a4258697cb4e5e72ff4c473f572e8103d28b7053d53f63dcb2a37167bc6ae
+// source-hash: a92737f3147f50ca2cf6319055f29d7afe2c17766723037ae46a81e73e7a66df
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_record_string.scxml
@@ -73,17 +73,25 @@ class StaticRecordStringStateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `last` datamodel variable, published (`sce:direction="out"`). */
-    var last: StaticRecordStringLabelledRecord = StaticRecordStringLabelledRecord(sensor = 1.toUByte(), label = "a")
-        private set
+    private var vLast: StaticRecordStringLabelledRecord = StaticRecordStringLabelledRecord(sensor = 1.toUByte(), label = "a")
+
+    /** What the published `last` holds. */
+    val last: StaticRecordStringLabelledRecord get() = vLast
     /** W3C SCXML 5.2: the `note` datamodel variable, published (`sce:direction="out"`). */
-    var note: String = "hello"
-        private set
+    private var vNote: String = "hello"
+
+    /** What the published `note` holds. */
+    val note: String get() = vNote
     /** W3C SCXML 5.2: the `labels` datamodel variable, published (`sce:direction="out"`). */
-    var labels: List<StaticRecordStringLabelledRecord> = emptyList()
-        private set
+    private var vLabels: List<StaticRecordStringLabelledRecord> = emptyList()
+
+    /** What the published `labels` holds. */
+    val labels: List<StaticRecordStringLabelledRecord> get() = vLabels
     /** W3C SCXML 5.2: the `errors` datamodel variable, published (`sce:direction="out"`). */
-    var errors: UInt = 0.toUInt()
-        private set
+    private var vErrors: UInt = 0.toUInt()
+
+    /** What the published `errors` holds. */
+    val errors: UInt get() = vErrors
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -97,8 +105,8 @@ class StaticRecordStringStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.note?.let { note = it }
-        params.errors?.let { errors = it }
+        params.note?.let { vNote = it }
+        params.errors?.let { vErrors = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -123,10 +131,10 @@ class StaticRecordStringStateMachine(
     )
 
     private fun currentData(): Data = Data(
-        last = last,
-        note = note,
-        labels = labels,
-        errors = errors,
+        last = vLast,
+        note = vNote,
+        labels = vLabels,
+        errors = vErrors,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -169,10 +177,10 @@ class StaticRecordStringStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "last" to last.toSaved(),
-            "note" to SavedValues.of(note),
-            "labels" to SavedValues.list(labels) { it.toSaved() },
-            "errors" to SavedValues.of(errors),
+            "last" to vLast.toSaved(),
+            "note" to SavedValues.of(vNote),
+            "labels" to SavedValues.list(vLabels) { it.toSaved() },
+            "errors" to SavedValues.of(vErrors),
         ),
         wallNowMs,
     )
@@ -202,10 +210,10 @@ class StaticRecordStringStateMachine(
         val saved2 = SavedValues.string(saved.variable("note"), "note", 16)
         val saved3 = SavedValues.list(saved.variable("labels"), "labels", 3) { e, w -> StaticRecordStringLabelledRecord.fromSaved(e, w) }
         val saved4 = SavedValues.uint32(saved.variable("errors"), "errors")
-        last = saved1
-        note = saved2
-        labels = saved3
-        errors = saved4
+        vLast = saved1
+        vNote = saved2
+        vLabels = saved3
+        vErrors = saved4
         enterSaved(saved, wallNowMs)
     }
 
@@ -534,7 +542,7 @@ class StaticRecordStringStateMachine(
             event is StaticRecordStringEvent.Tally -> transitionIdleAt10
             event is StaticRecordStringEvent.Peek -> transitionIdleAt11
             event is StaticRecordStringEvent.Peeklast -> transitionIdleAt12
-            event is StaticRecordStringEvent.Isfirst && (try { com.sce.forge.runtime.SceChecked.at(labels, (0).toLong()).label == "whole" } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordStringEvent.Error.Execution, "<transition cond='labels[0].label === 'whole''>: an integer operation overflowed or failed"); false }) -> transitionIdleAt13
+            event is StaticRecordStringEvent.Isfirst && (try { com.sce.forge.runtime.SceChecked.at(vLabels, (0).toLong()).label == "whole" } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordStringEvent.Error.Execution, "<transition cond='labels[0].label === 'whole''>: an integer operation overflowed or failed"); false }) -> transitionIdleAt13
             event is StaticRecordStringEvent.Take -> transitionIdleAt14
             event is StaticRecordStringEvent.Takelast -> transitionIdleAt15
             event is StaticRecordStringEvent.Forget -> transitionIdleAt16
@@ -573,49 +581,49 @@ class StaticRecordStringStateMachine(
             0 -> {
                 // SCE-MAP: static_record_string.scxml:38 :: idle :: _transition_0
 
-            if (try { last = last.copy(label = com.sce.forge.runtime.SceChecked.bounded("abcdefgh", 8)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordStringEvent.Error.Execution, "<assign location='last.label'>: an integer operation overflowed or failed"); true }) {
+            if (try { vLast = vLast.copy(label = com.sce.forge.runtime.SceChecked.bounded("abcdefgh", 8)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordStringEvent.Error.Execution, "<assign location='last.label'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             1 -> {
                 // SCE-MAP: static_record_string.scxml:41 :: idle :: _transition_1
 
-            if (try { last = last.copy(label = com.sce.forge.runtime.SceChecked.bounded("é€é", 8)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordStringEvent.Error.Execution, "<assign location='last.label'>: an integer operation overflowed or failed"); true }) {
+            if (try { vLast = vLast.copy(label = com.sce.forge.runtime.SceChecked.bounded("é€é", 8)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordStringEvent.Error.Execution, "<assign location='last.label'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             2 -> {
                 // SCE-MAP: static_record_string.scxml:44 :: idle :: _transition_2
 
-            if (try { last = last.copy(label = com.sce.forge.runtime.SceChecked.bounded("é€éé", 8)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordStringEvent.Error.Execution, "<assign location='last.label'>: an integer operation overflowed or failed"); true }) {
+            if (try { vLast = vLast.copy(label = com.sce.forge.runtime.SceChecked.bounded("é€éé", 8)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordStringEvent.Error.Execution, "<assign location='last.label'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             3 -> {
                 // SCE-MAP: static_record_string.scxml:47 :: idle :: _transition_3
 
-            if (try { last = last.copy(label = com.sce.forge.runtime.SceChecked.bounded("a", 8)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordStringEvent.Error.Execution, "<assign location='last.label'>: an integer operation overflowed or failed"); true }) {
+            if (try { vLast = vLast.copy(label = com.sce.forge.runtime.SceChecked.bounded("a", 8)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordStringEvent.Error.Execution, "<assign location='last.label'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             4 -> {
                 // SCE-MAP: static_record_string.scxml:50 :: idle :: _transition_4
 
-            if (try { note = com.sce.forge.runtime.SceChecked.bounded("abcdefghijklmnop", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordStringEvent.Error.Execution, "<assign location='note'>: an integer operation overflowed or failed"); true }) {
+            if (try { vNote = com.sce.forge.runtime.SceChecked.bounded("abcdefghijklmnop", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordStringEvent.Error.Execution, "<assign location='note'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             5 -> {
                 // SCE-MAP: static_record_string.scxml:53 :: idle :: _transition_5
 
-            if (try { last = last.copy(label = com.sce.forge.runtime.SceChecked.bounded(note, 8)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordStringEvent.Error.Execution, "<assign location='last.label'>: an integer operation overflowed or failed"); true }) {
+            if (try { vLast = vLast.copy(label = com.sce.forge.runtime.SceChecked.bounded(vNote, 8)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordStringEvent.Error.Execution, "<assign location='last.label'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             6 -> {
                 // SCE-MAP: static_record_string.scxml:56 :: idle :: _transition_6
 
-            if (try { note = com.sce.forge.runtime.SceChecked.bounded(last.label, 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordStringEvent.Error.Execution, "<assign location='note'>: an integer operation overflowed or failed"); true }) {
+            if (try { vNote = com.sce.forge.runtime.SceChecked.bounded(vLast.label, 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordStringEvent.Error.Execution, "<assign location='note'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -625,11 +633,11 @@ class StaticRecordStringStateMachine(
                     return
                 }
 
-            if (try { last = StaticRecordStringLabelledRecord(sensor = pendingLabelledTakenPayload!!.sensor, label = com.sce.forge.runtime.SceChecked.bounded(pendingLabelledTakenPayload!!.label, 8)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordStringEvent.Error.Execution, "<assign location='last'>: an integer operation overflowed or failed"); true }) {
+            if (try { vLast = StaticRecordStringLabelledRecord(sensor = pendingLabelledTakenPayload!!.sensor, label = com.sce.forge.runtime.SceChecked.bounded(pendingLabelledTakenPayload!!.label, 8)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordStringEvent.Error.Execution, "<assign location='last'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { if (labels.size < 3) { labels = labels + (StaticRecordStringLabelledRecord(sensor = pendingLabelledTakenPayload!!.sensor, label = com.sce.forge.runtime.SceChecked.bounded(pendingLabelledTakenPayload!!.label, 8))); false } else { raisePlatformError(StaticRecordStringEvent.Error.Execution, "<sce:append target='labels'>: the list already holds its capacity of 3"); true } } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordStringEvent.Error.Execution, "<sce:append target='labels'>: an integer operation overflowed or failed"); true }) {
+            if (try { if (vLabels.size < 3) { vLabels = vLabels + (StaticRecordStringLabelledRecord(sensor = pendingLabelledTakenPayload!!.sensor, label = com.sce.forge.runtime.SceChecked.bounded(pendingLabelledTakenPayload!!.label, 8))); false } else { raisePlatformError(StaticRecordStringEvent.Error.Execution, "<sce:append target='labels'>: the list already holds its capacity of 3"); true } } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordStringEvent.Error.Execution, "<sce:append target='labels'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -639,16 +647,16 @@ class StaticRecordStringStateMachine(
                     return
                 }
 
-            if (try { last = last.copy(label = com.sce.forge.runtime.SceChecked.bounded(pendingLabelledTakenPayload!!.label, 8)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordStringEvent.Error.Execution, "<assign location='last.label'>: an integer operation overflowed or failed"); true }) {
+            if (try { vLast = vLast.copy(label = com.sce.forge.runtime.SceChecked.bounded(pendingLabelledTakenPayload!!.label, 8)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordStringEvent.Error.Execution, "<assign location='last.label'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            last = last.copy(sensor = pendingLabelledTakenPayload!!.sensor)
+            vLast = vLast.copy(sensor = pendingLabelledTakenPayload!!.sensor)
             }
             9 -> {
                 // SCE-MAP: static_record_string.scxml:73 :: idle :: _transition_9
 
-            if (if (labels.size < 3) { labels = labels + (last); false } else { raisePlatformError(StaticRecordStringEvent.Error.Execution, "<sce:append target='labels'>: the list already holds its capacity of 3"); true }) {
+            if (if (vLabels.size < 3) { vLabels = vLabels + (vLast); false } else { raisePlatformError(StaticRecordStringEvent.Error.Execution, "<sce:append target='labels'>: the list already holds its capacity of 3"); true }) {
                 return
             }
             }
@@ -656,9 +664,9 @@ class StaticRecordStringStateMachine(
                 // SCE-MAP: static_record_string.scxml:76 :: idle :: _transition_10
 
 
-            for (l in labels) {
+            for (l in vLabels) {
 
-            if (try { note = com.sce.forge.runtime.SceChecked.bounded(l.label, 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordStringEvent.Error.Execution, "<assign location='note'>: an integer operation overflowed or failed"); true }) {
+            if (try { vNote = com.sce.forge.runtime.SceChecked.bounded(l.label, 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordStringEvent.Error.Execution, "<assign location='note'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -666,47 +674,47 @@ class StaticRecordStringStateMachine(
             11 -> {
                 // SCE-MAP: static_record_string.scxml:86 :: idle :: _transition_11
 
-            if (try { note = com.sce.forge.runtime.SceChecked.bounded(com.sce.forge.runtime.SceChecked.at(labels, (0).toLong()).label, 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordStringEvent.Error.Execution, "<assign location='note'>: an integer operation overflowed or failed"); true }) {
+            if (try { vNote = com.sce.forge.runtime.SceChecked.bounded(com.sce.forge.runtime.SceChecked.at(vLabels, (0).toLong()).label, 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordStringEvent.Error.Execution, "<assign location='note'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             12 -> {
                 // SCE-MAP: static_record_string.scxml:89 :: idle :: _transition_12
 
-            if (try { note = com.sce.forge.runtime.SceChecked.bounded(com.sce.forge.runtime.SceChecked.at(labels, (com.sce.forge.runtime.SceChecked.sub((labels).size.toUInt(), 1.toUInt())).toLong()).label, 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordStringEvent.Error.Execution, "<assign location='note'>: an integer operation overflowed or failed"); true }) {
+            if (try { vNote = com.sce.forge.runtime.SceChecked.bounded(com.sce.forge.runtime.SceChecked.at(vLabels, (com.sce.forge.runtime.SceChecked.sub((vLabels).size.toUInt(), 1.toUInt())).toLong()).label, 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordStringEvent.Error.Execution, "<assign location='note'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             13 -> {
                 // SCE-MAP: static_record_string.scxml:92 :: idle :: _transition_13
 
-            if (try { note = com.sce.forge.runtime.SceChecked.bounded("first", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordStringEvent.Error.Execution, "<assign location='note'>: an integer operation overflowed or failed"); true }) {
+            if (try { vNote = com.sce.forge.runtime.SceChecked.bounded("first", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordStringEvent.Error.Execution, "<assign location='note'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             14 -> {
                 // SCE-MAP: static_record_string.scxml:99 :: idle :: _transition_14
 
-            if ((try { last = last.copy(sensor = com.sce.forge.runtime.SceChecked.at(labels, (0).toLong()).sensor); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordStringEvent.Error.Execution, "<assign location='last.sensor'>: an integer operation overflowed or failed"); true }) || (try { last = last.copy(label = com.sce.forge.runtime.SceChecked.bounded(com.sce.forge.runtime.SceChecked.at(labels, (0).toLong()).label, 8)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordStringEvent.Error.Execution, "<assign location='last.label'>: an integer operation overflowed or failed"); true })) {
+            if ((try { vLast = vLast.copy(sensor = com.sce.forge.runtime.SceChecked.at(vLabels, (0).toLong()).sensor); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordStringEvent.Error.Execution, "<assign location='last.sensor'>: an integer operation overflowed or failed"); true }) || (try { vLast = vLast.copy(label = com.sce.forge.runtime.SceChecked.bounded(com.sce.forge.runtime.SceChecked.at(vLabels, (0).toLong()).label, 8)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordStringEvent.Error.Execution, "<assign location='last.label'>: an integer operation overflowed or failed"); true })) {
                 return
             }
             }
             15 -> {
                 // SCE-MAP: static_record_string.scxml:102 :: idle :: _transition_15
 
-            if ((try { last = last.copy(sensor = com.sce.forge.runtime.SceChecked.at(labels, (com.sce.forge.runtime.SceChecked.sub((labels).size.toUInt(), 1.toUInt())).toLong()).sensor); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordStringEvent.Error.Execution, "<assign location='last.sensor'>: an integer operation overflowed or failed"); true }) || (try { last = last.copy(label = com.sce.forge.runtime.SceChecked.bounded(com.sce.forge.runtime.SceChecked.at(labels, (com.sce.forge.runtime.SceChecked.sub((labels).size.toUInt(), 1.toUInt())).toLong()).label, 8)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordStringEvent.Error.Execution, "<assign location='last.label'>: an integer operation overflowed or failed"); true })) {
+            if ((try { vLast = vLast.copy(sensor = com.sce.forge.runtime.SceChecked.at(vLabels, (com.sce.forge.runtime.SceChecked.sub((vLabels).size.toUInt(), 1.toUInt())).toLong()).sensor); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordStringEvent.Error.Execution, "<assign location='last.sensor'>: an integer operation overflowed or failed"); true }) || (try { vLast = vLast.copy(label = com.sce.forge.runtime.SceChecked.bounded(com.sce.forge.runtime.SceChecked.at(vLabels, (com.sce.forge.runtime.SceChecked.sub((vLabels).size.toUInt(), 1.toUInt())).toLong()).label, 8)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordStringEvent.Error.Execution, "<assign location='last.label'>: an integer operation overflowed or failed"); true })) {
                 return
             }
             }
             16 -> {
                 // SCE-MAP: static_record_string.scxml:105 :: idle :: _transition_16
 
-            labels = emptyList()
+            vLabels = emptyList()
             }
             17 -> {
                 // SCE-MAP: static_record_string.scxml:108 :: idle :: _transition_17
 
-            if (try { errors = com.sce.forge.runtime.SceChecked.add(errors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordStringEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
+            if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordStringEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }

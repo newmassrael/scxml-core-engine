@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
 // A shared sheet of numbers: two people, `alice` and `bob`, each with a copy of the
-// sheet (`machines/sheet_peer.scxml`), and the hub both send to, which is the same
+// sheet (the fixture `sheet_peer.scxml`), and the hub both send to, which is the same
 // document told it is the hub. The people edit cells, offline and at the same time,
 // and the question is the one a shared spreadsheet answers: do the three copies end
 // with the same sheet, and is it the sheet the edits meant.

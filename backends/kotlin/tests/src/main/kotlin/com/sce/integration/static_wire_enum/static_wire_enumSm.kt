@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 572a4258697cb4e5e72ff4c473f572e8103d28b7053d53f63dcb2a37167bc6ae
+// source-hash: a92737f3147f50ca2cf6319055f29d7afe2c17766723037ae46a81e73e7a66df
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_wire_enum.scxml
@@ -83,17 +83,25 @@ class StaticWireEnumStateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `layout` datamodel variable, published (`sce:direction="out"`). */
-    var layout: StaticWireEnumViewModeEnum = StaticWireEnumViewModeEnum.WEEK
-        private set
+    private var vLayout: StaticWireEnumViewModeEnum = StaticWireEnumViewModeEnum.WEEK
+
+    /** What the published `layout` holds. */
+    val layout: StaticWireEnumViewModeEnum get() = vLayout
     /** W3C SCXML 5.2: the `shown` datamodel variable, published (`sce:direction="out"`). */
-    var shown: StaticWireEnumViewRecord = StaticWireEnumViewRecord(layout = StaticWireEnumViewModeEnum.DAY, zoom = 2.toUByte())
-        private set
+    private var vShown: StaticWireEnumViewRecord = StaticWireEnumViewRecord(layout = StaticWireEnumViewModeEnum.DAY, zoom = 2.toUByte())
+
+    /** What the published `shown` holds. */
+    val shown: StaticWireEnumViewRecord get() = vShown
     /** W3C SCXML 5.2: the `received` datamodel variable, published (`sce:direction="out"`). */
-    var received: StaticWireEnumViewModeEnum = StaticWireEnumViewModeEnum.MONTH
-        private set
+    private var vReceived: StaticWireEnumViewModeEnum = StaticWireEnumViewModeEnum.MONTH
+
+    /** What the published `received` holds. */
+    val received: StaticWireEnumViewModeEnum get() = vReceived
     /** W3C SCXML 5.2: the `deliveries` datamodel variable, published (`sce:direction="out"`). */
-    var deliveries: UInt = 0.toUInt()
-        private set
+    private var vDeliveries: UInt = 0.toUInt()
+
+    /** What the published `deliveries` holds. */
+    val deliveries: UInt get() = vDeliveries
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -106,7 +114,7 @@ class StaticWireEnumStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.deliveries?.let { deliveries = it }
+        params.deliveries?.let { vDeliveries = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -131,10 +139,10 @@ class StaticWireEnumStateMachine(
     )
 
     private fun currentData(): Data = Data(
-        layout = layout,
-        shown = shown,
-        received = received,
-        deliveries = deliveries,
+        layout = vLayout,
+        shown = vShown,
+        received = vReceived,
+        deliveries = vDeliveries,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -177,10 +185,10 @@ class StaticWireEnumStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "layout" to layout.toSaved(),
-            "shown" to shown.toSaved(),
-            "received" to received.toSaved(),
-            "deliveries" to SavedValues.of(deliveries),
+            "layout" to vLayout.toSaved(),
+            "shown" to vShown.toSaved(),
+            "received" to vReceived.toSaved(),
+            "deliveries" to SavedValues.of(vDeliveries),
         ),
         wallNowMs,
     )
@@ -210,10 +218,10 @@ class StaticWireEnumStateMachine(
         val saved2 = StaticWireEnumViewRecord.fromSaved(saved.variable("shown"), "shown")
         val saved3 = StaticWireEnumViewModeEnum.fromSaved(saved.variable("received"), "received")
         val saved4 = SavedValues.uint32(saved.variable("deliveries"), "deliveries")
-        layout = saved1
-        shown = saved2
-        received = saved3
-        deliveries = saved4
+        vLayout = saved1
+        vShown = saved2
+        vReceived = saved3
+        vDeliveries = saved4
         enterSaved(saved, wallNowMs)
     }
 
@@ -429,7 +437,7 @@ class StaticWireEnumStateMachine(
             0 -> {
                 // SCE-MAP: static_wire_enum.scxml:33 :: viewing :: _transition_0
 
-            layout = StaticWireEnumViewModeEnum.AGENDA_LIST
+            vLayout = StaticWireEnumViewModeEnum.AGENDA_LIST
             }
             1 -> {
                 // SCE-MAP: static_wire_enum.scxml:36 :: viewing :: _transition_1
@@ -437,7 +445,7 @@ class StaticWireEnumStateMachine(
 
             if (run send@{
             val sendPayload = mutableMapOf<String, Any?>()
-            putParam(sendPayload, "layout", (layout).declaredName)
+            putParam(sendPayload, "layout", (vLayout).declaredName)
 
             putParam(sendPayload, "zoom", (3).toLong())
 
@@ -457,9 +465,9 @@ class StaticWireEnumStateMachine(
 
             if (run send@{
             val sendPayload = mutableMapOf<String, Any?>()
-            putParam(sendPayload, "layout", (shown.layout).declaredName)
+            putParam(sendPayload, "layout", (vShown.layout).declaredName)
 
-            putParam(sendPayload, "zoom", (shown.zoom).toLong())
+            putParam(sendPayload, "zoom", (vShown.zoom).toLong())
 
             val sendData = buildJsonFromParams(sendPayload)
             // W3C SCXML 6.2: send to this session's external queue
@@ -477,7 +485,7 @@ class StaticWireEnumStateMachine(
 
             if (run send@{
             val sendPayload = mutableMapOf<String, Any?>()
-            putParam(sendPayload, "layout", (if (layout == StaticWireEnumViewModeEnum.WEEK) StaticWireEnumViewModeEnum.DAY else layout).declaredName)
+            putParam(sendPayload, "layout", (if (vLayout == StaticWireEnumViewModeEnum.WEEK) StaticWireEnumViewModeEnum.DAY else vLayout).declaredName)
 
             putParam(sendPayload, "zoom", (4).toLong())
 
@@ -497,9 +505,9 @@ class StaticWireEnumStateMachine(
                     return
                 }
 
-            received = pendingViewShownPayload!!.layout
+            vReceived = pendingViewShownPayload!!.layout
 
-            if (try { deliveries = com.sce.forge.runtime.SceChecked.add(deliveries, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticWireEnumEvent.Error.Execution, "<assign location='deliveries'>: an integer operation overflowed or failed"); true }) {
+            if (try { vDeliveries = com.sce.forge.runtime.SceChecked.add(vDeliveries, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticWireEnumEvent.Error.Execution, "<assign location='deliveries'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }

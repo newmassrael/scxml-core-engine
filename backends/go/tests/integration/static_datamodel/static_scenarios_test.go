@@ -25,6 +25,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strconv"
 	"testing"
 
 	sce "github.com/newmassrael/sce-go-runtime"
@@ -32,6 +33,7 @@ import (
 	_ "github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_history"
 	_ "github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_timers"
 
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/sheet_peer"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_block_ends"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_block_ends_list"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_bytes"
@@ -85,6 +87,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_wire_enum"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_wire_wide"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/sync_client"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/todo_peer"
 )
 
 // dayRecord is a `record:Day` as a host reads it: each field through the reader
@@ -209,6 +212,96 @@ func labelledsJSON[R labelledRecord](labelleds []R) any {
 	return out
 }
 
+// A 64-bit integer as a scenario states it: the text of its digits, since a JSON
+// number past 2^53 is not the integer it spells in every reader.
+func digits(value uint64) string { return strconv.FormatUint(value, 10) }
+
+func signedDigits(value int64) string { return strconv.FormatInt(value, 10) }
+
+// hlcRecord is a `record:Hlc` (sce:std/merge/hlc_timestamp) as a host reads it: a
+// hybrid logical clock's wall time, counter and node.
+type hlcRecord interface {
+	WallTime() int64
+	Counter() uint32
+	NodeId() uint64
+}
+
+// hlcJSON is a stamp as a scenario states it: its fields by the schema's ids.
+func hlcJSON(stamp hlcRecord) any {
+	return map[string]any{"wallTime": signedDigits(stamp.WallTime()), "counter": stamp.Counter(), "nodeId": digits(stamp.NodeId())}
+}
+
+// lwwCellRecord is a `record:LwwCell` (sce:std/merge/lww_cell) as a host reads it:
+// where the cell is, the number it holds and the stamp of the write that put it
+// there.
+type lwwCellRecord interface {
+	hlcRecord
+	Row() uint64
+	Col() uint64
+	Value() int64
+}
+
+// lwwCellsJSON is a list of such cells, in order.
+func lwwCellsJSON[R lwwCellRecord](cells []R) any {
+	out := make([]any, len(cells))
+	for i, cell := range cells {
+		out[i] = map[string]any{
+			"row": digits(cell.Row()), "col": digits(cell.Col()), "value": signedDigits(cell.Value()),
+			"wallTime": signedDigits(cell.WallTime()), "counter": cell.Counter(), "nodeId": digits(cell.NodeId()),
+		}
+	}
+	return out
+}
+
+// rgaNodeRecord is a `record:RgaNode` (sce:std/merge/rga_node) as a host reads it:
+// an element's id and the id of the one it was put in after.
+type rgaNodeRecord interface {
+	Key() uint64
+	After() uint64
+}
+
+// rgaNodesJSON is a list of such elements, in order.
+func rgaNodesJSON[R rgaNodeRecord](nodes []R) any {
+	out := make([]any, len(nodes))
+	for i, node := range nodes {
+		out[i] = map[string]any{"key": digits(node.Key()), "after": digits(node.After())}
+	}
+	return out
+}
+
+// rgaGoneRecord is a `record:RgaGone` (sce:std/merge/rga_gone) as a host reads it:
+// the id of an element taken out and the node that took it out.
+type rgaGoneRecord interface {
+	Key() uint64
+	By() uint64
+}
+
+// rgaGonesJSON is a list of such removals, in order.
+func rgaGonesJSON[R rgaGoneRecord](gones []R) any {
+	out := make([]any, len(gones))
+	for i, gone := range gones {
+		out[i] = map[string]any{"key": digits(gone.Key()), "by": digits(gone.By())}
+	}
+	return out
+}
+
+// todoTextRecord is a `record:Text` (todo_text) as a host reads it: which to-do,
+// which field of it, and the text the field holds.
+type todoTextRecord interface {
+	Id() uint64
+	Field() uint64
+	Text() string
+}
+
+// todoTextsJSON is a list of such texts, in order.
+func todoTextsJSON[R todoTextRecord](texts []R) any {
+	out := make([]any, len(texts))
+	for i, text := range texts {
+		out[i] = map[string]any{"id": digits(text.Id()), "field": digits(text.Field()), "text": text.Text()}
+	}
+	return out
+}
+
 // scenarioDir is where the scenarios live, from this package's directory.
 const scenarioDir = "../../../../../sce-build/tests/fixtures/static_datamodel/scenarios"
 
@@ -234,6 +327,27 @@ type machine struct {
 	// document gives the action and its arguments in the order the document gives
 	// them. Nil for a machine whose host is not one that records.
 	hostCalls func() []any
+	// sent is what the machine sent its Mesh peers (a `<send target="#name">`)
+	// since it was last asked, oldest first, each as a scenario's `sent` writes it:
+	// the target as the document writes it, the event's name, and the event's data
+	// where it has any. Nil for a machine whose driver records none.
+	sent func() []any
+}
+
+// sentToPeer is one Mesh send as a scenario's `sent` writes it. The data is the
+// JSON value the request's text spells; a text that is not JSON is kept under a
+// member no scenario states, so the step that reads it fails on it.
+func sentToPeer(request sce.HostSendRequest) any {
+	entry := map[string]any{"target": request.Target, "event": request.EventName}
+	if request.EventData != "" {
+		var data any
+		if err := json.Unmarshal([]byte(request.EventData), &data); err != nil {
+			entry["data that is not JSON"] = request.EventData
+		} else {
+			entry["data"] = data
+		}
+	}
+	return entry
 }
 
 // settleTicks is how many rounds a host gives a machine that needs `Tick` after
@@ -251,6 +365,15 @@ func drive[S interface {
 }, E comparable](policy sce.StatePolicy[S, E], variables map[string]func() any) machine {
 	engine := sce.NewEngine[S, E](policy)
 	engine.SetClock(sce.NewManualClock(0))
+	// A machine with no Mesh router fails each send to a peer as error.execution,
+	// so the router that records them is in place before the machine starts: what
+	// its start sends belongs to the first step. A machine that sends to no peer
+	// never reaches it.
+	var sent []any
+	engine.RegisterMeshRouter(func(request sce.HostSendRequest) []sce.HostSendResponse {
+		sent = append(sent, sentToPeer(request))
+		return nil
+	})
 	engine.Initialize()
 	// The generated policy says which call the machine needs: `Step` drains the
 	// queues and nothing else, and a machine with a delayed send or a child
@@ -306,6 +429,15 @@ func drive[S interface {
 		ended:     engine.IsInFinalState,
 		donedata:  engine.DonedataAtFinal,
 		variables: variables,
+		// The sends made since it was last called, oldest first, and forgets them.
+		sent: func() []any {
+			taken := sent
+			sent = nil
+			if taken == nil {
+				return []any{}
+			}
+			return taken
+		},
 	}
 }
 
@@ -362,6 +494,7 @@ func replay(t *testing.T, name string, m machine) {
 				Donedata      any            `json:"donedata"`
 				Variables     map[string]any `json:"variables"`
 				HostCalls     *[]any         `json:"host_calls"`
+				Sent          *[]any         `json:"sent"`
 			} `json:"expect"`
 		} `json:"steps"`
 	}
@@ -398,6 +531,21 @@ func replay(t *testing.T, name string, m machine) {
 				t.Errorf("%s: this driver records no host calls, so it cannot hold a step to them", where())
 			} else if !reflect.DeepEqual(asked, any(*step.Expect.HostCalls)) {
 				t.Errorf("%s: the machine asked its host %v, not %v", where(), asked, *step.Expect.HostCalls)
+			}
+		}
+		// What the machine sent its Mesh peers in this step, read on every step for
+		// the reason the host calls are. The order of the sends is part of the
+		// answer; the order a send's data spells its members in is not, and both
+		// sides are JSON values here.
+		var sent any
+		if m.sent != nil {
+			sent = asJSON(t, m.sent())
+		}
+		if step.Expect.Sent != nil {
+			if m.sent == nil {
+				t.Errorf("%s: this driver records no sends to peers, so it cannot hold a step to them", where())
+			} else if !reflect.DeepEqual(sent, any(*step.Expect.Sent)) {
+				t.Errorf("%s: the machine sent its peers %v, not %v", where(), sent, *step.Expect.Sent)
 			}
 		}
 		if step.Expect.Ended {
@@ -1320,6 +1468,61 @@ func TestASyncRunIsComposedOfTheStandardSyncRules(t *testing.T) {
 		"pages":       func() any { return policy.Pages() },
 		"refusals":    func() any { return policy.Refusals() },
 	}))
+}
+
+// todoCopy is one copy of the shared to-do list, as a scenario reads it.
+func todoCopy() machine {
+	policy := todo_peer.NewTodoPeerPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	return drive[todo_peer.TodoPeerState, todo_peer.TodoPeerEvent](&policy, map[string]func() any{
+		"node":     func() any { return digits(policy.Node()) },
+		"hub":      func() any { return policy.Hub() },
+		"clock":    func() any { return hlcJSON(policy.Clock()) },
+		"cells":    func() any { return lwwCellsJSON(policy.Cells()) },
+		"texts":    func() any { return todoTextsJSON(policy.Texts()) },
+		"refusals": func() any { return policy.Refusals() },
+	})
+}
+
+// A copy of a shared to-do list is replayed through the afternoon the world
+// simulation ran it through, as each of the three that took part saw it: every
+// event it was given, what it held after each, and what it sent its peers. Each
+// field of a to-do is a last-writer-wins register merged by the standard
+// `lww_write`, its stamps 64-bit and crossing as their digits, and a title is the
+// text of the write its cell kept.
+func TestACopyOfASharedTodoListIsReplayedAsEachPeerSawIt(t *testing.T) {
+	t.Run("alice", func(t *testing.T) { replay(t, "todo_peer_alice", todoCopy()) })
+	t.Run("bob", func(t *testing.T) { replay(t, "todo_peer_bob", todoCopy()) })
+	t.Run("the hub", func(t *testing.T) { replay(t, "todo_peer_server", todoCopy()) })
+}
+
+// sheetCopy is one copy of the shared sheet, as a scenario reads it.
+func sheetCopy() machine {
+	policy := sheet_peer.NewSheetPeerPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	return drive[sheet_peer.SheetPeerState, sheet_peer.SheetPeerEvent](&policy, map[string]func() any{
+		"node":     func() any { return digits(policy.Node()) },
+		"hub":      func() any { return policy.Hub() },
+		"clock":    func() any { return hlcJSON(policy.Clock()) },
+		"cells":    func() any { return lwwCellsJSON(policy.Cells()) },
+		"rows":     func() any { return rgaNodesJSON(policy.Rows()) },
+		"gone":     func() any { return rgaGonesJSON(policy.Gone()) },
+		"cols":     func() any { return rgaNodesJSON(policy.Cols()) },
+		"goneCols": func() any { return rgaGonesJSON(policy.GoneCols()) },
+		"lamport":  func() any { return digits(policy.Lamport()) },
+		"orphans":  func() any { return policy.Orphans() },
+		"refusals": func() any { return policy.Refusals() },
+	})
+}
+
+// A copy of a shared sheet of numbers is replayed the same way: its cells merged
+// by the standard `lww_write`, its rows and columns placed by `rga_insert` and
+// taken out by `rga_remove`, and its clock moved by `hlc_send` and `hlc_receive`,
+// with what the hub passes on to the other copies held send by send.
+func TestACopyOfASharedSheetIsReplayedAsEachPeerSawIt(t *testing.T) {
+	t.Run("alice", func(t *testing.T) { replay(t, "sheet_peer_alice", sheetCopy()) })
+	t.Run("bob", func(t *testing.T) { replay(t, "sheet_peer_bob", sheetCopy()) })
+	t.Run("the hub", func(t *testing.T) { replay(t, "sheet_peer_server", sheetCopy()) })
 }
 
 // An error ends the block it stands in (W3C SCXML 4.9): the statements after a

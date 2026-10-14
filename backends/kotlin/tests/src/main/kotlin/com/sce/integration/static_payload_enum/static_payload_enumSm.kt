@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 572a4258697cb4e5e72ff4c473f572e8103d28b7053d53f63dcb2a37167bc6ae
+// source-hash: a92737f3147f50ca2cf6319055f29d7afe2c17766723037ae46a81e73e7a66df
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_payload_enum.scxml
@@ -64,17 +64,25 @@ class StaticPayloadEnumStateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `layout` datamodel variable, published (`sce:direction="out"`). */
-    var layout: StaticPayloadEnumViewModeEnum = StaticPayloadEnumViewModeEnum.MONTH
-        private set
+    private var vLayout: StaticPayloadEnumViewModeEnum = StaticPayloadEnumViewModeEnum.MONTH
+
+    /** What the published `layout` holds. */
+    val layout: StaticPayloadEnumViewModeEnum get() = vLayout
     /** W3C SCXML 5.2: the `zoom` datamodel variable, published (`sce:direction="out"`). */
-    var zoom: UByte = 0.toUByte()
-        private set
+    private var vZoom: UByte = 0.toUByte()
+
+    /** What the published `zoom` holds. */
+    val zoom: UByte get() = vZoom
     /** W3C SCXML 5.2: the `agenda` datamodel variable, published (`sce:direction="out"`). */
-    var agenda: Boolean = false
-        private set
+    private var vAgenda: Boolean = false
+
+    /** What the published `agenda` holds. */
+    val agenda: Boolean get() = vAgenda
     /** W3C SCXML 5.2: the `shown` datamodel variable, published (`sce:direction="out"`). */
-    var shown: UInt = 0.toUInt()
-        private set
+    private var vShown: UInt = 0.toUInt()
+
+    /** What the published `shown` holds. */
+    val shown: UInt get() = vShown
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -89,9 +97,9 @@ class StaticPayloadEnumStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.zoom?.let { zoom = it }
-        params.agenda?.let { agenda = it }
-        params.shown?.let { shown = it }
+        params.zoom?.let { vZoom = it }
+        params.agenda?.let { vAgenda = it }
+        params.shown?.let { vShown = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -116,10 +124,10 @@ class StaticPayloadEnumStateMachine(
     )
 
     private fun currentData(): Data = Data(
-        layout = layout,
-        zoom = zoom,
-        agenda = agenda,
-        shown = shown,
+        layout = vLayout,
+        zoom = vZoom,
+        agenda = vAgenda,
+        shown = vShown,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -162,10 +170,10 @@ class StaticPayloadEnumStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "layout" to layout.toSaved(),
-            "zoom" to SavedValues.of(zoom),
-            "agenda" to SavedValues.of(agenda),
-            "shown" to SavedValues.of(shown),
+            "layout" to vLayout.toSaved(),
+            "zoom" to SavedValues.of(vZoom),
+            "agenda" to SavedValues.of(vAgenda),
+            "shown" to SavedValues.of(vShown),
         ),
         wallNowMs,
     )
@@ -195,10 +203,10 @@ class StaticPayloadEnumStateMachine(
         val saved2 = SavedValues.uint8(saved.variable("zoom"), "zoom")
         val saved3 = SavedValues.bool(saved.variable("agenda"), "agenda")
         val saved4 = SavedValues.uint32(saved.variable("shown"), "shown")
-        layout = saved1
-        zoom = saved2
-        agenda = saved3
-        shown = saved4
+        vLayout = saved1
+        vZoom = saved2
+        vAgenda = saved3
+        vShown = saved4
         enterSaved(saved, wallNowMs)
     }
 
@@ -377,13 +385,13 @@ class StaticPayloadEnumStateMachine(
                     return
                 }
 
-            agenda = true
+            vAgenda = true
 
-            layout = pendingViewShownPayload!!.layout
+            vLayout = pendingViewShownPayload!!.layout
 
-            zoom = pendingViewShownPayload!!.zoom
+            vZoom = pendingViewShownPayload!!.zoom
 
-            if (try { shown = com.sce.forge.runtime.SceChecked.add(shown, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
+            if (try { vShown = com.sce.forge.runtime.SceChecked.add(vShown, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
             }
@@ -393,13 +401,13 @@ class StaticPayloadEnumStateMachine(
                     return
                 }
 
-            agenda = false
+            vAgenda = false
 
-            layout = pendingViewShownPayload!!.layout
+            vLayout = pendingViewShownPayload!!.layout
 
-            zoom = pendingViewShownPayload!!.zoom
+            vZoom = pendingViewShownPayload!!.zoom
 
-            if (try { shown = com.sce.forge.runtime.SceChecked.add(shown, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
+            if (try { vShown = com.sce.forge.runtime.SceChecked.add(vShown, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
             }

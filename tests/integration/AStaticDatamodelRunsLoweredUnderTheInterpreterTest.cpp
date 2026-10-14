@@ -26,6 +26,7 @@
 // constructs have no lowering yet is refused with a typed diagnostic naming
 // the construct, and starts being replayed the day the lowering covers it.
 
+#include "common/SendHelper.h"
 #include "events/EventDispatcherImpl.h"
 #include "events/EventSchedulerImpl.h"
 #include "events/EventTargetFactoryImpl.h"
@@ -160,9 +161,145 @@ LoweredSet lowerSet(const std::filesystem::path &fixture, const std::filesystem:
 
 /// Whether a value the script engine holds is the scenario's. Both are read
 /// as JSON, so `253` and `253.0`, or `true` and `true`, are the same value.
+///
+/// A 64-bit integer is a Number in the Interpreter's data model, and the text
+/// of its digits in a scenario written from a saved state (a JSON number past
+/// 2^53 is not exact everywhere). So an integer the engine holds matches that
+/// text of the same integer, wherever in a record or a list it stands;
+/// everything else must be equal as written.
 bool holds(const nlohmann::json &got, const nlohmann::json &want) {
+    if (want.is_string() && got.is_number_integer()) {
+        return got.dump() == want.get<std::string>();
+    }
+    if (want.is_array() && got.is_array()) {
+        if (got.size() != want.size()) {
+            return false;
+        }
+        for (std::size_t n = 0; n < want.size(); ++n) {
+            if (!holds(got[n], want[n])) {
+                return false;
+            }
+        }
+        return true;
+    }
+    if (want.is_object() && got.is_object()) {
+        if (got.size() != want.size()) {
+            return false;
+        }
+        for (const auto &[name, value] : want.items()) {
+            if (!got.contains(name) || !holds(got[name], value)) {
+                return false;
+            }
+        }
+        return true;
+    }
     return got == want;
 }
+
+/// What a machine sent its Mesh peers (`<send target="#name">`), kept in the
+/// order it was sent. Written where the send is delivered and read by the test,
+/// under one lock.
+class SentToPeers {
+public:
+    void record(const EventDescriptor &event) {
+        nlohmann::json send = {{"target", event.target}, {"event", event.eventName}};
+        // The data the receiving session would read as `_event.data`, as the JSON
+        // value of its text; a send that carried none states no data.
+        const std::string data = event.payload();
+        if (!data.empty()) {
+            send["data"] = nlohmann::json::parse(data, nullptr, false);
+        }
+        std::lock_guard<std::mutex> lock(mutex_);
+        sent_.push_back(std::move(send));
+    }
+
+    /// The sends made since this was last called, oldest first, each as a
+    /// scenario's `sent` writes it: `{"target": …, "event": …, "data": …}`.
+    nlohmann::json take() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        nlohmann::json taken = std::move(sent_);
+        sent_ = nlohmann::json::array();
+        return taken;
+    }
+
+private:
+    std::mutex mutex_;
+    nlohmann::json sent_ = nlohmann::json::array();
+};
+
+/// The target of a send to a Mesh peer: it writes the send down and delivers it
+/// to no one, because the peer is not there. What a scenario holds a step to is
+/// that the machine asked for the send.
+class PeerTarget : public IEventTarget {
+public:
+    PeerTarget(std::shared_ptr<SentToPeers> sent, std::string peer) : sent_(std::move(sent)), peer_(std::move(peer)) {}
+
+    std::future<SendResult> send(const EventDescriptor &event) override {
+        sent_->record(event);
+        std::promise<SendResult> accepted;
+        accepted.set_value(SendResult::success(event.sendId));
+        return accepted.get_future();
+    }
+
+    std::string getTargetType() const override {
+        return "mesh";
+    }
+
+    bool canHandle(const std::string &targetUri) const override {
+        return targetUri == peer_;
+    }
+
+    std::vector<std::string> validate() const override {
+        return {};
+    }
+
+    std::string getDebugInfo() const override {
+        return "PeerTarget(" + peer_ + ")";
+    }
+
+private:
+    std::shared_ptr<SentToPeers> sent_;
+    std::string peer_;
+};
+
+/// A target factory that answers a Mesh target with a `PeerTarget` and leaves
+/// every other target to the factory it wraps.
+///
+/// The Interpreter has no Mesh transport to hand a send to: its own factory
+/// reads `#name` as a target with no scheme, which it takes for the sending
+/// session's internal queue, so a machine would take what it sent a peer
+/// itself. The send is caught at the target and not at the dispatcher, because
+/// the target is where a send is delivered: at once for an immediate one, and
+/// when it is due for a delayed one.
+class PeerRecordingTargetFactory : public IEventTargetFactory {
+public:
+    PeerRecordingTargetFactory(std::shared_ptr<IEventTargetFactory> inner, std::shared_ptr<SentToPeers> sent)
+        : inner_(std::move(inner)), sent_(std::move(sent)) {}
+
+    std::shared_ptr<IEventTarget> createTarget(const std::string &targetUri, const std::string &sessionId) override {
+        if (SendHelper::isMeshTarget(targetUri)) {
+            return std::make_shared<PeerTarget>(sent_, targetUri);
+        }
+        return inner_->createTarget(targetUri, sessionId);
+    }
+
+    void registerTargetType(const std::string &scheme,
+                            std::function<std::shared_ptr<IEventTarget>(const std::string &)> creator) override {
+        inner_->registerTargetType(scheme, std::move(creator));
+    }
+
+    bool isSchemeSupported(const std::string &scheme) const override {
+        return inner_->isSchemeSupported(scheme);
+    }
+
+    std::vector<std::string> getSupportedSchemes() const override {
+        return inner_->getSupportedSchemes();
+    }
+
+private:
+    std::shared_ptr<IEventTargetFactory> inner_;
+    std::shared_ptr<SentToPeers> sent_;
+};
 
 /// A host that performs every operation and records each call as the JSON of
 /// its arguments. A child session performs its actions on a thread of its own
@@ -245,8 +382,10 @@ protected:
     /// the Interpreter raises error.execution for a `<send>`, as for a send with
     /// nowhere to go, and a child session has no way to answer its parent. The
     /// events a machine sends itself are queued, and run when the raiser is
-    /// asked to; the raiser is returned for that.
-    std::shared_ptr<EventRaiserImpl> wire(StateMachine &machine) {
+    /// asked to; the raiser is returned for that. A replay hands in the list its
+    /// machine's sends to Mesh peers are written to, and those are delivered to
+    /// no one; without one a target is the Interpreter's own to resolve.
+    std::shared_ptr<EventRaiserImpl> wire(StateMachine &machine, std::shared_ptr<SentToPeers> sentToPeers = nullptr) {
         auto scheduler = std::make_shared<EventSchedulerImpl>(
             [](const EventDescriptor &event, std::shared_ptr<IEventTarget> target, const std::string &) -> bool {
                 try {
@@ -259,8 +398,11 @@ protected:
         eventRaiser->setScheduler(scheduler);
         eventRaiser->setImmediateMode(false);
         machine.setEventRaiser(eventRaiser);
-        machine.setEventDispatcher(
-            std::make_shared<EventDispatcherImpl>(scheduler, std::make_shared<EventTargetFactoryImpl>(eventRaiser)));
+        std::shared_ptr<IEventTargetFactory> targets = std::make_shared<EventTargetFactoryImpl>(eventRaiser);
+        if (sentToPeers) {
+            targets = std::make_shared<PeerRecordingTargetFactory>(std::move(targets), std::move(sentToPeers));
+        }
+        machine.setEventDispatcher(std::make_shared<EventDispatcherImpl>(scheduler, std::move(targets)));
         return eventRaiser;
     }
 
@@ -290,7 +432,11 @@ protected:
         // step's `host_calls` is read from. A machine with no action never asks it.
         const auto host = std::make_shared<RecordingHost>();
         machine->setNativeActionHost(host);
-        const auto eventRaiser = wire(*machine);
+        // What the machine sends its Mesh peers, which a step's `sent` is read
+        // from. Wired before the machine starts, because its first entry can
+        // already send.
+        const auto sentToPeers = std::make_shared<SentToPeers>();
+        const auto eventRaiser = wire(*machine, sentToPeers);
         ASSERT_TRUE(machine->loadSCXMLFromString(document)) << "the Interpreter does not load the lowered document";
         ASSERT_TRUE(machine->start());
         eventRaiser->processQueuedEvents();
@@ -321,6 +467,12 @@ protected:
             const auto asked = host->take();
             if (expect.contains("host_calls")) {
                 EXPECT_EQ(asked, expect.at("host_calls")) << "what the machine asked of its host";
+            }
+            // What the machine sent its Mesh peers in this step, taken on every
+            // step for the same reason; compared as values, in the order sent.
+            const auto sent = sentToPeers->take();
+            if (expect.contains("sent")) {
+                EXPECT_EQ(sent, expect.at("sent")) << "what the machine sent its peers";
             }
             // A machine that ended in a top-level <final> has no saved state
             // to read on the generated backends — the save refuses one — so
@@ -422,6 +574,15 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheInterpreterDoesWha
     // ... and one carried by a `<param>` and a `<donedata>`, as its Latin-1 text.
     EXPECT_NE(std::find(replayed.begin(), replayed.end(), "static_bytes_wire"), replayed.end())
         << "static_bytes_wire was not replayed: a byte string as a param has no lowering for the Interpreter";
+    // ... and the copies of a shared list and a shared sheet, composed of the standard
+    // merge rules: each holds lists of records with 64-bit fields and sends to its
+    // Mesh peers, which its scenario states step by step.
+    for (const char *copy : {"todo_peer_alice", "todo_peer_bob", "todo_peer_server", "sheet_peer_alice",
+                             "sheet_peer_bob", "sheet_peer_server"}) {
+        EXPECT_NE(std::find(replayed.begin(), replayed.end(), copy), replayed.end())
+            << copy << " was not replayed: a copy that merges with the standard rules has no lowering for the "
+            << "Interpreter";
+    }
     for (const auto &name : notYetLowered) {
         RecordProperty("not_yet_lowered_" + name, "refused by sce-codegen lower");
     }

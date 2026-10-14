@@ -123,36 +123,100 @@ done
 # too), and an algorithm's package is `com.sce.generated.<snake>` whatever
 # the machine's prefix — the package the machine's import line names.
 ALGORITHM_ROOT="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/generated"
-# algorithm_days_in_month: called from static_record's guard. algorithm_day_run:
-# its list is what static_list_assign takes whole.
-ALGORITHMS=(days_in_month day_run day_repeat ledger_add ledger_total ledger_amount ledger_bump ledger_ids)
-# The records static_state_algorithm hands those algorithms and takes back: an
-# algorithm's file imports the package of each, which is named for the schema.
-SCHEMAS=(schema_entry schema_total)
-for schema in "${SCHEMAS[@]}"; do
-    "$CODEGEN" generate "$INPUT_ROOT/$schema.scxml" -l kotlin -o "$TMP/$schema/"
-    dir="$ALGORITHM_ROOT/$schema"
-    mkdir -p "$dir"
-    find "$dir" -maxdepth 1 -name '*.kt' -delete
-    cp "$TMP/$schema"/*.kt "$dir/"
+#
+# Derived from what the machines import, for the reason the machines are: a list
+# here was one more place a new algorithm had to be remembered, and one left out
+# is a machine that imports a package nothing generated. A document is named as
+# the generator takes it — a local one by its path, a standard one by its library
+# name (`sce:std/...`) — and read for its own imports where it lies: a standard
+# one under stdlib/.
+
+# The file a document named as the generator takes it is read from.
+document_file() {
+    case "$1" in
+        sce:std/*) printf '%s\n' "stdlib/${1#sce:std/}" ;;
+        *) printf '%s\n' "$1" ;;
+    esac
+}
+
+# The documents of kind $1 that document $2 imports, each named as the generator
+# takes it: a standard one as it is written, any other beside the document that
+# imports it — which, for a standard document, is the library again.
+imports_of() {
+    local kind="$1" document="$2" import
+    while IFS= read -r import; do
+        case "$import" in
+            sce:*) printf '%s\n' "$import" ;;
+            *) printf '%s\n' "$(dirname "$document")/$import" ;;
+        esac
+    done < <(grep "<sce:import kind=\"$kind\"" "$(document_file "$document")" | grep -o 'src="[^"]*"' | cut -d'"' -f2)
+}
+
+# Every algorithm a machine calls, and every algorithm one of those calls in its
+# turn: an algorithm's file imports the package of each it calls, as a machine's
+# does.
+ALGORITHMS=()
+declare -A REACHED=()
+PENDING=()
+for machine in "${MACHINES[@]}"; do
+    while IFS= read -r algorithm; do
+        PENDING+=("$algorithm")
+    done < <(imports_of algorithm "$INPUT_ROOT/$machine.scxml")
 done
+while [ "${#PENDING[@]}" -gt 0 ]; do
+    algorithm="${PENDING[0]}"
+    PENDING=("${PENDING[@]:1}")
+    if [ -n "${REACHED[$algorithm]:-}" ]; then
+        continue
+    fi
+    REACHED[$algorithm]=1
+    ALGORITHMS+=("$algorithm")
+    while IFS= read -r called; do
+        PENDING+=("$called")
+    done < <(imports_of algorithm "$algorithm")
+done
+if [ "${#ALGORITHMS[@]}" -gt 0 ]; then
+    mapfile -t ALGORITHMS < <(printf '%s\n' "${ALGORITHMS[@]}" | sort -u)
+fi
+# The records a machine hands those algorithms and takes back are the payload
+# classes of the event-schemas an algorithm imports: its file imports the package
+# of each, which is named for the schema, and so does the machine that holds one.
+SCHEMAS=()
 for algorithm in "${ALGORITHMS[@]}"; do
-    "$CODEGEN" generate "$INPUT_ROOT/algorithm_$algorithm.scxml" -l kotlin -o "$TMP/algorithm_$algorithm/"
-    dir="$ALGORITHM_ROOT/$algorithm"
-    mkdir -p "$dir"
-    find "$dir" -maxdepth 1 -name '*.kt' -delete
-    cp "$TMP/algorithm_$algorithm"/*.kt "$dir/"
+    while IFS= read -r schema; do
+        SCHEMAS+=("$schema")
+    done < <(imports_of event-schema "$algorithm")
 done
-# The standard algorithms sync_client imports, by their library names, each
-# in the package its name gives, as a local one is.
-STD_ALGORITHMS=(sync/sync_failure sync/sync_retry_at sync/sync_delete_outcome sync/sync_upload_outcome)
-for algorithm in "${STD_ALGORITHMS[@]}"; do
-    name="${algorithm##*/}"
-    "$CODEGEN" generate "sce:std/$algorithm.scxml" -l kotlin -o "$TMP/std_$name/"
-    dir="$ALGORITHM_ROOT/$name"
-    mkdir -p "$dir"
-    find "$dir" -maxdepth 1 -name '*.kt' -delete
-    cp "$TMP/std_$name"/*.kt "$dir/"
+if [ "${#SCHEMAS[@]}" -gt 0 ]; then
+    mapfile -t SCHEMAS < <(printf '%s\n' "${SCHEMAS[@]}" | sort -u)
+fi
+
+# A generated file's directory is the last name of the package it declares, which
+# the generator takes from the document's own name and not from the path it was
+# read from.
+PACKAGES=()
+install_generated() {
+    local staged="$1" generated package dir
+    for generated in "$staged"/*.kt; do
+        package="$(sed -n 's/^package com\.sce\.generated\.\([A-Za-z0-9_]*\)$/\1/p' "$generated")"
+        if [ -z "$package" ]; then
+            echo "error: $generated declares no com.sce.generated package" >&2
+            exit 1
+        fi
+        dir="$ALGORITHM_ROOT/$package"
+        mkdir -p "$dir"
+        find "$dir" -maxdepth 1 -name '*.kt' -delete
+        cp "$generated" "$dir/"
+        PACKAGES+=("$package")
+    done
+}
+for i in "${!SCHEMAS[@]}"; do
+    "$CODEGEN" generate "${SCHEMAS[$i]}" -l kotlin -o "$TMP/schema_$i/"
+    install_generated "$TMP/schema_$i"
+done
+for i in "${!ALGORITHMS[@]}"; do
+    "$CODEGEN" generate "${ALGORITHMS[$i]}" -l kotlin -o "$TMP/algorithm_$i/"
+    install_generated "$TMP/algorithm_$i"
 done
 
-echo "Regenerated: ${MACHINES[*]} under $GENERATED_ROOT/ and ${SCHEMAS[*]} ${ALGORITHMS[*]} ${STD_ALGORITHMS[*]} under $ALGORITHM_ROOT/ from $INPUT_ROOT"
+echo "Regenerated: ${MACHINES[*]} under $GENERATED_ROOT/ and ${PACKAGES[*]:-none} under $ALGORITHM_ROOT/ from $INPUT_ROOT"

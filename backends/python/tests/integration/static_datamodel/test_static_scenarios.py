@@ -84,6 +84,23 @@ def _as_json(value):
     return value
 
 
+def _holds(got, want) -> bool:
+    """Whether what the machine holds is the scenario's. A scenario states a
+    64-bit integer as the text of its digits, which is how a saved state writes
+    one (a JSON number past 2^53 is not every reader's to keep), and Python holds
+    an integer of any width as an ``int``: an ``int`` is held to the digits that
+    spell it. A string the machine holds is a ``str`` and is not read as a number,
+    and a record or a list is held field by field and element by element.
+    Everything else must be equal as written."""
+    if isinstance(got, dict) and isinstance(want, dict):
+        return got.keys() == want.keys() and all(_holds(got[key], want[key]) for key in want)
+    if isinstance(got, list) and isinstance(want, list):
+        return len(got) == len(want) and all(_holds(g, w) for g, w in zip(got, want))
+    if isinstance(got, int) and not isinstance(got, bool) and isinstance(want, str):
+        return str(got) == want
+    return got == want
+
+
 class _ScenarioHost:
     """What a machine asked of its host, as a scenario's ``host_calls`` writes it:
     the name the document gives the action, and its arguments in the order the
@@ -99,6 +116,43 @@ class _ScenarioHost:
         """The calls made since this was last called, oldest first."""
         taken, self._calls = self._calls, []
         return taken
+
+
+class _ScenarioPeers:
+    """What a machine sent its Mesh peers -- a ``<send>`` whose target is
+    ``#name`` -- as a scenario's ``sent`` writes it: the target as the document
+    writes it, the event's name, and the event's data as the JSON value its text
+    spells, left out when the send carried none. It is the router a host
+    registers: with none registered such a send is ``error.execution`` and
+    reaches nobody."""
+
+    def __init__(self) -> None:
+        self._sends: list[dict] = []
+
+    def route(self, request) -> list:
+        sent = {"target": request.target, "event": request.event_name}
+        if request.event_data:
+            sent["data"] = json.loads(request.event_data)
+        self._sends.append(sent)
+        return []
+
+    def take(self) -> list[dict]:
+        """The sends made since this was last called, oldest first."""
+        taken, self._sends = self._sends, []
+        return taken
+
+
+def _same_json(got, want) -> bool:
+    """Whether two JSON values are the same value. Python's own equality says
+    ``True == 1``, which JSON does not: a boolean is equal only to a boolean,
+    inside an object or an array as at the top."""
+    if isinstance(got, bool) or isinstance(want, bool):
+        return isinstance(got, bool) and isinstance(want, bool) and got == want
+    if isinstance(got, dict) and isinstance(want, dict):
+        return got.keys() == want.keys() and all(_same_json(got[key], want[key]) for key in want)
+    if isinstance(got, list) and isinstance(want, list):
+        return len(got) == len(want) and all(_same_json(g, w) for g, w in zip(got, want))
+    return type(got) is type(want) and got == want
 
 
 def replay(name: str, machine: str | None = None) -> None:
@@ -118,6 +172,11 @@ def replay(name: str, machine: str | None = None) -> None:
     # the generated engine says so by taking it: that host is the one that records.
     host = _ScenarioHost() if "actions" in inspect.signature(module.create_engine).parameters else None
     engine = module.create_engine() if host is None else module.create_engine(host)
+    # Every machine is given the router that records, before it starts, so that
+    # what its start sends is recorded too: one with no send to a Mesh peer never
+    # calls it.
+    peers = _ScenarioPeers()
+    engine.register_mesh_router(peers.route)
     engine.initialize()
     policy = engine.policy
     readers = module.SCE_HOST_NAMES["readers"]
@@ -150,6 +209,13 @@ def replay(name: str, machine: str | None = None) -> None:
             assert asked == expect["host_calls"], (
                 f"{where}: the machine asked its host {asked!r}, not {expect['host_calls']!r}"
             )
+        # What the machine sent its Mesh peers in this step, read on every step for
+        # the same reason: every step takes its own, so none is handed on.
+        sent = peers.take()
+        if "sent" in expect:
+            assert _same_json(sent, expect["sent"]), (
+                f"{where}: the machine sent its Mesh peers {sent!r}, not {expect['sent']!r}"
+            )
         if expect.get("ended"):
             assert engine.reached_final, f"{where}: the machine ended in a top-level <final>"
             if "donedata" in expect:
@@ -173,7 +239,7 @@ def replay(name: str, machine: str | None = None) -> None:
             )
         for variable, want in expect.get("variables", {}).items():
             got = _as_json(_read(policy, readers, variable))
-            assert got == want, f"{where}: variable {variable!r} is {got!r}, not {want!r}"
+            assert _holds(got, want), f"{where}: variable {variable!r} is {got!r}, not {want!r}"
 
 
 # A counter counts to its flag and lets go: guards, `<assign>`, `<if>` and
@@ -419,6 +485,39 @@ def test_a_guard_calls_an_imported_algorithm() -> None:
 # standard event schemas'.
 def test_a_sync_run_is_composed_of_the_standard_sync_rules() -> None:
     replay("sync_client")
+
+
+# One copy of a shared to-do list, as each of the three that took part in one run
+# of it was driven: a person's copy stamps a change with its clock and sends it to
+# the hub, the hub passes a write on to every copy but the one it came from, and
+# each field of each to-do keeps the later write whatever order the writes arrive
+# in. Every step states what the copy sent its peers.
+def test_a_shared_list_as_alice_took_part_in_it() -> None:
+    replay("todo_peer_alice")
+
+
+def test_a_shared_list_as_bob_took_part_in_it() -> None:
+    replay("todo_peer_bob")
+
+
+def test_a_shared_list_as_the_hub_its_copies_send_to() -> None:
+    replay("todo_peer_server")
+
+
+# One copy of a shared sheet, as each of the three that took part in one run of it
+# was driven: its cells merge as the to-do list's fields do, and its rows and
+# columns are sequences every copy orders alike, with what was removed kept apart
+# from what was placed. Every step states what the copy sent its peers.
+def test_a_shared_sheet_as_alice_took_part_in_it() -> None:
+    replay("sheet_peer_alice")
+
+
+def test_a_shared_sheet_as_bob_took_part_in_it() -> None:
+    replay("sheet_peer_bob")
+
+
+def test_a_shared_sheet_as_the_hub_its_copies_send_to() -> None:
+    replay("sheet_peer_server")
 
 
 # The `eventexpr` of a `<send>` is a string computed from the machine's fields when

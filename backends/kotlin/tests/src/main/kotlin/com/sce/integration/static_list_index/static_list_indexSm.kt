@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 572a4258697cb4e5e72ff4c473f572e8103d28b7053d53f63dcb2a37167bc6ae
+// source-hash: a92737f3147f50ca2cf6319055f29d7afe2c17766723037ae46a81e73e7a66df
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_list_index.scxml
@@ -55,32 +55,50 @@ class StaticListIndexStateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `picked` datamodel variable, published (`sce:direction="out"`). */
-    var picked: List<UByte> = emptyList()
-        private set
+    private var vPicked: List<UByte> = emptyList()
+
+    /** What the published `picked` holds. */
+    val picked: List<UByte> get() = vPicked
     /** W3C SCXML 5.2: the `cursor` datamodel variable, published (`sce:direction="out"`). */
-    var cursor: Int = 0
-        private set
+    private var vCursor: Int = 0
+
+    /** What the published `cursor` holds. */
+    val cursor: Int get() = vCursor
     /** W3C SCXML 5.2: the `under` datamodel variable, published (`sce:direction="out"`). */
-    var under: UByte = 0.toUByte()
-        private set
+    private var vUnder: UByte = 0.toUByte()
+
+    /** What the published `under` holds. */
+    val under: UByte get() = vUnder
     /** W3C SCXML 5.2: the `first` datamodel variable, published (`sce:direction="out"`). */
-    var first: UByte = 0.toUByte()
-        private set
+    private var vFirst: UByte = 0.toUByte()
+
+    /** What the published `first` holds. */
+    val first: UByte get() = vFirst
     /** W3C SCXML 5.2: the `last` datamodel variable, published (`sce:direction="out"`). */
-    var last: UByte = 0.toUByte()
-        private set
+    private var vLast: UByte = 0.toUByte()
+
+    /** What the published `last` holds. */
+    val last: UByte get() = vLast
     /** W3C SCXML 5.2: the `ordered` datamodel variable, published (`sce:direction="out"`). */
-    var ordered: Boolean = false
-        private set
+    private var vOrdered: Boolean = false
+
+    /** What the published `ordered` holds. */
+    val ordered: Boolean get() = vOrdered
     /** W3C SCXML 5.2: the `room` datamodel variable, published (`sce:direction="out"`). */
-    var room: Boolean = false
-        private set
+    private var vRoom: Boolean = false
+
+    /** What the published `room` holds. */
+    val room: Boolean get() = vRoom
     /** W3C SCXML 5.2: the `count` datamodel variable, published (`sce:direction="out"`). */
-    var count: UInt = 0.toUInt()
-        private set
+    private var vCount: UInt = 0.toUInt()
+
+    /** What the published `count` holds. */
+    val count: UInt get() = vCount
     /** W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`). */
-    var refusals: UInt = 0.toUInt()
-        private set
+    private var vRefusals: UInt = 0.toUInt()
+
+    /** What the published `refusals` holds. */
+    val refusals: UInt get() = vRefusals
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -100,14 +118,14 @@ class StaticListIndexStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.cursor?.let { cursor = it }
-        params.under?.let { under = it }
-        params.first?.let { first = it }
-        params.last?.let { last = it }
-        params.ordered?.let { ordered = it }
-        params.room?.let { room = it }
-        params.count?.let { count = it }
-        params.refusals?.let { refusals = it }
+        params.cursor?.let { vCursor = it }
+        params.under?.let { vUnder = it }
+        params.first?.let { vFirst = it }
+        params.last?.let { vLast = it }
+        params.ordered?.let { vOrdered = it }
+        params.room?.let { vRoom = it }
+        params.count?.let { vCount = it }
+        params.refusals?.let { vRefusals = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -137,15 +155,15 @@ class StaticListIndexStateMachine(
     )
 
     private fun currentData(): Data = Data(
-        picked = picked,
-        cursor = cursor,
-        under = under,
-        first = first,
-        last = last,
-        ordered = ordered,
-        room = room,
-        count = count,
-        refusals = refusals,
+        picked = vPicked,
+        cursor = vCursor,
+        under = vUnder,
+        first = vFirst,
+        last = vLast,
+        ordered = vOrdered,
+        room = vRoom,
+        count = vCount,
+        refusals = vRefusals,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -188,15 +206,15 @@ class StaticListIndexStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "picked" to SavedValues.list(picked) { SavedValues.of(it) },
-            "cursor" to SavedValues.of(cursor),
-            "under" to SavedValues.of(under),
-            "first" to SavedValues.of(first),
-            "last" to SavedValues.of(last),
-            "ordered" to SavedValues.of(ordered),
-            "room" to SavedValues.of(room),
-            "count" to SavedValues.of(count),
-            "refusals" to SavedValues.of(refusals),
+            "picked" to SavedValues.list(vPicked) { SavedValues.of(it) },
+            "cursor" to SavedValues.of(vCursor),
+            "under" to SavedValues.of(vUnder),
+            "first" to SavedValues.of(vFirst),
+            "last" to SavedValues.of(vLast),
+            "ordered" to SavedValues.of(vOrdered),
+            "room" to SavedValues.of(vRoom),
+            "count" to SavedValues.of(vCount),
+            "refusals" to SavedValues.of(vRefusals),
         ),
         wallNowMs,
     )
@@ -231,15 +249,15 @@ class StaticListIndexStateMachine(
         val saved7 = SavedValues.bool(saved.variable("room"), "room")
         val saved8 = SavedValues.uint32(saved.variable("count"), "count")
         val saved9 = SavedValues.uint32(saved.variable("refusals"), "refusals")
-        picked = saved1
-        cursor = saved2
-        under = saved3
-        first = saved4
-        last = saved5
-        ordered = saved6
-        room = saved7
-        count = saved8
-        refusals = saved9
+        vPicked = saved1
+        vCursor = saved2
+        vUnder = saved3
+        vFirst = saved4
+        vLast = saved5
+        vOrdered = saved6
+        vRoom = saved7
+        vCount = saved8
+        vRefusals = saved9
         enterSaved(saved, wallNowMs)
     }
 
@@ -485,7 +503,7 @@ class StaticListIndexStateMachine(
             event is StaticListIndexEvent.More -> transitionReadingAt4
             event is StaticListIndexEvent.Next -> transitionReadingAt5
             event is StaticListIndexEvent.Back -> transitionReadingAt6
-            event is StaticListIndexEvent.Compare && (try { com.sce.forge.runtime.SceChecked.at(picked, (0).toLong()) < com.sce.forge.runtime.SceChecked.at(picked, (1).toLong()) } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListIndexEvent.Error.Execution, "<transition cond='picked[0] < picked[1]'>: an integer operation overflowed or failed"); false }) -> transitionReadingAt7
+            event is StaticListIndexEvent.Compare && (try { com.sce.forge.runtime.SceChecked.at(vPicked, (0).toLong()) < com.sce.forge.runtime.SceChecked.at(vPicked, (1).toLong()) } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListIndexEvent.Error.Execution, "<transition cond='picked[0] < picked[1]'>: an integer operation overflowed or failed"); false }) -> transitionReadingAt7
             event is StaticListIndexEvent.Compare -> transitionReadingAt8
             event is StaticListIndexEvent.Reset -> transitionReadingAt9
             event is StaticListIndexEvent.Error.Execution -> transitionReadingAt10
@@ -526,77 +544,77 @@ class StaticListIndexStateMachine(
                     return
                 }
 
-            if (if (picked.size < 3) { picked = picked + (pendingDayPickedPayload!!.dayOfMonth); false } else { raisePlatformError(StaticListIndexEvent.Error.Execution, "<sce:append target='picked'>: the list already holds its capacity of 3"); true }) {
+            if (if (vPicked.size < 3) { vPicked = vPicked + (pendingDayPickedPayload!!.dayOfMonth); false } else { raisePlatformError(StaticListIndexEvent.Error.Execution, "<sce:append target='picked'>: the list already holds its capacity of 3"); true }) {
                 return
             }
             }
             1 -> {
                 // SCE-MAP: static_list_index.scxml:45 :: reading :: _transition_1
 
-            if (try { first = com.sce.forge.runtime.SceChecked.at(picked, (0).toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListIndexEvent.Error.Execution, "<assign location='first'>: an integer operation overflowed or failed"); true }) {
+            if (try { vFirst = com.sce.forge.runtime.SceChecked.at(vPicked, (0).toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListIndexEvent.Error.Execution, "<assign location='first'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             2 -> {
                 // SCE-MAP: static_list_index.scxml:48 :: reading :: _transition_2
 
-            if (try { last = com.sce.forge.runtime.SceChecked.at(picked, (com.sce.forge.runtime.SceChecked.sub((picked).size.toUInt(), 1.toUInt())).toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListIndexEvent.Error.Execution, "<assign location='last'>: an integer operation overflowed or failed"); true }) {
+            if (try { vLast = com.sce.forge.runtime.SceChecked.at(vPicked, (com.sce.forge.runtime.SceChecked.sub((vPicked).size.toUInt(), 1.toUInt())).toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListIndexEvent.Error.Execution, "<assign location='last'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             3 -> {
                 // SCE-MAP: static_list_index.scxml:51 :: reading :: _transition_3
 
-            if (try { count = com.sce.forge.runtime.SceChecked.sub((picked).size.toUInt(), 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListIndexEvent.Error.Execution, "<assign location='count'>: an integer operation overflowed or failed"); true }) {
+            if (try { vCount = com.sce.forge.runtime.SceChecked.sub((vPicked).size.toUInt(), 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListIndexEvent.Error.Execution, "<assign location='count'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             4 -> {
                 // SCE-MAP: static_list_index.scxml:54 :: reading :: _transition_4
 
-            room = cursor < (picked).size.toUInt().toInt()
+            vRoom = vCursor < (vPicked).size.toUInt().toInt()
             }
             5 -> {
                 // SCE-MAP: static_list_index.scxml:57 :: reading :: _transition_5
 
-            if (try { under = com.sce.forge.runtime.SceChecked.at(picked, (cursor).toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListIndexEvent.Error.Execution, "<assign location='under'>: an integer operation overflowed or failed"); true }) {
+            if (try { vUnder = com.sce.forge.runtime.SceChecked.at(vPicked, (vCursor).toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListIndexEvent.Error.Execution, "<assign location='under'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { cursor = com.sce.forge.runtime.SceChecked.add(cursor, 1); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListIndexEvent.Error.Execution, "<assign location='cursor'>: an integer operation overflowed or failed"); true }) {
+            if (try { vCursor = com.sce.forge.runtime.SceChecked.add(vCursor, 1); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListIndexEvent.Error.Execution, "<assign location='cursor'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             6 -> {
                 // SCE-MAP: static_list_index.scxml:61 :: reading :: _transition_6
 
-            if (try { under = com.sce.forge.runtime.SceChecked.at(picked, (com.sce.forge.runtime.SceChecked.sub(cursor, 1)).toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListIndexEvent.Error.Execution, "<assign location='under'>: an integer operation overflowed or failed"); true }) {
+            if (try { vUnder = com.sce.forge.runtime.SceChecked.at(vPicked, (com.sce.forge.runtime.SceChecked.sub(vCursor, 1)).toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListIndexEvent.Error.Execution, "<assign location='under'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { cursor = com.sce.forge.runtime.SceChecked.sub(cursor, 1); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListIndexEvent.Error.Execution, "<assign location='cursor'>: an integer operation overflowed or failed"); true }) {
+            if (try { vCursor = com.sce.forge.runtime.SceChecked.sub(vCursor, 1); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListIndexEvent.Error.Execution, "<assign location='cursor'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             7 -> {
                 // SCE-MAP: static_list_index.scxml:65 :: reading :: _transition_7
 
-            ordered = true
+            vOrdered = true
             }
             8 -> {
                 // SCE-MAP: static_list_index.scxml:68 :: reading :: _transition_8
 
-            ordered = false
+            vOrdered = false
             }
             9 -> {
                 // SCE-MAP: static_list_index.scxml:71 :: reading :: _transition_9
 
-            picked = emptyList()
+            vPicked = emptyList()
             }
             10 -> {
                 // SCE-MAP: static_list_index.scxml:74 :: reading :: _transition_10
 
-            if (try { refusals = com.sce.forge.runtime.SceChecked.add(refusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListIndexEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListIndexEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }

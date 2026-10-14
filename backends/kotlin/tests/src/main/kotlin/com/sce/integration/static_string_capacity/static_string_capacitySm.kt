@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 572a4258697cb4e5e72ff4c473f572e8103d28b7053d53f63dcb2a37167bc6ae
+// source-hash: a92737f3147f50ca2cf6319055f29d7afe2c17766723037ae46a81e73e7a66df
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_string_capacity.scxml
@@ -37,17 +37,25 @@ class StaticStringCapacityStateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `title` datamodel variable, published (`sce:direction="out"`). */
-    var title: String = "ab"
-        private set
+    private var vTitle: String = "ab"
+
+    /** What the published `title` holds. */
+    val title: String get() = vTitle
     /** W3C SCXML 5.2: the `body` datamodel variable, published (`sce:direction="out"`). */
-    var body: String = "hello"
-        private set
+    private var vBody: String = "hello"
+
+    /** What the published `body` holds. */
+    val body: String get() = vBody
     /** W3C SCXML 5.2: the `copied` datamodel variable, published (`sce:direction="out"`). */
-    var copied: UInt = 0.toUInt()
-        private set
+    private var vCopied: UInt = 0.toUInt()
+
+    /** What the published `copied` holds. */
+    val copied: UInt get() = vCopied
     /** W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`). */
-    var refusals: UInt = 0.toUInt()
-        private set
+    private var vRefusals: UInt = 0.toUInt()
+
+    /** What the published `refusals` holds. */
+    val refusals: UInt get() = vRefusals
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -63,10 +71,10 @@ class StaticStringCapacityStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.title?.let { title = it }
-        params.body?.let { body = it }
-        params.copied?.let { copied = it }
-        params.refusals?.let { refusals = it }
+        params.title?.let { vTitle = it }
+        params.body?.let { vBody = it }
+        params.copied?.let { vCopied = it }
+        params.refusals?.let { vRefusals = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -91,10 +99,10 @@ class StaticStringCapacityStateMachine(
     )
 
     private fun currentData(): Data = Data(
-        title = title,
-        body = body,
-        copied = copied,
-        refusals = refusals,
+        title = vTitle,
+        body = vBody,
+        copied = vCopied,
+        refusals = vRefusals,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -137,10 +145,10 @@ class StaticStringCapacityStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "title" to SavedValues.of(title),
-            "body" to SavedValues.of(body),
-            "copied" to SavedValues.of(copied),
-            "refusals" to SavedValues.of(refusals),
+            "title" to SavedValues.of(vTitle),
+            "body" to SavedValues.of(vBody),
+            "copied" to SavedValues.of(vCopied),
+            "refusals" to SavedValues.of(vRefusals),
         ),
         wallNowMs,
     )
@@ -170,10 +178,10 @@ class StaticStringCapacityStateMachine(
         val saved2 = SavedValues.string(saved.variable("body"), "body", 16)
         val saved3 = SavedValues.uint32(saved.variable("copied"), "copied")
         val saved4 = SavedValues.uint32(saved.variable("refusals"), "refusals")
-        title = saved1
-        body = saved2
-        copied = saved3
-        refusals = saved4
+        vTitle = saved1
+        vBody = saved2
+        vCopied = saved3
+        vRefusals = saved4
         enterSaved(saved, wallNowMs)
     }
 
@@ -364,53 +372,53 @@ class StaticStringCapacityStateMachine(
             0 -> {
                 // SCE-MAP: static_string_capacity.scxml:27 :: idle :: _transition_0
 
-            if (try { title = com.sce.forge.runtime.SceChecked.bounded("abcd", 4); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStringCapacityEvent.Error.Execution, "<assign location='title'>: an integer operation overflowed or failed"); true }) {
+            if (try { vTitle = com.sce.forge.runtime.SceChecked.bounded("abcd", 4); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStringCapacityEvent.Error.Execution, "<assign location='title'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             1 -> {
                 // SCE-MAP: static_string_capacity.scxml:30 :: idle :: _transition_1
 
-            if (try { title = com.sce.forge.runtime.SceChecked.bounded("ab", 4); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStringCapacityEvent.Error.Execution, "<assign location='title'>: an integer operation overflowed or failed"); true }) {
+            if (try { vTitle = com.sce.forge.runtime.SceChecked.bounded("ab", 4); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStringCapacityEvent.Error.Execution, "<assign location='title'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             2 -> {
                 // SCE-MAP: static_string_capacity.scxml:33 :: idle :: _transition_2
 
-            if (try { body = com.sce.forge.runtime.SceChecked.bounded("hello", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStringCapacityEvent.Error.Execution, "<assign location='body'>: an integer operation overflowed or failed"); true }) {
+            if (try { vBody = com.sce.forge.runtime.SceChecked.bounded("hello", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStringCapacityEvent.Error.Execution, "<assign location='body'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             3 -> {
                 // SCE-MAP: static_string_capacity.scxml:37 :: idle :: _transition_3
 
-            if (try { body = com.sce.forge.runtime.SceChecked.bounded("éé", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStringCapacityEvent.Error.Execution, "<assign location='body'>: an integer operation overflowed or failed"); true }) {
+            if (try { vBody = com.sce.forge.runtime.SceChecked.bounded("éé", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStringCapacityEvent.Error.Execution, "<assign location='body'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             4 -> {
                 // SCE-MAP: static_string_capacity.scxml:41 :: idle :: _transition_4
 
-            if (try { body = com.sce.forge.runtime.SceChecked.bounded("é€", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStringCapacityEvent.Error.Execution, "<assign location='body'>: an integer operation overflowed or failed"); true }) {
+            if (try { vBody = com.sce.forge.runtime.SceChecked.bounded("é€", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStringCapacityEvent.Error.Execution, "<assign location='body'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             5 -> {
                 // SCE-MAP: static_string_capacity.scxml:44 :: idle :: _transition_5
 
-            if (try { title = com.sce.forge.runtime.SceChecked.bounded(body, 4); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStringCapacityEvent.Error.Execution, "<assign location='title'>: an integer operation overflowed or failed"); true }) {
+            if (try { vTitle = com.sce.forge.runtime.SceChecked.bounded(vBody, 4); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStringCapacityEvent.Error.Execution, "<assign location='title'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { copied = com.sce.forge.runtime.SceChecked.add(copied, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStringCapacityEvent.Error.Execution, "<assign location='copied'>: an integer operation overflowed or failed"); true }) {
+            if (try { vCopied = com.sce.forge.runtime.SceChecked.add(vCopied, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStringCapacityEvent.Error.Execution, "<assign location='copied'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             6 -> {
                 // SCE-MAP: static_string_capacity.scxml:48 :: idle :: _transition_6
 
-            if (try { refusals = com.sce.forge.runtime.SceChecked.add(refusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStringCapacityEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStringCapacityEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 572a4258697cb4e5e72ff4c473f572e8103d28b7053d53f63dcb2a37167bc6ae
+// source-hash: a92737f3147f50ca2cf6319055f29d7afe2c17766723037ae46a81e73e7a66df
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_record_real.scxml
@@ -56,11 +56,15 @@ class StaticRecordRealStateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `last` datamodel variable, published (`sce:direction="out"`). */
-    var last: StaticRecordRealReadingRecord = StaticRecordRealReadingRecord(sensor = 1.toUByte(), value = 0.5)
-        private set
+    private var vLast: StaticRecordRealReadingRecord = StaticRecordRealReadingRecord(sensor = 1.toUByte(), value = 0.5)
+
+    /** What the published `last` holds. */
+    val last: StaticRecordRealReadingRecord get() = vLast
     /** W3C SCXML 5.2: the `sum` datamodel variable, published (`sce:direction="out"`). */
-    var sum: Double = 0.0
-        private set
+    private var vSum: Double = 0.0
+
+    /** What the published `sum` holds. */
+    val sum: Double get() = vSum
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -73,7 +77,7 @@ class StaticRecordRealStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.sum?.let { sum = it }
+        params.sum?.let { vSum = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -96,8 +100,8 @@ class StaticRecordRealStateMachine(
     )
 
     private fun currentData(): Data = Data(
-        last = last,
-        sum = sum,
+        last = vLast,
+        sum = vSum,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -140,8 +144,8 @@ class StaticRecordRealStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "last" to last.toSaved(),
-            "sum" to SavedValues.of(sum),
+            "last" to vLast.toSaved(),
+            "sum" to SavedValues.of(vSum),
         ),
         wallNowMs,
     )
@@ -169,8 +173,8 @@ class StaticRecordRealStateMachine(
         beginRestore(saved, savedShape)
         val saved1 = StaticRecordRealReadingRecord.fromSaved(saved.variable("last"), "last")
         val saved2 = SavedValues.float64(saved.variable("sum"), "sum")
-        last = saved1
-        sum = saved2
+        vLast = saved1
+        vSum = saved2
         enterSaved(saved, wallNowMs)
     }
 
@@ -348,9 +352,9 @@ class StaticRecordRealStateMachine(
             0 -> {
                 // SCE-MAP: static_record_real.scxml:26 :: idle :: _transition_0
 
-            last = last.copy(value = last.value * 2.0 + 1.5)
+            vLast = vLast.copy(value = vLast.value * 2.0 + 1.5)
 
-            sum = sum + last.value
+            vSum = vSum + vLast.value
             }
             1 -> {
                 // SCE-MAP: static_record_real.scxml:30 :: idle :: _transition_1
@@ -358,9 +362,9 @@ class StaticRecordRealStateMachine(
                     return
                 }
 
-            last = last.copy(sensor = pendingReadingTakenPayload!!.sensor)
+            vLast = vLast.copy(sensor = pendingReadingTakenPayload!!.sensor)
 
-            last = last.copy(value = pendingReadingTakenPayload!!.value)
+            vLast = vLast.copy(value = pendingReadingTakenPayload!!.value)
             }
             else -> {}
         }

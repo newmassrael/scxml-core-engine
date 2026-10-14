@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 572a4258697cb4e5e72ff4c473f572e8103d28b7053d53f63dcb2a37167bc6ae
+// source-hash: a92737f3147f50ca2cf6319055f29d7afe2c17766723037ae46a81e73e7a66df
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_invoke_string__sce_synth_invoke__fits.scxml
@@ -30,7 +30,7 @@ class StaticInvokeStringSceSynthInvokeFitsStateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `title` datamodel variable, the machine's own. */
-    private var title: String = "ab"
+    private var vTitle: String = "ab"
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -43,7 +43,7 @@ class StaticInvokeStringSceSynthInvokeFitsStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.title?.let { title = it }
+        params.title?.let { vTitle = it }
     }
 
     /**
@@ -97,7 +97,7 @@ class StaticInvokeStringSceSynthInvokeFitsStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "title" to SavedValues.of(title),
+            "title" to SavedValues.of(vTitle),
         ),
         wallNowMs,
     )
@@ -124,7 +124,7 @@ class StaticInvokeStringSceSynthInvokeFitsStateMachine(
     fun restore(saved: SavedState, wallNowMs: Long) {
         beginRestore(saved, savedShape)
         val saved1 = SavedValues.string(saved.variable("title"), "title", 4)
-        title = saved1
+        vTitle = saved1
         enterSaved(saved, wallNowMs)
     }
 
@@ -221,7 +221,7 @@ class StaticInvokeStringSceSynthInvokeFitsStateMachine(
         event: StaticInvokeStringSceSynthInvokeFitsEvent?
     ): EnabledTransition<StaticInvokeStringSceSynthInvokeFitsState, HistoryId>? = when (state) {
         is StaticInvokeStringSceSynthInvokeFitsState.Waiting -> when {
-            event == null && title == "wxyz" -> transitionWaitingAt0
+            event == null && vTitle == "wxyz" -> transitionWaitingAt0
             else -> null
         }
         else -> null

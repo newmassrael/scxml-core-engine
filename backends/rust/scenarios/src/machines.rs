@@ -49,6 +49,9 @@ macro_rules! replay_row {
 /// A row marked `+ <Host> => <reader>` is a machine with `<sce:action>`s: it takes
 /// the host of that name, which records what it is asked, and `hosts::<reader>`
 /// turns that into the calls a scenario's `host_calls` states.
+///
+/// What a machine sends its Mesh peers needs no mark: the replay records it for
+/// every machine, and a scenario's `sent` is held to what was recorded.
 macro_rules! scenarios {
     ($($name:literal => $module:ident::{$policy:ident, $persist:ident} $(@ $manual:ident)? $(+ $host:ident => $calls:ident)?;)*) => {
         /// The scenarios this crate can replay, by file name.
@@ -90,6 +93,9 @@ macro_rules! scenarios {
 }
 
 scenarios! {
+    "sheet_peer_alice" => sheet_peer_sm::{SheetPeerPolicy, SheetPeerPersist};
+    "sheet_peer_bob" => sheet_peer_sm::{SheetPeerPolicy, SheetPeerPersist};
+    "sheet_peer_server" => sheet_peer_sm::{SheetPeerPolicy, SheetPeerPersist};
     "static_block_ends" => static_block_ends_sm::{StaticBlockEndsPolicy, StaticBlockEndsPersist};
     "static_block_ends_list" => static_block_ends_list_sm::{StaticBlockEndsListPolicy, StaticBlockEndsListPersist};
     "static_bytes" => static_bytes_sm::{StaticBytesPolicy, StaticBytesPersist};
@@ -148,4 +154,7 @@ scenarios! {
     "static_wire_enum" => static_wire_enum_sm::{StaticWireEnumPolicy, StaticWireEnumPersist};
     "static_wire_wide" => static_wire_wide_sm::{StaticWireWidePolicy, StaticWireWidePersist};
     "sync_client" => sync_client_sm::{SyncClientPolicy, SyncClientPersist};
+    "todo_peer_alice" => todo_peer_sm::{TodoPeerPolicy, TodoPeerPersist};
+    "todo_peer_bob" => todo_peer_sm::{TodoPeerPolicy, TodoPeerPersist};
+    "todo_peer_server" => todo_peer_sm::{TodoPeerPolicy, TodoPeerPersist};
 }

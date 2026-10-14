@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 572a4258697cb4e5e72ff4c473f572e8103d28b7053d53f63dcb2a37167bc6ae
+// source-hash: a92737f3147f50ca2cf6319055f29d7afe2c17766723037ae46a81e73e7a66df
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_real.scxml
@@ -38,24 +38,34 @@ class StaticRealStateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `level` datamodel variable, published (`sce:direction="out"`). */
-    var level: Double = 0.5
-        private set
+    private var vLevel: Double = 0.5
+
+    /** What the published `level` holds. */
+    val level: Double get() = vLevel
     /** W3C SCXML 5.2: the `rate` datamodel variable, the machine's own. */
-    private var rate: Double = 1.5
+    private var vRate: Double = 1.5
     /** W3C SCXML 5.2: the `total` datamodel variable, published (`sce:direction="out"`). */
-    var total: Double = 0.0
-        private set
+    private var vTotal: Double = 0.0
+
+    /** What the published `total` holds. */
+    val total: Double get() = vTotal
     /** W3C SCXML 5.2: the `tenth` datamodel variable, the machine's own. */
-    private var tenth: Double = 0.1
+    private var vTenth: Double = 0.1
     /** W3C SCXML 5.2: the `drift` datamodel variable, published (`sce:direction="out"`). */
-    var drift: Double = 0.0
-        private set
+    private var vDrift: Double = 0.0
+
+    /** What the published `drift` holds. */
+    val drift: Double get() = vDrift
     /** W3C SCXML 5.2: the `samples` datamodel variable, published (`sce:direction="out"`). */
-    var samples: List<Double> = emptyList()
-        private set
+    private var vSamples: List<Double> = emptyList()
+
+    /** What the published `samples` holds. */
+    val samples: List<Double> get() = vSamples
     /** W3C SCXML 5.2: the `errors` datamodel variable, published (`sce:direction="out"`). */
-    var errors: UInt = 0.toUInt()
-        private set
+    private var vErrors: UInt = 0.toUInt()
+
+    /** What the published `errors` holds. */
+    val errors: UInt get() = vErrors
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -73,12 +83,12 @@ class StaticRealStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.level?.let { level = it }
-        params.rate?.let { rate = it }
-        params.total?.let { total = it }
-        params.tenth?.let { tenth = it }
-        params.drift?.let { drift = it }
-        params.errors?.let { errors = it }
+        params.level?.let { vLevel = it }
+        params.rate?.let { vRate = it }
+        params.total?.let { vTotal = it }
+        params.tenth?.let { vTenth = it }
+        params.drift?.let { vDrift = it }
+        params.errors?.let { vErrors = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -104,11 +114,11 @@ class StaticRealStateMachine(
     )
 
     private fun currentData(): Data = Data(
-        level = level,
-        total = total,
-        drift = drift,
-        samples = samples,
-        errors = errors,
+        level = vLevel,
+        total = vTotal,
+        drift = vDrift,
+        samples = vSamples,
+        errors = vErrors,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -151,13 +161,13 @@ class StaticRealStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "level" to SavedValues.of(level),
-            "rate" to SavedValues.of(rate),
-            "total" to SavedValues.of(total),
-            "tenth" to SavedValues.of(tenth),
-            "drift" to SavedValues.of(drift),
-            "samples" to SavedValues.list(samples) { SavedValues.of(it) },
-            "errors" to SavedValues.of(errors),
+            "level" to SavedValues.of(vLevel),
+            "rate" to SavedValues.of(vRate),
+            "total" to SavedValues.of(vTotal),
+            "tenth" to SavedValues.of(vTenth),
+            "drift" to SavedValues.of(vDrift),
+            "samples" to SavedValues.list(vSamples) { SavedValues.of(it) },
+            "errors" to SavedValues.of(vErrors),
         ),
         wallNowMs,
     )
@@ -190,13 +200,13 @@ class StaticRealStateMachine(
         val saved5 = SavedValues.float64(saved.variable("drift"), "drift")
         val saved6 = SavedValues.list(saved.variable("samples"), "samples", 3) { e, w -> SavedValues.float64(e, w) }
         val saved7 = SavedValues.uint32(saved.variable("errors"), "errors")
-        level = saved1
-        rate = saved2
-        total = saved3
-        tenth = saved4
-        drift = saved5
-        samples = saved6
-        errors = saved7
+        vLevel = saved1
+        vRate = saved2
+        vTotal = saved3
+        vTenth = saved4
+        vDrift = saved5
+        vSamples = saved6
+        vErrors = saved7
         enterSaved(saved, wallNowMs)
     }
 
@@ -359,7 +369,7 @@ class StaticRealStateMachine(
     ): EnabledTransition<StaticRealState, HistoryId>? = when (state) {
         is StaticRealState.High -> when {
             event is StaticRealEvent.Shrink -> transitionHighAt0
-            event is StaticRealEvent.Drop && level < 1.0 -> transitionHighAt1
+            event is StaticRealEvent.Drop && vLevel < 1.0 -> transitionHighAt1
             else -> null
         }
         is StaticRealState.Low -> when {
@@ -367,7 +377,7 @@ class StaticRealStateMachine(
             event is StaticRealEvent.Shrink -> transitionLowAt1
             event is StaticRealEvent.Sum -> transitionLowAt2
             event is StaticRealEvent.Drift -> transitionLowAt3
-            event is StaticRealEvent.Rise && level > 7.0 -> transitionLowAt4
+            event is StaticRealEvent.Rise && vLevel > 7.0 -> transitionLowAt4
             event is StaticRealEvent.Error.Execution -> transitionLowAt5
             else -> null
         }
@@ -409,7 +419,7 @@ class StaticRealStateMachine(
             0 -> {
                 // SCE-MAP: static_real.scxml:58 :: high :: _transition_0
 
-            level = level / 4.0
+            vLevel = vLevel / 4.0
             }
             else -> {}
         }
@@ -417,37 +427,37 @@ class StaticRealStateMachine(
             0 -> {
                 // SCE-MAP: static_real.scxml:32 :: low :: _transition_0
 
-            level = level * 2.0 + rate
+            vLevel = vLevel * 2.0 + vRate
 
-            if (if (samples.size < 3) { samples = samples + (level); false } else { raisePlatformError(StaticRealEvent.Error.Execution, "<sce:append target='samples'>: the list already holds its capacity of 3"); true }) {
+            if (if (vSamples.size < 3) { vSamples = vSamples + (vLevel); false } else { raisePlatformError(StaticRealEvent.Error.Execution, "<sce:append target='samples'>: the list already holds its capacity of 3"); true }) {
                 return
             }
             }
             1 -> {
                 // SCE-MAP: static_real.scxml:37 :: low :: _transition_1
 
-            level = level / 4.0
+            vLevel = vLevel / 4.0
             }
             2 -> {
                 // SCE-MAP: static_real.scxml:41 :: low :: _transition_2
 
-            total = 0.0
+            vTotal = 0.0
 
 
-            for (v in samples) {
+            for (v in vSamples) {
 
-            total = total + v
+            vTotal = vTotal + v
             }
             }
             3 -> {
                 // SCE-MAP: static_real.scxml:48 :: low :: _transition_3
 
-            drift = tenth + 0.2
+            vDrift = vTenth + 0.2
             }
             5 -> {
                 // SCE-MAP: static_real.scxml:53 :: low :: _transition_5
 
-            if (try { errors = com.sce.forge.runtime.SceChecked.add(errors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRealEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
+            if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRealEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }

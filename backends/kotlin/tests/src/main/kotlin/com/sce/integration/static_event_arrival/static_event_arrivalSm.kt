@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 572a4258697cb4e5e72ff4c473f572e8103d28b7053d53f63dcb2a37167bc6ae
+// source-hash: a92737f3147f50ca2cf6319055f29d7afe2c17766723037ae46a81e73e7a66df
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_event_arrival.scxml
@@ -32,11 +32,15 @@ class StaticEventArrivalStateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `requests` datamodel variable, published (`sce:direction="out"`). */
-    var requests: UInt = 0.toUInt()
-        private set
+    private var vRequests: UInt = 0.toUInt()
+
+    /** What the published `requests` holds. */
+    val requests: UInt get() = vRequests
     /** W3C SCXML 5.2: the `specials` datamodel variable, published (`sce:direction="out"`). */
-    var specials: UInt = 0.toUInt()
-        private set
+    private var vSpecials: UInt = 0.toUInt()
+
+    /** What the published `specials` holds. */
+    val specials: UInt get() = vSpecials
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -50,8 +54,8 @@ class StaticEventArrivalStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.requests?.let { requests = it }
-        params.specials?.let { specials = it }
+        params.requests?.let { vRequests = it }
+        params.specials?.let { vSpecials = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -74,8 +78,8 @@ class StaticEventArrivalStateMachine(
     )
 
     private fun currentData(): Data = Data(
-        requests = requests,
-        specials = specials,
+        requests = vRequests,
+        specials = vSpecials,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -118,8 +122,8 @@ class StaticEventArrivalStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "requests" to SavedValues.of(requests),
-            "specials" to SavedValues.of(specials),
+            "requests" to SavedValues.of(vRequests),
+            "specials" to SavedValues.of(vSpecials),
         ),
         wallNowMs,
     )
@@ -147,8 +151,8 @@ class StaticEventArrivalStateMachine(
         beginRestore(saved, savedShape)
         val saved1 = SavedValues.uint32(saved.variable("requests"), "requests")
         val saved2 = SavedValues.uint32(saved.variable("specials"), "specials")
-        requests = saved1
-        specials = saved2
+        vRequests = saved1
+        vSpecials = saved2
         enterSaved(saved, wallNowMs)
     }
 
@@ -279,14 +283,14 @@ class StaticEventArrivalStateMachine(
             0 -> {
                 // SCE-MAP: static_event_arrival.scxml:29 :: listening :: _transition_0
 
-            if (try { specials = com.sce.forge.runtime.SceChecked.add(specials, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
+            if (try { vSpecials = com.sce.forge.runtime.SceChecked.add(vSpecials, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
             }
             1 -> {
                 // SCE-MAP: static_event_arrival.scxml:32 :: listening :: _transition_1
 
-            if (try { requests = com.sce.forge.runtime.SceChecked.add(requests, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
+            if (try { vRequests = com.sce.forge.runtime.SceChecked.add(vRequests, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
             }

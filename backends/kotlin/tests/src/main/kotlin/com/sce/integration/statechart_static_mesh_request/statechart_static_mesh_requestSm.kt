@@ -46,20 +46,26 @@ class StatechartStaticMeshRequestStateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `load` datamodel variable, the machine's own. */
-    private var load: UInt = 3.toUInt()
+    private var vLoad: UInt = 3.toUInt()
     /** W3C SCXML 5.2: the `label` datamodel variable, the machine's own. */
-    private var label: String = "idle"
+    private var vLabel: String = "idle"
     /** W3C SCXML 5.2: the `peer` datamodel variable, the machine's own. */
-    private var peer: String = "#motor"
+    private var vPeer: String = "#motor"
     /** W3C SCXML 5.2: the `answered` datamodel variable, published (`sce:direction="out"`). */
-    var answered: UInt = 0.toUInt()
-        private set
+    private var vAnswered: UInt = 0.toUInt()
+
+    /** What the published `answered` holds. */
+    val answered: UInt get() = vAnswered
     /** W3C SCXML 5.2: the `failed` datamodel variable, published (`sce:direction="out"`). */
-    var failed: UInt = 0.toUInt()
-        private set
+    private var vFailed: UInt = 0.toUInt()
+
+    /** What the published `failed` holds. */
+    val failed: UInt get() = vFailed
     /** W3C SCXML 5.2: the `refused` datamodel variable, published (`sce:direction="out"`). */
-    var refused: UInt = 0.toUInt()
-        private set
+    private var vRefused: UInt = 0.toUInt()
+
+    /** What the published `refused` holds. */
+    val refused: UInt get() = vRefused
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -77,12 +83,12 @@ class StatechartStaticMeshRequestStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
-        params.load?.let { load = it }
-        params.label?.let { label = it }
-        params.peer?.let { peer = it }
-        params.answered?.let { answered = it }
-        params.failed?.let { failed = it }
-        params.refused?.let { refused = it }
+        params.load?.let { vLoad = it }
+        params.label?.let { vLabel = it }
+        params.peer?.let { vPeer = it }
+        params.answered?.let { vAnswered = it }
+        params.failed?.let { vFailed = it }
+        params.refused?.let { vRefused = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -106,9 +112,9 @@ class StatechartStaticMeshRequestStateMachine(
     )
 
     private fun currentData(): Data = Data(
-        answered = answered,
-        failed = failed,
-        refused = refused,
+        answered = vAnswered,
+        failed = vFailed,
+        refused = vRefused,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -151,12 +157,12 @@ class StatechartStaticMeshRequestStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "load" to SavedValues.of(load),
-            "label" to SavedValues.of(label),
-            "peer" to SavedValues.of(peer),
-            "answered" to SavedValues.of(answered),
-            "failed" to SavedValues.of(failed),
-            "refused" to SavedValues.of(refused),
+            "load" to SavedValues.of(vLoad),
+            "label" to SavedValues.of(vLabel),
+            "peer" to SavedValues.of(vPeer),
+            "answered" to SavedValues.of(vAnswered),
+            "failed" to SavedValues.of(vFailed),
+            "refused" to SavedValues.of(vRefused),
         ),
         wallNowMs,
     )
@@ -188,12 +194,12 @@ class StatechartStaticMeshRequestStateMachine(
         val saved4 = SavedValues.uint32(saved.variable("answered"), "answered")
         val saved5 = SavedValues.uint32(saved.variable("failed"), "failed")
         val saved6 = SavedValues.uint32(saved.variable("refused"), "refused")
-        load = saved1
-        label = saved2
-        peer = saved3
-        answered = saved4
-        failed = saved5
-        refused = saved6
+        vLoad = saved1
+        vLabel = saved2
+        vPeer = saved3
+        vAnswered = saved4
+        vFailed = saved5
+        vRefused = saved6
         enterSaved(saved, wallNowMs)
     }
 
@@ -395,7 +401,7 @@ class StatechartStaticMeshRequestStateMachine(
                 run {
                     val generatedInvokeId = "asking.${System.identityHashCode(this)}.ask"
                     deferInvoke(state, generatedInvokeId) {
-                        val hostInvokeSrc: String = peer
+                        val hostInvokeSrc: String = vPeer
                         val hostInvokeParams = mutableMapOf<String, List<String>>()
                         // The same pairs as the data model holds them, for the
                         // request's eventData: one evaluation, read as text for
@@ -406,7 +412,7 @@ class StatechartStaticMeshRequestStateMachine(
                         hostInvokeParams["_mesh_deadline_ms"] =
                             (hostInvokeParams["_mesh_deadline_ms"] ?: emptyList()) + "250"
                         try {
-                            val v: Any? = (com.sce.forge.runtime.SceChecked.mul(load, 2.toUInt())).toLong()
+                            val v: Any? = (com.sce.forge.runtime.SceChecked.mul(vLoad, 2.toUInt())).toLong()
                             hostInvokeParams["force"] =
                                 (hostInvokeParams["force"] ?: emptyList()) + valueToWireString(v)
                             putParam(hostInvokePayload, "force", v)
@@ -415,7 +421,7 @@ class StatechartStaticMeshRequestStateMachine(
                             raisePlatformError(StatechartStaticMeshRequestEvent.Error.Execution, "<invoke> <param name='force'> expr failed to evaluate")
                         }
                         run {
-                            val v: Any? = label
+                            val v: Any? = vLabel
                             hostInvokeParams["speed"] =
                                 (hostInvokeParams["speed"] ?: emptyList()) + valueToWireString(v)
                             putParam(hostInvokePayload, "speed", v)
@@ -483,21 +489,21 @@ class StatechartStaticMeshRequestStateMachine(
             0 -> {
                 // SCE-MAP: statechart_static_mesh_request.scxml:76 :: asking :: _transition_0
 
-            if (try { answered = com.sce.forge.runtime.SceChecked.add(answered, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticMeshRequestEvent.Error.Execution, "<assign location='answered'>: an integer operation overflowed or failed"); true }) {
+            if (try { vAnswered = com.sce.forge.runtime.SceChecked.add(vAnswered, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticMeshRequestEvent.Error.Execution, "<assign location='answered'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             1 -> {
                 // SCE-MAP: statechart_static_mesh_request.scxml:79 :: asking :: _transition_1
 
-            if (try { failed = com.sce.forge.runtime.SceChecked.add(failed, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticMeshRequestEvent.Error.Execution, "<assign location='failed'>: an integer operation overflowed or failed"); true }) {
+            if (try { vFailed = com.sce.forge.runtime.SceChecked.add(vFailed, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticMeshRequestEvent.Error.Execution, "<assign location='failed'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             2 -> {
                 // SCE-MAP: statechart_static_mesh_request.scxml:82 :: asking :: _transition_2
 
-            if (try { refused = com.sce.forge.runtime.SceChecked.add(refused, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticMeshRequestEvent.Error.Execution, "<assign location='refused'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRefused = com.sce.forge.runtime.SceChecked.add(vRefused, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticMeshRequestEvent.Error.Execution, "<assign location='refused'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -507,18 +513,18 @@ class StatechartStaticMeshRequestStateMachine(
             0 -> {
                 // SCE-MAP: statechart_static_mesh_request.scxml:58 :: idle :: _transition_0
 
-            if (try { load = com.sce.forge.runtime.SceChecked.add(load, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticMeshRequestEvent.Error.Execution, "<assign location='load'>: an integer operation overflowed or failed"); true }) {
+            if (try { vLoad = com.sce.forge.runtime.SceChecked.add(vLoad, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticMeshRequestEvent.Error.Execution, "<assign location='load'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { label = com.sce.forge.runtime.SceChecked.bounded("busy", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticMeshRequestEvent.Error.Execution, "<assign location='label'>: an integer operation overflowed or failed"); true }) {
+            if (try { vLabel = com.sce.forge.runtime.SceChecked.bounded("busy", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticMeshRequestEvent.Error.Execution, "<assign location='label'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             1 -> {
                 // SCE-MAP: statechart_static_mesh_request.scxml:62 :: idle :: _transition_1
 
-            if (try { peer = com.sce.forge.runtime.SceChecked.bounded("#ghost", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticMeshRequestEvent.Error.Execution, "<assign location='peer'>: an integer operation overflowed or failed"); true }) {
+            if (try { vPeer = com.sce.forge.runtime.SceChecked.bounded("#ghost", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticMeshRequestEvent.Error.Execution, "<assign location='peer'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
