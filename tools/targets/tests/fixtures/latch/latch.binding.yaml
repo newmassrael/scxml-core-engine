@@ -1,0 +1,19 @@
+version: 1
+document: latch.scxml
+activation: on-change
+
+inputs:
+  level:
+    address: tank/in/level
+    when_absent: 50
+
+outputs:
+  alarm:
+    address: tank/out/alarm
+    field: value
+    map: {HIGH: HIGH, LOW: LOW}
+    hold_last: true
+    also: {Tag: ALARM}
+    when:
+      HIGH: {Note: over}
+    assumed: "the slot keeps what it last said between the two bands"

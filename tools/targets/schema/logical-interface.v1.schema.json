@@ -147,8 +147,13 @@
         {"required": ["passthrough"]},
         {"required": ["internal"]}
       ],
+      "dependentRequired": {"holds_last": ["values"]},
       "properties": {
         "values": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/producedValue"}},
+        "holds_last": {
+          "const": true,
+          "description": "A value the document produces outside `values` is no announcement: the output keeps the last value it announced, and before there is one it has none."
+        },
         "passthrough": {"const": true},
         "internal": {"const": true},
         "assumed": {"type": "string"},

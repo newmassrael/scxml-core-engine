@@ -39,7 +39,8 @@ STATECHART_OUTPUT_KEYS = {"address", "field", "sent", "when_nothing_sent", "map"
 PREDICATES = ("equals", "equals_any", "not_equals", "absent")
 TRANSFORM_INPUT_KEYS = {"address", *PREDICATES, "when_absent", "range", "protocol", "parameters",
                         *ANNOTATIONS}
-TRANSFORM_OUTPUT_KEYS = {"address", "field", "map", "passthrough", "internal", *ANNOTATIONS}
+TRANSFORM_OUTPUT_KEYS = {"address", "field", "map", "passthrough", "internal", "hold_last",
+                         "also", "when", *ANNOTATIONS}
 TOP_KEYS = {"version", "document", "activation", "inputs", "outputs"}
 
 
@@ -178,15 +179,23 @@ def split(binding_path: pathlib.Path, pack_dir: pathlib.Path, spec_path: pathlib
             if rule.get("internal"):
                 outputs[name] = {"internal": True, **annotations(rule)}
                 continue
+            # The other fields of the record an output is written into (`also`, always; `when`, while
+            # the output has a given value) are the platform's record, not anything the document
+            # computes: a library has no record to fill, so they are the profile's.
+            record = {k: rule[k] for k in ("also", "when") if rule.get(k)}
             if rule.get("passthrough"):
                 outputs[name] = {"passthrough": True, **annotations(rule)}
-                profile_outputs[name] = {"address": rule["address"], "field": rule["field"]}
+                profile_outputs[name] = {"address": rule["address"], "field": rule["field"], **record}
                 continue
             mapping = rule.get("map")
             if not isinstance(mapping, dict):
                 raise Refused(f"output {name}: neither internal, passthrough nor mapped")
-            outputs[name] = {"values": list(mapping), **annotations(rule)}
-            profile_outputs[name] = {"address": rule["address"], "field": rule["field"], "map": mapping}
+            # A value outside the map writes nothing: the slot keeps what it held. That is the
+            # output's behaviour, whatever the platform, so it is logical.
+            holds = {"holds_last": True} if rule.get("hold_last") else {}
+            outputs[name] = {"values": list(mapping), **holds, **annotations(rule)}
+            profile_outputs[name] = {"address": rule["address"], "field": rule["field"], "map": mapping,
+                                     **record}
     else:
         raise Refused(f"document kind {kind!r} is not split")
 
@@ -234,6 +243,10 @@ def join(interface: dict, profile: dict, document: str) -> dict:
             out["passthrough"] = True
         if "map" in prof:
             out["map"] = prof["map"]
+        if rule.get("holds_last"):
+            out["hold_last"] = True
+        if "when" in prof:
+            out["when"] = prof["when"]
         also = {prof["attribute_fields"][a]: v for a, v in (rule.get("attributes") or {}).items()}
         also.update(prof.get("also") or {})
         if also:

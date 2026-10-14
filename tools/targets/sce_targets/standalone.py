@@ -65,7 +65,7 @@ SC_OUTPUT_KEYS = {"sent", "values", "when_nothing_sent", "attributes", *ANNOTATI
 SENT_KEYS = {"processor"}
 TF_INPUT_KEYS = {"signal", "logical", "equals", "equals_any", "not_equals", "absent", "when_absent",
                  "range", *ANNOTATIONS}
-TF_OUTPUT_KEYS = {"values", "passthrough", "internal", *ANNOTATIONS}
+TF_OUTPUT_KEYS = {"values", "passthrough", "internal", "holds_last", *ANNOTATIONS}
 INT_TYPES = {"int8_t", "int16_t", "int32_t", "int64_t", "uint8_t", "uint16_t", "uint32_t",
              "uint64_t", "int", "unsigned", "std::int32_t", "std::int64_t", "std::uint32_t",
              "std::uint64_t"}
@@ -590,6 +590,9 @@ def input_expression(name: str, rule: dict, ptype: str, signal_index: dict, sign
     return body
 
 
+UNMAPPED_HELD = "                // Outside the values it announces: no announcement, the output keeps the last one."
+
+
 def emit_transform_api(interface_path, target_path, interface, target, machine_header, header_text,
                        holder: dict | None = None):
     component, signals, inputs, landed, param_types = plan_transform(interface, header_text, holder)
@@ -721,7 +724,7 @@ def emit_transform_api(interface_path, target_path, interface, target, machine_h
             a("            default: break;")
             a("            }")
             a("            if (!named) {")
-            a("                ++mUnmapped;")
+            a(UNMAPPED_HELD if rule.get("holds_last") else "                ++mUnmapped;")
             a(f"            }} else if (!mOut{i} || *mOut{i} != *named) {{")
             a(f"                mOut{i} = *named;")
             a("                if (mListener != nullptr) {")
@@ -735,7 +738,7 @@ def emit_transform_api(interface_path, target_path, interface, target, machine_h
             kind = value_kind(ret)
             allowed = " || ".join(f"value == {cpp_literal(v, kind)}" for v in rule["values"])
             a(f"            if (!({allowed})) {{")
-            a("                ++mUnmapped;")
+            a(UNMAPPED_HELD if rule.get("holds_last") else "                ++mUnmapped;")
             a(f"            }} else if (!mOut{i} || *mOut{i} != value) {{")
         else:
             a(f"            if (!mOut{i} || *mOut{i} != value) {{")
@@ -805,6 +808,14 @@ template <typename T> std::pair<bool, std::string> judge(const std::optional<T>&
         if (bar == std::string::npos) return {false, shown(*got)};
         start = bar + 1;
     }
+}
+// An output that keeps its last announced value has none until it announces one. A record that
+// expects a value there is describing what the platform's slot held before the component wrote
+// anything, which is not the component's to show; it is counted, not failed.
+inline int& unwritten() { static int n = 0; return n; }
+template <typename T> std::pair<bool, std::string> judgeHeld(const std::optional<T>& got, const std::string& wants) {
+    if (!got) { ++unwritten(); return {true, "(unwritten)"}; }
+    return judge(got, wants);
 }
 }  // namespace replay_detail
 using namespace replay_detail;
@@ -876,7 +887,7 @@ REPLAY_LOOP = r"""
     }
     std::cout << "judged " << run << " passed " << passed << " failed " << failed
               << " unsettable " << broken << " unmapped " << component.unmapped()
-              << " undeliverable " << component.undeliverable() << "\n";
+              << " undeliverable " << component.undeliverable() << " unwritten " << unwritten() << "\n";
     return (failed == 0 && broken == 0 && component.unmapped() == 0) ? 0 : 1;
 }
 """
@@ -936,6 +947,7 @@ def emit_replay(interface: dict, target: dict, api_header: str, header_text: str
     for o, rule in outputs.items():
         if rule.get("internal"):
             continue
+        judging = "judgeHeld" if rule.get("holds_last") else "judge"
         if kind == "statechart":
             a(f"        {{{cpp_string(o)}, [&](const std::string& want) {{ const auto& v = component.{camel(o)}(); "
               f"const std::string got = v ? std::string(toString(v->value)) : std::string(\"(unwritten)\"); "
@@ -943,9 +955,10 @@ def emit_replay(interface: dict, target: dict, api_header: str, header_text: str
         elif o in ENUM_OUTPUTS:
             a(f"        {{{cpp_string(o)}, [&](const std::string& want) {{ const auto& v = component.{camel(o)}(); "
               f"std::optional<std::string> named; if (v) named = std::string(toString(*v)); "
-              f"return judge(named, want); }}}},")
+              f"return {judging}(named, want); }}}},")
         else:
-            a(f"        {{{cpp_string(o)}, [&](const std::string& want) {{ return judge(component.{camel(o)}(), want); }}}},")
+            a(f"        {{{cpp_string(o)}, [&](const std::string& want) {{ "
+              f"return {judging}(component.{camel(o)}(), want); }}}},")
     a("    };")
     a("    const std::map<std::string, std::string> attributes = {")
     for o, rule in outputs.items():

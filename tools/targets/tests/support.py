@@ -22,6 +22,7 @@ TARGETS = HERE.parent
 FIXTURE = HERE / "fixtures" / "pump"
 STATECHART_FIXTURE = HERE / "fixtures" / "lamp"
 BEACON_FIXTURE = HERE / "fixtures" / "beacon"
+LATCH_FIXTURE = HERE / "fixtures" / "latch"
 SCHEMA = TARGETS / "schema" / "logical-interface.v1.schema.json"
 STANDALONE_TARGET = TARGETS / "targets" / "standalone.yaml"
 

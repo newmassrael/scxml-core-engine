@@ -56,11 +56,14 @@ class AKeyNoFileCouldHoldIsRefused(Working):
         self.split()
 
     def test_an_output_key_no_file_places(self):
-        """`hold_last` is a key binding.v1 admits and neither file has a place for: keeping what
-        a position held is a rule about a platform's record, not about the document."""
-        said = self.refusal_after(lambda b: b["outputs"]["pump"].update(hold_last=True))
+        """`unresolved` is a key binding.v1 admits and neither file has a place for: an output
+        nobody has said the address of is a question for the owner, and a split cannot answer it."""
+        def unaddressed(binding):
+            binding["outputs"]["fill"].pop("address")
+            binding["outputs"]["fill"]["unresolved"] = "nobody has said which address this reaches"
+        said = self.refusal_after(unaddressed)
         self.assertIn("keys not placed", said)
-        self.assertIn("hold_last", said)
+        self.assertIn("unresolved", said)
 
     def test_a_binding_the_core_itself_refuses_is_a_refusal_not_a_crash(self):
         said = self.refusal_after(lambda b: b["inputs"]["floatHigh"].update(hysteresis=3))

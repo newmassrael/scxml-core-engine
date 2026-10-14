@@ -1,0 +1,18 @@
+# A synthetic pack for the targets' tests of an output that keeps its last value. It is made up, and
+# nothing in it is anyone's. One number in, one slot out that is written only when the number is
+# high or low, and holds what it last said in between.
+version: 1
+entries:
+  - address: tank/in/level
+    role: input
+    names: [IN_Level]
+    type: number
+
+  - address: tank/out/alarm
+    role: output
+    names: [OUT_Alarm]
+    fields:
+      value: {values: {HIGH: 1, LOW: 2}}
+      # The rest of the platform's record for this slot. A library has none of it.
+      Tag: {type: text}
+      Note: {type: text}

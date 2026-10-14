@@ -143,6 +143,9 @@ def main(argv: list) -> int:
             attr_at[f"{prof['address']}.{f}"] = (name, attr)
         for f in (prof.get("also") or {}):
             platform_only.add(f"{prof['address']}.{f}")
+        for fields in (prof.get("when") or {}).values():
+            for f in fields:
+                platform_only.add(f"{prof['address']}.{f}")
 
     latches = core_verify.Latches(pack.conventions, pack.model)
     read_addresses = set().union(*(core_check.addresses_of(r) for r in a_inputs.values()))

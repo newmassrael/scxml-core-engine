@@ -1,0 +1,30 @@
+version: 1
+origin: made up for the targets' tests
+independent_cases: true
+ordered: true
+cases:
+  # Nothing has been said yet: the slot is the platform's own, and the record states what it held.
+  - name: between the bands before anything was said
+    given: {tank/in/level: 50}
+    drove: [tank/in/level]
+    expect: {tank/out/alarm.value: HIGH}
+
+  - name: above the band
+    given: {tank/in/level: 90}
+    drove: [tank/in/level]
+    expect: {tank/out/alarm.value: HIGH, tank/out/alarm.Tag: ALARM, tank/out/alarm.Note: over}
+
+  - name: between the bands after HIGH
+    given: {tank/in/level: 50}
+    drove: [tank/in/level]
+    expect: {tank/out/alarm.value: HIGH}
+
+  - name: below the band
+    given: {tank/in/level: 10}
+    drove: [tank/in/level]
+    expect: {tank/out/alarm.value: LOW, tank/out/alarm.Tag: ALARM}
+
+  - name: between the bands after LOW
+    given: {tank/in/level: 50}
+    drove: [tank/in/level]
+    expect: {tank/out/alarm.value: LOW}
