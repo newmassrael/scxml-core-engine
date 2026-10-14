@@ -21,6 +21,14 @@
 # heap grow. Single-codec embed needs no list storage and was already
 # no-alloc after the scalar round.
 #
+# The same build also compiles the generated algorithms over a record that holds
+# bounded text (`sce:std/text/*`, SCE_FORGE.md §4.12): the record's string field is
+# the fixed-capacity `SceString<N>` of `sce-portable-bytes` and the list the
+# algorithm builds is a `SceOwnedList`, so none of them reaches the heap when the
+# `alloc` feature is off. The committed trees the machine scenarios compile are
+# the algorithms' goldens, so a change to how the generator spells that text is
+# judged here too.
+#
 # Usage (from repo root):  scripts/check_noalloc_codec.sh
 
 set -euo pipefail
@@ -29,7 +37,9 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
 EXPECTED="tests/forge/expected"
+ALGORITHM_EXPECTED="backends/rust/tests/src/integration/static_datamodel"
 RUNTIME="$REPO_ROOT/backends/rust/forge-runtime"
+PORTABLE="$REPO_ROOT/backends/rust/portable-bytes"
 
 # Build dir under target/ (gitignored) so the workspace stays clean.
 WORK="$REPO_ROOT/target/noalloc_codec_check"
@@ -54,6 +64,15 @@ CODECS=(
     codec_tlv_chain_basic
 )
 
+# Generated algorithms over a record that holds bounded text: the record's
+# schema first, as each algorithm names it as a sibling (`use super::text_slot`).
+ALGORITHMS=(
+    text_slot
+    text_slot_latest
+    text_slot_retitled
+    text_slot_holds
+)
+
 cat > "$WORK/Cargo.toml" <<EOF
 [package]
 name = "sce_noalloc_codec_check"
@@ -63,12 +82,13 @@ publish = false
 
 [dependencies]
 sce-forge-runtime = { path = "$RUNTIME", default-features = false }
+sce-portable-bytes = { path = "$PORTABLE", default-features = false }
 
 # Declared (but left OFF for this gate) so the codec goldens'
 # \`#[cfg(feature = "alloc")]\` blocks are recognized cfg rather than
 # "unexpected" — keeps the no-alloc build warning-clean.
 [features]
-alloc = ["sce-forge-runtime/alloc"]
+alloc = ["sce-forge-runtime/alloc", "sce-portable-bytes/alloc"]
 
 [workspace]
 EOF
@@ -80,14 +100,21 @@ EOF
         echo "#[path = \"${c}.rs\"]"
         echo "pub mod ${c};"
     done
+    for a in "${ALGORITHMS[@]}"; do
+        echo "#[path = \"${a}.rs\"]"
+        echo "pub mod ${a};"
+    done
 } > "$WORK/src/lib.rs"
 
 for c in "${CODECS[@]}"; do
     cp "$EXPECTED/${c}.rs" "$WORK/src/${c}.rs"
 done
+for a in "${ALGORITHMS[@]}"; do
+    cp "$ALGORITHM_EXPECTED/${a}.rs" "$WORK/src/${a}.rs"
+done
 
-echo "==> Compiling ${#CODECS[@]} borrowed scalar codecs with --no-default-features (no_std, no alloc)"
+echo "==> Compiling ${#CODECS[@]} borrowed scalar codecs and ${#ALGORITHMS[@]} text algorithm files with --no-default-features (no_std, no alloc)"
 ( cd "$WORK" && cargo build --no-default-features )
 
-echo "OK: scalar + list-bearing (repeat / tlv-chain) codecs compile no_std without alloc."
+echo "OK: scalar + list-bearing (repeat / tlv-chain) codecs and the text algorithms compile no_std without alloc."
 rm -rf "$WORK"

@@ -14,19 +14,25 @@ name: sce-forge codec no_std no-alloc build
 # `heapless::Vec` (the Rust mirror of the C11 `T elems[MAX]; len` shape).
 # Single-codec embed needs no list storage and is already no-alloc.
 #
-# Trigger: changes to the codec generator/template, the committed codec
-# goldens the gate compiles, the forge runtime, the gate script itself, or
-# the cargo lockfile.
+# The same build compiles the generated algorithms over a record that holds
+# bounded text (sce:std/text), whose string field is the fixed-capacity
+# `SceString<N>` of sce-portable-bytes.
+#
+# Trigger: changes to the codec generator/template, the committed codec and
+# text-algorithm goldens the gate compiles, the forge runtime, the portable
+# bytes crate, the gate script itself, or the cargo lockfile.
 
 on:
   push:
     branches: [ main ]
     paths:
       - 'backends/*/forge-runtime/**'
+      - 'backends/rust/portable-bytes/**'
       - 'tools/codegen/templates/forge/rust/codec.rs.jinja2'
       - 'tools/codegen/templates/_macros/forge_rust_flag_accessors.jinja2'
       - 'sce-build/src/forge/generator.rs'
       - 'tests/forge/expected/codec_*.rs'
+      - 'backends/rust/tests/src/integration/static_datamodel/text_slot*.rs'
       - 'scripts/check_noalloc_codec.sh'
       - 'Cargo.lock'
       - '.github/workflows/sce-forge-codec-no-alloc.yml'
@@ -34,10 +40,12 @@ on:
     branches: [ main ]
     paths:
       - 'backends/*/forge-runtime/**'
+      - 'backends/rust/portable-bytes/**'
       - 'tools/codegen/templates/forge/rust/codec.rs.jinja2'
       - 'tools/codegen/templates/_macros/forge_rust_flag_accessors.jinja2'
       - 'sce-build/src/forge/generator.rs'
       - 'tests/forge/expected/codec_*.rs'
+      - 'backends/rust/tests/src/integration/static_datamodel/text_slot*.rs'
       - 'scripts/check_noalloc_codec.sh'
       - 'Cargo.lock'
       - '.github/workflows/sce-forge-codec-no-alloc.yml'
