@@ -105,13 +105,13 @@ class EveryRefusalOfALineageCheckHasACaseThatReachesItForThatReason(unittest.Tes
         "an id first issued in another revision": "was first issued in revision",
         "a retired id made live again": "a retired id is never issued again",
         "a requirement's history rewritten": "history is only added to",
-        "the last words replaced in an earlier revision": "are not the ones the work holds",
-        "a new id numbered below the work's next": "would be issued twice",
+        "the last words replaced in an earlier revision": "are not the ones the spec holds",
+        "a new id numbered below the spec's next": "would be issued twice",
         "a new id that was already issued by number": "would be issued twice",
-        "a next that is behind": "is behind the work's",
+        "a next that is behind": "is behind the spec's",
         # Starting the ids over retires every id and numbers on; putting the numbering back is
         # the reset it must not be, and is refused as any next that is behind is.
-        "every id started over and the numbering put back to R1": "is behind the work's",
+        "every id started over and the numbering put back to R1": "is behind the spec's",
     }
     LIST = {
         "the manifest of another revision": "last revision is",

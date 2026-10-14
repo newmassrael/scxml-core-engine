@@ -905,7 +905,7 @@
   },
   {
    "expect": {
-    "refused": "the lineage's next (6) is behind the work's (7): ids already issued would be issued again"
+    "refused": "the lineage's next (6) is behind the spec's (7): ids already issued would be issued again"
    },
    "name": "a lineage that goes back in time",
    "newer": "first",
@@ -913,7 +913,7 @@
   },
   {
    "expect": {
-    "refused": "the lineage is of 'other' and the work's is of 'lamp': one lineage follows one specification"
+    "refused": "the lineage is of 'other' and the spec's is of 'lamp': one lineage follows one specification"
    },
    "name": "a lineage of another specification",
    "newer": "second, of another specification",
@@ -921,7 +921,7 @@
   },
   {
    "expect": {
-    "refused": "the lineage's next (5) is behind the work's (7): ids already issued would be issued again"
+    "refused": "the lineage's next (5) is behind the spec's (7): ids already issued would be issued again"
    },
    "name": "a lineage whose next is behind",
    "newer": "third, whose next is behind",
@@ -1221,12 +1221,12 @@
   {
    "expect": "ok",
    "following": "fresh",
-   "name": "every id started over, numbered on from the work's next",
+   "name": "every id started over, numbered on from the spec's next",
    "previous": "first"
   },
   {
    "expect": {
-    "refused": "the lineage's next (1) is behind the work's (6): ids already issued would be issued again"
+    "refused": "the lineage's next (1) is behind the spec's (6): ids already issued would be issued again"
    },
    "following": "fresh, numbered from R1 again",
    "name": "every id started over and the numbering put back to R1",
@@ -1234,7 +1234,7 @@
   },
   {
    "expect": {
-    "refused": "the lineage is of 'other' and the work's is of 'lamp': one lineage follows one specification"
+    "refused": "the lineage is of 'other' and the spec's is of 'lamp': one lineage follows one specification"
    },
    "following": "second, of another specification",
    "name": "another specification",
@@ -1242,7 +1242,7 @@
   },
   {
    "expect": {
-    "refused": "the lineage has 2 revision(s) and the work's has 3: revisions are never taken back"
+    "refused": "the lineage has 2 revision(s) and the spec's has 3: revisions are never taken back"
    },
    "following": "third, with a revision fewer",
    "name": "fewer revisions",
@@ -1250,7 +1250,7 @@
   },
   {
    "expect": {
-    "refused": "revision 1 of the lineage is not the revision the work holds: a revision is not rewritten"
+    "refused": "revision 1 of the lineage is not the revision the spec holds: a revision is not rewritten"
    },
    "following": "second, its first revision rewritten",
    "name": "an earlier revision rewritten",
@@ -1258,7 +1258,7 @@
   },
   {
    "expect": {
-    "refused": "revision 1 of the lineage is not the revision the work holds: a revision is not rewritten"
+    "refused": "revision 1 of the lineage is not the revision the spec holds: a revision is not rewritten"
    },
    "following": "second, its first manifest digest rewritten",
    "name": "a revision with another after it is final",
@@ -1266,7 +1266,7 @@
   },
   {
    "expect": {
-    "refused": "revision 1 of the lineage is not the revision the work holds: a revision is not rewritten"
+    "refused": "revision 1 of the lineage is not the revision the spec holds: a revision is not rewritten"
    },
    "following": "second, its first sidecar digest rewritten",
    "name": "a revision's words digest with another after it is final",
@@ -1274,7 +1274,7 @@
   },
   {
    "expect": {
-    "refused": "R5 is in the work's lineage and not in this one: an id is never forgotten"
+    "refused": "R5 is in the spec's lineage and not in this one: an id is never forgotten"
    },
    "following": "third, an id forgotten",
    "name": "an id forgotten",
@@ -1298,7 +1298,7 @@
   },
   {
    "expect": {
-    "refused": "the words R4 has had are not the ones the work holds: a requirement's history is only added to"
+    "refused": "the words R4 has had are not the ones the spec holds: a requirement's history is only added to"
    },
    "following": "reworded, a requirement's history rewritten",
    "name": "a requirement's history rewritten",
@@ -1306,7 +1306,7 @@
   },
   {
    "expect": {
-    "refused": "the last words R1 had in revision 1 are not the ones the work holds"
+    "refused": "the last words R1 had in revision 1 are not the ones the spec holds"
    },
    "following": "third, an old requirement's words replaced",
    "name": "the last words replaced in an earlier revision",
@@ -1314,15 +1314,15 @@
   },
   {
    "expect": {
-    "refused": "R1x is new in this lineage and is not an id issued from the work's next (R6): an id would be issued twice"
+    "refused": "R1x is new in this lineage and is not an id issued from the spec's next (R6): an id would be issued twice"
    },
    "following": "third, a new id below next",
-   "name": "a new id numbered below the work's next",
+   "name": "a new id numbered below the spec's next",
    "previous": "second"
   },
   {
    "expect": {
-    "refused": "R0 is new in this lineage and is not an id issued from the work's next (R6): an id would be issued twice"
+    "refused": "R0 is new in this lineage and is not an id issued from the spec's next (R6): an id would be issued twice"
    },
    "following": "third, a new id numbered R0",
    "name": "a new id that was already issued by number",
@@ -1336,7 +1336,7 @@
   },
   {
    "expect": {
-    "refused": "the lineage's next (5) is behind the work's (7): ids already issued would be issued again"
+    "refused": "the lineage's next (5) is behind the spec's (7): ids already issued would be issued again"
    },
    "following": "third, whose next is behind",
    "name": "a next that is behind",
@@ -7371,7 +7371,7 @@
     "sidecar_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"1\",\n  \"text\": {\n    \"R1\": \"The lamp starts off.\",\n    \"R2\": \"Pressing the switch turns it on\",\n    \"R3\": \"pressing it again turns it off\",\n    \"R4\": \"After 30 seconds on, it turns itself off.\",\n    \"R5\": \"Nothing else changes it.\"\n  }\n}\n"
    },
    "name": "a list that keeps its lineage",
-   "what": "the work has now"
+   "what": "the spec has now"
   },
   {
    "expect": {
@@ -7458,7 +7458,7 @@
     "manifest_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"1\",\n  \"extraction\": {\n    \"ids\": \"synthesized\",\n    \"trace\": \"none\",\n    \"modality_convention\": \"english-modal-verbs\",\n    \"method\": \"ai-pass-1\"\n  },\n  \"sections\": [\n    {\n      \"id\": \"S1\",\n      \"title\": \"Sentence 1\"\n    },\n    {\n      \"id\": \"S2\",\n      \"title\": \"Sentence 2\"\n    },\n    {\n      \"id\": \"S3\",\n      \"title\": \"Sentence 3\"\n    },\n    {\n      \"id\": \"S4\",\n      \"title\": \"Sentence 4\"\n    }\n  ],\n  \"requirements\": [\n    {\n      \"id\": \"R1\",\n      \"section\": \"S1\"\n    },\n    {\n      \"id\": \"R2\",\n      \"section\": \"S2\"\n    },\n    {\n      \"id\": \"R3\",\n      \"section\": \"S2\"\n    },\n    {\n      \"id\": \"R4\",\n      \"section\": \"S3\"\n    },\n    {\n      \"id\": \"R5\",\n      \"section\": \"S4\"\n    }\n  ]\n}\n"
    },
    "name": "a lineage with no sidecar beside it",
-   "what": "the work has now"
+   "what": "the spec has now"
   },
   {
    "expect": {
@@ -7540,7 +7540,7 @@
     "sidecar_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"1\",\n  \"text\": {\n    \"R1\": \"The lamp starts off.\",\n    \"R2\": \"Pressing the switch turns it on\",\n    \"R3\": \"pressing it again turns it off\",\n    \"R4\": \"After 30 seconds on, it turns itself off.\",\n    \"R5\": \"Nothing else changes it.\"\n  }\n}\n"
    },
    "name": "a list made before lineages is adopted",
-   "what": "the work has now"
+   "what": "the spec has now"
   },
   {
    "expect": {
@@ -7622,17 +7622,17 @@
     "sidecar_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"1\",\n  \"text\": {\n    \"R1\": \"  The lamp\\n  starts   off.\\u00a0 \",\n    \"R2\": \"Pressing the switch turns it on\",\n    \"R3\": \"pressing it again turns it off\",\n    \"R4\": \"After 30 seconds on, it turns itself off.\",\n    \"R5\": \"Nothing else changes it.\"\n  }\n}\n"
    },
    "name": "adoption reads the words with their whitespace collapsed",
-   "what": "the work has now"
+   "what": "the spec has now"
   },
   {
    "expect": {
-    "refused": "the list the work has now keeps no lineage and no sidecar, so the words behind its ids are not known"
+    "refused": "the list the spec has now keeps no lineage and no sidecar, so the words behind its ids are not known"
    },
    "held": {
     "manifest_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"1\",\n  \"extraction\": {\n    \"ids\": \"synthesized\",\n    \"trace\": \"none\",\n    \"modality_convention\": \"english-modal-verbs\",\n    \"method\": \"ai-pass-1\"\n  },\n  \"sections\": [\n    {\n      \"id\": \"S1\",\n      \"title\": \"Sentence 1\"\n    },\n    {\n      \"id\": \"S2\",\n      \"title\": \"Sentence 2\"\n    },\n    {\n      \"id\": \"S3\",\n      \"title\": \"Sentence 3\"\n    },\n    {\n      \"id\": \"S4\",\n      \"title\": \"Sentence 4\"\n    }\n  ],\n  \"requirements\": [\n    {\n      \"id\": \"R1\",\n      \"section\": \"S1\"\n    },\n    {\n      \"id\": \"R2\",\n      \"section\": \"S2\"\n    },\n    {\n      \"id\": \"R3\",\n      \"section\": \"S2\"\n    },\n    {\n      \"id\": \"R4\",\n      \"section\": \"S3\"\n    },\n    {\n      \"id\": \"R5\",\n      \"section\": \"S4\"\n    }\n  ]\n}\n"
    },
    "name": "a list with neither a lineage nor a sidecar",
-   "what": "the work has now"
+   "what": "the spec has now"
   },
   {
    "expect": {
@@ -7644,51 +7644,51 @@
     "sidecar_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"1\",\n  \"text\": {\n    \"R1\": \"The lamp starts off.\",\n    \"R2\": \"Pressing the switch turns it on\",\n    \"R3\": \"pressing it again turns it off\",\n    \"R4\": \"After 30 seconds on, it turns itself off.\",\n    \"R5\": \"Nothing else changes it.\"\n  }\n}\n"
    },
    "name": "a lineage that is not JSON",
-   "what": "the work has now"
+   "what": "the spec has now"
   },
   {
    "expect": {
-    "refused": "the list the work has now is not JSON"
+    "refused": "the list the spec has now is not JSON"
    },
    "held": {
     "manifest_text": "not json",
     "sidecar_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"1\",\n  \"text\": {\n    \"R1\": \"The lamp starts off.\",\n    \"R2\": \"Pressing the switch turns it on\",\n    \"R3\": \"pressing it again turns it off\",\n    \"R4\": \"After 30 seconds on, it turns itself off.\",\n    \"R5\": \"Nothing else changes it.\"\n  }\n}\n"
    },
    "name": "a manifest that is not JSON",
-   "what": "the work has now"
+   "what": "the spec has now"
   },
   {
    "expect": {
-    "refused": "the list the work has now is not JSON"
+    "refused": "the list the spec has now is not JSON"
    },
    "held": {
     "manifest_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"1\",\n  \"extraction\": {\n    \"ids\": \"synthesized\",\n    \"trace\": \"none\",\n    \"modality_convention\": \"english-modal-verbs\",\n    \"method\": \"ai-pass-1\"\n  },\n  \"sections\": [\n    {\n      \"id\": \"S1\",\n      \"title\": \"Sentence 1\"\n    },\n    {\n      \"id\": \"S2\",\n      \"title\": \"Sentence 2\"\n    },\n    {\n      \"id\": \"S3\",\n      \"title\": \"Sentence 3\"\n    },\n    {\n      \"id\": \"S4\",\n      \"title\": \"Sentence 4\"\n    }\n  ],\n  \"requirements\": [\n    {\n      \"id\": \"R1\",\n      \"section\": \"S1\"\n    },\n    {\n      \"id\": \"R2\",\n      \"section\": \"S2\"\n    },\n    {\n      \"id\": \"R3\",\n      \"section\": \"S2\"\n    },\n    {\n      \"id\": \"R4\",\n      \"section\": \"S3\"\n    },\n    {\n      \"id\": \"R5\",\n      \"section\": \"S4\"\n    }\n  ]\n}\n",
     "sidecar_text": "not json"
    },
    "name": "a sidecar that is not JSON",
-   "what": "the work has now"
+   "what": "the spec has now"
   },
   {
    "expect": {
-    "refused": "the list the work has now is not a pair of JSON objects"
+    "refused": "the list the spec has now is not a pair of JSON objects"
    },
    "held": {
     "manifest_text": "[]",
     "sidecar_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"1\",\n  \"text\": {\n    \"R1\": \"The lamp starts off.\",\n    \"R2\": \"Pressing the switch turns it on\",\n    \"R3\": \"pressing it again turns it off\",\n    \"R4\": \"After 30 seconds on, it turns itself off.\",\n    \"R5\": \"Nothing else changes it.\"\n  }\n}\n"
    },
    "name": "a manifest that is not an object",
-   "what": "the work has now"
+   "what": "the spec has now"
   },
   {
    "expect": {
-    "refused": "the list the work has now is not a pair of JSON objects"
+    "refused": "the list the spec has now is not a pair of JSON objects"
    },
    "held": {
     "manifest_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"1\",\n  \"extraction\": {\n    \"ids\": \"synthesized\",\n    \"trace\": \"none\",\n    \"modality_convention\": \"english-modal-verbs\",\n    \"method\": \"ai-pass-1\"\n  },\n  \"sections\": [\n    {\n      \"id\": \"S1\",\n      \"title\": \"Sentence 1\"\n    },\n    {\n      \"id\": \"S2\",\n      \"title\": \"Sentence 2\"\n    },\n    {\n      \"id\": \"S3\",\n      \"title\": \"Sentence 3\"\n    },\n    {\n      \"id\": \"S4\",\n      \"title\": \"Sentence 4\"\n    }\n  ],\n  \"requirements\": [\n    {\n      \"id\": \"R1\",\n      \"section\": \"S1\"\n    },\n    {\n      \"id\": \"R2\",\n      \"section\": \"S2\"\n    },\n    {\n      \"id\": \"R3\",\n      \"section\": \"S2\"\n    },\n    {\n      \"id\": \"R4\",\n      \"section\": \"S3\"\n    },\n    {\n      \"id\": \"R5\",\n      \"section\": \"S4\"\n    }\n  ]\n}\n",
     "sidecar_text": "[]"
    },
    "name": "a sidecar that is not an object",
-   "what": "the work has now"
+   "what": "the spec has now"
   },
   {
    "expect": {
@@ -7699,7 +7699,7 @@
     "sidecar_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"1\",\n  \"text\": {\n    \"R1\": \"The lamp starts off.\",\n    \"R2\": \"Pressing the switch turns it on\",\n    \"R3\": \"pressing it again turns it off\",\n    \"R4\": \"After 30 seconds on, it turns itself off.\",\n    \"R5\": \"Nothing else changes it.\"\n  }\n}\n"
    },
    "name": "a manifest with no document",
-   "what": "the work has now"
+   "what": "the spec has now"
   },
   {
    "expect": {
@@ -7710,7 +7710,7 @@
     "sidecar_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"1\",\n  \"text\": {\n    \"R1\": \"The lamp starts off.\",\n    \"R2\": \"Pressing the switch turns it on\",\n    \"R3\": \"pressing it again turns it off\",\n    \"R4\": \"After 30 seconds on, it turns itself off.\",\n    \"R5\": \"Nothing else changes it.\"\n  }\n}\n"
    },
    "name": "a manifest that carries the source's own ids",
-   "what": "the work has now"
+   "what": "the spec has now"
   },
   {
    "expect": {
@@ -7721,7 +7721,7 @@
     "sidecar_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"1\",\n  \"text\": {\n    \"R1\": \"The lamp starts off.\",\n    \"R2\": \"Pressing the switch turns it on\",\n    \"R3\": \"pressing it again turns it off\",\n    \"R4\": \"After 30 seconds on, it turns itself off.\",\n    \"R5\": \"Nothing else changes it.\"\n  }\n}\n"
    },
    "name": "a manifest with no extraction",
-   "what": "the work has now"
+   "what": "the spec has now"
   },
   {
    "expect": {
@@ -7732,7 +7732,7 @@
     "sidecar_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"1\",\n  \"text\": {\n    \"R1\": \"The lamp starts off.\",\n    \"R2\": \"Pressing the switch turns it on\",\n    \"R3\": \"pressing it again turns it off\",\n    \"R4\": \"After 30 seconds on, it turns itself off.\",\n    \"R5\": \"Nothing else changes it.\"\n  }\n}\n"
    },
    "name": "a revision that is not a whole number",
-   "what": "the work has now"
+   "what": "the spec has now"
   },
   {
    "expect": {
@@ -7743,7 +7743,7 @@
     "sidecar_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"1\",\n  \"text\": {\n    \"R1\": \"The lamp starts off.\",\n    \"R2\": \"Pressing the switch turns it on\",\n    \"R3\": \"pressing it again turns it off\",\n    \"R4\": \"After 30 seconds on, it turns itself off.\",\n    \"R5\": \"Nothing else changes it.\"\n  }\n}\n"
    },
    "name": "a manifest with no revision",
-   "what": "the work has now"
+   "what": "the spec has now"
   },
   {
    "expect": {
@@ -7754,7 +7754,7 @@
     "sidecar_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"1\",\n  \"text\": {\n    \"R2\": \"Pressing the switch turns it on\",\n    \"R3\": \"pressing it again turns it off\",\n    \"R4\": \"After 30 seconds on, it turns itself off.\",\n    \"R5\": \"Nothing else changes it.\"\n  }\n}\n"
    },
    "name": "a requirement the sidecar has no words for",
-   "what": "the work has now"
+   "what": "the spec has now"
   },
   {
    "expect": {
@@ -7765,7 +7765,7 @@
     "sidecar_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"1\",\n  \"text\": {\n    \"R1\": \"  \",\n    \"R2\": \"Pressing the switch turns it on\",\n    \"R3\": \"pressing it again turns it off\",\n    \"R4\": \"After 30 seconds on, it turns itself off.\",\n    \"R5\": \"Nothing else changes it.\"\n  }\n}\n"
    },
    "name": "words that are blank",
-   "what": "the work has now"
+   "what": "the spec has now"
   },
   {
    "expect": {
@@ -7776,7 +7776,7 @@
     "sidecar_text": "{\n  \"doc_id\": \"lamp\",\n  \"rev\": \"1\",\n  \"text\": {\n    \"R1\": \"The lamp starts off.\",\n    \"R2\": \"Pressing the switch turns it on\",\n    \"R3\": \"pressing it again turns it off\",\n    \"R4\": \"After 30 seconds on, it turns itself off.\",\n    \"R5\": \"Nothing else changes it.\"\n  }\n}\n"
    },
    "name": "no requirements",
-   "what": "the work has now"
+   "what": "the spec has now"
   }
  ],
  "parse": [

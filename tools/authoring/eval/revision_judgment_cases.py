@@ -399,8 +399,8 @@ def of_list_cases():
     lineage = rl.render(first.lineage)
 
     def case(name, **held):
-        return {"name": name, "held": held, "what": "the work has now",
-                "expect": outcome(rl.of_list, held, "the work has now")}
+        return {"name": name, "held": held, "what": "the spec has now",
+                "expect": outcome(rl.of_list, held, "the spec has now")}
 
     def manifest_with(edit):
         data = json.loads(manifest)
@@ -623,7 +623,7 @@ def extends_cases(table: Lineages):
         case("a step after one that is not the last", named["first"], named["third"]),
         case("a lineage extends itself", named["second"], named["second"]),
         case("the same text read into another list", named["first"], named["again"]),
-        case("every id started over, numbered on from the work's next", named["first"],
+        case("every id started over, numbered on from the spec's next", named["first"],
              named["fresh"]),
         case("every id started over and the numbering put back to R1", named["first"],
              variant("fresh, numbered from R1 again", "fresh", numbering_reset)),
@@ -646,7 +646,7 @@ def extends_cases(table: Lineages):
             "reworded, a requirement's history rewritten", "reworded", old_words)),
         case("the last words replaced in an earlier revision", named["third"],
              variant("third, an old requirement's words replaced", "third", last_words)),
-        case("a new id numbered below the work's next", named["second"],
+        case("a new id numbered below the spec's next", named["second"],
              variant("third, a new id below next", "third", small_id)),
         case("a new id that was already issued by number", named["second"],
              variant("third, a new id numbered R0", "third", old_id)),

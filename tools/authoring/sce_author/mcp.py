@@ -4576,7 +4576,7 @@ def readiness() -> list[str]:
     if not codegen.is_file():
         problems.append(f"the product's generator is not at {codegen}: set SCE_CODEGEN to it")
     spec = specs.default_spec_binary()
-    if not work.is_file():
+    if not spec.is_file():
         problems.append(f"sce-spec is not at {spec}, so the specs tools cannot reach the specs "
                         f"folder: set SCE_SPEC to it")
     problems.extend(needs.sentence(need) for need in needs.missing())

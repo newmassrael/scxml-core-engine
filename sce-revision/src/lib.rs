@@ -9,7 +9,7 @@
 //! requirement-lineage-with-its-requirement-list.md`). What the lineage means is judged here:
 //!
 //! * [`parse`] and [`check`]: is this a lineage?
-//! * [`extends`]: does it continue the one a work holds? An id is issued once and a retired one
+//! * [`extends`]: does it continue the one a spec holds? An id is issued once and a retired one
 //!   never lives again, so a lineage that took anything back is refused;
 //! * [`belongs_to_list`]: is it the lineage of THIS list, its manifest and its sidecar?
 //! * [`between`]: what became of each requirement's words between two states of one lineage;
@@ -389,7 +389,7 @@ pub fn adopt(
     Ok(lineage)
 }
 
-/// The lineage of a list a work kept: the one saved with it, or, for a list made before
+/// The lineage of a list a spec kept: the one saved with it, or, for a list made before
 /// lineages, the one adopting it makes (the ids it has, the words behind them from its sidecar),
 /// which is what a later list built against it was given in the first place. Refuses a list that
 /// gives neither, saying what to do. `held` carries the texts of the list (`manifest_text`,
@@ -438,14 +438,14 @@ pub fn of_list(held: &Value, what: &str) -> Judgment<Value> {
     )
 }
 
-// -- does it continue the work's -------------------------------------------------------------
+// -- does it continue the spec's -------------------------------------------------------------
 
 /// Refuse a lineage that is not the continuation of `previous`.
 ///
 /// A lineage is only ever appended to: nothing it said is taken back. An id once issued is still
 /// there, with the words it had, and a retired id stays retired and never lives again; the
 /// revisions are the same revisions with more after them; and the ids issued since are numbered
-/// from where `previous` left off, so that none is issued twice. What `previous` was is the work's;
+/// from where `previous` left off, so that none is issued twice. What `previous` was is the spec's;
 /// nothing here reads it from a file.
 ///
 /// Two things may change in the last revision's row and the quotes it made, and only there: the
@@ -455,7 +455,7 @@ pub fn of_list(held: &Value, what: &str) -> Judgment<Value> {
 pub fn extends(previous: &Value, following: &Value) -> Judgment<()> {
     if previous["doc_id"] != following["doc_id"] {
         return refuse(format!(
-            "the lineage is of '{}' and the work's is of '{}': one lineage follows one \
+            "the lineage is of '{}' and the spec's is of '{}': one lineage follows one \
              specification",
             show(&following["doc_id"]),
             show(&previous["doc_id"])
@@ -467,7 +467,7 @@ pub fn extends(previous: &Value, following: &Value) -> Judgment<()> {
     );
     if following_next < previous_next {
         return refuse(format!(
-            "the lineage's next ({following_next}) is behind the work's ({previous_next}): ids \
+            "the lineage's next ({following_next}) is behind the spec's ({previous_next}): ids \
              already issued would be issued again"
         ));
     }
@@ -475,7 +475,7 @@ pub fn extends(previous: &Value, following: &Value) -> Judgment<()> {
     let after = array(&following["revisions"], "revisions")?;
     if after.len() < before.len() {
         return refuse(format!(
-            "the lineage has {} revision(s) and the work's has {}: revisions are never taken back",
+            "the lineage has {} revision(s) and the spec's has {}: revisions are never taken back",
             after.len(),
             before.len()
         ));
@@ -490,7 +490,7 @@ pub fn extends(previous: &Value, following: &Value) -> Judgment<()> {
             .all(|(key, value)| now.get(key) == Some(value));
         if !kept_as_it_was {
             return refuse(format!(
-                "revision {} of the lineage is not the revision the work holds: a revision is \
+                "revision {} of the lineage is not the revision the spec holds: a revision is \
                  not rewritten",
                 show(&row["rev"])
             ));
@@ -506,7 +506,7 @@ pub fn extends(previous: &Value, following: &Value) -> Judgment<()> {
         let id = show(&row["id"]);
         let Some(now) = row["id"].as_str().and_then(|id| held.get(id)) else {
             return refuse(format!(
-                "{id} is in the work's lineage and not in this one: an id is never forgotten"
+                "{id} is in the spec's lineage and not in this one: an id is never forgotten"
             ));
         };
         if now["first_rev"] != row["first_rev"] {
@@ -532,14 +532,14 @@ pub fn extends(previous: &Value, following: &Value) -> Judgment<()> {
         }
         if new.len() < old.len() || old[..old.len() - 1] != new[..old.len() - 1] {
             return refuse(format!(
-                "the words {id} has had are not the ones the work holds: a requirement's history \
+                "the words {id} has had are not the ones the spec holds: a requirement's history \
                  is only added to"
             ));
         }
         let (edge, edge_now) = (&old[old.len() - 1], &new[old.len() - 1]);
         if edge != edge_now && !(edge["rev"] == edge_now["rev"] && edge["rev"] == *last_rev) {
             return refuse(format!(
-                "the last words {id} had in revision {} are not the ones the work holds",
+                "the last words {id} had in revision {} are not the ones the spec holds",
                 show(&edge["rev"])
             ));
         }
@@ -561,7 +561,7 @@ pub fn extends(previous: &Value, following: &Value) -> Judgment<()> {
         };
         if !from_the_next {
             return refuse(format!(
-                "{id} is new in this lineage and is not an id issued from the work's next \
+                "{id} is new in this lineage and is not an id issued from the spec's next \
                  (R{previous_next}): an id would be issued twice"
             ));
         }
@@ -646,12 +646,12 @@ pub fn belongs_to_list(
 
 // -- what became of the words ----------------------------------------------------------------
 
-/// What happened to each requirement's WORDS between two states of one work's lineage: the
+/// What happened to each requirement's WORDS between two states of one spec's lineage: the
 /// `delta` that `scxml_requirement_set` would have returned had the revisions been built one after
 /// the other, derived from the two lineages alone.
 ///
 /// `older` is the lineage of the list an acceptance was taken of and `newer` the lineage of the
-/// list the work has now. `newer` has to continue `older` ([`extends`]): a lineage of another
+/// list the spec has now. `newer` has to continue `older` ([`extends`]): a lineage of another
 /// history says nothing about what became of the requirements of this one. An id that is live in
 /// both is `carried` when the words it last had are the same and `changed` when they are not; one
 /// live in `older` and retired in `newer` is `retired`; one live in `newer` and not in `older` is
