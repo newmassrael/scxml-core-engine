@@ -1827,7 +1827,7 @@ pub fn default_root() -> Option<PathBuf> {
             .map(PathBuf::from)
             .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))
     };
-    data.map(|dir| dir.join("sce-workbench").join("works"))
+    data.map(|dir| dir.join("sce-spec-workbench").join("works"))
 }
 
 fn validate_title(title: &str) -> Result<String, StoreError> {
