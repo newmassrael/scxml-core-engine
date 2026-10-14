@@ -438,10 +438,12 @@ protected:
                 EXPECT_EQ(asked, expect.at("host_calls")) << "what the machine asked of its host";
             }
             // What the machine sent its Mesh peers in this step, taken on every
-            // step for the same reason; compared as values, in the order sent.
+            // step for the same reason; compared as values, in the order sent,
+            // with a 64-bit integer held to the text of its digits as a variable is.
             const auto sent = sentToPeers->take();
             if (expect.contains("sent")) {
-                EXPECT_EQ(sent, expect.at("sent")) << "what the machine sent its peers";
+                EXPECT_TRUE(holds(sent, expect.at("sent")))
+                    << "what the machine sent its peers: " << sent.dump() << ", not " << expect.at("sent").dump();
             }
             // A machine that ended in a top-level <final> has no saved state
             // to read on the generated backends — the save refuses one — so

@@ -298,7 +298,11 @@ fn the_interpreter_holds_the_text_an_algorithm_writes_to_its_bound() {
     let lowered = std::fs::read_dir(out_dir.path())
         .expect("the output directory")
         .map(|e| std::fs::read_to_string(e.expect("an entry").path()).unwrap_or_default())
-        .collect::<String>();
+        .collect::<String>()
+        // The script engine is handed the attributes as a reader decodes them: the
+        // document writes `'` as `&apos;` and `"` as `&quot;`.
+        .replace("&apos;", "'")
+        .replace("&quot;", "\"");
     // The call hands the algorithm the variable itself, and each text it writes into
     // a record is held to the field's bound where it is written.
     assert!(
