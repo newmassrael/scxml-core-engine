@@ -73,6 +73,7 @@ import com.sce.integration.static_timers.StaticTimersStateMachine
 import com.sce.integration.static_whole_payload.StaticWholePayloadStateMachine
 import com.sce.integration.static_wire_wide.StaticWireWideStateMachine
 import com.sce.integration.static_wire_enum.StaticWireEnumStateMachine
+import com.sce.integration.presence_peer.PresencePeerStateMachine
 import com.sce.integration.sheet_peer.SheetPeerStateMachine
 import com.sce.integration.sync_client.SyncClientStateMachine
 import com.sce.integration.todo_peer.TodoPeerStateMachine
@@ -1430,6 +1431,49 @@ class StaticScenarioTest {
                 tick = { sm.tick() },
                 save = { sm.save() },
                 ended = { sm.isInFinalState },
+                sent = { sends.take() },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // One copy of the list of who is online, as each of the three that took part in
+    // one afternoon of it was driven: a client says it is here to the hub, the hub
+    // keeps what it was told for a ttl and tells every copy on one topic, and an
+    // entry is let go by the machine's own delayed send. The machine runs on a
+    // manual clock, which the scenario's `advance_ms` steps move on, and every step
+    // states what the copy sent its peers.
+    @Test
+    fun presencePeerIsAlicesCopyOfWhoIsOnline() {
+        replayPresencePeer(scenario("presence_peer_alice"))
+    }
+
+    @Test
+    fun presencePeerIsBobsCopyOfWhoIsOnline() {
+        replayPresencePeer(scenario("presence_peer_bob"))
+    }
+
+    @Test
+    fun presencePeerIsTheHubTheCopiesOfWhoIsOnlineSendTo() {
+        replayPresencePeer(scenario("presence_peer_server"))
+    }
+
+    /** One run of `presence_peer`, on a manual clock, with its sends to its peers recorded. */
+    private fun replayPresencePeer(scenario: JsonObject) {
+        val sends = RecordedSends()
+        val sm = PresencePeerStateMachine()
+        sm.clock = ManualClock(0)
+        sm.registerMeshRouter(sends.router)
+        sm.initialize()
+        try {
+            replay(
+                scenario,
+                send = { event, data -> sm.sendEventByName(event, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+                advance = { ms -> sm.advanceTimeMs(ms) },
                 sent = { sends.take() },
             )
         } finally {
