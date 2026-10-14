@@ -16,7 +16,7 @@ was a person's piece of writing, and the word stayed after the thing was a speci
 lineage, a model, a requirement list and an acceptance. The word has two costs. In English
 "work" is also the labour a request does and a verb ("to work on", "does not work"), so a reader
 cannot tell the noun from the rest by looking. And the person this is for says "specification";
-the application showed "작업" to someone who meant 사양.
+the application showed its Korean word for labour to someone who meant the specification.
 
 ## Decision
 
