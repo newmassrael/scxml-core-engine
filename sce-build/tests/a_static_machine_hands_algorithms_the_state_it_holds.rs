@@ -213,19 +213,137 @@ fn a_payload_is_no_record_on_an_event_that_declares_none() {
     );
 }
 
+/// A statechart that keeps titled places in a record and a list of records — the
+/// records of `sce:std/text/text_slot.scxml`, whose `text` is bounded at 32 UTF-8
+/// bytes — and hands them to the standard algorithms over them. `_event.data` is
+/// taken into `incoming` first, which is the assignment that holds its text to the
+/// bound.
+const TEXT_MACHINE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="open" datamodel="sce-static" name="static_state_text">
+  <sce:import kind="event-schema" src="sce:std/text/text_slot.scxml" as="Slot"/>
+  <sce:import kind="algorithm" src="sce:std/text/text_slot_latest.scxml" as="Latest"/>
+  <sce:import kind="algorithm" src="sce:std/text/text_slot_retitled.scxml" as="Retitled"/>
+  <sce:import kind="algorithm" src="sce:std/text/text_slot_holds.scxml" as="Holds"/>
+  <datamodel>
+    <data id="slots" sce:type="list&lt;record:Slot&gt;" sce:capacity="16" sce:direction="out"/>
+    <data id="held" sce:type="record:Slot" sce:direction="out">
+      <sce:set name="slot" expr="1"/>
+      <sce:set name="version" expr="0"/>
+      <sce:set name="text" expr="'start'"/>
+    </data>
+    <data id="incoming" sce:type="record:Slot" sce:direction="out">
+      <sce:set name="slot" expr="1"/>
+      <sce:set name="version" expr="0"/>
+      <sce:set name="text" expr="''"/>
+    </data>
+    <data id="known" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="open">
+    <transition event="text.slot" type="internal">
+      <assign location="incoming" expr="_event.data"/>
+      <assign location="held" expr="Latest(held, incoming)"/>
+      <if cond="Holds(slots, incoming)">
+        <assign location="known" expr="known + 1"/>
+      </if>
+      <sce:append target="slots" expr="incoming"/>
+    </transition>
+    <transition event="retitle" type="internal">
+      <assign location="slots" expr="Retitled(slots)"/>
+    </transition>
+  </state>
+</scxml>
+"#;
+
 #[test]
-fn a_record_that_holds_text_is_not_handed_to_an_algorithm() {
-    // The schema the amount algorithm takes a record of now has a string field: a
+fn a_record_that_holds_text_is_handed_to_an_algorithm_by_every_backend() {
+    for args in [
+        vec!["check", "-l", "rust"],
+        vec!["check", "-l", "kotlin"],
+        vec!["check", "-l", "python"],
+        vec!["check", "-l", "c"],
+        vec!["check", "-l", "cpp"],
+        vec![
+            "check",
+            "-l",
+            "go",
+            "--go-module-prefix",
+            "example.test/generated",
+        ],
+    ] {
+        let (ok, out) = run(&args, TEXT_MACHINE, &[]);
+        assert!(ok, "{args:?} must lower the machine:\n{out}");
+    }
+}
+
+#[test]
+fn the_interpreter_holds_the_text_an_algorithm_writes_to_its_bound() {
+    let dir = tempdir().expect("tempdir");
+    std::fs::write(dir.path().join("probe.scxml"), TEXT_MACHINE).expect("write the machine");
+    let out_dir = tempdir().expect("tempdir");
+    let out = Command::new(sce_codegen_bin())
+        .arg("--workspace-root")
+        .arg(repo_root())
+        .arg("lower")
+        .arg(dir.path().join("probe.scxml"))
+        .arg("-o")
+        .arg(out_dir.path())
+        .output()
+        .expect("invoke sce-codegen");
+    assert!(
+        out.status.success(),
+        "lower must accept the machine:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let lowered = std::fs::read_dir(out_dir.path())
+        .expect("the output directory")
+        .map(|e| std::fs::read_to_string(e.expect("an entry").path()).unwrap_or_default())
+        .collect::<String>();
+    // The call hands the algorithm the variable itself, and each text it writes into
+    // a record is held to the field's bound where it is written.
+    assert!(
+        lowered.contains("SceStatic.algorithms.text_slot_latest(held, incoming)"),
+        "the algorithm is called with the record the machine holds:\n{lowered}"
+    );
+    assert!(
+        lowered.contains("SceStatic.bounded('untitled', 32)"),
+        "the text an algorithm writes is held to the schema's bound:\n{lowered}"
+    );
+    assert!(
+        lowered.contains("SceStatic.bounded(s[\"text\"], 32)"),
+        "the text an algorithm copies is held to the bound of the field it lands in:\n{lowered}"
+    );
+}
+
+#[test]
+fn a_payload_that_holds_text_is_not_handed_to_an_algorithm() {
+    // The payload's text is held to its schema's bound by the assignment that takes it
+    // into a variable, so an algorithm is handed that variable and not the payload.
+    let (ok, out) = run(
+        &["check", "-l", "rust"],
+        &TEXT_MACHINE.replace("Latest(held, incoming)", "Latest(held, _event.data)"),
+        &[],
+    );
+    assert!(!ok, "a payload that holds text must be refused:\n{out}");
+    assert!(
+        out.contains("the payload of the event holds text"),
+        "the refusal names the reason:\n{out}"
+    );
+}
+
+#[test]
+fn a_record_that_holds_bytes_is_not_handed_to_an_algorithm() {
+    // The schema the amount algorithm takes a record of now has a byte string: a
     // record is copied into the algorithm's own type and back field by field, and
-    // only numbers and truth values copy the same way on every backend.
-    // The machine builds its `last` whole, so it gives the new field a value too.
-    let with_note = machine(Some((
+    // only numbers, truth values and bounded strings copy the same way on every
+    // backend. The machine builds its `last` whole, so it gives the new field a value.
+    let with_blob = machine(Some((
         "      <sce:set name=\"amount\" expr=\"0\"/>\n    </data>\n    <data id=\"ids\"",
-        "      <sce:set name=\"amount\" expr=\"0\"/>\n      <sce:set name=\"note\" expr=\"''\"/>\n    </data>\n    <data id=\"ids\"",
+        "      <sce:set name=\"amount\" expr=\"0\"/>\n      <sce:set name=\"blob\" expr=\"'ab'\"/>\n    </data>\n    <data id=\"ids\"",
     )));
     let (ok, out) = run(
         &["check", "-l", "rust"],
-        &with_note,
+        &with_blob,
         &[(
             "schema_entry.scxml",
             r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -238,15 +356,17 @@ fn a_record_that_holds_text_is_not_handed_to_an_algorithm() {
   <datamodel>
     <data id="id" sce:type="uint32" sce:direction="in"/>
     <data id="amount" sce:type="int32" sce:direction="in"/>
-    <data id="note" sce:type="string" sce:max-size="8" sce:direction="in"/>
+    <data id="blob" sce:type="bytes" sce:max-size="4" sce:direction="in"/>
   </datamodel>
 </scxml>
 "#,
         )],
     );
-    assert!(!ok, "a record with a string field must be refused:\n{out}");
+    assert!(!ok, "a record with a byte string must be refused:\n{out}");
     assert!(
-        out.contains("only records of numbers and truth values are handed to an algorithm"),
+        out.contains(
+            "only records of numbers, truth values and bounded strings are handed to an algorithm"
+        ),
         "the refusal names the reason:\n{out}"
     );
 }

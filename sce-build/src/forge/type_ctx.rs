@@ -800,6 +800,12 @@ pub struct StateContext<'a> {
     /// The alias of the schema the triggering event carries, if it carries one — what
     /// `_event.data` is a record of.
     pub payload_alias: Option<&'a str>,
+    /// Whether that schema has a `string` field. A payload's text is not yet held to
+    /// the bound its schema declares — the assignment that takes it into a variable
+    /// is what holds it — so a payload that carries text is not handed to an
+    /// algorithm whole (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A record's string
+    /// field").
+    pub payload_holds_text: bool,
 }
 
 /// The signature a call of `callee` is judged by when its slots are scalars, a record or
@@ -979,6 +985,12 @@ impl StaticScope {
                     )),
                 }
             }
+            (StaticSlot::Record(_), ArgShape::EventData) if context.payload_holds_text => Err(
+                "the payload of the event holds text, which is not held to the bound its \
+                 schema declares until it is taken into a variable: assign `_event.data` to a \
+                 record variable and hand the algorithm that"
+                    .to_string(),
+            ),
             (StaticSlot::Record(alias), ArgShape::EventData) => match context.payload_alias {
                 Some(held) if held == alias => Ok('p'),
                 Some(held) => Err(format!(

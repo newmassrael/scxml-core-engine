@@ -35,12 +35,13 @@ fn record_identity(imports: &[ForgeImport], base_dir: &Path, alias: &str) -> Opt
     record_schema(imports, base_dir, alias).map(|(id, _)| id)
 }
 
-/// [`record_identity`], and the fields of the schema it names.
+/// [`record_identity`], and the fields of the schema it names, each with the
+/// `sce:max-size` the schema declares on it.
 fn record_schema(
     imports: &[ForgeImport],
     base_dir: &Path,
     alias: &str,
-) -> Option<(RecordId, Vec<SceType>)> {
+) -> Option<(RecordId, Vec<(SceType, Option<u32>)>)> {
     let import = imports
         .iter()
         .find(|i| i.alias == alias && i.kind == ForgeKind::EventSchema)?;
@@ -51,7 +52,11 @@ fn record_schema(
     };
     Some((
         RecordId::intern(&crate::forge::stdlib::identity(&source.path), &schema.name),
-        schema.fields.iter().map(|f| f.sce_type.clone()).collect(),
+        schema
+            .fields
+            .iter()
+            .map(|f| (f.sce_type.clone(), f.max_size))
+            .collect(),
     ))
 }
 
@@ -104,16 +109,23 @@ fn value_signature(
         let (id, fields) = record_schema(callee_imports, callee_base, alias)
             .ok_or_else(|| format!("its record `{alias}` is a schema this call cannot resolve"))?;
         // A record is copied into the algorithm's own type and back, field by field; the
-        // fields of a number or a truth value copy the same way on every backend.
-        if let Some(held) = fields
+        // fields of a number or a truth value copy the same way on every backend, and a
+        // string the schema bounds is held within the same bound on both sides.
+        if let Some((held, max_size)) = fields
             .iter()
-            .find(|ty| !crate::forge::static_lowering::plain_scalar(ty))
+            .find(|(ty, max)| !crate::forge::static_lowering::record_field_copies(ty, *max))
         {
-            return Err(format!(
-                "its record `{alias}` has a field of type {}, and only records of numbers and \
-                 truth values are handed to an algorithm",
-                held.as_attr()
-            ));
+            return Err(match (held, max_size) {
+                (SceType::String, None) => format!(
+                    "its record `{alias}` has a string field with no `sce:max-size`, which \
+                     bounds the text an algorithm's record holds"
+                ),
+                _ => format!(
+                    "its record `{alias}` has a field of type {}, and only records of numbers, \
+                     truth values and bounded strings are handed to an algorithm",
+                    held.as_attr()
+                ),
+            });
         }
         own.get(&id).cloned().ok_or_else(|| {
             format!(

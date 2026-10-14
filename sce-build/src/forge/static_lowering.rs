@@ -293,19 +293,30 @@ fn generated_callee(lang: Language, document_name: &str, go_module_prefix: Optio
     }
 }
 
-/// The schema the record `alias` of `spec` is of, when every field of it is a number or
-/// a truth value: the records a call hands an algorithm and takes back are of those,
-/// whose copy is the same on every backend. One with a string, a byte string or an enum
-/// field is refused where the algorithm is imported ([`crate::forge::static_imports`]).
+/// The schema the record `alias` of `spec` is of, when every field of it is a number, a
+/// truth value or a string the schema bounds: the records a call hands an algorithm and
+/// takes back are of those, whose copy is a field-by-field one on every backend. One with
+/// a byte string or an enum field, or a string with no bound, is refused where the
+/// algorithm is imported ([`crate::forge::static_imports`]).
 fn plain_schema<'a>(spec: &AdapterSpec<'a>, alias: &str) -> Option<&'a EventSchemaModel> {
-    spec.schemas
-        .get(alias)
-        .filter(|schema| schema.fields.iter().all(|f| plain_scalar(&f.sce_type)))
+    spec.schemas.get(alias).filter(|schema| {
+        schema
+            .fields
+            .iter()
+            .all(|f| record_field_copies(&f.sce_type, f.max_size))
+    })
 }
 
 /// Whether `ty` is a number or a truth value (see [`plain_schema`]).
 pub(crate) fn plain_scalar(ty: &SceType) -> bool {
     !matches!(ty, SceType::Enum(_) | SceType::String | SceType::Bytes)
+}
+
+/// Whether a field of a record handed to an algorithm, and back, is one an adapter
+/// copies: a number or a truth value as it is, and a string the schema bounds as the
+/// text the algorithm's record holds within the same bound (SCE_FORGE.md §4.12).
+pub(crate) fn record_field_copies(ty: &SceType, max_size: Option<u32>) -> bool {
+    plain_scalar(ty) || (matches!(ty, SceType::String) && max_size.is_some())
 }
 
 /// One parameter of an adapter: a number the call hands the algorithm as it is, or the
@@ -1712,7 +1723,15 @@ impl StaticTarget for RustTarget {
                     } else {
                         self.record_field(&f.id)
                     };
-                    format!("{field}: {from}.{held}")
+                    match (&f.sce_type, f.max_size) {
+                        // The machine holds the text within the schema's bound,
+                        // which is the bound the algorithm's record holds it in:
+                        // the copy is the one a text already held to it takes.
+                        (SceType::String, Some(bound)) => format!(
+                            "{field}: ::sce_portable_bytes::SceString::<{bound}>::held(&{from}.{held})"
+                        ),
+                        _ => format!("{field}: {from}.{held}"),
+                    }
                 })
                 .collect();
             Some(format!(
@@ -1728,11 +1747,15 @@ impl StaticTarget for RustTarget {
                 .fields
                 .iter()
                 .map(|f| {
-                    format!(
-                        "{}: {from}.{}",
-                        self.record_field(&f.id),
-                        event_schema_field_ident(&f.id, Language::Rust)
-                    )
+                    let read =
+                        format!("{from}.{}", event_schema_field_ident(&f.id, Language::Rust));
+                    // The algorithm's text is held within the field's bound by
+                    // construction, so the machine's `String` takes it whole.
+                    let value = match f.sce_type {
+                        SceType::String => format!("{read}.as_str().to_string()"),
+                        _ => read,
+                    };
+                    format!("{}: {value}", self.record_field(&f.id))
                 })
                 .collect();
             Some(format!(
@@ -3616,11 +3639,18 @@ impl Rewrites<'_> {
                 .find(|(_, held)| held.name == schema.name)
                 .map(|(alias, _)| alias.as_str())
         });
+        let payload_holds_text = payload.as_ref().is_some_and(|schema| {
+            schema
+                .fields
+                .iter()
+                .any(|f| matches!(f.sce_type, SceType::String))
+        });
         self.scope.rewrite_state_calls(
             text,
             &StateContext {
                 loop_records: &loops,
                 payload_alias,
+                payload_holds_text,
             },
         )
     }
@@ -5757,6 +5787,31 @@ pub(crate) fn c_string_storage_of(capacity: u32) -> String {
     format!("sce_static_string_{capacity}_of")
 }
 
+/// The declaration of [`c_string_storage_type`] and of its fill function,
+/// under a guard named by the bound. Every header that holds a text of that
+/// bound writes this one text: a `sce-static` machine's record or variable,
+/// and an event-schema struct an algorithm takes as a record (SCE_FORGE.md
+/// §4.12), so a program that includes both declares the type once.
+///
+/// `_of` is the buffer holding a text already held to the bound — a payload's
+/// field taken whole into a record, a copy from a field of the same or a
+/// smaller bound — written without a library call, since the header includes
+/// none beyond `<stddef.h>`.
+pub(crate) fn c_string_storage_def(capacity: u32) -> String {
+    let ty = c_string_storage_type(capacity);
+    let guard = ty.to_uppercase().trim_end_matches("_T").to_string();
+    format!(
+        "#ifndef {guard}\n#define {guard}\n\
+         /* SCE Accepted Subset §2.15: a `string` of at most {capacity} UTF-8 bytes. */\n\
+         typedef struct {{\n    char data[{capacity} + 1];\n}} {ty};\n\n\
+         static inline {ty} {of}(const char *text) {{\n    \
+         {ty} value = {{ {{ 0 }} }};\n    \
+         for (size_t i = 0; i < {capacity}u && text[i] != '\\0'; ++i) {{\n        \
+         value.data[i] = text[i];\n    }}\n    return value;\n}}\n#endif",
+        of = c_string_storage_of(capacity)
+    )
+}
+
 /// The type a byte string of at most `capacity` bytes is held in: a buffer and
 /// the length it holds, named by the bound so that two variables, or a variable
 /// and a record's field, of one bound share it ([`CTarget::bytes_storage`]).
@@ -5787,31 +5842,6 @@ fn c_bytes_storage_of(capacity: u32) -> String {
 /// ([`StaticTarget::unsupported`]) until its spelling is written, rather than
 /// left as an undefined name in generated code.
 pub struct CTarget {
-/// The declaration of [`c_string_storage_type`] and of its fill function,
-/// under a guard named by the bound. Every header that holds a text of that
-/// bound writes this one text: a `sce-static` machine's record or variable,
-/// and an event-schema struct an algorithm takes as a record (SCE_FORGE.md
-/// §4.12), so a program that includes both declares the type once.
-///
-/// `_of` is the buffer holding a text already held to the bound — a payload's
-/// field taken whole into a record, a copy from a field of the same or a
-/// smaller bound — written without a library call, since the header includes
-/// none beyond `<stddef.h>`.
-pub(crate) fn c_string_storage_def(capacity: u32) -> String {
-    let ty = c_string_storage_type(capacity);
-    let guard = ty.to_uppercase().trim_end_matches("_T").to_string();
-    format!(
-        "#ifndef {guard}\n#define {guard}\n\
-         /* SCE Accepted Subset §2.15: a `string` of at most {capacity} UTF-8 bytes. */\n\
-         typedef struct {{\n    char data[{capacity} + 1];\n}} {ty};\n\n\
-         static inline {ty} {of}(const char *text) {{\n    \
-         {ty} value = {{ {{ 0 }} }};\n    \
-         for (size_t i = 0; i < {capacity}u && text[i] != '\\0'; ++i) {{\n        \
-         value.data[i] = text[i];\n    }}\n    return value;\n}}\n#endif",
-        of = c_string_storage_of(capacity)
-    )
-}
-
     /// The machine's name without the suite prefix, which the payload channel's
     /// tag constants are spelled from: the channel's own types do not carry the
     /// prefix, the machine's symbols do.

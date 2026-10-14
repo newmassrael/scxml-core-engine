@@ -563,11 +563,18 @@ impl<'a> Judge<'a> {
     {
         let loops = self.loop_records.borrow();
         let payload = self.payload_alias();
+        let payload_holds_text = self.payload_schema.borrow().as_ref().is_some_and(|schema| {
+            schema
+                .fields
+                .iter()
+                .any(|f| matches!(f.sce_type, crate::forge::model::SceType::String))
+        });
         self.scope.rewrite_state_calls(
             expr,
             &crate::forge::type_ctx::StateContext {
                 loop_records: &loops,
                 payload_alias: payload.as_deref(),
+                payload_holds_text,
             },
         )
     }
