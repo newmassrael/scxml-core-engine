@@ -78,6 +78,7 @@
 #include "static_send_type_sm.h"
 #include "static_state_algorithm_sm.h"
 #include "static_string_capacity_sm.h"
+#include "static_text_record_sm.h"
 #include "static_timers_sm.h"
 #include "static_whole_payload_sm.h"
 #include "static_wire_enum_sm.h"
@@ -427,6 +428,21 @@ template <typename Wide> json wideText(Wide value) {
     return std::to_string(value);
 }
 
+/// A `record:Slot` value as a scenario states it: its fields by the schema's ids,
+/// the version as the text of its digits.
+template <typename Slot> json slotJson(const Slot &slot) {
+    return json{{"slot", slot.slot}, {"version", wideText(slot.version)}, {"text", slot.text}};
+}
+
+/// A list of such values, in order.
+template <typename Slots> json slotsJson(const Slots &slots) {
+    json listed = json::array();
+    for (const auto &slot : slots) {
+        listed.push_back(slotJson(slot));
+    }
+    return listed;
+}
+
 /// Each element of a list as `one` writes it, in order.
 template <typename List, typename One> json listedJson(const List &list, One one) {
     json listed = json::array();
@@ -663,6 +679,21 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, AStatechartHandsItsStateToAnAlgorithm
         {"refusals", [](const Machine &m) { return json(m.refusals()); }},
     });
     replay("static_state_algorithm", driver);
+}
+
+// A statechart hands the standard text algorithms the record and the list of
+// records it holds, whose text is bounded, and takes back what they return: a
+// text past the bound is refused where the payload is taken, the state as it was.
+TEST(AStaticDatamodelRunsGeneratedCppTest, AStatechartHandsBoundedTextToAnAlgorithmAndTakesItBack) {
+    using Machine = G::static_text_record::static_text_record;
+    Driver<Machine> driver({
+        {"slots", [](const Machine &m) { return slotsJson(m.slots()); }},
+        {"held", [](const Machine &m) { return slotJson(m.held()); }},
+        {"incoming", [](const Machine &m) { return slotJson(m.incoming()); }},
+        {"known", [](const Machine &m) { return json(m.known()); }},
+        {"refusals", [](const Machine &m) { return json(m.refusals()); }},
+    });
+    replay("static_text_record", driver);
 }
 
 // An element is read by its index like any number; an index below zero or not
