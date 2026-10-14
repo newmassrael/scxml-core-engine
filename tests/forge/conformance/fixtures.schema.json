@@ -177,7 +177,7 @@
       }
     },
     "EventSchemaFieldValue": {
-      "description": "The value an event-schema field fixture writes and reads back. Untagged, so the manifest keeps writing a bare JSON number or `true`/`false`, and a template renders it as the literal it is — each arm branches on `sce_type == \"bool\"` where its language spells a boolean differently.",
+      "description": "The value an event-schema field fixture writes and reads back. Untagged, so the manifest keeps writing a bare JSON number, `true`/`false` or text, and a template renders it as the literal it is — each arm branches on `sce_type == \"bool\"` and `sce_type == \"string\"` where its language spells one differently. A text is the value of a `string` field the schema bounds with `sce:max-size` (SCE_FORGE.md §4.12).",
       "anyOf": [
         {
           "type": "integer",
@@ -185,6 +185,9 @@
         },
         {
           "type": "boolean"
+        },
+        {
+          "type": "string"
         }
       ]
     },
@@ -738,6 +741,15 @@
         "ident": {
           "description": "The field's identifier on the payload struct in this language (`forge::generator::event_schema_field_ident`).",
           "type": "string"
+        },
+        "max_size": {
+          "description": "The `sce:max-size` the schema declares on a `string` field — the number of UTF-8 bytes its text is held within (SCE_FORGE.md §4.12). `None` for every other field. Derived with `fields`, never written.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0.0
         },
         "name": {
           "description": "The schema's field id — the oracle's JSON key.",

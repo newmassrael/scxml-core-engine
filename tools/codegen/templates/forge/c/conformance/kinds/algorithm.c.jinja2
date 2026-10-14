@@ -93,12 +93,15 @@ static void test_{{ f.name }}(void) {
 {% for arg_ty in f.args %}
 {% set ai = loop.index0 %}
 {% if arg_ty.record is defined %}
-            .input_arg{{ ai }} = { {% for fld in arg_ty.fields %}.{{ fld.ident }} = {{ c.args[ai][fld.name] | c_literal(fld.type) }}, {% endfor %}},
+{# A record's text is the bounded buffer `{ char data[N + 1]; }`, which a string
+   literal fills as its first member; it needs no storage of its own beside the
+   case table. #}
+            .input_arg{{ ai }} = { {% for fld in arg_ty.fields %}.{{ fld.ident }} = {% if fld.type == "string" %}{ {{ c.args[ai][fld.name] | c_literal(fld.type) }} }{% else %}{{ c.args[ai][fld.name] | c_literal(fld.type) }}{% endif %}, {% endfor %}},
 {% elif arg_ty == "bytes" %}
             .input_arg{{ ai }} = {{ c.args[ai] | c_literal(arg_ty) }},
             .input_arg{{ ai }}_len = {{ c.args[ai] | length }},
 {% elif arg_ty.list_of is defined and arg_ty.list_of.record is defined %}
-            .input_arg{{ ai }} = { {% for v in c.args[ai] %}{ {% for fld in arg_ty.list_of.fields %}.{{ fld.ident }} = {{ v[fld.name] | c_literal(fld.type) }}, {% endfor %}}, {% else %}{0}{% endfor %} },
+            .input_arg{{ ai }} = { {% for v in c.args[ai] %}{ {% for fld in arg_ty.list_of.fields %}.{{ fld.ident }} = {% if fld.type == "string" %}{ {{ v[fld.name] | c_literal(fld.type) }} }{% else %}{{ v[fld.name] | c_literal(fld.type) }}{% endif %}, {% endfor %}}, {% else %}{0}{% endfor %} },
             .input_arg{{ ai }}_len = {{ c.args[ai] | length }},
 {% elif arg_ty.list_of is defined %}
             .input_arg{{ ai }} = { {% for v in c.args[ai] %}{{ v | c_literal(arg_ty.list_of) }}, {% else %}0{% endfor %} },
@@ -110,9 +113,9 @@ static void test_{{ f.name }}(void) {
 {% if c.fails is defined %}
             .fails = "{{ c.fails }}",
 {% elif f.output.record is defined %}
-            .expected = { {% for fld in f.output.fields %}.{{ fld.ident }} = {{ c.expected[fld.name] | c_literal(fld.type) }}, {% endfor %}},
+            .expected = { {% for fld in f.output.fields %}.{{ fld.ident }} = {% if fld.type == "string" %}{ {{ c.expected[fld.name] | c_literal(fld.type) }} }{% else %}{{ c.expected[fld.name] | c_literal(fld.type) }}{% endif %}, {% endfor %}},
 {% elif f.output.list_of is defined and f.output.list_of.record is defined %}
-            .expected = { {% for v in c.expected %}{ {% for fld in f.output.list_of.fields %}.{{ fld.ident }} = {{ v[fld.name] | c_literal(fld.type) }}, {% endfor %}}, {% else %}{0}{% endfor %} },
+            .expected = { {% for v in c.expected %}{ {% for fld in f.output.list_of.fields %}.{{ fld.ident }} = {% if fld.type == "string" %}{ {{ v[fld.name] | c_literal(fld.type) }} }{% else %}{{ v[fld.name] | c_literal(fld.type) }}{% endif %}, {% endfor %}}, {% else %}{0}{% endfor %} },
             .expected_len = {{ c.expected | length }},
 {% elif f.output.list_of is defined %}
             .expected = { {% for v in c.expected %}{{ v | c_literal(f.output.list_of) }}, {% else %}0{% endfor %} },
@@ -166,12 +169,21 @@ static void test_{{ f.name }}(void) {
 {% if f.output.record is defined %}
         {{ f.output.record | to_pascal_case }}Payload_t actual = {% if f.may_fail %}result.value{% else %}{{ f.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %}){% endif %};
 {% for fld in f.output.fields %}
+{% if fld.type == "string" %}
+        if (strcmp(actual.{{ fld.ident }}.data, cases[i].expected.{{ fld.ident }}.data) != 0) {
+            fprintf(stderr,
+                "FAIL: {{ f.name }} case %zu: {{ fld.name }} actual='%s' expected='%s'\n",
+                i, actual.{{ fld.ident }}.data, cases[i].expected.{{ fld.ident }}.data);
+            ++g_failures;
+        }
+{% else %}
         if (actual.{{ fld.ident }} != cases[i].expected.{{ fld.ident }}) {
             fprintf(stderr,
                 "FAIL: {{ f.name }} case %zu: {{ fld.name }} actual=%lld expected=%lld\n",
                 i, (long long)actual.{{ fld.ident }}, (long long)cases[i].expected.{{ fld.ident }});
             ++g_failures;
         }
+{% endif %}
 {% endfor %}
 {% elif f.output.list_of is defined %}
         {{ f.function }}_result_t actual = {% if f.may_fail %}result{% else %}{{ f.function }}({{ call_args }}){% endif %};
@@ -186,12 +198,21 @@ static void test_{{ f.name }}(void) {
 {% if f.output.list_of.record is defined %}
 {# A list of records: compared field by field. #}
 {% for fld in f.output.list_of.fields %}
+{% if fld.type == "string" %}
+            if (strcmp(actual.items[k].{{ fld.ident }}.data, cases[i].expected[k].{{ fld.ident }}.data) != 0) {
+                fprintf(stderr,
+                    "FAIL: {{ f.name }} case %zu [%zu]: {{ fld.name }} actual='%s' expected='%s'\n",
+                    i, k, actual.items[k].{{ fld.ident }}.data, cases[i].expected[k].{{ fld.ident }}.data);
+                ++g_failures;
+            }
+{% else %}
             if (actual.items[k].{{ fld.ident }} != cases[i].expected[k].{{ fld.ident }}) {
                 fprintf(stderr,
                     "FAIL: {{ f.name }} case %zu [%zu]: {{ fld.name }} actual=%lld expected=%lld\n",
                     i, k, (long long)actual.items[k].{{ fld.ident }}, (long long)cases[i].expected[k].{{ fld.ident }});
                 ++g_failures;
             }
+{% endif %}
 {% endfor %}
         }
 {% else %}

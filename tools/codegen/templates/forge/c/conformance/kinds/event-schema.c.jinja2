@@ -27,7 +27,13 @@ static void test_{{ f.name }}(void) {
        by the five arms that can compare against the oracle's field list. */
     {{ f.name | to_pascal_case }}Payload_t payload = {
 {% for field in f.fields %}
+{% if field.sce_type == "string" %}
+{# A bounded text is the buffer `{ char data[N + 1]; }`, which a string literal
+   fills as the first member. #}
+        .{{ field.name }} = { "{{ field.value }}" }{{ "," if not loop.last }}
+{% else %}
         .{{ field.name }} = {{ field.value }}{{ "," if not loop.last }}
+{% endif %}
 {% endfor %}
     };
 
@@ -35,15 +41,16 @@ static void test_{{ f.name }}(void) {
         const char *name;
         long long expected;
     } fields[] = {
-{% for field in f.fields %}
+{% for field in f.fields if field.sce_type != "string" %}
 {# A bool field compares as 0 or 1: `actual` below casts the field to
-   long long, and the expected side is written the same way. #}
+   long long, and the expected side is written the same way. A text is not a
+   number and is compared with `strcmp` after the table. #}
         { "{{ field.name }}", {% if field.sce_type == "bool" %}{{ 1 if field.value else 0 }}{% else %}{{ field.value }}{% endif %}LL }{{ "," if not loop.last }}
 {% endfor %}
     };
 
     const long long actual[] = {
-{% for field in f.fields %}
+{% for field in f.fields if field.sce_type != "string" %}
         (long long)payload.{{ field.name }}{{ "," if not loop.last }}
 {% endfor %}
     };
@@ -57,4 +64,12 @@ static void test_{{ f.name }}(void) {
             ++g_failures;
         }
     }
+{% for field in f.fields if field.sce_type == "string" %}
+    if (strcmp(payload.{{ field.name }}.data, "{{ field.value }}") != 0) {
+        fprintf(stderr,
+                "FAIL: {{ f.name }}.{{ field.name }} = '%s', expected '{{ field.value }}'\n",
+                payload.{{ field.name }}.data);
+        ++g_failures;
+    }
+{% endfor %}
 }

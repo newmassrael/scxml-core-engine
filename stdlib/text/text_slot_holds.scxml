@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/text/text_slot_holds.scxml — whether a list already holds a place
+  with `probe`'s slot and text: the question a replica asks before it applies
+  a write, since a write the list holds changes nothing.
+
+  Texts are compared byte for byte, as a UTF-8 string is, so "é" is not
+  "é".
+
+  {1, v5, "a"}, {2, v2, "b"} holds {2, v9, "b"} · does not hold {2, v9, "a"}.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="text_slot_holds" version="1.0">
+  <sce:import kind="event-schema" src="text_slot.scxml" as="Slot"/>
+  <sce:signature>
+    <sce:param name="slots" type="list&lt;record:Slot&gt;"/>
+    <sce:param name="probe" type="record:Slot"/>
+    <sce:return type="bool"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="found" type="bool" init="false"/>
+    <sce:foreach item="s" in="slots">
+      <sce:if cond="s.slot === probe.slot &amp;&amp; s.text === probe.text">
+        <sce:assign target="found" expr="true"/>
+      </sce:if>
+    </sce:foreach>
+    <sce:return expr="found"/>
+  </sce:body>
+</scxml>

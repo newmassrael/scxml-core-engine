@@ -81,8 +81,8 @@
         CHECK(actual.{{ fld.ident }} == c["expected"]["{{ fld.name }}"].get<{{ fld.type | cpp_type }}>(),
               "{{ f.name }} case %d: {{ fld.name }} actual=%s expected=%s",
               i,
-              std::to_string(actual.{{ fld.ident }}).c_str(),
-              std::to_string(c["expected"]["{{ fld.name }}"].get<{{ fld.type | cpp_type }}>()).c_str());
+              {% if fld.type == "string" %}actual.{{ fld.ident }}.c_str(){% else %}std::to_string(actual.{{ fld.ident }}).c_str(){% endif %},
+              {% if fld.type == "string" %}c["expected"]["{{ fld.name }}"].get<std::string>().c_str(){% else %}std::to_string(c["expected"]["{{ fld.name }}"].get<{{ fld.type | cpp_type }}>()).c_str(){% endif %});
 {% endfor %}
 {% elif f.output.list_of is defined and f.output.list_of.record is defined %}
 {# A list of records: compared by length, then field by field. #}
@@ -99,8 +99,8 @@
                   "{{ f.name }} case %d [%zu]: {{ fld.name }} actual=%s expected=%s",
                   i,
                   k,
-                  std::to_string(actual[k].{{ fld.ident }}).c_str(),
-                  std::to_string(expected[k]["{{ fld.name }}"].get<{{ fld.type | cpp_type }}>()).c_str());
+                  {% if fld.type == "string" %}actual[k].{{ fld.ident }}.c_str(){% else %}std::to_string(actual[k].{{ fld.ident }}).c_str(){% endif %},
+                  {% if fld.type == "string" %}expected[k]["{{ fld.name }}"].get<std::string>().c_str(){% else %}std::to_string(expected[k]["{{ fld.name }}"].get<{{ fld.type | cpp_type }}>()).c_str(){% endif %});
 {% endfor %}
         }
 {% elif f.output.list_of is defined %}

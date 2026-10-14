@@ -27,6 +27,10 @@
    AlgorithmError>`. A case that names a failure (`"fails": "overflow"`)
    carries no `expected`; it is judged by the error's contract name before
    anything reads `expected`, and every other case unwraps the value. #}
+{# A record's `string` field is the runtime's bounded text, `SceString<N>` with
+   the schema's `max-size`; the oracle's text is built into it with the fallible
+   copy a host uses, and read back as the `&str` it compares as. #}
+{% macro field_value(fld, raw, fixture) %}{% if fld.type == "string" %}::sce_portable_bytes::SceString::<{{ fld.max_size }}>::from_text({{ raw | rust_unmarshal("string") }}).expect("{{ fixture }}.{{ fld.name }}: the case text fits the schema's bound"){% else %}{{ raw | rust_unmarshal(fld.type) }}{% endif %}{% endmacro %}
 {% set call %}fixtures::{{ f.name }}::{{ f.function }}({% for arg_ty in f.args %}{% if arg_ty == "bytes" or arg_ty.list_of is defined %}&arg{{ loop.index0 }}{% else %}arg{{ loop.index0 }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}){% endset %}
 {% if f.output.compare == "tolerance" %}
     let tol = tolerance(&reference);
@@ -38,7 +42,7 @@
 {% if arg_ty.record is defined %}
         let arg{{ i }} = fixtures::{{ arg_ty.record }}::{{ arg_ty.record | to_pascal_case }}Payload {
 {% for fld in arg_ty.fields %}
-            {{ fld.ident }}: {{ ("case[\"args\"][" ~ i ~ "][\"" ~ fld.name ~ "\"]") | rust_unmarshal(fld.type) }},
+            {{ fld.ident }}: {{ field_value(fld, "case[\"args\"][" ~ i ~ "][\"" ~ fld.name ~ "\"]", f.name) }},
 {% endfor %}
         };
 {% elif arg_ty.list_of is defined and arg_ty.list_of.record is defined %}
@@ -49,7 +53,7 @@
             .iter()
             .map(|x| fixtures::{{ r.record }}::{{ r.record | to_pascal_case }}Payload {
 {% for fld in r.fields %}
-                {{ fld.ident }}: {{ ("x[\"" ~ fld.name ~ "\"]") | rust_unmarshal(fld.type) }},
+                {{ fld.ident }}: {{ field_value(fld, "x[\"" ~ fld.name ~ "\"]", f.name) }},
 {% endfor %}
             })
             .collect();
@@ -79,7 +83,7 @@
 {% endif %}
 {% for fld in f.output.fields %}
         assert_eq!(
-            actual.{{ fld.ident }},
+            actual.{{ fld.ident }}{% if fld.type == "string" %}.as_str(){% endif %},
             {{ ("case[\"expected\"][\"" ~ fld.name ~ "\"]") | rust_unmarshal(fld.type) }},
             "{{ f.name }}.{{ fld.name }}"
         );
@@ -95,7 +99,7 @@
         for (a, e) in actual.iter().zip(expected.iter()) {
 {% for fld in f.output.list_of.fields %}
             assert_eq!(
-                a.{{ fld.ident }},
+                a.{{ fld.ident }}{% if fld.type == "string" %}.as_str(){% endif %},
                 {{ ("e[\"" ~ fld.name ~ "\"]") | rust_unmarshal(fld.type) }},
                 "{{ f.name }}.{{ fld.name }}"
             );

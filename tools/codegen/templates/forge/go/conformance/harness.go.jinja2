@@ -214,6 +214,15 @@ func (f eventSchemaFieldSpec) int64Value(t *testing.T) int64 {
 	return v
 }
 
+func (f eventSchemaFieldSpec) stringValue(t *testing.T) string {
+	t.Helper()
+	var v string
+	if err := json.Unmarshal(f.Value, &v); err != nil {
+		t.Fatalf("field %q: value %s is not a string: %v", f.Name, f.Value, err)
+	}
+	return v
+}
+
 func (f eventSchemaFieldSpec) boolValue(t *testing.T) bool {
 	t.Helper()
 	var v bool

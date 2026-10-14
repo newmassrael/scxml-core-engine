@@ -25041,6 +25041,113 @@
         { "args": [19, [9007199254740992, 16, 16, 18, 19], []], "expected": 9007199254740992, "note": "fuzz" }
       ]
     },
+    "text_slot_latest": {
+      "fixture": "text_slot_latest",
+      "signature": "(a: record:Slot, b: record:Slot) -> record:Slot",
+      "formula": "a, moved to b's version when b's is greater, and to b's text when that differs from a's (the standard document sce:std/text/text_slot_latest.scxml)",
+      "cases": [
+        {
+          "args": [{ "slot": 1, "version": 5, "text": "draft" }, { "slot": 1, "version": 9, "text": "final" }],
+          "expected": { "slot": 1, "version": 9, "text": "final" },
+          "note": "the later version brings its text"
+        },
+        {
+          "args": [{ "slot": 1, "version": 5, "text": "draft" }, { "slot": 1, "version": 3, "text": "old" }],
+          "expected": { "slot": 1, "version": 5, "text": "draft" },
+          "note": "an earlier version changes nothing"
+        },
+        {
+          "args": [{ "slot": 1, "version": 5, "text": "draft" }, { "slot": 1, "version": 9, "text": "draft" }],
+          "expected": { "slot": 1, "version": 9, "text": "draft" },
+          "note": "the later version with the same text advances the version alone"
+        },
+        {
+          "args": [{ "slot": 1, "version": 5, "text": "draft" }, { "slot": 1, "version": 5, "text": "other" }],
+          "expected": { "slot": 1, "version": 5, "text": "draft" },
+          "note": "equal versions keep a"
+        },
+        {
+          "args": [{ "slot": 2, "version": 1, "text": "" }, { "slot": 2, "version": 2, "text": "x" }],
+          "expected": { "slot": 2, "version": 2, "text": "x" },
+          "note": "an empty text is replaced like any other"
+        },
+        {
+          "args": [{ "slot": 1, "version": 5, "text": "a" }, { "slot": 7, "version": 6, "text": "b" }],
+          "expected": { "slot": 1, "version": 6, "text": "b" },
+          "note": "the place is a's"
+        },
+        {
+          "args": [{ "slot": 4, "version": 1, "text": "" }, { "slot": 4, "version": 2, "text": "abcdefghijklmnopqrstuvwxyz012345" }],
+          "expected": { "slot": 4, "version": 2, "text": "abcdefghijklmnopqrstuvwxyz012345" },
+          "note": "a text of exactly the bound, 32 bytes, is carried whole"
+        }
+      ]
+    },
+    "text_slot_retitled": {
+      "fixture": "text_slot_retitled",
+      "signature": "(slots: list<record:Slot>) -> list<record:Slot> may-fail",
+      "formula": "each slot in order, an empty text titled \"untitled\" (the standard document sce:std/text/text_slot_retitled.scxml)",
+      "cases": [
+        { "args": [[]], "expected": [], "note": "no slots" },
+        {
+          "args": [[{ "slot": 1, "version": 5, "text": "a" }, { "slot": 2, "version": 2, "text": "" }]],
+          "expected": [{ "slot": 1, "version": 5, "text": "a" }, { "slot": 2, "version": 2, "text": "untitled" }],
+          "note": "only the empty text is titled"
+        },
+        {
+          "args": [[{ "slot": 3, "version": 1, "text": "keep" }]],
+          "expected": [{ "slot": 3, "version": 1, "text": "keep" }],
+          "note": "a titled slot is carried over"
+        },
+        {
+          "args": [[{ "slot": 1, "version": 1, "text": "" }, { "slot": 2, "version": 1, "text": "" }, { "slot": 3, "version": 1, "text": "" }, { "slot": 4, "version": 1, "text": "" }, { "slot": 5, "version": 1, "text": "" }, { "slot": 6, "version": 1, "text": "" }, { "slot": 7, "version": 1, "text": "" }, { "slot": 8, "version": 1, "text": "" }, { "slot": 9, "version": 1, "text": "" }, { "slot": 10, "version": 1, "text": "" }, { "slot": 11, "version": 1, "text": "" }, { "slot": 12, "version": 1, "text": "" }, { "slot": 13, "version": 1, "text": "" }, { "slot": 14, "version": 1, "text": "" }, { "slot": 15, "version": 1, "text": "" }, { "slot": 16, "version": 1, "text": "" }]],
+          "expected": [{ "slot": 1, "version": 1, "text": "untitled" }, { "slot": 2, "version": 1, "text": "untitled" }, { "slot": 3, "version": 1, "text": "untitled" }, { "slot": 4, "version": 1, "text": "untitled" }, { "slot": 5, "version": 1, "text": "untitled" }, { "slot": 6, "version": 1, "text": "untitled" }, { "slot": 7, "version": 1, "text": "untitled" }, { "slot": 8, "version": 1, "text": "untitled" }, { "slot": 9, "version": 1, "text": "untitled" }, { "slot": 10, "version": 1, "text": "untitled" }, { "slot": 11, "version": 1, "text": "untitled" }, { "slot": 12, "version": 1, "text": "untitled" }, { "slot": 13, "version": 1, "text": "untitled" }, { "slot": 14, "version": 1, "text": "untitled" }, { "slot": 15, "version": 1, "text": "untitled" }, { "slot": 16, "version": 1, "text": "untitled" }],
+          "note": "sixteen slots fill the result to its declared capacity"
+        }
+      ]
+    },
+    "text_slot_holds": {
+      "fixture": "text_slot_holds",
+      "signature": "(slots: list<record:Slot>, probe: record:Slot) -> bool",
+      "formula": "whether some slot has probe's slot and text (the standard document sce:std/text/text_slot_holds.scxml)",
+      "cases": [
+        {
+          "args": [[], { "slot": 1, "version": 1, "text": "a" }],
+          "expected": false,
+          "note": "an empty list holds nothing"
+        },
+        {
+          "args": [[{ "slot": 1, "version": 5, "text": "a" }, { "slot": 2, "version": 2, "text": "b" }], { "slot": 2, "version": 9, "text": "b" }],
+          "expected": true,
+          "note": "the version is not compared"
+        },
+        {
+          "args": [[{ "slot": 1, "version": 5, "text": "a" }, { "slot": 2, "version": 2, "text": "b" }], { "slot": 2, "version": 9, "text": "a" }],
+          "expected": false,
+          "note": "the slot holds another text"
+        },
+        {
+          "args": [[{ "slot": 1, "version": 5, "text": "a" }, { "slot": 2, "version": 2, "text": "b" }], { "slot": 1, "version": 9, "text": "b" }],
+          "expected": false,
+          "note": "another slot holds the text"
+        },
+        {
+          "args": [[{ "slot": 1, "version": 1, "text": "abcdefghijklmnopqrstuvwxyz012345" }], { "slot": 1, "version": 1, "text": "abcdefghijklmnopqrstuvwxyz012346" }],
+          "expected": false,
+          "note": "texts of the bound's length that differ in the last byte are different"
+        },
+        {
+          "args": [[{ "slot": 1, "version": 1, "text": "abcdefghijklmnopqrstuvwxyz012345" }], { "slot": 1, "version": 1, "text": "abcdefghijklmnopqrstuvwxyz012345" }],
+          "expected": true,
+          "note": "texts of the bound's length that agree are the same"
+        },
+        {
+          "args": [[{ "slot": 1, "version": 1, "text": "" }], { "slot": 1, "version": 1, "text": "" }],
+          "expected": true,
+          "note": "two empty texts are equal"
+        }
+      ]
+    },
     "utf8_within": {
       "fixture": "utf8_within",
       "signature": "(data: bytes, limit: u32) -> bool may-fail",
@@ -29654,6 +29761,17 @@
         { "name": "wallTime", "value": 1727000000400, "sce_type": "int64" },
         { "name": "counter", "value": 3, "sce_type": "uint32" },
         { "name": "nodeId", "value": 7, "sce_type": "uint64" }
+      ]
+    },
+    "text_slot": {
+      "fixture": "TextSlot",
+      "signature": "struct TextSlotPayload { uint32 slot; int64 version; string text; }",
+      "description": "One titled place of a shared list — which place it is, the version of the write that put its text there and the text, bounded at 32 UTF-8 bytes — the record type sce:std/text/text_slot_latest, text_slot_retitled and text_slot_holds take and return (SCE_FORGE.md §4.12). A SHAPE claim like every event-schema fixture: names, order, and that a value reads back.",
+      "event_name": "text.slot",
+      "fields": [
+        { "name": "slot", "value": 3, "sce_type": "uint32" },
+        { "name": "version", "value": 12, "sce_type": "int64" },
+        { "name": "text", "value": "draft", "sce_type": "string" }
       ]
     },
     "rga_node": {

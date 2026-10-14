@@ -209,6 +209,11 @@ pub struct RecordFieldSpec {
     pub ident: String,
     #[serde(rename = "type")]
     pub ty: CanonicalType,
+    /// The `sce:max-size` the schema declares on a `string` field — the number
+    /// of UTF-8 bytes its text is held within (SCE_FORGE.md §4.12). `None` for
+    /// every other field. Derived with `fields`, never written.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_size: Option<u32>,
 }
 
 /// Compound output descriptor for fixtures whose `expected` JSON value is an
@@ -376,15 +381,18 @@ pub struct EventSchemaFieldFixture {
 }
 
 /// The value an event-schema field fixture writes and reads back. Untagged,
-/// so the manifest keeps writing a bare JSON number or `true`/`false`, and a
-/// template renders it as the literal it is — each arm branches on
-/// `sce_type == "bool"` where its language spells a boolean differently.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// so the manifest keeps writing a bare JSON number, `true`/`false` or text,
+/// and a template renders it as the literal it is — each arm branches on
+/// `sce_type == "bool"` and `sce_type == "string"` where its language spells
+/// one differently. A text is the value of a `string` field the schema bounds
+/// with `sce:max-size` (SCE_FORGE.md §4.12).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(untagged)]
 pub enum EventSchemaFieldValue {
     Int(i64),
     Bool(bool),
+    Text(String),
 }
 
 /// One fixture entry. `name` and `ref_section` are common to every kind;
@@ -1517,17 +1525,40 @@ impl Manifest {
                         // bool) would be rendered as a literal of the wrong
                         // kind — a compile error in the typed arms, a silent
                         // coercion in Python.
+                        // A text is written between double quotes in every arm,
+                        // so one with a quote, a backslash or a character an
+                        // arm spells differently has no single literal.
+                        if let EventSchemaFieldValue::Text(text) = &field.value {
+                            if let Some(bad) = text
+                                .chars()
+                                .find(|c| !(c.is_ascii_alphanumeric() || " _.-".contains(*c)))
+                            {
+                                return Err(format!(
+                                    "fixture {}: event-schema field `{}` holds text with `{}`, \
+                                     which not every arm spells alike — a text is letters, \
+                                     digits, spaces and `_.-`",
+                                    f.name, field.name, bad
+                                ));
+                            }
+                        }
                         let declared_bool = field.sce_type == "bool";
+                        let declared_text = field.sce_type == "string";
                         let value_bool = matches!(field.value, EventSchemaFieldValue::Bool(_));
-                        if declared_bool != value_bool {
+                        let value_text = matches!(field.value, EventSchemaFieldValue::Text(_));
+                        if declared_bool != value_bool || declared_text != value_text {
                             return Err(format!(
                                 "fixture {}: event-schema field `{}` is declared \
                                  `{}` but its value is {} — a `bool` field takes \
-                                 true/false and every other field a number",
+                                 true/false, a `string` field text and every other \
+                                 field a number",
                                 f.name,
                                 field.name,
                                 field.sce_type,
-                                if value_bool { "a bool" } else { "a number" }
+                                match (value_bool, value_text) {
+                                    (true, _) => "a bool",
+                                    (_, true) => "text",
+                                    _ => "a number",
+                                }
                             ));
                         }
                     }
@@ -2484,6 +2515,11 @@ fn read_record_fields(
                 SceType::Int64 => CanonicalType::I64,
                 SceType::Float32 => CanonicalType::F32,
                 SceType::Float64 => CanonicalType::F64,
+                // A record's text is held within the bound its schema declares
+                // (SCE_FORGE.md §4.12), which a harness builds and reads it
+                // through, so a `string` field with none has nothing to be
+                // built at.
+                SceType::String if f.max_size.is_some() => CanonicalType::String,
                 other => {
                     return Err(format!(
                         "record `{record}`: field `{}` is {}, which the harness has no \
@@ -2497,6 +2533,10 @@ fn read_record_fields(
                 name: f.id.clone(),
                 ident: crate::forge::generator::event_schema_field_ident(&f.id, language),
                 ty,
+                max_size: match ty {
+                    CanonicalType::String => f.max_size,
+                    _ => None,
+                },
             })
         })
         .collect()

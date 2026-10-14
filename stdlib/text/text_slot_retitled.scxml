@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/text/text_slot_retitled.scxml — the places of a list as a reader
+  shows them: each one in order, and a place whose text is empty titled
+  "untitled". Every other place, and every place's slot and version, is
+  carried over unchanged.
+
+  The result holds at most 16 places (SCE_FORGE.md §4.12); past that the
+  bounded backends fail and the heap backends grow, so a host keeps its list
+  within it.
+
+  {1, v5, "a"}, {2, v2, ""} → {1, v5, "a"}, {2, v2, "untitled"}.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="text_slot_retitled" version="1.0">
+  <sce:import kind="event-schema" src="text_slot.scxml" as="Slot"/>
+  <sce:signature>
+    <sce:param name="slots" type="list&lt;record:Slot&gt;"/>
+    <sce:return type="list&lt;record:Slot&gt;" may-fail="true" returns-max-size="16"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="out" type="list&lt;record:Slot&gt;" capacity="16"/>
+    <sce:foreach item="s" in="slots">
+      <sce:var name="shown" type="record:Slot">
+        <sce:set name="slot" expr="s.slot"/>
+        <sce:set name="version" expr="s.version"/>
+        <sce:set name="text" expr="s.text"/>
+      </sce:var>
+      <sce:if cond="s.text === ''">
+        <sce:assign target="shown.text" expr="'untitled'"/>
+      </sce:if>
+      <sce:append target="out" expr="shown"/>
+    </sce:foreach>
+    <sce:return expr="out"/>
+  </sce:body>
+</scxml>

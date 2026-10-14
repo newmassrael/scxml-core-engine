@@ -22,7 +22,11 @@
 		// assertions below instead.
 		payload := {{ f.name }}.{{ f.name | to_pascal_case }}Payload{
 {% for field in f.fields %}
+{% if field.sce_type == "string" %}
+			{{ field.name | to_pascal_case }}: "{{ field.value }}",
+{% else %}
 			{{ field.name | to_pascal_case }}: {{ field.value }},
+{% endif %}
 {% endfor %}
 		}
 
@@ -34,6 +38,11 @@
 {% if field.sce_type == "bool" %}
 		if want := spec.Fields[{{ loop.index0 }}].boolValue(t); payload.{{ field.name | to_pascal_case }} != want {
 			t.Errorf("{{ f.name }}.{{ field.name }} = %t, want %t",
+				payload.{{ field.name | to_pascal_case }}, want)
+		}
+{% elif field.sce_type == "string" %}
+		if want := spec.Fields[{{ loop.index0 }}].stringValue(t); payload.{{ field.name | to_pascal_case }} != want {
+			t.Errorf("{{ f.name }}.{{ field.name }} = %q, want %q",
 				payload.{{ field.name | to_pascal_case }}, want)
 		}
 {% else %}

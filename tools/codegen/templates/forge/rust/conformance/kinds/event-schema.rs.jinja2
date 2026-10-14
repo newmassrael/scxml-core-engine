@@ -31,6 +31,9 @@
 {% for field in f.fields %}
 {% if field.sce_type == "bool" %}
             {{ field.name | to_snake_case }}: {{ field.value }},
+{% elif field.sce_type == "string" %}
+            {{ field.name | to_snake_case }}: ::sce_portable_bytes::SceString::from_text("{{ field.value }}")
+                .expect("{{ f.name }}.{{ field.name }}: the text fits the schema's bound"),
 {% else %}
             {{ field.name | to_snake_case }}: {{ field.value }}i64 as _,
 {% endif %}
@@ -47,6 +50,12 @@
         assert_eq!(
             payload.{{ field.name | to_snake_case }},
             fields[{{ loop.index0 }}]["value"].as_bool().unwrap(),
+            "{{ f.name }}.{{ field.name }}"
+        );
+{% elif field.sce_type == "string" %}
+        assert_eq!(
+            payload.{{ field.name | to_snake_case }}.as_str(),
+            fields[{{ loop.index0 }}]["value"].as_str().unwrap(),
             "{{ f.name }}.{{ field.name }}"
         );
 {% else %}

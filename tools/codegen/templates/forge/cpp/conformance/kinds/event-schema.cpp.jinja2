@@ -31,7 +31,11 @@
         // places and the read-backs below disagree.
         G::{{ f.name | to_pascal_case }}Payload payload{
 {% for field in f.fields %}
+{% if field.sce_type == "string" %}
+            std::string("{{ field.value }}"){{ "," if not loop.last }}
+{% else %}
             static_cast<decltype(G::{{ f.name | to_pascal_case }}Payload::{{ field.name }})>({{ field.value }}){{ "," if not loop.last }}
+{% endif %}
 {% endfor %}
         };
 
@@ -46,6 +50,11 @@
                   "{{ f.name }}.{{ field.name }} = %d, expected %d",
                   static_cast<int>(payload.{{ field.name }}),
                   static_cast<int>(o["value"].get<bool>()));
+{% elif field.sce_type == "string" %}
+            CHECK(payload.{{ field.name }} == o["value"].get<std::string>(),
+                  "{{ f.name }}.{{ field.name }} = '%s', expected '%s'",
+                  payload.{{ field.name }}.c_str(),
+                  o["value"].get<std::string>().c_str());
 {% else %}
             CHECK(static_cast<long long>(payload.{{ field.name }}) == o["value"].get<long long>(),
                   "{{ f.name }}.{{ field.name }} = %lld, expected %lld",

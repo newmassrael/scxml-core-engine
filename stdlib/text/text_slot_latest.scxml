@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/text/text_slot_latest.scxml — the place two replicas settle on when
+  each holds a version of it: the one with the greater version, with its text.
+  Equal versions keep `a`, so a caller that always passes its own record first
+  keeps what it has until a later write arrives.
+
+  The record is built from `a` and moved to `b`'s version and text only when
+  `b` is later; the text is copied only when it differs, which is what a
+  comparison of two texts is for. The place (`slot`) is `a`'s: two versions of
+  different places are not versions of one, and the caller does not ask.
+
+  a {1, v5, "draft"}, b {1, v9, "final"} → {1, v9, "final"} ·
+  b {1, v3, "old"} → {1, v5, "draft"} · b {1, v9, "draft"} → {1, v9, "draft"}.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="text_slot_latest" version="1.0">
+  <sce:import kind="event-schema" src="text_slot.scxml" as="Slot"/>
+  <sce:signature>
+    <sce:param name="a" type="record:Slot"/>
+    <sce:param name="b" type="record:Slot"/>
+    <sce:return type="record:Slot"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="out" type="record:Slot">
+      <sce:set name="slot" expr="a.slot"/>
+      <sce:set name="version" expr="a.version"/>
+      <sce:set name="text" expr="a.text"/>
+    </sce:var>
+    <sce:if cond="b.version &gt; a.version">
+      <sce:assign target="out.version" expr="b.version"/>
+      <sce:if cond="b.text !== a.text">
+        <sce:assign target="out.text" expr="b.text"/>
+      </sce:if>
+    </sce:if>
+    <sce:return expr="out"/>
+  </sce:body>
+</scxml>

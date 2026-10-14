@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/text/text_slot.scxml — one titled place of a shared list, as a
+  replica holds it and as a write to it travels: which place it is (`slot`),
+  the version of the write that put its text there, and the text itself. The
+  record type text_slot_latest, text_slot_retitled and text_slot_holds take
+  and return (SCE_FORGE.md §4.12).
+
+  `text` is the first field of a record that holds text: it is bounded by
+  `sce:max-size`, 32 UTF-8 bytes, which is the size every backend gives the
+  buffer it is held in. A record is not told apart by the length of the text
+  it carries, so the bound is the schema's and not the value's: a write to a
+  field with a smaller bound than the text came from is refused where it is
+  written, never cut.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="text_slot"
+       sce:event-name="text.slot">
+  <datamodel>
+    <data id="slot" sce:type="uint32" sce:direction="in"/>
+    <data id="version" sce:type="int64" sce:direction="in"/>
+    <data id="text" sce:type="string" sce:max-size="32" sce:direction="in"/>
+  </datamodel>
+</scxml>

@@ -2193,6 +2193,61 @@
       }
     },
     {
+      "name": "text_slot",
+      "document": "sce:std/text/text_slot.scxml",
+      "kind": "event-schema",
+      "ref_section": "event_schemas",
+      "event_name": "text.slot",
+      "fields": [
+        { "name": "slot", "value": 3, "sce_type": "uint32" },
+        { "name": "version", "value": 12, "sce_type": "int64" },
+        { "name": "text", "value": "draft", "sce_type": "string" }
+      ]
+    },
+    {
+      "name": "text_slot_latest",
+      "document": "sce:std/text/text_slot_latest.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "text_slot_latest",
+      "args": [
+        { "record": "text_slot" },
+        { "record": "text_slot" }
+      ],
+      "output": {
+        "record": "text_slot"
+      }
+    },
+    {
+      "name": "text_slot_retitled",
+      "document": "sce:std/text/text_slot_retitled.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "text_slot_retitled",
+      "args": [
+        { "list_of": { "record": "text_slot" } }
+      ],
+      "output": {
+        "list_of": { "record": "text_slot" },
+        "compare": "equality"
+      }
+    },
+    {
+      "name": "text_slot_holds",
+      "document": "sce:std/text/text_slot_holds.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "text_slot_holds",
+      "args": [
+        { "list_of": { "record": "text_slot" } },
+        { "record": "text_slot" }
+      ],
+      "output": {
+        "type": "bool",
+        "compare": "equality"
+      }
+    },
+    {
       "name": "weekday_from_days",
       "document": "sce:std/time/weekday_from_days.scxml",
       "kind": "algorithm",
