@@ -68,6 +68,7 @@ import com.sce.integration.static_record_bytes.StaticRecordBytesStateMachine
 import com.sce.integration.static_record_string.StaticRecordStringStateMachine
 import com.sce.integration.static_state_algorithm.StaticStateAlgorithmStateMachine
 import com.sce.integration.static_string_capacity.StaticStringCapacityStateMachine
+import com.sce.integration.static_text_record.StaticTextRecordStateMachine
 import com.sce.integration.static_timers.StaticTimersStateMachine
 import com.sce.integration.static_whole_payload.StaticWholePayloadStateMachine
 import com.sce.integration.static_wire_wide.StaticWireWideStateMachine
@@ -1221,6 +1222,27 @@ class StaticScenarioTest {
         try {
             replay(
                 scenario("static_state_algorithm"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // A statechart hands the standard text algorithms the record and the list of
+    // records it holds, whose text is bounded, and takes back what they return: a
+    // text past the bound is refused where the payload is taken, the state as it
+    // was.
+    @Test
+    fun staticTextRecordHandsBoundedTextToAnAlgorithmAndTakesItBack() {
+        val sm = StaticTextRecordStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_text_record"),
                 send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
                 tick = { sm.tick() },
                 save = { sm.save() },
