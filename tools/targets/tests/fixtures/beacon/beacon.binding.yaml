@@ -1,0 +1,21 @@
+version: 1
+document: beacon.scxml
+activation: on-change
+
+inputs:
+  side:
+    address: yard/in/side
+    when_absent: 10
+  active:
+    address: yard/in/active
+    equals: ACTIVE
+
+outputs:
+  beaconId:
+    address: yard/out/beacon
+    field: ID
+    passthrough: true
+  beaconStat:
+    address: yard/out/beacon
+    field: Stat
+    map: platform

@@ -1,0 +1,23 @@
+# A synthetic pack for the targets' tests of an event slot. It is made up, and nothing in it is
+# anyone's. One slot carries two events by identifier (K1, K2) and a status. When the slot moves from
+# one event to the other the host publishes the old event off first (`announces_old_off`), so a case
+# read as the first announcement sees (old identifier, OFF), not the state the round ends in.
+version: 1
+entries:
+  - address: yard/in/side
+    role: input
+    names: [IN_Side]
+    values: {EAST: 0, WEST: 1}
+
+  - address: yard/in/active
+    role: input
+    names: [IN_Active]
+    values: {INACTIVE: 0, ACTIVE: 1}
+
+  - address: yard/out/beacon
+    role: output
+    names: [OUT_Beacon]
+    fields:
+      ID: {type: text}
+      Stat: {values: {NONE: 0, "OFF": 1, "ON": 2}}
+    announces_old_off: true

@@ -1,0 +1,30 @@
+version: 1
+origin: made up for the targets' tests
+independent_cases: true
+ordered: true
+cases:
+  - name: the beacon lights on the east side
+    given: {yard/in/side: EAST, yard/in/active: ACTIVE}
+    drove: [yard/in/side, yard/in/active]
+    observed: first
+    expect: {yard/out/beacon.ID: K1, yard/out/beacon.Stat: "ON"}
+
+  # The slot moves from K1 to K2 while on: the host publishes K1 off first. The state the round
+  # ends in is (K2, ON), which a library without a host cannot be asked to show.
+  - name: the side changes while it is lit
+    given: {yard/in/side: WEST, yard/in/active: ACTIVE}
+    drove: [yard/in/side]
+    observed: first
+    expect: {yard/out/beacon.ID: K1, yard/out/beacon.Stat: "OFF"}
+
+  - name: the west beacon is lit
+    given: {yard/in/side: WEST, yard/in/active: INACTIVE}
+    drove: [yard/in/active]
+    observed: first
+    expect: {yard/out/beacon.ID: K2, yard/out/beacon.Stat: "OFF"}
+
+  - name: and lit again
+    given: {yard/in/side: WEST, yard/in/active: ACTIVE}
+    drove: [yard/in/active]
+    observed: first
+    expect: {yard/out/beacon.ID: K2, yard/out/beacon.Stat: "ON"}

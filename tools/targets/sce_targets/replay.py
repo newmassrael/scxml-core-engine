@@ -19,7 +19,8 @@ The translation goes through the target profile, inverted: a position the record
 found as an output's `address.field` (a value, through the inverse of the profile's `map`), as an
 attribute's field, or as a passthrough output. A position the profile fills from `also` -- a
 platform-only field -- has no logical name, so a target that speaks the interface cannot be asked
-about it; it is counted.
+about it; it is counted. So is a position the record states as what a host publishes first
+(`host_announced`), which a library without a host cannot show.
 
 statechart: the addresses the step drove are handed over, changed or not; the target's own
 on-change rule decides what reaches the machine.
@@ -86,6 +87,31 @@ def symbol_of(text, values: dict) -> str:
     raise Refused(f"value {text!r} is none of {sorted(values)}")
 
 
+def host_announced(model, owner, step) -> set:
+    """The positions a record states as what a host publishes first, which a library cannot show.
+
+    A component that `announces_old_off` has an event slot the host moves in order: from one
+    event to another, the old event is published off first, so a case read as its first
+    announcement (`observed: first`) expects (old identifier, OFF) where the round ended in the
+    new event, ON. A library has no host and shows the state a round ends in. The reading where
+    the two can differ is the status OFF; a status ON is the state the round ended in (an old
+    event shown would have been announced off first, and the record would say so). So the slot's
+    identifier and status are not asked when the record expects OFF, and are otherwise."""
+    if getattr(owner, "observed", "any") != "first":
+        return set()
+    held = set()
+    for entry in model.entries:
+        if not getattr(entry, "announces_old_off", False):
+            continue
+        status = f"{entry.address}.Stat"
+        if status not in step.expect:
+            continue
+        values = dict(field_of(model, entry.address, "Stat").values or {})
+        if symbol_of(step.expect[status], values) == core_verify._EVENT_OFF:
+            held |= {status, f"{entry.address}.ID"}
+    return held
+
+
 def main(argv: list) -> int:
     if len(argv) != 5:
         print(__doc__, file=sys.stderr)
@@ -125,8 +151,8 @@ def main(argv: list) -> int:
     last_given: dict = {}
 
     lines: list = []
-    counts = {"judged positions": 0, "platform-only positions": 0, "unbound positions": 0,
-              "silent rounds": 0, "unjudgeable steps": 0}
+    counts = {"judged positions": 0, "platform-only positions": 0, "host-announced positions": 0,
+              "unbound positions": 0, "silent rounds": 0, "unjudgeable steps": 0}
     for step, owner, judged in core_verify.rounds_of(pack.examples.cases):
         # A statechart's answer can depend on when it is read; a transform without a clock input
         # computes from the current values alone, so the reading time of its record says nothing
@@ -185,8 +211,11 @@ def main(argv: list) -> int:
                     lines.append(f"set {name} {'true' if value else 'false'}")
         lines.append("commit")
         if judged:
+            announced_by_host = host_announced(pack.model, owner, step)
             for position, want in step.expect.items():
-                if position in value_at:
+                if position in announced_by_host:
+                    counts["host-announced positions"] += 1
+                elif position in value_at:
                     name, inverse, values = value_at[position]
                     platform = symbol_of(want, values) if values else str(want)
                     logical = inverse.get(platform) or inverse.get(str(values.get(platform, "")))

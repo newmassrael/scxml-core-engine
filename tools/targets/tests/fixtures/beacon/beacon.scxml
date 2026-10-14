@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="transform" name="beacon">
+  <sce:import as="Side" src="side_values.scxml" kind="enum"/>
+  <sce:import as="Status" src="status_values.scxml" kind="enum"/>
+  <datamodel>
+    <data id="side" sce:type="enum:Side" sce:direction="in"/>
+    <data id="active" sce:type="bool" sce:direction="in"/>
+
+    <data id="beaconId" sce:type="string" sce:direction="out"
+          expr="(side === Side.EAST) ? 'K1' : 'K2'"/>
+    <data id="beaconStat" sce:type="enum:Status" sce:direction="out"
+          expr="active ? Status.ON : Status.OFF"/>
+  </datamodel>
+</scxml>
