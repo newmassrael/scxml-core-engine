@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A copy of the shared to-do list telling itself to show a peer its digest's node at
+  (`depth`, `prefix`): `to` is the node id of the peer (a person's copy has only the hub
+  to send to and does not read it), and `reply` whether the node answers the peer's
+  own at the last depth (todo_node). The copy sends the hash it holds there, which is 0
+  where it holds nothing, so a peer that holds something there sees the difference.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="todo_visit"
+       sce:event-name="todo.visit">
+  <datamodel>
+    <data id="to" sce:type="uint64" sce:direction="in"/>
+    <data id="depth" sce:type="uint8" sce:direction="in"/>
+    <data id="prefix" sce:type="uint64" sce:direction="in"/>
+    <data id="reply" sce:type="bool" sce:direction="in"/>
+  </datamodel>
+</scxml>

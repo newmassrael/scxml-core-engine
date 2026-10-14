@@ -49,6 +49,8 @@ const FORGE: &[&str] = &[
     "../../../stdlib/merge/orset_union.scxml",
     "../../../stdlib/merge/orset_live.scxml",
     "../../../stdlib/merge/orset_observed.scxml",
+    "../../../stdlib/merge/merkle_node.scxml",
+    "../../../stdlib/merge/merkle_insert.scxml",
     "../../../stdlib/merge/rga_node.scxml",
     "../../../stdlib/merge/rga_gone.scxml",
     "../../../stdlib/merge/rga_insert.scxml",
@@ -70,6 +72,10 @@ const FORGE: &[&str] = &[
     "../../../sce-build/tests/fixtures/static_datamodel/todo_write.scxml",
     "../../../sce-build/tests/fixtures/static_datamodel/todo_supersede.scxml",
     "../../../sce-build/tests/fixtures/static_datamodel/todo_value.scxml",
+    "../../../sce-build/tests/fixtures/static_datamodel/todo_keep.scxml",
+    "../../../sce-build/tests/fixtures/static_datamodel/todo_node.scxml",
+    "../../../sce-build/tests/fixtures/static_datamodel/todo_visit.scxml",
+    "../../../sce-build/tests/fixtures/static_datamodel/todo_share.scxml",
     "machines/todo_shout.scxml",
 ];
 

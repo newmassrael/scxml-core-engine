@@ -657,6 +657,10 @@ pub fn todo_oracle(world: &World) -> BTreeMap<(u64, u64), Field> {
     let mut written: BTreeMap<(u64, u64), Vec<TodoValue>> = BTreeMap::new();
     let mut superseded: Vec<Superseded> = Vec::new();
     for (event, write) in sent_to_the_hub(world) {
+        // The digest's nodes a resync walks are not changes.
+        if event != "todo.write" && event != "todo.supersede" {
+            continue;
+        }
         let number = |name: &str| whole(&write[name]);
         let key = (number("id") as u64, number("field") as u64);
         let stamp = (

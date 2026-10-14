@@ -5319,6 +5319,18 @@ values are what the Rust engine did, and the same test holds the run to oracles 
 read the network and not the copies. A machine that waits on a clock is not recorded
 this way yet: its record would have to hold when its time moved.
 
+The to-do afternoon includes changes a link dropped for good, which no retry
+repairs, and the copies finding them again: the host raises `todo.resync` on a copy
+when its link is back and the copies walk their merkle digests (`digest`, kept with
+`merkle_insert` over the minute of each change's dot) one node to a message
+(`todo.node`), answering where their own node differs with its children, down to a
+minute, where each side sends the changes it holds for that minute as the ordinary
+writes and supersedes they were. Every step of that exchange is in the scenarios,
+including the hash the statechart computes with checked integer arithmetic, so each
+backend is held to the same digest. A copy restarted from an older save, which
+loses changes in the same way, is a restore and not an event, so the world tests
+(`a_copy_restored_from_an_old_save_is_repaired_by_resync.rs`) hold that case.
+
 A step is read after the macrostep its event started has run to quiescence, and
 the first step, which may send none, after the machine has started and settled.
 The generated policy says which call a machine needs (`needs_event_scheduler`):

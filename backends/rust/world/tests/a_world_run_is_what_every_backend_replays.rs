@@ -39,6 +39,7 @@ const TODO_PUBLISHED: &[&str] = &[
     "adds",
     "tombstones",
     "values",
+    "digest",
     "refusals",
 ];
 
@@ -144,7 +145,8 @@ fn about(what: &str, who: &str) -> String {
 /// An afternoon of the shared to-do list: changes to different fields of one to-do at
 /// once, two titles written at the same instant, a title past what a title holds,
 /// changes made while a link is down, and a to-do removed by one while the other
-/// renames it.
+/// renames it; then changes a link dropped for good, found again by the copies telling
+/// each other their link is back (`todo.resync`).
 fn todo_afternoon() -> World {
     let mut world = recorded_todo_world(11, 20);
     todo_title(&mut world, "alice", 7, "buy milk");
@@ -174,6 +176,25 @@ fn todo_afternoon() -> World {
     world.advance_ms(300);
     world.heal("alice", "server");
     assert_eq!(world.run_until_quiet(60_000), Outcome::Quiet);
+
+    // Two minutes later alice's link drops what it carries without a word, in both
+    // directions, so the hub and bob never get what alice writes and alice never gets
+    // what bob writes: changes lost for good, which no retry repairs.
+    world.advance_ms(120_000);
+    world.degrade("alice", "server", 100, 0);
+    todo_set(&mut world, "alice", 7, DUE, 20_002);
+    todo_title(&mut world, "alice", 3, "call Dr Han");
+    world.advance_ms(60_000);
+    todo_set(&mut world, "bob", 5, DONE, 1);
+    todo_title(&mut world, "bob", 3, "call the clinic");
+    assert_eq!(world.run_until_quiet(60_000), Outcome::Quiet);
+    world.degrade("alice", "server", 0, 0);
+
+    // The link is back: each copy tells its peers, in turn, to look for where they differ.
+    for who in ["alice", "server", "bob"] {
+        world.raise(who, "todo.resync", "");
+        assert_eq!(world.run_until_quiet(60_000), Outcome::Quiet);
+    }
     world
 }
 
@@ -183,7 +204,12 @@ fn an_afternoon_of_the_shared_todo_list_is_three_scenarios() {
     let list = agreed_todos(&mut world);
     assert_eq!(list, todo_oracle(&world));
     assert_eq!(list[&(7, TITLE)].text.as_deref(), Some("buy oat milk"));
-    assert_eq!(list[&(3, TITLE)].text.as_deref(), Some("call the dentist"));
+    // Retitled by both while alice's link dropped everything: neither saw the other's, so
+    // both titles stay, and the later stamp is the one a single reader takes.
+    assert_eq!(list[&(3, TITLE)].live.len(), 2);
+    assert_eq!(list[&(3, TITLE)].text.as_deref(), Some("call the clinic"));
+    assert_eq!(list[&(7, DUE)].value, 20_002);
+    assert_eq!(list[&(5, DONE)].value, 1);
     assert_eq!(list[&(5, TITLE)].text.as_deref(), Some("tea at 4"));
     assert_eq!(list[&(5, REMOVED)].value, 1);
     assert!(
