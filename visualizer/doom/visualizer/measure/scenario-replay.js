@@ -86,6 +86,31 @@ function variable(runner, name) {
     return text === '' ? null : JSON.parse(text);
 }
 
+/**
+ * Whether the variable `got`, as the script engine writes it, is the value `want` a
+ * scenario states. A 64-bit integer is written in a scenario as its decimal digits,
+ * because a JSON number holds no more than 53 bits, and the engine holds it as a
+ * number: the two are the same value when the number's digits are the string, as
+ * every other lane that replays the scenarios reads them. Records and lists are
+ * compared member by member; nothing else is loosened.
+ */
+function sameValue(got, want) {
+    if (typeof got === 'number' && typeof want === 'string' && /^-?\d+$/.test(want)) {
+        return Number.isSafeInteger(got) && String(got) === want;
+    }
+    if (Array.isArray(want)) {
+        return Array.isArray(got) && got.length === want.length
+            && want.every((member, i) => sameValue(got[i], member));
+    }
+    if (want !== null && typeof want === 'object') {
+        if (got === null || typeof got !== 'object' || Array.isArray(got)) return false;
+        const names = Object.keys(want);
+        return Object.keys(got).length === names.length
+            && names.every((name) => name in got && sameValue(got[name], want[name]));
+    }
+    return isDeepStrictEqual(got, want);
+}
+
 /** The documents beside `document`, answered from the fixture directory. */
 function siblingFromFixtures(name) {
     const file = path.join(FIXTURES, name);
@@ -126,7 +151,7 @@ async function replay(Module, SceBuildWasm, scenario) {
             }
             for (const [name, want] of Object.entries(expect.variables || {})) {
                 const got = variable(runner, name);
-                if (!isDeepStrictEqual(got, want)) {
+                if (!sameValue(got, want)) {
                     failures.push(`${at}: variable \`${name}\` is ${JSON.stringify(got)}, not ${JSON.stringify(want)}`);
                 }
             }
