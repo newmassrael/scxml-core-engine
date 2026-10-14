@@ -4237,7 +4237,19 @@ handed over whole when its schema holds text: `_event.data` carries the text the
 sent, which is held to its bound only by the assignment that takes it into a variable,
 so a call of `Alg(_event.data)` is refused at the call (`expression/unsupported-construct`,
 "the payload of the event holds text") and the author assigns the payload to a record
-variable and hands the algorithm that.
+variable and hands the algorithm that. This is a decision and not a gap in the
+lowering: the one place a text is judged against a bound is the assignment into a
+variable, which every backend and the Interpreter carry out as the same rule (nothing
+is written, `error.execution` is raised, the block ends), and it is also where a
+payload's text is lifted out of the wire. Judging it again in each adapter would need a
+second failure channel, spelled differently in six languages (a `Result`, an exception,
+an `Outcome`, a recorded failure), in a position where a guard cannot say what a
+failed call means, and it would give the author nothing the assignment does not: the
+record variable is the copy the call would have made. `scenarios/static_text_record.json`
+runs the form the rule asks for — the payload taken into `incoming`, then handed to
+`Latest`, `Holds` and, through `slots`, `Retitled` — on every engine that runs the
+model, with a text of exactly the bound, one byte past it that is refused with the
+state as it was, and a multi-byte text counted in bytes.
 
 A call is a statement like any other. It reads the variables as they stand, and
 nothing the algorithm does reaches the machine's state: the machine hands over a copy
