@@ -41,21 +41,21 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use sce_works::figures::GENERATOR_ENV;
+use sce_works::{Clock, HostReport, HostWaiting, Product, SceCodegen, WorkStore, WAITING_MAX};
+
 use crate::auth_policy::Policy;
 use crate::claude_code::{AuthorServer, ClaudeCode, ClaudeCodeConfig};
 use crate::client_run::capture;
-use crate::clock::Clock;
 use crate::codex::{Codex, CodexConfig, CodexLaunch, HOME_DIR as CODEX_HOME_DIR};
 use crate::codex_support::Support;
 use crate::connection::{AdapterKind, AuthSource};
+use crate::connection_store::ConnectionStore;
 use crate::directory::{ClaudeLaunch, Connections, Launches};
-use crate::figures::{SceCodegen, GENERATOR_ENV};
 use crate::installed::Installed;
-use crate::review::Product;
 use crate::runner::{
     Cancel, Directory, Draft, GenerateError, Generator, Job, Runner, RunnerConfig, Waiting,
 };
-use crate::store::{ConnectionStore, HostReport, HostWaiting, WorkStore, WAITING_MAX};
 
 /// Names `SCE_EXECUTOR`, `SCE_CLAUDE`, `SCE_CODEX`, `SCE_AUTHOR_MCP`, `SCE_WORK`,
 /// `SCE_CLAUDE_MODEL`, `SCE_CLAUDE_BUDGET_USD` in the environment.

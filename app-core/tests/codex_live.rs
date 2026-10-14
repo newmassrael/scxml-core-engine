@@ -26,11 +26,10 @@ use sce_app_core::claude_code::AuthorServer;
 use sce_app_core::codex::{instructions_of, version_of, Codex, CodexConfig};
 use sce_app_core::codex_support::Support;
 use sce_app_core::connection::AuthSource;
-use sce_app_core::requests::Inputs;
 use sce_app_core::runner::{Outcome, Runner, RunnerConfig};
-use sce_app_core::{
-    ModelReviewer, Policy, Registration, ReviewRequest, SceCodegen, SystemClock, WorkStore,
-};
+use sce_app_core::Policy;
+use sce_works::requests::Inputs;
+use sce_works::{ModelReviewer, Registration, ReviewRequest, SceCodegen, SystemClock, WorkStore};
 use serde_json::{json, Value};
 
 const SPECIFICATION: &str = "\
@@ -467,8 +466,9 @@ fn run(attack: bool) {
     let store = Arc::new(WorkStore::with_clock(&works, SystemClock));
     let work = store.create_work("Synthetic indicator").unwrap().id;
     let head = match store.save_source(&work, &source, None).unwrap() {
-        sce_app_core::Saved::Saved { revision, .. }
-        | sce_app_core::Saved::Unchanged { revision } => revision,
+        sce_works::Saved::Saved { revision, .. } | sce_works::Saved::Unchanged { revision } => {
+            revision
+        }
     };
     let request = store
         .register_request(
@@ -490,7 +490,7 @@ fn run(attack: bool) {
         command: PathBuf::from("python3"),
         args: vec![mcp.display().to_string()],
         env: vec![
-            ("SCE_WORK".into(), env!("CARGO_BIN_EXE_sce-work").into()),
+            ("SCE_WORK".into(), common::sce_work().display().to_string()),
             ("SCE_WORKS_DIR".into(), works.display().to_string()),
             ("SCE_CODEGEN".into(), codegen.display().to_string()),
             (
@@ -616,7 +616,7 @@ fn run(attack: bool) {
     let model = store.read_model(&work, None).unwrap().unwrap();
     assert!(model.text.contains("<scxml"));
     assert!(!model.text.contains(&secret));
-    let files = sce_app_core::model_set::ModelFiles::parse(&model.text).unwrap();
+    let files = sce_works::model_set::ModelFiles::parse(&model.text).unwrap();
     let siblings: Vec<_> = files.others().into_iter().cloned().collect();
     let review = SceCodegen::at(codegen)
         .review(&ReviewRequest {

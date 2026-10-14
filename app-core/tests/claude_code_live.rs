@@ -25,9 +25,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use sce_app_core::claude_code::{AuthorServer, ClaudeCode, ClaudeCodeConfig};
-use sce_app_core::requests::Inputs;
 use sce_app_core::runner::{Generator, Outcome, Runner, RunnerConfig};
-use sce_app_core::{Registration, SceCodegen, SystemClock, WorkStore};
+use sce_works::requests::Inputs;
+use sce_works::{Registration, SceCodegen, SystemClock, WorkStore};
 use serde_json::Value;
 
 const SPECIFICATION: &str = "\
@@ -62,8 +62,9 @@ fn the_real_client_writes_a_model_the_core_accepts_and_publishes() {
     let work = store.create_work("Storage room door").unwrap().id;
     let source = store.save_source(&work, SPECIFICATION, None).unwrap();
     let head = match source {
-        sce_app_core::Saved::Saved { revision, .. }
-        | sce_app_core::Saved::Unchanged { revision } => revision,
+        sce_works::Saved::Saved { revision, .. } | sce_works::Saved::Unchanged { revision } => {
+            revision
+        }
     };
     let request = store
         .register_request(
@@ -88,7 +89,7 @@ fn the_real_client_writes_a_model_the_core_accepts_and_publishes() {
         env: vec![
             (
                 "SCE_WORK".to_string(),
-                env!("CARGO_BIN_EXE_sce-work").to_string(),
+                common::sce_work().display().to_string(),
             ),
             ("SCE_WORKS_DIR".to_string(), works.display().to_string()),
             ("SCE_CODEGEN".to_string(), codegen.display().to_string()),
@@ -188,8 +189,9 @@ fn a_hostile_specification_cannot_make_the_real_client_read_elsewhere() {
     );
     let work = store.create_work("Storage room door").unwrap().id;
     let head = match store.save_source(&work, &hostile, None).unwrap() {
-        sce_app_core::Saved::Saved { revision, .. }
-        | sce_app_core::Saved::Unchanged { revision } => revision,
+        sce_works::Saved::Saved { revision, .. } | sce_works::Saved::Unchanged { revision } => {
+            revision
+        }
     };
     store
         .register_request(
@@ -233,7 +235,7 @@ fn a_hostile_specification_cannot_make_the_real_client_read_elsewhere() {
         env: vec![
             (
                 "SCE_WORK".to_string(),
-                env!("CARGO_BIN_EXE_sce-work").to_string(),
+                common::sce_work().display().to_string(),
             ),
             ("SCE_WORKS_DIR".to_string(), works.display().to_string()),
             ("SCE_CODEGEN".to_string(), codegen.display().to_string()),

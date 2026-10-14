@@ -3,12 +3,11 @@
 #
 # sce-app-core — the part of the specification workbench that has no screen.
 #
-# A works folder holds one folder per work, and a work holds the specification
-# text as a chain of immutable, content-addressed revisions. The desktop app and
-# its browser shell read and write that folder through this crate, and the
-# authoring MCP is meant to, through the `sce-work` command (it does not yet), so
-# there is ONE implementation of what a save is and of what makes two saves
-# conflict.
+# The works folder is SCE's (`sce-works`): the desktop app and its browser shell read and write
+# it through that crate, and the authoring MCP through the `sce-work` command it builds, so there
+# is ONE implementation of what a save is. What is here is what the workbench adds: the ways a
+# person reaches a model (connections, kept in their own settings folder), the AI clients it runs
+# for a request of the works, and the commands a screen asks about them.
 #
 # Nothing here links a GUI toolkit: this crate is a member of the root
 # workspace and is built and tested by the lanes that already run there. The
@@ -18,82 +17,30 @@
 name = "sce-app-core"
 version.workspace = true
 edition.workspace = true
-# `std::fs::File::lock` is how a save is serialised across processes, on every
-# platform, without a dependency. It is stable from 1.89, which is above the
-# workspace floor the runtime crates keep for embedded targets.
+# The works it links need 1.89 (`std::fs::File::lock`), and so does this.
 rust-version = "1.89"
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "Works folder, immutable source revisions and the command layer shared by the desktop app and the MCP"
+description = "The specification workbench without its screen: connections, AI clients and the commands a screen asks about them"
 
 [lib]
 name = "sce_app_core"
 
-[[bin]]
-name = "sce-work"
-path = "src/bin/sce_work.rs"
-required-features = ["cli"]
-
-[[test]]
-name = "cli"
-path = "tests/cli.rs"
-required-features = ["cli"]
-
-# Runs the real Claude Code through the real `sce-work`: it is ignored unless asked for, and
-# needs the binary to hand it, which only the `cli` feature builds.
-[[test]]
-name = "claude_code_live"
-path = "tests/claude_code_live.rs"
-required-features = ["cli"]
-
-# Real Codex and MCP verification, explicitly opted into because it runs a paid model.
-[[test]]
-name = "codex_live"
-path = "tests/codex_live.rs"
-required-features = ["cli"]
-
-# The same, with a model on a model server the person runs (Ollama, llama.cpp, vLLM, LM Studio):
-# ignored unless asked for, and needs the server named in the environment.
-[[test]]
-name = "local_live"
-path = "tests/local_live.rs"
-required-features = ["cli"]
-
-[features]
-default = []
-# The `sce-work` command: the same operations as JSON in and out, so a process
-# that is not Rust (the authoring MCP) writes through this crate and not through
-# a second implementation of it.
-cli = ["dep:clap"]
-
 [dependencies]
+sce-works = { path = "../sce-works" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-sha2 = { workspace = true }
-# Judges a requirement list's lineage when a list is saved or published: whether it is a
-# lineage, the list's own, and the continuation of the one the work holds. One implementation,
-# so that this store and the generator refuse in the same words.
-sce-revision = { path = "../sce-revision" }
-# The rules of a generation request are one document (`machines/request_life`), generated into
-# `src/request_life/generated`. The machine that comes out runs on this engine and calls these
-# helpers for its integer arithmetic. `default-features = false` leaves out the engine's own HTTP
-# transport and the allocation-free targets' machinery: nothing here sends over the first or is
-# built for the second.
-sce-rust-runtime = { path = "../backends/rust/runtime", default-features = false }
-sce-forge-runtime = { path = "../backends/rust/forge-runtime", default-features = false }
-clap = { version = "4", features = ["derive"], optional = true }
 # A model server the person reaches over https (a tunnel, a server on another computer). rustls
 # with the ring provider and the web's roots, as the mesh binding's wss client has it
 # (backends/rust/mesh/Cargo.toml), so that a build needs no TLS library of the system's.
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 webpki-roots = "1"
-# Reads a document an AI wrote, to refuse one that names a file (`src/document_files.rs`). The
-# reader the checker's own build uses (sce-build), which has no dependencies of its own.
-roxmltree = "0.20"
 
 [dev-dependencies]
 serde_json = "1"
+# The stand-ins a test holds a work against (`sce_works::testing`).
+sce-works = { path = "../sce-works", features = ["testing"] }
 # The certificates a test server is given, made when the test runs: nothing secret is kept in
 # the tree, and none of them can run out.
 rcgen = "0.13"

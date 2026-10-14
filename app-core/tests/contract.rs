@@ -26,9 +26,9 @@ use sce_app_core::codex_environment::API_KEY_VARIABLE;
 use sce_app_core::codex_status::{self, CodexStatus, SourceAccount, SupportState};
 use sce_app_core::server_status::{Reach, ServerState, ServerStatus};
 use sce_app_core::{
-    call, call_in, AuthSource, CommandError, ConnectionStore, Context, Entrance, FixedClock,
-    NoRenderer, Policy, Product, Route, WorkStore, COMMANDS, COMMAND_SET_VERSION,
+    all_commands, call_in, AuthSource, ConnectionStore, Context, Entrance, Policy, Route,
 };
+use sce_works::{CommandError, FixedClock, NoRenderer, Product, WorkStore, COMMAND_SET_VERSION};
 use serde_json::{json, Map, Value};
 
 use common::{FakeRenderer, RefusingRenderer};
@@ -52,6 +52,21 @@ fn name_the_unstable(value: &mut Value, from: &str, to: &str) {
             .for_each(|v| name_the_unstable(v, from, to)),
         _ => {}
     }
+}
+
+/// The command `name`, asked of the application by a program with no settings folder.
+fn call(
+    store: &WorkStore<FixedClock>,
+    renderer: &dyn Product,
+    name: &str,
+    args: Value,
+) -> Result<Value, CommandError> {
+    let policy = Policy::shipped();
+    call_in(
+        &Context::new(store, renderer, &policy, Entrance::Tool),
+        name,
+        args,
+    )
 }
 
 fn answer(store: &WorkStore<FixedClock>, name: &str, args: Value) -> Value {
@@ -804,7 +819,7 @@ fn replies() -> Value {
         answer(&store, "read_host_status", json!({})),
     );
     store
-        .report_host(sce_app_core::HostReport {
+        .report_host(sce_works::HostReport {
             name: "desktop",
             hosting: false,
             reason: Some("no Claude Code to write models with: install it, or set SCE_CLAUDE"),
@@ -818,12 +833,12 @@ fn replies() -> Value {
     );
     // A shell that hosts, and the request it left queued because it could not run it.
     store
-        .report_host(sce_app_core::HostReport {
+        .report_host(sce_works::HostReport {
             name: "web-shell",
             hosting: true,
             reason: None,
             client_version: Some("2.1.291"),
-            waiting: &[sce_app_core::HostWaiting {
+            waiting: &[sce_works::HostWaiting {
                 work: id.clone(),
                 request: request_id.clone(),
                 connection: "claude".to_string(),
@@ -1497,7 +1512,7 @@ fn replies() -> Value {
 
     // A command without a written-down reply is a command the screen's test
     // cannot hold to account.
-    for command in COMMANDS {
+    for command in all_commands() {
         assert!(
             answers
                 .keys()

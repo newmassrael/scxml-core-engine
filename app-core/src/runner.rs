@@ -35,16 +35,12 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::answers::Answers;
-use crate::clock::Clock;
-use crate::commands::{complete_generation, CommandError};
-use crate::error::StoreError;
-use crate::model_set::ModelFiles;
-use crate::requests::{ConnectionId, ConnectionRef, Pin, State};
-use crate::requirements::Requirements;
-use crate::review::Product;
-use crate::revision::Revision;
-use crate::store::{AdapterReport, CandidateWrite, RequestView, WorkId, WorkStore};
+use sce_works::commands::complete_generation;
+use sce_works::requests::State;
+use sce_works::{
+    AdapterReport, Answers, CandidateWrite, Clock, CommandError, ConnectionId, ConnectionRef,
+    ModelFiles, Pin, Product, RequestView, Requirements, Revision, StoreError, WorkId, WorkStore,
+};
 
 /// What a refusal of the request's own state is called when the request is no longer the
 /// runner's to work on.

@@ -13,9 +13,9 @@
 mod common;
 
 use sce_app_core::{
-    call, call_in, CommandError, Connection, ConnectionStore, Context, Entrance, Policy, Route,
-    WorkStore, COMMANDS, COMMAND_SET_VERSION,
+    call_in, Connection, ConnectionStore, Context, Entrance, Policy, Route, COMMANDS,
 };
+use sce_works::{CommandError, WorkStore, COMMAND_SET_VERSION};
 use serde_json::{json, Value};
 
 use common::FakeRenderer;
@@ -35,7 +35,7 @@ impl Rig {
         }
     }
 
-    fn context(&self, entrance: Entrance) -> Context<'_, sce_app_core::SystemClock> {
+    fn context(&self, entrance: Entrance) -> Context<'_, sce_works::SystemClock> {
         Context::new(&self.works, &FakeRenderer, &self.policy, entrance)
             .with_connections(Some(&self.connections))
     }
@@ -47,6 +47,15 @@ impl Rig {
     fn desktop(&self, name: &str, args: Value) -> Value {
         self.ask(Entrance::Desktop, name, args)
             .unwrap_or_else(|e| panic!("{name} was refused: {e:?}"))
+    }
+
+    /// `name`, taking no arguments, asked by `entrance` with no settings folder.
+    fn bare(&self, entrance: Entrance, name: &str) -> Result<Value, CommandError> {
+        call_in(
+            &Context::new(&self.works, &FakeRenderer, &self.policy, entrance),
+            name,
+            json!({}),
+        )
     }
 }
 
@@ -71,7 +80,7 @@ fn describe_says_which_entrance_it_is_and_what_it_may_do() {
 
     let desktop = rig.desktop("describe", json!({}));
     let browser = rig.ask(Entrance::Browser, "describe", json!({})).unwrap();
-    let tool = call(&rig.works, &FakeRenderer, "describe", json!({})).unwrap();
+    let tool = rig.bare(Entrance::Tool, "describe").unwrap();
 
     assert_eq!(desktop["command_set_version"], json!(COMMAND_SET_VERSION));
     assert_eq!(
@@ -222,7 +231,7 @@ fn only_the_desktop_changes_settings_and_the_others_read_them() {
 fn an_entrance_with_no_settings_folder_says_so() {
     let rig = Rig::new("cc-no-settings");
 
-    let refused = call(&rig.works, &FakeRenderer, "list_connections", json!({})).unwrap_err();
+    let refused = rig.bare(Entrance::Tool, "list_connections").unwrap_err();
 
     assert_eq!(refused.kind, "no-settings");
 }

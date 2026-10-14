@@ -27,7 +27,8 @@ use sce_app_core::claude_code::Search;
 use sce_app_core::codex::{auth_store_override, instructions_of};
 use sce_app_core::codex_status;
 use sce_app_core::codex_support::Support;
-use sce_app_core::{call_in, ConnectionStore, Context, Entrance, Policy, Route, WorkStore};
+use sce_app_core::{call_in, ConnectionStore, Context, Entrance, Policy, Route};
+use sce_works::WorkStore;
 use serde_json::{json, Value};
 
 use common::{scratch, FakeRenderer};

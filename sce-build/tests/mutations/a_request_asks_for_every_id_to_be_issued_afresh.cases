@@ -8,7 +8,8 @@
 # the request (and it is an input of the key, so a press that asked is not the press that did not),
 # the request says it in its record only when it was made, the runner hands it to the generator in
 # the job, and the command both takes it and says it back. Each case below takes one of those away
-# and must make a test of `app-core/tests/{requests,runner,request_commands}.rs` red.
+# and must make a test of `sce-works/tests/{requests,request_commands}.rs` or
+# `app-core/tests/runner.rs` red.
 #
 # ⚠ A mutated tree is built under `-D warnings`, so every case keeps each binding it had in
 # use: a mutation that stops reading one is an unused-variable ERROR, the tree does not
@@ -17,12 +18,12 @@
 # Anchors are literal slices of the source; an edit that moves one is reported INCONCLUSIVE with
 # the anchor quoted, never as a pass.
 
-mutation_tests -p sce-app-core --features cli --test requests --test runner --test request_commands
-mutation_targets app-core/src/store/request_store.rs app-core/src/requests.rs app-core/src/runner.rs app-core/src/commands.rs
-mutation_oracles app-core/tests/requests.rs app-core/tests/runner.rs app-core/tests/request_commands.rs
+mutation_tests -p sce-works --test requests --test request_commands -p sce-app-core --test runner
+mutation_targets sce-works/src/store/request_store.rs sce-works/src/requests.rs app-core/src/runner.rs sce-works/src/commands.rs
+mutation_oracles sce-works/tests/requests.rs app-core/tests/runner.rs sce-works/tests/request_commands.rs
 
 mutation_case "a press that asked is taken for the press that did not" <<'PY'
-edit("app-core/src/store/request_store.rs",
+edit("sce-works/src/store/request_store.rs",
      "            if same.inputs != registration.expect || same.fresh_ids != fresh_ids {",
      "            if same.inputs != registration.expect {")
 PY
@@ -34,13 +35,13 @@ edit("app-core/src/runner.rs",
 PY
 
 mutation_case "a request does not keep what the owner asked" <<'PY'
-edit("app-core/src/requests.rs",
+edit("sce-works/src/requests.rs",
      "        Request { fresh_ids, ..self }",
      "        Request { fresh_ids: fresh_ids && false, ..self }")
 PY
 
 mutation_case "a request that asked for nothing writes the ask all the same" <<'PY'
-edit("app-core/src/requests.rs",
+edit("sce-works/src/requests.rs",
      "    #[serde(default, skip_serializing_if = \"std::ops::Not::not\")]\n    pub fresh_ids: bool,",
      "    #[serde(default)]\n    pub fresh_ids: bool,")
 PY
@@ -52,13 +53,13 @@ edit("app-core/src/runner.rs",
 PY
 
 mutation_case "the command does not pass the ask on to the registration" <<'PY'
-edit("app-core/src/commands.rs",
-     "        pin,\n        fresh_ids,\n    )?;",
-     "        pin,\n        false && fresh_ids,\n    )?;")
+edit("sce-works/src/commands.rs",
+     "                pin,\n                fresh_ids,\n            )?;",
+     "                pin,\n                false && fresh_ids,\n            )?;")
 PY
 
 mutation_case "the request is said without what was asked" <<'PY'
-edit("app-core/src/commands.rs",
+edit("sce-works/src/commands.rs",
      "        \"fresh_ids\": request.fresh_ids,",
      "        \"fresh_ids\": false,")
 PY

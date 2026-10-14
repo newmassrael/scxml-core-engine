@@ -10,9 +10,9 @@
 # `app/` is a workspace of its own, excluded from the root one, so the root
 # lanes never build it: the desktop shell links a GUI toolkit, and every Rust
 # lane would otherwise need that installed. What has no screen lives in
-# `app-core/`, which the root lanes DO build and test (`cargo test --workspace`
-# runs its tests, including the contract test that writes down every reply of the
-# command layer). This gate is the rest:
+# `app-core/` and the works it links (`sce-works/`), which the root lanes DO build
+# and test (`cargo test --workspace` runs their tests, including the contract test
+# that writes down every reply of the command layer). This gate is the rest:
 #
 #   1. The screen: types, unit tests, and the production build. The unit tests
 #      read `app-core/contract/replies.json`, so a core that changed a reply and
@@ -53,11 +53,11 @@ command -v npm >/dev/null 2>&1 \
 # `--workspace` here means `app/`'s members, never the root's. A manifest under
 # a directory the root `Cargo.toml` excludes says so on the line itself.
 # Formatting names the two packages and does not use `--all`. `--all` adds every
-# local path dependency (`app-core`, which pulls `sce-build` and the backends in
-# through its dev-dependencies) and hands rustfmt every file of them on ONE command
-# line: ~97 KB, over the 32767 characters Windows lets a process be started with
-# ("The filename or extension is too long", measured on the `windows` lane).
-# `app-core` is a member of the root workspace, so `fmt-check.yml` already judges it.
+# local path dependency (`app-core` and `sce-works`, which pull the backends in) and
+# hands rustfmt every file of them on ONE command line: ~97 KB, over the 32767
+# characters Windows lets a process be started with ("The filename or extension is
+# too long", measured on the `windows` lane). `app-core` and `sce-works` are members
+# of the root workspace, so `fmt-check.yml` already judges them.
 cargo fmt --manifest-path app/Cargo.toml -p sce-workbench -p sce-web-shell --check \
     || sce_gate_fail "app: cargo fmt --check"
 

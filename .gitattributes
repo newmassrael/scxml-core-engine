@@ -5,3 +5,4 @@
 # `text=auto` keeps git's own detection of binary files (the icons) in force.
 /app-core/** text=auto eol=lf
 /app/** text=auto eol=lf
+/sce-works/** text=auto eol=lf

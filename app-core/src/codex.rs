@@ -33,6 +33,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
+use sce_works::Revision;
 use serde_json::Value;
 
 use crate::auth_policy::Observed;
@@ -45,7 +46,6 @@ use crate::client_run::{
 use crate::codex_environment::environment_for;
 use crate::codex_support::{enabled_features, Support};
 use crate::connection::AuthSource;
-use crate::revision::Revision;
 use crate::runner::{Cancel, Draft, GenerateError, Generator, Job};
 
 // The authoring server's tools a client may use, said once for every client that has them

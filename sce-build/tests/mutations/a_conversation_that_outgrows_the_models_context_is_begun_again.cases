@@ -22,7 +22,7 @@
 # Anchors are literal slices of the source; an edit that moves one is reported INCONCLUSIVE with
 # the anchor quoted, never as a pass.
 
-mutation_tests -p sce-app-core --features cli --lib --test local --test connections --test connection_directory
+mutation_tests -p sce-app-core --lib --test local --test connections --test connection_directory
 mutation_targets app-core/src/local.rs app-core/src/directory.rs app-core/src/connection.rs
 mutation_oracles app-core/tests/local.rs app-core/tests/connections.rs app-core/tests/connection_directory.rs
 
@@ -106,7 +106,7 @@ PY
 
 mutation_case "the context a connection gives does not reach the run" <<'PY'
 edit("app-core/src/directory.rs",
-     "            context_tokens: pin.limits.context_tokens,",
+     "            context_tokens: run.limits.context_tokens,",
      "            context_tokens: None,")
 PY
 
@@ -118,8 +118,8 @@ PY
 
 mutation_case "the hand-overs a connection allows do not reach the run" <<'PY'
 edit("app-core/src/directory.rs",
-     "            handoffs: pin.limits.handoffs.unwrap_or(defaults.handoffs),",
-     "            handoffs: pin.limits.handoffs.map(|_| defaults.handoffs).unwrap_or(defaults.handoffs),")
+     "            handoffs: run.limits.handoffs.unwrap_or(defaults.handoffs),",
+     "            handoffs: run.limits.handoffs.map(|_| defaults.handoffs).unwrap_or(defaults.handoffs),")
 PY
 
 mutation_case "a limit of hand-overs alone is taken for a connection without limits" <<'PY'

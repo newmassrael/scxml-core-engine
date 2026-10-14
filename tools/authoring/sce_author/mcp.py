@@ -2272,9 +2272,9 @@ _FILE_ATTRIBUTES = frozenset({"src", "href", "template"})
 _FILE_LIST_ATTRIBUTES = frozenset({"{http://sce.dev/ext}candidates"})
 _XML_BASE = "{http://www.w3.org/XML/1998/namespace}base"
 
-# The longest a document's file name is in the application (`MAX_NAME_CHARS`,
-# app-core/src/model_set.rs): a longer reference names no document of a draft. The application
-# reads the answer it ends with by the same rule (app-core/src/document_files.rs), and the cases
+# The longest a document's file name is in the works (`MAX_NAME_CHARS`,
+# sce-works/src/model_set.rs): a longer reference names no document of a draft. The application
+# reads the answer it ends with by the same rule (sce-works/src/document_files.rs), and the cases
 # in tests/fixtures/file_references.json hold the two to it.
 _MAX_NAME_CHARS = 100
 

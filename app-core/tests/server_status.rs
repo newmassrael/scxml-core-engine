@@ -24,7 +24,8 @@ use std::thread;
 use rustls::pki_types::{PrivateKeyDer, PrivatePkcs8KeyDer};
 use rustls::{ServerConfig, ServerConnection, StreamOwned};
 use sce_app_core::server_status::{read, Reach, ServerState};
-use sce_app_core::{call_in, ConnectionStore, Context, Entrance, Policy, WorkStore};
+use sce_app_core::{call_in, ConnectionStore, Context, Entrance, Policy};
+use sce_works::WorkStore;
 use serde_json::{json, Value};
 
 use common::model_server::{chat_server, Script};
@@ -206,7 +207,7 @@ fn an_address_a_connection_could_not_keep_is_refused_as_a_connection_refuses_it(
 
 // ---- the command -----------------------------------------------------------------------------
 
-fn ask(entrance: Entrance, args: Value) -> Result<Value, sce_app_core::CommandError> {
+fn ask(entrance: Entrance, args: Value) -> Result<Value, sce_works::CommandError> {
     let works = WorkStore::at(scratch("ss-works"));
     let settings = ConnectionStore::at(scratch("ss-settings"));
     let policy = Policy::shipped();

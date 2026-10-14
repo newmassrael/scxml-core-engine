@@ -5,7 +5,7 @@
 //!
 //! It holds no logic of its own. The window shows `ui/`, and the command it
 //! offers the screen, `sce_call`, hands the command's name and arguments to
-//! `sce_app_core::call` and hands the answer back. The browser shell used during
+//! `sce_app_core::call_in` and hands the answer back. The browser shell used during
 //! development offers the same single entrance, so the screen cannot behave
 //! differently in the two for a reason that lives in the shell.
 //!
@@ -26,10 +26,8 @@ use std::time::Instant;
 use close_gate::{CloseGate, Decision};
 use sce_app_core::host::{self, ExecutorHost, HostSettings};
 use sce_app_core::installed::{self, Installed};
-use sce_app_core::{
-    call_in, default_root, default_settings_root, renderer_with_bundle, CommandError,
-    ConnectionStore, Context, Entrance, Policy, Product, WorkStore,
-};
+use sce_app_core::{call_in, default_settings_root, ConnectionStore, Context, Entrance, Policy};
+use sce_works::{default_root, renderer_with_bundle, CommandError, Product, WorkStore};
 use serde_json::Value;
 use tauri::{Manager, RunEvent, WindowEvent};
 

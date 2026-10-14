@@ -14,10 +14,10 @@
 //! What the address says of it is all that is known. A tunnel to another computer is `127.0.0.1`,
 //! which is why a connection also carries the name a person gave it.
 
+use sce_works::StoreError;
 use serde::Serialize;
 
 use crate::connection::check_server_address;
-use crate::error::StoreError;
 use crate::http_client::Endpoint;
 use crate::local::{list_models, ModelsError};
 

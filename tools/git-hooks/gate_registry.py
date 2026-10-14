@@ -1043,7 +1043,8 @@ GATES: dict[str, dict] = {
     },
     # The specification workbench (`app/`): a workspace of its own, excluded from
     # the root one because the desktop shell links a GUI toolkit. The part with
-    # no screen is `app-core/`, which `workspace-tests` already runs.
+    # no screen is `app-core/` and the works it links (`sce-works/`), which
+    # `workspace-tests` already runs.
     #
     # `ci_only` for the number: 66s with every artefact warm, but the first
     # compile of the Tauri shell took 295s on a 32-core machine, and a push

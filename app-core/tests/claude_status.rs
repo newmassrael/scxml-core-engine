@@ -22,9 +22,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use sce_app_core::claude_code::account_from_status;
-use sce_app_core::{
-    call_in, ConnectionStore, Context, Entrance, Observed, Policy, Route, WorkStore,
-};
+use sce_app_core::{call_in, ConnectionStore, Context, Entrance, Observed, Policy, Route};
+use sce_works::WorkStore;
 use serde_json::{json, Value};
 
 use common::{scratch, FakeRenderer};

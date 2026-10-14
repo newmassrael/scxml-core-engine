@@ -45,7 +45,7 @@ cargo_profile=()
 
 cd "$repo_root"
 cargo build "${cargo_profile[@]}" -p sce-build --features cli --bin sce-codegen
-cargo build "${cargo_profile[@]}" -p sce-app-core --features cli --bin sce-work
+cargo build "${cargo_profile[@]}" -p sce-works --features cli --bin sce-work
 codegen="$repo_root/target/$profile/sce-codegen"
 work="$repo_root/target/$profile/sce-work"
 

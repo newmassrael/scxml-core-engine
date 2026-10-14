@@ -3,7 +3,7 @@
 - Status: Accepted for stages 1 to 3 (implemented and tested, see "What stage 1 / 2 / 3 measured");
   D1 decided (c) on 2026-10-09 and stage 4a is under way; D2 is the owner's: see "Open decisions"
 - Date: 2026-10-08
-- Scope: `app-core` (the requirement list's record, `save_requirements`, `read_requirements`,
+- Scope: `sce-works` (part of `app-core` when this was decided; moved 2026-10-14) (the requirement list's record, `save_requirements`, `read_requirements`,
   `save_request_candidate`, bundles), the `sce-work` command layer, the authoring MCP's
   `works_*` tools, and a pure `between` / `extends` in `tools/authoring/sce_author/requirement_lineage.py`.
   Step 6 of the chain begun in ADR 0006
@@ -11,7 +11,7 @@
   `docs/adr/0007-an-acceptance-keeps-what-each-requirement-rests-on.md`,
   `docs/adr/0008-an-acceptance-says-what-moved-since-it-was-taken.md`,
   `docs/adr/0009-a-revision-stays-within-the-reach-of-what-changed.md`,
-  `app-core/src/store.rs`, `app-core/src/requirements.rs`, `app-core/src/acceptance.rs`
+  `sce-works/src/store.rs`, `sce-works/src/requirements.rs`, `sce-works/src/acceptance.rs`
 
 ## Context
 
@@ -22,7 +22,7 @@ id is issued once and never again. It is a file the CALLER keeps and hands back
 
 A work in the workbench is the application's own unit: its text, its model, the owner's
 answers, its requirement list and its acceptances, five chains in one folder that ONE
-implementation writes (`app-core/src/store.rs`). The folder has no place for the lineage. A
+implementation writes (`sce-works/src/store.rs`). The folder has no place for the lineage. A
 client that revises a work reads `manifest_text` and `sidecar_text` from `works_read`, and
 those are all it can give back: `previous_manifest` and `previous_sidecar`, the path ADR 0006
 calls adoption.
@@ -120,9 +120,9 @@ same compare-and-swap.**
 
 - **D1. Where the join lives once two surfaces need it.** ADR 0009 put the join of words and
   evidence in Python because it needed no product change, and the workbench's report needs the
-  same join while `app-core` is Rust. A second table written in Rust would be two definitions
+  same join while `sce-works` is Rust. A second table written in Rust would be two definitions
   of what a revision finding is, and they would drift. The choices: (a) keep one in Python and
-  have the application reach it through the authoring package, (b) port it to `app-core`, (c)
+  have the application reach it through the authoring package, (b) port it to `sce-works`, (c)
   move it into the product as one command (`revision-join`, with its schema registered in
   `SCE_WIRE_CONTRACTS.md`) that the Python tools and `sce-work` both call. **Recommendation: (c).**
   It changes where ADR 0009's table lives and adds a wire surface, so it is not done by this
@@ -178,7 +178,7 @@ same compare-and-swap.**
 
 Criteria set before code. Each stage ends with a push; none needs the next.
 
-1. **The record and the commands (`app-core`).** Done when: a list saved with a lineage reads
+1. **The record and the commands (`sce-works`).** Done when: a list saved with a lineage reads
    back byte for byte, and one saved without is the same bytes (the same digest) as today; a save
    without a lineage onto a head that has one is refused `lineage-dropped`; a candidate carries
    the lineage and `complete_request` publishes it with the list; a core that predates the field
@@ -192,7 +192,7 @@ Criteria set before code. Each stage ends with a push; none needs the next.
    rule of decision 4 and a break that removes it. **Done** for the tools: see "What stage 2
    measured"; the application's own generation is "Stage 2b" there, and is not done.
 3. **The derived delta and a check by work.** `between`, and a `works_revision_check` that joins
-   it with the product's evidence over the staged work (`app-core/src/acceptance.rs` already
+   it with the product's evidence over the staged work (`sce-works/src/acceptance.rs` already
    stages a work for the product, `Snapshot::stage`). Done when: the check of a work agrees with
    `scxml_revision_check` given the same two lineages, and a delta of a later step needs no
    composition. The join's home is D1.
@@ -222,13 +222,13 @@ Criteria set before code. Each stage ends with a push; none needs the next.
 
 Implemented as `requirement_lineage.between` (the words of a revision, from two lineages),
 `works.read_requirements_at` and `works.read_acceptance_delta`, the tools `works_revision_check`
-and `works_revision_report` (`mcp._work_revision_join`), and, in `app-core`, a new command
+and `works_revision_report` (`mcp._work_revision_join`), and, in `sce-works`, a new command
 `read_acceptance_delta` (command set 20) over a new method of the acceptor,
 `delta_acceptance`, which stages the work as the product is always shown one and runs
 `acceptance-delta`. The acceptance and the design and list it is compared with are read as ONE
 state of the work, and the manifest the record pinned is passed on beside the lines. The join
 stays where ADR 0009 put it (D1 is not decided by this stage). Held by
-`app-core/tests/what_moved_in_a_work_since_it_was_accepted.rs` (6 tests), the stand-in and the
+`sce-works/tests/what_moved_in_a_work_since_it_was_accepted.rs` (6 tests), the stand-in and the
 real generator in `tests/acceptance_product.rs`, the contract file, the screen's guard
 (`parseReadAcceptanceDelta`, 2 tests; the screen does not show the report yet),
 `tests/test_a_lineage_is_only_ever_appended_to.py` (10 tests of `between`) and
@@ -320,7 +320,7 @@ the gap is loud and a lineage cannot be lost silently. What is done and what is 
   written to attack it (`tests/codex_live.rs`). With the owner's approval both live tests (the
   plain run and the attack run) were run with `SCE_CODEX_VERIFY=1` against Codex 0.159.0 on
   2026-10-09 and passed, and the shipped entry names the new contract, `codex/7465c0fb9357`.
-  Of `app-core`'s tests the change moved exactly two: the schema's list of required properties
+  Of `sce-works`'s tests the change moved exactly two: the schema's list of required properties
   in `tests/claude_code.rs` and the Codex contract.
 - **What the live run did not measure.** It used the synthetic indicator specification, a
   work that holds no lineage, so it verifies the sandbox, the tools and the answer form under
@@ -329,13 +329,13 @@ the gap is loud and a lineage cannot be lost silently. What is done and what is 
 
 ## What stage 1 measured
 
-Implemented in `app-core/src/requirements.rs` (the record), `app-core/src/store.rs` and
+Implemented in `sce-works/src/requirements.rs` (the record), `sce-works/src/store.rs` and
 `store/bundle_store.rs` (`refuse_a_dropped_lineage`, called by a direct save and by a bundle's
-publication, under the work's lock), and `app-core/src/commands.rs` (`lineage` of
+publication, under the work's lock), and `sce-works/src/commands.rs` (`lineage` of
 `save_requirements` and `save_request_candidate`, `lineage` in what `read_requirements` and the
 snapshot return, `COMMAND_SET_VERSION` 19 with the screen's `SUPPORTED_COMMAND_SET_VERSION` and
 `contract/replies.json` moved with it). Held by
-`app-core/tests/a_work_keeps_the_lineage_of_its_requirement_list.rs` (12 tests), the record's own
+`sce-works/tests/a_work_keeps_the_lineage_of_its_requirement_list.rs` (12 tests), the record's own
 unit tests (10) and `tests/contract.rs`:
 
 1. **Met.** A list with a lineage reads back with it byte for byte as a `v` 2 record, and a list
@@ -364,7 +364,7 @@ Seven ways of breaking it were put to those tests and each was caught by the tes
 the refusal removed from a direct save, the refusal removed from a publication, the reply
 carrying a `null` lineage, the lineage's kind not checked, the save command ignoring `lineage`,
 the candidate command ignoring it, and the record always written as `v` 1. The screen's tests
-(17 files, 546 tests) pass with the new version, run with node 22 as CI does; `app-core`'s tests
+(17 files, 546 tests) pass with the new version, run with node 22 as CI does; `sce-works`'s tests
 pass and clippy with warnings denied is clean. One test of the MCP client
 (`a_server_that_closes_its_input_and_lives_on_is_said_to_be_gone_and_not_waited_for`) timed out
 once in the whole-crate run on a loaded build machine and passes alone; it does not touch lists.

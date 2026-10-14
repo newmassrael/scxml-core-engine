@@ -269,7 +269,7 @@ class ARevisionOfAWork(unittest.TestCase):
         self.assertIn("keeps no lineage and no sidecar", body(refused))
 
     # An acceptance that pinned another manifest than the list it was taken of is refused by the
-    # product now, and that refusal is held where it is made: `app-core/tests/a_work_says_what_
+    # product now, and that refusal is held where it is made: `sce-works/tests/a_work_says_what_
     # its_revision_did_to_each_requirement.rs` (`an_acceptance_that_pinned_another_manifest_than_
     # the_list_is_refused`), with a stand-in whose record pins another manifest.
 

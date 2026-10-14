@@ -23,7 +23,7 @@ use std::time::{Duration, Instant};
 
 use sce_app_core::claude_code::{AuthorServer, ClaudeCode, ClaudeCodeConfig, ALLOWED_TOOLS};
 use sce_app_core::runner::{Cancel, GenerateError, Generator, Job};
-use sce_app_core::{ModelFiles, Revision, WorkId};
+use sce_works::{ModelFiles, Revision, WorkId};
 use serde_json::{json, Value};
 
 /// A stand-in for `claude`, and where it wrote down what it was given.

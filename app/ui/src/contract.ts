@@ -3,7 +3,8 @@
 
 // What the command layer answers, and the guards that check an answer is that.
 //
-// The Rust side is the authority (`app-core/src/commands.rs`). An answer is not
+// The Rust side is the authority (`app-core/src/commands.rs`, in front of the
+// works' `sce-works/src/commands.rs`). An answer is not
 // trusted because the screen was written against it: it is checked as it comes in,
 // so a screen and a core of different versions fail with a sentence that says so
 // instead of with `undefined` somewhere in a view. Extra fields are tolerated (a

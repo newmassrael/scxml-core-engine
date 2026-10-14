@@ -10,7 +10,8 @@ caller read, taken under a lock, and the desktop application and this server
 both save. A second implementation here -- read the files, write the files --
 would be a second definition of what a save is and of when two saves conflict,
 without the first one's lock: the day they disagreed an owner would lose text.
-`sce-work` is the application's own command layer (`app-core`), so there is one.
+`sce-work` is the works' own command layer (`sce-works`), the one the
+application links too, so there is one.
 
 The refusals keep their words. `sce-work` answers a refusal as a JSON line with a
 `kind` a program branches on and a sentence for a person, and `WorksError`
@@ -82,7 +83,7 @@ def call_work(command: str, args: dict | None = None,
         raise WorksError(
             "unavailable",
             f"sce-work is not at {binary}: the works folder is reached through it. Build it "
-            f"(cargo build -p sce-app-core --features cli --bin sce-work), or name it "
+            f"(cargo build -p sce-works --features cli --bin sce-work), or name it "
             f"with SCE_WORK")
     try:
         done = process.run([str(binary), "call", command, "--args-stdin"],

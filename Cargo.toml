@@ -23,6 +23,7 @@ members = [
     "backends/rust/scenarios",
     "backends/rust/world",
     "sce-revision",
+    "sce-works",
     "app-core",
 ]
 # The application links a GUI toolkit and is a workspace of its own (see

@@ -22,6 +22,7 @@ on:
     paths:
       - 'app/**'
       - 'app-core/**'
+      - 'sce-works/**'
       - 'tools/authoring/**'
       - 'tools/codegen/templates/**'
       - 'scripts/package_app.sh'
@@ -34,6 +35,7 @@ on:
     paths:
       - 'app/**'
       - 'app-core/**'
+      - 'sce-works/**'
       - 'tools/authoring/**'
       - 'tools/codegen/templates/**'
       - 'scripts/package_app.sh'
@@ -81,7 +83,7 @@ jobs:
             ~/.cargo/git
             target
             app/target
-          key: ${{ runner.os }}-cargo-installer-${{ hashFiles('Cargo.lock', 'app/Cargo.lock', 'app/**/Cargo.toml', 'app-core/Cargo.toml', 'sce-build/Cargo.toml') }}
+          key: ${{ runner.os }}-cargo-installer-${{ hashFiles('Cargo.lock', 'app/Cargo.lock', 'app/**/Cargo.toml', 'app-core/Cargo.toml', 'sce-works/Cargo.toml', 'sce-build/Cargo.toml') }}
           restore-keys: |
             ${{ runner.os }}-cargo-installer-
       - name: Cache the Tauri CLI

@@ -32,6 +32,7 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use sce_works::{Document, Revision};
 use serde_json::{json, Value};
 
 use crate::claude_code::AuthorServer;
@@ -41,8 +42,6 @@ use crate::client_run::{
 };
 use crate::http_client::{self, Endpoint, HttpError, Request};
 use crate::mcp_client::{McpClient, McpError, Tool};
-use crate::model_set::Document;
-use crate::revision::Revision;
 use crate::runner::{Cancel, Draft, GenerateError, Generator, Job};
 
 /// The most of one answer of the server that is read.
@@ -1268,7 +1267,7 @@ pub fn list_models(endpoint: &Endpoint, bearer: Option<&str>) -> Result<Vec<Stri
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model_set::ModelFiles;
+    use sce_works::ModelFiles;
 
     /// A message read as the draft with no check behind it: what most of these say is of the
     /// message alone.

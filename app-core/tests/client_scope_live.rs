@@ -32,7 +32,7 @@ use sce_app_core::http_client::Endpoint;
 use sce_app_core::local::{Local, LocalConfig};
 use sce_app_core::mcp_client::McpClient;
 use sce_app_core::runner::{Cancel, Generator, Job};
-use sce_app_core::{Revision, SystemClock, WorkId, WorkStore};
+use sce_works::{Revision, SystemClock, WorkId, WorkStore};
 use serde_json::{json, Value};
 
 use common::model_server::{calls, chat_server, draft, says};
@@ -111,7 +111,7 @@ impl Setting {
                 "from sce_author import mcp; mcp.main()".to_string(),
             ],
             env: vec![
-                ("SCE_WORK".into(), env!("CARGO_BIN_EXE_sce-work").into()),
+                ("SCE_WORK".into(), common::sce_work().display().to_string()),
                 ("SCE_WORKS_DIR".into(), self.works.display().to_string()),
                 ("SCE_CODEGEN".into(), self.codegen.display().to_string()),
                 (

@@ -1,0 +1,77 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+#
+# sce-works — the works folder: a specification's text, the models written for it, the owner's
+# answers, its requirement list and what the owner accepted, each as a chain of immutable,
+# content-addressed revisions, and the requests that ask an AI for a model.
+#
+# It is SCE's and not an application's: the authoring MCP reads and writes a work through the
+# `sce-work` command this crate builds, and an application that shows works (the workbench)
+# links this crate, so there is ONE implementation of what a save is and of what makes two
+# saves conflict. Which AI clients there are and how one is run is the application's; a request
+# made for one carries what the application wrote for it, and the works keep it unread
+# (`requests::Pin`).
+
+[package]
+name = "sce-works"
+version.workspace = true
+edition.workspace = true
+# `std::fs::File::lock` is how a save is serialised across processes, on every
+# platform, without a dependency. It is stable from 1.89, which is above the
+# workspace floor the runtime crates keep for embedded targets.
+rust-version = "1.89"
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Works folder, immutable revisions, generation requests and the command layer the authoring MCP and the workbench share"
+
+[lib]
+name = "sce_works"
+
+[[bin]]
+name = "sce-work"
+path = "src/bin/sce_work.rs"
+required-features = ["cli"]
+
+[[test]]
+name = "cli"
+path = "tests/cli.rs"
+required-features = ["cli"]
+
+[features]
+default = []
+# The `sce-work` command: the same operations as JSON in and out, so a process
+# that is not Rust (the authoring MCP) writes through this crate and not through
+# a second implementation of it.
+cli = ["dep:clap"]
+# The stand-ins a test of the works, or of an application built on them, holds a work
+# against (`testing`): a product that answers without the generator, and the like.
+testing = []
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = { workspace = true }
+# Judges a requirement list's lineage when a list is saved or published: whether it is a
+# lineage, the list's own, and the continuation of the one the work holds. One implementation,
+# so that this store and the generator refuse in the same words.
+sce-revision = { path = "../sce-revision" }
+# The rules of a generation request are one document (`machines/request_life`), generated into
+# `src/request_life/generated`. The machine that comes out runs on this engine and calls these
+# helpers for its integer arithmetic. `default-features = false` leaves out the engine's own HTTP
+# transport and the allocation-free targets' machinery: nothing here sends over the first or is
+# built for the second.
+sce-rust-runtime = { path = "../backends/rust/runtime", default-features = false }
+sce-forge-runtime = { path = "../backends/rust/forge-runtime", default-features = false }
+clap = { version = "4", features = ["derive"], optional = true }
+# Reads a document an AI wrote, to refuse one that names a file (`src/document_files.rs`). The
+# reader the checker's own build uses (sce-build), which has no dependencies of its own.
+roxmltree = "0.20"
+
+[dev-dependencies]
+serde_json = "1"
+# The tests hold a work against the stand-ins of `testing`.
+sce-works = { path = ".", features = ["testing"] }
+
+[lints]
+workspace = true

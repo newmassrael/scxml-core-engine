@@ -58,8 +58,10 @@ What does not exist yet, so that nothing below is read as done:
 ## How the parts fit
 
 ```
-app-core/        (root workspace member; no GUI, no network)
-  the works folder, revisions, the JSON command layer, the `sce-work` CLI
+sce-works/       (root workspace member, SCE's; no GUI, no network)
+  the works folder, revisions, requests, the JSON command layer, the `sce-work` CLI
+app-core/        (root workspace member; no GUI)
+  connections, the AI clients a request is run with, the application's commands
 app/
   src-tauri/     the desktop application: a window around ui/, one command
   web-shell/     the same commands over HTTP, for a machine with no display
@@ -69,8 +71,10 @@ app/
 Everything the screen can do is one call, `call(name, args)`. The window routes
 it through Tauri's `invoke` and the browser shell through `POST /api/call`;
 `sce-work call <name>` is the same call for a process that is not Rust, which the
-authoring MCP uses. All of them end in `sce_app_core::call`, so there is one
-definition of what a save is.
+authoring MCP uses. The window and the browser shell go through
+`sce_app_core::call_in`, which answers the application's own commands and hands
+the rest to the works; `sce-work` reaches the works directly. All of them end in
+`sce_works::commands`, so there is one definition of what a save is.
 
 The works folder is plain files:
 
@@ -825,7 +829,8 @@ After building `sce-codegen`, reproduce the shipped configuration with a signed-
 
 ```sh
 cargo build -p sce-build --features cli --bin sce-codegen
-SCE_LIVE_MODEL=gpt-6.1-sol cargo test -p sce-app-core --features cli --test codex_live -- --ignored --nocapture --test-threads=1
+cargo build -p sce-works --features cli --bin sce-work
+SCE_LIVE_MODEL=gpt-6.1-sol cargo test -p sce-app-core --test codex_live -- --ignored --nocapture --test-threads=1
 ```
 
 These tests run a paid model. Traces and the rendered pseudocode contain only synthetic test
@@ -1138,26 +1143,26 @@ else: it has no file-system, shell or network permission.
 
 | What | Command |
 |---|---|
-| Works folder and command layer | `cargo test -p sce-app-core --features cli` |
-| The model chain and `figures` (a stand-in generator, Unix) | `--test models`, `--test figures` of the same package |
-| Removing a work, and a save racing it | `--test removal` of the same package |
-| A work read as one state, with a writer saving while it is read | `--test snapshot` (and `--lib`) of the same package |
-| Requests: leases, attempts, supersession by a save, callers racing at the lock | `--test requests`, `--test request_commands` (and `--lib` for the state machine) |
-| Candidates and bundles: publishing, the core's own check, readers that never see two generations, a stopped publication, the old saves refused | `--test bundles` (and `--lib`) of the same package |
-| The runner that hosts a generator: taking, renewing, repairing, ending | `--test runner` of the same package |
-| Claude Code as the generator, against a stand-in client (Unix) | `--test claude_code` of the same package |
-| A shell that hosts the executor: the settings, what it says when it cannot (including a server that would not start), taking a request, stopping | `--test host` of the same package |
-| The programs an installer carries, found in its bundle and named when missing | `--test installed` of the same package |
+| Works folder and its command layer, and `sce-work` | `cargo test -p sce-works --features cli` |
+| The model chain and `figures` (a stand-in generator, Unix) | `--test models`, `--test figures` of `sce-works` |
+| Removing a work, and a save racing it | `--test removal` of `sce-works` |
+| A work read as one state, with a writer saving while it is read | `--test snapshot` (and `--lib`) of `sce-works` |
+| Requests: leases, attempts, supersession by a save, callers racing at the lock | `--test requests`, `--test request_commands` (and `--lib` for the state machine) of `sce-works` |
+| Candidates and bundles: publishing, the core's own check, readers that never see two generations, a stopped publication, the old saves refused | `--test bundles` (and `--lib`) of `sce-works` |
+| Which AI adapters are there | `--test adapters` of `sce-works` |
+| A model of several documents (`model_set.rs`, staging, the command's shapes) | `--lib`, `--test model_sets`, `--test figures` of `sce-works` |
+| The owner's answers: the chain, stamps, conflicts | `--test answers` (and `--lib`) of `sce-works` |
+| What SCE says of a model (a stand-in generator, and the real one with `SCE_CODEGEN`) | `--test figures` of `sce-works`; `SCE_CODEGEN=<path to sce-codegen>` for the real one (skipped, and says so, without it) |
+| Requirements and acceptance: the commands, and the product behind them (a stand-in, and the real generator with `SCE_CODEGEN`) | `--test acceptance`, `--test acceptance_product` (and `--lib`) of `sce-works` |
+| The workbench's own commands, connections and the contract file | `cargo test -p sce-app-core` |
+| The runner that hosts a generator: taking, renewing, repairing, ending | `--test runner` of `sce-app-core` |
+| Claude Code as the generator, against a stand-in client (Unix) | `--test claude_code` of `sce-app-core` |
+| A shell that hosts the executor: the settings, what it says when it cannot (including a server that would not start), taking a request, stopping | `--test host` of `sce-app-core` |
+| The programs an installer carries, found in its bundle and named when missing | `--test installed` of `sce-app-core` |
+| The real client, server and product end to end (a model runs: minutes and money) | `cargo build -p sce-works --features cli --bin sce-work`, then `cargo test -p sce-app-core --test claude_code_live -- --ignored --nocapture` |
 | The authoring server saying whether it could start (`--check`) | `python3 -m unittest tests.test_the_server_says_whether_it_can_do_its_work_before_it_is_asked_to` (in `tools/authoring`, with `PYTHONPATH=.`) |
 | The installer, installed and started (Linux `.deb`) | `scripts/package_app.sh --debug`, then `scripts/verify_installed_app.sh <the .deb it prints>`; CI runs both as the `installer` gate (`installer.yml`) |
-| The real client, server and product end to end (a model runs: minutes and money) | `cargo test -p sce-app-core --features cli --test claude_code_live -- --ignored --nocapture` |
-| Which AI adapters are there | `--test adapters` of the same package |
-| A model of several documents (`model_set.rs`, staging, the command's shapes) | `--lib`, `--test model_sets`, `--test figures` of the same package |
-| The owner's answers: the chain, stamps, conflicts | `--test answers` (and `--lib`) of the same package |
-| What SCE says of a model (a stand-in generator, and the real one with `SCE_CODEGEN`) | `--test figures` of the same package |
-| Requirements and acceptance: the commands, and the product behind them (a stand-in, and the real generator with `SCE_CODEGEN`) | `--test acceptance`, `--test acceptance_product` (and `--lib`) of the same package |
 | The MCP's works tools, against the real `sce-work` and generator | `python3 -m unittest tests.test_the_works_folder_is_reached_through_the_applications_own_command` (in `tools/authoring`, with `PYTHONPATH=.`) |
-| The same with the real generator | `SCE_CODEGEN=<path to sce-codegen> cargo test -p sce-app-core --test figures` (skipped, and says so, without it) |
 | Browser shell: handler, sockets | `cargo test -p sce-web-shell` (from `app/`) |
 | Screen: guards, editor model, model panel, acceptance, heads, following the work, transport, words | `npm test` (in `app/ui`) |
 | Screen types and build | `npm run build` (in `app/ui`) |

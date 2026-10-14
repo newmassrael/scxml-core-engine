@@ -34,18 +34,18 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use sce_works::{Pin, StoreError};
+
 use crate::auth_policy::{Decision, Observed, Policy, Reason, Route};
 use crate::claude_code::{
     claude_version_of, observe_auth, AuthorServer, ClaudeCode, ClaudeCodeConfig, SAY_WHAT_IT_IS,
 };
 use crate::codex::{Codex, CodexConfig, CodexLaunch};
 use crate::connection::{AdapterKind, AuthSource, PinnedRun};
-use crate::error::StoreError;
+use crate::connection_store::{ConnectionStore, StoredConnection};
 use crate::http_client::Endpoint;
 use crate::local::{Local, LocalConfig};
-use crate::requests::Pin;
 use crate::runner::{Directory, Generator, Unrunnable};
-use crate::store::{ConnectionStore, StoredConnection};
 
 /// How long what the client said of who is signed in is kept before it is asked again. A runner
 /// looks at its requests every few seconds; a client asked every time would be a process spawned

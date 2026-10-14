@@ -16,14 +16,14 @@ mod common;
 use std::sync::{Arc, Mutex};
 
 use sce_app_core::connection::AdapterKind;
-use sce_app_core::requests::{ConnectionRef, Inputs, Pin, State};
 use sce_app_core::runner::{
     Cancel, Directory, Draft, GenerateError, Generator, Job, Outcome, Runner, RunnerConfig,
     Unrunnable,
 };
-use sce_app_core::{
-    ConnectionId, Limits, ManualClock, ModelFiles, PinnedRun, Registration, Requirements, Revision,
-    WorkId, WorkStore,
+use sce_app_core::{Limits, PinnedRun};
+use sce_works::requests::{ConnectionRef, Inputs, Pin, State};
+use sce_works::{
+    ConnectionId, ManualClock, ModelFiles, Registration, Requirements, Revision, WorkId, WorkStore,
 };
 
 use common::FakeRenderer;

@@ -11,15 +11,12 @@
 //! accident, a server's address, takes no user, no query and no fragment, and a stored
 //! connection with a field this type does not have is not read.
 //!
-//! The connection is kept apart from the works (see `store::connection_store`) and a request
+//! The connection is kept apart from the works (see [`crate::connection_store`]) and a request
 //! pins it by its [`ConnectionId`] and the revision it had when the request was made.
 
+use sce_works::{ConnectionId, Pin, Revision, StoreError};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-
-use crate::error::StoreError;
-use crate::requests::{ConnectionId, Pin};
-use crate::revision::Revision;
 
 const NAME_MAX: usize = 80;
 const MODEL_MAX: usize = 200;

@@ -62,8 +62,8 @@ if [[ -z "$codegen" ]]; then
     codegen="$(sce_codegen_require "$repo_root")"
 fi
 [[ -x "$codegen" ]] || { printf 'package: %s is not an executable generator\n' "$codegen" >&2; exit 1; }
-# The works command is named, never built here: it belongs to the application's
-# workspace (`cargo build -p sce-app-core --features cli --bin sce-work`), and a
+# The works command is named, never built here: it is the works crate's
+# (`cargo build -p sce-works --features cli --bin sce-work`), and a
 # bundle that quietly carried a stale one would be the second writer of the folder.
 if [[ -n "$work" && ! -x "$work" ]]; then
     printf 'package: %s is not an executable sce-work\n' "$work" >&2

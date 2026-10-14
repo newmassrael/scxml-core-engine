@@ -3,15 +3,16 @@ name: Workbench application
 # The specification workbench (`app/`): its screen (TypeScript), the browser
 # shell and the desktop shell (Tauri). It is a workspace of its own, excluded from
 # the root one, so no other lane builds it; what has no screen lives in
-# `app-core/`, which rust-workspace-tests.yml already runs.
+# `app-core/` and the works it links (`sce-works/`), which
+# rust-workspace-tests.yml already runs.
 #
 # `scripts/gates/app.sh` is the whole of what is judged. This file only installs
 # what that script needs and calls it, so the lane and a local run cannot differ
 # in what they check.
 #
-# The paths include `app-core/`: the screen's tests read the contract file the
-# core's tests write, and a change to either side has to be judged against the
-# other.
+# The paths include `app-core/` and `sce-works/`: the screen's tests read the
+# contract file the core's tests write, most of whose replies are the works', and
+# a change to either side has to be judged against the other.
 #
 # The same gate runs a second time on Windows (`windows`), because the people the
 # workbench is for write specifications on it and nothing else in this repository
@@ -25,6 +26,7 @@ on:
     paths:
       - 'app/**'
       - 'app-core/**'
+      - 'sce-works/**'
       - '.github/workflows/app.yml'
       - 'scripts/gates/app.sh'
   pull_request:
@@ -32,6 +34,7 @@ on:
     paths:
       - 'app/**'
       - 'app-core/**'
+      - 'sce-works/**'
       - '.github/workflows/app.yml'
       - 'scripts/gates/app.sh'
   workflow_dispatch:
@@ -66,7 +69,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             app/target
-          key: ${{ runner.os }}-cargo-app-${{ hashFiles('app/Cargo.lock', 'app/**/Cargo.toml', 'app-core/Cargo.toml') }}
+          key: ${{ runner.os }}-cargo-app-${{ hashFiles('app/Cargo.lock', 'app/**/Cargo.toml', 'app-core/Cargo.toml', 'sce-works/Cargo.toml') }}
           restore-keys: |
             ${{ runner.os }}-cargo-app-
       - uses: actions/setup-node@v5
@@ -100,7 +103,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             app/target
-          key: ${{ runner.os }}-cargo-app-${{ hashFiles('app/Cargo.lock', 'app/**/Cargo.toml', 'app-core/Cargo.toml') }}
+          key: ${{ runner.os }}-cargo-app-${{ hashFiles('app/Cargo.lock', 'app/**/Cargo.toml', 'app-core/Cargo.toml', 'sce-works/Cargo.toml') }}
           restore-keys: |
             ${{ runner.os }}-cargo-app-
       - uses: actions/setup-node@v5

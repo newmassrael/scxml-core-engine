@@ -18,7 +18,7 @@
 # Anchors are literal slices of the source; an edit that moves one is reported INCONCLUSIVE with
 # the anchor quoted, never as a pass.
 
-mutation_tests -p sce-app-core --features cli --lib --test local
+mutation_tests -p sce-app-core --lib --test local
 mutation_targets app-core/src/local.rs
 mutation_oracles app-core/tests/local.rs
 

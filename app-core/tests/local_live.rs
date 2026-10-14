@@ -33,12 +33,10 @@ use sce_app_core::claude_code::AuthorServer;
 use sce_app_core::host::{start_with, HostSettings};
 use sce_app_core::http_client::Endpoint;
 use sce_app_core::local::{list_models, Local, LocalConfig, Step};
-use sce_app_core::requests::{Inputs, State};
 use sce_app_core::runner::{Generator, Outcome, Runner, RunnerConfig};
-use sce_app_core::{
-    call_in, ConnectionStore, Context, Entrance, Policy, Product, Registration, Requirements,
-    SceCodegen, SystemClock, WorkId, WorkStore,
-};
+use sce_app_core::{call_in, ConnectionStore, Context, Entrance, Policy};
+use sce_works::requests::{Inputs, State};
+use sce_works::{Product, Registration, Requirements, SceCodegen, SystemClock, WorkId, WorkStore};
 use serde_json::{json, Value};
 
 const SPECIFICATION: &str = "\
@@ -144,7 +142,7 @@ impl Setup {
             env: vec![
                 (
                     "SCE_WORK".to_string(),
-                    env!("CARGO_BIN_EXE_sce-work").to_string(),
+                    common::sce_work().display().to_string(),
                 ),
                 ("SCE_WORKS_DIR".to_string(), works.display().to_string()),
                 (
@@ -249,8 +247,9 @@ fn a_model_on_a_real_server_writes_a_model_the_core_accepts_and_publishes() {
     let work = store.create_work("Storage room door").unwrap().id;
     let source = store.save_source(&work, SPECIFICATION, None).unwrap();
     let head = match source {
-        sce_app_core::Saved::Saved { revision, .. }
-        | sce_app_core::Saved::Unchanged { revision } => revision,
+        sce_works::Saved::Saved { revision, .. } | sce_works::Saved::Unchanged { revision } => {
+            revision
+        }
     };
     let request = store
         .register_request(
@@ -354,8 +353,9 @@ fn a_server_registered_through_the_commands_is_written_for_by_a_host_with_no_cli
     // Asks for a model with it.
     let work = store.create_work("Storage room door").unwrap().id;
     let head = match store.save_source(&work, SPECIFICATION, None).unwrap() {
-        sce_app_core::Saved::Saved { revision, .. }
-        | sce_app_core::Saved::Unchanged { revision } => revision,
+        sce_works::Saved::Saved { revision, .. } | sce_works::Saved::Unchanged { revision } => {
+            revision
+        }
     };
     ask(
         "request_generation",
@@ -373,7 +373,7 @@ fn a_server_registered_through_the_commands_is_written_for_by_a_host_with_no_cli
     shell.claude = Some(PathBuf::from("/nowhere/claude"));
     shell.codex = Some(PathBuf::from("/nowhere/codex"));
     shell.author = Some(repo.join("scripts/sce_author_mcp.sh"));
-    shell.work = Some(PathBuf::from(env!("CARGO_BIN_EXE_sce-work")));
+    shell.work = Some(common::sce_work());
     shell.codegen = Some(codegen.clone());
     let host = start_with(
         Arc::clone(&store),
@@ -502,8 +502,9 @@ fn a_model_on_a_real_server_keeps_the_ids_of_a_revision_and_issues_them_afresh_w
     let runner = setup.runner(&store, &works, 2);
 
     let head = match store.save_source(&work, SPECIFICATION, None).unwrap() {
-        sce_app_core::Saved::Saved { revision, .. }
-        | sce_app_core::Saved::Unchanged { revision } => revision,
+        sce_works::Saved::Saved { revision, .. } | sce_works::Saved::Unchanged { revision } => {
+            revision
+        }
     };
     write_for(&store, &runner, &work, "press-1", false);
     let first = ids_held(&store, &work);

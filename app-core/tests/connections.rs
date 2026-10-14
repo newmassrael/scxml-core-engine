@@ -17,10 +17,8 @@ use std::fs;
 use std::sync::{Arc, Barrier};
 use std::thread;
 
-use sce_app_core::{
-    AdapterKind, AuthSource, Connection, ConnectionId, ConnectionStore, Limits, Revision, Saved,
-    StoreError,
-};
+use sce_app_core::{AdapterKind, AuthSource, Connection, ConnectionStore, Limits};
+use sce_works::{ConnectionId, Revision, Saved, StoreError};
 
 fn id(text: &str) -> ConnectionId {
     ConnectionId::parse(text).expect("a valid connection id")

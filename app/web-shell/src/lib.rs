@@ -29,10 +29,8 @@ pub mod assets;
 pub mod server;
 pub mod token;
 
-use sce_app_core::{
-    call_in, CommandError, ConnectionStore, Context, Entrance, Policy, Product, WorkStore,
-    MAX_SOURCE_BYTES,
-};
+use sce_app_core::{call_in, ConnectionStore, Context, Entrance, Policy};
+use sce_works::{CommandError, Product, WorkStore, MAX_SOURCE_BYTES};
 use serde::Deserialize;
 use serde_json::Value;
 

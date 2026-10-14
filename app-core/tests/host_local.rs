@@ -24,11 +24,9 @@ use std::time::{Duration, Instant};
 
 use sce_app_core::codex::AUTHOR_TOOLS;
 use sce_app_core::host::{start_with, HostSettings, NotHosted};
-use sce_app_core::requests::{Inputs, Pin, State};
-use sce_app_core::{
-    AdapterKind, AuthSource, Connection, ConnectionId, ConnectionStore, Limits, ManualClock,
-    Policy, Registration, Saved, WorkId, WorkStore,
-};
+use sce_app_core::{AdapterKind, AuthSource, Connection, ConnectionStore, Limits, Policy};
+use sce_works::requests::{Inputs, Pin, State};
+use sce_works::{ConnectionId, ManualClock, Registration, Saved, WorkId, WorkStore};
 
 use common::model_server::{authoring_server, chat_server, draft, says};
 use common::FakeRenderer;

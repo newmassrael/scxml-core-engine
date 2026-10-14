@@ -17,11 +17,11 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use sce_app_core::requests::{Inputs, State};
 use sce_app_core::runner::{
     Cancel, Draft, GenerateError, Generator, Job, Outcome, Runner, RunnerConfig,
 };
-use sce_app_core::{
+use sce_works::requests::{Inputs, State};
+use sce_works::{
     call, ManualClock, ModelFiles, Registration, Requirements, Revision, WorkId, WorkStore,
 };
 use serde_json::json;

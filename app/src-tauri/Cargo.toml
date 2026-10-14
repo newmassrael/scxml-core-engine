@@ -25,6 +25,7 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 serde_json = { workspace = true }
 sce-app-core = { workspace = true }
+sce-works = { workspace = true }
 
 [lints]
 workspace = true

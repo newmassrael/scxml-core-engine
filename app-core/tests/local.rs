@@ -27,7 +27,7 @@ use sce_app_core::codex::AUTHOR_TOOLS;
 use sce_app_core::http_client::Endpoint;
 use sce_app_core::local::{list_models, Local, LocalConfig, ModelsError, Step};
 use sce_app_core::runner::{Cancel, GenerateError, Generator, Job};
-use sce_app_core::{Revision, WorkId};
+use sce_works::{Revision, WorkId};
 use serde_json::{json, Value};
 
 use common::model_server::{

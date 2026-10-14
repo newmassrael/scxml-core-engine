@@ -218,6 +218,13 @@ scan_exclusions = [
     # in `paths`, which is what the existence axis would force anyway.
     "app-core/",
     "app/",
+    # The works folder (`sce-works/`), which the workbench links and the authoring
+    # MCP reaches through `sce-work`; it too implements no clause of the
+    # Recommendation. Measured 2026-10-14 over its 48 Rust sources: the one file
+    # with a `§` is the generated request machine, whose section marks the generator's
+    # templates write (the Accepted Subset's 2.15, W3C's 5.10), as they did when it
+    # lived in `app-core/`.
+    "sce-works/",
     # The judgment of a revision of a requirement list (`sce-revision/`), which the
     # workbench's store and the generator both ask. It implements no clause of the
     # W3C SCXML Recommendation: it reads lineages (hashes and numbers) and says

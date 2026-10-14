@@ -18,7 +18,7 @@ BUILT = unittest.skipUnless(_default_codegen().exists(),
                             "the product's code generator is not built")
 
 # The cases the application's reader of the answer an AI ends with is held to as well
-# (app-core/src/document_files.rs): one rule in two languages.
+# (sce-works/src/document_files.rs): one rule in two languages.
 FILE_REFERENCES = pathlib.Path(__file__).resolve().parent / "fixtures" / "file_references.json"
 
 NS ='xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"'

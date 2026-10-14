@@ -27,7 +27,8 @@ use sce_app_core::claude_code::{AuthorServer, ALLOWED_TOOLS};
 use sce_app_core::codex::{Codex, CodexConfig, AUTHOR_TOOLS};
 use sce_app_core::codex_support::Support;
 use sce_app_core::runner::{Cancel, GenerateError, Generator, Job};
-use sce_app_core::{AuthSource, Revision, WorkId};
+use sce_app_core::AuthSource;
+use sce_works::{Revision, WorkId};
 use serde_json::{json, Value};
 
 const VERSION: &str = "0.159.0";

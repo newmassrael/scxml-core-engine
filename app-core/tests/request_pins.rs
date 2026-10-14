@@ -14,11 +14,11 @@
 
 mod common;
 
-use sce_app_core::requests::{Inputs, Pin, Request};
 use sce_app_core::{
-    call, call_in, AdapterKind, CommandError, ConnectionStore, Context, Entrance, Limits,
-    PinnedRun, Policy, Registration, Revision, SystemClock, WorkId, WorkStore,
+    call_in, AdapterKind, ConnectionStore, Context, Entrance, Limits, PinnedRun, Policy,
 };
+use sce_works::requests::{Inputs, Pin, Request};
+use sce_works::{call, CommandError, Registration, Revision, SystemClock, WorkId, WorkStore};
 use serde_json::{json, Value};
 
 use common::FakeRenderer;

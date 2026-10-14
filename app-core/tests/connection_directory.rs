@@ -26,12 +26,11 @@ use sce_app_core::claude_code::{
 };
 use sce_app_core::directory::{ClaudeLaunch, Connections};
 use sce_app_core::local::LocalConfig;
-use sce_app_core::requests::Pin;
 use sce_app_core::runner::{Directory, Unrunnable};
 use sce_app_core::{
-    AdapterKind, AuthSource, Connection, ConnectionId, ConnectionStore, Limits, Observed, Policy,
-    Route,
+    AdapterKind, AuthSource, Connection, ConnectionStore, Limits, Observed, Policy, Route,
 };
+use sce_works::{ConnectionId, Pin};
 
 /// A stand-in for `claude` that answers `--version` and `auth status`, and records what it was
 /// asked.
@@ -188,8 +187,9 @@ impl Rig {
     fn pin(&self, connection: &Connection) -> Pin {
         let saved = self.settings.save(connection, None).unwrap();
         let revision = match saved {
-            sce_app_core::Saved::Saved { revision, .. }
-            | sce_app_core::Saved::Unchanged { revision } => revision,
+            sce_works::Saved::Saved { revision, .. } | sce_works::Saved::Unchanged { revision } => {
+                revision
+            }
         };
         connection.pin(revision)
     }
@@ -546,7 +546,7 @@ fn settings_that_are_not_on_this_computer_are_said_to_be_missing() {
     let rig = Rig::new("dir-missing-settings", SUBSCRIPTION);
     let mut pin = rig.pin(&claude());
     // The request came with the works folder from another computer, and its revision is not here.
-    pin.revision = sce_app_core::Revision::of(b"another computer");
+    pin.revision = sce_works::Revision::of(b"another computer");
 
     let said = refused(rig.directory(Policy::shipped()).claude_for(&pin));
 

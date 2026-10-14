@@ -21,11 +21,8 @@ use std::time::Duration;
 
 use sce_app_core::claude_code::{AuthorServer, Search};
 use sce_app_core::directory::{ClaudeLaunch, Connections};
-use sce_app_core::requests::Pin;
-use sce_app_core::{
-    call_in, CommandError, ConnectionId, ConnectionStore, Context, Entrance, PinnedRun, Policy,
-    Revision, WorkStore,
-};
+use sce_app_core::{call_in, ConnectionStore, Context, Entrance, PinnedRun, Policy};
+use sce_works::{CommandError, ConnectionId, Pin, Revision, WorkStore};
 use serde_json::{json, Value};
 
 use common::{scratch, write_program, FakeRenderer};

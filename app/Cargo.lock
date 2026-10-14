@@ -2672,14 +2672,10 @@ dependencies = [
 name = "sce-app-core"
 version = "0.1.0"
 dependencies = [
- "roxmltree",
  "rustls",
- "sce-forge-runtime",
- "sce-revision",
- "sce-rust-runtime",
+ "sce-works",
  "serde",
  "serde_json",
- "sha2",
  "webpki-roots",
 ]
 
@@ -2727,6 +2723,7 @@ dependencies = [
  "hyper",
  "hyper-util",
  "sce-app-core",
+ "sce-works",
  "serde",
  "serde_json",
  "tokio",
@@ -2737,9 +2734,23 @@ name = "sce-workbench"
 version = "0.1.0"
 dependencies = [
  "sce-app-core",
+ "sce-works",
  "serde_json",
  "tauri",
  "tauri-build",
+]
+
+[[package]]
+name = "sce-works"
+version = "0.1.0"
+dependencies = [
+ "roxmltree",
+ "sce-forge-runtime",
+ "sce-revision",
+ "sce-rust-runtime",
+ "serde",
+ "serde_json",
+ "sha2",
 ]
 
 [[package]]

@@ -29,6 +29,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
 use std::time::Duration;
 
+use sce_works::Revision;
 use serde_json::{json, Value};
 
 use crate::auth_policy::Observed;
@@ -37,7 +38,6 @@ use crate::client_run::{
     blank_job, capture, draft_from, prompt, schema, scoped_to, span_words, supervise, tail, Ended,
     Scratch, SERVER, SYSTEM_PROMPT, WORK_SCOPE,
 };
-use crate::revision::Revision;
 use crate::runner::{Cancel, Draft, GenerateError, Generator, Job};
 
 /// The tools the client may use, of the authoring server's. Reading a work and checking a draft;

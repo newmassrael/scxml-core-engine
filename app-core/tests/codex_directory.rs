@@ -26,12 +26,11 @@ use sce_app_core::claude_code::AuthorServer;
 use sce_app_core::codex::{observed_from_login_status, CodexLaunch};
 use sce_app_core::codex_support::Support;
 use sce_app_core::directory::Connections;
-use sce_app_core::requests::Pin;
 use sce_app_core::runner::{Cancel, Directory, GenerateError, Generator, Job, Unrunnable};
 use sce_app_core::{
-    AdapterKind, AuthSource, Connection, ConnectionId, ConnectionStore, Limits, Observed, Policy,
-    Revision, Route, WorkId,
+    AdapterKind, AuthSource, Connection, ConnectionStore, Limits, Observed, Policy, Route,
 };
+use sce_works::{ConnectionId, Pin, Revision, WorkId};
 
 const VERSION: &str = "0.159.0";
 const APP_HOME: &str = "/app/data/codex-home";
@@ -193,8 +192,9 @@ impl Rig {
     fn pin(&self, connection: &Connection) -> Pin {
         let saved = self.settings.save(connection, None).unwrap();
         let revision = match saved {
-            sce_app_core::Saved::Saved { revision, .. }
-            | sce_app_core::Saved::Unchanged { revision } => revision,
+            sce_works::Saved::Saved { revision, .. } | sce_works::Saved::Unchanged { revision } => {
+                revision
+            }
         };
         connection.pin(revision)
     }

@@ -20,13 +20,14 @@ use std::sync::Arc;
 
 use sce_app_core::host::{self, HostSettings};
 use sce_app_core::{
-    default_renderer, default_root, default_settings_root, AdapterKind, AuthSource, Connection,
-    ConnectionId, ConnectionStore, Limits as RunLimits, Policy, SceCodegen, WorkStore,
+    default_settings_root, AdapterKind, AuthSource, Connection, ConnectionStore,
+    Limits as RunLimits, Policy,
 };
 use sce_web_shell::address::check_bind;
 use sce_web_shell::assets::Assets;
 use sce_web_shell::server::{serve, Limits};
 use sce_web_shell::{token, Shell};
+use sce_works::{default_renderer, default_root, ConnectionId, SceCodegen, WorkStore};
 
 const DEFAULT_LISTEN: &str = "127.0.0.1:5174";
 

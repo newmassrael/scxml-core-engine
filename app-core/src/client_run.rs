@@ -19,15 +19,12 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use sce_works::document_files::refuse_file_access;
+use sce_works::{Document, ModelFiles, Requirements, Revision, WorkId};
 use serde_json::{json, Value};
 
 use crate::claude_code::AuthorServer;
-use crate::document_files::refuse_file_access;
-use crate::model_set::{Document, ModelFiles};
-use crate::requirements::Requirements;
-use crate::revision::Revision;
 use crate::runner::{Cancel, Draft, Job};
-use crate::store::WorkId;
 
 /// The most of what a client writes that is kept to show the owner when it fails.
 const KEPT_BYTES: usize = 16 * 1024 * 1024;
