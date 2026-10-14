@@ -122,6 +122,15 @@ later minute. The algorithm is Actual's and does what its correction intends; th
 document's sentence was too strong, so it now says where the bound holds, and two
 hand cases pin the same pair of digests pruned and not. A wrong expectation in five
 of the fixtures fails Go and C++.
+
+Eighth run, 2026-10-15: the three `text_slot*` documents, whose cases had been written
+by hand — `text_slot_latest`, `text_slot_retitled` and `text_slot_holds`, 1400 cases.
+The texts are UTF-8 and the bound is in bytes, so they are drawn at every encoded
+width, at exactly the 32-byte bound and just under it, empty, equal, and as the
+precomposed and decomposed forms of one letter; a text past the bound is never drawn,
+since the schema refuses it where it is written and no document answers it. All six
+backends agreed with the model on every case. Characters with no visible form are
+written as `\\u` escapes, the rest as themselves.
 """
 
 from __future__ import annotations
@@ -133,6 +142,7 @@ import json
 import math
 import re
 import sys
+import unicodedata
 from pathlib import Path
 
 import content_line_model
@@ -703,6 +713,43 @@ def utf8_within(data: list, limit: int):
     if counted[0] == "fails":
         return counted
     return ("ok", counted[1] <= limit)
+
+
+#: The `sce:max-size` of `sce:std/text/text_slot`'s text, in UTF-8 bytes, and the
+#: most places `text_slot_retitled` holds in its result.
+TEXT_BOUND = 32
+SLOT_CAPACITY = 16
+UNTITLED = "untitled"
+
+
+def titled_slot(place: int, version: int, text: str) -> dict:
+    return {"slot": place, "version": version, "text": text}
+
+
+def text_slot_latest(a: dict, b: dict):
+    """sce:std/text/text_slot_latest — `a`, moved to `b`'s version and text when
+    `b`'s version is greater; equal versions keep `a`, and the place is `a`'s. A
+    text is only ever one the schema's bound already holds, so nothing fails."""
+    if b["version"] > a["version"]:
+        return ("ok", titled_slot(a["slot"], b["version"], b["text"]))
+    return ("ok", dict(a))
+
+
+def text_slot_retitled(slots: list):
+    """sce:std/text/text_slot_retitled — each place in order, an empty text titled
+    "untitled", the rest carried over. The result holds 16 places at most; a list
+    past that is where the bounded backends fail and the heap backends grow, so a
+    case never reaches it."""
+    assert len(slots) <= SLOT_CAPACITY
+    return ("ok", [dict(held, text=held["text"] or UNTITLED) for held in slots])
+
+
+def text_slot_holds(slots: list, probe: dict):
+    """sce:std/text/text_slot_holds — some place has the probe's slot and its
+    text, byte for byte; the version is not compared. Two strings of one encoding
+    are equal in code points exactly when they are equal in bytes, so the
+    precomposed and the decomposed "e with acute" stay two."""
+    return ("ok", any(held["slot"] == probe["slot"] and held["text"] == probe["text"] for held in slots))
 
 
 def entry(element: int, wall: int, counter: int, node: int) -> dict:
@@ -1974,6 +2021,143 @@ def utf8_within_args(rng: SplitMix64) -> list:
     return [data, limit]
 
 
+#: Characters of each encoded width (in UTF-8 bytes). No NUL: the C backend ends
+#: a text there.
+TEXT_WIDTHS = {
+    1: ["a", "Z", "0", " ", "\x7f", "-"],
+    2: ["é", "ß", "́", "߿", "\u0080"],
+    3: ["€", "한", "ࠀ", "￿", "﻿"],
+    4: ["\U0001f468", "\U00010000", "\U0010ffff", "\U0001f600"],
+}
+#: Texts that differ by one character or one encoding: the precomposed and the
+#: decomposed "e with acute", which a byte comparison tells apart as the document
+#: says it does, a case, and the title the document gives an empty text.
+TEXT_PAIRS = ["é", "é", "e", "E", "É", "café", "café", UNTITLED, "Untitled", "untitle"]
+VERSION_EDGES = [I64_MIN, I64_MIN + 1, -1, 0, 1, 2**31, 2**53, I64_MAX - 1, I64_MAX]
+
+
+def utf8_size(text: str) -> int:
+    return len(text.encode("utf-8"))
+
+
+def text_of_size(rng: SplitMix64, size: int) -> str:
+    """A text of exactly `size` UTF-8 bytes, its characters of mixed widths."""
+    parts, used = [], 0
+    while used < size:
+        width = rng.pick([w for w in TEXT_WIDTHS if used + w <= size])
+        parts.append(rng.pick(TEXT_WIDTHS[width]))
+        used += width
+    return "".join(parts)
+
+
+def slot_text(rng: SplitMix64) -> str:
+    """A text the schema's bound holds: empty, a title or near-title, exactly the
+    bound, a byte or two under it, or any length between. A text past the bound
+    is never drawn: the schema refuses it where it is written, so it is no
+    document's input, and every document here reads and writes the one bound."""
+    style = rng.below(10)
+    if style == 0:
+        return ""
+    if style <= 2:
+        return rng.pick(TEXT_PAIRS)
+    if style <= 4:
+        return text_of_size(rng, TEXT_BOUND)
+    if style <= 6:
+        return text_of_size(rng, TEXT_BOUND - rng.between(1, 3))
+    return text_of_size(rng, rng.between(1, TEXT_BOUND))
+
+
+def slot_place(rng: SplitMix64) -> int:
+    return rng.pick([0, 1, 2, 3, U32_MAX - 1, U32_MAX]) if rng.below(3) else rng.between(0, 6)
+
+
+def slot_version(rng: SplitMix64) -> int:
+    return rng.pick(VERSION_EDGES) if rng.below(3) == 0 else rng.between(-3, 12)
+
+
+def near_text(rng: SplitMix64, base: str) -> str:
+    """`base`, or a text that agrees with it up to its end: a prefix, one byte
+    more, the last character changed, or a text drawn afresh. A comparison is
+    decided at the first byte that differs, and a bounded buffer is where the last
+    one sits."""
+    kind = rng.below(7)
+    if kind <= 1:
+        return base
+    if kind == 2 and base:
+        return base[: rng.below(len(base))]
+    if kind == 3 and utf8_size(base) < TEXT_BOUND:
+        return base + "x"
+    if kind == 4 and base:
+        changed = base[:-1] + ("!" if base[-1] != "!" else "?")
+        if utf8_size(changed) <= TEXT_BOUND:
+            return changed
+    return slot_text(rng)
+
+
+def slot_value(rng: SplitMix64) -> dict:
+    return titled_slot(slot_place(rng), slot_version(rng), slot_text(rng))
+
+
+def text_slot_latest_args(rng: SplitMix64):
+    """Two writes of a place: the later one on either side, the same version with
+    another text, an adjacent version, the ends of an int64, and now and then a
+    different place, which `a` keeps."""
+    a = slot_value(rng)
+    version = a["version"]
+    kind = rng.below(8)
+    if kind == 0:
+        other = version
+    elif kind == 1 and version < I64_MAX:
+        other = version + 1
+    elif kind == 2 and version > I64_MIN:
+        other = version - 1
+    else:
+        other = slot_version(rng)
+    place = a["slot"] if rng.below(4) else slot_place(rng)
+    return [a, titled_slot(place, other, near_text(rng, a["text"]))]
+
+
+def slot_list(rng: SplitMix64) -> list:
+    """Up to `SLOT_CAPACITY` places, with places and near-equal texts repeated, as
+    a replica's list may hold them."""
+    held: list = []
+    for _ in range(rng.pick([0, 1, 1, 2, 2, 3, 4, 5, 8, 15, 16, 16])):
+        if held and rng.below(5) == 0:
+            base = rng.pick(held)
+            place = base["slot"] if rng.below(2) else slot_place(rng)
+            held.append(titled_slot(place, slot_version(rng), near_text(rng, base["text"])))
+        else:
+            held.append(slot_value(rng))
+    return held
+
+
+def text_slot_retitled_args(rng: SplitMix64):
+    held = slot_list(rng)
+    if held and rng.below(3) == 0:
+        at = rng.below(len(held))
+        held[at] = dict(held[at], text="")
+    return [held]
+
+
+def text_slot_holds_args(rng: SplitMix64):
+    """A list and a probe: one of its places under another version, the place with
+    another text, the text under another place, or a place it holds whole."""
+    held = slot_list(rng)
+    if not held or rng.below(4) == 0:
+        return [held, slot_value(rng)]
+    base = rng.pick(held)
+    kind = rng.below(5)
+    if kind <= 1:
+        probe = titled_slot(base["slot"], slot_version(rng), base["text"])
+    elif kind == 2:
+        probe = titled_slot(base["slot"], base["version"], near_text(rng, base["text"]))
+    elif kind == 3:
+        probe = titled_slot(slot_place(rng), base["version"], base["text"])
+    else:
+        probe = dict(base)
+    return [held, probe]
+
+
 MULTIPLIER_EDGES = [
     1.0, 1.0000000000000002, 1.5, 2.0, 3.0, 10.0, 1e3, 1e15, 1e18, 1e19, 1e300,
     1.7976931348623157e308,
@@ -2942,6 +3126,9 @@ FIXTURES = {
     "rga_insert": (lambda args: rga_insert(*args), rga_insert_args, 500, 0xE110_0046),
     "rga_holds": (lambda args: rga_holds(*args), rga_holds_args, 250, 0xE110_0047),
     "rga_remove": (lambda args: rga_remove(*args), rga_remove_args, 250, 0xE110_0048),
+    "text_slot_latest": (lambda args: text_slot_latest(*args), text_slot_latest_args, 500, 0xE110_0049),
+    "text_slot_retitled": (lambda args: text_slot_retitled(*args), text_slot_retitled_args, 400, 0xE110_004A),
+    "text_slot_holds": (lambda args: text_slot_holds(*args), text_slot_holds_args, 500, 0xE110_004B),
 }
 
 
@@ -3434,6 +3621,101 @@ def validate_laws() -> None:
             [first, second],
         )
 
+    # The titled places of a shared list. `text_slot_latest` says the later version
+    # wins and an equal one keeps `a`, which makes it a join once no two versions
+    # tie; `text_slot_retitled` says only an empty text changes, and that to a text
+    # that is not empty; `text_slot_holds` says it asks for the place and the text
+    # and nothing else.
+    latest_laws = {
+        name: Law(f"text_slot_latest {name}")
+        for name in (
+            "commutes for one place of two versions",
+            "associates for three versions",
+            "is idempotent",
+            "keeps a on equal versions",
+            "takes the greater version and that write's text",
+            "keeps a's place",
+        )
+    }
+    retitled_laws = {
+        name: Law(f"text_slot_retitled {name}")
+        for name in (
+            "is idempotent",
+            "keeps the places, their order, slots and versions",
+            "changes only an empty text",
+            "leaves no text empty",
+        )
+    }
+    holds_laws = {
+        name: Law(f"text_slot_holds {name}")
+        for name in (
+            "holds every place it holds, whatever version asks",
+            "does not depend on the order of the places",
+            "keeps holding what it held when a place is added",
+            "holds nothing of an empty list",
+            "asks the retitled list for \"untitled\" exactly where a place was empty or already titled so",
+        )
+    }
+    for _ in range(LAW_RUNS):
+        first, second = text_slot_latest_args(rng)
+        picked = answer_of(text_slot_latest(first, second))
+        latest_laws["is idempotent"].holds(answer_of(text_slot_latest(first, first)) == first, first)
+        latest_laws["keeps a on equal versions"].holds(
+            answer_of(text_slot_latest(first, dict(second, version=first["version"]))) == first, [first, second]
+        )
+        winner = second if second["version"] > first["version"] else first
+        latest_laws["takes the greater version and that write's text"].holds(
+            picked["version"] == max(first["version"], second["version"]) and picked["text"] == winner["text"],
+            [first, second],
+        )
+        latest_laws["keeps a's place"].holds(picked["slot"] == first["slot"], [first, second])
+
+        same = dict(second, slot=first["slot"])
+        if same["version"] != first["version"]:
+            latest_laws["commutes for one place of two versions"].holds(
+                answer_of(text_slot_latest(first, same)) == answer_of(text_slot_latest(same, first)),
+                [first, same],
+            )
+            third = dict(slot_value(rng), slot=first["slot"], version=slot_version(rng))
+            if third["version"] not in (first["version"], same["version"]):
+                join = lambda x, y: answer_of(text_slot_latest(x, y))
+                latest_laws["associates for three versions"].holds(
+                    join(join(first, same), third) == join(first, join(same, third)), [first, same, third]
+                )
+
+        held = text_slot_retitled_args(rng)[0]
+        shown = answer_of(text_slot_retitled(held))
+        retitled_laws["is idempotent"].holds(answer_of(text_slot_retitled(shown)) == shown, held)
+        retitled_laws["keeps the places, their order, slots and versions"].holds(
+            [(s["slot"], s["version"]) for s in shown] == [(s["slot"], s["version"]) for s in held], held
+        )
+        retitled_laws["changes only an empty text"].holds(
+            all(after["text"] == before["text"] for before, after in zip(held, shown) if before["text"]), held
+        )
+        retitled_laws["leaves no text empty"].holds(all(s["text"] for s in shown), held)
+
+        listed, probe = text_slot_holds_args(rng)
+        asked = answer_of(text_slot_holds(listed, probe))
+        if listed:
+            member = rng.pick(listed)
+            holds_laws["holds every place it holds, whatever version asks"].holds(
+                answer_of(text_slot_holds(listed, dict(member, version=slot_version(rng)))), [listed, member]
+            )
+        holds_laws["does not depend on the order of the places"].holds(
+            answer_of(text_slot_holds(shuffled(rng, listed), probe)) == asked, [listed, probe]
+        )
+        if len(listed) < SLOT_CAPACITY:
+            holds_laws["keeps holding what it held when a place is added"].holds(
+                not asked or answer_of(text_slot_holds(listed + [slot_value(rng)], probe)), [listed, probe]
+            )
+        holds_laws["holds nothing of an empty list"].holds(not answer_of(text_slot_holds([], probe)), probe)
+        if len(listed) <= SLOT_CAPACITY:
+            titled = answer_of(text_slot_holds(answer_of(text_slot_retitled(listed)), dict(probe, text=UNTITLED)))
+            expected = any(s["slot"] == probe["slot"] and s["text"] in ("", UNTITLED) for s in listed)
+            holds_laws[
+                "asks the retitled list for \"untitled\" exactly where a place was empty or already titled so"
+            ].holds(titled == expected, [listed, probe])
+
     every_law = (
         union_laws + [prune_law] + order_laws + clock_laws + [classify_law] + apply_laws + ack_laws
         + [page_law, insert_law, dedup_law, hold_law, gcra_law, retry_law, utc_law]
@@ -3441,6 +3723,7 @@ def validate_laws() -> None:
         + [stable_order_law, stable_idle_law, stable_join_law, stable_least_law]
         + [remove_law, remove_only_law, add_wins_law, contains_law, text_order_law, diff_minute_law]
         + write_laws + rga_laws + remove_laws
+        + list(latest_laws.values()) + list(retitled_laws.values()) + list(holds_laws.values())
     )
     for law in every_law:
         law.was_asked()
@@ -3560,7 +3843,26 @@ def render(value) -> str:
         return "{ " + members + " }"
     if isinstance(value, list):
         return "[" + ", ".join(render(member) for member in value) + "]"
-    return json.dumps(value)
+    return written(json.dumps(value, ensure_ascii=False))
+
+
+def written(encoded: str) -> str:
+    """JSON text with each character that has no visible form (a control, a
+    format character such as a byte-order mark, an unassigned code point or a
+    noncharacter) spelled as a `\\u` escape, and every other character as itself,
+    so the file reads the same in an editor as in a JSON reader."""
+
+    def spelled(match: re.Match) -> str:
+        char = match.group()
+        if unicodedata.category(char) not in ("Cc", "Cf", "Cn", "Co", "Cs"):
+            return char
+        code = ord(char)
+        if code < 0x10000:
+            return f"\\u{code:04x}"
+        code -= 0x10000
+        return f"\\u{0xD800 + (code >> 10):04x}\\u{0xDC00 + (code & 0x3FF):04x}"
+
+    return re.sub(r"[^\x00-\x7e]", spelled, encoded)
 
 
 def identity(args) -> str:
