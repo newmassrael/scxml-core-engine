@@ -778,6 +778,29 @@ fn a_candidate_that_carries_an_id_of_a_list_made_before_lineages_is_not_publishe
 }
 
 #[test]
+fn the_list_made_before_lineages_handed_back_as_it_was_is_not_published_when_asked_afresh() {
+    // The one list without a lineage the store lets through is the very list the work holds,
+    // saved again: it loses nothing, so it is not refused as `lineage-dropped`. Asked for every
+    // id afresh, it still carries every id the work's list had, and is refused as any list that
+    // carries one is, whether or not a lineage came with it.
+    let g = generation("fresh-ids-same-list-before-lineages");
+    let first = g.running("press-1");
+    g.write(&first, "one", bare_of("first"));
+    g.publish(&first).expect("a list made before lineages");
+
+    let second = g.running_fresh("press-2");
+    g.write(&second, "two", bare_of("first"));
+    let (kind, detail) = kind_of(g.publish(&second).unwrap_err());
+
+    assert_eq!(kind, "fresh-ids-not-issued", "{detail}");
+    assert_eq!(
+        detail["carried"],
+        json!(["R1", "R2", "R3", "R4", "R5"]),
+        "{detail}"
+    );
+}
+
+#[test]
 fn a_candidate_without_the_lineage_a_list_made_before_lineages_stands_on_is_not_published() {
     // The lineage the core derives for such a list is as much the work's as a kept one: a list
     // without one would let the next revision issue a retired id again, to another requirement.
