@@ -171,7 +171,11 @@ impl<const R: usize> Ring<R> {
     /// How often a dequeue that found an entry still empty looks again before
     /// it makes the entry unusable for the enqueue that owns it. Bounded, so
     /// the operation stays lock-free; loom, which cannot explore a long spin,
-    /// looks once.
+    /// looks once. Past the first look again, it looks only while an enqueue
+    /// holds the entry's ticket (the tail is past it): with none, no look can
+    /// find the entry filled, and an empty ring would spend the whole count on
+    /// every dequeue. The first asks nothing, so a ring that looks once, as
+    /// loom's does, explores what it did before the question was asked.
     const SPINS: u32 = if cfg!(loom) { 1 } else { 10_000 };
 
     /// The entry a ticket names: the ticket rotated so that consecutive
@@ -379,6 +383,10 @@ impl<const R: usize> Ring<R> {
             let ticket_cycle = (head << 1) | Self::LOW_MASK;
             let slot = self.entry(Self::map(head));
             let mut spins = 0;
+            // Whether an enqueue holds this ticket, asked once, before the
+            // second look again: the tail only moves on, so an enqueue that
+            // holds it then is the only one a look could wait for.
+            let mut held: Option<bool> = None;
             'look: loop {
                 let mut entry = slot.load(Ordering::Acquire);
                 loop {
@@ -403,7 +411,13 @@ impl<const R: usize> Ring<R> {
                         // may be about to fill it; look a few times, then move
                         // the entry to this cycle so that enqueue fails.
                         spins += 1;
-                        if spins <= Self::SPINS {
+                        if spins <= Self::SPINS
+                            && (spins == 1
+                                || *held.get_or_insert_with(|| {
+                                    let tail = self.tail.0.load(Ordering::Acquire);
+                                    before(head, tail & !Self::FIN)
+                                }))
+                        {
                             continue 'look;
                         }
                         replacement = ticket_cycle ^ ((!entry) & n);

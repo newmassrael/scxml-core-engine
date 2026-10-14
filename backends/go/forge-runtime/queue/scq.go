@@ -76,7 +76,11 @@ const lineShift = 3
 
 // spins is how often a dequeue that found an entry still empty looks again
 // before it makes the entry unusable for the enqueue that owns it. Bounded, so
-// the operation stays lock-free.
+// the operation stays lock-free. Past the first look again, it looks only while
+// an enqueue holds the entry's ticket (the tail is past it): with none, no look
+// can find the entry filled, and an empty ring would spend the whole count on
+// every dequeue. The first asks nothing, so a ring that looks once, as a model
+// checker's does, explores what it did before the question was asked.
 const spins = 10000
 
 // newRing returns a ring of slots slots holding the indices 0..filled, oldest
@@ -212,8 +216,13 @@ func (r *ring) catchUp(tail, head uint64) {
 // index when the entry was this ticket's (the entry is left empty in the same
 // cycle), false when the ticket found nothing and the caller goes on to the
 // empty check.
-func (r *ring) look(slot *atomic.Uint64, ticketCycle uint64) (uint64, bool) {
+func (r *ring) look(slot *atomic.Uint64, ticket uint64) (uint64, bool) {
+	ticketCycle := (ticket << 1) | r.lowMask
 	looked := 0
+	// Whether an enqueue holds this ticket, asked once, before the second look
+	// again: the tail only moves on, so an enqueue that holds it then is the
+	// only one a look could wait for.
+	asked, held := false, false
 	for {
 		entry := slot.Load()
 		for {
@@ -239,7 +248,13 @@ func (r *ring) look(slot *atomic.Uint64, ticketCycle uint64) (uint64, bool) {
 				// this cycle so that enqueue fails.
 				looked++
 				if looked <= spins {
-					break // look again from a fresh read
+					if looked > 1 && !asked {
+						asked = true
+						held = before(ticket, r.tail.v.Load()&^fin)
+					}
+					if looked == 1 || held {
+						break // look again from a fresh read
+					}
 				}
 				replacement = ticketCycle ^ ((^entry) & r.entryCount)
 			}
@@ -276,8 +291,7 @@ func (r *ring) dequeueBy(byThreshold bool) (uint64, bool) {
 	}
 	for {
 		head := r.head.v.Add(1) - 1
-		ticketCycle := (head << 1) | r.lowMask
-		if index, ok := r.look(&r.entries[r.mapTicket(head)], ticketCycle); ok {
+		if index, ok := r.look(&r.entries[r.mapTicket(head)], head); ok {
 			return index, true
 		}
 

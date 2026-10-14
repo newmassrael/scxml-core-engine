@@ -63,7 +63,11 @@
 
 /* How often a dequeue that found an entry still empty looks again before it
  * makes the entry unusable for the enqueue that owns it. Bounded, so the
- * operation stays lock-free.
+ * operation stays lock-free. Past the first look again, it looks only while an
+ * enqueue holds the entry's ticket (the tail is past it): with none, no look can
+ * find the entry filled, and an empty ring would spend the whole count on every
+ * dequeue. The first asks nothing, so a ring that looks once, as a model
+ * checker's does, explores what it did before the question was asked.
  *
  * The count is a public, overridable default (`SCE_QUEUE_SCQ_SPINS`) and not a
  * constant of this file, for the reason the Rust runtime takes it as a
@@ -238,9 +242,14 @@ static inline void SCE_QSCQ_NAME(catch_up)(SCE_QSCQ_NAME(ring_t) * r, SCE_QSCQ_W
  * `*index` set, when the entry was this ticket's (the entry is left empty in the
  * same cycle); zero when the ticket found nothing and the caller goes on to the
  * empty check. */
-static inline int SCE_QSCQ_NAME(look)(SCE_QSCQ_NAME(ring_t) * r, SCE_QSCQ_WORD *slot, SCE_QSCQ_WORD ticket_cycle,
+static inline int SCE_QSCQ_NAME(look)(SCE_QSCQ_NAME(ring_t) * r, SCE_QSCQ_WORD *slot, SCE_QSCQ_WORD ticket,
                                       SCE_QSCQ_WORD *index) {
+    const SCE_QSCQ_WORD ticket_cycle = (SCE_QSCQ_WORD)((SCE_QSCQ_WORD)(ticket << 1) | r->low_mask);
     unsigned looked = 0;
+    /* Whether an enqueue holds this ticket, asked once, before the second look
+     * again: the tail only moves on, so an enqueue that holds it then is the
+     * only one a look could wait for. Unasked below zero. */
+    int held = -1;
     for (;;) {
         SCE_QSCQ_WORD entry = SCE_QSCQ_LOAD_ACQ(slot);
         for (;;) {
@@ -268,7 +277,13 @@ static inline int SCE_QSCQ_NAME(look)(SCE_QSCQ_NAME(ring_t) * r, SCE_QSCQ_WORD *
                  * cycle so that enqueue fails. */
                 looked++;
                 if (looked <= SCE_QSCQ_SPINS) {
-                    break; /* look again from a fresh read */
+                    if (looked > 1 && held < 0) {
+                        const SCE_QSCQ_WORD tail = SCE_QSCQ_LOAD_ACQ(&r->tail);
+                        held = SCE_QSCQ_NAME(before)(ticket, (SCE_QSCQ_WORD)(tail & (SCE_QSCQ_WORD)~SCE_QSCQ_FIN));
+                    }
+                    if (looked == 1 || held) {
+                        break; /* look again from a fresh read */
+                    }
                 }
                 replacement = (SCE_QSCQ_WORD)(ticket_cycle ^ ((SCE_QSCQ_WORD)~entry & r->entry_count));
             }
@@ -291,9 +306,8 @@ static inline int SCE_QSCQ_NAME(dequeue_by)(SCE_QSCQ_NAME(ring_t) * r, int by_th
     }
     for (;;) {
         const SCE_QSCQ_WORD head = SCE_QSCQ_FETCH_ADD(&r->head, 1);
-        const SCE_QSCQ_WORD ticket_cycle = (SCE_QSCQ_WORD)((SCE_QSCQ_WORD)(head << 1) | r->low_mask);
         SCE_QSCQ_WORD tail;
-        if (SCE_QSCQ_NAME(look)(r, &r->entries[SCE_QSCQ_NAME(map_ticket)(r, head)], ticket_cycle, index)) {
+        if (SCE_QSCQ_NAME(look)(r, &r->entries[SCE_QSCQ_NAME(map_ticket)(r, head)], head, index)) {
             return 1;
         }
 

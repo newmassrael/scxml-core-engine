@@ -410,7 +410,12 @@ template <std::size_t R> class Ring {
     static constexpr unsigned kLineShift = 3;
     /// How often a dequeue that found an entry still empty looks again before
     /// it makes the entry unusable for the enqueue that owns it. Bounded, so
-    /// the operation stays lock-free.
+    /// the operation stays lock-free. Past the first look again, it looks only
+    /// while an enqueue holds the entry's ticket (the tail is past it): with
+    /// none, no look can find the entry filled, and an empty ring would spend
+    /// the whole count on every dequeue. The first asks nothing, so a ring that
+    /// looks once, as a model checker's does, explores what it did before the
+    /// question was asked.
     ///
     /// The count is a build-time default (`SCE_QUEUE_SCQ_SPINS`, 10000), the same
     /// name and default the C runtime takes (queue_scq_width.inc), and the Rust
@@ -531,8 +536,7 @@ private:
         }
         for (;;) {
             const std::uint64_t head = head_.value.fetch_add(1, std::memory_order_acq_rel);
-            const std::uint64_t ticket_cycle = (head << 1) | kLowMask;
-            if (const std::optional<std::size_t> taken = look(entry_at(map(head)), ticket_cycle)) {
+            if (const std::optional<std::size_t> taken = look(entry_at(map(head)), head)) {
                 return taken;
             }
 
@@ -571,8 +575,13 @@ private:
     /// index when the entry was this ticket's (and the entry is left empty in
     /// the same cycle), `std::nullopt` when the ticket found nothing and the
     /// caller goes on to the empty check.
-    std::optional<std::size_t> look(std::atomic<std::uint64_t> &slot, std::uint64_t ticket_cycle) noexcept {
+    std::optional<std::size_t> look(std::atomic<std::uint64_t> &slot, std::uint64_t ticket) noexcept {
+        const std::uint64_t ticket_cycle = (ticket << 1) | kLowMask;
         unsigned spins = 0;
+        // Whether an enqueue holds this ticket, asked once, before the second
+        // look again: the tail only moves on, so an enqueue that holds it then
+        // is the only one a look could wait for.
+        std::optional<bool> held;
         for (;;) {
             std::uint64_t seen = slot.load(std::memory_order_acquire);
             for (;;) {
@@ -597,7 +606,12 @@ private:
                     // be about to fill it; look a few times, then move the
                     // entry to this cycle so that enqueue fails.
                     if (++spins <= kSpins) {
-                        break;  // look again from a fresh read
+                        if (spins > 1 && !held) {
+                            held = before(ticket, tail_.value.load(std::memory_order_acquire) & ~kFin);
+                        }
+                        if (spins == 1 || *held) {
+                            break;  // look again from a fresh read
+                        }
                     }
                     replacement = ticket_cycle ^ ((~seen) & kEntries);
                 }

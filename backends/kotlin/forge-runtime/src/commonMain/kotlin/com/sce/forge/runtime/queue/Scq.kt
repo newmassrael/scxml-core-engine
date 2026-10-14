@@ -32,7 +32,11 @@ private const val LINE_SHIFT: Int = 3
 /**
  * How often a dequeue that found an entry still empty looks again before it
  * makes the entry unusable for the enqueue that owns it. Bounded, so the
- * operation stays lock-free.
+ * operation stays lock-free. Past the first look again, it looks only while an
+ * enqueue holds the entry's ticket (the tail is past it): with none, no look can
+ * find the entry filled, and an empty ring would spend the whole count on every
+ * dequeue. The first asks nothing, so a ring that looks once, as a model
+ * checker's does, explores what it did before the question was asked.
  *
  * It is patience and not part of the correctness argument: any count, none
  * included, only changes how soon the entry is given up. A model checker cannot
@@ -226,8 +230,13 @@ private class Ring(slots: Long, filled: Long, private val spins: Int) {
      * cycle), [NONE] when the ticket found nothing and the caller goes on to
      * the empty check.
      */
-    private fun look(slot: AtomicLong, ticketCycle: Long): Long {
+    private fun look(slot: AtomicLong, ticket: Long): Long {
+        val ticketCycle = (ticket shl 1) or lowMask
         var looked = 0
+        // Whether an enqueue holds this ticket, asked once, before the second look
+        // again: the tail only moves on, so an enqueue that holds it then is the
+        // only one a look could wait for.
+        var held: Boolean? = null
         while (true) {
             var entry = slot.load()
             while (true) {
@@ -252,7 +261,9 @@ private class Ring(slots: Long, filled: Long, private val spins: Int) {
                     // about to fill it; look a few times, then move the entry to
                     // this cycle so that enqueue fails.
                     looked++
-                    if (looked <= spins) {
+                    if (looked <= spins &&
+                        (looked == 1 || (held ?: before(ticket, tail.load() and FIN.inv()).also { held = it }))
+                    ) {
                         break // look again from a fresh read
                     }
                     replacement = ticketCycle xor (entry.inv() and entryCount)
@@ -284,8 +295,7 @@ private class Ring(slots: Long, filled: Long, private val spins: Int) {
         }
         while (true) {
             val ticket = head.fetchAndAdd(1)
-            val ticketCycle = (ticket shl 1) or lowMask
-            val index = look(entries[mapTicket(ticket)], ticketCycle)
+            val index = look(entries[mapTicket(ticket)], ticket)
             if (index != NONE) {
                 return index
             }
