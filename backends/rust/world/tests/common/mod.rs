@@ -261,6 +261,356 @@ pub fn oracle(world: &World) -> BTreeMap<(u64, u64), Held> {
     expected
 }
 
+// ── Formulas ────────────────────────────────────────────────────────────────
+
+/// One side of a formula: a number, or the cell at a place.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Operand {
+    Number(i64),
+    Cell(u64, u64),
+}
+
+/// What a cell holds: a number, or a formula, which is an operation (`op`: the
+/// constants below) over two operands. An operand an operation does not read is
+/// held as the number 0.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Content {
+    Number(i64),
+    Formula { op: u8, a: Operand, b: Operand },
+}
+
+/// The operations a formula names (sce:std/merge/lww_cell).
+pub const COPY: u8 = 1;
+pub const ADD: u8 = 2;
+pub const SUBTRACT: u8 = 3;
+pub const MULTIPLY: u8 = 4;
+pub const DIVIDE: u8 = 5;
+pub const SUM: u8 = 6;
+
+/// The faults a cell shows instead of a number (sce:std/merge/sheet_settle).
+pub const CYCLE: u8 = 1;
+pub const DIVIDED_BY_ZERO: u8 = 2;
+pub const OVERFLOWED: u8 = 3;
+pub const BAD_RANGE: u8 = 4;
+pub const UNKNOWN_OPERATION: u8 = 5;
+
+/// What a cell shows: the number, and the fault (0 for none) it shows instead.
+pub type Shown = (i64, u8);
+
+/// A formula as the host's edit event writes it.
+fn operand_fields(side: &str, operand: Operand) -> String {
+    match operand {
+        Operand::Number(number) => {
+            format!(r#""{side}Ref":false,"{side}Row":"0","{side}Col":"0","{side}Val":"{number}""#)
+        }
+        Operand::Cell(row, col) => {
+            format!(r#""{side}Ref":true,"{side}Row":"{row}","{side}Col":"{col}","{side}Val":"0""#)
+        }
+    }
+}
+
+/// A person types a formula into the cell at (`row`, `col`), when the host's clock
+/// reads the world's time.
+pub fn type_formula(
+    world: &mut World,
+    who: &str,
+    (row, col): (u64, u64),
+    op: u8,
+    a: Operand,
+    b: Operand,
+) {
+    let now = world.now_ms();
+    world.raise(
+        who,
+        "sheet.formula",
+        &format!(
+            r#"{{"row":"{row}","col":"{col}","op":{op},{},{},"now":"{now}"}}"#,
+            operand_fields("a", a),
+            operand_fields("b", b)
+        ),
+    );
+}
+
+fn operand_of(cell: &Value, side: &str) -> Operand {
+    let field = |name: &str| cell[format!("{side}{name}")].clone();
+    if field("Ref").as_bool().expect("a flag") {
+        Operand::Cell(whole(&field("Row")) as u64, whole(&field("Col")) as u64)
+    } else {
+        Operand::Number(whole(&field("Val")) as i64)
+    }
+}
+
+/// What a cell as a copy holds it, or a write to it as it travels, holds.
+fn content_of(cell: &Value) -> Content {
+    let op = whole(&cell["op"]) as u8;
+    if op == 0 {
+        Content::Number(whole(&cell["value"]) as i64)
+    } else {
+        Content::Formula {
+            op,
+            a: operand_of(cell, "a"),
+            b: operand_of(cell, "b"),
+        }
+    }
+}
+
+/// The cells a copy holds, by place, each with what it holds.
+pub fn contents_of(world: &mut World, who: &str) -> BTreeMap<(u64, u64), Content> {
+    let variables = variables_of(world, who);
+    variables["cells"]
+        .as_array()
+        .expect("the cells are a list")
+        .iter()
+        .map(|cell| {
+            (
+                (whole(&cell["row"]) as u64, whole(&cell["col"]) as u64),
+                content_of(cell),
+            )
+        })
+        .collect()
+}
+
+/// What a copy shows, by place.
+pub fn shown_of(world: &mut World, who: &str) -> BTreeMap<(u64, u64), Shown> {
+    let variables = variables_of(world, who);
+    let mut shown = BTreeMap::new();
+    let mut previous = None;
+    for record in variables["shown"].as_array().expect("shown is a list") {
+        let place = (whole(&record["row"]) as u64, whole(&record["col"]) as u64);
+        assert!(
+            previous < Some(place),
+            "{who} shows its places out of order or twice: {place:?} after {previous:?}"
+        );
+        previous = Some(place);
+        shown.insert(
+            place,
+            (
+                whole(&record["value"]) as i64,
+                whole(&record["fault"]) as u8,
+            ),
+        );
+    }
+    shown
+}
+
+/// The three copies show one sheet; which.
+pub fn agreed_shown(world: &mut World) -> BTreeMap<(u64, u64), Shown> {
+    let server = shown_of(world, "server");
+    for who in ["alice", "bob"] {
+        assert_eq!(
+            shown_of(world, who),
+            server,
+            "{who} and the hub show different sheets"
+        );
+    }
+    server
+}
+
+/// What the cells should hold, read from the network: of every write a person sent
+/// the hub, the one with the latest stamp wins its cell, formula and all.
+pub fn oracle_contents(world: &World) -> BTreeMap<(u64, u64), Content> {
+    let mut latest: BTreeMap<(u64, u64), ((u64, u64, u64), Content)> = BTreeMap::new();
+    for (event, write) in sent_to_the_hub(world) {
+        if event != "sheet.cell" {
+            continue;
+        }
+        let number = |field: &str| whole(&write[field]);
+        let place = (number("row") as u64, number("col") as u64);
+        let stamp = (
+            number("wallTime") as u64,
+            number("counter") as u64,
+            number("nodeId") as u64,
+        );
+        match latest.get(&place) {
+            Some((held, _)) if *held >= stamp => {}
+            _ => {
+                latest.insert(place, (stamp, content_of(&write)));
+            }
+        }
+    }
+    latest
+        .into_iter()
+        .map(|(place, (_, content))| (place, content))
+        .collect()
+}
+
+/// What an operation gives for two numbers, in int64: the exact result, and the
+/// fault when it is not one (division by zero, a result outside int64, an operation
+/// there is none of). Written in i128, which cannot overflow, as a second statement
+/// of sheet_apply.
+fn apply(op: u8, a: i64, b: i64) -> Shown {
+    let (a, b) = (i128::from(a), i128::from(b));
+    let exact = match op {
+        ADD => a + b,
+        SUBTRACT => a - b,
+        MULTIPLY => a * b,
+        DIVIDE if b == 0 => return (0, DIVIDED_BY_ZERO),
+        DIVIDE => a / b,
+        _ => return (0, UNKNOWN_OPERATION),
+    };
+    i64::try_from(exact).map_or((0, OVERFLOWED), |number| (number, 0))
+}
+
+/// What the sheet shows, worked out from the cells and the orders of the rows and
+/// columns by following each cell's references depth first, as a person would, and
+/// not by the passes the library makes: a second statement of what a formula means
+/// (sce:std/merge/sheet_settle), held to the run by the tests of this file.
+/// `rows` and `cols` are the orders, removed ones included, and `gone` and
+/// `gone_cols` the ids removed.
+pub struct Sheet<'a> {
+    pub cells: &'a BTreeMap<(u64, u64), Content>,
+    pub rows: &'a [u64],
+    pub gone: &'a [u64],
+    pub cols: &'a [u64],
+    pub gone_cols: &'a [u64],
+}
+
+impl Sheet<'_> {
+    pub fn shown(&self) -> BTreeMap<(u64, u64), Shown> {
+        let mut memo = BTreeMap::new();
+        let mut busy = Vec::new();
+        for place in self.cells.keys() {
+            self.solve(*place, &mut memo, &mut busy);
+        }
+        // A cell that reads itself, however far round, shows a cycle.
+        self.cells
+            .keys()
+            .map(|place| (*place, memo[place].unwrap_or((0, CYCLE))))
+            .collect()
+    }
+
+    /// What the cell at `place` shows, `None` when it reads itself.
+    fn solve(
+        &self,
+        place: (u64, u64),
+        memo: &mut BTreeMap<(u64, u64), Option<Shown>>,
+        busy: &mut Vec<(u64, u64)>,
+    ) -> Option<Shown> {
+        if let Some(known) = memo.get(&place) {
+            return *known;
+        }
+        if busy.contains(&place) {
+            return None;
+        }
+        busy.push(place);
+        let answer = match self.cells[&place] {
+            Content::Number(number) => Some((number, 0)),
+            Content::Formula { op, a, b } => self.formula(op, a, b, memo, busy),
+        };
+        busy.pop();
+        memo.insert(place, answer);
+        answer
+    }
+
+    fn read(
+        &self,
+        operand: Operand,
+        memo: &mut BTreeMap<(u64, u64), Option<Shown>>,
+        busy: &mut Vec<(u64, u64)>,
+    ) -> Option<Shown> {
+        match operand {
+            Operand::Number(number) => Some((number, 0)),
+            Operand::Cell(row, col) if self.cells.contains_key(&(row, col)) => {
+                self.solve((row, col), memo, busy)
+            }
+            // A place no cell holds reads 0.
+            Operand::Cell(..) => Some((0, 0)),
+        }
+    }
+
+    fn formula(
+        &self,
+        op: u8,
+        a: Operand,
+        b: Operand,
+        memo: &mut BTreeMap<(u64, u64), Option<Shown>>,
+        busy: &mut Vec<(u64, u64)>,
+    ) -> Option<Shown> {
+        match op {
+            COPY => self.read(a, memo, busy),
+            ADD..=DIVIDE => {
+                let (left, right) = (self.read(a, memo, busy)?, self.read(b, memo, busy)?);
+                Some(match (left.1, right.1) {
+                    (0, 0) => apply(op, left.0, right.0),
+                    (0, fault) | (fault, 0) => (0, fault),
+                    (one, other) => (0, one.min(other)),
+                })
+            }
+            SUM => self.sum(a, b, memo, busy),
+            _ => Some((0, UNKNOWN_OPERATION)),
+        }
+    }
+
+    /// The sum of the cells in the rectangle whose corners are the cells a and b
+    /// name, in the orders of the rows and columns: those in a row and a column that
+    /// are not removed, between the corners' places.
+    fn sum(
+        &self,
+        a: Operand,
+        b: Operand,
+        memo: &mut BTreeMap<(u64, u64), Option<Shown>>,
+        busy: &mut Vec<(u64, u64)>,
+    ) -> Option<Shown> {
+        let (Operand::Cell(a_row, a_col), Operand::Cell(b_row, b_col)) = (a, b) else {
+            return Some((0, BAD_RANGE));
+        };
+        let place = |order: &[u64], id: u64| order.iter().position(|&held| held == id);
+        let (Some(a_at), Some(b_at), Some(c_at), Some(d_at)) = (
+            place(self.rows, a_row),
+            place(self.rows, b_row),
+            place(self.cols, a_col),
+            place(self.cols, b_col),
+        ) else {
+            return Some((0, BAD_RANGE));
+        };
+        let (rows, cols) = (
+            a_at.min(b_at)..=a_at.max(b_at),
+            c_at.min(d_at)..=c_at.max(d_at),
+        );
+        let (mut above, mut below, mut fault) = (0_i128, 0_i128, 0_u8);
+        for &(row, col) in self.cells.keys() {
+            let (Some(r), Some(c)) = (place(self.rows, row), place(self.cols, col)) else {
+                continue;
+            };
+            if self.gone.contains(&row)
+                || self.gone_cols.contains(&col)
+                || !rows.contains(&r)
+                || !cols.contains(&c)
+            {
+                continue;
+            }
+            let (number, cell_fault) = self.solve((row, col), memo, busy)?;
+            match cell_fault {
+                0 if number > 0 => above += i128::from(number),
+                0 => below += i128::from(number),
+                other => fault = if fault == 0 { other } else { fault.min(other) },
+            }
+        }
+        Some(if fault != 0 {
+            (0, fault)
+        } else if above > i128::from(i64::MAX) || below < i128::from(i64::MIN) {
+            (0, OVERFLOWED)
+        } else {
+            (i64::try_from(above + below).expect("the signs differ"), 0)
+        })
+    }
+}
+
+/// The three copies show what the cells they agree on say, which the oracle works out
+/// from the network and the orders the people made: the sheet's shown values; which.
+pub fn expected_shown(world: &World) -> BTreeMap<(u64, u64), Shown> {
+    let (rows, gone) = oracle_order(world, "sheet.row", "sheet.gone");
+    let (cols, gone_cols) = oracle_order(world, "sheet.col", "sheet.gone_col");
+    Sheet {
+        cells: &oracle_contents(world),
+        rows: &rows,
+        gone: &gone,
+        cols: &cols,
+        gone_cols: &gone_cols,
+    }
+    .shown()
+}
+
 /// The id the next row a person adds will have: one more than the largest counter
 /// their copy has seen, with their node below it.
 pub fn next_row_key(world: &mut World, who: &str) -> u64 {

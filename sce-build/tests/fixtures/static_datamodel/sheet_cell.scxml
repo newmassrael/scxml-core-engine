@@ -1,12 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   One cell of a sheet, as a replica holds it and as a write to it travels: where it
-  is (`row`, `col`), the number it holds, and the stamp of the write that put it there
+  is (`row`, `col`), what it holds, and the stamp of the write that put it there
   (a hybrid logical clock, hlc_timestamp). The row and the column are the ids the
   sheet gave them, which are not their places: a place is decided by the order the
   rows and columns stand in, and an id does not move when another is inserted before
   it. A cell is a last-writer-wins register, and the stamp is what decides which of
   two writes to it stays.
+  What a cell holds is a number (`op` 0, the number in `value`) or a formula (any
+  other `op`, over the operands `a` and `b`); the formula travels in the write as the
+  number does and wins or loses the cell with it, and what it shows is worked out from
+  the cells a copy holds (sce:std/merge/sheet_settle), not carried.
   The world simulation (backends/rust/world) uses it as the event-schema of a write
   and as the record of a replica's cell list, so the two cannot disagree on a field.
   The fields are lww_cell's (sce:std/merge), which the write is applied by, at the
@@ -27,5 +31,14 @@
     <data id="wallTime" sce:type="int64" sce:direction="in"/>
     <data id="counter" sce:type="uint32" sce:direction="in"/>
     <data id="nodeId" sce:type="uint64" sce:direction="in"/>
+    <data id="op" sce:type="uint8" sce:direction="in"/>
+    <data id="aRef" sce:type="bool" sce:direction="in"/>
+    <data id="aRow" sce:type="uint64" sce:direction="in"/>
+    <data id="aCol" sce:type="uint64" sce:direction="in"/>
+    <data id="aVal" sce:type="int64" sce:direction="in"/>
+    <data id="bRef" sce:type="bool" sce:direction="in"/>
+    <data id="bRow" sce:type="uint64" sce:direction="in"/>
+    <data id="bCol" sce:type="uint64" sce:direction="in"/>
+    <data id="bVal" sce:type="int64" sce:direction="in"/>
   </datamodel>
 </scxml>

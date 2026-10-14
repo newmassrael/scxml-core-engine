@@ -50,8 +50,8 @@ const PRESENCE_PUBLISHED: &[&str] = &[
 
 /// The variables a copy of the sheet publishes.
 const SHEET_PUBLISHED: &[&str] = &[
-    "node", "hub", "clock", "cells", "rows", "gone", "cols", "goneCols", "lamport", "orphans",
-    "refusals",
+    "node", "hub", "clock", "cells", "rows", "gone", "cols", "goneCols", "shown", "lamport",
+    "orphans", "refusals",
 ];
 
 fn scenario_path(name: &str) -> PathBuf {
@@ -284,6 +284,60 @@ fn sheet_morning() -> World {
     world.advance_ms(400);
     world.heal("bob", "server");
     assert_eq!(world.run_until_quiet(60_000), Outcome::Quiet);
+
+    // Formulas over what is there: a sum down the first column from the first row to
+    // the one bob added offline (the removed row between is not summed), a chain
+    // that reads the sum, and then two formulas written while apart that read each
+    // other, which every copy shows as a cycle.
+    let total = add_col(&mut world, "alice", left);
+    assert_eq!(world.run_until_quiet(10_000), Outcome::Quiet);
+    type_formula(
+        &mut world,
+        "alice",
+        (first, total),
+        SUM,
+        Operand::Cell(first, left),
+        Operand::Cell(offline, left),
+    );
+    assert_eq!(world.run_until_quiet(10_000), Outcome::Quiet);
+    type_formula(
+        &mut world,
+        "bob",
+        (second, total),
+        MULTIPLY,
+        Operand::Cell(first, total),
+        Operand::Number(2),
+    );
+    type_formula(
+        &mut world,
+        "bob",
+        (offline, total),
+        DIVIDE,
+        Operand::Number(100),
+        Operand::Cell(offline, right),
+    );
+    assert_eq!(world.run_until_quiet(10_000), Outcome::Quiet);
+    world.partition("bob", "server");
+    world.advance_ms(50);
+    type_formula(
+        &mut world,
+        "alice",
+        (third, total),
+        COPY,
+        Operand::Cell(second, total),
+        Operand::Number(0),
+    );
+    type_formula(
+        &mut world,
+        "bob",
+        (second, total),
+        COPY,
+        Operand::Cell(third, total),
+        Operand::Number(0),
+    );
+    world.advance_ms(400);
+    world.heal("bob", "server");
+    assert_eq!(world.run_until_quiet(60_000), Outcome::Quiet);
     world
 }
 
@@ -291,6 +345,19 @@ fn sheet_morning() -> World {
 fn a_morning_of_the_shared_sheet_is_three_scenarios() {
     let mut world = sheet_morning();
     assert_eq!(agreed(&mut world), oracle(&world));
+    let shown = agreed_shown(&mut world);
+    assert_eq!(shown, expected_shown(&world));
+    assert!(
+        shown.values().any(|&(_, fault)| fault == CYCLE),
+        "the two formulas that read each other are a cycle"
+    );
+    assert!(
+        shown.values().any(|&(_, fault)| fault == DIVIDED_BY_ZERO),
+        "a cell that was never typed into reads 0"
+    );
+    assert!(shown
+        .values()
+        .any(|&(number, fault)| fault == 0 && number == 20));
     assert_eq!(
         agreed_rows(&mut world),
         oracle_order(&world, "sheet.row", "sheet.gone")
@@ -300,7 +367,8 @@ fn a_morning_of_the_shared_sheet_is_three_scenarios() {
         oracle_order(&world, "sheet.col", "sheet.gone_col")
     );
     assert_eq!(shown_by(&mut world, "server").len(), 3);
-    assert_eq!(columns_shown_by(&mut world, "server").len(), 1);
+    // The column the formulas sit in joined the one left standing.
+    assert_eq!(columns_shown_by(&mut world, "server").len(), 2);
     for who in ["alice", "bob", "server"] {
         let variables = variables_of(&mut world, who);
         assert_eq!(variables["refusals"], json!(0), "{who} refused nothing");

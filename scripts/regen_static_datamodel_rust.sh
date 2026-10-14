@@ -91,6 +91,8 @@ STD_ALGORITHMS+=(merge/orset_entry merge/orset_union merge/orset_live merge/orse
 STD_ALGORITHMS+=(text/text_slot text/text_slot_latest text/text_slot_retitled text/text_slot_holds)
 # The digest todo_peer keeps of the changes it holds.
 STD_ALGORITHMS+=(merge/merkle_node merge/merkle_insert)
+# What the sheet shows of its cells: the formulas settled and the values sorted.
+STD_ALGORITHMS+=(merge/sheet_value merge/sheet_shown merge/sheet_apply merge/sheet_settle merge/sheet_show)
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT

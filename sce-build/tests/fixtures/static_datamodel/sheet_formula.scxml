@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A person's edit of one cell into a formula, as the host hands it to a replica: where,
+  the formula, and `now`, the host's wall clock in milliseconds (sheet_edit says why a
+  machine is told the time). The formula is lww_cell's (sce:std/merge): the operation
+  `op` over the operands a and b, each a number (`aRef` false, `aVal`) or the cell at a
+  place (`aRef` true, `aRow`, `aCol`), and `b` the same. Operation 1 is the value of a,
+  2 to 5 are a + b, a - b, a * b and a / b, and 6 is the sum of the rectangle whose
+  corners are the cells a and b name.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="sheet_formula"
+       sce:event-name="sheet.formula">
+  <datamodel>
+    <data id="row" sce:type="uint64" sce:direction="in"/>
+    <data id="col" sce:type="uint64" sce:direction="in"/>
+    <data id="op" sce:type="uint8" sce:direction="in"/>
+    <data id="aRef" sce:type="bool" sce:direction="in"/>
+    <data id="aRow" sce:type="uint64" sce:direction="in"/>
+    <data id="aCol" sce:type="uint64" sce:direction="in"/>
+    <data id="aVal" sce:type="int64" sce:direction="in"/>
+    <data id="bRef" sce:type="bool" sce:direction="in"/>
+    <data id="bRow" sce:type="uint64" sce:direction="in"/>
+    <data id="bCol" sce:type="uint64" sce:direction="in"/>
+    <data id="bVal" sce:type="int64" sce:direction="in"/>
+    <data id="now" sce:type="int64" sce:direction="in"/>
+  </datamodel>
+</scxml>
