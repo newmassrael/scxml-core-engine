@@ -643,6 +643,7 @@ fn resolve_names(ast: &mut TypedExpr, ctx: &TypeCtx<'_>, source: &str) -> Result
     reject_misdirected_indexing(ast, source)?;
     reject_unreadable_element_fields(ast, ctx, source)?;
     reject_records_as_operands(ast, source, RecordPlace::Whole)?;
+    reject_record_text_misuse(ast, ctx, source, false)?;
     reject_buffers_as_values(ast, source)?;
     reject_call_argument_mismatches(ast, ctx, source)?;
     lower_bytes_eq(ast, ctx);
@@ -849,6 +850,62 @@ fn reject_records_as_operands(
             .children()
             .into_iter()
             .try_for_each(|child| reject_records_as_operands(child, source, RecordPlace::Operand)),
+    }
+}
+
+/// Refuse a record's text field anywhere but as an operand of `===` or `!==`
+/// (SCE_FORGE.md §4.12). The text of a record is held in a buffer of the
+/// schema's bound, which each backend spells in its own storage — an owned
+/// bounded string, a fixed array, the language's string — so v1 admits only
+/// the comparison, which every one of them lowers to the same answer. The one
+/// other read, the whole field copied into another record's string field, is
+/// judged where that write is lowered and never reaches an expression. A
+/// concatenation, an index, a length, a condition or a return of the text is
+/// refused here, at the field.
+///
+/// The check runs against [`TypeCtx::record_text`], which is empty for every
+/// context but an algorithm whose records hold text.
+fn reject_record_text_misuse(
+    expr: &TypedExpr,
+    ctx: &TypeCtx<'_>,
+    source: &str,
+    operand_of_comparison: bool,
+) -> Result<(), Refusal> {
+    if ctx.record_text.is_empty() {
+        return Ok(());
+    }
+    let reads_text = matches!(expr.kind, ExprKind::Member { .. })
+        && dotted_path(expr).is_some_and(|path| ctx.record_text.contains(path.as_str()));
+    if reads_text {
+        if operand_of_comparison {
+            return Ok(());
+        }
+        return Err(ExprError::UnsupportedConstruct {
+            construct: "a record's text field read as a value (v1 reads it only as an operand \
+                        of === or !==, and copies it whole into another record's string field \
+                        with <sce:set> or <sce:assign>)"
+                .to_string(),
+            observed: expr
+                .span
+                .clone()
+                .and_then(|span| source.get(span))
+                .map(str::to_string),
+        }
+        .at(expr.span.clone()));
+    }
+    match &expr.kind {
+        ExprKind::Binary {
+            op: BinOp::StrictEq | BinOp::StrictNeq,
+            left,
+            right,
+        } => {
+            reject_record_text_misuse(left, ctx, source, true)?;
+            reject_record_text_misuse(right, ctx, source, true)
+        }
+        _ => expr
+            .children()
+            .into_iter()
+            .try_for_each(|child| reject_record_text_misuse(child, ctx, source, false)),
     }
 }
 

@@ -1097,6 +1097,17 @@ pub struct TypeCtx<'a> {
     /// none, and every other target, is written as it always was. False is the
     /// opt-out for a test that wants the language's own arithmetic.
     pub rounds_to_single: bool,
+    /// The `"<record>.<field>"` path of every `string` field of an algorithm's
+    /// records (SCE_FORGE.md §4.12). Each is also in `vars`, typed as the
+    /// string it is, but the text lives in a buffer of the schema's bound and
+    /// not in a value of the language's own string type, so only the two reads
+    /// a backend lowers alike are admitted: the whole value copied into
+    /// another record's string field, and an operand of `==` / `!=`
+    /// ([`crate::forge::expr::reject_record_text_misuse`]).
+    ///
+    /// ⚠ Empty everywhere but an algorithm whose records hold text, which is
+    /// what keeps every other context's string exactly what it was.
+    pub record_text: std::collections::HashSet<&'a str>,
 }
 
 /// Whether a record's members are known to the expression that reads it.
@@ -1131,7 +1142,14 @@ impl<'a> TypeCtx<'a> {
             string_capacities: HashMap::new(),
             joins_into_buffers: false,
             rounds_to_single: true,
+            record_text: std::collections::HashSet::new(),
         }
+    }
+
+    /// Declare `path`, a `"<record>.<field>"`, a record's text field. See
+    /// [`TypeCtx::record_text`].
+    pub fn insert_record_text(&mut self, path: &'a str) {
+        self.record_text.insert(path);
     }
 
     /// Declare the bound of the string variable `name`. See

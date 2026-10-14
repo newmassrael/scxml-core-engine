@@ -426,11 +426,36 @@ pub struct ImportContext {
 pub struct RecordImport {
     /// e.g. Rust `hlc::HlcPayload`, C11 `HlcPayload_t`.
     pub qualified_type: String,
-    /// `(id, type)` in declaration order.
-    pub fields: Vec<(String, SceType)>,
+    /// The schema's fields in declaration order.
+    pub fields: Vec<RecordField>,
     /// Which schema this is, by its document's identity — what a call
     /// compares when it passes this record to another algorithm.
     pub id: crate::forge::types::RecordId,
+}
+
+/// One field of an imported event-schema, as an algorithm's record holds it.
+#[derive(Debug, Clone)]
+pub struct RecordField {
+    pub id: String,
+    pub ty: SceType,
+    /// The schema's `sce:max-size` on the field: the bound, in UTF-8 bytes,
+    /// of a `string` field (SCE_FORGE.md §4.12). `None` when the schema
+    /// declares none, which a `string` field of a record cannot lack.
+    pub max_size: Option<u32>,
+}
+
+impl RecordImport {
+    /// The field named `id`.
+    pub fn field(&self, id: &str) -> Option<&RecordField> {
+        self.fields.iter().find(|f| f.id == id)
+    }
+
+    /// Whether any field is a `string`, which makes the record text-bearing:
+    /// not plain data, so a backend that holds it by borrow or clone instead
+    /// of by copy asks this.
+    pub fn holds_text(&self) -> bool {
+        self.fields.iter().any(|f| matches!(f.ty, SceType::String))
+    }
 }
 
 /// One parameter or the return of an imported algorithm's signature.
@@ -2240,14 +2265,32 @@ fn render_event_schema(
             let resolved = l.type_name(&f.sce_type);
             let go_field_name = event_schema_field_ident(&f.id, crate::generator::Language::Go);
             let rs_field_name = event_schema_field_ident(&f.id, crate::generator::Language::Rust);
+            // A `string` field the schema bounds is held in a buffer of that
+            // many UTF-8 bytes where the language's own string cannot be one
+            // (SCE_FORGE.md §4.12): Rust the runtime's bounded text, which is
+            // fixed-capacity on the no-alloc profile; C11 the bounded buffer a
+            // `sce-static` statechart holds the same text in. A string with no
+            // bound stays the language's own, and no record can name it.
+            let text_bound = match (&f.sce_type, f.max_size) {
+                (SceType::String, Some(bound)) => Some(bound),
+                _ => None,
+            };
+            let rs_type = match text_bound {
+                Some(bound) => format!("::sce_portable_bytes::SceString<{bound}>").into(),
+                None => resolved.clone(),
+            };
+            let c_type = match text_bound {
+                Some(bound) => crate::forge::static_lowering::c_string_storage_type(bound).into(),
+                None => resolved.clone(),
+            };
             serde_json::json!({
                 "id": f.id,
                 "cpp_type": resolved,
-                "rs_type": resolved,
+                "rs_type": rs_type,
                 "kt_type": resolved,
                 "go_type": resolved,
                 "py_type": resolved,
-                "c_type": resolved,
+                "c_type": c_type,
                 "go_field_name": go_field_name,
                 "rs_field_name": rs_field_name,
             })
@@ -2313,6 +2356,21 @@ fn render_event_schema(
     ctx.insert("payload_struct_name".into(), payload_struct_name.into());
     ctx.insert("event_name".into(), m.event_name.clone().into());
     ctx.insert("fields".into(), serde_json::json!(fields));
+    // The declaration of each bounded buffer the C11 struct holds a text in,
+    // once per bound, under the guard every header that declares it shares.
+    let text_bounds: std::collections::BTreeSet<u32> = m
+        .fields
+        .iter()
+        .filter_map(|f| match (&f.sce_type, f.max_size) {
+            (SceType::String, Some(bound)) => Some(bound),
+            _ => None,
+        })
+        .collect();
+    let c_text_defs: Vec<String> = text_bounds
+        .iter()
+        .map(|&bound| crate::forge::static_lowering::c_string_storage_def(bound))
+        .collect();
+    ctx.insert("c_text_defs".into(), serde_json::json!(c_text_defs));
     ctx.insert("enum_includes".into(), serde_json::json!(enum_includes));
     ctx.insert("enum_use_paths".into(), serde_json::json!(enum_use_paths));
     ctx.insert(
@@ -24928,9 +24986,10 @@ pub(crate) fn order_record_fields<'f>(
 
 /// The record type `record:<alias>` names, judged for what v1 can carry
 /// (SCE_FORGE.md §4.12): an imported event-schema whose every field is a
-/// fixed-width number, a `bool` or an enum. A `string` or `bytes` field has a
-/// length of its own, which the C11 struct does not carry and the Rust one
-/// holds in an allocation, so such a schema is refused as a record type.
+/// fixed-width number, a `bool`, an enum, or a `string` the schema bounds with
+/// `sce:max-size`. A `string` field without a bound has no size a bounded
+/// buffer could be declared at, and a `bytes` field has no operation a body
+/// can apply to it, so a schema with either is refused as a record type.
 /// Refused at `spelling`, the `type` attribute that names it.
 fn resolve_record<'i>(
     imports: &'i [ImportContext],
@@ -24966,16 +25025,229 @@ fn resolve_record<'i>(
              carries no payload and no record type is generated for it"
         )));
     }
-    if let Some((id, ty)) = record.fields.iter().find(|(_, ty)| {
-        !(AlgorithmValueType::list_elem_admitted(ty) || matches!(ty, SceType::Enum(_)))
+    if let Some(field) = record.fields.iter().find(|f| {
+        !(AlgorithmValueType::list_elem_admitted(&f.ty)
+            || matches!(f.ty, SceType::Enum(_) | SceType::String))
     }) {
         return Err(refuse(format!(
-            "a schema of fixed-width fields — `{alias}` declares `{id}` as {}, and a string or \
-             bytes field is not carried by a record in v1",
-            ty.as_attr()
+            "a schema of fixed-width and bounded text fields — `{alias}` declares `{}` as {}, \
+             and a bytes field is not carried by a record in v1",
+            field.id,
+            field.ty.as_attr()
+        )));
+    }
+    if let Some(field) = record
+        .fields
+        .iter()
+        .find(|f| matches!(f.ty, SceType::String) && f.max_size.is_none())
+    {
+        return Err(refuse(format!(
+            "a string field with a bound — `{alias}` declares `{id}` as string without \
+             `sce:max-size`, and a record holds its text in a buffer of that many UTF-8 bytes",
+            id = field.id
         )));
     }
     Ok(record)
+}
+
+/// The text of a record's string field, read as the string a comparison takes
+/// (SCE_FORGE.md §4.12): `member` is the field as the backend spells it on the
+/// record. Rust holds it in the runtime's bounded text and reads it as a
+/// `&str`; C11 holds it in the bounded buffer of
+/// [`crate::forge::static_lowering::c_string_storage_type`] and reads its
+/// `data`; every other backend's field is the language's own string.
+fn record_text_operand(lang: crate::generator::Language, member: &str) -> String {
+    use crate::generator::Language;
+    match lang {
+        Language::Rust => format!("{member}.as_str()"),
+        Language::C11 => format!("{member}.data"),
+        Language::Cpp | Language::Go | Language::Python | Language::Kotlin => member.to_string(),
+    }
+}
+
+/// A record `local` handed on as a value the receiver may keep — an argument
+/// to another algorithm, an element appended to a list, a returned borrow.
+/// A Rust record that holds text is not `Copy`, and the body reads the record
+/// again after it is passed, so what is handed on is a clone; every other
+/// backend copies a record by assignment or holds it as an immutable value.
+fn owned_record(lang: crate::generator::Language, local: &str, holds_text: bool) -> String {
+    if matches!(lang, crate::generator::Language::Rust) && holds_text {
+        format!("{local}.clone()")
+    } else {
+        local.to_string()
+    }
+}
+
+/// What the value written to a record's `string` field is, once the validator
+/// has read it ([`judge_text_write`]).
+pub(crate) enum TextSource<'r> {
+    /// A string literal, as the author wrote it between its quotes.
+    Literal,
+    /// The string field of the record named `record`.
+    Field {
+        record: String,
+        field: &'r RecordField,
+    },
+}
+
+/// Why a value cannot be written to a record's `string` field.
+pub(crate) enum TextRefusal {
+    /// The expression does not parse.
+    Unreadable(crate::forge::expr::Refusal),
+    /// It is neither a string literal nor the string field of a record.
+    Shape(&'static str),
+    /// Its bound is larger than the field's: `held` bytes where the field fits
+    /// fewer.
+    TooLong { held: u32, what: String },
+}
+
+/// Judge the value written to the `string` field `dest` of a record
+/// (SCE_FORGE.md §4.12). v1 writes a record's text from two things only — a
+/// string literal and the string field of another record — because each has
+/// a bound the validator can read, and a copy into a field with a smaller
+/// bound is refused where the write is, so no backend and no engine holds a
+/// text past its field's bound:
+///
+/// - a literal counts the bytes between its quotes, before an escape is read,
+///   which is never fewer than the string it spells;
+/// - a field's bound is the `sce:max-size` its own schema declares.
+///
+/// `record_of` answers the schema a record name is typed by: every record
+/// parameter, local and foreach item of the body.
+pub(crate) fn judge_text_write<'r>(
+    rhs: &str,
+    dest: &RecordField,
+    record_of: &dyn Fn(&str) -> Option<&'r RecordImport>,
+) -> Result<TextSource<'r>, TextRefusal> {
+    let bound = dest
+        .max_size
+        .expect("resolve_record refuses a string field with no bound");
+    let ast = expr::parse_to_ast(rhs).map_err(TextRefusal::Unreadable)?;
+    match &ast.kind {
+        expr::ExprKind::StringLit { value, .. } => {
+            if value.len() > bound as usize {
+                return Err(TextRefusal::TooLong {
+                    held: u32::try_from(value.len()).unwrap_or(u32::MAX),
+                    what: "a string literal".to_string(),
+                });
+            }
+            Ok(TextSource::Literal)
+        }
+        expr::ExprKind::Member { .. } => {
+            let (record, field) = expr::dotted_path(&ast)
+                .and_then(|path| {
+                    let (record, field) = path.split_once('.')?;
+                    let field = record_of(record)?.field(field)?;
+                    matches!(field.ty, SceType::String).then(|| (record.to_string(), field))
+                })
+                .ok_or(TextRefusal::Shape(
+                    "a value that is no text field of a record",
+                ))?;
+            let held = field
+                .max_size
+                .expect("resolve_record refuses a string field with no bound");
+            if held > bound {
+                return Err(TextRefusal::TooLong {
+                    held,
+                    what: format!("the string field `{}`", field.id),
+                });
+            }
+            Ok(TextSource::Field { record, field })
+        }
+        _ => Err(TextRefusal::Shape("an expression")),
+    }
+}
+
+/// [`judge_text_write`], placed at the attribute that carries the value, and
+/// spelled for the backend: the text in the type the field holds it in. Rust
+/// the runtime's bounded text, built from a literal by a macro that compares
+/// the two lengths at build time and from a field by a copy whose widening is
+/// a build error; C11 the bounded buffer of the field's bound, filled by the
+/// bound's own helper; every other backend the language's string.
+fn lower_text_write(
+    rhs: &str,
+    spelling: Option<&crate::attribute_spelling::AttributeSpelling>,
+    dest: &RecordField,
+    ctx: &AlgorithmLowerCtx<'_>,
+) -> Result<String, ForgeError> {
+    use crate::forge::error::ExprError;
+    use crate::forge::types::InferredType;
+    use crate::generator::Language;
+    let lang = ctx.lang;
+    let site = ExpressionSite::new(rhs, spelling);
+    let bound = dest
+        .max_size
+        .expect("resolve_record refuses a string field with no bound");
+    let record_of = |name: &str| {
+        let alias = ctx.records.get(name)?;
+        resolve_record(ctx.imports, alias, None, "<sce:set>").ok()
+    };
+    let source = judge_text_write(rhs, dest, &record_of).map_err(|refusal| match refusal {
+        TextRefusal::Unreadable(refusal) => site.place(refusal),
+        TextRefusal::Shape(what) => {
+            let at = site.locate(Some(0..rhs.trim().len()));
+            let refusal: ForgeError = ExprError::UnsupportedConstruct {
+                construct: format!(
+                    "{what} written to the string field `{}` (v1 writes a record's text from a \
+                     string literal or from the string field of a record)",
+                    dest.id
+                ),
+                observed: at.observed(),
+            }
+            .into();
+            at.place(refusal)
+        }
+        TextRefusal::TooLong { held, what } => {
+            let at = site.locate(Some(0..rhs.trim().len()));
+            let refusal: ForgeError = ExprError::TypeMismatch {
+                expected: format!(
+                    "a string of at most {bound} UTF-8 bytes (the bound of `{}`)",
+                    dest.id
+                ),
+                got: format!("{what} of up to {held} bytes"),
+                observed: at.observed(),
+            }
+            .into();
+            at.place(refusal)
+        }
+    })?;
+    Ok(match source {
+        TextSource::Literal => {
+            let literal = expr::transpile_typed(
+                rhs,
+                ctx.l.expr_target(),
+                ctx.type_ctx,
+                ctx.renames,
+                InferredType::Str,
+            )
+            .map_err(|refusal| site.place(refusal))?;
+            match lang {
+                Language::Rust => format!("::sce_portable_bytes::sce_text!({bound}, {literal})"),
+                Language::C11 => format!(
+                    "{}({literal})",
+                    crate::forge::static_lowering::c_string_storage_of(bound)
+                ),
+                Language::Cpp | Language::Go | Language::Python | Language::Kotlin => literal,
+            }
+        }
+        TextSource::Field { record, field } => {
+            let member = format!(
+                "{}.{}",
+                ctx.l.local_id(&record),
+                event_schema_field_ident(&field.id, lang)
+            );
+            match lang {
+                Language::Rust => {
+                    format!("::sce_portable_bytes::SceString::<{bound}>::widened(&{member})")
+                }
+                Language::C11 => format!(
+                    "{}({member}.data)",
+                    crate::forge::static_lowering::c_string_storage_of(bound)
+                ),
+                Language::Cpp | Language::Go | Language::Python | Language::Kotlin => member,
+            }
+        }
+    })
 }
 
 /// Every record local of `body` — `(name, alias, type spelling)` — nested
@@ -25467,6 +25739,7 @@ struct AlgorithmBodyCfg<'a> {
     append_buffers: &'a std::collections::HashMap<String, AppendBufferDecl>,
     c11_result_type: Option<&'a str>,
     records: &'a std::collections::HashMap<String, String>,
+    borrowed_records: &'a std::collections::HashSet<String>,
     channel: ReturnChannel<'a>,
 }
 
@@ -25506,6 +25779,7 @@ fn lower_algorithm_body(
         append_buffers: cfg.append_buffers,
         c11_result_type: cfg.c11_result_type,
         records: cfg.records,
+        borrowed_records: cfg.borrowed_records,
         channel: cfg.channel,
     };
     for s in stmts {
@@ -25596,6 +25870,9 @@ struct AlgorithmLowerCtx<'a> {
     /// alias that types it — what a member assignment, a record local, a
     /// record return and a record appended to a list are judged against.
     records: &'a std::collections::HashMap<String, String>,
+    /// The foreach items among [`Self::records`]: records the body reads
+    /// through a borrow of the caller's element ([`AlgorithmTypes::borrowed_records`]).
+    borrowed_records: &'a std::collections::HashSet<String>,
     /// How the body returns its value, and a failure in its place when the
     /// algorithm declares `may-fail` (SCE_FORGE.md §3.4.1).
     channel: ReturnChannel<'a>,
@@ -25666,6 +25943,7 @@ fn lower_algorithm_stmt(
         append_buffers,
         c11_result_type,
         records,
+        borrowed_records,
         channel,
     } = ctx;
     match s {
@@ -25844,7 +26122,7 @@ fn lower_algorithm_stmt(
         } => {
             let element = format!("<sce:var name=\"{name}\">");
             let record = resolve_record(imports, alias, type_spelling.as_ref(), &element)?;
-            let declared: Vec<&str> = record.fields.iter().map(|(id, _)| id.as_str()).collect();
+            let declared: Vec<&str> = record.fields.iter().map(|f| f.id.as_str()).collect();
             let ordered = order_record_fields(
                 fields,
                 &declared,
@@ -25855,17 +26133,21 @@ fn lower_algorithm_stmt(
                 name_spelling.as_ref(),
             )?;
             let mut inits: Vec<(String, String)> = Vec::new();
-            for ((id, ty), f) in record.fields.iter().zip(ordered) {
+            for (field, f) in record.fields.iter().zip(ordered) {
                 let site = ExpressionSite::new(&f.expr, f.expr_spelling.as_ref());
-                let value = expr::transpile_into(
-                    &f.expr,
-                    l.expr_target(),
-                    type_ctx,
-                    renames,
-                    InferredType::from_sce_type(ty),
-                )
-                .map_err(|refusal| site.place(refusal))?;
-                inits.push((event_schema_field_ident(id, lang), value));
+                let value = if matches!(field.ty, SceType::String) {
+                    lower_text_write(&f.expr, f.expr_spelling.as_ref(), field, ctx)?
+                } else {
+                    expr::transpile_into(
+                        &f.expr,
+                        l.expr_target(),
+                        type_ctx,
+                        renames,
+                        InferredType::from_sce_type(&field.ty),
+                    )
+                    .map_err(|refusal| site.place(refusal))?
+                };
+                inits.push((event_schema_field_ident(&field.id, lang), value));
             }
             let local = l.local_id(name);
             let ty = &record.qualified_type;
@@ -25975,6 +26257,30 @@ fn lower_algorithm_stmt(
                 }
                 .into();
                 return Err(at.place(refusal));
+            }
+            // A record's string field is written from a text the validator can
+            // bound (`lower_text_write`), into the buffer its backend holds the
+            // field in, not through an expression of the language's own string.
+            let text_target = trimmed_target.split_once('.').and_then(|(root, field)| {
+                let alias = records.get(root.trim())?;
+                let record = resolve_record(imports, alias, None, "<sce:assign>").ok()?;
+                let field = record.field(field.trim())?;
+                matches!(field.ty, SceType::String).then(|| (root.trim(), field))
+            });
+            if let Some((root, field)) = text_target {
+                let value = lower_text_write(rhs, expr_spelling.as_ref(), field, ctx)?;
+                let local = l.local_id(root);
+                let member = event_schema_field_ident(&field.id, lang);
+                out.push_str(&match lang {
+                    Language::Kotlin => {
+                        format!("{pad}{local} = {local}.copy({member} = {value})\n")
+                    }
+                    Language::Python => format!("{pad}{local}.{member} = {value}\n"),
+                    Language::Rust | Language::Cpp | Language::C11 | Language::Go => {
+                        format!("{pad}{local}.{member} = {value};\n")
+                    }
+                });
+                return Ok(());
             }
             if matches!(lang, Language::Kotlin) {
                 if let Some((root, field)) = trimmed_target.split_once('.') {
@@ -26096,7 +26402,11 @@ fn lower_algorithm_stmt(
                                 .into();
                             return Err(at.place(refusal));
                         }
-                        l.local_id(name)
+                        // The list keeps its own copy: a Rust record that holds
+                        // text is cloned in, as the body may read it again.
+                        let holds_text =
+                            resolve_record(imports, alias, None, "<sce:append>")?.holds_text();
+                        owned_record(lang, &l.local_id(name), holds_text)
                     }
                 };
                 out.push_str(
@@ -26548,6 +26858,9 @@ fn lower_algorithm_stmt(
                 // its schema declares, which the item was registered with
                 // (`AlgorithmTypes::collect`).
                 let source_ty = type_ctx.lookup_var(source);
+                // A Rust record that holds text is not `Copy`, so its loop
+                // borrows each element instead of copying it out.
+                let mut item_is_borrowed = false;
                 let item_name: Option<String> = match source_ty {
                     InferredType::Bytes => Some(l.type_name(&SceType::Uint8).into_owned()),
                     InferredType::List(crate::forge::types::ListElem::Record) => {
@@ -26558,11 +26871,9 @@ fn lower_algorithm_stmt(
                             ))
                         })?;
                         let element = format!("<sce:foreach item=\"{item}\" in=\"{source}\">");
-                        Some(
-                            resolve_record(imports, alias, None, &element)?
-                                .qualified_type
-                                .clone(),
-                        )
+                        let record = resolve_record(imports, alias, None, &element)?;
+                        item_is_borrowed = record.holds_text();
+                        Some(record.qualified_type.clone())
                     }
                     InferredType::List(elem) => {
                         Some(l.type_name(&sce_type_of_list_elem(elem)).into_owned())
@@ -26605,6 +26916,9 @@ fn lower_algorithm_stmt(
                 .map_err(|refusal| source_site.place(refusal))?;
                 let it = l.local_id(item);
                 let header = match lang {
+                    Language::Rust if item_is_borrowed => {
+                        format!("{pad}for {it} in {src_lowered}.iter() {{\n")
+                    }
                     Language::Rust => format!("{pad}for &{it} in {src_lowered}.iter() {{\n"),
                     Language::Cpp => format!("{pad}for ({item_name} {it} : {src_lowered}) {{\n"),
                     // The index is named for the item, so a nested foreach's
@@ -26701,7 +27015,17 @@ fn lower_algorithm_stmt(
                             .into();
                         return Err(at.place(refusal));
                     }
-                    channel.value(pad, &l.local_id(name), false)
+                    // A foreach item is a borrow of the caller's element, so a
+                    // Rust record that holds text is cloned out of it; a
+                    // parameter or a local is the body's own and moves.
+                    let holds_text =
+                        resolve_record(imports, alias, None, "<sce:return>")?.holds_text();
+                    let returned = if borrowed_records.contains(name) {
+                        owned_record(lang, &l.local_id(name), holds_text)
+                    } else {
+                        l.local_id(name)
+                    };
+                    channel.value(pad, &returned, false)
                 }
                 // A `bytes` return (byte-buffer-build, §4.12): the returned
                 // value is the bytes buffer local, by name — the buffer is the
@@ -28093,8 +28417,17 @@ pub(crate) struct AlgorithmTypes<'a> {
     /// Every `record:<alias>` parameter and local — its name, the alias, and
     /// the event-schema import that types it (SCE_FORGE.md §4.12).
     pub(crate) records: Vec<(&'a str, &'a str, &'a RecordImport)>,
+    /// The foreach items over a list of records: a record the body reads
+    /// through a borrow of the caller's element and does not own, which a
+    /// backend that holds a text-bearing record by clone rather than by copy
+    /// must clone before it stores or returns one.
+    pub(crate) borrowed_records: std::collections::HashSet<String>,
     /// `"<name>.<field>"` for a record's and a collection element's fields.
     members: Vec<(String, SceType)>,
+    /// `"<name>.<field>"` for each `string` field of a record: the members
+    /// whose text lives in a buffer of the schema's bound
+    /// ([`crate::forge::types::TypeCtx::record_text`]).
+    text_members: Vec<String>,
     /// A collection element's `"<item>.<field>"` and its length sibling.
     member_lens: Vec<(String, String)>,
 }
@@ -28237,6 +28570,10 @@ impl<'a> AlgorithmTypes<'a> {
         // local is a closed record whose members are the schema's fields,
         // typed as the schema types them — registered the way a collection
         // element's are.
+        let borrowed_records: std::collections::HashSet<String> = record_list_items
+            .iter()
+            .map(|(name, _, _)| (*name).to_string())
+            .collect();
         let bindings = m
             .signature
             .params
@@ -28265,10 +28602,15 @@ impl<'a> AlgorithmTypes<'a> {
             )
             .collect::<Vec<_>>();
         let mut records = Vec::new();
+        let mut text_members = Vec::new();
         for (name, alias, spelling, element) in &bindings {
             let record = resolve_record(imports, alias, *spelling, element)?;
-            for (id, ty) in &record.fields {
-                members.push((format!("{name}.{id}"), ty.clone()));
+            for field in &record.fields {
+                let path = format!("{name}.{}", field.id);
+                if matches!(field.ty, SceType::String) {
+                    text_members.push(path.clone());
+                }
+                members.push((path, field.ty.clone()));
             }
             records.push((*name, *alias, record));
         }
@@ -28280,7 +28622,9 @@ impl<'a> AlgorithmTypes<'a> {
             bytes_buffers,
             record_items,
             records,
+            borrowed_records,
             members,
+            text_members,
             member_lens,
         })
     }
@@ -28329,6 +28673,9 @@ impl<'a> AlgorithmTypes<'a> {
         }
         for (name, ty) in &self.members {
             type_ctx.insert_var(name.as_str(), InferredType::from_sce_type(ty));
+        }
+        for path in &self.text_members {
+            type_ctx.insert_record_text(path.as_str());
         }
         for (path, len_member) in &self.member_lens {
             type_ctx.insert_member_len_field(path.as_str(), len_member.as_str());
@@ -28503,16 +28850,28 @@ fn render_algorithm(
     let mut record_renames: Vec<(String, String)> = Vec::new();
     for &(name, _, record) in &types.records {
         let local = l.local_id(name);
-        for (id, _) in &record.fields {
+        for field in &record.fields {
+            let member = format!("{local}.{}", event_schema_field_ident(&field.id, lang));
             record_renames.push((
-                format!("{name}.{id}"),
-                format!("{local}.{}", event_schema_field_ident(id, lang)),
+                format!("{name}.{}", field.id),
+                match field.ty {
+                    // The text a comparison reads, in the type the backend
+                    // compares a string as.
+                    SceType::String => record_text_operand(lang, &member),
+                    _ => member,
+                },
             ));
         }
         // The record as a whole value — an argument to an algorithm whose
-        // parameter is this record — is its local's identifier. (A member
-        // access looks its whole path up first, so this never shadows one.)
-        record_renames.push((name.to_string(), local));
+        // parameter is this record — is its local's identifier, or a copy of
+        // it where the backend holds a text-bearing record by clone: the call
+        // takes its argument by value, and the body reads the record again.
+        // (A member access looks its whole path up first, so this never
+        // shadows one.)
+        record_renames.push((
+            name.to_string(),
+            owned_record(lang, &local, record.holds_text()),
+        ));
     }
     let type_ctx = types.type_ctx(m, imports);
 
@@ -28835,6 +29194,7 @@ fn render_algorithm(
             append_buffers: &append_buffers,
             c11_result_type: c11_result_type.as_deref(),
             records: &records,
+            borrowed_records: &types.borrowed_records,
             channel,
         },
         // A `may-fail` Kotlin body sits inside the `try` that turns a failure
@@ -28886,6 +29246,15 @@ fn render_algorithm(
     ctx.insert("body".into(), body.into());
     ctx.insert("may_fail".into(), may_fail.into());
     ctx.insert("needs_span".into(), needs_span.into());
+    // C11 compares a record's text with `strcmp`.
+    ctx.insert(
+        "needs_string_h".into(),
+        types
+            .records
+            .iter()
+            .any(|(_, _, record)| record.holds_text())
+            .into(),
+    );
     // C11 declares a read-only `list<T>` parameter as the runtime's view for
     // its element (`sce/forge/list_view.h`); a list of records' view is
     // declared beside the algorithm, over the `size_t` that header brings.

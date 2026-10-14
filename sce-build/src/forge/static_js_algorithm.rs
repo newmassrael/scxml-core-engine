@@ -55,7 +55,10 @@
 use crate::forge::const_fold::{self, ConstSite, ConstValue};
 use crate::forge::error::GenerateError;
 use crate::forge::expr::{self, ExprTarget};
-use crate::forge::generator::{AlgorithmTypes, ImportContext, RecordImport};
+use crate::forge::generator::{
+    judge_text_write, AlgorithmTypes, ImportContext, RecordField, RecordImport, TextRefusal,
+    TextSource,
+};
 use crate::forge::model::{
     AlgorithmConstType, AlgorithmModel, AlgorithmStmt, AlgorithmValueType, ForgeImport,
     ListElemType, SceType,
@@ -438,6 +441,50 @@ impl Body<'_> {
         )
     }
 
+    /// The value written to the `string` field `dest` of a record, judged as
+    /// every backend judges it ([`judge_text_write`]) and held to the field's
+    /// bound where it is written, so the Interpreter fails a text past it as
+    /// the generated backends refuse one (SCE_FORGE.md §4.12).
+    fn text_write(&self, rhs: &str, dest: &RecordField) -> Result<String, GenerateError> {
+        let bound = dest
+            .max_size
+            .expect("resolve_record refuses a string field with no bound");
+        let record_of = |name: &str| {
+            self.records
+                .get(name)
+                .and_then(|alias| self.imports.record(alias))
+        };
+        let source = judge_text_write(rhs, dest, &record_of).map_err(|refusal| match refusal {
+            TextRefusal::Unreadable(refusal) => refuse(
+                self.algorithm,
+                format!("`{}`: {}", rhs.trim(), refusal.error),
+            ),
+            TextRefusal::Shape(what) => refuse(
+                self.algorithm,
+                format!(
+                    "{what} written to the string field `{}` (v1 writes a record's text from a \
+                     string literal or from the string field of a record)",
+                    dest.id
+                ),
+            ),
+            TextRefusal::TooLong { held, what } => refuse(
+                self.algorithm,
+                format!(
+                    "{what} of up to {held} bytes written to the string field `{}`, which holds \
+                     at most {bound}",
+                    dest.id
+                ),
+            ),
+        })?;
+        let text = match source {
+            TextSource::Literal => self.slot(rhs, InferredType::Str)?,
+            TextSource::Field { record, field } => {
+                format!("{record}[{}]", quoted(&field.id))
+            }
+        };
+        Ok(format!("{RUNTIME_GLOBAL}.bounded({text}, {bound})"))
+    }
+
     fn statements(
         &self,
         stmts: &[AlgorithmStmt],
@@ -501,18 +548,20 @@ impl Body<'_> {
                 check_name(self.algorithm, name)?;
                 let record = self.record_import(alias)?;
                 let mut members = Vec::with_capacity(record.fields.len());
-                for (id, ty) in &record.fields {
-                    let Some(given) = fields.iter().find(|field| &field.name == id) else {
+                for field in &record.fields {
+                    let id = &field.id;
+                    let Some(given) = fields.iter().find(|given| &given.name == id) else {
                         return Err(refuse(
                             self.algorithm,
                             format!("the record local `{name}`, which gives no value for `{id}`"),
                         ));
                     };
-                    members.push(format!(
-                        "{}: {}",
-                        quoted(id),
-                        self.slot(&given.expr, InferredType::from_sce_type(ty))?
-                    ));
+                    let value = if matches!(field.ty, SceType::String) {
+                        self.text_write(&given.expr, field)?
+                    } else {
+                        self.slot(&given.expr, InferredType::from_sce_type(&field.ty))?
+                    };
+                    members.push(format!("{}: {value}", quoted(id)));
                 }
                 if fields.len() != record.fields.len() {
                     return Err(refuse(
@@ -545,12 +594,23 @@ impl Body<'_> {
                             format!("an assignment to the member `{target}`"),
                         ));
                     }
-                    let slot =
-                        expr::infer_expr_type(target, self.ctx).unwrap_or(InferredType::Unknown);
+                    let text_field = self
+                        .records
+                        .get(root)
+                        .and_then(|alias| self.imports.record(alias))
+                        .and_then(|record| record.field(field))
+                        .filter(|f| matches!(f.ty, SceType::String));
+                    let value = match text_field {
+                        Some(text_field) => self.text_write(expr, text_field)?,
+                        None => {
+                            let slot = expr::infer_expr_type(target, self.ctx)
+                                .unwrap_or(InferredType::Unknown);
+                            self.slot(expr, slot)?
+                        }
+                    };
                     return Ok(format!(
-                        "{root} = {RUNTIME_GLOBAL}.set({root}, {}, {});",
+                        "{root} = {RUNTIME_GLOBAL}.set({root}, {}, {value});",
                         quoted(field),
-                        self.slot(expr, slot)?
                     ));
                 }
                 if target.contains('[') {

@@ -423,7 +423,8 @@ const SCHEMA_HLC: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 </scxml>
 "#;
 
-/// An event-schema with a `string` field, which a record cannot carry in v1.
+/// An event-schema with a `string` field that declares no `sce:max-size`,
+/// which a record cannot carry: its text has no buffer size to be held in.
 const SCHEMA_NAMED: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" sce:kind="event-schema" name="probe_schema_named" sce:event-name="named.thing">
   <datamodel>
@@ -432,8 +433,35 @@ const SCHEMA_NAMED: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 </scxml>
 "#;
 
-/// A record parameter typed by a schema with a `string` field — refused at
-/// the `type` that names it (SCE_FORGE.md §4.12).
+/// An event-schema with a `bytes` field, which no record carries.
+const SCHEMA_BLOB: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" sce:kind="event-schema" name="probe_schema_blob" sce:event-name="blob.thing">
+  <datamodel>
+    <data id="blob" sce:type="bytes" sce:max-size="4" sce:direction="in"/>
+  </datamodel>
+</scxml>
+"#;
+
+/// Event-schemas whose one `string` field is bounded, at eight and at four
+/// UTF-8 bytes: the two ends of a copy the validator judges.
+const SCHEMA_TEXT: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" sce:kind="event-schema" name="probe_schema_text" sce:event-name="text.thing">
+  <datamodel>
+    <data id="label" sce:type="string" sce:max-size="8" sce:direction="in"/>
+  </datamodel>
+</scxml>
+"#;
+
+const SCHEMA_SHORT: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" sce:kind="event-schema" name="probe_schema_short" sce:event-name="short.thing">
+  <datamodel>
+    <data id="label" sce:type="string" sce:max-size="4" sce:direction="in"/>
+  </datamodel>
+</scxml>
+"#;
+
+/// A record parameter typed by a schema whose `string` field has no bound —
+/// refused at the `type` that names it (SCE_FORGE.md §4.12).
 const RECORD_STRING_FIELD: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_record_string_field" version="1.0">
   <sce:import kind="event-schema" src="probe_schema_named.scxml" as="Named"/>
@@ -444,6 +472,99 @@ const RECORD_STRING_FIELD: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
   </sce:signature>
   <sce:body>
     <sce:return expr="0"/>
+  </sce:body>
+</scxml>
+"#;
+
+/// A record parameter typed by a schema with a `bytes` field, which has no
+/// operation a body can apply to it — refused at the `type` that names it.
+const RECORD_BYTES_FIELD: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_record_bytes_field" version="1.0">
+  <sce:import kind="event-schema" src="probe_schema_blob.scxml" as="Blob"/>
+  <sce:signature>
+    <sce:param name="b"
+               type="record:Blob"/>
+    <sce:return type="uint8"/>
+  </sce:signature>
+  <sce:body>
+    <sce:return expr="0"/>
+  </sce:body>
+</scxml>
+"#;
+
+/// A record's text field read as a value — here the initial value of a string
+/// local. v1 reads it only as an operand of `===` / `!==` and copies it whole
+/// into another record's string field; refused at the field.
+const RECORD_TEXT_AS_VALUE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_record_text_as_value" version="1.0">
+  <sce:import kind="event-schema" src="probe_schema_text.scxml" as="Text"/>
+  <sce:signature>
+    <sce:param name="t" type="record:Text"/>
+    <sce:return type="uint8"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="copy" type="string"
+             init="t.label"/>
+    <sce:return expr="0"/>
+  </sce:body>
+</scxml>
+"#;
+
+/// A text of eight bytes copied into a field that holds four — refused at the
+/// value, never cut.
+const RECORD_TEXT_TOO_LONG: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_record_text_too_long" version="1.0">
+  <sce:import kind="event-schema" src="probe_schema_text.scxml" as="Text"/>
+  <sce:import kind="event-schema" src="probe_schema_short.scxml" as="Short"/>
+  <sce:signature>
+    <sce:param name="t" type="record:Text"/>
+    <sce:return type="record:Short"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="s" type="record:Short">
+      <sce:set name="label"
+               expr="t.label"/>
+    </sce:var>
+    <sce:return expr="s"/>
+  </sce:body>
+</scxml>
+"#;
+
+/// A literal of five bytes written to a field that holds four.
+const RECORD_TEXT_LITERAL_TOO_LONG: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_record_text_literal_too_long" version="1.0">
+  <sce:import kind="event-schema" src="probe_schema_short.scxml" as="Short"/>
+  <sce:signature>
+    <sce:param name="n" type="uint8"/>
+    <sce:return type="record:Short"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="s" type="record:Short">
+      <sce:set name="label"
+               expr="'abcde'"/>
+    </sce:var>
+    <sce:return expr="s"/>
+  </sce:body>
+</scxml>
+"#;
+
+/// A text field written from an expression rather than a literal or another
+/// record's text field — v1 has no concatenation, so the result has no bound
+/// the validator can read.
+const RECORD_TEXT_FROM_EXPRESSION: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_record_text_from_expression" version="1.0">
+  <sce:import kind="event-schema" src="probe_schema_short.scxml" as="Short"/>
+  <sce:signature>
+    <sce:param name="n" type="uint8"/>
+    <sce:return type="record:Short"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="s" type="record:Short">
+      <sce:set name="label" expr="'a'"/>
+    </sce:var>
+    <sce:assign target="s.label"
+                expr="'a' + 'b'"/>
+    <sce:return expr="s"/>
   </sce:body>
 </scxml>
 "#;
@@ -660,10 +781,47 @@ const RECORD_CALL_STD_SCHEMA: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 </scxml>
 "#;
 
+/// A record with a bounded text field, built from a literal, from another
+/// record's text of a smaller or equal bound, updated by a literal, compared
+/// both ways, appended to a list and returned — accepted on every backend.
+const RECORD_TEXT_USED: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_record_text_used" version="1.0">
+  <sce:import kind="event-schema" src="probe_schema_text.scxml" as="Text"/>
+  <sce:import kind="event-schema" src="probe_schema_short.scxml" as="Short"/>
+  <sce:signature>
+    <sce:param name="t" type="record:Text"/>
+    <sce:param name="s" type="record:Short"/>
+    <sce:param name="all" type="list&lt;record:Text&gt;"/>
+    <sce:return type="list&lt;record:Text&gt;" returns-max-size="4"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="out" type="list&lt;record:Text&gt;" capacity="4"/>
+    <sce:var name="made" type="record:Text">
+      <sce:set name="label" expr="s.label"/>
+    </sce:var>
+    <sce:if cond="made.label === s.label &amp;&amp; made.label !== 'none'">
+      <sce:assign target="made.label" expr="t.label"/>
+    </sce:if>
+    <sce:if cond="t.label !== s.label">
+      <sce:assign target="made.label" expr="'none'"/>
+    </sce:if>
+    <sce:append target="out" expr="made"/>
+    <sce:foreach item="e" in="all">
+      <sce:append target="out" expr="e"/>
+    </sce:foreach>
+    <sce:return expr="out"/>
+  </sce:body>
+</scxml>
+"#;
+
 const SUPPORT: &[(&str, &str)] = &[
+    ("probe_record_text_used.scxml", RECORD_TEXT_USED),
     ("probe_list_callee.scxml", LIST_CALLEE),
     ("probe_schema_hlc.scxml", SCHEMA_HLC),
     ("probe_schema_named.scxml", SCHEMA_NAMED),
+    ("probe_schema_blob.scxml", SCHEMA_BLOB),
+    ("probe_schema_text.scxml", SCHEMA_TEXT),
+    ("probe_schema_short.scxml", SCHEMA_SHORT),
     ("probe_schema_twin.scxml", SCHEMA_TWIN),
     ("probe_record_callee.scxml", RECORD_CALLEE),
     (
@@ -851,6 +1009,46 @@ const CASES: &[Case] = &[
         actual: Some("record:Named"),
     },
     Case {
+        file: "probe_record_bytes_field.scxml",
+        document: RECORD_BYTES_FIELD,
+        code: "validation/attribute-rule-violated",
+        line: 6,
+        col: 22,
+        actual: Some("record:Blob"),
+    },
+    Case {
+        file: "probe_record_text_as_value.scxml",
+        document: RECORD_TEXT_AS_VALUE,
+        code: "expression/unsupported-construct",
+        line: 10,
+        col: 20,
+        actual: Some("t.label"),
+    },
+    Case {
+        file: "probe_record_text_too_long.scxml",
+        document: RECORD_TEXT_TOO_LONG,
+        code: "expression/type-mismatch",
+        line: 12,
+        col: 22,
+        actual: Some("t.label"),
+    },
+    Case {
+        file: "probe_record_text_literal_too_long.scxml",
+        document: RECORD_TEXT_LITERAL_TOO_LONG,
+        code: "expression/type-mismatch",
+        line: 11,
+        col: 22,
+        actual: Some("'abcde'"),
+    },
+    Case {
+        file: "probe_record_text_from_expression.scxml",
+        document: RECORD_TEXT_FROM_EXPRESSION,
+        code: "expression/unsupported-construct",
+        line: 13,
+        col: 23,
+        actual: Some("'a' + 'b'"),
+    },
+    Case {
         file: "probe_record_missing_field.scxml",
         document: RECORD_MISSING_FIELD,
         code: "validation/attribute-rule-violated",
@@ -985,6 +1183,34 @@ fn a_record_algorithm_is_callable_from_an_algorithm_of_the_same_schema() {
                 String::from_utf8_lossy(&output.stderr)
             );
         }
+    }
+}
+
+/// A record whose `string` field the schema bounds is accepted on every
+/// backend, and a copy into a field of the same or a larger bound is the only
+/// copy that is (SCE_FORGE.md §4.12).
+#[test]
+fn a_record_with_bounded_text_is_accepted_on_every_backend() {
+    let dir = fixture();
+    for language in ["rust", "cpp", "c11", "go", "python", "kotlin"] {
+        let output = Command::new(codegen_bin())
+            .current_dir(dir.path())
+            .args([
+                "--error-format=json",
+                "check",
+                "probe_record_text_used.scxml",
+                "-l",
+                language,
+                "--go-module-prefix",
+                "example.com/probe",
+            ])
+            .output()
+            .expect("run sce-codegen");
+        assert!(
+            output.status.success(),
+            "{language}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 }
 

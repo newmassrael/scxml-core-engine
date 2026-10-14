@@ -4792,7 +4792,11 @@ fn validate_and_enrich_imports(
                     fields: sm
                         .fields
                         .iter()
-                        .map(|f| (f.id.clone(), f.sce_type.clone()))
+                        .map(|f| forge::generator::RecordField {
+                            id: f.id.clone(),
+                            ty: f.sce_type.clone(),
+                            max_size: f.max_size,
+                        })
                         .collect(),
                     id: forge::types::RecordId::intern(
                         &forge::stdlib::identity(&source.path),

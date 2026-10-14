@@ -17,6 +17,17 @@
 {% for inc in enum_includes %}
 #include "{{ inc }}"
 {% endfor %}
+{% if c_text_defs %}
+#include <stddef.h>
+
+{# A bounded `string` field is held in a buffer of its `sce:max-size`, the
+   type a `sce-static` statechart holds the same text in, declared under the
+   guard both headers share (SCE_FORGE.md section 4.12). #}
+{% for def in c_text_defs %}
+{{ def }}
+
+{% endfor %}
+{% endif %}
 
 {% if fields %}
 typedef struct {

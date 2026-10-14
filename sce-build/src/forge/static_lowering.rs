@@ -5747,13 +5747,13 @@ pub fn lower_python(
 /// The C type of a buffer that holds a `string` of at most `capacity` UTF-8 bytes:
 /// named by the bound so that two variables, or a variable and a record's field,
 /// of one bound share it ([`CTarget::string_storage`]).
-fn c_string_storage_type(capacity: u32) -> String {
+pub(crate) fn c_string_storage_type(capacity: u32) -> String {
     format!("sce_static_string_{capacity}_t")
 }
 
 /// The function that fills the buffer of [`c_string_storage_type`] from a text
 /// that fits it.
-fn c_string_storage_of(capacity: u32) -> String {
+pub(crate) fn c_string_storage_of(capacity: u32) -> String {
     format!("sce_static_string_{capacity}_of")
 }
 
@@ -5787,6 +5787,31 @@ fn c_bytes_storage_of(capacity: u32) -> String {
 /// ([`StaticTarget::unsupported`]) until its spelling is written, rather than
 /// left as an undefined name in generated code.
 pub struct CTarget {
+/// The declaration of [`c_string_storage_type`] and of its fill function,
+/// under a guard named by the bound. Every header that holds a text of that
+/// bound writes this one text: a `sce-static` machine's record or variable,
+/// and an event-schema struct an algorithm takes as a record (SCE_FORGE.md
+/// §4.12), so a program that includes both declares the type once.
+///
+/// `_of` is the buffer holding a text already held to the bound — a payload's
+/// field taken whole into a record, a copy from a field of the same or a
+/// smaller bound — written without a library call, since the header includes
+/// none beyond `<stddef.h>`.
+pub(crate) fn c_string_storage_def(capacity: u32) -> String {
+    let ty = c_string_storage_type(capacity);
+    let guard = ty.to_uppercase().trim_end_matches("_T").to_string();
+    format!(
+        "#ifndef {guard}\n#define {guard}\n\
+         /* SCE Accepted Subset §2.15: a `string` of at most {capacity} UTF-8 bytes. */\n\
+         typedef struct {{\n    char data[{capacity} + 1];\n}} {ty};\n\n\
+         static inline {ty} {of}(const char *text) {{\n    \
+         {ty} value = {{ {{ 0 }} }};\n    \
+         for (size_t i = 0; i < {capacity}u && text[i] != '\\0'; ++i) {{\n        \
+         value.data[i] = text[i];\n    }}\n    return value;\n}}\n#endif",
+        of = c_string_storage_of(capacity)
+    )
+}
+
     /// The machine's name without the suite prefix, which the payload channel's
     /// tag constants are spelled from: the channel's own types do not carry the
     /// prefix, the machine's symbols do.
@@ -6598,20 +6623,7 @@ impl StaticTarget for CTarget {
     // what an expression reads and a reader answers ([`Self::variable_ref`]).
     fn string_storage(&self, capacity: u32, init: &str) -> Option<StringStorage> {
         let ty = c_string_storage_type(capacity);
-        let guard = ty.to_uppercase().trim_end_matches("_T").to_string();
-        // `_of` is the buffer holding a text already held to the bound — a
-        // payload's field taken whole into a record — written without a library
-        // call, since the header includes none.
-        let def = format!(
-            "#ifndef {guard}\n#define {guard}\n\
-             /* SCE Accepted Subset §2.15: a `string` of at most {capacity} UTF-8 bytes. */\n\
-             typedef struct {{\n    char data[{capacity} + 1];\n}} {ty};\n\n\
-             static inline {ty} {of}(const char *text) {{\n    \
-             {ty} value = {{ {{ 0 }} }};\n    \
-             for (size_t i = 0; i < {capacity}u && text[i] != '\\0'; ++i) {{\n        \
-             value.data[i] = text[i];\n    }}\n    return value;\n}}\n#endif",
-            of = c_string_storage_of(capacity)
-        );
+        let def = c_string_storage_def(capacity);
         Some(StringStorage {
             init: format!("({ty}){{ {init} }}"),
             ty,
