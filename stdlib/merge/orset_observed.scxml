@@ -19,7 +19,7 @@
   <sce:signature>
     <sce:param name="live" type="list&lt;record:Entry&gt;"/>
     <sce:param name="element" type="uint64"/>
-    <sce:return type="list&lt;record:Entry&gt;" returns-max-size="256"/>
+    <sce:return type="list&lt;record:Entry&gt;" may-fail="true" returns-max-size="256"/>
   </sce:signature>
   <sce:body>
     <sce:var name="out" type="list&lt;record:Entry&gt;" capacity="256"/>

@@ -5,34 +5,42 @@
   person's copy and the hub the copies send to; `todo.join` says which.
 
   A to-do is a row of fields (todo_write): a title, whether it is done, a due day,
-  whether it is removed. Each field of each to-do is its own last-writer-wins
-  register, so two people who change different fields of one to-do at once both keep
-  their change, and two who change the same field leave the later one, on every copy,
-  whatever order the changes reach it in and however many times each does.
+  whether it is removed. Each field of each to-do is a multi-value register: a write
+  gives the field one more value, known by the stamp of the write (its dot), and a
+  person who writes over a field writes over the values they have SEEN, no others. So
+  two people who change the same field of one to-do at once, neither having seen the
+  other's write, both keep theirs, on every copy, whatever order the changes reach it
+  in and however many times each does; and a person who writes after seeing them
+  replaces them all. A field with one value reads as that value, and with more than one
+  says it was changed twice at once, and which values, for a person to choose from.
 
-  The numbers of the fields live in `cells`, one cell for each (to-do, field), and
-  are merged by the standard `lww_write` exactly as the cells of a sheet are. The one
-  thing a cell cannot hold is a text, so the titles are held beside the cells in
-  `texts`, and a title is written to `texts` only when its write is the one its cell
-  kept: the cell decides which write wins, and the text follows it. That is the whole
-  of what this document adds to the merge.
+  The registers are an observed-remove set of the standard `orset_*` algorithms: a
+  write is an add of the register's element with the write's dot as its tag, writing
+  over a value is a tombstone of the value's tag, and what a field holds is the adds no
+  tombstone names (orset_live). The element is `id * 16 + field`. What a set cannot
+  carry is the value itself, a number and a text, so each live add has its value in
+  `values`, beside it, taken in when the add is live and taken out when a tombstone
+  names it. That is the whole of what this document adds to the merge.
 
   The clock is moved by what a copy sees as well as by what it does, as the sheet's
   is: a change made after reading someone else's sorts after it.
 
-  `cells` and `texts` are what a run compares across copies.
+  `values` is what a run compares across copies.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="open" datamodel="sce-static" name="todo_peer">
   <sce:import kind="event-schema" src="todo_join.scxml" as="Join"/>
   <sce:import kind="event-schema" src="todo_edit.scxml" as="Edit"/>
   <sce:import kind="event-schema" src="todo_write.scxml" as="Write"/>
-  <sce:import kind="event-schema" src="todo_text.scxml" as="Text"/>
+  <sce:import kind="event-schema" src="todo_supersede.scxml" as="Supersede"/>
+  <sce:import kind="event-schema" src="todo_value.scxml" as="Value"/>
   <sce:import kind="event-schema" src="sce:std/merge/hlc_timestamp.scxml" as="Hlc"/>
-  <sce:import kind="event-schema" src="sce:std/merge/lww_cell.scxml" as="LwwCell"/>
+  <sce:import kind="event-schema" src="sce:std/merge/orset_entry.scxml" as="Entry"/>
   <sce:import kind="algorithm" src="sce:std/merge/hlc_send.scxml" as="HlcSend"/>
   <sce:import kind="algorithm" src="sce:std/merge/hlc_receive.scxml" as="HlcReceive"/>
-  <sce:import kind="algorithm" src="sce:std/merge/lww_write.scxml" as="LwwWrite"/>
+  <sce:import kind="algorithm" src="sce:std/merge/orset_union.scxml" as="OrsetUnion"/>
+  <sce:import kind="algorithm" src="sce:std/merge/orset_live.scxml" as="OrsetLive"/>
+  <sce:import kind="algorithm" src="sce:std/merge/orset_observed.scxml" as="OrsetObserved"/>
   <datamodel>
     <data id="node" sce:type="uint64" expr="0" sce:direction="out"/>
     <data id="hub" sce:type="bool" expr="false" sce:direction="out"/>
@@ -46,23 +54,30 @@
       <sce:set name="counter" expr="0"/>
       <sce:set name="nodeId" expr="0"/>
     </data>
-    <data id="cells" sce:type="list&lt;record:LwwCell&gt;" sce:capacity="256" sce:direction="out"/>
-    <data id="write" sce:type="record:LwwCell">
-      <sce:set name="row" expr="0"/>
-      <sce:set name="col" expr="0"/>
-      <sce:set name="value" expr="0"/>
+    <data id="adds" sce:type="list&lt;record:Entry&gt;" sce:capacity="256" sce:direction="out"/>
+    <data id="tombstones" sce:type="list&lt;record:Entry&gt;" sce:capacity="256" sce:direction="out"/>
+    <data id="live" sce:type="list&lt;record:Entry&gt;" sce:capacity="256"/>
+    <data id="observed" sce:type="list&lt;record:Entry&gt;" sce:capacity="256"/>
+    <data id="one" sce:type="list&lt;record:Entry&gt;" sce:capacity="256"/>
+    <data id="entry" sce:type="record:Entry">
+      <sce:set name="element" expr="0"/>
       <sce:set name="wallTime" expr="0"/>
       <sce:set name="counter" expr="0"/>
       <sce:set name="nodeId" expr="0"/>
     </data>
-    <data id="texts" sce:type="list&lt;record:Text&gt;" sce:capacity="64" sce:direction="out"/>
-    <data id="rebuilt" sce:type="list&lt;record:Text&gt;" sce:capacity="64"/>
-    <data id="held" sce:type="record:Text">
+    <data id="values" sce:type="list&lt;record:Value&gt;" sce:capacity="128" sce:direction="out"/>
+    <data id="rebuilt" sce:type="list&lt;record:Value&gt;" sce:capacity="128"/>
+    <data id="held" sce:type="record:Value">
       <sce:set name="id" expr="0"/>
       <sce:set name="field" expr="0"/>
+      <sce:set name="value" expr="0"/>
       <sce:set name="text" expr="''"/>
+      <sce:set name="wallTime" expr="0"/>
+      <sce:set name="counter" expr="0"/>
+      <sce:set name="nodeId" expr="0"/>
     </data>
-    <data id="won" sce:type="bool" expr="false"/>
+    <data id="isLive" sce:type="bool" expr="false"/>
+    <data id="present" sce:type="bool" expr="false"/>
     <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>
   </datamodel>
   <state id="open">
@@ -71,13 +86,35 @@
       <assign location="hub" expr="_event.data.hub"/>
     </transition>
 
-    <!-- A person's change: stamped, then handled as any write is, and sent to the hub. -->
+    <!-- A person's change: stamped, then handled as any write is, and sent to the hub.
+         The values the person has seen in the field are the ones it writes over: each
+         is named in a supersede, here and at the hub, before the write itself. -->
     <transition event="todo.edit" type="internal">
       <!-- The text is read first, into a place nothing else reads: a text past its bound
            is an assignment that fails and ends the block, so the change is refused
            whole, with the clock where it was and nothing sent. -->
       <assign location="held.text" expr="_event.data.text"/>
       <assign location="clock" expr="HlcSend(clock, _event.data.now, node)"/>
+      <assign location="live" expr="OrsetLive(adds, tombstones)"/>
+      <assign location="observed" expr="OrsetObserved(live, _event.data.id * 16 + _event.data.field)"/>
+      <foreach array="observed" item="o">
+        <send target="#_internal" event="todo.supersede">
+          <param name="id" expr="_event.data.id"/>
+          <param name="field" expr="_event.data.field"/>
+          <param name="wallTime" expr="o.wallTime"/>
+          <param name="counter" expr="o.counter"/>
+          <param name="nodeId" expr="o.nodeId"/>
+          <param name="by" expr="node"/>
+        </send>
+        <send target="#server" event="todo.supersede">
+          <param name="id" expr="_event.data.id"/>
+          <param name="field" expr="_event.data.field"/>
+          <param name="wallTime" expr="o.wallTime"/>
+          <param name="counter" expr="o.counter"/>
+          <param name="nodeId" expr="o.nodeId"/>
+          <param name="by" expr="node"/>
+        </send>
+      </foreach>
       <send target="#_internal" event="todo.write">
         <param name="id" expr="_event.data.id"/>
         <param name="field" expr="_event.data.field"/>
@@ -98,7 +135,7 @@
       </send>
     </transition>
 
-    <!-- A write to a field, from a person here or from elsewhere. -->
+    <!-- A write to a field, from a person here or from elsewhere: one more value, once. -->
     <transition event="todo.write" type="internal">
       <!-- The same, for a write that arrives: one whose text does not fit changes
            nothing here and is passed on to no one, rather than being merged in part. -->
@@ -109,37 +146,38 @@
         <assign location="stamp.nodeId" expr="_event.data.nodeId"/>
         <assign location="clock" expr="HlcReceive(clock, stamp, clock.wallTime, node)"/>
       </if>
-      <assign location="write.row" expr="_event.data.id"/>
-      <assign location="write.col" expr="_event.data.field"/>
-      <assign location="write.value" expr="_event.data.value"/>
-      <assign location="write.wallTime" expr="_event.data.wallTime"/>
-      <assign location="write.counter" expr="_event.data.counter"/>
-      <assign location="write.nodeId" expr="_event.data.nodeId"/>
-      <assign location="cells" expr="LwwWrite(cells, write)"/>
+      <assign location="entry.element" expr="_event.data.id * 16 + _event.data.field"/>
+      <assign location="entry.wallTime" expr="_event.data.wallTime"/>
+      <assign location="entry.counter" expr="_event.data.counter"/>
+      <assign location="entry.nodeId" expr="_event.data.nodeId"/>
+      <sce:clear target="one"/>
+      <sce:append target="one" expr="entry"/>
+      <assign location="adds" expr="OrsetUnion(adds, one)"/>
 
-      <!-- Whether this write is the one its cell now holds: only then does a text
-           written with it stay. -->
-      <assign location="won" expr="false"/>
-      <foreach array="cells" item="c">
-        <if cond="c.row === _event.data.id &amp;&amp; c.col === _event.data.field &amp;&amp; c.wallTime === _event.data.wallTime &amp;&amp; c.counter === _event.data.counter &amp;&amp; c.nodeId === _event.data.nodeId">
-          <assign location="won" expr="true"/>
+      <!-- Whether the write is live: no tombstone names it. One a person wrote over
+           before it arrived is not taken in. And whether its value is already held,
+           which a write that arrives twice is. -->
+      <assign location="live" expr="OrsetLive(adds, tombstones)"/>
+      <assign location="isLive" expr="false"/>
+      <foreach array="live" item="l">
+        <if cond="l.element === entry.element &amp;&amp; l.wallTime === entry.wallTime &amp;&amp; l.counter === entry.counter &amp;&amp; l.nodeId === entry.nodeId">
+          <assign location="isLive" expr="true"/>
         </if>
       </foreach>
-      <if cond="won &amp;&amp; _event.data.field === 1">
-        <sce:clear target="rebuilt"/>
-        <foreach array="texts" item="t">
-          <if cond="t.id !== _event.data.id || t.field !== _event.data.field">
-            <sce:append target="rebuilt" expr="t"/>
-          </if>
-        </foreach>
+      <assign location="present" expr="false"/>
+      <foreach array="values" item="v">
+        <if cond="v.id === _event.data.id &amp;&amp; v.field === _event.data.field &amp;&amp; v.wallTime === _event.data.wallTime &amp;&amp; v.counter === _event.data.counter &amp;&amp; v.nodeId === _event.data.nodeId">
+          <assign location="present" expr="true"/>
+        </if>
+      </foreach>
+      <if cond="isLive &amp;&amp; !present">
         <assign location="held.id" expr="_event.data.id"/>
         <assign location="held.field" expr="_event.data.field"/>
-        <assign location="held.text" expr="_event.data.text"/>
-        <sce:append target="rebuilt" expr="held"/>
-        <sce:clear target="texts"/>
-        <foreach array="rebuilt" item="r">
-          <sce:append target="texts" expr="r"/>
-        </foreach>
+        <assign location="held.value" expr="_event.data.value"/>
+        <assign location="held.wallTime" expr="_event.data.wallTime"/>
+        <assign location="held.counter" expr="_event.data.counter"/>
+        <assign location="held.nodeId" expr="_event.data.nodeId"/>
+        <sce:append target="values" expr="held"/>
       </if>
 
       <if cond="hub &amp;&amp; _event.data.nodeId !== 1">
@@ -162,6 +200,49 @@
           <param name="wallTime" expr="_event.data.wallTime"/>
           <param name="counter" expr="_event.data.counter"/>
           <param name="nodeId" expr="_event.data.nodeId"/>
+        </send>
+      </if>
+    </transition>
+
+    <!-- A value someone wrote over, from a person here or from elsewhere: its add is
+         named by a tombstone, and its value, if held, is taken out. -->
+    <transition event="todo.supersede" type="internal">
+      <assign location="entry.element" expr="_event.data.id * 16 + _event.data.field"/>
+      <assign location="entry.wallTime" expr="_event.data.wallTime"/>
+      <assign location="entry.counter" expr="_event.data.counter"/>
+      <assign location="entry.nodeId" expr="_event.data.nodeId"/>
+      <sce:clear target="one"/>
+      <sce:append target="one" expr="entry"/>
+      <assign location="tombstones" expr="OrsetUnion(tombstones, one)"/>
+      <sce:clear target="rebuilt"/>
+      <foreach array="values" item="v">
+        <if cond="v.id !== _event.data.id || v.field !== _event.data.field || v.wallTime !== _event.data.wallTime || v.counter !== _event.data.counter || v.nodeId !== _event.data.nodeId">
+          <sce:append target="rebuilt" expr="v"/>
+        </if>
+      </foreach>
+      <sce:clear target="values"/>
+      <foreach array="rebuilt" item="r">
+        <sce:append target="values" expr="r"/>
+      </foreach>
+
+      <if cond="hub &amp;&amp; _event.data.by !== 1">
+        <send target="#alice" event="todo.supersede">
+          <param name="id" expr="_event.data.id"/>
+          <param name="field" expr="_event.data.field"/>
+          <param name="wallTime" expr="_event.data.wallTime"/>
+          <param name="counter" expr="_event.data.counter"/>
+          <param name="nodeId" expr="_event.data.nodeId"/>
+          <param name="by" expr="_event.data.by"/>
+        </send>
+      </if>
+      <if cond="hub &amp;&amp; _event.data.by !== 2">
+        <send target="#bob" event="todo.supersede">
+          <param name="id" expr="_event.data.id"/>
+          <param name="field" expr="_event.data.field"/>
+          <param name="wallTime" expr="_event.data.wallTime"/>
+          <param name="counter" expr="_event.data.counter"/>
+          <param name="nodeId" expr="_event.data.nodeId"/>
+          <param name="by" expr="_event.data.by"/>
         </send>
       </if>
     </transition>

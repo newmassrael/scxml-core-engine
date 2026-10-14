@@ -32,7 +32,15 @@ use sce_rust_world::{Outcome, Taken, World};
 use serde_json::{json, Map, Value};
 
 /// The variables a copy of the to-do list publishes (`sce:direction="out"`).
-const TODO_PUBLISHED: &[&str] = &["node", "hub", "clock", "cells", "texts", "refusals"];
+const TODO_PUBLISHED: &[&str] = &[
+    "node",
+    "hub",
+    "clock",
+    "adds",
+    "tombstones",
+    "values",
+    "refusals",
+];
 
 /// The variables a copy of the sheet publishes.
 const SHEET_PUBLISHED: &[&str] = &[

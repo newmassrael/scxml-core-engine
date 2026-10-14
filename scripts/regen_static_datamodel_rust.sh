@@ -85,6 +85,7 @@ STD_ALGORITHMS=(sync/sync_failure sync/sync_retry_at sync/sync_delete_outcome sy
 STD_ALGORITHMS+=(merge/hlc_timestamp merge/hlc_compare merge/hlc_send merge/hlc_receive)
 STD_ALGORITHMS+=(merge/lww_cell merge/lww_write)
 STD_ALGORITHMS+=(merge/rga_node merge/rga_gone merge/rga_insert merge/rga_holds merge/rga_remove)
+STD_ALGORITHMS+=(merge/orset_entry merge/orset_union merge/orset_live merge/orset_observed)
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT

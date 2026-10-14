@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A value a field of a to-do holds in a copy: which to-do (`id`), which field (`field`),
+  the number (`value`) or the text (`text`, at most 32 bytes of UTF-8) and the stamp of
+  the write that gave it, which is the dot it is known by. A field holds one of these
+  for every write nobody has written over, so two people who changed it at the same
+  time each have theirs here until a later write is made by someone who has seen both.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="todo_value"
+       sce:event-name="todo.value">
+  <datamodel>
+    <data id="id" sce:type="uint64" sce:direction="in"/>
+    <data id="field" sce:type="uint64" sce:direction="in"/>
+    <data id="value" sce:type="int64" sce:direction="in"/>
+    <data id="text" sce:type="string" sce:max-size="32" sce:direction="in"/>
+    <data id="wallTime" sce:type="int64" sce:direction="in"/>
+    <data id="counter" sce:type="uint32" sce:direction="in"/>
+    <data id="nodeId" sce:type="uint64" sce:direction="in"/>
+  </datamodel>
+</scxml>

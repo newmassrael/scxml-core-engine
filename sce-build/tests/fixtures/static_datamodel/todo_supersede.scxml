@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  One write a person has seen and written over, as it travels between copies: the
+  field it was written to (`id`, `field`), the stamp of that write (`wallTime`,
+  `counter`, `nodeId`: the dot it is known by) and `by`, the node of the person who
+  wrote over it. A write over a field does not erase a value it has not seen, so each
+  copy takes the writes that were seen out one by one, and a value written at the same
+  time by someone who had not seen it is not named here and stays (todo_peer).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="todo_supersede"
+       sce:event-name="todo.supersede">
+  <datamodel>
+    <data id="id" sce:type="uint64" sce:direction="in"/>
+    <data id="field" sce:type="uint64" sce:direction="in"/>
+    <data id="wallTime" sce:type="int64" sce:direction="in"/>
+    <data id="counter" sce:type="uint32" sce:direction="in"/>
+    <data id="nodeId" sce:type="uint64" sce:direction="in"/>
+    <data id="by" sce:type="uint64" sce:direction="in"/>
+  </datamodel>
+</scxml>

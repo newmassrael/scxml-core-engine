@@ -570,50 +570,68 @@ pub fn todo_variables_of(world: &mut World, who: &str) -> Value {
     saved["variables"].clone()
 }
 
-/// One field of one to-do as a copy holds it: its number, its text when it is the
-/// title, and the stamp of the write that put it there.
+/// One value a field of a to-do holds: its number, its text when it is the title, and
+/// the stamp of the write that gave it, which is the dot it is known by.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Field {
+pub struct TodoValue {
     pub value: i64,
     pub text: Option<String>,
     pub stamp: (u64, u64, u64),
 }
 
+/// One field of one to-do as a copy holds it. A field holds a value for every write
+/// nobody has written over, so `live` is more than one value when two people changed
+/// it at the same time; `value`, `text` and `stamp` are those of the latest of them,
+/// which is the one a reader that needs a single value takes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Field {
+    pub value: i64,
+    pub text: Option<String>,
+    pub stamp: (u64, u64, u64),
+    pub live: Vec<TodoValue>,
+}
+
+impl Field {
+    /// A field from the values it holds, latest stamp last once they are sorted.
+    fn of(mut live: Vec<TodoValue>) -> Self {
+        live.sort_by_key(|held| held.stamp);
+        let latest = live.last().expect("a field holds a value").clone();
+        Field {
+            value: latest.value,
+            text: latest.text,
+            stamp: latest.stamp,
+            live,
+        }
+    }
+}
+
 /// The fields a copy holds, by (to-do, field).
 pub fn todos_of(world: &mut World, who: &str) -> BTreeMap<(u64, u64), Field> {
     let variables = todo_variables_of(world, who);
-    let mut fields = BTreeMap::new();
-    for cell in variables["cells"].as_array().expect("cells are a list") {
-        let number = |name: &str| whole(&cell[name]);
-        let key = (number("row") as u64, number("col") as u64);
-        let stamp = (
-            number("wallTime") as u64,
-            number("counter") as u64,
-            number("nodeId") as u64,
-        );
-        let held = Field {
+    let mut held: BTreeMap<(u64, u64), Vec<TodoValue>> = BTreeMap::new();
+    for value in variables["values"].as_array().expect("values are a list") {
+        let number = |name: &str| whole(&value[name]);
+        let key = (number("id") as u64, number("field") as u64);
+        let one = TodoValue {
             value: number("value") as i64,
-            text: None,
-            stamp,
+            text: (key.1 == TITLE).then(|| value["text"].as_str().expect("a text").to_string()),
+            stamp: (
+                number("wallTime") as u64,
+                number("counter") as u64,
+                number("nodeId") as u64,
+            ),
         };
+        let held = held.entry(key).or_default();
         assert!(
-            fields.insert(key, held).is_none(),
-            "{who} holds {key:?} twice"
+            held.iter().all(|other| other.stamp != one.stamp),
+            "{who} holds the write {:?} of {key:?} twice",
+            one.stamp
         );
+        held.push(one);
     }
-    for text in variables["texts"].as_array().expect("texts are a list") {
-        let key = (whole(&text["id"]) as u64, whole(&text["field"]) as u64);
-        let held = fields
-            .get_mut(&key)
-            .unwrap_or_else(|| panic!("{who} holds a text for {key:?} with no cell"));
-        assert!(
-            held.text
-                .replace(text["text"].as_str().expect("a text").to_string())
-                .is_none(),
-            "{who} holds the text of {key:?} twice"
-        );
-    }
-    fields
+    held.into_iter()
+        .map(|(key, live)| (key, Field::of(live)))
+        .collect()
 }
 
 /// The three copies hold one list of to-dos; which.
@@ -630,14 +648,12 @@ pub fn agreed_todos(world: &mut World) -> BTreeMap<(u64, u64), Field> {
 }
 
 /// What the list should hold, read from the network and not from the copies: of every
-/// write a person sent the hub, the one with the latest stamp wins its field, and the
-/// text is the text that write carried.
+/// write a person sent the hub, the ones no person sent a supersede for are the values
+/// of its field, and the latest of them is the one a single reader takes.
 pub fn todo_oracle(world: &World) -> BTreeMap<(u64, u64), Field> {
-    let mut expected: BTreeMap<(u64, u64), Field> = BTreeMap::new();
+    let mut written: BTreeMap<(u64, u64), Vec<TodoValue>> = BTreeMap::new();
+    let mut superseded: Vec<((u64, u64), (u64, u64, u64))> = Vec::new();
     for (event, write) in sent_to_the_hub(world) {
-        if event != "todo.write" {
-            continue;
-        }
         let number = |name: &str| whole(&write[name]);
         let key = (number("id") as u64, number("field") as u64);
         let stamp = (
@@ -645,17 +661,31 @@ pub fn todo_oracle(world: &World) -> BTreeMap<(u64, u64), Field> {
             number("counter") as u64,
             number("nodeId") as u64,
         );
-        let held = Field {
-            value: number("value") as i64,
-            text: (key.1 == TITLE).then(|| write["text"].as_str().expect("a text").to_string()),
-            stamp,
-        };
-        match expected.get(&key) {
-            Some(latest) if latest.stamp >= stamp => {}
-            _ => {
-                expected.insert(key, held);
+        match event.as_str() {
+            "todo.write" => {
+                let one = TodoValue {
+                    value: number("value") as i64,
+                    text: (key.1 == TITLE)
+                        .then(|| write["text"].as_str().expect("a text").to_string()),
+                    stamp,
+                };
+                let held = written.entry(key).or_default();
+                if held.iter().all(|other| other.stamp != stamp) {
+                    held.push(one);
+                }
             }
+            "todo.supersede" => superseded.push((key, stamp)),
+            _ => {}
         }
     }
-    expected
+    written
+        .into_iter()
+        .filter_map(|(key, held)| {
+            let live: Vec<TodoValue> = held
+                .into_iter()
+                .filter(|one| !superseded.contains(&(key, one.stamp)))
+                .collect();
+            (!live.is_empty()).then(|| (key, Field::of(live)))
+        })
+        .collect()
 }

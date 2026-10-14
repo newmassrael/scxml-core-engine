@@ -645,6 +645,41 @@ impl World {
             .clone()
     }
 
+    /// Stop the machine `name` and start it again from what it saved of itself, the
+    /// way a process that is killed and comes back does. `restore` is given the
+    /// machine as it stands and the world's clock, and gives back the machine a
+    /// restore of its saved state makes, measuring time by that clock: a generated
+    /// machine restores through a trait of its own, which is why the call is the
+    /// caller's to write (`|engine, clock| Engine::restore_with(TodoPeer::new(),
+    /// &engine.save_at(0).unwrap(), clock, 0).unwrap()`).
+    ///
+    /// What is kept is the machine's connection to its peers — the endpoint, its
+    /// links and what it was already told — and what is lost is whatever the machine
+    /// had been given and not yet taken, as a process loses what it had not read. The
+    /// Mesh router and the world's clock are set on the new machine as `add` sets
+    /// them; no `<onentry>` runs and no `<data>` is evaluated, as the restore says.
+    ///
+    /// # Panics
+    ///
+    /// For a machine that keeps a record: what a restored machine did is not what a
+    /// record of the events its first run was given would replay.
+    pub fn restart<P: StatePolicy + 'static>(
+        &mut self,
+        name: &str,
+        restore: impl FnOnce(&Engine<P>, SceClock) -> Engine<P>,
+    ) {
+        let now_ms = u64::try_from(self.clock.now_ms()).unwrap_or(0);
+        let actor = self.actor::<P>(name);
+        assert!(
+            actor.record.is_none(),
+            "{name} is recorded, and a restart is not an event a scenario can give a machine"
+        );
+        let mut engine = restore(&actor.engine, SceClock::Manual(now_ms));
+        endpoint::register(&mut engine, &actor.endpoint);
+        actor.engine = engine;
+        actor.given.clear();
+    }
+
     fn add_actor<P: StatePolicy + 'static>(
         &mut self,
         name: &str,

@@ -45,6 +45,10 @@ const FORGE: &[&str] = &[
     "../../../stdlib/merge/hlc_receive.scxml",
     "../../../stdlib/merge/lww_cell.scxml",
     "../../../stdlib/merge/lww_write.scxml",
+    "../../../stdlib/merge/orset_entry.scxml",
+    "../../../stdlib/merge/orset_union.scxml",
+    "../../../stdlib/merge/orset_live.scxml",
+    "../../../stdlib/merge/orset_observed.scxml",
     "../../../stdlib/merge/rga_node.scxml",
     "../../../stdlib/merge/rga_gone.scxml",
     "../../../stdlib/merge/rga_insert.scxml",
@@ -64,7 +68,8 @@ const FORGE: &[&str] = &[
     "../../../sce-build/tests/fixtures/static_datamodel/todo_join.scxml",
     "../../../sce-build/tests/fixtures/static_datamodel/todo_edit.scxml",
     "../../../sce-build/tests/fixtures/static_datamodel/todo_write.scxml",
-    "../../../sce-build/tests/fixtures/static_datamodel/todo_text.scxml",
+    "../../../sce-build/tests/fixtures/static_datamodel/todo_supersede.scxml",
+    "../../../sce-build/tests/fixtures/static_datamodel/todo_value.scxml",
     "machines/todo_shout.scxml",
 ];
 

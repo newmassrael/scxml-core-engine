@@ -48,18 +48,76 @@ fn changes_to_different_fields_of_one_todo_are_both_kept() {
     assert!(world.host_errors().is_empty());
 }
 
+/// Two people retitle a to-do at the same moment, neither having seen the other's: both
+/// titles stay, on every copy, and a reader that needs one takes the later stamp.
 #[test]
-fn two_titles_written_at_the_same_instant_leave_one_everywhere() {
+fn two_titles_written_at_the_same_instant_are_both_kept_everywhere() {
     let mut world = todo_world(1, 20);
     todo_title(&mut world, "alice", 3, "call dentist");
     todo_title(&mut world, "bob", 3, "call the dentist");
     assert_eq!(world.run_until_quiet(10_000), Outcome::Quiet);
 
     let list = agreed_todos(&mut world);
-    // The stamps tie on time and counter, so the node id decides: bob's. And the text
-    // is the text that write carried, not the other's.
-    assert_eq!(list[&(3, TITLE)].text.as_deref(), Some("call the dentist"));
+    let title = &list[&(3, TITLE)];
+    let texts: Vec<_> = title.live.iter().map(|held| held.text.as_deref()).collect();
+    assert_eq!(
+        texts.len(),
+        2,
+        "neither saw the other's title, so neither wrote over it: {texts:?}"
+    );
+    assert!(texts.contains(&Some("call dentist")));
+    assert!(texts.contains(&Some("call the dentist")));
+    // The stamps tie on time and counter, so the node id decides which a single reader
+    // takes: bob's. And the text is the text that write carried, not the other's.
+    assert_eq!(title.text.as_deref(), Some("call the dentist"));
     assert_eq!(list, todo_oracle(&world));
+}
+
+/// A person who has seen both titles and writes a third writes over both of them.
+#[test]
+fn a_title_written_after_seeing_both_replaces_both() {
+    let mut world = todo_world(1, 20);
+    todo_title(&mut world, "alice", 3, "call dentist");
+    todo_title(&mut world, "bob", 3, "call the dentist");
+    assert_eq!(world.run_until_quiet(10_000), Outcome::Quiet);
+    assert_eq!(agreed_todos(&mut world)[&(3, TITLE)].live.len(), 2);
+
+    todo_title(&mut world, "alice", 3, "call Dr Han");
+    assert_eq!(world.run_until_quiet(10_000), Outcome::Quiet);
+
+    let list = agreed_todos(&mut world);
+    let title = &list[&(3, TITLE)];
+    assert_eq!(title.live.len(), 1, "both were seen, so both were replaced");
+    assert_eq!(title.text.as_deref(), Some("call Dr Han"));
+    assert_eq!(list, todo_oracle(&world));
+}
+
+/// Changes made at the same moment on two sides of a cut link are both kept when the
+/// link is back, however long each side was apart: the values nobody wrote over stay.
+#[test]
+fn values_changed_on_both_sides_of_a_cut_link_are_both_kept() {
+    let mut world = todo_world(5, 20);
+    todo_set(&mut world, "alice", 1, DUE, 10);
+    assert_eq!(world.run_until_quiet(10_000), Outcome::Quiet);
+    world.partition("alice", "server");
+    todo_set(&mut world, "alice", 1, DUE, 20);
+    todo_set(&mut world, "bob", 1, DUE, 30);
+    assert_eq!(world.run_until_quiet(500), Outcome::Quiet);
+    assert_eq!(todos_of(&mut world, "alice")[&(1, DUE)].value, 20);
+
+    world.heal("alice", "server");
+    assert_eq!(world.run_until_quiet(60_000), Outcome::Quiet);
+
+    let list = agreed_todos(&mut world);
+    let mut values: Vec<_> = list[&(1, DUE)].live.iter().map(|held| held.value).collect();
+    values.sort_unstable();
+    assert_eq!(
+        values,
+        [20, 30],
+        "the first value was written over by both, and the two writes did not see each other"
+    );
+    assert_eq!(list, todo_oracle(&world));
+    assert!(world.host_errors().is_empty());
 }
 
 /// A person who has read a title and types over it means to replace it, even when their
@@ -180,15 +238,131 @@ fn a_write_whose_text_does_not_fit_changes_nothing_at_the_hub() {
     assert_eq!(todo_variables_of(&mut world, "server")["refusals"], 1);
 }
 
+/// A copy killed and started again from what it saved of itself.
+///
+/// What it saves of itself after the restart is what it saved before: every variable,
+/// not only the ones a test reads, so a restore that drops one is said where it drops it.
+fn restart(world: &mut sce_rust_world::World, who: &str) {
+    let before = todo_variables_of(world, who);
+    restart_without_looking(world, who);
+    assert_eq!(
+        todo_variables_of(world, who),
+        before,
+        "{who} did not come back as it was"
+    );
+}
+
+fn restart_without_looking(world: &mut sce_rust_world::World, who: &str) {
+    world.restart::<TodoPeer>(who, |engine, clock| {
+        let saved = engine.save_at(0).expect("a running machine saves");
+        sce_rust_runtime::Engine::<TodoPeer>::restore_with(TodoPeer::new(), &saved, clock, 0)
+            .expect("what a machine saved restores")
+    });
+}
+
+/// A person's copy restarted in the middle of an afternoon holds what it held, and
+/// the three copies still end alike: the registers, the writes seen and the
+/// tombstones all come back from the saved state.
+#[test]
+fn a_copy_restarted_midway_holds_what_it_held_and_the_list_still_converges() {
+    let mut world = todo_world(1, 20);
+    todo_title(&mut world, "alice", 4, "water plants");
+    todo_set(&mut world, "bob", 4, DONE, 1);
+    assert_eq!(world.run_until_quiet(10_000), Outcome::Quiet);
+    // Alice and bob each write over the title at the same moment, so a field holds two
+    // values when bob is killed.
+    todo_title(&mut world, "alice", 4, "water the plants");
+    todo_title(&mut world, "bob", 4, "water ferns");
+    assert_eq!(world.run_until_quiet(10_000), Outcome::Quiet);
+    let before = todos_of(&mut world, "bob");
+    assert_eq!(before[&(4, TITLE)].live.len(), 2);
+
+    restart(&mut world, "bob");
+    assert_eq!(
+        todos_of(&mut world, "bob"),
+        before,
+        "bob came back as he was"
+    );
+
+    // After the restart bob has seen both titles, so what he writes replaces both, and
+    // alice, who changes the due day at the same time, keeps hers.
+    todo_title(&mut world, "bob", 4, "water everything");
+    todo_set(&mut world, "alice", 4, DUE, 6);
+    assert_eq!(world.run_until_quiet(10_000), Outcome::Quiet);
+
+    let list = agreed_todos(&mut world);
+    assert_eq!(list[&(4, TITLE)].live.len(), 1);
+    assert_eq!(list[&(4, TITLE)].text.as_deref(), Some("water everything"));
+    assert_eq!(list[&(4, DUE)].value, 6);
+    assert_eq!(list, todo_oracle(&world));
+    assert!(world.host_errors().is_empty());
+}
+
+/// The hub killed and started again still is the hub: what it saved says so, and what
+/// either person writes next reaches the other through it.
+#[test]
+fn a_hub_restarted_midway_still_relays_to_both_people() {
+    let mut world = todo_world(1, 20);
+    todo_title(&mut world, "alice", 5, "before");
+    assert_eq!(world.run_until_quiet(10_000), Outcome::Quiet);
+
+    restart(&mut world, "server");
+    assert_eq!(
+        todo_variables_of(&mut world, "server")["hub"],
+        true,
+        "the hub came back as the hub"
+    );
+
+    todo_title(&mut world, "bob", 5, "after");
+    todo_set(&mut world, "alice", 5, DUE, 9);
+    assert_eq!(world.run_until_quiet(10_000), Outcome::Quiet);
+
+    let list = agreed_todos(&mut world);
+    assert_eq!(list[&(5, TITLE)].text.as_deref(), Some("after"));
+    assert_eq!(list[&(5, DUE)].value, 9);
+    assert_eq!(list, todo_oracle(&world));
+}
+
+/// A copy killed with an edit it had not read loses that edit and nothing else: the
+/// edit was never taken, so no copy was sent it.
+#[test]
+fn an_edit_a_killed_copy_had_not_read_is_lost_and_nothing_else() {
+    let mut world = todo_world(1, 20);
+    todo_title(&mut world, "alice", 2, "kept");
+    assert_eq!(world.run_until_quiet(10_000), Outcome::Quiet);
+
+    todo_title(&mut world, "alice", 2, "never read");
+    restart(&mut world, "alice");
+    assert_eq!(world.run_until_quiet(10_000), Outcome::Quiet);
+
+    let list = agreed_todos(&mut world);
+    assert_eq!(list[&(2, TITLE)].text.as_deref(), Some("kept"));
+    assert_eq!(list[&(2, TITLE)].live.len(), 1);
+    assert_eq!(list, todo_oracle(&world));
+}
+
 /// An afternoon of changes to a few to-dos at random times, links cut and restored,
 /// delays spread out and envelopes delivered twice: for every seed the three copies end
 /// alike and as the oracle says.
 #[test]
 fn a_random_afternoon_of_changes_ends_with_one_list() {
+    an_afternoon(false);
+}
+
+/// The same afternoon with copies killed and started again from their saved states.
+#[test]
+fn a_random_afternoon_with_restarts_ends_with_one_list() {
+    an_afternoon(true);
+}
+
+fn an_afternoon(restarts: bool) {
     const TITLES: [&str; 5] = ["milk", "post office", "\u{d560}\u{c77c}", "tax", "gym at 7"];
     for seed in 0..40 {
         let mut rng = Rng::new(seed);
         let mut world = todo_world(seed, 5);
+        // The copies take the join the host gave them before anything can kill one: a
+        // process killed before it has read its first event comes back without it.
+        assert_eq!(world.run_until_quiet(1), Outcome::Quiet, "seed {seed}");
         world.jitter("alice", "server", 40);
         world.jitter("bob", "server", 40);
         world.reorder("alice", "server");
@@ -236,6 +410,11 @@ fn a_random_afternoon_of_changes_ends_with_one_list() {
                 }
                 cut[which] = !cut[which];
             }
+            // Now and then a copy is killed and comes back from its saved state.
+            if restarts && rng.below(10) == 0 {
+                let who = ["alice", "bob", "server"][usize::try_from(rng.below(3)).unwrap()];
+                restart(&mut world, who);
+            }
             world.run_until_quiet(i64::try_from(rng.below(60)).unwrap() + 1);
         }
         for (which, name) in ["alice", "bob"].into_iter().enumerate() {
@@ -249,10 +428,8 @@ fn a_random_afternoon_of_changes_ends_with_one_list() {
             "seed {seed}"
         );
 
-        let list = agreed_todos(&mut world);
-        assert_eq!(list, todo_oracle(&world), "seed {seed}");
-        assert!(world.host_errors().is_empty(), "seed {seed}");
-        assert!(!list.is_empty(), "seed {seed}");
+        // A copy that refused a write is the first thing to say, before the copies are
+        // compared: a list that differs because a block failed is not a merge fault.
         for who in ["alice", "bob", "server"] {
             assert_eq!(
                 todo_variables_of(&mut world, who)["refusals"],
@@ -260,5 +437,16 @@ fn a_random_afternoon_of_changes_ends_with_one_list() {
                 "seed {seed}: {who} refused a write"
             );
         }
+        for who in ["alice", "bob"] {
+            assert_eq!(
+                todos_of(&mut world, who),
+                todos_of(&mut world, "server"),
+                "seed {seed}: {who} and the hub hold different to-do lists"
+            );
+        }
+        let list = agreed_todos(&mut world);
+        assert_eq!(list, todo_oracle(&world), "seed {seed}");
+        assert!(world.host_errors().is_empty(), "seed {seed}");
+        assert!(!list.is_empty(), "seed {seed}");
     }
 }

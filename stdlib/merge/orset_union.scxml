@@ -27,7 +27,7 @@
   <sce:signature>
     <sce:param name="a" type="list&lt;record:Entry&gt;"/>
     <sce:param name="b" type="list&lt;record:Entry&gt;"/>
-    <sce:return type="list&lt;record:Entry&gt;" returns-max-size="256"/>
+    <sce:return type="list&lt;record:Entry&gt;" may-fail="true" returns-max-size="256"/>
   </sce:signature>
   <sce:body>
     <sce:var name="out" type="list&lt;record:Entry&gt;" capacity="256"/>
