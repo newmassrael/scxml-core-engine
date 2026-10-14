@@ -93,6 +93,9 @@ macro_rules! scenarios {
 }
 
 scenarios! {
+    "presence_peer_alice" => presence_peer_sm::{PresencePeerPolicy, PresencePeerPersist} @ Manual;
+    "presence_peer_bob" => presence_peer_sm::{PresencePeerPolicy, PresencePeerPersist} @ Manual;
+    "presence_peer_server" => presence_peer_sm::{PresencePeerPolicy, PresencePeerPersist} @ Manual;
     "sheet_peer_alice" => sheet_peer_sm::{SheetPeerPolicy, SheetPeerPersist};
     "sheet_peer_bob" => sheet_peer_sm::{SheetPeerPolicy, SheetPeerPersist};
     "sheet_peer_server" => sheet_peer_sm::{SheetPeerPolicy, SheetPeerPersist};

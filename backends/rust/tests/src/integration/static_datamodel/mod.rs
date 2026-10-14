@@ -20,6 +20,7 @@ pub mod orset_entry;
 pub mod orset_live;
 pub mod orset_observed;
 pub mod orset_union;
+pub mod presence_peer_sm;
 pub mod rga_gone;
 pub mod rga_holds;
 pub mod rga_insert;

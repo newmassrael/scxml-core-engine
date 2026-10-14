@@ -960,12 +960,15 @@ fn static_payload_reads_the_fields_of_its_event() {
 // them, so here they say only that the committed machine is the one that ran;
 // what they are for is the other six drivers, held to the same steps.
 macro_rules! a_copy_does_what_it_did_in_the_world {
-    ($($test:ident: $module:ident::{$policy:ident, $persist:ident} => $scenario:literal;)*) => {$(
+    ($($test:ident: $module:ident::{$policy:ident, $persist:ident} $(@ $manual:ident)? => $scenario:literal;)*) => {$(
         #[test]
         fn $test() {
             use sce_rust_tests::integration::static_datamodel::$module::{$persist, $policy};
+            #[allow(unused_mut)]
+            let mut engine = Engine::new($policy::new());
+            $(engine.set_clock(SceClock::$manual(0));)?
             replay(
-                Engine::new($policy::new()),
+                engine,
                 |engine| engine.save().expect("saves"),
                 include_str!(concat!(
                     "../../../../sce-build/tests/fixtures/",
@@ -977,6 +980,9 @@ macro_rules! a_copy_does_what_it_did_in_the_world {
 }
 
 a_copy_does_what_it_did_in_the_world! {
+    presence_peer_does_what_alice_did: presence_peer_sm::{PresencePeerPolicy, PresencePeerPersist} @ Manual => "static_datamodel/scenarios/presence_peer_alice.json";
+    presence_peer_does_what_bob_did: presence_peer_sm::{PresencePeerPolicy, PresencePeerPersist} @ Manual => "static_datamodel/scenarios/presence_peer_bob.json";
+    presence_peer_does_what_the_hub_did: presence_peer_sm::{PresencePeerPolicy, PresencePeerPersist} @ Manual => "static_datamodel/scenarios/presence_peer_server.json";
     todo_peer_does_what_alice_did: todo_peer_sm::{TodoPeerPolicy, TodoPeerPersist} => "static_datamodel/scenarios/todo_peer_alice.json";
     todo_peer_does_what_bob_did: todo_peer_sm::{TodoPeerPolicy, TodoPeerPersist} => "static_datamodel/scenarios/todo_peer_bob.json";
     todo_peer_does_what_the_hub_did: todo_peer_sm::{TodoPeerPolicy, TodoPeerPersist} => "static_datamodel/scenarios/todo_peer_server.json";
