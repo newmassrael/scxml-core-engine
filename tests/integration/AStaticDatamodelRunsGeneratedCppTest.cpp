@@ -481,9 +481,41 @@ template <typename Hlc> json hlcJson(const Hlc &stamp) {
 /// A list of `record:LwwCell` values (sce:std/merge/lww_cell), in order.
 template <typename Cells> json lwwCellsJson(const Cells &cells) {
     return listedJson(cells, [](const auto &cell) {
-        return json{{"row", wideText(cell.row)},     {"col", wideText(cell.col)},
-                    {"value", wideText(cell.value)}, {"wallTime", wideText(cell.wallTime)},
-                    {"counter", cell.counter},       {"nodeId", wideText(cell.nodeId)}};
+        return json{{"row", wideText(cell.row)},
+                    {"col", wideText(cell.col)},
+                    {"value", wideText(cell.value)},
+                    {"wallTime", wideText(cell.wallTime)},
+                    {"counter", cell.counter},
+                    {"nodeId", wideText(cell.nodeId)},
+                    {"op", cell.op},
+                    {"aRef", cell.aRef},
+                    {"aRow", wideText(cell.aRow)},
+                    {"aCol", wideText(cell.aCol)},
+                    {"aVal", wideText(cell.aVal)},
+                    {"bRef", cell.bRef},
+                    {"bRow", wideText(cell.bRow)},
+                    {"bCol", wideText(cell.bCol)},
+                    {"bVal", wideText(cell.bVal)}};
+    });
+}
+
+/// A list of `record:Entry` values (sce:std/merge/orset_entry), in order.
+template <typename Entries> json orsetEntriesJson(const Entries &entries) {
+    return listedJson(entries, [](const auto &entry) {
+        return json{{"element", wideText(entry.element)},
+                    {"wallTime", wideText(entry.wallTime)},
+                    {"counter", entry.counter},
+                    {"nodeId", wideText(entry.nodeId)}};
+    });
+}
+
+/// A list of `record:Shown` values (sce:std/merge/sheet_shown), in order.
+template <typename Shown> json sheetShownJson(const Shown &shown) {
+    return listedJson(shown, [](const auto &record) {
+        return json{{"row", wideText(record.row)},
+                    {"col", wideText(record.col)},
+                    {"value", wideText(record.value)},
+                    {"fault", record.fault}};
     });
 }
 
@@ -1531,6 +1563,7 @@ Driver<ClockPeeking<G::sheet_peer::sheet_peer>> sheetPeerDriver() {
         {"gone", [](const Machine &m) { return rgaGonesJson(m.gone()); }},
         {"cols", [](const Machine &m) { return rgaNodesJson(m.cols()); }},
         {"goneCols", [](const Machine &m) { return rgaGonesJson(m.goneCols()); }},
+        {"shown", [](const Machine &m) { return sheetShownJson(m.shown()); }},
         {"lamport", [](const Machine &m) { return wideText(m.lamport()); }},
         {"orphans", [](const Machine &m) { return json(m.orphans()); }},
         {"refusals", [](const Machine &m) { return json(m.refusals()); }},

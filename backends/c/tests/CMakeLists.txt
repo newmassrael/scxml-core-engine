@@ -2701,7 +2701,8 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
             lww_cell lww_write
             orset_entry orset_union orset_live orset_observed
             merkle_node merkle_insert
-            rga_node rga_gone rga_insert rga_holds rga_remove)
+            rga_node rga_gone rga_insert rga_holds rga_remove
+            sheet_value sheet_shown sheet_apply sheet_settle sheet_show)
         set(_HEADER "${SCE_C_INTEGRATION_GENERATED_DIR}/${_MERGE_HEADER}.h")
         add_custom_command(
             OUTPUT "${_HEADER}"
@@ -2747,7 +2748,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     sce_generate_static_integration_c_test(sheet_peer
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/sheet_peer.scxml"
-        STAGE_ALSO sheet_join.scxml sheet_edit.scxml sheet_cell.scxml
+        STAGE_ALSO sheet_join.scxml sheet_edit.scxml sheet_formula.scxml sheet_cell.scxml
                    sheet_add_row.scxml sheet_row.scxml sheet_drop_row.scxml sheet_gone.scxml
                    sheet_add_col.scxml sheet_col.scxml sheet_drop_col.scxml sheet_gone_col.scxml
     )

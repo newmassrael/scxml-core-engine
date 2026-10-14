@@ -1941,7 +1941,18 @@ static const char *wide_signed_digits(int64_t value) {
     E(value, wide_signed_digits)                                                                                       \
     E(wallTime, wide_signed_digits)                                                                                    \
     N(counter)                                                                                                         \
-    E(nodeId, wide_digits)
+    E(nodeId, wide_digits)                                                                                             \
+    N(op)                                                                                                              \
+    N(aRef)                                                                                                            \
+    E(aRow, wide_digits)                                                                                               \
+    E(aCol, wide_digits)                                                                                               \
+    E(aVal, wide_signed_digits)                                                                                        \
+    N(bRef)                                                                                                            \
+    E(bRow, wide_digits)                                                                                               \
+    E(bCol, wide_digits)                                                                                               \
+    E(bVal, wide_signed_digits)
+// What a cell of the sheet shows: a place, the number and the fault when it shows none.
+#define SHEET_SHOWN_FIELDS(N, E) E(row, wide_digits) E(col, wide_digits) E(value, wide_signed_digits) N(fault)
 #define ORSET_ENTRY_FIELDS(N, E)                                                                                       \
     E(element, wide_digits)                                                                                            \
     E(wallTime, wide_signed_digits)                                                                                    \
@@ -2045,6 +2056,7 @@ RECORD_LIST_READER(sheet_peer, gone, sheet_peer_record_rga_gone_view_t, sheet_pe
 RECORD_LIST_READER(sheet_peer, cols, sheet_peer_record_rga_node_view_t, sheet_peer_record_rga_node_t, RGA_NODE_FIELDS)
 RECORD_LIST_READER(sheet_peer, goneCols, sheet_peer_record_rga_gone_view_t, sheet_peer_record_rga_gone_t,
                    RGA_GONE_FIELDS)
+RECORD_LIST_READER(sheet_peer, shown, sheet_peer_record_shown_view_t, sheet_peer_record_shown_t, SHEET_SHOWN_FIELDS)
 
 static const char *sheet_peer_text(void *sm, const char *name) {
     if (strcmp(name, "node") == 0) {
@@ -2065,9 +2077,10 @@ static const variable_t sheet_peer_variables[] = {
     {"refusals", sheet_peer_read_refusals},
 };
 static const record_variable_t sheet_peer_records[] = {
-    RECORD_ROW(sheet_peer, clock),     RECORD_LIST_ROW(sheet_peer, cells), RECORD_LIST_ROW(sheet_peer, rows),
-    RECORD_LIST_ROW(sheet_peer, gone), RECORD_LIST_ROW(sheet_peer, cols),  RECORD_LIST_ROW(sheet_peer, goneCols),
-    {NULL, NULL, NULL, NULL}};
+    RECORD_ROW(sheet_peer, clock),      RECORD_LIST_ROW(sheet_peer, cells),
+    RECORD_LIST_ROW(sheet_peer, rows),  RECORD_LIST_ROW(sheet_peer, gone),
+    RECORD_LIST_ROW(sheet_peer, cols),  RECORD_LIST_ROW(sheet_peer, goneCols),
+    RECORD_LIST_ROW(sheet_peer, shown), {NULL, NULL, NULL, NULL}};
 STATIC_SCENARIO_PEERED(sheet_peer, sheet_peer_states, sheet_peer_variables, sheet_peer_text, no_lists,
                        sheet_peer_records)
 
@@ -2266,9 +2279,9 @@ int main(void) {
     bad |= todo_peer_scenario("todo_peer_alice", 13);
     bad |= todo_peer_scenario("todo_peer_bob", 13);
     bad |= todo_peer_scenario("todo_peer_server", 13);
-    bad |= sheet_peer_scenario("sheet_peer_alice", 18);
-    bad |= sheet_peer_scenario("sheet_peer_bob", 19);
-    bad |= sheet_peer_scenario("sheet_peer_server", 19);
+    bad |= sheet_peer_scenario("sheet_peer_alice", 24);
+    bad |= sheet_peer_scenario("sheet_peer_bob", 26);
+    bad |= sheet_peer_scenario("sheet_peer_server", 26);
     bad |= presence_peer_scenario("presence_peer_alice", 23);
     bad |= presence_peer_scenario("presence_peer_bob", 21);
     bad |= presence_peer_scenario("presence_peer_server", 12);

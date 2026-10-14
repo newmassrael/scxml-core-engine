@@ -258,13 +258,22 @@ func hlcJSON(stamp hlcRecord) any {
 }
 
 // lwwCellRecord is a `record:LwwCell` (sce:std/merge/lww_cell) as a host reads it:
-// where the cell is, the number it holds and the stamp of the write that put it
-// there.
+// where the cell is, what it holds (a number, or a formula over two operands) and
+// the stamp of the write that put it there.
 type lwwCellRecord interface {
 	hlcRecord
 	Row() uint64
 	Col() uint64
 	Value() int64
+	Op() uint8
+	ARef() bool
+	ARow() uint64
+	ACol() uint64
+	AVal() int64
+	BRef() bool
+	BRow() uint64
+	BCol() uint64
+	BVal() int64
 }
 
 // lwwCellsJSON is a list of such cells, in order.
@@ -274,6 +283,30 @@ func lwwCellsJSON[R lwwCellRecord](cells []R) any {
 		out[i] = map[string]any{
 			"row": digits(cell.Row()), "col": digits(cell.Col()), "value": signedDigits(cell.Value()),
 			"wallTime": signedDigits(cell.WallTime()), "counter": cell.Counter(), "nodeId": digits(cell.NodeId()),
+			"op":   cell.Op(),
+			"aRef": cell.ARef(), "aRow": digits(cell.ARow()), "aCol": digits(cell.ACol()), "aVal": signedDigits(cell.AVal()),
+			"bRef": cell.BRef(), "bRow": digits(cell.BRow()), "bCol": digits(cell.BCol()), "bVal": signedDigits(cell.BVal()),
+		}
+	}
+	return out
+}
+
+// sheetShownRecord is a `record:Shown` (sce:std/merge/sheet_shown) as a host reads
+// it: a place of the sheet, the number it shows and the fault when it shows none.
+type sheetShownRecord interface {
+	Row() uint64
+	Col() uint64
+	Value() int64
+	Fault() uint8
+}
+
+// sheetShownJSON is a list of such records, in order.
+func sheetShownJSON[R sheetShownRecord](shown []R) any {
+	out := make([]any, len(shown))
+	for i, record := range shown {
+		out[i] = map[string]any{
+			"row": digits(record.Row()), "col": digits(record.Col()),
+			"value": signedDigits(record.Value()), "fault": record.Fault(),
 		}
 	}
 	return out
@@ -1641,6 +1674,7 @@ func sheetCopy() machine {
 		"gone":     func() any { return rgaGonesJSON(policy.Gone()) },
 		"cols":     func() any { return rgaNodesJSON(policy.Cols()) },
 		"goneCols": func() any { return rgaGonesJSON(policy.GoneCols()) },
+		"shown":    func() any { return sheetShownJSON(policy.Shown()) },
 		"lamport":  func() any { return digits(policy.Lamport()) },
 		"orphans":  func() any { return policy.Orphans() },
 		"refusals": func() any { return policy.Refusals() },
