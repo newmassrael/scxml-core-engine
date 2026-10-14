@@ -1,0 +1,64 @@
+# Mutation cases for "an algorithm's record may hold a string the schema bounds with
+# `sce:max-size`, and writes it only from a literal that fits or from a field of the
+# same or a smaller bound" (SCE_FORGE.md §4.12, "Records"; docs/SCE_ACCEPTED_SUBSET.md
+# §2.15, "A record's string field").
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/an_algorithm_record_holds_bounded_text.cases`.
+#
+# The validator judges it where the record is named and where the text is written, for
+# every backend alike, before any of them lowers a statement. The judge is
+# `an_algorithm_rule_is_refused_at_the_attribute_that_breaks_it`, whose cases write a
+# record schema with no bound, with a byte string, a text of eight bytes copied into a
+# field of four, a literal of five bytes into a field of four, a text field read as a
+# value and a text written from an expression. The mutants take one decision away each:
+#
+#   a string field the schema does not bound is let through;
+#   a byte string field is let through;
+#   a copy into a smaller bound is let through;
+#   a literal one byte past the bound is let through;
+#   a text field is read where no backend lowers the read alike;
+#   a text written from an expression is taken as a literal.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test an_algorithm_rule_is_refused_at_the_attribute_that_breaks_it
+mutation_targets sce-build/src/forge/generator.rs sce-build/src/forge/expr.rs
+mutation_oracles sce-build/tests/an_algorithm_rule_is_refused_at_the_attribute_that_breaks_it.rs
+
+mutation_case "a string field the schema does not bound is let through" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     "        .find(|f| matches!(f.ty, SceType::String) && f.max_size.is_none())",
+     "        .find(|f| matches!(f.ty, SceType::String) && f.max_size.is_none() && false)")
+PY
+
+mutation_case "a byte string field is let through" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     "            || matches!(f.ty, SceType::Enum(_) | SceType::String))",
+     "            || matches!(f.ty, SceType::Enum(_) | SceType::String | SceType::Bytes))")
+PY
+
+mutation_case "a copy into a smaller bound is let through" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     "            if held > bound {\n                return Err(TextRefusal::TooLong {\n                    held,",
+     "            if held > bound && false {\n                return Err(TextRefusal::TooLong {\n                    held,")
+PY
+
+mutation_case "a literal one byte past the bound is let through" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     "            if value.len() > bound as usize {\n                return Err(TextRefusal::TooLong {",
+     "            if value.len() > bound as usize + 1 {\n                return Err(TextRefusal::TooLong {")
+PY
+
+mutation_case "a text field is read where no backend lowers the read alike" <<'PY'
+edit("sce-build/src/forge/expr.rs",
+     "    if reads_text {\n        if operand_of_comparison {",
+     "    if reads_text {\n        if operand_of_comparison || true {")
+PY
+
+mutation_case "a text written from an expression is taken as a literal" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     "        _ => Err(TextRefusal::Shape(\"an expression\")),",
+     "        _ => Ok(TextSource::Literal),")
+PY

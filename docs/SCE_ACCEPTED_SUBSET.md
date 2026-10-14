@@ -3839,6 +3839,16 @@ refused. The Interpreter runs the same scenario lowered
 (`AStaticDatamodelRunsLoweredUnderTheInterpreterTest`, which finds scenarios by
 scanning their directory), under the same bound.
 
+An imported algorithm takes and gives back such a record and a list of them
+(State an algorithm takes and gives back, below). Its own record holds the text in a
+buffer of the same bound — in Rust the runtime's bounded text, a `String` under
+`alloc` and a fixed `heapless::String<N>` on the no-alloc profile, and in C11 the very
+`sce_static_string_<N>_t` the record above holds it in — and the adapter copies the
+field across, so the text the algorithm returns is within the bound the machine's
+variable holds. What an algorithm does with the text is limited to a copy from a
+literal or from a field of the same or a smaller bound, and a comparison with `===`
+and `!==` (SCE_FORGE.md §4.12), so the bound cannot be passed inside the algorithm.
+
 **A byte string.** A `bytes` variable declares the most bytes it holds with
 `sce:capacity`, and a record's `bytes` field is bounded by the `sce:max-size` its
 schema writes (`docs/adr/0005`, decision 2). No default stands in for either: a byte
@@ -4213,9 +4223,21 @@ same element, a list of records a list of the same schema. An algorithm that ret
 a list declares `may-fail` and a `returns-max-size`, and the variable it is assigned
 to must be able to hold all of it (`sce:capacity` at least `returns-max-size`, naming
 both numbers), as for a list of numbers above. A record is handed over only when
-every field of its schema is a number or a truth value, the fields that copy the same
-on every backend: one with a string, a byte string or an enum field is refused where
-the algorithm is imported, naming the field.
+every field of its schema is a number, a truth value or a string the schema bounds
+with `sce:max-size`, the fields that copy field by field on every backend: one with a
+byte string or an enum field, or with a string that declares no bound, is refused
+where the algorithm is imported, naming the field. A string field is the text held
+within its bound on both sides of the call (A record's string field, above): the
+algorithm's record holds it in a buffer of the same bound
+(SCE_FORGE.md §4.12, "How a record holds its text"), the algorithm writes a text to a
+record only from a literal that fits or from a field of the same or a smaller bound,
+so what it returns is within the bound the variable it is assigned to holds it in, and
+no copy back can be cut or fail. The payload of an event is the one source that is not
+handed over whole when its schema holds text: `_event.data` carries the text the host
+sent, which is held to its bound only by the assignment that takes it into a variable,
+so a call of `Alg(_event.data)` is refused at the call (`expression/unsupported-construct`,
+"the payload of the event holds text") and the author assigns the payload to a record
+variable and hands the algorithm that.
 
 A call is a statement like any other. It reads the variables as they stand, and
 nothing the algorithm does reaches the machine's state: the machine hands over a copy

@@ -1,0 +1,42 @@
+# Mutation cases for "a sce-static statechart hands an algorithm a record or a list of
+# records that holds a string the schema bounds, and takes one back; a payload that
+# holds text is not handed over whole" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "State an
+# algorithm takes and gives back").
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_machine_hands_an_algorithm_a_record_that_holds_text.cases`.
+#
+# The judge is `a_static_machine_hands_algorithms_the_state_it_holds`: the machine over
+# the standard text_slot documents lowers on every backend, the Interpreter's lowering
+# holds each text an algorithm writes to the field's bound, a payload with text is refused
+# at the call, and a record with a byte string is refused where the algorithm is
+# imported. The mutants take one decision away each:
+#
+#   a payload that holds text is handed to an algorithm whole;
+#   a record with a byte string is handed to an algorithm;
+#   the Interpreter writes an algorithm's literal to a record without the bound.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test a_static_machine_hands_algorithms_the_state_it_holds
+mutation_targets sce-build/src/forge/type_ctx.rs sce-build/src/forge/static_lowering.rs sce-build/src/forge/static_js_algorithm.rs
+mutation_oracles sce-build/tests/a_static_machine_hands_algorithms_the_state_it_holds.rs
+
+mutation_case "a payload that holds text is handed to an algorithm whole" <<'PY'
+edit("sce-build/src/forge/type_ctx.rs",
+     "(StaticSlot::Record(_), ArgShape::EventData) if context.payload_holds_text => Err(",
+     "(StaticSlot::Record(_), ArgShape::EventData) if context.payload_holds_text && false => Err(")
+PY
+
+mutation_case "a record with a byte string is handed to an algorithm" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "    plain_scalar(ty) || (matches!(ty, SceType::String) && max_size.is_some())",
+     "    plain_scalar(ty) || matches!(ty, SceType::String | SceType::Bytes)")
+PY
+
+mutation_case "the Interpreter writes an algorithm's text to a record without the bound" <<'PY'
+edit("sce-build/src/forge/static_js_algorithm.rs",
+     "        Ok(format!(\"{RUNTIME_GLOBAL}.bounded({text}, {bound})\"))",
+     "        Ok(text)")
+PY
