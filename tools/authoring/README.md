@@ -2285,6 +2285,30 @@ all is still withheld rather than failed: its effect may arrive through a
 component the document cannot see. Without the host stated, the run is as it
 was.
 
+A recorded step is ONE round unless the pack's `host.rounds` says otherwise.
+`per-delivery` says the platform hands a step's inputs to the component one
+delivery at a time — one subscription, one call — in the order the record drove
+them, and each delivery is a round that lands its outputs before the next one
+runs; the case is read once the step has settled, after its last round. Which
+addresses arrive together is the interface model's `delivered_with` (an address
+it gives no name is a delivery of its own), a fact of the platform's wiring that
+neither the specification nor a document can state (`verify.deliveries`). ⚠ The
+two readings part where a step drives two deliveries and the first round sends
+an output something the second does not: one round per step reads the last send
+of the whole step. Measured 2026-10-14 against a platform's acceptance validator
+with a generated component, the same two inputs listed in either order were
+judged by the state after the second round, three runs out of three, and one
+order failed a case the one-round reading passed. Both kinds of document are run
+that way (`verify.host_rounds`): each delivery is a step of its own that holds
+what the platform holds once it has run — the record's values for what has been
+delivered, the step before's for what is still to come — and every part but the
+last is run like a setup step, so a statechart takes its events and lands its
+round, and a computation is activated, moves what it keeps (a holder, a
+`hold_last` slot, a counter protocol's latch) and lands what it writes. The last
+part is the step as recorded, judged as it always was. A drive the document does
+not read stays with that last part, and an address restating its value is no
+delivery.
+
 ⚠ That is how an output written only at certain moments is stated: in its
 rule, not in the host. On one platform's original components about half the
 outputs were written in the rounds that delivered an input they read, and the

@@ -276,6 +276,10 @@
         "writes": {
           "enum": ["every-round"],
           "description": "Which positions a round writes, and therefore announces. `every-round`: every position an output rule writes, in every round, changed or not -- which for a `hold_last` rule handed a value its map lacks is none, so an output written only at certain moments is stated in its rule, not here. ⚠ The only policy `verify` models, and the one listed here for that reason: measured 2026-09-27 on one platform's original components, about half of the outputs were written in the rounds that delivered an input they read, and the rest by guards, transitions, timers and their code's grouping -- a timing that differs output by output. A case read as its first announcement (`observed: first`) depends on this, so `verify` refuses such a case where the pack does not state it."
+        },
+        "rounds": {
+          "enum": ["per-delivery"],
+          "description": "How the host cuts a recorded step into rounds. `per-delivery`: the platform hands the step's inputs to the component one delivery at a time (the interface model's `delivered_with`), in the order the record drove them, and each delivery is a round of its own that lands its outputs before the next begins; a case is read once the step has settled, after its last round. Left out, a step is one round, as it always was. ⚠ The two part where a step drives addresses of two deliveries and the first round sends something the second does not: measured 2026-10-14 against one platform's acceptance validator with a generated component, the same two inputs listed in either order were judged by the state after the second round, three runs out of three -- one order failed a case the one-round reading passed. A statechart takes each delivery's events as a round of its own, and a computation is activated once per delivery, moving what it keeps (a holder, a `hold_last` slot, a counter protocol's latch) in each."
         }
       }
     },

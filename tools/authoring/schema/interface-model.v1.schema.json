@@ -56,6 +56,11 @@
           "type": "boolean",
           "default": false,
           "description": "For an event output several events share (a record with an `ID` and a `Stat`): when the COMPONENT moves the slot to another event it first publishes the OLD event with its `Stat` off, and then the new one. ⚠ A fact of the component, not of the platform: measured 2026-10-07 over 244 product sources, 79 read the cached event ID back and the others do not. Declared on a component that does not do it, the first publication of a direct switch becomes the old event off, which the validator rejects (four components, measured); left out of one that does, its \"event off\" cases fail (two components, ten cases). Neither the specification nor a document can say it, so the model does. Only an `output` or `stored` entry that has a `Stat` field can carry it."
+        },
+        "delivered_with": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The platform delivery -- one subscription, one callback into the component -- that hands this address over, named so that every address handed over in the same call carries the same name. Read only where the pack's `host.rounds` is `per-delivery`: a recorded step that drives addresses of several deliveries is then several rounds, one per delivery, in the order the record drove them, and an address with no name is a delivery of its own. ⚠ A fact of the platform's wiring of this component, not of the specification: which addresses one subscription groups is in the platform's own declaration of the component, and a document cannot say it. Not said of an `output`: a component is not handed what only it writes."
         }
       },
       "allOf": [

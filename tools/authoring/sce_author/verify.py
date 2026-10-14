@@ -28,6 +28,7 @@ clean run for a document it never executed.
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import hashlib
 import itertools
 import json
@@ -2737,6 +2738,100 @@ def rounds_of(cases):
         yield case, case, True
 
 
+def deliveries(addresses, model, host: dict) -> list[list]:
+    """The rounds one recorded step is cut into: the addresses each delivers, in order.
+
+    Under `host.rounds: per-delivery` the platform hands a step's inputs to the component one
+    delivery at a time, in the order the record drove them, and every address the model names
+    with the same `delivered_with` arrives in the same one -- the delivery takes the place of
+    its first address; an address the model gives no name is a delivery of its own. Otherwise
+    the step is one round, as it always was.
+
+    ⚠ One round per step was the only reading, and it is wrong where a step drives addresses of
+    two deliveries: the first round lands what it sent before the second runs. Measured
+    2026-10-14 against a platform's acceptance validator: the second of two such rounds sent
+    nothing to an output the first had turned on, the case read it off, and the one-round
+    reading -- the last send of the whole step -- passed what the platform failed.
+    """
+    addresses = list(addresses)
+    if host.get("rounds") != "per-delivery":
+        return [addresses] if addresses else []
+    by_address = getattr(model, "by_address", {}) if model is not None else {}
+    grouped: dict = {}
+    for address in addresses:
+        entry = by_address.get(address)
+        name = entry.delivered_with if entry is not None and entry.delivered_with else None
+        grouped.setdefault(("delivery", name) if name else ("address", address), []).append(address)
+    return list(grouped.values())
+
+
+def _kept(delivered, addresses):
+    """A step's `delivered`, narrowed to `addresses`; None where the record does not say."""
+    return None if delivered is None else tuple(a for a in delivered if a in addresses)
+
+
+def split_step(step, prior: dict, model, host: dict, read: set) -> list:
+    """`step` as the rounds the host runs it in.
+
+    Under `host.rounds: per-delivery` a step that changes addresses the document reads in more
+    than one delivery (`deliveries`) is one step per delivery, in the order driven. Each drives
+    its own delivery and holds what the platform holds once that delivery has run: the record's
+    values for what has been delivered so far, the step before's for what is still to come. The
+    last is the step itself with only its last delivery driven, so a judged step keeps its name,
+    what it expects and when it was read. One delivery, or no rounds stated: `[step]`.
+
+    ⚠ A drive the document does not read -- a slot the record planted, an address the
+    component does not receive -- is no delivery of this document's: it stays with the last
+    part, where the rules about it (planting, withholding what the component cannot see) read
+    it as they always did. An address restating its value delivers nothing (`unchanged_drives`)
+    and stays there too.
+    """
+    if host.get("rounds") != "per-delivery":
+        return [step]
+    unchanged = unchanged_drives(step, prior, model)
+    drove = list(dict.fromkeys(step.drove or ()))
+    split = [a for a in drove if a in read and a not in unchanged]
+    parts = deliveries(split, model, host)
+    if len(parts) <= 1:
+        return [step]
+    others = tuple(a for a in drove if a not in split)
+    out = []
+    for number, part in enumerate(parts, start=1):
+        later = {a for p in parts[number:] for a in p}
+        if not later:
+            driven = (*part, *others)
+            out.append(dataclasses.replace(step, drove=driven,
+                                           delivered=_kept(step.delivered, driven)))
+            break
+        held = {a: v for a, v in (step.given or {}).items() if a not in later}
+        held.update({a: prior[a] for a in later if a in prior})
+        out.append(dataclasses.replace(
+            step, name=f"{step.name} (delivery {number} of {len(parts)})", given=held,
+            drove=tuple(part), delivered=_kept(step.delivered, part), expect={},
+            elapsed_ms=None, elapsed_window=None, before=()))
+    return out
+
+
+def host_rounds(examples, model, host: dict, read: set, sources: bool = False):
+    """`rounds_of`, every step cut into the rounds the host runs it in (`split_step`).
+
+    Yields `(step, case, judged, part)` -- `part` counting from 0 within the recorded step,
+    judged only on the last part of a judged step -- and, with `sources`, the step as recorded
+    after it. The state the parts are cut against is what the steps before held, reset at
+    each case's first step where the examples do not declare an order (`last_given` is reset
+    there for the same reason).
+    """
+    prior: dict = {}
+    for step, owner, judged in rounds_of(examples.cases):
+        if not examples.ordered and step is (owner.before[0] if owner.before else owner):
+            prior.clear()
+        parts = split_step(step, prior, model, host, read)
+        remember_given(step, prior)
+        for part, piece in enumerate(parts):
+            out = (piece, owner, judged and part == len(parts) - 1, part)
+            yield out + ((step,) if sources else ())
+
+
 class StatechartRun:
     """One engine, driven through the cases in the order they happened.
 
@@ -3427,7 +3522,12 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
                    for address, want in case.expect.items())
 
     machine_reads = set().union(*(rule_addresses(rule, latches) for rule in driving.values()))
-    for case, owner, judged in rounds_of(examples.cases):
+    # Whether a delivery of the step being run moved the machine (`host_rounds`).
+    step_moved = False
+    for case, owner, judged, part in host_rounds(examples, pack.model,
+                                                 pack.conventions.host, machine_reads):
+        if part == 0:
+            step_moved = False
         # Under `on-change` the host runs the component only for an input
         # that changed; a record restating a value delivers nothing.
         #
@@ -3488,8 +3588,8 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
                     if address not in rule_addresses(rule, latches):
                         continue
                     if rule.get("protocol"):
-                        # One telling per case: the protocol reads every address it draws on
-                        # at once, so a case that drove two of them is told once.
+                        # One telling per round: the protocol reads every address it draws on
+                        # at once, so a round that delivered two of them is told once.
                         if name in told:
                             continue
                         told.add(name)
@@ -3499,11 +3599,16 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
                     elif run.drive(rule, case):
                         moved = True
                         lost = could_have_moved(where)
+            step_moved = step_moved or moved
             if lost:
                 if judged:
                     withhold(result, case)
                 continue
-            if not moved:
+            # ⚠ The last delivery of a step the host runs in several (`host_rounds`) changed a
+            # value and sent the machine nothing: the host still ran that round and wrote what
+            # it writes in every round, and an earlier delivery of the same step moved the
+            # machine, so there IS a round of this case to judge -- read as one with no events.
+            if not moved and not (judged and step_moved):
                 if not judged:
                     # A setup step that moves nothing this document listens
                     # for leaves the machine as it was. That is a fact about
@@ -3963,7 +4068,11 @@ def _verify(pack: Pack, binding_path: pathlib.Path, codegen: pathlib.Path | None
     # Why what the document kept is no longer known, once it is not.
     lost = ""
     planted = Planted(bound)
-    for case, owner, judged in rounds_of(examples.cases):
+    # ⚠ A step the host runs in several deliveries is several activations (`host_rounds`): each
+    # computes from the inputs as they stand after its delivery, moves what the document keeps
+    # and lands what it writes, and the case is judged on the last.
+    for case, owner, judged, part, source in host_rounds(
+            examples, pack.model, pack.conventions.host, read_addresses, sources=True):
         if id(owner) in failed:
             continue
         # Before the round: the record's writes land first, the document's
@@ -3976,7 +4085,8 @@ def _verify(pack: Pack, binding_path: pathlib.Path, codegen: pathlib.Path | None
         result = CaseResult(name=owner.name or "(unnamed)")
         hidden = unaccounted_drives(case, pack.model, read_addresses, examples.independent)
         if rounds_are_known:
-            if not examples.ordered and case is (owner.before[0] if owner.before else owner):
+            if (not examples.ordered and part == 0
+                    and source is (owner.before[0] if owner.before else owner)):
                 # ⚠ Cases that do not declare an order do not say what ran
                 # before them, so the first step of each is a change. Its own
                 # setup steps ARE ordered. Comparing with the previous case in

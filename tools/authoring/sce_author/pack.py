@@ -156,6 +156,9 @@ class Entry:
     note: str = ""
     #: The component moves this event slot to another event by first publishing the old one off.
     announces_old_off: bool = False
+    #: The platform delivery this address arrives in, together with every address of the same
+    #: name; empty where the model does not say (`conventions.host.rounds`).
+    delivered_with: str = ""
 
     @property
     def written(self) -> bool:
@@ -347,6 +350,12 @@ def _entry(raw: dict, where: str = "", problems: Problems = FIRST_PROBLEM) -> En
             f"{'not written by a document' if raw['role'] not in WRITTEN_ROLES else 'without a Stat field'}"
             f": only an `output` or `stored` event record with a `Stat` has an old event to "
             f"publish off"))
+    delivered_with = raw.get("delivered_with", "")
+    if delivered_with and raw["role"] == "output":
+        problems.refuse(PackError(
+            f"{here + ': ' if here else ''}delivered_with is said of an `output`: it names how "
+            f"the platform hands an address TO the component, and a component is not handed "
+            f"what only it writes"))
     return Entry(
         address=raw["address"],
         role=raw["role"],
@@ -354,6 +363,7 @@ def _entry(raw: dict, where: str = "", problems: Problems = FIRST_PROBLEM) -> En
         fields=tuple(fields),
         note=raw.get("note", ""),
         announces_old_off=announces,
+        delivered_with=delivered_with,
     )
 
 
