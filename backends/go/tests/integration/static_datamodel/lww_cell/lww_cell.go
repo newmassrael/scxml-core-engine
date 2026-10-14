@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 0022d2f7097a4a1eb0e7ba717e1da8948cc1ba80ab5d45ced6c3b314777dd2db
-// SCE-MAP: lww_cell.scxml:21 :: _forge_body
+// source-hash: c431fa9e45990e8b729e69a4bf81ba13f9cc4e8066ddecbd5ff6346ac56dd5f3
+// SCE-MAP: lww_cell.scxml:37 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="event-schema")
 // Runtime: none
@@ -16,4 +16,13 @@ type LwwCellPayload struct {
 	WallTime int64
 	Counter uint32
 	NodeId uint64
+	Op uint8
+	ARef bool
+	ARow uint64
+	ACol uint64
+	AVal int64
+	BRef bool
+	BRow uint64
+	BCol uint64
+	BVal int64
 }

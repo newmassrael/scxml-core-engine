@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: f6a25f05d9c6710c575a8a02095451e4b3efae7e36c47b7681b1beb92894445e
+// source-hash: 0bf4374c854925578e15f37f10b6f21a3e0a703009ff9d2c9643d11dab40fd22
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -20,7 +20,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: sheet_peer.scxml:34 :: _machine
+// SCE-MAP: sheet_peer.scxml:46 :: _machine
 
 package sheet_peer
 
@@ -42,6 +42,8 @@ import (
 	sce_rga_insert "github.com/newmassrael/sce-go-tests/integration/static_datamodel/rga_insert"
 	sce_rga_node "github.com/newmassrael/sce-go-tests/integration/static_datamodel/rga_node"
 	sce_rga_remove "github.com/newmassrael/sce-go-tests/integration/static_datamodel/rga_remove"
+	sce_sheet_settle "github.com/newmassrael/sce-go-tests/integration/static_datamodel/sheet_settle"
+	sce_sheet_show "github.com/newmassrael/sce-go-tests/integration/static_datamodel/sheet_show"
 )
 
 // Ensure imports are used
@@ -154,12 +156,14 @@ const (
 	SheetPeerEventSheetDropCol SheetPeerEvent = 5
 	SheetPeerEventSheetDropRow SheetPeerEvent = 6
 	SheetPeerEventSheetEdit SheetPeerEvent = 7
-	SheetPeerEventSheetGone SheetPeerEvent = 8
-	SheetPeerEventSheetGoneCol SheetPeerEvent = 9
-	SheetPeerEventSheetJoin SheetPeerEvent = 10
-	SheetPeerEventSheetRow SheetPeerEvent = 11
+	SheetPeerEventSheetFormula SheetPeerEvent = 8
+	SheetPeerEventSheetGone SheetPeerEvent = 9
+	SheetPeerEventSheetGoneCol SheetPeerEvent = 10
+	SheetPeerEventSheetJoin SheetPeerEvent = 11
+	SheetPeerEventSheetRecompute SheetPeerEvent = 12
+	SheetPeerEventSheetRow SheetPeerEvent = 13
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	SheetPeerEventNull SheetPeerEvent = 12
+	SheetPeerEventNull SheetPeerEvent = 14
 )
 
 func (e SheetPeerEvent) String() string {
@@ -180,12 +184,16 @@ func (e SheetPeerEvent) String() string {
 		return "sheet.drop_row"
 	case SheetPeerEventSheetEdit:
 		return "sheet.edit"
+	case SheetPeerEventSheetFormula:
+		return "sheet.formula"
 	case SheetPeerEventSheetGone:
 		return "sheet.gone"
 	case SheetPeerEventSheetGoneCol:
 		return "sheet.gone_col"
 	case SheetPeerEventSheetJoin:
 		return "sheet.join"
+	case SheetPeerEventSheetRecompute:
+		return "sheet.recompute"
 	case SheetPeerEventSheetRow:
 		return "sheet.row"
 	case SheetPeerEventNull:
@@ -211,6 +219,7 @@ const (
 	SheetPeerPayloadTagSheetDropCol
 	SheetPeerPayloadTagSheetDropRow
 	SheetPeerPayloadTagSheetEdit
+	SheetPeerPayloadTagSheetFormula
 	SheetPeerPayloadTagSheetGone
 	SheetPeerPayloadTagSheetGoneCol
 	SheetPeerPayloadTagSheetJoin
@@ -241,6 +250,15 @@ type SheetPeerSheetCellPayload struct {
 	wallTime int64
 	counter uint32
 	nodeId uint64
+	op uint8
+	aRef bool
+	aRow uint64
+	aCol uint64
+	aVal int64
+	bRef bool
+	bRow uint64
+	bCol uint64
+	bVal int64
 }
 
 // SheetPeerSheetColPayload is the NL→IR Item C1 Path A typed `_event.data`
@@ -272,6 +290,24 @@ type SheetPeerSheetEditPayload struct {
 	row uint64
 	col uint64
 	value int64
+	now int64
+}
+
+// SheetPeerSheetFormulaPayload is the NL→IR Item C1 Path A typed `_event.data`
+// payload for `sheet.formula`. Internal to the package; consumers inject it via
+// the `RaiseSheetFormula` seam below (fields are unexported by design).
+type SheetPeerSheetFormulaPayload struct {
+	row uint64
+	col uint64
+	op uint8
+	aRef bool
+	aRow uint64
+	aCol uint64
+	aVal int64
+	bRef bool
+	bRow uint64
+	bCol uint64
+	bVal int64
 	now int64
 }
 
@@ -352,17 +388,17 @@ func RaiseSheetAddRow(e *sce.Engine[SheetPeerState, SheetPeerEvent], after uint6
 // values in one call so the name↔type pairing cannot be constructed
 // inconsistently. Twin of the Rust `RaiseSheetCell` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaiseSheetCell(e *sce.Engine[SheetPeerState, SheetPeerEvent], row uint64, col uint64, value int64, wallTime int64, counter uint32, nodeId uint64) {
+func RaiseSheetCell(e *sce.Engine[SheetPeerState, SheetPeerEvent], row uint64, col uint64, value int64, wallTime int64, counter uint32, nodeId uint64, op uint8, aRef bool, aRow uint64, aCol uint64, aVal int64, bRef bool, bRow uint64, bCol uint64, bVal int64) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[SheetPeerEvent]{
 		Event:    SheetPeerEventSheetCell,
 		Metadata: sce.EventMetadata{
 			EventType:    sce.EventTypeExternal,
-			TypedPayload: SheetPeerSheetCellPayload{row: row, col: col, value: value, wallTime: wallTime, counter: counter, nodeId: nodeId, },
+			TypedPayload: SheetPeerSheetCellPayload{row: row, col: col, value: value, wallTime: wallTime, counter: counter, nodeId: nodeId, op: op, aRef: aRef, aRow: aRow, aCol: aCol, aVal: aVal, bRef: bRef, bRow: bRow, bCol: bCol, bVal: bVal, },
 			// Both carriers are filled: the typed one a native guard reads,
 			// and `Data`, which is what the script engine binds `_event.data`
 			// from. Filling only the first left an `<assign expr="_event.data.x">`
 			// on this event reading nothing, on every backend alike.
-			Data: sce.PayloadJSON(sce.Pair("row", sce.Uint64PayloadText(row)), sce.Pair("col", sce.Uint64PayloadText(col)), sce.Pair("value", sce.Int64PayloadText(value)), sce.Pair("wallTime", sce.Int64PayloadText(wallTime)), sce.Pair("counter", counter), sce.Pair("nodeId", sce.Uint64PayloadText(nodeId))),
+			Data: sce.PayloadJSON(sce.Pair("row", sce.Uint64PayloadText(row)), sce.Pair("col", sce.Uint64PayloadText(col)), sce.Pair("value", sce.Int64PayloadText(value)), sce.Pair("wallTime", sce.Int64PayloadText(wallTime)), sce.Pair("counter", counter), sce.Pair("nodeId", sce.Uint64PayloadText(nodeId)), sce.Pair("op", op), sce.Pair("aRef", aRef), sce.Pair("aRow", sce.Uint64PayloadText(aRow)), sce.Pair("aCol", sce.Uint64PayloadText(aCol)), sce.Pair("aVal", sce.Int64PayloadText(aVal)), sce.Pair("bRef", bRef), sce.Pair("bRow", sce.Uint64PayloadText(bRow)), sce.Pair("bCol", sce.Uint64PayloadText(bCol)), sce.Pair("bVal", sce.Int64PayloadText(bVal))),
 		},
 	})
 }
@@ -443,6 +479,26 @@ func RaiseSheetEdit(e *sce.Engine[SheetPeerState, SheetPeerEvent], row uint64, c
 			// from. Filling only the first left an `<assign expr="_event.data.x">`
 			// on this event reading nothing, on every backend alike.
 			Data: sce.PayloadJSON(sce.Pair("row", sce.Uint64PayloadText(row)), sce.Pair("col", sce.Uint64PayloadText(col)), sce.Pair("value", sce.Int64PayloadText(value)), sce.Pair("now", sce.Int64PayloadText(now))),
+		},
+	})
+}
+
+// RaiseSheetFormula is the NL→IR Item C1 Path A per-event typed `_event.data`
+// inject seam for `sheet.formula` — binds the event name and the payload field
+// values in one call so the name↔type pairing cannot be constructed
+// inconsistently. Twin of the Rust `RaiseSheetFormula` extension-trait method
+// and the C11 `raise_<event>_typed` entry.
+func RaiseSheetFormula(e *sce.Engine[SheetPeerState, SheetPeerEvent], row uint64, col uint64, op uint8, aRef bool, aRow uint64, aCol uint64, aVal int64, bRef bool, bRow uint64, bCol uint64, bVal int64, now int64) {
+	e.RaiseExternalWithMeta(sce.EventWithMetadata[SheetPeerEvent]{
+		Event:    SheetPeerEventSheetFormula,
+		Metadata: sce.EventMetadata{
+			EventType:    sce.EventTypeExternal,
+			TypedPayload: SheetPeerSheetFormulaPayload{row: row, col: col, op: op, aRef: aRef, aRow: aRow, aCol: aCol, aVal: aVal, bRef: bRef, bRow: bRow, bCol: bCol, bVal: bVal, now: now, },
+			// Both carriers are filled: the typed one a native guard reads,
+			// and `Data`, which is what the script engine binds `_event.data`
+			// from. Filling only the first left an `<assign expr="_event.data.x">`
+			// on this event reading nothing, on every backend alike.
+			Data: sce.PayloadJSON(sce.Pair("row", sce.Uint64PayloadText(row)), sce.Pair("col", sce.Uint64PayloadText(col)), sce.Pair("op", op), sce.Pair("aRef", aRef), sce.Pair("aRow", sce.Uint64PayloadText(aRow)), sce.Pair("aCol", sce.Uint64PayloadText(aCol)), sce.Pair("aVal", sce.Int64PayloadText(aVal)), sce.Pair("bRef", bRef), sce.Pair("bRow", sce.Uint64PayloadText(bRow)), sce.Pair("bCol", sce.Uint64PayloadText(bCol)), sce.Pair("bVal", sce.Int64PayloadText(bVal)), sce.Pair("now", sce.Int64PayloadText(now))),
 		},
 	})
 }
@@ -560,6 +616,15 @@ type SheetPeerLwwCellRecord struct {
 	wallTime int64
 	counter uint32
 	nodeId uint64
+	op uint8
+	aRef bool
+	aRow uint64
+	aCol uint64
+	aVal int64
+	bRef bool
+	bRow uint64
+	bCol uint64
+	bVal int64
 }
 
 // Row reports the `row` field.
@@ -590,6 +655,51 @@ func (r SheetPeerLwwCellRecord) Counter() uint32 {
 // NodeId reports the `nodeId` field.
 func (r SheetPeerLwwCellRecord) NodeId() uint64 {
 	return r.nodeId
+}
+
+// Op reports the `op` field.
+func (r SheetPeerLwwCellRecord) Op() uint8 {
+	return r.op
+}
+
+// ARef reports the `aRef` field.
+func (r SheetPeerLwwCellRecord) ARef() bool {
+	return r.aRef
+}
+
+// ARow reports the `aRow` field.
+func (r SheetPeerLwwCellRecord) ARow() uint64 {
+	return r.aRow
+}
+
+// ACol reports the `aCol` field.
+func (r SheetPeerLwwCellRecord) ACol() uint64 {
+	return r.aCol
+}
+
+// AVal reports the `aVal` field.
+func (r SheetPeerLwwCellRecord) AVal() int64 {
+	return r.aVal
+}
+
+// BRef reports the `bRef` field.
+func (r SheetPeerLwwCellRecord) BRef() bool {
+	return r.bRef
+}
+
+// BRow reports the `bRow` field.
+func (r SheetPeerLwwCellRecord) BRow() uint64 {
+	return r.bRow
+}
+
+// BCol reports the `bCol` field.
+func (r SheetPeerLwwCellRecord) BCol() uint64 {
+	return r.bCol
+}
+
+// BVal reports the `bVal` field.
+func (r SheetPeerLwwCellRecord) BVal() int64 {
+	return r.bVal
 }
 
 
@@ -627,6 +737,35 @@ func (r SheetPeerRgaGoneRecord) By() uint64 {
 }
 
 
+// SCE Accepted Subset §2.15: a `record:Shown` datamodel value.
+type SheetPeerShownRecord struct {
+	row uint64
+	col uint64
+	value int64
+	fault uint8
+}
+
+// Row reports the `row` field.
+func (r SheetPeerShownRecord) Row() uint64 {
+	return r.row
+}
+
+// Col reports the `col` field.
+func (r SheetPeerShownRecord) Col() uint64 {
+	return r.col
+}
+
+// Value reports the `value` field.
+func (r SheetPeerShownRecord) Value() int64 {
+	return r.value
+}
+
+// Fault reports the `fault` field.
+func (r SheetPeerShownRecord) Fault() uint8 {
+	return r.fault
+}
+
+
 // ── SCE Accepted Subset §2.15: calls of an algorithm that takes or returns state ──
 func sceAdapt_HlcReceive__vv(p0 SheetPeerHlcRecord, p1 SheetPeerHlcRecord, p2 int64, p3 uint64) scealgorithm.Outcome[SheetPeerHlcRecord] {
 	r, err := sce_hlc_receive.HlcReceive(sce_hlc_timestamp.HlcTimestampPayload{WallTime: p0.wallTime, Counter: p0.counter, NodeId: p0.nodeId}, sce_hlc_timestamp.HlcTimestampPayload{WallTime: p1.wallTime, Counter: p1.counter, NodeId: p1.nodeId}, p2, p3)
@@ -649,15 +788,15 @@ func sceAdapt_HlcSend__v(p0 SheetPeerHlcRecord, p1 int64, p2 uint64) scealgorith
 func sceAdapt_LwwWrite__vv(p0 []SheetPeerLwwCellRecord, p1 SheetPeerLwwCellRecord) scealgorithm.Outcome[[]SheetPeerLwwCellRecord] {
 	a0 := make([]sce_lww_cell.LwwCellPayload, len(p0))
 	for i, e := range p0 {
-		a0[i] = sce_lww_cell.LwwCellPayload{Row: e.row, Col: e.col, Value: e.value, WallTime: e.wallTime, Counter: e.counter, NodeId: e.nodeId}
+		a0[i] = sce_lww_cell.LwwCellPayload{Row: e.row, Col: e.col, Value: e.value, WallTime: e.wallTime, Counter: e.counter, NodeId: e.nodeId, Op: e.op, ARef: e.aRef, ARow: e.aRow, ACol: e.aCol, AVal: e.aVal, BRef: e.bRef, BRow: e.bRow, BCol: e.bCol, BVal: e.bVal}
 	}
-	r, err := sce_lww_write.LwwWrite(a0, sce_lww_cell.LwwCellPayload{Row: p1.row, Col: p1.col, Value: p1.value, WallTime: p1.wallTime, Counter: p1.counter, NodeId: p1.nodeId})
+	r, err := sce_lww_write.LwwWrite(a0, sce_lww_cell.LwwCellPayload{Row: p1.row, Col: p1.col, Value: p1.value, WallTime: p1.wallTime, Counter: p1.counter, NodeId: p1.nodeId, Op: p1.op, ARef: p1.aRef, ARow: p1.aRow, ACol: p1.aCol, AVal: p1.aVal, BRef: p1.bRef, BRow: p1.bRow, BCol: p1.bCol, BVal: p1.bVal})
 	if err != nil {
 		return scealgorithm.Outcome[[]SheetPeerLwwCellRecord]{Err: err}
 	}
 	out := make([]SheetPeerLwwCellRecord, len(r))
 	for i, e := range r {
-		out[i] = SheetPeerLwwCellRecord{row: e.Row, col: e.Col, value: e.Value, wallTime: e.WallTime, counter: e.Counter, nodeId: e.NodeId}
+		out[i] = SheetPeerLwwCellRecord{row: e.Row, col: e.Col, value: e.Value, wallTime: e.WallTime, counter: e.Counter, nodeId: e.NodeId, op: e.Op, aRef: e.ARef, aRow: e.ARow, aCol: e.ACol, aVal: e.AVal, bRef: e.BRef, bRow: e.BRow, bCol: e.BCol, bVal: e.BVal}
 	}
 	return scealgorithm.Outcome[[]SheetPeerLwwCellRecord]{Value: out}
 }
@@ -702,6 +841,51 @@ func sceAdapt_RgaRemove__vv(p0 []SheetPeerRgaGoneRecord, p1 SheetPeerRgaGoneReco
 	return scealgorithm.Outcome[[]SheetPeerRgaGoneRecord]{Value: out}
 }
 
+func sceAdapt_SheetSettle__vvvvv(p0 []SheetPeerLwwCellRecord, p1 []SheetPeerRgaNodeRecord, p2 []SheetPeerRgaGoneRecord, p3 []SheetPeerRgaNodeRecord, p4 []SheetPeerRgaGoneRecord) scealgorithm.Outcome[[]int64] {
+	a0 := make([]sce_lww_cell.LwwCellPayload, len(p0))
+	for i, e := range p0 {
+		a0[i] = sce_lww_cell.LwwCellPayload{Row: e.row, Col: e.col, Value: e.value, WallTime: e.wallTime, Counter: e.counter, NodeId: e.nodeId, Op: e.op, ARef: e.aRef, ARow: e.aRow, ACol: e.aCol, AVal: e.aVal, BRef: e.bRef, BRow: e.bRow, BCol: e.bCol, BVal: e.bVal}
+	}
+	a1 := make([]sce_rga_node.RgaNodePayload, len(p1))
+	for i, e := range p1 {
+		a1[i] = sce_rga_node.RgaNodePayload{Key: e.key, After: e.after}
+	}
+	a2 := make([]sce_rga_gone.RgaGonePayload, len(p2))
+	for i, e := range p2 {
+		a2[i] = sce_rga_gone.RgaGonePayload{Key: e.key, By: e.by}
+	}
+	a3 := make([]sce_rga_node.RgaNodePayload, len(p3))
+	for i, e := range p3 {
+		a3[i] = sce_rga_node.RgaNodePayload{Key: e.key, After: e.after}
+	}
+	a4 := make([]sce_rga_gone.RgaGonePayload, len(p4))
+	for i, e := range p4 {
+		a4[i] = sce_rga_gone.RgaGonePayload{Key: e.key, By: e.by}
+	}
+	r, err := sce_sheet_settle.SheetSettle(a0, a1, a2, a3, a4)
+	if err != nil {
+		return scealgorithm.Outcome[[]int64]{Err: err}
+	}
+	out := append(r[:0:0], r...)
+	return scealgorithm.Outcome[[]int64]{Value: out}
+}
+
+func sceAdapt_SheetShow__vv(p0 []SheetPeerLwwCellRecord, p1 []int64) scealgorithm.Outcome[[]SheetPeerShownRecord] {
+	a0 := make([]sce_lww_cell.LwwCellPayload, len(p0))
+	for i, e := range p0 {
+		a0[i] = sce_lww_cell.LwwCellPayload{Row: e.row, Col: e.col, Value: e.value, WallTime: e.wallTime, Counter: e.counter, NodeId: e.nodeId, Op: e.op, ARef: e.aRef, ARow: e.aRow, ACol: e.aCol, AVal: e.aVal, BRef: e.bRef, BRow: e.bRow, BCol: e.bCol, BVal: e.bVal}
+	}
+	r, err := sce_sheet_show.SheetShow(a0, p1)
+	if err != nil {
+		return scealgorithm.Outcome[[]SheetPeerShownRecord]{Err: err}
+	}
+	out := make([]SheetPeerShownRecord, len(r))
+	for i, e := range r {
+		out[i] = SheetPeerShownRecord{row: e.Row, col: e.Col, value: e.Value, fault: e.Fault}
+	}
+	return scealgorithm.Outcome[[]SheetPeerShownRecord]{Value: out}
+}
+
 // ======================================================================
 // Policy struct
 // ======================================================================
@@ -719,6 +903,7 @@ type SheetPeerPolicy struct {
 	pendingSheetDropColPayload SheetPeerSheetDropColPayload
 	pendingSheetDropRowPayload SheetPeerSheetDropRowPayload
 	pendingSheetEditPayload SheetPeerSheetEditPayload
+	pendingSheetFormulaPayload SheetPeerSheetFormulaPayload
 	pendingSheetGonePayload SheetPeerSheetGonePayload
 	pendingSheetGoneColPayload SheetPeerSheetGoneColPayload
 	pendingSheetJoinPayload SheetPeerSheetJoinPayload
@@ -747,6 +932,10 @@ type SheetPeerPolicy struct {
 	vCols []SheetPeerRgaNodeRecord
 	// W3C SCXML 5.2: the `goneCols` datamodel variable, published (`sce:direction="out"`).
 	vGoneCols []SheetPeerRgaGoneRecord
+	// W3C SCXML 5.2: the `trail` datamodel variable.
+	vTrail []int64
+	// W3C SCXML 5.2: the `shown` datamodel variable, published (`sce:direction="out"`).
+	vShown []SheetPeerShownRecord
 	// W3C SCXML 5.2: the `write` datamodel variable.
 	vWrite SheetPeerLwwCellRecord
 	// W3C SCXML 5.2: the `placed` datamodel variable.
@@ -782,7 +971,9 @@ func NewSheetPeerPolicy() SheetPeerPolicy {
 		vGone: nil,
 		vCols: nil,
 		vGoneCols: nil,
-		vWrite: SheetPeerLwwCellRecord{row: 0, col: 0, value: 0, wallTime: 0, counter: 0, nodeId: 0},
+		vTrail: nil,
+		vShown: nil,
+		vWrite: SheetPeerLwwCellRecord{row: 0, col: 0, value: 0, wallTime: 0, counter: 0, nodeId: 0, op: 0, aRef: false, aRow: 0, aCol: 0, aVal: 0, bRef: false, bRow: 0, bCol: 0, bVal: 0},
 		vPlaced: SheetPeerRgaNodeRecord{key: 0, after: 0},
 		vRemoval: SheetPeerRgaGoneRecord{key: 0, by: 0},
 		vLamport: 0,
@@ -838,6 +1029,12 @@ func (p *SheetPeerPolicy) Cols() []SheetPeerRgaNodeRecord {
 // variable holds now (W3C SCXML 5.2). Only the machine writes it.
 func (p *SheetPeerPolicy) GoneCols() []SheetPeerRgaGoneRecord {
 	return p.vGoneCols
+}
+
+// Shown reports what the published `shown` datamodel
+// variable holds now (W3C SCXML 5.2). Only the machine writes it.
+func (p *SheetPeerPolicy) Shown() []SheetPeerShownRecord {
+	return p.vShown
 }
 
 // Lamport reports what the published `lamport` datamodel
@@ -1025,12 +1222,16 @@ func (p *SheetPeerPolicy) GetEventFromName(name string) (SheetPeerEvent, bool) {
 		return SheetPeerEventSheetDropRow, true
 	case "sheet.edit":
 		return SheetPeerEventSheetEdit, true
+	case "sheet.formula":
+		return SheetPeerEventSheetFormula, true
 	case "sheet.gone":
 		return SheetPeerEventSheetGone, true
 	case "sheet.gone_col":
 		return SheetPeerEventSheetGoneCol, true
 	case "sheet.join":
 		return SheetPeerEventSheetJoin, true
+	case "sheet.recompute":
+		return SheetPeerEventSheetRecompute, true
 	case "sheet.row":
 		return SheetPeerEventSheetRow, true
 	}
@@ -1133,6 +1334,9 @@ func (p *SheetPeerPolicy) PopulateEventMetadata(meta *sce.EventMetadata) {
 	case SheetPeerSheetEditPayload:
 		p.pendingPayloadTag = SheetPeerPayloadTagSheetEdit
 		p.pendingSheetEditPayload = v
+	case SheetPeerSheetFormulaPayload:
+		p.pendingPayloadTag = SheetPeerPayloadTagSheetFormula
+		p.pendingSheetFormulaPayload = v
 	case SheetPeerSheetGonePayload:
 		p.pendingPayloadTag = SheetPeerPayloadTagSheetGone
 		p.pendingSheetGonePayload = v
@@ -1213,6 +1417,33 @@ func (p *SheetPeerPolicy) LiftTypedPayload(event SheetPeerEvent, meta *sce.Event
 		if payload.nodeId, err = sce.PayloadUnsigned64(fields, "nodeId"); err != nil {
 			return err
 		}
+		if payload.op, err = sce.PayloadUnsigned[uint8](fields, "op"); err != nil {
+			return err
+		}
+		if payload.aRef, err = sce.PayloadBool(fields, "aRef"); err != nil {
+			return err
+		}
+		if payload.aRow, err = sce.PayloadUnsigned64(fields, "aRow"); err != nil {
+			return err
+		}
+		if payload.aCol, err = sce.PayloadUnsigned64(fields, "aCol"); err != nil {
+			return err
+		}
+		if payload.aVal, err = sce.PayloadSigned64(fields, "aVal"); err != nil {
+			return err
+		}
+		if payload.bRef, err = sce.PayloadBool(fields, "bRef"); err != nil {
+			return err
+		}
+		if payload.bRow, err = sce.PayloadUnsigned64(fields, "bRow"); err != nil {
+			return err
+		}
+		if payload.bCol, err = sce.PayloadUnsigned64(fields, "bCol"); err != nil {
+			return err
+		}
+		if payload.bVal, err = sce.PayloadSigned64(fields, "bVal"); err != nil {
+			return err
+		}
 		p.pendingSheetCellPayload = payload
 		p.pendingPayloadTag = SheetPeerPayloadTagSheetCell
 	case SheetPeerEventSheetCol:
@@ -1271,6 +1502,50 @@ func (p *SheetPeerPolicy) LiftTypedPayload(event SheetPeerEvent, meta *sce.Event
 		}
 		p.pendingSheetEditPayload = payload
 		p.pendingPayloadTag = SheetPeerPayloadTagSheetEdit
+	case SheetPeerEventSheetFormula:
+		fields, err := sce.LiftPayload(meta.Data)
+		if err != nil {
+			return err
+		}
+		var payload SheetPeerSheetFormulaPayload
+		if payload.row, err = sce.PayloadUnsigned64(fields, "row"); err != nil {
+			return err
+		}
+		if payload.col, err = sce.PayloadUnsigned64(fields, "col"); err != nil {
+			return err
+		}
+		if payload.op, err = sce.PayloadUnsigned[uint8](fields, "op"); err != nil {
+			return err
+		}
+		if payload.aRef, err = sce.PayloadBool(fields, "aRef"); err != nil {
+			return err
+		}
+		if payload.aRow, err = sce.PayloadUnsigned64(fields, "aRow"); err != nil {
+			return err
+		}
+		if payload.aCol, err = sce.PayloadUnsigned64(fields, "aCol"); err != nil {
+			return err
+		}
+		if payload.aVal, err = sce.PayloadSigned64(fields, "aVal"); err != nil {
+			return err
+		}
+		if payload.bRef, err = sce.PayloadBool(fields, "bRef"); err != nil {
+			return err
+		}
+		if payload.bRow, err = sce.PayloadUnsigned64(fields, "bRow"); err != nil {
+			return err
+		}
+		if payload.bCol, err = sce.PayloadUnsigned64(fields, "bCol"); err != nil {
+			return err
+		}
+		if payload.bVal, err = sce.PayloadSigned64(fields, "bVal"); err != nil {
+			return err
+		}
+		if payload.now, err = sce.PayloadSigned64(fields, "now"); err != nil {
+			return err
+		}
+		p.pendingSheetFormulaPayload = payload
+		p.pendingPayloadTag = SheetPeerPayloadTagSheetFormula
 	case SheetPeerEventSheetGone:
 		fields, err := sce.LiftPayload(meta.Data)
 		if err != nil {
@@ -1348,7 +1623,7 @@ func (p *SheetPeerPolicy) ClearEventMetadata() {
 // ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
 // configuration, runs its <onentry>, and its <initial> transition's content when
 // its initial state is entered by default.
-//line sheet_peer.scxml:34
+//line sheet_peer.scxml:46
 func (p *SheetPeerPolicy) ExecuteEntryActions(state SheetPeerState, engine *sce.Engine[SheetPeerState, SheetPeerEvent], isDefaultEntry bool) {
 	switch state {
 	default:
@@ -1361,7 +1636,7 @@ func (p *SheetPeerPolicy) ExecuteEntryActions(state SheetPeerState, engine *sce.
 // <initial> content) when the history was taken with nothing recorded. The
 // engine asks for it by the entry set's defaultHistoryContent answer; a history
 // that restored what it recorded runs nothing.
-//line sheet_peer.scxml:34
+//line sheet_peer.scxml:46
 func (p *SheetPeerPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[SheetPeerState, SheetPeerEvent]) {
 	// W3C SCXML 3.10.2: no <history> in this document has default content.
 }
@@ -1369,7 +1644,7 @@ func (p *SheetPeerPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, en
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
 // runs its <onexit>, cancels its invocations and removes it from the
 // configuration — §scxml-D-exitStates's order.
-//line sheet_peer.scxml:34
+//line sheet_peer.scxml:46
 func (p *SheetPeerPolicy) ExecuteExitActions(state SheetPeerState, engine *sce.Engine[SheetPeerState, SheetPeerEvent], configurationBeforeExit []SheetPeerState) {
 	// §scxml-D-exitStates orders one state's exit as onexit, then
 	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
@@ -1386,7 +1661,7 @@ func (p *SheetPeerPolicy) ExecuteExitActions(state SheetPeerState, engine *sce.E
 // BindCurrentEvent binds the event whose transitions are about to be selected as
 // the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
 // and not for an eventless selection, which has no event of its own.
-//line sheet_peer.scxml:34
+//line sheet_peer.scxml:46
 func (p *SheetPeerPolicy) BindCurrentEvent(event SheetPeerEvent, engine *sce.Engine[SheetPeerState, SheetPeerEvent]) {
 	// This document's guards never read _event, so there is nothing to bind.
 }
@@ -1396,7 +1671,7 @@ func (p *SheetPeerPolicy) BindCurrentEvent(event SheetPeerEvent, engine *sce.Eng
 // that event enables and whose guard holds. The engine walks the atomic states
 // and their ancestors and keeps the ordered set; the null event asks for
 // eventless transitions.
-//line sheet_peer.scxml:34
+//line sheet_peer.scxml:46
 func (p *SheetPeerPolicy) FirstEnabledTransition(state SheetPeerState, event SheetPeerEvent, engine *sce.Engine[SheetPeerState, SheetPeerEvent]) (sce.EnabledTransition[SheetPeerState, sce.HistoryID], bool) {
 	switch state {
 	case SheetPeerStateOpen:
@@ -1420,7 +1695,7 @@ func (p *SheetPeerPolicy) FirstEnabledTransition(state SheetPeerState, event She
 				}, true
 			}
 		}
-		if event == SheetPeerEventSheetCell {
+		if event == SheetPeerEventSheetFormula {
 			{
 				return sce.EnabledTransition[SheetPeerState, sce.HistoryID]{
 					Source:          state,
@@ -1430,7 +1705,7 @@ func (p *SheetPeerPolicy) FirstEnabledTransition(state SheetPeerState, event She
 				}, true
 			}
 		}
-		if event == SheetPeerEventSheetAddRow {
+		if event == SheetPeerEventSheetCell {
 			{
 				return sce.EnabledTransition[SheetPeerState, sce.HistoryID]{
 					Source:          state,
@@ -1440,7 +1715,7 @@ func (p *SheetPeerPolicy) FirstEnabledTransition(state SheetPeerState, event She
 				}, true
 			}
 		}
-		if event == SheetPeerEventSheetRow {
+		if event == SheetPeerEventSheetRecompute {
 			{
 				return sce.EnabledTransition[SheetPeerState, sce.HistoryID]{
 					Source:          state,
@@ -1450,7 +1725,7 @@ func (p *SheetPeerPolicy) FirstEnabledTransition(state SheetPeerState, event She
 				}, true
 			}
 		}
-		if event == SheetPeerEventSheetDropRow {
+		if event == SheetPeerEventSheetAddRow {
 			{
 				return sce.EnabledTransition[SheetPeerState, sce.HistoryID]{
 					Source:          state,
@@ -1460,7 +1735,7 @@ func (p *SheetPeerPolicy) FirstEnabledTransition(state SheetPeerState, event She
 				}, true
 			}
 		}
-		if event == SheetPeerEventSheetGone {
+		if event == SheetPeerEventSheetRow {
 			{
 				return sce.EnabledTransition[SheetPeerState, sce.HistoryID]{
 					Source:          state,
@@ -1470,7 +1745,7 @@ func (p *SheetPeerPolicy) FirstEnabledTransition(state SheetPeerState, event She
 				}, true
 			}
 		}
-		if event == SheetPeerEventSheetAddCol {
+		if event == SheetPeerEventSheetDropRow {
 			{
 				return sce.EnabledTransition[SheetPeerState, sce.HistoryID]{
 					Source:          state,
@@ -1480,7 +1755,7 @@ func (p *SheetPeerPolicy) FirstEnabledTransition(state SheetPeerState, event She
 				}, true
 			}
 		}
-		if event == SheetPeerEventSheetCol {
+		if event == SheetPeerEventSheetGone {
 			{
 				return sce.EnabledTransition[SheetPeerState, sce.HistoryID]{
 					Source:          state,
@@ -1490,7 +1765,7 @@ func (p *SheetPeerPolicy) FirstEnabledTransition(state SheetPeerState, event She
 				}, true
 			}
 		}
-		if event == SheetPeerEventSheetDropCol {
+		if event == SheetPeerEventSheetAddCol {
 			{
 				return sce.EnabledTransition[SheetPeerState, sce.HistoryID]{
 					Source:          state,
@@ -1500,7 +1775,7 @@ func (p *SheetPeerPolicy) FirstEnabledTransition(state SheetPeerState, event She
 				}, true
 			}
 		}
-		if event == SheetPeerEventSheetGoneCol {
+		if event == SheetPeerEventSheetCol {
 			{
 				return sce.EnabledTransition[SheetPeerState, sce.HistoryID]{
 					Source:          state,
@@ -1510,11 +1785,31 @@ func (p *SheetPeerPolicy) FirstEnabledTransition(state SheetPeerState, event She
 				}, true
 			}
 		}
-		if event == SheetPeerEventErrorExecution {
+		if event == SheetPeerEventSheetDropCol {
 			{
 				return sce.EnabledTransition[SheetPeerState, sce.HistoryID]{
 					Source:          state,
 					TransitionIndex: 11,
+					HasActions:      true,
+					IsInternal:      true,
+				}, true
+			}
+		}
+		if event == SheetPeerEventSheetGoneCol {
+			{
+				return sce.EnabledTransition[SheetPeerState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 12,
+					HasActions:      true,
+					IsInternal:      true,
+				}, true
+			}
+		}
+		if event == SheetPeerEventErrorExecution {
+			{
+				return sce.EnabledTransition[SheetPeerState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 13,
 					HasActions:      true,
 					IsInternal:      true,
 				}, true
@@ -1526,13 +1821,13 @@ func (p *SheetPeerPolicy) FirstEnabledTransition(state SheetPeerState, event She
 
 // ExecuteTransitionContent runs one transition's executable content (W3C SCXML
 // 3.13), between the microstep's exits and its entries.
-//line sheet_peer.scxml:34
+//line sheet_peer.scxml:46
 func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transitionIndex int, engine *sce.Engine[SheetPeerState, SheetPeerEvent]) {
 	switch source {
 	case SheetPeerStateOpen:
 		switch transitionIndex {
 		case 0:
-			//line sheet_peer.scxml:101
+			//line sheet_peer.scxml:128
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != SheetPeerPayloadTagSheetJoin {
@@ -1548,7 +1843,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 
 			}()
 		case 1:
-			//line sheet_peer.scxml:107
+			//line sheet_peer.scxml:137
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != SheetPeerPayloadTagSheetEdit {
@@ -1598,6 +1893,42 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 			sceValue := sce.Uint64PayloadText(uint64(p.vNode))
 			parts = append(parts, sce.EventDataParam{Name: "nodeId", Value: sceValue})
 		}
+		{
+			sceValue := int64(0)
+			parts = append(parts, sce.EventDataParam{Name: "op", Value: sceValue})
+		}
+		{
+			sceValue := false
+			parts = append(parts, sce.EventDataParam{Name: "aRef", Value: sceValue})
+		}
+		{
+			sceValue := int64(0)
+			parts = append(parts, sce.EventDataParam{Name: "aRow", Value: sceValue})
+		}
+		{
+			sceValue := int64(0)
+			parts = append(parts, sce.EventDataParam{Name: "aCol", Value: sceValue})
+		}
+		{
+			sceValue := int64(0)
+			parts = append(parts, sce.EventDataParam{Name: "aVal", Value: sceValue})
+		}
+		{
+			sceValue := false
+			parts = append(parts, sce.EventDataParam{Name: "bRef", Value: sceValue})
+		}
+		{
+			sceValue := int64(0)
+			parts = append(parts, sce.EventDataParam{Name: "bRow", Value: sceValue})
+		}
+		{
+			sceValue := int64(0)
+			parts = append(parts, sce.EventDataParam{Name: "bCol", Value: sceValue})
+		}
+		{
+			sceValue := int64(0)
+			parts = append(parts, sce.EventDataParam{Name: "bVal", Value: sceValue})
+		}
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)
 		_ = eventDataStr
 	// W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
@@ -1614,6 +1945,20 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 		}
 	}
 	}
+			}()
+		case 2:
+			//line sheet_peer.scxml:160
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
+				if p.pendingPayloadTag != SheetPeerPayloadTagSheetFormula {
+					return
+				}
+
+
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_HlcSend__v(p.vClock, p.pendingSheetFormulaPayload.now, p.vNode)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<assign location='clock'>: an integer operation overflowed or failed")); return true }; p.vClock = sceValue; return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
 
 	// W3C SCXML 6.2: send id="__send_1"
 	{
@@ -1629,15 +1974,15 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 		// `_event.data.value === 42` finds the string "42" unequal.
 		parts := make([]sce.EventDataParam, 0)
 		{
-			sceValue := sce.Uint64PayloadText(uint64(p.pendingSheetEditPayload.row))
+			sceValue := sce.Uint64PayloadText(uint64(p.pendingSheetFormulaPayload.row))
 			parts = append(parts, sce.EventDataParam{Name: "row", Value: sceValue})
 		}
 		{
-			sceValue := sce.Uint64PayloadText(uint64(p.pendingSheetEditPayload.col))
+			sceValue := sce.Uint64PayloadText(uint64(p.pendingSheetFormulaPayload.col))
 			parts = append(parts, sce.EventDataParam{Name: "col", Value: sceValue})
 		}
 		{
-			sceValue := sce.Int64PayloadText(int64(p.pendingSheetEditPayload.value))
+			sceValue := int64(0)
 			parts = append(parts, sce.EventDataParam{Name: "value", Value: sceValue})
 		}
 		{
@@ -1652,40 +1997,50 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 			sceValue := sce.Uint64PayloadText(uint64(p.vNode))
 			parts = append(parts, sce.EventDataParam{Name: "nodeId", Value: sceValue})
 		}
+		{
+			sceValue := int64(p.pendingSheetFormulaPayload.op)
+			parts = append(parts, sce.EventDataParam{Name: "op", Value: sceValue})
+		}
+		{
+			sceValue := p.pendingSheetFormulaPayload.aRef
+			parts = append(parts, sce.EventDataParam{Name: "aRef", Value: sceValue})
+		}
+		{
+			sceValue := sce.Uint64PayloadText(uint64(p.pendingSheetFormulaPayload.aRow))
+			parts = append(parts, sce.EventDataParam{Name: "aRow", Value: sceValue})
+		}
+		{
+			sceValue := sce.Uint64PayloadText(uint64(p.pendingSheetFormulaPayload.aCol))
+			parts = append(parts, sce.EventDataParam{Name: "aCol", Value: sceValue})
+		}
+		{
+			sceValue := sce.Int64PayloadText(int64(p.pendingSheetFormulaPayload.aVal))
+			parts = append(parts, sce.EventDataParam{Name: "aVal", Value: sceValue})
+		}
+		{
+			sceValue := p.pendingSheetFormulaPayload.bRef
+			parts = append(parts, sce.EventDataParam{Name: "bRef", Value: sceValue})
+		}
+		{
+			sceValue := sce.Uint64PayloadText(uint64(p.pendingSheetFormulaPayload.bRow))
+			parts = append(parts, sce.EventDataParam{Name: "bRow", Value: sceValue})
+		}
+		{
+			sceValue := sce.Uint64PayloadText(uint64(p.pendingSheetFormulaPayload.bCol))
+			parts = append(parts, sce.EventDataParam{Name: "bCol", Value: sceValue})
+		}
+		{
+			sceValue := sce.Int64PayloadText(int64(p.pendingSheetFormulaPayload.bVal))
+			parts = append(parts, sce.EventDataParam{Name: "bVal", Value: sceValue})
+		}
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)
 		_ = eventDataStr
-	// §scxml-6.2.5: "sce:mesh" is served by the host, which
-	// declared it to this build. Dispatch rather than refuse — and take the
-	// whole send, because a processor the host serves owns delivery; falling
-	// through would also enqueue the event locally and the document would see
-	// the act twice.
+	// W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
+	// and does not change the queue.
 	{
-		hostParams := sce.WireParamsFromTypedParams(parts)
-		hostRequest := sce.HostSendRequest{
-			ProcessorType: "sce:mesh",
-			EventName:     "sheet.cell",
-			Target:        "#server",
-			Content:       "",
-			Params:        hostParams,
-			SendID:        "__send_1",
-			// W3C SCXML 5.10: the payload computed above, once, for every arm.
-			EventData: eventDataStr,
-			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
-			// processed now, carried back out as a W3C child's send to its
-			// parent carries it (§scxml-6.4.1). Analysis keeps the field on
-			// every machine with a host-served send.
-			InvokeID: p.pendingEventInvokeid,
-		}
-		_, hostServed := engine.PerformHostSend(hostRequest)
-		// W3C SCXML 6.2: a declared type with no handler registered is, from
-		// the document's side, a processor the platform does not support — the
-		// act it asked for was performed by nobody. Same event as an
-		// undeclared type, so a wiring mistake cannot read as success.
-		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
-			errEvt := sce.NewPlatformError(SheetPeerEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
-			errEvt.Metadata.SendID = "__send_1"
-			engine.Raise(errEvt)
-		}
+		meta := sce.NewEventWithMetadata(SheetPeerEventSheetCell)
+		meta.Metadata.Data = eventDataStr
+		engine.Raise(meta)
 	}
 		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
 		// <foreach> it came — the block is its own function.
@@ -1695,8 +2050,8 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 	}
 	}
 			}()
-		case 2:
-			//line sheet_peer.scxml:128
+		case 3:
+			//line sheet_peer.scxml:182
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != SheetPeerPayloadTagSheetCell {
@@ -1750,96 +2105,63 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 
 
 
+	p.vWrite.op = p.pendingSheetCellPayload.op
+
+
+
+	p.vWrite.aRef = p.pendingSheetCellPayload.aRef
+
+
+
+	p.vWrite.aRow = p.pendingSheetCellPayload.aRow
+
+
+
+	p.vWrite.aCol = p.pendingSheetCellPayload.aCol
+
+
+
+	p.vWrite.aVal = p.pendingSheetCellPayload.aVal
+
+
+
+	p.vWrite.bRef = p.pendingSheetCellPayload.bRef
+
+
+
+	p.vWrite.bRow = p.pendingSheetCellPayload.bRow
+
+
+
+	p.vWrite.bCol = p.pendingSheetCellPayload.bCol
+
+
+
+	p.vWrite.bVal = p.pendingSheetCellPayload.bVal
+
+
+
 	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_LwwWrite__vv(p.vCells, p.vWrite)), 256); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<assign location='cells'>: an integer operation overflowed or failed")); return true }; p.vCells = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
-	if p.vHub && p.pendingSheetCellPayload.nodeId != 1 {
-
 	// W3C SCXML 6.2: send id="__send_2"
 	{
-	// W3C SCXML 6.2: Evaluate <param> expressions at send time
 	{
-		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
-		// and its pair left out, and the message still goes; the error ends
-		// the block once it has. Read at the end of this element.
-		paramFailed := false
-		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
-		// delivered, so this is an ordered list rather than a map. The typed
-		// value is kept rather than its text — a receiver reading
-		// `_event.data.value === 42` finds the string "42" unequal.
-		parts := make([]sce.EventDataParam, 0)
-		{
-			sceValue := sce.Uint64PayloadText(uint64(p.pendingSheetCellPayload.row))
-			parts = append(parts, sce.EventDataParam{Name: "row", Value: sceValue})
-		}
-		{
-			sceValue := sce.Uint64PayloadText(uint64(p.pendingSheetCellPayload.col))
-			parts = append(parts, sce.EventDataParam{Name: "col", Value: sceValue})
-		}
-		{
-			sceValue := sce.Int64PayloadText(int64(p.pendingSheetCellPayload.value))
-			parts = append(parts, sce.EventDataParam{Name: "value", Value: sceValue})
-		}
-		{
-			sceValue := sce.Int64PayloadText(int64(p.pendingSheetCellPayload.wallTime))
-			parts = append(parts, sce.EventDataParam{Name: "wallTime", Value: sceValue})
-		}
-		{
-			sceValue := int64(p.pendingSheetCellPayload.counter)
-			parts = append(parts, sce.EventDataParam{Name: "counter", Value: sceValue})
-		}
-		{
-			sceValue := sce.Uint64PayloadText(uint64(p.pendingSheetCellPayload.nodeId))
-			parts = append(parts, sce.EventDataParam{Name: "nodeId", Value: sceValue})
-		}
-		eventDataStr := sce.BuildJSONFromTypedParams(parts)
+		eventDataStr := ""
 		_ = eventDataStr
-	// §scxml-6.2.5: "sce:mesh" is served by the host, which
-	// declared it to this build. Dispatch rather than refuse — and take the
-	// whole send, because a processor the host serves owns delivery; falling
-	// through would also enqueue the event locally and the document would see
-	// the act twice.
+	// W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
+	// and does not change the queue.
 	{
-		hostParams := sce.WireParamsFromTypedParams(parts)
-		hostRequest := sce.HostSendRequest{
-			ProcessorType: "sce:mesh",
-			EventName:     "sheet.cell",
-			Target:        "#alice",
-			Content:       "",
-			Params:        hostParams,
-			SendID:        "__send_2",
-			// W3C SCXML 5.10: the payload computed above, once, for every arm.
-			EventData: eventDataStr,
-			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
-			// processed now, carried back out as a W3C child's send to its
-			// parent carries it (§scxml-6.4.1). Analysis keeps the field on
-			// every machine with a host-served send.
-			InvokeID: p.pendingEventInvokeid,
-		}
-		_, hostServed := engine.PerformHostSend(hostRequest)
-		// W3C SCXML 6.2: a declared type with no handler registered is, from
-		// the document's side, a processor the platform does not support — the
-		// act it asked for was performed by nobody. Same event as an
-		// undeclared type, so a wiring mistake cannot read as success.
-		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
-			errEvt := sce.NewPlatformError(SheetPeerEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
-			errEvt.Metadata.SendID = "__send_2"
-			engine.Raise(errEvt)
-		}
-	}
-		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
-		// <foreach> it came — the block is its own function.
-		if paramFailed {
-			return
-		}
+		meta := sce.NewEventWithMetadata(SheetPeerEventSheetRecompute)
+		meta.Metadata.Data = eventDataStr
+		engine.Raise(meta)
 	}
 	}
 	}
 
-
-	if p.vHub && p.pendingSheetCellPayload.nodeId != 2 {
+	if !p.vHub && p.pendingSheetCellPayload.nodeId == p.vNode {
 
 	// W3C SCXML 6.2: send id="__send_3"
 	{
@@ -1878,6 +2200,42 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 			sceValue := sce.Uint64PayloadText(uint64(p.pendingSheetCellPayload.nodeId))
 			parts = append(parts, sce.EventDataParam{Name: "nodeId", Value: sceValue})
 		}
+		{
+			sceValue := int64(p.pendingSheetCellPayload.op)
+			parts = append(parts, sce.EventDataParam{Name: "op", Value: sceValue})
+		}
+		{
+			sceValue := p.pendingSheetCellPayload.aRef
+			parts = append(parts, sce.EventDataParam{Name: "aRef", Value: sceValue})
+		}
+		{
+			sceValue := sce.Uint64PayloadText(uint64(p.pendingSheetCellPayload.aRow))
+			parts = append(parts, sce.EventDataParam{Name: "aRow", Value: sceValue})
+		}
+		{
+			sceValue := sce.Uint64PayloadText(uint64(p.pendingSheetCellPayload.aCol))
+			parts = append(parts, sce.EventDataParam{Name: "aCol", Value: sceValue})
+		}
+		{
+			sceValue := sce.Int64PayloadText(int64(p.pendingSheetCellPayload.aVal))
+			parts = append(parts, sce.EventDataParam{Name: "aVal", Value: sceValue})
+		}
+		{
+			sceValue := p.pendingSheetCellPayload.bRef
+			parts = append(parts, sce.EventDataParam{Name: "bRef", Value: sceValue})
+		}
+		{
+			sceValue := sce.Uint64PayloadText(uint64(p.pendingSheetCellPayload.bRow))
+			parts = append(parts, sce.EventDataParam{Name: "bRow", Value: sceValue})
+		}
+		{
+			sceValue := sce.Uint64PayloadText(uint64(p.pendingSheetCellPayload.bCol))
+			parts = append(parts, sce.EventDataParam{Name: "bCol", Value: sceValue})
+		}
+		{
+			sceValue := sce.Int64PayloadText(int64(p.pendingSheetCellPayload.bVal))
+			parts = append(parts, sce.EventDataParam{Name: "bVal", Value: sceValue})
+		}
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)
 		_ = eventDataStr
 	// §scxml-6.2.5: "sce:mesh" is served by the host, which
@@ -1890,7 +2248,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 		hostRequest := sce.HostSendRequest{
 			ProcessorType: "sce:mesh",
 			EventName:     "sheet.cell",
-			Target:        "#bob",
+			Target:        "#server",
 			Content:       "",
 			Params:        hostParams,
 			SendID:        "__send_3",
@@ -1922,9 +2280,266 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 	}
 	}
 
+
+	if p.vHub && p.pendingSheetCellPayload.nodeId != 1 {
+
+	// W3C SCXML 6.2: send id="__send_4"
+	{
+	// W3C SCXML 6.2: Evaluate <param> expressions at send time
+	{
+		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
+		// and its pair left out, and the message still goes; the error ends
+		// the block once it has. Read at the end of this element.
+		paramFailed := false
+		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
+		// delivered, so this is an ordered list rather than a map. The typed
+		// value is kept rather than its text — a receiver reading
+		// `_event.data.value === 42` finds the string "42" unequal.
+		parts := make([]sce.EventDataParam, 0)
+		{
+			sceValue := sce.Uint64PayloadText(uint64(p.pendingSheetCellPayload.row))
+			parts = append(parts, sce.EventDataParam{Name: "row", Value: sceValue})
+		}
+		{
+			sceValue := sce.Uint64PayloadText(uint64(p.pendingSheetCellPayload.col))
+			parts = append(parts, sce.EventDataParam{Name: "col", Value: sceValue})
+		}
+		{
+			sceValue := sce.Int64PayloadText(int64(p.pendingSheetCellPayload.value))
+			parts = append(parts, sce.EventDataParam{Name: "value", Value: sceValue})
+		}
+		{
+			sceValue := sce.Int64PayloadText(int64(p.pendingSheetCellPayload.wallTime))
+			parts = append(parts, sce.EventDataParam{Name: "wallTime", Value: sceValue})
+		}
+		{
+			sceValue := int64(p.pendingSheetCellPayload.counter)
+			parts = append(parts, sce.EventDataParam{Name: "counter", Value: sceValue})
+		}
+		{
+			sceValue := sce.Uint64PayloadText(uint64(p.pendingSheetCellPayload.nodeId))
+			parts = append(parts, sce.EventDataParam{Name: "nodeId", Value: sceValue})
+		}
+		{
+			sceValue := int64(p.pendingSheetCellPayload.op)
+			parts = append(parts, sce.EventDataParam{Name: "op", Value: sceValue})
+		}
+		{
+			sceValue := p.pendingSheetCellPayload.aRef
+			parts = append(parts, sce.EventDataParam{Name: "aRef", Value: sceValue})
+		}
+		{
+			sceValue := sce.Uint64PayloadText(uint64(p.pendingSheetCellPayload.aRow))
+			parts = append(parts, sce.EventDataParam{Name: "aRow", Value: sceValue})
+		}
+		{
+			sceValue := sce.Uint64PayloadText(uint64(p.pendingSheetCellPayload.aCol))
+			parts = append(parts, sce.EventDataParam{Name: "aCol", Value: sceValue})
+		}
+		{
+			sceValue := sce.Int64PayloadText(int64(p.pendingSheetCellPayload.aVal))
+			parts = append(parts, sce.EventDataParam{Name: "aVal", Value: sceValue})
+		}
+		{
+			sceValue := p.pendingSheetCellPayload.bRef
+			parts = append(parts, sce.EventDataParam{Name: "bRef", Value: sceValue})
+		}
+		{
+			sceValue := sce.Uint64PayloadText(uint64(p.pendingSheetCellPayload.bRow))
+			parts = append(parts, sce.EventDataParam{Name: "bRow", Value: sceValue})
+		}
+		{
+			sceValue := sce.Uint64PayloadText(uint64(p.pendingSheetCellPayload.bCol))
+			parts = append(parts, sce.EventDataParam{Name: "bCol", Value: sceValue})
+		}
+		{
+			sceValue := sce.Int64PayloadText(int64(p.pendingSheetCellPayload.bVal))
+			parts = append(parts, sce.EventDataParam{Name: "bVal", Value: sceValue})
+		}
+		eventDataStr := sce.BuildJSONFromTypedParams(parts)
+		_ = eventDataStr
+	// §scxml-6.2.5: "sce:mesh" is served by the host, which
+	// declared it to this build. Dispatch rather than refuse — and take the
+	// whole send, because a processor the host serves owns delivery; falling
+	// through would also enqueue the event locally and the document would see
+	// the act twice.
+	{
+		hostParams := sce.WireParamsFromTypedParams(parts)
+		hostRequest := sce.HostSendRequest{
+			ProcessorType: "sce:mesh",
+			EventName:     "sheet.cell",
+			Target:        "#alice",
+			Content:       "",
+			Params:        hostParams,
+			SendID:        "__send_4",
+			// W3C SCXML 5.10: the payload computed above, once, for every arm.
+			EventData: eventDataStr,
+			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
+			// processed now, carried back out as a W3C child's send to its
+			// parent carries it (§scxml-6.4.1). Analysis keeps the field on
+			// every machine with a host-served send.
+			InvokeID: p.pendingEventInvokeid,
+		}
+		_, hostServed := engine.PerformHostSend(hostRequest)
+		// W3C SCXML 6.2: a declared type with no handler registered is, from
+		// the document's side, a processor the platform does not support — the
+		// act it asked for was performed by nobody. Same event as an
+		// undeclared type, so a wiring mistake cannot read as success.
+		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
+			errEvt := sce.NewPlatformError(SheetPeerEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
+			errEvt.Metadata.SendID = "__send_4"
+			engine.Raise(errEvt)
+		}
+	}
+		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
+		// <foreach> it came — the block is its own function.
+		if paramFailed {
+			return
+		}
+	}
+	}
+	}
+
+
+	if p.vHub && p.pendingSheetCellPayload.nodeId != 2 {
+
+	// W3C SCXML 6.2: send id="__send_5"
+	{
+	// W3C SCXML 6.2: Evaluate <param> expressions at send time
+	{
+		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
+		// and its pair left out, and the message still goes; the error ends
+		// the block once it has. Read at the end of this element.
+		paramFailed := false
+		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
+		// delivered, so this is an ordered list rather than a map. The typed
+		// value is kept rather than its text — a receiver reading
+		// `_event.data.value === 42` finds the string "42" unequal.
+		parts := make([]sce.EventDataParam, 0)
+		{
+			sceValue := sce.Uint64PayloadText(uint64(p.pendingSheetCellPayload.row))
+			parts = append(parts, sce.EventDataParam{Name: "row", Value: sceValue})
+		}
+		{
+			sceValue := sce.Uint64PayloadText(uint64(p.pendingSheetCellPayload.col))
+			parts = append(parts, sce.EventDataParam{Name: "col", Value: sceValue})
+		}
+		{
+			sceValue := sce.Int64PayloadText(int64(p.pendingSheetCellPayload.value))
+			parts = append(parts, sce.EventDataParam{Name: "value", Value: sceValue})
+		}
+		{
+			sceValue := sce.Int64PayloadText(int64(p.pendingSheetCellPayload.wallTime))
+			parts = append(parts, sce.EventDataParam{Name: "wallTime", Value: sceValue})
+		}
+		{
+			sceValue := int64(p.pendingSheetCellPayload.counter)
+			parts = append(parts, sce.EventDataParam{Name: "counter", Value: sceValue})
+		}
+		{
+			sceValue := sce.Uint64PayloadText(uint64(p.pendingSheetCellPayload.nodeId))
+			parts = append(parts, sce.EventDataParam{Name: "nodeId", Value: sceValue})
+		}
+		{
+			sceValue := int64(p.pendingSheetCellPayload.op)
+			parts = append(parts, sce.EventDataParam{Name: "op", Value: sceValue})
+		}
+		{
+			sceValue := p.pendingSheetCellPayload.aRef
+			parts = append(parts, sce.EventDataParam{Name: "aRef", Value: sceValue})
+		}
+		{
+			sceValue := sce.Uint64PayloadText(uint64(p.pendingSheetCellPayload.aRow))
+			parts = append(parts, sce.EventDataParam{Name: "aRow", Value: sceValue})
+		}
+		{
+			sceValue := sce.Uint64PayloadText(uint64(p.pendingSheetCellPayload.aCol))
+			parts = append(parts, sce.EventDataParam{Name: "aCol", Value: sceValue})
+		}
+		{
+			sceValue := sce.Int64PayloadText(int64(p.pendingSheetCellPayload.aVal))
+			parts = append(parts, sce.EventDataParam{Name: "aVal", Value: sceValue})
+		}
+		{
+			sceValue := p.pendingSheetCellPayload.bRef
+			parts = append(parts, sce.EventDataParam{Name: "bRef", Value: sceValue})
+		}
+		{
+			sceValue := sce.Uint64PayloadText(uint64(p.pendingSheetCellPayload.bRow))
+			parts = append(parts, sce.EventDataParam{Name: "bRow", Value: sceValue})
+		}
+		{
+			sceValue := sce.Uint64PayloadText(uint64(p.pendingSheetCellPayload.bCol))
+			parts = append(parts, sce.EventDataParam{Name: "bCol", Value: sceValue})
+		}
+		{
+			sceValue := sce.Int64PayloadText(int64(p.pendingSheetCellPayload.bVal))
+			parts = append(parts, sce.EventDataParam{Name: "bVal", Value: sceValue})
+		}
+		eventDataStr := sce.BuildJSONFromTypedParams(parts)
+		_ = eventDataStr
+	// §scxml-6.2.5: "sce:mesh" is served by the host, which
+	// declared it to this build. Dispatch rather than refuse — and take the
+	// whole send, because a processor the host serves owns delivery; falling
+	// through would also enqueue the event locally and the document would see
+	// the act twice.
+	{
+		hostParams := sce.WireParamsFromTypedParams(parts)
+		hostRequest := sce.HostSendRequest{
+			ProcessorType: "sce:mesh",
+			EventName:     "sheet.cell",
+			Target:        "#bob",
+			Content:       "",
+			Params:        hostParams,
+			SendID:        "__send_5",
+			// W3C SCXML 5.10: the payload computed above, once, for every arm.
+			EventData: eventDataStr,
+			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
+			// processed now, carried back out as a W3C child's send to its
+			// parent carries it (§scxml-6.4.1). Analysis keeps the field on
+			// every machine with a host-served send.
+			InvokeID: p.pendingEventInvokeid,
+		}
+		_, hostServed := engine.PerformHostSend(hostRequest)
+		// W3C SCXML 6.2: a declared type with no handler registered is, from
+		// the document's side, a processor the platform does not support — the
+		// act it asked for was performed by nobody. Same event as an
+		// undeclared type, so a wiring mistake cannot read as success.
+		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
+			errEvt := sce.NewPlatformError(SheetPeerEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
+			errEvt.Metadata.SendID = "__send_5"
+			engine.Raise(errEvt)
+		}
+	}
+		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
+		// <foreach> it came — the block is its own function.
+		if paramFailed {
+			return
+		}
+	}
+	}
+	}
+
 			}()
-		case 3:
-			//line sheet_peer.scxml:166
+		case 4:
+			//line sheet_peer.scxml:226
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
+
+
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_SheetSettle__vvvvv(p.vCells, p.vRows, p.vGone, p.vCols, p.vGoneCols)), 768); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<assign location='trail'>: an integer operation overflowed or failed")); return true }; p.vTrail = sceValue; return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+
+
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_SheetShow__vv(p.vCells, p.vTrail)), 256); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<assign location='shown'>: an integer operation overflowed or failed")); return true }; p.vShown = sceValue; return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+			}()
+		case 5:
+			//line sheet_peer.scxml:233
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != SheetPeerPayloadTagSheetAddRow {
@@ -1943,7 +2558,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 	}
 
 
-	// W3C SCXML 6.2: send id="__send_4"
+	// W3C SCXML 6.2: send id="__send_6"
 	{
 	// W3C SCXML 6.2: Evaluate <param> expressions at send time
 	{
@@ -1981,7 +2596,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 	}
 	}
 
-	// W3C SCXML 6.2: send id="__send_5"
+	// W3C SCXML 6.2: send id="__send_7"
 	{
 	// W3C SCXML 6.2: Evaluate <param> expressions at send time
 	{
@@ -2017,7 +2632,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 			Target:        "#server",
 			Content:       "",
 			Params:        hostParams,
-			SendID:        "__send_5",
+			SendID:        "__send_7",
 			// W3C SCXML 5.10: the payload computed above, once, for every arm.
 			EventData: eventDataStr,
 			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
@@ -2033,7 +2648,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
 			errEvt := sce.NewPlatformError(SheetPeerEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
-			errEvt.Metadata.SendID = "__send_5"
+			errEvt.Metadata.SendID = "__send_7"
 			engine.Raise(errEvt)
 		}
 	}
@@ -2045,8 +2660,8 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 	}
 	}
 			}()
-		case 4:
-			//line sheet_peer.scxml:183
+		case 6:
+			//line sheet_peer.scxml:250
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != SheetPeerPayloadTagSheetRow {
@@ -2054,8 +2669,8 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 				}
 
 	{
-	var ifCondFailed4 bool
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.DivUint64(&sceFailure, p.pendingSheetRowPayload.key, 256) > p.vLamport; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<if cond='_event.data.key / 256 > lamport'>: an integer operation overflowed or failed")); ifCondFailed4 = true; return false }; return sceValue }() {
+	var ifCondFailed5 bool
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.DivUint64(&sceFailure, p.pendingSheetRowPayload.key, 256) > p.vLamport; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<if cond='_event.data.key / 256 > lamport'>: an integer operation overflowed or failed")); ifCondFailed5 = true; return false }; return sceValue }() {
 
 
 	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.DivUint64(&sceFailure, p.pendingSheetRowPayload.key, 256); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<assign location='lamport'>: an integer operation overflowed or failed")); return true }; p.vLamport = sceValue; return false }() {
@@ -2063,7 +2678,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 	}
 
 	}
-	if ifCondFailed4 {
+	if ifCondFailed5 {
 		return // W3C SCXML 4.9: the error ends the block
 	}
 	}
@@ -2093,11 +2708,26 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 	}
 
 
+	// W3C SCXML 6.2: send id="__send_8"
 	{
-	var ifCondFailed6 bool
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := p.vHub && scealgorithm.RemUint64(&sceFailure, p.pendingSheetRowPayload.key, 256) != 1; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<if cond='hub && _event.data.key % 256 !== 1'>: an integer operation overflowed or failed")); ifCondFailed6 = true; return false }; return sceValue }() {
+	{
+		eventDataStr := ""
+		_ = eventDataStr
+	// W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
+	// and does not change the queue.
+	{
+		meta := sce.NewEventWithMetadata(SheetPeerEventSheetRecompute)
+		meta.Metadata.Data = eventDataStr
+		engine.Raise(meta)
+	}
+	}
+	}
 
-	// W3C SCXML 6.2: send id="__send_6"
+	{
+	var ifCondFailed7 bool
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := p.vHub && scealgorithm.RemUint64(&sceFailure, p.pendingSheetRowPayload.key, 256) != 1; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<if cond='hub && _event.data.key % 256 !== 1'>: an integer operation overflowed or failed")); ifCondFailed7 = true; return false }; return sceValue }() {
+
+	// W3C SCXML 6.2: send id="__send_9"
 	{
 	// W3C SCXML 6.2: Evaluate <param> expressions at send time
 	{
@@ -2133,7 +2763,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 			Target:        "#alice",
 			Content:       "",
 			Params:        hostParams,
-			SendID:        "__send_6",
+			SendID:        "__send_9",
 			// W3C SCXML 5.10: the payload computed above, once, for every arm.
 			EventData: eventDataStr,
 			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
@@ -2149,7 +2779,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
 			errEvt := sce.NewPlatformError(SheetPeerEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
-			errEvt.Metadata.SendID = "__send_6"
+			errEvt.Metadata.SendID = "__send_9"
 			engine.Raise(errEvt)
 		}
 	}
@@ -2161,17 +2791,17 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 	}
 	}
 	}
-	if ifCondFailed6 {
+	if ifCondFailed7 {
 		return // W3C SCXML 4.9: the error ends the block
 	}
 	}
 
 
 	{
-	var ifCondFailed7 bool
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := p.vHub && scealgorithm.RemUint64(&sceFailure, p.pendingSheetRowPayload.key, 256) != 2; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<if cond='hub && _event.data.key % 256 !== 2'>: an integer operation overflowed or failed")); ifCondFailed7 = true; return false }; return sceValue }() {
+	var ifCondFailed8 bool
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := p.vHub && scealgorithm.RemUint64(&sceFailure, p.pendingSheetRowPayload.key, 256) != 2; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<if cond='hub && _event.data.key % 256 !== 2'>: an integer operation overflowed or failed")); ifCondFailed8 = true; return false }; return sceValue }() {
 
-	// W3C SCXML 6.2: send id="__send_7"
+	// W3C SCXML 6.2: send id="__send_10"
 	{
 	// W3C SCXML 6.2: Evaluate <param> expressions at send time
 	{
@@ -2207,7 +2837,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 			Target:        "#bob",
 			Content:       "",
 			Params:        hostParams,
-			SendID:        "__send_7",
+			SendID:        "__send_10",
 			// W3C SCXML 5.10: the payload computed above, once, for every arm.
 			EventData: eventDataStr,
 			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
@@ -2223,7 +2853,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
 			errEvt := sce.NewPlatformError(SheetPeerEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
-			errEvt.Metadata.SendID = "__send_7"
+			errEvt.Metadata.SendID = "__send_10"
 			engine.Raise(errEvt)
 		}
 	}
@@ -2235,21 +2865,21 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 	}
 	}
 	}
-	if ifCondFailed7 {
+	if ifCondFailed8 {
 		return // W3C SCXML 4.9: the error ends the block
 	}
 	}
 
 			}()
-		case 5:
-			//line sheet_peer.scxml:208
+		case 7:
+			//line sheet_peer.scxml:276
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != SheetPeerPayloadTagSheetDropRow {
 					return
 				}
 
-	// W3C SCXML 6.2: send id="__send_8"
+	// W3C SCXML 6.2: send id="__send_11"
 	{
 	// W3C SCXML 6.2: Evaluate <param> expressions at send time
 	{
@@ -2287,7 +2917,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 	}
 	}
 
-	// W3C SCXML 6.2: send id="__send_9"
+	// W3C SCXML 6.2: send id="__send_12"
 	{
 	// W3C SCXML 6.2: Evaluate <param> expressions at send time
 	{
@@ -2323,7 +2953,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 			Target:        "#server",
 			Content:       "",
 			Params:        hostParams,
-			SendID:        "__send_9",
+			SendID:        "__send_12",
 			// W3C SCXML 5.10: the payload computed above, once, for every arm.
 			EventData: eventDataStr,
 			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
@@ -2339,7 +2969,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
 			errEvt := sce.NewPlatformError(SheetPeerEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
-			errEvt.Metadata.SendID = "__send_9"
+			errEvt.Metadata.SendID = "__send_12"
 			engine.Raise(errEvt)
 		}
 	}
@@ -2351,8 +2981,8 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 	}
 	}
 			}()
-		case 6:
-			//line sheet_peer.scxml:221
+		case 8:
+			//line sheet_peer.scxml:289
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != SheetPeerPayloadTagSheetGone {
@@ -2373,9 +3003,24 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 	}
 
 
+	// W3C SCXML 6.2: send id="__send_13"
+	{
+	{
+		eventDataStr := ""
+		_ = eventDataStr
+	// W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
+	// and does not change the queue.
+	{
+		meta := sce.NewEventWithMetadata(SheetPeerEventSheetRecompute)
+		meta.Metadata.Data = eventDataStr
+		engine.Raise(meta)
+	}
+	}
+	}
+
 	if p.vHub && p.pendingSheetGonePayload.by != 1 {
 
-	// W3C SCXML 6.2: send id="__send_10"
+	// W3C SCXML 6.2: send id="__send_14"
 	{
 	// W3C SCXML 6.2: Evaluate <param> expressions at send time
 	{
@@ -2411,7 +3056,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 			Target:        "#alice",
 			Content:       "",
 			Params:        hostParams,
-			SendID:        "__send_10",
+			SendID:        "__send_14",
 			// W3C SCXML 5.10: the payload computed above, once, for every arm.
 			EventData: eventDataStr,
 			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
@@ -2427,7 +3072,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
 			errEvt := sce.NewPlatformError(SheetPeerEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
-			errEvt.Metadata.SendID = "__send_10"
+			errEvt.Metadata.SendID = "__send_14"
 			engine.Raise(errEvt)
 		}
 	}
@@ -2443,7 +3088,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 
 	if p.vHub && p.pendingSheetGonePayload.by != 2 {
 
-	// W3C SCXML 6.2: send id="__send_11"
+	// W3C SCXML 6.2: send id="__send_15"
 	{
 	// W3C SCXML 6.2: Evaluate <param> expressions at send time
 	{
@@ -2479,7 +3124,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 			Target:        "#bob",
 			Content:       "",
 			Params:        hostParams,
-			SendID:        "__send_11",
+			SendID:        "__send_15",
 			// W3C SCXML 5.10: the payload computed above, once, for every arm.
 			EventData: eventDataStr,
 			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
@@ -2495,7 +3140,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
 			errEvt := sce.NewPlatformError(SheetPeerEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
-			errEvt.Metadata.SendID = "__send_11"
+			errEvt.Metadata.SendID = "__send_15"
 			engine.Raise(errEvt)
 		}
 	}
@@ -2509,8 +3154,8 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 	}
 
 			}()
-		case 7:
-			//line sheet_peer.scxml:242
+		case 9:
+			//line sheet_peer.scxml:311
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != SheetPeerPayloadTagSheetAddCol {
@@ -2529,7 +3174,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 	}
 
 
-	// W3C SCXML 6.2: send id="__send_12"
+	// W3C SCXML 6.2: send id="__send_16"
 	{
 	// W3C SCXML 6.2: Evaluate <param> expressions at send time
 	{
@@ -2567,7 +3212,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 	}
 	}
 
-	// W3C SCXML 6.2: send id="__send_13"
+	// W3C SCXML 6.2: send id="__send_17"
 	{
 	// W3C SCXML 6.2: Evaluate <param> expressions at send time
 	{
@@ -2603,7 +3248,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 			Target:        "#server",
 			Content:       "",
 			Params:        hostParams,
-			SendID:        "__send_13",
+			SendID:        "__send_17",
 			// W3C SCXML 5.10: the payload computed above, once, for every arm.
 			EventData: eventDataStr,
 			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
@@ -2619,7 +3264,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
 			errEvt := sce.NewPlatformError(SheetPeerEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
-			errEvt.Metadata.SendID = "__send_13"
+			errEvt.Metadata.SendID = "__send_17"
 			engine.Raise(errEvt)
 		}
 	}
@@ -2631,8 +3276,8 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 	}
 	}
 			}()
-		case 8:
-			//line sheet_peer.scxml:255
+		case 10:
+			//line sheet_peer.scxml:324
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != SheetPeerPayloadTagSheetCol {
@@ -2640,8 +3285,8 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 				}
 
 	{
-	var ifCondFailed10 bool
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.DivUint64(&sceFailure, p.pendingSheetColPayload.key, 256) > p.vLamport; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<if cond='_event.data.key / 256 > lamport'>: an integer operation overflowed or failed")); ifCondFailed10 = true; return false }; return sceValue }() {
+	var ifCondFailed11 bool
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.DivUint64(&sceFailure, p.pendingSheetColPayload.key, 256) > p.vLamport; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<if cond='_event.data.key / 256 > lamport'>: an integer operation overflowed or failed")); ifCondFailed11 = true; return false }; return sceValue }() {
 
 
 	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.DivUint64(&sceFailure, p.pendingSheetColPayload.key, 256); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<assign location='lamport'>: an integer operation overflowed or failed")); return true }; p.vLamport = sceValue; return false }() {
@@ -2649,7 +3294,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 	}
 
 	}
-	if ifCondFailed10 {
+	if ifCondFailed11 {
 		return // W3C SCXML 4.9: the error ends the block
 	}
 	}
@@ -2679,11 +3324,26 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 	}
 
 
+	// W3C SCXML 6.2: send id="__send_18"
 	{
-	var ifCondFailed12 bool
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := p.vHub && scealgorithm.RemUint64(&sceFailure, p.pendingSheetColPayload.key, 256) != 1; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<if cond='hub && _event.data.key % 256 !== 1'>: an integer operation overflowed or failed")); ifCondFailed12 = true; return false }; return sceValue }() {
+	{
+		eventDataStr := ""
+		_ = eventDataStr
+	// W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
+	// and does not change the queue.
+	{
+		meta := sce.NewEventWithMetadata(SheetPeerEventSheetRecompute)
+		meta.Metadata.Data = eventDataStr
+		engine.Raise(meta)
+	}
+	}
+	}
 
-	// W3C SCXML 6.2: send id="__send_14"
+	{
+	var ifCondFailed13 bool
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := p.vHub && scealgorithm.RemUint64(&sceFailure, p.pendingSheetColPayload.key, 256) != 1; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<if cond='hub && _event.data.key % 256 !== 1'>: an integer operation overflowed or failed")); ifCondFailed13 = true; return false }; return sceValue }() {
+
+	// W3C SCXML 6.2: send id="__send_19"
 	{
 	// W3C SCXML 6.2: Evaluate <param> expressions at send time
 	{
@@ -2719,7 +3379,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 			Target:        "#alice",
 			Content:       "",
 			Params:        hostParams,
-			SendID:        "__send_14",
+			SendID:        "__send_19",
 			// W3C SCXML 5.10: the payload computed above, once, for every arm.
 			EventData: eventDataStr,
 			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
@@ -2735,7 +3395,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
 			errEvt := sce.NewPlatformError(SheetPeerEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
-			errEvt.Metadata.SendID = "__send_14"
+			errEvt.Metadata.SendID = "__send_19"
 			engine.Raise(errEvt)
 		}
 	}
@@ -2747,17 +3407,17 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 	}
 	}
 	}
-	if ifCondFailed12 {
+	if ifCondFailed13 {
 		return // W3C SCXML 4.9: the error ends the block
 	}
 	}
 
 
 	{
-	var ifCondFailed13 bool
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := p.vHub && scealgorithm.RemUint64(&sceFailure, p.pendingSheetColPayload.key, 256) != 2; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<if cond='hub && _event.data.key % 256 !== 2'>: an integer operation overflowed or failed")); ifCondFailed13 = true; return false }; return sceValue }() {
+	var ifCondFailed14 bool
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := p.vHub && scealgorithm.RemUint64(&sceFailure, p.pendingSheetColPayload.key, 256) != 2; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<if cond='hub && _event.data.key % 256 !== 2'>: an integer operation overflowed or failed")); ifCondFailed14 = true; return false }; return sceValue }() {
 
-	// W3C SCXML 6.2: send id="__send_15"
+	// W3C SCXML 6.2: send id="__send_20"
 	{
 	// W3C SCXML 6.2: Evaluate <param> expressions at send time
 	{
@@ -2793,7 +3453,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 			Target:        "#bob",
 			Content:       "",
 			Params:        hostParams,
-			SendID:        "__send_15",
+			SendID:        "__send_20",
 			// W3C SCXML 5.10: the payload computed above, once, for every arm.
 			EventData: eventDataStr,
 			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
@@ -2809,7 +3469,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
 			errEvt := sce.NewPlatformError(SheetPeerEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
-			errEvt.Metadata.SendID = "__send_15"
+			errEvt.Metadata.SendID = "__send_20"
 			engine.Raise(errEvt)
 		}
 	}
@@ -2821,21 +3481,21 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 	}
 	}
 	}
-	if ifCondFailed13 {
+	if ifCondFailed14 {
 		return // W3C SCXML 4.9: the error ends the block
 	}
 	}
 
 			}()
-		case 9:
-			//line sheet_peer.scxml:279
+		case 11:
+			//line sheet_peer.scxml:349
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != SheetPeerPayloadTagSheetDropCol {
 					return
 				}
 
-	// W3C SCXML 6.2: send id="__send_16"
+	// W3C SCXML 6.2: send id="__send_21"
 	{
 	// W3C SCXML 6.2: Evaluate <param> expressions at send time
 	{
@@ -2873,7 +3533,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 	}
 	}
 
-	// W3C SCXML 6.2: send id="__send_17"
+	// W3C SCXML 6.2: send id="__send_22"
 	{
 	// W3C SCXML 6.2: Evaluate <param> expressions at send time
 	{
@@ -2909,7 +3569,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 			Target:        "#server",
 			Content:       "",
 			Params:        hostParams,
-			SendID:        "__send_17",
+			SendID:        "__send_22",
 			// W3C SCXML 5.10: the payload computed above, once, for every arm.
 			EventData: eventDataStr,
 			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
@@ -2925,7 +3585,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
 			errEvt := sce.NewPlatformError(SheetPeerEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
-			errEvt.Metadata.SendID = "__send_17"
+			errEvt.Metadata.SendID = "__send_22"
 			engine.Raise(errEvt)
 		}
 	}
@@ -2937,8 +3597,8 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 	}
 	}
 			}()
-		case 10:
-			//line sheet_peer.scxml:290
+		case 12:
+			//line sheet_peer.scxml:360
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != SheetPeerPayloadTagSheetGoneCol {
@@ -2959,9 +3619,24 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 	}
 
 
+	// W3C SCXML 6.2: send id="__send_23"
+	{
+	{
+		eventDataStr := ""
+		_ = eventDataStr
+	// W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
+	// and does not change the queue.
+	{
+		meta := sce.NewEventWithMetadata(SheetPeerEventSheetRecompute)
+		meta.Metadata.Data = eventDataStr
+		engine.Raise(meta)
+	}
+	}
+	}
+
 	if p.vHub && p.pendingSheetGoneColPayload.by != 1 {
 
-	// W3C SCXML 6.2: send id="__send_18"
+	// W3C SCXML 6.2: send id="__send_24"
 	{
 	// W3C SCXML 6.2: Evaluate <param> expressions at send time
 	{
@@ -2997,7 +3672,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 			Target:        "#alice",
 			Content:       "",
 			Params:        hostParams,
-			SendID:        "__send_18",
+			SendID:        "__send_24",
 			// W3C SCXML 5.10: the payload computed above, once, for every arm.
 			EventData: eventDataStr,
 			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
@@ -3013,7 +3688,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
 			errEvt := sce.NewPlatformError(SheetPeerEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
-			errEvt.Metadata.SendID = "__send_18"
+			errEvt.Metadata.SendID = "__send_24"
 			engine.Raise(errEvt)
 		}
 	}
@@ -3029,7 +3704,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 
 	if p.vHub && p.pendingSheetGoneColPayload.by != 2 {
 
-	// W3C SCXML 6.2: send id="__send_19"
+	// W3C SCXML 6.2: send id="__send_25"
 	{
 	// W3C SCXML 6.2: Evaluate <param> expressions at send time
 	{
@@ -3065,7 +3740,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 			Target:        "#bob",
 			Content:       "",
 			Params:        hostParams,
-			SendID:        "__send_19",
+			SendID:        "__send_25",
 			// W3C SCXML 5.10: the payload computed above, once, for every arm.
 			EventData: eventDataStr,
 			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
@@ -3081,7 +3756,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
 			errEvt := sce.NewPlatformError(SheetPeerEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
-			errEvt.Metadata.SendID = "__send_19"
+			errEvt.Metadata.SendID = "__send_25"
 			engine.Raise(errEvt)
 		}
 	}
@@ -3095,8 +3770,8 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 	}
 
 			}()
-		case 11:
-			//line sheet_peer.scxml:308
+		case 13:
+			//line sheet_peer.scxml:379
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

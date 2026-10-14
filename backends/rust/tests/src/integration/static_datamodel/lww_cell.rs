@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 0022d2f7097a4a1eb0e7ba717e1da8948cc1ba80ab5d45ced6c3b314777dd2db
-#![doc = "SCE-MAP: lww_cell.scxml:21 :: _forge_body"]
-// SCE-MAP: lww_cell.scxml:21 :: _forge_body
+// source-hash: c431fa9e45990e8b729e69a4bf81ba13f9cc4e8066ddecbd5ff6346ac56dd5f3
+#![doc = "SCE-MAP: lww_cell.scxml:37 :: _forge_body"]
+// SCE-MAP: lww_cell.scxml:37 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="event-schema")
 // Runtime: none
@@ -16,4 +16,13 @@ pub struct LwwCellPayload {
     pub wall_time: i64,
     pub counter: u32,
     pub node_id: u64,
+    pub op: u8,
+    pub a_ref: bool,
+    pub a_row: u64,
+    pub a_col: u64,
+    pub a_val: i64,
+    pub b_ref: bool,
+    pub b_row: u64,
+    pub b_col: u64,
+    pub b_val: i64,
 }

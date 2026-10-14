@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: f6a25f05d9c6710c575a8a02095451e4b3efae7e36c47b7681b1beb92894445e
+// source-hash: 0bf4374c854925578e15f37f10b6f21a3e0a703009ff9d2c9643d11dab40fd22
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -72,8 +72,8 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
-#![doc = "SCE-MAP: sheet_peer.scxml:34 :: _machine"]
-// SCE-MAP: sheet_peer.scxml:34 :: _machine
+#![doc = "SCE-MAP: sheet_peer.scxml:46 :: _machine"]
+// SCE-MAP: sheet_peer.scxml:46 :: _machine
 
 use super::hlc_receive;
 use super::hlc_send;
@@ -85,6 +85,9 @@ use super::rga_holds;
 use super::rga_insert;
 use super::rga_node;
 use super::rga_remove;
+use super::sheet_settle;
+use super::sheet_show;
+use super::sheet_shown;
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
 
@@ -113,9 +116,11 @@ pub enum SheetPeerEvent {
     SheetDropCol,
     SheetDropRow,
     SheetEdit,
+    SheetFormula,
     SheetGone,
     SheetGoneCol,
     SheetJoin,
+    SheetRecompute,
     SheetRow,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
@@ -143,6 +148,7 @@ impl SheetPeerEvent {
         SheetPeerEvent::SheetDropCol,
         SheetPeerEvent::SheetDropRow,
         SheetPeerEvent::SheetEdit,
+        SheetPeerEvent::SheetFormula,
         SheetPeerEvent::SheetJoin,
     ];
 }
@@ -166,6 +172,15 @@ pub struct SheetPeerSheetCellPayload {
     pub wallTime: i64,
     pub counter: u32,
     pub nodeId: u64,
+    pub op: u8,
+    pub aRef: bool,
+    pub aRow: u64,
+    pub aCol: u64,
+    pub aVal: i64,
+    pub bRef: bool,
+    pub bRow: u64,
+    pub bCol: u64,
+    pub bVal: i64,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -189,6 +204,22 @@ pub struct SheetPeerSheetEditPayload {
     pub row: u64,
     pub col: u64,
     pub value: i64,
+    pub now: i64,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct SheetPeerSheetFormulaPayload {
+    pub row: u64,
+    pub col: u64,
+    pub op: u8,
+    pub aRef: bool,
+    pub aRow: u64,
+    pub aCol: u64,
+    pub aVal: i64,
+    pub bRef: bool,
+    pub bRow: u64,
+    pub bCol: u64,
+    pub bVal: i64,
     pub now: i64,
 }
 
@@ -229,6 +260,7 @@ pub enum SheetPeerPayload {
     SheetDropCol(SheetPeerSheetDropColPayload),
     SheetDropRow(SheetPeerSheetDropRowPayload),
     SheetEdit(SheetPeerSheetEditPayload),
+    SheetFormula(SheetPeerSheetFormulaPayload),
     SheetGone(SheetPeerSheetGonePayload),
     SheetGoneCol(SheetPeerSheetGoneColPayload),
     SheetJoin(SheetPeerSheetJoinPayload),
@@ -267,6 +299,10 @@ pub trait SheetPeerInject {
     /// Binds the event name and payload variant in one call (name↔type
     /// pairing cannot be constructed inconsistently).
     fn raise_sheet_edit(&mut self, payload: SheetPeerSheetEditPayload);
+    /// Typed `_event.data` inject for `sheet.formula`.
+    /// Binds the event name and payload variant in one call (name↔type
+    /// pairing cannot be constructed inconsistently).
+    fn raise_sheet_formula(&mut self, payload: SheetPeerSheetFormulaPayload);
     /// Typed `_event.data` inject for `sheet.gone`.
     /// Binds the event name and payload variant in one call (name↔type
     /// pairing cannot be constructed inconsistently).
@@ -306,7 +342,7 @@ impl SheetPeerInject for ::sce_rust_runtime::Engine<SheetPeerPolicy> {
     }
     fn raise_sheet_cell(&mut self, payload: SheetPeerSheetCellPayload) {
         let data = ::sce_rust_runtime::payload_wire(format_args!(
-            "{{\"row\":\"{}\", \"col\":\"{}\", \"value\":\"{}\", \"wallTime\":\"{}\", \"counter\":{}, \"nodeId\":\"{}\"}}", payload.row, payload.col, payload.value, payload.wallTime, payload.counter, payload.nodeId
+            "{{\"row\":\"{}\", \"col\":\"{}\", \"value\":\"{}\", \"wallTime\":\"{}\", \"counter\":{}, \"nodeId\":\"{}\", \"op\":{}, \"aRef\":{}, \"aRow\":\"{}\", \"aCol\":\"{}\", \"aVal\":\"{}\", \"bRef\":{}, \"bRow\":\"{}\", \"bCol\":\"{}\", \"bVal\":\"{}\"}}", payload.row, payload.col, payload.value, payload.wallTime, payload.counter, payload.nodeId, payload.op, payload.aRef, payload.aRow, payload.aCol, payload.aVal, payload.bRef, payload.bRow, payload.bCol, payload.bVal
         ));
         self.raise_external_typed_with_data(
             SheetPeerEvent::SheetCell,
@@ -351,6 +387,16 @@ impl SheetPeerInject for ::sce_rust_runtime::Engine<SheetPeerPolicy> {
         self.raise_external_typed_with_data(
             SheetPeerEvent::SheetEdit,
             SheetPeerPayload::SheetEdit(payload),
+            &data,
+        );
+    }
+    fn raise_sheet_formula(&mut self, payload: SheetPeerSheetFormulaPayload) {
+        let data = ::sce_rust_runtime::payload_wire(format_args!(
+            "{{\"row\":\"{}\", \"col\":\"{}\", \"op\":{}, \"aRef\":{}, \"aRow\":\"{}\", \"aCol\":\"{}\", \"aVal\":\"{}\", \"bRef\":{}, \"bRow\":\"{}\", \"bCol\":\"{}\", \"bVal\":\"{}\", \"now\":\"{}\"}}", payload.row, payload.col, payload.op, payload.aRef, payload.aRow, payload.aCol, payload.aVal, payload.bRef, payload.bRow, payload.bCol, payload.bVal, payload.now
+        ));
+        self.raise_external_typed_with_data(
+            SheetPeerEvent::SheetFormula,
+            SheetPeerPayload::SheetFormula(payload),
             &data,
         );
     }
@@ -420,6 +466,15 @@ pub struct SheetPeerLwwCellRecord {
     pub wallTime: i64,
     pub counter: u32,
     pub nodeId: u64,
+    pub op: u8,
+    pub aRef: bool,
+    pub aRow: u64,
+    pub aCol: u64,
+    pub aVal: i64,
+    pub bRef: bool,
+    pub bRow: u64,
+    pub bCol: u64,
+    pub bVal: i64,
 }
 
 /// SCE Accepted Subset §2.15: a `record:RgaNode` datamodel value.
@@ -436,6 +491,16 @@ pub struct SheetPeerRgaNodeRecord {
 pub struct SheetPeerRgaGoneRecord {
     pub key: u64,
     pub by: u64,
+}
+
+/// SCE Accepted Subset §2.15: a `record:Shown` datamodel value.
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[allow(non_snake_case)]
+pub struct SheetPeerShownRecord {
+    pub row: u64,
+    pub col: u64,
+    pub value: i64,
+    pub fault: u8,
 }
 
 // ── SCE Accepted Subset §2.15: calls of an algorithm that takes or returns state ──
@@ -503,6 +568,15 @@ fn call_LwwWrite__vv(
             wall_time: r.wallTime,
             counter: r.counter,
             node_id: r.nodeId,
+            op: r.op,
+            a_ref: r.aRef,
+            a_row: r.aRow,
+            a_col: r.aCol,
+            a_val: r.aVal,
+            b_ref: r.bRef,
+            b_row: r.bRow,
+            b_col: r.bCol,
+            b_val: r.bVal,
         })
         .collect();
     let r = lww_write::lww_write(
@@ -514,6 +588,15 @@ fn call_LwwWrite__vv(
             wall_time: p1.wallTime,
             counter: p1.counter,
             node_id: p1.nodeId,
+            op: p1.op,
+            a_ref: p1.aRef,
+            a_row: p1.aRow,
+            a_col: p1.aCol,
+            a_val: p1.aVal,
+            b_ref: p1.bRef,
+            b_row: p1.bRow,
+            b_col: p1.bCol,
+            b_val: p1.bVal,
         },
     )?;
     Ok(r.iter()
@@ -524,6 +607,15 @@ fn call_LwwWrite__vv(
             wallTime: r.wall_time,
             counter: r.counter,
             nodeId: r.node_id,
+            op: r.op,
+            aRef: r.a_ref,
+            aRow: r.a_row,
+            aCol: r.a_col,
+            aVal: r.a_val,
+            bRef: r.b_ref,
+            bRow: r.b_row,
+            bCol: r.b_col,
+            bVal: r.b_val,
         })
         .collect::<Vec<_>>())
 }
@@ -595,6 +687,108 @@ fn call_RgaRemove__vv(
         .collect::<Vec<_>>())
 }
 
+#[allow(non_snake_case)]
+fn call_SheetSettle__vvvvv(
+    p0: &[SheetPeerLwwCellRecord],
+    p1: &[SheetPeerRgaNodeRecord],
+    p2: &[SheetPeerRgaGoneRecord],
+    p3: &[SheetPeerRgaNodeRecord],
+    p4: &[SheetPeerRgaGoneRecord],
+) -> Result<Vec<i64>, sce_forge_runtime::algorithm::AlgorithmError> {
+    let p0_algorithm: Vec<lww_cell::LwwCellPayload> = p0
+        .iter()
+        .map(|r| lww_cell::LwwCellPayload {
+            row: r.row,
+            col: r.col,
+            value: r.value,
+            wall_time: r.wallTime,
+            counter: r.counter,
+            node_id: r.nodeId,
+            op: r.op,
+            a_ref: r.aRef,
+            a_row: r.aRow,
+            a_col: r.aCol,
+            a_val: r.aVal,
+            b_ref: r.bRef,
+            b_row: r.bRow,
+            b_col: r.bCol,
+            b_val: r.bVal,
+        })
+        .collect();
+    let p1_algorithm: Vec<rga_node::RgaNodePayload> = p1
+        .iter()
+        .map(|r| rga_node::RgaNodePayload {
+            key: r.key,
+            after: r.after,
+        })
+        .collect();
+    let p2_algorithm: Vec<rga_gone::RgaGonePayload> = p2
+        .iter()
+        .map(|r| rga_gone::RgaGonePayload {
+            key: r.key,
+            by: r.by,
+        })
+        .collect();
+    let p3_algorithm: Vec<rga_node::RgaNodePayload> = p3
+        .iter()
+        .map(|r| rga_node::RgaNodePayload {
+            key: r.key,
+            after: r.after,
+        })
+        .collect();
+    let p4_algorithm: Vec<rga_gone::RgaGonePayload> = p4
+        .iter()
+        .map(|r| rga_gone::RgaGonePayload {
+            key: r.key,
+            by: r.by,
+        })
+        .collect();
+    let r = sheet_settle::sheet_settle(
+        &p0_algorithm,
+        &p1_algorithm,
+        &p2_algorithm,
+        &p3_algorithm,
+        &p4_algorithm,
+    )?;
+    Ok(r.to_vec())
+}
+
+#[allow(non_snake_case)]
+fn call_SheetShow__vv(
+    p0: &[SheetPeerLwwCellRecord],
+    p1: &[i64],
+) -> Result<Vec<SheetPeerShownRecord>, sce_forge_runtime::algorithm::AlgorithmError> {
+    let p0_algorithm: Vec<lww_cell::LwwCellPayload> = p0
+        .iter()
+        .map(|r| lww_cell::LwwCellPayload {
+            row: r.row,
+            col: r.col,
+            value: r.value,
+            wall_time: r.wallTime,
+            counter: r.counter,
+            node_id: r.nodeId,
+            op: r.op,
+            a_ref: r.aRef,
+            a_row: r.aRow,
+            a_col: r.aCol,
+            a_val: r.aVal,
+            b_ref: r.bRef,
+            b_row: r.bRow,
+            b_col: r.bCol,
+            b_val: r.bVal,
+        })
+        .collect();
+    let r = sheet_show::sheet_show(&p0_algorithm, p1)?;
+    Ok(r.iter()
+        .map(|r| SheetPeerShownRecord {
+            row: r.row,
+            col: r.col,
+            value: r.value,
+            fault: r.fault,
+        })
+        .collect::<Vec<_>>())
+}
+
 // ── SCE Accepted Subset §2.15: what a host observes of a sce-static machine ──
 
 /// The published variables (`sce:direction="out"`) as one owned value, in
@@ -610,6 +804,7 @@ pub struct SheetPeerData {
     pub gone: Vec<SheetPeerRgaGoneRecord>,
     pub cols: Vec<SheetPeerRgaNodeRecord>,
     pub gone_cols: Vec<SheetPeerRgaGoneRecord>,
+    pub shown: Vec<SheetPeerShownRecord>,
     pub lamport: u64,
     pub orphans: u32,
     pub refusals: u32,
@@ -650,6 +845,7 @@ impl SheetPeerObserve for Engine<SheetPeerPolicy> {
                 gone: policy.gone.clone(),
                 cols: policy.cols.clone(),
                 gone_cols: policy.gone_cols.clone(),
+                shown: policy.shown.clone(),
                 lamport: policy.lamport,
                 orphans: policy.orphans,
                 refusals: policy.refusals,
@@ -718,6 +914,42 @@ impl ::sce_rust_runtime::saved_state::SavedValue for SheetPeerLwwCellRecord {
                 "nodeId".to_string(),
                 ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.nodeId),
             ),
+            (
+                "op".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.op),
+            ),
+            (
+                "aRef".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.aRef),
+            ),
+            (
+                "aRow".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.aRow),
+            ),
+            (
+                "aCol".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.aCol),
+            ),
+            (
+                "aVal".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.aVal),
+            ),
+            (
+                "bRef".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.bRef),
+            ),
+            (
+                "bRow".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.bRow),
+            ),
+            (
+                "bCol".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.bCol),
+            ),
+            (
+                "bVal".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.bVal),
+            ),
         ])
     }
 
@@ -732,6 +964,15 @@ impl ::sce_rust_runtime::saved_state::SavedValue for SheetPeerLwwCellRecord {
             wallTime: ::sce_rust_runtime::saved_state::record_field(value, what, "wallTime")?,
             counter: ::sce_rust_runtime::saved_state::record_field(value, what, "counter")?,
             nodeId: ::sce_rust_runtime::saved_state::record_field(value, what, "nodeId")?,
+            op: ::sce_rust_runtime::saved_state::record_field(value, what, "op")?,
+            aRef: ::sce_rust_runtime::saved_state::record_field(value, what, "aRef")?,
+            aRow: ::sce_rust_runtime::saved_state::record_field(value, what, "aRow")?,
+            aCol: ::sce_rust_runtime::saved_state::record_field(value, what, "aCol")?,
+            aVal: ::sce_rust_runtime::saved_state::record_field(value, what, "aVal")?,
+            bRef: ::sce_rust_runtime::saved_state::record_field(value, what, "bRef")?,
+            bRow: ::sce_rust_runtime::saved_state::record_field(value, what, "bRow")?,
+            bCol: ::sce_rust_runtime::saved_state::record_field(value, what, "bCol")?,
+            bVal: ::sce_rust_runtime::saved_state::record_field(value, what, "bVal")?,
         })
     }
 }
@@ -782,6 +1023,41 @@ impl ::sce_rust_runtime::saved_state::SavedValue for SheetPeerRgaGoneRecord {
         Ok(Self {
             key: ::sce_rust_runtime::saved_state::record_field(value, what, "key")?,
             by: ::sce_rust_runtime::saved_state::record_field(value, what, "by")?,
+        })
+    }
+}
+
+impl ::sce_rust_runtime::saved_state::SavedValue for SheetPeerShownRecord {
+    fn to_saved(&self) -> ::sce_rust_runtime::json::Value {
+        ::sce_rust_runtime::json::Value::Object(vec![
+            (
+                "row".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.row),
+            ),
+            (
+                "col".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.col),
+            ),
+            (
+                "value".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.value),
+            ),
+            (
+                "fault".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.fault),
+            ),
+        ])
+    }
+
+    fn from_saved(
+        value: &::sce_rust_runtime::json::Value,
+        what: &str,
+    ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal> {
+        Ok(Self {
+            row: ::sce_rust_runtime::saved_state::record_field(value, what, "row")?,
+            col: ::sce_rust_runtime::saved_state::record_field(value, what, "col")?,
+            value: ::sce_rust_runtime::saved_state::record_field(value, what, "value")?,
+            fault: ::sce_rust_runtime::saved_state::record_field(value, what, "fault")?,
         })
     }
 }
@@ -870,7 +1146,7 @@ pub trait SheetPeerPersist: Sized {
 impl SheetPeerPersist for Engine<SheetPeerPolicy> {
     type Policy = SheetPeerPolicy;
 
-    const SHAPE: &'static str = "9d83d09021256edef19aee8bd083ef8a53cec06e13bbd100b0d9f5979a2b6fb7";
+    const SHAPE: &'static str = "070f30a811cd5c8c778f3a9004b542e4e4f5975b98504754196aa02c2bf6ff82";
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<
         ::sce_rust_runtime::NoHistory,
@@ -923,6 +1199,14 @@ impl SheetPeerPersist for Engine<SheetPeerPolicy> {
                 (
                     "goneCols".to_string(),
                     ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.gone_cols),
+                ),
+                (
+                    "trail".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.trail),
+                ),
+                (
+                    "shown".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.shown),
                 ),
                 (
                     "write".to_string(),
@@ -996,6 +1280,10 @@ impl SheetPeerPersist for Engine<SheetPeerPolicy> {
             ::sce_rust_runtime::saved_state::bounded(saved.variable("cols")?, "cols", 256)?;
         policy.gone_cols =
             ::sce_rust_runtime::saved_state::bounded(saved.variable("goneCols")?, "goneCols", 256)?;
+        policy.trail =
+            ::sce_rust_runtime::saved_state::bounded(saved.variable("trail")?, "trail", 768)?;
+        policy.shown =
+            ::sce_rust_runtime::saved_state::bounded(saved.variable("shown")?, "shown", 256)?;
         policy.write = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("write")?,
             "write",
@@ -1070,6 +1358,10 @@ pub struct SheetPeerPolicy {
     cols: Vec<SheetPeerRgaNodeRecord>,
     /// W3C SCXML 5.2: the `goneCols` datamodel variable, published (`sce:direction="out"`).
     gone_cols: Vec<SheetPeerRgaGoneRecord>,
+    /// W3C SCXML 5.2: the `trail` datamodel variable.
+    trail: Vec<i64>,
+    /// W3C SCXML 5.2: the `shown` datamodel variable, published (`sce:direction="out"`).
+    shown: Vec<SheetPeerShownRecord>,
     /// W3C SCXML 5.2: the `write` datamodel variable.
     write: SheetPeerLwwCellRecord,
     /// W3C SCXML 5.2: the `placed` datamodel variable.
@@ -1125,6 +1417,8 @@ impl SheetPeerPolicy {
         let gone: Vec<SheetPeerRgaGoneRecord> = Vec::new();
         let cols: Vec<SheetPeerRgaNodeRecord> = Vec::new();
         let gone_cols: Vec<SheetPeerRgaGoneRecord> = Vec::new();
+        let trail: Vec<i64> = Vec::new();
+        let shown: Vec<SheetPeerShownRecord> = Vec::new();
         let write: SheetPeerLwwCellRecord = SheetPeerLwwCellRecord {
             row: 0,
             col: 0,
@@ -1132,6 +1426,15 @@ impl SheetPeerPolicy {
             wallTime: 0,
             counter: 0,
             nodeId: 0,
+            op: 0,
+            aRef: false,
+            aRow: 0,
+            aCol: 0,
+            aVal: 0,
+            bRef: false,
+            bRow: 0,
+            bCol: 0,
+            bVal: 0,
         };
         let placed: SheetPeerRgaNodeRecord = SheetPeerRgaNodeRecord { key: 0, after: 0 };
         let removal: SheetPeerRgaGoneRecord = SheetPeerRgaGoneRecord { key: 0, by: 0 };
@@ -1151,6 +1454,8 @@ impl SheetPeerPolicy {
             gone,
             cols,
             gone_cols,
+            trail,
+            shown,
             write,
             placed,
             removal,
@@ -1234,6 +1539,12 @@ impl SheetPeerPolicy {
     /// holds now. Only the machine writes it.
     pub fn gone_cols(&self) -> &[SheetPeerRgaGoneRecord] {
         &self.gone_cols
+    }
+
+    /// W3C SCXML 5.2: what the published `shown` datamodel variable
+    /// holds now. Only the machine writes it.
+    pub fn shown(&self) -> &[SheetPeerShownRecord] {
+        &self.shown
     }
 
     /// W3C SCXML 5.2: what the published `lamport` datamodel variable
@@ -1394,9 +1705,11 @@ impl StatePolicy for SheetPeerPolicy {
             SheetPeerEvent::SheetDropCol => "sheet.drop_col",
             SheetPeerEvent::SheetDropRow => "sheet.drop_row",
             SheetPeerEvent::SheetEdit => "sheet.edit",
+            SheetPeerEvent::SheetFormula => "sheet.formula",
             SheetPeerEvent::SheetGone => "sheet.gone",
             SheetPeerEvent::SheetGoneCol => "sheet.gone_col",
             SheetPeerEvent::SheetJoin => "sheet.join",
+            SheetPeerEvent::SheetRecompute => "sheet.recompute",
             SheetPeerEvent::SheetRow => "sheet.row",
             SheetPeerEvent::Null => "",
         }
@@ -1412,9 +1725,11 @@ impl StatePolicy for SheetPeerPolicy {
             "sheet.drop_col" => Some(SheetPeerEvent::SheetDropCol),
             "sheet.drop_row" => Some(SheetPeerEvent::SheetDropRow),
             "sheet.edit" => Some(SheetPeerEvent::SheetEdit),
+            "sheet.formula" => Some(SheetPeerEvent::SheetFormula),
             "sheet.gone" => Some(SheetPeerEvent::SheetGone),
             "sheet.gone_col" => Some(SheetPeerEvent::SheetGoneCol),
             "sheet.join" => Some(SheetPeerEvent::SheetJoin),
+            "sheet.recompute" => Some(SheetPeerEvent::SheetRecompute),
             "sheet.row" => Some(SheetPeerEvent::SheetRow),
             _ => None,
         }
@@ -1496,6 +1811,15 @@ impl StatePolicy for SheetPeerPolicy {
                     wallTime: fields.signed64("wallTime")?,
                     counter: fields.unsigned::<u32>("counter")?,
                     nodeId: fields.unsigned64("nodeId")?,
+                    op: fields.unsigned::<u8>("op")?,
+                    aRef: fields.truth("aRef")?,
+                    aRow: fields.unsigned64("aRow")?,
+                    aCol: fields.unsigned64("aCol")?,
+                    aVal: fields.signed64("aVal")?,
+                    bRef: fields.truth("bRef")?,
+                    bRow: fields.unsigned64("bRow")?,
+                    bCol: fields.unsigned64("bCol")?,
+                    bVal: fields.signed64("bVal")?,
                 });
             }
             SheetPeerEvent::SheetCol => {
@@ -1527,6 +1851,24 @@ impl StatePolicy for SheetPeerPolicy {
                     value: fields.signed64("value")?,
                     now: fields.signed64("now")?,
                 });
+            }
+            SheetPeerEvent::SheetFormula => {
+                let fields = ::sce_rust_runtime::event_payload::PayloadFields::decode(data)?;
+                self.pending_payload =
+                    SheetPeerPayload::SheetFormula(SheetPeerSheetFormulaPayload {
+                        row: fields.unsigned64("row")?,
+                        col: fields.unsigned64("col")?,
+                        op: fields.unsigned::<u8>("op")?,
+                        aRef: fields.truth("aRef")?,
+                        aRow: fields.unsigned64("aRow")?,
+                        aCol: fields.unsigned64("aCol")?,
+                        aVal: fields.signed64("aVal")?,
+                        bRef: fields.truth("bRef")?,
+                        bRow: fields.unsigned64("bRow")?,
+                        bCol: fields.unsigned64("bCol")?,
+                        bVal: fields.signed64("bVal")?,
+                        now: fields.signed64("now")?,
+                    });
             }
             SheetPeerEvent::SheetGone => {
                 let fields = ::sce_rust_runtime::event_payload::PayloadFields::decode(data)?;
@@ -1579,8 +1921,8 @@ impl StatePolicy for SheetPeerPolicy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: sheet_peer.scxml:34 :: _machine"]
-    // SCE-MAP: sheet_peer.scxml:34 :: _machine
+    #[doc = "SCE-MAP: sheet_peer.scxml:46 :: _machine"]
+    // SCE-MAP: sheet_peer.scxml:46 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -1596,8 +1938,8 @@ impl StatePolicy for SheetPeerPolicy {
     // recorded runs nothing.
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: sheet_peer.scxml:34 :: _machine"]
-    // SCE-MAP: sheet_peer.scxml:34 :: _machine
+    #[doc = "SCE-MAP: sheet_peer.scxml:46 :: _machine"]
+    // SCE-MAP: sheet_peer.scxml:46 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -1613,8 +1955,8 @@ impl StatePolicy for SheetPeerPolicy {
     // the first of `state`'s own transitions, in document order, that `event`
     // enables. The engine walks the atomic states and their ancestors and
     // keeps the ordered set. `Event::Null` asks for eventless transitions.
-    #[doc = "SCE-MAP: sheet_peer.scxml:34 :: _machine"]
-    // SCE-MAP: sheet_peer.scxml:34 :: _machine
+    #[doc = "SCE-MAP: sheet_peer.scxml:46 :: _machine"]
+    // SCE-MAP: sheet_peer.scxml:46 :: _machine
     fn first_enabled_transition(
         &mut self,
         state: Self::State,
@@ -1645,7 +1987,7 @@ impl StatePolicy for SheetPeerPolicy {
                         });
                     }
                 }
-                if event == SheetPeerEvent::SheetCell {
+                if event == SheetPeerEvent::SheetFormula {
                     {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
@@ -1656,7 +1998,7 @@ impl StatePolicy for SheetPeerPolicy {
                         });
                     }
                 }
-                if event == SheetPeerEvent::SheetAddRow {
+                if event == SheetPeerEvent::SheetCell {
                     {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
@@ -1667,7 +2009,7 @@ impl StatePolicy for SheetPeerPolicy {
                         });
                     }
                 }
-                if event == SheetPeerEvent::SheetRow {
+                if event == SheetPeerEvent::SheetRecompute {
                     {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
@@ -1678,7 +2020,7 @@ impl StatePolicy for SheetPeerPolicy {
                         });
                     }
                 }
-                if event == SheetPeerEvent::SheetDropRow {
+                if event == SheetPeerEvent::SheetAddRow {
                     {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
@@ -1689,7 +2031,7 @@ impl StatePolicy for SheetPeerPolicy {
                         });
                     }
                 }
-                if event == SheetPeerEvent::SheetGone {
+                if event == SheetPeerEvent::SheetRow {
                     {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
@@ -1700,7 +2042,7 @@ impl StatePolicy for SheetPeerPolicy {
                         });
                     }
                 }
-                if event == SheetPeerEvent::SheetAddCol {
+                if event == SheetPeerEvent::SheetDropRow {
                     {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
@@ -1711,7 +2053,7 @@ impl StatePolicy for SheetPeerPolicy {
                         });
                     }
                 }
-                if event == SheetPeerEvent::SheetCol {
+                if event == SheetPeerEvent::SheetGone {
                     {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
@@ -1722,7 +2064,7 @@ impl StatePolicy for SheetPeerPolicy {
                         });
                     }
                 }
-                if event == SheetPeerEvent::SheetDropCol {
+                if event == SheetPeerEvent::SheetAddCol {
                     {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
@@ -1733,7 +2075,7 @@ impl StatePolicy for SheetPeerPolicy {
                         });
                     }
                 }
-                if event == SheetPeerEvent::SheetGoneCol {
+                if event == SheetPeerEvent::SheetCol {
                     {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
@@ -1744,12 +2086,34 @@ impl StatePolicy for SheetPeerPolicy {
                         });
                     }
                 }
-                if event == SheetPeerEvent::ErrorExecution {
+                if event == SheetPeerEvent::SheetDropCol {
                     {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
                             targets: &[],
                             transition_index: 11,
+                            has_actions: true,
+                            is_internal: true,
+                        });
+                    }
+                }
+                if event == SheetPeerEvent::SheetGoneCol {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[],
+                            transition_index: 12,
+                            has_actions: true,
+                            is_internal: true,
+                        });
+                    }
+                }
+                if event == SheetPeerEvent::ErrorExecution {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[],
+                            transition_index: 13,
                             has_actions: true,
                             is_internal: true,
                         });
@@ -1763,8 +2127,8 @@ impl StatePolicy for SheetPeerPolicy {
 
     // W3C SCXML 3.13: a transition's executable content, run by the engine
     // between the microstep's exits and its entries.
-    #[doc = "SCE-MAP: sheet_peer.scxml:34 :: _machine"]
-    // SCE-MAP: sheet_peer.scxml:34 :: _machine
+    #[doc = "SCE-MAP: sheet_peer.scxml:46 :: _machine"]
+    // SCE-MAP: sheet_peer.scxml:46 :: _machine
     fn execute_transition_content(
         &mut self,
         source: Self::State,
@@ -1775,7 +2139,7 @@ impl StatePolicy for SheetPeerPolicy {
             SheetPeerState::Open => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: sheet_peer.scxml:101 :: open :: _transition_0
+                        // SCE-MAP: sheet_peer.scxml:128 :: open :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
                         let ev = match &self.pending_payload {
                             SheetPeerPayload::SheetJoin(ev) => ev.clone(),
@@ -1791,7 +2155,7 @@ impl StatePolicy for SheetPeerPolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: sheet_peer.scxml:107 :: open :: _transition_1
+                        // SCE-MAP: sheet_peer.scxml:137 :: open :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
                         let ev = match &self.pending_payload {
                             SheetPeerPayload::SheetEdit(ev) => ev.clone(),
@@ -1869,6 +2233,51 @@ impl StatePolicy for SheetPeerPolicy {
                                             (self.node).to_string(),
                                         ),
                                     );
+                                    // The value is read from the machine's field as it stands now.
+                                    wire_params
+                                        .entry("op".to_string())
+                                        .or_default()
+                                        .push(::sce_rust_runtime::ScriptValue::Int(i64::from(0)));
+                                    // The value is read from the machine's field as it stands now.
+                                    wire_params
+                                        .entry("aRef".to_string())
+                                        .or_default()
+                                        .push(::sce_rust_runtime::ScriptValue::Bool(false));
+                                    // The value is read from the machine's field as it stands now.
+                                    wire_params
+                                        .entry("aRow".to_string())
+                                        .or_default()
+                                        .push(::sce_rust_runtime::ScriptValue::Int(i64::from(0)));
+                                    // The value is read from the machine's field as it stands now.
+                                    wire_params
+                                        .entry("aCol".to_string())
+                                        .or_default()
+                                        .push(::sce_rust_runtime::ScriptValue::Int(i64::from(0)));
+                                    // The value is read from the machine's field as it stands now.
+                                    wire_params
+                                        .entry("aVal".to_string())
+                                        .or_default()
+                                        .push(::sce_rust_runtime::ScriptValue::Int(i64::from(0)));
+                                    // The value is read from the machine's field as it stands now.
+                                    wire_params
+                                        .entry("bRef".to_string())
+                                        .or_default()
+                                        .push(::sce_rust_runtime::ScriptValue::Bool(false));
+                                    // The value is read from the machine's field as it stands now.
+                                    wire_params
+                                        .entry("bRow".to_string())
+                                        .or_default()
+                                        .push(::sce_rust_runtime::ScriptValue::Int(i64::from(0)));
+                                    // The value is read from the machine's field as it stands now.
+                                    wire_params
+                                        .entry("bCol".to_string())
+                                        .or_default()
+                                        .push(::sce_rust_runtime::ScriptValue::Int(i64::from(0)));
+                                    // The value is read from the machine's field as it stands now.
+                                    wire_params
+                                        .entry("bVal".to_string())
+                                        .or_default()
+                                        .push(::sce_rust_runtime::ScriptValue::Int(i64::from(0)));
                                     ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
                                 };
                                 let event_data: &str = &event_data_string;
@@ -1885,6 +2294,31 @@ impl StatePolicy for SheetPeerPolicy {
 
                                 let _ = event_data; // suppress unused warning in branches that skip dispatch
                                 let _ = send_id; // suppress unused warning when no send operation
+                            }
+                        }
+                    }
+                    2 => {
+                        // SCE-MAP: sheet_peer.scxml:160 :: open :: _transition_2
+                        // W3C SCXML 3.13: Transition 2 actions
+                        let ev = match &self.pending_payload {
+                            SheetPeerPayload::SheetFormula(ev) => ev.clone(),
+                            _ => return,
+                        };
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // W3C SCXML 5.3: <assign location="clock">
+                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.clock = call_HlcSend__v(&self.clock, ev.now, self.node)?;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<assign location='clock'>: an integer operation overflowed or failed"));
+        true
+    }
+};
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
                             }
 
                             {
@@ -1919,11 +2353,10 @@ impl StatePolicy for SheetPeerPolicy {
                                         ),
                                     );
                                     // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("value".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (ev.value).to_string(),
-                                        ),
-                                    );
+                                    wire_params
+                                        .entry("value".to_string())
+                                        .or_default()
+                                        .push(::sce_rust_runtime::ScriptValue::Int(i64::from(0)));
                                     // The value is read from the machine's field as it stands now.
                                     wire_params.entry("wallTime".to_string()).or_default().push(
                                         ::sce_rust_runtime::ScriptValue::String(
@@ -1942,40 +2375,68 @@ impl StatePolicy for SheetPeerPolicy {
                                             (self.node).to_string(),
                                         ),
                                     );
+                                    // The value is read from the machine's field as it stands now.
+                                    wire_params.entry("op".to_string()).or_default().push(
+                                        ::sce_rust_runtime::ScriptValue::Int(i64::from(ev.op)),
+                                    );
+                                    // The value is read from the machine's field as it stands now.
+                                    wire_params
+                                        .entry("aRef".to_string())
+                                        .or_default()
+                                        .push(::sce_rust_runtime::ScriptValue::Bool(ev.aRef));
+                                    // The value is read from the machine's field as it stands now.
+                                    wire_params.entry("aRow".to_string()).or_default().push(
+                                        ::sce_rust_runtime::ScriptValue::String(
+                                            (ev.aRow).to_string(),
+                                        ),
+                                    );
+                                    // The value is read from the machine's field as it stands now.
+                                    wire_params.entry("aCol".to_string()).or_default().push(
+                                        ::sce_rust_runtime::ScriptValue::String(
+                                            (ev.aCol).to_string(),
+                                        ),
+                                    );
+                                    // The value is read from the machine's field as it stands now.
+                                    wire_params.entry("aVal".to_string()).or_default().push(
+                                        ::sce_rust_runtime::ScriptValue::String(
+                                            (ev.aVal).to_string(),
+                                        ),
+                                    );
+                                    // The value is read from the machine's field as it stands now.
+                                    wire_params
+                                        .entry("bRef".to_string())
+                                        .or_default()
+                                        .push(::sce_rust_runtime::ScriptValue::Bool(ev.bRef));
+                                    // The value is read from the machine's field as it stands now.
+                                    wire_params.entry("bRow".to_string()).or_default().push(
+                                        ::sce_rust_runtime::ScriptValue::String(
+                                            (ev.bRow).to_string(),
+                                        ),
+                                    );
+                                    // The value is read from the machine's field as it stands now.
+                                    wire_params.entry("bCol".to_string()).or_default().push(
+                                        ::sce_rust_runtime::ScriptValue::String(
+                                            (ev.bCol).to_string(),
+                                        ),
+                                    );
+                                    // The value is read from the machine's field as it stands now.
+                                    wire_params.entry("bVal".to_string()).or_default().push(
+                                        ::sce_rust_runtime::ScriptValue::String(
+                                            (ev.bVal).to_string(),
+                                        ),
+                                    );
                                     ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
                                 };
                                 let event_data: &str = &event_data_string;
 
-                                // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
-                                // which declared it to this build. Dispatch rather than refuse.
+                                // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
+                                // A delay postpones it and does not change the queue.
                                 {
-                                    let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
-                                    let __sce_request = sce_rust_runtime::HostSendRequest {
-                                        processor_type: "sce:mesh".to_string(),
-                                        event_name: "sheet.cell".to_string(),
-                                        target: "#server".to_string(),
-                                        content: "".to_string(),
-                                        params: host_params,
-                                        send_id: send_id.to_string(),
-                                        // W3C SCXML 5.10: the payload computed above, once, for every arm.
-                                        event_data: event_data.to_string(),
-                                        // SCE_MESH.md §mesh-10.7: the invokeid of the event being
-                                        // processed now, carried back out as a W3C child's send to its
-                                        // parent carries it (§scxml-6.4.1). Analysis keeps the field on
-                                        // every machine with a host-served send.
-                                        invoke_id: self.pending_event_invokeid.to_string(),
-                                    };
-                                    let __sce_served = engine.perform_host_send(__sce_request);
-                                    // W3C SCXML 6.2: a declared type with no handler registered is,
-                                    // from the document's side, a processor the platform does not
-                                    // support — the act it asked for was performed by nobody. Same
-                                    // event, so a wiring mistake cannot read as success.
-                                    if __sce_served.is_none()
-                                        && !engine.has_event_processor("sce:mesh")
-                                    {
-                                        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
-                                        engine.raise(err_meta);
-                                    }
+                                    let mut meta = sce_rust_runtime::EventWithMetadata::new(
+                                        SheetPeerEvent::SheetCell,
+                                    );
+                                    meta.set_event_data(event_data);
+                                    engine.raise(meta);
                                 }
 
                                 let _ = event_data; // suppress unused warning in branches that skip dispatch
@@ -1983,9 +2444,9 @@ impl StatePolicy for SheetPeerPolicy {
                             }
                         }
                     }
-                    2 => {
-                        // SCE-MAP: sheet_peer.scxml:128 :: open :: _transition_2
-                        // W3C SCXML 3.13: Transition 2 actions
+                    3 => {
+                        // SCE-MAP: sheet_peer.scxml:182 :: open :: _transition_3
+                        // W3C SCXML 3.13: Transition 3 actions
                         let ev = match &self.pending_payload {
                             SheetPeerPayload::SheetCell(ev) => ev.clone(),
                             _ => return,
@@ -2037,6 +2498,33 @@ impl StatePolicy for SheetPeerPolicy {
                             // W3C SCXML 5.3: <assign location="write.nodeId">
                             self.write.nodeId = ev.nodeId;
 
+                            // W3C SCXML 5.3: <assign location="write.op">
+                            self.write.op = ev.op;
+
+                            // W3C SCXML 5.3: <assign location="write.aRef">
+                            self.write.aRef = ev.aRef;
+
+                            // W3C SCXML 5.3: <assign location="write.aRow">
+                            self.write.aRow = ev.aRow;
+
+                            // W3C SCXML 5.3: <assign location="write.aCol">
+                            self.write.aCol = ev.aCol;
+
+                            // W3C SCXML 5.3: <assign location="write.aVal">
+                            self.write.aVal = ev.aVal;
+
+                            // W3C SCXML 5.3: <assign location="write.bRef">
+                            self.write.bRef = ev.bRef;
+
+                            // W3C SCXML 5.3: <assign location="write.bRow">
+                            self.write.bRow = ev.bRow;
+
+                            // W3C SCXML 5.3: <assign location="write.bCol">
+                            self.write.bCol = ev.bCol;
+
+                            // W3C SCXML 5.3: <assign location="write.bVal">
+                            self.write.bVal = ev.bVal;
+
                             // W3C SCXML 5.3: <assign location="cells">
                             let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     self.cells = sce_forge_runtime::algorithm::within((call_LwwWrite__vv(&self.cells, &self.write)?).as_slice(), 256)?.to_vec();
@@ -2052,108 +2540,27 @@ impl StatePolicy for SheetPeerPolicy {
                                 break 'action_block; // W3C SCXML 4.9: the error ends the block
                             }
 
-                            // W3C SCXML 5.9: cond="hub && _event.data.nodeId !== 1"
-                            if self.hub && ev.nodeId != 1 {
+                            {
+                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_2");
+
+                                let event_data: &str = "";
+
+                                // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
+                                // A delay postpones it and does not change the queue.
                                 {
-                                    let send_id =
-                                        ::sce_rust_runtime::sce_string_from_str("__send_2");
-
-                                    // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                    // delivered, so each name carries a vector. The typed value is kept
-                                    // rather than its text — a receiver reading `_event.data.value === 42`
-                                    // finds the string "42" unequal.
-                                    //
-                                    // Declared out here rather than inside the payload block because
-                                    // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                    // below are renderings of that one evaluation: the BasicHTTP and
-                                    // host-served arms read this map instead of asking the data model again.
-                                    let mut _send_wire_params: ::std::collections::BTreeMap<
-                                        String,
-                                        Vec<::sce_rust_runtime::ScriptValue>,
-                                    > = ::std::collections::BTreeMap::new();
-                                    // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                    let event_data_string: String = {
-                                        let wire_params = &mut _send_wire_params;
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("row".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                (ev.row).to_string(),
-                                            ),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("col".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                (ev.col).to_string(),
-                                            ),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("value".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                (ev.value).to_string(),
-                                            ),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params
-                                            .entry("wallTime".to_string())
-                                            .or_default()
-                                            .push(::sce_rust_runtime::ScriptValue::String(
-                                                (ev.wallTime).to_string(),
-                                            ));
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("counter".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::Int(i64::from(
-                                                ev.counter,
-                                            )),
-                                        );
-                                        // The value is read from the machine's field as it stands now.
-                                        wire_params.entry("nodeId".to_string()).or_default().push(
-                                            ::sce_rust_runtime::ScriptValue::String(
-                                                (ev.nodeId).to_string(),
-                                            ),
-                                        );
-                                        ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                    };
-                                    let event_data: &str = &event_data_string;
-
-                                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
-                                    // which declared it to this build. Dispatch rather than refuse.
-                                    {
-                                        let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
-                                        let __sce_request = sce_rust_runtime::HostSendRequest {
-                                            processor_type: "sce:mesh".to_string(),
-                                            event_name: "sheet.cell".to_string(),
-                                            target: "#alice".to_string(),
-                                            content: "".to_string(),
-                                            params: host_params,
-                                            send_id: send_id.to_string(),
-                                            // W3C SCXML 5.10: the payload computed above, once, for every arm.
-                                            event_data: event_data.to_string(),
-                                            // SCE_MESH.md §mesh-10.7: the invokeid of the event being
-                                            // processed now, carried back out as a W3C child's send to its
-                                            // parent carries it (§scxml-6.4.1). Analysis keeps the field on
-                                            // every machine with a host-served send.
-                                            invoke_id: self.pending_event_invokeid.to_string(),
-                                        };
-                                        let __sce_served = engine.perform_host_send(__sce_request);
-                                        // W3C SCXML 6.2: a declared type with no handler registered is,
-                                        // from the document's side, a processor the platform does not
-                                        // support — the act it asked for was performed by nobody. Same
-                                        // event, so a wiring mistake cannot read as success.
-                                        if __sce_served.is_none()
-                                            && !engine.has_event_processor("sce:mesh")
-                                        {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
-                                            engine.raise(err_meta);
-                                        }
-                                    }
-
-                                    let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                    let _ = send_id; // suppress unused warning when no send operation
+                                    let mut meta = sce_rust_runtime::EventWithMetadata::new(
+                                        SheetPeerEvent::SheetRecompute,
+                                    );
+                                    meta.set_event_data(event_data);
+                                    engine.raise(meta);
                                 }
+
+                                let _ = event_data; // suppress unused warning in branches that skip dispatch
+                                let _ = send_id; // suppress unused warning when no send operation
                             }
 
-                            // W3C SCXML 5.9: cond="hub && _event.data.nodeId !== 2"
-                            if self.hub && ev.nodeId != 2 {
+                            // W3C SCXML 5.9: cond="!hub && _event.data.nodeId === node"
+                            if !self.hub && ev.nodeId == self.node {
                                 {
                                     let send_id =
                                         ::sce_rust_runtime::sce_string_from_str("__send_3");
@@ -2211,6 +2618,356 @@ impl StatePolicy for SheetPeerPolicy {
                                                 (ev.nodeId).to_string(),
                                             ),
                                         );
+                                        // The value is read from the machine's field as it stands now.
+                                        wire_params.entry("op".to_string()).or_default().push(
+                                            ::sce_rust_runtime::ScriptValue::Int(i64::from(ev.op)),
+                                        );
+                                        // The value is read from the machine's field as it stands now.
+                                        wire_params
+                                            .entry("aRef".to_string())
+                                            .or_default()
+                                            .push(::sce_rust_runtime::ScriptValue::Bool(ev.aRef));
+                                        // The value is read from the machine's field as it stands now.
+                                        wire_params.entry("aRow".to_string()).or_default().push(
+                                            ::sce_rust_runtime::ScriptValue::String(
+                                                (ev.aRow).to_string(),
+                                            ),
+                                        );
+                                        // The value is read from the machine's field as it stands now.
+                                        wire_params.entry("aCol".to_string()).or_default().push(
+                                            ::sce_rust_runtime::ScriptValue::String(
+                                                (ev.aCol).to_string(),
+                                            ),
+                                        );
+                                        // The value is read from the machine's field as it stands now.
+                                        wire_params.entry("aVal".to_string()).or_default().push(
+                                            ::sce_rust_runtime::ScriptValue::String(
+                                                (ev.aVal).to_string(),
+                                            ),
+                                        );
+                                        // The value is read from the machine's field as it stands now.
+                                        wire_params
+                                            .entry("bRef".to_string())
+                                            .or_default()
+                                            .push(::sce_rust_runtime::ScriptValue::Bool(ev.bRef));
+                                        // The value is read from the machine's field as it stands now.
+                                        wire_params.entry("bRow".to_string()).or_default().push(
+                                            ::sce_rust_runtime::ScriptValue::String(
+                                                (ev.bRow).to_string(),
+                                            ),
+                                        );
+                                        // The value is read from the machine's field as it stands now.
+                                        wire_params.entry("bCol".to_string()).or_default().push(
+                                            ::sce_rust_runtime::ScriptValue::String(
+                                                (ev.bCol).to_string(),
+                                            ),
+                                        );
+                                        // The value is read from the machine's field as it stands now.
+                                        wire_params.entry("bVal".to_string()).or_default().push(
+                                            ::sce_rust_runtime::ScriptValue::String(
+                                                (ev.bVal).to_string(),
+                                            ),
+                                        );
+                                        ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
+                                    };
+                                    let event_data: &str = &event_data_string;
+
+                                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
+                                    // which declared it to this build. Dispatch rather than refuse.
+                                    {
+                                        let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
+                                        let __sce_request = sce_rust_runtime::HostSendRequest {
+                                            processor_type: "sce:mesh".to_string(),
+                                            event_name: "sheet.cell".to_string(),
+                                            target: "#server".to_string(),
+                                            content: "".to_string(),
+                                            params: host_params,
+                                            send_id: send_id.to_string(),
+                                            // W3C SCXML 5.10: the payload computed above, once, for every arm.
+                                            event_data: event_data.to_string(),
+                                            // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                                            // processed now, carried back out as a W3C child's send to its
+                                            // parent carries it (§scxml-6.4.1). Analysis keeps the field on
+                                            // every machine with a host-served send.
+                                            invoke_id: self.pending_event_invokeid.to_string(),
+                                        };
+                                        let __sce_served = engine.perform_host_send(__sce_request);
+                                        // W3C SCXML 6.2: a declared type with no handler registered is,
+                                        // from the document's side, a processor the platform does not
+                                        // support — the act it asked for was performed by nobody. Same
+                                        // event, so a wiring mistake cannot read as success.
+                                        if __sce_served.is_none()
+                                            && !engine.has_event_processor("sce:mesh")
+                                        {
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                            engine.raise(err_meta);
+                                        }
+                                    }
+
+                                    let _ = event_data; // suppress unused warning in branches that skip dispatch
+                                    let _ = send_id; // suppress unused warning when no send operation
+                                }
+                            }
+
+                            // W3C SCXML 5.9: cond="hub && _event.data.nodeId !== 1"
+                            if self.hub && ev.nodeId != 1 {
+                                {
+                                    let send_id =
+                                        ::sce_rust_runtime::sce_string_from_str("__send_4");
+
+                                    // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                                    // delivered, so each name carries a vector. The typed value is kept
+                                    // rather than its text — a receiver reading `_event.data.value === 42`
+                                    // finds the string "42" unequal.
+                                    //
+                                    // Declared out here rather than inside the payload block because
+                                    // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                                    // below are renderings of that one evaluation: the BasicHTTP and
+                                    // host-served arms read this map instead of asking the data model again.
+                                    let mut _send_wire_params: ::std::collections::BTreeMap<
+                                        String,
+                                        Vec<::sce_rust_runtime::ScriptValue>,
+                                    > = ::std::collections::BTreeMap::new();
+                                    // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                                    let event_data_string: String = {
+                                        let wire_params = &mut _send_wire_params;
+                                        // The value is read from the machine's field as it stands now.
+                                        wire_params.entry("row".to_string()).or_default().push(
+                                            ::sce_rust_runtime::ScriptValue::String(
+                                                (ev.row).to_string(),
+                                            ),
+                                        );
+                                        // The value is read from the machine's field as it stands now.
+                                        wire_params.entry("col".to_string()).or_default().push(
+                                            ::sce_rust_runtime::ScriptValue::String(
+                                                (ev.col).to_string(),
+                                            ),
+                                        );
+                                        // The value is read from the machine's field as it stands now.
+                                        wire_params.entry("value".to_string()).or_default().push(
+                                            ::sce_rust_runtime::ScriptValue::String(
+                                                (ev.value).to_string(),
+                                            ),
+                                        );
+                                        // The value is read from the machine's field as it stands now.
+                                        wire_params
+                                            .entry("wallTime".to_string())
+                                            .or_default()
+                                            .push(::sce_rust_runtime::ScriptValue::String(
+                                                (ev.wallTime).to_string(),
+                                            ));
+                                        // The value is read from the machine's field as it stands now.
+                                        wire_params.entry("counter".to_string()).or_default().push(
+                                            ::sce_rust_runtime::ScriptValue::Int(i64::from(
+                                                ev.counter,
+                                            )),
+                                        );
+                                        // The value is read from the machine's field as it stands now.
+                                        wire_params.entry("nodeId".to_string()).or_default().push(
+                                            ::sce_rust_runtime::ScriptValue::String(
+                                                (ev.nodeId).to_string(),
+                                            ),
+                                        );
+                                        // The value is read from the machine's field as it stands now.
+                                        wire_params.entry("op".to_string()).or_default().push(
+                                            ::sce_rust_runtime::ScriptValue::Int(i64::from(ev.op)),
+                                        );
+                                        // The value is read from the machine's field as it stands now.
+                                        wire_params
+                                            .entry("aRef".to_string())
+                                            .or_default()
+                                            .push(::sce_rust_runtime::ScriptValue::Bool(ev.aRef));
+                                        // The value is read from the machine's field as it stands now.
+                                        wire_params.entry("aRow".to_string()).or_default().push(
+                                            ::sce_rust_runtime::ScriptValue::String(
+                                                (ev.aRow).to_string(),
+                                            ),
+                                        );
+                                        // The value is read from the machine's field as it stands now.
+                                        wire_params.entry("aCol".to_string()).or_default().push(
+                                            ::sce_rust_runtime::ScriptValue::String(
+                                                (ev.aCol).to_string(),
+                                            ),
+                                        );
+                                        // The value is read from the machine's field as it stands now.
+                                        wire_params.entry("aVal".to_string()).or_default().push(
+                                            ::sce_rust_runtime::ScriptValue::String(
+                                                (ev.aVal).to_string(),
+                                            ),
+                                        );
+                                        // The value is read from the machine's field as it stands now.
+                                        wire_params
+                                            .entry("bRef".to_string())
+                                            .or_default()
+                                            .push(::sce_rust_runtime::ScriptValue::Bool(ev.bRef));
+                                        // The value is read from the machine's field as it stands now.
+                                        wire_params.entry("bRow".to_string()).or_default().push(
+                                            ::sce_rust_runtime::ScriptValue::String(
+                                                (ev.bRow).to_string(),
+                                            ),
+                                        );
+                                        // The value is read from the machine's field as it stands now.
+                                        wire_params.entry("bCol".to_string()).or_default().push(
+                                            ::sce_rust_runtime::ScriptValue::String(
+                                                (ev.bCol).to_string(),
+                                            ),
+                                        );
+                                        // The value is read from the machine's field as it stands now.
+                                        wire_params.entry("bVal".to_string()).or_default().push(
+                                            ::sce_rust_runtime::ScriptValue::String(
+                                                (ev.bVal).to_string(),
+                                            ),
+                                        );
+                                        ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
+                                    };
+                                    let event_data: &str = &event_data_string;
+
+                                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
+                                    // which declared it to this build. Dispatch rather than refuse.
+                                    {
+                                        let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
+                                        let __sce_request = sce_rust_runtime::HostSendRequest {
+                                            processor_type: "sce:mesh".to_string(),
+                                            event_name: "sheet.cell".to_string(),
+                                            target: "#alice".to_string(),
+                                            content: "".to_string(),
+                                            params: host_params,
+                                            send_id: send_id.to_string(),
+                                            // W3C SCXML 5.10: the payload computed above, once, for every arm.
+                                            event_data: event_data.to_string(),
+                                            // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                                            // processed now, carried back out as a W3C child's send to its
+                                            // parent carries it (§scxml-6.4.1). Analysis keeps the field on
+                                            // every machine with a host-served send.
+                                            invoke_id: self.pending_event_invokeid.to_string(),
+                                        };
+                                        let __sce_served = engine.perform_host_send(__sce_request);
+                                        // W3C SCXML 6.2: a declared type with no handler registered is,
+                                        // from the document's side, a processor the platform does not
+                                        // support — the act it asked for was performed by nobody. Same
+                                        // event, so a wiring mistake cannot read as success.
+                                        if __sce_served.is_none()
+                                            && !engine.has_event_processor("sce:mesh")
+                                        {
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                            engine.raise(err_meta);
+                                        }
+                                    }
+
+                                    let _ = event_data; // suppress unused warning in branches that skip dispatch
+                                    let _ = send_id; // suppress unused warning when no send operation
+                                }
+                            }
+
+                            // W3C SCXML 5.9: cond="hub && _event.data.nodeId !== 2"
+                            if self.hub && ev.nodeId != 2 {
+                                {
+                                    let send_id =
+                                        ::sce_rust_runtime::sce_string_from_str("__send_5");
+
+                                    // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                                    // delivered, so each name carries a vector. The typed value is kept
+                                    // rather than its text — a receiver reading `_event.data.value === 42`
+                                    // finds the string "42" unequal.
+                                    //
+                                    // Declared out here rather than inside the payload block because
+                                    // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                                    // below are renderings of that one evaluation: the BasicHTTP and
+                                    // host-served arms read this map instead of asking the data model again.
+                                    let mut _send_wire_params: ::std::collections::BTreeMap<
+                                        String,
+                                        Vec<::sce_rust_runtime::ScriptValue>,
+                                    > = ::std::collections::BTreeMap::new();
+                                    // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                                    let event_data_string: String = {
+                                        let wire_params = &mut _send_wire_params;
+                                        // The value is read from the machine's field as it stands now.
+                                        wire_params.entry("row".to_string()).or_default().push(
+                                            ::sce_rust_runtime::ScriptValue::String(
+                                                (ev.row).to_string(),
+                                            ),
+                                        );
+                                        // The value is read from the machine's field as it stands now.
+                                        wire_params.entry("col".to_string()).or_default().push(
+                                            ::sce_rust_runtime::ScriptValue::String(
+                                                (ev.col).to_string(),
+                                            ),
+                                        );
+                                        // The value is read from the machine's field as it stands now.
+                                        wire_params.entry("value".to_string()).or_default().push(
+                                            ::sce_rust_runtime::ScriptValue::String(
+                                                (ev.value).to_string(),
+                                            ),
+                                        );
+                                        // The value is read from the machine's field as it stands now.
+                                        wire_params
+                                            .entry("wallTime".to_string())
+                                            .or_default()
+                                            .push(::sce_rust_runtime::ScriptValue::String(
+                                                (ev.wallTime).to_string(),
+                                            ));
+                                        // The value is read from the machine's field as it stands now.
+                                        wire_params.entry("counter".to_string()).or_default().push(
+                                            ::sce_rust_runtime::ScriptValue::Int(i64::from(
+                                                ev.counter,
+                                            )),
+                                        );
+                                        // The value is read from the machine's field as it stands now.
+                                        wire_params.entry("nodeId".to_string()).or_default().push(
+                                            ::sce_rust_runtime::ScriptValue::String(
+                                                (ev.nodeId).to_string(),
+                                            ),
+                                        );
+                                        // The value is read from the machine's field as it stands now.
+                                        wire_params.entry("op".to_string()).or_default().push(
+                                            ::sce_rust_runtime::ScriptValue::Int(i64::from(ev.op)),
+                                        );
+                                        // The value is read from the machine's field as it stands now.
+                                        wire_params
+                                            .entry("aRef".to_string())
+                                            .or_default()
+                                            .push(::sce_rust_runtime::ScriptValue::Bool(ev.aRef));
+                                        // The value is read from the machine's field as it stands now.
+                                        wire_params.entry("aRow".to_string()).or_default().push(
+                                            ::sce_rust_runtime::ScriptValue::String(
+                                                (ev.aRow).to_string(),
+                                            ),
+                                        );
+                                        // The value is read from the machine's field as it stands now.
+                                        wire_params.entry("aCol".to_string()).or_default().push(
+                                            ::sce_rust_runtime::ScriptValue::String(
+                                                (ev.aCol).to_string(),
+                                            ),
+                                        );
+                                        // The value is read from the machine's field as it stands now.
+                                        wire_params.entry("aVal".to_string()).or_default().push(
+                                            ::sce_rust_runtime::ScriptValue::String(
+                                                (ev.aVal).to_string(),
+                                            ),
+                                        );
+                                        // The value is read from the machine's field as it stands now.
+                                        wire_params
+                                            .entry("bRef".to_string())
+                                            .or_default()
+                                            .push(::sce_rust_runtime::ScriptValue::Bool(ev.bRef));
+                                        // The value is read from the machine's field as it stands now.
+                                        wire_params.entry("bRow".to_string()).or_default().push(
+                                            ::sce_rust_runtime::ScriptValue::String(
+                                                (ev.bRow).to_string(),
+                                            ),
+                                        );
+                                        // The value is read from the machine's field as it stands now.
+                                        wire_params.entry("bCol".to_string()).or_default().push(
+                                            ::sce_rust_runtime::ScriptValue::String(
+                                                (ev.bCol).to_string(),
+                                            ),
+                                        );
+                                        // The value is read from the machine's field as it stands now.
+                                        wire_params.entry("bVal".to_string()).or_default().push(
+                                            ::sce_rust_runtime::ScriptValue::String(
+                                                (ev.bVal).to_string(),
+                                            ),
+                                        );
                                         ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
                                     };
                                     let event_data: &str = &event_data_string;
@@ -2253,9 +3010,45 @@ impl StatePolicy for SheetPeerPolicy {
                             }
                         }
                     }
-                    3 => {
-                        // SCE-MAP: sheet_peer.scxml:166 :: open :: _transition_3
-                        // W3C SCXML 3.13: Transition 3 actions
+                    4 => {
+                        // SCE-MAP: sheet_peer.scxml:226 :: open :: _transition_4
+                        // W3C SCXML 3.13: Transition 4 actions
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // W3C SCXML 5.3: <assign location="trail">
+                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.trail = sce_forge_runtime::algorithm::within((call_SheetSettle__vvvvv(&self.cells, &self.rows, &self.gone, &self.cols, &self.gone_cols)?).as_slice(), 768)?.to_vec();
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<assign location='trail'>: an integer operation overflowed or failed"));
+        true
+    }
+};
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                            }
+
+                            // W3C SCXML 5.3: <assign location="shown">
+                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.shown = sce_forge_runtime::algorithm::within((call_SheetShow__vv(&self.cells, &self.trail)?).as_slice(), 256)?.to_vec();
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<assign location='shown'>: an integer operation overflowed or failed"));
+        true
+    }
+};
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                            }
+                        }
+                    }
+                    5 => {
+                        // SCE-MAP: sheet_peer.scxml:233 :: open :: _transition_5
+                        // W3C SCXML 3.13: Transition 5 actions
                         let ev = match &self.pending_payload {
                             SheetPeerPayload::SheetAddRow(ev) => ev.clone(),
                             _ => return,
@@ -2293,7 +3086,7 @@ impl StatePolicy for SheetPeerPolicy {
                             }
 
                             {
-                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_4");
+                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_6");
 
                                 // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                 // delivered, so each name carries a vector. The typed value is kept
@@ -2342,7 +3135,7 @@ impl StatePolicy for SheetPeerPolicy {
                             }
 
                             {
-                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_5");
+                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_7");
 
                                 // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                 // delivered, so each name carries a vector. The typed value is kept
@@ -2413,9 +3206,9 @@ impl StatePolicy for SheetPeerPolicy {
                             }
                         }
                     }
-                    4 => {
-                        // SCE-MAP: sheet_peer.scxml:183 :: open :: _transition_4
-                        // W3C SCXML 3.13: Transition 4 actions
+                    6 => {
+                        // SCE-MAP: sheet_peer.scxml:250 :: open :: _transition_6
+                        // W3C SCXML 3.13: Transition 6 actions
                         let ev = match &self.pending_payload {
                             SheetPeerPayload::SheetRow(ev) => ev.clone(),
                             _ => return,
@@ -2500,6 +3293,25 @@ if sce_failed {
                             }
 
                             {
+                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_8");
+
+                                let event_data: &str = "";
+
+                                // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
+                                // A delay postpones it and does not change the queue.
+                                {
+                                    let mut meta = sce_rust_runtime::EventWithMetadata::new(
+                                        SheetPeerEvent::SheetRecompute,
+                                    );
+                                    meta.set_event_data(event_data);
+                                    engine.raise(meta);
+                                }
+
+                                let _ = event_data; // suppress unused warning in branches that skip dispatch
+                                let _ = send_id; // suppress unused warning when no send operation
+                            }
+
+                            {
                                 let mut if_cond_failed = false;
                                 // W3C SCXML 5.9: cond="hub && _event.data.key % 256 !== 1"
                                 if match (|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> {
@@ -2515,7 +3327,7 @@ if sce_failed {
 
 
 {
-    let send_id = ::sce_rust_runtime::sce_string_from_str("__send_6");
+    let send_id = ::sce_rust_runtime::sce_string_from_str("__send_9");
 
 
     // W3C SCXML 6.2 / test178: a name may repeat and every value must be
@@ -2595,7 +3407,7 @@ if sce_failed {
 
 
 {
-    let send_id = ::sce_rust_runtime::sce_string_from_str("__send_7");
+    let send_id = ::sce_rust_runtime::sce_string_from_str("__send_10");
 
 
     // W3C SCXML 6.2 / test178: a name may repeat and every value must be
@@ -2660,9 +3472,9 @@ if sce_failed {
                             }
                         }
                     }
-                    5 => {
-                        // SCE-MAP: sheet_peer.scxml:208 :: open :: _transition_5
-                        // W3C SCXML 3.13: Transition 5 actions
+                    7 => {
+                        // SCE-MAP: sheet_peer.scxml:276 :: open :: _transition_7
+                        // W3C SCXML 3.13: Transition 7 actions
                         let ev = match &self.pending_payload {
                             SheetPeerPayload::SheetDropRow(ev) => ev.clone(),
                             _ => return,
@@ -2670,7 +3482,7 @@ if sce_failed {
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             {
-                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_8");
+                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_11");
 
                                 // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                 // delivered, so each name carries a vector. The typed value is kept
@@ -2719,7 +3531,7 @@ if sce_failed {
                             }
 
                             {
-                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_9");
+                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_12");
 
                                 // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                 // delivered, so each name carries a vector. The typed value is kept
@@ -2790,9 +3602,9 @@ if sce_failed {
                             }
                         }
                     }
-                    6 => {
-                        // SCE-MAP: sheet_peer.scxml:221 :: open :: _transition_6
-                        // W3C SCXML 3.13: Transition 6 actions
+                    8 => {
+                        // SCE-MAP: sheet_peer.scxml:289 :: open :: _transition_8
+                        // W3C SCXML 3.13: Transition 8 actions
                         let ev = match &self.pending_payload {
                             SheetPeerPayload::SheetGone(ev) => ev.clone(),
                             _ => return,
@@ -2820,11 +3632,30 @@ if sce_failed {
                                 break 'action_block; // W3C SCXML 4.9: the error ends the block
                             }
 
+                            {
+                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_13");
+
+                                let event_data: &str = "";
+
+                                // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
+                                // A delay postpones it and does not change the queue.
+                                {
+                                    let mut meta = sce_rust_runtime::EventWithMetadata::new(
+                                        SheetPeerEvent::SheetRecompute,
+                                    );
+                                    meta.set_event_data(event_data);
+                                    engine.raise(meta);
+                                }
+
+                                let _ = event_data; // suppress unused warning in branches that skip dispatch
+                                let _ = send_id; // suppress unused warning when no send operation
+                            }
+
                             // W3C SCXML 5.9: cond="hub && _event.data.by !== 1"
                             if self.hub && ev.by != 1 {
                                 {
                                     let send_id =
-                                        ::sce_rust_runtime::sce_string_from_str("__send_10");
+                                        ::sce_rust_runtime::sce_string_from_str("__send_14");
 
                                     // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                     // delivered, so each name carries a vector. The typed value is kept
@@ -2899,7 +3730,7 @@ if sce_failed {
                             if self.hub && ev.by != 2 {
                                 {
                                     let send_id =
-                                        ::sce_rust_runtime::sce_string_from_str("__send_11");
+                                        ::sce_rust_runtime::sce_string_from_str("__send_15");
 
                                     // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                     // delivered, so each name carries a vector. The typed value is kept
@@ -2971,9 +3802,9 @@ if sce_failed {
                             }
                         }
                     }
-                    7 => {
-                        // SCE-MAP: sheet_peer.scxml:242 :: open :: _transition_7
-                        // W3C SCXML 3.13: Transition 7 actions
+                    9 => {
+                        // SCE-MAP: sheet_peer.scxml:311 :: open :: _transition_9
+                        // W3C SCXML 3.13: Transition 9 actions
                         let ev = match &self.pending_payload {
                             SheetPeerPayload::SheetAddCol(ev) => ev.clone(),
                             _ => return,
@@ -3011,7 +3842,7 @@ if sce_failed {
                             }
 
                             {
-                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_12");
+                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_16");
 
                                 // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                 // delivered, so each name carries a vector. The typed value is kept
@@ -3060,7 +3891,7 @@ if sce_failed {
                             }
 
                             {
-                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_13");
+                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_17");
 
                                 // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                 // delivered, so each name carries a vector. The typed value is kept
@@ -3131,9 +3962,9 @@ if sce_failed {
                             }
                         }
                     }
-                    8 => {
-                        // SCE-MAP: sheet_peer.scxml:255 :: open :: _transition_8
-                        // W3C SCXML 3.13: Transition 8 actions
+                    10 => {
+                        // SCE-MAP: sheet_peer.scxml:324 :: open :: _transition_10
+                        // W3C SCXML 3.13: Transition 10 actions
                         let ev = match &self.pending_payload {
                             SheetPeerPayload::SheetCol(ev) => ev.clone(),
                             _ => return,
@@ -3218,6 +4049,25 @@ if sce_failed {
                             }
 
                             {
+                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_18");
+
+                                let event_data: &str = "";
+
+                                // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
+                                // A delay postpones it and does not change the queue.
+                                {
+                                    let mut meta = sce_rust_runtime::EventWithMetadata::new(
+                                        SheetPeerEvent::SheetRecompute,
+                                    );
+                                    meta.set_event_data(event_data);
+                                    engine.raise(meta);
+                                }
+
+                                let _ = event_data; // suppress unused warning in branches that skip dispatch
+                                let _ = send_id; // suppress unused warning when no send operation
+                            }
+
+                            {
                                 let mut if_cond_failed = false;
                                 // W3C SCXML 5.9: cond="hub && _event.data.key % 256 !== 1"
                                 if match (|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> {
@@ -3233,7 +4083,7 @@ if sce_failed {
 
 
 {
-    let send_id = ::sce_rust_runtime::sce_string_from_str("__send_14");
+    let send_id = ::sce_rust_runtime::sce_string_from_str("__send_19");
 
 
     // W3C SCXML 6.2 / test178: a name may repeat and every value must be
@@ -3313,7 +4163,7 @@ if sce_failed {
 
 
 {
-    let send_id = ::sce_rust_runtime::sce_string_from_str("__send_15");
+    let send_id = ::sce_rust_runtime::sce_string_from_str("__send_20");
 
 
     // W3C SCXML 6.2 / test178: a name may repeat and every value must be
@@ -3378,9 +4228,9 @@ if sce_failed {
                             }
                         }
                     }
-                    9 => {
-                        // SCE-MAP: sheet_peer.scxml:279 :: open :: _transition_9
-                        // W3C SCXML 3.13: Transition 9 actions
+                    11 => {
+                        // SCE-MAP: sheet_peer.scxml:349 :: open :: _transition_11
+                        // W3C SCXML 3.13: Transition 11 actions
                         let ev = match &self.pending_payload {
                             SheetPeerPayload::SheetDropCol(ev) => ev.clone(),
                             _ => return,
@@ -3388,7 +4238,7 @@ if sce_failed {
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             {
-                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_16");
+                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_21");
 
                                 // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                 // delivered, so each name carries a vector. The typed value is kept
@@ -3437,7 +4287,7 @@ if sce_failed {
                             }
 
                             {
-                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_17");
+                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_22");
 
                                 // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                 // delivered, so each name carries a vector. The typed value is kept
@@ -3508,9 +4358,9 @@ if sce_failed {
                             }
                         }
                     }
-                    10 => {
-                        // SCE-MAP: sheet_peer.scxml:290 :: open :: _transition_10
-                        // W3C SCXML 3.13: Transition 10 actions
+                    12 => {
+                        // SCE-MAP: sheet_peer.scxml:360 :: open :: _transition_12
+                        // W3C SCXML 3.13: Transition 12 actions
                         let ev = match &self.pending_payload {
                             SheetPeerPayload::SheetGoneCol(ev) => ev.clone(),
                             _ => return,
@@ -3538,11 +4388,30 @@ if sce_failed {
                                 break 'action_block; // W3C SCXML 4.9: the error ends the block
                             }
 
+                            {
+                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_23");
+
+                                let event_data: &str = "";
+
+                                // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
+                                // A delay postpones it and does not change the queue.
+                                {
+                                    let mut meta = sce_rust_runtime::EventWithMetadata::new(
+                                        SheetPeerEvent::SheetRecompute,
+                                    );
+                                    meta.set_event_data(event_data);
+                                    engine.raise(meta);
+                                }
+
+                                let _ = event_data; // suppress unused warning in branches that skip dispatch
+                                let _ = send_id; // suppress unused warning when no send operation
+                            }
+
                             // W3C SCXML 5.9: cond="hub && _event.data.by !== 1"
                             if self.hub && ev.by != 1 {
                                 {
                                     let send_id =
-                                        ::sce_rust_runtime::sce_string_from_str("__send_18");
+                                        ::sce_rust_runtime::sce_string_from_str("__send_24");
 
                                     // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                     // delivered, so each name carries a vector. The typed value is kept
@@ -3617,7 +4486,7 @@ if sce_failed {
                             if self.hub && ev.by != 2 {
                                 {
                                     let send_id =
-                                        ::sce_rust_runtime::sce_string_from_str("__send_19");
+                                        ::sce_rust_runtime::sce_string_from_str("__send_25");
 
                                     // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                     // delivered, so each name carries a vector. The typed value is kept
@@ -3689,9 +4558,9 @@ if sce_failed {
                             }
                         }
                     }
-                    11 => {
-                        // SCE-MAP: sheet_peer.scxml:308 :: open :: _transition_11
-                        // W3C SCXML 3.13: Transition 11 actions
+                    13 => {
+                        // SCE-MAP: sheet_peer.scxml:379 :: open :: _transition_13
+                        // W3C SCXML 3.13: Transition 13 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             // W3C SCXML 5.3: <assign location="refusals">

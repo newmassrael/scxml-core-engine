@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 0022d2f7097a4a1eb0e7ba717e1da8948cc1ba80ab5d45ced6c3b314777dd2db
-// SCE-MAP: lww_cell.scxml:21 :: _forge_body
+// source-hash: c431fa9e45990e8b729e69a4bf81ba13f9cc4e8066ddecbd5ff6346ac56dd5f3
+// SCE-MAP: lww_cell.scxml:37 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="event-schema")
 // Runtime: none
@@ -9,4 +9,4 @@
 
 package com.sce.generated.lww_cell
 
-data class LwwCellPayload(    val row: ULong,    val col: ULong,    val value: Long,    val wallTime: Long,    val counter: UInt,    val nodeId: ULong)
+data class LwwCellPayload(    val row: ULong,    val col: ULong,    val value: Long,    val wallTime: Long,    val counter: UInt,    val nodeId: ULong,    val op: UByte,    val aRef: Boolean,    val aRow: ULong,    val aCol: ULong,    val aVal: Long,    val bRef: Boolean,    val bRow: ULong,    val bCol: ULong,    val bVal: Long)

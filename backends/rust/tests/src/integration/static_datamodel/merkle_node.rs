@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 0022d2f7097a4a1eb0e7ba717e1da8948cc1ba80ab5d45ced6c3b314777dd2db
+// source-hash: c431fa9e45990e8b729e69a4bf81ba13f9cc4e8066ddecbd5ff6346ac56dd5f3
 #![doc = "SCE-MAP: merkle_node.scxml:22 :: _forge_body"]
 // SCE-MAP: merkle_node.scxml:22 :: _forge_body
 
