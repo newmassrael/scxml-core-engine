@@ -35,13 +35,17 @@ fn record_identity(imports: &[ForgeImport], base_dir: &Path, alias: &str) -> Opt
     record_schema(imports, base_dir, alias).map(|(id, _)| id)
 }
 
+/// A field of a record schema: its type, and the `sce:max-size` the schema declares
+/// on it, if any.
+type SchemaField = (SceType, Option<u32>);
+
 /// [`record_identity`], and the fields of the schema it names, each with the
 /// `sce:max-size` the schema declares on it.
 fn record_schema(
     imports: &[ForgeImport],
     base_dir: &Path,
     alias: &str,
-) -> Option<(RecordId, Vec<(SceType, Option<u32>)>)> {
+) -> Option<(RecordId, Vec<SchemaField>)> {
     let import = imports
         .iter()
         .find(|i| i.alias == alias && i.kind == ForgeKind::EventSchema)?;

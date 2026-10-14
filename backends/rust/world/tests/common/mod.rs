@@ -647,12 +647,15 @@ pub fn agreed_todos(world: &mut World) -> BTreeMap<(u64, u64), Field> {
     server
 }
 
+/// A write someone wrote over: the field it was written to, and its stamp.
+type Superseded = ((u64, u64), (u64, u64, u64));
+
 /// What the list should hold, read from the network and not from the copies: of every
 /// write a person sent the hub, the ones no person sent a supersede for are the values
 /// of its field, and the latest of them is the one a single reader takes.
 pub fn todo_oracle(world: &World) -> BTreeMap<(u64, u64), Field> {
     let mut written: BTreeMap<(u64, u64), Vec<TodoValue>> = BTreeMap::new();
-    let mut superseded: Vec<((u64, u64), (u64, u64, u64))> = Vec::new();
+    let mut superseded: Vec<Superseded> = Vec::new();
     for (event, write) in sent_to_the_hub(world) {
         let number = |name: &str| whole(&write[name]);
         let key = (number("id") as u64, number("field") as u64);
