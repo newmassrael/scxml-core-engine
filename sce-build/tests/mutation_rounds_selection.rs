@@ -1182,11 +1182,22 @@ fn a_change_to_an_oracle_selects_the_round_it_belongs_to() {
     // And exactly, for an oracle that belongs to one casefile alone: selecting
     // everything on every change would be the other failure — a corpus sweep
     // on every push, which is the version of this gate that gets switched off.
+    //
+    // "Alone" is of the file and not only of the oracle role: a file one casefile
+    // reads as its oracle can be what a casefile mutates, its own or another's
+    // (`hazard.rs` is the oracle of one round and the target of two), and a
+    // change to it rightly selects every round that names it. Such a file says
+    // nothing of whether the selection is exact, so it is not the one asked.
+    // Taking the first sole oracle in path order without this asked it the day
+    // the oracles that sorted before it left the tree (2026-10-14).
+    let targets: BTreeSet<String> = corpus.iter().flat_map(|c| declared_targets(c)).collect();
     let (sole, owner) = owners
         .iter()
-        .find(|(oracle, files)| files.len() == 1 && oracle.ends_with(".rs"))
+        .find(|(oracle, files)| {
+            files.len() == 1 && oracle.ends_with(".rs") && !targets.contains(*oracle)
+        })
         .map(|(oracle, files)| (oracle.clone(), files[0].clone()))
-        .expect("some oracle belongs to exactly one casefile");
+        .expect("some oracle belongs to exactly one casefile and is no casefile's target");
     let (ok, chosen, log) = selection_for(&[&sole]);
     assert!(ok, "the gate failed while choosing:\n{log}");
     assert_eq!(
