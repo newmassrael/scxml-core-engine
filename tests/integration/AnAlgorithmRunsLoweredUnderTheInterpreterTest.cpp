@@ -158,12 +158,18 @@ Lowered lower(const std::string &document) {
 }
 
 /// An argument as script source: a list or bytes is an array, a record an
-/// object, each spelled from what it holds. An integer a Number holds exactly is
-/// a Number and one it does not is a BigInt literal, which is the one form the
-/// lowered functions hold an integer in (`SceStatic`, docs/SCE_ACCEPTED_SUBSET.md
-/// 2.15); nothing is left unspelled but a value of a kind the reference does not
-/// carry.
+/// object, each spelled from what it holds, and a text a string literal. An
+/// integer a Number holds exactly is a Number and one it does not is a BigInt
+/// literal, which is the one form the lowered functions hold an integer in
+/// (`SceStatic`, docs/SCE_ACCEPTED_SUBSET.md 2.15); nothing is left unspelled but
+/// a value of a kind the reference does not carry.
 bool spell(const nlohmann::json &value, std::string &out) {
+    if (value.is_string()) {
+        // A JSON string is a string literal of the script, its UTF-8 kept as
+        // written: the lowered functions count a text in bytes.
+        out = value.dump();
+        return true;
+    }
     if (value.is_array()) {
         out = "[";
         for (size_t index = 0; index < value.size(); ++index) {
@@ -272,8 +278,8 @@ Answer call(::SCE::IScriptEngine &engine, const std::string &session, const std:
 }
 
 /// Whether two values are the same: a list or bytes by its elements in order, a
-/// record by its fields whatever order they were written in, and the rest as a
-/// number or a truth value is.
+/// record by its fields whatever order they were written in, a text by its
+/// bytes, and the rest as a number or a truth value is.
 bool sameValue(const nlohmann::json &got, const nlohmann::json &want) {
     if (got.is_array() || want.is_array()) {
         if (!got.is_array() || !want.is_array() || got.size() != want.size()) {
@@ -299,6 +305,10 @@ bool sameValue(const nlohmann::json &got, const nlohmann::json &want) {
     }
     if (got.is_boolean() || want.is_boolean()) {
         return got.is_boolean() && want.is_boolean() && got.get<bool>() == want.get<bool>();
+    }
+    // A text is the same bytes, as the backends compare it.
+    if (got.is_string() || want.is_string()) {
+        return got.is_string() && want.is_string() && got.get<std::string>() == want.get<std::string>();
     }
     // Two integers are compared as integers: past 2^53 a double is a different
     // value from its neighbour.
