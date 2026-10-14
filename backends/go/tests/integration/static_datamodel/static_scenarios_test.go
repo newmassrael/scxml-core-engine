@@ -285,19 +285,45 @@ func rgaGonesJSON[R rgaGoneRecord](gones []R) any {
 	return out
 }
 
-// todoTextRecord is a `record:Text` (todo_text) as a host reads it: which to-do,
-// which field of it, and the text the field holds.
-type todoTextRecord interface {
+// orsetEntryRecord is a `record:Entry` (sce:std/merge/orset_entry) as a host reads
+// it: the element, and the stamp of the add that put it there.
+type orsetEntryRecord interface {
+	hlcRecord
+	Element() uint64
+}
+
+// orsetEntriesJSON is a list of such entries, in order.
+func orsetEntriesJSON[R orsetEntryRecord](entries []R) any {
+	out := make([]any, len(entries))
+	for i, entry := range entries {
+		out[i] = map[string]any{
+			"element": digits(entry.Element()), "wallTime": signedDigits(entry.WallTime()),
+			"counter": entry.Counter(), "nodeId": digits(entry.NodeId()),
+		}
+	}
+	return out
+}
+
+// todoValueRecord is a `record:Value` (todo_value) as a host reads it: which
+// to-do, which field of it, the number and the text the field holds, and the
+// stamp of the write that put them there.
+type todoValueRecord interface {
+	hlcRecord
 	Id() uint64
 	Field() uint64
+	Value() int64
 	Text() string
 }
 
-// todoTextsJSON is a list of such texts, in order.
-func todoTextsJSON[R todoTextRecord](texts []R) any {
-	out := make([]any, len(texts))
-	for i, text := range texts {
-		out[i] = map[string]any{"id": digits(text.Id()), "field": digits(text.Field()), "text": text.Text()}
+// todoValuesJSON is a list of such values, in order.
+func todoValuesJSON[R todoValueRecord](values []R) any {
+	out := make([]any, len(values))
+	for i, value := range values {
+		out[i] = map[string]any{
+			"id": digits(value.Id()), "field": digits(value.Field()), "value": signedDigits(value.Value()),
+			"text": value.Text(), "wallTime": signedDigits(value.WallTime()),
+			"counter": value.Counter(), "nodeId": digits(value.NodeId()),
+		}
 	}
 	return out
 }
@@ -1475,21 +1501,22 @@ func todoCopy() machine {
 	policy := todo_peer.NewTodoPeerPolicy()
 	policy.SessionID = sce.GenerateSessionID()
 	return drive[todo_peer.TodoPeerState, todo_peer.TodoPeerEvent](&policy, map[string]func() any{
-		"node":     func() any { return digits(policy.Node()) },
-		"hub":      func() any { return policy.Hub() },
-		"clock":    func() any { return hlcJSON(policy.Clock()) },
-		"cells":    func() any { return lwwCellsJSON(policy.Cells()) },
-		"texts":    func() any { return todoTextsJSON(policy.Texts()) },
-		"refusals": func() any { return policy.Refusals() },
+		"node":       func() any { return digits(policy.Node()) },
+		"hub":        func() any { return policy.Hub() },
+		"clock":      func() any { return hlcJSON(policy.Clock()) },
+		"adds":       func() any { return orsetEntriesJSON(policy.Adds()) },
+		"tombstones": func() any { return orsetEntriesJSON(policy.Tombstones()) },
+		"values":     func() any { return todoValuesJSON(policy.Values()) },
+		"refusals":   func() any { return policy.Refusals() },
 	})
 }
 
 // A copy of a shared to-do list is replayed through the afternoon the world
 // simulation ran it through, as each of the three that took part saw it: every
-// event it was given, what it held after each, and what it sent its peers. Each
-// field of a to-do is a last-writer-wins register merged by the standard
-// `lww_write`, its stamps 64-bit and crossing as their digits, and a title is the
-// text of the write its cell kept.
+// event it was given, what it held after each, and what it sent its peers. The
+// to-dos it knows are an observed-remove set (`adds` and `tombstones`), each
+// field of one is a value record kept by its stamp, and the stamps are 64-bit and
+// cross as their digits.
 func TestACopyOfASharedTodoListIsReplayedAsEachPeerSawIt(t *testing.T) {
 	t.Run("alice", func(t *testing.T) { replay(t, "todo_peer_alice", todoCopy()) })
 	t.Run("bob", func(t *testing.T) { replay(t, "todo_peer_bob", todoCopy()) })
