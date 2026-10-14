@@ -77,5 +77,12 @@ jobs:
           python-version: '3.x'
       - name: Install the two libraries a pack is parsed and validated with
         run: python3 -m pip install --upgrade pyyaml jsonschema
+      - name: Install clang-format-19
+        # The library is generated as C++, which `sce-codegen` formats with clang-format pinned to
+        # major 19 or refuses (docs/SCE_CODEGEN_DETERMINISM.md section 9). The runner ships 18, so the
+        # first run of this lane (2026-10-14) refused every parity case until this step existed.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-format-19
       - name: Targets gate
         run: scripts/gate targets

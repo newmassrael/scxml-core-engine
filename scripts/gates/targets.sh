@@ -14,6 +14,8 @@
 # The second needs the product's generator and a C++ compiler, and a case that cannot run
 # skips, and a skip reads as a pass. So this gate refuses to run without either: they are
 # built or installed one step up, and absence here is a broken step, not a reason to judge less.
+# The generator formats the C++ it writes with clang-format pinned to major 19 and refuses
+# without it (docs/SCE_CODEGEN_DETERMINISM.md section 9), which the workflow installs.
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
