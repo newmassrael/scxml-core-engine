@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/merge/sheet_apply.scxml — what the operation `op` gives for the
+  numbers `a` and `b` in int64, as a cell of a sheet shows it: 2, a + b;
+  3, a - b; 4, a * b; 5, a / b, truncated toward zero. The value is `fault` 0
+  and the number, and a result there is no number for is a fault with
+  value 0: 2 a division by zero, 3 a result outside int64 (including
+  the quotient of the smallest int64 and -1). An `op` that is none of the
+  four is fault 5, which sheet_settle names an operation the library does not
+  know.
+
+  Every case is decided before the arithmetic is done, so a sum or a
+  product that does not fit is a fault a sheet shows and not a failure that
+  takes the sheet's other cells with it.
+
+  op 2, a 9223372036854775807, b 1 → fault 3 · op 5, a 7, b -2 → -3 ·
+  op 5, a 7, b 0 → fault 2 · op 4, a -3, b 4 → -12.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="sheet_apply" version="1.0">
+  <sce:import kind="event-schema" src="sheet_value.scxml" as="Value"/>
+  <sce:signature>
+    <sce:param name="op" type="uint8"/>
+    <sce:param name="a" type="int64"/>
+    <sce:param name="b" type="int64"/>
+    <sce:return type="record:Value" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="top" type="int64" init="9223372036854775807"/>
+    <sce:var name="bottom" type="int64" init="-top - 1"/>
+    <sce:var name="value" type="int64" init="0"/>
+    <sce:var name="fault" type="uint8" init="0"/>
+    <sce:if cond="op === 2">
+      <sce:if cond="(b &gt; 0 &amp;&amp; a &gt; top - b) || (b &lt; 0 &amp;&amp; a &lt; bottom - b)">
+        <sce:assign target="fault" expr="3"/>
+        <sce:else>
+          <sce:assign target="value" expr="a + b"/>
+        </sce:else>
+      </sce:if>
+      <sce:else>
+        <sce:if cond="op === 3">
+          <sce:if cond="(b &lt; 0 &amp;&amp; a &gt; top + b) || (b &gt; 0 &amp;&amp; a &lt; bottom + b)">
+            <sce:assign target="fault" expr="3"/>
+            <sce:else>
+              <sce:assign target="value" expr="a - b"/>
+            </sce:else>
+          </sce:if>
+          <sce:else>
+            <sce:if cond="op === 4">
+              <sce:if cond="a === 0 || b === 0">
+                <sce:assign target="value" expr="0"/>
+                <sce:else>
+                  <sce:if cond="(a &gt; 0 &amp;&amp; b &gt; 0 &amp;&amp; a &gt; top / b) || (a &gt; 0 &amp;&amp; b &lt; 0 &amp;&amp; b &lt; bottom / a) || (a &lt; 0 &amp;&amp; b &gt; 0 &amp;&amp; a &lt; bottom / b) || (a &lt; 0 &amp;&amp; b &lt; 0 &amp;&amp; b &lt; top / a)">
+                    <sce:assign target="fault" expr="3"/>
+                    <sce:else>
+                      <sce:assign target="value" expr="a * b"/>
+                    </sce:else>
+                  </sce:if>
+                </sce:else>
+              </sce:if>
+              <sce:else>
+                <sce:if cond="op === 5">
+                  <sce:if cond="b === 0">
+                    <sce:assign target="fault" expr="2"/>
+                    <sce:else>
+                      <sce:if cond="a === bottom &amp;&amp; b === -1">
+                        <sce:assign target="fault" expr="3"/>
+                        <sce:else>
+                          <sce:assign target="value" expr="a / b"/>
+                        </sce:else>
+                      </sce:if>
+                    </sce:else>
+                  </sce:if>
+                  <sce:else>
+                    <sce:assign target="fault" expr="5"/>
+                  </sce:else>
+                </sce:if>
+              </sce:else>
+            </sce:if>
+          </sce:else>
+        </sce:if>
+      </sce:else>
+    </sce:if>
+    <sce:var name="result" type="record:Value">
+      <sce:set name="value" expr="value"/>
+      <sce:set name="fault" expr="fault"/>
+    </sce:var>
+    <sce:return expr="result"/>
+  </sce:body>
+</scxml>

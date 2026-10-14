@@ -761,8 +761,37 @@ def orset_union(a: list, b: list):
     return ("ok", a + [other for other in b if other not in a])
 
 
-def cell(row: int, col: int, value: int, stamp: dict) -> dict:
-    return {"row": row, "col": col, "value": value, **stamp}
+#: What a cell that holds a number carries in the fields of a formula.
+NUMBER = {"op": 0, "aRef": False, "aRow": 0, "aCol": 0, "aVal": 0, "bRef": False, "bRow": 0, "bCol": 0, "bVal": 0}
+
+
+def cell(row: int, col: int, value: int, stamp: dict, held: dict = NUMBER) -> dict:
+    """A cell of a grid: the number `value`, or the formula `held` carries, with
+    the stamp of the write that put it there."""
+    return {"row": row, "col": col, "value": value, **stamp, **held}
+
+
+def reads(row: int, col: int) -> tuple:
+    """An operand that names the cell at a place."""
+    return ("ref", row, col)
+
+
+def literal(number: int) -> tuple:
+    """An operand that is a number."""
+    return ("lit", number)
+
+
+def formula(op: int, a: tuple = ("lit", 0), b: tuple = ("lit", 0)) -> dict:
+    """The fields of a formula: operation `op` over the operands a and b. An
+    operand the operation does not read is held as the literal 0."""
+    held = {"op": op}
+    for side, operand in (("a", a), ("b", b)):
+        is_ref = operand[0] == "ref"
+        held[f"{side}Ref"] = is_ref
+        held[f"{side}Row"] = operand[1] if is_ref else 0
+        held[f"{side}Col"] = operand[2] if is_ref else 0
+        held[f"{side}Val"] = 0 if is_ref else operand[1]
+    return held
 
 
 def lww_write(cells: list, write: dict):
@@ -824,6 +853,177 @@ def rga_remove(gone: list, removal: dict):
     already marked."""
     marked = any(held["key"] == removal["key"] for held in gone)
     return ("ok", list(gone) + ([] if marked else [removal]))
+
+
+#: The faults a cell of a grid shows instead of a number (sce:std/merge/sheet_settle).
+CYCLE, DIVIDE, OVERFLOW, BAD_RANGE, UNKNOWN_OP = 1, 2, 3, 4, 5
+
+
+def sheet_value(value: int, fault: int) -> dict:
+    return {"value": value, "fault": fault}
+
+
+def sheet_apply(op: int, a: int, b: int):
+    """sce:std/merge/sheet_apply — a + b, a - b, a * b and a / b toward zero in
+    int64, the exact result judged against the width: one outside it is a fault,
+    as is a division by zero, and an operation that is none of the four."""
+    if op not in (2, 3, 4, 5):
+        return ("ok", sheet_value(0, UNKNOWN_OP))
+    if op == 5 and b == 0:
+        return ("ok", sheet_value(0, DIVIDE))
+    exact = {2: a + b, 3: a - b, 4: a * b}.get(op) if op != 5 else truncated_quotient(a, b)
+    if not fits(exact, I64_MIN, I64_MAX):
+        return ("ok", sheet_value(0, OVERFLOW))
+    return ("ok", sheet_value(exact, 0))
+
+
+def sheet_first(cells: list) -> dict:
+    """The index of the first cell at each place."""
+    first: dict = {}
+    for at, held in enumerate(cells):
+        first.setdefault((held["row"], held["col"]), at)
+    return first
+
+
+def sheet_orders(rows: list, gone: list, cols: list, gone_cols: list) -> tuple:
+    """Each row id's and column id's place in its order, counted from 1, and the
+    ids removed from either."""
+    return (
+        {node["key"]: place + 1 for place, node in enumerate(rows)},
+        {node["key"]: place + 1 for place, node in enumerate(cols)},
+        {mark["key"] for mark in gone},
+        {mark["key"] for mark in gone_cols},
+    )
+
+
+def sheet_members(cells: list, formula_cell: dict, orders: tuple):
+    """The cells a sum takes, by index, or None where its rectangle is not
+    defined: the cells that stand in the rows and columns between the corners'
+    places, and in a row and a column that are not removed."""
+    row_place, col_place, gone_rows, gone_cols = orders
+    if not (formula_cell["aRef"] and formula_cell["bRef"]):
+        return None
+    rows = [row_place.get(formula_cell["aRow"], 0), row_place.get(formula_cell["bRow"], 0)]
+    cols = [col_place.get(formula_cell["aCol"], 0), col_place.get(formula_cell["bCol"], 0)]
+    if 0 in rows or 0 in cols:
+        return None
+    return [
+        at
+        for at, held in enumerate(cells)
+        if held["row"] not in gone_rows
+        and held["col"] not in gone_cols
+        and min(rows) <= row_place.get(held["row"], 0) <= max(rows)
+        and min(cols) <= col_place.get(held["col"], 0) <= max(cols)
+    ]
+
+
+def sheet_formula(held: dict, a: tuple, b: tuple, members):
+    """What a cell shows, as (number, fault), given what its operands show — a
+    and b, each (number, fault) — and what the cells of its rectangle show, or
+    None where there is none. Where several things fault, the smallest code is
+    shown."""
+    op = held["op"]
+    if op == 0:
+        return (held["value"], 0)
+    if op == 1:
+        return a
+    if op in (2, 3, 4, 5):
+        if a[1] or b[1]:
+            return (0, min(fault for fault in (a[1], b[1]) if fault))
+        applied = sheet_apply(op, a[0], b[0])[1]
+        return (applied["value"], applied["fault"])
+    if op == 6:
+        if members is None:
+            return (0, BAD_RANGE)
+        faults = [fault for _, fault in members if fault]
+        if faults:
+            return (0, min(faults))
+        above = sum(number for number, _ in members if number > 0)
+        below = sum(number for number, _ in members if number < 0)
+        if above > I64_MAX or below < I64_MIN:
+            return (0, OVERFLOW)
+        return (above + below, 0)
+    return (0, UNKNOWN_OP)
+
+
+def sheet_operand(held: dict, side: str, first: dict, shows):
+    """What an operand reads: its literal, or what the first cell at its place
+    shows (0 where there is none), or None when that cell is not yet shown."""
+    if not held[f"{side}Ref"]:
+        return (held[f"{side}Val"], 0)
+    holder = first.get((held[f"{side}Row"], held[f"{side}Col"]))
+    return (0, 0) if holder is None else shows(holder)
+
+
+def sheet_settle(cells: list, rows: list, gone: list, cols: list, gone_cols: list):
+    """sce:std/merge/sheet_settle — the cells gone over in passes, a cell going on
+    the trail, as (index, number, fault), in the first pass that finds everything
+    it reads already there; a pass that adds none is the last."""
+    orders, first = sheet_orders(rows, gone, cols, gone_cols), sheet_first(cells)
+    shown: dict = {}
+    trail: list = []
+    moving, passes = True, 0
+    while moving and passes <= len(cells):
+        moving, passes = False, passes + 1
+        for at, held in enumerate(cells):
+            if at in shown:
+                continue
+            op = held["op"]
+            a = sheet_operand(held, "a", first, shown.get) if op in (1, 2, 3, 4, 5) else (0, 0)
+            b = sheet_operand(held, "b", first, shown.get) if op in (2, 3, 4, 5) else (0, 0)
+            members = sheet_members(cells, held, orders) if op == 6 else None
+            seen = None if members is None else [shown.get(other) for other in members]
+            if a is None or b is None or (seen is not None and None in seen):
+                continue
+            shown[at] = sheet_formula(held, a, b, seen)
+            trail += [at, *shown[at]]
+            moving = True
+    return ("ok", trail)
+
+
+def sheet_semantics(cells: list, rows: list, gone: list, cols: list, gone_cols: list) -> dict:
+    """What each cell shows, by index, as (number, fault), for the cells that do
+    not read a cycle — worked out by following each cell's references depth first
+    and not by passes, so that it is a second statement of what sheet_settle
+    means, held to it by a law."""
+    orders, first = sheet_orders(rows, gone, cols, gone_cols), sheet_first(cells)
+    memo: dict = {}
+    busy: set = set()
+
+    def solve(at: int):
+        if at in memo:
+            return memo[at]
+        if at in busy:
+            return None
+        busy.add(at)
+        held = cells[at]
+        op = held["op"]
+        a = sheet_operand(held, "a", first, solve) if op in (1, 2, 3, 4, 5) else (0, 0)
+        b = sheet_operand(held, "b", first, solve) if op in (2, 3, 4, 5) else (0, 0)
+        members = sheet_members(cells, held, orders) if op == 6 else None
+        seen = None if members is None else [solve(other) for other in members]
+        if a is None or b is None or (seen is not None and None in seen):
+            result = None
+        else:
+            result = sheet_formula(held, a, b, seen)
+        busy.discard(at)
+        memo[at] = result
+        return result
+
+    return {at: answer for at in range(len(cells)) if (answer := solve(at)) is not None}
+
+
+def sheet_show(cells: list, trail: list):
+    """sce:std/merge/sheet_show — one record for each place, in order of row then
+    column, from the cell first held there; what the trail says of it (the last
+    entry naming its index), or 0 and the fault CYCLE where it names none."""
+    said = {trail[at]: (trail[at + 1], trail[at + 2]) for at in range(0, len(trail), 3)}
+    first = sheet_first(cells)
+    out = []
+    for (row, col), at in sorted(first.items()):
+        number, fault = said.get(at, (0, CYCLE))
+        out.append({"row": row, "col": col, "value": number, "fault": fault})
+    return ("ok", out)
 
 
 def hlc_text(stamp: dict):
@@ -1815,13 +2015,16 @@ def lww_cells(rng: SplitMix64) -> list:
         if place not in places:
             places.append(place)
     base = stamp_value(rng)
-    return [
-        cell(row, col, cell_value(rng), near_stamp(rng, base) if rng.below(3) else stamp_value(rng))
-        for row, col in places
-    ]
+    cells = []
+    for row, col in places:
+        number, held = sheet_held(rng, places)
+        cells.append(cell(row, col, number, near_stamp(rng, base) if rng.below(3) else stamp_value(rng), held))
+    return cells
 
 
 def lww_write_args(rng: SplitMix64):
+    """Writes carry what a cell holds, a number or a formula, whole: the write
+    that wins a cell wins all of it."""
     cells = lww_cells(rng)
     if cells and rng.below(3):
         held = rng.pick(cells)
@@ -1829,7 +2032,8 @@ def lww_write_args(rng: SplitMix64):
         stamp = stamp_of(held) if rng.below(8) == 0 else near_stamp(rng, stamp_of(held))
     else:
         place, stamp = (place_id(rng), place_id(rng)), stamp_value(rng)
-    return [cells, cell(place[0], place[1], cell_value(rng), stamp)]
+    number, payload = sheet_held(rng, [(held["row"], held["col"]) for held in cells] + [place])
+    return [cells, cell(place[0], place[1], number, stamp, payload)]
 
 
 def rga_key(rng: SplitMix64) -> int:
@@ -1887,6 +2091,107 @@ def rga_remove_args(rng: SplitMix64):
     else:
         key = rga_key(rng)
     return [gone, rga_gone(key, rng.pick(NODE_EDGES))]
+
+
+#: Row and column ids a grid under test is built from, besides the small ones, and
+#: ids no order of the grid holds, for a reference that names nothing.
+SHEET_IDS = [1, 2, 3, 255, 256, 2**32, 2**63, U64_MAX]
+SHEET_ABSENT = [0, 41, U64_MAX - 1]
+#: Numbers a formula reads, at the edges where an int64 operation starts to fail.
+SHEET_EDGES = [I64_MIN, I64_MIN + 1, -3037000500, -2**32, -1, 0, 1, 2, 2**31, 2**32, 3037000499, 3037000500, I64_MAX - 1, I64_MAX]
+
+
+def sheet_number(rng: SplitMix64) -> int:
+    return rng.pick(SHEET_EDGES) if rng.below(2) == 0 else rng.between(-20, 20)
+
+
+def sheet_apply_args(rng: SplitMix64):
+    op = rng.pick([2, 2, 3, 3, 4, 4, 5, 5, 0, 1, 6, 255])
+    a = sheet_number(rng)
+    if rng.below(6) == 0:
+        # The other operand just where the result leaves int64, for this operation.
+        nearest = {2: I64_MAX - a, 3: a + I64_MAX, 4: I64_MAX // a if a else 1, 5: rng.pick([0, -1, 1])}.get(op, 0)
+        b = clamp(nearest + rng.pick([-1, 0, 1]), I64_MIN, I64_MAX)
+    else:
+        b = sheet_number(rng)
+    return [op, a, b]
+
+
+def sheet_ids(rng: SplitMix64, count: int) -> list:
+    """A few distinct ids, small or at the edges of their width."""
+    ids: list = []
+    for _ in range(count):
+        key = rng.pick(SHEET_IDS) if rng.below(2) == 0 else rng.between(1, 40)
+        if key not in ids:
+            ids.append(key)
+    return ids
+
+
+def sheet_order(rng: SplitMix64, ids: list) -> list:
+    """An array of these ids, built as a replica builds one."""
+    nodes: list = []
+    for key in ids:
+        after = 0 if not nodes or rng.below(3) == 0 else rng.pick(nodes)["key"]
+        nodes = rga_insert(nodes, rga_node(key, after))[1]
+    return nodes
+
+
+def sheet_operand_of(rng: SplitMix64, places: list) -> tuple:
+    """A reference to one of the places, or a number."""
+    if places and rng.below(10) < 7:
+        return reads(*rng.pick(places))
+    return literal(sheet_number(rng))
+
+
+def sheet_held(rng: SplitMix64, places: list):
+    """What a cell holds: its number and its formula fields. The number is the
+    one a number cell shows; a formula keeps it too, which nothing reads."""
+    kind = rng.below(10)
+    if kind < 4:
+        return cell_value(rng), NUMBER
+    op = rng.pick([1, 1, 2, 2, 3, 4, 5, 5, 6, 6, 6, 7, 255])
+    if op == 6:
+        corners = [reads(*rng.pick(places)) if places and rng.below(10) else literal(0) for _ in range(2)]
+        return cell_value(rng), formula(op, *corners)
+    return cell_value(rng), formula(op, sheet_operand_of(rng, places), sheet_operand_of(rng, places))
+
+
+def sheet_grid(rng: SplitMix64):
+    """A grid: its cells, the orders of its rows and columns, and the removals.
+    The places are among the rows and columns the orders hold, and one more that
+    they do not, so that a cell may stand outside them."""
+    row_ids = sheet_ids(rng, rng.pick([0, 1, 2, 2, 3, 3, 4]))
+    col_ids = sheet_ids(rng, rng.pick([0, 1, 2, 2, 3]))
+    rows, cols = sheet_order(rng, row_ids), sheet_order(rng, col_ids)
+    gone = [rga_gone(key, rng.pick(NODE_EDGES)) for key in row_ids if rng.below(5) == 0]
+    gone_cols = [rga_gone(key, rng.pick(NODE_EDGES)) for key in col_ids if rng.below(5) == 0]
+    candidates = [
+        (row, col)
+        for row in row_ids + [rng.pick(SHEET_ABSENT)]
+        for col in col_ids + [rng.pick(SHEET_ABSENT)]
+    ]
+    places = shuffled(rng, candidates)[: min(rng.pick([0, 1, 2, 3, 4, 5, 6, 8]), len(candidates))]
+    base = stamp_value(rng)
+    cells = []
+    for row, col in places:
+        number, held = sheet_held(rng, candidates)
+        cells.append(cell(row, col, number, near_stamp(rng, base) if rng.below(3) else stamp_value(rng), held))
+    return cells, rows, gone, cols, gone_cols
+
+
+def sheet_settle_args(rng: SplitMix64):
+    return list(sheet_grid(rng))
+
+
+def sheet_show_args(rng: SplitMix64):
+    """Cells and a trail of them in no order that matters: most of what the cells
+    show, some of it left out, and sometimes an entry that names no cell."""
+    cells, rows, gone, cols, gone_cols = sheet_grid(rng)
+    shown = sheet_semantics(cells, rows, gone, cols, gone_cols)
+    entries = [[at, *answer] for at, answer in shown.items() if rng.below(8) != 0]
+    if rng.below(8) == 0:
+        entries.append([len(cells) + rng.between(0, 3), cell_value(rng), 0])
+    return [cells, [number for entry in shuffled(rng, entries) for number in entry]]
 
 
 def text_args(rng: SplitMix64):
@@ -3129,6 +3434,9 @@ FIXTURES = {
     "text_slot_latest": (lambda args: text_slot_latest(*args), text_slot_latest_args, 500, 0xE110_0049),
     "text_slot_retitled": (lambda args: text_slot_retitled(*args), text_slot_retitled_args, 400, 0xE110_004A),
     "text_slot_holds": (lambda args: text_slot_holds(*args), text_slot_holds_args, 500, 0xE110_004B),
+    "sheet_apply": (lambda args: sheet_apply(*args), sheet_apply_args, 500, 0xE110_004C),
+    "sheet_settle": (lambda args: sheet_settle(*args), sheet_settle_args, 600, 0xE110_004D),
+    "sheet_show": (lambda args: sheet_show(*args), sheet_show_args, 300, 0xE110_004E),
 }
 
 
@@ -3834,6 +4142,108 @@ def validate_undo_laws() -> None:
         law.was_asked()
 
 
+def validate_sheet_laws() -> None:
+    """The claims `sheet_settle`, `sheet_show` and `sheet_apply` make about
+    themselves (see [`Law`]); the grids come from the same generator the cases
+    do."""
+    rng = SplitMix64(0xE110_5EE7)
+    followed_law = Law("sheet_settle: the passes agree with following the references depth first")
+    order_law = Law("sheet_show does not depend on the order the cells are held in")
+    places_law = Law("sheet_show shows each place once, in order of row then column")
+    reads_law = Law("a formula that reads a cell shows what the cell shows")
+    writes_law = Law("sheet_show: the order the writes arrive in does not matter")
+    cycle_law = Law("two acyclic formulas that read each other show a cycle on every replica")
+    commute_law = Law("sheet_apply: a + b and a * b commute")
+    back_law = Law("sheet_apply: a + b - b is a when nothing faults")
+    divide_law = Law("sheet_apply: a / b truncates toward zero")
+    fault_law = Law("sheet_apply: a fault leaves the value 0")
+
+    def shown_of(cells: list, rows: list, gone: list, cols: list, gone_cols: list) -> list:
+        return sheet_show(cells, sheet_settle(cells, rows, gone, cols, gone_cols)[1])[1]
+
+    def replica(writes: list) -> list:
+        held: list = []
+        for write in writes:
+            held = lww_write(held, write)[1]
+        return held
+
+    for _ in range(LAW_RUNS * 2):
+        grid = sheet_grid(rng)
+        cells, rows, gone, cols, gone_cols = grid
+        trail = sheet_settle(*grid)[1]
+        passed = {trail[at]: (trail[at + 1], trail[at + 2]) for at in range(0, len(trail), 3)}
+        followed_law.holds(
+            len(trail) == 3 * len(passed) and passed == sheet_semantics(*grid), list(grid)
+        )
+
+        shown = sheet_show(cells, trail)[1]
+        order_law.holds(shown_of(shuffled(rng, cells), rows, gone, cols, gone_cols) == shown, list(grid))
+        places = [(record["row"], record["col"]) for record in shown]
+        places_law.holds(
+            places == sorted(set(places)) and set(places) == {(held["row"], held["col"]) for held in cells},
+            list(grid),
+        )
+        by_place = {(record["row"], record["col"]): (record["value"], record["fault"]) for record in shown}
+        for held in cells:
+            if held["op"] == 1 and held["aRef"]:
+                reads_law.holds(
+                    by_place[(held["row"], held["col"])]
+                    == by_place.get((held["aRow"], held["aCol"]), (0, 0)),
+                    list(grid),
+                )
+
+        # The cells as the writes that made them, stamped one after another in no
+        # order that matters, and concurrent writes to some of the same places.
+        where = [(held["row"], held["col"]) for held in cells]
+        writes = []
+        for held in cells:
+            writes.append(
+                cell(held["row"], held["col"], held["value"], hlc(100 + len(writes), 0, 1 + len(writes) % 3),
+                     {key: held[key] for key in NUMBER})
+            )
+        for _ in range(rng.between(0, 4) if cells else 0):
+            source = rng.pick(cells)
+            row, col = rng.pick(where)
+            writes.append(
+                cell(row, col, source["value"], hlc(100 + len(writes), 0, 1 + len(writes) % 3),
+                     {key: source[key] for key in NUMBER})
+            )
+        writes_law.holds(
+            shown_of(replica(writes), rows, gone, cols, gone_cols)
+            == shown_of(replica(shuffled(rng, writes)), rows, gone, cols, gone_cols),
+            [writes, rows, gone, cols, gone_cols],
+        )
+
+        one = (rng.pick(SHEET_IDS), rng.pick(SHEET_IDS))
+        other = (rng.pick([id_ for id_ in SHEET_IDS if id_ != one[0]]), rng.pick(SHEET_IDS))
+        mine = cell(*one, 0, hlc(100, 0, 1), formula(1, reads(*other)))
+        theirs = cell(*other, 0, hlc(100, 0, 2), formula(1, reads(*one)))
+        both = [shown_of(replica(order), [], [], [], []) for order in ([mine, theirs], [theirs, mine])]
+        cycle_law.holds(
+            both[0] == both[1] and all(record["fault"] == CYCLE for record in both[0]) and len(both[0]) == 2,
+            [mine, theirs],
+        )
+
+        x, y = sheet_number(rng), sheet_number(rng)
+        for op in (2, 4):
+            commute_law.holds(sheet_apply(op, x, y) == sheet_apply(op, y, x), [op, x, y])
+        total = sheet_apply(2, x, y)[1]
+        if total["fault"] == 0:
+            back = sheet_apply(3, total["value"], y)[1]
+            back_law.holds(back == sheet_value(x, 0), [x, y])
+        quotient = sheet_apply(5, x, y)[1]
+        if quotient["fault"] == 0:
+            left = x - quotient["value"] * y
+            divide_law.holds(abs(left) < abs(y) and (left == 0 or (left > 0) == (x > 0)), [x, y])
+        for op in (2, 3, 4, 5):
+            result = sheet_apply(op, x, y)[1]
+            fault_law.holds(result["fault"] == 0 or result["value"] == 0, [op, x, y])
+
+    for law in (followed_law, order_law, places_law, reads_law, writes_law, cycle_law,
+                commute_law, back_law, divide_law, fault_law):
+        law.was_asked()
+
+
 def render(value) -> str:
     """A value the way the hand-written cases write it: a record as
     `{ "year": 1970, ... }`, a list as `[1, 2]`, a boolean as `true`, a number
@@ -3980,6 +4390,7 @@ def main(argv) -> int:
     validate_calendar()
     validate_laws()
     validate_undo_laws()
+    validate_sheet_laws()
     original = REFERENCE.read_text(encoding="utf-8")
     json.loads(original)
     text, report = regenerate(original)

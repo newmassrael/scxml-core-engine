@@ -4,7 +4,7 @@
 <!--
   sce:std/merge/lww_cell.scxml — one cell of a grid of last-writer-wins
   registers, as a replica holds it and as a write to it travels: where it is
-  (`row`, `col`), the number it holds, and the stamp of the write that put it
+  (`row`, `col`), what it holds, and the stamp of the write that put it
   there. The record type lww_write takes and returns (SCE_FORGE.md §4.12).
 
   `row` and `col` are the ids a grid gave its rows and columns, not their
@@ -17,6 +17,22 @@
   as one: a record's fields are fixed-width scalars, so a record does not hold
   a record. A cell is stamped with the same widths a clock is, so a stamp read
   off a cell is a stamp hlc_compare orders.
+
+  What a cell holds is a number or a formula, and it is one register either
+  way: the write that wins the cell wins all of it, so a formula is data that
+  merges as a number does, and what a formula means is not decided here. `op`
+  says which it is.
+  - 0 is a number, held in `value`; every field after the stamp is 0 or false.
+  - Any other `op` is a formula over the operands a and b. An operand is a
+    literal (`aRef` false, the number `aVal`) or a reference to the cell at
+    (`aRow`, `aCol`) (`aRef` true); b is the same with `bRef`, `bRow`, `bCol`
+    and `bVal`. The operations are 1, the value of operand a; 2, 3, 4 and 5,
+    a + b, a - b, a * b and a / b; and 6, the sum of the cells inside the
+    rectangle whose corners are the cells a and b name, which takes no literal.
+  sheet_settle and sheet_show give a formula its value from the cells of the
+  grid. An `op` they do not know is a fault they report rather than a failure,
+  so a replica running a later version of the library cannot make an earlier
+  one stop.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -31,5 +47,14 @@
     <data id="wallTime" sce:type="int64" sce:direction="in"/>
     <data id="counter" sce:type="uint32" sce:direction="in"/>
     <data id="nodeId" sce:type="uint64" sce:direction="in"/>
+    <data id="op" sce:type="uint8" sce:direction="in"/>
+    <data id="aRef" sce:type="bool" sce:direction="in"/>
+    <data id="aRow" sce:type="uint64" sce:direction="in"/>
+    <data id="aCol" sce:type="uint64" sce:direction="in"/>
+    <data id="aVal" sce:type="int64" sce:direction="in"/>
+    <data id="bRef" sce:type="bool" sce:direction="in"/>
+    <data id="bRow" sce:type="uint64" sce:direction="in"/>
+    <data id="bCol" sce:type="uint64" sce:direction="in"/>
+    <data id="bVal" sce:type="int64" sce:direction="in"/>
   </datamodel>
 </scxml>

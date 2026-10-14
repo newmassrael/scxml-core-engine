@@ -1,0 +1,310 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/merge/sheet_settle.scxml — the numbers the cells of a grid show, worked
+  out from the cells the grid holds: a number is itself, and a formula is its
+  operation over the cells it names (lww_cell says what a formula is). The
+  trail it returns is read by sheet_show, which puts it in the order of the
+  places and into records; the two together are what a replica displays.
+
+  What a replica replicates is the cells, each a last-writer-wins register
+  (lww_write); what a person reads is a function of them, so two replicas
+  that hold the same cells show the same numbers whatever order the writes
+  reached them in. Nothing is stored beside the cells, so there is no value to
+  go stale or to merge: a write to a cell moves what every formula that reads
+  it shows, on the next call.
+
+  The trail is the cells that could be worked out, in the order they were,
+  three numbers each: the cell's index in `cells`, the number it shows, and
+  the fault (below) it shows instead of one, 0 for none. A cell that is not on
+  the trail is one the work never reached, because it reads itself, however
+  far round: a circular reference. The order of the trail is the order the
+  cells were reached in, so it is not the same on two replicas that hold the
+  same cells in a different order; what sheet_show makes of it is.
+
+  Values. A reference to a place no cell holds reads 0. A reference to a
+  cell reads what it shows, and a cell in a row or a column that has been
+  removed still shows something: removal hides a row, it does not erase what
+  the cells in it were worth. A sum (op 6) takes the cells of the rectangle
+  between its two corners: the corners name rows and columns, and the
+  rectangle is every row between theirs in `rows`' order and every column
+  between theirs in `cols`' order, so a row inserted between them is summed
+  too. A removed row or column is not summed, though its mark keeps its place
+  in the order, so a corner that was removed still bounds the rectangle.
+  Division truncates toward zero. Every operation is int64 (sheet_apply), and
+  a sum's overflow is decided on its positive terms and on its negative terms
+  apart, so it does not depend on the order the terms are met in.
+
+  Faults. A cell that cannot show a number shows 0 and a fault, and a cell that
+  reads a cell with a fault shows that fault, so one reaches every formula that
+  depends on it. Where it reads several, the smallest code wins, which does not
+  depend on the order they are read in either.
+  - 1 a circular reference: the cell is part of a cycle of references or reads
+    a cell that is, however far. Two replicas that each wrote an acyclic
+    formula, A1 reads B1 and B1 reads A1, hold a cycle together, and every
+    replica shows it the same way. A sum that includes its own cell is one.
+    No cell reaches the trail with this fault: it is what sheet_show says of a
+    cell the trail does not hold.
+  - 2 a division by zero.
+  - 3 a result outside int64.
+  - 4 a sum whose corner is not a reference, or names a row or column `rows`
+    or `cols` does not hold: the rectangle is not defined, and the cell reads
+    no other cell.
+  - 5 an `op` this library does not know.
+
+  The work is bounded. The cells are gone over again and again, and a pass
+  works out the cells whose operands an earlier pass had; a pass that works out
+  none is the last, and there are at most as many passes as cells.
+
+  A place held twice, which lww_write never leaves, is read as the first.
+  The trail holds at most 256 cells (SCE_FORGE.md §4.12).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="sheet_settle" version="1.0">
+  <sce:import kind="event-schema" src="lww_cell.scxml" as="Cell"/>
+  <sce:import kind="event-schema" src="rga_node.scxml" as="Node"/>
+  <sce:import kind="event-schema" src="rga_gone.scxml" as="Gone"/>
+  <sce:import kind="event-schema" src="sheet_value.scxml" as="Value"/>
+  <sce:import kind="algorithm" src="sheet_apply.scxml" as="apply"/>
+  <sce:signature>
+    <sce:param name="cells" type="list&lt;record:Cell&gt;"/>
+    <sce:param name="rows" type="list&lt;record:Node&gt;"/>
+    <sce:param name="gone" type="list&lt;record:Gone&gt;"/>
+    <sce:param name="cols" type="list&lt;record:Node&gt;"/>
+    <sce:param name="goneCols" type="list&lt;record:Gone&gt;"/>
+    <sce:return type="list&lt;int64&gt;" may-fail="true" returns-max-size="768"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="trail" type="list&lt;int64&gt;" capacity="768"/>
+    <sce:var name="moving" type="bool" init="true"/>
+    <sce:var name="passes" type="int64" init="0"/>
+    <sce:while cond="moving &amp;&amp; passes &lt;= len(cells)">
+      <sce:assign target="moving" expr="false"/>
+      <sce:assign target="passes" expr="passes + 1"/>
+      <sce:var name="at" type="int64" init="0"/>
+      <sce:foreach item="c" in="cells">
+        <sce:var name="settled" type="bool" init="false"/>
+        <sce:var name="d" type="int64" init="0"/>
+        <sce:while cond="d &lt; len(trail)">
+          <sce:if cond="trail[d] === at">
+            <sce:assign target="settled" expr="true"/>
+          </sce:if>
+          <sce:assign target="d" expr="d + 3"/>
+        </sce:while>
+        <sce:if cond="!settled">
+          <sce:var name="ready" type="bool" init="true"/>
+          <sce:var name="v" type="int64" init="0"/>
+          <sce:var name="f" type="int64" init="0"/>
+
+          <!-- The operands of operations 1 to 5: a literal, or what the cell at a
+               place shows once the trail holds it, 0 where there is no cell. -->
+          <sce:var name="va" type="int64" init="0"/>
+          <sce:var name="fa" type="int64" init="0"/>
+          <sce:var name="vb" type="int64" init="0"/>
+          <sce:var name="fb" type="int64" init="0"/>
+          <sce:var name="sides" type="int64" init="(c.op &gt;= 1 &amp;&amp; c.op &lt;= 5) ? (c.op === 1 ? 1 : 2) : 0"/>
+          <sce:var name="side" type="int64" init="0"/>
+          <sce:while cond="side &lt; sides">
+            <sce:var name="isRef" type="bool" init="side === 0 ? c.aRef : c.bRef"/>
+            <sce:var name="wantRow" type="uint64" init="side === 0 ? c.aRow : c.bRow"/>
+            <sce:var name="wantCol" type="uint64" init="side === 0 ? c.aCol : c.bCol"/>
+            <sce:var name="xv" type="int64" init="side === 0 ? c.aVal : c.bVal"/>
+            <sce:var name="xf" type="int64" init="0"/>
+            <sce:if cond="isRef">
+              <sce:assign target="xv" expr="0"/>
+              <sce:var name="found" type="bool" init="false"/>
+              <sce:var name="holder" type="int64" init="0"/>
+              <sce:var name="j" type="int64" init="0"/>
+              <sce:foreach item="probe" in="cells">
+                <sce:if cond="!found &amp;&amp; probe.row === wantRow &amp;&amp; probe.col === wantCol">
+                  <sce:assign target="found" expr="true"/>
+                  <sce:assign target="holder" expr="j"/>
+                </sce:if>
+                <sce:assign target="j" expr="j + 1"/>
+              </sce:foreach>
+              <sce:if cond="found">
+                <sce:var name="hit" type="bool" init="false"/>
+                <sce:var name="m" type="int64" init="0"/>
+                <sce:while cond="m &lt; len(trail)">
+                  <sce:if cond="trail[m] === holder">
+                    <sce:assign target="hit" expr="true"/>
+                    <sce:assign target="xv" expr="trail[m + 1]"/>
+                    <sce:assign target="xf" expr="trail[m + 2]"/>
+                  </sce:if>
+                  <sce:assign target="m" expr="m + 3"/>
+                </sce:while>
+                <sce:if cond="!hit">
+                  <sce:assign target="ready" expr="false"/>
+                </sce:if>
+              </sce:if>
+            </sce:if>
+            <sce:if cond="side === 0">
+              <sce:assign target="va" expr="xv"/>
+              <sce:assign target="fa" expr="xf"/>
+              <sce:else>
+                <sce:assign target="vb" expr="xv"/>
+                <sce:assign target="fb" expr="xf"/>
+              </sce:else>
+            </sce:if>
+            <sce:assign target="side" expr="side + 1"/>
+          </sce:while>
+
+          <sce:if cond="c.op === 0">
+            <sce:assign target="v" expr="c.value"/>
+          </sce:if>
+          <sce:if cond="c.op === 1">
+            <sce:assign target="v" expr="va"/>
+            <sce:assign target="f" expr="fa"/>
+          </sce:if>
+          <sce:if cond="c.op &gt;= 2 &amp;&amp; c.op &lt;= 5">
+            <sce:if cond="fa !== 0 || fb !== 0">
+              <sce:assign target="f" expr="fa === 0 ? fb : (fb === 0 ? fa : (fa &lt; fb ? fa : fb))"/>
+              <sce:else>
+                <sce:var name="applied" type="record:Value" init="apply(c.op, va, vb)"/>
+                <sce:assign target="v" expr="applied.value"/>
+                <sce:assign target="f" expr="applied.fault"/>
+              </sce:else>
+            </sce:if>
+          </sce:if>
+          <sce:if cond="c.op &gt; 6">
+            <sce:assign target="f" expr="5"/>
+          </sce:if>
+
+          <!-- A sum: the places of its four corners in the orders, and then every
+               cell that stands inside the rectangle they bound. -->
+          <sce:if cond="c.op === 6">
+            <sce:var name="ra" type="int64" init="0"/>
+            <sce:var name="rb" type="int64" init="0"/>
+            <sce:var name="ca" type="int64" init="0"/>
+            <sce:var name="cb" type="int64" init="0"/>
+            <sce:var name="spin" type="int64" init="0"/>
+            <sce:foreach item="rw" in="rows">
+              <sce:assign target="spin" expr="spin + 1"/>
+              <sce:if cond="rw.key === c.aRow">
+                <sce:assign target="ra" expr="spin"/>
+              </sce:if>
+              <sce:if cond="rw.key === c.bRow">
+                <sce:assign target="rb" expr="spin"/>
+              </sce:if>
+            </sce:foreach>
+            <sce:assign target="spin" expr="0"/>
+            <sce:foreach item="cl" in="cols">
+              <sce:assign target="spin" expr="spin + 1"/>
+              <sce:if cond="cl.key === c.aCol">
+                <sce:assign target="ca" expr="spin"/>
+              </sce:if>
+              <sce:if cond="cl.key === c.bCol">
+                <sce:assign target="cb" expr="spin"/>
+              </sce:if>
+            </sce:foreach>
+            <sce:if cond="!c.aRef || !c.bRef || ra === 0 || rb === 0 || ca === 0 || cb === 0">
+              <sce:assign target="f" expr="4"/>
+              <sce:else>
+                <sce:var name="rowLow" type="int64" init="ra &lt; rb ? ra : rb"/>
+                <sce:var name="rowHigh" type="int64" init="ra &lt; rb ? rb : ra"/>
+                <sce:var name="colLow" type="int64" init="ca &lt; cb ? ca : cb"/>
+                <sce:var name="colHigh" type="int64" init="ca &lt; cb ? cb : ca"/>
+                <sce:var name="above" type="int64" init="0"/>
+                <sce:var name="below" type="int64" init="0"/>
+                <sce:var name="spilled" type="bool" init="false"/>
+                <sce:var name="worst" type="int64" init="0"/>
+                <sce:var name="walked" type="int64" init="0"/>
+                <sce:foreach item="q" in="cells">
+                  <!-- Where this cell stands: its row's and its column's place in the
+                       orders, 0 where an order does not hold it, and whether either
+                       has been removed. -->
+                  <sce:var name="qr" type="int64" init="0"/>
+                  <sce:var name="qc" type="int64" init="0"/>
+                  <sce:var name="qs" type="int64" init="0"/>
+                  <sce:foreach item="rq" in="rows">
+                    <sce:assign target="qs" expr="qs + 1"/>
+                    <sce:if cond="rq.key === q.row">
+                      <sce:assign target="qr" expr="qs"/>
+                    </sce:if>
+                  </sce:foreach>
+                  <sce:assign target="qs" expr="0"/>
+                  <sce:foreach item="cq" in="cols">
+                    <sce:assign target="qs" expr="qs + 1"/>
+                    <sce:if cond="cq.key === q.col">
+                      <sce:assign target="qc" expr="qs"/>
+                    </sce:if>
+                  </sce:foreach>
+                  <sce:var name="qgone" type="bool" init="false"/>
+                  <sce:foreach item="gq" in="gone">
+                    <sce:if cond="gq.key === q.row">
+                      <sce:assign target="qgone" expr="true"/>
+                    </sce:if>
+                  </sce:foreach>
+                  <sce:foreach item="hq" in="goneCols">
+                    <sce:if cond="hq.key === q.col">
+                      <sce:assign target="qgone" expr="true"/>
+                    </sce:if>
+                  </sce:foreach>
+                  <sce:if cond="!qgone &amp;&amp; qr &gt;= rowLow &amp;&amp; qr &lt;= rowHigh &amp;&amp; qc &gt;= colLow &amp;&amp; qc &lt;= colHigh">
+                    <sce:var name="seen" type="bool" init="false"/>
+                    <sce:var name="w" type="int64" init="0"/>
+                    <sce:while cond="w &lt; len(trail)">
+                      <sce:if cond="trail[w] === walked">
+                        <sce:assign target="seen" expr="true"/>
+                        <sce:var name="mv" type="int64" init="trail[w + 1]"/>
+                        <sce:var name="mf" type="int64" init="trail[w + 2]"/>
+                        <sce:if cond="mf !== 0">
+                          <sce:assign target="worst" expr="worst === 0 ? mf : (mf &lt; worst ? mf : worst)"/>
+                        </sce:if>
+                        <sce:if cond="mf === 0 &amp;&amp; mv &gt; 0">
+                          <sce:var name="grown" type="record:Value" init="apply(2, above, mv)"/>
+                          <sce:if cond="grown.fault !== 0">
+                            <sce:assign target="spilled" expr="true"/>
+                            <sce:else>
+                              <sce:assign target="above" expr="grown.value"/>
+                            </sce:else>
+                          </sce:if>
+                        </sce:if>
+                        <sce:if cond="mf === 0 &amp;&amp; mv &lt; 0">
+                          <sce:var name="shrunk" type="record:Value" init="apply(2, below, mv)"/>
+                          <sce:if cond="shrunk.fault !== 0">
+                            <sce:assign target="spilled" expr="true"/>
+                            <sce:else>
+                              <sce:assign target="below" expr="shrunk.value"/>
+                            </sce:else>
+                          </sce:if>
+                        </sce:if>
+                      </sce:if>
+                      <sce:assign target="w" expr="w + 3"/>
+                    </sce:while>
+                    <sce:if cond="!seen">
+                      <sce:assign target="ready" expr="false"/>
+                    </sce:if>
+                  </sce:if>
+                  <sce:assign target="walked" expr="walked + 1"/>
+                </sce:foreach>
+                <sce:if cond="worst !== 0">
+                  <sce:assign target="f" expr="worst"/>
+                  <sce:else>
+                    <sce:if cond="spilled">
+                      <sce:assign target="f" expr="3"/>
+                      <sce:else>
+                        <sce:assign target="v" expr="above + below"/>
+                      </sce:else>
+                    </sce:if>
+                  </sce:else>
+                </sce:if>
+              </sce:else>
+            </sce:if>
+          </sce:if>
+
+          <sce:if cond="ready">
+            <sce:append target="trail" expr="at"/>
+            <sce:append target="trail" expr="v"/>
+            <sce:append target="trail" expr="f"/>
+            <sce:assign target="moving" expr="true"/>
+          </sce:if>
+        </sce:if>
+        <sce:assign target="at" expr="at + 1"/>
+      </sce:foreach>
+    </sce:while>
+    <sce:return expr="trail"/>
+  </sce:body>
+</scxml>

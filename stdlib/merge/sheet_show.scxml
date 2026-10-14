@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/merge/sheet_show.scxml — what every cell of a grid shows: one record
+  for each place `cells` holds, with the number the cell shows and the fault
+  when it shows none, from the `trail` sheet_settle made of the same cells.
+
+  The records are in order of row id, then column id, whatever order `cells`
+  is in. That order is the order the writes arrived in, which differs between
+  replicas, and so does the order of the trail; two replicas that hold the same
+  cells hold the same records. A place held twice, which lww_write never
+  leaves, is shown once, as its first.
+
+  A cell the trail does not hold is one sheet_settle never reached, because
+  it reads itself, however far round: it shows 0 and fault 1, a circular
+  reference (sheet_settle names the faults).
+
+  The result holds at most 256 cells (SCE_FORGE.md §4.12).
+
+  cells (1,1), (0,2), (0,1) and a trail naming them all → the records of
+  (0,1), (0,2), (1,1) · a trail without the index of (0,2) → (0,2) shows fault 1.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="sheet_show" version="1.0">
+  <sce:import kind="event-schema" src="lww_cell.scxml" as="Cell"/>
+  <sce:import kind="event-schema" src="sheet_shown.scxml" as="Shown"/>
+  <sce:signature>
+    <sce:param name="cells" type="list&lt;record:Cell&gt;"/>
+    <sce:param name="trail" type="list&lt;int64&gt;"/>
+    <sce:return type="list&lt;record:Shown&gt;" may-fail="true" returns-max-size="256"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="out" type="list&lt;record:Shown&gt;" capacity="256"/>
+    <sce:var name="started" type="bool" init="false"/>
+    <sce:var name="lastRow" type="uint64" init="0"/>
+    <sce:var name="lastCol" type="uint64" init="0"/>
+    <sce:var name="more" type="bool" init="true"/>
+    <sce:while cond="more">
+      <sce:var name="chosen" type="bool" init="false"/>
+      <sce:var name="bestRow" type="uint64" init="0"/>
+      <sce:var name="bestCol" type="uint64" init="0"/>
+      <sce:var name="bestAt" type="int64" init="0"/>
+      <sce:var name="cursor" type="int64" init="0"/>
+      <sce:foreach item="s" in="cells">
+        <sce:if cond="(!started || s.row &gt; lastRow || (s.row === lastRow &amp;&amp; s.col &gt; lastCol)) &amp;&amp; (!chosen || s.row &lt; bestRow || (s.row === bestRow &amp;&amp; s.col &lt; bestCol))">
+          <sce:assign target="chosen" expr="true"/>
+          <sce:assign target="bestRow" expr="s.row"/>
+          <sce:assign target="bestCol" expr="s.col"/>
+          <sce:assign target="bestAt" expr="cursor"/>
+        </sce:if>
+        <sce:assign target="cursor" expr="cursor + 1"/>
+      </sce:foreach>
+      <sce:if cond="chosen">
+        <sce:var name="shownValue" type="int64" init="0"/>
+        <sce:var name="shownFault" type="uint8" init="1"/>
+        <sce:var name="u" type="int64" init="0"/>
+        <sce:while cond="u &lt; len(trail)">
+          <sce:if cond="trail[u] === bestAt">
+            <sce:assign target="shownValue" expr="trail[u + 1]"/>
+            <sce:assign target="shownFault" expr="trail[u + 2]"/>
+          </sce:if>
+          <sce:assign target="u" expr="u + 3"/>
+        </sce:while>
+        <sce:var name="line" type="record:Shown">
+          <sce:set name="row" expr="bestRow"/>
+          <sce:set name="col" expr="bestCol"/>
+          <sce:set name="value" expr="shownValue"/>
+          <sce:set name="fault" expr="shownFault"/>
+        </sce:var>
+        <sce:append target="out" expr="line"/>
+        <sce:assign target="started" expr="true"/>
+        <sce:assign target="lastRow" expr="bestRow"/>
+        <sce:assign target="lastCol" expr="bestCol"/>
+        <sce:else>
+          <sce:assign target="more" expr="false"/>
+        </sce:else>
+      </sce:if>
+    </sce:while>
+    <sce:return expr="out"/>
+  </sce:body>
+</scxml>

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/merge/sheet_value.scxml — what one operation on two numbers gives:
+  the number, and the fault when there is none. The record type sheet_apply
+  returns (SCE_FORGE.md §4.12).
+
+  `fault` 0 is no fault, and `value` is the number. Any other fault leaves
+  `value` 0. The faults are the ones sheet_settle reports for a cell, numbered
+  as it numbers them: 2 a division by zero, 3 a result outside int64.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="sheet_value"
+       sce:event-name="merge.sheet_value">
+  <datamodel>
+    <data id="value" sce:type="int64" sce:direction="in"/>
+    <data id="fault" sce:type="uint8" sce:direction="in"/>
+  </datamodel>
+</scxml>

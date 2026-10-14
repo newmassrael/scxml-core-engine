@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/merge/sheet_shown.scxml — what a cell of a grid shows once its
+  formula is worked out: where it is (`row`, `col`, the ids lww_cell names),
+  the number it shows, and the fault when it shows none. The record type
+  sheet_show returns (SCE_FORGE.md §4.12).
+
+  `fault` 0 is no fault, and `value` is the number the cell shows. Any other
+  fault leaves `value` 0, and is one of the codes sheet_settle documents: 1 a
+  circular reference, 2 a division by zero, 3 a result outside int64, 4 a
+  range that names a place the grid does not hold, 5 an operation the library
+  does not know.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="sheet_shown"
+       sce:event-name="merge.sheet_shown">
+  <datamodel>
+    <data id="row" sce:type="uint64" sce:direction="in"/>
+    <data id="col" sce:type="uint64" sce:direction="in"/>
+    <data id="value" sce:type="int64" sce:direction="in"/>
+    <data id="fault" sce:type="uint8" sce:direction="in"/>
+  </datamodel>
+</scxml>
