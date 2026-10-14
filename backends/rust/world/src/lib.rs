@@ -30,7 +30,8 @@
 //! does not order or deliver once does, which is what the core's duplicate
 //! suppression (§mesh-10.5) answers. A link keeps the order its envelopes were
 //! sent in, as a WebSocket does, however much their delays are spread; one that
-//! does not ([`World::reorder`]) is the case the Mesh core orders for.
+//! does not ([`World::reorder`]) is the case the Mesh core orders for. A topic
+//! ([`World::topic`]) is the one-to-many a machine sends to by one name.
 //!
 //! ⚠ The Mesh core takes the first sequence number it sees from a sender as the
 //! start of that sender's stream. An envelope cut in flight before any other has
@@ -45,6 +46,14 @@
 //! (docs/SCE_ACCEPTED_SUBSET.md §2.15), so a run of several machines becomes one
 //! scenario for each of them, and the engines that cannot run in this world are
 //! held to what the machines did in it.
+//!
+//! A machine that waits on a clock is recorded with the time that passed: the
+//! world's time that moved between two events a machine took is a step of its own
+//! (`advance_ms`), so a delayed send that came due in it is replayed by the same
+//! wait. ⚠ A wait is one step however many times the world's time moved in it, as
+//! a scenario cannot say more, so a delayed send whose delivery arms another that
+//! falls due in the same wait is not replayed as the world ran it; the machines of
+//! this world arm one delayed send from an event, and none from a delivery.
 //!
 //! ⚠ Not modelled yet: a request's deadline and an ordering gap's timeout are
 //! observed when the world's time reaches them by another thing happening; a
@@ -150,6 +159,10 @@ struct Flight {
     due_ms: i64,
     seq: u64,
     bytes: Vec<u8>,
+    /// Whether it is one copy of what was published to a topic. A copy cut in flight
+    /// is lost, as a datagram is: the publisher sent to the topic, not to this
+    /// receiver, and has nothing to send again to it.
+    topic: bool,
 }
 
 /// What one direction of a link does.
@@ -188,6 +201,8 @@ struct NetState {
     /// When the last envelope put on each directed link is due, so the next one on a
     /// link that keeps order is due no earlier.
     last_due: BTreeMap<(String, String), i64>,
+    /// The topics, by publisher and name: who each is delivered to.
+    topics: BTreeMap<(String, String), Vec<String>>,
     rng: Rng,
     next_seq: u64,
     trace: Vec<Traced>,
@@ -203,6 +218,7 @@ impl Network {
             flights: Vec::new(),
             links: BTreeMap::new(),
             last_due: BTreeMap::new(),
+            topics: BTreeMap::new(),
             rng: Rng::new(seed),
             next_seq: 0,
             trace: Vec::new(),
@@ -222,13 +238,91 @@ pub struct SimTransport {
     clock: Clock,
 }
 
+impl NetState {
+    /// Put one envelope on the link from `from` to `to`, as the link treats it: lost,
+    /// delivered once, or delivered twice, each after its latency and a jitter drawn
+    /// from the seed. `topic` is whether it is a copy of what was published to a topic.
+    fn carry(&mut self, now: i64, from: &str, to: &str, bytes: &[u8], topic: bool) {
+        let direction = (from.to_string(), to.to_string());
+        let lost = |net: &mut Self| {
+            net.trace.push(Traced {
+                at_ms: now,
+                from: from.to_string(),
+                to: to.to_string(),
+                fate: Fate::Lost,
+                bytes: bytes.to_vec(),
+            });
+        };
+        // Only a topic gets here with a link that is missing or down: a transmission to
+        // a peer is refused before it, so the link is there and up.
+        let Some(link) = self.links.get(&direction).copied().filter(|link| link.up) else {
+            lost(self);
+            return;
+        };
+        if self.rng.below(100) < link.loss_pct {
+            lost(self);
+            return;
+        }
+        let deliveries = if self.rng.below(100) < link.duplicate_pct {
+            2
+        } else {
+            1
+        };
+        for copy in 0..deliveries {
+            let jitter = i64::try_from(
+                self.rng
+                    .below(u64::try_from(link.jitter_ms + 1).unwrap_or(1)),
+            )
+            .unwrap_or(0);
+            let mut due_ms = now + link.latency_ms + jitter;
+            if link.fifo {
+                due_ms = due_ms.max(self.last_due.get(&direction).copied().unwrap_or(0));
+            }
+            self.last_due.insert(direction.clone(), due_ms);
+            let seq = self.next_seq;
+            self.next_seq += 1;
+            self.flights.push(Flight {
+                from: from.to_string(),
+                to: to.to_string(),
+                due_ms,
+                seq,
+                bytes: bytes.to_vec(),
+                topic,
+            });
+            self.trace.push(Traced {
+                at_ms: now,
+                from: from.to_string(),
+                to: to.to_string(),
+                fate: if copy == 0 {
+                    Fate::Sent { due_ms }
+                } else {
+                    Fate::Duplicated { due_ms }
+                },
+                bytes: bytes.to_vec(),
+            });
+        }
+    }
+}
+
 impl Transport for SimTransport {
     fn transmit(&mut self, peer: &str, bytes: &[u8]) -> Result<(), TransportFailure> {
         let now = self.clock.now_ms();
         let mut net = self.net.lock();
+        let topic = (self.from.clone(), peer.to_string());
+        if let Some(subscribers) = net.topics.get(&topic).cloned() {
+            // A topic is not one link: each subscriber is reached by its own, which
+            // loses, repeats and delays its copy as it does anything else it carries,
+            // and a subscriber whose link is down is not reached at all. Nothing is
+            // refused and nothing is sent again, since what is published to a topic
+            // is not addressed to anyone in particular.
+            for subscriber in subscribers {
+                net.carry(now, &self.from, &subscriber, bytes, true);
+            }
+            return Ok(());
+        }
         let link = net
             .links
-            .get(&(self.from.clone(), peer.to_string()))
+            .get(&topic)
             .copied()
             .ok_or_else(|| TransportFailure {
                 retryable: false,
@@ -240,53 +334,7 @@ impl Transport for SimTransport {
                 message: Some(format!("the link from {} to {peer} is down", self.from)),
             });
         }
-        let mut deliveries = 1;
-        if net.rng.below(100) < link.loss_pct {
-            net.trace.push(Traced {
-                at_ms: now,
-                from: self.from.clone(),
-                to: peer.to_string(),
-                fate: Fate::Lost,
-                bytes: bytes.to_vec(),
-            });
-            return Ok(());
-        }
-        if net.rng.below(100) < link.duplicate_pct {
-            deliveries = 2;
-        }
-        for copy in 0..deliveries {
-            let jitter = i64::try_from(
-                net.rng
-                    .below(u64::try_from(link.jitter_ms + 1).unwrap_or(1)),
-            )
-            .unwrap_or(0);
-            let mut due_ms = now + link.latency_ms + jitter;
-            let direction = (self.from.clone(), peer.to_string());
-            if link.fifo {
-                due_ms = due_ms.max(net.last_due.get(&direction).copied().unwrap_or(0));
-            }
-            net.last_due.insert(direction, due_ms);
-            let seq = net.next_seq;
-            net.next_seq += 1;
-            net.flights.push(Flight {
-                from: self.from.clone(),
-                to: peer.to_string(),
-                due_ms,
-                seq,
-                bytes: bytes.to_vec(),
-            });
-            net.trace.push(Traced {
-                at_ms: now,
-                from: self.from.clone(),
-                to: peer.to_string(),
-                fate: if copy == 0 {
-                    Fate::Sent { due_ms }
-                } else {
-                    Fate::Duplicated { due_ms }
-                },
-                bytes: bytes.to_vec(),
-            });
-        }
+        net.carry(now, &self.from, peer, bytes, false);
         Ok(())
     }
 }
@@ -344,13 +392,24 @@ pub struct Sent {
     pub data: String,
 }
 
-/// One step of a machine's record: an event it was given from outside, and what the
-/// machine was once the macrostep that event started had run to quiescence.
+/// One step of a machine's record: an event it was given from outside, or time that
+/// moved, and what the machine was once the macrostep that started had run to
+/// quiescence.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Taken {
-    /// The event's name and its data (JSON, or empty); `None` for the first step,
-    /// which is the machine as its start left it.
+    /// The event's name and its data (JSON, or empty); `None` for a step that moves
+    /// time, and for the first step, which is the machine as its start left it.
     pub event: Option<(String, String)>,
+    /// How far the world's time moved, in milliseconds, since the step before, for a
+    /// step that moves time; `0` for every other. Only a machine that runs on the
+    /// event scheduler has such steps: one that does not cannot tell that time moved.
+    /// A step of this kind is not an event and carries none, as a scenario's step
+    /// states one or the other.
+    pub advance_ms: u64,
+    /// How long after the step the machine's scheduler has something next to deliver,
+    /// in milliseconds; `None` when it has nothing waiting. A replay on a real clock
+    /// reads a step correctly only when this is well clear of the time it waits.
+    pub next_due_ms: Option<u64>,
     /// Whether the machine dropped the event because none of its events matches the
     /// name (§scxml-3.12.1).
     pub dropped: bool,
@@ -364,10 +423,16 @@ pub struct Taken {
 type Reader<P> = Box<dyn Fn(&Engine<P>) -> String>;
 
 /// The record of one machine: how it is read, what it sent since it was last read,
-/// and the steps so far.
+/// the time that moved since its last step, and the steps so far.
 struct Record<P: StatePolicy> {
     read: Reader<P>,
     sent: Arc<Mutex<Vec<Sent>>>,
+    /// Milliseconds the world's time has moved since the last step was written. It
+    /// is written as a step of its own when the machine is next given an event, or
+    /// when the record is read, and not each time the world's time moves: with no
+    /// event between them the moves are one wait, and the machine does the same on
+    /// every engine whether it is told so at once or in parts.
+    waited_ms: u64,
     steps: Vec<Taken>,
 }
 
@@ -414,6 +479,24 @@ impl<P: StatePolicy> Actor<P> {
 
     /// Write the step that just ran into the machine's record, when it keeps one.
     fn note(&mut self, event: Option<(String, String)>) {
+        self.write_step(event, 0);
+    }
+
+    /// Write the time that moved since the machine's last step as a step of its
+    /// own, if any did. Called when the machine is about to be given an event, so
+    /// the step reads the machine as the wait left it and the event is then judged
+    /// on top of that.
+    fn note_wait(&mut self) {
+        let Some(record) = &mut self.record else {
+            return;
+        };
+        let waited = std::mem::take(&mut record.waited_ms);
+        if waited > 0 {
+            self.write_step(None, waited);
+        }
+    }
+
+    fn write_step(&mut self, event: Option<(String, String)>, advance_ms: u64) {
         let Some(record) = &mut self.record else {
             return;
         };
@@ -427,8 +510,11 @@ impl<P: StatePolicy> Actor<P> {
                 .expect("the list of what was sent is never left mid-update"),
         );
         let saved = (record.read)(&self.engine);
+        let next_due_ms = self.engine.time_until_next_scheduled_ms();
         record.steps.push(Taken {
             event,
+            advance_ms,
+            next_due_ms,
             dropped,
             sent,
             saved,
@@ -447,6 +533,7 @@ impl<P: StatePolicy> Actor<P> {
             if given.is_empty() && calls.is_empty() {
                 return;
             }
+            self.note_wait();
             for (event, data) in given {
                 self.engine.raise_external_by_name(&event, &data);
                 self.rest();
@@ -543,6 +630,13 @@ impl<P: StatePolicy + 'static> Participant for Actor<P> {
 
     fn advance(&mut self, ms: u64) {
         self.engine.advance_time_ms(ms);
+        // A machine that does not run on the scheduler cannot tell that time moved, so
+        // its record does not hold it.
+        if P::NEEDS_EVENT_SCHEDULER {
+            if let Some(record) = &mut self.record {
+                record.waited_ms = record.waited_ms.saturating_add(ms);
+            }
+        }
     }
 
     fn next_due_ms(&self, now_ms: i64) -> Option<i64> {
@@ -615,11 +709,9 @@ impl World {
     /// step, as the text it saves of itself. A generated machine saves through a
     /// trait of its own, which is why the reader is the caller's to write.
     ///
-    /// # Panics
-    ///
-    /// For a machine that needs the event scheduler: what such a machine does
-    /// depends on when its time was moved, which a record of the events it was given
-    /// does not hold.
+    /// A machine that runs on the event scheduler is recorded too: the time the
+    /// world's clock moves between two events it takes is a step of its own
+    /// ([`Taken::advance_ms`]), which is how a scenario states a wait.
     pub fn add_read<P: StatePolicy + 'static>(
         &mut self,
         name: &str,
@@ -627,20 +719,23 @@ impl World {
         router: Router,
         read: impl Fn(&Engine<P>) -> String + 'static,
     ) {
-        assert!(
-            !P::NEEDS_EVENT_SCHEDULER,
-            "{name} runs on a scheduler: its record would have to hold when its time moved, and does not"
-        );
         self.add_actor(name, policy, router, Some(Box::new(read)));
     }
 
     /// The record of the machine `name`, which was added by
-    /// [`add_read`](Self::add_read): every step so far, the start first.
+    /// [`add_read`](Self::add_read): every step so far, the start first. Time that
+    /// moved since the machine last took an event is the last step.
     pub fn record_of<P: StatePolicy + 'static>(&mut self, name: &str) -> Vec<Taken> {
-        self.actor::<P>(name)
+        let actor = self.actor::<P>(name);
+        assert!(
+            actor.record.is_some(),
+            "{name} keeps no record: it was not added to be read"
+        );
+        actor.note_wait();
+        actor
             .record
             .as_ref()
-            .unwrap_or_else(|| panic!("{name} keeps no record: it was not added to be read"))
+            .expect("a record was asserted above")
             .steps
             .clone()
     }
@@ -730,6 +825,7 @@ impl World {
             Record {
                 read,
                 sent,
+                waited_ms: 0,
                 steps: Vec::new(),
             }
         });
@@ -765,6 +861,49 @@ impl World {
         }
         self.with_actor(a, |actor| actor.peer_ready(b));
         self.with_actor(b, |actor| actor.peer_ready(a));
+    }
+
+    /// Make `topic` a name `publisher` can send to, that every one of `subscribers`
+    /// receives: a Zenoh key a machine puts to and others have declared a subscriber
+    /// on, or a DDS topic, where the publisher does not list its readers
+    /// (SCE_MESH.md, "SCE does not enumerate peers"). The publisher's router binds the
+    /// topic as a peer, and each subscriber's binds the publisher, since that is
+    /// whom the copy it receives is from.
+    ///
+    /// Each copy travels the link from the publisher to its subscriber
+    /// ([`link`](Self::link) first), so it is delayed, lost and repeated as that link
+    /// does, and a subscriber whose link is down receives nothing: a publication is
+    /// not addressed, so it is not failed back and not sent again. A machine whose
+    /// state is soft, which the next publication repairs, is what that suits.
+    ///
+    /// # Panics
+    ///
+    /// When a subscriber has no link from the publisher, or the topic is already
+    /// declared.
+    pub fn topic(&mut self, publisher: &str, topic: &str, subscribers: &[&str]) {
+        {
+            let mut net = self.net.lock();
+            for subscriber in subscribers {
+                assert!(
+                    net.links
+                        .contains_key(&(publisher.to_string(), (*subscriber).to_string())),
+                    "no link from {publisher} to {subscriber}: link them before the topic"
+                );
+            }
+            let key = (publisher.to_string(), topic.to_string());
+            assert!(
+                !net.topics.contains_key(&key),
+                "{publisher} already has a topic named {topic}"
+            );
+            net.topics.insert(
+                key,
+                subscribers
+                    .iter()
+                    .map(|subscriber| (*subscriber).to_string())
+                    .collect(),
+            );
+        }
+        self.with_actor(publisher, |actor| actor.peer_ready(topic));
     }
 
     /// Spread the delay of every envelope between `a` and `b` over
@@ -832,7 +971,7 @@ impl World {
         };
         self.with_actor(a, |actor| actor.peer_not_ready(b));
         self.with_actor(b, |actor| actor.peer_not_ready(a));
-        for flight in cut {
+        for flight in cut.into_iter().filter(|flight| !flight.topic) {
             let (from, to, bytes) = (flight.from, flight.to, flight.bytes);
             self.with_actor(&from, |actor| actor.transmit_failed(&to, bytes));
         }
