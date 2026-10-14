@@ -1,0 +1,173 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15): one copy of a shared
+  to-do list, for the world simulation (backends/rust/world). The same document is a
+  person's copy and the hub the copies send to; `todo.join` says which.
+
+  A to-do is a row of fields (todo_write): a title, whether it is done, a due day,
+  whether it is removed. Each field of each to-do is its own last-writer-wins
+  register, so two people who change different fields of one to-do at once both keep
+  their change, and two who change the same field leave the later one, on every copy,
+  whatever order the changes reach it in and however many times each does.
+
+  The numbers of the fields live in `cells`, one cell for each (to-do, field), and
+  are merged by the standard `lww_write` exactly as the cells of a sheet are. The one
+  thing a cell cannot hold is a text, so the titles are held beside the cells in
+  `texts`, and a title is written to `texts` only when its write is the one its cell
+  kept: the cell decides which write wins, and the text follows it. That is the whole
+  of what this document adds to the merge.
+
+  The clock is moved by what a copy sees as well as by what it does, as the sheet's
+  is: a change made after reading someone else's sorts after it.
+
+  `cells` and `texts` are what a run compares across copies.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="open" datamodel="sce-static" name="todo_peer">
+  <sce:import kind="event-schema" src="todo_join.scxml" as="Join"/>
+  <sce:import kind="event-schema" src="todo_edit.scxml" as="Edit"/>
+  <sce:import kind="event-schema" src="todo_write.scxml" as="Write"/>
+  <sce:import kind="event-schema" src="todo_text.scxml" as="Text"/>
+  <sce:import kind="event-schema" src="sce:std/merge/hlc_timestamp.scxml" as="Hlc"/>
+  <sce:import kind="event-schema" src="sce:std/merge/lww_cell.scxml" as="LwwCell"/>
+  <sce:import kind="algorithm" src="sce:std/merge/hlc_send.scxml" as="HlcSend"/>
+  <sce:import kind="algorithm" src="sce:std/merge/hlc_receive.scxml" as="HlcReceive"/>
+  <sce:import kind="algorithm" src="sce:std/merge/lww_write.scxml" as="LwwWrite"/>
+  <datamodel>
+    <data id="node" sce:type="uint64" expr="0" sce:direction="out"/>
+    <data id="hub" sce:type="bool" expr="false" sce:direction="out"/>
+    <data id="clock" sce:type="record:Hlc" sce:direction="out">
+      <sce:set name="wallTime" expr="0"/>
+      <sce:set name="counter" expr="0"/>
+      <sce:set name="nodeId" expr="0"/>
+    </data>
+    <data id="stamp" sce:type="record:Hlc">
+      <sce:set name="wallTime" expr="0"/>
+      <sce:set name="counter" expr="0"/>
+      <sce:set name="nodeId" expr="0"/>
+    </data>
+    <data id="cells" sce:type="list&lt;record:LwwCell&gt;" sce:capacity="256" sce:direction="out"/>
+    <data id="write" sce:type="record:LwwCell">
+      <sce:set name="row" expr="0"/>
+      <sce:set name="col" expr="0"/>
+      <sce:set name="value" expr="0"/>
+      <sce:set name="wallTime" expr="0"/>
+      <sce:set name="counter" expr="0"/>
+      <sce:set name="nodeId" expr="0"/>
+    </data>
+    <data id="texts" sce:type="list&lt;record:Text&gt;" sce:capacity="64" sce:direction="out"/>
+    <data id="rebuilt" sce:type="list&lt;record:Text&gt;" sce:capacity="64"/>
+    <data id="held" sce:type="record:Text">
+      <sce:set name="id" expr="0"/>
+      <sce:set name="field" expr="0"/>
+      <sce:set name="text" expr="''"/>
+    </data>
+    <data id="won" sce:type="bool" expr="false"/>
+    <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="open">
+    <transition event="todo.join" type="internal">
+      <assign location="node" expr="_event.data.node"/>
+      <assign location="hub" expr="_event.data.hub"/>
+    </transition>
+
+    <!-- A person's change: stamped, then handled as any write is, and sent to the hub. -->
+    <transition event="todo.edit" type="internal">
+      <!-- The text is read first, into a place nothing else reads: a text past its bound
+           is an assignment that fails and ends the block, so the change is refused
+           whole, with the clock where it was and nothing sent. -->
+      <assign location="held.text" expr="_event.data.text"/>
+      <assign location="clock" expr="HlcSend(clock, _event.data.now, node)"/>
+      <send target="#_internal" event="todo.write">
+        <param name="id" expr="_event.data.id"/>
+        <param name="field" expr="_event.data.field"/>
+        <param name="value" expr="_event.data.value"/>
+        <param name="text" expr="_event.data.text"/>
+        <param name="wallTime" expr="clock.wallTime"/>
+        <param name="counter" expr="clock.counter"/>
+        <param name="nodeId" expr="node"/>
+      </send>
+      <send target="#server" event="todo.write">
+        <param name="id" expr="_event.data.id"/>
+        <param name="field" expr="_event.data.field"/>
+        <param name="value" expr="_event.data.value"/>
+        <param name="text" expr="_event.data.text"/>
+        <param name="wallTime" expr="clock.wallTime"/>
+        <param name="counter" expr="clock.counter"/>
+        <param name="nodeId" expr="node"/>
+      </send>
+    </transition>
+
+    <!-- A write to a field, from a person here or from elsewhere. -->
+    <transition event="todo.write" type="internal">
+      <!-- The same, for a write that arrives: one whose text does not fit changes
+           nothing here and is passed on to no one, rather than being merged in part. -->
+      <assign location="held.text" expr="_event.data.text"/>
+      <if cond="_event.data.nodeId !== node">
+        <assign location="stamp.wallTime" expr="_event.data.wallTime"/>
+        <assign location="stamp.counter" expr="_event.data.counter"/>
+        <assign location="stamp.nodeId" expr="_event.data.nodeId"/>
+        <assign location="clock" expr="HlcReceive(clock, stamp, clock.wallTime, node)"/>
+      </if>
+      <assign location="write.row" expr="_event.data.id"/>
+      <assign location="write.col" expr="_event.data.field"/>
+      <assign location="write.value" expr="_event.data.value"/>
+      <assign location="write.wallTime" expr="_event.data.wallTime"/>
+      <assign location="write.counter" expr="_event.data.counter"/>
+      <assign location="write.nodeId" expr="_event.data.nodeId"/>
+      <assign location="cells" expr="LwwWrite(cells, write)"/>
+
+      <!-- Whether this write is the one its cell now holds: only then does a text
+           written with it stay. -->
+      <assign location="won" expr="false"/>
+      <foreach array="cells" item="c">
+        <if cond="c.row === _event.data.id &amp;&amp; c.col === _event.data.field &amp;&amp; c.wallTime === _event.data.wallTime &amp;&amp; c.counter === _event.data.counter &amp;&amp; c.nodeId === _event.data.nodeId">
+          <assign location="won" expr="true"/>
+        </if>
+      </foreach>
+      <if cond="won &amp;&amp; _event.data.field === 1">
+        <sce:clear target="rebuilt"/>
+        <foreach array="texts" item="t">
+          <if cond="t.id !== _event.data.id || t.field !== _event.data.field">
+            <sce:append target="rebuilt" expr="t"/>
+          </if>
+        </foreach>
+        <assign location="held.id" expr="_event.data.id"/>
+        <assign location="held.field" expr="_event.data.field"/>
+        <assign location="held.text" expr="_event.data.text"/>
+        <sce:append target="rebuilt" expr="held"/>
+        <sce:clear target="texts"/>
+        <foreach array="rebuilt" item="r">
+          <sce:append target="texts" expr="r"/>
+        </foreach>
+      </if>
+
+      <if cond="hub &amp;&amp; _event.data.nodeId !== 1">
+        <send target="#alice" event="todo.write">
+          <param name="id" expr="_event.data.id"/>
+          <param name="field" expr="_event.data.field"/>
+          <param name="value" expr="_event.data.value"/>
+          <param name="text" expr="_event.data.text"/>
+          <param name="wallTime" expr="_event.data.wallTime"/>
+          <param name="counter" expr="_event.data.counter"/>
+          <param name="nodeId" expr="_event.data.nodeId"/>
+        </send>
+      </if>
+      <if cond="hub &amp;&amp; _event.data.nodeId !== 2">
+        <send target="#bob" event="todo.write">
+          <param name="id" expr="_event.data.id"/>
+          <param name="field" expr="_event.data.field"/>
+          <param name="value" expr="_event.data.value"/>
+          <param name="text" expr="_event.data.text"/>
+          <param name="wallTime" expr="_event.data.wallTime"/>
+          <param name="counter" expr="_event.data.counter"/>
+          <param name="nodeId" expr="_event.data.nodeId"/>
+        </send>
+      </if>
+    </transition>
+
+    <transition event="error.execution" type="internal">
+      <assign location="refusals" expr="refusals + 1"/>
+    </transition>
+  </state>
+</scxml>

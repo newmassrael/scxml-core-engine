@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  What the host tells a copy of the shared to-do list when it starts: the node id its
+  stamps carry, and whether this copy is the hub the others send to.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="todo_join"
+       sce:event-name="todo.join">
+  <datamodel>
+    <data id="node" sce:type="uint64" sce:direction="in"/>
+    <data id="hub" sce:type="bool" sce:direction="in"/>
+  </datamodel>
+</scxml>

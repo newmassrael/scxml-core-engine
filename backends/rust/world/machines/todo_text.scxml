@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The text of one text field of one to-do, as a copy holds it: which to-do (`id`),
+  which field (`field`) and the text (`text`, at most 32 bytes of UTF-8). The stamp
+  that decides which text stays is the one of the cell the same place holds in the
+  copy's cells (lww_cell), so the text and the cell cannot disagree about which write
+  they are.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="todo_text"
+       sce:event-name="todo.text">
+  <datamodel>
+    <data id="id" sce:type="uint64" sce:direction="in"/>
+    <data id="field" sce:type="uint64" sce:direction="in"/>
+    <data id="text" sce:type="string" sce:max-size="32" sce:direction="in"/>
+  </datamodel>
+</scxml>

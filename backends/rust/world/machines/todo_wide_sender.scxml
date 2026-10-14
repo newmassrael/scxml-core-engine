@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static": a sender of the shared to-do list that holds a title to 64
+  bytes where the list holds it to 32 (todo_write) — a copy of the app from before the
+  bound was set, or one built with a wider one. It has no copy of the list: `todo.shout`
+  sends the hub one write of a title and keeps nothing, which is what a hub has to be
+  able to refuse without having first merged part of it.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="open" datamodel="sce-static" name="todo_wide_sender">
+  <sce:import kind="event-schema" src="todo_shout.scxml" as="Shout"/>
+  <datamodel>
+    <data id="sent" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="open">
+    <transition event="todo.shout" type="internal">
+      <assign location="sent" expr="sent + 1"/>
+      <send target="#server" event="todo.write">
+        <param name="id" expr="_event.data.id"/>
+        <param name="field" expr="1"/>
+        <param name="value" expr="0"/>
+        <param name="text" expr="_event.data.text"/>
+        <param name="wallTime" expr="500"/>
+        <param name="counter" expr="0"/>
+        <param name="nodeId" expr="1"/>
+      </send>
+    </transition>
+  </state>
+</scxml>

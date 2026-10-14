@@ -23,6 +23,8 @@ const STATECHARTS: &[&str] = &[
     "machines/echo_client.scxml",
     "machines/echo_server.scxml",
     "machines/sheet_peer.scxml",
+    "machines/todo_peer.scxml",
+    "machines/todo_wide_sender.scxml",
 ];
 
 /// The algorithms and record schemas the statecharts import, the standard ones from
@@ -51,6 +53,11 @@ const FORGE: &[&str] = &[
     "machines/sheet_gone_col.scxml",
     "machines/sheet_add_col.scxml",
     "machines/sheet_drop_col.scxml",
+    "machines/todo_join.scxml",
+    "machines/todo_edit.scxml",
+    "machines/todo_write.scxml",
+    "machines/todo_text.scxml",
+    "machines/todo_shout.scxml",
 ];
 
 fn main() {

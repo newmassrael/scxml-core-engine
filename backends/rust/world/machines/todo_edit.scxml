@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A person's change to one field of a to-do, as the host hands it to a copy: which
+  to-do, which field, the number or the text, and `now`, the host's wall clock in
+  milliseconds (a machine reads no clock of its own). The copy turns it into a write
+  stamped to sort after everything it has seen (todo_write).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="todo_edit"
+       sce:event-name="todo.edit">
+  <datamodel>
+    <data id="id" sce:type="uint64" sce:direction="in"/>
+    <data id="field" sce:type="uint64" sce:direction="in"/>
+    <data id="value" sce:type="int64" sce:direction="in"/>
+    <data id="text" sce:type="string" sce:max-size="32" sce:direction="in"/>
+    <data id="now" sce:type="int64" sce:direction="in"/>
+  </datamodel>
+</scxml>

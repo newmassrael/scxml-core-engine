@@ -20,6 +20,8 @@ use serde_json::Value;
 include!(concat!(env!("OUT_DIR"), "/machines.rs"));
 
 pub use sheet_peer::{SheetPeerPersist, SheetPeerPolicy as Peer};
+pub use todo_peer::{TodoPeerPersist, TodoPeerPolicy as TodoPeer};
+pub use todo_wide_sender::TodoWideSenderPolicy as WideSender;
 
 /// How the binding to a peer is configured: envelopes delivered once, with those
 /// written while the link is down kept until it is back. `ordered` asks the Mesh
@@ -442,4 +444,167 @@ fn agreed_order(
         );
     }
     (order, gone)
+}
+
+// ── The shared to-do list (`machines/todo_peer.scxml`) ──────────────────────
+
+/// The world of the to-do list: alice (node 1) and bob (node 2), each `latency_ms` from
+/// the hub, over links that may reorder what they carry. Writes to a field do not depend
+/// on the ones before it, so no binding orders.
+pub fn todo_world(seed: u64, latency_ms: i64) -> World {
+    let mut world = World::new(seed);
+    world.add("alice", TodoPeer::new(), person("alice", false));
+    world.add("bob", TodoPeer::new(), person("bob", false));
+    world.add("server", TodoPeer::new(), hub(false));
+    world.link("alice", "server", latency_ms);
+    world.link("bob", "server", latency_ms);
+    world.raise("alice", "todo.join", r#"{"node":"1","hub":false}"#);
+    world.raise("bob", "todo.join", r#"{"node":"2","hub":false}"#);
+    world.raise("server", "todo.join", r#"{"node":"100","hub":true}"#);
+    world
+}
+
+/// The fields of a to-do, by the numbers the host gives them.
+pub const TITLE: u64 = 1;
+pub const DONE: u64 = 2;
+pub const DUE: u64 = 3;
+pub const REMOVED: u64 = 9;
+
+/// Quote `text` as a JSON string, escaping what JSON requires.
+fn json_text(text: &str) -> String {
+    serde_json::to_string(text).expect("a string is JSON")
+}
+
+/// A person changes the number of a field of a to-do, when the host's clock reads the
+/// world's time.
+pub fn todo_set(world: &mut World, who: &str, id: u64, field: u64, value: i64) {
+    let now = world.now_ms();
+    todo_edit_at(world, who, id, field, value, "", now);
+}
+
+/// A person gives a to-do a title.
+pub fn todo_title(world: &mut World, who: &str, id: u64, title: &str) {
+    let now = world.now_ms();
+    todo_edit_at(world, who, id, TITLE, 0, title, now);
+}
+
+/// The general form: the host's clock reads `now`.
+pub fn todo_edit_at(
+    world: &mut World,
+    who: &str,
+    id: u64,
+    field: u64,
+    value: i64,
+    text: &str,
+    now: i64,
+) {
+    world.raise(
+        who,
+        "todo.edit",
+        &format!(
+            r#"{{"id":"{id}","field":"{field}","value":"{value}","text":{},"now":"{now}"}}"#,
+            json_text(text)
+        ),
+    );
+}
+
+/// What a copy saved of itself, for the to-do list.
+pub fn todo_variables_of(world: &mut World, who: &str) -> Value {
+    let saved = world
+        .actor::<TodoPeer>(who)
+        .engine()
+        .save_at(0)
+        .expect("a running machine saves");
+    let saved: Value = serde_json::from_str(&saved.to_json()).expect("a saved state is JSON");
+    saved["variables"].clone()
+}
+
+/// One field of one to-do as a copy holds it: its number, its text when it is the
+/// title, and the stamp of the write that put it there.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Field {
+    pub value: i64,
+    pub text: Option<String>,
+    pub stamp: (u64, u64, u64),
+}
+
+/// The fields a copy holds, by (to-do, field).
+pub fn todos_of(world: &mut World, who: &str) -> BTreeMap<(u64, u64), Field> {
+    let variables = todo_variables_of(world, who);
+    let mut fields = BTreeMap::new();
+    for cell in variables["cells"].as_array().expect("cells are a list") {
+        let number = |name: &str| whole(&cell[name]);
+        let key = (number("row") as u64, number("col") as u64);
+        let stamp = (
+            number("wallTime") as u64,
+            number("counter") as u64,
+            number("nodeId") as u64,
+        );
+        let held = Field {
+            value: number("value") as i64,
+            text: None,
+            stamp,
+        };
+        assert!(
+            fields.insert(key, held).is_none(),
+            "{who} holds {key:?} twice"
+        );
+    }
+    for text in variables["texts"].as_array().expect("texts are a list") {
+        let key = (whole(&text["id"]) as u64, whole(&text["field"]) as u64);
+        let held = fields
+            .get_mut(&key)
+            .unwrap_or_else(|| panic!("{who} holds a text for {key:?} with no cell"));
+        assert!(
+            held.text
+                .replace(text["text"].as_str().expect("a text").to_string())
+                .is_none(),
+            "{who} holds the text of {key:?} twice"
+        );
+    }
+    fields
+}
+
+/// The three copies hold one list of to-dos; which.
+pub fn agreed_todos(world: &mut World) -> BTreeMap<(u64, u64), Field> {
+    let server = todos_of(world, "server");
+    for who in ["alice", "bob"] {
+        assert_eq!(
+            todos_of(world, who),
+            server,
+            "{who} and the hub hold different to-do lists"
+        );
+    }
+    server
+}
+
+/// What the list should hold, read from the network and not from the copies: of every
+/// write a person sent the hub, the one with the latest stamp wins its field, and the
+/// text is the text that write carried.
+pub fn todo_oracle(world: &World) -> BTreeMap<(u64, u64), Field> {
+    let mut expected: BTreeMap<(u64, u64), Field> = BTreeMap::new();
+    for (event, write) in sent_to_the_hub(world) {
+        if event != "todo.write" {
+            continue;
+        }
+        let number = |name: &str| whole(&write[name]);
+        let key = (number("id") as u64, number("field") as u64);
+        let stamp = (
+            number("wallTime") as u64,
+            number("counter") as u64,
+            number("nodeId") as u64,
+        );
+        let held = Field {
+            value: number("value") as i64,
+            text: (key.1 == TITLE).then(|| write["text"].as_str().expect("a text").to_string()),
+            stamp,
+        };
+        match expected.get(&key) {
+            Some(latest) if latest.stamp >= stamp => {}
+            _ => {
+                expected.insert(key, held);
+            }
+        }
+    }
+    expected
 }

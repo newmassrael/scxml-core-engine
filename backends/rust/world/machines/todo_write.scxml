@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  One write to one field of one to-do, as it travels between copies: which to-do
+  (`id`), which field of it (`field`), the number the field is set to (`value`) or,
+  for a text field, the text (`text`), and the stamp of the write (a hybrid logical
+  clock, hlc_timestamp). A to-do is a row of fields, and each field is its own
+  last-writer-wins register, so two people changing different fields of one to-do at
+  once both keep their change, and two changing the same field leave the later one.
+  The numbers of the fields are the host's: here 1 is the title (text), 2 whether it
+  is done, 3 its due day, and 9 whether it is removed.
+  `text` holds at most 32 bytes of UTF-8, counted in bytes as every string of a
+  `sce-static` machine is.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="todo_write"
+       sce:event-name="todo.write">
+  <datamodel>
+    <data id="id" sce:type="uint64" sce:direction="in"/>
+    <data id="field" sce:type="uint64" sce:direction="in"/>
+    <data id="value" sce:type="int64" sce:direction="in"/>
+    <data id="text" sce:type="string" sce:max-size="32" sce:direction="in"/>
+    <data id="wallTime" sce:type="int64" sce:direction="in"/>
+    <data id="counter" sce:type="uint32" sce:direction="in"/>
+    <data id="nodeId" sce:type="uint64" sce:direction="in"/>
+  </datamodel>
+</scxml>
