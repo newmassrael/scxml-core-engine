@@ -660,11 +660,9 @@ mod command {
     fn only_the_desktop_application_may_start_a_program_to_ask_it_something() {
         let fake = Fake::new("cst-cmd-entrances", CHATGPT, SIGNED_OUT);
 
-        for entrance in [Entrance::Browser, Entrance::Tool] {
-            let (kind, _) = ask(entrance, Some(&fake.binary)).unwrap_err();
-            assert_eq!(kind, "not-allowed-here", "{entrance:?}");
-        }
-        // And nothing was started for the ones that were refused.
+        let (kind, _) = ask(Entrance::Browser, Some(&fake.binary)).unwrap_err();
+        assert_eq!(kind, "not-allowed-here");
+        // And nothing was started for the one that was refused.
         assert!(fake.logins().is_empty());
     }
 

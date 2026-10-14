@@ -57,11 +57,13 @@ import {
   parseWorkAndHead,
   parseWorkHeads,
   parseWorkSnapshot,
+  SUPPORTED_APPLICATION_COMMAND_SET_VERSION,
   SUPPORTED_COMMAND_SET_VERSION,
 } from "../src/contract";
 
 interface Replies {
   command_set_version: number;
+  application_command_set_version: number;
   answers: Record<string, unknown>;
   refusals: Record<string, unknown>;
 }
@@ -133,8 +135,13 @@ function commandOf(name: string): string {
 }
 
 describe("the replies the core gives", () => {
-  it("are of the command set this screen was written for", () => {
+  it("are of the command sets this screen was written for", () => {
     expect(replies.command_set_version).toBe(SUPPORTED_COMMAND_SET_VERSION);
+    expect(replies.application_command_set_version).toBe(SUPPORTED_APPLICATION_COMMAND_SET_VERSION);
+    expect(parseDescribed(replies.answers["describe"])).toMatchObject({
+      command_set_version: SUPPORTED_COMMAND_SET_VERSION,
+      application_command_set_version: SUPPORTED_APPLICATION_COMMAND_SET_VERSION,
+    });
   });
 
   it("are all accepted by the guard of their command", () => {
@@ -572,7 +579,7 @@ describe("the replies the core gives", () => {
 
   it("say which entrance asked, and whether it may change the settings", () => {
     expect(parseDescribed(replies.answers["describe"])).toMatchObject({
-      entrance: "tool",
+      entrance: "browser",
       settings: false,
       writes_settings: false,
     });
@@ -977,6 +984,11 @@ describe("a reply that is not the promised shape", () => {
       /status/,
     );
     expect(() => parseDescribed({ command_set_version: 14, commands: [], root: "r" })).toThrow(/entrance/);
+    // A core of one command set (24 and before) says no application version beside it, and said
+    // `tool` of a door the application no longer has.
+    const described = { command_set_version: 24, commands: [], root: "r", settings: false, writes_settings: false, starts_programs: false };
+    expect(() => parseDescribed({ ...described, entrance: "desktop" })).toThrow(/application_command_set_version/);
+    expect(() => parseDescribed({ ...described, entrance: "tool", application_command_set_version: 1 })).toThrow(/entrance/);
   });
 
   it("is refused when what is said of Claude Code is a state or a billing the screen does not know", () => {

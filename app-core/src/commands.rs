@@ -49,6 +49,17 @@ pub const COMMANDS: &[&str] = &[
     "set_default_connection",
 ];
 
+/// The version of the application's own commands and of what `describe` adds to the works'
+/// answer, said as `application_command_set_version` beside the works' `command_set_version`
+/// ([`sce_works::COMMAND_SET_VERSION`]). It moves as that one does: when a command's arguments or
+/// answer change in a way a caller written against the last one would misread.
+///
+/// 1: the commands above, which were the workbench's one command set 14 to 24 until the works
+/// were versioned apart (works 25), and `describe`'s `entrance` (`desktop` or `browser`; the
+/// `tool` an `sce-work` of that set said is the works' to answer now, and says nothing of who
+/// asked), `settings`, `writes_settings` and `starts_programs`.
+pub const APPLICATION_COMMAND_SET_VERSION: u32 = 1;
+
 /// Every command an entrance of the application answers: the works', then its own.
 pub fn all_commands() -> Vec<&'static str> {
     sce_works::COMMANDS
@@ -90,9 +101,6 @@ pub enum Entrance {
     Desktop,
     /// The development shell a token reaches over a network.
     Browser,
-    /// A program that runs commands. An AI may be on the other end of it, and an AI must not be
-    /// able to change which AI it runs on.
-    Tool,
 }
 
 impl Entrance {
@@ -207,6 +215,10 @@ pub fn call_in<C: Clock>(
     if name == "describe" {
         if let Some(fields) = answered.as_object_mut() {
             fields.insert("commands".to_string(), json!(all_commands()));
+            fields.insert(
+                "application_command_set_version".to_string(),
+                json!(APPLICATION_COMMAND_SET_VERSION),
+            );
             fields.insert("entrance".to_string(), json!(context.entrance));
             fields.insert("settings".to_string(), json!(context.connections.is_some()));
             fields.insert(

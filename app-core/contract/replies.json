@@ -113,7 +113,8 @@
       "deleted": "main"
     },
     "describe": {
-      "command_set_version": 24,
+      "application_command_set_version": 1,
+      "command_set_version": 25,
       "commands": [
         "describe",
         "list_works",
@@ -167,14 +168,15 @@
         "delete_connection",
         "set_default_connection"
       ],
-      "entrance": "tool",
+      "entrance": "browser",
       "root": "<root>",
       "settings": false,
       "starts_programs": false,
       "writes_settings": false
     },
     "describe_desktop": {
-      "command_set_version": 24,
+      "application_command_set_version": 1,
+      "command_set_version": 25,
       "commands": [
         "describe",
         "list_works",
@@ -2505,7 +2507,8 @@
       "default": "main"
     }
   },
-  "command_set_version": 24,
+  "application_command_set_version": 1,
+  "command_set_version": 25,
   "refusals": {
     "active-request": {
       "detail": {
@@ -2694,14 +2697,14 @@
     },
     "not-allowed-to-find-clients": {
       "detail": {
-        "entrance": "tool"
+        "entrance": "browser"
       },
       "kind": "not-allowed-here",
       "message": "`find_clients` starts a program of the person's, and only the desktop application does that"
     },
     "not-allowed-to-read-server-status": {
       "detail": {
-        "entrance": "tool"
+        "entrance": "browser"
       },
       "kind": "not-allowed-here",
       "message": "`read_server_status` starts a program of the person's, and only the desktop application does that"

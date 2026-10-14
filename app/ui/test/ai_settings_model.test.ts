@@ -3,7 +3,11 @@
 
 import { describe, expect, it } from "vitest";
 
-import { NO_LIMITS, SUPPORTED_COMMAND_SET_VERSION } from "../src/contract";
+import {
+  NO_LIMITS,
+  SUPPORTED_APPLICATION_COMMAND_SET_VERSION,
+  SUPPORTED_COMMAND_SET_VERSION,
+} from "../src/contract";
 import type {
   ClaudeAccount,
   ClaudeClient,
@@ -41,6 +45,7 @@ const OTHER = "b".repeat(64);
 
 const described = (over: Partial<Described> = {}): Described => ({
   command_set_version: SUPPORTED_COMMAND_SET_VERSION,
+  application_command_set_version: SUPPORTED_APPLICATION_COMMAND_SET_VERSION,
   commands: [],
   root: "/works",
   entrance: "desktop",
@@ -95,10 +100,11 @@ const listing = (over: Partial<ConnectionListing> = {}): ConnectionListing => ({
 
 describe("what the AI settings can say, by where the screen is", () => {
   it("is nothing to ask in a window that may not start a program", () => {
-    for (const entrance of ["browser", "tool"] as const) {
-      const says = readinessOf(described({ entrance, starts_programs: false, writes_settings: false }), { phase: "idle" });
-      expect(says.kind).toBe("not-here");
-    }
+    const says = readinessOf(
+      described({ entrance: "browser", starts_programs: false, writes_settings: false }),
+      { phase: "idle" },
+    );
+    expect(says.kind).toBe("not-here");
   });
 
   it("is not asked until it is asked, and is waiting while it is", () => {

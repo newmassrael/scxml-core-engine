@@ -83,6 +83,13 @@ pub const COMMANDS: &[&str] = &[
 
 /// The version of this command set. It moves when a command's arguments or
 /// answer change in a way a caller written against the last one would misread.
+/// `describe` says it as `command_set_version` at every entrance, the works' own
+/// (`sce-work`) and an application's that answers commands of its own in front of
+/// these, which says its own beside it.
+///
+/// Up to 24 this was the workbench's one command set, and the entries for its
+/// settings and the programs of a person's (14 to 18) are of commands that are no
+/// longer in it (see 25).
 ///
 /// 2: a work also keeps a model (`save_model`, `read_model`, `model_history`) and
 /// SCE draws it (`figures`). A screen written for 1 has no use for them, and a
@@ -242,7 +249,15 @@ pub const COMMANDS: &[&str] = &[
 /// (`lineage-dropped`, `lineage-not-continued`), so that the first lineage of a work is judged like
 /// every other. A client of 23 was handed no lineage for such a list and built its next list as a
 /// first one, which a core of 24 refuses; a core of 23 would keep it.
-pub const COMMAND_SET_VERSION: u32 = 24;
+///
+/// 25: the commands are the works' alone. The settings, the sign-in table and the status of a
+/// person's clients and servers (`list_connections` to `set_default_connection`) are an
+/// application's, which answers them in front of these and versions them itself; `describe` lists
+/// only these, and says nothing of who asked (`entrance`, `settings`, `writes_settings`,
+/// `starts_programs` are the application's too). A request may still name a connection, and the
+/// entrance makes its pin ([`Pins`]). A caller of 24 that asked `sce-work` for a setting was told
+/// `no-settings`, and is now told `unknown-command`.
+pub const COMMAND_SET_VERSION: u32 = 25;
 
 /// A command that did not do what was asked, in a shape every shell can pass on.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

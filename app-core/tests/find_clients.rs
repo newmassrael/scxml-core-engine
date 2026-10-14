@@ -118,10 +118,10 @@ fn only_the_desktop_may_ask_because_asking_starts_the_programs() {
     let program = client("fc-entrances", "2.1.291 (Claude Code)", SUBSCRIPTION);
     let rig = Rig::new("fc-entrances", &[dir_of(&program)]);
 
-    for entrance in [Entrance::Browser, Entrance::Tool] {
-        let refused = rig.ask(entrance, "find_clients", json!({})).unwrap_err();
-        assert_eq!(refused.kind, "not-allowed-here", "{entrance:?}");
-    }
+    let refused = rig
+        .ask(Entrance::Browser, "find_clients", json!({}))
+        .unwrap_err();
+    assert_eq!(refused.kind, "not-allowed-here");
 }
 
 #[test]

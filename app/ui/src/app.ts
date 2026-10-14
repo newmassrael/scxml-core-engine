@@ -53,6 +53,7 @@ import {
 import {
   conflictRevisions,
   ContractError,
+  SUPPORTED_APPLICATION_COMMAND_SET_VERSION,
   SUPPORTED_COMMAND_SET_VERSION,
   isOpenRequest,
   movedInRefusal,
@@ -302,10 +303,14 @@ export class App {
     this.render();
     await this.guard(async () => {
       this.described = await this.api.describe();
-      if (this.described.command_set_version !== SUPPORTED_COMMAND_SET_VERSION) {
+      // Two command sets, said as one: the works' and the application's own beside it.
+      if (
+        this.described.command_set_version !== SUPPORTED_COMMAND_SET_VERSION ||
+        this.described.application_command_set_version !== SUPPORTED_APPLICATION_COMMAND_SET_VERSION
+      ) {
         this.fatal = this.t("versionMismatch", {
-          screen: String(SUPPORTED_COMMAND_SET_VERSION),
-          core: String(this.described.command_set_version),
+          screen: `${SUPPORTED_COMMAND_SET_VERSION}.${SUPPORTED_APPLICATION_COMMAND_SET_VERSION}`,
+          core: `${this.described.command_set_version}.${this.described.application_command_set_version}`,
         });
         return;
       }

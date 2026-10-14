@@ -10,8 +10,14 @@
 // instead of with `undefined` somewhere in a view. Extra fields are tolerated (a
 // later core may add some); missing or mistyped ones are not.
 
-/** The command set this screen was written for (`COMMAND_SET_VERSION` in the core). */
-export const SUPPORTED_COMMAND_SET_VERSION = 24;
+/** The works' command set this screen was written for (`COMMAND_SET_VERSION` in `sce-works`). */
+export const SUPPORTED_COMMAND_SET_VERSION = 25;
+
+/**
+ * The application's own command set this screen was written for (`APPLICATION_COMMAND_SET_VERSION`
+ * in the core): the settings, the programs of a person's, and what `describe` says of who asked.
+ */
+export const SUPPORTED_APPLICATION_COMMAND_SET_VERSION = 1;
 
 /** A revision: the SHA-256 of a saved text, as 64 lowercase hex digits. */
 export type Revision = string;
@@ -286,10 +292,13 @@ export interface ReadAcceptance {
 }
 
 /** Which door a command came in by (`Entrance` in the core). */
-export type Entrance = "desktop" | "browser" | "tool";
+export type Entrance = "desktop" | "browser";
 
 export interface Described {
+  /** The works' command set. */
   readonly command_set_version: number;
+  /** The application's own, beside it. */
+  readonly application_command_set_version: number;
   readonly commands: readonly string[];
   readonly root: string;
   /** Which entrance asked: what it may change depends on it. */
@@ -1662,20 +1671,25 @@ export function parseJudgment(value: unknown): Judgment {
 
 export function parseDescribed(value: unknown): Described {
   const r = record(value, "describe");
-  const version = r["command_set_version"];
-  if (typeof version !== "number") throw new ContractError("describe.command_set_version", "a number");
   return {
-    command_set_version: version,
+    command_set_version: versionOf(r, "command_set_version"),
     commands: list(r, "commands", "describe").map((c, i) => {
       if (typeof c !== "string") throw new ContractError(`describe.commands[${i}]`, "a string");
       return c;
     }),
     root: text(r, "root", "describe"),
-    entrance: oneOf(r, "entrance", "describe", ["desktop", "browser", "tool"] as const),
+    entrance: oneOf(r, "entrance", "describe", ["desktop", "browser"] as const),
     settings: flag(r, "settings", "describe"),
     writes_settings: flag(r, "writes_settings", "describe"),
     starts_programs: flag(r, "starts_programs", "describe"),
+    application_command_set_version: versionOf(r, "application_command_set_version"),
   };
+}
+
+function versionOf(value: Obj, key: string): number {
+  const field = value[key];
+  if (typeof field !== "number") throw new ContractError(`describe.${key}`, "a number");
+  return field;
 }
 
 function flag(value: Obj, key: string, where: string): boolean {

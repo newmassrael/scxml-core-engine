@@ -45,7 +45,10 @@ pub mod runner;
 pub mod server_status;
 
 pub use auth_policy::{Decision, Observed, Policy, Reason, Route, Status};
-pub use commands::{all_commands, call_in, Context, Entrance, SettingsPins, COMMANDS};
+pub use commands::{
+    all_commands, call_in, Context, Entrance, SettingsPins, APPLICATION_COMMAND_SET_VERSION,
+    COMMANDS,
+};
 pub use connection::{AdapterKind, AuthSource, Connection, Limits, PinnedRun};
 pub use connection_store::{
     default_settings_root, ConnectionListing, ConnectionStore, StoredConnection,

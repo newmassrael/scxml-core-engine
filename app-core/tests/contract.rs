@@ -27,6 +27,7 @@ use sce_app_core::codex_status::{self, CodexStatus, SourceAccount, SupportState}
 use sce_app_core::server_status::{Reach, ServerState, ServerStatus};
 use sce_app_core::{
     all_commands, call_in, AuthSource, ConnectionStore, Context, Entrance, Policy, Route,
+    APPLICATION_COMMAND_SET_VERSION,
 };
 use sce_works::{CommandError, FixedClock, NoRenderer, Product, WorkStore, COMMAND_SET_VERSION};
 use serde_json::{json, Map, Value};
@@ -54,7 +55,7 @@ fn name_the_unstable(value: &mut Value, from: &str, to: &str) {
     }
 }
 
-/// The command `name`, asked of the application by a program with no settings folder.
+/// The command `name`, asked of the application by its browser shell with no settings folder.
 fn call(
     store: &WorkStore<FixedClock>,
     renderer: &dyn Product,
@@ -63,7 +64,7 @@ fn call(
 ) -> Result<Value, CommandError> {
     let policy = Policy::shipped();
     call_in(
-        &Context::new(store, renderer, &policy, Entrance::Tool),
+        &Context::new(store, renderer, &policy, Entrance::Browser),
         name,
         args,
     )
@@ -978,7 +979,11 @@ fn replies() -> Value {
     );
     refusals.insert(
         "not-allowed-to-find-clients".into(),
-        refuse(&entrance(Entrance::Tool, true), "find_clients", json!({})),
+        refuse(
+            &entrance(Entrance::Browser, true),
+            "find_clients",
+            json!({}),
+        ),
     );
     // What a screen is told of Claude Code. A program that is not there is asked for real; the
     // shapes a client that is there gives are the core's own types, so that the file does not
@@ -1242,7 +1247,7 @@ fn replies() -> Value {
     refusals.insert(
         "not-allowed-to-read-server-status".into(),
         refuse(
-            &entrance(Entrance::Tool, true),
+            &entrance(Entrance::Browser, true),
             "read_server_status",
             json!({ "server_url": "http://127.0.0.1:11434/v1" }),
         ),
@@ -1524,6 +1529,7 @@ fn replies() -> Value {
     let mut document = json!({
         "about": "Every reply of the command layer, produced by tests/contract.rs and read by the screen's tests.",
         "command_set_version": COMMAND_SET_VERSION,
+        "application_command_set_version": APPLICATION_COMMAND_SET_VERSION,
         "answers": answers,
         "refusals": refusals,
     });

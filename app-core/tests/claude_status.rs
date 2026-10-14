@@ -286,11 +286,9 @@ fn a_client_that_does_not_answer_json_is_not_a_login() {
 fn what_starts_a_program_is_only_the_desktops() {
     let fake = Fake::new("claude-status-entrances", SUBSCRIPTION, 0);
 
-    for entrance in [Entrance::Browser, Entrance::Tool] {
-        let refused = ask(entrance, Some(&fake.binary), &Policy::shipped()).unwrap_err();
-        assert!(refused.starts_with("not-allowed-here:"), "{refused}");
-    }
-    // And the client was not started for them.
+    let refused = ask(Entrance::Browser, Some(&fake.binary), &Policy::shipped()).unwrap_err();
+    assert!(refused.starts_with("not-allowed-here:"), "{refused}");
+    // And the client was not started for it.
     assert!(!fake.record.join("argv").exists());
 }
 
@@ -305,5 +303,4 @@ fn the_entrance_says_whether_it_may_start_a_program() {
 
     assert_eq!(said(Entrance::Desktop), json!(true));
     assert_eq!(said(Entrance::Browser), json!(false));
-    assert_eq!(said(Entrance::Tool), json!(false));
 }

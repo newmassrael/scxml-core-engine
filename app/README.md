@@ -564,11 +564,14 @@ of a work's text does.
 
 `list_connections`, `read_connection` and `read_auth_policy` read; `save_connection`,
 `delete_connection` and `set_default_connection` change. **Only the desktop entrance changes
-settings**: the browser shell is a development tool a token reaches over a network, and
-`sce-work` is what an AI reaches the works through, and an AI must not be able to change which AI
-it runs on. They answer `not-allowed-here`, and an entrance with no settings folder answers
-`no-settings`. `describe` says which entrance asked and whether it may change them, and whether
-it may start a program (`starts_programs`).
+settings**: the browser shell is a development tool a token reaches over a network. They answer
+`not-allowed-here`, and an entrance with no settings folder answers `no-settings`. `sce-work`,
+which an AI reaches the works through, has none of these commands at all (an AI must not be able
+to change which AI it runs on): they are the application's, and the works answer
+`unknown-command`. `describe` says which entrance asked and whether it may change them, and whether
+it may start a program (`starts_programs`), and gives two versions: the works' command set
+(`command_set_version`) and the application's own beside it (`application_command_set_version`).
+The screen refuses a core whose either one is not the one it was written for.
 
 **A connection names a program only among the ones the application found.** A connection names
 a program the application runs, so a command that took any path would be a way to make it run

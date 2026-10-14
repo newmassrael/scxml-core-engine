@@ -236,18 +236,12 @@ fn the_command_answers_with_the_server_and_what_it_listed() {
 
 #[test]
 fn only_the_desktop_window_may_call_an_address() {
-    let tool = ask(
-        Entrance::Tool,
-        json!({ "server_url": "http://127.0.0.1:1/v1" }),
-    )
-    .unwrap_err();
     let browser = ask(
         Entrance::Browser,
         json!({ "server_url": "http://127.0.0.1:1/v1" }),
     )
     .unwrap_err();
 
-    assert_eq!(tool.kind, "not-allowed-here");
     assert_eq!(browser.kind, "not-allowed-here");
 }
 

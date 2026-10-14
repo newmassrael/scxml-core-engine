@@ -13,7 +13,8 @@
 mod common;
 
 use sce_app_core::{
-    call_in, Connection, ConnectionStore, Context, Entrance, Policy, Route, COMMANDS,
+    call_in, Connection, ConnectionStore, Context, Entrance, Policy, Route,
+    APPLICATION_COMMAND_SET_VERSION, COMMANDS,
 };
 use sce_works::{CommandError, WorkStore, COMMAND_SET_VERSION};
 use serde_json::{json, Value};
@@ -80,28 +81,23 @@ fn describe_says_which_entrance_it_is_and_what_it_may_do() {
 
     let desktop = rig.desktop("describe", json!({}));
     let browser = rig.ask(Entrance::Browser, "describe", json!({})).unwrap();
-    let tool = rig.bare(Entrance::Tool, "describe").unwrap();
 
+    // The works' version and the application's, each where it is kept.
     assert_eq!(desktop["command_set_version"], json!(COMMAND_SET_VERSION));
     assert_eq!(
-        [&desktop, &browser, &tool].map(|d| d["entrance"].clone()),
-        [json!("desktop"), json!("browser"), json!("tool")]
+        desktop["application_command_set_version"],
+        json!(APPLICATION_COMMAND_SET_VERSION)
     );
     assert_eq!(
-        [&desktop, &browser, &tool].map(|d| (d["settings"].clone(), d["writes_settings"].clone())),
-        [
-            (json!(true), json!(true)),
-            (json!(true), json!(false)),
-            (json!(false), json!(false))
-        ]
+        [&desktop, &browser].map(|d| d["entrance"].clone()),
+        [json!("desktop"), json!("browser")]
+    );
+    assert_eq!(
+        [&desktop, &browser].map(|d| (d["settings"].clone(), d["writes_settings"].clone())),
+        [(json!(true), json!(true)), (json!(true), json!(false))]
     );
     // The window of an application that found no settings folder cannot change any.
-    let bare = call_in(
-        &Context::new(&rig.works, &FakeRenderer, &rig.policy, Entrance::Desktop),
-        "describe",
-        json!({}),
-    )
-    .unwrap();
+    let bare = rig.bare(Entrance::Desktop, "describe").unwrap();
     assert_eq!(
         (bare["settings"].clone(), bare["writes_settings"].clone()),
         (json!(false), json!(false))
@@ -116,6 +112,30 @@ fn describe_says_which_entrance_it_is_and_what_it_may_do() {
     ] {
         assert!(COMMANDS.contains(&name), "{name} is a command");
     }
+}
+
+#[test]
+fn the_works_describe_their_own_commands_and_not_who_asked() {
+    // `sce-work` reaches the works with no application in front of them: the same version of
+    // the same commands, none of the application's, and nothing of an entrance it does not have.
+    let rig = Rig::new("cc-works-describe");
+
+    let works = sce_works::call(&rig.works, &FakeRenderer, "describe", json!({})).unwrap();
+
+    assert_eq!(works["command_set_version"], json!(COMMAND_SET_VERSION));
+    for absent in [
+        "application_command_set_version",
+        "entrance",
+        "settings",
+        "writes_settings",
+        "starts_programs",
+    ] {
+        assert!(works.get(absent).is_none(), "{absent}: {works}");
+    }
+    assert_eq!(works["commands"], json!(sce_works::COMMANDS));
+    let refused =
+        sce_works::call(&rig.works, &FakeRenderer, "list_connections", json!({})).unwrap_err();
+    assert_eq!(refused.kind, "unknown-command");
 }
 
 #[test]
@@ -212,15 +232,13 @@ fn only_the_desktop_changes_settings_and_the_others_read_them() {
         ),
     ];
 
-    for entrance in [Entrance::Browser, Entrance::Tool] {
-        for (name, args) in &write_calls {
-            let refused = rig.ask(entrance, name, args.clone()).unwrap_err();
-            assert_eq!(refused.kind, "not-allowed-here", "{name} from {entrance:?}");
-        }
-        // Whoever has a settings folder may read it; only changing it is the desktop's.
-        let listed = rig.ask(entrance, "list_connections", json!({}));
-        assert!(listed.is_ok(), "{entrance:?} reads settings: {listed:?}");
+    for (name, args) in &write_calls {
+        let refused = rig.ask(Entrance::Browser, name, args.clone()).unwrap_err();
+        assert_eq!(refused.kind, "not-allowed-here", "{name}");
     }
+    // Whoever has a settings folder may read it; only changing it is the desktop's.
+    let listed = rig.ask(Entrance::Browser, "list_connections", json!({}));
+    assert!(listed.is_ok(), "the browser reads settings: {listed:?}");
 
     let listed = rig.desktop("list_connections", json!({}));
     assert_eq!(listed["connections"].as_array().unwrap().len(), 1);
@@ -231,7 +249,7 @@ fn only_the_desktop_changes_settings_and_the_others_read_them() {
 fn an_entrance_with_no_settings_folder_says_so() {
     let rig = Rig::new("cc-no-settings");
 
-    let refused = rig.bare(Entrance::Tool, "list_connections").unwrap_err();
+    let refused = rig.bare(Entrance::Browser, "list_connections").unwrap_err();
 
     assert_eq!(refused.kind, "no-settings");
 }

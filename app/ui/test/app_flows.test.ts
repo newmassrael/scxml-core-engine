@@ -17,7 +17,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { App } from "../src/app";
-import { SUPPORTED_COMMAND_SET_VERSION } from "../src/contract";
+import { SUPPORTED_APPLICATION_COMMAND_SET_VERSION, SUPPORTED_COMMAND_SET_VERSION } from "../src/contract";
 import { CommandFailure, UNAUTHORIZED, type Args, type Transport } from "../src/ipc";
 import type { Ticker } from "../src/watch";
 
@@ -307,10 +307,16 @@ class FakeCore implements Transport {
   }
 
   private commandSet: number = SUPPORTED_COMMAND_SET_VERSION;
+  private applicationSet: number = SUPPORTED_APPLICATION_COMMAND_SET_VERSION;
 
   /** The command set this core says it speaks: another than the screen's, to see the screen refuse it. */
   describeAs(version: number): void {
     this.commandSet = version;
+  }
+
+  /** The same, of the application's own command set beside the works'. */
+  describeApplicationAs(version: number): void {
+    this.applicationSet = version;
   }
 
   /** The same list kept again for another text: the revision is the same, and so is what SCE says of it. */
@@ -447,6 +453,7 @@ class FakeCore implements Transport {
       case "describe":
         return {
           command_set_version: this.commandSet,
+          application_command_set_version: this.applicationSet,
           commands: [],
           root: "/fake/works",
           entrance: "desktop",
@@ -2893,6 +2900,26 @@ describe("a work that moves under the screen", () => {
     expect(root.textContent).toContain(String(SUPPORTED_COMMAND_SET_VERSION));
     expect(stale.callsOf("list_works")).toHaveLength(0);
     expect(stale.callsOf("read_judgment")).toHaveLength(0);
+  });
+
+  it("refuses an application of another command-set version though its works are the screen's", async () => {
+    // The works' version and the application's move apart: a core whose works speak the screen's
+    // set and whose own commands do not is refused the same way, by both numbers.
+    const stale = new FakeCore();
+    stale.addWork("alpha", "Alpha", ["alpha one"]);
+    const older = SUPPORTED_APPLICATION_COMMAND_SET_VERSION + 1;
+    stale.describeApplicationAs(older);
+    document.body.innerHTML = '<div id="app"></div>';
+    root = document.getElementById("app") as HTMLElement;
+    app = new App(root, { transport: stale, storage: null, browserLanguage: "en", ticker });
+    await app.start();
+    await settle();
+
+    expect(root.textContent).toContain(`${SUPPORTED_COMMAND_SET_VERSION}.${older}`);
+    expect(root.textContent).toContain(
+      `${SUPPORTED_COMMAND_SET_VERSION}.${SUPPORTED_APPLICATION_COMMAND_SET_VERSION}`,
+    );
+    expect(stale.callsOf("list_works")).toHaveLength(0);
   });
 
   it("keeps the design and the verdict it shows together while the next read of the work is slow", async () => {

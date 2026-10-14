@@ -13,7 +13,11 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { AiSettings, type AiSettingsHost } from "../src/ai_settings";
 import { CLAUDE_CONNECTION_ID, CODEX_CONNECTION_ID, LOCAL_CONNECTION_ID } from "../src/ai_settings_model";
 import type { Api } from "../src/api";
-import { NO_LIMITS, SUPPORTED_COMMAND_SET_VERSION } from "../src/contract";
+import {
+  NO_LIMITS,
+  SUPPORTED_APPLICATION_COMMAND_SET_VERSION,
+  SUPPORTED_COMMAND_SET_VERSION,
+} from "../src/contract";
 import type {
   Candidate,
   ClaudeAccount,
@@ -40,6 +44,7 @@ const OTHER_PROGRAM = "/usr/local/bin/claude";
 
 const DESKTOP: Described = {
   command_set_version: SUPPORTED_COMMAND_SET_VERSION,
+  application_command_set_version: SUPPORTED_APPLICATION_COMMAND_SET_VERSION,
   commands: [],
   root: "/works",
   entrance: "desktop",
