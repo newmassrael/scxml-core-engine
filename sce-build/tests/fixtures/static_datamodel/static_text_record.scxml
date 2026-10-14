@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "State an algorithm
+  takes and gives back" and "A record's string field"): a statechart that keeps
+  titled places hands the standard algorithms over `sce:std/text/text_slot.scxml`
+  the records and the list of records it holds, whose `text` is bounded at 32 UTF-8
+  bytes, and takes back what they return, text included, on every backend.
+
+  A place that arrives is taken into `incoming` first, which is the assignment that
+  holds the text it carries to the bound: `_event.data` is never handed to an
+  algorithm itself, because no bound has judged its text (SCE_FORGE.md §4.12).
+  `Latest` settles `held` on the later of two versions with its text, `Holds` asks
+  whether the list already has the place's slot and text, and `Retitled` gives an
+  untitled place the title "untitled". A text one byte past the bound fails the
+  assignment as any other does: nothing is written, error.execution is raised
+  (`refusals` counts it) and the block ends (§scxml-4.9), so the algorithms are
+  not called and the state is as it was.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="open" datamodel="sce-static" name="static_text_record">
+  <sce:import kind="event-schema" src="sce:std/text/text_slot.scxml" as="Slot"/>
+  <sce:import kind="algorithm" src="sce:std/text/text_slot_latest.scxml" as="Latest"/>
+  <sce:import kind="algorithm" src="sce:std/text/text_slot_retitled.scxml" as="Retitled"/>
+  <sce:import kind="algorithm" src="sce:std/text/text_slot_holds.scxml" as="Holds"/>
+  <datamodel>
+    <data id="slots" sce:type="list&lt;record:Slot&gt;" sce:capacity="16" sce:direction="out"/>
+    <data id="held" sce:type="record:Slot" sce:direction="out">
+      <sce:set name="slot" expr="1"/>
+      <sce:set name="version" expr="0"/>
+      <sce:set name="text" expr="'start'"/>
+    </data>
+    <data id="incoming" sce:type="record:Slot" sce:direction="out">
+      <sce:set name="slot" expr="1"/>
+      <sce:set name="version" expr="0"/>
+      <sce:set name="text" expr="''"/>
+    </data>
+    <data id="known" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="open">
+    <transition event="text.slot" type="internal">
+      <assign location="incoming" expr="_event.data"/>
+      <assign location="held" expr="Latest(held, incoming)"/>
+      <if cond="Holds(slots, incoming)">
+        <assign location="known" expr="known + 1"/>
+      </if>
+      <sce:append target="slots" expr="incoming"/>
+    </transition>
+    <transition event="retitle" type="internal">
+      <assign location="slots" expr="Retitled(slots)"/>
+    </transition>
+    <transition event="error.execution" type="internal">
+      <assign location="refusals" expr="refusals + 1"/>
+    </transition>
+  </state>
+</scxml>

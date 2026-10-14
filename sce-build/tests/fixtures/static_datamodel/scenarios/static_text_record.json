@@ -1,0 +1,122 @@
+{
+  "machine": "static_text_record",
+  "about": "A statechart that keeps titled places in a record and a list of records, whose text is bounded at 32 UTF-8 bytes, hands them to the standard algorithms over sce:std/text/text_slot and takes back what they return, text included. A text that fits the bound exactly is handed over and back; one byte past it is refused where the payload is taken, with error.execution (`refusals` counts it), and leaves the state as it was; the bound counts bytes, not characters (e-acute 2, euro sign 3). Expected values are derived from the algorithms' documents and the byte counts, not observed from a backend.",
+  "steps": [
+    { "note": "nothing yet: the record is built from its <sce:set>s, the list is empty",
+      "expect": { "state": "open", "variables": {
+        "slots": [], "held": { "slot": 1, "version": "0", "text": "start" },
+        "incoming": { "slot": 1, "version": "0", "text": "" }, "known": 0, "refusals": 0 } } },
+
+    { "note": "a place that fits: taken, Latest moves held to its version and text, Holds finds nothing, the list keeps it",
+      "event": "text.slot", "data": { "slot": 1, "version": "5", "text": "draft" },
+      "expect": { "variables": {
+        "slots": [ { "slot": 1, "version": "5", "text": "draft" } ],
+        "held": { "slot": 1, "version": "5", "text": "draft" },
+        "incoming": { "slot": 1, "version": "5", "text": "draft" }, "known": 0, "refusals": 0 } } },
+
+    { "note": "a later version of the place: held follows it",
+      "event": "text.slot", "data": { "slot": 1, "version": "9", "text": "final" },
+      "expect": { "variables": {
+        "slots": [ { "slot": 1, "version": "5", "text": "draft" }, { "slot": 1, "version": "9", "text": "final" } ],
+        "held": { "slot": 1, "version": "9", "text": "final" },
+        "incoming": { "slot": 1, "version": "9", "text": "final" }, "known": 0, "refusals": 0 } } },
+
+    { "note": "an earlier version with a text the list already holds under that slot: held stays, Holds says so and `known` counts it",
+      "event": "text.slot", "data": { "slot": 1, "version": "3", "text": "draft" },
+      "expect": { "variables": {
+        "slots": [ { "slot": 1, "version": "5", "text": "draft" }, { "slot": 1, "version": "9", "text": "final" },
+                   { "slot": 1, "version": "3", "text": "draft" } ],
+        "held": { "slot": 1, "version": "9", "text": "final" },
+        "incoming": { "slot": 1, "version": "3", "text": "draft" }, "known": 1, "refusals": 0 } } },
+
+    { "note": "a text of exactly 32 bytes fits the bound and travels through Latest and into the list",
+      "event": "text.slot", "data": { "slot": 2, "version": "10", "text": "abcdefghijklmnopqrstuvwxyz012345" },
+      "expect": { "variables": {
+        "slots": [ { "slot": 1, "version": "5", "text": "draft" }, { "slot": 1, "version": "9", "text": "final" },
+                   { "slot": 1, "version": "3", "text": "draft" },
+                   { "slot": 2, "version": "10", "text": "abcdefghijklmnopqrstuvwxyz012345" } ],
+        "held": { "slot": 1, "version": "10", "text": "abcdefghijklmnopqrstuvwxyz012345" },
+        "incoming": { "slot": 2, "version": "10", "text": "abcdefghijklmnopqrstuvwxyz012345" },
+        "known": 1, "refusals": 0 } } },
+
+    { "note": "one byte past the bound: taking the payload fails, error.execution is raised, and neither the record, the list nor held changes",
+      "event": "text.slot", "data": { "slot": 2, "version": "11", "text": "abcdefghijklmnopqrstuvwxyz0123456" },
+      "expect": { "variables": {
+        "slots": [ { "slot": 1, "version": "5", "text": "draft" }, { "slot": 1, "version": "9", "text": "final" },
+                   { "slot": 1, "version": "3", "text": "draft" },
+                   { "slot": 2, "version": "10", "text": "abcdefghijklmnopqrstuvwxyz012345" } ],
+        "held": { "slot": 1, "version": "10", "text": "abcdefghijklmnopqrstuvwxyz012345" },
+        "incoming": { "slot": 2, "version": "10", "text": "abcdefghijklmnopqrstuvwxyz012345" },
+        "known": 1, "refusals": 1 } } },
+
+    { "note": "32 bytes in 13 characters fit: the bound counts bytes",
+      "event": "text.slot", "data": { "slot": 3, "version": "11", "text": "é€é€é€é€é€é€é" },
+      "expect": { "variables": {
+        "slots": [ { "slot": 1, "version": "5", "text": "draft" }, { "slot": 1, "version": "9", "text": "final" },
+                   { "slot": 1, "version": "3", "text": "draft" },
+                   { "slot": 2, "version": "10", "text": "abcdefghijklmnopqrstuvwxyz012345" },
+                   { "slot": 3, "version": "11", "text": "é€é€é€é€é€é€é" } ],
+        "held": { "slot": 1, "version": "11", "text": "é€é€é€é€é€é€é" },
+        "incoming": { "slot": 3, "version": "11", "text": "é€é€é€é€é€é€é" },
+        "known": 1, "refusals": 1 } } },
+
+    { "note": "33 bytes in 14 characters do not fit, though a count of characters would admit them: the state is as it was",
+      "event": "text.slot", "data": { "slot": 3, "version": "12", "text": "é€é€é€é€é€é€éa" },
+      "expect": { "variables": {
+        "slots": [ { "slot": 1, "version": "5", "text": "draft" }, { "slot": 1, "version": "9", "text": "final" },
+                   { "slot": 1, "version": "3", "text": "draft" },
+                   { "slot": 2, "version": "10", "text": "abcdefghijklmnopqrstuvwxyz012345" },
+                   { "slot": 3, "version": "11", "text": "é€é€é€é€é€é€é" } ],
+        "held": { "slot": 1, "version": "11", "text": "é€é€é€é€é€é€é" },
+        "incoming": { "slot": 3, "version": "11", "text": "é€é€é€é€é€é€é" },
+        "known": 1, "refusals": 2 } } },
+
+    { "note": "an empty text is a text: held takes it",
+      "event": "text.slot", "data": { "slot": 4, "version": "12", "text": "" },
+      "expect": { "variables": {
+        "slots": [ { "slot": 1, "version": "5", "text": "draft" }, { "slot": 1, "version": "9", "text": "final" },
+                   { "slot": 1, "version": "3", "text": "draft" },
+                   { "slot": 2, "version": "10", "text": "abcdefghijklmnopqrstuvwxyz012345" },
+                   { "slot": 3, "version": "11", "text": "é€é€é€é€é€é€é" },
+                   { "slot": 4, "version": "12", "text": "" } ],
+        "held": { "slot": 1, "version": "12", "text": "" },
+        "incoming": { "slot": 4, "version": "12", "text": "" }, "known": 1, "refusals": 2 } } },
+
+    { "note": "Retitled titles the place whose text is empty and carries every other place over, text and all",
+      "event": "retitle",
+      "expect": { "variables": {
+        "slots": [ { "slot": 1, "version": "5", "text": "draft" }, { "slot": 1, "version": "9", "text": "final" },
+                   { "slot": 1, "version": "3", "text": "draft" },
+                   { "slot": 2, "version": "10", "text": "abcdefghijklmnopqrstuvwxyz012345" },
+                   { "slot": 3, "version": "11", "text": "é€é€é€é€é€é€é" },
+                   { "slot": 4, "version": "12", "text": "untitled" } ],
+        "held": { "slot": 1, "version": "12", "text": "" }, "known": 1, "refusals": 2 } } },
+
+    { "note": "Holds compares the 32 bytes of the multi-byte text with the list's, byte for byte, and finds it",
+      "event": "text.slot", "data": { "slot": 3, "version": "13", "text": "é€é€é€é€é€é€é" },
+      "expect": { "variables": {
+        "slots": [ { "slot": 1, "version": "5", "text": "draft" }, { "slot": 1, "version": "9", "text": "final" },
+                   { "slot": 1, "version": "3", "text": "draft" },
+                   { "slot": 2, "version": "10", "text": "abcdefghijklmnopqrstuvwxyz012345" },
+                   { "slot": 3, "version": "11", "text": "é€é€é€é€é€é€é" },
+                   { "slot": 4, "version": "12", "text": "untitled" },
+                   { "slot": 3, "version": "13", "text": "é€é€é€é€é€é€é" } ],
+        "held": { "slot": 1, "version": "13", "text": "é€é€é€é€é€é€é" },
+        "incoming": { "slot": 3, "version": "13", "text": "é€é€é€é€é€é€é" },
+        "known": 2, "refusals": 2 } } },
+
+    { "note": "a place the algorithm retitled is a place the machine holds: Holds finds its new title",
+      "event": "text.slot", "data": { "slot": 4, "version": "14", "text": "untitled" },
+      "expect": { "variables": {
+        "slots": [ { "slot": 1, "version": "5", "text": "draft" }, { "slot": 1, "version": "9", "text": "final" },
+                   { "slot": 1, "version": "3", "text": "draft" },
+                   { "slot": 2, "version": "10", "text": "abcdefghijklmnopqrstuvwxyz012345" },
+                   { "slot": 3, "version": "11", "text": "é€é€é€é€é€é€é" },
+                   { "slot": 4, "version": "12", "text": "untitled" },
+                   { "slot": 3, "version": "13", "text": "é€é€é€é€é€é€é" },
+                   { "slot": 4, "version": "14", "text": "untitled" } ],
+        "held": { "slot": 1, "version": "14", "text": "untitled" },
+        "incoming": { "slot": 4, "version": "14", "text": "untitled" },
+        "known": 3, "refusals": 2 } } }
+  ]
+}
