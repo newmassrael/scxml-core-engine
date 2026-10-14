@@ -552,6 +552,13 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheInterpreterDoesWha
             << copy << " was not replayed: a copy that merges with the standard rules has no lowering for the "
             << "Interpreter";
     }
+    // ... and the copies of the list of who is online, whose entries are let go by the
+    // machine's own delayed send, which the Interpreter waits out on its wall clock.
+    for (const char *copy : {"presence_peer_alice", "presence_peer_bob", "presence_peer_server"}) {
+        EXPECT_NE(std::find(replayed.begin(), replayed.end(), copy), replayed.end())
+            << copy << " was not replayed: a copy whose entries expire by a delayed send has no lowering for the "
+            << "Interpreter";
+    }
     for (const auto &name : notYetLowered) {
         RecordProperty("not_yet_lowered_" + name, "refused by sce-codegen lower");
     }

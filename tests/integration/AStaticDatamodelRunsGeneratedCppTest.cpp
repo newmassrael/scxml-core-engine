@@ -26,6 +26,7 @@
 //     argument that overflows stops the call and raises `error.execution`.
 
 #include "common/SceClock.h"
+#include "presence_peer_sm.h"
 #include "sheet_peer_sm.h"
 #include "static_block_ends_list_sm.h"
 #include "static_block_ends_sm.h"
@@ -464,6 +465,14 @@ public:
     }
 };
 
+/// The policy that holds a machine's variables. A published variable the machine
+/// already has a member by, such as `clock`, which is the engine's own, is given no
+/// reader (`reader_names::reader_is_taken`), so a host that must see it reads the field
+/// off the policy that holds it.
+template <typename Machine> auto &policyOf(const Machine &machine) {
+    return const_cast<Machine &>(machine).getPolicy();
+}
+
 /// A `record:Hlc` value (sce:std/merge/hlc_timestamp) as a scenario states it.
 template <typename Hlc> json hlcJson(const Hlc &stamp) {
     return json{{"wallTime", wideText(stamp.wallTime)}, {"counter", stamp.counter}, {"nodeId", wideText(stamp.nodeId)}};
@@ -519,6 +528,40 @@ template <typename Nodes> json rgaNodesJson(const Nodes &nodes) {
 template <typename Gones> json rgaGonesJson(const Gones &gones) {
     return listedJson(gones,
                       [](const auto &gone) { return json{{"key", wideText(gone.key)}, {"by", wideText(gone.by)}}; });
+}
+
+/// A list of `record:Entry` values (sce:std/merge/orset_entry), in order: an element
+/// of an observed-remove set and the dot that adds or names it.
+template <typename Entries> json orsetEntriesJson(const Entries &entries) {
+    return listedJson(entries, [](const auto &entry) {
+        return json{{"element", wideText(entry.element)},
+                    {"wallTime", wideText(entry.wallTime)},
+                    {"counter", entry.counter},
+                    {"nodeId", wideText(entry.nodeId)}};
+    });
+}
+
+/// A list of `record:Value` (todo_value.scxml), in order: a value a field of a to-do
+/// holds, with the stamp of the write that gave it.
+template <typename Values> json todoValuesJson(const Values &values) {
+    return listedJson(values, [](const auto &held) {
+        return json{{"id", wideText(held.id)},
+                    {"field", wideText(held.field)},
+                    {"value", wideText(held.value)},
+                    {"text", held.text},
+                    {"wallTime", wideText(held.wallTime)},
+                    {"counter", held.counter},
+                    {"nodeId", wideText(held.nodeId)}};
+    });
+}
+
+/// A list of `record:Seen` (presence_seen.scxml), in order: a client an entry of the
+/// list of who is online is for, the latest heartbeat stamp the copy holds for it, and
+/// the renewal of the entry that stamp belongs to.
+template <typename Entries> json presenceEntriesJson(const Entries &entries) {
+    return listedJson(entries, [](const auto &entry) {
+        return json{{"client", entry.client}, {"last", wideText(entry.last)}, {"gen", entry.gen}};
+    });
 }
 
 }  // namespace
@@ -1454,10 +1497,10 @@ Driver<ClockPeeking<G::todo_peer::todo_peer>> todoPeerDriver() {
 }
 
 // A copy of a shared to-do list merges the writes it is given with the standard
-// merge rules, holds a title beside the cell that decides which write of it
-// stays, and sends a person's change to the hub. The scenario is what one copy
-// was given through a run of three, and states what it sent its peers at each
-// step: the copy of a person who edits...
+// merge rules, keeping every value of a field that nobody has written over as an
+// observed-remove set does, and sends a person's change to the hub. The scenario
+// is what one copy was given through a run of three, and states what it sent its
+// peers at each step: the copy of a person who edits...
 TEST(AStaticDatamodelRunsGeneratedCppTest, ACopyOfASharedListHoldsAndSendsWhatAliceDid) {
     auto driver = todoPeerDriver();
     replay("todo_peer_alice", driver);
@@ -1514,6 +1557,44 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, ACopyOfASharedSheetHoldsAndSendsWhatB
 TEST(AStaticDatamodelRunsGeneratedCppTest, TheHubOfASharedSheetPassesEachWriteOn) {
     auto driver = sheetPeerDriver();
     replay("sheet_peer_server", driver);
+}
+
+/// One copy of the list of who is online as a host reads it. One machine, three
+/// scenarios: a client's copy twice and the hub's.
+Driver<G::presence_peer::presence_peer> presencePeerDriver() {
+    using Machine = G::presence_peer::presence_peer;
+    return Driver<Machine>({
+        {"node", [](const Machine &m) { return json(m.node()); }},
+        {"hub", [](const Machine &m) { return json(m.hub()); }},
+        {"ttl", [](const Machine &m) { return json(m.ttl()); }},
+        {"lease", [](const Machine &m) { return json(m.lease()); }},
+        {"online", [](const Machine &m) { return presenceEntriesJson(m.online()); }},
+        {"serial", [](const Machine &m) { return json(m.serial()); }},
+        {"lost", [](const Machine &m) { return json(m.lost()); }},
+        {"refusals", [](const Machine &m) { return json(m.refusals()); }},
+    });
+}
+
+// A copy of the list of who is online keeps each entry for a lease, let go by the
+// machine's own delayed send unless a later heartbeat renewed it, and the hub tells
+// every copy what it was told. The machine runs on a manual clock which the
+// scenario's `advance_ms` steps move on, and the scenario states what the copy sent
+// its peers at each step: a client's copy...
+TEST(AStaticDatamodelRunsGeneratedCppTest, ACopyOfWhoIsOnlineHoldsAndSendsWhatAliceDid) {
+    auto driver = presencePeerDriver();
+    replay("presence_peer_alice", driver);
+}
+
+// ...the copy of the other client...
+TEST(AStaticDatamodelRunsGeneratedCppTest, ACopyOfWhoIsOnlineHoldsAndSendsWhatBobDid) {
+    auto driver = presencePeerDriver();
+    replay("presence_peer_bob", driver);
+}
+
+// ...and the hub, which lets a client go when its heartbeats stop and tells every copy.
+TEST(AStaticDatamodelRunsGeneratedCppTest, TheHubOfWhoIsOnlineLetsGoWhatGoesSilent) {
+    auto driver = presencePeerDriver();
+    replay("presence_peer_server", driver);
 }
 
 // A list of records is filled by name from a record variable or a loop's item,
