@@ -140,6 +140,10 @@ class APictureBecomesAMarkedGuess(unittest.TestCase):
         for name in ("interface-model.yaml", "conventions.yaml",
                      "examples.yaml"):
             shutil.copy(CROSSING / name, tmp / name)
+        # The document names its outputs' values through enumerations of its own, imported
+        # from beside it: a copy of the document needs them beside it too.
+        for values in CROSSING.glob("*_values.scxml"):
+            shutil.copy(values, tmp / values.name)
 
         document = (CROSSING / "controller_resolved.scxml").read_text(
             encoding="utf-8")
@@ -147,14 +151,17 @@ class APictureBecomesAMarkedGuess(unittest.TestCase):
                 f'          sce:assumed-reason="{THE_AUTHORS_REASON}"\n'
                 f'          ') if marked else ""
         document = document.replace(
-            '<data id="trainSignal" sce:type="int32" sce:direction="out"\n'
+            '<data id="trainSignal" sce:type="enum:TrainSignal" sce:direction="out"\n'
             '          expr=',
-            f'<data id="trainSignal" sce:type="int32" sce:direction="out"\n'
+            f'<data id="trainSignal" sce:type="enum:TrainSignal" sce:direction="out"\n'
             f'          {mark}expr=')
         # The drawing showed an order; it did not show that the mains matter.
         document = document.replace(
-            'expr="!mainsOk ? 0 : (barrierDown ? 2 : (approaching ? 1 : 2))"',
-            'expr="barrierDown ? 2 : (approaching ? 1 : 2)"')
+            'expr="!mainsOk ? TrainSignal.DANGER\n'
+            '        : (barrierDown ? TrainSignal.CLEAR\n'
+            '          : (approaching ? TrainSignal.CAUTION : TrainSignal.CLEAR))"',
+            'expr="barrierDown ? TrainSignal.CLEAR\n'
+            '        : (approaching ? TrainSignal.CAUTION : TrainSignal.CLEAR)"')
         (tmp / "drawn.scxml").write_text(document, encoding="utf-8")
 
         binding = yaml.safe_load(CLOSED_BINDING.read_text(encoding="utf-8"))

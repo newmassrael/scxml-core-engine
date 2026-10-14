@@ -51,16 +51,17 @@ CONSTANT = """<?xml version="1.0" encoding="UTF-8"?>
        version="1.0" sce:kind="transform" name="constant">
   <datamodel>
     <data id="count" sce:type="int32" sce:direction="in"/>
-    <data id="lamp" sce:type="int32" sce:direction="out" expr="2"/>
+    <data id="lamp" sce:type="string" sce:direction="out" expr="'on'"/>
   </datamodel>
 </scxml>
 """
 
+# The lamp is one of a closed set of symbols, so the document names it and the map lands the name.
 CONSTANT_BINDING = {
     "version": 1, "document": "constant.scxml",
     "inputs": {"count": {"address": "Plant.Input.Count", "when_absent": 0}},
     "outputs": {"lamp": {"address": "Plant.Out.Lamp", "field": "Stat",
-                         "map": {2: "ON"}}},
+                         "map": {"on": "ON"}}},
 }
 
 HOST = {"activation": "on-change", "writes": "every-round"}
@@ -108,7 +109,7 @@ class ARoundIsWhatTheHostRuns(Fixture):
         used to fail at a pseudo-position no guess stands behind, and the
         guess came back as one nothing compared."""
         guessed = CONSTANT.replace(
-            'expr="2"', 'expr="2" sce:assumed="lamp-constant" '
+            '''expr="'on'"''', '''expr="'on'" sce:assumed="lamp-constant" '''
                         'sce:assumed-reason="the text never decides the lamp"')
         result = self.run_cases([
             case("counted", "Plant.Input.Count", 3),
@@ -161,18 +162,20 @@ EVENT_DOCUMENT = """<?xml version="1.0" encoding="UTF-8"?>
        version="1.0" sce:kind="transform" name="fixture">
   <datamodel>
     <data id="count" sce:type="int32" sce:direction="in"/>
-    <data id="event" sce:type="int32" sce:direction="out"
-          expr="count &gt; 10 ? 2 : (count &gt; 0 ? 1 : 0)"/>
+    <data id="event" sce:type="string" sce:direction="out"
+          expr="count &gt; 10 ? 'many' : (count &gt; 0 ? 'few' : 'none')"/>
   </datamodel>
 </scxml>
 """
 
 
+# Three values of the document's own, two of which land the same symbol.
 def event_binding(when):
     return {"version": 1, "document": "fixture.scxml",
             "inputs": {"count": {"address": "Plant.Input.Count", "when_absent": 0}},
             "outputs": {"event": {"address": "Plant.Out.Event", "field": "Stat",
-                                  "map": {0: "OFF", 1: "ON", 2: "ON"}, "when": when}}}
+                                  "map": {"none": "OFF", "few": "ON", "many": "ON"},
+                                  "when": when}}}
 
 
 class ARecordIsWrittenWhole(Fixture):
@@ -182,26 +185,27 @@ class ARecordIsWrittenWhole(Fixture):
         return [str(f) for f in self.bind(event_binding(when))]
 
     def test_two_ways_of_showing_that_write_different_fields_are_refused(self):
-        """⚠ The discriminator. Shown as 1 after 2, the event would carry 2's
-        duration: 1 does not write one."""
-        found = self.found({1: {"ID": "A", "Count": 1}, 2: {"ID": "B", "Duration": 10}})
+        """⚠ The discriminator. Shown as `few` after `many`, the event would carry
+        `many`'s duration: `few` does not write one."""
+        found = self.found({"few": {"ID": "A", "Count": 1},
+                            "many": {"ID": "B", "Duration": 10}})
         said = [f for f in found if "write different fields" in f]
         self.assertEqual(1, len(said), found)
-        self.assertIn("1 leaves Duration", said[0])
-        self.assertIn("2 leaves Count", said[0])
+        self.assertIn("'few' leaves Duration", said[0])
+        self.assertIn("'many' leaves Count", said[0])
 
     def test_every_way_of_showing_writing_every_field_is_not_refused(self):
-        found = self.found({1: {"ID": "A", "Count": 1, "Duration": 0},
-                            2: {"ID": "B", "Count": 0, "Duration": 10}})
+        found = self.found({"few": {"ID": "A", "Count": 1, "Duration": 0},
+                            "many": {"ID": "B", "Count": 0, "Duration": 10}})
         self.assertFalse([f for f in found if "write different fields" in f], found)
 
     def test_going_off_is_not_compared_with_showing(self):
         """The identifier says what is turning off; the sound is not
         rewritten. That is a different value of the event's status, and not
         a second story about the same one."""
-        found = self.found({0: {"ID": "A"},
-                            1: {"ID": "A", "Count": 1, "Duration": 0},
-                            2: {"ID": "B", "Count": 0, "Duration": 10}})
+        found = self.found({"none": {"ID": "A"},
+                            "few": {"ID": "A", "Count": 1, "Duration": 0},
+                            "many": {"ID": "B", "Count": 0, "Duration": 10}})
         self.assertFalse([f for f in found if "write different fields" in f], found)
 
 
@@ -250,15 +254,17 @@ KEEPER = """<?xml version="1.0" encoding="UTF-8"?>
   <datamodel>
     <data id="a" sce:type="bool" sce:direction="in"/>
     <data id="b" sce:type="bool" sce:direction="in"/>
-    <data id="lamp" sce:type="int32" sce:direction="out" expr="a &amp;&amp; !b ? 2 : 9"/>
+    <data id="lamp" sce:type="string" sce:direction="out"
+          expr="a &amp;&amp; !b ? 'shown' : 'quiet'"/>
   </datamodel>
 </scxml>
 """
 
 
+# `quiet` is the value the map leaves out under `hold_last`: the slot keeps what it showed.
 def keeper_binding(kept):
-    lamp = ({"map": {2: "ON"}, "hold_last": True} if kept
-            else {"map": {2: "ON", 9: "OFF"}})
+    lamp = ({"map": {"shown": "ON"}, "hold_last": True} if kept
+            else {"map": {"shown": "ON", "quiet": "OFF"}})
     return {"version": 1, "document": "keeper.scxml", "activation": "on-change",
             "inputs": {"a": {"address": A, "equals": "ON"}, "b": {"address": B, "equals": "ON"}},
             "outputs": {"lamp": {"address": "Plant.Out.Lamp", "field": "Stat", **lamp}}}

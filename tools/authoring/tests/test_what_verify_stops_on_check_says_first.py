@@ -62,10 +62,23 @@ EXAMPLES = {
     ],
 }
 
-# The lamp as a truth value rather than a number.
-BOOL_OUT = DOCUMENT.replace(
-    'sce:type="int32" sce:direction="out" expr="mode ? 1 : 0"',
-    'sce:type="bool" sce:direction="out" expr="mode"')
+
+def swapped(text: str, old: str, new: str) -> str:
+    """`text` with `old` replaced by `new`, which it must contain.
+
+    ⚠ `str.replace` hands the text back unchanged when `old` is not in it, so a variant made
+    from the shared document went on being the shared document after that document changed:
+    the test built on it still passed, about a document nobody had meant."""
+    assert old in text, f"{old!r} is not in the document this variant is made from"
+    return text.replace(old, new)
+
+
+# How the shared document declares and computes the lamp, and its expression alone.
+LAMP = 'sce:type="string" sce:direction="out" expr="mode ? \'on\' : \'off\'"'
+LAMP_EXPR = 'expr="mode ? \'on\' : \'off\'"'
+
+# The lamp as a truth value rather than a name.
+BOOL_OUT = swapped(DOCUMENT, LAMP, 'sce:type="bool" sce:direction="out" expr="mode"')
 
 # A crossing signal that flashes only while a level it READS is above 3 --
 # the shape a statechart cannot be handed from a binding.
@@ -215,20 +228,19 @@ class ABooleanOutputOwesBothCases(Both):
     def test_hold_last_leaves_the_other_case_unwritten_on_purpose(self):
         self.assertEqual([], self.found(self.lamp({True: "ON"}, hold_last=True)))
 
-    def test_a_computed_number_output_is_not_judged_before_it_runs(self):
-        """The boundary. A COMPUTED number has no list of values to owe
-        entries for, so a map missing one is found by the case that produces
-        it. (This used `mode ? 1 : 0`, which since 2026-09-26 is read as the
-        two literals it can produce -- the next test.)"""
-        self.use(DOCUMENT.replace('expr="mode ? 1 : 0"', 'expr="mode ? 1 + 1 : 0"'))
-        self.assertEqual([], self.found(self.lamp({2: "ON"})))
+    def test_a_computed_output_is_not_judged_before_it_runs(self):
+        """The boundary. A COMPUTED value has no list of values to owe entries for, so a map
+        missing one is found by the case that produces it. The name is joined rather than
+        written whole, which is a computation and not a literal (`landing.expression_values`)."""
+        self.use(swapped(DOCUMENT, LAMP_EXPR, 'expr="\'o\' + (mode ? \'n\' : \'ff\')"'))
+        self.assertEqual([], self.found(self.lamp({"on": "ON"})))
 
-    def test_a_number_output_of_literals_owes_each_an_entry(self):
-        """`mode ? 1 : 0` can produce 1 and 0 and nothing else, so a map with
-        no entry for 0 is refused before any case runs."""
+    def test_an_output_of_literals_owes_each_an_entry(self):
+        """`mode ? 'on' : 'off'` can produce those two names and nothing else, so a map with
+        no entry for one is refused before any case runs."""
         self.use(DOCUMENT)
-        found = self.found(self.lamp({1: "ON"}))
-        self.assertTrue(any("no entry for 0" in f for f in found), found)
+        found = self.found(self.lamp({"on": "ON"}))
+        self.assertTrue(any("no entry for 'off'" in f for f in found), found)
 
 
 class ASendIsOwedAnEntry(Both):
@@ -267,11 +279,12 @@ class AnInputTheDocumentTakes(Both):
         self.assertSaidByBoth(binding, "the document declares no input 'ghost'")
 
     def clocked(self, activation):
-        document = DOCUMENT.replace(
+        document = swapped(swapped(
+            DOCUMENT,
             '<data id="mode" sce:type="bool" sce:direction="in"/>',
             '<data id="mode" sce:type="bool" sce:direction="in"/>'
-            '<data id="since" sce:type="int32" sce:direction="in"/>').replace(
-            'expr="mode ? 1 : 0"', 'expr="(since &gt;= 500 &amp;&amp; mode) ? 1 : 0"')
+            '<data id="since" sce:type="int32" sce:direction="in"/>'),
+            LAMP_EXPR, 'expr="(since &gt;= 500 &amp;&amp; mode) ? \'on\' : \'off\'"')
         self.use(document)
         binding = copy.deepcopy(BINDING)
         if activation:
@@ -295,17 +308,18 @@ class AnInputTheDocumentTakes(Both):
     def test_the_clock_and_the_variant_name_no_address(self):
         """Read off the case, as the schema says of both. `check` refused
         them as having "no address and no protocol" while `verify` ran them."""
-        # Both are read, without moving the lamp off `mode ? 1 : 0`: an input
+        # Both are read, without moving the lamp off what `mode` decides: an input
         # no expression reads is refused on its own account (since 2026-09-26),
         # which is not what this test is about.
-        document = DOCUMENT.replace(
+        document = swapped(swapped(
+            DOCUMENT,
             '<data id="mode" sce:type="bool" sce:direction="in"/>',
             '<data id="mode" sce:type="bool" sce:direction="in"/>'
             '<data id="since" sce:type="int32" sce:direction="in"/>'
-            '<data id="branch" sce:type="bool" sce:direction="in"/>').replace(
-            'expr="mode ? 1 : 0"',
-            'expr="(since &gt;= 0 &amp;&amp; (branch || !branch) &amp;&amp; mode) ? 1 : 0"')
-        self.assertIn("since &gt;= 0", document)
+            '<data id="branch" sce:type="bool" sce:direction="in"/>'),
+            LAMP_EXPR,
+            'expr="(since &gt;= 0 &amp;&amp; (branch || !branch) &amp;&amp; mode) '
+            '? \'on\' : \'off\'"')
         self.use(document)
         binding = copy.deepcopy(BINDING)
         # A clock is read only by a host that runs the document as time
@@ -446,9 +460,10 @@ class AKeepingDocumentNeedsItsActivation(Both):
 
 
 # A string output that SPELLS the call without making it.
-SPELLS = DOCUMENT.replace(
-    '<data id="lamp" sce:type="int32" sce:direction="out" expr="mode ? 1 : 0"/>',
-    '<data id="lamp" sce:type="int32" sce:direction="out" expr="mode ? 1 : 0"/>'
+SPELLS = swapped(
+    DOCUMENT,
+    f'<data id="lamp" {LAMP}/>',
+    f'<data id="lamp" {LAMP}/>'
     '<data id="label" sce:type="string" sce:direction="out" '
     'expr="mode ? \'previous(mode)\' : \'now\'"/>')
 

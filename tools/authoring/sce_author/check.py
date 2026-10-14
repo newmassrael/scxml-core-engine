@@ -664,12 +664,20 @@ def imports_of(path: pathlib.Path) -> list[pathlib.Path]:
 
 
 def platform_table(model, rule: dict) -> tuple[dict | None, str]:
-    """The platform's table for the field an output rule lands on -- `({number: symbol}, '')`
-    -- or `(None, why)` when the model gives it none.
+    """The platform's table for the field an output rule lands on -- `({symbol: symbol}, '')`,
+    every symbol the platform gives the field under its own name -- or `(None, why)` when the
+    model gives it none.
 
     The table is read from the interface model, not written by anyone: a binding that says
-    `map: platform` cannot lose an entry or number one wrongly, which is the defect a table
-    typed by hand again can have."""
+    `map: platform` cannot lose an entry or misspell one, which is the defect a table typed by
+    hand again can have. It is keyed by NAME: a document's enumeration lands each variant on
+    the platform's symbol of the same name (`landing.document_name`), and a variant the
+    platform has no symbol for is one `check` refuses as having nowhere to land.
+
+    ⚠ It was keyed by the platform's NUMBER, for a document that computed that number. Such a
+    document is written in one platform's numbering and means nothing on another
+    (`closed_value_refusals`), and it was the easy road: a skeleton declared every enumerated
+    output a number and landed it through this table."""
     address = rule.get("address")
     entry = model.by_address.get(address) if address else None
     if entry is None:
@@ -679,8 +687,60 @@ def platform_table(model, rule: dict) -> tuple[dict | None, str]:
         return None, f"{address} has no field {rule.get('field', '')!r}"
     if not fld.values:
         return None, (f"{address}.{fld.name} is not an enumeration, so the model has no table "
-                      f"of numbers and symbols for it")
-    return {code: symbol for symbol, code in sorted(fld.values.items(), key=lambda kv: kv[1])}, ""
+                      f"of symbols for it")
+    return {symbol: symbol for symbol, _code in sorted(fld.values.items(), key=lambda kv: kv[1])}, ""
+
+
+def closed_value_refusals(document, outputs: dict, model) -> list:
+    """`(where, why)` for every output that hands a closed set of the platform's a NUMBER.
+
+    A field the interface model enumerates takes one of a closed set of symbols, and the
+    number beside each is that platform's own code for it. An output computed as a number and
+    landed there -- through a `map` keyed by those codes, or `passthrough` -- is a document
+    written in one platform's numbering: bound to another platform, or read by a person, the
+    number says nothing. So a closed set crosses the boundary by NAME: the document declares
+    an enumeration of its own, and `map` says which symbol each variant lands on.
+
+    An output read from a `<send>` has no declared type to judge. Its event's name is the
+    document's own word already; what a `param` or the content carries is whatever the
+    document put there, so there the MAP says it: a map keyed by a number lands a number.
+    `check` reports these and `verify` refuses on them, in the same words.
+    """
+    refusals = []
+    for name, rule in sorted(outputs.items()):
+        if not isinstance(rule, dict) or rule.get("internal"):
+            continue
+        address = rule.get("address")
+        entry = model.by_address.get(address) if address else None
+        fld = entry.field(rule.get("field", "")) if entry is not None else None
+        if fld is None or not fld.values:
+            continue
+        position = address + (f".{fld.name}" if fld.name else "")
+        if rule.get("sent"):
+            numbered = [key for key in (rule.get("map") or {})
+                        if isinstance(key, (int, float)) and not isinstance(key, bool)]
+            if numbered and isinstance(rule.get("map"), dict):
+                refusals.append((f"output {name}", (
+                    f"lands on {position}, which the platform defines as a closed set of "
+                    f"symbols ({', '.join(fld.values)}), through a map keyed by "
+                    f"{', '.join(map(repr, numbered))}: a number the document sends there is "
+                    f"this platform's own code for a symbol, so the document would be written "
+                    f"in one platform's numbering. A closed set crosses the boundary by name "
+                    f"-- send a name of the document's own and key the map by it")))
+            continue
+        declared = document.types.get(name)
+        if delivery.document_class(declared) != "number":
+            continue
+        refusals.append((f"output {name}", (
+            f"lands on {position}, which the platform defines as a closed set of symbols "
+            f"({', '.join(fld.values)}), and the document declares it `{declared}`: a number "
+            f"there is this platform's own code for a symbol, so the document would be written "
+            f"in one platform's numbering. A closed set crosses the boundary by name -- declare "
+            f"the output an enumeration of the document's own (`sce:type=\"enum:<alias>\"`, "
+            f"imported with `<sce:import kind=\"enum\" .../>`) and let `map` name the symbol "
+            f"each variant lands on; `map: {landing.PLATFORM_MAP}` lands every variant on the "
+            f"symbol of the same name")))
+    return refusals
 
 
 def _resolve_platform_maps(doc: dict, model, path: pathlib.Path) -> None:
@@ -1889,6 +1949,10 @@ def check(pack: Pack, binding_path: pathlib.Path, prose=None,
     # fixture otherwise accepts: nothing here, and `verify` stopped on every
     # one. Each is now one judgement both commands make.
     #
+    # A closed set of the platform's is handed over by name, never by the platform's number.
+    out.extend(Finding(where, why)
+               for where, why in closed_value_refusals(document, declared_outputs, model))
+
     # Where an output lands, and whether it can land every value the document
     # says it can produce (`landing`).
     for name, rule in sorted(declared_outputs.items()):
@@ -1897,7 +1961,7 @@ def check(pack: Pack, binding_path: pathlib.Path, prose=None,
             out.append(Finding(f"output {name}", why))
             continue
         values = landing.produces(rule, document.types.get(name), document.sends,
-                                  document.expressions.get(name))
+                                  document.expressions.get(name), document.variants_of(name))
         missing = landing.unmapped(rule, values)
         if missing:
             # A key that names none of the values the document can produce is
@@ -1923,8 +1987,8 @@ def check(pack: Pack, binding_path: pathlib.Path, prose=None,
                     f"`when_nothing_sent: {default[0]!r}` is what the host writes in a round "
                     f"where nothing is sent, and the map has no entry for it: its keys are "
                     f"{keys}. A map is keyed by what the document sends, and `map: platform` "
-                    f"is keyed by the platform's NUMBERS -- write the number, or add the "
-                    f"entry."))
+                    f"is keyed by the platform's symbols, each under its own name -- write "
+                    f"the name, or add the entry."))
         initial = document.initials.get(name)
         if (initial is not None and document.types.get(name) == "string" and "map" in rule
                 and not rule.get("hold_last") and not landing.mapped(rule["map"], initial)[0]):

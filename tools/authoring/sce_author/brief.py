@@ -22,8 +22,15 @@ from .questions import ask
 
 
 def _value_line(fld) -> str:
+    """What a field takes: a closed set's symbols by name, in the platform's order.
+
+    ⚠ The platform's number for each symbol is not printed. It was (`OFF=0, ON=1`), and a
+    writer shown a number beside a name computed the number: the document was then written
+    in one platform's numbering, which `check` refuses (`check.closed_value_refusals`).
+    """
     if fld.values:
-        return ", ".join(f"{s}={n}" for s, n in sorted(fld.values.items(), key=lambda kv: kv[1]))
+        return "one of " + ", ".join(
+            s for s, _ in sorted(fld.values.items(), key=lambda kv: kv[1]))
     return f"({fld.type or 'no declared value space'})"
 
 
@@ -139,6 +146,8 @@ def _parts(prose: Prose, pack: Pack) -> list[str]:
     parts += ["## 2. Addresses this specification touches", ""]
     if not touched:
         parts.append("(none — no name in the prose resolves to the interface model)")
+    if any(fld.values for entry in touched for fld in entry.fields):
+        parts += [_CLOSED_SETS, ""]
     for entry in touched:
         parts.append(f"- `{entry.address}` ({entry.role}) — written as " + ", ".join(entry.names))
         for fld in entry.fields:
@@ -339,6 +348,20 @@ def host_lines(host: dict) -> list[str]:
 # of twenty-nine documents were written that way. The move is taught here, at
 # the point of writing, because a refusal after the fact is the more
 # expensive way to learn it.
+# Said where the writer meets the symbols, because the refusal that follows a number written
+# there is the more expensive way to learn it.
+_CLOSED_SETS = """\
+A field listed as `one of ...` takes a symbol of a closed set. Such a value crosses to the
+platform BY NAME, never as a number: declare it `sce:type="enum:<Alias>"`, with the
+enumeration a document of its own (`sce:kind="enum"`, one `<sce:variant>` per name) that
+this one imports (`<sce:import as="<Alias>" src="..." kind="enum"/>`), and write a value as
+`<Alias>.<NAME>`. An output so declared lands through `map: platform` when its variants
+are the platform's names, or through a map keyed by the variant names when they are not;
+an input is handed the variant named as the symbol the address carries. `scaffold --kind
+transform` writes those enumerations. A number there (`x = on ? 2 : 1`, `request == 0`)
+is one platform's code for a symbol, and `check` refuses it."""
+
+
 _REMEMBERING = """\
 A transform can keep a value from one activation to the next, and says so
 itself. `previous(x)` is the value field `x` of this document held at the end

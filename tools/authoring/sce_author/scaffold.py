@@ -13,9 +13,9 @@ So this writes that half and nothing else:
 
   - `version` and `document`;
   - one output rule per position the model declares, with its `address` and
-    `field`, landing through `map: platform` -- the platform's own table, read
-    from the model rather than typed -- when the field has a value space, and
-    `passthrough` when it has none;
+    `field`, landing through `map: platform` -- the platform's symbols, each
+    under its own name, read from the model rather than typed -- when the field
+    is a closed set of symbols, and `passthrough` when it has no value space;
   - one input rule per address the model declares, with the value space
     beside it as a comment.
 
@@ -42,6 +42,16 @@ and never reached the one condition the specification states. Whether a
 component IS a transform is a reading too, so the document is written only
 when the caller says so; a statechart's shell is its states and events, which
 the model does not know.
+
+A position the platform gives a closed set of symbols is declared an
+ENUMERATION of the document's own, in a file of its own beside the document
+(`<position>_values.scxml`), with the platform's symbols as its variants and the
+document's own numbers, 0 upwards. The document names a value (`Lamp.ON`), the
+binding lands it on the symbol of the same name, and the platform's number for
+it appears in neither. ⚠ The skeleton used to declare such a position `int64`
+and land it through a table keyed by the platform's numbers, and the documents
+written from it computed those numbers: measured 2026-10-14 over one corpus,
+nearly every document did, and none could be bound to another platform.
 """
 
 from __future__ import annotations
@@ -65,10 +75,11 @@ KINDS = ("transform",)
 
 SCE_NAMESPACE = "http://sce.dev/ext"
 
-# The `sce:type` a document declares for a position of each model type. An
-# enumeration carries the platform's own number, which `map: platform` lands. `number` is a model that does not say whole or fraction, so the
-# type that holds both is written; a model that knows says `integer`.
-_SCE_TYPE = {"enum": "int64", "integer": "int64", "number": "float64",
+# The `sce:type` a document declares for a position of each model type that is not a closed
+# set of symbols (that one is an enumeration of the document's own, `enum_alias`). `number`
+# is a model that does not say whole or fraction, so the type that holds both is written; a
+# model that knows says `integer`.
+_SCE_TYPE = {"integer": "int64", "number": "float64",
              "text": "string", "boolean": "bool"}
 
 
@@ -142,6 +153,51 @@ def positions(pack: Pack) -> tuple[list[Position], list[Position]]:
     return named
 
 
+def enum_alias(pos: Position) -> str:
+    """The alias a document imports a position's enumeration under: the position's
+    identifier, capitalised (`lampStat` -> `LampStat`)."""
+    return pos.name[:1].upper() + pos.name[1:]
+
+
+def enum_stem(pos: Position) -> str:
+    """The stem of the file a position's enumeration is written to, which is also the
+    enumeration's name (`lampStat` -> `lamp_stat_values`). ⚠ No dot: a document's identity is
+    its file stem, and the generator cannot give a dotted one back."""
+    return re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", pos.name).lower() + "_values"
+
+
+def enum_file(pos: Position) -> str:
+    """The file a position's enumeration is written to, beside the document."""
+    return f"{enum_stem(pos)}.scxml"
+
+
+def draft_enum(pos: Position) -> str:
+    """The enumeration of the document's own for a position the platform gives a closed set.
+
+    The platform's symbols are its variants, in the platform's order, and the numbers are the
+    DOCUMENT's: 0 upwards, whatever the platform numbers them. Nothing reads them across the
+    boundary -- a value crosses by its name -- so they are free to be the document's own.
+    """
+    symbols = [s for s, _n in sorted(pos.field.values.items(), key=lambda kv: kv[1])]
+    underlying = "uint8" if len(symbols) <= 256 else "uint16"
+    name = enum_stem(pos)
+    lines = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        f"<!-- The values {pos.entry.address}{'.' + pos.field.name if pos.field.name else ''}",
+        "     takes, as this document names them. The names are the platform's symbols;",
+        "     the numbers are the document's own and never cross the boundary. -->",
+        f'<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="{SCE_NAMESPACE}"',
+        f'       version="1.0" sce:kind="enum" name={_xml_attr(name)} '
+        f'sce:underlying-type="{underlying}">',
+        "  <datamodel>",
+        '    <data id="variants">',
+    ]
+    lines += [f'      <sce:variant name={_xml_attr(symbol)} value="{number}"/>'
+              for number, symbol in enumerate(symbols)]
+    lines += ["    </data>", "  </datamodel>", "</scxml>"]
+    return "\n".join(lines) + "\n"
+
+
 def draft(pack: Pack, document: str, activation: str | None = None) -> str:
     """The skeleton as YAML text. Deterministic: the model's order, always."""
     if activation is not None and activation not in ACTIVATIONS:
@@ -184,6 +240,12 @@ def draft(pack: Pack, document: str, activation: str | None = None) -> str:
     lines.append("inputs:" if inputs else "inputs: {}")
     for pos in inputs:
         lines.append(f"  # {pos.entry.role}: {_values_comment(pos.field)}")
+        if pos.field.values:
+            # A closed set crosses by name: compared here, or handed to an enumeration of
+            # the document's own. Never as the platform's number.
+            lines.append("  #   a closed set: compare it (`equals: <symbol>`), or leave the rule as it")
+            lines.append(f"  #   is for a document input declared `enum:{enum_alias(pos)}` -- it is handed")
+            lines.append("  #   the variant of the same name, never the platform's number.")
         lines.append(f"  {pos.name}:")
         lines.append(f"    address: {_scalar(pos.entry.address)}")
         if pos.field.name:
@@ -199,24 +261,28 @@ def draft(pack: Pack, document: str, activation: str | None = None) -> str:
         if fld.name:
             lines.append(f"    field: {_scalar(fld.name)}")
         if fld.values:
-            # The platform's own table, read from the model: a document that
-            # computes the platform's code lands it unchanged, and nothing is
-            # typed that could be copied wrongly. A document that numbers its
-            # values otherwise replaces this line with the table it needs.
+            # The platform's symbols under their own names, read from the model: the
+            # document's enumeration (`enum:<alias>`) lands each variant on the symbol of
+            # the same name, and nothing is typed that could be copied wrongly. A document
+            # that names its values otherwise replaces this line with the table it needs,
+            # keyed by its variants.
             lines.append(f"    map: {PLATFORM_MAP}")
         else:
             lines.append("    passthrough: true")
     return "\n".join(lines) + "\n"
 
 
-def _sce_type(fld: Field) -> str:
-    kind = "enum" if fld.values else fld.type
-    if kind not in _SCE_TYPE:
+def _sce_type(pos: Position) -> str:
+    fld = pos.field
+    if fld.values:
+        # A closed set of symbols: an enumeration of the document's own (`draft_enum`).
+        return f"enum:{enum_alias(pos)}"
+    if fld.type not in _SCE_TYPE:
         raise ScaffoldError(
             f"field {fld.name or '(the address)'}: the model gives it "
-            f"{'no type' if kind is None else f'type {kind!r}'}, and a document "
-            f"variable needs one of {', '.join(sorted(_SCE_TYPE))}")
-    return _SCE_TYPE[kind]
+            f"{'no type' if fld.type is None else f'type {fld.type!r}'}, and a document "
+            f"variable needs one of {', '.join(sorted(_SCE_TYPE))} or a closed set of symbols")
+    return _SCE_TYPE[fld.type]
 
 
 def draft_transform(pack: Pack, name: str) -> str:
@@ -232,17 +298,21 @@ def draft_transform(pack: Pack, name: str) -> str:
         "     Its identifiers are the binding skeleton's. Each output still needs",
         "     `expr`: its value computed from the inputs, which is what the",
         "     specification says. Delete the inputs the document does not read,",
-        "     and the output rules the binding does not bind. -->",
+        "     and the output rules the binding does not bind. A closed set of symbols",
+        "     is an enumeration of the document's own (the imports below): write a",
+        "     value by its name, `<Alias>.<SYMBOL>`, never by a number. -->",
         f'<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="{SCE_NAMESPACE}"',
         f'       version="1.0" sce:kind="transform" name={_xml_attr(name)}>',
-        "  <datamodel>",
     ]
+    lines += [f'  <sce:import as="{enum_alias(pos)}" src="{enum_file(pos)}" kind="enum"/>'
+              for pos in (*inputs, *outputs) if pos.field.values]
+    lines.append("  <datamodel>")
     for direction, side in (("in", inputs), ("out", outputs)):
         for pos in side:
             lines.append(f"    <!-- {pos.entry.address}"
                          f"{'.' + pos.field.name if pos.field.name else ''}: "
                          f"{_values_comment(pos.field)} -->")
-            lines.append(f'    <data id="{pos.name}" sce:type="{_sce_type(pos.field)}" '
+            lines.append(f'    <data id="{pos.name}" sce:type="{_sce_type(pos)}" '
                          f'sce:direction="{direction}"/>')
     lines += ["  </datamodel>", "</scxml>"]
     return "\n".join(lines) + "\n"
@@ -258,8 +328,9 @@ def write(pack: Pack, document: str, out: pathlib.Path,
     """Write the binding skeleton to `out`, which must not exist yet.
 
     With `kind="transform"`, the document the binding names is written too,
-    beside it, and it must not exist either. Nothing is written unless both
-    can be.
+    beside it, with the enumeration of each position that is a closed set
+    (`draft_enum`), and none of them may exist either. Nothing is written
+    unless all can be.
     """
     if kind is not None and kind not in KINDS:
         raise ScaffoldError(f"kind {kind!r}: a skeleton is written only for "
@@ -270,16 +341,27 @@ def write(pack: Pack, document: str, out: pathlib.Path,
                             f"written over it would throw away whatever it decides")
     text = draft(pack, document, activation)
     doc_path = doc_text = None
+    enums: list[tuple[pathlib.Path, str]] = []
     if kind == "transform":
         doc_path = (out.parent / document)
         if doc_path.exists():
             raise ScaffoldError(f"{doc_path}: a document is already there, and a "
                                 f"skeleton written over it would throw it away")
         doc_text = draft_transform(pack, pathlib.PurePath(document).stem)
+        inputs, outputs = positions(pack)
+        enums = [(doc_path.parent / enum_file(pos), draft_enum(pos))
+                 for pos in (*inputs, *outputs) if pos.field.values]
+        for path, _text in enums:
+            if path.exists():
+                raise ScaffoldError(f"{path}: an enumeration is already there, and a "
+                                    f"skeleton written over it would throw it away")
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(text, encoding="utf-8")
     if doc_path is not None:
         doc_path.parent.mkdir(parents=True, exist_ok=True)
         doc_path.write_text(doc_text, encoding="utf-8")
         text += f"\n# and {document}:\n" + doc_text
+        for path, enum_text in enums:
+            path.write_text(enum_text, encoding="utf-8")
+            text += f"\n# and {path.name}:\n" + enum_text
     return text

@@ -55,16 +55,18 @@ def document(on_type: str, test: str) -> str:
        version="1.0" sce:kind="transform" name="changed">
   <datamodel>
     <data id="on" sce:type="{on_type}" sce:direction="in"/>
-    <data id="lamp" sce:type="int32" sce:direction="out"
+    <data id="lamp" sce:type="string" sce:direction="out"
           sce:assumed="lamp-rule"
           sce:assumed-reason="the text does not say which way round the lamp reads"
-          expr="{test} ? 1 : 2"/>
+          expr="{test} ? 'dim' : 'lit'"/>
   </datamodel>
 </scxml>
 """
 
 
-LAMP = {"address": "Plant.Out.Lamp", "field": "Stat", "map": {1: "OFF", 2: "ON"}}
+# The lamp is one of a closed set of the platform's symbols, so the document says which by a
+# name of its own (`dim`, `lit`, and `full` where a test needs a third) and the map lands it.
+LAMP = {"address": "Plant.Out.Lamp", "field": "Stat", "map": {"dim": "OFF", "lit": "ON"}}
 
 
 def case(name, expect, at=SWITCH, value="true"):
@@ -126,7 +128,7 @@ class AGuessIsChangedToSeeWhatRestsOnIt(Fixture):
         cf = found["binding:output:lamp"]
         self.assertEqual("witness", cf.verdict)
         repairing = [(f.decision, f.value) for f in cf.flips if f.fixed and not f.broken]
-        self.assertEqual([("map[1]", "ON")], repairing)
+        self.assertEqual([("map[dim]", "ON")], repairing)
         self.assertEqual("refuted", gaps["output lamp"].kind)
         self.assertTrue(any("what the tests expect" in line
                             for line in lines(gaps["output lamp"])))
@@ -185,33 +187,35 @@ class AGuessIsChangedToSeeWhatRestsOnIt(Fixture):
         self.assertEqual([], gaps["lamp"].sole)
 
     def test_a_documents_guess_is_changed_to_its_candidates(self):
-        """⚠ The discriminator for a document's own guess. The author chose 1
-        for a switched-on lamp and wrote down 2 as the other reading: with 2
-        in its place the case passes, and that is the answer."""
+        """⚠ The discriminator for a document's own guess. The author chose `dim`
+        for a switched-on lamp and wrote down `lit` as the other reading: with
+        `lit` in its place the case passes, and that is the answer."""
         text = document("bool", "on").replace(
-            'expr="on ? 1 : 2"', 'sce:assumed-candidates="1 2" expr="on ? 1 : 3"')
+            '''expr="on ? 'dim' : 'lit'"''',
+            '''sce:assumed-candidates="dim lit" expr="on ? 'dim' : 'full'"''')
         base, found, gaps = self.run_with(
             {"on": {"address": SWITCH, "when_absent": False}},
-            {**LAMP, "map": {1: "OFF", 2: "ON", 3: "MAX"}},
+            {**LAMP, "map": {"dim": "OFF", "lit": "ON", "full": "MAX"}},
             [case("counted", "ON")], text=text)
         cf = found["document:lamp"]
         self.assertEqual(("witness", True), (cf.verdict, cf.exhaustive))
-        self.assertEqual([("candidate", "2")],
+        self.assertEqual([("candidate", "lit")],
                          [(f.decision, f.value) for f in cf.flips if f.fixed])
         self.assertEqual("refuted", gaps["lamp"].kind)
 
     def test_candidates_whose_place_is_not_known_are_refused_by_check(self):
-        """1 appears twice: which of them the author chose is not written
+        """`dim` appears twice: which of them the author chose is not written
         down, and choosing for them would change a different document."""
         self.write_pack(SWITCHED, CONVENTIONS)
         (self.root / "changed.scxml").write_text(document("bool", "on").replace(
-            'expr="on ? 1 : 2"', 'sce:assumed-candidates="1 2" expr="on ? 1 : 1"'),
+            '''expr="on ? 'dim' : 'lit'"''',
+            '''sce:assumed-candidates="dim lit" expr="on ? 'dim' : 'dim'"'''),
             encoding="utf-8")
         found = [str(f) for f in self.bind(
             {"version": 1, "document": "changed.scxml",
              "inputs": {"on": {"address": SWITCH, "when_absent": False}},
-             "outputs": {"lamp": {**LAMP, "map": {1: "OFF"}}}})]
-        self.assertTrue(any("1 ×2" in f and "assumed-candidates" in f for f in found), found)
+             "outputs": {"lamp": {**LAMP, "map": {"dim": "OFF"}}}})]
+        self.assertTrue(any("dim ×2" in f and "assumed-candidates" in f for f in found), found)
 
     def test_its_author_is_asked_for_candidates_and_told_nothing_else(self):
         """⚠ The discriminator for the question. A failure rests on a guess
@@ -230,10 +234,11 @@ class AGuessIsChangedToSeeWhatRestsOnIt(Fixture):
 
     def test_a_guess_with_candidates_is_not_asked_about(self):
         text = document("bool", "on").replace(
-            'expr="on ? 1 : 2"', 'sce:assumed-candidates="1 2" expr="on ? 1 : 3"')
+            '''expr="on ? 'dim' : 'lit'"''',
+            '''sce:assumed-candidates="dim lit" expr="on ? 'dim' : 'full'"''')
         base, found, gaps = self.run_with(
             {"on": {"address": SWITCH, "when_absent": False}},
-            {**LAMP, "map": {1: "OFF", 2: "ON", 3: "MAX"}},
+            {**LAMP, "map": {"dim": "OFF", "lit": "ON", "full": "MAX"}},
             [case("counted", "ON")], text=text)
         self.assertEqual("", gaps["lamp"].ask)
 
@@ -243,7 +248,7 @@ class AGuessIsChangedToSeeWhatRestsOnIt(Fixture):
         return [str(f) for f in self.bind(
             {"version": 1, "document": "changed.scxml",
              "inputs": {"on": {"address": SWITCH, "when_absent": False}},
-             "outputs": {"lamp": {**LAMP, "map": {1: "OFF", 2: "ON"}}}})]
+             "outputs": {"lamp": {**LAMP, "map": {"dim": "OFF", "lit": "ON"}}}})]
 
     def test_check_refuses_a_guess_that_lists_no_candidates(self):
         """⚠ The discriminator for the requirement. A guess that says nothing
@@ -253,7 +258,8 @@ class AGuessIsChangedToSeeWhatRestsOnIt(Fixture):
 
     def test_one_candidate_says_there_is_no_other(self):
         text = document("bool", "on").replace(
-            'expr="on ? 1 : 2"', 'sce:assumed-candidates="on" expr="on ? 1 : 2"')
+            '''expr="on ? 'dim' : 'lit'"''',
+            '''sce:assumed-candidates="on" expr="on ? 'dim' : 'lit'"''')
         self.assertFalse([f for f in self.found_by_check(text)
                           if "assumed-candidates" in f])
         base, found, _ = self.run_with(
@@ -267,16 +273,18 @@ class AGuessIsChangedToSeeWhatRestsOnIt(Fixture):
         """The decided value in its own `<data>`, the logic reading it: the
         list has one place, and a value the expression writes twice elsewhere
         does not matter."""
+        # The decision variable lands nowhere (`internal`), so it is the document's own
+        # number; the lamp that reads it is still named.
         text = document("bool", "on").replace(
-            '<data id="lamp" sce:type="int32" sce:direction="out"\n'
+            '<data id="lamp" sce:type="string" sce:direction="out"\n'
             '          sce:assumed="lamp-rule"\n'
             '          sce:assumed-reason="the text does not say which way round the lamp reads"\n'
-            '          expr="on ? 1 : 2"/>',
+            '''          expr="on ? 'dim' : 'lit'"/>''',
             '<data id="onValue" sce:type="int32" sce:direction="out" '
             'sce:assumed="lamp-rule" sce:assumed-reason="r" '
             'sce:assumed-candidates="1 2" expr="1"/>\n'
-            '    <data id="lamp" sce:type="int32" sce:direction="out" '
-            'expr="on ? onValue : (1 + 1)"/>')
+            '    <data id="lamp" sce:type="string" sce:direction="out" '
+            '''expr="on ? (onValue === 1 ? 'dim' : 'lit') : (1 + 1 === 2 ? 'lit' : 'dim')"/>''')
         self.assertIn('expr="1"', text)
         self.assertFalse([f for f in self.found_by_check(text) if "assumed-candidates" in f])
         base, found, gaps = self.run_with(
@@ -289,7 +297,8 @@ class AGuessIsChangedToSeeWhatRestsOnIt(Fixture):
 
     def test_a_value_written_twice_is_refused_with_the_shape_that_works(self):
         text = document("bool", "on").replace(
-            'expr="on ? 1 : 2"', 'sce:assumed-candidates="1 2" expr="on ? 1 : (1 + 1)"')
+            '''expr="on ? 'dim' : 'lit'"''',
+            '''sce:assumed-candidates="dim lit" expr="on ? 'dim' : (on ? 'dim' : 'lit')"''')
         found = [f for f in self.found_by_check(text) if "assumed-candidates" in f]
         self.assertTrue(found and "its own `<data>`" in found[0], found)
 

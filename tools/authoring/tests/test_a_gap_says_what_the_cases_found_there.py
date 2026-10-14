@@ -30,17 +30,17 @@ GUESSED = """<?xml version="1.0" encoding="UTF-8"?>
        version="1.0" sce:kind="transform" name="guessed">
   <datamodel>
     <data id="count" sce:type="int32" sce:direction="in"/>
-    <data id="lamp" sce:type="int32" sce:direction="out"
+    <data id="lamp" sce:type="string" sce:direction="out"
           sce:assumed="lamp-threshold"
           sce:assumed-reason="no threshold is given; read as above zero"
-          expr="count &gt; 0 ? 1 : 0"/>
+          expr="count &gt; 0 ? 'on' : 'off'"/>
     <data id="level" sce:type="int32" sce:direction="out"
           sce:assumed="level-scale"
           sce:assumed-reason="no scale is given; read as the count doubled"
           expr="count * 2"/>
-    <data id="spare" sce:type="int32" sce:direction="out"
+    <data id="spare" sce:type="string" sce:direction="out"
           sce:assumed="spare-default" sce:assumed-reason="nothing decides it"
-          expr="0"/>
+          expr="'off'"/>
   </datamodel>
 </scxml>
 """
@@ -51,11 +51,11 @@ BINDING = {
     "inputs": {"count": {"address": "Plant.Input.Count", "when_absent": 0}},
     "outputs": {
         "lamp": {"address": "Plant.Out.Lamp", "field": "Stat",
-                 "map": {0: "OFF", 1: "ON"},
+                 "map": {"off": "OFF", "on": "ON"},
                  "assumed": "the lamp's symbols are the platform default"},
         "level": {"address": "Plant.Out.Lamp", "field": "Value", "passthrough": True},
         "spare": {"address": "Plant.Out.Unwritten", "field": "Stat",
-                  "map": {0: "OFF"}},
+                  "map": {"off": "OFF"}},
     },
 }
 

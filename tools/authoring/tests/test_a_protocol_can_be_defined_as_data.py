@@ -448,9 +448,11 @@ class ABindingRefusesAYamlBoolean(unittest.TestCase):
 
     def test_a_boolean_inside_a_map_says_which_entry(self):
         def mutate(doc):
-            doc["outputs"]["bell"]["map"][0] = False
+            # A table written out, as a document naming its values otherwise writes one:
+            # YAML reads the unquoted `OFF` as false.
+            doc["outputs"]["bell"]["map"] = {"RINGING": "RINGING", "SILENT": False}
         said = self.refusal(mutate)
-        self.assertIn("outputs -> bell -> map -> 0", said)
+        self.assertIn("outputs -> bell -> map -> SILENT", said)
 
     def test_the_keys_that_are_genuinely_booleans_are_left_alone(self):
         from sce_author.check import read_binding

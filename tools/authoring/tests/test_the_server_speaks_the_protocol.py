@@ -342,7 +342,7 @@ class TheServerSpeaksTheProtocol(unittest.TestCase):
         self.assertEqual(
             ["transform fixture",
              "  in mode: bool",
-             "  out lamp: int32 = mode ? 1 : 0"],
+             "  out lamp: string = mode ? 'on' : 'off'"],
             page.splitlines())
         # ⚠ Text, not a JSON object. Every other tool here answers with one,
         # and quoting this page into a JSON string would put backslashes

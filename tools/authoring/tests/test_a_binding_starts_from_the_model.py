@@ -41,7 +41,9 @@ class ABindingStartsFromTheModel(unittest.TestCase):
     def setUp(self):
         self.pack = load_pack(PACK)
         self.dir = pathlib.Path(tempfile.mkdtemp(prefix="sce_scaffold_test_"))
-        shutil.copy(PACK / "controller.scxml", self.dir / "controller.scxml")
+        # The document and the enumerations it imports: one design is all of them.
+        for source in [PACK / "controller.scxml", *sorted(PACK.glob("*_values.scxml"))]:
+            shutil.copy(source, self.dir / source.name)
         self.out = self.dir / "controller.binding.yaml"
 
     def tearDown(self):
@@ -70,17 +72,19 @@ class ABindingStartsFromTheModel(unittest.TestCase):
         self.assertEqual(sorted(expected), sorted(positions))
         self.assertEqual(len(positions), len(set(positions)))
 
-    def test_a_value_space_lands_by_the_platforms_own_numbers(self):
-        """The reference binding beside this fixture was written by hand, and
-        its maps are keyed by the platform's own numbers: the skeleton binds
-        `map: platform`, which is read as that same table, so it reproduces the
-        half of a correct binding that is not a decision without typing it."""
+    def test_a_value_space_lands_by_the_platforms_own_names(self):
+        """The reference binding beside this fixture lands each output's enumeration on the
+        platform's symbols of the same names; the skeleton binds `map: platform`, which is
+        read as that same table, so it reproduces the half of a correct binding that is not
+        a decision without typing it. No number of the platform's is in either."""
         self.skeleton()
         got = {r["address"]: r for r in read_binding(self.out, self.pack)["outputs"].values()}
-        reference = read_binding(PACK / "controller.binding.yaml")["outputs"]
+        reference = read_binding(PACK / "controller.binding.yaml", self.pack)["outputs"]
         for rule in reference.values():
             self.assertEqual(rule["field"], got[rule["address"]]["field"])
             self.assertEqual(rule["map"], got[rule["address"]]["map"])
+            self.assertEqual(list(rule["map"]), list(rule["map"].values()))
+            self.assertTrue(all(isinstance(key, str) for key in rule["map"]), rule["map"])
 
     def test_a_value_space_is_written_as_the_word_and_not_as_a_table(self):
         for rule in self.skeleton()["outputs"].values():

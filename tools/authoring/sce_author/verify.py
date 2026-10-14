@@ -42,8 +42,8 @@ from types import SimpleNamespace
 
 from . import delivery, landing, process, sandbox
 from .check import (STATECHART_KINDS, Finding, activation_in_force, activation_unsaid,
-                    addresses_of, clock_refusals, driving_refusals, imports_of,
-                    read_binding)
+                    addresses_of, clock_refusals, closed_value_refusals, driving_refusals,
+                    imports_of, read_binding)
 from .errors import AuthoringError, VerifyError
 # ⚠ Re-exported, not defined here. Generated code is imported, and a design's
 # machine started, only in a process of its own (`sandbox`, `worker`); what
@@ -551,6 +551,12 @@ def verification_source(document: pathlib.Path, declared,
         kind = (re.search(r'\bsce:type="([^"]+)"', tag) or [None, ""])[1]
         value = next((v for prefix, v in _PLACEHOLDERS if kind.startswith(prefix)),
                      None)
+        if value is None and kind.startswith("enum:"):
+            # An enumeration of the document's own stands in by its first variant, written
+            # by name as any value of it is. ⚠ It had no placeholder, so an open output
+            # declared the way a closed set is declared lost the whole verification.
+            variants = declared.enums.get(kind[len("enum:"):]) or {}
+            value = next((f"{kind[len('enum:'):]}.{name}" for name in variants), None)
         if value is None:
             return tag
         placed += 1
@@ -3438,7 +3444,8 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
         if rule.get("sent"):
             return sent_value(name, rule, requests)
         if name in declared.outputs:
-            return run.declared_value(name)
+            return landing.document_name(run.declared_value(name), declared.types.get(name),
+                                         declared.variants_of(name))
         raise VerifyError(
             f"output {name!r} is bound to no `sent`, and the "
             f"document does not declare it `sce:direction=\"out\"` "
@@ -3840,7 +3847,8 @@ def _verify(pack: Pack, binding_path: pathlib.Path, codegen: pathlib.Path | None
     # used to get past SILENTLY: a value an input rule computed was dropped
     # and the event sent bare, so a guard comparing it compared what the
     # variable started as, and the verdict blamed the document.
-    stopped = driving_refusals(declared, dict(binding.get("inputs") or {}))
+    stopped = (driving_refusals(declared, dict(binding.get("inputs") or {}))
+               + closed_value_refusals(declared, dict(binding.get("outputs") or {}), pack.model))
     if stopped:
         return Verification(refusal="\n".join(f"{where}: {why}"
                                               for where, why in stopped))
@@ -4252,6 +4260,13 @@ def _verify(pack: Pack, binding_path: pathlib.Path, codegen: pathlib.Path | None
                     # the platform symbol it lands as -- mapping first would
                     # hand the document a word it never produced.
                     history.outputs[name] = computed if settled else _UNDETERMINED
+                # ⚠ AFTER what is fed back is remembered, and before anything lands: an
+                # enumeration's member lands by its variant's name (`landing.document_name`),
+                # and the document is handed back the member it produced, not that name.
+                runs = [landing.document_name(r, declared.types.get(name),
+                                              declared.variants_of(name)) for r in runs]
+                if wanted:
+                    shown_outputs[name] = runs[0]
                 # Where the document wrote this round, in any run: a planted
                 # value there no longer survives. Taken before `_held`, which
                 # replays an older write the record may since have planted over.

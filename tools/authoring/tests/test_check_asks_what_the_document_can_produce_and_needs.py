@@ -49,12 +49,18 @@ class AnExpressionOfLiteralsSaysWhatItCanProduce(unittest.TestCase):
             self.assertIsNone(expression_values(expr), expr)
 
 
+# The reference binding's rule for the road signal, up to what its `map` says.
+ROAD_SIGNAL = "  roadSignal:\n    address: plant/out/road-signal\n    field: value\n    map: "
+
+
 class ACheckedPair(unittest.TestCase):
     def setUp(self):
         self.pack = load_pack(PACK)
         self.dir = pathlib.Path(tempfile.mkdtemp(prefix="sce_check_produce_"))
-        for name in ("controller.scxml", "controller.binding.yaml"):
-            shutil.copy(PACK / name, self.dir / name)
+        # The pair, and the enumerations the document imports: one design is all of them.
+        for source in [PACK / "controller.scxml", PACK / "controller.binding.yaml",
+                       *sorted(PACK.glob("*_values.scxml"))]:
+            shutil.copy(source, self.dir / source.name)
         self.document = self.dir / "controller.scxml"
         self.binding = self.dir / "controller.binding.yaml"
 
@@ -66,6 +72,10 @@ class ACheckedPair(unittest.TestCase):
         self.assertIn(old, text)
         path.write_text(text.replace(old, new, 1), encoding="utf-8")
 
+    def road_map(self, table):
+        """The road signal's rule landing through `table` instead of the platform's own."""
+        self.replace(self.binding, ROAD_SIGNAL + "platform", ROAD_SIGNAL + table)
+
     def details(self, prose=None):
         return [f.detail for f in check(self.pack, self.binding, prose)]
 
@@ -73,31 +83,32 @@ class ACheckedPair(unittest.TestCase):
 class AMapKeyedByWhatTheDocumentNeverProduces(ACheckedPair):
     def setUp(self):
         super().setUp()
-        # The road signal as a value table: DARK, FLASHING or STEADY by number.
+        # The road signal as a value table, under names of the document's own.
         text = self.document.read_text(encoding="utf-8")
         start = text.index('<data id="roadSignal"')
         end = text.index("/>", start) + 2
         self.document.write_text(
-            text[:start] + '<data id="roadSignal" sce:type="int32" sce:direction="out" '
-            'expr="approaching ? 1 : 0"/>' + text[end:], encoding="utf-8")
+            text[:start] + '<data id="roadSignal" sce:type="string" sce:direction="out" '
+            'expr="approaching ? \'flashing\' : \'dark\'"/>' + text[end:], encoding="utf-8")
+        self.road_map("{dark: DARK, flashing: FLASHING}")
 
     def test_a_map_with_an_entry_for_every_literal_passes(self):
         self.assertFalse([d for d in self.details() if "map has no entry" in d])
 
     def test_keyed_by_the_inputs_symbol_it_is_refused_and_the_stray_key_named(self):
-        self.replace(self.binding, "map: {0: DARK, 1: FLASHING, 2: STEADY}",
+        self.replace(self.binding, "map: {dark: DARK, flashing: FLASHING}",
                      "map: {APPROACHING: FLASHING}")
         refused = [d for d in self.details() if "map has no entry" in d]
         self.assertEqual(1, len(refused), refused)
-        self.assertIn("1, 0", refused[0])
+        self.assertIn("'flashing', 'dark'", refused[0])
         self.assertIn("'APPROACHING' name no value the document produces", refused[0])
 
     def test_a_literal_with_no_entry_is_refused_without_blaming_a_good_key(self):
-        self.replace(self.binding, "map: {0: DARK, 1: FLASHING, 2: STEADY}",
-                     "map: {1: FLASHING}")
+        self.replace(self.binding, "map: {dark: DARK, flashing: FLASHING}",
+                     "map: {flashing: FLASHING}")
         refused = [d for d in self.details() if "map has no entry" in d]
         self.assertEqual(1, len(refused), refused)
-        self.assertIn("no entry for 0", refused[0])
+        self.assertIn("no entry for 'dark'", refused[0])
         self.assertNotIn("name no value", refused[0])
 
 
@@ -116,8 +127,7 @@ class AStringOutputsInitialValue(ACheckedPair):
             text[:start] + '<data id="roadSignal" sce:type="string" sce:direction="out" '
             'sce:initial="INITIAL" expr="approaching ? \'FLASHING\' : \'DARK\'"/>' + text[end:],
             encoding="utf-8")
-        self.replace(self.binding, "map: {0: DARK, 1: FLASHING, 2: STEADY}",
-                     "map: {DARK: DARK, FLASHING: FLASHING}")
+        self.road_map("{DARK: DARK, FLASHING: FLASHING}")
 
     def refused(self):
         return [d for d in self.details() if "sce:initial" in d]

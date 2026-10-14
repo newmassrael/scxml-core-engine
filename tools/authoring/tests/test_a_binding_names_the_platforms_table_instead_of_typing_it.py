@@ -1,16 +1,19 @@
-"""`map: platform` lands a document's numbers through the platform's own table, read from the model.
+"""`map: platform` lands a document's enumeration on the platform's symbols of the same names.
 
-A table typed again by hand can lose an entry, and every symbol after the lost one then lands one number
-early: measured 2026-10-11 on the 7,090 distinct output maps of the authoring survey, one writer re-typing
-a 54-symbol enumeration left one symbol out -- 240 cases failed on the value and 452 could not be judged,
-because the last symbol moved from 53 to 52 and the document's 53 had no entry, while `check` passed it.
+A table typed again by hand can lose an entry. Measured 2026-10-11: one writer re-typing a long
+enumeration left one symbol out, every symbol after it landed on the wrong one, the last had no
+entry at all, and `check` passed it. So the table is not typed: `map: platform` is read from the
+model.
 
-The first answer was a rule that guessed from the SHAPE of a map whether it was a copy. A shape cannot say
-what its author meant: a copy that lost its first entry and an own numbering that counts from another
-start are the same map, and each correction of the rule refused another sound binding. What a writer
-means is said, not guessed: `map: platform` is the platform's table, nothing is typed, and a map written
-out is the document's own numbering, judged by what the document produces (`landing.unmapped`) and by
-the cases `verify` runs.
+It is keyed by NAME. A position the platform gives a closed set of symbols is an enumeration of
+the document's own, a value crosses the boundary as the variant the document chose, and the
+platform's number for a symbol is in neither file. ⚠ It was keyed by the platform's number, for a
+document that computed that number: such a document is written in one platform's numbering, and
+`check` refuses it now whichever way its map is written (`closed_value_refusals`).
+
+A shape cannot say what its author meant, so nothing here guesses from one: `map: platform` is
+the platform's table, a map written out is the document's own naming, and both are judged by what
+the document can produce (`landing.unmapped`) and by the cases `verify` runs.
 
 Every case that must be refused is paired with the nearest one that must not be.
 """
@@ -24,14 +27,46 @@ import yaml
 from sce_author.check import PackError, platform_table, read_binding
 from sce_author.landing import PLATFORM_MAP
 from sce_author.scaffold import draft
+from sce_author.verify import verify
 
 from tests.test_refusals_actually_fire import BINDING, CONVENTIONS, DOCUMENT, MODEL, Fixture
 
-PLATFORM = {0: "NONE", 1: "OFF", 2: "ON", 3: "MAX"}
+PLATFORM = {"NONE": "NONE", "OFF": "OFF", "ON": "ON", "MAX": "MAX"}
 
 
 def lamp_rule(**more) -> dict:
     return {"address": "Plant.Out.Lamp", "field": "Stat", **more}
+
+
+def lamp_values(*variants: str) -> str:
+    """An enumeration of the document's own, numbered as the document likes."""
+    lines = "\n".join(f'      <sce:variant name="{name}" value="{10 * (n + 1)}"/>'
+                      for n, name in enumerate(variants))
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="enum" name="lamp_values" sce:underlying-type="uint8">
+  <datamodel>
+    <data id="variants">
+{lines}
+    </data>
+  </datamodel>
+</scxml>
+"""
+
+
+def enumerated(on: str = "ON", off: str = "OFF") -> str:
+    """The fixture's document with the lamp as an enumeration it imports."""
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="transform" name="fixture">
+  <sce:import as="Lamp" src="lamp_values.scxml" kind="enum"/>
+  <datamodel>
+    <data id="mode" sce:type="bool" sce:direction="in"/>
+    <data id="lamp" sce:type="enum:Lamp" sce:direction="out"
+          expr="mode ? Lamp.{on} : Lamp.{off}"/>
+  </datamodel>
+</scxml>
+"""
 
 
 class TheTableIsRead(Fixture):
@@ -40,13 +75,21 @@ class TheTableIsRead(Fixture):
         path.write_text(yaml.safe_dump({**BINDING, "outputs": {"lamp": rule}}), encoding="utf-8")
         return path
 
-    def test_the_word_is_the_models_table_for_the_field(self):
+    def test_the_word_is_the_models_symbols_each_under_its_own_name(self):
         binding = read_binding(self.written(lamp_rule(map=PLATFORM_MAP)), self.pack())
         self.assertEqual(PLATFORM, binding["outputs"]["lamp"]["map"])
 
+    def test_no_number_of_the_platforms_is_in_the_table(self):
+        """⚠ The discriminator for the contract: the table used to be `{0: NONE, 1: OFF, ...}`,
+        which is what let a document compute the platform's code and land it unchanged."""
+        table, _why = platform_table(self.pack().model, lamp_rule(map=PLATFORM_MAP))
+        self.assertTrue(all(isinstance(key, str) for key in table), table)
+        self.assertEqual(list(table), list(table.values()))
+
     def test_a_written_out_map_is_left_as_it_is(self):
-        binding = read_binding(self.written(lamp_rule(map={0: "OFF", 1: "ON"})), self.pack())
-        self.assertEqual({0: "OFF", 1: "ON"}, binding["outputs"]["lamp"]["map"])
+        own = {"off": "OFF", "on": "ON"}
+        binding = read_binding(self.written(lamp_rule(map=own)), self.pack())
+        self.assertEqual(own, binding["outputs"]["lamp"]["map"])
 
     def test_without_a_pack_the_word_stays_for_a_caller_that_reads_no_map(self):
         binding = read_binding(self.written(lamp_rule(map=PLATFORM_MAP)))
@@ -58,7 +101,7 @@ class TheTableIsRead(Fixture):
         lamp["fields"]["Stat"]["values"] = {"NONE": 0, "OFF": 1, "ON": 2, "MAX": 3, "EXTRA": 4}
         self.write_pack(model, CONVENTIONS)
         binding = read_binding(self.written(lamp_rule(map=PLATFORM_MAP)), self.pack())
-        self.assertEqual({**PLATFORM, 4: "EXTRA"}, binding["outputs"]["lamp"]["map"])
+        self.assertEqual({**PLATFORM, "EXTRA": "EXTRA"}, binding["outputs"]["lamp"]["map"])
 
     def test_the_table_is_listed_in_the_models_own_order(self):
         table, why = platform_table(self.pack().model, lamp_rule(map=PLATFORM_MAP))
@@ -93,44 +136,91 @@ class TheWordIsRefusedWhereThereIsNoTable(Fixture):
 
 
 class TheCheckJudgesWhatTheDocumentProduces(Fixture):
-    """The document of the fixture produces 1 or 0; others are written below."""
+    """The lamp as an enumeration of the document's own, landed by its variants' names."""
 
-    def bind_with(self, rule: dict, document: str = DOCUMENT):
+    def bind_with(self, rule: dict, document: str, variants=("OFF", "ON")):
         (self.root / "fixture.scxml").write_text(document, encoding="utf-8")
-        return self.bind({**BINDING, "outputs": {"lamp": rule}})
+        (self.root / "lamp_values.scxml").write_text(lamp_values(*variants), encoding="utf-8")
+        return [str(f) for f in self.bind({**BINDING, "outputs": {"lamp": rule}})]
 
-    @staticmethod
-    def producing(expr: str) -> str:
-        return DOCUMENT.replace('expr="mode ? 1 : 0"', f'expr="{expr}"')
+    def test_the_platforms_table_lands_every_variant_on_the_symbol_of_its_name(self):
+        self.assertEqual([], self.bind_with(lamp_rule(map=PLATFORM_MAP), enumerated()))
 
-    def test_the_platforms_table_lands_what_the_document_computes(self):
-        self.assertEqual([], self.bind_with(lamp_rule(map=PLATFORM_MAP)))
-
-    def test_a_table_that_lost_an_entry_is_refused_where_the_document_needs_it(self):
-        # The document computes the platform's own number 3, and the table typed again lost
-        # its entry: nothing says so but what the document produces.
-        lost = {0: "NONE", 1: "OFF", 2: "ON"}
-        said = [str(f) for f in self.bind_with(lamp_rule(map=lost), self.producing("mode ? 3 : 0"))]
+    def test_a_variant_the_platform_has_no_symbol_for_is_refused(self):
+        said = self.bind_with(lamp_rule(map=PLATFORM_MAP), enumerated(on="DIM"),
+                              variants=("OFF", "DIM"))
         self.assertEqual(1, len(said), said)
-        self.assertIn("the map has no entry for 3", said[0])
+        self.assertIn("the map has no entry for 'DIM'", said[0])
+
+    def test_a_written_out_table_that_lost_a_variant_is_refused(self):
+        """Every variant is a value the document can produce, whichever its expression
+        happens to name, so a table typed out owes each one an entry."""
+        said = self.bind_with(lamp_rule(map={"OFF": "OFF", "ON": "ON"}), enumerated(),
+                              variants=("OFF", "ON", "MAX"))
+        self.assertEqual(1, len(said), said)
+        self.assertIn("the map has no entry for 'MAX'", said[0])
 
     def test_the_same_document_through_the_platforms_table_is_not_refused(self):
-        self.assertEqual([], self.bind_with(lamp_rule(map=PLATFORM_MAP), self.producing("mode ? 3 : 0")))
+        self.assertEqual([], self.bind_with(lamp_rule(map=PLATFORM_MAP), enumerated(),
+                                            variants=("OFF", "ON", "MAX")))
 
-    def test_a_value_the_platforms_table_has_no_number_for_is_refused(self):
-        said = [str(f) for f in self.bind_with(lamp_rule(map=PLATFORM_MAP), self.producing("mode ? 9 : 0"))]
+    # The nearest maps that must NOT be refused: each names its values as the document does,
+    # which a document is free to do, whatever the platform calls them.
+    def test_variants_named_otherwise_are_the_documents_own(self):
+        own = {"DARK": "OFF", "LIT": "ON"}
+        self.assertEqual([], self.bind_with(lamp_rule(map=own), enumerated(on="LIT", off="DARK"),
+                                            variants=("DARK", "LIT")))
+
+    def test_a_text_the_document_names_its_values_by_is_the_documents_own(self):
+        self.assertEqual([], self.bind_with(lamp_rule(map={"off": "OFF", "on": "ON"}), DOCUMENT))
+
+
+class ANumberIsNotLandedOnAClosedSet(Fixture):
+    """⚠ The discriminator for the rule. The lamp is one of a closed set of symbols; a number
+    there is the platform's code for one, and the map it is keyed by does not change that."""
+
+    NUMBERED = DOCUMENT.replace('sce:type="string"', 'sce:type="int32"').replace(
+        "mode ? 'on' : 'off'", "mode ? 2 : 1")
+
+    def found(self, rule: dict) -> list:
+        (self.root / "fixture.scxml").write_text(self.NUMBERED, encoding="utf-8")
+        return [str(f) for f in self.bind({**BINDING, "outputs": {"lamp": rule}})]
+
+    def test_the_premise_the_document_computes_a_number(self):
+        self.assertIn('sce:type="int32"', self.NUMBERED)
+        self.assertIn("mode ? 2 : 1", self.NUMBERED)
+
+    def test_a_number_through_a_table_keyed_by_the_platforms_codes_is_refused(self):
+        said = [f for f in self.found(lamp_rule(map={1: "OFF", 2: "ON"})) if "closed set" in f]
         self.assertEqual(1, len(said), said)
-        self.assertIn("the map has no entry for 9", said[0])
+        self.assertIn("output lamp", said[0])
+        self.assertIn("Plant.Out.Lamp.Stat", said[0])
+        self.assertIn("`int32`", said[0])
+        self.assertIn("enum:<alias>", said[0])
 
-    # The nearest maps that must NOT be refused: each numbers its values as the document does,
-    # which a document is free to do, whatever its shape looks like beside the platform's.
-    def test_a_numbering_shifted_by_one_is_the_documents_own(self):
-        shifted = {0: "OFF", 1: "ON", 2: "MAX"}
-        self.assertEqual([], self.bind_with(lamp_rule(map=shifted), self.producing("mode ? 2 : 0")))
+    def test_a_number_through_the_platforms_table_is_refused_too(self):
+        said = [f for f in self.found(lamp_rule(map=PLATFORM_MAP)) if "closed set" in f]
+        self.assertEqual(1, len(said), said)
 
-    def test_a_table_naming_every_symbol_under_other_numbers_is_the_documents_own(self):
-        permuted = {0: "ON", 1: "OFF", 2: "NONE", 3: "MAX"}
-        self.assertEqual([], self.bind_with(lamp_rule(map=permuted), self.producing("mode ? 1 : 0")))
+    def test_a_number_passed_through_to_a_closed_set_is_refused(self):
+        said = [f for f in self.found(lamp_rule(passthrough=True)) if "closed set" in f]
+        self.assertEqual(1, len(said), said)
+
+    def test_a_number_on_a_field_that_is_a_number_is_not(self):
+        rule = {"address": "Plant.Out.Lamp", "field": "Value", "passthrough": True}
+        self.assertFalse([f for f in self.found(rule) if "closed set" in f])
+
+    def test_verify_stops_on_it_in_the_words_check_used(self):
+        """What `check` says first, `verify` does not run past: a verdict over a document
+        written in the platform's numbers would be a verdict about that numbering."""
+        rule = lamp_rule(map={1: "OFF", 2: "ON"})
+        said = [f for f in self.found(rule) if "closed set" in f]
+        self.assertEqual(1, len(said), said)
+        result = verify(self.pack(), self.root / "fixture.binding.yaml")
+        self.assertFalse(result.ran)
+        self.assertIn("closed set", result.refusal)
+        why = result.refusal.split(": ", 1)[1]
+        self.assertIn(why, said[0])
 
 
 class TheScaffoldWritesTheWordNotTheTable(Fixture):

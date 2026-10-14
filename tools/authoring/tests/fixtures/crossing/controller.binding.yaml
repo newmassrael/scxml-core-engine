@@ -22,20 +22,22 @@ inputs:
     address: plant/in/local-override
     equals: "ON"
 
+# Each output is an enumeration of the document's own, and `map: platform`
+# lands every variant on the platform's symbol of the same name.
 outputs:
   roadSignal:
     address: plant/out/road-signal
     field: value
-    map: {0: DARK, 1: FLASHING, 2: STEADY}
+    map: platform
   bell:
     address: plant/out/bell
     field: value
-    map: {0: SILENT, 1: RINGING}
+    map: platform
   barrier:
     address: plant/out/barrier
     field: value
-    map: {0: STOP, 1: LOWER, 2: RAISE}
+    map: platform
   trainSignal:
     address: plant/out/train-signal
     field: value
-    map: {0: DANGER, 1: CAUTION, 2: CLEAR}
+    map: platform

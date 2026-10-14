@@ -108,11 +108,14 @@ DOCUMENT = """<?xml version="1.0" encoding="UTF-8"?>
        version="1.0" sce:kind="transform" name="fixture">
   <datamodel>
     <data id="mode" sce:type="bool" sce:direction="in"/>
-    <data id="lamp" sce:type="int32" sce:direction="out" expr="mode ? 1 : 0"/>
+    <data id="lamp" sce:type="string" sce:direction="out" expr="mode ? 'on' : 'off'"/>
   </datamodel>
 </scxml>
 """
 
+# ⚠ The lamp is one of a closed set of the platform's symbols, so the document says which by
+# a NAME of its own and the map lands the name. A number there would be the platform's code
+# for a symbol, and `check` refuses a document that computes one (`closed_value_refusals`).
 BINDING = {
     "version": 1,
     "document": "fixture.scxml",
@@ -121,7 +124,7 @@ BINDING = {
         "lamp": {
             "address": "Plant.Out.Lamp",
             "field": "Stat",
-            "map": {0: "OFF", 1: "ON"},
+            "map": {"off": "OFF", "on": "ON"},
         }
     },
 }

@@ -28,7 +28,7 @@ import yaml
 from sce_author import mcp
 from sce_author.check import check
 from sce_author.pack import load_pack
-from sce_author.scaffold import SCE_NAMESPACE, ScaffoldError, write
+from sce_author.scaffold import SCE_NAMESPACE, ScaffoldError, enum_file, positions, write
 
 HERE = pathlib.Path(__file__).resolve().parent
 PACK = HERE / "fixtures" / "crossing"
@@ -79,15 +79,74 @@ class ATransformStartsFromTheModel(unittest.TestCase):
             self.assertNotIn("prefix `sce`", message)
             self.assertNotIn("does not say what kind", message)
 
+    def enumerations(self, root):
+        """Alias -> (the file it is imported from, its variants in order), as written."""
+        found = {}
+        for imported in root.iter(f"{SCE}import"):
+            path = self.dir / imported.get("src")
+            variants = [(v.get("name"), v.get("value"))
+                        for v in ET.parse(path).getroot().iter(f"{SCE}variant")]
+            found[imported.get("as")] = (path, variants)
+        return found
+
+    def test_a_closed_set_is_an_enumeration_of_the_documents_own(self):
+        """⚠ The discriminator for the skeleton. A position the platform gives a closed set
+        of symbols was declared `int64` and landed through the platform's numbers, and the
+        documents written from that skeleton computed those numbers."""
+        binding, root = self.scaffold()
+        enums = self.enumerations(root)
+        data = {d.get("id"): d.get(f"{SCE}type") for d in root.iter(f"{SCXML}data")}
+        closed = {}
+        for side in ("inputs", "outputs"):
+            for name, rule in binding[side].items():
+                fld = self.pack.model.by_address[rule["address"]].field(rule.get("field", ""))
+                if fld.values:
+                    closed[name] = fld
+        self.assertTrue(closed, "the premise: the model has closed sets")
+        for name, fld in closed.items():
+            self.assertTrue(data[name].startswith("enum:"), f"{name} is declared `{data[name]}`")
+            path, variants = enums[data[name][len("enum:"):]]
+            self.assertNotIn(".", path.stem, "a document's identity is its stem")
+            # The platform's symbols by name, in its order, under the document's own numbers.
+            self.assertEqual([s for s, _ in sorted(fld.values.items(), key=lambda kv: kv[1])],
+                             [n for n, _ in variants])
+            self.assertEqual([str(n) for n in range(len(variants))], [v for _, v in variants])
+        self.assertNotIn("int64", {data[name] for name in closed})
+        for rule in binding["outputs"].values():
+            if "map" in rule:
+                self.assertEqual("platform", rule["map"])
+
+    def test_the_skeleton_itself_hands_no_closed_set_a_number(self):
+        self.scaffold()
+        said = [m for _w, m in self.refusals() if "closed set" in m]
+        self.assertEqual([], said)
+
     def test_an_output_with_an_expression_is_no_longer_refused_for_it(self):
-        binding, _ = self.scaffold()
+        binding, root = self.scaffold()
         first = next(iter(binding["outputs"]))
+        alias = next(d.get(f"{SCE}type") for d in root.iter(f"{SCXML}data")
+                     if d.get("id") == first)[len("enum:"):]
+        symbol = self.enumerations(root)[alias][1][0][0]
         text = self.document.read_text(encoding="utf-8")
-        text = text.replace(f'<data id="{first}" ', f'<data id="{first}" expr="0" ', 1)
+        text = text.replace(f'<data id="{first}" ',
+                            f'<data id="{first}" expr="{alias}.{symbol}" ', 1)
         self.document.write_text(text, encoding="utf-8")
-        uncomputed = {w.split(" ", 1)[1] for w, m in self.refusals() if "computes nothing" in m}
+        got = self.refusals()
+        uncomputed = {w.split(" ", 1)[1] for w, m in got if "computes nothing" in m}
         self.assertNotIn(first, uncomputed)
         self.assertEqual(set(binding["outputs"]) - {first}, uncomputed)
+        self.assertEqual([], [m for w, m in got if w == f"output {first}"],
+                         "a value written by its name lands through `map: platform`")
+
+    def test_an_existing_enumeration_is_never_overwritten_and_nothing_is_written(self):
+        _inputs, outputs = positions(self.pack)
+        theirs = self.dir / enum_file(next(p for p in outputs if p.field.values))
+        theirs.write_text("<scxml/>", encoding="utf-8")
+        with self.assertRaises(ScaffoldError):
+            write(self.pack, "controller.scxml", self.binding, None, "transform")
+        self.assertEqual("<scxml/>", theirs.read_text())
+        self.assertFalse(self.binding.exists(), "the binding was written alone")
+        self.assertFalse(self.document.exists(), "the document was written alone")
 
     def test_an_existing_document_is_never_overwritten_and_nothing_is_written(self):
         self.document.write_text("<scxml/>", encoding="utf-8")

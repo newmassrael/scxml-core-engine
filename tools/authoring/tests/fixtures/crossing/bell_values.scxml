@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The values plant/out/bell.value takes, as the document names them. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="enum" name="bell_values" sce:underlying-type="uint8">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="SILENT" value="0"/>
+      <sce:variant name="RINGING" value="1"/>
+    </data>
+  </datamodel>
+</scxml>

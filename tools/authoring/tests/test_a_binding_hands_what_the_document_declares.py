@@ -17,9 +17,11 @@ refuted guess about something else. Asserted here:
                not a copy of it
   refused      a pairing the declarations disagree on, a comparison into a
                non-bool input, a bound on a non-number, a memory of another
-               type, and an enumeration whose numbers contradict the address's
-  read         a text, a truth value, a number through the value space, an
-               enumeration's number, and absence -- declared or refused
+               type, a closed set of symbols into a number, and an
+               enumeration that shares no name with the address's
+  read         a text, a truth value, a number, an enumeration's variant by
+               the NAME of the symbol the address carries, and absence --
+               declared or refused
   run          a text input drives a document end to end, and the same rule
                into a `bool` input is refused by `check`
 """
@@ -101,17 +103,34 @@ class TheDeclarationsMustAgree(unittest.TestCase):
         self.assertEqual("", refusal("count", {**AT, "equals": "ON"}, "bool", unsaid),
                          "a comparison needs no kind; it asks one question")
 
-    def test_an_enumeration_meets_the_address_on_the_number(self):
+    def test_an_enumeration_meets_the_address_on_the_name(self):
         self.assertEqual("", refusal("mode", AT, "enum:Level", LEVEL,
                                      variants={"LOW": 1, "HIGH": 2}))
 
-    def test_an_enumeration_whose_numbers_contradict_the_address_is_refused(self):
-        """⚠ `number: true` handed the number over with no such check, so a
-        document whose enumeration numbered HIGH as 1 would have read the
-        platform's LOW as its HIGH, silently."""
-        why = refusal("mode", AT, "enum:Level", LEVEL,
-                      variants={"LOW": 2, "HIGH": 1})
-        self.assertIn("HIGH as 2 and 1", why)
+    def test_each_side_numbers_its_values_as_it_likes(self):
+        """⚠ The handoff was by number, so the two had to agree on every number, and a
+        document's enumeration was the platform's numbering copied out. By name they need
+        not: the address's HIGH is the document's HIGH whatever either calls it inside."""
+        self.assertEqual("", refusal("mode", AT, "enum:Level", LEVEL,
+                                     variants={"LOW": 20, "HIGH": 10}))
+
+    def test_an_enumeration_that_shares_no_name_with_the_address_is_refused(self):
+        why = refusal("mode", AT, "enum:Level", LEVEL, variants={"SLOW": 1, "FAST": 2})
+        self.assertIn("the handoff is by name", why)
+        self.assertIn("SLOW, FAST", why)
+
+    def test_a_closed_set_of_symbols_is_not_handed_to_a_number(self):
+        """⚠ The discriminator for the rule on the input side. The number beside a symbol
+        is one platform's code for it; a document comparing it is written in that
+        platform's numbering, and this pairing used to be handed over."""
+        why = refusal("level", AT, "int32", LEVEL)
+        self.assertIn("a symbol of a closed set (NONE, LOW, HIGH, MAX)", why)
+        self.assertIn("`equals`", why)
+        self.assertIn("enum:<alias>", why)
+        with self.assertRaises(DeliveryError):
+            read_as_is("level", AT, "HIGH", True, "int32", LEVEL)
+        self.assertEqual("", refusal("level", {**AT, "equals": "HIGH"}, "bool", LEVEL),
+                         "compared, it is a truth value and no number crosses")
 
     def test_an_enumeration_nobody_imported_is_refused(self):
         self.assertIn("no enumeration", refusal("mode", AT, "enum:Level", LEVEL))
@@ -121,10 +140,10 @@ class TheDeclarationsMustAgree(unittest.TestCase):
         into an `int32` input passed `check` and `verify`, and reached the
         document as a text where it computes with a number; the product's
         connecting code refused the same binding."""
-        why = refusal("level", {**AT, "when_absent": "LOW"}, "int32", LEVEL)
+        why = refusal("count", {**AT, "when_absent": "LOW"}, "int32", COUNT)
         self.assertIn("`when_absent: 'LOW'`", why)
         self.assertIn("a number", why)
-        self.assertEqual("", refusal("level", {**AT, "when_absent": 0}, "int32", LEVEL))
+        self.assertEqual("", refusal("count", {**AT, "when_absent": 0}, "int32", COUNT))
         self.assertIn("a truth value", refusal("ready", {**AT, "when_absent": "false"},
                                                "bool", TRUTH))
         self.assertEqual("", refusal("ready", {**AT, "when_absent": False}, "bool", TRUTH))
@@ -171,17 +190,23 @@ class TheValueIsRead(unittest.TestCase):
         with self.assertRaises(DeliveryError):
             read_as_is("r", AT, "maybe", True, "bool", TRUTH)
 
-    def test_a_number_goes_through_the_value_space(self):
-        self.assertEqual(2, read_as_is("m", AT, "HIGH", True, "int32", LEVEL))
+    def test_a_number_is_read_as_a_number(self):
         self.assertEqual(7, read_as_is("n", AT, "7.0", True, "int32", COUNT))
+
+    def test_an_enumeration_is_handed_the_variant_of_the_same_name(self):
+        """The document's own number for it, whether the record writes the symbol or the
+        platform's number for the symbol (2 is HIGH on this address)."""
+        variants = {"LOW": 20, "HIGH": 10}
+        for recorded in ("HIGH", "2", 2):
+            self.assertEqual(10, read_as_is("m", AT, recorded, True, "enum:Level", LEVEL,
+                                            variants=variants))
 
     def test_an_enumeration_takes_only_its_own_variants(self):
         variants = {"LOW": 1, "HIGH": 2}
-        self.assertEqual(2, read_as_is("m", AT, "HIGH", True, "enum:Level", LEVEL,
-                                       variants=variants))
         with self.assertRaises(DeliveryError) as raised:
             read_as_is("m", AT, "MAX", True, "enum:Level", LEVEL, variants=variants)
-        self.assertIn("no variant numbered", str(raised.exception))
+        self.assertIn("is MAX", str(raised.exception))
+        self.assertIn("no variant of that name", str(raised.exception))
 
     def test_an_address_the_model_does_not_describe_is_not_guessed_at(self):
         with self.assertRaises(DeliveryError) as raised:

@@ -37,7 +37,7 @@
       "properties": {
         "address": {
           "type": "string",
-          "description": "The platform address this input reads. Named with nothing that compares it, it hands the document the address's own value, read as the type the document declares for this input (`sce:type`) and checked against what the interface model says the address carries -- a number, a text, a truth value, or an enumeration's number. ⚠ There is no key restating that type. The document and the model already say it, and a third statement is a third place to disagree: `number: true` was one, and measured 2026-09-22 over 24 bindings its 24 uses all fed `int32` inputs while nothing compared the two, and a text input had no key at all."
+          "description": "The platform address this input reads. Named with nothing that compares it, it hands the document the address's own value, read as the type the document declares for this input (`sce:type`) and checked against what the interface model says the address carries -- a number, a text, a truth value, or, for an address that carries a symbol of a closed set, the variant of the same name in an enumeration of the document's own (a closed set is not handed to a number: the number beside a symbol is one platform's code for it). ⚠ There is no key restating that type. The document and the model already say it, and a third statement is a third place to disagree: `number: true` was one, and measured 2026-09-22 over 24 bindings its 24 uses all fed `int32` inputs while nothing compared the two, and a text input had no key at all."
         },
         "unresolved": {
           "type": "string",
@@ -62,7 +62,7 @@
         },
         "when_absent": {
           "x-sce-document-value": true,
-          "description": "What an address handed over as it is -- a number, a text, a truth value, an enumeration's number -- reads as when it is not reporting: the case drives no value there, or a token the conventions list as absence, or (for a number) one outside `range`. ⚠ Required for such an input whose address a case may not drive -- there is no safe silent answer. Folding absence into zero made seven cases on one corpus look as though the specification had been misread, when what had actually happened was that nothing was reporting. A symbol comparison needs no such declaration: an address that is not reporting is not any symbol, which is already the answer. Out of range counts as absent here because a reading the platform cannot represent is not a reading."
+          "description": "What an address handed over as it is -- a number, a text, a truth value, a variant of the document's own enumeration (written as the document's number for it) -- reads as when it is not reporting: the case drives no value there, or a token the conventions list as absence, or (for a number) one outside `range`. ⚠ Required for such an input whose address a case may not drive -- there is no safe silent answer. Folding absence into zero made seven cases on one corpus look as though the specification had been misread, when what had actually happened was that nothing was reporting. A symbol comparison needs no such declaration: an address that is not reporting is not any symbol, which is already the answer. Out of range counts as absent here because a reading the platform cannot represent is not a reading."
         },
         "previous_of": {
           "type": "string",

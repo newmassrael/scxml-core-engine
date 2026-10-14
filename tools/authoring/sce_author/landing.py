@@ -50,6 +50,31 @@ def names_value(key, value) -> bool:
 PLATFORM_MAP = "platform"
 
 
+def document_name(value, sce_type: str | None, variants: dict | None):
+    """An output value as the document names it: an enumeration's member by its variant's name.
+
+    A closed set of values crosses the boundary by NAME (`check.closed_value_refusal`), so a
+    document's `enum:` output lands through the variant it chose, never through its number:
+    the number is the document's own and means nothing to a platform. A member arrives as
+    itself (it has a `name`), or as the number the lowering keeps it as, read back through the
+    document's own table. Any other output is what it is.
+
+    ⚠ Before this a member was compared with the map's keys as it came -- an object of the
+    process that played the design -- and matched none: an enumeration-typed output passed
+    `check` and left every case of `verify` unjudged.
+    """
+    if not (sce_type or "").startswith("enum:") or value is None:
+        return value
+    name = getattr(value, "name", None)
+    if isinstance(name, str):
+        return name
+    if isinstance(value, int) and not isinstance(value, bool) and variants:
+        for variant, number in variants.items():
+            if number == value:
+                return variant
+    return value
+
+
 def mapped(table: dict, value) -> tuple[bool, object]:
     """The entry of a binding's `map` that names `value`: (True, what it
     writes), or (False, None) when no key names it."""
@@ -200,7 +225,8 @@ def _conditional(body: str) -> tuple[str, str] | None:
     return None
 
 
-def produces(rule: dict, sce_type: str | None, sends, expr: str | None = None) -> list | None:
+def produces(rule: dict, sce_type: str | None, sends, expr: str | None = None,
+             variants: dict | None = None) -> list | None:
     """Every value this rule can be handed, when the document says; else None.
 
     `sce_type` is what the document declares the output to be, `sends` its
@@ -226,6 +252,9 @@ def produces(rule: dict, sce_type: str | None, sends, expr: str | None = None) -
         names = [event for event, processor in sends
                  if event and (wanted is None or processor == wanted)]
         return list(dict.fromkeys([*names, rule.get("when_nothing_sent")]))
+    if (sce_type or "").startswith("enum:") and variants:
+        # An enumeration output is one of its variants, landed by name (`document_name`).
+        return list(variants)
     literals = expression_values(expr)
     if literals is not None:
         return literals
@@ -251,9 +280,9 @@ def unmapped_default(rule: dict) -> list:
 
     The host answers a round in which nothing was sent with this value, and it goes through
     the map like any other. ⚠ Known whatever the document sends: `produces` cannot list the
-    values of a send's `param`, so `unmapped` never asked about this one, and a binding that
-    wrote the platform's SYMBOL beside `map: platform` -- whose keys are the platform's
-    NUMBERS -- passed `check` and was refused by `verify` on every round that sent nothing.
+    values of a send's `param`, so `unmapped` never asked about this one, and a binding whose
+    default was not one of its map's keys passed `check` and was refused by `verify` on every
+    round that sent nothing.
     Empty under `hold_last`, where a value with no entry keeps what the position held.
     """
     if "map" not in rule or rule.get("hold_last") or "when_nothing_sent" not in rule:

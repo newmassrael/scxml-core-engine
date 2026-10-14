@@ -50,6 +50,9 @@ class AVerdictNamesTheLoweringItIsAbout(unittest.TestCase):
         for name in ("interface-model.yaml", "conventions.yaml",
                      "examples.yaml", "controller_resolved.scxml"):
             shutil.copy(CROSSING / name, self.tmp / name)
+        # The enumerations the document imports: it is built with them or not at all.
+        for path in sorted(CROSSING.glob("*_values.scxml")):
+            shutil.copy(path, self.tmp / path.name)
         self.pack = load_pack(self.tmp)
         self.binding = self.tmp / "b.yaml"
         self.binding.write_text(CLOSED.read_text(encoding="utf-8"),

@@ -90,14 +90,14 @@ DECLARING = """<?xml version="1.0" encoding="UTF-8"?>
        version="1.0" datamodel="ecmascript" initial="dark"
        sce:kind="statechart">
   <datamodel>
-    <data id="roadSignal" sce:type="int32" sce:direction="out" expr="0"/>
+    <data id="roadSignal" sce:type="string" sce:direction="out" expr="'dark'"/>
   </datamodel>
   <state id="dark">
-    <onentry><assign location="roadSignal" expr="0"/></onentry>
+    <onentry><assign location="roadSignal" expr="'dark'"/></onentry>
     <transition event="train.approaching" target="flashing"/>
   </state>
   <state id="flashing">
-    <onentry><assign location="roadSignal" expr="1"/></onentry>
+    <onentry><assign location="roadSignal" expr="'flashing'"/></onentry>
     <transition event="train.cleared" target="dark"/>
   </state>
 </scxml>
@@ -540,7 +540,7 @@ class AnOutputTheDocumentDeclaresIsReadFromIt(unittest.TestCase):
     def test_the_declared_variable_is_what_the_case_is_judged_on(self):
         result = self.run_with({
             "address": "plant/out/road-signal", "field": "value",
-            "map": {0: "DARK", 1: "FLASHING"}})
+            "map": {"dark": "DARK", "flashing": "FLASHING"}})
         self.assertTrue(result.ran, result.refusal)
         self.assertEqual(2, result.passed,
                          [(r.name, r.refusal, r.failures) for r in result.results])
@@ -551,7 +551,7 @@ class AnOutputTheDocumentDeclaresIsReadFromIt(unittest.TestCase):
             DECLARING.replace("roadSignal", name), encoding="utf-8")
         binding = {**BINDING, "outputs": {name: {
             "address": "plant/out/road-signal", "field": "value",
-            "map": {0: "DARK", 1: "FLASHING"}}}}
+            "map": {"dark": "DARK", "flashing": "FLASHING"}}}}
         path = self.tmp / "b.yaml"
         path.write_text(yaml.safe_dump(binding), encoding="utf-8")
         return verify(load_pack(self.tmp), path)

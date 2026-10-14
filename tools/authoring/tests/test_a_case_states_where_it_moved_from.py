@@ -192,8 +192,8 @@ EDGE = """<?xml version="1.0" encoding="UTF-8"?>
     <data id="mode" sce:type="bool" sce:direction="in"/>
     <data id="wasMode" sce:type="bool" sce:direction="in"/>
     <data id="count" sce:type="int32" sce:direction="in"/>
-    <data id="lamp" sce:type="int32" sce:direction="out"
-          expr="(mode &amp;&amp; !wasMode &amp;&amp; count &gt;= 0) ? 1 : 0"/>
+    <data id="lamp" sce:type="string" sce:direction="out"
+          expr="(mode &amp;&amp; !wasMode &amp;&amp; count &gt;= 0) ? 'on' : 'off'"/>
   </datamodel>
 </scxml>
 """

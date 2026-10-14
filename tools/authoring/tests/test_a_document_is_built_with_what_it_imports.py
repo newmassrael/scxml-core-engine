@@ -56,8 +56,8 @@ IMPORTING = """<?xml version="1.0" encoding="UTF-8"?>
   <sce:import as="Level" src="levels/supply_level.scxml" kind="enum"/>
   <datamodel>
     <data id="mode" sce:type="enum:Level" sce:direction="in"/>
-    <data id="lamp" sce:type="int32" sce:direction="out"
-          expr="mode === Level.HIGH ? 1 : 0"/>
+    <data id="lamp" sce:type="string" sce:direction="out"
+          expr="mode === Level.HIGH ? 'on' : 'off'"/>
   </datamodel>
 </scxml>
 """

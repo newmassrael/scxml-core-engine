@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The values plant/out/train-signal.value takes, as the document names them. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="enum" name="train_signal_values" sce:underlying-type="uint8">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="DANGER" value="0"/>
+      <sce:variant name="CAUTION" value="1"/>
+      <sce:variant name="CLEAR" value="2"/>
+    </data>
+  </datamodel>
+</scxml>

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The values plant/out/barrier.value takes, as the document names them. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="enum" name="barrier_values" sce:underlying-type="uint8">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="STOP" value="0"/>
+      <sce:variant name="LOWER" value="1"/>
+      <sce:variant name="RAISE" value="2"/>
+    </data>
+  </datamodel>
+</scxml>

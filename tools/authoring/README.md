@@ -2560,16 +2560,40 @@ binding `check` can read, so each gap comes back as a refusal naming its rule.
 the ones that failed failed on the copied half -- a missing `version`, an
 output rule with no `field` -- and never reached the half that reads the prose.
 
-`map: platform` is the platform's own table for the field -- the number each
-symbol has in the interface model -- read from the model when the binding is
-read, so a document that computes the platform's numbers lands them unchanged
-and nothing is typed that could be copied wrongly. A document that numbers its
-values otherwise writes the table it needs, and that table is its own numbering:
-`check` holds it to what the document produces (an output whose `expr` yields
-only literals must have an entry for each, below) and `verify` to the cases, and
-does not judge it by whether it looks like the platform's. The word needs an
-enumerated `field`: on a field the model does not enumerate, or an address or
-field it does not have, the binding is refused when it is read, naming the output.
+`map: platform` is the platform's own table for the field -- every symbol the
+interface model gives it, under its own NAME -- read from the model when the
+binding is read, so a document's enumeration lands each variant on the symbol of
+the same name and nothing is typed that could be copied wrongly. A document that
+names its values otherwise writes the table it needs, keyed by its own names:
+`check` holds it to what the document produces (every variant of an enumeration,
+and every literal of an output whose `expr` yields only literals, must have an
+entry, below) and `verify` to the cases, and does not judge it by whether it
+looks like the platform's. The word needs an enumerated `field`: on a field the
+model does not enumerate, or an address or field it does not have, the binding
+is refused when it is read, naming the output.
+
+⚠ **A closed set crosses the boundary by name, in both directions.** A field
+the model enumerates takes one of a closed set of symbols, and the number beside
+each is that platform's own code for it. A document that computes or compares
+that number (`stat = on ? 2 : 1`, `request == 0`) is written in one platform's
+numbering: bound to another, or read by a person, the number says nothing. So
+`check` and `verify` refuse, in the same words, an output declared a number that
+lands on an enumerated field (through any `map`, or `passthrough`), a `<send>`
+landed there through a map keyed by a number, and an input declared a number
+that is handed an enumerated address as it is (`check.closed_value_refusals`,
+`delivery.refusal`). What takes their place: an enumeration of the document's
+own (`sce:type="enum:<alias>"`, a `sce:kind="enum"` document it imports) --
+handed an input's symbol as the variant of the same name, landed by `map` on the
+symbol each variant names -- or a comparison (`equals`), or a truth value, or a
+name of the document's own as a text or an event. The numbers of an enumeration
+document are the document's and never cross; the two sides need not agree on
+them. This table was keyed by the platform's NUMBER, the skeleton declared every
+enumerated position `int64`, and documents written from it computed the
+platform's codes: measured 2026-10-14, nearly every document of one corpus did,
+and an enumeration-typed output -- the form that does not -- passed `check` and
+left every case of `verify` unjudged, so nobody could have used it.
+
+Why the table is read rather than typed, from when it was keyed by number:
 ⚠ Measured 2026-10-11 on an enumeration of 54 symbols: a re-typed map lost one
 symbol, so every symbol after it landed one number early (240 cases failed) and
 the last symbol moved from 53 to 52, so the document's 53 had no entry (452
@@ -2583,8 +2607,12 @@ is now said in the binding.
 `--kind transform` also writes the document the binding names, beside it and
 only if it does not exist: the root declaring `sce:kind="transform"` in SCE's
 namespace, and one `<data>` per rule, with the rule's identifier, its direction
-and a `sce:type` read off the model (`int64` for a value space or an
-`integer`, `float64` for a `number`, which does not say it is whole). No
+and a `sce:type` read off the model (`int64` for an `integer`, `float64` for a
+`number`, which does not say it is whole). A position that is a closed set of
+symbols is declared `enum:<Alias>`, and its enumeration is written beside the
+document as `<position>_values.scxml` and imported: the platform's symbols as
+its variants, numbered by the document from 0, so a value is written by its
+name (`<Alias>.<SYMBOL>`) and no number of the platform's is in the skeleton. No
 output has an `expr`:
 the expression is the specification's reading, and `check` refuses each
 transform output that still computes nothing, as the product would. Whether
@@ -2758,10 +2786,11 @@ carries:
 
 | document declares | address carries | the document receives |
 |---|---|---|
-| a number type (`int32`, `float64`, …) | a number, or an enumeration | the number (an enumeration's through the model) |
+| a number type (`int32`, `float64`, …) | a number | the number |
 | `string` | a text | the text |
 | `bool` | a truth value | the truth value |
-| `enum:<alias>` | an enumeration, or a number | the number, which must be one of the imported enumeration's variants |
+| `enum:<alias>` | an enumeration | the variant NAMED as the symbol the address carries (the document's own number for it) |
+| `enum:<alias>` | a number | the number, which must be one of the imported enumeration's variants |
 
 Any other pairing is refused by `check`, and by `verify` in the same words, and
 a comparison (`equals`, `absent`, …) into an input not declared `bool` is
@@ -2769,8 +2798,11 @@ refused the same way. ⚠ There is no key saying "read this as a number": the
 document and the model already say what it is, and `number: true` — which
 said it a third time — fed an `int32` input in all 24 of its uses on one corpus
 while nothing compared the two, and left a text input no way to be read at all.
-An enumeration meets the platform on the NUMBER, so where both sides name a
-value they must give it the same one.
+An enumeration meets the platform on the NAME: the two sides must share a name
+to hand anything over, and the number each keeps for it is its own. An
+enumerated address is not handed to a number at all -- that number is the
+platform's code for a symbol (above, *a closed set crosses the boundary by
+name*).
 
 ⚠ `becomes` is not a spelling of `equals`. `equals` asks what an address IS
 and answers every round; `becomes` asks what it CHANGED TO and answers once. A

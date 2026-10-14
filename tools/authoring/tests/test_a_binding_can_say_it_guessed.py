@@ -32,8 +32,9 @@ COUNTED = """<?xml version="1.0" encoding="UTF-8"?>
        version="1.0" sce:kind="transform" name="counted">
   <datamodel>
     <data id="count" sce:type="int32" sce:direction="in"/>
-    <data id="lamp" sce:type="int32" sce:direction="out"
-          expr="count &gt; 0 ? 1 : 0"/>
+    <!-- The lamp is one of a closed set, so the document names which. -->
+    <data id="lamp" sce:type="string" sce:direction="out"
+          expr="count &gt; 0 ? 'on' : 'off'"/>
   </datamodel>
 </scxml>
 """
@@ -48,7 +49,7 @@ def binding(count_rule=None, lamp_rule=None):
         "inputs": {"count": {"address": "Plant.Input.Count",
                              "when_absent": 0, **(count_rule or {})}},
         "outputs": {"lamp": {"address": "Plant.Out.Lamp", "field": "Stat",
-                             "map": {0: "OFF", 1: "ON"}, **(lamp_rule or {})}},
+                             "map": {"off": "OFF", "on": "ON"}, **(lamp_rule or {})}},
     }
 
 

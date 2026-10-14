@@ -38,11 +38,11 @@ DOCUMENT = """<?xml version="1.0" encoding="UTF-8"?>
              sce:assumed-reason="read from a drawing: the later input decides"
              sce:assumed-candidates="later earlier">
     <data id="count" sce:type="int32" sce:direction="in"/>
-    <data id="lamp" sce:type="int32" sce:direction="out"
+    <data id="lamp" sce:type="string" sce:direction="out"
           sce:assumed="lamp-threshold"
           sce:assumed-reason="no threshold is given; read as above zero"
-          sce:assumed-candidates="1 0"
-          expr="count &gt; 0 ? 1 : 0"/>
+          sce:assumed-candidates="on off"
+          expr="count &gt; 0 ? 'on' : 'off'"/>
   </datamodel>
 </scxml>
 """
@@ -52,7 +52,7 @@ BINDING = {
     "document": "placed.scxml",
     "inputs": {"count": {"address": "Plant.Input.Count", "when_absent": 0}},
     "outputs": {"lamp": {"address": "Plant.Out.Lamp", "field": "Stat",
-                         "map": {0: "OFF", 1: "ON"}}},
+                         "map": {"off": "OFF", "on": "ON"}}},
 }
 
 CASE = {"name": "two counted",

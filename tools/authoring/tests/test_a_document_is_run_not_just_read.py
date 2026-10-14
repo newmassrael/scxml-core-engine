@@ -34,6 +34,13 @@ OPEN_BINDING = CROSSING / "controller.binding.yaml"
 CLOSED_BINDING = CROSSING / "controller_resolved.binding.yaml"
 
 
+def copy_enumerations(into: pathlib.Path) -> None:
+    """The enumerations the crossing documents import, beside a copy of one: a document is
+    built with what it imports, and a copy without them is refused on its import line."""
+    for path in sorted(CROSSING.glob("*_values.scxml")):
+        shutil.copy(path, into / path.name)
+
+
 def codegen_is_built() -> bool:
     from sce_author.verify import _default_codegen
     return _default_codegen().exists()
@@ -167,6 +174,7 @@ class ADocumentIsRunNotJustRead(unittest.TestCase):
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
         for name in ("interface-model.yaml", "conventions.yaml", "examples.yaml"):
             shutil.copy(CROSSING / name, tmp / name)
+        copy_enumerations(tmp)
         document = (CROSSING / "controller_resolved.scxml").read_text(encoding="utf-8")
         (tmp / "doc.scxml").write_text(
             document.replace('sce:kind="transform"', 'sce:kind="observer"'),
@@ -204,9 +212,12 @@ class ADocumentIsRunNotJustRead(unittest.TestCase):
             '          sce:assumed-reason="the records never say which shows '
             'when both hold"\n'
             '          expr="approaching ? 1 : 0"/>\n'
-            '    <data id="roadSignal"').replace(
-            'expr="manualOverride ? 0 : (approaching ? 1 : (occupied ? 2 : 0))"',
-            'expr="manualOverride ? 0 : (guessed !== 0 ? 9 : (occupied ? 2 : 0))"')
+            '    <data id="roadSignal"')
+        # The road signal now goes STEADY where the records flash it, by way of the guess.
+        self.assertIn("(approaching ? RoadSignal.FLASHING", guessed,
+                      "the premise: the fixture still writes the arm this replaces")
+        guessed = guessed.replace("(approaching ? RoadSignal.FLASHING",
+                                  "(guessed !== 0 ? RoadSignal.STEADY")
 
         def use_it(binding):
             binding["document"] = "guessed.scxml"
@@ -349,6 +360,7 @@ class ADocumentIsRunNotJustRead(unittest.TestCase):
             shutil.copy(CROSSING / name, tmp / name)
         for name in ("controller_resolved.scxml",):
             shutil.copy(CROSSING / name, tmp / name)
+        copy_enumerations(tmp)
         shutil.copy(CLOSED_BINDING, tmp / "b.yaml")
         examples = yaml.safe_load((CROSSING / "examples.yaml").read_text(encoding="utf-8"))
         for case in examples["cases"]:
@@ -367,6 +379,7 @@ class ADocumentIsRunNotJustRead(unittest.TestCase):
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
         for name in ("interface-model.yaml", "controller_resolved.scxml"):
             shutil.copy(CROSSING / name, tmp / name)
+        copy_enumerations(tmp)
         conventions = yaml.safe_load(
             (CROSSING / "conventions.yaml").read_text(encoding="utf-8"))
         if mutate_conventions:

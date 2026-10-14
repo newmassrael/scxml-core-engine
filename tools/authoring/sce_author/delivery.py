@@ -45,12 +45,14 @@ _CLASSES = (
 # Keys whose rule hands the document a truth value.
 _TRUTH = ("equals", "equals_any", "not_equals", "absent", "variant_is", "protocol")
 
-# The pairs that hand a value over unchanged: (document class, slot kind).
-# ⚠ An enumeration input takes the platform's NUMBER, not its spelling. An
-# enumeration document declares a number for every variant, and the model
-# declares one for every symbol, so the two meet on the number -- and where
-# they both name a value they must agree on it (`refusal`).
-_AS_IS = {("number", "number"), ("number", "enum"), ("text", "text"),
+# The pairs that hand a value over as it is: (document class, slot kind).
+# ⚠ A closed set crosses the boundary by NAME. An address that carries a symbol of an
+# enumeration is handed to an enumeration of the document's own as the variant of the same
+# name; the number each side keeps for it is that side's own and they need not agree. It is
+# NOT handed to a number: the number beside a symbol is one platform's code for it, and a
+# document comparing it (`x == 2`) is written in that platform's numbering. That pair was
+# here, and a skeleton declared every enumerated input a number, so documents were.
+_AS_IS = {("number", "number"), ("text", "text"),
           ("bool", "boolean"), ("enum", "enum"), ("enum", "number")}
 
 
@@ -181,21 +183,26 @@ def _handoff_refusal(name: str, rule: dict, sce_type: str | None, field,
                 f"enumeration of that name is imported, so nothing says what "
                 f"its numbers mean")
     if (doc, slot) == ("enum", "enum"):
-        # ⚠ One value named by both sides with two numbers is two meanings
-        # for one handoff. Names only one side has are not compared: a
-        # platform list carries values -- a timeout, a reserved code -- that a
-        # document's enumeration need not, and meeting one is refused when it
-        # is read rather than presumed here.
-        clash = sorted(s for s, n in field.values.items()
-                       if s in variants and variants[s] != n)
-        if clash:
-            return (f"the address and the document's enumeration give "
-                    + ", ".join(f"{s} as {field.values[s]} and {variants[s]}"
-                                for s in clash)
-                    + " -- the handoff is by number, so one of them is wrong")
+        # ⚠ The handoff is by name, so the two have to share one. Names only one side has
+        # are not compared: a platform list carries values -- a timeout, a reserved code --
+        # that a document's enumeration need not, and meeting one is refused when it is read
+        # rather than presumed here. Sharing none, nothing could ever be handed over.
+        if not set(field.values) & set(variants):
+            return (f"the address carries {', '.join(field.values)} and the document's "
+                    f"enumeration `{sce_type}` has {', '.join(variants)}: the handoff is by "
+                    f"name, and no variant is named as a symbol of the address is")
         return ""
     if (doc, slot) in _AS_IS:
         return ""
+    if (doc, slot) == ("number", "enum"):
+        return (f"names an address and nothing else, which hands the document what the "
+                f"address carries -- a symbol of a closed set ({', '.join(field.values)}) -- "
+                f"and it declares {name!r} `{sce_type}`: the number beside a symbol is this "
+                f"platform's own code for it, so a document reading it is written in one "
+                f"platform's numbering. A closed set crosses the boundary by name -- compare "
+                f"it (`equals`, `equals_any`), or declare {name!r} an enumeration of the "
+                f"document's own (`sce:type=\"enum:<alias>\"`), which is handed the variant "
+                f"of the same name")
     if doc == "bool":
         return (f"names an address and nothing else, which hands the document "
                 f"what the address carries -- {_carries(slot)} -- and it "
@@ -213,8 +220,9 @@ def absence_refusal(name: str, rule: dict, sce_type: str | None,
     `when_absent` is handed to the document as it is written (`read_as_is`), in
     place of what the address would have carried, so it has to be a value of
     the document's own type: a number for a number, a truth value for a `bool`,
-    a text for a `string`, and an enumeration's NUMBER for an enumeration --
-    the same thing a reporting address hands it.
+    a text for a `string`, and for an enumeration the number of one of its
+    variants -- the document's own number, which is what a reporting address's
+    symbol is handed over as.
 
     ⚠ A symbol of the address (`when_absent: OFF` on an `int32` input) used to
     pass `check` and `verify` alike, and reached the document as a text where
@@ -314,6 +322,20 @@ def read_as_is(name: str, rule: dict, value, present: bool, sce_type: str | None
             return False
         raise DeliveryError(f"input {name!r}: {value!r} at {rule.get('address')} "
                             f"is not a truth value")
+    if (doc, slot) == ("enum", "enum"):
+        # By name: the symbol the address carries is the variant of the same name, and the
+        # document is handed ITS number for it. A record may write the symbol or the
+        # platform's number for it; the model says which symbol a number is.
+        symbol = _symbol(value, field)
+        if symbol not in variants:
+            # A value the platform can carry and the document's enumeration has no variant
+            # for -- a timeout, a reserved code. Handing it over would give the document a
+            # value its own type says cannot occur.
+            raise DeliveryError(
+                f"input {name!r}: {value!r} at {rule.get('address')} is "
+                f"{symbol if symbol is not None else 'no symbol of the address'}, and the "
+                f"document's enumeration `{sce_type}` has no variant of that name")
+        return variants[symbol]
     number = _number(name, rule, value, field)
     if doc == "enum" and number not in variants.values():
         # A value the platform can carry and the document's enumeration has
@@ -326,21 +348,30 @@ def read_as_is(name: str, rule: dict, value, present: bool, sce_type: str | None
     return number
 
 
-def _number(name: str, rule: dict, value, field):
+def _symbol(value, field) -> str | None:
+    """The symbol of an enumerated address a record's value names: the symbol as written, or
+    the one the model numbers so. None when it names neither."""
     text = str(value).strip()
-    # ⚠ Through the value space first. A record writes `ON` where the
-    # document wants the platform's number for it, and the model is the
-    # authority on which number a symbol is.
-    if field.values and text in field.values:
-        number = float(field.values[text])
-    else:
-        try:
-            number = float(text)
-        except ValueError:
-            if "when_absent" in rule:
-                return rule["when_absent"]
-            raise DeliveryError(f"input {name!r}: {value!r} at "
-                                f"{rule.get('address')} is not a number") from None
+    if text in field.values:
+        return text
+    try:
+        number = float(text)
+    except ValueError:
+        return None
+    return next((s for s, n in field.values.items() if float(n) == number), None)
+
+
+def _number(name: str, rule: dict, value, field):
+    # The address carries a number: an enumerated one is never read here, because its number
+    # is not handed over (`refusal`), and its symbol is read by name (`_symbol`).
+    text = str(value).strip()
+    try:
+        number = float(text)
+    except ValueError:
+        if "when_absent" in rule:
+            return rule["when_absent"]
+        raise DeliveryError(f"input {name!r}: {value!r} at "
+                            f"{rule.get('address')} is not a number") from None
     low, high = rule.get("range", (None, None))
     if low is not None and not (low <= number <= high):
         # A reading the platform cannot represent is not a reading.

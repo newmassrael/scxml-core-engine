@@ -210,7 +210,9 @@ class TheReadmeIsNotOutOfDate(unittest.TestCase):
         crossing = HERE / "fixtures" / "crossing"
         page = assemble(load_prose([crossing / "specification.md"]),
                         load_pack(crossing))
-        named = set(re.findall(r"sce:([a-z][a-z0-9-]*)", page))
+        # Attributes: an element (`<sce:import>`, `<sce:variant>`) is not in the list of
+        # markers this is checked against, and is refused by the product on other grounds.
+        named = set(re.findall(r"(?<!<)sce:([a-z][a-z0-9-]*)", page))
         self.assertTrue(named, "the brief names no markers at all")
         unknown = sorted(n for n in named if n not in known)
         self.assertEqual([], unknown,

@@ -37,15 +37,15 @@ HEADER = """<?xml version="1.0" encoding="UTF-8"?>
 """
 
 # The guard is declared and never read: nothing can turn on it.
-IGNORES = HEADER + """    <data id="lamp" sce:type="int32" sce:direction="out" expr="mode ? 1 : 0"/>
+IGNORES = HEADER + """    <data id="lamp" sce:type="string" sce:direction="out" expr="mode ? 'on' : 'off'"/>
   </datamodel>
 </scxml>
 """
 
 # The guard matters only while the supply is HIGH. At LOW the lamp is off
 # whatever it is -- which is what lets one case be judged and not the other.
-DEPENDS = HEADER + """    <data id="lamp" sce:type="int32" sce:direction="out"
-          expr="(mode &amp;&amp; guard) ? 1 : 0"/>
+DEPENDS = HEADER + """    <data id="lamp" sce:type="string" sce:direction="out"
+          expr="(mode &amp;&amp; guard) ? 'on' : 'off'"/>
   </datamodel>
 </scxml>
 """
@@ -63,7 +63,8 @@ BINDING = {
         "lamp": {
             "address": "Plant.Out.Lamp",
             "field": "Stat",
-            "map": {0: "OFF", 1: "ON"},
+            # The lamp is one of a closed set of symbols: the document names it.
+            "map": {"off": "OFF", "on": "ON"},
             # A constant the binding always writes. It comes out the same
             # under every value of the guard, which is exactly what let the
             # first version pass a case on it alone.
@@ -200,12 +201,13 @@ OPEN_DOC = """<?xml version="1.0" encoding="UTF-8"?>
        version="1.0" sce:kind="transform" name="guarded">
   <datamodel>
     <data id="mode" sce:type="bool" sce:direction="in"/>
-    <data id="lamp" sce:type="int32" sce:direction="out" expr="mode ? 1 : 0"/>
+    <data id="lamp" sce:type="string" sce:direction="out" expr="mode ? 'on' : 'off'"/>
     <!-- Nobody has said how loud the chime is. sce:unresolved is the marker. -->
     <data id="chime" sce:type="int32" sce:direction="out"
           sce:unresolved="CHIME_LEVEL"
           sce:unresolved-reason="the source names the chime and not its level"/>
-    <data id="loud" sce:type="int32" sce:direction="out" expr="chime + 1"/>
+    <data id="loud" sce:type="string" sce:direction="out"
+          expr="chime &gt; 1 ? 'loud' : 'soft'"/>
   </datamodel>
 </scxml>
 """
@@ -216,11 +218,11 @@ OPEN_BINDING = {
     "inputs": {"mode": {"address": "Plant.Input.SupplyMode", "equals": "HIGH"}},
     "outputs": {
         "lamp": {"address": "Plant.Out.Lamp", "field": "Stat",
-                 "map": {0: "OFF", 1: "ON"}},
+                 "map": {"off": "OFF", "on": "ON"}},
         "chime": {"address": "Plant.Out.Lamp", "field": "Value",
                   "passthrough": True},
         "loud": {"address": "Plant.Out.Unwritten", "field": "Stat",
-                 "map": {0: "NONE", 1: "OFF", 2: "ON"}},
+                 "map": {"soft": "OFF", "loud": "ON"}},
     },
 }
 

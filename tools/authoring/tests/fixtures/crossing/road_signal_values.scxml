@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The values plant/out/road-signal.value takes, as the document names them.
+     The names are the platform's symbols; the numbers are the document's own
+     and never cross the boundary. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="enum" name="road_signal_values" sce:underlying-type="uint8">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="DARK" value="0"/>
+      <sce:variant name="FLASHING" value="1"/>
+      <sce:variant name="STEADY" value="2"/>
+    </data>
+  </datamodel>
+</scxml>

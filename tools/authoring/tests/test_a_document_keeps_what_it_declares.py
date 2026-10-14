@@ -42,8 +42,8 @@ KEPT = """<?xml version="1.0" encoding="UTF-8"?>
   <datamodel>
     <data id="mode" sce:type="bool" sce:direction="in" sce:initial="false"/>
     <data id="count" sce:type="int32" sce:direction="in"/>
-    <data id="lamp" sce:type="int32" sce:direction="out"
-          expr="(count &gt;= 0 &amp;&amp; mode &amp;&amp; !previous(mode)) ? 1 : 0"/>
+    <data id="lamp" sce:type="string" sce:direction="out"
+          expr="(count &gt;= 0 &amp;&amp; mode &amp;&amp; !previous(mode)) ? 'on' : 'off'"/>
   </datamodel>
 </scxml>
 """
@@ -55,8 +55,8 @@ FORGETS = """<?xml version="1.0" encoding="UTF-8"?>
   <datamodel>
     <data id="mode" sce:type="bool" sce:direction="in"/>
     <data id="count" sce:type="int32" sce:direction="in"/>
-    <data id="lamp" sce:type="int32" sce:direction="out"
-          expr="(count &gt;= 0 &amp;&amp; mode) ? 1 : 0"/>
+    <data id="lamp" sce:type="string" sce:direction="out"
+          expr="(count &gt;= 0 &amp;&amp; mode) ? 'on' : 'off'"/>
   </datamodel>
 </scxml>
 """

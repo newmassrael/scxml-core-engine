@@ -102,11 +102,19 @@ class TheCommandsWorkAsAProduct(unittest.TestCase):
 
     def test_check_fails_when_a_name_is_not_real(self):
         binding = self.tmp / "b.yaml"
-        text = (CROSSING / "controller_resolved.binding.yaml").read_text(
-            encoding="utf-8").replace("plant/out/bell", "plant/out/nothing")
+        # An INPUT's address: the outputs land through `map: platform`, and one of those at
+        # an address the model does not have cannot be read at all, which is another answer
+        # (a binding that cannot be opened) than the one asked for here (a name `check` finds).
+        original = (CROSSING / "controller_resolved.binding.yaml").read_text(encoding="utf-8")
+        text = original.replace("plant/in/obstacle", "plant/in/nothing")
+        self.assertNotEqual(original, text, "the premise: the fixture names that address")
         binding.write_text(text, encoding="utf-8")
         shutil.copy(CROSSING / "controller_resolved.scxml",
                     self.tmp / "controller_resolved.scxml")
+        # With the enumerations it imports: a copy without them is refused for the import,
+        # which is not the refusal this case is about.
+        for path in sorted(CROSSING.glob("*_values.scxml")):
+            shutil.copy(path, self.tmp / path.name)
         code, said, _ = run(["check", "--pack", str(CROSSING),
                              "--binding", str(binding)])
         self.assertEqual(1, code)
