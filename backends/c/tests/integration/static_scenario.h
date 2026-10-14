@@ -1229,9 +1229,10 @@ static int sce_scenario_step(sce_scenario_cursor_t *c, const sce_scenario_driver
 // steps cannot pass by having none.
 static int sce_scenario_replay(const char *path, const sce_scenario_driver_t *d, int *replayed) {
     // The longest scenario is a run a machine took part in, a step a line with all
-    // it held after it: some 13 KB. A file past the buffer is refused, since the
-    // part of it that was read would replay as a shorter scenario that passes.
-    static char text[32768];
+    // it held after it: some 163 KB, the to-do list's, whose digest of the changes it
+    // holds is written out at every step. A file past the buffer is refused, since
+    // the part of it that was read would replay as a shorter scenario that passes.
+    static char text[262144];
     FILE *file = fopen(path, "rb");
     if (file == NULL) {
         (void)fprintf(stderr, "%s: FAIL - cannot read %s\n", d->machine, path);
