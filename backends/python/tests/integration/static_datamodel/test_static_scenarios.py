@@ -513,6 +513,23 @@ def test_a_shared_list_as_the_hub_its_copies_send_to() -> None:
     replay("todo_peer_server")
 
 
+# One copy of the list of who is online, as each of the three that took part in one
+# afternoon of it was driven: a client says it is here to the hub, the hub keeps
+# what it was told for a ttl and tells every copy on one topic, and an entry is let
+# go by the machine's own delayed send, which the `advance_ms` steps move the
+# engine's time on to. Every step states what the copy sent its peers.
+def test_a_presence_list_as_alice_took_part_in_it() -> None:
+    replay("presence_peer_alice")
+
+
+def test_a_presence_list_as_bob_took_part_in_it() -> None:
+    replay("presence_peer_bob")
+
+
+def test_a_presence_list_as_the_hub_its_copies_send_to() -> None:
+    replay("presence_peer_server")
+
+
 # One copy of a shared sheet, as each of the three that took part in one run of it
 # was driven: its cells merge as the to-do list's fields do, and its rows and
 # columns are sequences every copy orders alike, with what was removed kept apart
