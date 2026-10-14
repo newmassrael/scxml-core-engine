@@ -89,6 +89,8 @@ STD_ALGORITHMS+=(merge/orset_entry merge/orset_union merge/orset_live merge/orse
 # The standard text rules static_text_record hands a record that holds text, and
 # the record's own schema.
 STD_ALGORITHMS+=(text/text_slot text/text_slot_latest text/text_slot_retitled text/text_slot_holds)
+# The digest todo_peer keeps of the changes it holds.
+STD_ALGORITHMS+=(merge/merkle_node merge/merkle_insert)
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT

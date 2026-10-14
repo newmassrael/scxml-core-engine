@@ -459,14 +459,14 @@ endforeach()
 # sheet is composed of, by their library names. The records they take and return
 # are the library's own event-schemas, and lww_write orders two stamps with
 # hlc_compare, which neither machine imports but lww_write's header includes.
-foreach(_STD_MERGE_SCHEMA hlc_timestamp lww_cell rga_node rga_gone orset_entry)
+foreach(_STD_MERGE_SCHEMA hlc_timestamp lww_cell rga_node rga_gone orset_entry merkle_node)
     sce_add_algorithm(
         TARGET static_datamodel_generated_cpp_test
         SCXML_FILE sce:std/merge/${_STD_MERGE_SCHEMA}.scxml
         HEADER ${_STD_MERGE_SCHEMA}.h
     )
 endforeach()
-foreach(_STD_MERGE_RULE hlc_send hlc_receive hlc_compare lww_write rga_insert rga_holds rga_remove orset_union orset_live orset_observed)
+foreach(_STD_MERGE_RULE hlc_send hlc_receive hlc_compare lww_write rga_insert rga_holds rga_remove orset_union orset_live orset_observed merkle_insert)
     sce_add_algorithm(
         TARGET static_datamodel_generated_cpp_test
         SCXML_FILE sce:std/merge/${_STD_MERGE_RULE}.scxml

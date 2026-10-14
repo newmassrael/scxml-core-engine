@@ -2700,6 +2700,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
             hlc_timestamp hlc_compare hlc_send hlc_receive
             lww_cell lww_write
             orset_entry orset_union orset_live orset_observed
+            merkle_node merkle_insert
             rga_node rga_gone rga_insert rga_holds rga_remove)
         set(_HEADER "${SCE_C_INTEGRATION_GENERATED_DIR}/${_MERGE_HEADER}.h")
         add_custom_command(
@@ -2718,7 +2719,8 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/todo_peer.scxml"
         STAGE_ALSO todo_join.scxml todo_edit.scxml todo_write.scxml todo_supersede.scxml
-                   todo_value.scxml
+                   todo_value.scxml todo_keep.scxml todo_node.scxml todo_visit.scxml
+                   todo_share.scxml
     )
     # A machine that hands the standard text rules a record and a list of records
     # that hold text: each rule's header, and the header of the schema they take

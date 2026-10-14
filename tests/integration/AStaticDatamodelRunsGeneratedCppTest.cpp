@@ -478,7 +478,8 @@ template <typename Cells> json lwwCellsJson(const Cells &cells) {
     });
 }
 
-/// A list of `record:Entry` values (sce:std/merge/orset_entry), in order.
+/// A list of `record:Entry` values (sce:std/merge/orset_entry), in order: the element and the
+/// stamp of the add that put it there.
 template <typename Entries> json orsetEntriesJson(const Entries &entries) {
     return listedJson(entries, [](const auto &entry) {
         return json{{"element", wideText(entry.element)},
@@ -498,6 +499,13 @@ template <typename Values> json todoValuesJson(const Values &values) {
                     {"wallTime", wideText(held.wallTime)},
                     {"counter", held.counter},
                     {"nodeId", wideText(held.nodeId)}};
+    });
+}
+
+/// A list of `record:Node` values (sce:std/merge/merkle_node), in order: one node of a digest.
+template <typename Nodes> json merkleNodesJson(const Nodes &nodes) {
+    return listedJson(nodes, [](const auto &node) {
+        return json{{"depth", node.depth}, {"prefix", wideText(node.prefix)}, {"hash", node.hash}};
     });
 }
 
@@ -1440,6 +1448,7 @@ Driver<ClockPeeking<G::todo_peer::todo_peer>> todoPeerDriver() {
         {"adds", [](const Machine &m) { return orsetEntriesJson(m.adds()); }},
         {"tombstones", [](const Machine &m) { return orsetEntriesJson(m.tombstones()); }},
         {"values", [](const Machine &m) { return todoValuesJson(m.values()); }},
+        {"digest", [](const Machine &m) { return merkleNodesJson(m.digest()); }},
         {"refusals", [](const Machine &m) { return json(m.refusals()); }},
     });
 }

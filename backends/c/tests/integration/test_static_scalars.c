@@ -1921,6 +1921,7 @@ static const char *wide_signed_digits(int64_t value) {
     E(wallTime, wide_signed_digits)                                                                                    \
     N(counter)                                                                                                         \
     E(nodeId, wide_digits)
+#define MERKLE_NODE_FIELDS(N, E) N(depth) E(prefix, wide_digits) N(hash)
 #define RGA_NODE_FIELDS(N, E) E(key, wide_digits) E(after, wide_digits)
 #define RGA_GONE_FIELDS(N, E) E(key, wide_digits) E(by, wide_digits)
 
@@ -1984,6 +1985,7 @@ RECORD_READER(todo_peer, clock, todo_peer_record_hlc_t, HLC_FIELDS)
 RECORD_LIST_READER(todo_peer, adds, todo_peer_record_entry_view_t, todo_peer_record_entry_t, ORSET_ENTRY_FIELDS)
 RECORD_LIST_READER(todo_peer, tombstones, todo_peer_record_entry_view_t, todo_peer_record_entry_t, ORSET_ENTRY_FIELDS)
 RECORD_LIST_READER(todo_peer, values, todo_peer_record_value_view_t, todo_peer_record_value_t, TODO_VALUE_FIELDS)
+RECORD_LIST_READER(todo_peer, digest, todo_peer_record_node_view_t, todo_peer_record_node_t, MERKLE_NODE_FIELDS)
 
 static const char *todo_peer_text(void *sm, const char *name) {
     if (strcmp(name, "node") == 0) {
@@ -1999,11 +2001,9 @@ static const variable_t todo_peer_variables[] = {
     {"hub", todo_peer_read_hub},
     {"refusals", todo_peer_read_refusals},
 };
-static const record_variable_t todo_peer_records[] = {RECORD_ROW(todo_peer, clock),
-                                                      RECORD_LIST_ROW(todo_peer, adds),
-                                                      RECORD_LIST_ROW(todo_peer, tombstones),
-                                                      RECORD_LIST_ROW(todo_peer, values),
-                                                      {NULL, NULL, NULL, NULL}};
+static const record_variable_t todo_peer_records[] = {
+    RECORD_ROW(todo_peer, clock),       RECORD_LIST_ROW(todo_peer, adds),   RECORD_LIST_ROW(todo_peer, tombstones),
+    RECORD_LIST_ROW(todo_peer, values), RECORD_LIST_ROW(todo_peer, digest), {NULL, NULL, NULL, NULL}};
 STATIC_SCENARIO_PEERED(todo_peer, todo_peer_states, todo_peer_variables, todo_peer_text, no_lists, todo_peer_records)
 
 // sheet_peer: one copy of a shared sheet of numbers, replayed the same way: its

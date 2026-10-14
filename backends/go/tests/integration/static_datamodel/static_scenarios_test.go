@@ -329,6 +329,23 @@ func orsetEntriesJSON[R orsetEntryRecord](entries []R) any {
 	return out
 }
 
+// merkleNodeRecord is a `record:Node` (sce:std/merge/merkle_node) as a host reads it: one
+// node of a digest, by its depth and prefix, and the hash of the changes under it.
+type merkleNodeRecord interface {
+	Depth() uint8
+	Prefix() uint64
+	Hash() uint32
+}
+
+// merkleNodesJSON is a list of such nodes, in order.
+func merkleNodesJSON[R merkleNodeRecord](nodes []R) any {
+	out := make([]any, len(nodes))
+	for i, node := range nodes {
+		out[i] = map[string]any{"depth": node.Depth(), "prefix": digits(node.Prefix()), "hash": node.Hash()}
+	}
+	return out
+}
+
 // todoValueRecord is a `record:Value` (todo_value) as a host reads it: which
 // to-do, which field of it, the number and the text the field holds, and the
 // stamp of the write that put them there.
@@ -1547,6 +1564,7 @@ func todoCopy() machine {
 		"adds":       func() any { return orsetEntriesJSON(policy.Adds()) },
 		"tombstones": func() any { return orsetEntriesJSON(policy.Tombstones()) },
 		"values":     func() any { return todoValuesJSON(policy.Values()) },
+		"digest":     func() any { return merkleNodesJSON(policy.Digest()) },
 		"refusals":   func() any { return policy.Refusals() },
 	})
 }
