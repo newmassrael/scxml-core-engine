@@ -49,7 +49,7 @@
 
 use core::ptr;
 
-use super::sync::{AtomicBool, AtomicPtr, AtomicUsize, Ordering};
+use super::sync::{AtomicBool, AtomicPtr, AtomicUsize, Ordering, UnsafeCell};
 use super::Padded;
 
 /// The header a retired object carries so the domain can chain it and, once no
@@ -63,9 +63,15 @@ pub struct Retired {
     next: AtomicPtr<Retired>,
     /// What frees the object. Written by [`HazardDomain::retire`] before the
     /// object is published to the list, read by the scan after it took the list.
-    reclaim: Option<unsafe fn(*mut Retired, *const ())>,
+    ///
+    /// A cell, with `context`, because a participant that protected the object
+    /// holds a shared reference to all of it while another retires it, and a
+    /// reference promises that the bytes it covers are not written: only a cell's
+    /// are free of that promise. The hazard keeps the object from being freed, not
+    /// from being retired, and the write is the retirement's.
+    reclaim: UnsafeCell<Option<unsafe fn(*mut Retired, *const ())>>,
     /// The value `reclaim` is called with: the allocator that gave the object.
-    context: *const (),
+    context: UnsafeCell<*const ()>,
 }
 
 impl Retired {
@@ -73,8 +79,8 @@ impl Retired {
     pub fn new() -> Self {
         Self {
             next: AtomicPtr::new(ptr::null_mut()),
-            reclaim: None,
-            context: ptr::null(),
+            reclaim: UnsafeCell::new(None),
+            context: UnsafeCell::new(ptr::null()),
         }
     }
 }
@@ -186,8 +192,8 @@ impl<const H: usize> HazardDomain<H> {
         // SAFETY: the caller's contract makes the header live and, before it is
         // published below, ours alone.
         unsafe {
-            ptr::addr_of_mut!((*node).reclaim).write(Some(reclaim));
-            ptr::addr_of_mut!((*node).context).write(context);
+            (*node).reclaim.with_mut(|slot| slot.write(Some(reclaim)));
+            (*node).context.with_mut(|slot| slot.write(context));
         }
         // Counted before it is published, so a scan that frees it at once never
         // subtracts what was not yet added.
@@ -275,7 +281,12 @@ impl<const H: usize> HazardDomain<H> {
     /// `node` was taken off the list by this thread and nothing reaches it.
     unsafe fn reclaim(node: *mut Retired) {
         // SAFETY: the header was written by `retire` before it was published.
-        let (reclaim, context) = unsafe { ((*node).reclaim, (*node).context) };
+        let (reclaim, context) = unsafe {
+            (
+                (*node).reclaim.with(|slot| slot.read()),
+                (*node).context.with(|slot| slot.read()),
+            )
+        };
         if let Some(reclaim) = reclaim {
             // SAFETY: `retire`'s contract.
             unsafe { reclaim(node, context) };

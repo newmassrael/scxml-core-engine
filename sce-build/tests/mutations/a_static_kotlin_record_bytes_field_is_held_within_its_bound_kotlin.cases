@@ -43,14 +43,14 @@ PY
 
 mutation_case "a record is handed to a host with the machine's own array" <<'PY'
 edit("tools/codegen/templates/kotlin/state_machine.kt.jinja2",
-     "        get() = field.detached()",
-     "        get() = field")
+     "{{ field.name }}.detached(){% elif",
+     "{{ field.name }}{% elif")
 PY
 
 mutation_case "the records of a list are handed to a host with the machine's own arrays" <<'PY'
 edit("tools/codegen/templates/kotlin/state_machine.kt.jinja2",
-     "        get() = field.map { it.detached() }",
-     "        get() = field")
+     "{{ field.name }}.map { it.detached() }",
+     "{{ field.name }}")
 PY
 
 mutation_case "two records of the same bytes are told apart by the identity of their arrays" <<'PY'

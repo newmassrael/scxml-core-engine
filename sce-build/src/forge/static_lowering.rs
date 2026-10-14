@@ -9086,9 +9086,9 @@ mod tests {
     fn a_kotlin_machine_writes_its_literals_beside_a_single_as_singles() {
         let (inits, statements) = lowered_single(Language::Kotlin);
         assert_eq!(inits, ["0.1f", "0.0f", "0.0"], "{inits:?}");
-        assert!(statements[0].contains("tenth + 0.2f"), "{statements:?}");
+        assert!(statements[0].contains("vTenth + 0.2f"), "{statements:?}");
         assert!(
-            statements[1].contains("tenth.toDouble() + 0.2") && !statements[1].contains("0.2f"),
+            statements[1].contains("vTenth.toDouble() + 0.2") && !statements[1].contains("0.2f"),
             "{statements:?}"
         );
     }
