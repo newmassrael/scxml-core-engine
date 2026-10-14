@@ -16,7 +16,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 )
 
 type lscqSubject struct{ q *Lscq[tracked] }
@@ -243,7 +242,7 @@ func TestAnLscqLosesNothingAndReordersNothingBetweenGoroutines(t *testing.T) {
 	q, _ := NewLscq[uint64](4, 4, allocator, LockFree)
 	const total = uint64(producers * perProducer)
 	var delivered atomic.Uint64
-	deadline := time.Now().Add(120 * time.Second)
+	var watch progress
 	// Each consumer keeps the last value it saw from each producer: one
 	// producer's elements reach one consumer in the order they were pushed.
 	seen := make([][producers]int64, consumers)
@@ -264,14 +263,16 @@ func TestAnLscqLosesNothingAndReordersNothingBetweenGoroutines(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			defer producer.Release()
+			var look lookout
 			for i := uint64(0); i < perProducer; i++ {
 				for producer.TryPush(uint64(p)*perProducer+i) != PushOK {
-					if time.Now().After(deadline) {
+					if look.stuck(&watch) {
 						failures.Add(1)
 						return
 					}
 					runtime.Gosched()
 				}
+				watch.beat()
 			}
 		}()
 	}
@@ -284,8 +285,9 @@ func TestAnLscqLosesNothingAndReordersNothingBetweenGoroutines(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			defer consumer.Release()
+			var look lookout
 			for delivered.Load() < total {
-				if time.Now().After(deadline) {
+				if look.stuck(&watch) {
 					failures.Add(1)
 					return
 				}
@@ -294,6 +296,7 @@ func TestAnLscqLosesNothingAndReordersNothingBetweenGoroutines(t *testing.T) {
 					runtime.Gosched()
 					continue
 				}
+				watch.beat()
 				from := int(got / perProducer)
 				if int64(got) <= seen[c][from] {
 					failures.Add(1)
@@ -306,7 +309,7 @@ func TestAnLscqLosesNothingAndReordersNothingBetweenGoroutines(t *testing.T) {
 	}
 	wg.Wait()
 	if failures.Load() != 0 {
-		t.Fatalf("%d failure(s): a reordered element or the deadline", failures.Load())
+		t.Fatalf("%d failure(s): a reordered element, or the queue stopped making progress", failures.Load())
 	}
 	for p := 0; p < producers; p++ {
 		var sum uint64

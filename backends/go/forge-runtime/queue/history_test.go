@@ -32,7 +32,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 )
 
 // historyOperation is one observed operation in the JSON form. A value is
@@ -119,23 +118,25 @@ func recordSpscRun(t *testing.T, capacity int) historyDocument {
 	}
 	var clock atomic.Uint64
 	tick := func() uint64 { return clock.Add(1) }
-	deadline := time.Now().Add(120 * time.Second)
+	var watch progress
 
 	var pushes, pops []historyOperation
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
+		var look lookout
 		for value := uint64(1); value <= valuesPerSpscRun; value++ {
 			for {
-				if time.Now().After(deadline) {
-					t.Error("the elements did not all arrive before the deadline")
+				if look.stuck(&watch) {
+					t.Error("the elements stopped arriving")
 					return
 				}
 				invoked := tick()
 				status := producer.TryPush(value)
 				returned := tick()
 				if status == PushOK {
+					watch.beat()
 					pushes = append(pushes, historyOperation{"push", valueOf(value), "pushed", invoked, returned})
 					break
 				}
@@ -147,15 +148,17 @@ func recordSpscRun(t *testing.T, capacity int) historyDocument {
 	go func() {
 		defer wg.Done()
 		delivered := 0
+		var look lookout
 		for delivered < valuesPerSpscRun {
-			if time.Now().After(deadline) {
-				t.Error("the elements did not all arrive before the deadline")
+			if look.stuck(&watch) {
+				t.Error("the elements stopped arriving")
 				return
 			}
 			invoked := tick()
 			value, ok := consumer.TryPop()
 			returned := tick()
 			if ok {
+				watch.beat()
 				pops = append(pops, historyOperation{"pop", valueOf(value), "popped", invoked, returned})
 				delivered++
 			} else {

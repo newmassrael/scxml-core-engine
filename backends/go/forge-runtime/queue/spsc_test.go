@@ -6,7 +6,6 @@ package queue
 import (
 	"sync"
 	"testing"
-	"time"
 )
 
 // A Lamport ring keeps order across many laps of its index space.
@@ -131,7 +130,7 @@ func TestALamportRingLosesNothingBetweenGoroutines(t *testing.T) {
 	const count = 200000
 	q := NewSpsc[uint32](16)
 	got := make([]uint32, 0, count)
-	deadline := time.Now().Add(60 * time.Second)
+	var watch progress
 
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -139,12 +138,14 @@ func TestALamportRingLosesNothingBetweenGoroutines(t *testing.T) {
 		defer wg.Done()
 		consumer, _ := q.Consumer()
 		defer consumer.Release()
+		var look lookout
 		for len(got) < count {
-			if time.Now().After(deadline) {
-				t.Error("the elements did not all arrive before the deadline")
+			if look.stuck(&watch) {
+				t.Error("the elements stopped arriving")
 				return
 			}
 			if v, ok := consumer.TryPop(); ok {
+				watch.beat()
 				got = append(got, v)
 			}
 		}
@@ -156,6 +157,7 @@ func TestALamportRingLosesNothingBetweenGoroutines(t *testing.T) {
 		for i := uint32(0); i < count; i++ {
 			for producer.TryPush(i) != PushOK {
 			}
+			watch.beat()
 		}
 	}()
 	wg.Wait()

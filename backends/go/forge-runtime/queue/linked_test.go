@@ -12,7 +12,6 @@ package queue
 import (
 	"runtime"
 	"testing"
-	"time"
 )
 
 // mustPanic fails the test unless fn panics.
@@ -167,7 +166,7 @@ func TestALinkedQueueLosesNothingBetweenGoroutines(t *testing.T) {
 	const total = 50000
 	failed := make(chan string, 2)
 	done := make(chan struct{}, 2)
-	deadline := time.Now().Add(120 * time.Second)
+	var watch progress
 	go func() {
 		defer func() { done <- struct{}{} }()
 		for value := uint64(0); value < total; value++ {
@@ -175,14 +174,16 @@ func TestALinkedQueueLosesNothingBetweenGoroutines(t *testing.T) {
 				failed <- "an allocator with no limit refused a segment"
 				return
 			}
+			watch.beat()
 		}
 	}()
 	go func() {
 		defer func() { done <- struct{}{} }()
 		expected := uint64(0)
+		var look lookout
 		for expected < total {
-			if time.Now().After(deadline) {
-				failed <- "the elements did not all arrive before the deadline"
+			if look.stuck(&watch) {
+				failed <- "the elements stopped arriving"
 				return
 			}
 			got, ok := consumer.TryPop()
@@ -193,6 +194,7 @@ func TestALinkedQueueLosesNothingBetweenGoroutines(t *testing.T) {
 				failed <- "popped out of order"
 				return
 			default:
+				watch.beat()
 				expected++
 			}
 		}

@@ -20,7 +20,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 )
 
 // runsPerSegmentedShape runs of each segmented shape are recorded, for the same
@@ -47,7 +46,7 @@ func recordSegmentedRun(t *testing.T, producers []producing, consumers []consumi
 	t.Helper()
 	var clock atomic.Uint64
 	tick := func() uint64 { return clock.Add(1) }
-	deadline := time.Now().Add(120 * time.Second)
+	var watch progress
 	total := uint64(len(producers)) * perProducer
 	var delivered atomic.Uint64
 	logs := make([][]historyOperation, len(producers)+len(consumers))
@@ -58,17 +57,19 @@ func recordSegmentedRun(t *testing.T, producers []producing, consumers []consumi
 		go func() {
 			defer wg.Done()
 			defer producers[p].release()
+			var look lookout
 			for i := uint64(0); i < perProducer; i++ {
 				value := uint64(p)*perProducer + i + 1
 				for {
-					if time.Now().After(deadline) {
-						t.Error("the elements did not all arrive before the deadline")
+					if look.stuck(&watch) {
+						t.Error("the elements stopped arriving")
 						return
 					}
 					invoked := tick()
 					status := producers[p].push(value)
 					returned := tick()
 					if status == PushOK {
+						watch.beat()
 						logs[p] = append(logs[p], historyOperation{"push", valueOf(value), "pushed", invoked, returned})
 						break
 					}
@@ -86,15 +87,17 @@ func recordSegmentedRun(t *testing.T, producers []producing, consumers []consumi
 			defer wg.Done()
 			defer consumers[c].release()
 			mine := len(producers) + c
+			var look lookout
 			for delivered.Load() < total {
-				if time.Now().After(deadline) {
-					t.Error("the elements did not all arrive before the deadline")
+				if look.stuck(&watch) {
+					t.Error("the elements stopped arriving")
 					return
 				}
 				invoked := tick()
 				value, ok := consumers[c].pop()
 				returned := tick()
 				if ok {
+					watch.beat()
 					logs[mine] = append(logs[mine], historyOperation{"pop", valueOf(value), "popped", invoked, returned})
 					delivered.Add(1)
 				} else {

@@ -10,7 +10,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 )
 
 type scqSubject struct{ q *Scq[tracked] }
@@ -183,14 +182,15 @@ type event struct {
 // nothing is duplicated, and each consumer sees each producer's elements in
 // the order they went in. The consumers stop when every element sent has been
 // taken, not after a quiet spell, so a slow producer is never mistaken for a
-// lost element; the deadline turns a genuinely lost element into a failure.
+// lost element; a run in which nothing completes for a minute (progress.go's
+// stuckAfter) turns a genuinely lost element into a failure.
 // Under -race this is also the data-race check the RFC asks of Go.
 func TestTheScqQueueLosesNothingBetweenGoroutines(t *testing.T) {
 	const perProducer = 20000
 	const total = 2 * perProducer
 	q := NewScq[event](8, 8)
 	var taken atomic.Int64
-	deadline := time.Now().Add(60 * time.Second)
+	var watch progress
 	logs := make([][]event, 2)
 
 	var wg sync.WaitGroup
@@ -201,12 +201,14 @@ func TestTheScqQueueLosesNothingBetweenGoroutines(t *testing.T) {
 			defer wg.Done()
 			consumer, _ := q.Consumer()
 			defer consumer.Release()
+			var look lookout
 			for taken.Load() < total {
-				if time.Now().After(deadline) {
-					t.Error("the elements did not all arrive before the deadline")
+				if look.stuck(&watch) {
+					t.Error("the elements stopped arriving")
 					return
 				}
 				if e, ok := consumer.TryPop(); ok {
+					watch.beat()
 					taken.Add(1)
 					logs[c] = append(logs[c], e)
 				}
@@ -223,6 +225,7 @@ func TestTheScqQueueLosesNothingBetweenGoroutines(t *testing.T) {
 			for i := uint32(0); i < perProducer; i++ {
 				for producer.TryPush(event{producer: p, sequence: i}) != PushOK {
 				}
+				watch.beat()
 			}
 		}()
 	}

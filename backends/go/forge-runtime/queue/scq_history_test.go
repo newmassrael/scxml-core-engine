@@ -15,7 +15,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 )
 
 // recordScqRun records `producers` producers and `consumers` consumers on real
@@ -26,7 +25,7 @@ func recordScqRun(t *testing.T, capacity, ringSlots, producers, consumers int, p
 	q := NewScq[uint64](capacity, ringSlots)
 	var clock atomic.Uint64
 	tick := func() uint64 { return clock.Add(1) }
-	deadline := time.Now().Add(120 * time.Second)
+	var watch progress
 	total := uint64(producers) * perProducer
 	var delivered atomic.Uint64
 	logs := make([][]historyOperation, producers+consumers)
@@ -38,17 +37,19 @@ func recordScqRun(t *testing.T, capacity, ringSlots, producers, consumers int, p
 			defer wg.Done()
 			producer, _ := q.Producer()
 			defer producer.Release()
+			var look lookout
 			for i := uint64(0); i < perProducer; i++ {
 				value := uint64(p)*perProducer + i + 1
 				for {
-					if time.Now().After(deadline) {
-						t.Error("the elements did not all arrive before the deadline")
+					if look.stuck(&watch) {
+						t.Error("the elements stopped arriving")
 						return
 					}
 					invoked := tick()
 					status := producer.TryPush(value)
 					returned := tick()
 					if status == PushOK {
+						watch.beat()
 						logs[p] = append(logs[p], historyOperation{"push", valueOf(value), "pushed", invoked, returned})
 						break
 					}
@@ -65,15 +66,17 @@ func recordScqRun(t *testing.T, capacity, ringSlots, producers, consumers int, p
 			consumer, _ := q.Consumer()
 			defer consumer.Release()
 			mine := producers + c
+			var look lookout
 			for delivered.Load() < total {
-				if time.Now().After(deadline) {
-					t.Error("the elements did not all arrive before the deadline")
+				if look.stuck(&watch) {
+					t.Error("the elements stopped arriving")
 					return
 				}
 				invoked := tick()
 				value, ok := consumer.TryPop()
 				returned := tick()
 				if ok {
+					watch.beat()
 					logs[mine] = append(logs[mine], historyOperation{"pop", valueOf(value), "popped", invoked, returned})
 					delivered.Add(1)
 				} else {
