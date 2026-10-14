@@ -108,6 +108,7 @@ mutation_targets backends/go/tests/integration/static_datamodel/static_wire_wide
 mutation_targets backends/go/tests/integration/static_datamodel/sync_client/sync_client_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/todo_peer/todo_peer_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/sheet_peer/sheet_peer_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/presence_peer/presence_peer_sm.go
 mutation_regen scripts/regen_static_datamodel_go.sh
 mutation_oracles backends/go/tests/integration/static_datamodel/static_scenarios_test.go
 

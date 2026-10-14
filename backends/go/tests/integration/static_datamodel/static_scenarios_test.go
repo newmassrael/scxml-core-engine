@@ -33,6 +33,7 @@ import (
 	_ "github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_history"
 	_ "github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_timers"
 
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/presence_peer"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/sheet_peer"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_block_ends"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_block_ends_list"
@@ -315,6 +316,25 @@ func rgaGonesJSON[R rgaGoneRecord](gones []R) any {
 type orsetEntryRecord interface {
 	hlcRecord
 	Element() uint64
+}
+
+// presenceEntryRecord is a `record:Seen` (presence_seen) as a host reads it: a
+// client an entry of the list of who is online is for, the latest heartbeat stamp
+// the copy holds for it, and the renewal of the entry that stamp belongs to.
+type presenceEntryRecord interface {
+	Client() uint32
+	Last() int64
+	Gen() uint32
+}
+
+// presenceEntriesJSON is a list of such entries, in order. The stamp is 64-bit and
+// crosses as its digits.
+func presenceEntriesJSON[R presenceEntryRecord](entries []R) any {
+	out := make([]any, len(entries))
+	for i, entry := range entries {
+		out[i] = map[string]any{"client": entry.Client(), "last": signedDigits(entry.Last()), "gen": entry.Gen()}
+	}
+	return out
 }
 
 // orsetEntriesJSON is a list of such entries, in order.
@@ -1579,6 +1599,33 @@ func TestACopyOfASharedTodoListIsReplayedAsEachPeerSawIt(t *testing.T) {
 	t.Run("alice", func(t *testing.T) { replay(t, "todo_peer_alice", todoCopy()) })
 	t.Run("bob", func(t *testing.T) { replay(t, "todo_peer_bob", todoCopy()) })
 	t.Run("the hub", func(t *testing.T) { replay(t, "todo_peer_server", todoCopy()) })
+}
+
+// presenceCopy is one copy of the list of who is online, as a scenario reads it.
+func presenceCopy() machine {
+	policy := presence_peer.NewPresencePeerPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	return drive[presence_peer.PresencePeerState, presence_peer.PresencePeerEvent](&policy, map[string]func() any{
+		"node":     func() any { return policy.Node() },
+		"hub":      func() any { return policy.Hub() },
+		"ttl":      func() any { return policy.Ttl() },
+		"lease":    func() any { return policy.Lease() },
+		"online":   func() any { return presenceEntriesJSON(policy.Online()) },
+		"serial":   func() any { return policy.Serial() },
+		"lost":     func() any { return policy.Lost() },
+		"refusals": func() any { return policy.Refusals() },
+	})
+}
+
+// A copy of the list of who is online is replayed through the afternoon the world
+// simulation ran it through, as each of the three that took part saw it: every
+// event it was given, the time that passed between them (its entries are let go by
+// the machine's own delayed send, on the manual clock `drive` gives it), what it held
+// after each, and what it sent its peers.
+func TestACopyOfWhoIsOnlineIsReplayedAsEachPeerSawIt(t *testing.T) {
+	t.Run("alice", func(t *testing.T) { replay(t, "presence_peer_alice", presenceCopy()) })
+	t.Run("bob", func(t *testing.T) { replay(t, "presence_peer_bob", presenceCopy()) })
+	t.Run("the hub", func(t *testing.T) { replay(t, "presence_peer_server", presenceCopy()) })
 }
 
 // sheetCopy is one copy of the shared sheet, as a scenario reads it.
