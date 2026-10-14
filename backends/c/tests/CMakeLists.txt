@@ -2720,6 +2720,28 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         STAGE_ALSO todo_join.scxml todo_edit.scxml todo_write.scxml todo_supersede.scxml
                    todo_value.scxml
     )
+    # A machine that hands the standard text rules a record and a list of records
+    # that hold text: each rule's header, and the header of the schema they take
+    # and give back, is generated once beside the machine that includes them.
+    set(_STATIC_TEXT_HEADERS "")
+    foreach(_TEXT_HEADER text_slot text_slot_latest text_slot_retitled text_slot_holds)
+        set(_HEADER "${SCE_C_INTEGRATION_GENERATED_DIR}/${_TEXT_HEADER}.h")
+        add_custom_command(
+            OUTPUT "${_HEADER}"
+            COMMAND "${SCE_CODEGEN}" generate "sce:std/text/${_TEXT_HEADER}.scxml"
+                    -l c11 -o "${SCE_C_INTEGRATION_GENERATED_DIR}"
+                    --write-deps "${_HEADER}.d"
+            DEPENDS "${SCE_CODEGEN}"
+            DEPFILE "${_HEADER}.d"
+            COMMENT "Generating C11 header: ${_TEXT_HEADER}.h"
+            VERBATIM
+        )
+        list(APPEND _STATIC_TEXT_HEADERS "${_HEADER}")
+    endforeach()
+    sce_generate_static_integration_c_test(static_text_record
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_text_record.scxml"
+    )
     sce_generate_static_integration_c_test(sheet_peer
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/sheet_peer.scxml"
@@ -2823,6 +2845,8 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_todo_peer_SOURCES}
         ${INTEGRATION_C_TEST_sheet_peer_SOURCES}
         ${_STATIC_MERGE_HEADERS}
+        ${INTEGRATION_C_TEST_static_text_record_SOURCES}
+        ${_STATIC_TEXT_HEADERS}
     )
     target_link_libraries(sce_c_integration_static_scalars PRIVATE
         sce_c_runtime sce_c_runtime_posix sce_c_base

@@ -148,6 +148,7 @@
 #include "static_send_type_sm.h"
 #include "static_state_algorithm_sm.h"
 #include "static_string_capacity_sm.h"
+#include "static_text_record_sm.h"
 #include "static_timers_sm.h"
 #include "static_whole_payload_sm.h"
 #include "static_wire_enum_sm.h"
@@ -1923,6 +1924,38 @@ static const char *wide_signed_digits(int64_t value) {
 #define RGA_NODE_FIELDS(N, E) E(key, wide_digits) E(after, wide_digits)
 #define RGA_GONE_FIELDS(N, E) E(key, wide_digits) E(by, wide_digits)
 
+// static_text_record: the algorithms are handed the record and the list of records
+// the machine holds, whose text is a buffer of the bound its schema declares, and
+// what they return is written back with its text. The buffer's text is what a
+// scenario compares, copied where it outlives the record the reader holds by value;
+// the version is a 64-bit integer, stated as the text of its digits.
+#define SLOT_FIELDS(N, E) N(slot) E(version, wide_signed_digits) E(text, static_text_record_slot_text)
+VARIABLE_READER(static_text_record, known)
+VARIABLE_READER(static_text_record, refusals)
+
+static const char *static_text_record_slot_text(sce_static_string_32_t text) {
+    static char copy[sizeof(text.data)];
+    memcpy(copy, text.data, sizeof(copy));
+    return copy;
+}
+
+RECORD_READER(static_text_record, held, static_text_record_record_slot_t, SLOT_FIELDS)
+RECORD_READER(static_text_record, incoming, static_text_record_record_slot_t, SLOT_FIELDS)
+RECORD_LIST_READER(static_text_record, slots, static_text_record_record_slot_view_t, static_text_record_record_slot_t,
+                   SLOT_FIELDS)
+static const name_value_t text_record_states[] = {
+    {"open", STATIC_TEXT_RECORD_STATE_OPEN},
+};
+static const variable_t text_record_variables[] = {
+    {"known", static_text_record_read_known},
+    {"refusals", static_text_record_read_refusals},
+};
+static const record_variable_t text_record_records[] = {RECORD_ROW(static_text_record, held),
+                                                        RECORD_ROW(static_text_record, incoming),
+                                                        RECORD_LIST_ROW(static_text_record, slots),
+                                                        {NULL, NULL, NULL, NULL}};
+STATIC_SCENARIO(static_text_record, text_record_states, text_record_variables, NULL, no_lists, text_record_records)
+
 // todo_peer: one copy of a shared to-do list, replayed through the afternoon the
 // world simulation ran it through, as each of the three that took part saw it.
 // A to-do's fields are values the copy keeps, each stamped; an observed-remove set
@@ -2135,6 +2168,7 @@ int main(void) {
     bad |= static_record_scenario("static_record", 16);
     bad |= static_record_list_scenario("static_record_list", 14);
     bad |= static_state_algorithm_scenario("static_state_algorithm", 17);
+    bad |= static_text_record_scenario("static_text_record", 12);
     bad |= static_record_list_index_scenario("static_record_list_index", 19);
     bad |= static_record_enum_scenario("static_record_enum", 29);
     bad |= static_whole_payload_scenario("static_whole_payload", 9);
