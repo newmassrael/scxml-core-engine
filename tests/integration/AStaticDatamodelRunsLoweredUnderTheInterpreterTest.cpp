@@ -339,15 +339,11 @@ protected:
         return text.empty() ? nlohmann::json(nullptr) : nlohmann::json::parse(text, nullptr, false);
     }
 
-    /// What a `<send>` and an `<invoke>` need to run: a dispatcher. Without one
-    /// the Interpreter raises error.execution for a `<send>`, as for a send with
-    /// nowhere to go, and a child session has no way to answer its parent. The
-    /// events a machine sends itself are queued, and run when the raiser is
-    /// asked to; the raiser is returned for that. A replay hands in the list its
-    /// machine's sends to Mesh peers are written to, and those are delivered to
-    /// no one; without one the Interpreter has no router for a peer, and the send
-    /// is refused as error.execution.
-    std::shared_ptr<EventRaiserImpl> wire(StateMachine &machine, std::shared_ptr<SentToPeers> sentToPeers = nullptr) {
+    /// A scheduler that delivers a delayed send to its target when it falls due.
+    /// In MANUAL mode the wall clock fires nothing and the logical clock is the
+    /// host's to move (`EventSchedulerImpl::advanceTime`), which is the clock the
+    /// generated backends' replays hold the same scenarios to.
+    static std::shared_ptr<EventSchedulerImpl> makeScheduler(SchedulerMode mode) {
         auto scheduler = std::make_shared<EventSchedulerImpl>(
             [](const EventDescriptor &event, std::shared_ptr<IEventTarget> target, const std::string &) -> bool {
                 try {
@@ -356,6 +352,28 @@ protected:
                     return false;
                 }
             });
+        scheduler->setMode(mode);
+        return scheduler;
+    }
+
+    /// What a `<send>` and an `<invoke>` need to run: a dispatcher. Without one
+    /// the Interpreter raises error.execution for a `<send>`, as for a send with
+    /// nowhere to go, and a child session has no way to answer its parent. The
+    /// events a machine sends itself are queued, and run when the raiser is
+    /// asked to; the raiser is returned for that. A replay hands in the list its
+    /// machine's sends to Mesh peers are written to, and those are delivered to
+    /// no one; without one the Interpreter has no router for a peer, and the send
+    /// is refused as error.execution.
+    ///
+    /// The scheduler is the wall clock's unless the caller hands in its own: a
+    /// child session runs on a thread of its own and a test of one waits for it
+    /// in real time, while a replay that moves time by the step moves the
+    /// scheduler's logical clock itself (`makeScheduler(SchedulerMode::MANUAL)`).
+    std::shared_ptr<EventRaiserImpl> wire(StateMachine &machine, std::shared_ptr<SentToPeers> sentToPeers = nullptr,
+                                          std::shared_ptr<EventSchedulerImpl> scheduler = nullptr) {
+        if (!scheduler) {
+            scheduler = makeScheduler(SchedulerMode::AUTOMATIC);
+        }
         auto eventRaiser = std::make_shared<EventRaiserImpl>();
         eventRaiser->setScheduler(scheduler);
         eventRaiser->setImmediateMode(false);
@@ -405,7 +423,11 @@ protected:
         // from. Wired before the machine starts, because its first entry can
         // already send.
         const auto sentToPeers = std::make_shared<SentToPeers>();
-        const auto eventRaiser = wire(*machine, sentToPeers);
+        // The time a step's `advance_ms` moves is this scheduler's logical clock,
+        // not the wall: the scenario says how far time goes, and the delayed sends
+        // that fall due in that span are released, with nothing waited out.
+        const auto scheduler = makeScheduler(SchedulerMode::MANUAL);
+        const auto eventRaiser = wire(*machine, sentToPeers, scheduler);
         ASSERT_TRUE(machine->loadSCXMLFromString(document)) << "the Interpreter does not load the lowered document";
         ASSERT_TRUE(machine->start());
         eventRaiser->processQueuedEvents();
@@ -417,11 +439,10 @@ protected:
             const std::string note = step.value("note", std::string{});
             SCOPED_TRACE("step " + std::to_string(n) + (note.empty() ? "" : " (" + note + ")"));
             // A step that moves the machine's time on, for a scenario of a delayed
-            // send. The Interpreter's scheduler runs on the wall clock, so the
-            // time is waited out; the scenario's margins are wide enough for the
-            // wait to be the one the step names.
+            // send: the scheduler's logical clock moves on by exactly that much and
+            // what fell due in the span is delivered, in the order of its deadlines.
             if (step.contains("advance_ms")) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(step.at("advance_ms").get<int64_t>()));
+                scheduler->advanceTime(std::chrono::milliseconds(step.at("advance_ms").get<int64_t>()));
                 eventRaiser->processQueuedEvents();
             }
             if (step.contains("event")) {
@@ -555,7 +576,8 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheInterpreterDoesWha
             << "Interpreter";
     }
     // ... and the copies of the list of who is online, whose entries are let go by the
-    // machine's own delayed send, which the Interpreter waits out on its wall clock.
+    // machine's own delayed send, which the Interpreter's scheduler releases as the
+    // scenario moves its logical clock on.
     for (const char *copy : {"presence_peer_alice", "presence_peer_bob", "presence_peer_server"}) {
         EXPECT_NE(std::find(replayed.begin(), replayed.end(), copy), replayed.end())
             << copy << " was not replayed: a copy whose entries expire by a delayed send has no lowering for the "
