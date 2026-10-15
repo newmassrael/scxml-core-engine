@@ -5347,6 +5347,19 @@ backend is held to the same digest. A copy restarted from an older save, which
 loses changes in the same way, is a restore and not an event, so the world tests
 (`a_copy_restored_from_an_old_save_is_repaired_by_resync.rs`) hold that case.
 
+A copy need not be a Rust machine. `World::add_external` hosts one in another
+process behind the Mesh endpoint the world keeps for it, driven over a
+line-delimited JSON step protocol (`sce_rust_world::external`: `start`, `raise`,
+`advance`, `saved`, `restore`; the child reads no wall time and every reply is a
+function of the requests before it). The Kotlin side is `backends/kotlin/world`
+(`:sce-kotlin-world`), which wraps the generated `todo_peer` on a `ManualClock` and
+settles it as `StaticScenarioTest.kt` does, so in
+`a_kotlin_copy_shares_the_todo_list_with_rust_copies.rs` any of alice, bob and the
+hub is Kotlin, the oracles that read the network judge the mix, and a Kotlin copy
+is held to putting the traffic of a Rust one on the network, line for line. That
+test needs a JVM and `./gradlew :sce-kotlin-world:installDist`; with neither it
+skips unless `SCE_REQUIRE_TOOLS` is set.
+
 A step is read after the macrostep its event started has run to quiescence, and
 the first step, which may send none, after the machine has started and settled.
 The generated policy says which call a machine needs (`needs_event_scheduler`):

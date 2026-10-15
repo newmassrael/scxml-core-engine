@@ -491,6 +491,16 @@ const CI_ONLY: &[(&str, &str)] = &[
          through SCE_REQUIRE_TOOLS; local contributors may skip with a warning.",
     ),
     (
+        "gradlew :sce-kotlin-world:installDist",
+        "provisions the runner rather than verifying the tree: it builds the \
+         step server the world simulation hosts a generated Kotlin copy of the \
+         to-do list with, a JVM program the world tests start once per Kotlin \
+         actor. Like the runtime jars it is a prerequisite and not a \
+         verification; CI builds it and, with SCE_REQUIRE_TOOLS, fails the \
+         tests that find it missing, and a workstation that has not built it \
+         skips those tests with a warning.",
+    ),
+    (
         "gradlew :sce-forge-runtime-kotlin:jvmJar",
         "provisions the runner rather than verifying the tree: it builds the \
          jar every Kotlin forge gate puts on `kotlinc -cp`, and a runner \
