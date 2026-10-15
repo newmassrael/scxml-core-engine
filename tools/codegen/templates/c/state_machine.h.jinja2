@@ -338,16 +338,18 @@ typedef struct {{ csym_prefix }}{{ model.name }}_scheduled_entry {
     uint64_t fire_time_ms;
     {{ csym_prefix }}{{ model.name }}_event_t event;
     char send_id[SCE_MAX_ID_LEN];
-{% if model.needs_script_engine %}
-    /* W3C SCXML 5.10: the payload this entry's event carries, as the JSON
+{% if model.needs_script_engine or model.has_delayed_send_payload %}
+    /* §scxml-5.10: the payload this entry's event carries, as the JSON
        its `data[]` takes; empty when the <send> carries none. It used to be
        a reference into the Lua registry, restored into a global the next
        dequeue promoted — which any event dequeued first could take, and
        which no saved state can hold, because a registry reference means
        nothing outside the engine that issued it. Mirrors cpp
        `EventWithMetadata::data`. Costs SCE_MAX_DATA_LEN per scheduled slot,
-       on machines with a script engine only — the only ones whose sends
-       evaluate a payload. */
+       on a machine with a script engine, whose sends can evaluate a payload,
+       and on one whose document sends a delayed payload of its own fields
+       (`has_delayed_send_payload`, §scxml-6.2.4); no other machine has a
+       payload to hold. */
     char data[SCE_MAX_DATA_LEN];
 {% endif %}
     /* W3C SCXML 6.2.4 + C.1: where the entry delivers when it comes due —

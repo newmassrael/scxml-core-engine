@@ -233,6 +233,11 @@ const ANALYZER_WRITTEN: &[&str] = &[
     "externally_drivable_events",
     // The other half of `delayed_host_send_max_params` above: the yes-or-no.
     "has_delayed_host_send",
+    // Template dispatch, as `has_delayed_host_send` above: whether a delayed
+    // `<send>` carries a payload, which the C11 backend's fixed-size queue
+    // entry must make room for. Arithmetic over the authored `delay` and
+    // `<param>`/`namelist`/`<content>`, which a rendering shows as themselves.
+    "has_delayed_send_payload",
     "internal_source",
     "is_true_internal",
     "matches_any_event",

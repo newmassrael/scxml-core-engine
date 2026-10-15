@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 0e931b64d8b84ac074c11f557102b954390a5b6bc56ecf7eaee340a9062b12f3
+// source-hash: 14eab19e007466760dd188bf9886e0b16a1100f5051fb061af6ed75d1acb2bf1
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -20,7 +20,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: presence_peer.scxml:53 :: _machine
+// SCE-MAP: presence_peer.scxml:52 :: _machine
 
 package presence_peer
 
@@ -185,6 +185,7 @@ const (
 	PresencePeerPayloadTagNone PresencePeerPayloadTag = iota
 	PresencePeerPayloadTagPresenceAlive
 	PresencePeerPayloadTagPresenceBeat
+	PresencePeerPayloadTagPresenceExpire
 	PresencePeerPayloadTagPresenceJoin
 	PresencePeerPayloadTagPresenceLeft
 	PresencePeerPayloadTagPresenceSeen
@@ -203,6 +204,13 @@ type PresencePeerPresenceAlivePayload struct {
 // the `RaisePresenceBeat` seam below (fields are unexported by design).
 type PresencePeerPresenceBeatPayload struct {
 	now int64
+}
+
+// PresencePeerPresenceExpirePayload is the NL→IR Item C1 Path A typed `_event.data`
+// payload for `presence.expire`. Internal to the package; consumers inject it via
+// the `RaisePresenceExpire` seam below (fields are unexported by design).
+type PresencePeerPresenceExpirePayload struct {
+	gen uint32
 }
 
 // PresencePeerPresenceJoinPayload is the NL→IR Item C1 Path A typed `_event.data`
@@ -268,6 +276,26 @@ func RaisePresenceBeat(e *sce.Engine[PresencePeerState, PresencePeerEvent], now 
 			// from. Filling only the first left an `<assign expr="_event.data.x">`
 			// on this event reading nothing, on every backend alike.
 			Data: sce.PayloadJSON(sce.Pair("now", sce.Int64PayloadText(now))),
+		},
+	})
+}
+
+// RaisePresenceExpire is the NL→IR Item C1 Path A per-event typed `_event.data`
+// inject seam for `presence.expire` — binds the event name and the payload field
+// values in one call so the name↔type pairing cannot be constructed
+// inconsistently. Twin of the Rust `RaisePresenceExpire` extension-trait method
+// and the C11 `raise_<event>_typed` entry.
+func RaisePresenceExpire(e *sce.Engine[PresencePeerState, PresencePeerEvent], gen uint32) {
+	e.RaiseExternalWithMeta(sce.EventWithMetadata[PresencePeerEvent]{
+		Event:    PresencePeerEventPresenceExpire,
+		Metadata: sce.EventMetadata{
+			EventType:    sce.EventTypeExternal,
+			TypedPayload: PresencePeerPresenceExpirePayload{gen: gen, },
+			// Both carriers are filled: the typed one a native guard reads,
+			// and `Data`, which is what the script engine binds `_event.data`
+			// from. Filling only the first left an `<assign expr="_event.data.x">`
+			// on this event reading nothing, on every backend alike.
+			Data: sce.PayloadJSON(sce.Pair("gen", gen)),
 		},
 	})
 }
@@ -369,6 +397,7 @@ type PresencePeerPolicy struct {
 	pendingPayloadTag PresencePeerPayloadTag
 	pendingPresenceAlivePayload PresencePeerPresenceAlivePayload
 	pendingPresenceBeatPayload PresencePeerPresenceBeatPayload
+	pendingPresenceExpirePayload PresencePeerPresenceExpirePayload
 	pendingPresenceJoinPayload PresencePeerPresenceJoinPayload
 	pendingPresenceLeftPayload PresencePeerPresenceLeftPayload
 	pendingPresenceSeenPayload PresencePeerPresenceSeenPayload
@@ -394,8 +423,6 @@ type PresencePeerPolicy struct {
 	vEntry PresencePeerSeenRecord
 	// W3C SCXML 5.2: the `serial` datamodel variable, published (`sce:direction="out"`).
 	vSerial uint32
-	// W3C SCXML 5.2: the `due` datamodel variable, published (`sce:direction="out"`).
-	vDue uint32
 	// W3C SCXML 5.2: the `known` datamodel variable.
 	vKnown bool
 	// W3C SCXML 5.2: the `fresh` datamodel variable.
@@ -424,7 +451,6 @@ func NewPresencePeerPolicy() PresencePeerPolicy {
 		vRebuilt: nil,
 		vEntry: PresencePeerSeenRecord{client: 0, last: 0, gen: 0},
 		vSerial: 0,
-		vDue: 0,
 		vKnown: false,
 		vFresh: false,
 		vLost: 0,
@@ -468,12 +494,6 @@ func (p *PresencePeerPolicy) Serial() uint32 {
 	return p.vSerial
 }
 
-// Due reports what the published `due` datamodel
-// variable holds now (W3C SCXML 5.2). Only the machine writes it.
-func (p *PresencePeerPolicy) Due() uint32 {
-	return p.vDue
-}
-
 // Lost reports what the published `lost` datamodel
 // variable holds now (W3C SCXML 5.2). Only the machine writes it.
 func (p *PresencePeerPolicy) Lost() uint32 {
@@ -495,7 +515,6 @@ type PresencePeerInvokeParams struct {
 	VTtl *uint32
 	VLease *uint32
 	VSerial *uint32
-	VDue *uint32
 	VKnown *bool
 	VFresh *bool
 	VLost *uint32
@@ -519,9 +538,6 @@ func (p *PresencePeerPolicy) AcceptParams(params PresencePeerInvokeParams) {
 	}
 	if params.VSerial != nil {
 		p.vSerial = *params.VSerial
-	}
-	if params.VDue != nil {
-		p.vDue = *params.VDue
 	}
 	if params.VKnown != nil {
 		p.vKnown = *params.VKnown
@@ -754,6 +770,9 @@ func (p *PresencePeerPolicy) PopulateEventMetadata(meta *sce.EventMetadata) {
 	case PresencePeerPresenceBeatPayload:
 		p.pendingPayloadTag = PresencePeerPayloadTagPresenceBeat
 		p.pendingPresenceBeatPayload = v
+	case PresencePeerPresenceExpirePayload:
+		p.pendingPayloadTag = PresencePeerPayloadTagPresenceExpire
+		p.pendingPresenceExpirePayload = v
 	case PresencePeerPresenceJoinPayload:
 		p.pendingPayloadTag = PresencePeerPayloadTagPresenceJoin
 		p.pendingPresenceJoinPayload = v
@@ -810,6 +829,17 @@ func (p *PresencePeerPolicy) LiftTypedPayload(event PresencePeerEvent, meta *sce
 		}
 		p.pendingPresenceBeatPayload = payload
 		p.pendingPayloadTag = PresencePeerPayloadTagPresenceBeat
+	case PresencePeerEventPresenceExpire:
+		fields, err := sce.LiftPayload(meta.Data)
+		if err != nil {
+			return err
+		}
+		var payload PresencePeerPresenceExpirePayload
+		if payload.gen, err = sce.PayloadUnsigned[uint32](fields, "gen"); err != nil {
+			return err
+		}
+		p.pendingPresenceExpirePayload = payload
+		p.pendingPayloadTag = PresencePeerPayloadTagPresenceExpire
 	case PresencePeerEventPresenceJoin:
 		fields, err := sce.LiftPayload(meta.Data)
 		if err != nil {
@@ -882,7 +912,7 @@ func (p *PresencePeerPolicy) ClearEventMetadata() {
 // ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
 // configuration, runs its <onentry>, and its <initial> transition's content when
 // its initial state is entered by default.
-//line presence_peer.scxml:53
+//line presence_peer.scxml:52
 func (p *PresencePeerPolicy) ExecuteEntryActions(state PresencePeerState, engine *sce.Engine[PresencePeerState, PresencePeerEvent], isDefaultEntry bool) {
 	switch state {
 	default:
@@ -895,7 +925,7 @@ func (p *PresencePeerPolicy) ExecuteEntryActions(state PresencePeerState, engine
 // <initial> content) when the history was taken with nothing recorded. The
 // engine asks for it by the entry set's defaultHistoryContent answer; a history
 // that restored what it recorded runs nothing.
-//line presence_peer.scxml:53
+//line presence_peer.scxml:52
 func (p *PresencePeerPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[PresencePeerState, PresencePeerEvent]) {
 	// W3C SCXML 3.10.2: no <history> in this document has default content.
 }
@@ -903,7 +933,7 @@ func (p *PresencePeerPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID,
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
 // runs its <onexit>, cancels its invocations and removes it from the
 // configuration — §scxml-D-exitStates's order.
-//line presence_peer.scxml:53
+//line presence_peer.scxml:52
 func (p *PresencePeerPolicy) ExecuteExitActions(state PresencePeerState, engine *sce.Engine[PresencePeerState, PresencePeerEvent], configurationBeforeExit []PresencePeerState) {
 	// §scxml-D-exitStates orders one state's exit as onexit, then
 	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
@@ -920,7 +950,7 @@ func (p *PresencePeerPolicy) ExecuteExitActions(state PresencePeerState, engine 
 // BindCurrentEvent binds the event whose transitions are about to be selected as
 // the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
 // and not for an eventless selection, which has no event of its own.
-//line presence_peer.scxml:53
+//line presence_peer.scxml:52
 func (p *PresencePeerPolicy) BindCurrentEvent(event PresencePeerEvent, engine *sce.Engine[PresencePeerState, PresencePeerEvent]) {
 	// This document's guards never read _event, so there is nothing to bind.
 }
@@ -930,7 +960,7 @@ func (p *PresencePeerPolicy) BindCurrentEvent(event PresencePeerEvent, engine *s
 // that event enables and whose guard holds. The engine walks the atomic states
 // and their ancestors and keeps the ordered set; the null event asks for
 // eventless transitions.
-//line presence_peer.scxml:53
+//line presence_peer.scxml:52
 func (p *PresencePeerPolicy) FirstEnabledTransition(state PresencePeerState, event PresencePeerEvent, engine *sce.Engine[PresencePeerState, PresencePeerEvent]) (sce.EnabledTransition[PresencePeerState, sce.HistoryID], bool) {
 	switch state {
 	case PresencePeerStateOpen:
@@ -1023,13 +1053,13 @@ func (p *PresencePeerPolicy) FirstEnabledTransition(state PresencePeerState, eve
 
 // ExecuteTransitionContent runs one transition's executable content (W3C SCXML
 // 3.13), between the microstep's exits and its entries.
-//line presence_peer.scxml:53
+//line presence_peer.scxml:52
 func (p *PresencePeerPolicy) ExecuteTransitionContent(source PresencePeerState, transitionIndex int, engine *sce.Engine[PresencePeerState, PresencePeerEvent]) {
 	switch source {
 	case PresencePeerStateOpen:
 		switch transitionIndex {
 		case 0:
-			//line presence_peer.scxml:80
+			//line presence_peer.scxml:79
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != PresencePeerPayloadTagPresenceJoin {
@@ -1063,7 +1093,7 @@ func (p *PresencePeerPolicy) ExecuteTransitionContent(source PresencePeerState, 
 
 			}()
 		case 1:
-			//line presence_peer.scxml:94
+			//line presence_peer.scxml:93
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != PresencePeerPayloadTagPresenceBeat {
@@ -1135,7 +1165,7 @@ func (p *PresencePeerPolicy) ExecuteTransitionContent(source PresencePeerState, 
 	}
 			}()
 		case 2:
-			//line presence_peer.scxml:104
+			//line presence_peer.scxml:103
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != PresencePeerPayloadTagPresenceAlive {
@@ -1253,7 +1283,7 @@ func (p *PresencePeerPolicy) ExecuteTransitionContent(source PresencePeerState, 
 	}
 			}()
 		case 3:
-			//line presence_peer.scxml:120
+			//line presence_peer.scxml:119
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != PresencePeerPayloadTagPresenceSeen {
@@ -1364,8 +1394,22 @@ func (p *PresencePeerPolicy) ExecuteTransitionContent(source PresencePeerState, 
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
 	}
+	// W3C SCXML 6.2: Evaluate <param> expressions at send time
 	{
-		eventDataStr := ""
+		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
+		// and its pair left out, and the message still goes; the error ends
+		// the block once it has. Read at the end of this element.
+		paramFailed := false
+		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
+		// delivered, so this is an ordered list rather than a map. The typed
+		// value is kept rather than its text — a receiver reading
+		// `_event.data.value === 42` finds the string "42" unequal.
+		parts := make([]sce.EventDataParam, 0)
+		{
+			sceValue := int64(p.vSerial)
+			parts = append(parts, sce.EventDataParam{Name: "gen", Value: sceValue})
+		}
+		eventDataStr := sce.BuildJSONFromTypedParams(parts)
 		_ = eventDataStr
 	// W3C SCXML 6.2: External send
 	// W3C SCXML 6.2: delayed to this session's external queue. §scxml-C-1: the
@@ -1374,6 +1418,11 @@ func (p *PresencePeerPolicy) ExecuteTransitionContent(source PresencePeerState, 
 		engine.ScheduleEvent(delayEvt, time.Duration(sendDelayMs) * time.Millisecond, "__send_3", eventDataStr, p.SessionID)
 	}
 
+		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
+		// <foreach> it came — the block is its own function.
+		if paramFailed {
+			return
+		}
 	}
 	}
 	}
@@ -1383,12 +1432,9 @@ func (p *PresencePeerPolicy) ExecuteTransitionContent(source PresencePeerState, 
 			//line presence_peer.scxml:151
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
-
-
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vDue, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(PresencePeerEventErrorExecution, "<assign location='due'>: an integer operation overflowed or failed")); return true }; p.vDue = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
+				if p.pendingPayloadTag != PresencePeerPayloadTagPresenceExpire {
+					return
+				}
 
 
 	p.vKnown = false
@@ -1403,7 +1449,7 @@ func (p *PresencePeerPolicy) ExecuteTransitionContent(source PresencePeerState, 
 	for _, m := range append(p.vOnline[:0:0], p.vOnline...) {
 		_ = m
 
-	if m.gen == p.vDue {
+	if m.gen == p.pendingPresenceExpirePayload.gen {
 
 
 	p.vKnown = true
@@ -1415,7 +1461,7 @@ func (p *PresencePeerPolicy) ExecuteTransitionContent(source PresencePeerState, 
 	}
 
 
-	if m.gen != p.vDue {
+	if m.gen != p.pendingPresenceExpirePayload.gen {
 
 	// SCE Accepted Subset §2.15: <sce:append target="rebuilt">
 
@@ -1519,7 +1565,7 @@ func (p *PresencePeerPolicy) ExecuteTransitionContent(source PresencePeerState, 
 
 			}()
 		case 5:
-			//line presence_peer.scxml:180
+			//line presence_peer.scxml:179
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != PresencePeerPayloadTagPresenceLeft {
@@ -1567,7 +1613,7 @@ func (p *PresencePeerPolicy) ExecuteTransitionContent(source PresencePeerState, 
 
 			}()
 		case 6:
-			//line presence_peer.scxml:194
+			//line presence_peer.scxml:193
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1578,7 +1624,7 @@ func (p *PresencePeerPolicy) ExecuteTransitionContent(source PresencePeerState, 
 
 			}()
 		case 7:
-			//line presence_peer.scxml:198
+			//line presence_peer.scxml:197
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

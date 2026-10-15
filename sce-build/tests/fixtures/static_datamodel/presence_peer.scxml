@@ -20,15 +20,14 @@
     that repeats or reorders delivers, renews nothing.
   * Every kept heartbeat arms the entry's expiry with the machine's own delayed send:
     `presence.expire` to itself, after the lease. The entry is numbered with the renewal
-    it was armed for (`gen`, counted by `serial`), and a delayed send of one delay is
-    delivered in the order it was sent in (docs/SCE_ACCEPTED_SUBSET.md §2.15, the
-    `static_timers` scenario), so the nth expiry to come due is the nth renewal's: `due`
-    counts them, and the entry numbered `due` is the one whose time has run out, if it
-    is still held. A heartbeat that renews an entry gives it a later number, so the
-    expiry armed for the earlier one finds no entry and does nothing. That is the whole
-    of "a heartbeat extends a client's life": no <cancel>, no expiry to find and remove,
-    and nothing for the delayed send to carry, which a backend with no script engine
-    does not carry on one.
+    it was armed for (`gen`, counted by `serial`), and the expiry carries that number
+    (docs/SCE_ACCEPTED_SUBSET.md §2.15: a delayed `<send>` evaluates its `<param>`s when
+    it runs, not when it is due), so the entry numbered `gen` is the one whose time has
+    run out, if it is still held. A heartbeat that renews an entry gives it a later
+    number, so the expiry armed for the earlier one finds no entry and does nothing.
+    That is the whole of "a heartbeat extends a client's life": no <cancel>, no expiry
+    to find and remove, and no count of the expiries that came due, which would hold
+    only for a runtime that delivers delayed sends in the order they were sent in.
   * The hub tells every copy, on the one topic `#room`, each heartbeat it was given
     (`presence.seen`), so a client that joins is announced by its first and a client that
     is still here is renewed by every one. A copy keeps an entry as the hub does, with an
@@ -43,9 +42,9 @@
   hub holds is exact: a client is online from the heartbeat the hub kept until `ttl`
   after it, on the hub's clock, and not a moment beyond.
 
-  What a copy counts is its own: `serial` and `due` are not carried between copies, and
-  the expiry of a copy and of the hub are different delays (`lease`), each in the order
-  of its own machine.
+  What a copy counts is its own: `serial` is not carried between copies, and the expiry
+  of a copy and of the hub are different delays (`lease`), each numbered by its own
+  machine.
 
   `online` is what a run compares across copies: the entries, the one heard from
   longest ago first on the hub, and in the order the copy heard them on a copy.
@@ -57,6 +56,7 @@
   <sce:import kind="event-schema" src="presence_alive.scxml" as="Alive"/>
   <sce:import kind="event-schema" src="presence_seen.scxml" as="Seen"/>
   <sce:import kind="event-schema" src="presence_left.scxml" as="Left"/>
+  <sce:import kind="event-schema" src="presence_expire.scxml" as="Expire"/>
   <datamodel>
     <data id="node" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="hub" sce:type="bool" expr="false" sce:direction="out"/>
@@ -70,7 +70,6 @@
       <sce:set name="gen" expr="0"/>
     </data>
     <data id="serial" sce:type="uint32" expr="0" sce:direction="out"/>
-    <data id="due" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="known" sce:type="bool" expr="false"/>
     <data id="fresh" sce:type="bool" expr="false"/>
     <data id="lost" sce:type="uint32" expr="0" sce:direction="out"/>
@@ -141,23 +140,23 @@
              that did not complete leaves the count of renewals and the expiries armed
              as many as each other. -->
         <assign location="serial" expr="serial + 1"/>
-        <send event="presence.expire" delayexpr="lease + 'ms'"/>
+        <send event="presence.expire" delayexpr="lease + 'ms'">
+          <param name="gen" expr="serial"/>
+        </send>
       </if>
     </transition>
 
-    <!-- The time given to the nth renewal has run out: the nth expiry to come due is
-         its, since they are delivered in the order they were armed in. It is let go
+    <!-- The time given to a renewal has run out: the one the expiry names. It is let go
          only if it is still that renewal, and the hub then tells the copies. -->
     <transition event="presence.expire" type="internal">
-      <assign location="due" expr="due + 1"/>
       <assign location="known" expr="false"/>
       <sce:clear target="rebuilt"/>
       <foreach array="online" item="m">
-        <if cond="m.gen === due">
+        <if cond="m.gen === _event.data.gen">
           <assign location="known" expr="true"/>
           <assign location="entry" expr="m"/>
         </if>
-        <if cond="m.gen !== due">
+        <if cond="m.gen !== _event.data.gen">
           <sce:append target="rebuilt" expr="m"/>
         </if>
       </foreach>

@@ -712,6 +712,16 @@ fn analyze_action(action: &Action, model: &mut SCXMLModel) {
             }
             if !action.delay.is_empty() || !action.delayexpr.is_empty() {
                 model.needs_event_scheduler = Some(true);
+                // §scxml-6.2.4: what the delayed send carries
+                // waits on the entry until it is due, so an entry that cannot
+                // hold it must be told to make room.
+                if !action.params.is_empty()
+                    || !action.namelist.is_empty()
+                    || !action.content.is_empty()
+                    || !action.contentexpr.is_empty()
+                {
+                    model.has_delayed_send_payload = true;
+                }
             }
             // §scxml-C-1 (test553): namelist evaluation needs the
             // declared-var set so undeclared names trigger error.execution

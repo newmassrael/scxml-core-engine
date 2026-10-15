@@ -3150,6 +3150,111 @@ fn a_send_delayexpr_that_joins_text_is_written_for_c_into_a_buffer_the_model_siz
     );
 }
 
+/// The text of every generated file with the extension `ext`.
+fn generated_with_extension(dir: &std::path::Path, ext: &str) -> String {
+    let mut text = String::new();
+    for entry in std::fs::read_dir(dir).expect("the output directory") {
+        let path = entry.expect("an entry").path();
+        if path.extension().is_some_and(|e| e == ext) {
+            text.push_str(&std::fs::read_to_string(&path).expect("a generated file"));
+        }
+    }
+    text
+}
+
+#[test]
+fn a_delayed_send_carries_its_params_through_the_scheduled_entry_of_a_c_machine_with_no_engine() {
+    // §scxml-6.2.4 + §scxml-5.10: the params are read from the machine's fields
+    // when the send runs and wait on the entry until it is due, so the entry
+    // has room for them and the drain raises the event with them. The send used
+    // to be refused when it ran, because that room existed only for a machine
+    // with a script engine.
+    let out_dir = tempdir().expect("tempdir");
+    let document = machine(
+        r#"<state id="s"><onentry>
+      <send event="notify" delay="1s"><param name="n" expr="count"/></send>
+    </onentry></state>"#,
+    );
+    let (ok, out) = run(
+        &[
+            "generate",
+            "-l",
+            "c",
+            "-o",
+            out_dir.path().to_str().expect("a path"),
+        ],
+        &document,
+    );
+    assert!(ok, "a delayed send with a param generates for C11:\n{out}");
+    assert!(
+        out.contains("\"needs_script_engine\":false"),
+        "the machine still needs no engine:\n{out}"
+    );
+    let header = generated_with_extension(out_dir.path(), "h");
+    let source = generated_with_extension(out_dir.path(), "c");
+    assert!(
+        !source.contains("a combination of attributes this backend cannot emit"),
+        "the delayed send is emitted, not refused when it runs:\n{source}"
+    );
+    assert!(
+        header.contains("char data[SCE_MAX_DATA_LEN];\n    /* W3C SCXML 6.2.4 + C.1: where"),
+        "the scheduled entry holds the payload:\n{header}"
+    );
+    assert!(
+        source.contains("sce_copy_bounded_data(slot->data, payload_json);"),
+        "the payload is copied onto the entry when it is scheduled:\n{source}"
+    );
+    assert!(
+        source.contains("memcpy(evt.data, ready.data, sizeof(evt.data));"),
+        "the drain raises the event with the payload it was sent with:\n{source}"
+    );
+    assert!(
+        source.contains("sce_forge_wire_pair(&sce_wire_, \"\\\"n\\\"\""),
+        "the pair is written from the machine's field, with no engine:\n{source}"
+    );
+    assert!(
+        !source.contains("luaL_dostring"),
+        "no script engine reads the param:\n{source}"
+    );
+}
+
+#[test]
+fn a_c_machine_whose_delayed_sends_carry_nothing_keeps_its_scheduled_entry_free_of_a_payload() {
+    // The room for a payload costs SCE_MAX_DATA_LEN per queued send, so a
+    // machine pays it only when its document sends a delayed payload: an
+    // undelayed send with params, and a delayed one with none, leave it out.
+    for states in [
+        r#"<state id="s"><onentry><send event="notify" delay="1s"/></onentry></state>"#,
+        r#"<state id="s"><onentry>
+      <send event="notify"><param name="n" expr="count"/></send>
+      <send event="again" delay="1s"/>
+    </onentry></state>"#,
+    ] {
+        let out_dir = tempdir().expect("tempdir");
+        let (ok, out) = run(
+            &[
+                "generate",
+                "-l",
+                "c",
+                "-o",
+                out_dir.path().to_str().expect("a path"),
+            ],
+            &machine(states),
+        );
+        assert!(ok, "the machine generates for C11:\n{out}");
+        let header = generated_with_extension(out_dir.path(), "h");
+        let source = generated_with_extension(out_dir.path(), "c");
+        assert!(
+            !header.contains("char data[SCE_MAX_DATA_LEN];\n    /* W3C SCXML 6.2.4 + C.1: where"),
+            "a send with nothing to carry needs no payload on the entry:\n{header}"
+        );
+        assert!(
+            !source.contains("memcpy(evt.data, ready.data, sizeof(evt.data));"),
+            "nothing is restored onto the event it raises:\n{source}"
+        );
+    }
+}
+
 /// A `sce-static` machine whose entry (line 8) sends with the attributes `send`
 /// and no `event` of its own.
 fn sending_event(send: &str) -> String {

@@ -540,7 +540,7 @@ SCE_SM_FN static SCE_C_UNUSED void scheduled_push_routed({{ csym_prefix }}{{ mod
                                   const char *event_name,
                                   const char *invoke_id,
                                   const char *send_id
-{%- if model.needs_script_engine %},
+{%- if model.needs_script_engine or model.has_delayed_send_payload %},
                                   const char *payload_json
 {%- endif %});
 {% if model.has_delayed_host_send %}
@@ -1216,14 +1216,14 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
    every route the scheduled queue carries — this session's queues, the
    parent, an invoked child, and a BasicHTTP post, whose request waits in the
    entry a host-served send's does (§scxml-6.2.4) — but a BasicHTTP send takes
-   no evaluated event name. A scheduled entry holds a payload only on a
-   machine with a script engine (its `data[]` is sized for those), so a
-   delayed payload elsewhere is said rather than dropped; a BasicHTTP request
-   carries its pairs in the host-send fields instead, and needs no `data[]`. #}
+   no evaluated event name. A scheduled entry holds the payload of a delayed
+   send in its `data[]`, which a machine has when it runs a script engine or
+   when the analyzer found a delayed payload in its document
+   (`has_delayed_send_payload`); a BasicHTTP request carries its pairs in the
+   host-send fields instead, and needs no `data[]`. #}
 {% set no_route = (not refused_at_build) and (
       route == 'none'
       or (not has_event and route != 'http')
-      or (has_delay and has_payload and not model.needs_script_engine and route != 'http')
       or (route == 'http' and (action.eventexpr or in_foreach))) %}
 {% if no_route %}
             /* W3C SCXML 6.2: a delivery this backend has no route for. Said
@@ -1237,6 +1237,9 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                 {{ send_id_c }});
             return;
 {% else %}
+{% if has_delay and has_payload and route != 'http' and not refused_at_build and not (model.needs_script_engine or model.has_delayed_send_payload) %}
+#error "SCE codegen drift: a delayed <send> carries a payload, yet this machine's scheduled entry has no `data[]` to hold it. analyzer::analyze_action must set has_delayed_send_payload for every delayed send with a <param>, namelist or <content>."
+{% endif %}
 {# ── The element's own arguments, evaluated once ── W3C SCXML 6.2: "The
    Processor MUST evaluate all arguments to <send> when the <send> element is
    evaluated", and "if the evaluation of <send>'s arguments produces an error,
@@ -1734,11 +1737,12 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
 {% endif %}{# the build-time refusals #}
 {% endif %}{# a delivery with no route #}
 {%- endmacro %}
-{#- W3C SCXML 5.10: the payload argument a scheduled entry takes — `_ed`
-    when the send carries one; present only on a machine with a script
-    engine, whose entries hold a payload. -#}
+{#- §scxml-5.10: the payload argument a scheduled entry takes — `_ed`
+    when the send carries one; present only on a machine whose entries hold a
+    payload: one with a script engine, or one whose document sends a delayed
+    payload of its own (`has_delayed_send_payload`). -#}
 {% macro scheduled_payload_arg(has_payload) -%}
-{%- if model.needs_script_engine %}, {% if has_payload %}_ed{% else %}NULL{% endif %}{% endif -%}
+{%- if model.needs_script_engine or model.has_delayed_send_payload %}, {% if has_payload %}_ed{% else %}NULL{% endif %}{% endif -%}
 {%- endmacro %}
 {#- W3C SCXML 6.2.4: schedule the event into one of this session's own
     queues — `route_c` names which — carrying the payload `_ed` holds. An
@@ -3600,7 +3604,7 @@ SCE_SM_FN static SCE_C_UNUSED void scheduled_push_routed({{ csym_prefix }}{{ mod
                                   const char *event_name,
                                   const char *invoke_id,
                                   const char *send_id
-{%- if model.needs_script_engine %},
+{%- if model.needs_script_engine or model.has_delayed_send_payload %},
                                   const char *payload_json
 {%- endif %}) {
     {{ csym_prefix }}{{ model.name }}_scheduled_entry_t *slot = scheduled_reserve(
@@ -3635,8 +3639,8 @@ SCE_SM_FN static SCE_C_UNUSED void scheduled_push_routed({{ csym_prefix }}{{ mod
 {% else %}
     (void)invoke_id;
 {% endif %}
-{% if model.needs_script_engine %}
-    /* W3C SCXML 5.10: the payload the event will carry, as the JSON its
+{% if model.needs_script_engine or model.has_delayed_send_payload %}
+    /* §scxml-5.10: the payload the event will carry, as the JSON its
        `data[]` takes — `send_payload_json` already refused one that does
        not fit, so the copy is whole. */
     if (payload_json != NULL) {
@@ -4885,7 +4889,7 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_tick({{ csym_prefix }}{{ model.
         if (ready.route == (uint8_t){{ csym_prefix | upper }}{{ model.name | upper }}_SCHED_ROUTE_PARENT) {
             if (sm->parent_dispatch != NULL) {
                 sm->parent_dispatch(sm->parent_sm, ready.route_event, sm->invoke_id,
-{%- if model.needs_script_engine %} ready.data[0] != '\0' ? ready.data : NULL{% else %} NULL{% endif %});
+{%- if model.needs_script_engine or model.has_delayed_send_payload %} ready.data[0] != '\0' ? ready.data : NULL{% else %} NULL{% endif %});
             } else if (sm->parent_sm == NULL) {
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error_with_send_id(
                     sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_COMMUNICATION,
@@ -4904,7 +4908,7 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_tick({{ csym_prefix }}{{ model.
             sce_forwarded_event_t _ready_fwd;
             memset(&_ready_fwd, 0, sizeof(_ready_fwd));
             sce_copy_bounded_id(_ready_fwd.name, ready.route_event);
-{% if model.needs_script_engine %}
+{% if model.needs_script_engine or model.has_delayed_send_payload %}
             sce_copy_bounded_data(_ready_fwd.data, ready.data);
 {% endif %}
             sce_copy_bounded_id(_ready_fwd.send_id, ready.send_id);
@@ -4937,12 +4941,14 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_tick({{ csym_prefix }}{{ model.
            terminator without tripping `-Wstringop-truncation` (which
            strncpy would since src is a same-size buffer). */
         memcpy(evt.send_id, ready.send_id, (size_t)SCE_MAX_ID_LEN);
-{% if model.needs_script_engine %}
-        /* W3C SCXML 5.10 (test186): the payload captured at send time rides
+{% if model.needs_script_engine or model.has_delayed_send_payload %}
+        /* §scxml-5.10 (test186): the payload captured at send time rides
            on the event it belongs to (mirrors cpp's EventWithMetadata::data
            → LuaEngine::setCurrentEvent delivery). Same-sized arrays, NUL
            written by `scheduled_push_routed`. */
         memcpy(evt.data, ready.data, sizeof(evt.data));
+{% endif %}
+{% if model.needs_script_engine %}
         /* W3C SCXML 5.10: the name the event was sent under, when its member is
            not called that. Same-sized arrays; the NUL is written by
            `scheduled_push_routed`. */

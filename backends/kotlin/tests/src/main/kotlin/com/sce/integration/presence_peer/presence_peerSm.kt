@@ -1,10 +1,10 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 0e931b64d8b84ac074c11f557102b954390a5b6bc56ecf7eaee340a9062b12f3
+// source-hash: 14eab19e007466760dd188bf9886e0b16a1100f5051fb061af6ed75d1acb2bf1
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/presence_peer.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: presence_peer.scxml:53 :: _machine
+// SCE-MAP: presence_peer.scxml:52 :: _machine
 
 package com.sce.integration.presence_peer
 
@@ -49,6 +49,11 @@ data class PresencePeerPresenceAlivePayload(val client: UInt, val at: Long)
 // payload for `presence.beat`. Consumers inject it via the `raisePresenceBeat` seam
 // on the machine — they never name this class directly.
 data class PresencePeerPresenceBeatPayload(val now: Long)
+
+// PresencePeerPresenceExpirePayload is the NL→IR Item C1 Path A typed `_event.data`
+// payload for `presence.expire`. Consumers inject it via the `raisePresenceExpire` seam
+// on the machine — they never name this class directly.
+data class PresencePeerPresenceExpirePayload(val gen: UInt)
 
 // PresencePeerPresenceJoinPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `presence.join`. Consumers inject it via the `raisePresenceJoin` seam
@@ -117,11 +122,6 @@ class PresencePeerStateMachine(
 
     /** What the published `serial` holds. */
     val serial: UInt get() = vSerial
-    /** W3C SCXML 5.2: the `due` datamodel variable, published (`sce:direction="out"`). */
-    private var vDue: UInt = 0.toUInt()
-
-    /** What the published `due` holds. */
-    val due: UInt get() = vDue
     /** W3C SCXML 5.2: the `known` datamodel variable, the machine's own. */
     private var vKnown: Boolean = false
     /** W3C SCXML 5.2: the `fresh` datamodel variable, the machine's own. */
@@ -148,7 +148,6 @@ class PresencePeerStateMachine(
         var ttl: UInt? = null
         var lease: UInt? = null
         var serial: UInt? = null
-        var due: UInt? = null
         var known: Boolean? = null
         var fresh: Boolean? = null
         var lost: UInt? = null
@@ -162,7 +161,6 @@ class PresencePeerStateMachine(
         params.ttl?.let { vTtl = it }
         params.lease?.let { vLease = it }
         params.serial?.let { vSerial = it }
-        params.due?.let { vDue = it }
         params.known?.let { vKnown = it }
         params.fresh?.let { vFresh = it }
         params.lost?.let { vLost = it }
@@ -177,7 +175,6 @@ class PresencePeerStateMachine(
         val lease: UInt,
         val online: List<PresencePeerSeenRecord>,
         val serial: UInt,
-        val due: UInt,
         val lost: UInt,
         val refusals: UInt,
     )
@@ -202,7 +199,6 @@ class PresencePeerStateMachine(
         lease = vLease,
         online = vOnline,
         serial = vSerial,
-        due = vDue,
         lost = vLost,
         refusals = vRefusals,
     )
@@ -231,7 +227,7 @@ class PresencePeerStateMachine(
      * from a document that renamed, re-typed or moved a state or a variable is
      * refused, one saved before a guard or an action changed is not.
      */
-    val savedShape: String = "13fcbcdd6ac6c590487e96a1cb74f86fa1d86e5ae684f3ba1bdeed202192f69a"
+    val savedShape: String = "61319fa1be44c43d13305ba3a241a6aa058882da0d4c2736fb3c896d16fad0e3"
 
     /**
      * This machine's whole state at the macrostep boundary it stands at —
@@ -255,7 +251,6 @@ class PresencePeerStateMachine(
             "rebuilt" to SavedValues.list(vRebuilt) { it.toSaved() },
             "entry" to vEntry.toSaved(),
             "serial" to SavedValues.of(vSerial),
-            "due" to SavedValues.of(vDue),
             "known" to SavedValues.of(vKnown),
             "fresh" to SavedValues.of(vFresh),
             "lost" to SavedValues.of(vLost),
@@ -293,11 +288,10 @@ class PresencePeerStateMachine(
         val saved6 = SavedValues.list(saved.variable("rebuilt"), "rebuilt", 128) { e, w -> PresencePeerSeenRecord.fromSaved(e, w) }
         val saved7 = PresencePeerSeenRecord.fromSaved(saved.variable("entry"), "entry")
         val saved8 = SavedValues.uint32(saved.variable("serial"), "serial")
-        val saved9 = SavedValues.uint32(saved.variable("due"), "due")
-        val saved10 = SavedValues.bool(saved.variable("known"), "known")
-        val saved11 = SavedValues.bool(saved.variable("fresh"), "fresh")
-        val saved12 = SavedValues.uint32(saved.variable("lost"), "lost")
-        val saved13 = SavedValues.uint32(saved.variable("refusals"), "refusals")
+        val saved9 = SavedValues.bool(saved.variable("known"), "known")
+        val saved10 = SavedValues.bool(saved.variable("fresh"), "fresh")
+        val saved11 = SavedValues.uint32(saved.variable("lost"), "lost")
+        val saved12 = SavedValues.uint32(saved.variable("refusals"), "refusals")
         vNode = saved1
         vHub = saved2
         vTtl = saved3
@@ -306,11 +300,10 @@ class PresencePeerStateMachine(
         vRebuilt = saved6
         vEntry = saved7
         vSerial = saved8
-        vDue = saved9
-        vKnown = saved10
-        vFresh = saved11
-        vLost = saved12
-        vRefusals = saved13
+        vKnown = saved9
+        vFresh = saved10
+        vLost = saved11
+        vRefusals = saved12
         enterSaved(saved, wallNowMs)
     }
 
@@ -322,6 +315,7 @@ class PresencePeerStateMachine(
     // native transition guards. `null` between events / for untyped events.
     private var pendingPresenceAlivePayload: PresencePeerPresenceAlivePayload? = null
     private var pendingPresenceBeatPayload: PresencePeerPresenceBeatPayload? = null
+    private var pendingPresenceExpirePayload: PresencePeerPresenceExpirePayload? = null
     private var pendingPresenceJoinPayload: PresencePeerPresenceJoinPayload? = null
     private var pendingPresenceLeftPayload: PresencePeerPresenceLeftPayload? = null
     private var pendingPresenceSeenPayload: PresencePeerPresenceSeenPayload? = null
@@ -337,12 +331,14 @@ class PresencePeerStateMachine(
     override fun populateTypedPayload(event: PresencePeerEvent, metadata: EventMetadata) {
         pendingPresenceAlivePayload = null
         pendingPresenceBeatPayload = null
+        pendingPresenceExpirePayload = null
         pendingPresenceJoinPayload = null
         pendingPresenceLeftPayload = null
         pendingPresenceSeenPayload = null
         when (val tp = metadata.typedPayload) {
             is PresencePeerPresenceAlivePayload -> pendingPresenceAlivePayload = tp
             is PresencePeerPresenceBeatPayload -> pendingPresenceBeatPayload = tp
+            is PresencePeerPresenceExpirePayload -> pendingPresenceExpirePayload = tp
             is PresencePeerPresenceJoinPayload -> pendingPresenceJoinPayload = tp
             is PresencePeerPresenceLeftPayload -> pendingPresenceLeftPayload = tp
             is PresencePeerPresenceSeenPayload -> pendingPresenceSeenPayload = tp
@@ -355,6 +351,9 @@ class PresencePeerStateMachine(
                 } else if (event == PresencePeerEvent.Presence.Beat) {
                     val fields = EventPayload.decode(metadata.data)
                     pendingPresenceBeatPayload = PresencePeerPresenceBeatPayload(fields.int64("now"))
+                } else if (event == PresencePeerEvent.Presence.Expire) {
+                    val fields = EventPayload.decode(metadata.data)
+                    pendingPresenceExpirePayload = PresencePeerPresenceExpirePayload(fields.uint32("gen"))
                 } else if (event == PresencePeerEvent.Presence.Join) {
                     val fields = EventPayload.decode(metadata.data)
                     pendingPresenceJoinPayload = PresencePeerPresenceJoinPayload(fields.uint32("node"), fields.boolean("hub"), fields.uint32("ttl"), fields.uint32("slack"))
@@ -399,6 +398,22 @@ class PresencePeerStateMachine(
                 // Filling only the first left an `<assign expr="_event.data.x">` on
                 // this event reading nothing, on every backend alike.
                 data = EventPayload.encode(mapOf("now" to now))
+            )
+        )
+    }
+    // NL→IR Item C1 Path A typed `_event.data` inject seam for
+    // `presence.expire` — binds the event name and the payload field values in one call.
+    fun raisePresenceExpire(gen: UInt) {
+        send(
+            PresencePeerEvent.Presence.Expire,
+            EventMetadata(
+                type = "external",
+                typedPayload = PresencePeerPresenceExpirePayload(gen),
+                // Both carriers are filled: the typed one a native guard reads, and
+                // `data`, which is what the script engine binds `_event.data` from.
+                // Filling only the first left an `<assign expr="_event.data.x">` on
+                // this event reading nothing, on every backend alike.
+                data = EventPayload.encode(mapOf("gen" to gen))
             )
         )
     }
@@ -620,33 +635,33 @@ class PresencePeerStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: presence_peer.scxml:53 :: _machine
+    // SCE-MAP: presence_peer.scxml:52 :: _machine
     override fun onEntry(state: PresencePeerState, isDefaultEntry: Boolean) {
         when (state) {
             is PresencePeerState.Open -> {
-                // SCE-MAP: presence_peer.scxml:79 :: open :: _state_body
+                // SCE-MAP: presence_peer.scxml:78 :: open :: _state_body
             }
         }
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: presence_peer.scxml:53 :: _machine
+    // SCE-MAP: presence_peer.scxml:52 :: _machine
     override fun onExit(state: PresencePeerState) {
         when (state) {
             is PresencePeerState.Open -> {
-                // SCE-MAP: presence_peer.scxml:79 :: open :: _state_body
+                // SCE-MAP: presence_peer.scxml:78 :: open :: _state_body
             }
         }
     }
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: presence_peer.scxml:53 :: _machine
+    // SCE-MAP: presence_peer.scxml:52 :: _machine
     override fun executeTransitionContent(source: PresencePeerState, transitionIndex: Int) {
         when (source) {
         is PresencePeerState.Open -> when (transitionIndex) {
             0 -> {
-                // SCE-MAP: presence_peer.scxml:80 :: open :: _transition_0
+                // SCE-MAP: presence_peer.scxml:79 :: open :: _transition_0
                 if (pendingPresenceJoinPayload == null) {
                     return
                 }
@@ -668,7 +683,7 @@ class PresencePeerStateMachine(
             }
             }
             1 -> {
-                // SCE-MAP: presence_peer.scxml:94 :: open :: _transition_1
+                // SCE-MAP: presence_peer.scxml:93 :: open :: _transition_1
                 if (pendingPresenceBeatPayload == null) {
                     return
                 }
@@ -721,7 +736,7 @@ class PresencePeerStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             2 -> {
-                // SCE-MAP: presence_peer.scxml:104 :: open :: _transition_2
+                // SCE-MAP: presence_peer.scxml:103 :: open :: _transition_2
                 if (pendingPresenceAlivePayload == null) {
                     return
                 }
@@ -796,7 +811,7 @@ class PresencePeerStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             3 -> {
-                // SCE-MAP: presence_peer.scxml:120 :: open :: _transition_3
+                // SCE-MAP: presence_peer.scxml:119 :: open :: _transition_3
                 if (pendingPresenceSeenPayload == null) {
                     return
                 }
@@ -864,7 +879,10 @@ class PresencePeerStateMachine(
                 raisePlatformError(PresencePeerEvent.Error.Execution, "<send> delayexpr is not a CSS2 time", "__send_3")
                 return@send true
             }
-            val sendData = ""
+            val sendPayload = mutableMapOf<String, Any?>()
+            putParam(sendPayload, "gen", (vSerial).toLong())
+
+            val sendData = buildJsonFromParams(sendPayload)
             // W3C SCXML 6.2: Delayed send
             scheduleSend("__send_3", sendDelayMs, PresencePeerEvent.Presence.Expire, EventMetadata.external(sendId = "__send_3", origin = scriptSessionId ?: "", data = sendData))
             false
@@ -877,10 +895,9 @@ class PresencePeerStateMachine(
             }
             4 -> {
                 // SCE-MAP: presence_peer.scxml:151 :: open :: _transition_4
-
-            if (try { vDue = com.sce.forge.runtime.SceChecked.add(vDue, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(PresencePeerEvent.Error.Execution, "<assign location='due'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+                if (pendingPresenceExpirePayload == null) {
+                    return
+                }
 
             vKnown = false
 
@@ -890,7 +907,7 @@ class PresencePeerStateMachine(
             for (m in vOnline) {
 
 
-            if (m.gen == vDue) {
+            if (m.gen == pendingPresenceExpirePayload!!.gen) {
 
             vKnown = true
 
@@ -898,7 +915,7 @@ class PresencePeerStateMachine(
             }
 
 
-            if (m.gen != vDue) {
+            if (m.gen != pendingPresenceExpirePayload!!.gen) {
 
             if (if (vRebuilt.size < 128) { vRebuilt = vRebuilt + (m); false } else { raisePlatformError(PresencePeerEvent.Error.Execution, "<sce:append target='rebuilt'>: the list already holds its capacity of 128"); true }) {
                 return
@@ -972,7 +989,7 @@ class PresencePeerStateMachine(
             }
             }
             5 -> {
-                // SCE-MAP: presence_peer.scxml:180 :: open :: _transition_5
+                // SCE-MAP: presence_peer.scxml:179 :: open :: _transition_5
                 if (pendingPresenceLeftPayload == null) {
                     return
                 }
@@ -1002,14 +1019,14 @@ class PresencePeerStateMachine(
             }
             }
             6 -> {
-                // SCE-MAP: presence_peer.scxml:194 :: open :: _transition_6
+                // SCE-MAP: presence_peer.scxml:193 :: open :: _transition_6
 
             if (try { vLost = com.sce.forge.runtime.SceChecked.add(vLost, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(PresencePeerEvent.Error.Execution, "<assign location='lost'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             7 -> {
-                // SCE-MAP: presence_peer.scxml:198 :: open :: _transition_7
+                // SCE-MAP: presence_peer.scxml:197 :: open :: _transition_7
 
             if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(PresencePeerEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return

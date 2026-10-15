@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The time given to one renewal of an entry has run out: which renewal (`gen`), the number
+  the holder gave it when it armed this expiry (docs/SCE_ACCEPTED_SUBSET.md §2.15, a
+  delayed `<send>` carries its `<param>`s). The holder sends it to itself, so the entry it
+  names is let go only if it is still the one that renewal made.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="presence_expire"
+       sce:event-name="presence.expire">
+  <datamodel>
+    <data id="gen" sce:type="uint32" sce:direction="in"/>
+  </datamodel>
+</scxml>

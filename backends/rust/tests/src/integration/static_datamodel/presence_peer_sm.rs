@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 0e931b64d8b84ac074c11f557102b954390a5b6bc56ecf7eaee340a9062b12f3
+// source-hash: 14eab19e007466760dd188bf9886e0b16a1100f5051fb061af6ed75d1acb2bf1
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -72,8 +72,8 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
-#![doc = "SCE-MAP: presence_peer.scxml:53 :: _machine"]
-// SCE-MAP: presence_peer.scxml:53 :: _machine
+#![doc = "SCE-MAP: presence_peer.scxml:52 :: _machine"]
+// SCE-MAP: presence_peer.scxml:52 :: _machine
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -145,6 +145,11 @@ pub struct PresencePeerPresenceBeatPayload {
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
+pub struct PresencePeerPresenceExpirePayload {
+    pub gen: u32,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct PresencePeerPresenceJoinPayload {
     pub node: u32,
     pub hub: bool,
@@ -173,6 +178,7 @@ pub enum PresencePeerPayload {
     None,
     PresenceAlive(PresencePeerPresenceAlivePayload),
     PresenceBeat(PresencePeerPresenceBeatPayload),
+    PresenceExpire(PresencePeerPresenceExpirePayload),
     PresenceJoin(PresencePeerPresenceJoinPayload),
     PresenceLeft(PresencePeerPresenceLeftPayload),
     PresenceSeen(PresencePeerPresenceSeenPayload),
@@ -190,6 +196,10 @@ pub trait PresencePeerInject {
     /// Binds the event name and payload variant in one call (name↔type
     /// pairing cannot be constructed inconsistently).
     fn raise_presence_beat(&mut self, payload: PresencePeerPresenceBeatPayload);
+    /// Typed `_event.data` inject for `presence.expire`.
+    /// Binds the event name and payload variant in one call (name↔type
+    /// pairing cannot be constructed inconsistently).
+    fn raise_presence_expire(&mut self, payload: PresencePeerPresenceExpirePayload);
     /// Typed `_event.data` inject for `presence.join`.
     /// Binds the event name and payload variant in one call (name↔type
     /// pairing cannot be constructed inconsistently).
@@ -222,6 +232,14 @@ impl PresencePeerInject for ::sce_rust_runtime::Engine<PresencePeerPolicy> {
         self.raise_external_typed_with_data(
             PresencePeerEvent::PresenceBeat,
             PresencePeerPayload::PresenceBeat(payload),
+            &data,
+        );
+    }
+    fn raise_presence_expire(&mut self, payload: PresencePeerPresenceExpirePayload) {
+        let data = ::sce_rust_runtime::payload_wire(format_args!("{{\"gen\":{}}}", payload.gen));
+        self.raise_external_typed_with_data(
+            PresencePeerEvent::PresenceExpire,
+            PresencePeerPayload::PresenceExpire(payload),
             &data,
         );
     }
@@ -283,7 +301,6 @@ pub struct PresencePeerData {
     pub lease: u32,
     pub online: Vec<PresencePeerSeenRecord>,
     pub serial: u32,
-    pub due: u32,
     pub lost: u32,
     pub refusals: u32,
 }
@@ -321,7 +338,6 @@ impl PresencePeerObserve for Engine<PresencePeerPolicy> {
                 lease: policy.lease,
                 online: policy.online.clone(),
                 serial: policy.serial,
-                due: policy.due,
                 lost: policy.lost,
                 refusals: policy.refusals,
             },
@@ -446,7 +462,7 @@ pub trait PresencePeerPersist: Sized {
 impl PresencePeerPersist for Engine<PresencePeerPolicy> {
     type Policy = PresencePeerPolicy;
 
-    const SHAPE: &'static str = "13fcbcdd6ac6c590487e96a1cb74f86fa1d86e5ae684f3ba1bdeed202192f69a";
+    const SHAPE: &'static str = "61319fa1be44c43d13305ba3a241a6aa058882da0d4c2736fb3c896d16fad0e3";
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<
         ::sce_rust_runtime::NoHistory,
@@ -495,10 +511,6 @@ impl PresencePeerPersist for Engine<PresencePeerPolicy> {
                 (
                     "serial".to_string(),
                     ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.serial),
-                ),
-                (
-                    "due".to_string(),
-                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.due),
                 ),
                 (
                     "known".to_string(),
@@ -560,8 +572,6 @@ impl PresencePeerPersist for Engine<PresencePeerPolicy> {
             saved.variable("serial")?,
             "serial",
         )?;
-        policy.due =
-            ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("due")?, "due")?;
         policy.known = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("known")?,
             "known",
@@ -592,7 +602,6 @@ pub struct PresencePeerInvokeParams {
     pub ttl: Option<u32>,
     pub lease: Option<u32>,
     pub serial: Option<u32>,
-    pub due: Option<u32>,
     pub known: Option<bool>,
     pub fresh: Option<bool>,
     pub lost: Option<u32>,
@@ -626,8 +635,6 @@ pub struct PresencePeerPolicy {
     entry: PresencePeerSeenRecord,
     /// W3C SCXML 5.2: the `serial` datamodel variable, published (`sce:direction="out"`).
     serial: u32,
-    /// W3C SCXML 5.2: the `due` datamodel variable, published (`sce:direction="out"`).
-    due: u32,
     /// W3C SCXML 5.2: the `known` datamodel variable.
     known: bool,
     /// W3C SCXML 5.2: the `fresh` datamodel variable.
@@ -672,7 +679,6 @@ impl PresencePeerPolicy {
             gen: 0,
         };
         let serial: u32 = 0;
-        let due: u32 = 0;
         let known: bool = false;
         let fresh: bool = false;
         let lost: u32 = 0;
@@ -688,7 +694,6 @@ impl PresencePeerPolicy {
             rebuilt,
             entry,
             serial,
-            due,
             known,
             fresh,
             lost,
@@ -717,9 +722,6 @@ impl PresencePeerPolicy {
         }
         if let Some(value) = params.serial {
             self.serial = value;
-        }
-        if let Some(value) = params.due {
-            self.due = value;
         }
         if let Some(value) = params.known {
             self.known = value;
@@ -769,12 +771,6 @@ impl PresencePeerPolicy {
     /// holds now. Only the machine writes it.
     pub fn serial(&self) -> u32 {
         self.serial
-    }
-
-    /// W3C SCXML 5.2: what the published `due` datamodel variable
-    /// holds now. Only the machine writes it.
-    pub fn due(&self) -> u32 {
-        self.due
     }
 
     /// W3C SCXML 5.2: what the published `lost` datamodel variable
@@ -1019,6 +1015,13 @@ impl StatePolicy for PresencePeerPolicy {
                         now: fields.signed64("now")?,
                     });
             }
+            PresencePeerEvent::PresenceExpire => {
+                let fields = ::sce_rust_runtime::event_payload::PayloadFields::decode(data)?;
+                self.pending_payload =
+                    PresencePeerPayload::PresenceExpire(PresencePeerPresenceExpirePayload {
+                        gen: fields.unsigned::<u32>("gen")?,
+                    });
+            }
             PresencePeerEvent::PresenceJoin => {
                 let fields = ::sce_rust_runtime::event_payload::PayloadFields::decode(data)?;
                 self.pending_payload =
@@ -1068,8 +1071,8 @@ impl StatePolicy for PresencePeerPolicy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: presence_peer.scxml:53 :: _machine"]
-    // SCE-MAP: presence_peer.scxml:53 :: _machine
+    #[doc = "SCE-MAP: presence_peer.scxml:52 :: _machine"]
+    // SCE-MAP: presence_peer.scxml:52 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -1085,8 +1088,8 @@ impl StatePolicy for PresencePeerPolicy {
     // recorded runs nothing.
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: presence_peer.scxml:53 :: _machine"]
-    // SCE-MAP: presence_peer.scxml:53 :: _machine
+    #[doc = "SCE-MAP: presence_peer.scxml:52 :: _machine"]
+    // SCE-MAP: presence_peer.scxml:52 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -1102,8 +1105,8 @@ impl StatePolicy for PresencePeerPolicy {
     // the first of `state`'s own transitions, in document order, that `event`
     // enables. The engine walks the atomic states and their ancestors and
     // keeps the ordered set. `Event::Null` asks for eventless transitions.
-    #[doc = "SCE-MAP: presence_peer.scxml:53 :: _machine"]
-    // SCE-MAP: presence_peer.scxml:53 :: _machine
+    #[doc = "SCE-MAP: presence_peer.scxml:52 :: _machine"]
+    // SCE-MAP: presence_peer.scxml:52 :: _machine
     fn first_enabled_transition(
         &mut self,
         state: Self::State,
@@ -1208,8 +1211,8 @@ impl StatePolicy for PresencePeerPolicy {
 
     // W3C SCXML 3.13: a transition's executable content, run by the engine
     // between the microstep's exits and its entries.
-    #[doc = "SCE-MAP: presence_peer.scxml:53 :: _machine"]
-    // SCE-MAP: presence_peer.scxml:53 :: _machine
+    #[doc = "SCE-MAP: presence_peer.scxml:52 :: _machine"]
+    // SCE-MAP: presence_peer.scxml:52 :: _machine
     fn execute_transition_content(
         &mut self,
         source: Self::State,
@@ -1220,7 +1223,7 @@ impl StatePolicy for PresencePeerPolicy {
             PresencePeerState::Open => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: presence_peer.scxml:80 :: open :: _transition_0
+                        // SCE-MAP: presence_peer.scxml:79 :: open :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
                         let ev = match &self.pending_payload {
                             PresencePeerPayload::PresenceJoin(ev) => ev.clone(),
@@ -1260,7 +1263,7 @@ impl StatePolicy for PresencePeerPolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: presence_peer.scxml:94 :: open :: _transition_1
+                        // SCE-MAP: presence_peer.scxml:93 :: open :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
                         let ev = match &self.pending_payload {
                             PresencePeerPayload::PresenceBeat(ev) => ev.clone(),
@@ -1339,7 +1342,7 @@ impl StatePolicy for PresencePeerPolicy {
                         }
                     }
                     2 => {
-                        // SCE-MAP: presence_peer.scxml:104 :: open :: _transition_2
+                        // SCE-MAP: presence_peer.scxml:103 :: open :: _transition_2
                         // W3C SCXML 3.13: Transition 2 actions
                         let ev = match &self.pending_payload {
                             PresencePeerPayload::PresenceAlive(ev) => ev.clone(),
@@ -1475,7 +1478,7 @@ impl StatePolicy for PresencePeerPolicy {
                         }
                     }
                     3 => {
-                        // SCE-MAP: presence_peer.scxml:120 :: open :: _transition_3
+                        // SCE-MAP: presence_peer.scxml:119 :: open :: _transition_3
                         // W3C SCXML 3.13: Transition 3 actions
                         let ev = match &self.pending_payload {
                             PresencePeerPayload::PresenceSeen(ev) => ev.clone(),
@@ -1614,7 +1617,31 @@ impl StatePolicy for PresencePeerPolicy {
                                         engine.raise(err_meta);
                                         break 'action_block; // W3C SCXML 4.9: the error ends the block
                                     } else {
-                                        let event_data: &str = "";
+                                        // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                                        // delivered, so each name carries a vector. The typed value is kept
+                                        // rather than its text — a receiver reading `_event.data.value === 42`
+                                        // finds the string "42" unequal.
+                                        //
+                                        // Declared out here rather than inside the payload block because
+                                        // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                                        // below are renderings of that one evaluation: the BasicHTTP and
+                                        // host-served arms read this map instead of asking the data model again.
+                                        let mut _send_wire_params: ::std::collections::BTreeMap<
+                                            String,
+                                            Vec<::sce_rust_runtime::ScriptValue>,
+                                        > = ::std::collections::BTreeMap::new();
+                                        // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                                        let event_data_string: String = {
+                                            let wire_params = &mut _send_wire_params;
+                                            // The value is read from the machine's field as it stands now.
+                                            wire_params.entry("gen".to_string()).or_default().push(
+                                                ::sce_rust_runtime::ScriptValue::Int(i64::from(
+                                                    self.serial,
+                                                )),
+                                            );
+                                            ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
+                                        };
+                                        let event_data: &str = &event_data_string;
 
                                         // W3C SCXML 6.2: Default send (no target = external event)
                                         // W3C SCXML 6.2: delayed to this session's external queue. §scxml-C-1: the
@@ -1639,23 +1666,12 @@ impl StatePolicy for PresencePeerPolicy {
                     4 => {
                         // SCE-MAP: presence_peer.scxml:151 :: open :: _transition_4
                         // W3C SCXML 3.13: Transition 4 actions
+                        let ev = match &self.pending_payload {
+                            PresencePeerPayload::PresenceExpire(ev) => ev.clone(),
+                            _ => return,
+                        };
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
-                            // W3C SCXML 5.3: <assign location="due">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.due = sce_forge_runtime::algorithm::add::<u32>(self.due, 1)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, "<assign location='due'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-
                             // W3C SCXML 5.3: <assign location="known">
                             self.known = false;
 
@@ -1665,8 +1681,8 @@ impl StatePolicy for PresencePeerPolicy {
                             for m in self.online.clone() {
                                 let _ = &m;
 
-                                // W3C SCXML 5.9: cond="m.gen === due"
-                                if m.gen == self.due {
+                                // W3C SCXML 5.9: cond="m.gen === _event.data.gen"
+                                if m.gen == ev.gen {
                                     // W3C SCXML 5.3: <assign location="known">
                                     self.known = true;
 
@@ -1674,8 +1690,8 @@ impl StatePolicy for PresencePeerPolicy {
                                     self.entry = m;
                                 }
 
-                                // W3C SCXML 5.9: cond="m.gen !== due"
-                                if m.gen != self.due {
+                                // W3C SCXML 5.9: cond="m.gen !== _event.data.gen"
+                                if m.gen != ev.gen {
                                     // SCE Accepted Subset §2.15: <sce:append target="rebuilt">
                                     let sce_failed = if self.rebuilt.len() < 128 {
                                         self.rebuilt.push(m);
@@ -1791,7 +1807,7 @@ impl StatePolicy for PresencePeerPolicy {
                         }
                     }
                     5 => {
-                        // SCE-MAP: presence_peer.scxml:180 :: open :: _transition_5
+                        // SCE-MAP: presence_peer.scxml:179 :: open :: _transition_5
                         // W3C SCXML 3.13: Transition 5 actions
                         let ev = match &self.pending_payload {
                             PresencePeerPayload::PresenceLeft(ev) => ev.clone(),
@@ -1842,7 +1858,7 @@ impl StatePolicy for PresencePeerPolicy {
                         }
                     }
                     6 => {
-                        // SCE-MAP: presence_peer.scxml:194 :: open :: _transition_6
+                        // SCE-MAP: presence_peer.scxml:193 :: open :: _transition_6
                         // W3C SCXML 3.13: Transition 6 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1863,7 +1879,7 @@ impl StatePolicy for PresencePeerPolicy {
                         }
                     }
                     7 => {
-                        // SCE-MAP: presence_peer.scxml:198 :: open :: _transition_7
+                        // SCE-MAP: presence_peer.scxml:197 :: open :: _transition_7
                         // W3C SCXML 3.13: Transition 7 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {

@@ -3598,6 +3598,24 @@ pub struct SCXMLModel {
     /// declaration is applied, because until then those sends are refusals.
     #[serde(default)]
     pub has_delayed_host_send: bool,
+    /// Whether any `<send>` in this document carries a delay together with a
+    /// payload — a `<param>`, a `namelist` or `<content>` (§scxml-6.2.4,
+    /// §scxml-5.10).
+    ///
+    /// The payload is evaluated when the `<send>` runs and rides on the
+    /// delayed entry until it comes due (§scxml-6.2 evaluates a `<param>` at
+    /// SEND time, tests 176 and 186). The C11 backend's queue entry is a
+    /// fixed-size struct, so it needs this answer at generation time to decide
+    /// whether to emit the storage for the payload: a machine with a script
+    /// engine always has it, and one without owes it only when a document sends
+    /// a delayed payload, so a delay-free or payload-free machine pays nothing
+    /// for it. The backends with a heap carry the payload in the entry's
+    /// variant and need no flag.
+    ///
+    /// Derived in [`crate::analyzer::analyze_action`], beside
+    /// [`Self::needs_event_scheduler`], from the same `<send>`.
+    #[serde(default)]
+    pub has_delayed_send_payload: bool,
     /// The largest `<param>` count on any delayed host-served `<send>`.
     ///
     /// Zero when [`Self::has_delayed_host_send`] is false, and zero also

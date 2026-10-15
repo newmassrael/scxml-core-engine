@@ -2757,7 +2757,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/presence_peer.scxml"
         STAGE_ALSO presence_join.scxml presence_beat.scxml presence_alive.scxml
-                   presence_seen.scxml presence_left.scxml
+                   presence_seen.scxml presence_left.scxml presence_expire.scxml
     )
 
     # The delayed-send machine of `static_timers` is generated once and used by two
