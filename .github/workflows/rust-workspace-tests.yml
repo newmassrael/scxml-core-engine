@@ -112,6 +112,9 @@ on:
       # The shared table every copy of the Mesh-target predicate reads; the
       # build's copy `include_str!`s it.
       - 'tests/mesh/**'
+      # The policy documents `forge_conformance` compiles into its per-language
+      # run tests: an edit to one changes what those tests assert.
+      - 'tests/forge/resources/**'
   pull_request:
     branches: [ main ]
     paths:
@@ -170,6 +173,9 @@ on:
       # The shared table every copy of the Mesh-target predicate reads; the
       # build's copy `include_str!`s it.
       - 'tests/mesh/**'
+      # The policy documents `forge_conformance` compiles into its per-language
+      # run tests: an edit to one changes what those tests assert.
+      - 'tests/forge/resources/**'
 
 # This lane is not superseded by the push that follows it.
 #
