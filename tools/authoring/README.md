@@ -1666,7 +1666,10 @@ no record names. And a case that drove the same addresses to the same values
 as the one before it is a real assertion -- the schema is explicit that a
 restatement is not nothing happening -- but nothing says whether the age
 beside it runs from this assertion or from the one that started the situation.
-Those are different moments, and a delayed act can fall between them.
+Those are different moments, and a delayed act can fall between them. Without
+the host's delivery rule (`activation`) this stays refused; under `on-change`
+the restatement reaches nothing, so it starts no situation and its age is read
+as the time the record waited after the case before it (see the delivery rule).
 
 ⚠ **A time known only as bounds is written as bounds.** `elapsed_ms:
 {min, max}` is for a record whose harness waits "up to" a timeout, or whose
@@ -2494,7 +2497,13 @@ record that rewrites a value it already held -- a setup step restating a
 precondition, say -- delivers nothing, in setup and judged rounds alike. The
 comparison is through the value space, so `0` and `CLEAR` are one value. A
 judged case whose every drive is such a restatement reaches the document not
-at all and is not judged. When the records restate a value and the binding
+at all, so it is judged only as a case that WAITS: when the machine is waiting
+on a delayed act and the case records an `elapsed_ms`, the clock moves on by
+that much (the record's own account of how long the harness waited after the
+case before it -- a restatement starts no situation, so the number is no
+situation's age) and what the machine announces in that window is read. With
+nothing pending, or no time recorded, there is nothing to read and the case is
+not judged. When the records restate a value and the binding
 does not say `activation`, `check` reports it and `verify` refuses to replay:
 delivering the restatement is a guess about the platform, and on 2026-09-23 it
 revived a machine an earlier event had reset and passed a case the product

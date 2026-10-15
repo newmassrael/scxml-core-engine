@@ -481,12 +481,33 @@ class ADelayedActNeedsTimeToBeDrivenThrough(unittest.TestCase):
         self.assertIn("the same reading, asserted again", result.refusal)
         self.assertIn("activation: on-change", result.refusal)
 
-    def test_under_on_change_a_restatement_with_an_age_dates_nothing(self):
-        """A restatement that reaches nothing restarts nothing, so there is
-        no second anchor to choose between -- and no round to judge."""
+    def test_under_on_change_a_restatement_is_read_after_the_wait_the_record_waited(self):
+        """A restatement that reaches nothing restarts nothing: it starts no situation, so its
+        `elapsed_ms` is how long the record waited after the case before it, from where the
+        clock stood -- and the wait the first case armed (500 ms) is the machine's to finish."""
         self.binding = {**self.binding, "activation": "on-change"}
         result = self.run_cases(self.RESTATED_WITH_AN_AGE)
         self.assertTrue(result.ran, result.refusal)
+        self.assertEqual((2, 0, 0), (result.passed, result.failed, result.unjudged),
+                         [(r.name, r.refusal) for r in result.results])
+
+    def test_the_wait_of_a_restatement_is_added_to_the_clock_not_the_situations_age(self):
+        """⚠ The discriminator for the anchor. 100 ms after the first case plus 450 ms is 550:
+        the 500 ms wait is over. Read as the situation's age (450) it would not be."""
+        self.binding = {**self.binding, "activation": "on-change"}
+        again = {**self.RESTATED_WITH_AN_AGE[1], "elapsed_ms": 450}
+        result = self.run_cases([self.RESTATED_WITH_AN_AGE[0], again])
+        self.assertEqual((2, 0, 0), (result.passed, result.failed, result.unjudged),
+                         [(r.name, r.refusal, r.failures) for r in result.results])
+
+    def test_a_restatement_with_nothing_pending_has_no_round_to_judge(self):
+        """The machine is not waiting on anything, so there is nothing the wait could do."""
+        self.binding = {**self.binding, "activation": "on-change"}
+        settled = {**self.RESTATED_WITH_AN_AGE[0], "name": "settled",
+                   "given": {"plant/in/train-approach": "CLEAR"},
+                   "expect": {"plant/out/road-signal.value": "DARK"}}
+        again = {**settled, "name": "the same reading, asserted again", "elapsed_ms": 600}
+        result = self.run_cases([settled, again])
         self.assertEqual((1, 0, 1), (result.passed, result.failed, result.unjudged),
                          [(r.name, r.refusal) for r in result.results])
         self.assertIn("no input of this case reaches the document",

@@ -2814,8 +2814,38 @@ def split_step(step, prior: dict, model, host: dict, read: set) -> list:
         out.append(dataclasses.replace(
             step, name=f"{step.name} (delivery {number} of {len(parts)})", given=held,
             drove=tuple(part), delivered=_kept(step.delivered, part), expect={},
-            elapsed_ms=None, elapsed_window=None, before=()))
+            elapsed_ms=None, elapsed_window=_between_deliveries(step), before=()))
     return out
+
+
+#: How long the platform takes between two deliveries of one step: it hands each over as soon as
+#: the one before has been taken (the validator's subscription wait is 50 ms).
+DELIVERY_GAP_MS = 50.0
+
+
+def _between_deliveries(step):
+    """The age at which a delivery that another of the same step follows was handed over.
+
+    The platform hands a step's deliveries over one after another, so a delivery that is not
+    the last is followed by the next at once: it happened within `DELIVERY_GAP_MS` of the
+    step's drive, or within the step's own upper bound when that is shorter. A step that
+    records no time gives these none either, and the machine, if it waits on a delayed act,
+    is not dated.
+
+    ⚠ This was `None`, which `StatechartRun.observe` refuses while a delayed act is pending:
+    the first delivery of a step arms a wait and the second delivery of the same step
+    reached a machine nobody would date. Measured 2026-10-15: one component's setup step
+    drives the signal that starts a 10 s wait and, in the same step, two elapsed-time
+    signals; its case was withheld for a reading no record could name.
+
+    ⚠ And the step's own upper bound is when the STEP was read, not when its early
+    deliveries were handed over: taking it as theirs (a first version of this did) gave a
+    delivery of a step read at 60 s the slack of 60 s, past a 60 s wait it had armed, and
+    fifteen cases of another component went from judged to "no configuration from here on
+    is known".
+    """
+    window = step.elapsed_window
+    return None if window is None else (0.0, min(float(window[1]), DELIVERY_GAP_MS))
 
 
 def host_rounds(examples, model, host: dict, read: set, sources: bool = False):
@@ -3144,6 +3174,10 @@ class StatechartRun:
             raise VerifyError(f"the record {stopped}, so what the machine holds after it "
                               f"cannot be read")
         self.check()
+
+    def waiting_on_a_delayed_act(self) -> bool:
+        """Whether a delayed act is pending: the machine will do something when time passes."""
+        return self.engine.time_until_next_scheduled_ms() is not None
 
     def observe(self, case) -> None:
         """Move virtual time to the moment this case was observed.
@@ -3550,7 +3584,9 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
         #
         # ⚠ This also settles what a restatement's `elapsed_ms` is measured
         # from, which used to be refused as unknowable: a restatement that
-        # reaches nothing restarts nothing, so no case is dated from one.
+        # reaches nothing restarts nothing, so no SITUATION is dated from one.
+        # What its `elapsed_ms` says is how long the record waited after the
+        # case before it, and a case that only waits is read so (below).
         # A binding that does not say `activation` never gets here with a
         # restatement -- the run is refused before it starts.
         unchanged = unchanged_drives(case, last_given, pack.model)
@@ -3643,17 +3679,37 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
                 # ⚠ A case that drove nothing this document listens for is
                 # NOT a pass. Reading the machine afterwards would report
                 # whatever the previous case left, attributed to this one.
-                if unchanged and unchanged >= set(case.drove):
+                #
+                # ⚠ Except the case that only WAITS. Its drive restates what the platform
+                # already held, so under `on-change` nothing reaches the document -- and
+                # the record still reads the component `elapsed_ms` later, because the
+                # situation it reads is the one an earlier round started: a delayed act the
+                # machine is waiting on. The harness waited, and the component answered when
+                # the act fired. That is attributable (the act is pending, the window says
+                # when it was read, and an announcement is read only if it arrives in it),
+                # which "whatever the previous case left" is not. Measured 2026-10-15: a
+                # case "after timeout" restates the value the case before it drove, expects
+                # the output to have changed 1000 ms later, and was withheld.
+                #
+                # ⚠ `elapsed_ms` of such a case is how long the record waited AFTER the case
+                # before it, from where the clock stood (`observe` advances by it): the
+                # restatement started no situation, so the number cannot be the situation's
+                # age, and the record is the one place that says how long the harness waited.
+                restated = bool(unchanged) and unchanged >= set(case.drove)
+                waits = (restated and case.elapsed_window is not None
+                         and run.waiting_on_a_delayed_act())
+                if not waits:
+                    if restated:
+                        raise VerifyError(
+                            f"drove {sorted(unchanged)} at the value(s) they "
+                            f"already held, and under `activation: on-change` an "
+                            f"unchanged input reaches nothing: no input of this "
+                            f"case reaches the document, so there is no round of "
+                            f"its to judge")
                     raise VerifyError(
-                        f"drove {sorted(unchanged)} at the value(s) they "
-                        f"already held, and under `activation: on-change` an "
-                        f"unchanged input reaches nothing: no input of this "
-                        f"case reaches the document, so there is no round of "
-                        f"its to judge")
-                raise VerifyError(
-                    f"drove {list(case.drove) or 'nothing'}, and no input "
-                    f"rule turns any of that into an event this document "
-                    f"receives")
+                        f"drove {list(case.drove) or 'nothing'}, and no input "
+                        f"rule turns any of that into an event this document "
+                        f"receives")
             # ⚠ AFTER the drive and BEFORE the reading. The drive is what
             # starts the situation whose age `elapsed_ms` states, and the
             # reading is what that age dates -- so a delayed act reaches the
