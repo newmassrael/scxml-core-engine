@@ -12,10 +12,9 @@
 // second and `#bob` every person but the first, so a write of the first or the second
 // person reaches all the others once, and a write of any other person reaches each of
 // the others twice and its writer twice as well, which a copy takes in as writes it
-// already holds. The first two are the only people whose write the hub does not send back
-// to them, so they are the only ones a sheet can have write: a copy of the sheet sends on
-// to the hub every write it is given that carries its own node, which is how a write of
-// its own leaves it, and would send on the one it is sent back for ever.
+// already holds. Any of the hundred may write: a copy sends a write to the hub from the
+// handler of its own edit and sends nothing for one it is given, so a write the hub sends
+// back to its writer is applied once and ends there.
 
 use std::collections::BTreeMap;
 

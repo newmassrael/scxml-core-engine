@@ -280,10 +280,23 @@ fn sheet_morning() -> World {
     world.advance_ms(50);
     let offline = add_row(&mut world, "bob", second);
     type_into(&mut world, "bob", offline, left, 7);
+    let typed_at = world.now_ms();
     type_into(&mut world, "alice", first, left, 11);
     world.advance_ms(400);
     world.heal("bob", "server");
     assert_eq!(world.run_until_quiet(60_000), Outcome::Quiet);
+
+    // A hub that reaches many copies by one topic sends a write back to its writer.
+    // Alice is given the write she typed above once more: she holds it already, and
+    // sends nothing, for only an edit sends a write to the hub.
+    world.raise(
+        "alice",
+        "sheet.cell",
+        &format!(
+            r#"{{"row":"{first}","col":"{left}","value":"11","wallTime":"{typed_at}","counter":0,"nodeId":"1","op":0,"aRef":false,"aRow":"0","aCol":"0","aVal":"0","bRef":false,"bRow":"0","bCol":"0","bVal":"0"}}"#
+        ),
+    );
+    assert_eq!(world.run_until_quiet(10_000), Outcome::Quiet);
 
     // Formulas over what is there: a sum down the first column from the first row to
     // the one bob added offline (the removed row between is not summed), a chain

@@ -5,9 +5,12 @@
   same document is a person's copy and the hub the copies send to; `sheet.join` says
   which.
 
-  An edit is applied to this copy at once and sent to the hub, so typing never waits
-  for the network. A write that arrives, from the hub or, at the hub, from a person,
-  is applied the same way, and the hub passes it on to the other copies.
+  An edit is applied to this copy at once and sent to the hub by the handler of the
+  edit, so typing never waits for the network. A write that arrives, from the hub or,
+  at the hub, from a person, is applied the same way, and the hub passes it on to the
+  other copies. Only an edit sends a write to the hub: a copy that is given a write
+  carrying its own node, which a hub that reaches many copies by one topic may send
+  back, applies it and sends nothing, so such an echo ends where it lands.
 
   The merging is done by the standard library of this repository (sce:std/merge), and
   the statechart only decides when to ask for it and who to tell:
@@ -121,6 +124,12 @@
     </data>
     <data id="lamport" sce:type="uint64" expr="0" sce:direction="out"/>
     <data id="newKey" sce:type="uint64" expr="0"/>
+    <!-- The zeros the write sent to the hub carries where a number edit has no formula
+         and a formula has no number: held in the types of the fields (sheet_cell), so
+         that a 64-bit integer leaves as its digits, as it does in a write passed on,
+         and not as the number a literal would be. -->
+    <data id="noKey" sce:type="uint64" expr="0"/>
+    <data id="noNumber" sce:type="int64" expr="0"/>
     <data id="orphans" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>
   </datamodel>
@@ -130,10 +139,10 @@
       <assign location="hub" expr="_event.data.hub"/>
     </transition>
 
-    <!-- A person's edit of a cell to a number: stamped, and handled as any write is.
-         What is handled here and was written here is sent on to the hub by the
-         handler of a write, which is the one place a write of this copy's own leaves
-         it. -->
+    <!-- A person's edit of a cell to a number: stamped, handled as any write is, and
+         sent to the hub. This handler and the one of a formula are where a write of
+         this copy's own leaves it: the handler of a write sends nothing to the hub,
+         for it could not tell a write made here from one sent back. -->
     <transition event="sheet.edit" type="internal">
       <assign location="clock" expr="HlcSend(clock, _event.data.now, node)"/>
       <send target="#_internal" event="sheet.cell">
@@ -153,6 +162,23 @@
         <param name="bCol" expr="0"/>
         <param name="bVal" expr="0"/>
       </send>
+      <send target="#server" event="sheet.cell">
+        <param name="row" expr="_event.data.row"/>
+        <param name="col" expr="_event.data.col"/>
+        <param name="value" expr="_event.data.value"/>
+        <param name="wallTime" expr="clock.wallTime"/>
+        <param name="counter" expr="clock.counter"/>
+        <param name="nodeId" expr="node"/>
+        <param name="op" expr="0"/>
+        <param name="aRef" expr="false"/>
+        <param name="aRow" expr="noKey"/>
+        <param name="aCol" expr="noKey"/>
+        <param name="aVal" expr="noNumber"/>
+        <param name="bRef" expr="false"/>
+        <param name="bRow" expr="noKey"/>
+        <param name="bCol" expr="noKey"/>
+        <param name="bVal" expr="noNumber"/>
+      </send>
     </transition>
 
     <!-- A person's edit of a cell to a formula: the same, with the formula where the
@@ -163,6 +189,23 @@
         <param name="row" expr="_event.data.row"/>
         <param name="col" expr="_event.data.col"/>
         <param name="value" expr="0"/>
+        <param name="wallTime" expr="clock.wallTime"/>
+        <param name="counter" expr="clock.counter"/>
+        <param name="nodeId" expr="node"/>
+        <param name="op" expr="_event.data.op"/>
+        <param name="aRef" expr="_event.data.aRef"/>
+        <param name="aRow" expr="_event.data.aRow"/>
+        <param name="aCol" expr="_event.data.aCol"/>
+        <param name="aVal" expr="_event.data.aVal"/>
+        <param name="bRef" expr="_event.data.bRef"/>
+        <param name="bRow" expr="_event.data.bRow"/>
+        <param name="bCol" expr="_event.data.bCol"/>
+        <param name="bVal" expr="_event.data.bVal"/>
+      </send>
+      <send target="#server" event="sheet.cell">
+        <param name="row" expr="_event.data.row"/>
+        <param name="col" expr="_event.data.col"/>
+        <param name="value" expr="noNumber"/>
         <param name="wallTime" expr="clock.wallTime"/>
         <param name="counter" expr="clock.counter"/>
         <param name="nodeId" expr="node"/>
@@ -203,11 +246,6 @@
       <assign location="write.bVal" expr="_event.data.bVal"/>
       <assign location="cells" expr="LwwWrite(cells, write)"/>
       <send target="#_internal" event="sheet.recompute"/>
-      <if cond="!hub &amp;&amp; _event.data.nodeId === node">
-        <send target="#server" event="sheet.cell">
-          <content expr="_event.data"/>
-        </send>
-      </if>
       <if cond="hub &amp;&amp; _event.data.nodeId !== 1">
         <send target="#alice" event="sheet.cell">
           <content expr="_event.data"/>

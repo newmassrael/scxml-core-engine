@@ -153,17 +153,16 @@ fn a_hundred_people_changing_a_list_at_random_times_end_with_one_list() {
 }
 
 /// An afternoon of numbers and formulas typed into a few cells at random times by the
-/// two people the hub may write for, with ninety-eight more reading the sheet: every
-/// copy ends with the cells the hub holds, which are the ones the oracle says, and shows
-/// what the oracle works out from them. The others do not write because a copy of the
-/// sheet sends a write that carries its own node to the hub, and the hub's topics send a
-/// third person's write back to them (tests/common/crowd.rs).
+/// any of the hundred people: every copy ends with the cells the hub holds, which are the
+/// ones the oracle says, and shows what the oracle works out from them. The hub's topics
+/// send a third person's write back to its writer, which applies it and sends nothing
+/// (tests/common/crowd.rs), so the write of any person ends where it lands.
 #[test]
-fn a_hundred_copies_of_a_sheet_two_people_type_into_end_with_one_sheet() {
+fn a_hundred_copies_of_a_sheet_a_hundred_people_type_into_end_with_one_sheet() {
     const EDITS: usize = 150;
     let numbers = [i64::MIN, -3, -1, 0, 0, 1, 2, 3, 100, i64::MAX];
     let people = crowd(PEOPLE);
-    let writers = &people[..2];
+    let writers = &people[..];
     for seed in SEEDS {
         let mut rng = Rng::new(seed);
         let mut world = sheet_crowd(seed, &people);
