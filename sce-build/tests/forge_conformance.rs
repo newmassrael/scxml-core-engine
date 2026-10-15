@@ -17665,90 +17665,41 @@ fn run_cobs_vectors_kotlin(dir: &std::path::Path, test_id: &str) -> Result<(), S
 // backend's emit directly, all six against ONE table: a gate that reads its own
 // copy of the answer cannot disagree with it.
 //
-// The three documents are written out when a gate runs and are not kept under
-// `tests/forge/resources`: the `source-hash` of every committed generated tree
-// is a hash of every `.scxml` under its input root, so a document added there
-// would move the headers of trees this test has nothing to do with.
+// The documents are the reference policy of SCE_FORGE.md §5.6, which is kept
+// under `tests/forge/resources` (`policy_mode`, `policy_settings`,
+// `policy_layer`, `policy_strict_needs_limit`) so a reader meets the same files
+// this test runs. They are compiled in here and written to a fresh temp
+// directory when a gate runs, because a gate removes the directory it generates
+// into and that one must never be the resources directory.
 
-const LAYER_MODE_DOC: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
-<scxml xmlns="http://www.w3.org/2005/07/scxml"
-       xmlns:sce="http://sce.dev/ext"
-       version="1.0"
-       sce:kind="enum"
-       name="layer_mode"
-       sce:underlying-type="uint8">
-  <datamodel>
-    <data id="variants">
-      <sce:variant name="relaxed" value="0"/>
-      <sce:variant name="strict" value="1"/>
-    </data>
-  </datamodel>
-</scxml>
-"#;
+const POLICY_MODE_DOC: &str = include_str!("../../tests/forge/resources/policy_mode.scxml");
 
-const LAYER_SETTINGS_DOC: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
-<scxml xmlns="http://www.w3.org/2005/07/scxml"
-       xmlns:sce="http://sce.dev/ext"
-       version="1.0"
-       sce:kind="event-schema"
-       name="layer_settings"
-       sce:event-name="layer.settings">
-  <sce:import src="layer_mode.scxml" kind="enum" as="LayerMode"/>
-  <datamodel>
-    <data id="mode" sce:type="enum:LayerMode" sce:direction="in"/>
-    <data id="limitDays" sce:type="uint16" sce:direction="in"/>
-    <data id="burst" sce:type="uint32" sce:direction="in"/>
-    <data id="locked" sce:type="bool" sce:direction="in"/>
-  </datamodel>
-</scxml>
-"#;
+const POLICY_SETTINGS_DOC: &str = include_str!("../../tests/forge/resources/policy_settings.scxml");
 
 /// The stricter mode wins whatever the mask says; every other field comes from
 /// `over` when its mask bit is set and from `base` otherwise. The enum is read in
 /// a comparison AND produced by a conditional — the two places a backend can
 /// spell an enum differently from a number.
-const LAYER_MERGE_DOC: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
-<scxml xmlns="http://www.w3.org/2005/07/scxml"
-       xmlns:sce="http://sce.dev/ext"
-       sce:kind="algorithm" name="layer_merge" version="1.0">
-  <sce:import kind="event-schema" src="layer_settings.scxml" as="Settings"/>
-  <sce:import kind="enum" src="layer_mode.scxml" as="LayerMode"/>
-  <sce:signature>
-    <sce:param name="base" type="record:Settings"/>
-    <sce:param name="over" type="record:Settings"/>
-    <sce:param name="mask" type="uint64"/>
-    <sce:return type="record:Settings"/>
-  </sce:signature>
-  <sce:body>
-    <sce:var name="out" type="record:Settings">
-      <sce:set name="mode" expr="over.mode === LayerMode.strict ? over.mode : base.mode"/>
-      <sce:set name="limitDays" expr="(mask &amp; 1) !== 0 ? over.limitDays : base.limitDays"/>
-      <sce:set name="burst" expr="(mask &amp; 2) !== 0 ? over.burst : base.burst"/>
-      <sce:set name="locked" expr="(mask &amp; 4) !== 0 ? over.locked : base.locked"/>
-    </sce:var>
-    <sce:return expr="out"/>
-  </sce:body>
-</scxml>
-"#;
+const POLICY_LAYER_DOC: &str = include_str!("../../tests/forge/resources/policy_layer.scxml");
 
 const LAYER_DOC_FILES: &[&str] = &[
-    "layer_mode.scxml",
-    "layer_settings.scxml",
-    "layer_merge.scxml",
+    "policy_mode.scxml",
+    "policy_settings.scxml",
+    "policy_layer.scxml",
 ];
 
 /// One settings value: `(mode, limit_days, burst, locked)`, mode 0 = relaxed and
 /// 1 = strict.
-type LayerSettings = (u8, u16, u32, bool);
+type PolicySettings = (u8, u16, u32, bool);
 
 struct LayerCase {
-    base: LayerSettings,
-    over: LayerSettings,
+    base: PolicySettings,
+    over: PolicySettings,
     mask: u64,
-    want: LayerSettings,
+    want: PolicySettings,
 }
 
-/// The shared answer. Each row is worked from the rule in `LAYER_MERGE_DOC`:
+/// The shared answer. Each row is worked from the rule in `POLICY_LAYER_DOC`:
 /// the mode is `over`'s when `over` is strict and `base`'s otherwise, and a
 /// field follows its mask bit (1 = limit_days, 2 = burst, 4 = locked).
 const LAYER_CASES: &[LayerCase] = &[
@@ -17820,9 +17771,9 @@ fn generate_temp_docs(
 /// The three layering documents, in the order they import each other.
 fn layer_docs() -> [(&'static str, &'static str); 3] {
     [
-        (LAYER_DOC_FILES[0], LAYER_MODE_DOC),
-        (LAYER_DOC_FILES[1], LAYER_SETTINGS_DOC),
-        (LAYER_DOC_FILES[2], LAYER_MERGE_DOC),
+        (LAYER_DOC_FILES[0], POLICY_MODE_DOC),
+        (LAYER_DOC_FILES[1], POLICY_SETTINGS_DOC),
+        (LAYER_DOC_FILES[2], POLICY_LAYER_DOC),
     ]
 }
 
@@ -17843,23 +17794,23 @@ fn layer_rows(row: impl Fn(&LayerCase) -> String) -> String {
     LAYER_CASES.iter().map(row).collect::<Vec<_>>().join("\n")
 }
 
-fn layer_mode_variant(mode: u8) -> &'static str {
+fn policy_mode_variant(mode: u8) -> &'static str {
     ["relaxed", "strict"][mode as usize]
 }
 
 /// `mode` spelled as a variant of the enum on a backend that writes it
-/// `<Enum><sep><Variant>` in PascalCase (`LayerMode::Strict`).
-fn layer_mode_pascal(mode: u8) -> &'static str {
+/// `<Enum><sep><Variant>` in PascalCase (`PolicyMode::Strict`).
+fn policy_mode_pascal(mode: u8) -> &'static str {
     ["Relaxed", "Strict"][mode as usize]
 }
 
 #[test]
 fn forge_rust_enum_record_layer_runtime() {
     let test_id = "enum_record_layer_rust";
-    let settings = |s: LayerSettings| {
+    let settings = |s: PolicySettings| {
         format!(
-            "S {{ mode: LayerMode::{}, limit_days: {}, burst: {}, locked: {} }}",
-            layer_mode_pascal(s.0),
+            "S {{ mode: PolicyMode::{}, limit_days: {}, burst: {}, locked: {} }}",
+            policy_mode_pascal(s.0),
             s.1,
             s.2,
             s.3
@@ -17876,12 +17827,12 @@ fn forge_rust_enum_record_layer_runtime() {
     });
     let harness = "#[cfg(test)]\n\
          mod tests {\n\
-         \x20   use crate::layer_merge::layer_merge;\n\
-         \x20   use crate::layer_mode::LayerMode;\n\
-         \x20   use crate::layer_settings::LayerSettingsPayload as S;\n\
+         \x20   use crate::policy_layer::policy_layer;\n\
+         \x20   use crate::policy_mode::PolicyMode;\n\
+         \x20   use crate::policy_settings::PolicySettingsPayload as S;\n\
          \n\
          \x20   fn ck(base: S, over: S, mask: u64, want: S) {\n\
-         \x20       let got = layer_merge(base, over, mask);\n\
+         \x20       let got = policy_layer(base, over, mask);\n\
          \x20       assert_eq!(got.mode, want.mode, \"mode\");\n\
          \x20       assert_eq!(got.limit_days, want.limit_days, \"limit_days\");\n\
          \x20       assert_eq!(got.burst, want.burst, \"burst\");\n\
@@ -17917,10 +17868,10 @@ fn forge_cpp_enum_record_layer_runtime() {
         .expect("generate the layer documents");
     write_flat_emit(&proj_dir, &all_files, "h").expect("write the emit");
 
-    let settings = |s: LayerSettings| {
+    let settings = |s: PolicySettings| {
         format!(
             "{{M::{}, {}, {}u, {}}}",
-            layer_mode_pascal(s.0),
+            policy_mode_pascal(s.0),
             s.1,
             s.2,
             s.3
@@ -17935,12 +17886,12 @@ fn forge_cpp_enum_record_layer_runtime() {
             settings(c.want)
         )
     });
-    let driver = "#include \"layer_merge.h\"\n\
+    let driver = "#include \"policy_layer.h\"\n\
          #include <cstdint>\n\
          #include <cstdio>\n\
          \n\
-         using S = SCE::Generated::LayerSettings::LayerSettingsPayload;\n\
-         using M = SCE::Generated::LayerMode::LayerMode;\n\
+         using S = SCE::Generated::PolicySettings::PolicySettingsPayload;\n\
+         using M = SCE::Generated::PolicyMode::PolicyMode;\n\
          \n\
          struct Row { S base; S over; std::uint64_t mask; S want; };\n\
          \n\
@@ -17950,7 +17901,7 @@ fn forge_cpp_enum_record_layer_runtime() {
          \x20   };\n\
          \x20   int i = 0;\n\
          \x20   for (const Row& r : rows) {\n\
-         \x20       const S got = SCE::Generated::LayerMerge::layer_merge(r.base, r.over, r.mask);\n\
+         \x20       const S got = SCE::Generated::PolicyLayer::policy_layer(r.base, r.over, r.mask);\n\
          \x20       if (got.mode != r.want.mode || got.limitDays != r.want.limitDays ||\n\
          \x20           got.burst != r.want.burst || got.locked != r.want.locked) {\n\
          \x20           std::printf(\"row %d: layering mismatch\\n\", i);\n\
@@ -17997,10 +17948,10 @@ fn forge_c11_enum_record_layer_runtime() {
         .expect("generate the layer documents");
     write_flat_emit(&proj_dir, &all_files, "h").expect("write the emit");
 
-    let settings = |s: LayerSettings| {
+    let settings = |s: PolicySettings| {
         format!(
-            "{{ .mode = LAYER_MODE_{}, .limitDays = {}, .burst = {}u, .locked = {} }}",
-            layer_mode_variant(s.0).to_uppercase(),
+            "{{ .mode = POLICY_MODE_{}, .limitDays = {}, .burst = {}u, .locked = {} }}",
+            policy_mode_variant(s.0).to_uppercase(),
             s.1,
             s.2,
             s.3
@@ -18015,14 +17966,14 @@ fn forge_c11_enum_record_layer_runtime() {
             settings(c.want)
         )
     });
-    let driver = "#include \"layer_merge.h\"\n\
+    let driver = "#include \"policy_layer.h\"\n\
          #include <stdio.h>\n\
          \n\
          typedef struct {\n\
-         \x20   LayerSettingsPayload_t base;\n\
-         \x20   LayerSettingsPayload_t over;\n\
+         \x20   PolicySettingsPayload_t base;\n\
+         \x20   PolicySettingsPayload_t over;\n\
          \x20   uint64_t mask;\n\
-         \x20   LayerSettingsPayload_t want;\n\
+         \x20   PolicySettingsPayload_t want;\n\
          } row_t;\n\
          \n\
          int main(void) {\n\
@@ -18030,7 +17981,7 @@ fn forge_c11_enum_record_layer_runtime() {
          @ROWS@\n\
          \x20   };\n\
          \x20   for (size_t i = 0; i < sizeof(rows) / sizeof(rows[0]); ++i) {\n\
-         \x20       LayerSettingsPayload_t got = layer_merge(rows[i].base, rows[i].over, rows[i].mask);\n\
+         \x20       PolicySettingsPayload_t got = policy_layer(rows[i].base, rows[i].over, rows[i].mask);\n\
          \x20       if (got.mode != rows[i].want.mode || got.limitDays != rows[i].want.limitDays ||\n\
          \x20           got.burst != rows[i].want.burst || got.locked != rows[i].want.locked) {\n\
          \x20           printf(\"row %zu: layering mismatch\\n\", i);\n\
@@ -18119,10 +18070,10 @@ fn forge_go_enum_record_layer_runtime() {
     );
     std::fs::write(proj_dir.join("go.mod"), go_mod).expect("write go.mod");
 
-    let settings = |s: LayerSettings| {
+    let settings = |s: PolicySettings| {
         format!(
-            "lset.LayerSettingsPayload{{Mode: lmode.LayerMode{}, LimitDays: {}, Burst: {}, Locked: {}}}",
-            layer_mode_pascal(s.0),
+            "lset.PolicySettingsPayload{{Mode: lmode.PolicyMode{}, LimitDays: {}, Burst: {}, Locked: {}}}",
+            policy_mode_pascal(s.0),
             s.1,
             s.2,
             s.3
@@ -18143,15 +18094,15 @@ fn forge_go_enum_record_layer_runtime() {
          \t\"fmt\"\n\
          \t\"os\"\n\
          \n\
-         \tlmerge \"@PREFIX@/layer_merge\"\n\
-         \tlmode \"@PREFIX@/layer_mode\"\n\
-         \tlset \"@PREFIX@/layer_settings\"\n\
+         \tlmerge \"@PREFIX@/policy_layer\"\n\
+         \tlmode \"@PREFIX@/policy_mode\"\n\
+         \tlset \"@PREFIX@/policy_settings\"\n\
          )\n\
          \n\
          type row struct {\n\
-         \tbase, over lset.LayerSettingsPayload\n\
+         \tbase, over lset.PolicySettingsPayload\n\
          \tmask       uint64\n\
-         \twant       lset.LayerSettingsPayload\n\
+         \twant       lset.PolicySettingsPayload\n\
          }\n\
          \n\
          func main() {\n\
@@ -18159,7 +18110,7 @@ fn forge_go_enum_record_layer_runtime() {
          @ROWS@\n\
          \t}\n\
          \tfor i, r := range rows {\n\
-         \t\tif got := lmerge.LayerMerge(r.base, r.over, r.mask); got != r.want {\n\
+         \t\tif got := lmerge.PolicyLayer(r.base, r.over, r.mask); got != r.want {\n\
          \t\t\tfmt.Printf(\"row %d: got %+v want %+v\\n\", i, got, r.want)\n\
          \t\t\tos.Exit(1)\n\
          \t\t}\n\
@@ -18195,10 +18146,10 @@ fn forge_python_enum_record_layer_runtime() {
     std::fs::write(pkg_dir.join("__init__.py"), "").expect("write __init__.py");
     write_flat_emit(&pkg_dir, &all_files, "py").expect("write the emit");
 
-    let settings = |s: LayerSettings| {
+    let settings = |s: PolicySettings| {
         format!(
-            "S(LayerMode.{}, {}, {}, {})",
-            layer_mode_variant(s.0).to_uppercase(),
+            "S(PolicyMode.{}, {}, {}, {})",
+            policy_mode_variant(s.0).to_uppercase(),
             s.1,
             s.2,
             if s.3 { "True" } else { "False" }
@@ -18215,16 +18166,16 @@ fn forge_python_enum_record_layer_runtime() {
     });
     let driver = "import sys\n\
          \n\
-         from pkg.layer_merge import layer_merge\n\
-         from pkg.layer_mode import LayerMode\n\
-         from pkg.layer_settings import LayerSettingsPayload as S\n\
+         from pkg.policy_layer import policy_layer\n\
+         from pkg.policy_mode import PolicyMode\n\
+         from pkg.policy_settings import PolicySettingsPayload as S\n\
          \n\
          ROWS = [\n\
          @ROWS@\n\
          ]\n\
          \n\
          for i, (base, over, mask, want) in enumerate(ROWS):\n\
-         \x20   got = layer_merge(base, over, mask)\n\
+         \x20   got = policy_layer(base, over, mask)\n\
          \x20   if got != want:\n\
          \x20       print(f\"row {i}: got {got} want {want}\")\n\
          \x20       sys.exit(1)\n"
@@ -18254,10 +18205,10 @@ fn forge_kotlin_enum_record_layer_runtime() {
         .expect("generate the layer documents");
     let written = write_flat_emit(&proj_dir, &all_files, "kt").expect("write the emit");
 
-    let settings = |s: LayerSettings| {
+    let settings = |s: PolicySettings| {
         format!(
-            "settings(LayerMode.{}, {}, {}L, {})",
-            layer_mode_variant(s.0).to_uppercase(),
+            "settings(PolicyMode.{}, {}, {}L, {})",
+            policy_mode_variant(s.0).to_uppercase(),
             s.1,
             s.2,
             s.3
@@ -18272,26 +18223,26 @@ fn forge_kotlin_enum_record_layer_runtime() {
             settings(c.want)
         )
     });
-    let driver = "import com.sce.generated.layer_merge.layerMerge\n\
-         import com.sce.generated.layer_mode.LayerMode\n\
-         import com.sce.generated.layer_settings.LayerSettingsPayload\n\
+    let driver = "import com.sce.generated.policy_layer.policyLayer\n\
+         import com.sce.generated.policy_mode.PolicyMode\n\
+         import com.sce.generated.policy_settings.PolicySettingsPayload\n\
          \n\
          class Row(\n\
-         \x20   val base: LayerSettingsPayload,\n\
-         \x20   val over: LayerSettingsPayload,\n\
+         \x20   val base: PolicySettingsPayload,\n\
+         \x20   val over: PolicySettingsPayload,\n\
          \x20   val mask: ULong,\n\
-         \x20   val want: LayerSettingsPayload,\n\
+         \x20   val want: PolicySettingsPayload,\n\
          )\n\
          \n\
-         fun settings(mode: LayerMode, limitDays: Int, burst: Long, locked: Boolean) =\n\
-         \x20   LayerSettingsPayload(mode, limitDays.toUShort(), burst.toUInt(), locked)\n\
+         fun settings(mode: PolicyMode, limitDays: Int, burst: Long, locked: Boolean) =\n\
+         \x20   PolicySettingsPayload(mode, limitDays.toUShort(), burst.toUInt(), locked)\n\
          \n\
          fun main() {\n\
          \x20   val rows = listOf(\n\
          @ROWS@\n\
          \x20   )\n\
          \x20   for ((i, r) in rows.withIndex()) {\n\
-         \x20       val got = layerMerge(r.base, r.over, r.mask)\n\
+         \x20       val got = policyLayer(r.base, r.over, r.mask)\n\
          \x20       if (got != r.want) {\n\
          \x20           println(\"row $i: got $got want ${r.want}\")\n\
          \x20           kotlin.system.exitProcess(1)\n\
@@ -18332,26 +18283,16 @@ fn forge_kotlin_enum_record_layer_runtime() {
 // validator is written by a different emitter than an event-schema's, and the
 // shared harness cannot hold an enum input either.
 
-const MODE_NEEDS_LIMIT_DOC: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
-<scxml xmlns="http://www.w3.org/2005/07/scxml"
-       xmlns:sce="http://sce.dev/ext"
-       version="1.0"
-       sce:kind="validator"
-       name="mode_needs_limit">
-  <sce:import kind="enum" src="layer_mode.scxml" as="LayerMode"/>
-  <datamodel>
-    <data id="mode" sce:type="enum:LayerMode" sce:direction="in"/>
-    <data id="limitDays" sce:type="uint16" sce:direction="in" sce:range-min="0" sce:range-max="365"/>
-    <data id="valid" sce:type="bool" sce:direction="out"
-          sce:plausibility="mode !== LayerMode.strict || limitDays &gt; 0"/>
-  </datamodel>
-</scxml>
-"#;
+const POLICY_STRICT_NEEDS_LIMIT_DOC: &str =
+    include_str!("../../tests/forge/resources/policy_strict_needs_limit.scxml");
 
 fn limit_docs() -> [(&'static str, &'static str); 2] {
     [
-        ("layer_mode.scxml", LAYER_MODE_DOC),
-        ("mode_needs_limit.scxml", MODE_NEEDS_LIMIT_DOC),
+        ("policy_mode.scxml", POLICY_MODE_DOC),
+        (
+            "policy_strict_needs_limit.scxml",
+            POLICY_STRICT_NEEDS_LIMIT_DOC,
+        ),
     ]
 }
 
@@ -18418,8 +18359,8 @@ fn forge_rust_enum_validator_runtime() {
     let test_id = "enum_validator_rust";
     let rows = limit_rows(|c| {
         format!(
-            "        ck(LayerMode::{}, {}, {}, \"{}\");",
-            layer_mode_pascal(c.mode),
+            "        ck(PolicyMode::{}, {}, {}, \"{}\");",
+            policy_mode_pascal(c.mode),
             c.limit_days,
             c.valid,
             c.reason
@@ -18427,11 +18368,11 @@ fn forge_rust_enum_validator_runtime() {
     });
     let harness = "#[cfg(test)]\n\
          mod tests {\n\
-         \x20   use crate::layer_mode::LayerMode;\n\
-         \x20   use crate::mode_needs_limit::ModeNeedsLimit;\n\
+         \x20   use crate::policy_mode::PolicyMode;\n\
+         \x20   use crate::policy_strict_needs_limit::PolicyStrictNeedsLimit;\n\
          \n\
-         \x20   fn ck(mode: LayerMode, limit_days: u16, valid: bool, reason: &str) {\n\
-         \x20       let got = ModeNeedsLimit::new().validate(mode, limit_days);\n\
+         \x20   fn ck(mode: PolicyMode, limit_days: u16, valid: bool, reason: &str) {\n\
+         \x20       let got = PolicyStrictNeedsLimit::new().validate(mode, limit_days);\n\
          \x20       assert_eq!(got.valid, valid, \"valid for ({mode:?}, {limit_days})\");\n\
          \x20       assert_eq!(got.reason, reason, \"reason for ({mode:?}, {limit_days})\");\n\
          \x20   }\n\
@@ -18465,23 +18406,23 @@ fn forge_cpp_enum_validator_runtime() {
     let rows = limit_rows(|c| {
         format!(
             "    ck(M::{}, {}, {}, \"{}\");",
-            layer_mode_pascal(c.mode),
+            policy_mode_pascal(c.mode),
             c.limit_days,
             c.valid,
             c.reason
         )
     });
-    let driver = "#include \"mode_needs_limit.h\"\n\
+    let driver = "#include \"policy_strict_needs_limit.h\"\n\
          #include <cstdint>\n\
          #include <cstdio>\n\
          #include <string>\n\
          \n\
-         using M = SCE::Generated::LayerMode::LayerMode;\n\
+         using M = SCE::Generated::PolicyMode::PolicyMode;\n\
          \n\
          static int failures = 0;\n\
          \n\
          static void ck(M mode, std::uint16_t limit_days, bool valid, const std::string& reason) {\n\
-         \x20   SCE::Generated::ModeNeedsLimit::ModeNeedsLimit v;\n\
+         \x20   SCE::Generated::PolicyStrictNeedsLimit::PolicyStrictNeedsLimit v;\n\
          \x20   const auto got = v.validate(mode, limit_days);\n\
          \x20   if (got.valid != valid || std::string(got.reason) != reason) {\n\
          \x20       std::printf(\"FAIL (%d, %u)\\n\", static_cast<int>(mode), static_cast<unsigned>(limit_days));\n\
@@ -18532,21 +18473,21 @@ fn forge_c11_enum_validator_runtime() {
 
     let rows = limit_rows(|c| {
         format!(
-            "    ck(LAYER_MODE_{}, {}, {}, \"{}\");",
-            layer_mode_variant(c.mode).to_uppercase(),
+            "    ck(POLICY_MODE_{}, {}, {}, \"{}\");",
+            policy_mode_variant(c.mode).to_uppercase(),
             c.limit_days,
             c.valid,
             c.reason
         )
     });
-    let driver = "#include \"mode_needs_limit.h\"\n\
+    let driver = "#include \"policy_strict_needs_limit.h\"\n\
          #include <stdio.h>\n\
          #include <string.h>\n\
          \n\
          static int failures = 0;\n\
          \n\
-         static void ck(LayerMode_t mode, uint16_t limit_days, bool valid, const char *reason) {\n\
-         \x20   mode_needs_limit_result_t got = mode_needs_limit_validate(mode, limit_days);\n\
+         static void ck(PolicyMode_t mode, uint16_t limit_days, bool valid, const char *reason) {\n\
+         \x20   policy_strict_needs_limit_result_t got = policy_strict_needs_limit_validate(mode, limit_days);\n\
          \x20   if (got.valid != valid || strcmp(got.reason, reason) != 0) {\n\
          \x20       printf(\"FAIL (%d, %u)\\n\", (int)mode, (unsigned)limit_days);\n\
          \x20       ++failures;\n\
@@ -18625,8 +18566,8 @@ fn forge_go_enum_validator_runtime() {
 
     let rows = limit_rows(|c| {
         format!(
-            "\tck(lmode.LayerMode{}, {}, {}, \"{}\")",
-            layer_mode_pascal(c.mode),
+            "\tck(lmode.PolicyMode{}, {}, {}, \"{}\")",
+            policy_mode_pascal(c.mode),
             c.limit_days,
             c.valid,
             c.reason
@@ -18638,14 +18579,14 @@ fn forge_go_enum_validator_runtime() {
          \t\"fmt\"\n\
          \t\"os\"\n\
          \n\
-         \tlmode \"@PREFIX@/layer_mode\"\n\
-         \tvmod \"@PREFIX@/mode_needs_limit\"\n\
+         \tlmode \"@PREFIX@/policy_mode\"\n\
+         \tvmod \"@PREFIX@/policy_strict_needs_limit\"\n\
          )\n\
          \n\
          func main() {\n\
          \tfailures := 0\n\
-         \tck := func(m lmode.LayerMode, l uint16, valid bool, reason string) {\n\
-         \t\tgot := vmod.NewModeNeedsLimit().Validate(m, l)\n\
+         \tck := func(m lmode.PolicyMode, l uint16, valid bool, reason string) {\n\
+         \t\tgot := vmod.NewPolicyStrictNeedsLimit().Validate(m, l)\n\
          \t\tif got.Valid != valid || got.Reason != reason {\n\
          \t\t\tfmt.Printf(\"FAIL (%v, %d): got %v/%q\\n\", m, l, got.Valid, got.Reason)\n\
          \t\t\tfailures++\n\
@@ -18689,8 +18630,8 @@ fn forge_python_enum_validator_runtime() {
 
     let rows = limit_rows(|c| {
         format!(
-            "ck(LayerMode.{}, {}, {}, \"{}\")",
-            layer_mode_variant(c.mode).to_uppercase(),
+            "ck(PolicyMode.{}, {}, {}, \"{}\")",
+            policy_mode_variant(c.mode).to_uppercase(),
             c.limit_days,
             if c.valid { "True" } else { "False" },
             c.reason
@@ -18698,15 +18639,15 @@ fn forge_python_enum_validator_runtime() {
     });
     let driver = "import sys\n\
          \n\
-         from pkg.layer_mode import LayerMode\n\
-         from pkg.mode_needs_limit import ModeNeedsLimit\n\
+         from pkg.policy_mode import PolicyMode\n\
+         from pkg.policy_strict_needs_limit import PolicyStrictNeedsLimit\n\
          \n\
          failures = 0\n\
          \n\
          \n\
          def ck(mode, limit_days, valid, reason):\n\
          \x20   global failures\n\
-         \x20   got = ModeNeedsLimit().validate(mode, limit_days)\n\
+         \x20   got = PolicyStrictNeedsLimit().validate(mode, limit_days)\n\
          \x20   if got.valid != valid or got.reason != reason:\n\
          \x20       print(f\"FAIL ({mode}, {limit_days}): got {got}\")\n\
          \x20       failures += 1\n\
@@ -18746,20 +18687,20 @@ fn forge_kotlin_enum_validator_runtime() {
 
     let rows = limit_rows(|c| {
         format!(
-            "    ck(LayerMode.{}, {}, {}, \"{}\")",
-            layer_mode_variant(c.mode).to_uppercase(),
+            "    ck(PolicyMode.{}, {}, {}, \"{}\")",
+            policy_mode_variant(c.mode).to_uppercase(),
             c.limit_days,
             c.valid,
             c.reason
         )
     });
-    let driver = "import com.sce.generated.layer_mode.LayerMode\n\
-         import com.sce.generated.mode_needs_limit.ModeNeedsLimit\n\
+    let driver = "import com.sce.generated.policy_mode.PolicyMode\n\
+         import com.sce.generated.policy_strict_needs_limit.PolicyStrictNeedsLimit\n\
          \n\
          var failures = 0\n\
          \n\
-         fun ck(mode: LayerMode, limitDays: Int, valid: Boolean, reason: String) {\n\
-         \x20   val got = ModeNeedsLimit().validate(mode, limitDays.toUShort())\n\
+         fun ck(mode: PolicyMode, limitDays: Int, valid: Boolean, reason: String) {\n\
+         \x20   val got = PolicyStrictNeedsLimit().validate(mode, limitDays.toUShort())\n\
          \x20   if (got.valid != valid || got.reason != reason) {\n\
          \x20       println(\"FAIL ($mode, $limitDays): got ${got.valid}/${got.reason}\")\n\
          \x20       failures++\n\

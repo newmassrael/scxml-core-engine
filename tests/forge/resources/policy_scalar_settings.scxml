@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The reference policy record with every field a number or a flag: the shape of
+  `policy_settings` with the mode as the flag `strict`
+  (SCE_FORGE.md §5.6, "Policy as data").
+
+  The shared conformance harness holds a record only when each field has a
+  canonical type, and an enum field has none, so this is the policy the
+  harness runs on all six backends (`policy_scalar_layer`,
+  `policy_scalar_rule`). The enum itself is held by the per-language tests
+  over `policy_settings`.
+
+  Bit i of a layering mask names the field at position i in the table below.
+
+    bit   field      type
+    rule  strict     bool (decided by its own rule, not by a bit)
+    0     limitDays  uint16
+    1     burst      uint32
+    2     locked     bool
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="policy_scalar_settings"
+       sce:event-name="policy.scalar_settings">
+  <datamodel>
+    <data id="strict" sce:type="bool" sce:direction="in"/>
+    <data id="limitDays" sce:type="uint16" sce:direction="in"/>
+    <data id="burst" sce:type="uint32" sce:direction="in"/>
+    <data id="locked" sce:type="bool" sce:direction="in"/>
+  </datamodel>
+</scxml>

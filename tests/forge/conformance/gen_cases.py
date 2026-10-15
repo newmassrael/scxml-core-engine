@@ -141,6 +141,18 @@ value of the list in exactly one of them, in only the number and the text it car
 every encoded width and at the 32-byte bound. A list one short of the 128 values the
 result holds is drawn now and then. Nine laws are checked on the model before any case
 is written.
+
+Tenth run, 2026-10-15: the reference policy of SCE_FORGE.md section 5.6 in the form the
+harness can hold, a record of numbers and flags — `policy_scalar_layer` (500 cases) and
+`policy_scalar_rule` (300, a stateless validator whose `sequence` the model extends the
+way it extends a `cases` array). Masks are drawn over the three bits that name a field,
+over bits that name none (up to the widest `uint64`) and as single bits; a limit is drawn
+at each edge of the 0 to 365 range the rule holds it to, inside it and anywhere a
+`uint16` can be. Nine laws are checked on the model before any case is written, among
+them that folding under one mask does not depend on how it is grouped, and one fact the
+document's host step rests on: two policies that each pass the rule can fold into one
+that does not. Rust, Python, Go, Kotlin, C++ and C11 all agreed with the model on every
+case.
 """
 
 from __future__ import annotations
@@ -801,6 +813,38 @@ def mv_value_drop(values: list, gone: dict):
     """sce:std/merge/mv_value_drop — every value but the one of the write `gone`
     names, in the order the values had."""
     return ("ok", [dict(there) for there in values if not same_write(there, gone)])
+
+
+#: The range `policy_scalar_rule` holds `limitDays` to, inclusive.
+POLICY_LIMIT_MAX = 365
+
+
+def policy_scalar_layer(base: dict, over: dict, mask: int):
+    """tests/forge/resources/policy_scalar_layer.scxml — a policy layered over
+    another. `strict` is set when either layer sets it, whatever the mask says;
+    the other three fields follow bits 0, 1 and 2 of the mask, from `over` when
+    the bit is set and from `base` when it is not. A higher bit names no field."""
+    return (
+        "ok",
+        {
+            "strict": over["strict"] or base["strict"],
+            "limitDays": over["limitDays"] if mask & 1 else base["limitDays"],
+            "burst": over["burst"] if mask & 2 else base["burst"],
+            "locked": over["locked"] if mask & 4 else base["locked"],
+        },
+    )
+
+
+def policy_scalar_rule(strict: bool, limit_days: int):
+    """tests/forge/resources/policy_scalar_rule.scxml — a policy is refused when
+    its limit is out of range, and then when it is strict with no limit; the
+    range is judged first, so that is the reason a strict policy with a limit out
+    of range gives."""
+    if not 0 <= limit_days <= POLICY_LIMIT_MAX:
+        return ("ok", {"valid": False, "reason": "limit_days_out_of_range"})
+    if strict and limit_days == 0:
+        return ("ok", {"valid": False, "reason": "plausibility_failed"})
+    return ("ok", {"valid": True, "reason": ""})
 
 
 def entry(element: int, wall: int, counter: int, node: int) -> dict:
@@ -2596,6 +2640,55 @@ def mv_value_drop_args(rng: SplitMix64):
     return [held, mv_probe(rng, held)]
 
 
+POLICY_LIMITS = [0, 1, 7, 30, 364, POLICY_LIMIT_MAX, POLICY_LIMIT_MAX + 1, U16_MAX]
+POLICY_BURSTS = [0, 1, 10, 50, U32_MAX]
+
+
+def policy_limit(rng: SplitMix64) -> int:
+    """A limit at an edge of the range, inside it, or anywhere a uint16 can be."""
+    kind = rng.below(10)
+    if kind < 4:
+        return rng.pick(POLICY_LIMITS + [2, 366, U16_MAX - 1])
+    if kind < 8:
+        return rng.between(0, POLICY_LIMIT_MAX)
+    return rng.between(0, U16_MAX)
+
+
+def policy_scalar_settings(rng: SplitMix64) -> dict:
+    return {
+        "strict": rng.below(2) == 1,
+        "limitDays": policy_limit(rng),
+        "burst": rng.pick(POLICY_BURSTS) if rng.below(2) else rng.between(0, U32_MAX),
+        "locked": rng.below(2) == 1,
+    }
+
+
+def policy_mask(rng: SplitMix64) -> int:
+    """A mask over the three bits that name a field, one that sets bits no field
+    has, and the widest `uint64`."""
+    kind = rng.below(10)
+    if kind < 6:
+        return rng.between(0, 7)
+    if kind == 6:
+        return rng.pick([8, 16, 255, 2**32, 2**63])
+    if kind == 7:
+        return U64_MAX
+    if kind == 8:
+        return rng.between(0, U64_MAX)
+    return 1 << rng.below(3)
+
+
+def policy_layer_args(rng: SplitMix64):
+    """Two policies, sometimes the same one, and a mask."""
+    base = policy_scalar_settings(rng)
+    over = dict(base) if rng.below(12) == 0 else policy_scalar_settings(rng)
+    return [base, over, policy_mask(rng)]
+
+
+def policy_rule_args(rng: SplitMix64):
+    return [rng.below(2) == 1, policy_limit(rng)]
+
+
 MULTIPLIER_EDGES = [
     1.0, 1.0000000000000002, 1.5, 2.0, 3.0, 10.0, 1e3, 1e15, 1e18, 1e19, 1e300,
     1.7976931348623157e308,
@@ -3573,6 +3666,10 @@ FIXTURES = {
     "mv_value_holds": (lambda args: mv_value_holds(*args), mv_value_holds_args, 400, 0xE110_004F),
     "mv_value_keep": (lambda args: mv_value_keep(*args), mv_value_keep_args, 500, 0xE110_0050),
     "mv_value_drop": (lambda args: mv_value_drop(*args), mv_value_drop_args, 400, 0xE110_0051),
+    "policy_scalar_layer": (lambda args: policy_scalar_layer(*args), policy_layer_args, 500, 0xE110_0052),
+    # A validator's cases are a `sequence`, and this one holds no state, so each
+    # generated case stands alone.
+    "PolicyScalarRule::validate": (lambda args: policy_scalar_rule(*args), policy_rule_args, 300, 0xE110_0053),
 }
 
 
@@ -4424,6 +4521,67 @@ def validate_sheet_laws() -> None:
         law.was_asked()
 
 
+def validate_policy_laws() -> None:
+    """The claims the policy documents (SCE_FORGE.md §5.6) make about
+    themselves (see [`Law`]); the policies come from the generator the cases do."""
+    rng = SplitMix64(0xE110_90C1)
+    same_law = Law("policy_scalar_layer: a policy layered over itself is itself")
+    keeps_law = Law("policy_scalar_layer: a field whose bit is clear stays the base's")
+    takes_law = Law("policy_scalar_layer: a field whose bit is set is the over's")
+    tighten_law = Law("policy_scalar_layer: a layer never loosens strict")
+    names_law = Law("policy_scalar_layer: a bit that names no field changes nothing")
+    fold_law = Law("policy_scalar_layer: folding under one mask does not depend on where it is grouped")
+    strict_law = Law("policy_scalar_layer: strict does not depend on the mask")
+    rule_law = Law("policy_scalar_rule: valid is exactly in range, and a limit when strict")
+    order_law = Law("policy_scalar_rule: an out-of-range limit is reported as the range")
+
+    for _ in range(LAW_RUNS):
+        base, over, mask = policy_layer_args(rng)
+        third = policy_scalar_settings(rng)
+        folded = answer_of(policy_scalar_layer(base, over, mask))
+        inputs = [base, over, mask]
+
+        same_law.holds(answer_of(policy_scalar_layer(base, base, mask)) == base, inputs)
+        for bit, field in enumerate(("limitDays", "burst", "locked")):
+            wanted = over[field] if mask >> bit & 1 else base[field]
+            (takes_law if mask >> bit & 1 else keeps_law).holds(folded[field] == wanted, inputs)
+        tighten_law.holds(folded["strict"] >= base["strict"] and folded["strict"] >= over["strict"], inputs)
+        names_law.holds(answer_of(policy_scalar_layer(base, over, mask & 7)) == folded, inputs)
+        strict_law.holds(
+            all(answer_of(policy_scalar_layer(base, over, other))["strict"] == folded["strict"]
+                for other in (0, 7, U64_MAX)),
+            inputs,
+        )
+        left = answer_of(policy_scalar_layer(answer_of(policy_scalar_layer(base, over, mask)), third, mask))
+        right = answer_of(policy_scalar_layer(base, answer_of(policy_scalar_layer(over, third, mask)), mask))
+        fold_law.holds(left == right, [base, over, third, mask])
+
+        strict, limit = rng.below(2) == 1, policy_limit(rng)
+        verdict = answer_of(policy_scalar_rule(strict, limit))
+        in_range = 0 <= limit <= POLICY_LIMIT_MAX
+        rule_law.holds(verdict["valid"] == (in_range and (not strict or limit > 0)), [strict, limit])
+        order_law.holds(
+            in_range or verdict == {"valid": False, "reason": "limit_days_out_of_range"}, [strict, limit]
+        )
+
+    for law in (same_law, keeps_law, takes_law, tighten_law, names_law, fold_law, strict_law, rule_law, order_law):
+        law.was_asked()
+
+    # What the pattern's host step is for, held as a fact and not left to prose: two
+    # policies that each pass the rule can fold into one that does not, a strict
+    # base with a limit under a layer that sets the limit to zero, so a fold is
+    # validated after it is made and not only before.
+    strict_base = {"strict": True, "limitDays": 7, "burst": 50, "locked": False}
+    lax_layer = {"strict": False, "limitDays": 0, "burst": 50, "locked": False}
+    fold = answer_of(policy_scalar_layer(strict_base, lax_layer, 1))
+    if not (
+        answer_of(policy_scalar_rule(strict_base["strict"], strict_base["limitDays"]))["valid"]
+        and answer_of(policy_scalar_rule(lax_layer["strict"], lax_layer["limitDays"]))["valid"]
+        and not answer_of(policy_scalar_rule(fold["strict"], fold["limitDays"]))["valid"]
+    ):
+        raise SystemExit("two policies that pass the rule no longer fold into one that fails it")
+
+
 def render(value) -> str:
     """A value the way the hand-written cases write it: a record as
     `{ "year": 1970, ... }`, a list as `[1, 2]`, a boolean as `true`, a number
@@ -4467,10 +4625,12 @@ def case_line(args, answer) -> str:
 
 
 def section(text: str, fixture: str):
-    """(start, end) of `fixture`'s `cases` array contents: from just after `[`
-    to just before the `]` that closes it."""
+    """(start, end) of `fixture`'s `cases` array contents (a validator's is its
+    `sequence`): from just after `[` to just before the `]` that closes it."""
     anchor = text.index(f'"fixture": "{fixture}"')
-    opening = text.index('"cases": [', anchor) + len('"cases": [')
+    arrays = [text.find(f'"{key}": [', anchor) for key in ("cases", "sequence")]
+    first = min(at for at in arrays if at >= 0)
+    opening = text.index("[", first) + 1
     closing = text.index("\n      ]", opening)
     return opening, closing
 
@@ -4571,6 +4731,7 @@ def main(argv) -> int:
     validate_laws()
     validate_undo_laws()
     validate_sheet_laws()
+    validate_policy_laws()
     original = REFERENCE.read_text(encoding="utf-8")
     json.loads(original)
     text, report = regenerate(original)

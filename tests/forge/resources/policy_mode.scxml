@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  How strict a policy is: the enum field of the reference policy record
+  `policy_settings` (SCE_FORGE.md §5.6, "Policy as data").
+
+  A policy value that is a choice and not a number is an enum, so a value no
+  variant names is not a policy: a machine that takes the record as an event's
+  payload refuses the whole payload, and a layering algorithm compares the
+  field by its variant (`policy_layer`).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="enum"
+       name="policy_mode"
+       sce:underlying-type="uint8">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="relaxed" value="0"/>
+      <sce:variant name="strict" value="1"/>
+    </data>
+  </datamodel>
+</scxml>

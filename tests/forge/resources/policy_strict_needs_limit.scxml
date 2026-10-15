@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A rule between two fields of the reference policy: a strict policy has a
+  limit of at least one day (SCE_FORGE.md §5.6, "Policy as data").
+
+  The inputs are the record's fields spread out as an enum and a scalar, the
+  one `sce:plausibility` is the rule, and the range of `limitDays` is checked
+  before the rule, so a strict policy whose limit is out of range reports the
+  range. A validator document holds one plausibility, so a second rule between
+  fields is a second document.
+
+  Like `policy_settings`, this runs through the per-language compile-and-run
+  tests, because the harness cannot hold an enum input.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="validator"
+       name="policy_strict_needs_limit">
+  <sce:import kind="enum" src="policy_mode.scxml" as="PolicyMode"/>
+  <datamodel>
+    <data id="mode" sce:type="enum:PolicyMode" sce:direction="in"/>
+    <data id="limitDays" sce:type="uint16" sce:direction="in" sce:range-min="0" sce:range-max="365"/>
+    <data id="valid" sce:type="bool" sce:direction="out"
+          sce:plausibility="mode !== PolicyMode.strict || limitDays &gt; 0"/>
+  </datamodel>
+</scxml>

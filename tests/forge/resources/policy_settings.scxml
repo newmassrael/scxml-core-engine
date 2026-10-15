@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The reference policy record: one enum field and three fixed-width fields.
+  A policy is a record type, and this is the schema the other `policy_*`
+  documents are written over (SCE_FORGE.md §5.6, "Policy as data").
+
+  Bit i of a layering mask names the field at position i in the table below.
+  The table is the one place the pairing of a field and a bit is written;
+  `policy_layer` reads it.
+
+    bit   field      type
+    rule  mode       policy_mode (decided by its own rule, not by a bit)
+    0     limitDays  uint16
+    1     burst      uint32
+    2     locked     bool
+
+  The field ids are camelCase on purpose: Rust spells them snake_case and Go
+  PascalCase, so a member access that is not renamed through the rule that
+  emitted the struct does not compile on those two backends.
+
+  The shared conformance harness has no canonical type for an enum field, so
+  this record runs through the per-language compile-and-run tests
+  `forge_{rust,cpp,c11,go,python,kotlin}_enum_record_layer_runtime` and
+  `..._enum_validator_runtime` in `sce-build/tests/forge_conformance.rs`.
+  `policy_scalar_settings` is the same shape with the mode as a flag, which
+  the harness does hold.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="policy_settings"
+       sce:event-name="policy.settings">
+  <sce:import src="policy_mode.scxml" kind="enum" as="PolicyMode"/>
+  <datamodel>
+    <data id="mode" sce:type="enum:PolicyMode" sce:direction="in"/>
+    <data id="limitDays" sce:type="uint16" sce:direction="in"/>
+    <data id="burst" sce:type="uint32" sce:direction="in"/>
+    <data id="locked" sce:type="bool" sce:direction="in"/>
+  </datamodel>
+</scxml>

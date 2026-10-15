@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Layer one policy over another: `(base, over, mask) -> record`
+  (SCE_FORGE.md §5.6, "Policy as data"), over the scalar policy
+  `policy_scalar_settings`.
+
+  Field i comes from `over` when bit i of `mask` is set and from `base`
+  otherwise; the bit of each field is written in `policy_scalar_settings`.
+  `strict` follows a rule of its own instead of a bit: it is set when either
+  layer sets it, whatever the mask says, so a layer can tighten a policy and
+  never loosen it. A bit above those the schema names is not read.
+
+  `policy_layer` is the same document over the enum-field record; the
+  conformance harness runs this one with cases from an independent model
+  (`tests/forge/conformance/gen_cases.py`).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm"
+       name="policy_scalar_layer"
+       version="1.0">
+  <sce:import kind="event-schema" src="policy_scalar_settings.scxml" as="Settings"/>
+  <sce:signature>
+    <sce:param name="base" type="record:Settings"/>
+    <sce:param name="over" type="record:Settings"/>
+    <sce:param name="mask" type="uint64"/>
+    <sce:return type="record:Settings"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="out" type="record:Settings">
+      <sce:set name="strict" expr="over.strict || base.strict"/>
+      <sce:set name="limitDays" expr="(mask &amp; 1) !== 0 ? over.limitDays : base.limitDays"/>
+      <sce:set name="burst" expr="(mask &amp; 2) !== 0 ? over.burst : base.burst"/>
+      <sce:set name="locked" expr="(mask &amp; 4) !== 0 ? over.locked : base.locked"/>
+    </sce:var>
+    <sce:return expr="out"/>
+  </sce:body>
+</scxml>

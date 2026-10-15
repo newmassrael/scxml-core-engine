@@ -2239,19 +2239,36 @@ A limit, a window or a mode that a product changes without a release is data, an
 | Step | Kind | What it does | What holds it |
 |------|------|--------------|---------------|
 | Shape | `event-schema` with `enum:` fields | Names the policy: fixed-width integers, `bool` and `enum:` values (§4.12). | A `sce-static` machine takes the record as the whole payload of one event. A payload that does not fit — an enum name the document does not declare, an integer past its width — is refused as a whole and writes nothing, not even the fields that did fit: the scenarios `static_whole_payload` and `static_payload_enum`, replayed by every backend. |
-| Rules between fields | `validator` | One document per rule. The inputs are the record's fields spread out as scalars and `enum:` values, and the rule is the document's one `sce:plausibility` (§4.7). | `forge_{rust,cpp,c11,go,python,kotlin}_enum_validator_runtime` hold all six backends to one table, including that a field's range is checked before the rule between fields. |
-| Layers | `algorithm` over `record:` | `(base, over, mask) → record`: field *i* comes from `over` when bit *i* of `mask` is set and from `base` otherwise. A field may follow a rule of its own instead; the held example lets the stricter of two modes win whatever the mask says. | `forge_{rust,cpp,c11,go,python,kotlin}_enum_record_layer_runtime`, again one table for six backends. |
+| Rules between fields | `validator` | One document per rule. The inputs are the record's fields spread out as scalars and `enum:` values, and the rule is the document's one `sce:plausibility` (§4.7). | `forge_{rust,cpp,c11,go,python,kotlin}_enum_validator_runtime` hold all six backends to one table, including that a field's range is checked before the rule between fields. The same rule over a flag in place of the enum runs in the numerical conformance harness (§6.6) on all six backends. |
+| Layers | `algorithm` over `record:` | `(base, over, mask) → record`: field *i* comes from `over` when bit *i* of `mask` is set and from `base` otherwise. A field may follow a rule of its own instead; the held example lets the stricter of two modes win whatever the mask says. | `forge_{rust,cpp,c11,go,python,kotlin}_enum_record_layer_runtime`, again one table for six backends. The same layering over a flag in place of the enum runs in the harness, with cases from an independent model. |
 | Reception | `statechart` (`sce-static`) | Holds the finished record in a record variable and reads its fields in guards. | The same scenarios. |
 
 The pattern asks the host for three steps, in this order:
 
 1. Collect the layers and fold them with the layering algorithm, from the weakest to the strongest.
-2. Spread the result into each rule's validator. When one fails, the previous record stays and nothing is sent.
+2. Spread the result of each fold into each rule's validator, and not only the layers: two layers that each pass a rule can fold into one that does not, as a strict base with a limit does under a layer that sets the limit to zero. When one fails, the previous record stays and nothing is sent.
 3. Send the finished record as the payload of one event.
 
-The host takes steps 1 and 2 and not the machine, because a statechart does not call algorithms (§4.12, "Calls between algorithms"). That is also why the machine promises only what its schema gives it, a record that fits: the rules between fields are held before the event, by the validators.
+The host takes steps 1 and 2 and not the machine. A validator is a document a host calls, and a statechart hands an algorithm a record only when every field of its schema is a number, a `bool` or bounded text (SCE Accepted Subset §2.15, "State an algorithm takes and gives back"), which a policy with an `enum:` field is not. That is also why the machine promises only what its schema gives it, a record that fits: the rules between fields are held before the event, by the validators.
 
-What this does not do. It is not an expression language: a policy is values, and the behaviour that reads them is compiled, so a rule the documents cannot say is a change to a document. A `mask` carries 64 fields, so a larger policy is split into groups. A validator document holds one `sce:plausibility`, so n rules between fields are n documents. And an `enum:` value reaches a payload only by its declared name.
+#### Reference example
+
+One policy is written out in `tests/forge/resources/`, in two forms. `policy_settings` is the policy as an owner writes it, with an `enum:` field; the numerical conformance harness (§6.6) has no canonical type for an enum field, so what it holds is the same shape with the mode as a `bool`, `policy_scalar_settings`. Each form is a schema, one rule between fields and a layering algorithm, written over the schema as the table above says.
+
+| Document | Kind | What it is | Where it runs |
+|----------|------|------------|---------------|
+| `policy_mode`, `policy_settings` | `enum`, `event-schema` | A mode (`relaxed`, `strict`), and the record of that mode, a `uint16` limit in days, a `uint32` burst and a `bool` lock. | The scenarios of the Shape row, and the two groups of per-language tests below. |
+| `policy_strict_needs_limit` | `validator` | A strict policy has a limit of at least one day; the limit is also held to 0 to 365. | `forge_{rust,cpp,c11,go,python,kotlin}_enum_validator_runtime`. |
+| `policy_layer` | `algorithm` | `(base, over, mask) → record`; the stricter mode wins, the limit, burst and lock follow bits 0, 1 and 2. | `forge_{rust,cpp,c11,go,python,kotlin}_enum_record_layer_runtime`. |
+| `policy_scalar_settings` | `event-schema` | The record with `strict` as a `bool`. | The numerical conformance harness, as the record of the two fixtures below. |
+| `policy_scalar_rule` | `validator` | The rule of `policy_strict_needs_limit` over the flag. | The harness, on all six backends: nine cases by hand and generated cases from the model. |
+| `policy_scalar_layer` | `algorithm` | The layering of `policy_layer` over the flag: `strict` is set when either layer sets it. | The harness, on all six backends: nine cases by hand and generated cases from the model, with masks that set bits no field has and the widest `uint64`. |
+
+The harness cases come from an independent model in `tests/forge/conformance/gen_cases.py`, which also checks, before any case is written, what the two documents claim about themselves: a policy layered over itself is itself, a field whose bit is clear stays the base's and one whose bit is set is the over's, a layer never loosens `strict`, folding under one mask does not depend on how it is grouped, a bit that names no field changes nothing, and the rule accepts exactly a limit in range that is not zero for a strict policy.
+
+A policy of an owner's own is these documents rewritten over its fields: the schema, a validator for each rule between fields, and a layering algorithm whose head names the field each mask bit stands for. Nothing of the reference example is imported.
+
+What this does not do. It is not an expression language: a policy is values, and the behaviour that reads them is compiled, so a rule the documents cannot say is a change to a document. It is not a library either, and there is no layering that takes any record: an algorithm names each field it layers, SCE has no way to read a record's fields without naming them, and a generic version would need a reflection that the six backends do not share (C11 and Rust have none at run time), so one document would no longer mean one thing on all six. A `mask` carries 64 fields, so a larger policy is split into groups. A validator document holds one `sce:plausibility`, so n rules between fields are n documents. And an `enum:` value reaches a payload only by its declared name.
 
 ---
 
