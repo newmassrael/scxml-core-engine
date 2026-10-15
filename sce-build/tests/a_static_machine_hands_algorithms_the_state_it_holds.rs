@@ -314,7 +314,7 @@ fn the_interpreter_holds_the_text_an_algorithm_writes_to_its_bound() {
         "the text an algorithm writes is held to the schema's bound:\n{lowered}"
     );
     assert!(
-        lowered.contains("SceStatic.bounded(s[\"text\"], 32)"),
+        lowered.contains("SceStatic.bounded(s['text'], 32)"),
         "the text an algorithm copies is held to the bound of the field it lands in:\n{lowered}"
     );
 }
