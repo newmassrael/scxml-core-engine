@@ -33,6 +33,13 @@
 //! does not ([`World::reorder`]) is the case the Mesh core orders for. A topic
 //! ([`World::topic`]) is the one-to-many a machine sends to by one name.
 //!
+//! An actor need not be a Rust machine. [`World::add_external`] hosts one that runs in
+//! another process, such as a generated Kotlin machine in a JVM, behind the same Mesh
+//! endpoint: the world owns time, the network and the endpoint, and the process owns the
+//! machine and is driven over a line protocol ([`external`]). Copies in different
+//! languages then exchange real traffic through the one simulated network, and the
+//! oracles that read that network judge them together.
+//!
 //! ⚠ The Mesh core takes the first sequence number it sees from a sender as the
 //! start of that sender's stream. An envelope cut in flight before any other has
 //! arrived, and sent again later, is below that start by then and is dropped for
@@ -69,6 +76,9 @@ use sce_rust_mesh::endpoint::{
 };
 use sce_rust_mesh::router::Router;
 use sce_rust_runtime::{Engine, SceClock, StatePolicy};
+
+pub mod external;
+use external::{ExternalActor, ExternalMachine};
 
 /// How many times a machine's queues and its endpoint are drained in a row
 /// before the world calls the machine a loop. A machine that answers itself
@@ -457,12 +467,6 @@ impl<P: StatePolicy> Actor<P> {
         self.engine.policy()
     }
 
-    fn lock_endpoint(&self) -> std::sync::MutexGuard<'_, Endpoint<SimTransport, SimEnvironment>> {
-        self.endpoint
-            .lock()
-            .expect("a Mesh endpoint is never left mid-update")
-    }
-
     /// Run the machine until it has nothing more to do at the present time. The
     /// generator says which call a machine needs: `step` drains the queues and
     /// nothing else, and a machine with a delayed send or a child session is driven
@@ -567,28 +571,39 @@ impl<P: StatePolicy> Actor<P> {
     }
 }
 
-/// What the world asks of an actor, whatever its machine.
+/// What the world asks of an actor, whatever its machine and wherever it runs.
+///
+/// An actor is a machine and the Mesh endpoint that serves it. What concerns the
+/// endpoint is the same for every machine, so it is answered here once; what an actor
+/// brings is the machine's side.
 trait Participant {
     fn name(&self) -> &str;
-    fn receive(&mut self, from: &str, bytes: Vec<u8>);
-    fn peer_ready(&mut self, peer: &str);
-    fn peer_not_ready(&mut self, peer: &str);
-    fn transmit_failed(&mut self, peer: &str, bytes: Vec<u8>);
+    /// The actor's Mesh endpoint.
+    fn endpoint(&self) -> &ActorEndpoint;
     fn raise(&mut self, event: &str, data: &str);
-    fn tick(&mut self);
     fn pump(&mut self);
     fn advance(&mut self, ms: u64);
-    /// When this actor next needs the world's time to have reached, in the
-    /// world's milliseconds: its engine's next scheduled thing, or its
-    /// endpoint's next retry.
-    fn next_due_ms(&self, now_ms: i64) -> Option<i64>;
-    fn host_errors(&mut self) -> Vec<String>;
+    /// When the machine's own scheduler next has something to deliver, in the world's
+    /// milliseconds.
+    fn engine_due_ms(&self, now_ms: i64) -> Option<i64>;
     fn as_any(&mut self) -> &mut dyn Any;
-}
 
-impl<P: StatePolicy + 'static> Participant for Actor<P> {
-    fn name(&self) -> &str {
-        &self.name
+    /// The machine's saved state, for an actor whose machine is another process's and
+    /// cannot be reached through a typed engine; `None` for one that can.
+    fn saved_state(&mut self) -> Option<String> {
+        None
+    }
+
+    /// Stop the machine and start it again from `saved`, or from what it saved of
+    /// itself when none is given, if it is another process's; whether it was.
+    fn restart_external(&mut self, _saved: Option<&str>) -> bool {
+        false
+    }
+
+    fn lock_endpoint(&self) -> std::sync::MutexGuard<'_, Endpoint<SimTransport, SimEnvironment>> {
+        self.endpoint()
+            .lock()
+            .expect("a Mesh endpoint is never left mid-update")
     }
 
     fn receive(&mut self, from: &str, bytes: Vec<u8>) {
@@ -616,12 +631,42 @@ impl<P: StatePolicy + 'static> Participant for Actor<P> {
         );
     }
 
-    fn raise(&mut self, event: &str, data: &str) {
-        self.given.push((event.to_string(), data.to_string()));
-    }
-
     fn tick(&mut self) {
         self.lock_endpoint().tick();
+    }
+
+    /// When this actor next needs the world's time to have reached, in the
+    /// world's milliseconds: its engine's next scheduled thing, or its
+    /// endpoint's next retry.
+    fn next_due_ms(&self, now_ms: i64) -> Option<i64> {
+        let engine = self.engine_due_ms(now_ms);
+        let retry = self.lock_endpoint().next_retry_due_ms();
+        match (engine, retry) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        }
+    }
+
+    fn host_errors(&mut self) -> Vec<String> {
+        self.lock_endpoint()
+            .take_host_errors()
+            .into_iter()
+            .map(|error| format!("{error:?}"))
+            .collect()
+    }
+}
+
+impl<P: StatePolicy + 'static> Participant for Actor<P> {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn endpoint(&self) -> &ActorEndpoint {
+        &self.endpoint
+    }
+
+    fn raise(&mut self, event: &str, data: &str) {
+        self.given.push((event.to_string(), data.to_string()));
     }
 
     fn pump(&mut self) {
@@ -639,24 +684,10 @@ impl<P: StatePolicy + 'static> Participant for Actor<P> {
         }
     }
 
-    fn next_due_ms(&self, now_ms: i64) -> Option<i64> {
-        let engine = self
-            .engine
+    fn engine_due_ms(&self, now_ms: i64) -> Option<i64> {
+        self.engine
             .time_until_next_scheduled_ms()
-            .map(|wait| now_ms.saturating_add(i64::try_from(wait).unwrap_or(i64::MAX)));
-        let retry = self.lock_endpoint().next_retry_due_ms();
-        match (engine, retry) {
-            (Some(a), Some(b)) => Some(a.min(b)),
-            (a, b) => a.or(b),
-        }
-    }
-
-    fn host_errors(&mut self) -> Vec<String> {
-        self.lock_endpoint()
-            .take_host_errors()
-            .into_iter()
-            .map(|error| format!("{error:?}"))
-            .collect()
+            .map(|wait| now_ms.saturating_add(i64::try_from(wait).unwrap_or(i64::MAX)))
     }
 
     fn as_any(&mut self) -> &mut dyn Any {
@@ -775,13 +806,63 @@ impl World {
         actor.given.clear();
     }
 
-    fn add_actor<P: StatePolicy + 'static>(
-        &mut self,
-        name: &str,
-        policy: P,
-        router: Router,
-        read: Option<Reader<P>>,
-    ) {
+    /// Add an actor whose machine runs in another process, `machine`, under `name`,
+    /// served by an endpoint that holds `router` as any actor is. The machine is started
+    /// afresh, at the world's time, and left at rest. A world is not given a handle that
+    /// another world is using: see [`ExternalMachine`].
+    ///
+    /// Everything the world does to an actor it does to this one: links, partitions and
+    /// the rest act on its endpoint, and what the machine sends goes to that endpoint
+    /// as what a Rust machine sends does. What it cannot do is be recorded
+    /// ([`add_read`](Self::add_read)): the record is what the Rust engine did.
+    pub fn add_external(&mut self, name: &str, machine: &ExternalMachine, router: Router) {
+        let endpoint = self.endpoint_for(name, router);
+        let actor = ExternalActor::begin(name, machine, endpoint, self.clock.clone());
+        self.actors.push(Box::new(actor));
+    }
+
+    /// Stop the machine of the external actor `name` and start it again from what it
+    /// saved of itself, as [`restart`](Self::restart) does a Rust machine: the endpoint
+    /// and its links are kept, and what the machine had been given and not yet taken is
+    /// lost.
+    ///
+    /// # Panics
+    ///
+    /// When `name` is not an external actor.
+    pub fn restart_external(&mut self, name: &str) {
+        self.restart_external_from(name, None);
+    }
+
+    /// Stop the machine of the external actor `name` and start it again from `saved`,
+    /// text it saved earlier ([`external_saved`](Self::external_saved)) and that is older
+    /// than what it holds now: a copy that comes back from an old save has lost what it
+    /// learned since, which the endpoint's retries do not give back.
+    ///
+    /// # Panics
+    ///
+    /// When `name` is not an external actor, or `saved` is not a state it can restore.
+    pub fn restore_external(&mut self, name: &str, saved: &str) {
+        self.restart_external_from(name, Some(saved));
+    }
+
+    fn restart_external_from(&mut self, name: &str, saved: Option<&str>) {
+        let mut external = false;
+        self.with_actor(name, |actor| external = actor.restart_external(saved));
+        assert!(external, "{name} is not hosted by another process");
+    }
+
+    /// What the machine of the external actor `name` saves of itself, as the text it
+    /// saves; `None` for an actor that is not external, whose machine is read through
+    /// [`actor`](Self::actor).
+    pub fn external_saved(&mut self, name: &str) -> Option<String> {
+        let mut saved = None;
+        self.with_actor(name, |actor| saved = actor.saved_state());
+        saved
+    }
+
+    /// The endpoint for the actor `name`, on the world's network and clock, and its own
+    /// randomness drawn from the seed and its name.
+    fn endpoint_for(&self, name: &str, router: Router) -> ActorEndpoint {
         assert!(
             self.actors.iter().all(|actor| actor.name() != name),
             "the world already holds an actor named {name}"
@@ -795,8 +876,17 @@ impl World {
             clock: self.clock.clone(),
             rng: Rng::new(self.seed ^ hash_name(name)),
         };
-        let endpoint: ActorEndpoint =
-            Arc::new(Mutex::new(Endpoint::new(router, transport, environment)));
+        Arc::new(Mutex::new(Endpoint::new(router, transport, environment)))
+    }
+
+    fn add_actor<P: StatePolicy + 'static>(
+        &mut self,
+        name: &str,
+        policy: P,
+        router: Router,
+        read: Option<Reader<P>>,
+    ) {
+        let endpoint = self.endpoint_for(name, router);
         let mut engine = Engine::new(policy);
         engine.set_clock(SceClock::Manual(
             u64::try_from(self.clock.now_ms()).unwrap_or(0),
