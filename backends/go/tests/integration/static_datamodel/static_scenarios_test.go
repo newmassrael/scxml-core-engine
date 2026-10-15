@@ -40,6 +40,8 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_bytes"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_bytes_wire"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_cancel_expr"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_child_host"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_child_host_hybrid"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_counter"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_donedata"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_donedata_content"
@@ -448,6 +450,11 @@ type machine struct {
 	// document gives the action and its arguments in the order the document gives
 	// them. Nil for a machine whose host is not one that records.
 	hostCalls func() []any
+	// childHosts is the child hosts the machine's host was asked for since it was
+	// last asked, oldest asked first, and what each child asked of its host, each
+	// as a scenario's `child_hosts` writes it (childHostBook.take). Nil for a
+	// machine whose children are not given hosts that record.
+	childHosts func() []any
 	// sent is what the machine sent its Mesh peers (a `<send target="#name">`)
 	// since it was last asked, oldest first, each as a scenario's `sent` writes it:
 	// the target as the document writes it, the event's name, and the event's data
@@ -615,6 +622,7 @@ func replay(t *testing.T, name string, m machine) {
 				Donedata      any            `json:"donedata"`
 				Variables     map[string]any `json:"variables"`
 				HostCalls     *[]any         `json:"host_calls"`
+				ChildHosts    *[]any         `json:"child_hosts"`
 				Sent          *[]any         `json:"sent"`
 			} `json:"expect"`
 		} `json:"steps"`
@@ -652,6 +660,19 @@ func replay(t *testing.T, name string, m machine) {
 				t.Errorf("%s: this driver records no host calls, so it cannot hold a step to them", where())
 			} else if !reflect.DeepEqual(asked, any(*step.Expect.HostCalls)) {
 				t.Errorf("%s: the machine asked its host %v, not %v", where(), asked, *step.Expect.HostCalls)
+			}
+		}
+		// The child hosts the machine's host was asked for in this step, and what
+		// each child asked of its host, read and held for the same reason.
+		var children any
+		if m.childHosts != nil {
+			children = asJSON(t, m.childHosts())
+		}
+		if step.Expect.ChildHosts != nil {
+			if m.childHosts == nil {
+				t.Errorf("%s: this driver records no child hosts, so it cannot hold a step to them", where())
+			} else if !reflect.DeepEqual(children, any(*step.Expect.ChildHosts)) {
+				t.Errorf("%s: the child hosts were %v, not %v", where(), children, *step.Expect.ChildHosts)
 			}
 		}
 		// What the machine sent its Mesh peers in this step, read on every step for
@@ -1393,6 +1414,129 @@ func TestACancelRemovesTheSendItsIdNames(t *testing.T) {
 		"b_fired":  func() any { return policy.BFired() },
 		"refusals": func() any { return policy.Refusals() },
 	}))
+}
+
+// childHostBook is the child hosts a machine's host was asked for, in the order
+// asked, and what each child asked of its host. A child owns the host it was
+// given, so each host is made here (open) and writes into the book this reads.
+type childHostBook struct{ children []*bookedChild }
+
+// bookedChild is one child host the machine's host was asked for.
+type bookedChild struct {
+	invoke    string
+	start     int
+	candidate string
+	calls     []any
+	taken     int
+	announced bool
+}
+
+// open is the machine's host being asked for the host of a child its `invoke`
+// started: `candidate` is the stem of the document when the invoke names one of
+// several, and empty for a child written inline.
+func (b *childHostBook) open(invoke, candidate string) *bookedChild {
+	start := 1
+	for _, child := range b.children {
+		if child.invoke == invoke {
+			start++
+		}
+	}
+	child := &bookedChild{invoke: invoke, start: start, candidate: candidate}
+	b.children = append(b.children, child)
+	return child
+}
+
+// call is the child asking its host for `action`, with `args` in the order the
+// document gives them.
+func (c *bookedChild) call(action string, args ...any) {
+	c.calls = append(c.calls, map[string]any{"action": action, "args": append([]any{}, args...)})
+}
+
+// take is the children asked for or called since it was last called, oldest asked
+// first, each as a scenario's `child_hosts` writes it: the invoke, the start of
+// that invoke, the candidate's document stem where the invoke names one, and the
+// calls made in this step alone. A child asked for earlier that called nothing
+// since has no entry.
+func (b *childHostBook) take() []any {
+	fresh := []any{}
+	for _, child := range b.children {
+		calls := append([]any{}, child.calls[child.taken:]...)
+		if child.announced && len(calls) == 0 {
+			continue
+		}
+		child.taken = len(child.calls)
+		child.announced = true
+		entry := map[string]any{"invoke": child.invoke, "start": child.start, "host_calls": calls}
+		if child.candidate != "" {
+			entry["candidate"] = child.candidate
+		}
+		fresh = append(fresh, entry)
+	}
+	return fresh
+}
+
+// recordedWorkerHost is the host a `worker` child of `static_child_host` acts
+// through.
+type recordedWorkerHost struct{ child *bookedChild }
+
+func (h recordedWorkerHost) Started()               { h.child.call("started") }
+func (h recordedWorkerHost) Finished(steps uint32) { h.child.call("finished", steps) }
+
+// recordingParentHost is the host of `static_child_host`: it declares no act of
+// its own, and answers a host for each start of `worker`.
+type recordingParentHost struct{ book *childHostBook }
+
+func (h recordingParentHost) ActionsForWorker() static_child_host.StaticChildHostSceSynthInvokeWorkerActions {
+	return recordedWorkerHost{h.book.open("worker", "")}
+}
+
+// recordedFirstHost and recordedSecondHost are the hosts of the two candidates of
+// `static_child_host_hybrid`, each with an act of its own.
+type recordedFirstHost struct{ child *bookedChild }
+
+func (h recordedFirstHost) FirstRan() { h.child.call("first_ran") }
+
+type recordedSecondHost struct{ child *bookedChild }
+
+func (h recordedSecondHost) SecondRan() { h.child.call("second_ran") }
+
+// recordingHybridParentHost answers the host for the candidate it is asked about,
+// under the stem of that candidate's document, and for no other.
+type recordingHybridParentHost struct{ book *childHostBook }
+
+func (h recordingHybridParentHost) ActionsForWorkStaticHostedFirst() static_child_host_hybrid.StaticHostedFirstActions {
+	return recordedFirstHost{h.book.open("work", "static_hosted_first")}
+}
+
+func (h recordingHybridParentHost) ActionsForWorkStaticHostedSecond() static_child_host_hybrid.StaticHostedSecondActions {
+	return recordedSecondHost{h.book.open("work", "static_hosted_second")}
+}
+
+// A child that declares `<sce:action>`s is built with the host its parent's host
+// answers for it, each time the invocation starts, and what the child asked of
+// that host is what the scenario's `child_hosts` holds.
+func TestEachStartOfAChildIsGivenAHostOfItsOwn(t *testing.T) {
+	book := &childHostBook{}
+	policy := static_child_host.NewStaticChildHostPolicy(recordingParentHost{book})
+	policy.SessionID = sce.GenerateSessionID()
+	m := drive[static_child_host.StaticChildHostState, static_child_host.StaticChildHostEvent](&policy, map[string]func() any{
+		"completed": func() any { return policy.Completed() },
+	})
+	m.childHosts = book.take
+	replay(t, "static_child_host", m)
+}
+
+// A hybrid `<invoke>` is given the host answered for the candidate it starts, and
+// for no other.
+func TestACandidateIsGivenTheHostAnsweredForIt(t *testing.T) {
+	book := &childHostBook{}
+	policy := static_child_host_hybrid.NewStaticChildHostHybridPolicy(recordingHybridParentHost{book})
+	policy.SessionID = sce.GenerateSessionID()
+	m := drive[static_child_host_hybrid.StaticChildHostHybridState, static_child_host_hybrid.StaticChildHostHybridEvent](&policy, map[string]func() any{
+		"completed": func() any { return policy.Completed() },
+	})
+	m.childHosts = book.take
+	replay(t, "static_child_host_hybrid", m)
 }
 
 // A child session an <invoke> started is driven through its parent by

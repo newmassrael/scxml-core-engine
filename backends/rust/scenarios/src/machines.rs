@@ -4,26 +4,32 @@
 //! The table that says which committed machine ([`crate::integration`]) replays
 //! which scenario.
 
-use crate::{hosts, replay, replay_with_host};
+use crate::hosts::ChildHosts;
+use crate::{hosts, replay, replay_with_host, replay_with_hosts, Hosts};
 use sce_rust_runtime::{Engine, SceClock};
 
 /// The machine's policy as a row builds it: a machine with `<sce:action>`s takes
-/// the host that records them.
+/// the host that records them, and a machine whose children are given hosts takes
+/// the host `hosts::<builder>` makes, which writes each child's into the book.
 macro_rules! policy {
     ($policy:ident) => {
         $policy::new()
     };
-    ($policy:ident, $host:ident) => {
+    ($policy:ident, host $host:ident) => {
         $policy::new($host::default())
+    };
+    ($policy:ident, children $builder:ident, $book:ident) => {
+        $policy::new(hosts::$builder(&$book))
     };
 }
 
-/// A row's replay: with the reader of what its host recorded, or without.
+/// A row's replay: with the reader of what its host recorded, or of what its
+/// children's hosts did, or without.
 macro_rules! replay_row {
     ($engine:ident, $text:expr) => {
         replay($engine, |engine| engine.save_at(0).expect("saves"), $text)
     };
-    ($engine:ident, $text:expr, $calls:ident) => {{
+    ($engine:ident, $text:expr, calls $calls:ident) => {{
         let mut seen = 0usize;
         replay_with_host(
             $engine,
@@ -32,6 +38,16 @@ macro_rules! replay_row {
             $text,
         )
     }};
+    // The builder is named by the row so that the repetition that carries the book
+    // is the one that carries it; the policy was built with it already.
+    ($engine:ident, $text:expr, children $book:ident $builder:ident) => {
+        replay_with_hosts(
+            $engine,
+            |engine| engine.save_at(0).expect("saves"),
+            Hosts::none().child_hosts(|| $book.take()),
+            $text,
+        )
+    };
 }
 
 /// One row per scenario: the file it is read from, and the machine that replays
@@ -50,10 +66,14 @@ macro_rules! replay_row {
 /// the host of that name, which records what it is asked, and `hosts::<reader>`
 /// turns that into the calls a scenario's `host_calls` states.
 ///
+/// A row marked `& <builder>` is a machine whose children are given hosts: its
+/// policy takes the host `hosts::<builder>` makes of the book the row replays with,
+/// and the scenario's `child_hosts` are read from that book.
+///
 /// What a machine sends its Mesh peers needs no mark: the replay records it for
 /// every machine, and a scenario's `sent` is held to what was recorded.
 macro_rules! scenarios {
-    ($($name:literal => $module:ident::{$policy:ident, $persist:ident} $(@ $manual:ident)? $(+ $host:ident => $calls:ident)?;)*) => {
+    ($($name:literal => $module:ident::{$policy:ident, $persist:ident} $(@ $manual:ident)? $(+ $host:ident => $calls:ident)? $(& $builder:ident)?;)*) => {
         /// The scenarios this crate can replay, by file name.
         pub const NAMES: &[&str] = &[$($name),*];
 
@@ -77,13 +97,16 @@ macro_rules! scenarios {
             match name {
                 $($name => {
                     use crate::integration::static_datamodel::$module::{$persist, $policy $(, $host)?};
+                    #[allow(unused_variables)]
+                    let book = ChildHosts::default();
                     #[allow(unused_mut)]
-                    let mut engine = Engine::new(policy!($policy $(, $host)?));
+                    let mut engine = Engine::new(policy!($policy $(, host $host)? $(, children $builder, book)?));
                     $(engine.set_clock(SceClock::$manual(0));)?
                     replay_row!(
                         engine,
                         scenario_text($name).expect("the table names its own scenario")
-                        $(, $calls)?
+                        $(, calls $calls)?
+                        $(, children book $builder)?
                     );
                 })*
                 other => panic!("`{other}` is not a scenario of this table"),
@@ -104,6 +127,8 @@ scenarios! {
     "static_bytes" => static_bytes_sm::{StaticBytesPolicy, StaticBytesPersist};
     "static_bytes_wire" => static_bytes_wire_sm::{StaticBytesWirePolicy, StaticBytesWirePersist};
     "static_cancel_expr" => static_cancel_expr_sm::{StaticCancelExprPolicy, StaticCancelExprPersist} @ Manual;
+    "static_child_host" => static_child_host_sm::{StaticChildHostPolicy, StaticChildHostPersist} & static_child_host;
+    "static_child_host_hybrid" => static_child_host_hybrid_sm::{StaticChildHostHybridPolicy, StaticChildHostHybridPersist} & static_child_host_hybrid;
     "static_counter" => static_counter_sm::{StaticCounterPolicy, StaticCounterPersist};
     "static_counter_bound" => static_counter_sm::{StaticCounterPolicy, StaticCounterPersist};
     "static_donedata" => static_donedata_sm::{StaticDonedataPolicy, StaticDonedataPersist};

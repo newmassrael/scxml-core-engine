@@ -160,6 +160,45 @@ fn each_rule_of_the_vocabulary_refuses_what_it_is_for() {
             "a host call carries `x`",
         ),
         (
+            json!({"machine": "m", "steps": [{"expect": {"child_hosts": {}}}]}),
+            "`child_hosts` is an array",
+        ),
+        (
+            json!({"machine": "m", "steps": [{"expect": {"child_hosts": [{"start": 1, "host_calls": []}]}}]}),
+            "names the `invoke`",
+        ),
+        (
+            json!({"machine": "m", "steps": [{"expect": {"child_hosts": [{"invoke": "w", "host_calls": []}]}}]}),
+            "counts the `start`",
+        ),
+        (
+            json!({"machine": "m", "steps": [{"expect": {"child_hosts": [{"invoke": "w", "start": 0, "host_calls": []}]}}]}),
+            "counts the `start`",
+        ),
+        (
+            json!({"machine": "m", "steps": [{"expect": {"child_hosts": [{"invoke": "w", "start": 1}]}}]}),
+            "states the `host_calls`",
+        ),
+        (
+            json!({"machine": "m", "steps": [{"expect": {"child_hosts": [{"invoke": "w", "start": 1, "candidate": "", "host_calls": []}]}}]}),
+            "the stem of the document",
+        ),
+        (
+            json!({"machine": "m", "steps": [{"expect": {"child_hosts": [{"invoke": "w", "start": 1, "host_calls": [{"action": "a"}]}]}}]}),
+            "carries its `args`",
+        ),
+        (
+            json!({"machine": "m", "steps": [{"expect": {"child_hosts": [{"invoke": "w", "start": 1, "host_calls": [], "hosts": []}]}}]}),
+            "a child host carries `hosts`",
+        ),
+        (
+            json!({"machine": "m", "steps": [{"expect": {"child_hosts": [
+                {"invoke": "w", "start": 1, "host_calls": []},
+                {"invoke": "w", "start": 1, "host_calls": []}
+            ]}}]}),
+            "twice",
+        ),
+        (
             json!({"machine": "m", "steps": [{"expect": {"sent": {}}}]}),
             "`sent` is an array",
         ),

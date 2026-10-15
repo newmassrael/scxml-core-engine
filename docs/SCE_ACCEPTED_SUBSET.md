@@ -5233,11 +5233,15 @@ that invoke a child are replayed there as well as run by hand: the three whose
 child is written inline (`static_invoke`, `static_invoke_params`,
 `static_invoke_string`) have a scenario each, and the same file also holds each of
 them to what the generated backends' `a_static_child_is_handed_its_params` and its
-siblings hold them to; the three whose child is a candidate document or whose
-host the parent answers (`static_invoke_hybrid`, `static_child_host`,
-`static_child_host_hybrid`) have no scenario and are run by hand alone, the two
-hybrid ones from the directory `lower --out-dir` writes. The same file runs the
-table of document stems through the library's `candidate`.
+siblings hold them to; `static_invoke_hybrid`, whose child is a candidate
+document, has no scenario and is run by hand alone, from the directory
+`lower --out-dir` writes. The replay asks the lowering for that set of documents
+and not for one, so a machine whose hybrid `<invoke>` is lowered as three is
+replayed and is not taken for one that is not lowered yet. `static_child_host` and
+`static_child_host_hybrid`, whose parent answers a host for each child, have a
+scenario each, which states what each of those hosts was asked (`child_hosts`,
+below). The same file runs the table of document stems through the library's
+`candidate`.
 
 **A scenario of a static machine.** A scenario is a JSON file in
 `sce-build/tests/fixtures/static_datamodel/scenarios/` that states what a machine
@@ -5276,9 +5280,10 @@ the Interpreter. These are the first three of the six steps of
 | `state` | expect | the atomic state the machine is in |
 | `configuration` | expect | the set of every active state, a compound or a parallel one with the atomic ones below it, by the id the document gives it; the order is not part of the answer |
 | `variables` | expect | variable to value, for the variables the document publishes (`sce:direction="out"`): a number, a bool, an enum by its declared name, a string, a record as an object of its fields, a list as an array, a real written with a fraction or an exponent |
-| `ended` | expect | `true` when the machine ended in a top-level `<final>`; such a machine has no saved state, so the step states nothing but `ended`, `donedata`, `host_calls` and `sent` |
+| `ended` | expect | `true` when the machine ended in a top-level `<final>`; such a machine has no saved state, so the step states nothing but `ended`, `donedata`, `host_calls`, `child_hosts` and `sent` |
 | `donedata` | expect | with `ended`, the data the final's `<donedata>` left for an invoking parent, as JSON, compared as a value |
 | `host_calls` | expect | the calls the machine made of its host in this step, oldest first: `{"action": <the name the document gives the <sce:action>>, "args": [<each <sce:arg>, in the document's order>]}`; the start's calls belong to the first step, a step that states none is not judged on them, and they are not carried into the next |
+| `child_hosts` | expect | the hosts the machine's own host answered for its invoked children, and what each child asked of its host, in this step: one entry for each child whose host was asked for in this step or that called its host in it, oldest asked first, `{"invoke": <the id of the <invoke>>, "start": <how many children that invoke had started, this one included, from 1>, "candidate": <the stem of the document a hybrid <invoke> started, left out for an inline child>, "host_calls": [<the child's calls in this step, as `host_calls` writes them>]}`; a child asked for earlier that called nothing in this step has no entry, a step that states none is not judged on them, and they are not carried into the next. A child is told by its invoke and its start, so two entries of one step may not name the same child |
 | `sent` | expect | what the machine sent its Mesh peers in this step, oldest first: `{"target": <the peer as the document writes it, "#server">, "event": <the event's name>, "data": <the event's data, as JSON>}`, `data` left out when the send carried none; the start's sends belong to the first step, a step that states none is not judged on them, and they are not carried into the next |
 
 A step sends an event or moves time and does not do both: the drivers do not agree
@@ -5286,6 +5291,19 @@ on which comes first, and no scenario needs it. A machine that publishes no
 variable, such as `static_host_call`, is read from what it told its host, which is
 why `host_calls` exists; a driver whose machine records no host refuses a step
 that states it rather than pass it.
+
+A machine that declares no act of its own may still be the host of its children:
+the host of an invoked child is obtained from the machine's own host, once for each
+start of the `<invoke>`, and is the child's alone (§2.15, "Child sessions"). What
+such a machine did is what each child asked of the host it was given, which no
+variable shows, so `child_hosts` states it, a child to an entry, told by its invoke
+and its start. A driver is the machine's host, so it answers a recording host for
+each child it is asked for and keeps them in the order asked. The rule is that of
+`host_calls`, and a driver may not weaken it: a driver that cannot record a child
+host (an engine whose parent has no way to hand one out, or a driver that did not
+wire one) FAILS a step that states `child_hosts`, and never passes it unjudged. A
+child run on a thread of its own, as the Interpreter's is, is read when the step has
+been given time to be told, and judged on what the hosts show then.
 
 A `<send target="#name">` leaves the machine through the Mesh router its host
 registers, and each driver is its machine's host, so each registers a router that

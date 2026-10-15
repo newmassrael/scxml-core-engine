@@ -33,6 +33,8 @@
 #include "static_bytes_sm.h"
 #include "static_bytes_wire_sm.h"
 #include "static_cancel_expr_sm.h"
+#include "static_child_host_hybrid_sm.h"
+#include "static_child_host_sm.h"
 #include "static_counter_sm.h"
 #include "static_donedata_content_sm.h"
 #include "static_donedata_record_sm.h"
@@ -88,6 +90,7 @@
 #include "todo_peer_sm.h"
 
 #include <cstdint>
+#include <deque>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -143,6 +146,77 @@ json readScenario(const std::string &machine) {
 /// that finds nothing to do changes nothing.
 constexpr int kSettleTicks = 5;
 
+/// The child hosts a machine's host was asked for, in the order asked, and what each
+/// child asked of its host. A child owns nothing of the host it was given, the
+/// machine's host does, so each host is opened here and writes into the book this
+/// reads. The children are kept in a deque, whose elements stay put, because a host
+/// holds a reference to its own.
+class ChildHostBook {
+public:
+    class Child {
+    public:
+        Child(std::string invoke, int start, std::string candidate)
+            : invoke_(std::move(invoke)), start_(start), candidate_(std::move(candidate)) {}
+
+        /// The child asked its host for `action`, with `args` in the order the
+        /// document gives them.
+        void call(const std::string &action, json args = json::array()) {
+            calls_.push_back({{"action", action}, {"args", std::move(args)}});
+        }
+
+    private:
+        friend class ChildHostBook;
+        std::string invoke_;
+        int start_;
+        std::string candidate_;
+        json calls_ = json::array();
+        std::size_t taken_ = 0;
+        bool announced_ = false;
+    };
+
+    /// The machine's host was asked for the host of a child its `invoke` started:
+    /// `candidate` is the stem of the document when the invoke names one of several,
+    /// and empty for a child written inline.
+    Child &open(const std::string &invoke, const std::string &candidate = "") {
+        int start = 1;
+        for (const auto &child : children_) {
+            if (child.invoke_ == invoke) {
+                ++start;
+            }
+        }
+        return children_.emplace_back(invoke, start, candidate);
+    }
+
+    /// The children asked for or called since this was last called, oldest asked
+    /// first, each as a scenario's `child_hosts` writes it: the invoke, the start of
+    /// that invoke, the candidate's document stem where the invoke names one, and
+    /// the calls made in this step alone. A child asked for earlier that called
+    /// nothing since has no entry.
+    json take() {
+        json fresh = json::array();
+        for (auto &child : children_) {
+            json calls = json::array();
+            for (; child.taken_ < child.calls_.size(); ++child.taken_) {
+                calls.push_back(child.calls_[child.taken_]);
+            }
+            if (child.announced_ && calls.empty()) {
+                continue;
+            }
+            child.announced_ = true;
+            json entry = {{"invoke", child.invoke_}, {"start", child.start_}};
+            if (!child.candidate_.empty()) {
+                entry["candidate"] = child.candidate_;
+            }
+            entry["host_calls"] = std::move(calls);
+            fresh.push_back(std::move(entry));
+        }
+        return fresh;
+    }
+
+private:
+    std::deque<Child> children_;
+};
+
 /// One generated machine as a scenario sees it: events by their document name,
 /// and the published variables by theirs.
 template <typename Machine> class Driver {
@@ -155,6 +229,11 @@ public:
     /// document gives them.
     using HostCalls = std::function<json()>;
 
+    /// The child hosts the machine's host was asked for since this was last called,
+    /// and what each child asked of its host, each as a scenario's `child_hosts`
+    /// writes it.
+    using ChildHosts = std::function<json()>;
+
     explicit Driver(std::map<std::string, Reader> variables) : variables_(std::move(variables)) {}
 
     /// A machine with `<sce:action>`s takes the host that performs them as it is
@@ -163,6 +242,13 @@ public:
     template <typename Host>
     Driver(std::map<std::string, Reader> variables, Host &host, HostCalls hostCalls)
         : machine_(host), variables_(std::move(variables)), hostCalls_(std::move(hostCalls)) {}
+
+    /// A machine that declares no act of its own and whose children are given
+    /// hosts: `host` answers each child's, and writes it into `children`, which is
+    /// what the scenario's `child_hosts` are read from.
+    template <typename Host>
+    Driver(std::map<std::string, Reader> variables, Host &host, ChildHostBook &children)
+        : machine_(host), variables_(std::move(variables)), childHosts_([&children] { return children.take(); }) {}
 
     /// The machine runs on a manual clock, so a delayed send waits exactly the
     /// time a step names (`advance`) and not the time the test happened to take.
@@ -254,6 +340,18 @@ public:
         return hostCalls_ ? hostCalls_() : json();
     }
 
+    /// Whether the machine's children are given hosts that record what they are asked.
+    bool recordsChildHosts() const {
+        return static_cast<bool>(childHosts_);
+    }
+
+    /// The child hosts asked for since this was last called, and what their
+    /// children asked of them. Null for a machine whose children's hosts are not
+    /// ones that record.
+    json childHosts() {
+        return childHosts_ ? childHosts_() : json();
+    }
+
     /// What the machine sent its Mesh peers since this was last called, oldest
     /// first, each as a scenario's `sent` writes it: `{"target": …, "event": …,
     /// "data": …}`, the target as the document writes it, and the data the JSON
@@ -284,6 +382,7 @@ private:
     Machine machine_;
     std::map<std::string, Reader> variables_;
     HostCalls hostCalls_;
+    ChildHosts childHosts_;
     /// Shared with the callback the machine holds, so that it stays the list the
     /// machine writes to wherever the driver is moved.
     std::shared_ptr<json> sent_ = std::make_shared<json>(json::array());
@@ -319,6 +418,15 @@ template <typename Machine> void replay(const std::string &machine, Driver<Machi
             EXPECT_TRUE(driver.recordsHostCalls())
                 << "this driver records no host calls, so it cannot hold a step to them";
             EXPECT_EQ(asked, expect["host_calls"]) << "what the machine asked of its host";
+        }
+        // The child hosts the machine's host was asked for in this step, and what
+        // each child asked of its host, taken and held the same way.
+        const json children = driver.childHosts();
+        if (expect.contains("child_hosts")) {
+            EXPECT_TRUE(driver.recordsChildHosts())
+                << "this driver records no child hosts, so it cannot hold a step to them";
+            EXPECT_EQ(children, expect["child_hosts"])
+                << "the child hosts the machine's host was asked for, and what their children asked of them";
         }
         // What the machine sent its Mesh peers in this step, taken on every step
         // for the same reason. Every driver records them, so a step that states
@@ -1149,6 +1257,96 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, AHostActionTellsItsHostWhatTheDatamod
 
     Driver<Machine> driver({}, host, [&host] { return host.take(); });
     replay("static_host_call", driver);
+}
+
+// A child that declares `<sce:action>`s is built with the host its parent's host
+// answers for it, each time the invocation starts, and what the child asked of that
+// host is what the scenario's `child_hosts` holds. The parent declares no act of its
+// own: its host answers a host for each child and writes it into the book the
+// driver reads. The parent's host owns what it answers, as a machine's own host is
+// held by reference, so the children's hosts are kept in a deque.
+TEST(AStaticDatamodelRunsGeneratedCppTest, EachStartOfAChildIsGivenAHostOfItsOwn) {
+    namespace Ch = G::static_child_host;
+    namespace Wk = G::static_child_host__sce_synth_invoke__worker;
+    using Machine = Ch::static_child_host;
+
+    struct WorkerHost : Wk::StaticChildHostSceSynthInvokeWorkerActions {
+        explicit WorkerHost(ChildHostBook::Child &child) : child(child) {}
+
+        void started() override {
+            child.call("started");
+        }
+
+        void finished(uint32_t steps) override {
+            child.call("finished", json::array({steps}));
+        }
+
+        ChildHostBook::Child &child;
+    };
+
+    struct Host : Ch::StaticChildHostActions {
+        ChildHostBook book;
+        std::deque<WorkerHost> workers;
+
+        Wk::StaticChildHostSceSynthInvokeWorkerActions &actionsForWorker() override {
+            return workers.emplace_back(book.open("worker"));
+        }
+    } host;
+
+    Driver<Machine> driver(
+        {
+            {"completed", [](const Machine &m) { return json(m.completed()); }},
+        },
+        host, host.book);
+    replay("static_child_host", driver);
+}
+
+// A hybrid `<invoke>` is given the host answered for the candidate it starts, and for
+// no other.
+TEST(AStaticDatamodelRunsGeneratedCppTest, ACandidateIsGivenTheHostAnsweredForIt) {
+    namespace Hy = G::static_child_host_hybrid;
+    using Machine = Hy::static_child_host_hybrid;
+
+    struct FirstHost : G::static_hosted_first::StaticHostedFirstActions {
+        explicit FirstHost(ChildHostBook::Child &child) : child(child) {}
+
+        void firstRan() override {
+            child.call("first_ran");
+        }
+
+        ChildHostBook::Child &child;
+    };
+
+    struct SecondHost : G::static_hosted_second::StaticHostedSecondActions {
+        explicit SecondHost(ChildHostBook::Child &child) : child(child) {}
+
+        void secondRan() override {
+            child.call("second_ran");
+        }
+
+        ChildHostBook::Child &child;
+    };
+
+    struct Host : Hy::StaticChildHostHybridActions {
+        ChildHostBook book;
+        std::deque<FirstHost> firsts;
+        std::deque<SecondHost> seconds;
+
+        G::static_hosted_first::StaticHostedFirstActions &actionsForWorkStaticHostedFirst() override {
+            return firsts.emplace_back(book.open("work", "static_hosted_first"));
+        }
+
+        G::static_hosted_second::StaticHostedSecondActions &actionsForWorkStaticHostedSecond() override {
+            return seconds.emplace_back(book.open("work", "static_hosted_second"));
+        }
+    } host;
+
+    Driver<Machine> driver(
+        {
+            {"completed", [](const Machine &m) { return json(m.completed()); }},
+        },
+        host, host.book);
+    replay("static_child_host_hybrid", driver);
 }
 
 // A child session an `<invoke>` started is driven through its parent by

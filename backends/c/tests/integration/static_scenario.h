@@ -16,7 +16,7 @@
 // `expect` for any other object that spelled `state`. It reads what a step
 // carries — `event`, an event's `data` as the compact JSON text every producer
 // fills it with, whether the step `dropped` it, `expect.state`, `expect.ended`,
-// `expect.variables`, `expect.host_calls`, `expect.sent` — and stops, naming it,
+// `expect.variables`, `expect.host_calls`, `expect.child_hosts`, `expect.sent` — and stops, naming it,
 // at what it does not, rather than passing a scenario it did not replay.
 //
 // A number spelled with a fraction or an exponent (`0.0`, `0.5`, `1e21`) is a
@@ -128,6 +128,19 @@ typedef struct {
     // the step whatever it states. Unset for a machine whose driver records none: a
     // step that states `sent` then fails.
     const char *(*sent)(void *sm);
+    // The child hosts the machine's host was asked for since this was last called,
+    // and what each child asked of its host, as the compact JSON array a scenario's
+    // `child_hosts` is: each `{"invoke":"<id>","start":<n>,"candidate":"<stem>",
+    // "host_calls":[…]}` — the invoke that started the child, how many children that
+    // invoke had started, the stem of the document it started where the invoke names
+    // one of several, and the calls the child made of that host in this step, as
+    // `host_calls` writes them — oldest asked first, and `[]` for none. Called once
+    // per step, so a step is judged on that step alone. The two are compared as JSON
+    // values. NULL from the call is a driver whose record could not hold the step's
+    // hosts, which fails the step whatever it states. Unset for a machine whose
+    // children are not given hosts that record: a step that states `child_hosts` then
+    // fails.
+    const char *(*child_hosts)(void *sm);
 } sce_scenario_driver_t;
 
 // `index` of a record that is a variable of its own, not an element of a list.
@@ -744,11 +757,47 @@ static int sce_scenario_expect_record(sce_scenario_cursor_t *c, const sce_scenar
     }
 }
 
+// A member of `expect` that states an array of JSON values the driver recorded
+// as `got` — the sends to Mesh peers, the child hosts — compared as the values they
+// are, so that the order a value spells its members in is the driver's own, and
+// neither is copied to be. `got` is NULL for a driver that records none, which
+// fails the step that states the member; `none` names what it records none of and
+// `what` says what `got` is, each in the words of a failure.
+static int sce_scenario_expect_recorded(sce_scenario_cursor_t *c, const sce_scenario_driver_t *d, int step,
+                                        const char *member, const char *got, const char *none, const char *what) {
+    char message[160];
+    sce_scenario_space(c);
+    const char *from = c->at;
+    if (!sce_scenario_skip_value(c)) {
+        (void)snprintf(message, sizeof(message), "`%s` is not well formed", member);
+        return sce_scenario_fail(d, step, message);
+    }
+    if (got == NULL) {
+        (void)snprintf(message, sizeof(message), "this driver records no %s, so it cannot hold a step to them", none);
+        return sce_scenario_fail(d, step, message);
+    }
+    sce_scenario_cursor_t want = {from};
+    sce_scenario_cursor_t seen = {got};
+    bool same = sce_scenario_same_json(&seen, &want);
+    // Nothing may follow the array the driver wrote.
+    sce_scenario_space(&seen);
+    same = same && *seen.at == '\0';
+    if (same) {
+        return 0;
+    }
+    // Written whole, not through the bounded message: a record is longer than that
+    // holds, and the part cut off is the part that differs as often as not.
+    (void)fprintf(stderr, "%s: FAIL [step %d] - %s %s, not %.*s\n", d->machine, step, what, got, (int)(c->at - from),
+                  from);
+    return 1;
+}
+
 // What a step expects, read from its `expect` object — the object `c` is at.
 // `asked` is what the machine told its host in this step, or NULL for a driver
-// that records none, and `sent` what it sent its Mesh peers, or NULL likewise.
+// that records none, `children` what the child hosts its host answered were asked
+// and `sent` what it sent its Mesh peers, each NULL likewise.
 static int sce_scenario_expect(sce_scenario_cursor_t *c, const sce_scenario_driver_t *d, int step, const char *asked,
-                               const char *sent) {
+                               const char *children, const char *sent) {
     int bad = 0;
     char key[64];
     char message[256];
@@ -830,30 +879,13 @@ static int sce_scenario_expect(sce_scenario_cursor_t *c, const sce_scenario_driv
             // first. The order of the sends is part of the answer; the order a
             // send's data spells its members in is not, so the two are compared as
             // the values they are and neither is copied to be.
-            sce_scenario_space(c);
-            const char *from = c->at;
-            if (!sce_scenario_skip_value(c)) {
-                return sce_scenario_fail(d, step, "`sent` is not well formed");
-            }
-            if (sent == NULL) {
-                bad |= sce_scenario_fail(d, step,
-                                         "this driver records no sends to peers, so it cannot hold a step to them");
-            } else {
-                sce_scenario_cursor_t want = {from};
-                sce_scenario_cursor_t got = {sent};
-                bool same = sce_scenario_same_json(&got, &want);
-                // Nothing may follow the array the driver wrote.
-                sce_scenario_space(&got);
-                same = same && *got.at == '\0';
-                if (!same) {
-                    // Written whole, not through the bounded message: a send is
-                    // longer than that holds, and the part cut off is the part
-                    // that differs as often as not.
-                    (void)fprintf(stderr, "%s: FAIL [step %d] - the machine sent its peers %s, not %.*s\n", d->machine,
-                                  step, sent, (int)(c->at - from), from);
-                    bad = 1;
-                }
-            }
+            bad |=
+                sce_scenario_expect_recorded(c, d, step, "sent", sent, "sends to peers", "the machine sent its peers");
+        } else if (strcmp(key, "child_hosts") == 0) {
+            // The child hosts the machine's host was asked for in this step, and
+            // what each child asked of its host, oldest asked first.
+            bad |= sce_scenario_expect_recorded(c, d, step, "child_hosts", children, "child hosts",
+                                                "the child hosts were");
         } else if (strcmp(key, "donedata") == 0) {
             const int mismatch = sce_scenario_expect_done_data(c, d, step);
             if (mismatch != 0) {
@@ -1211,6 +1243,16 @@ static int sce_scenario_step(sce_scenario_cursor_t *c, const sce_scenario_driver
     // What the machine asked of its host in this step. Read on every step, so that
     // a step which states nothing does not hand its calls to the next.
     const char *asked = d->host_calls == NULL ? NULL : d->host_calls(d->sm);
+    // The child hosts its host was asked for, and what each child asked of its
+    // host, read on every step for the same reason and failing the step the same
+    // way when the driver's record could not hold them.
+    const char *children = NULL;
+    if (d->child_hosts != NULL) {
+        children = d->child_hosts(d->sm);
+        if (children == NULL) {
+            return sce_scenario_fail(d, step, "the child hosts of this step did not fit the driver's record of them");
+        }
+    }
     // What it sent its Mesh peers, read on every step for the same reason. A
     // driver that records them and could not keep this step's has nothing true to
     // compare, which is a failure of the step whether or not it states `sent`.
@@ -1221,7 +1263,7 @@ static int sce_scenario_step(sce_scenario_cursor_t *c, const sce_scenario_driver
             return sce_scenario_fail(d, step, "the sends of this step did not fit the driver's record of them");
         }
     }
-    return expect.at == NULL ? 0 : sce_scenario_expect(&expect, d, step, asked, sent);
+    return expect.at == NULL ? 0 : sce_scenario_expect(&expect, d, step, asked, children, sent);
 }
 
 // Replay the scenario at `path` against `d`: the number of steps that failed,

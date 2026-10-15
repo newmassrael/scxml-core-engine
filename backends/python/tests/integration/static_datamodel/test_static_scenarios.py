@@ -118,6 +118,91 @@ class _ScenarioHost:
         return taken
 
 
+class _ChildHosts:
+    """The child hosts a machine's host was asked for, in the order asked, and what
+    each child asked of its host, as a scenario's ``child_hosts`` writes them. A
+    child owns the host it was given, so each host is made here (:meth:`open`)
+    and writes into the book this reads."""
+
+    def __init__(self) -> None:
+        self._children: list[dict] = []
+
+    def open(self, invoke: str, candidate: str | None = None) -> "_ChildHost":
+        """The machine's host was asked for the host of a child its ``invoke``
+        started, and answers the one this returns. ``candidate`` is the stem of the
+        document when the invoke names one of several."""
+        start = 1 + sum(1 for child in self._children if child["invoke"] == invoke)
+        child = {
+            "invoke": invoke,
+            "start": start,
+            "candidate": candidate,
+            "calls": [],
+            "taken": 0,
+            "announced": False,
+        }
+        self._children.append(child)
+        return _ChildHost(child["calls"])
+
+    def take(self) -> list[dict]:
+        """The children asked for or called since this was last called, oldest
+        asked first: the invoke, the start of that invoke, the candidate's document
+        stem where the invoke names one, and the calls made in this step alone. A
+        child asked for earlier that called nothing since has no entry."""
+        fresh = []
+        for child in self._children:
+            calls = child["calls"][child["taken"] :]
+            if child["announced"] and not calls:
+                continue
+            child["taken"] = len(child["calls"])
+            child["announced"] = True
+            entry = {"invoke": child["invoke"], "start": child["start"]}
+            if child["candidate"] is not None:
+                entry["candidate"] = child["candidate"]
+            entry["host_calls"] = calls
+            fresh.append(entry)
+        return fresh
+
+
+class _ChildHost:
+    """A child's host: every act a child of these machines declares, each written
+    down as a scenario's ``host_calls`` writes it. A child is only ever asked for
+    the acts its own document declares."""
+
+    def __init__(self, calls: list[dict]) -> None:
+        self._calls = calls
+
+    def started(self) -> None:
+        self._calls.append({"action": "started", "args": []})
+
+    def finished(self, steps: int) -> None:
+        self._calls.append({"action": "finished", "args": [steps]})
+
+    def first_ran(self) -> None:
+        self._calls.append({"action": "first_ran", "args": []})
+
+    def second_ran(self) -> None:
+        self._calls.append({"action": "second_ran", "args": []})
+
+
+class _ParentHost:
+    """The host of a machine that declares no act of its own and whose children are
+    given hosts: it answers a host for the child each ``invoke`` starts, under the
+    name the generated machine asks for it (``actions_for_<invoke>`` and, for a
+    hybrid invoke, ``_<candidate stem>``), and writes it into the book."""
+
+    def __init__(self, children: _ChildHosts) -> None:
+        self._children = children
+
+    def actions_for_worker(self) -> _ChildHost:
+        return self._children.open("worker")
+
+    def actions_for_work_static_hosted_first(self) -> _ChildHost:
+        return self._children.open("work", "static_hosted_first")
+
+    def actions_for_work_static_hosted_second(self) -> _ChildHost:
+        return self._children.open("work", "static_hosted_second")
+
+
 class _ScenarioPeers:
     """What a machine sent its Mesh peers -- a ``<send>`` whose target is
     ``#name`` -- as a scenario's ``sent`` writes it: the target as the document
@@ -170,7 +255,19 @@ def replay(name: str, machine: str | None = None) -> None:
     )
     # A machine with `<sce:action>`s is built with the host that performs them, and
     # the generated engine says so by taking it: that host is the one that records.
-    host = _ScenarioHost() if "actions" in inspect.signature(module.create_engine).parameters else None
+    # One whose host only answers the hosts of its children (the methods of its
+    # actions protocol are all ``actions_for_<invoke>``) is given the host that
+    # writes them into the book a step's ``child_hosts`` is read from.
+    host = None
+    children = None
+    parameters = inspect.signature(module.create_engine).parameters
+    if "actions" in parameters:
+        protocol = getattr(module, str(parameters["actions"].annotation))
+        if any(name.startswith("actions_for_") for name in vars(protocol)):
+            children = _ChildHosts()
+            host = _ParentHost(children)
+        else:
+            host = _ScenarioHost()
     engine = module.create_engine() if host is None else module.create_engine(host)
     # Every machine is given the router that records, before it starts, so that
     # what its start sends is recorded too: one with no send to a Mesh peer never
@@ -201,13 +298,23 @@ def replay(name: str, machine: str | None = None) -> None:
         # What the machine asked of its host in this step. Read on every step so
         # that a step which states nothing does not hand its calls to the next, and
         # a step that states some needs a driver that records them.
-        asked = host.take() if host is not None else None
+        asked = host.take() if isinstance(host, _ScenarioHost) else None
         if "host_calls" in expect:
             assert asked is not None, (
                 f"{where}: this driver records no host calls, so it cannot hold a step to them"
             )
             assert asked == expect["host_calls"], (
                 f"{where}: the machine asked its host {asked!r}, not {expect['host_calls']!r}"
+            )
+        # The child hosts the machine's host was asked for in this step, and what
+        # each child asked of its host, read and held the same way.
+        made = children.take() if children is not None else None
+        if "child_hosts" in expect:
+            assert made is not None, (
+                f"{where}: this driver records no child hosts, so it cannot hold a step to them"
+            )
+            assert _same_json(made, expect["child_hosts"]), (
+                f"{where}: the child hosts were {made!r}, not {expect['child_hosts']!r}"
             )
         # What the machine sent its Mesh peers in this step, read on every step for
         # the same reason: every step takes its own, so none is handed on.
@@ -587,6 +694,19 @@ def test_a_cancel_removes_the_send_its_id_names() -> None:
 # from records them: one call per entry of `idle`, with the datamodel as it stood.
 def test_a_host_action_tells_its_host_what_the_datamodel_held() -> None:
     replay("static_host_call")
+
+
+# A child that declares `<sce:action>`s is built with the host its parent's host
+# answers for it, each time the invocation starts, and what the child asked of that
+# host is what the scenario's `child_hosts` holds.
+def test_each_start_of_a_child_is_given_a_host_of_its_own() -> None:
+    replay("static_child_host")
+
+
+# A hybrid `<invoke>` is given the host answered for the candidate it starts, and for
+# no other.
+def test_a_candidate_is_given_the_host_answered_for_it() -> None:
+    replay("static_child_host_hybrid")
 
 
 # A child session an `<invoke>` started is driven through its parent by

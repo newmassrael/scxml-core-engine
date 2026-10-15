@@ -19,7 +19,7 @@
 // too; this file is what picks each machine and its scenario.
 
 use sce_rust_runtime::{Engine, SceClock};
-use sce_rust_scenarios::{hosts, replay, replay_with_host};
+use sce_rust_scenarios::{hosts, replay, replay_with_host, replay_with_hosts, Hosts};
 use sce_rust_tests::integration::static_datamodel::static_block_ends_list_sm::{
     StaticBlockEndsListPersist, StaticBlockEndsListPolicy,
 };
@@ -560,6 +560,48 @@ fn static_host_call_tells_its_host_what_the_datamodel_held() {
         |engine| hosts::static_host_call(engine, &mut seen),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_host_call.json"
+        ),
+    );
+}
+
+// A child that declares `<sce:action>`s is built with the host its parent's host
+// answers for it, and what the child asked of it is what the scenario's
+// `child_hosts` holds. The parent's recording host takes the function that answers
+// each child's host, and `hosts::static_child_host` writes what each child asked
+// into the book the replay reads. The machine is the replay crate's own copy, as
+// `static_host_call`'s is.
+#[test]
+fn static_child_host_gives_each_start_of_its_child_a_host_of_its_own() {
+    use sce_rust_scenarios::integration::static_datamodel::static_child_host_sm::{
+        StaticChildHostPersist, StaticChildHostPolicy,
+    };
+    let book = hosts::ChildHosts::default();
+    replay_with_hosts(
+        Engine::new(StaticChildHostPolicy::new(hosts::static_child_host(&book))),
+        |engine| engine.save().expect("saves"),
+        Hosts::none().child_hosts(|| book.take()),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_child_host.json"
+        ),
+    );
+}
+
+// A hybrid `<invoke>` is given the host answered for the candidate it starts and for
+// no other.
+#[test]
+fn static_child_host_hybrid_gives_a_candidate_the_host_answered_for_it() {
+    use sce_rust_scenarios::integration::static_datamodel::static_child_host_hybrid_sm::{
+        StaticChildHostHybridPersist, StaticChildHostHybridPolicy,
+    };
+    let book = hosts::ChildHosts::default();
+    replay_with_hosts(
+        Engine::new(StaticChildHostHybridPolicy::new(
+            hosts::static_child_host_hybrid(&book),
+        )),
+        |engine| engine.save().expect("saves"),
+        Hosts::none().child_hosts(|| book.take()),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_child_host_hybrid.json"
         ),
     );
 }

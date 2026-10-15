@@ -1,0 +1,21 @@
+{
+  "machine": "static_child_host_hybrid",
+  "about": "A hybrid <invoke> starts the candidate its `srcexpr` names, and the parent's host answers a host for THAT candidate and for no other. `working` invokes `work`, whose `pick` names `static_hosted_first` while the machine starts and `static_hosted_second` once `again` has changed it and `back` has entered `working` anew. Each candidate performs one act as it is entered (`first_ran`, `second_ran`, an act the other does not declare) and ends at once, so `done.invoke.work` counts the run in `completed`. A candidate's entry names it (`candidate`, the stem of its document) and counts the starts of `work` (`start`): a parent that built the candidate it did not choose would add an entry, and one that gave a candidate the host of the other would put the act on the wrong one. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "note": "started: the first candidate was asked for and built, performed `first_ran` as it was entered, and ended; the second was not asked for",
+      "expect": { "state": "working", "variables": { "completed": 1 },
+                  "child_hosts": [ { "invoke": "work", "start": 1, "candidate": "static_hosted_first",
+                                     "host_calls": [ { "action": "first_ran", "args": [] } ] } ] } },
+
+    { "note": "`again` changes `pick` and leaves the state that invokes: nothing is asked of any host",
+      "event": "again",
+      "expect": { "state": "idle", "variables": { "completed": 1 },
+                  "child_hosts": [] } },
+
+    { "note": "`back` invokes `work` anew, and `pick` now names the second candidate: the host asked for and answered is that one's, and the first candidate's run is not repeated",
+      "event": "back",
+      "expect": { "state": "working", "variables": { "completed": 2 },
+                  "child_hosts": [ { "invoke": "work", "start": 2, "candidate": "static_hosted_second",
+                                     "host_calls": [ { "action": "second_ran", "args": [] } ] } ] } }
+  ]
+}

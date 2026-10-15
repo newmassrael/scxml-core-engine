@@ -110,6 +110,8 @@
 #include "static_bytes_sm.h"
 #include "static_bytes_wire_sm.h"
 #include "static_cancel_expr_sm.h"
+#include "static_child_host_hybrid_sm.h"
+#include "static_child_host_sm.h"
 #include "static_counter_sm.h"
 #include "static_donedata_content_sm.h"
 #include "static_donedata_record_sm.h"
@@ -312,10 +314,11 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
 // scenario. DONE answers the data its final's `<donedata>` wrote, for a machine
 // that has one. INIT starts the machine in `sm`, and ADVANCE moves the clock of a
 // machine that waits on one, or is NULL for a machine that does not. HOST_CALLS
-// answers what the machine asked of its host and SENT what it sent its Mesh
-// peers, each since it was last asked, or is NULL for a machine with neither.
+// answers what the machine asked of its host, SENT what it sent its Mesh peers
+// and CHILD_HOSTS the child hosts its host was asked for and what the children
+// asked of them, each since it was last asked, or is NULL for a machine with none.
 #define STATIC_SCENARIO_CORE(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, DONE, REAL, REAL_LIST, RECORD_REAL, INIT,     \
-                             ADVANCE, HOST_CALLS, SENT)                                                                \
+                             ADVANCE, HOST_CALLS, SENT, CHILD_HOSTS)                                                   \
     static bool M##_read_record_field(void *sm, const char *name, size_t index, const char *field, int64_t *out) {     \
         for (size_t i = 0; RECORDS[i].name != NULL; ++i) {                                                             \
             if (strcmp(RECORDS[i].name, name) == 0) {                                                                  \
@@ -417,7 +420,8 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
                                               ADVANCE,                                                                 \
                                               M##_active_count,                                                        \
                                               HOST_CALLS,                                                              \
-                                              SENT};                                                                   \
+                                              SENT,                                                                    \
+                                              CHILD_HOSTS};                                                            \
         char path[512];                                                                                                \
         (void)snprintf(path, sizeof(path), "%s/%s.json", SCE_STATIC_SCENARIO_DIR, scenario);                           \
         int replayed = 0;                                                                                              \
@@ -434,14 +438,22 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
 // A machine that waits on no clock, started as `_init` starts it.
 #define STATIC_SCENARIO_FULL(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, DONE, REAL, REAL_LIST, RECORD_REAL)           \
     STATIC_SCENARIO_CORE(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, DONE, REAL, REAL_LIST, RECORD_REAL,               \
-                         M##_init(&sm), NULL, NULL, NULL)
+                         M##_init(&sm), NULL, NULL, NULL, NULL)
 
 // A machine whose `<sce:action>`s go to a host that records them: INIT starts it
 // with that host installed, which it must be before the first entry runs, and
 // HOST_CALLS answers what the host heard since it was last asked.
 #define STATIC_SCENARIO_HOSTED(M, STATES, VARIABLES, INIT, HOST_CALLS)                                                 \
     STATIC_SCENARIO_CORE(M, STATES, VARIABLES, NULL, no_lists, no_records, NULL, NULL, NULL, NULL, INIT, NULL,         \
-                         HOST_CALLS, NULL)
+                         HOST_CALLS, NULL, NULL)
+
+// A machine that declares no act of its own and whose children are given hosts
+// that record: INIT starts it with the table of the host that answers each child's
+// installed, which it must be before the first entry runs, and CHILD_HOSTS answers
+// what those hosts were asked since it was last asked.
+#define STATIC_SCENARIO_CHILD_HOSTED(M, STATES, VARIABLES, INIT, CHILD_HOSTS)                                          \
+    STATIC_SCENARIO_CORE(M, STATES, VARIABLES, NULL, no_lists, no_records, NULL, NULL, NULL, NULL, INIT, NULL, NULL,   \
+                         NULL, CHILD_HOSTS)
 
 // What the machines below sent their Mesh peers, kept by the router installed
 // here as the compact JSON a scenario's `sent` states: each send its target, its
@@ -527,7 +539,7 @@ static const char *peers_sent(void *sm) {
         M##_init_with_host_processors(sm, &wiring);                                                                    \
     }                                                                                                                  \
     STATIC_SCENARIO_CORE(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, NULL, NULL, NULL, NULL,                           \
-                         M##_start_with_router(&sm), NULL, NULL, peers_sent)
+                         M##_start_with_router(&sm), NULL, NULL, peers_sent, NULL)
 
 // A machine whose delayed sends wait on a clock the scenario owns: it is started
 // on a manual one, and an `advance_ms` step moves it on and runs what came due.
@@ -538,7 +550,7 @@ static const char *peers_sent(void *sm) {
         return true;                                                                                                   \
     }                                                                                                                  \
     STATIC_SCENARIO_CORE(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, NULL, NULL, NULL, NULL,                           \
-                         M##_init_with_clock(&sm, sce_clock_manual(0u)), M##_advance_clock, NULL, NULL)
+                         M##_init_with_clock(&sm, sce_clock_manual(0u)), M##_advance_clock, NULL, NULL, NULL)
 
 // A machine that does both: it sends to Mesh peers and its delayed sends wait on a
 // clock the scenario owns. It is started with the router installed and on a manual
@@ -560,7 +572,7 @@ static const char *peers_sent(void *sm) {
         return true;                                                                                                   \
     }                                                                                                                  \
     STATIC_SCENARIO_CORE(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, NULL, NULL, NULL, NULL,                           \
-                         M##_start_with_router_and_clock(&sm), M##_advance_clock, NULL, peers_sent)
+                         M##_start_with_router_and_clock(&sm), M##_advance_clock, NULL, peers_sent, NULL)
 
 // A machine that publishes no real: DONE as above, and REAL, REAL_LIST and
 // RECORD_REAL — the readers of a real variable, of a list of reals and of a real
@@ -1831,6 +1843,224 @@ static const variable_t host_call_variables[] = {
 };
 STATIC_SCENARIO_HOSTED(static_host_call, host_call_states, host_call_variables, host_call_start(&sm), host_call_heard)
 
+// static_child_host and static_child_host_hybrid: a child that declares
+// `<sce:action>`s is begun with the table of the host that performs them, which its
+// parent's table answers each time the invocation starts, and the parent declares no
+// act of its own. What the machine did is what each child asked of the table it was
+// given, so each table the parent answers is opened in the book below, and what its
+// child calls is written down in it as the compact JSON a scenario's `host_calls`
+// states. The tables and the book are static, as the parent's table is, because a
+// child keeps the pointer it was handed.
+enum {
+    CHILD_HOSTS_KEPT = 4,
+    CHILD_CALLS_SIZE = 384,
+};
+
+typedef struct {
+    const char *invoke;
+    const char *candidate; /* the document stem of a candidate, NULL for an inline child */
+    int start;
+    char calls[CHILD_CALLS_SIZE]; /* each call as JSON, each followed by a comma */
+    size_t len;
+    size_t taken; /* the bytes of `calls` an earlier step took */
+    bool announced;
+} child_record_t;
+
+static struct {
+    child_record_t children[CHILD_HOSTS_KEPT];
+    size_t count;
+    bool lost;
+} child_book;
+
+static void child_book_forget(void) {
+    memset(&child_book, 0, sizeof(child_book));
+}
+
+/* The parent's table was asked for the table of a child its `invoke` started. NULL
+ * for a child the book has no room for, which fails the step it was asked in. */
+static child_record_t *child_open(const char *invoke, const char *candidate) {
+    if (child_book.count >= CHILD_HOSTS_KEPT) {
+        child_book.lost = true;
+        return NULL;
+    }
+    int start = 1;
+    for (size_t i = 0; i < child_book.count; ++i) {
+        if (strcmp(child_book.children[i].invoke, invoke) == 0) {
+            ++start;
+        }
+    }
+    child_record_t *child = &child_book.children[child_book.count++];
+    memset(child, 0, sizeof(*child));
+    child->invoke = invoke;
+    child->candidate = candidate;
+    child->start = start;
+    return child;
+}
+
+/* A call a child made of its table. One that does not fit is not cut short: the book
+ * is marked as having lost it, and the step it was heard in fails. */
+static void child_hears(void *user_data, const char *call) {
+    child_record_t *child = (child_record_t *)user_data;
+    const size_t size = strlen(call);
+    if (child->len + size + 2u >= sizeof(child->calls)) {
+        child_book.lost = true;
+        return;
+    }
+    memcpy(child->calls + child->len, call, size);
+    child->len += size;
+    child->calls[child->len++] = ',';
+    child->calls[child->len] = '\0';
+}
+
+/* The children asked for or called since this was last asked, oldest asked first, each
+ * as a scenario's `child_hosts` writes it, or NULL when a call or a child was lost. */
+static const char *child_hosts_heard(void *sm) {
+    static char taken[CHILD_HOSTS_KEPT * (CHILD_CALLS_SIZE + 128) + 4];
+    (void)sm;
+    size_t used = 0;
+    taken[used++] = '[';
+    for (size_t i = 0; i < child_book.count; ++i) {
+        child_record_t *child = &child_book.children[i];
+        /* What it called in this step, without the comma that follows its last. */
+        const size_t heard = child->len - child->taken;
+        if (child->announced && heard == 0u) {
+            continue;
+        }
+        char head[128];
+        int wrote = snprintf(head, sizeof(head), "%s{\"invoke\":\"%s\",\"start\":%d,", used > 1u ? "," : "",
+                             child->invoke, child->start);
+        if (child->candidate != NULL) {
+            wrote += snprintf(head + wrote, sizeof(head) - (size_t)wrote, "\"candidate\":\"%s\",", child->candidate);
+        }
+        wrote += snprintf(head + wrote, sizeof(head) - (size_t)wrote, "\"host_calls\":[");
+        memcpy(taken + used, head, (size_t)wrote);
+        used += (size_t)wrote;
+        if (heard > 0u) {
+            memcpy(taken + used, child->calls + child->taken, heard - 1u);
+            used += heard - 1u;
+        }
+        taken[used++] = ']';
+        taken[used++] = '}';
+        child->taken = child->len;
+        child->announced = true;
+    }
+    taken[used++] = ']';
+    taken[used] = '\0';
+    const bool lost = child_book.lost;
+    child_book.lost = false;
+    return lost ? NULL : taken;
+}
+
+static void on_worker_started(void *user_data) {
+    child_hears(user_data, "{\"action\":\"started\",\"args\":[]}");
+}
+
+static void on_worker_finished(void *user_data, uint32_t steps) {
+    char call[64];
+    (void)snprintf(call, sizeof(call), "{\"action\":\"finished\",\"args\":[%u]}", (unsigned)steps);
+    child_hears(user_data, call);
+}
+
+static void on_first_ran(void *user_data) {
+    child_hears(user_data, "{\"action\":\"first_ran\",\"args\":[]}");
+}
+
+static void on_second_ran(void *user_data) {
+    child_hears(user_data, "{\"action\":\"second_ran\",\"args\":[]}");
+}
+
+static static_child_host__sce_synth_invoke__worker_actions_t worker_tables[CHILD_HOSTS_KEPT];
+static static_hosted_first_actions_t first_tables[CHILD_HOSTS_KEPT];
+static static_hosted_second_actions_t second_tables[CHILD_HOSTS_KEPT];
+
+/* The tables are indexed as the book's children are: the child opened n-th is
+ * `children[n]`, so its table is the n-th of its kind's pool. */
+static const static_child_host__sce_synth_invoke__worker_actions_t *child_host_for_worker(void *user_data) {
+    (void)user_data;
+    child_record_t *child = child_open("worker", NULL);
+    if (child == NULL) {
+        return NULL;
+    }
+    static_child_host__sce_synth_invoke__worker_actions_t *table = &worker_tables[child - child_book.children];
+    memset(table, 0, sizeof(*table));
+    table->started = on_worker_started;
+    table->finished = on_worker_finished;
+    table->user_data = child;
+    return table;
+}
+
+static const static_hosted_first_actions_t *child_host_for_first(void *user_data) {
+    (void)user_data;
+    child_record_t *child = child_open("work", "static_hosted_first");
+    if (child == NULL) {
+        return NULL;
+    }
+    static_hosted_first_actions_t *table = &first_tables[child - child_book.children];
+    memset(table, 0, sizeof(*table));
+    table->first_ran = on_first_ran;
+    table->user_data = child;
+    return table;
+}
+
+static const static_hosted_second_actions_t *child_host_for_second(void *user_data) {
+    (void)user_data;
+    child_record_t *child = child_open("work", "static_hosted_second");
+    if (child == NULL) {
+        return NULL;
+    }
+    static_hosted_second_actions_t *table = &second_tables[child - child_book.children];
+    memset(table, 0, sizeof(*table));
+    table->second_ran = on_second_ran;
+    table->user_data = child;
+    return table;
+}
+
+/* The parent's table is installed with the machine, before its first entry runs. */
+static void child_host_start(static_child_host_t *sm) {
+    static static_child_host_actions_t parent;
+    memset(&parent, 0, sizeof(parent));
+    parent.actions_for_worker = child_host_for_worker;
+    child_book_forget();
+    if (!static_child_host_init_with_actions(sm, &parent)) {
+        (void)fprintf(stderr, "static_child_host: FAIL - a complete table was refused\n");
+    }
+}
+
+static void child_host_hybrid_start(static_child_host_hybrid_t *sm) {
+    static static_child_host_hybrid_actions_t parent;
+    memset(&parent, 0, sizeof(parent));
+    parent.actions_for_work_static_hosted_first = child_host_for_first;
+    parent.actions_for_work_static_hosted_second = child_host_for_second;
+    child_book_forget();
+    if (!static_child_host_hybrid_init_with_actions(sm, &parent)) {
+        (void)fprintf(stderr, "static_child_host_hybrid: FAIL - a complete table was refused\n");
+    }
+}
+
+VARIABLE_READER(static_child_host, completed)
+
+static const name_value_t child_host_states[] = {
+    {"working", STATIC_CHILD_HOST_STATE_WORKING},
+    {"idle", STATIC_CHILD_HOST_STATE_IDLE},
+};
+static const variable_t child_host_variables[] = {
+    {"completed", static_child_host_read_completed},
+};
+STATIC_SCENARIO_CHILD_HOSTED(static_child_host, child_host_states, child_host_variables, child_host_start(&sm),
+                             child_hosts_heard)
+
+VARIABLE_READER(static_child_host_hybrid, completed)
+
+static const name_value_t child_host_hybrid_states[] = {
+    {"working", STATIC_CHILD_HOST_HYBRID_STATE_WORKING},
+    {"idle", STATIC_CHILD_HOST_HYBRID_STATE_IDLE},
+};
+static const variable_t child_host_hybrid_variables[] = {
+    {"completed", static_child_host_hybrid_read_completed},
+};
+STATIC_SCENARIO_CHILD_HOSTED(static_child_host_hybrid, child_host_hybrid_states, child_host_hybrid_variables,
+                             child_host_hybrid_start(&sm), child_hosts_heard)
+
 // static_invoke: a child session an `<invoke>` started is driven through its
 // parent by autoforward, takes the events it waits for in order, and its end
 // reaches the parent as `done.invoke`, which the parent counts. Leaving the state
@@ -2269,6 +2499,8 @@ int main(void) {
     bad |= static_send_idlocation_scenario("static_send_idlocation", 13);
     bad |= static_history_scenario("static_history", 17);
     bad |= static_host_call_scenario("static_host_call", 5);
+    bad |= static_child_host_scenario("static_child_host", 8);
+    bad |= static_child_host_hybrid_scenario("static_child_host_hybrid", 3);
     bad |= static_invoke_scenario("static_invoke", 6);
     bad |= static_invoke_scenario("static_invoke_abort", 4);
     bad |= static_invoke_params_scenario("static_invoke_params", 2);

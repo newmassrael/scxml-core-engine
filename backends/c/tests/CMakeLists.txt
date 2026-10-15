@@ -2786,6 +2786,21 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_host_call.scxml"
     )
 
+    # A child that declares `<sce:action>`s is begun with the table of the host
+    # that performs them, which its parent's own table answers each time the
+    # invocation starts (docs/adr/0005, decision 6). The documents are the ones
+    # the Kotlin, Python, Go and C++ suites drive: `static_child_host` invokes an
+    # inline child, `static_child_host_hybrid` one of two candidates, each of which
+    # the parent's generation writes beside it. They are generated once and used by
+    # two executables: the scenarios below, which read what each child asked of its
+    # table, and the cases of the tables themselves further down.
+    foreach(_STATIC_CHILD_HOST_MACHINE static_child_host static_child_host_hybrid)
+        sce_generate_static_integration_c_test(${_STATIC_CHILD_HOST_MACHINE}
+            "${SCE_C_INTEGRATION_GENERATED_DIR}"
+            SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_STATIC_CHILD_HOST_MACHINE}.scxml"
+        )
+    endforeach()
+
     # A machine with a `<history>` and a `<parallel>`: what its history brought
     # back is read from the machine's whole active configuration.
     sce_generate_static_integration_c_test(static_history
@@ -2821,6 +2836,8 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_timers_SOURCES}
         ${INTEGRATION_C_TEST_static_history_SOURCES}
         ${INTEGRATION_C_TEST_static_host_call_SOURCES}
+        ${INTEGRATION_C_TEST_static_child_host_SOURCES}
+        ${INTEGRATION_C_TEST_static_child_host_hybrid_SOURCES}
         ${INTEGRATION_C_TEST_static_invoke_SOURCES}
         ${INTEGRATION_C_TEST_static_invoke_params_SOURCES}
         ${INTEGRATION_C_TEST_static_invoke_string_SOURCES}
@@ -3026,18 +3043,9 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
-    # A child that declares `<sce:action>`s is begun with the table of the host
-    # that performs them, which its parent's own table answers each time the
-    # invocation starts (docs/adr/0005, decision 6). The documents are the ones
-    # the Kotlin, Python, Go and C++ suites drive: `static_child_host` invokes an
-    # inline child, `static_child_host_hybrid` one of two candidates, each of which
-    # the parent's generation writes beside it.
-    foreach(_STATIC_CHILD_HOST_MACHINE static_child_host static_child_host_hybrid)
-        sce_generate_static_integration_c_test(${_STATIC_CHILD_HOST_MACHINE}
-            "${SCE_C_INTEGRATION_GENERATED_DIR}"
-            SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_STATIC_CHILD_HOST_MACHINE}.scxml"
-        )
-    endforeach()
+    # The cases of the tables a child is begun with, beyond what its scenarios say:
+    # a table that answers none, and one with the member that answers a child's
+    # table missing. The machines are generated above.
     add_executable(sce_c_integration_static_child_host
         integration/test_static_child_host.c
         ${INTEGRATION_C_TEST_static_child_host_SOURCES}

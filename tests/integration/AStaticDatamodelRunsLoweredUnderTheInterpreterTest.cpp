@@ -306,10 +306,70 @@ public:
         return taken;
     }
 
+    /// A child the invocation started is given a host of its own, a recording one
+    /// like this, and this keeps it, with the invoke that started the child, how many
+    /// children that invoke had started, and the stem of the document the invoke
+    /// loaded (empty for a child written inline), in the order they were asked for.
+    std::shared_ptr<INativeActionHost> hostForChild(const std::string &invokeId, const std::string &document) override {
+        const auto host = std::make_shared<RecordingHost>();
+        std::lock_guard<std::mutex> lock(mutex_);
+        int start = 1;
+        for (const auto &child : children_) {
+            if (child.invoke == invokeId) {
+                ++start;
+            }
+        }
+        children_.push_back({invokeId, start, document, host});
+        return host;
+    }
+
+    /// The child hosts asked for or called since this was last taken, oldest asked
+    /// first, each as a scenario's `child_hosts` writes it: the invoke, the start of
+    /// that invoke, the candidate's document stem where the invoke names one, and
+    /// the calls made in this step alone. A child asked for earlier that called
+    /// nothing since has no entry. `consume` false reads them without taking them,
+    /// for a step that waits for what a child running on a thread of its own has yet
+    /// to do.
+    nlohmann::json childHosts(bool consume) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        nlohmann::json fresh = nlohmann::json::array();
+        for (auto &child : children_) {
+            const auto calls = child.host->calls();
+            nlohmann::json heard = nlohmann::json::array();
+            for (std::size_t n = child.taken; n < calls.size(); ++n) {
+                heard.push_back({{"action", calls[n].first}, {"args", calls[n].second}});
+            }
+            if (child.announced && heard.empty()) {
+                continue;
+            }
+            nlohmann::json entry = {{"invoke", child.invoke}, {"start", child.start}};
+            if (!child.document.empty()) {
+                entry["candidate"] = child.document;
+            }
+            entry["host_calls"] = std::move(heard);
+            fresh.push_back(std::move(entry));
+            if (consume) {
+                child.taken = calls.size();
+                child.announced = true;
+            }
+        }
+        return fresh;
+    }
+
 private:
+    struct Child {
+        std::string invoke;
+        int start;
+        std::string document;
+        std::shared_ptr<RecordingHost> host;
+        std::size_t taken = 0;
+        bool announced = false;
+    };
+
     mutable std::mutex mutex_;
     std::vector<std::pair<std::string, nlohmann::json>> calls_;
     std::size_t taken_ = 0;
+    std::vector<Child> children_;
 };
 
 }  // namespace
@@ -411,9 +471,10 @@ protected:
         return false;
     }
 
-    /// Replay `scenario` against `document`, the machine the scenario names
-    /// once lowered.
-    void replay(const std::string &document, const nlohmann::json &scenario) {
+    /// Replay `scenario` against `document`, the file of the machine the scenario
+    /// names once lowered: the first of the set `sce-codegen lower --out-dir` wrote,
+    /// which stands beside the candidates its hybrid `<invoke>`s may start.
+    void replay(const std::filesystem::path &document, const nlohmann::json &scenario) {
         const auto machine = std::make_shared<StateMachine>(*engine_);
         // The host a machine's `<sce:action>`s go to, which records them: what a
         // step's `host_calls` is read from. A machine with no action never asks it.
@@ -428,7 +489,7 @@ protected:
         // that fall due in that span are released, with nothing waited out.
         const auto scheduler = makeScheduler(SchedulerMode::MANUAL);
         const auto eventRaiser = wire(*machine, sentToPeers, scheduler);
-        ASSERT_TRUE(machine->loadSCXMLFromString(document)) << "the Interpreter does not load the lowered document";
+        ASSERT_TRUE(machine->loadSCXML(document.string())) << "the Interpreter does not load the lowered document";
         ASSERT_TRUE(machine->start());
         eventRaiser->processQueuedEvents();
 
@@ -457,6 +518,20 @@ protected:
             const auto asked = host->take();
             if (expect.contains("host_calls")) {
                 EXPECT_EQ(asked, expect.at("host_calls")) << "what the machine asked of its host";
+            }
+            // The child hosts the machine's host was asked for in this step, and what
+            // each child asked of its host, taken and held the same way. A child
+            // session runs on a thread of its own, so what it did is there when the
+            // step has been given time to be told, not when the event returns: a step
+            // that states some waits until the hosts show it, and is judged on what
+            // they show when that time is up.
+            if (expect.contains("child_hosts")) {
+                settles(eventRaiser, [&] { return host->childHosts(false) == expect.at("child_hosts"); });
+            }
+            const auto children = host->childHosts(true);
+            if (expect.contains("child_hosts")) {
+                EXPECT_EQ(children, expect.at("child_hosts"))
+                    << "the child hosts the machine's host was asked for, and what their children asked of them";
             }
             // What the machine sent its Mesh peers in this step, taken on every
             // step for the same reason; compared as values, in the order sent,
@@ -531,18 +606,28 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheInterpreterDoesWha
         ASSERT_FALSE(scenario.is_discarded()) << "a scenario is JSON";
         const std::string machine = scenario.at("machine").get<std::string>();
 
-        const Lowered lowered = lower(kFixtures / (machine + ".scxml"));
-        if (!lowered.ok) {
+        // The lowering is asked for as a set, a directory: a machine with a hybrid
+        // `<invoke>` is refused as one document, since the candidates it may start
+        // stand beside it, and a refusal that told the two apart by its text would
+        // pass a scenario of one as not yet lowered. A machine with none is a set
+        // of one.
+        const auto dir =
+            std::filesystem::temp_directory_path() / ("sce-scenario-" + std::to_string(::getpid()) + "-" + name);
+        std::error_code ec;
+        std::filesystem::remove_all(dir, ec);
+        const LoweredSet set = lowerSet(kFixtures / (machine + ".scxml"), dir);
+        if (!set.ok) {
             // A refusal is an answer, and it must be the typed one: a crash
             // or a bare failure would read the same as "not yet lowered".
-            ASSERT_TRUE(lowered.refusal.is_object()) << "`sce-codegen lower` failed with no diagnostic";
-            EXPECT_EQ("generate/unsupported-feature", lowered.refusal.value("code", std::string{}))
-                << lowered.refusal.dump();
+            ASSERT_TRUE(set.refusal.is_object()) << "`sce-codegen lower` failed with no diagnostic";
+            EXPECT_EQ("generate/unsupported-feature", set.refusal.value("code", std::string{})) << set.refusal.dump();
             notYetLowered.push_back(name);
+            std::filesystem::remove_all(dir, ec);
             continue;
         }
-        replay(lowered.document, scenario);
+        replay(set.documents.at(0), scenario);
         replayed.push_back(name);
+        std::filesystem::remove_all(dir, ec);
     }
 
     // Floor: a scan that found nothing to replay would pass, so what it must
@@ -582,6 +667,14 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheInterpreterDoesWha
         EXPECT_NE(std::find(replayed.begin(), replayed.end(), copy), replayed.end())
             << copy << " was not replayed: a copy whose entries expire by a delayed send has no lowering for the "
             << "Interpreter";
+    }
+    // ... and a child that declares `<sce:action>`s, given the host its parent's host
+    // answers for it: an inline one, and the candidate a hybrid `<invoke>` starts. A
+    // machine with a hybrid invoke is lowered as a set and not as one document, so the
+    // scan must not take that refusal for a lowering that does not exist yet.
+    for (const char *parent : {"static_child_host", "static_child_host_hybrid"}) {
+        EXPECT_NE(std::find(replayed.begin(), replayed.end(), parent), replayed.end())
+            << parent << " was not replayed: a child given a host by its parent has no lowering for the Interpreter";
     }
     for (const auto &name : notYetLowered) {
         RecordProperty("not_yet_lowered_" + name, "refused by sce-codegen lower");

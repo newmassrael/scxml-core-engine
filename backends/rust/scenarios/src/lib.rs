@@ -8,7 +8,8 @@
 //! data: a list of steps, each an external event with its payload and what the
 //! machine must hold after it runs to quiescence — its current state, the set of
 //! its active states (`configuration`), any of its variables, what it asked of
-//! its host (`host_calls`) and what it sent its Mesh peers (`sent`). What the
+//! its host (`host_calls`), what each child session was given as its host and
+//! asked of it (`child_hosts`) and what it sent its Mesh peers (`sent`). What the
 //! machine holds is read from its saved state, the text
 //! every backend saves byte for byte, so one scenario judges every backend by the
 //! same answer and needs no per-type glue.
@@ -62,7 +63,7 @@ pub fn replay<P: StatePolicy>(
     save: impl Fn(&Engine<P>) -> SavedState,
     scenario: &str,
 ) {
-    replay_recording(engine, save, None, scenario);
+    replay_recording(engine, save, Hosts::none(), scenario);
 }
 
 /// [`replay`] for a machine whose `<sce:action>`s go to a host that records them.
@@ -76,19 +77,67 @@ pub fn replay<P: StatePolicy>(
 pub fn replay_with_host<P: StatePolicy>(
     engine: Engine<P>,
     save: impl Fn(&Engine<P>) -> SavedState,
-    mut host_calls: impl FnMut(&Engine<P>) -> Vec<Value>,
+    host_calls: impl FnMut(&Engine<P>) -> Vec<Value>,
     scenario: &str,
 ) {
-    replay_recording(engine, save, Some(&mut host_calls), scenario);
+    replay_recording(engine, save, Hosts::none().host_calls(host_calls), scenario);
 }
 
-/// What a driver offers to read what the machine asked of its host.
-type HostCalls<'a, P> = Option<&'a mut dyn FnMut(&Engine<P>) -> Vec<Value>>;
+/// [`replay`] for a machine whose host is read through [`Hosts`]: its own, its
+/// children's, or both.
+pub fn replay_with_hosts<P: StatePolicy>(
+    engine: Engine<P>,
+    save: impl Fn(&Engine<P>) -> SavedState,
+    hosts: Hosts<'_, P>,
+    scenario: &str,
+) {
+    replay_recording(engine, save, hosts, scenario);
+}
+
+/// What a driver offers to read of the hosts a machine acts through. A step that
+/// states what a host was asked needs the driver to have a reader for it, and a
+/// driver with none FAILS that step: a step that judged nothing would pass.
+pub struct Hosts<'a, P: StatePolicy> {
+    host_calls: Option<HostCallsReader<'a, P>>,
+    child_hosts: Option<ChildHostsReader<'a>>,
+}
+
+/// Reads what the machine asked of its own host since it was last asked.
+type HostCallsReader<'a, P> = Box<dyn FnMut(&Engine<P>) -> Vec<Value> + 'a>;
+
+/// Reads the child hosts the machine's host was asked for since it was last asked.
+type ChildHostsReader<'a> = Box<dyn FnMut() -> Vec<Value> + 'a>;
+
+impl<'a, P: StatePolicy> Hosts<'a, P> {
+    /// A machine whose hosts record nothing.
+    pub fn none() -> Self {
+        Self {
+            host_calls: None,
+            child_hosts: None,
+        }
+    }
+
+    /// What the machine asked of its own host since it was last asked, oldest
+    /// first, each as a scenario's `host_calls` writes it.
+    pub fn host_calls(mut self, read: impl FnMut(&Engine<P>) -> Vec<Value> + 'a) -> Self {
+        self.host_calls = Some(Box::new(read));
+        self
+    }
+
+    /// The child hosts the machine's host was asked for since it was last asked,
+    /// and what the children asked of them, as a scenario's `child_hosts` writes
+    /// them ([`hosts::ChildHosts::take`]). A child's host is owned by the child, so
+    /// the reader holds a handle of its own to what they recorded.
+    pub fn child_hosts(mut self, read: impl FnMut() -> Vec<Value> + 'a) -> Self {
+        self.child_hosts = Some(Box::new(read));
+        self
+    }
+}
 
 fn replay_recording<P: StatePolicy>(
     mut engine: Engine<P>,
     save: impl Fn(&Engine<P>) -> SavedState,
-    mut host_calls: HostCalls<'_, P>,
+    mut hosts: Hosts<'_, P>,
     scenario: &str,
 ) {
     let scenario: Value = serde_json::from_str(scenario).expect("a scenario is JSON");
@@ -146,7 +195,7 @@ fn replay_recording<P: StatePolicy>(
         let note = step.get("note").and_then(Value::as_str).unwrap_or("");
         // What the machine asked of its host in this step. Read on every step so
         // that a step which states nothing does not hand its calls to the next.
-        let asked = host_calls.as_mut().map(|read| read(&engine));
+        let asked = hosts.host_calls.as_mut().map(|read| read(&engine));
         match (expect.get("host_calls"), asked) {
             (Some(want), Some(got)) => assert_eq!(
                 &Value::Array(got),
@@ -155,6 +204,20 @@ fn replay_recording<P: StatePolicy>(
             ),
             (Some(_), None) => panic!(
                 "step {n} ({note}): this driver records no host calls, so it cannot hold a step to them"
+            ),
+            (None, _) => {}
+        }
+        // The child hosts the machine's host was asked for in this step, and what
+        // each child asked of its host, read and held the same way.
+        let children = hosts.child_hosts.as_mut().map(|read| read());
+        match (expect.get("child_hosts"), children) {
+            (Some(want), Some(got)) => assert_eq!(
+                &Value::Array(got),
+                want,
+                "step {n} ({note}): the child hosts the machine's host was asked for, and what their children asked of them"
+            ),
+            (Some(_), None) => panic!(
+                "step {n} ({note}): this driver records no child hosts, so it cannot hold a step to them"
             ),
             (None, _) => {}
         }

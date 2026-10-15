@@ -1,0 +1,47 @@
+{
+  "machine": "static_child_host",
+  "about": "A child that declares <sce:action>s is built with a host, so the parent obtains one from its own host when the invocation starts, and the parent declares no act of its own: what the machine did is what each child asked of the host it was given. `working` invokes `worker`, which performs `started` as it is entered and `finished`, with the steps it counted, when `b` ends it; the parent forwards `a` and `b` (autoforward). Each start of `worker` is asked for a host of its own, so `again` and `back`, which leave `working` and enter it anew, start `worker` a second time (`start` 2) and what the first one did is not carried into the second. A step's `child_hosts` holds an entry for each child host asked for in that step or called in it; a child that asked nothing and was not just built has none. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "note": "started: the parent's host was asked for the first child's host, and the child performed its first act through it as it was entered",
+      "expect": { "state": "working", "variables": { "completed": 0 },
+                  "child_hosts": [ { "invoke": "worker", "start": 1,
+                                     "host_calls": [ { "action": "started", "args": [] } ] } ] } },
+
+    { "note": "`a` moves the child on; it asks nothing of its host and no host is asked for",
+      "event": "a",
+      "expect": { "state": "working", "variables": { "completed": 0 },
+                  "child_hosts": [] } },
+
+    { "note": "`b` ends the child, which reports the two steps it counted to the host it was built with",
+      "event": "b",
+      "expect": { "state": "working", "variables": { "completed": 1 },
+                  "child_hosts": [ { "invoke": "worker", "start": 1,
+                                     "host_calls": [ { "action": "finished", "args": [2] } ] } ] } },
+
+    { "note": "`again` leaves the state that invokes: nothing is asked of any host",
+      "event": "again",
+      "expect": { "state": "idle", "variables": { "completed": 1 },
+                  "child_hosts": [] } },
+
+    { "note": "`back` invokes `worker` anew: the parent's host is asked again, and the second child performs its first act through the host it was given, not the first child's",
+      "event": "back",
+      "expect": { "state": "working", "variables": { "completed": 1 },
+                  "child_hosts": [ { "invoke": "worker", "start": 2,
+                                     "host_calls": [ { "action": "started", "args": [] } ] } ] } },
+
+    { "note": "the second child takes `a`",
+      "event": "a",
+      "expect": { "state": "working", "variables": { "completed": 1 },
+                  "child_hosts": [] } },
+
+    { "note": "and ends on `b`, reporting to its own host and to no other",
+      "event": "b",
+      "expect": { "state": "working", "variables": { "completed": 2 },
+                  "child_hosts": [ { "invoke": "worker", "start": 2,
+                                     "host_calls": [ { "action": "finished", "args": [2] } ] } ] } },
+
+    { "note": "`finish` leaves for the final state of the parent: no host is asked for or called",
+      "event": "finish",
+      "expect": { "ended": true, "child_hosts": [] } }
+  ]
+}

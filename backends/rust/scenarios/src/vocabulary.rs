@@ -27,16 +27,24 @@ pub const EXPECT: &[&str] = &[
     "ended",
     "donedata",
     "host_calls",
+    "child_hosts",
     "sent",
 ];
 
 /// What a step that expects the machine ended may still state: a machine that
 /// ended in a top-level `<final>` has no saved state, so no state, configuration
 /// or variable can be read from it.
-const AFTER_END: &[&str] = &["ended", "donedata", "host_calls", "sent"];
+const AFTER_END: &[&str] = &["ended", "donedata", "host_calls", "child_hosts", "sent"];
 
 /// The members of one entry of `host_calls`.
 const HOST_CALL: &[&str] = &["action", "args"];
+
+/// The members of one entry of `child_hosts`: the child host the machine's own
+/// host was asked for, told by the invoke that started the child (`invoke`) and
+/// how many children that invoke had started (`start`, from 1), the document it
+/// started when the invoke names one of several (`candidate`), and what the child
+/// asked of that host in the step (`host_calls`, as a machine's own are).
+const CHILD_HOST: &[&str] = &["invoke", "start", "candidate", "host_calls"];
 
 /// The members of one entry of `sent`.
 const SENT: &[&str] = &["target", "event", "data"];
@@ -94,16 +102,10 @@ fn check_expect(expect: &Map<String, Value>) -> Result<(), String> {
         return Err("`donedata` belongs to a step that expects `ended`".into());
     }
     if let Some(calls) = expect.get("host_calls") {
-        for call in calls.as_array().ok_or("`host_calls` is an array")? {
-            let call = call.as_object().ok_or("a host call is an object")?;
-            unknown(call, HOST_CALL, "a host call")?;
-            call.get("action")
-                .and_then(Value::as_str)
-                .ok_or("a host call names its `action`")?;
-            call.get("args")
-                .and_then(Value::as_array)
-                .ok_or("a host call carries its `args` as an array")?;
-        }
+        check_host_calls(calls)?;
+    }
+    if let Some(children) = expect.get("child_hosts") {
+        check_child_hosts(children)?;
     }
     if let Some(sends) = expect.get("sent") {
         for send in sends.as_array().ok_or("`sent` is an array")? {
@@ -125,6 +127,60 @@ fn check_expect(expect: &Map<String, Value>) -> Result<(), String> {
                 .and_then(Value::as_str)
                 .ok_or("a send names its `event`")?;
         }
+    }
+    Ok(())
+}
+
+/// The calls a host was asked for, as `host_calls` writes them: of the machine's
+/// own host, and of each child host in `child_hosts`.
+fn check_host_calls(calls: &Value) -> Result<(), String> {
+    for call in calls.as_array().ok_or("`host_calls` is an array")? {
+        let call = call.as_object().ok_or("a host call is an object")?;
+        unknown(call, HOST_CALL, "a host call")?;
+        call.get("action")
+            .and_then(Value::as_str)
+            .ok_or("a host call names its `action`")?;
+        call.get("args")
+            .and_then(Value::as_array)
+            .ok_or("a host call carries its `args` as an array")?;
+    }
+    Ok(())
+}
+
+/// The child hosts a step states. A child is told by the invoke and the start, so
+/// two entries of one step that name the same child are one child stated twice,
+/// and the driver, which writes each child once, could never match both.
+fn check_child_hosts(children: &Value) -> Result<(), String> {
+    let mut seen = Vec::new();
+    for child in children.as_array().ok_or("`child_hosts` is an array")? {
+        let child = child.as_object().ok_or("a child host is an object")?;
+        unknown(child, CHILD_HOST, "a child host")?;
+        let invoke = child
+            .get("invoke")
+            .and_then(Value::as_str)
+            .ok_or("a child host names the `invoke` that started its child")?;
+        let start = child
+            .get("start")
+            .and_then(Value::as_u64)
+            .filter(|start| *start >= 1)
+            .ok_or("a child host counts the `start` of its invoke from 1")?;
+        if let Some(candidate) = child.get("candidate") {
+            candidate
+                .as_str()
+                .filter(|stem| !stem.is_empty())
+                .ok_or("a child host's `candidate` is the stem of the document it started")?;
+        }
+        check_host_calls(
+            child
+                .get("host_calls")
+                .ok_or("a child host states the `host_calls` of its child")?,
+        )?;
+        if seen.contains(&(invoke, start)) {
+            return Err(format!(
+                "`child_hosts` states the child of `{invoke}` start {start} twice"
+            ));
+        }
+        seen.push((invoke, start));
     }
     Ok(())
 }

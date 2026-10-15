@@ -25,6 +25,13 @@ import com.sce.integration.static_block_ends_list.StaticBlockEndsListStateMachin
 import com.sce.integration.static_bytes.StaticBytesStateMachine
 import com.sce.integration.static_bytes_wire.StaticBytesWireStateMachine
 import com.sce.integration.static_cancel_expr.StaticCancelExprStateMachine
+import com.sce.integration.static_child_host.RecordingStaticChildHostActions
+import com.sce.integration.static_child_host.RecordingStaticChildHostSceSynthInvokeWorkerActions
+import com.sce.integration.static_child_host.StaticChildHostStateMachine
+import com.sce.integration.static_child_host_hybrid.RecordingStaticChildHostHybridActions
+import com.sce.integration.static_child_host_hybrid.RecordingStaticHostedFirstActions
+import com.sce.integration.static_child_host_hybrid.RecordingStaticHostedSecondActions
+import com.sce.integration.static_child_host_hybrid.StaticChildHostHybridStateMachine
 import com.sce.integration.static_counter.StaticCounterStateMachine
 import com.sce.integration.static_donedata.StaticDonedataStateMachine
 import com.sce.integration.static_donedata_content.StaticDonedataContentStateMachine
@@ -171,6 +178,104 @@ class StaticScenarioTest {
     }
 
     /**
+     * The child hosts a machine's host was asked for, in the order asked, and what
+     * each child asked of its host. A child owns the host it was given, so the
+     * host the parent answers is written here as it is made ([open]), with the
+     * function that reads what it recorded as the scenario writes it and forgets it.
+     */
+    private class ChildHosts {
+        private class Child(
+            val invoke: String,
+            val start: Int,
+            val candidate: String?,
+            val take: () -> List<JsonElement>,
+        ) {
+            var announced = false
+        }
+
+        private val children = mutableListOf<Child>()
+
+        /**
+         * The machine's host was asked for the host of a child its [invoke]
+         * started, and answers [host]: [candidate] is the stem of the document when
+         * the invoke names one of several, and [take] reads what the host recorded
+         * as `host_calls` writes it.
+         */
+        fun <H> open(invoke: String, candidate: String?, host: H, take: (H) -> List<JsonElement>): H {
+            val start = 1 + children.count { it.invoke == invoke }
+            children += Child(invoke, start, candidate) { take(host) }
+            return host
+        }
+
+        /**
+         * The children asked for or called since this was last called, oldest asked
+         * first, each as a scenario's `child_hosts` writes it: the invoke, the start
+         * of that invoke, the candidate's document stem where the invoke names one,
+         * and the calls made in this step alone. A child asked for earlier that
+         * called nothing since has no entry.
+         */
+        fun take(): List<JsonElement> =
+            children.mapNotNull { child ->
+                val calls = child.take()
+                if (child.announced && calls.isEmpty()) {
+                    return@mapNotNull null
+                }
+                child.announced = true
+                buildJsonObject {
+                    put("invoke", child.invoke)
+                    put("start", child.start)
+                    child.candidate?.let { put("candidate", it) }
+                    put("host_calls", JsonArray(calls))
+                }
+            }
+    }
+
+    /** One call of a child's host as a scenario's `host_calls` writes it. */
+    private fun hostCall(action: String, vararg args: JsonElement): JsonElement =
+        buildJsonObject {
+            put("action", action)
+            put("args", JsonArray(args.toList()))
+        }
+
+    /** What a `worker` child of `static_child_host` recorded, read and forgotten. */
+    private fun workerCalls(host: RecordingStaticChildHostSceSynthInvokeWorkerActions): List<JsonElement> {
+        val fresh =
+            host.calls.map { call ->
+                when (call) {
+                    is RecordingStaticChildHostSceSynthInvokeWorkerActions.Call.Started -> hostCall("started")
+                    is RecordingStaticChildHostSceSynthInvokeWorkerActions.Call.Finished ->
+                        hostCall("finished", JsonPrimitive(call.steps.toLong()))
+                }
+            }
+        host.clear()
+        return fresh
+    }
+
+    /** What a first candidate of `static_child_host_hybrid` recorded, read and forgotten. */
+    private fun firstCalls(host: RecordingStaticHostedFirstActions): List<JsonElement> {
+        val fresh =
+            host.calls.map { call ->
+                when (call) {
+                    is RecordingStaticHostedFirstActions.Call.FirstRan -> hostCall("first_ran")
+                }
+            }
+        host.clear()
+        return fresh
+    }
+
+    /** What a second candidate of `static_child_host_hybrid` recorded, read and forgotten. */
+    private fun secondCalls(host: RecordingStaticHostedSecondActions): List<JsonElement> {
+        val fresh =
+            host.calls.map { call ->
+                when (call) {
+                    is RecordingStaticHostedSecondActions.Call.SecondRan -> hostCall("second_ran")
+                }
+            }
+        host.clear()
+        return fresh
+    }
+
+    /**
      * What a machine sent its Mesh peers — a `<send>` whose target is `#name` —
      * as the router a host registers is handed it. Registered before the machine
      * starts, so that what its start sends is recorded too; with no router
@@ -210,7 +315,8 @@ class StaticScenarioTest {
      * Replay [scenario] against a machine driven by [send] and [tick], read
      * back with [save] after every step, and asked whether it has [ended]. A
      * machine with a host that records its `<sce:action>`s gives [hostCalls],
-     * and one whose sends to its Mesh peers are recorded gives [sent].
+     * one whose children are given hosts that record gives [childHosts], and one
+     * whose sends to its Mesh peers are recorded gives [sent].
      */
     private fun replay(
         scenario: JsonObject,
@@ -221,6 +327,7 @@ class StaticScenarioTest {
         donedata: () -> String = { "" },
         advance: (Long) -> Unit = { error("this machine runs on no manual clock to advance") },
         hostCalls: (() -> List<JsonElement>)? = null,
+        childHosts: (() -> List<JsonElement>)? = null,
         sent: (() -> List<JsonElement>)? = null,
     ) {
         val steps = scenario.getValue("steps").jsonArray
@@ -251,6 +358,20 @@ class StaticScenarioTest {
                     "step $n ($note): this driver records no host calls, so it cannot hold a step to them",
                 )
                 assertEquals(want, JsonArray(asked!!), "step $n ($note): what the machine asked of its host")
+            }
+            // The child hosts the machine's host was asked for in this step, and what
+            // each child asked of its host, read and held the same way.
+            val children = childHosts?.invoke()
+            expect["child_hosts"]?.let { want ->
+                assertTrue(
+                    children != null,
+                    "step $n ($note): this driver records no child hosts, so it cannot hold a step to them",
+                )
+                assertEquals(
+                    want,
+                    JsonArray(children!!),
+                    "step $n ($note): the child hosts the machine's host was asked for, and what their children asked of them",
+                )
             }
             // What the machine sent its Mesh peers in this step, read and held to
             // the step the same way: every step takes its own, so none is handed
@@ -820,6 +941,66 @@ class StaticScenarioTest {
                 save = { sm.save() },
                 ended = { sm.isInFinalState },
                 hostCalls = staticHostCallCalls(host),
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // A child that declares `<sce:action>`s is built with the host its parent's host
+    // answers for it, each time the invocation starts, and what the child asked of
+    // that host is what the scenario's `child_hosts` holds. The parent declares no
+    // act of its own: the generated recording host takes the function that answers
+    // each child's host, and the book records what each of those hosts was asked.
+    @Test
+    fun staticChildHostGivesEachStartOfItsChildAHostOfItsOwn() {
+        val children = ChildHosts()
+        val sm = StaticChildHostStateMachine(
+            RecordingStaticChildHostActions(
+                actionsForWorkerSource = {
+                    children.open("worker", null, RecordingStaticChildHostSceSynthInvokeWorkerActions(), ::workerCalls)
+                },
+            ),
+        )
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_child_host"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { repeat(SETTLE_TICKS) { sm.tick() } },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+                childHosts = children::take,
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // A hybrid `<invoke>` is given the host answered for the candidate it starts, and
+    // for no other.
+    @Test
+    fun staticChildHostHybridGivesACandidateTheHostAnsweredForIt() {
+        val children = ChildHosts()
+        val sm = StaticChildHostHybridStateMachine(
+            RecordingStaticChildHostHybridActions(
+                actionsForWorkStaticHostedFirstSource = {
+                    children.open("work", "static_hosted_first", RecordingStaticHostedFirstActions(), ::firstCalls)
+                },
+                actionsForWorkStaticHostedSecondSource = {
+                    children.open("work", "static_hosted_second", RecordingStaticHostedSecondActions(), ::secondCalls)
+                },
+            ),
+        )
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_child_host_hybrid"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { repeat(SETTLE_TICKS) { sm.tick() } },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+                childHosts = children::take,
             )
         } finally {
             sm.cleanup()
