@@ -14,7 +14,7 @@ use sce_rust_mesh::generated::envelope::Envelope;
 use sce_rust_mesh::inbound::Delivery;
 use sce_rust_mesh::outbound::{OutboundBuffer, RetryPolicy};
 use sce_rust_mesh::router::{PeerConfig, Router};
-use sce_rust_world::{Fate, World};
+use sce_rust_world::{Fate, Outcome, Rng, World};
 use serde_json::Value;
 
 include!(concat!(env!("OUT_DIR"), "/machines.rs"));
@@ -23,7 +23,9 @@ pub use sheet_peer::{SheetPeerPersist, SheetPeerPolicy as Peer};
 pub use todo_peer::{TodoPeerPersist, TodoPeerPolicy as TodoPeer};
 
 pub mod crowd;
+pub mod kotlin;
 pub mod presence;
+pub mod resync;
 
 /// How the binding to a peer is configured: envelopes delivered once, with those
 /// written while the link is down kept until it is back. `ordered` asks the Mesh
@@ -850,17 +852,26 @@ pub fn recorded_todo_world(seed: u64, latency_ms: i64) -> World {
 }
 
 fn todo_world_with(seed: u64, latency_ms: i64, recorded: bool) -> World {
+    todo_world_of(seed, latency_ms, |world, who, router| {
+        if recorded {
+            world.add_read(who, TodoPeer::new(), router, saved_todos);
+        } else {
+            world.add(who, TodoPeer::new(), router);
+        }
+    })
+}
+
+/// The world of the to-do list with each of its three actors added by `add`, which is
+/// given the world, the actor's name and its router: what differs between a world of
+/// Rust copies and one with a copy that is another process's is only how a copy is added.
+pub fn todo_world_of(seed: u64, latency_ms: i64, add: impl Fn(&mut World, &str, Router)) -> World {
     let mut world = World::new(seed);
     for (who, router) in [
         ("alice", person("alice", false)),
         ("bob", person("bob", false)),
         ("server", hub(false)),
     ] {
-        if recorded {
-            world.add_read(who, TodoPeer::new(), router, saved_todos);
-        } else {
-            world.add(who, TodoPeer::new(), router);
-        }
+        add(&mut world, who, router);
     }
     world.link("alice", "server", latency_ms);
     world.link("bob", "server", latency_ms);
@@ -915,13 +926,20 @@ pub fn todo_edit_at(
 }
 
 /// What a copy saved of itself, for the to-do list.
+///
+/// A copy that is another process's saves through its process; the text is the same one,
+/// which every backend saves byte for byte.
 pub fn todo_variables_of(world: &mut World, who: &str) -> Value {
-    let saved = world
-        .actor::<TodoPeer>(who)
-        .engine()
-        .save_at(0)
-        .expect("a running machine saves");
-    let saved: Value = serde_json::from_str(&saved.to_json()).expect("a saved state is JSON");
+    let saved = match world.external_saved(who) {
+        Some(saved) => saved,
+        None => world
+            .actor::<TodoPeer>(who)
+            .engine()
+            .save_at(0)
+            .expect("a running machine saves")
+            .to_json(),
+    };
+    let saved: Value = serde_json::from_str(&saved).expect("a saved state is JSON");
     saved["variables"].clone()
 }
 
@@ -1050,4 +1068,95 @@ pub fn todo_oracle(world: &World) -> BTreeMap<(u64, u64), Field> {
             (!live.is_empty()).then(|| (key, Field::of(live)))
         })
         .collect()
+}
+
+/// An afternoon of changes to a few to-dos at random times, links cut and restored,
+/// delays spread out and envelopes delivered twice, run in `world` (a to-do world of
+/// latency 5, [`todo_world`]) from `seed`: at the end the three copies hold one list and
+/// it is the list the oracle says. With `restarts`, copies are now and then killed and
+/// started again by `restart`, which is given the world and the copy's name.
+pub fn todo_afternoon(
+    world: &mut World,
+    seed: u64,
+    restarts: bool,
+    mut restart: impl FnMut(&mut World, &str),
+) {
+    const TITLES: [&str; 5] = ["milk", "post office", "\u{d560}\u{c77c}", "tax", "gym at 7"];
+    let mut rng = Rng::new(seed);
+    // The copies take the join the host gave them before anything can kill one: a
+    // process killed before it has read its first event comes back without it.
+    assert_eq!(world.run_until_quiet(1), Outcome::Quiet, "seed {seed}");
+    world.jitter("alice", "server", 40);
+    world.jitter("bob", "server", 40);
+    world.reorder("alice", "server");
+    world.reorder("bob", "server");
+    world.degrade("alice", "server", 0, 20);
+    world.degrade("bob", "server", 0, 20);
+    let mut cut = [false, false];
+    for _ in 0..60 {
+        let who = if rng.below(2) == 0 { "alice" } else { "bob" };
+        let id = 1 + rng.below(4);
+        match rng.below(4) {
+            0 => {
+                let title = TITLES[usize::try_from(rng.below(5)).unwrap()];
+                todo_title(world, who, id, title);
+            }
+            1 => todo_set(world, who, id, DONE, i64::try_from(rng.below(2)).unwrap()),
+            2 => todo_set(world, who, id, DUE, i64::try_from(rng.below(365)).unwrap()),
+            _ => todo_set(
+                world,
+                who,
+                id,
+                REMOVED,
+                i64::try_from(rng.below(2)).unwrap(),
+            ),
+        }
+        if rng.below(6) == 0 {
+            let which = usize::from(rng.below(2) == 1);
+            let name = ["alice", "bob"][which];
+            if cut[which] {
+                world.heal(name, "server");
+            } else {
+                world.partition(name, "server");
+            }
+            cut[which] = !cut[which];
+        }
+        // Now and then a copy is killed and comes back from its saved state.
+        if restarts && rng.below(10) == 0 {
+            let who = ["alice", "bob", "server"][usize::try_from(rng.below(3)).unwrap()];
+            restart(world, who);
+        }
+        world.run_until_quiet(i64::try_from(rng.below(60)).unwrap() + 1);
+    }
+    for (which, name) in ["alice", "bob"].into_iter().enumerate() {
+        if cut[which] {
+            world.heal(name, "server");
+        }
+    }
+    assert_eq!(
+        world.run_until_quiet(600_000),
+        Outcome::Quiet,
+        "seed {seed}"
+    );
+
+    // A copy that refused a write is the first thing to say, before the copies are
+    // compared: a list that differs because a block failed is not a merge fault.
+    for who in ["alice", "bob", "server"] {
+        assert_eq!(
+            todo_variables_of(world, who)["refusals"],
+            0,
+            "seed {seed}: {who} refused a write"
+        );
+    }
+    for who in ["alice", "bob"] {
+        assert_eq!(
+            todos_of(world, who),
+            todos_of(world, "server"),
+            "seed {seed}: {who} and the hub hold different to-do lists"
+        );
+    }
+    let list = agreed_todos(world);
+    assert_eq!(list, todo_oracle(world), "seed {seed}");
+    assert!(world.host_errors().is_empty(), "seed {seed}");
+    assert!(!list.is_empty(), "seed {seed}");
 }

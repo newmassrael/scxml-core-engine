@@ -22,7 +22,7 @@ mod common;
 // use it would be told it imports something it does not use.
 use common::todo_wide_sender::TodoWideSenderPolicy as WideSender;
 use common::*;
-use sce_rust_world::{Outcome, Rng};
+use sce_rust_world::Outcome;
 
 #[test]
 fn changes_to_different_fields_of_one_todo_are_both_kept() {
@@ -356,97 +356,8 @@ fn a_random_afternoon_with_restarts_ends_with_one_list() {
 }
 
 fn an_afternoon(restarts: bool) {
-    const TITLES: [&str; 5] = ["milk", "post office", "\u{d560}\u{c77c}", "tax", "gym at 7"];
     for seed in 0..40 {
-        let mut rng = Rng::new(seed);
         let mut world = todo_world(seed, 5);
-        // The copies take the join the host gave them before anything can kill one: a
-        // process killed before it has read its first event comes back without it.
-        assert_eq!(world.run_until_quiet(1), Outcome::Quiet, "seed {seed}");
-        world.jitter("alice", "server", 40);
-        world.jitter("bob", "server", 40);
-        world.reorder("alice", "server");
-        world.reorder("bob", "server");
-        world.degrade("alice", "server", 0, 20);
-        world.degrade("bob", "server", 0, 20);
-        let mut cut = [false, false];
-        for _ in 0..60 {
-            let who = if rng.below(2) == 0 { "alice" } else { "bob" };
-            let id = 1 + rng.below(4);
-            match rng.below(4) {
-                0 => {
-                    let title = TITLES[usize::try_from(rng.below(5)).unwrap()];
-                    todo_title(&mut world, who, id, title);
-                }
-                1 => todo_set(
-                    &mut world,
-                    who,
-                    id,
-                    DONE,
-                    i64::try_from(rng.below(2)).unwrap(),
-                ),
-                2 => todo_set(
-                    &mut world,
-                    who,
-                    id,
-                    DUE,
-                    i64::try_from(rng.below(365)).unwrap(),
-                ),
-                _ => todo_set(
-                    &mut world,
-                    who,
-                    id,
-                    REMOVED,
-                    i64::try_from(rng.below(2)).unwrap(),
-                ),
-            }
-            if rng.below(6) == 0 {
-                let which = usize::from(rng.below(2) == 1);
-                let name = ["alice", "bob"][which];
-                if cut[which] {
-                    world.heal(name, "server");
-                } else {
-                    world.partition(name, "server");
-                }
-                cut[which] = !cut[which];
-            }
-            // Now and then a copy is killed and comes back from its saved state.
-            if restarts && rng.below(10) == 0 {
-                let who = ["alice", "bob", "server"][usize::try_from(rng.below(3)).unwrap()];
-                restart(&mut world, who);
-            }
-            world.run_until_quiet(i64::try_from(rng.below(60)).unwrap() + 1);
-        }
-        for (which, name) in ["alice", "bob"].into_iter().enumerate() {
-            if cut[which] {
-                world.heal(name, "server");
-            }
-        }
-        assert_eq!(
-            world.run_until_quiet(600_000),
-            Outcome::Quiet,
-            "seed {seed}"
-        );
-
-        // A copy that refused a write is the first thing to say, before the copies are
-        // compared: a list that differs because a block failed is not a merge fault.
-        for who in ["alice", "bob", "server"] {
-            assert_eq!(
-                todo_variables_of(&mut world, who)["refusals"],
-                0,
-                "seed {seed}: {who} refused a write"
-            );
-        }
-        for who in ["alice", "bob"] {
-            assert_eq!(
-                todos_of(&mut world, who),
-                todos_of(&mut world, "server"),
-                "seed {seed}: {who} and the hub hold different to-do lists"
-            );
-        }
-        let list = agreed_todos(&mut world);
-        assert_eq!(list, todo_oracle(&world), "seed {seed}");
-        assert!(world.host_errors().is_empty(), "seed {seed}");
-        assert!(!list.is_empty(), "seed {seed}");
+        todo_afternoon(&mut world, seed, restarts, restart);
     }
 }
