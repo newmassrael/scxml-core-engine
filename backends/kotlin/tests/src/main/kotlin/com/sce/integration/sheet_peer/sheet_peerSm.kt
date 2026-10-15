@@ -1,10 +1,10 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 14eab19e007466760dd188bf9886e0b16a1100f5051fb061af6ed75d1acb2bf1
+// source-hash: d314dff16e98b84266f19060e6b24a11b5c3faa28e30e8e31e7069680e98f372
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/sheet_peer.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: sheet_peer.scxml:46 :: _machine
+// SCE-MAP: sheet_peer.scxml:49 :: _machine
 @file:OptIn(ExperimentalUnsignedTypes::class)
 
 package com.sce.integration.sheet_peer
@@ -278,6 +278,10 @@ class SheetPeerStateMachine(
     val lamport: ULong get() = vLamport
     /** W3C SCXML 5.2: the `newKey` datamodel variable, the machine's own. */
     private var vNewKey: ULong = 0.toULong()
+    /** W3C SCXML 5.2: the `noKey` datamodel variable, the machine's own. */
+    private var vNoKey: ULong = 0.toULong()
+    /** W3C SCXML 5.2: the `noNumber` datamodel variable, the machine's own. */
+    private var vNoNumber: Long = 0
     /** W3C SCXML 5.2: the `orphans` datamodel variable, published (`sce:direction="out"`). */
     private var vOrphans: UInt = 0.toUInt()
 
@@ -299,6 +303,8 @@ class SheetPeerStateMachine(
         var hub: Boolean? = null
         var lamport: ULong? = null
         var newKey: ULong? = null
+        var noKey: ULong? = null
+        var noNumber: Long? = null
         var orphans: UInt? = null
         var refusals: UInt? = null
     }
@@ -309,6 +315,8 @@ class SheetPeerStateMachine(
         params.hub?.let { vHub = it }
         params.lamport?.let { vLamport = it }
         params.newKey?.let { vNewKey = it }
+        params.noKey?.let { vNoKey = it }
+        params.noNumber?.let { vNoNumber = it }
         params.orphans?.let { vOrphans = it }
         params.refusals?.let { vRefusals = it }
     }
@@ -381,7 +389,7 @@ class SheetPeerStateMachine(
      * from a document that renamed, re-typed or moved a state or a variable is
      * refused, one saved before a guard or an action changed is not.
      */
-    val savedShape: String = "070f30a811cd5c8c778f3a9004b542e4e4f5975b98504754196aa02c2bf6ff82"
+    val savedShape: String = "1ac6b3f2603c6108cd17580f835aab53156fb15bf1be7c02a34b837cfb45cf6f"
 
     /**
      * This machine's whole state at the macrostep boundary it stands at —
@@ -413,6 +421,8 @@ class SheetPeerStateMachine(
             "removal" to vRemoval.toSaved(),
             "lamport" to SavedValues.of(vLamport),
             "newKey" to SavedValues.of(vNewKey),
+            "noKey" to SavedValues.of(vNoKey),
+            "noNumber" to SavedValues.of(vNoNumber),
             "orphans" to SavedValues.of(vOrphans),
             "refusals" to SavedValues.of(vRefusals),
         ),
@@ -456,8 +466,10 @@ class SheetPeerStateMachine(
         val saved14 = SheetPeerRgaGoneRecord.fromSaved(saved.variable("removal"), "removal")
         val saved15 = SavedValues.uint64(saved.variable("lamport"), "lamport")
         val saved16 = SavedValues.uint64(saved.variable("newKey"), "newKey")
-        val saved17 = SavedValues.uint32(saved.variable("orphans"), "orphans")
-        val saved18 = SavedValues.uint32(saved.variable("refusals"), "refusals")
+        val saved17 = SavedValues.uint64(saved.variable("noKey"), "noKey")
+        val saved18 = SavedValues.int64(saved.variable("noNumber"), "noNumber")
+        val saved19 = SavedValues.uint32(saved.variable("orphans"), "orphans")
+        val saved20 = SavedValues.uint32(saved.variable("refusals"), "refusals")
         vNode = saved1
         vHub = saved2
         vClock = saved3
@@ -474,8 +486,10 @@ class SheetPeerStateMachine(
         vRemoval = saved14
         vLamport = saved15
         vNewKey = saved16
-        vOrphans = saved17
-        vRefusals = saved18
+        vNoKey = saved17
+        vNoNumber = saved18
+        vOrphans = saved19
+        vRefusals = saved20
         enterSaved(saved, wallNowMs)
     }
 
@@ -1011,33 +1025,33 @@ class SheetPeerStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: sheet_peer.scxml:46 :: _machine
+    // SCE-MAP: sheet_peer.scxml:49 :: _machine
     override fun onEntry(state: SheetPeerState, isDefaultEntry: Boolean) {
         when (state) {
             is SheetPeerState.Open -> {
-                // SCE-MAP: sheet_peer.scxml:127 :: open :: _state_body
+                // SCE-MAP: sheet_peer.scxml:136 :: open :: _state_body
             }
         }
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: sheet_peer.scxml:46 :: _machine
+    // SCE-MAP: sheet_peer.scxml:49 :: _machine
     override fun onExit(state: SheetPeerState) {
         when (state) {
             is SheetPeerState.Open -> {
-                // SCE-MAP: sheet_peer.scxml:127 :: open :: _state_body
+                // SCE-MAP: sheet_peer.scxml:136 :: open :: _state_body
             }
         }
     }
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: sheet_peer.scxml:46 :: _machine
+    // SCE-MAP: sheet_peer.scxml:49 :: _machine
     override fun executeTransitionContent(source: SheetPeerState, transitionIndex: Int) {
         when (source) {
         is SheetPeerState.Open -> when (transitionIndex) {
             0 -> {
-                // SCE-MAP: sheet_peer.scxml:128 :: open :: _transition_0
+                // SCE-MAP: sheet_peer.scxml:137 :: open :: _transition_0
                 if (pendingSheetJoinPayload == null) {
                     return
                 }
@@ -1047,7 +1061,7 @@ class SheetPeerStateMachine(
             vHub = pendingSheetJoinPayload!!.hub
             }
             1 -> {
-                // SCE-MAP: sheet_peer.scxml:137 :: open :: _transition_1
+                // SCE-MAP: sheet_peer.scxml:146 :: open :: _transition_1
                 if (pendingSheetEditPayload == null) {
                     return
                 }
@@ -1099,9 +1113,82 @@ class SheetPeerStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+
+
+            if (run send@{
+            val sendPayload = mutableMapOf<String, Any?>()
+            putParam(sendPayload, "row", (pendingSheetEditPayload!!.row).toString())
+
+            putParam(sendPayload, "col", (pendingSheetEditPayload!!.col).toString())
+
+            putParam(sendPayload, "value", (pendingSheetEditPayload!!.value).toString())
+
+            putParam(sendPayload, "wallTime", (vClock.wallTime).toString())
+
+            putParam(sendPayload, "counter", (vClock.counter).toLong())
+
+            putParam(sendPayload, "nodeId", (vNode).toString())
+
+            putParam(sendPayload, "op", (0).toLong())
+
+            putParam(sendPayload, "aRef", false)
+
+            putParam(sendPayload, "aRow", (vNoKey).toString())
+
+            putParam(sendPayload, "aCol", (vNoKey).toString())
+
+            putParam(sendPayload, "aVal", (vNoNumber).toString())
+
+            putParam(sendPayload, "bRef", false)
+
+            putParam(sendPayload, "bRow", (vNoKey).toString())
+
+            putParam(sendPayload, "bCol", (vNoKey).toString())
+
+            putParam(sendPayload, "bVal", (vNoNumber).toString())
+
+            val sendData = buildJsonFromParams(sendPayload)
+            // The same pairs as the text a form carries (W3C SCXML C.2), so no
+            // `<param>` is evaluated twice.
+            val sendWireParams = sendPayload.mapValues { (_, v) ->
+                if (v is RepeatedParam) v.values.map { valueToWireString(it) } else listOf(valueToWireString(v))
+            }
+            // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
+            // which declared it to this build. Dispatch rather than refuse —
+            // and take the whole send, because a processor the host serves
+            // owns delivery; falling through would also enqueue the event
+            // locally and the document would see the act twice.
+            val hostRequest = HostSendRequest(
+                processorType = "sce:mesh",
+                eventName = "sheet.cell",
+                target = "#server",
+                content = "",
+                params = sendWireParams,
+                sendId = "__send_1",
+                eventData = sendData,
+                // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                // processed now, carried back out as a W3C child's send to its
+                // parent carries it (§scxml-6.4.1).
+                invokeId = currentEventMetadata.invokeId
+            )
+            val hostServed = performHostSend(hostRequest)
+            // W3C SCXML 6.2: a declared type with no handler registered is,
+            // from the document's side, a processor the platform does not
+            // support — the act it asked for was performed by nobody. Same
+            // event as an undeclared type, so a wiring mistake cannot read
+            // as success.
+            if (hostServed == null && !hasEventProcessor("sce:mesh")) {
+                raisePlatformError(SheetPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_1")
+            }
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             2 -> {
-                // SCE-MAP: sheet_peer.scxml:160 :: open :: _transition_2
+                // SCE-MAP: sheet_peer.scxml:186 :: open :: _transition_2
                 if (pendingSheetFormulaPayload == null) {
                     return
                 }
@@ -1153,9 +1240,82 @@ class SheetPeerStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+
+
+            if (run send@{
+            val sendPayload = mutableMapOf<String, Any?>()
+            putParam(sendPayload, "row", (pendingSheetFormulaPayload!!.row).toString())
+
+            putParam(sendPayload, "col", (pendingSheetFormulaPayload!!.col).toString())
+
+            putParam(sendPayload, "value", (vNoNumber).toString())
+
+            putParam(sendPayload, "wallTime", (vClock.wallTime).toString())
+
+            putParam(sendPayload, "counter", (vClock.counter).toLong())
+
+            putParam(sendPayload, "nodeId", (vNode).toString())
+
+            putParam(sendPayload, "op", (pendingSheetFormulaPayload!!.op).toLong())
+
+            putParam(sendPayload, "aRef", pendingSheetFormulaPayload!!.aRef)
+
+            putParam(sendPayload, "aRow", (pendingSheetFormulaPayload!!.aRow).toString())
+
+            putParam(sendPayload, "aCol", (pendingSheetFormulaPayload!!.aCol).toString())
+
+            putParam(sendPayload, "aVal", (pendingSheetFormulaPayload!!.aVal).toString())
+
+            putParam(sendPayload, "bRef", pendingSheetFormulaPayload!!.bRef)
+
+            putParam(sendPayload, "bRow", (pendingSheetFormulaPayload!!.bRow).toString())
+
+            putParam(sendPayload, "bCol", (pendingSheetFormulaPayload!!.bCol).toString())
+
+            putParam(sendPayload, "bVal", (pendingSheetFormulaPayload!!.bVal).toString())
+
+            val sendData = buildJsonFromParams(sendPayload)
+            // The same pairs as the text a form carries (W3C SCXML C.2), so no
+            // `<param>` is evaluated twice.
+            val sendWireParams = sendPayload.mapValues { (_, v) ->
+                if (v is RepeatedParam) v.values.map { valueToWireString(it) } else listOf(valueToWireString(v))
+            }
+            // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
+            // which declared it to this build. Dispatch rather than refuse —
+            // and take the whole send, because a processor the host serves
+            // owns delivery; falling through would also enqueue the event
+            // locally and the document would see the act twice.
+            val hostRequest = HostSendRequest(
+                processorType = "sce:mesh",
+                eventName = "sheet.cell",
+                target = "#server",
+                content = "",
+                params = sendWireParams,
+                sendId = "__send_3",
+                eventData = sendData,
+                // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                // processed now, carried back out as a W3C child's send to its
+                // parent carries it (§scxml-6.4.1).
+                invokeId = currentEventMetadata.invokeId
+            )
+            val hostServed = performHostSend(hostRequest)
+            // W3C SCXML 6.2: a declared type with no handler registered is,
+            // from the document's side, a processor the platform does not
+            // support — the act it asked for was performed by nobody. Same
+            // event as an undeclared type, so a wiring mistake cannot read
+            // as success.
+            if (hostServed == null && !hasEventProcessor("sce:mesh")) {
+                raisePlatformError(SheetPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_3")
+            }
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             3 -> {
-                // SCE-MAP: sheet_peer.scxml:182 :: open :: _transition_3
+                // SCE-MAP: sheet_peer.scxml:225 :: open :: _transition_3
                 if (pendingSheetCellPayload == null) {
                     return
                 }
@@ -1222,83 +1382,6 @@ class SheetPeerStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
-            if (!vHub && pendingSheetCellPayload!!.nodeId == vNode) {
-
-
-            if (run send@{
-            val sendPayload = mutableMapOf<String, Any?>()
-            putParam(sendPayload, "row", (pendingSheetCellPayload!!.row).toString())
-
-            putParam(sendPayload, "col", (pendingSheetCellPayload!!.col).toString())
-
-            putParam(sendPayload, "value", (pendingSheetCellPayload!!.value).toString())
-
-            putParam(sendPayload, "wallTime", (pendingSheetCellPayload!!.wallTime).toString())
-
-            putParam(sendPayload, "counter", (pendingSheetCellPayload!!.counter).toLong())
-
-            putParam(sendPayload, "nodeId", (pendingSheetCellPayload!!.nodeId).toString())
-
-            putParam(sendPayload, "op", (pendingSheetCellPayload!!.op).toLong())
-
-            putParam(sendPayload, "aRef", pendingSheetCellPayload!!.aRef)
-
-            putParam(sendPayload, "aRow", (pendingSheetCellPayload!!.aRow).toString())
-
-            putParam(sendPayload, "aCol", (pendingSheetCellPayload!!.aCol).toString())
-
-            putParam(sendPayload, "aVal", (pendingSheetCellPayload!!.aVal).toString())
-
-            putParam(sendPayload, "bRef", pendingSheetCellPayload!!.bRef)
-
-            putParam(sendPayload, "bRow", (pendingSheetCellPayload!!.bRow).toString())
-
-            putParam(sendPayload, "bCol", (pendingSheetCellPayload!!.bCol).toString())
-
-            putParam(sendPayload, "bVal", (pendingSheetCellPayload!!.bVal).toString())
-
-            val sendData = buildJsonFromParams(sendPayload)
-            // The same pairs as the text a form carries (W3C SCXML C.2), so no
-            // `<param>` is evaluated twice.
-            val sendWireParams = sendPayload.mapValues { (_, v) ->
-                if (v is RepeatedParam) v.values.map { valueToWireString(it) } else listOf(valueToWireString(v))
-            }
-            // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
-            // which declared it to this build. Dispatch rather than refuse —
-            // and take the whole send, because a processor the host serves
-            // owns delivery; falling through would also enqueue the event
-            // locally and the document would see the act twice.
-            val hostRequest = HostSendRequest(
-                processorType = "sce:mesh",
-                eventName = "sheet.cell",
-                target = "#server",
-                content = "",
-                params = sendWireParams,
-                sendId = "__send_3",
-                eventData = sendData,
-                // SCE_MESH.md §mesh-10.7: the invokeid of the event being
-                // processed now, carried back out as a W3C child's send to its
-                // parent carries it (§scxml-6.4.1).
-                invokeId = currentEventMetadata.invokeId
-            )
-            val hostServed = performHostSend(hostRequest)
-            // W3C SCXML 6.2: a declared type with no handler registered is,
-            // from the document's side, a processor the platform does not
-            // support — the act it asked for was performed by nobody. Same
-            // event as an undeclared type, so a wiring mistake cannot read
-            // as success.
-            if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(SheetPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_3")
-            }
-            false
-            }) {
-                // W3C SCXML 4.9: an error raised while this element was
-                // processed ends the block.
-                return
-            } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-
-
             if (vHub && pendingSheetCellPayload!!.nodeId != 1.toULong()) {
 
 
@@ -1351,7 +1434,7 @@ class SheetPeerStateMachine(
                 target = "#alice",
                 content = "",
                 params = sendWireParams,
-                sendId = "__send_4",
+                sendId = "__send_5",
                 eventData = sendData,
                 // SCE_MESH.md §mesh-10.7: the invokeid of the event being
                 // processed now, carried back out as a W3C child's send to its
@@ -1365,7 +1448,7 @@ class SheetPeerStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(SheetPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_4")
+                raisePlatformError(SheetPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_5")
             }
             false
             }) {
@@ -1428,7 +1511,7 @@ class SheetPeerStateMachine(
                 target = "#bob",
                 content = "",
                 params = sendWireParams,
-                sendId = "__send_5",
+                sendId = "__send_6",
                 eventData = sendData,
                 // SCE_MESH.md §mesh-10.7: the invokeid of the event being
                 // processed now, carried back out as a W3C child's send to its
@@ -1442,7 +1525,7 @@ class SheetPeerStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(SheetPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_5")
+                raisePlatformError(SheetPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_6")
             }
             false
             }) {
@@ -1453,7 +1536,7 @@ class SheetPeerStateMachine(
             }
             }
             4 -> {
-                // SCE-MAP: sheet_peer.scxml:226 :: open :: _transition_4
+                // SCE-MAP: sheet_peer.scxml:264 :: open :: _transition_4
 
             if (try { vTrail = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_SheetSettle__vvvvv(vCells, vRows, vGone, vCols, vGoneCols)), 768); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, "<assign location='trail'>: an integer operation overflowed or failed"); true }) {
                 return
@@ -1464,7 +1547,7 @@ class SheetPeerStateMachine(
             }
             }
             5 -> {
-                // SCE-MAP: sheet_peer.scxml:233 :: open :: _transition_5
+                // SCE-MAP: sheet_peer.scxml:271 :: open :: _transition_5
                 if (pendingSheetAddRowPayload == null) {
                     return
                 }
@@ -1519,7 +1602,7 @@ class SheetPeerStateMachine(
                 target = "#server",
                 content = "",
                 params = sendWireParams,
-                sendId = "__send_7",
+                sendId = "__send_8",
                 eventData = sendData,
                 // SCE_MESH.md §mesh-10.7: the invokeid of the event being
                 // processed now, carried back out as a W3C child's send to its
@@ -1533,7 +1616,7 @@ class SheetPeerStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(SheetPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_7")
+                raisePlatformError(SheetPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_8")
             }
             false
             }) {
@@ -1543,20 +1626,20 @@ class SheetPeerStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             6 -> {
-                // SCE-MAP: sheet_peer.scxml:250 :: open :: _transition_6
+                // SCE-MAP: sheet_peer.scxml:288 :: open :: _transition_6
                 if (pendingSheetRowPayload == null) {
                     return
                 }
 
 
-            var ifCondFailed5 = false
-            if ((try { com.sce.forge.runtime.SceChecked.div(pendingSheetRowPayload!!.key, 256.toULong()) > vLamport } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, "<if cond='_event.data.key / 256 > lamport'>: an integer operation overflowed or failed"); ifCondFailed5 = true; false })) {
+            var ifCondFailed4 = false
+            if ((try { com.sce.forge.runtime.SceChecked.div(pendingSheetRowPayload!!.key, 256.toULong()) > vLamport } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, "<if cond='_event.data.key / 256 > lamport'>: an integer operation overflowed or failed"); ifCondFailed4 = true; false })) {
 
             if (try { vLamport = com.sce.forge.runtime.SceChecked.div(pendingSheetRowPayload!!.key, 256.toULong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, "<assign location='lamport'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
-            if (ifCondFailed5) {
+            if (ifCondFailed4) {
                 return
             }
 
@@ -1590,8 +1673,8 @@ class SheetPeerStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
-            var ifCondFailed7 = false
-            if ((try { vHub && com.sce.forge.runtime.SceChecked.rem(pendingSheetRowPayload!!.key, 256.toULong()) != 1.toULong() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, "<if cond='hub && _event.data.key % 256 !== 1'>: an integer operation overflowed or failed"); ifCondFailed7 = true; false })) {
+            var ifCondFailed6 = false
+            if ((try { vHub && com.sce.forge.runtime.SceChecked.rem(pendingSheetRowPayload!!.key, 256.toULong()) != 1.toULong() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, "<if cond='hub && _event.data.key % 256 !== 1'>: an integer operation overflowed or failed"); ifCondFailed6 = true; false })) {
 
 
             if (run send@{
@@ -1617,7 +1700,7 @@ class SheetPeerStateMachine(
                 target = "#alice",
                 content = "",
                 params = sendWireParams,
-                sendId = "__send_9",
+                sendId = "__send_10",
                 eventData = sendData,
                 // SCE_MESH.md §mesh-10.7: the invokeid of the event being
                 // processed now, carried back out as a W3C child's send to its
@@ -1631,7 +1714,7 @@ class SheetPeerStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(SheetPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_9")
+                raisePlatformError(SheetPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_10")
             }
             false
             }) {
@@ -1640,13 +1723,13 @@ class SheetPeerStateMachine(
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
-            if (ifCondFailed7) {
+            if (ifCondFailed6) {
                 return
             }
 
 
-            var ifCondFailed8 = false
-            if ((try { vHub && com.sce.forge.runtime.SceChecked.rem(pendingSheetRowPayload!!.key, 256.toULong()) != 2.toULong() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, "<if cond='hub && _event.data.key % 256 !== 2'>: an integer operation overflowed or failed"); ifCondFailed8 = true; false })) {
+            var ifCondFailed7 = false
+            if ((try { vHub && com.sce.forge.runtime.SceChecked.rem(pendingSheetRowPayload!!.key, 256.toULong()) != 2.toULong() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, "<if cond='hub && _event.data.key % 256 !== 2'>: an integer operation overflowed or failed"); ifCondFailed7 = true; false })) {
 
 
             if (run send@{
@@ -1672,7 +1755,7 @@ class SheetPeerStateMachine(
                 target = "#bob",
                 content = "",
                 params = sendWireParams,
-                sendId = "__send_10",
+                sendId = "__send_11",
                 eventData = sendData,
                 // SCE_MESH.md §mesh-10.7: the invokeid of the event being
                 // processed now, carried back out as a W3C child's send to its
@@ -1686,7 +1769,7 @@ class SheetPeerStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(SheetPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_10")
+                raisePlatformError(SheetPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_11")
             }
             false
             }) {
@@ -1695,12 +1778,12 @@ class SheetPeerStateMachine(
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
-            if (ifCondFailed8) {
+            if (ifCondFailed7) {
                 return
             }
             }
             7 -> {
-                // SCE-MAP: sheet_peer.scxml:276 :: open :: _transition_7
+                // SCE-MAP: sheet_peer.scxml:314 :: open :: _transition_7
                 if (pendingSheetDropRowPayload == null) {
                     return
                 }
@@ -1747,7 +1830,7 @@ class SheetPeerStateMachine(
                 target = "#server",
                 content = "",
                 params = sendWireParams,
-                sendId = "__send_12",
+                sendId = "__send_13",
                 eventData = sendData,
                 // SCE_MESH.md §mesh-10.7: the invokeid of the event being
                 // processed now, carried back out as a W3C child's send to its
@@ -1761,7 +1844,7 @@ class SheetPeerStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(SheetPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_12")
+                raisePlatformError(SheetPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_13")
             }
             false
             }) {
@@ -1771,7 +1854,7 @@ class SheetPeerStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             8 -> {
-                // SCE-MAP: sheet_peer.scxml:289 :: open :: _transition_8
+                // SCE-MAP: sheet_peer.scxml:327 :: open :: _transition_8
                 if (pendingSheetGonePayload == null) {
                     return
                 }
@@ -1824,7 +1907,7 @@ class SheetPeerStateMachine(
                 target = "#alice",
                 content = "",
                 params = sendWireParams,
-                sendId = "__send_14",
+                sendId = "__send_15",
                 eventData = sendData,
                 // SCE_MESH.md §mesh-10.7: the invokeid of the event being
                 // processed now, carried back out as a W3C child's send to its
@@ -1838,7 +1921,7 @@ class SheetPeerStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(SheetPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_14")
+                raisePlatformError(SheetPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_15")
             }
             false
             }) {
@@ -1875,7 +1958,7 @@ class SheetPeerStateMachine(
                 target = "#bob",
                 content = "",
                 params = sendWireParams,
-                sendId = "__send_15",
+                sendId = "__send_16",
                 eventData = sendData,
                 // SCE_MESH.md §mesh-10.7: the invokeid of the event being
                 // processed now, carried back out as a W3C child's send to its
@@ -1889,7 +1972,7 @@ class SheetPeerStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(SheetPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_15")
+                raisePlatformError(SheetPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_16")
             }
             false
             }) {
@@ -1900,7 +1983,7 @@ class SheetPeerStateMachine(
             }
             }
             9 -> {
-                // SCE-MAP: sheet_peer.scxml:311 :: open :: _transition_9
+                // SCE-MAP: sheet_peer.scxml:349 :: open :: _transition_9
                 if (pendingSheetAddColPayload == null) {
                     return
                 }
@@ -1955,7 +2038,7 @@ class SheetPeerStateMachine(
                 target = "#server",
                 content = "",
                 params = sendWireParams,
-                sendId = "__send_17",
+                sendId = "__send_18",
                 eventData = sendData,
                 // SCE_MESH.md §mesh-10.7: the invokeid of the event being
                 // processed now, carried back out as a W3C child's send to its
@@ -1969,7 +2052,7 @@ class SheetPeerStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(SheetPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_17")
+                raisePlatformError(SheetPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_18")
             }
             false
             }) {
@@ -1979,20 +2062,20 @@ class SheetPeerStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             10 -> {
-                // SCE-MAP: sheet_peer.scxml:324 :: open :: _transition_10
+                // SCE-MAP: sheet_peer.scxml:362 :: open :: _transition_10
                 if (pendingSheetColPayload == null) {
                     return
                 }
 
 
-            var ifCondFailed11 = false
-            if ((try { com.sce.forge.runtime.SceChecked.div(pendingSheetColPayload!!.key, 256.toULong()) > vLamport } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, "<if cond='_event.data.key / 256 > lamport'>: an integer operation overflowed or failed"); ifCondFailed11 = true; false })) {
+            var ifCondFailed10 = false
+            if ((try { com.sce.forge.runtime.SceChecked.div(pendingSheetColPayload!!.key, 256.toULong()) > vLamport } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, "<if cond='_event.data.key / 256 > lamport'>: an integer operation overflowed or failed"); ifCondFailed10 = true; false })) {
 
             if (try { vLamport = com.sce.forge.runtime.SceChecked.div(pendingSheetColPayload!!.key, 256.toULong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, "<assign location='lamport'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
-            if (ifCondFailed11) {
+            if (ifCondFailed10) {
                 return
             }
 
@@ -2026,8 +2109,8 @@ class SheetPeerStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
 
-            var ifCondFailed13 = false
-            if ((try { vHub && com.sce.forge.runtime.SceChecked.rem(pendingSheetColPayload!!.key, 256.toULong()) != 1.toULong() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, "<if cond='hub && _event.data.key % 256 !== 1'>: an integer operation overflowed or failed"); ifCondFailed13 = true; false })) {
+            var ifCondFailed12 = false
+            if ((try { vHub && com.sce.forge.runtime.SceChecked.rem(pendingSheetColPayload!!.key, 256.toULong()) != 1.toULong() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, "<if cond='hub && _event.data.key % 256 !== 1'>: an integer operation overflowed or failed"); ifCondFailed12 = true; false })) {
 
 
             if (run send@{
@@ -2053,7 +2136,7 @@ class SheetPeerStateMachine(
                 target = "#alice",
                 content = "",
                 params = sendWireParams,
-                sendId = "__send_19",
+                sendId = "__send_20",
                 eventData = sendData,
                 // SCE_MESH.md §mesh-10.7: the invokeid of the event being
                 // processed now, carried back out as a W3C child's send to its
@@ -2067,7 +2150,7 @@ class SheetPeerStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(SheetPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_19")
+                raisePlatformError(SheetPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_20")
             }
             false
             }) {
@@ -2076,13 +2159,13 @@ class SheetPeerStateMachine(
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
-            if (ifCondFailed13) {
+            if (ifCondFailed12) {
                 return
             }
 
 
-            var ifCondFailed14 = false
-            if ((try { vHub && com.sce.forge.runtime.SceChecked.rem(pendingSheetColPayload!!.key, 256.toULong()) != 2.toULong() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, "<if cond='hub && _event.data.key % 256 !== 2'>: an integer operation overflowed or failed"); ifCondFailed14 = true; false })) {
+            var ifCondFailed13 = false
+            if ((try { vHub && com.sce.forge.runtime.SceChecked.rem(pendingSheetColPayload!!.key, 256.toULong()) != 2.toULong() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, "<if cond='hub && _event.data.key % 256 !== 2'>: an integer operation overflowed or failed"); ifCondFailed13 = true; false })) {
 
 
             if (run send@{
@@ -2108,7 +2191,7 @@ class SheetPeerStateMachine(
                 target = "#bob",
                 content = "",
                 params = sendWireParams,
-                sendId = "__send_20",
+                sendId = "__send_21",
                 eventData = sendData,
                 // SCE_MESH.md §mesh-10.7: the invokeid of the event being
                 // processed now, carried back out as a W3C child's send to its
@@ -2122,7 +2205,7 @@ class SheetPeerStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(SheetPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_20")
+                raisePlatformError(SheetPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_21")
             }
             false
             }) {
@@ -2131,12 +2214,12 @@ class SheetPeerStateMachine(
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
-            if (ifCondFailed14) {
+            if (ifCondFailed13) {
                 return
             }
             }
             11 -> {
-                // SCE-MAP: sheet_peer.scxml:349 :: open :: _transition_11
+                // SCE-MAP: sheet_peer.scxml:387 :: open :: _transition_11
                 if (pendingSheetDropColPayload == null) {
                     return
                 }
@@ -2183,7 +2266,7 @@ class SheetPeerStateMachine(
                 target = "#server",
                 content = "",
                 params = sendWireParams,
-                sendId = "__send_22",
+                sendId = "__send_23",
                 eventData = sendData,
                 // SCE_MESH.md §mesh-10.7: the invokeid of the event being
                 // processed now, carried back out as a W3C child's send to its
@@ -2197,7 +2280,7 @@ class SheetPeerStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(SheetPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_22")
+                raisePlatformError(SheetPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_23")
             }
             false
             }) {
@@ -2207,7 +2290,7 @@ class SheetPeerStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             12 -> {
-                // SCE-MAP: sheet_peer.scxml:360 :: open :: _transition_12
+                // SCE-MAP: sheet_peer.scxml:398 :: open :: _transition_12
                 if (pendingSheetGoneColPayload == null) {
                     return
                 }
@@ -2260,7 +2343,7 @@ class SheetPeerStateMachine(
                 target = "#alice",
                 content = "",
                 params = sendWireParams,
-                sendId = "__send_24",
+                sendId = "__send_25",
                 eventData = sendData,
                 // SCE_MESH.md §mesh-10.7: the invokeid of the event being
                 // processed now, carried back out as a W3C child's send to its
@@ -2274,7 +2357,7 @@ class SheetPeerStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(SheetPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_24")
+                raisePlatformError(SheetPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_25")
             }
             false
             }) {
@@ -2311,7 +2394,7 @@ class SheetPeerStateMachine(
                 target = "#bob",
                 content = "",
                 params = sendWireParams,
-                sendId = "__send_25",
+                sendId = "__send_26",
                 eventData = sendData,
                 // SCE_MESH.md §mesh-10.7: the invokeid of the event being
                 // processed now, carried back out as a W3C child's send to its
@@ -2325,7 +2408,7 @@ class SheetPeerStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(SheetPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_25")
+                raisePlatformError(SheetPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_26")
             }
             false
             }) {
@@ -2336,7 +2419,7 @@ class SheetPeerStateMachine(
             }
             }
             13 -> {
-                // SCE-MAP: sheet_peer.scxml:379 :: open :: _transition_13
+                // SCE-MAP: sheet_peer.scxml:417 :: open :: _transition_13
 
             if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
