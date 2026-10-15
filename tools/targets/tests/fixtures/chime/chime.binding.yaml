@@ -1,0 +1,31 @@
+version: 1
+document: chime.scxml
+
+inputs:
+  ring:
+    address: desk/in/switch
+    becomes: RINGING
+    event: switch.ring
+  quiet:
+    address: desk/in/switch
+    becomes: QUIETED
+    event: switch.quiet
+  test:
+    address: desk/in/switch
+    becomes: TESTING
+    event: switch.test
+
+outputs:
+  signal:
+    address: desk/out/chime
+    field: Stat
+    sent: {processor: x-sce-host}
+    map: {chime.ring: BELL, chime.quiet: SILENT}
+    # A test pulse is no value of the output and a round with nothing sent announces nothing: the
+    # slot keeps the last announcement, which `held` says.
+    hold_last: true
+    when_nothing_sent: held
+    also: {Tag: t3}
+    when:
+      chime.ring: {Note: n7}
+    assumed: "the signal keeps what it last said when only a test pulse is sent"

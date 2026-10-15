@@ -147,6 +147,10 @@
         },
         "values": {"type": "array", "items": {"$ref": "#/$defs/producedValue"}},
         "when_nothing_sent": {"$ref": "#/$defs/producedValue"},
+        "holds_last": {
+          "const": true,
+          "description": "A send that is no value of `values`, and a round that sends nothing, announce nothing: the output keeps the last announcement, and before there is one it has none. `when_nothing_sent` may then name a token outside `values`, which says the same."
+        },
         "attributes": {
           "type": "object",
           "description": "Constants the specification states for the output, by a logical name.",

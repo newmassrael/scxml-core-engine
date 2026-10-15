@@ -1,0 +1,31 @@
+version: 1
+origin: made up for the targets' tests
+independent_cases: true
+# A statechart is replayed, not recomputed: each case starts where the one before it ended.
+ordered: true
+cases:
+  # Nothing has been announced yet: the slot is the platform's own, and the record states what it held.
+  - name: a test pulse before anything was announced
+    given: {desk/in/switch: TESTING}
+    drove: [desk/in/switch]
+    expect: {desk/out/chime.Stat: SILENT}
+
+  - name: the switch is set to ringing
+    given: {desk/in/switch: RINGING}
+    drove: [desk/in/switch]
+    expect: {desk/out/chime.Stat: BELL, desk/out/chime.Tag: t3, desk/out/chime.Note: n7}
+
+  - name: a test pulse after ringing keeps the bell
+    given: {desk/in/switch: TESTING}
+    drove: [desk/in/switch]
+    expect: {desk/out/chime.Stat: BELL}
+
+  - name: the switch is set to quieted
+    given: {desk/in/switch: QUIETED}
+    drove: [desk/in/switch]
+    expect: {desk/out/chime.Stat: SILENT, desk/out/chime.Tag: t3}
+
+  - name: a test pulse after quieted keeps it silent
+    given: {desk/in/switch: TESTING}
+    drove: [desk/in/switch]
+    expect: {desk/out/chime.Stat: SILENT}

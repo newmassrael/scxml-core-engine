@@ -61,7 +61,7 @@ from sce_targets import split as splitting
 RUNTIME_SOURCES = ("UniqueIdGenerator.cpp", "EventDataHelper.cpp", "JsonUtils.cpp")
 ANNOTATIONS = {"assumed", "note"}
 SC_INPUT_KEYS = {"signal", "becomes", "event", "carries", "logical", *ANNOTATIONS}
-SC_OUTPUT_KEYS = {"sent", "values", "when_nothing_sent", "attributes", *ANNOTATIONS}
+SC_OUTPUT_KEYS = {"sent", "values", "when_nothing_sent", "attributes", "holds_last", *ANNOTATIONS}
 SENT_KEYS = {"processor"}
 TF_INPUT_KEYS = {"signal", "logical", "equals", "equals_any", "not_equals", "absent", "when_absent",
                  "range", *ANNOTATIONS}
@@ -288,7 +288,9 @@ def plan_statechart(interface: dict, header_text: str = ""):
         if extra:
             raise Refused(f"output {name}: this target reads a send's event name only, not {sorted(extra)}")
         wns = rule.get("when_nothing_sent")
-        if wns is not None and wns not in rule["values"]:
+        # An output that keeps its last announcement may name, as what a round that sends nothing
+        # reads, a token that is none of its values: that says "nothing is announced".
+        if wns is not None and wns not in rule["values"] and not rule.get("holds_last"):
             raise Refused(f"output {name}: when_nothing_sent {wns!r} is not one of its values")
     unique([pascal(s) for s in signals] + [pascal(o) for o in outputs]
            + [pascal(o) + "Value" for o in outputs] + [pascal(component)]
@@ -457,15 +459,18 @@ def emit_statechart_api(interface_path, target_path, interface, target, machine_
         a("        if (request != nullptr) {")
         a(f"            value = parse{t}(request->eventName);")
         a("            if (!value) {")
-        a("                ++mUnmapped;")
-        a("                return;")
+        if rule.get("holds_last"):
+            a("                return;  // a send that is no value of the output announces nothing: the last stands")
+        else:
+            a("                ++mUnmapped;")
+            a("                return;")
         a("            }")
         a("        } else {")
         wns = rule.get("when_nothing_sent")
-        if wns is not None:
+        if wns is not None and wns in rule["values"]:
             a(f"            value = {t}::{enumerator(wns)};  // when_nothing_sent")
         else:
-            a("            return;  // nothing sent and no when_nothing_sent: not written this round")
+            a("            return;  // nothing sent and nothing it reads as: not written this round")
         a("        }")
         a(f"        if (!mOut{i} || mOut{i}->value != *value) {{")
         a(f"            mOut{i} = {pascal(o)}{{*value}};")
@@ -1026,7 +1031,12 @@ def emit_replay(interface: dict, target: dict, api_header: str, header_text: str
             continue
         judging = "judgeHeld" if rule.get("holds_last") else "judge"
         if kind == "statechart":
+            # An output that keeps its last announcement has none until it announces one; a
+            # record that expects a value there describes the platform's own slot, which is counted.
+            unwritten_reading = ("if (!v) { ++unwritten(); return std::make_pair(true, std::string(\"(unwritten)\")); } "
+                                 if rule.get("holds_last") else "")
             a(f"        {{{cpp_string(o)}, [&](const std::string& want) {{ const auto& v = component.{camel(o)}(); "
+              f"{unwritten_reading}"
               f"const std::string got = v ? std::string(toString(v->value)) : std::string(\"(unwritten)\"); "
               f"return std::make_pair(got == want, got); }}}},")
         elif o in ENUM_OUTPUTS:

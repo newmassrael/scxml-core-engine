@@ -1,0 +1,18 @@
+# A synthetic pack for the targets' tests of a statechart output that keeps its last announcement. It
+# is made up, and nothing in it is anyone's. A switch with three positions; a chime slot that is
+# announced RING or QUIET, while a test pulse is no announcement and the slot keeps what it had.
+version: 1
+entries:
+  - address: desk/in/switch
+    role: input
+    names: [IN_Switch]
+    values: {QUIETED: 0, RINGING: 1, TESTING: 2}
+
+  - address: desk/out/chime
+    role: output
+    names: [OUT_Chime]
+    fields:
+      Stat: {values: {SILENT: 0, BELL: 1}}
+      # The rest of the platform's record for this slot. A library has none of it.
+      Tag: {type: text}
+      Note: {type: text}

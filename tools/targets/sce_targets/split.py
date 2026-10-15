@@ -36,7 +36,8 @@ from sce_author.pack import load_pack
 ANNOTATIONS = ("assumed", "note")
 STATECHART_INPUT_KEYS = {"address", "becomes", "event", "carries", "protocol", "parameters",
                          *ANNOTATIONS}
-STATECHART_OUTPUT_KEYS = {"address", "field", "sent", "when_nothing_sent", "map", "also", *ANNOTATIONS}
+STATECHART_OUTPUT_KEYS = {"address", "field", "sent", "when_nothing_sent", "map", "also", "hold_last",
+                          "when", *ANNOTATIONS}
 PREDICATES = ("equals", "equals_any", "not_equals", "absent")
 TRANSFORM_INPUT_KEYS = {"address", *PREDICATES, "when_absent", "range", "protocol", "parameters",
                         *ANNOTATIONS}
@@ -151,6 +152,11 @@ def split(binding_path: pathlib.Path, pack_dir: pathlib.Path, spec_path: pathlib
             logical = {"sent": rule["sent"], "values": list(mapping)}
             if "when_nothing_sent" in rule:
                 logical["when_nothing_sent"] = rule["when_nothing_sent"]
+            if rule.get("hold_last"):
+                # A send that is no value of the output, and a round that sends nothing, announce
+                # nothing: the output keeps the last announcement. That is its behaviour whatever
+                # the platform, so it is logical, as for a transform.
+                logical["holds_last"] = True
             attributes, attribute_fields, platform_also = {}, {}, {}
             for field, value in (rule.get("also") or {}).items():
                 if stated_by_spec(value, spec):
@@ -167,6 +173,10 @@ def split(binding_path: pathlib.Path, pack_dir: pathlib.Path, spec_path: pathlib
                 prof["attribute_fields"] = attribute_fields
             if platform_also:
                 prof["also"] = platform_also
+            if rule.get("when"):
+                # The other fields of the platform's record, written while the output has a given
+                # value: the platform's record, not anything the document computes.
+                prof["when"] = rule["when"]
             profile_outputs[name] = prof
     elif kind == "transform":
         for name, rule in (binding.get("inputs") or {}).items():

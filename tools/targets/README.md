@@ -33,11 +33,13 @@ They need the authoring core on the module path (`PYTHONPATH=tools/targets:tools
 A key the split does not place is refused, never dropped: a dropped key is one the rebuilt binding
 would silently lack. The same holds for a key the standalone target does not build.
 
-Where a transform output's keys go: `hold_last` is the output's own behaviour (a value outside its
-`values` is no announcement, and it keeps the last one), so it is `holds_last` in the interface and
-the library keeps the value; before there is one, a record's expectation is counted (`unwritten`),
-not failed. `also` and `when` fill the other fields of a platform's record; a library has no record,
-so they are the profile's and those positions are counted as platform-only. A record that reads an
+Where an output's keys go, for a transform and a statechart alike: `hold_last` is the output's own
+behaviour (a value or a send outside its `values` is no announcement, and it keeps the last one), so
+it is `holds_last` in the interface and the library keeps the value; a statechart's
+`when_nothing_sent` may then name a token outside `values`, which says "nothing is announced". Before
+there is a last announcement, a record's expectation is counted (`unwritten`), not failed. `also` and
+`when` fill the other fields of a platform's record; a library has no record, so they are the
+profile's and those positions are counted as platform-only. A record that reads an
 event slot as its first announcement (`announces_old_off`) and expects OFF is a reading only a host
 has, and is counted as host-announced.
 

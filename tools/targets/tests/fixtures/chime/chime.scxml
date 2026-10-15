@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" datamodel="null" initial="idle" sce:kind="statechart" name="chime">
+  <state id="idle">
+    <transition event="switch.ring">
+      <send event="chime.ring" type="x-sce-host"/>
+    </transition>
+    <transition event="switch.quiet">
+      <send event="chime.quiet" type="x-sce-host"/>
+    </transition>
+    <transition event="switch.test">
+      <send event="chime.test" type="x-sce-host"/>
+    </transition>
+  </state>
+</scxml>
