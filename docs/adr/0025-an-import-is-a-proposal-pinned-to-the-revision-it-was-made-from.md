@@ -49,6 +49,14 @@ The refusal sentences are the product's words, identical in both languages.
 **Decisions are data.** Each decision the owner makes on a block (keep, correct, drop, add from the
 original) is appended to a log beside the proposal, never applied by editing the conversion in place.
 
+**A Markdown original needs no conversion.** When the document brought in is already Markdown, it is
+its own conversion: the original and the conversion are one blob, SCE splits it into blocks by rule, and
+no provider is waited for (ADR 0029). Nothing about the proposal changes otherwise. It is pinned to the
+revision it was made against, it is refused as `moved` if the spec has moved, and the owner is shown
+what it changes in the spec instead of how a conversion compares with an original. For a new spec with
+nothing to compare against, accepting is one step. What the rules could not carry, such as a table that
+did not parse, is reported as a reader's list is (ADR 0026), never discarded.
+
 ## Alternatives rejected
 
 - A hard lock on the spec while a proposal is pending. With a server, one person who closes a window

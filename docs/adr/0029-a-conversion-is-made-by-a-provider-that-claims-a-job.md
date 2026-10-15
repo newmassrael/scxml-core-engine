@@ -1,0 +1,98 @@
+# ADR 0029 — A conversion is made by a provider that claims a job
+
+- Status: Accepted as the direction (the owner decided it on 2026-10-15); not yet implemented
+- Date: 2026-10-15
+- Scope: who or what turns an original's blocks into a conversion, how a provider is attached, what
+  the product asks of one, and what an organisation may restrict
+- Related: `docs/adr/0025-an-import-is-a-proposal-pinned-to-the-revision-it-was-made-from.md`,
+  `docs/adr/0026-a-conversion-is-held-to-the-original-block-by-block.md`,
+  `docs/adr/0027-the-spec-store-is-a-contract-with-a-folder-and-a-database-behind-it.md`,
+  `docs/adr/0028-a-spec-lives-in-a-workspace-and-one-interface-serves-two-hosts.md`
+
+## Context
+
+Today a conversion is made by an AI client that a person connects to the authoring tools. The owner
+decided that the person chooses what converts their documents: an account they already have, an API
+key, or a model running on their own machine, and later possibly a service offered with the product.
+An organisation must be able to use the hosted service and its own installation, and to say which of
+these its people may use.
+
+ADR 0026 already holds every conversion to the original block by block and does not take the converter's
+word for its completeness. The converter is therefore replaceable without weakening what a reviewer is
+promised.
+
+## Decision
+
+**A conversion is a job, kept in the store.** When an original has been extracted into blocks
+(ADR 0026), a conversion job is recorded. It names the extraction (by hash), the revisions of the spec
+it is made against (ADR 0025) and the version of the conversion recipe. Its life (queued, claimed,
+done, failed) is written once as a document, as the life of an import is.
+
+**A provider claims a job with a lease.** The lease is the store's own `claim`, `heartbeat` and
+`release` (ADR 0027). A provider that stops heartbeating loses the job, which another provider may then
+claim. Whatever claims the job returns the same thing: a conversion, a blob of Markdown blocks that
+cite their sources.
+
+**There are four kinds of provider and one contract.**
+
+- An AI client the person has connected, which takes the job through the authoring tools.
+- An API key, with which the host itself calls a model.
+- A model on the person's own machine, run by a worker that connects outward to the host and claims
+  jobs. Nothing needs to reach the person's machine, so a hosted workspace can be served by a local
+  model.
+- A service offered with the product. It is not designed here.
+
+**The product asks a provider to say what it can read.** A provider declares which ways of reading it
+supports (`text-layer`, `ocr`, `vision`) and the longest input it takes. A job whose extraction needs
+something the provider did not declare is refused with a plain sentence that names what is missing. The
+declaration is the provider's own word; it is not trusted for quality, because SCE's check of every
+citation (ADR 0026) decides what a conversion is worth, whichever provider made it. The product does not
+rate, rank or recommend models.
+
+**Every conversion records where it came from.** The provider kind, the model identifier as the provider
+reports it, and the recipe version are kept with the conversion. Converting the same original again
+with another provider gives a second conversion over the same blocks, and both are kept (ADR 0026).
+
+**The recipe is one versioned document the product owns.** The instructions that make a provider convert
+faithfully (what a block is, how to cite, what to leave marked unresolved) are written once. The
+authoring tools serve them to a connected client; the host passes them to a key or a local worker. A
+provider has no recipe of its own.
+
+**Secrets stay out of the store.** An API key is never written to a store, an export or a git tree. On
+the desktop it is held in the operating system's credential store. On a server it is stored encrypted
+and can be replaced but not read back through the interface. An organisation may supply its own key
+management; how is not decided here.
+
+**An organisation can restrict the kinds.** A workspace has a policy naming the provider kinds its
+members may use, set by an administrator, for example a local model only. The interface says in one
+line where a document goes, so that a person and an auditor can see it without reading a policy.
+
+**Markdown needs no provider.** A Markdown original is its own conversion (ADR 0025), so the import
+works with no provider connected.
+
+## Alternatives rejected
+
+- A code path for each provider in the screens. The screens would learn the providers, and adding one
+  would mean changing them.
+- Trusting a provider's report that its conversion is complete. This is what ADR 0026 refuses.
+- Benchmarking or approving models inside the product. The person chooses their model; the product keeps
+  the conversion honest, which it can do for any model.
+- Calling only from the host. A model on a person's machine could then never serve a hosted workspace.
+
+## Consequences
+
+- The store's contract gains a record for a conversion job and uses the lease it already has; the
+  conformance suite (ADR 0027) states the new promises.
+- The conversion recipe leaves the connected client's instructions and becomes a versioned document with
+  its own file, tests and changelog.
+- A weaker model is not a different product: it yields more conversions the reviewer is asked to check.
+- The screens show the provider as a name and a state, and a choice among the kinds the workspace's
+  policy allows.
+
+## Not decided here
+
+- The service offered with the product: its kind, its terms and how it is paid for.
+- Any limit or estimate of what an API key may spend.
+- Which recogniser or vision model an extractor or a local worker uses, and the confidence at which a
+  block is queued for a person (carried from ADR 0026).
+- How an organisation's own key management is attached.
