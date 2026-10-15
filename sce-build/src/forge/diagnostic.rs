@@ -10538,7 +10538,9 @@ fn scxml_semantic_fields(e: &crate::scxml_semantic::ScxmlSemanticError) -> Diagn
                 k
             },
         },
-        ScxmlSemanticError::UnreachableState { state_id } => DiagnosticPayload {
+        // `alternative` is prose only (the message's second sentence): it is
+        // not an `actual`, a `fix` or part of the id.
+        ScxmlSemanticError::UnreachableState { state_id, .. } => DiagnosticPayload {
             // NEW — NL→IR Mapping Roadmap Item 3. Reachability
             // is a Statechart-graph rule with no forge analog (Forge
             // kinds carry no control-flow surface), so the wire code
@@ -10554,7 +10556,7 @@ fn scxml_semantic_fields(e: &crate::scxml_semantic::ScxmlSemanticError) -> Diagn
             fix: None,
             key_fragments: vec!["scxml-unreachable-state".to_string(), state_id.clone()],
         },
-        ScxmlSemanticError::DeadTransition { state, target } => DiagnosticPayload {
+        ScxmlSemanticError::DeadTransition { state, target, .. } => DiagnosticPayload {
             // NEW — paired with `UnreachableState` above; emitted in
             // preference whenever the orphan state carries at least
             // one `<transition>` so the diagnostic surfaces a concrete
@@ -11847,6 +11849,7 @@ mod tests {
                 "forge/scxml-unreachable-state",
                 crate::scxml_semantic::ScxmlSemanticError::UnreachableState {
                     state_id: "ghost_branch".into(),
+                    alternative: None,
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:c62a2a67930417c8","code":"scxml/unreachable-state","stage":"validation","message":"State 'ghost_branch' is unreachable from the document initial configuration","actual":"ghost_branch"}"#,
@@ -11859,6 +11862,7 @@ mod tests {
                 crate::scxml_semantic::ScxmlSemanticError::DeadTransition {
                     state: "ghost_branch".into(),
                     target: "armed".into(),
+                    alternative: None,
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:c6afb255ec2689b7","code":"scxml/dead-transition","stage":"validation","message":"Transition in unreachable state 'ghost_branch' targets 'armed' — source state is never entered","actual":"armed"}"#,

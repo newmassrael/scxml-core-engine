@@ -2909,6 +2909,10 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Configuration.kt",
           "symbol": "childArity",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/scxml_semantic.rs",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",

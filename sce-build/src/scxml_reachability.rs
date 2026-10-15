@@ -60,7 +60,7 @@ use std::collections::{HashSet, VecDeque};
 use crate::forge::error::{ForgeError, Located};
 use crate::model::SCXMLModel;
 use crate::provenance::MarkerKind;
-use crate::scxml_semantic::ScxmlSemanticError;
+use crate::scxml_semantic::{Alternative, ScxmlSemanticError};
 
 /// Reject the document on its first reachability violation — the first
 /// of [`findings`], for callers whose result carries one error.
@@ -104,6 +104,7 @@ pub fn findings(model: &SCXMLModel, source: &str) -> Vec<Located<ForgeError>> {
         if reach.contains(&state.id) {
             continue;
         }
+        let alternative = alternative_to(model, &reach, state);
         // Per-transition form takes priority — surface the first
         // transition with a non-empty target so the author repair
         // lands on the orphan edge.
@@ -121,6 +122,7 @@ pub fn findings(model: &SCXMLModel, source: &str) -> Vec<Located<ForgeError>> {
                         ScxmlSemanticError::DeadTransition {
                             state: state.id.clone(),
                             target,
+                            alternative,
                         }
                         .into(),
                         trans.source_location.as_ref(),
@@ -134,6 +136,7 @@ pub fn findings(model: &SCXMLModel, source: &str) -> Vec<Located<ForgeError>> {
             model.locate(
                 ScxmlSemanticError::UnreachableState {
                     state_id: state.id.clone(),
+                    alternative,
                 }
                 .into(),
                 state.source_location.as_ref(),
@@ -143,6 +146,38 @@ pub fn findings(model: &SCXMLModel, source: &str) -> Vec<Located<ForgeError>> {
     }
 
     out
+}
+
+/// The entered sibling `state` is an alternative to, if it has one.
+///
+/// Siblings are the children of one parent (the document's top level when
+/// the state has none). They are alternatives only under a parent that is
+/// not a `<parallel>`: a parallel parent that was entered would have entered
+/// this child too (§scxml-3.4), so an orphan under one has no entered
+/// sibling to be an alternative to. The first entered sibling in document
+/// order is named, so the message is the same on every run.
+fn alternative_to(
+    model: &SCXMLModel,
+    reach: &HashSet<String>,
+    state: &crate::model::State,
+) -> Option<Alternative> {
+    let parent_is_parallel = state
+        .parent
+        .as_ref()
+        .and_then(|p| model.states.get(p))
+        .is_some_and(|p| p.is_parallel);
+    if parent_is_parallel {
+        return None;
+    }
+    model
+        .states
+        .values()
+        .filter(|s| s.parent == state.parent && s.id != state.id && reach.contains(&s.id))
+        .min_by_key(|s| s.document_order)
+        .map(|s| Alternative {
+            sibling: s.id.clone(),
+            top_level: state.parent.is_none(),
+        })
 }
 
 /// First whitespace-separated non-empty target on a transition's
@@ -551,5 +586,113 @@ mod tests {
     fn empty_model_is_silent() {
         let model = SCXMLModel::default();
         assert!(validate(&model, "test.scxml").is_ok());
+    }
+
+    /// What an orphan's message says, one string per finding in document order.
+    fn messages(model: &SCXMLModel) -> Vec<String> {
+        findings(model, "test.scxml")
+            .into_iter()
+            .map(|f| f.error.to_string())
+            .collect()
+    }
+
+    /// A top-level orphan beside the entered initial state is its alternative: the message
+    /// names that sibling and says the states are top-level.
+    #[test]
+    fn a_top_level_orphan_names_the_entered_sibling() {
+        let mut model = SCXMLModel {
+            initial: "a".to_string(),
+            ..Default::default()
+        };
+        insert_states(&mut model, vec![state("a", 0), state("b", 1)]);
+        let said = messages(&model);
+        assert_eq!(said.len(), 1);
+        assert!(said[0].contains("sibling of 'a'"), "{}", said[0]);
+        assert!(
+            said[0].contains("top-level states are alternatives"),
+            "{}",
+            said[0]
+        );
+    }
+
+    /// A state with no entered sibling gets the bare message: here the orphan's only sibling is
+    /// itself an orphan (both are children of an unreachable compound).
+    #[test]
+    fn an_orphan_with_no_entered_sibling_keeps_the_bare_message() {
+        let mut model = SCXMLModel {
+            initial: "a".to_string(),
+            ..Default::default()
+        };
+        let mut island = state("island", 1);
+        island.children = vec!["left".to_string(), "right".to_string()];
+        insert_states(
+            &mut model,
+            vec![
+                state("a", 0),
+                island,
+                child("left", "island", 2),
+                child("right", "island", 3),
+            ],
+        );
+        let said = messages(&model);
+        assert_eq!(said.len(), 3, "{said:?}");
+        // `island` is an alternative of `a`; its two children are not alternatives of anything
+        // that is entered.
+        assert!(said[0].contains("sibling of 'a'"), "{}", said[0]);
+        assert_eq!(
+            said[1],
+            "State 'left' is unreachable from the document initial configuration"
+        );
+        assert_eq!(
+            said[2],
+            "State 'right' is unreachable from the document initial configuration"
+        );
+    }
+
+    /// Siblings are not alternatives under a `<parallel>`: an entered parallel enters every
+    /// region (§scxml-3.4), so a region is never an orphan beside an entered one. An orphan
+    /// region of a parallel that is itself not entered has no entered sibling either.
+    #[test]
+    fn a_region_of_a_parallel_is_never_described_as_an_alternative() {
+        let mut model = SCXMLModel {
+            initial: "a".to_string(),
+            ..Default::default()
+        };
+        let mut par = state("par", 1);
+        par.is_parallel = true;
+        par.children = vec!["r1".to_string(), "r2".to_string()];
+        insert_states(
+            &mut model,
+            vec![
+                state("a", 0),
+                par,
+                child("r1", "par", 2),
+                child("r2", "par", 3),
+            ],
+        );
+        let said = messages(&model);
+        assert_eq!(said.len(), 3, "{said:?}");
+        assert!(
+            said[0].contains("'par'") && said[0].contains("sibling of 'a'"),
+            "{}",
+            said[0]
+        );
+        assert!(!said[1].contains("sibling of"), "{}", said[1]);
+        assert!(!said[2].contains("sibling of"), "{}", said[2]);
+    }
+
+    /// The first entered sibling in document order is the one named.
+    #[test]
+    fn the_first_entered_sibling_in_document_order_is_named() {
+        let mut model = SCXMLModel {
+            initial: "y".to_string(),
+            ..Default::default()
+        };
+        let mut y = state("y", 1);
+        y.transitions.push(transition_to("x"));
+        insert_states(&mut model, vec![state("x", 0), y, state("z", 2)]);
+        let said = messages(&model);
+        assert_eq!(said.len(), 1);
+        assert!(said[0].contains("sibling of 'x'"), "{}", said[0]);
     }
 }

@@ -294,6 +294,44 @@ pub const LEGAL_STATE_SPECIFICATION_RULE: &str =
      <parallel>, and an initial or history default names only descendants of \
      the state that holds it";
 
+/// The entered sibling an unreachable state is an alternative to
+/// (§scxml-3.3: a compound state is in one child at a time).
+///
+/// Two sibling states are alternatives, not concurrent regions: only a
+/// `<parallel>` parent enters all its children (§scxml-3.4). An author who
+/// meant the states to run side by side, and wrote them under a `<state>` or
+/// at the top of the document, gets exactly this orphan — and the bare
+/// "unreachable" says neither why nor what to do.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Alternative {
+    /// A sibling that is entered from the document's initial configuration.
+    pub sibling: String,
+    /// The shared parent is the document itself (the states are top-level).
+    pub top_level: bool,
+}
+
+/// The sentence appended to an orphan's message when it is an [`Alternative`].
+fn alternative_note(alternative: &Option<Alternative>) -> String {
+    match alternative {
+        None => String::new(),
+        Some(Alternative { sibling, top_level }) => {
+            let (place, together) = if *top_level {
+                (
+                    "top-level states",
+                    "put them under one `<parallel>` and make that the document's initial state",
+                )
+            } else {
+                ("sibling states", "make their parent a `<parallel>`")
+            };
+            format!(
+                ". It is a sibling of '{sibling}', which is entered, and {place} are \
+                 alternatives: only one is active at a time. To run them side by side, \
+                 {together}; to enter it later, add a transition to it"
+            )
+        }
+    }
+}
+
 /// SCXML post-parse semantic failures.
 ///
 /// Each variant maps to a stable wire `DiagnosticCode` via
@@ -608,10 +646,16 @@ pub enum ScxmlSemanticError {
     /// one transition is present, the per-transition variant fires
     /// first because it points the author at a concrete element to
     /// repair (delete the transition / re-attach the source state).
-    #[error("State '{state_id}' is unreachable from the document initial configuration")]
+    #[error(
+        "State '{state_id}' is unreachable from the document initial configuration{}",
+        alternative_note(.alternative)
+    )]
     UnreachableState {
         /// The unreachable state's id.
         state_id: String,
+        /// Set when the state has a sibling that IS entered: the orphan is
+        /// then an alternative to it, which is the usual reason.
+        alternative: Option<Alternative>,
     },
 
     /// A `<transition>` element lives in a state that is itself
@@ -628,7 +672,8 @@ pub enum ScxmlSemanticError {
     /// state-level diagnostic.
     #[error(
         "Transition in unreachable state '{state}' targets '{target}' — \
-         source state is never entered"
+         source state is never entered{}",
+        alternative_note(.alternative)
     )]
     DeadTransition {
         /// Owning state id (the unreachable `<state>` / `<parallel>`
@@ -641,6 +686,9 @@ pub enum ScxmlSemanticError {
         /// every target shares the same orphan source so collapsing
         /// to a single diagnostic is correct).
         target: String,
+        /// As on [`Self::UnreachableState`]: the entered sibling this
+        /// state is an alternative to, when there is one.
+        alternative: Option<Alternative>,
     },
 
     /// A member of a document set sends to its parent session
@@ -1124,10 +1172,12 @@ mod tests {
             },
             ScxmlSemanticError::UnreachableState {
                 state_id: "ghost".into(),
+                alternative: None,
             },
             ScxmlSemanticError::DeadTransition {
                 state: "ghost".into(),
                 target: "armed".into(),
+                alternative: None,
             },
             ScxmlSemanticError::ParentSendWithoutParent {
                 machine: "notifier".into(),

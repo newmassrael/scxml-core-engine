@@ -115,7 +115,7 @@ fn orphan_final_without_transitions_emits_unreachable_state() {
     let err = compile_expect_err(dir.path(), "orphan_final.scxml");
     match &err.error {
         ForgeError::Scxml(boxed) => match boxed.as_ref() {
-            ScxmlSemanticError::UnreachableState { state_id } => {
+            ScxmlSemanticError::UnreachableState { state_id, .. } => {
                 assert_eq!(state_id, "ghost");
             }
             other => panic!("expected UnreachableState variant, got {other:?}"),
@@ -149,7 +149,7 @@ fn orphan_state_with_transition_emits_dead_transition() {
     let err = compile_expect_err(dir.path(), "dead_transition.scxml");
     match &err.error {
         ForgeError::Scxml(boxed) => match boxed.as_ref() {
-            ScxmlSemanticError::DeadTransition { state, target } => {
+            ScxmlSemanticError::DeadTransition { state, target, .. } => {
                 assert_eq!(state, "ghost");
                 assert_eq!(target, "idle");
             }
@@ -250,4 +250,123 @@ fn parallel_all_children_stay_reachable() {
 "#,
     );
     compile_positive(dir.path(), "parallel_regions.scxml");
+}
+
+// The message of an orphan that is an alternative of an entered sibling. `message` is prose
+// (SCE_ERROR_CONTRACT.md §1: not machine-parsed, not part of `id`), so these pin the words an
+// author is told, not a wire shape.
+
+fn orphan_message(dir: &Path, scxml_name: &str) -> String {
+    compile_expect_err(dir, scxml_name).error.to_string()
+}
+
+#[test]
+fn a_top_level_sibling_of_the_initial_state_is_told_to_use_a_parallel() {
+    // Two top-level states are alternatives (§scxml-3.3): only `a` is entered. An author who
+    // meant them to run side by side gets `b` as an orphan, and the bare "unreachable" names
+    // neither the sibling nor the way out.
+    let dir = tempdir().expect("tempdir");
+    write_fixture(
+        dir.path(),
+        "siblings.scxml",
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" name="siblings" initial="a">
+  <state id="a"><transition event="go" target="a"/></state>
+  <state id="b"/>
+</scxml>
+"#,
+    );
+    let said = orphan_message(dir.path(), "siblings.scxml");
+    assert!(said.contains("'b'"), "{said}");
+    assert!(said.contains("sibling of 'a'"), "{said}");
+    assert!(said.contains("top-level states are alternatives"), "{said}");
+    assert!(said.contains("under one `<parallel>`"), "{said}");
+}
+
+#[test]
+fn a_sibling_state_under_a_compound_parent_is_told_to_make_the_parent_a_parallel() {
+    let dir = tempdir().expect("tempdir");
+    write_fixture(
+        dir.path(),
+        "compound_siblings.scxml",
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" name="compound_siblings" initial="top">
+  <state id="top" initial="left">
+    <state id="left"><transition event="go" target="left"/></state>
+    <state id="right"/>
+  </state>
+</scxml>
+"#,
+    );
+    let said = orphan_message(dir.path(), "compound_siblings.scxml");
+    assert!(said.contains("'right'"), "{said}");
+    assert!(said.contains("sibling of 'left'"), "{said}");
+    assert!(said.contains("sibling states are alternatives"), "{said}");
+    assert!(said.contains("make their parent a `<parallel>`"), "{said}");
+    assert!(!said.contains("top-level"), "{said}");
+}
+
+#[test]
+fn the_dead_transition_form_carries_the_same_advice() {
+    let dir = tempdir().expect("tempdir");
+    write_fixture(
+        dir.path(),
+        "dead_sibling.scxml",
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" name="dead_sibling" initial="a">
+  <state id="a"><transition event="go" target="a"/></state>
+  <state id="b"><transition event="never" target="a"/></state>
+</scxml>
+"#,
+    );
+    let said = orphan_message(dir.path(), "dead_sibling.scxml");
+    assert!(
+        said.contains("Transition in unreachable state 'b'"),
+        "{said}"
+    );
+    assert!(said.contains("sibling of 'a'"), "{said}");
+}
+
+#[test]
+fn the_first_entered_sibling_in_document_order_is_the_one_named() {
+    // `x` and `y` are both entered (`y` is `initial`, `x` is its transition target), `z` is
+    // the orphan: the message names the same sibling on every run.
+    let dir = tempdir().expect("tempdir");
+    write_fixture(
+        dir.path(),
+        "named_sibling.scxml",
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" name="named_sibling" initial="y">
+  <state id="x"><transition event="go" target="x"/></state>
+  <state id="y"><transition event="go" target="x"/></state>
+  <state id="z"/>
+</scxml>
+"#,
+    );
+    let said = orphan_message(dir.path(), "named_sibling.scxml");
+    assert!(said.contains("sibling of 'x'"), "{said}");
+}
+
+#[test]
+fn a_document_that_wraps_the_regions_in_a_parallel_is_accepted() {
+    // The repair the message names.
+    let dir = tempdir().expect("tempdir");
+    write_fixture(
+        dir.path(),
+        "wrapped.scxml",
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" name="wrapped" initial="all">
+  <parallel id="all">
+    <state id="a"><transition event="go" target="a"/></state>
+    <state id="b"><transition event="go" target="b"/></state>
+  </parallel>
+</scxml>
+"#,
+    );
+    compile_positive(dir.path(), "wrapped.scxml");
 }

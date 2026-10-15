@@ -6225,6 +6225,18 @@ Both rejection paths sit in the `scxml/*` family because reachability
 is a Statechart-graph rule with no analog on the Forge-kind side
 (Forge kinds carry no control-flow surface).
 
+When the orphan has a sibling (a child of the same parent, or another
+top-level state) that IS entered, both messages end with a sentence naming
+that sibling and saying why: siblings are alternatives, only a `<parallel>`
+parent enters all its children (§scxml-3.3, §scxml-3.4). It names the way
+out for each intent: put the states under one `<parallel>` to run them side
+by side (a top-level one becomes the document's initial state), or add a
+transition to enter it later. The first entered sibling in document order is
+named, so the message is stable. The sentence is prose in `message`
+(SCE_ERROR_CONTRACT.md §1: not machine-parsed, not part of `id`); `actual`,
+`fix` and the code are as before, and an orphan with no entered sibling
+(everything under an unreachable parent) keeps the bare message.
+
 ---
 
 ### A document set whose member sends to a parent nobody is
