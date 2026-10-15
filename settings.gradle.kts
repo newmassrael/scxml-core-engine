@@ -38,6 +38,11 @@ include(":sce-kotlin-tests")
 project(":sce-kotlin-tests").projectDir = file("backends/kotlin/tests")
 include(":sce-kotlin-mesh")
 project(":sce-kotlin-mesh").projectDir = file("backends/kotlin/mesh")
+// A step server for the world simulation (backends/rust/world): one generated machine
+// per JVM process, driven over stdin and stdout. Its own module so a world test does not
+// compile the 390 machines of `:sce-kotlin-tests`.
+include(":sce-kotlin-world")
+project(":sce-kotlin-world").projectDir = file("backends/kotlin/world")
 // ECMA-262 through a Lua-lowered Kotlin artifact. Separate from
 // `:sce-kotlin-tests` because it compiles two artifacts generated from one
 // document with two `--script-engine` selections, which is a different subject
