@@ -153,7 +153,19 @@ sce_codegen_require() {
     # rather than inheriting the risk the workflow step was written to
     # avoid.
     sce_codegen_drop_stale_release "$root"
-    (cd "$root" && cargo build --bin sce-codegen --features cli -p sce-build) >&2
+    # A build that FAILED is a refusal, not a reason to look for a binary. The
+    # search below finds whatever `target/` still holds, and after a failed build
+    # that is the generator of the tree before the edit: a regeneration run with
+    # it writes the output of the OLD sources and reads as a success. Measured
+    # 2026-10-15 on a mutation round whose edit left a `format!` argument unused:
+    # the generator did not compile, the regeneration ran with the previous
+    # binary, every generated file came out unchanged, and the round reported
+    # "every test binary is byte-identical" instead of the compiler's refusal.
+    if ! (cd "$root" && cargo build --bin sce-codegen --features cli -p sce-build) >&2; then
+        echo "error: the sce-codegen build failed, so no generator agrees with the sources" >&2
+        echo "  under $root; a binary left by an earlier build is not used in its place." >&2
+        return 1
+    fi
     if path="$(sce_codegen_path "$root")"; then
         # Both exits shim, and that is not tidiness: the branch above is taken
         # on a warm tree and this one on a cold one, so a selection honoured by

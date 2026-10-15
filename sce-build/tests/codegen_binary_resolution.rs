@@ -510,6 +510,77 @@ fn the_shell_locator_rebuilds_a_generator_that_disagrees_with_the_tree() {
     );
 }
 
+/// A generator whose rebuild FAILED is refused, not replaced by the stale binary
+/// the failed build left in `target/`.
+///
+/// The locator rebuilt a generator that disagreed with the tree and then looked
+/// for a binary without asking whether the build had succeeded, so a tree whose
+/// sources did not compile was regenerated with the generator of the sources
+/// before the edit. A mutation round measured it (2026-10-15): the edit left a
+/// `format!` argument unused, the generator did not compile, every regenerated
+/// file came out unchanged, and the round said the test binaries were
+/// byte-identical instead of quoting the compiler.
+///
+/// Driven against a sandbox: the planted binary answers `verify-generator` as
+/// stale, and the stand-in for cargo fails the way a compile error does.
+///
+/// Called the way the regen scripts call it, `CODEGEN="$(sce_codegen_require ..)"`:
+/// `set -e` is not inherited into a command substitution, so a failure the
+/// function does not turn into its own exit status is invisible to the caller.
+/// A bare call would be stopped by `set -e` whatever the function does, and the
+/// test would pass against the defect it exists for.
+#[test]
+fn the_shell_locator_refuses_when_the_rebuild_fails() {
+    let root = repo_root();
+    let sandbox =
+        std::env::temp_dir().join(format!("sce-codegen-failed-build-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&sandbox);
+    let bin_dir = sandbox.join("target/debug");
+    let fake_path = sandbox.join("fakebin");
+    std::fs::create_dir_all(&bin_dir).expect("create sandbox profile dir");
+    std::fs::create_dir_all(&fake_path).expect("create fake PATH dir");
+
+    common::executable::install_executable(
+        &bin_dir.join("sce-codegen"),
+        "#!/bin/sh\ncase \"$1\" in verify-generator) exit 20;; esac\nexit 0\n",
+    )
+    .expect("install the stale generator");
+    common::executable::install_executable(
+        &fake_path.join("cargo"),
+        "#!/bin/sh\necho 'error: could not compile `sce-build`' >&2\nexit 101\n",
+    )
+    .expect("install the failing cargo");
+
+    let script = format!(
+        "set -euo pipefail\nexport PATH={fake}:$PATH\nsource {root}/scripts/lib/sce_codegen.sh\n\
+         CODEGEN=\"$(sce_codegen_require {sandbox})\"\nprintf '%s\\n' \"$CODEGEN\"\n",
+        fake = fake_path.display(),
+        root = root.display(),
+        sandbox = sandbox.display(),
+    );
+    let out = std::process::Command::new("bash")
+        .arg("-c")
+        .arg(&script)
+        .output()
+        .expect("bash runs the locator");
+    let _ = std::fs::remove_dir_all(&sandbox);
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success(),
+        "a failed rebuild was answered with a generator; stdout {stdout:?}",
+    );
+    assert!(
+        !stdout.contains("target/debug/sce-codegen"),
+        "the stale binary was named after the rebuild failed; got {stdout:?}",
+    );
+    assert!(
+        stderr.contains("could not compile"),
+        "the compiler's own refusal must reach the caller; got {stderr:?}",
+    );
+}
+
 /// Enough regen scripts must reach the scan for a clean result to mean
 /// anything. 115 per-stem scripts existed when this bound was measured
 /// (2026-08-21); the floor sits well under that so adding or retiring a

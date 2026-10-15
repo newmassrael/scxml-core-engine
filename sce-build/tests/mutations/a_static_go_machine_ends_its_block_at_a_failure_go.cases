@@ -215,9 +215,14 @@ PY
 # document declares it. A name no variant declares (`fortnight`) is a payload that
 # does not fit its schema, and the delivery must be refused with nothing written
 # — a name taken for the enum's first value writes the `zoom` beside it.
+#
+# The replacement keeps `{alias}`, as a Go comment: the string is a `format!`
+# whose `alias = r.alias` is a named argument, and Rust refuses a named argument
+# nothing in the string uses. Without it the generator did not compile, and the
+# round read INCONCLUSIVE for a reason that was not the case's.
 
 mutation_case "a payload's enum field takes a name no variant declares" <<'PY'
 edit("sce-build/src/forge/generator.rs",
      "                 return 0, fmt.Errorf(\\\"%q (%s) is not a variant of {alias}\\\", \\\"{id}\\\", name) }}()\",\n",
-     "                 return 0, nil }}()\",\n")
+     "                 return 0, nil /* {alias} */ }}()\",\n")
 PY
