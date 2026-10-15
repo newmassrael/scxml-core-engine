@@ -1,0 +1,26 @@
+version: 1
+document: gauge.scxml
+
+inputs:
+  stored:
+    address: plant/in/stored
+    event: stored.set
+    carries: value
+  supply:
+    protocol: last-incremented
+    parameters: {on_counter: plant/in/on, off_counter: plant/in/off}
+    event: supply.set
+    carries: value
+
+outputs:
+  indicator:
+    address: plant/out/indicator
+    field: value
+    sent: {processor: x-sce-host}
+    when_nothing_sent: indicator.idle
+    map:
+      indicator.idle: IDLE
+      indicator.high: HIGH
+      indicator.low: LOW
+      indicator.lit: LIT
+      indicator.dark: DARK

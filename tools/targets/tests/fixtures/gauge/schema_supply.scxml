@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="event-schema" name="schema_supply"
+       sce:event-name="supply.set">
+  <datamodel>
+    <data id="value" sce:type="bool" sce:direction="in"/>
+  </datamodel>
+</scxml>

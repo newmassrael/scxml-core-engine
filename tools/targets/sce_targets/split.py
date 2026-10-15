@@ -34,7 +34,8 @@ from sce_author.check import PackError
 from sce_author.pack import load_pack
 
 ANNOTATIONS = ("assumed", "note")
-STATECHART_INPUT_KEYS = {"address", "becomes", "event", *ANNOTATIONS}
+STATECHART_INPUT_KEYS = {"address", "becomes", "event", "carries", "protocol", "parameters",
+                         *ANNOTATIONS}
 STATECHART_OUTPUT_KEYS = {"address", "field", "sent", "when_nothing_sent", "map", "also", *ANNOTATIONS}
 PREDICATES = ("equals", "equals_any", "not_equals", "absent")
 TRANSFORM_INPUT_KEYS = {"address", *PREDICATES, "when_absent", "range", "protocol", "parameters",
@@ -127,9 +128,21 @@ def split(binding_path: pathlib.Path, pack_dir: pathlib.Path, spec_path: pathlib
             extra = set(rule) - STATECHART_INPUT_KEYS
             if extra:
                 raise Refused(f"input {name}: keys not placed: {sorted(extra)}")
+            if rule.get("protocol"):
+                # The pack's reading over several addresses is the platform's encoding of a state
+                # the specification names; the machine is told the state, as the event's data.
+                inputs[name] = {"logical": True, "event": rule["event"], "carries": rule["carries"],
+                                **annotations(rule)}
+                protocols[name] = {"protocol": rule["protocol"], "parameters": rule.get("parameters") or {}}
+                continue
             signal = add_signal(signals, profile_signals, pack.model, rule["address"])
-            inputs[name] = {"signal": signal, "becomes": rule["becomes"], "event": rule["event"],
-                            **annotations(rule)}
+            placed = {"signal": signal}
+            if "becomes" in rule:
+                placed["becomes"] = rule["becomes"]
+            placed["event"] = rule["event"]
+            if "carries" in rule:
+                placed["carries"] = rule["carries"]
+            inputs[name] = {**placed, **annotations(rule)}
         for name, rule in (binding.get("outputs") or {}).items():
             extra = set(rule) - STATECHART_OUTPUT_KEYS
             if extra:
@@ -220,10 +233,11 @@ def join(interface: dict, profile: dict, document: str) -> dict:
     for name, rule in interface["inputs"].items():
         notes = annotations(rule)
         if rule.get("logical"):
-            binding["inputs"][name] = {**profile["protocols"][name], **notes}
+            told = {k: rule[k] for k in ("event", "carries") if k in rule}
+            binding["inputs"][name] = {**profile["protocols"][name], **told, **notes}
             continue
         out = {"address": profile["signals"][rule["signal"]]["address"]}
-        for key in ("becomes", "event", *PREDICATES, "when_absent", "range"):
+        for key in ("becomes", "event", "carries", *PREDICATES, "when_absent", "range"):
             if key in rule:
                 out[key] = rule[key]
         binding["inputs"][name] = {**out, **notes}

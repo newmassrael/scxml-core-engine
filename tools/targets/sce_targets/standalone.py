@@ -60,7 +60,7 @@ from sce_targets import split as splitting
 
 RUNTIME_SOURCES = ("UniqueIdGenerator.cpp", "EventDataHelper.cpp", "JsonUtils.cpp")
 ANNOTATIONS = {"assumed", "note"}
-SC_INPUT_KEYS = {"signal", "becomes", "event", *ANNOTATIONS}
+SC_INPUT_KEYS = {"signal", "becomes", "event", "carries", "logical", *ANNOTATIONS}
 SC_OUTPUT_KEYS = {"sent", "values", "when_nothing_sent", "attributes", *ANNOTATIONS}
 SENT_KEYS = {"processor"}
 TF_INPUT_KEYS = {"signal", "logical", "equals", "equals_any", "not_equals", "absent", "when_absent",
@@ -217,17 +217,64 @@ def signal_cpp(decl: dict, name: str) -> tuple[str, str]:
 # ------------------------------------------------------------------ statechart
 
 
-def plan_statechart(interface: dict):
+def read_raise_functions(header_text: str) -> dict:
+    """event name -> (raise function, [(param type, param name)]): the typed `_event.data` inject
+    the generator writes for an event whose schema the document imports."""
+    found = {}
+    for match in re.finditer(r"inject for `([^`]+)`.*?void\s+(raise\w+)\(([^)]*)\)\s*\{", header_text, re.S):
+        params = []
+        for piece in [p.strip() for p in match.group(3).split(",") if p.strip()]:
+            ctype, _, pname = piece.rpartition(" ")
+            params.append((ctype.strip(), pname.strip()))
+        found[match.group(1)] = (match.group(2), params)
+    return found
+
+
+def plan_statechart(interface: dict, header_text: str = ""):
+    """The statechart's inputs sorted by how the machine is told: a bare event when a closed
+    signal changes to a symbol (`by_signal`), or an event with the value as its data (`carried`:
+    a number or truth-value signal, or a logical state)."""
     component = interface["component"]
     signals = interface.get("signals") or {}
     inputs = interface.get("inputs") or {}
     outputs = interface.get("outputs") or {}
     events: list = []
     by_signal: dict = {s: [] for s in signals}
+    carried: list = []
+    raises = read_raise_functions(header_text)
+    for s, decl in signals.items():
+        if signal_cpp(decl, s)[1] == "text":
+            raise Refused(f"signal {s}: a text a statechart is told is not built")
     for name, rule in inputs.items():
         extra = set(rule) - SC_INPUT_KEYS
         if extra:
             raise Refused(f"input {name}: this target does not implement {sorted(extra)}")
+        if "carries" in rule or rule.get("logical"):
+            if "becomes" in rule:
+                raise Refused(f"input {name}: a value that is carried is told whenever it changes; "
+                              "this target does not implement `becomes` beside `carries`")
+            if rule.get("logical"):
+                kind, signal = "bool", None
+            else:
+                signal = rule["signal"]
+                kind = signal_cpp(signals[signal], signal)[1]
+                if kind == "enum":
+                    raise Refused(f"input {name}: an enumeration is not carried as an event's data; "
+                                  "it is told as a bare event for each symbol")
+            if rule["event"] not in raises:
+                raise Refused(f"input {name}: the machine has no typed inject for {rule['event']!r} "
+                              "(does the document import the event's schema?)")
+            fn, params = raises[rule["event"]]
+            if [p for _t, p in params] != [rule["carries"]]:
+                raise Refused(f"input {name}: {rule['event']!r} takes {[p for _t, p in params]}, "
+                              f"and this target carries the one field {rule['carries']!r}")
+            ctype = params[0][0]
+            fits = ctype == "bool" if kind == "bool" else ctype in INT_TYPES | REAL_TYPES
+            if not fits:
+                raise Refused(f"input {name}: a {kind} handed to a field of type {ctype}")
+            carried.append({"name": name, "signal": signal, "event": rule["event"], "fn": fn,
+                            "ctype": ctype, "kind": kind, "index": len(carried)})
+            continue
         if rule["becomes"] not in signals[rule["signal"]]["values"]:
             raise Refused(f"input {name}: {rule['becomes']!r} is not a value of {rule['signal']}")
         if rule["event"] not in events:
@@ -244,12 +291,15 @@ def plan_statechart(interface: dict):
         if wns is not None and wns not in rule["values"]:
             raise Refused(f"output {name}: when_nothing_sent {wns!r} is not one of its values")
     unique([pascal(s) for s in signals] + [pascal(o) for o in outputs]
-           + [pascal(o) + "Value" for o in outputs] + [pascal(component)], "types")
-    return component, signals, by_signal, outputs, events
+           + [pascal(o) + "Value" for o in outputs] + [pascal(component)]
+           + [pascal(c["name"]) for c in carried if c["signal"] is None], "types")
+    return component, signals, by_signal, outputs, events, carried
 
 
-def emit_statechart_api(interface_path, target_path, interface, target, machine_header, processors):
-    component, signals, by_signal, outputs, events = plan_statechart(interface)
+def emit_statechart_api(interface_path, target_path, interface, target, machine_header, processors,
+                        header_text=""):
+    component, signals, by_signal, outputs, events, carried = plan_statechart(interface, header_text)
+    logicals = [c for c in carried if c["signal"] is None]
     round_mode = target["round"]
     for name, rule in outputs.items():
         if rule["sent"]["processor"] not in processors:
@@ -261,7 +311,8 @@ def emit_statechart_api(interface_path, target_path, interface, target, machine_
     a(f"namespace {namespace_of(target, component)} {{")
     a("")
     for s, decl in signals.items():
-        emit_value_enum(a, pascal(s), decl["values"])
+        if "values" in decl:
+            emit_value_enum(a, pascal(s), decl["values"])
     for o, rule in outputs.items():
         emit_value_enum(a, pascal(o) + "Value", rule["values"])
         a(f"struct {pascal(o)} {{")
@@ -297,9 +348,10 @@ def emit_statechart_api(interface_path, target_path, interface, target, machine_
         a("    " + line)
     a("")
     a("    // Inputs. An unchanged value reaches nothing (activation on-change).")
-    for i, s in enumerate(signals):
+    for i, (s, decl) in enumerate(signals.items()):
         t = pascal(s)
-        a(f"    void set{t}({t} value) {{")
+        stype = signal_cpp(decl, s)[0]
+        a(f"    void set{t}({stype} value) {{")
         a(f"        deliver{i}(value);")
         if round_mode == "per-signal":
             a("        land();")
@@ -307,6 +359,18 @@ def emit_statechart_api(interface_path, target_path, interface, target, machine_
         a("    // The signal stopped reporting: its next value is news whatever it is.")
         a(f"    void mark{t}Absent() {{")
         a(f"        mLast{i}.reset();")
+        a("    }")
+    for k, c in enumerate(logicals):
+        a(f"    // {c['name']}: a state the specification names (a platform may encode it as counters);")
+        a(f"    // the machine is told it as the data of {c['event']}, whenever it changes.")
+        a(f"    void set{pascal(c['name'])}(bool value) {{")
+        a(f"        if (mLogical{k} && *mLogical{k} == value) {{")
+        a("            return;")
+        a("        }")
+        a(f"        mLogical{k} = value;")
+        a(f"        carry{c['index']}(value);")
+        if round_mode == "per-signal":
+            a("        land();")
         a("    }")
     a("")
     if round_mode == "batch":
@@ -330,13 +394,24 @@ def emit_statechart_api(interface_path, target_path, interface, target, machine_
     a(f"    using Event = ::SCE::Generated::{component}::Event;")
     a(f"    static constexpr std::array<const char*, {len(events)}> kEventNames{{{{{', '.join(cpp_string(e) for e in events)}}}}};")
     a("")
+    for c in carried:
+        a(f"    // {c['name']}: {c['event']} with the value as its data, and the machine runs.")
+        a(f"    void carry{c['index']}({c['ctype']} value) {{")
+        a(f"        mMachine.{c['fn']}(value);")
+        a("        mMachine.step();")
+        a("    }")
+        a("")
     for i, (s, decl) in enumerate(signals.items()):
         t = pascal(s)
-        a(f"    void deliver{i}({t} value) {{")
+        stype = signal_cpp(decl, s)[0]
+        a(f"    void deliver{i}({stype} value) {{")
         a(f"        if (mLast{i} && *mLast{i} == value) {{")
         a("            return;")
         a("        }")
         a(f"        mLast{i} = value;")
+        for c in carried:
+            if c["signal"] == s:
+                a(f"        carry{c['index']}(static_cast<{c['ctype']}>(value));  // {c['name']}")
         rules = by_signal[s]
         if rules:
             a("        switch (value) {")
@@ -405,8 +480,10 @@ def emit_statechart_api(interface_path, target_path, interface, target, machine_
     a(f"    std::array<std::optional<Event>, {len(events)}> mEvents{{}};")
     a("    std::vector<::SCE::HostSendRequest> mSends;")
     a("    std::size_t mUnmapped = 0;")
-    for i, s in enumerate(signals):
-        a(f"    std::optional<{pascal(s)}> mLast{i};")
+    for i, (s, decl) in enumerate(signals.items()):
+        a(f"    std::optional<{signal_cpp(decl, s)[0]}> mLast{i};")
+    for k in range(len(logicals)):
+        a(f"    std::optional<bool> mLogical{k};")
     for i, o in enumerate(outputs):
         a(f"    std::optional<{pascal(o)}> mOut{i};")
     a("};")
@@ -1021,7 +1098,7 @@ def main(argv: list) -> int:
         for name in RUNTIME_SOURCES:
             shutil.copy2(pathlib.Path(runtime_dir) / name, out / f"Sce{name}")
         api = emit_statechart_api(interface_path, target_path, interface, target, headers[0].name,
-                                  sorted(made.declared))
+                                  sorted(made.declared), header_text)
     elif kind == "transform":
         api = emit_transform_api(interface_path, target_path, interface, target, headers[0].name,
                                  header_text, holder)

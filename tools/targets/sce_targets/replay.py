@@ -173,8 +173,30 @@ def main(argv: list) -> int:
                 raw = given.get(address)
                 if str(raw).strip().lower() in absence:
                     lines.append(f"absent {signal}")
-                else:
+                elif "values" in interface["signals"][signal]:
                     lines.append(f"set {signal} {symbol_of(raw, numbers_of(pack.model, address))}")
+                else:
+                    lines.append(f"set {signal} {raw}")
+            # A state the pack reads over several addresses is told when a case moves one of them
+            # (an address driven at the value it held reaches nothing), once for the round, with
+            # the reading verify computes from the record's counters.
+            unchanged = (core_verify.unchanged_drives(step, last_given, pack.model)
+                         if activation == "on-change" else set())
+            core_verify.remember_given(step, last_given)
+            for name, rule in interface["inputs"].items():
+                if not rule.get("logical"):
+                    continue
+                moved = set(step.drove or ()) - unchanged
+                if not moved & core_verify.rule_addresses(a_inputs[name], latches):
+                    continue
+                try:
+                    value = core_verify.input_value(name, a_inputs[name], step, latches,
+                                                    pack.model, None, pack.conventions)
+                except core_verify.VerifyError as exc:
+                    counts["unjudgeable steps"] += 1
+                    lines.append(f"unjudgeable {name}: {str(exc).splitlines()[0]}")
+                    continue
+                lines.append(f"set {name} {'true' if value else 'false'}")
         else:
             silent = False
             if rounds_are_known:

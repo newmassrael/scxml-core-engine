@@ -1,0 +1,30 @@
+version: 1
+origin: made up for the targets' tests
+independent_cases: true
+# A statechart is replayed, not recomputed: each case starts where the one before it ended.
+ordered: true
+cases:
+  - name: a stored number above the threshold
+    given: {plant/in/stored: 70}
+    drove: [plant/in/stored]
+    expect: {plant/out/indicator.value: HIGH}
+
+  - name: a stored number below it
+    given: {plant/in/stored: 20}
+    drove: [plant/in/stored]
+    expect: {plant/out/indicator.value: LOW}
+
+  - name: the supply comes on
+    given: {plant/in/on: 1, plant/in/off: 0}
+    drove: [plant/in/on]
+    expect: {plant/out/indicator.value: LIT}
+
+  - name: the supply goes off
+    given: {plant/in/on: 1, plant/in/off: 1}
+    drove: [plant/in/off]
+    expect: {plant/out/indicator.value: DARK}
+
+  - name: the supply comes on again
+    given: {plant/in/on: 2, plant/in/off: 1}
+    drove: [plant/in/on]
+    expect: {plant/out/indicator.value: LIT}

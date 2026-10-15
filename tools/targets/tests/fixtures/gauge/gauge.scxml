@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" datamodel="sce-static" initial="running" sce:kind="statechart"
+       name="gauge">
+  <sce:import kind="event-schema" src="schema_stored.scxml" as="Stored"/>
+  <sce:import kind="event-schema" src="schema_supply.scxml" as="Supply"/>
+  <datamodel>
+    <data id="unused" sce:type="int32" sce:direction="out" expr="0"/>
+  </datamodel>
+  <state id="running">
+    <transition event="stored.set" cond="_event.data.value &gt; 50" type="internal">
+      <send event="indicator.high" type="x-sce-host"/>
+    </transition>
+    <transition event="stored.set" type="internal">
+      <send event="indicator.low" type="x-sce-host"/>
+    </transition>
+    <transition event="supply.set" cond="_event.data.value" type="internal">
+      <send event="indicator.lit" type="x-sce-host"/>
+    </transition>
+    <transition event="supply.set" type="internal">
+      <send event="indicator.dark" type="x-sce-host"/>
+    </transition>
+  </state>
+</scxml>

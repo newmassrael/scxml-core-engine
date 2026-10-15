@@ -1,0 +1,14 @@
+version: 1
+name_classes:
+  - pattern: '\bIN_[A-Za-z0-9_]+\b'
+    role: supplied
+  - pattern: '\bOUT_[A-Za-z0-9_]+\b'
+    role: own_output
+protocols:
+  last-incremented:
+    parameters: [on_counter, off_counter]
+    latch:
+      set_when_changed: on_counter
+      clear_when_changed: off_counter
+      both: last
+      initial: clear

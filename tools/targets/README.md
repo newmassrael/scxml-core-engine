@@ -39,8 +39,13 @@ the library keeps the value; before there is one, a record's expectation is coun
 not failed. `also` and `when` fill the other fields of a platform's record; a library has no record,
 so they are the profile's and those positions are counted as platform-only. A record that reads an
 event slot as its first announcement (`announces_old_off`) and expects OFF is a reading only a host
-has, and is counted as host-announced. Statechart input rules that carry a value (`carries`,
-`protocol`, `absent`) are not placed yet and are refused.
+has, and is counted as host-announced.
+
+A statechart input that is told a value is placed too: `carries` sends the event with the signal's
+number or truth value as its data (the library calls the machine's typed inject for that event), and
+a `protocol` names a state in the interface (`logical`) and keeps its counters in the profile. A
+statechart input with `absent` or `when_absent`, a closed set carried as data, and a machine with a
+delayed act (it needs a clock the library does not have) are refused.
 
 ## What is judged
 

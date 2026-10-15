@@ -1,0 +1,28 @@
+# A synthetic pack for the targets' tests of a statechart whose inputs carry a value. It is made up,
+# and nothing in it is anyone's. A stored number the machine is told as event data, a supply whose
+# on and off counters the pack reads as one truth value, and an indicator that leaves as a send.
+version: 1
+entries:
+  - address: plant/in/stored
+    role: input
+    names: [IN_Stored]
+    type: integer
+    range: {minimum: 0, maximum: 99}
+
+  - address: plant/in/on
+    role: input
+    names: [IN_On]
+    type: integer
+    range: {minimum: 0, maximum: 9}
+
+  - address: plant/in/off
+    role: input
+    names: [IN_Off]
+    type: integer
+    range: {minimum: 0, maximum: 9}
+
+  - address: plant/out/indicator
+    role: output
+    names: [OUT_Indicator]
+    fields:
+      value: {values: {IDLE: 0, HIGH: 1, LOW: 2, LIT: 3, DARK: 4}}

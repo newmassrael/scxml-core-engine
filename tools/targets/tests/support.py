@@ -6,6 +6,7 @@ tests can be read by anyone and the tools cannot have learned a platform from th
 
 from __future__ import annotations
 
+import atexit
 import json
 import os
 import pathlib
@@ -23,6 +24,7 @@ FIXTURE = HERE / "fixtures" / "pump"
 STATECHART_FIXTURE = HERE / "fixtures" / "lamp"
 BEACON_FIXTURE = HERE / "fixtures" / "beacon"
 LATCH_FIXTURE = HERE / "fixtures" / "latch"
+GAUGE_FIXTURE = HERE / "fixtures" / "gauge"
 SCHEMA = TARGETS / "schema" / "logical-interface.v1.schema.json"
 STANDALONE_TARGET = TARGETS / "targets" / "standalone.yaml"
 
@@ -42,11 +44,43 @@ REPO = TARGETS.parent.parent
 RUNTIME_SOURCES = (REPO / "sce" / "src" / "common" / "UniqueIdGenerator.cpp",
                    REPO / "sce" / "src" / "common" / "EventDataHelper.cpp",
                    REPO / "sce" / "src" / "runtime" / "JsonUtils.cpp")
-RUNTIME_INCLUDES = (REPO / "sce" / "include", REPO / "third_party" / "nlohmann_json" / "include")
+# The last is where a machine told a typed event payload finds the algorithm header it includes.
+RUNTIME_INCLUDES = (REPO / "sce" / "include", REPO / "third_party" / "nlohmann_json" / "include",
+                    REPO / "backends" / "cpp" / "forge-runtime" / "include")
 
 
 def runtime_is_present() -> bool:
     return all(p.is_file() for p in RUNTIME_SOURCES) and all(p.is_dir() for p in RUNTIME_INCLUDES)
+
+
+_runtime_objects: dict = {}
+
+
+def runtime_to_link(lib: pathlib.Path, includes: list) -> list:
+    """What a statechart library links of the runtime: the sources the generator copied beside it.
+
+    They are the same three files for every library, and compiling them is most of what building
+    one costs, so a copy that is byte for byte the repository's is compiled once for the whole run
+    and linked as an object. A copy that differs (the generator changed it) is compiled in place."""
+    linked = []
+    for copy in sorted(lib.glob("Sce*.cpp")):
+        original = next(p for p in RUNTIME_SOURCES if p.name == copy.name[3:])
+        if copy.read_bytes() != original.read_bytes():
+            linked.append(str(copy))
+            continue
+        if copy.name not in _runtime_objects:
+            if "directory" not in _runtime_objects:
+                _runtime_objects["directory"] = pathlib.Path(tempfile.mkdtemp(prefix="sce-targets-runtime-"))
+                atexit.register(shutil.rmtree, _runtime_objects["directory"], ignore_errors=True)
+            obj = _runtime_objects["directory"] / (copy.stem + ".o")
+            built = subprocess.run([compiler(), "-std=c++17", "-Wall", "-Wextra", "-Werror", "-c",
+                                    *includes, str(copy), "-o", str(obj)],
+                                   capture_output=True, text=True)
+            if built.returncode != 0:
+                raise AssertionError(f"the runtime source {copy.name} does not build:\n{built.stderr}")
+            _runtime_objects[copy.name] = obj
+        linked.append(str(_runtime_objects[copy.name]))
+    return linked
 
 
 class Working(unittest.TestCase):
@@ -105,7 +139,7 @@ class Working(unittest.TestCase):
         self.assertEqual(0, done.returncode, done.stdout + done.stderr)
         binary = self.root / "replay"
         includes = [x for p in RUNTIME_INCLUDES for x in ("-I", str(p))] if statechart else []
-        runtime = sorted(str(p) for p in lib.glob("Sce*.cpp"))
+        runtime = runtime_to_link(lib, includes) if statechart else []
         built = subprocess.run([compiler(), "-std=c++17", "-Wall", "-Wextra", "-Werror",
                                 "-I", str(lib), "-I", str(lib / "machine"), *includes,
                                 str(lib / f"{self.component}Replay.cpp"), *runtime, "-o", str(binary)],

@@ -64,6 +64,7 @@
     "input": {
       "oneOf": [
         {"$ref": "#/$defs/statechartInput"},
+        {"$ref": "#/$defs/statechartCarriedInput"},
         {"$ref": "#/$defs/transformInput"},
         {"$ref": "#/$defs/logicalInput"}
       ]
@@ -77,6 +78,20 @@
         "signal": {"type": "string"},
         "becomes": {"$ref": "#/$defs/symbol"},
         "event": {"type": "string"},
+        "assumed": {"type": "string"},
+        "note": {"type": "string"}
+      }
+    },
+    "statechartCarriedInput": {
+      "description": "A signal whose value the machine is told: `event` is sent with the signal's value as the data field `carries`, whenever the signal changes (and, with `becomes`, only when it changes to that symbol).",
+      "type": "object",
+      "required": ["signal", "event", "carries"],
+      "additionalProperties": false,
+      "properties": {
+        "signal": {"type": "string"},
+        "becomes": {"$ref": "#/$defs/symbol"},
+        "event": {"type": "string"},
+        "carries": {"type": "string", "minLength": 1},
         "assumed": {"type": "string"},
         "note": {"type": "string"}
       }
@@ -103,8 +118,11 @@
       "type": "object",
       "required": ["logical"],
       "additionalProperties": false,
+      "dependentRequired": {"event": ["carries"], "carries": ["event"]},
       "properties": {
         "logical": {"const": true},
+        "event": {"type": "string", "description": "A statechart is told the state as the data of this event, sent whenever the state changes."},
+        "carries": {"type": "string", "minLength": 1},
         "assumed": {"type": "string"},
         "note": {"type": "string"}
       }
