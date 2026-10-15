@@ -1993,7 +1993,7 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, ASendToAMeshPeerWithNoRouterRegistere
     G::todo_peer::todo_peer machine;
     machine.initialize();
     machine.raiseExternal("todo.join", R"({"node":"1","hub":false})");
-    machine.raiseExternal("todo.edit", R"({"id":"7","field":"1","value":"0","text":"buy milk","now":"0"})");
+    machine.raiseExternal("todo.edit", R"({"id":7,"field":1,"value":"0","text":"buy milk","now":"0"})");
     machine.step();
     EXPECT_EQ(machine.refusals(), 1u) << "the send to #server was refused, once, as error.execution";
 }

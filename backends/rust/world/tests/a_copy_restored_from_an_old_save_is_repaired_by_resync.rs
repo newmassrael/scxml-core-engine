@@ -12,99 +12,16 @@
 // here is that the copies then end with one list, that it is the list the changes meant
 // (the oracle reads the network, not the copies), that each copy's digest is the digest of
 // exactly what it holds, and that the exchange does not resend what the copies agreed on.
+//
+// The same is held for wall times past 2051 and for field numbers in the thousands in
+// a_resync_reaches_every_wall_time_and_every_field_number.rs.
 
 mod common;
 
 use common::resync::*;
 use common::*;
-use sce_forge_runtime::codec::SceCursor;
-use sce_rust_mesh::generated::envelope::Envelope;
 use sce_rust_runtime::saved_state::SavedState;
-use sce_rust_runtime::Engine;
-use sce_rust_world::{Fate, Outcome, Rng, World};
-use serde_json::Value;
-
-/// A copy as it stands, to be restored later.
-fn save(world: &mut World, who: &str) -> SavedState {
-    world
-        .actor::<TodoPeer>(who)
-        .engine()
-        .save_at(0)
-        .expect("a running machine saves")
-}
-
-/// The copy killed and started again from `saved`, which is older than what it held.
-fn restore_from(world: &mut World, who: &str, saved: SavedState) {
-    world.restart::<TodoPeer>(who, move |_, clock| {
-        Engine::<TodoPeer>::restore_with(TodoPeer::new(), &saved, clock, 0)
-            .expect("what a machine saved restores")
-    });
-}
-
-/// The host tells the copy its link is back.
-fn resync(world: &mut World, who: &str) {
-    world.raise(who, "todo.resync", "");
-}
-
-/// Everything sent on the network from the trace line `mark` on: who sent it, to whom, the
-/// event and its data.
-fn sent_since(world: &World, mark: usize) -> Vec<(String, String, String, Value)> {
-    world
-        .trace()
-        .into_iter()
-        .skip(mark)
-        .filter(|line| matches!(line.fate, Fate::Sent { .. }))
-        .map(|line| {
-            let envelope = Envelope::decode(&mut SceCursor::new(&line.bytes)).expect("an envelope");
-            let data = serde_json::from_slice(envelope.data).unwrap_or(Value::Null);
-            (
-                line.from.clone(),
-                line.to.clone(),
-                envelope.event_type.to_string(),
-                data,
-            )
-        })
-        .collect()
-}
-
-/// The minutes of the writes and supersedes among `sent`: the changes that were sent again.
-fn minutes_of_changes(sent: &[(String, String, String, Value)]) -> Vec<i128> {
-    let mut minutes: Vec<i128> = sent
-        .iter()
-        .filter(|(_, _, event, _)| event == "todo.write" || event == "todo.supersede")
-        .map(|(_, _, _, data)| whole(&data["wallTime"]) / i128::from(MINUTE))
-        .collect();
-    minutes.sort_unstable();
-    minutes.dedup();
-    minutes
-}
-
-/// Some to-dos written across the first half hour, a save of alice's copy, and then more
-/// changes by both people in the minutes after it: the changes alice's copy would lose
-/// if it came back from the save.
-fn alice_saved_then_both_write_on() -> (World, SavedState) {
-    let mut world = todo_world(7, 20);
-    assert_eq!(world.run_until_quiet(1), Outcome::Quiet);
-    todo_title(&mut world, "alice", 1, "pay rent");
-    todo_set(&mut world, "bob", 1, DUE, 5);
-    todo_set(&mut world, "alice", 2, DONE, 0);
-    assert_eq!(world.run_until_quiet(10_000), Outcome::Quiet);
-    world.advance_ms(30 * MINUTE);
-
-    let old = save(&mut world, "alice");
-
-    world.advance_ms(7 * MINUTE);
-    todo_title(&mut world, "bob", 1, "pay the rent");
-    assert_eq!(world.run_until_quiet(10_000), Outcome::Quiet);
-    world.advance_ms(5 * MINUTE);
-    todo_set(&mut world, "alice", 3, DUE, 9);
-    todo_title(&mut world, "alice", 2, "buy bread");
-    assert_eq!(world.run_until_quiet(10_000), Outcome::Quiet);
-    world.advance_ms(11 * MINUTE);
-    todo_set(&mut world, "bob", 3, DONE, 1);
-    assert_eq!(world.run_until_quiet(10_000), Outcome::Quiet);
-    (world, old)
-}
+use sce_rust_world::{Outcome, World};
 
 /// A person's copy brought back from a save older than what the others have been sent
 /// holds less than they do, and stays that way: nothing the network does repairs it. Told
@@ -112,65 +29,7 @@ fn alice_saved_then_both_write_on() -> (World, SavedState) {
 /// the changes of the minutes they differed in and no others.
 #[test]
 fn a_person_restored_from_an_old_save_is_repaired_by_resync() {
-    let (mut world, old) = alice_saved_then_both_write_on();
-    let whole_list = assert_converged(&mut world, "before the restore");
-    assert_eq!(
-        whole_list[&(1, TITLE)].text.as_deref(),
-        Some("pay the rent")
-    );
-    assert_eq!(whole_list[&(3, DONE)].value, 1);
-
-    restore_from(&mut world, "alice", old);
-    let lost = todos_of(&mut world, "alice");
-    assert_ne!(lost, whole_list, "alice came back without what came after");
-    assert_eq!(lost[&(1, TITLE)].text.as_deref(), Some("pay rent"));
-    assert!(!lost.contains_key(&(3, DUE)));
-
-    // The links are up and the others believe alice has everything they sent her, so
-    // there is nothing left for the network to do, and alice stays as she came back.
-    assert_eq!(world.run_until_quiet(60_000), Outcome::Quiet);
-    assert_eq!(
-        todos_of(&mut world, "alice"),
-        lost,
-        "nothing repaired alice"
-    );
-    assert_ne!(
-        digest_of(&mut world, "alice"),
-        digest_of(&mut world, "server")
-    );
-
-    let mark = world.trace().len();
-    resync(&mut world, "alice");
-    assert_eq!(world.run_until_quiet(60_000), Outcome::Quiet);
-
-    let list = assert_converged(&mut world, "after the resync");
-    assert_eq!(list, whole_list);
-    assert_eq!(
-        list[&(1, TITLE)].live.len(),
-        1,
-        "the old title was written over"
-    );
-
-    // What was sent again is what alice lacked, from the minutes after the save, and the
-    // minute of the title bob wrote over: a tombstone is in the minute of the dot it names, so
-    // the minute of the first title is one the copies differ in. The half hour between,
-    // which the copies agreed on, is not sent.
-    let sent = sent_since(&world, mark);
-    let minutes = minutes_of_changes(&sent);
-    assert!(!minutes.is_empty(), "alice was sent what she lacked");
-    assert!(
-        minutes.iter().all(|minute| *minute == 0 || *minute >= 30),
-        "changes of the minutes the copies agreed on were sent again: {minutes:?}"
-    );
-    assert!(
-        minutes.iter().any(|minute| *minute >= 30),
-        "the changes made after the save were sent: {minutes:?}"
-    );
-    assert!(
-        sent.iter()
-            .all(|(from, _, _, _)| from == "alice" || from == "server"),
-        "bob took no part: he agreed with the hub"
-    );
+    assert_alice_is_repaired(0);
 }
 
 /// The hub restored from an old save has lost what both people sent it, and the two
@@ -273,7 +132,7 @@ fn a_copy_that_lost_its_own_writes_is_stamped_after_them_once_they_are_back() {
 /// which the receiver finds equal to its own and does not answer.
 #[test]
 fn copies_that_agree_exchange_one_node_and_nothing_else() {
-    let (mut world, _) = alice_saved_then_both_write_on();
+    let (mut world, _): (World, SavedState) = alice_saved_then_both_write_on(0);
     assert_converged(&mut world, "before the resync");
     let mark = world.trace().len();
     resync(&mut world, "alice");
@@ -297,7 +156,7 @@ fn copies_that_agree_exchange_one_node_and_nothing_else() {
 /// duplicate and delay what they carry, the copies end alike.
 #[test]
 fn a_resync_told_again_and_by_every_copy_changes_nothing() {
-    let (mut world, old) = alice_saved_then_both_write_on();
+    let (mut world, old) = alice_saved_then_both_write_on(0);
     let whole_list = assert_converged(&mut world, "before the restore");
     for who in ["alice", "bob"] {
         world.jitter(who, "server", 30);
@@ -359,117 +218,13 @@ fn what_a_lossy_link_dropped_is_found_by_resync() {
 /// A copy is restored only once the three agree, so the other two always hold what it lost.
 #[test]
 fn a_random_afternoon_with_restores_from_old_saves_ends_with_one_list() {
-    const TITLES: [&str; 5] = ["milk", "post office", "\u{d560}\u{c77c}", "tax", "gym at 7"];
-    let mut repaired = 0;
-    for seed in 0..30 {
-        let mut rng = Rng::new(seed);
-        let mut world = todo_world(seed, 5);
-        assert_eq!(world.run_until_quiet(1), Outcome::Quiet, "seed {seed}");
-        for who in ["alice", "bob"] {
-            world.jitter(who, "server", 40);
-            world.reorder(who, "server");
-            world.degrade(who, "server", 0, 20);
-        }
-        let names = ["alice", "bob", "server"];
-        let mut saves: [Option<SavedState>; 3] = [None, None, None];
-        let mut cut = [false, false];
-        for round in 0..6 {
-            for _ in 0..12 {
-                world.advance_ms(i64::try_from(rng.below(4 * 60_000)).unwrap() + 1);
-                let who = if rng.below(2) == 0 { "alice" } else { "bob" };
-                let id = 1 + rng.below(4);
-                match rng.below(4) {
-                    0 => {
-                        let title = TITLES[usize::try_from(rng.below(5)).unwrap()];
-                        todo_title(&mut world, who, id, title);
-                    }
-                    1 => todo_set(
-                        &mut world,
-                        who,
-                        id,
-                        DONE,
-                        i64::try_from(rng.below(2)).unwrap(),
-                    ),
-                    2 => todo_set(
-                        &mut world,
-                        who,
-                        id,
-                        DUE,
-                        i64::try_from(rng.below(365)).unwrap(),
-                    ),
-                    _ => todo_set(
-                        &mut world,
-                        who,
-                        id,
-                        REMOVED,
-                        i64::try_from(rng.below(2)).unwrap(),
-                    ),
-                }
-                if rng.below(6) == 0 {
-                    let which = usize::from(rng.below(2) == 1);
-                    if cut[which] {
-                        world.heal(names[which], "server");
-                    } else {
-                        world.partition(names[which], "server");
-                    }
-                    cut[which] = !cut[which];
-                }
-                world.run_until_quiet(i64::try_from(rng.below(60)).unwrap() + 1);
-            }
-            for (which, name) in names.iter().take(2).enumerate() {
-                if cut[which] {
-                    world.heal(name, "server");
-                    cut[which] = false;
-                }
-            }
-            assert_eq!(
-                world.run_until_quiet(600_000),
-                Outcome::Quiet,
-                "seed {seed} round {round}"
-            );
-            let context = format!("seed {seed} round {round}, before a restore");
-            assert_converged(&mut world, &context);
-
-            // One copy comes back from the older save it kept, when it kept one.
-            let victim = usize::try_from(rng.below(3)).unwrap();
-            if let Some(old) = saves[victim].take() {
-                let who = names[victim];
-                let had = digest_of(&mut world, who);
-                restore_from(&mut world, who, old);
-                let lost = digest_of(&mut world, who) != had;
-                // The copy is written to before its link is back, now and then.
-                if rng.below(3) == 0 {
-                    world.advance_ms(i64::try_from(rng.below(60_000)).unwrap() + 1);
-                    if who != "server" {
-                        todo_set(&mut world, who, 1 + rng.below(4), DUE, 400);
-                    }
-                }
-                resync(&mut world, who);
-                if rng.below(4) == 0 {
-                    resync(&mut world, names[usize::try_from(rng.below(3)).unwrap()]);
-                }
-                assert_eq!(
-                    world.run_until_quiet(600_000),
-                    Outcome::Quiet,
-                    "seed {seed} round {round}"
-                );
-                repaired += usize::from(lost);
-                let context = format!("seed {seed} round {round}, {who} restored");
-                assert_converged(&mut world, &context);
-            }
-            for (which, save_of) in saves.iter_mut().enumerate() {
-                if rng.below(2) == 0 {
-                    *save_of = Some(save(&mut world, names[which]));
-                }
-            }
-        }
-        assert!(
-            !agreed_todos(&mut world).is_empty(),
-            "seed {seed}: the run wrote something"
-        );
-    }
-    assert!(
-        repaired >= 20,
-        "the run restored copies that had lost changes only {repaired} times"
-    );
+    random_afternoon(&Afternoon {
+        seeds: 0..30,
+        ids: &[1, 2, 3, 4],
+        fields: &[(DONE, 2), (DUE, 365), (REMOVED, 2)],
+        late: (DUE, 400),
+        epochs: &[0],
+        reaches: 0,
+        repaired_at_least: 20,
+    });
 }

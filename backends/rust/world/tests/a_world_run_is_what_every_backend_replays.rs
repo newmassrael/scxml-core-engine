@@ -27,6 +27,7 @@ mod common;
 
 use std::path::PathBuf;
 
+use common::resync::{MINUTE, OLD_LIMIT_MINUTES};
 use common::*;
 use sce_rust_world::{Outcome, Taken, World};
 use serde_json::{json, Map, Value};
@@ -203,6 +204,53 @@ fn todo_afternoon() -> World {
         world.raise(who, "todo.resync", "");
         assert_eq!(world.run_until_quiet(60_000), Outcome::Quiet);
     }
+
+    // Years on, past 3^16 minutes (2051-11-05T13:21Z, where the first form of the
+    // digest's key ran out): changes made in the last minute before it and the first
+    // after, in 2100 and far beyond (under 2^53 milliseconds, which the Interpreter's
+    // integers hold), to to-dos and fields numbered as a long list numbers them; then a
+    // link that drops what two more changes send, found again by the walk down all
+    // thirty levels of the digest.
+    let boundary = OLD_LIMIT_MINUTES * MINUTE;
+    todo_edit_at(&mut world, "bob", 70_000, 300, 5, "", boundary - 1);
+    todo_edit_at(&mut world, "alice", 70_000, 300, 6, "", boundary);
+    todo_edit_at(&mut world, "bob", 70_000, 4096, 2, "", 4_102_444_800_000);
+    assert_eq!(world.run_until_quiet(60_000), Outcome::Quiet);
+    world.degrade("alice", "server", 100, 0);
+    todo_edit_at(
+        &mut world,
+        "alice",
+        4_294_967_295,
+        65_535,
+        1,
+        "",
+        4_500_000_000_000_000,
+    );
+    todo_edit_at(
+        &mut world,
+        "bob",
+        3_000_000,
+        16,
+        8,
+        "",
+        4_500_000_000_060_000,
+    );
+    world.advance_ms(60_000);
+    todo_edit_at(
+        &mut world,
+        "alice",
+        4_294_967_295,
+        65_535,
+        9,
+        "",
+        4_500_000_000_120_000,
+    );
+    assert_eq!(world.run_until_quiet(60_000), Outcome::Quiet);
+    world.degrade("alice", "server", 0, 0);
+    for who in ["alice", "server", "bob"] {
+        world.raise(who, "todo.resync", "");
+        assert_eq!(world.run_until_quiet(60_000), Outcome::Quiet);
+    }
     world
 }
 
@@ -220,6 +268,14 @@ fn an_afternoon_of_the_shared_todo_list_is_three_scenarios() {
     assert_eq!(list[&(5, DONE)].value, 1);
     assert_eq!(list[&(5, TITLE)].text.as_deref(), Some("tea at 4"));
     assert_eq!(list[&(5, REMOVED)].value, 1);
+    // The changes of the years on: two writes in the minutes either side of 3^16, which
+    // neither saw, both held; a field in the thousands; and the writes a link dropped.
+    assert_eq!(list[&(70_000, 300)].live.len(), 2);
+    assert_eq!(list[&(70_000, 300)].value, 6);
+    assert_eq!(list[&(70_000, 4096)].value, 2);
+    assert_eq!(list[&(3_000_000, 16)].value, 8);
+    assert_eq!(list[&(4_294_967_295, 65_535)].value, 9);
+    assert_eq!(list[&(4_294_967_295, 65_535)].live.len(), 1);
     assert!(
         !list.contains_key(&(4, TITLE)),
         "the long title was refused"

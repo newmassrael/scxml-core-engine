@@ -2,10 +2,10 @@
 <!--
   A change a copy of the shared to-do list has taken in, told to the copy's own digest
   (todo_peer): whether it is an add or a tombstone (`kind`, 0 for an add and 1 for a
-  tombstone), the register it is in (`id`, `field`) and the dot it is known by
-  (`wallTime`, `counter`, `nodeId`). It is raised by the copy for itself, from the
-  places a change is first stored, so the digest is made in one place whatever the
-  change was.
+  tombstone), the register it is in (`element`, the one the set names it by) and the
+  dot it is known by (`wallTime`, `counter`, `nodeId`). It is raised by the copy for
+  itself, from the places a change is first stored, so the digest is made in one
+  place whatever the change was.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -15,8 +15,7 @@
        sce:event-name="todo.keep">
   <datamodel>
     <data id="kind" sce:type="uint8" sce:direction="in"/>
-    <data id="id" sce:type="uint64" sce:direction="in"/>
-    <data id="field" sce:type="uint64" sce:direction="in"/>
+    <data id="element" sce:type="uint64" sce:direction="in"/>
     <data id="wallTime" sce:type="int64" sce:direction="in"/>
     <data id="counter" sce:type="uint32" sce:direction="in"/>
     <data id="nodeId" sce:type="uint64" sce:direction="in"/>

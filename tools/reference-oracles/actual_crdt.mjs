@@ -68,19 +68,36 @@ function murmurCases() {
 
 // ---- merkle ---------------------------------------------------------------
 
+// The documents' key is 30 base-3 digits, so that it writes every minute of a
+// signed 64-bit millisecond clock (merge/merkle_node.scxml); the reference's is
+// the minute written as it comes, 16 digits for the minutes of its domain. For
+// a minute of the domain the two are one path, the reference's with the 14
+// leading zeros of the longer key put in front of it: the reference's node at
+// depth d is the document's at depth d + 14, with the same prefix, and the 14
+// nodes of prefix 0 above hold what the root holds.
+const KEY_DIGITS = 30, DOMAIN_DIGITS = 16, ZEROS = KEY_DIGITS - DOMAIN_DIGITS;
+
 // The reference's nested trie as the documents' digest: one node per trie
 // node, its base-3 path read as the prefix, ascending (depth, prefix). The
 // reference's hash is a signed 32-bit int (JS XOR); `>>> 0` is the same bits.
+// A trie that holds a change has the leading zeros above its path; an empty
+// one is the root alone.
 function flatten(trie) {
-  const out = [];
-  (function walk(node, path) {
-    out.push({
-      depth: path.length,
-      prefix: path.length === 0 ? 0 : parseInt(path, 3),
+  const path = [];
+  (function walk(node, digits) {
+    path.push({
+      depth: digits.length,
+      prefix: digits.length === 0 ? 0 : parseInt(digits, 3),
       hash: (node.hash || 0) >>> 0,
     });
-    for (const k of merkle.getKeys(node)) walk(node[k], path + k);
+    for (const k of merkle.getKeys(node)) walk(node[k], digits + k);
   })(trie, '');
+  const root = path.find(node => node.depth === 0);
+  const out = [root];
+  if (path.length > 1) {
+    for (let d = 1; d <= ZEROS; d++) out.push({ depth: d, prefix: 0, hash: root.hash });
+  }
+  for (const node of path) if (node.depth > 0) out.push({ ...node, depth: node.depth + ZEROS });
   out.sort((a, b) => a.depth - b.depth || a.prefix - b.prefix);
   return out;
 }
@@ -177,15 +194,19 @@ function diffCases() {
 }
 
 // Outside the reference's domain. The expected value is the documents'
-// definition (a node at depth d holds minute / 3^(16-d)); `reference`
+// definition (a node at depth d holds minute / 3^(30-d)); `reference`
 // records what Actual does with the same input.
 function deviationCases() {
   const cases = [];
-  for (const [label, ms] of [['1990-01-01 (15-digit key)', Date.UTC(1990, 0, 1)], ['2060-01-01 (17-digit key)', Date.UTC(2060, 0, 1)]]) {
+  for (const [label, ms] of [
+    ['1990-01-01 (15-digit key)', Date.UTC(1990, 0, 1)],
+    ['2060-01-01 (17-digit key)', Date.UTC(2060, 0, 1)],
+    ['9999-12-31 (21-digit key)', Date.UTC(9999, 11, 31, 23, 59, 0)],
+  ]) {
     const t = stamp(ms, 0, 1);
     const minute = minuteOf(t);
     const expected = [{ depth: 0, prefix: 0, hash: hashOf(t) }];
-    for (let d = 1; d <= 16; d++) expected.push({ depth: d, prefix: Math.floor(minute / 3 ** (16 - d)), hash: hashOf(t) });
+    for (let d = 1; d <= KEY_DIGITS; d++) expected.push({ depth: d, prefix: Math.floor(minute / 3 ** (KEY_DIGITS - d)), hash: hashOf(t) });
     // A second change in the same minute makes the reference's diff descend
     // to the leaf and read the minute back from the path it walked.
     let reference;

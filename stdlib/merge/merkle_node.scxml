@@ -7,12 +7,22 @@
   packages/crdt/src/crdt/merkle.ts): the node at `depth` whose key is
   `prefix`, and the XOR of the hashes of every change under it.
 
-  A change's key is its minute, `floor(millis / 60000)`, written as 16
-  base-3 digits. The node at depth d (1 ≤ d ≤ 16) holds the changes whose
-  minute divided by 3^(16-d) is `prefix`; the root is depth 0, prefix 0,
-  and holds them all. The leading digit is not held to 0..2: a minute from
-  3^16 on (2051-11-05T13:21Z) keeps a larger depth-1 prefix, where the
-  reference's string key grows a 17th digit and fails.
+  A change's key is its minute, `floor(millis / 60000)`, written as 30
+  base-3 digits. The node at depth d (1 ≤ d ≤ 30) holds the changes whose
+  minute divided by 3^(30-d) is `prefix`; the root is depth 0, prefix 0,
+  and holds them all. Thirty digits are what a signed 64-bit millisecond
+  clock needs and no more: the last minute it holds is 153722867280912,
+  below 3^30 = 205891132094649, so the leading digit is 0, 1 or 2 for every
+  wall time a hybrid logical clock (hlc_timestamp) can carry, and the digest
+  is a ternary trie of one fixed depth. The reference's key is the minute
+  written in base 3 as it comes, which is 16 digits only from 1997 to 3^16
+  minutes (2051-11-05T13:21Z): a shorter string before, a longer one after,
+  and the same minute is a different path in each.
+
+  A clock that reads today sits under a run of nodes of prefix 0, depths 1 to
+  14, each holding the whole digest: the digits of a minute below 3^16 are
+  leading zeros. They are one node each however many changes the digest
+  holds, and the price of a key that is the same length for every minute.
 
   A digest is a list of nodes in ascending (depth, prefix) — the one order
   a set of nodes has, so two digests of the same changes are equal lists

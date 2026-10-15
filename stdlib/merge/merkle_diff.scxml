@@ -30,8 +30,11 @@
   is hash 0 here, where the reference compares `undefined` with 0 and calls
   an empty digest different from an emptied one.
 
-  `millis` is the path's minute times 60000; a minute too large for that
-  fails `overflow`. Both digests are read as merkle_insert writes them.
+  `millis` is the path's minute times 60000. A digest merkle_insert wrote holds
+  only minutes of a signed 64-bit millisecond clock, whose milliseconds fit, so
+  it never fails; a digest written by hand with a node past the last such minute
+  fails `overflow`. Both digests are read as merkle_insert writes them: thirty
+  levels, so that the search takes at most thirty steps down.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -64,12 +67,12 @@
       <sce:return expr="result"/>
     </sce:if>
     <!-- The node the search stands at: its depth, its prefix, and
-         3^(16-depth), the minutes one of its prefixes spans. -->
+         3^(30-depth), the minutes one of its prefixes spans. -->
     <sce:var name="d" type="uint32" init="0"/>
     <sce:var name="k" type="uint64" init="0"/>
-    <sce:var name="span" type="uint64" init="43046721"/>
+    <sce:var name="span" type="uint64" init="205891132094649"/>
     <sce:var name="descending" type="bool" init="true"/>
-    <sce:while cond="descending &amp;&amp; d &lt; 16">
+    <sce:while cond="descending &amp;&amp; d &lt; 30">
       <sce:assign target="descending" expr="false"/>
       <sce:var name="started" type="bool" init="false"/>
       <sce:var name="last" type="uint64" init="0"/>

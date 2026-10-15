@@ -19,8 +19,8 @@
   node's hash does not decide what is kept.
 
   `keep` must be at least 1 and `nodes` a digest (ascending (depth,
-  prefix), depth at most 16); anything else fails `precondition`. The
-  result is in the same order. The comparison is O(16 · n²), which a
+  prefix), depth at most 30); anything else fails `precondition`. The
+  result is in the same order. The comparison is O(30 · n²), which a
   digest of this size affords.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
@@ -38,7 +38,7 @@
     <sce:var name="prevDepth" type="int32" init="-1"/>
     <sce:var name="prevPrefix" type="uint64" init="0"/>
     <sce:foreach item="x" in="nodes">
-      <sce:require cond="x.depth &lt;= 16 &amp;&amp; (x.depth &gt; prevDepth || (x.depth === prevDepth &amp;&amp; x.prefix &gt; prevPrefix))"/>
+      <sce:require cond="x.depth &lt;= 30 &amp;&amp; (x.depth &gt; prevDepth || (x.depth === prevDepth &amp;&amp; x.prefix &gt; prevPrefix))"/>
       <sce:assign target="prevDepth" expr="x.depth"/>
       <sce:assign target="prevPrefix" expr="x.prefix"/>
       <!-- Walk from x up to the root: x is kept when, at every step, fewer

@@ -17,9 +17,12 @@
   The registers are an observed-remove set of the standard `orset_*` algorithms: a
   write is an add of the register's element with the write's dot as its tag, writing
   over a value is a tombstone of the value's tag, and what a field holds is the adds no
-  tombstone names (orset_live). The element is `id * 16 + field`. What a set cannot
-  carry is the value itself, a number and a text, so each live add has its value in
-  `values`, beside it, taken in when the add is live and taken out when a tombstone
+  tombstone names (orset_live). The element is `id * 65536 + field`: a to-do is a uint32
+  and a field a uint16 (todo_write), so the pair is one uint64 below 2^48 and no two
+  registers share one, whatever the numbers; it is below 2^53 as well, which the
+  Interpreter's integers hold exactly, so no lane meets a limit another does not.
+  What a set cannot carry is the value itself, a number and a text, so each live add
+  has its value in `values`, beside it, taken in when the add is live and taken out when a tombstone
   names it. The standard `mv_value_*` algorithms keep them: the machine assigns a
   write's text into a record of its own first (a payload's text is not handed to an
   algorithm, and that assignment is where a text past its bound is refused), and the
@@ -37,24 +40,31 @@
   names leaves the digest when the tombstone arrives (XOR again), and the tombstone stays,
   so two copies hold the same digest exactly when they hold the same live adds and
   tombstones, whatever order the changes reached each in. The hash is a 32-bit mix of the
-  register, the dot and whether it is an add or a tombstone, computed here (`todo.keep`)
-  with the checked integer arithmetic every statechart has.
+  register, the dot and whether it is an add or a tombstone (merge/merkle_change_hash),
+  every part of each taken whole.
 
   The host raises `todo.resync` on a copy when its link is back. A message cannot carry a
   list, so the digest is not sent: it is walked, one node to a message (`todo.node`: depth,
   prefix, hash). A copy that is sent a node compares it with its own at that place; where
   they differ it answers with its own three children of the node (a child it holds
   nothing under is sent with hash 0, so the peer finds what only the peer holds), down to
-  the last depth, where a node is one minute: there each side sends the changes it holds
-  for that minute as the ordinary `todo.write` and `todo.supersede` they were, which every
-  copy takes in once whoever sends them and however often. merkle_diff is not used for the
-  walk: it compares two whole digests held in one place, and here the peer's arrives a node
-  at a time, so the walk is made by the messages. The digest's keeping is merkle_insert's.
-  Minutes from 3^16 (2051) on are past what the three children of the root reach; the
-  digest holds them but the walk does not look there.
+  the last depth, 30, where a node is one minute: there each side sends the changes it
+  holds for that minute as the ordinary `todo.write` and `todo.supersede` they were, which
+  every copy takes in once whoever sends them and however often. merkle_diff is not used
+  for the walk: it compares two whole digests held in one place, and here the peer's
+  arrives a node at a time, so the walk is made by the messages. The digest's keeping is
+  merkle_insert's.
 
-  A to-do's field number is below 16, as the element `id * 16 + field` says: a tombstone
-  names its register by that element, and the supersede sent for it takes the pair back.
+  The root has three children and each node three, thirty levels down, which is every
+  minute a signed 64-bit millisecond clock holds (merkle_node): a change at any wall time
+  is on a path the walk takes. A wall time of today is under a run of fourteen nodes that
+  hold the whole digest, which the walk passes one level to a message each; that is the
+  same for every change however many there are, and a walk for many changes shares it.
+  The messages of a walk are the nodes where the copies differ, three to a level, and
+  grow with the changes they differ in and not with the time they were made at.
+
+  A tombstone names its register by the element, and the supersede sent for it takes the
+  element back to the to-do and the field (`element / 65536`, `element % 65536`).
 
   `values` and `digest` are what a run compares across copies.
 -->
@@ -81,6 +91,7 @@
   <sce:import kind="algorithm" src="sce:std/merge/mv_value_keep.scxml" as="MvValueKeep"/>
   <sce:import kind="algorithm" src="sce:std/merge/mv_value_drop.scxml" as="MvValueDrop"/>
   <sce:import kind="algorithm" src="sce:std/merge/merkle_insert.scxml" as="MerkleInsert"/>
+  <sce:import kind="algorithm" src="sce:std/merge/merkle_change_hash.scxml" as="MerkleChangeHash"/>
   <datamodel>
     <data id="node" sce:type="uint64" expr="0" sce:direction="out"/>
     <data id="hub" sce:type="bool" expr="false" sce:direction="out"/>
@@ -117,7 +128,8 @@
     </data>
     <data id="digest" sce:type="list&lt;record:Node&gt;" sce:capacity="1024" sce:direction="out"/>
     <data id="mine" sce:type="uint32" expr="0"/>
-    <data id="mixed" sce:type="int64" expr="0"/>
+    <data id="shareId" sce:type="uint32" expr="0"/>
+    <data id="shareField" sce:type="uint16" expr="0"/>
     <data id="known" sce:type="bool" expr="false"/>
     <data id="wasLive" sce:type="bool" expr="false"/>
     <data id="isLive" sce:type="bool" expr="false"/>
@@ -140,7 +152,9 @@
       <assign location="held.text" expr="_event.data.text"/>
       <assign location="clock" expr="HlcSend(clock, _event.data.now, node)"/>
       <assign location="live" expr="OrsetLive(adds, tombstones)"/>
-      <assign location="observed" expr="OrsetObserved(live, _event.data.id * 16 + _event.data.field)"/>
+      <assign location="entry.element" expr="_event.data.id"/>
+      <assign location="entry.element" expr="entry.element * 65536 + _event.data.field"/>
+      <assign location="observed" expr="OrsetObserved(live, entry.element)"/>
       <foreach array="observed" item="o">
         <send target="#_internal" event="todo.supersede">
           <param name="id" expr="_event.data.id"/>
@@ -199,7 +213,8 @@
         <assign location="clock.wallTime" expr="_event.data.wallTime"/>
         <assign location="clock.counter" expr="_event.data.counter"/>
       </if>
-      <assign location="entry.element" expr="_event.data.id * 16 + _event.data.field"/>
+      <assign location="entry.element" expr="_event.data.id"/>
+      <assign location="entry.element" expr="entry.element * 65536 + _event.data.field"/>
       <assign location="entry.wallTime" expr="_event.data.wallTime"/>
       <assign location="entry.counter" expr="_event.data.counter"/>
       <assign location="entry.nodeId" expr="_event.data.nodeId"/>
@@ -228,8 +243,7 @@
         <assign location="values" expr="MvValueKeep(values, held)"/>
         <send target="#_internal" event="todo.keep">
           <param name="kind" expr="0"/>
-          <param name="id" expr="_event.data.id"/>
-          <param name="field" expr="_event.data.field"/>
+          <param name="element" expr="entry.element"/>
           <param name="wallTime" expr="_event.data.wallTime"/>
           <param name="counter" expr="_event.data.counter"/>
           <param name="nodeId" expr="_event.data.nodeId"/>
@@ -263,7 +277,8 @@
     <!-- A value someone wrote over, from a person here or from elsewhere: its add is
          named by a tombstone, and its value, if held, is taken out. -->
     <transition event="todo.supersede" type="internal">
-      <assign location="entry.element" expr="_event.data.id * 16 + _event.data.field"/>
+      <assign location="entry.element" expr="_event.data.id"/>
+      <assign location="entry.element" expr="entry.element * 65536 + _event.data.field"/>
       <assign location="entry.wallTime" expr="_event.data.wallTime"/>
       <assign location="entry.counter" expr="_event.data.counter"/>
       <assign location="entry.nodeId" expr="_event.data.nodeId"/>
@@ -290,8 +305,7 @@
       <if cond="!known">
         <send target="#_internal" event="todo.keep">
           <param name="kind" expr="1"/>
-          <param name="id" expr="_event.data.id"/>
-          <param name="field" expr="_event.data.field"/>
+          <param name="element" expr="entry.element"/>
           <param name="wallTime" expr="_event.data.wallTime"/>
           <param name="counter" expr="_event.data.counter"/>
           <param name="nodeId" expr="_event.data.nodeId"/>
@@ -300,8 +314,7 @@
       <if cond="wasLive">
         <send target="#_internal" event="todo.keep">
           <param name="kind" expr="0"/>
-          <param name="id" expr="_event.data.id"/>
-          <param name="field" expr="_event.data.field"/>
+          <param name="element" expr="entry.element"/>
           <param name="wallTime" expr="_event.data.wallTime"/>
           <param name="counter" expr="_event.data.counter"/>
           <param name="nodeId" expr="_event.data.nodeId"/>
@@ -332,18 +345,14 @@
 
     <!-- A change taken in for the first time, told to the digest: its hash is XORed
          into every node on the path of its minute. An add that a tombstone has named
-         is told again, which takes it out. The hash mixes the register, the dot and the
-         kind, one step at a time, each below 2^53 before it is reduced to 32 bits. -->
+         is told again, which takes it out. The hash is merkle_change_hash's, of the
+         entry the change names and its kind. -->
     <transition event="todo.keep" type="internal">
-      <assign location="mixed" expr="(_event.data.id * 16 + _event.data.field) % 4294967296"/>
-      <assign location="mixed" expr="(mixed * 1000003 + _event.data.wallTime % 4294967296) % 4294967296"/>
-      <assign location="mixed" expr="(mixed * 1000003 + _event.data.counter) % 4294967296"/>
-      <assign location="mixed" expr="(mixed * 1000003 + _event.data.nodeId % 4294967296) % 4294967296"/>
-      <assign location="mixed" expr="(mixed * 1000003 + _event.data.kind + 1) % 4294967296"/>
-      <assign location="mixed" expr="mixed ^ (mixed / 65536)"/>
-      <assign location="mixed" expr="(mixed * 69069 + 12345) % 4294967296"/>
-      <assign location="mixed" expr="mixed ^ (mixed / 8192)"/>
-      <assign location="mine" expr="mixed"/>
+      <assign location="entry.element" expr="_event.data.element"/>
+      <assign location="entry.wallTime" expr="_event.data.wallTime"/>
+      <assign location="entry.counter" expr="_event.data.counter"/>
+      <assign location="entry.nodeId" expr="_event.data.nodeId"/>
+      <assign location="mine" expr="MerkleChangeHash(entry, _event.data.kind)"/>
       <assign location="digest" expr="MerkleInsert(digest, _event.data.wallTime / 60000, mine)"/>
     </transition>
 
@@ -425,7 +434,7 @@
           <assign location="mine" expr="n.hash"/>
         </if>
       </foreach>
-      <if cond="mine !== _event.data.hash &amp;&amp; _event.data.depth &lt; 16">
+      <if cond="mine !== _event.data.hash &amp;&amp; _event.data.depth &lt; 30">
         <send target="#_internal" event="todo.visit">
           <param name="to" expr="_event.data.sender"/>
           <param name="depth" expr="_event.data.depth + 1"/>
@@ -445,16 +454,16 @@
           <param name="reply" expr="false"/>
         </send>
       </if>
-      <if cond="mine !== _event.data.hash &amp;&amp; _event.data.depth === 16">
+      <if cond="mine !== _event.data.hash &amp;&amp; _event.data.depth === 30">
         <send target="#_internal" event="todo.share">
           <param name="to" expr="_event.data.sender"/>
           <param name="minute" expr="_event.data.prefix"/>
         </send>
       </if>
-      <if cond="mine !== _event.data.hash &amp;&amp; _event.data.depth === 16 &amp;&amp; !_event.data.reply">
+      <if cond="mine !== _event.data.hash &amp;&amp; _event.data.depth === 30 &amp;&amp; !_event.data.reply">
         <send target="#_internal" event="todo.visit">
           <param name="to" expr="_event.data.sender"/>
-          <param name="depth" expr="16"/>
+          <param name="depth" expr="30"/>
           <param name="prefix" expr="_event.data.prefix"/>
           <param name="reply" expr="true"/>
         </send>
@@ -468,10 +477,12 @@
     <transition event="todo.share" type="internal">
       <foreach array="values" item="v">
         <if cond="v.wallTime / 60000 === _event.data.minute">
+          <assign location="shareId" expr="v.id"/>
+          <assign location="shareField" expr="v.field"/>
           <if cond="!hub">
             <send target="#server" event="todo.write">
-              <param name="id" expr="v.id"/>
-              <param name="field" expr="v.field"/>
+              <param name="id" expr="shareId"/>
+              <param name="field" expr="shareField"/>
               <param name="value" expr="v.value"/>
               <param name="text" expr="v.text"/>
               <param name="wallTime" expr="v.wallTime"/>
@@ -481,8 +492,8 @@
           </if>
           <if cond="hub &amp;&amp; _event.data.to === 1">
             <send target="#alice" event="todo.write">
-              <param name="id" expr="v.id"/>
-              <param name="field" expr="v.field"/>
+              <param name="id" expr="shareId"/>
+              <param name="field" expr="shareField"/>
               <param name="value" expr="v.value"/>
               <param name="text" expr="v.text"/>
               <param name="wallTime" expr="v.wallTime"/>
@@ -492,8 +503,8 @@
           </if>
           <if cond="hub &amp;&amp; _event.data.to === 2">
             <send target="#bob" event="todo.write">
-              <param name="id" expr="v.id"/>
-              <param name="field" expr="v.field"/>
+              <param name="id" expr="shareId"/>
+              <param name="field" expr="shareField"/>
               <param name="value" expr="v.value"/>
               <param name="text" expr="v.text"/>
               <param name="wallTime" expr="v.wallTime"/>
@@ -505,10 +516,12 @@
       </foreach>
       <foreach array="tombstones" item="t">
         <if cond="t.wallTime / 60000 === _event.data.minute">
+          <assign location="shareId" expr="t.element / 65536"/>
+          <assign location="shareField" expr="t.element % 65536"/>
           <if cond="!hub">
             <send target="#server" event="todo.supersede">
-              <param name="id" expr="t.element / 16"/>
-              <param name="field" expr="t.element % 16"/>
+              <param name="id" expr="shareId"/>
+              <param name="field" expr="shareField"/>
               <param name="wallTime" expr="t.wallTime"/>
               <param name="counter" expr="t.counter"/>
               <param name="nodeId" expr="t.nodeId"/>
@@ -517,8 +530,8 @@
           </if>
           <if cond="hub &amp;&amp; _event.data.to === 1">
             <send target="#alice" event="todo.supersede">
-              <param name="id" expr="t.element / 16"/>
-              <param name="field" expr="t.element % 16"/>
+              <param name="id" expr="shareId"/>
+              <param name="field" expr="shareField"/>
               <param name="wallTime" expr="t.wallTime"/>
               <param name="counter" expr="t.counter"/>
               <param name="nodeId" expr="t.nodeId"/>
@@ -527,8 +540,8 @@
           </if>
           <if cond="hub &amp;&amp; _event.data.to === 2">
             <send target="#bob" event="todo.supersede">
-              <param name="id" expr="t.element / 16"/>
-              <param name="field" expr="t.element % 16"/>
+              <param name="id" expr="shareId"/>
+              <param name="field" expr="shareField"/>
               <param name="wallTime" expr="t.wallTime"/>
               <param name="counter" expr="t.counter"/>
               <param name="nodeId" expr="t.nodeId"/>

@@ -7,7 +7,10 @@
   last-writer-wins register, so two people changing different fields of one to-do at
   once both keep their change, and two changing the same field leave the later one.
   The numbers of the fields are the host's: here 1 is the title (text), 2 whether it
-  is done, 3 its due day, and 9 whether it is removed.
+  is done, 3 its due day, and 9 whether it is removed. A to-do is numbered by a
+  uint32 and a field by a uint16, so that the register they name, `id * 65536 +
+  field`, is one uint64 below 2^48 (todo_peer): any number the types hold names a
+  register of its own, and none is refused for being large.
   `text` holds at most 32 bytes of UTF-8, counted in bytes as every string of a
   `sce-static` machine is.
 -->
@@ -18,8 +21,8 @@
        name="todo_write"
        sce:event-name="todo.write">
   <datamodel>
-    <data id="id" sce:type="uint64" sce:direction="in"/>
-    <data id="field" sce:type="uint64" sce:direction="in"/>
+    <data id="id" sce:type="uint32" sce:direction="in"/>
+    <data id="field" sce:type="uint16" sce:direction="in"/>
     <data id="value" sce:type="int64" sce:direction="in"/>
     <data id="text" sce:type="string" sce:max-size="32" sce:direction="in"/>
     <data id="wallTime" sce:type="int64" sce:direction="in"/>

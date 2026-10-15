@@ -12,8 +12,8 @@
        name="todo_edit"
        sce:event-name="todo.edit">
   <datamodel>
-    <data id="id" sce:type="uint64" sce:direction="in"/>
-    <data id="field" sce:type="uint64" sce:direction="in"/>
+    <data id="id" sce:type="uint32" sce:direction="in"/>
+    <data id="field" sce:type="uint16" sce:direction="in"/>
     <data id="value" sce:type="int64" sce:direction="in"/>
     <data id="text" sce:type="string" sce:max-size="32" sce:direction="in"/>
     <data id="now" sce:type="int64" sce:direction="in"/>

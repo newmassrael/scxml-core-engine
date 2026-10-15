@@ -221,7 +221,7 @@ fn a_write_whose_text_does_not_fit_changes_nothing_at_the_hub() {
     world.raise(
         "alice",
         "todo.shout",
-        &format!(r#"{{"id":"9","text":"{too_long}"}}"#),
+        &format!(r#"{{"id":9,"text":"{too_long}"}}"#),
     );
     assert_eq!(world.run_until_quiet(10_000), Outcome::Quiet);
     assert!(

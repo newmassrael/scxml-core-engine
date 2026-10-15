@@ -919,7 +919,7 @@ pub fn todo_edit_at(
         who,
         "todo.edit",
         &format!(
-            r#"{{"id":"{id}","field":"{field}","value":"{value}","text":{},"now":"{now}"}}"#,
+            r#"{{"id":{id},"field":{field},"value":"{value}","text":{},"now":"{now}"}}"#,
             json_text(text)
         ),
     );

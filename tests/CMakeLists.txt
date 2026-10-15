@@ -468,7 +468,7 @@ foreach(_STD_MERGE_SCHEMA hlc_timestamp lww_cell rga_node rga_gone orset_entry m
 endforeach()
 foreach(_STD_MERGE_RULE hlc_send hlc_receive hlc_compare lww_write rga_insert rga_holds rga_remove
                         orset_union orset_live orset_observed mv_value_holds mv_value_keep mv_value_drop
-                        merkle_insert sheet_apply sheet_settle sheet_show)
+                        merkle_insert merkle_change_hash sheet_apply sheet_settle sheet_show)
     sce_add_algorithm(
         TARGET static_datamodel_generated_cpp_test
         SCXML_FILE sce:std/merge/${_STD_MERGE_RULE}.scxml

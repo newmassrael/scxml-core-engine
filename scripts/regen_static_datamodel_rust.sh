@@ -92,7 +92,7 @@ STD_ALGORITHMS+=(merge/mv_value merge/mv_value_holds merge/mv_value_keep merge/m
 # the record's own schema.
 STD_ALGORITHMS+=(text/text_slot text/text_slot_latest text/text_slot_retitled text/text_slot_holds)
 # The digest todo_peer keeps of the changes it holds.
-STD_ALGORITHMS+=(merge/merkle_node merge/merkle_insert)
+STD_ALGORITHMS+=(merge/merkle_node merge/merkle_insert merge/merkle_change_hash)
 # What the sheet shows of its cells: the formulas settled and the values sorted.
 STD_ALGORITHMS+=(merge/sheet_value merge/sheet_shown merge/sheet_apply merge/sheet_settle merge/sheet_show)
 

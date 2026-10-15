@@ -10,7 +10,7 @@
        name="todo_shout"
        sce:event-name="todo.shout">
   <datamodel>
-    <data id="id" sce:type="uint64" sce:direction="in"/>
+    <data id="id" sce:type="uint32" sce:direction="in"/>
     <data id="text" sce:type="string" sce:max-size="64" sce:direction="in"/>
   </datamodel>
 </scxml>

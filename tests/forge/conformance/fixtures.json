@@ -1636,6 +1636,21 @@
       }
     },
     {
+      "name": "merkle_change_hash",
+      "document": "sce:std/merge/merkle_change_hash.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "merkle_change_hash",
+      "args": [
+        { "record": "orset_entry" },
+        "u8"
+      ],
+      "output": {
+        "type": "u32",
+        "compare": "equality"
+      }
+    },
+    {
       "name": "merkle_diff",
       "document": "sce:std/merge/merkle_diff.scxml",
       "kind": "algorithm",

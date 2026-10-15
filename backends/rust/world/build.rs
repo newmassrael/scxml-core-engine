@@ -56,6 +56,7 @@ const FORGE: &[&str] = &[
     "../../../stdlib/merge/mv_value_drop.scxml",
     "../../../stdlib/merge/merkle_node.scxml",
     "../../../stdlib/merge/merkle_insert.scxml",
+    "../../../stdlib/merge/merkle_change_hash.scxml",
     "../../../stdlib/merge/rga_node.scxml",
     "../../../stdlib/merge/rga_gone.scxml",
     "../../../stdlib/merge/rga_insert.scxml",

@@ -2701,7 +2701,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
             lww_cell lww_write
             orset_entry orset_union orset_live orset_observed
             mv_value mv_value_holds mv_value_keep mv_value_drop
-            merkle_node merkle_insert
+            merkle_node merkle_insert merkle_change_hash
             rga_node rga_gone rga_insert rga_holds rga_remove
             sheet_value sheet_shown sheet_apply sheet_settle sheet_show)
         set(_HEADER "${SCE_C_INTEGRATION_GENERATED_DIR}/${_MERGE_HEADER}.h")

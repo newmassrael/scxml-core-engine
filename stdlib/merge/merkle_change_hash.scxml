@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/merge/merkle_change_hash.scxml — the 32-bit hash a merkle digest
+  (merkle_insert) holds for one change of an observed-remove set: the change
+  is the entry `change` (orset_entry: the element, and the dot of the add it
+  names) and `kind` says what happened to it, 0 for an add and 1 for a
+  tombstone. An add and the tombstone that names it are two changes and hash
+  apart, so a digest that has taken both in, and one that has taken only the
+  add, differ.
+
+  Every part of the change is mixed in, whole: the element, the wall time, the
+  node (each in two 32-bit halves, the low and then the high), the counter
+  and the kind. A 64-bit part that only gave its low half would hash two
+  changes alike whose wall times, elements or nodes differ by a multiple of
+  2^32 — the same change a month and a half later, or the same register of
+  another row — and XOR cancels two changes of one hash out of every node they
+  share. Each step is `h = (h * 1000003 + part) % 2^32`, and the result is
+  finished by the avalanche of MurmurHash3's fmix32 (murmur3_32), so that
+  every bit of every part moves about half the bits of the hash. The finish
+  is not decoration. An add and the tombstone that names it differ only in
+  the kind, the last part, which moves the sum by one; a finish that does not
+  spread that one step gives the same difference to many pairs, and a digest
+  XORs the differences of the changes two copies lack: two pairs with one
+  difference cancel in the root, and the copies are taken for equal while they
+  are not (a fuzzed afternoon of the to-do list found it in the first form,
+  whose finish was a xorshift and an affine step). Every product is below
+  2^64 with its operands below 2^32, so the integer contract
+  (SCE_FORGE.md §3.4.1) is met by proof and no step wraps.
+
+  A wall time is not negative (an hlc_timestamp never issues one): a negative
+  one fails `precondition`, as merkle_insert fails a negative minute.
+
+  element 0, wall time 0, counter 0, node 0 → 1364076727 as an add,
+  821347078 as a tombstone · element 1 → 3250054446 · element 2^32 →
+  2464132885 · the add of element 1 at wall time 60000, counter 2, node 3 →
+  2297224627.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="merkle_change_hash" version="1.0">
+  <sce:import kind="event-schema" src="orset_entry.scxml" as="Entry"/>
+  <sce:signature>
+    <sce:param name="change" type="record:Entry"/>
+    <sce:param name="kind" type="uint8"/>
+    <sce:return type="uint32" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:require cond="change.wallTime &gt;= 0"/>
+    <sce:var name="element" type="uint64" init="change.element"/>
+    <sce:var name="wall" type="uint64" init="change.wallTime"/>
+    <sce:var name="counter" type="uint64" init="change.counter"/>
+    <sce:var name="node" type="uint64" init="change.nodeId"/>
+    <sce:var name="h" type="uint64" init="0"/>
+    <sce:assign target="h" expr="(h * 1000003 + element % 4294967296) % 4294967296"/>
+    <sce:assign target="h" expr="(h * 1000003 + element / 4294967296) % 4294967296"/>
+    <sce:assign target="h" expr="(h * 1000003 + wall % 4294967296) % 4294967296"/>
+    <sce:assign target="h" expr="(h * 1000003 + wall / 4294967296) % 4294967296"/>
+    <sce:assign target="h" expr="(h * 1000003 + counter) % 4294967296"/>
+    <sce:assign target="h" expr="(h * 1000003 + node % 4294967296) % 4294967296"/>
+    <sce:assign target="h" expr="(h * 1000003 + node / 4294967296) % 4294967296"/>
+    <sce:assign target="h" expr="(h * 1000003 + kind + 1) % 4294967296"/>
+    <sce:assign target="h" expr="h ^ (h / 65536)"/>
+    <sce:assign target="h" expr="(h * 2246822507) % 4294967296"/>
+    <sce:assign target="h" expr="h ^ (h / 8192)"/>
+    <sce:assign target="h" expr="(h * 3266489909) % 4294967296"/>
+    <sce:assign target="h" expr="h ^ (h / 65536)"/>
+    <sce:return expr="h"/>
+  </sce:body>
+</scxml>

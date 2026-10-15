@@ -1809,10 +1809,26 @@ def acl_granted(tree: list, acl: list, user: int, groups: list, owner: int):
     return ("ok", [privilege["id"] for privilege in tree if granted(privilege["id"])])
 
 
+#: The digits of a merkle key, and so the depth of a digest: thirty base-3 digits
+#: write every minute of a signed 64-bit millisecond clock.
+MERKLE_DEPTH = 30
+#: The minutes the key can write: 3^30. Every one below it has a leading digit of
+#: 0, 1 or 2, which is what a walk from the root reaches.
+MERKLE_MINUTES = 3**MERKLE_DEPTH
+#: The last minute a signed 64-bit millisecond clock holds, 153722867280912, and
+#: the last the digest accepts; it is below MERKLE_MINUTES, and its milliseconds
+#: are the last a merkle_diff answer can name.
+MERKLE_LAST_MINUTE = I64_MAX // 60_000
+#: The year-2051 limit of the reference's 16-digit key, and the first minute past it.
+MERKLE_OLD_MINUTES = 3**16
+
+
 def merkle_path(minute: int) -> list:
     """The nodes a change at `minute` lies under: the root, then for each depth 1
-    to 16 the node whose prefix is the minute's base-3 digits down to that depth."""
-    return [(0, 0)] + [(depth, minute // 3 ** (16 - depth)) for depth in range(1, 17)]
+    to 30 the node whose prefix is the minute's base-3 digits down to that depth."""
+    return [(0, 0)] + [
+        (depth, minute // 3 ** (MERKLE_DEPTH - depth)) for depth in range(1, MERKLE_DEPTH + 1)
+    ]
 
 
 def merkle_node(depth: int, prefix: int, hash_: int) -> dict:
@@ -1820,15 +1836,16 @@ def merkle_node(depth: int, prefix: int, hash_: int) -> dict:
 
 
 def merkle_digest_valid(nodes: list) -> bool:
-    """Ascending (depth, prefix) with no depth past 16 — a digest the family wrote."""
+    """Ascending (depth, prefix) with no depth past 30 — a digest the family wrote."""
     keys = [(node["depth"], node["prefix"]) for node in nodes]
-    return all(depth <= 16 for depth, _ in keys) and all(a < b for a, b in zip(keys, keys[1:]))
+    return all(depth <= MERKLE_DEPTH for depth, _ in keys) and all(a < b for a, b in zip(keys, keys[1:]))
 
 
 def merkle_insert(nodes: list, minute: int, hash_: int):
     """sce:std/merge/merkle_insert — the change's hash XORed into every node on its
-    path, a missing node created with the hash alone."""
-    if minute < 0 or not merkle_digest_valid(nodes):
+    path, a missing node created with the hash alone; a minute no signed 64-bit
+    millisecond clock holds is refused."""
+    if not 0 <= minute <= MERKLE_LAST_MINUTE or not merkle_digest_valid(nodes):
         return ("fails", "precondition")
     table = {(node["depth"], node["prefix"]): node["hash"] for node in nodes}
     for key in merkle_path(minute):
@@ -1877,8 +1894,8 @@ def merkle_diff(a: list, b: list):
 
     if root(a) == root(b):
         return ("ok", {"differs": False, "millis": 0})
-    depth, prefix, span = 0, 0, 3**16
-    while depth < 16:
+    depth, prefix, span = 0, 0, MERKLE_MINUTES
+    while depth < MERKLE_DEPTH:
         children = sorted(
             {
                 node["prefix"]
@@ -1901,6 +1918,35 @@ def merkle_diff(a: list, b: list):
     minute = checked(prefix * span, 0, U64_MAX)
     minute = checked(minute)
     return ("ok", {"differs": True, "millis": checked(minute * 60000)})
+
+
+def merkle_change_hash(change: dict, kind: int):
+    """sce:std/merge/merkle_change_hash — a 32-bit mix of one change of an
+    observed-remove set: the element, the wall time and the node each as a low and
+    a high 32-bit half, the counter and the kind, one step at a time, then the
+    avalanche of MurmurHash3's fmix32. A negative wall time is refused."""
+    if change["wallTime"] < 0:
+        return ("fails", "precondition")
+    word = 2**32
+    parts = [
+        change["element"] % word,
+        change["element"] // word,
+        change["wallTime"] % word,
+        change["wallTime"] // word,
+        change["counter"],
+        change["nodeId"] % word,
+        change["nodeId"] // word,
+        kind + 1,
+    ]
+    mixed = 0
+    for part in parts:
+        mixed = (mixed * 1_000_003 + part) % word
+    mixed ^= mixed >> 16
+    mixed = (mixed * 0x85EBCA6B) % word
+    mixed ^= mixed >> 13
+    mixed = (mixed * 0xC2B2AE35) % word
+    mixed ^= mixed >> 16
+    return ("ok", mixed)
 
 
 def epoch_ms(year, month, day, hour=0, minute=0, second=0, milli=0) -> int:
@@ -3472,18 +3518,45 @@ def membership_args(rng: SplitMix64):
 
 
 def merkle_minute(rng: SplitMix64) -> int:
-    """A change's minute: a real one, near the start or the 3^16 boundary where the
-    leading digit outgrows 2, and far past what a clock reads."""
+    """A change's minute, one the key can write: a real one, near the start or the
+    3^16 boundary the reference's 16-digit key ends at, anywhere out to the last
+    minute a signed 64-bit millisecond clock holds, and at the key's own edges."""
     kind = rng.below(10)
     if kind < 4:
         return 29_841_720 + rng.between(-100_000, 100_000)
-    if kind < 6:
+    if kind < 5:
         return rng.pick([0, 1, 2, 3, 8, 26, 27, 28])
-    if kind < 8:
-        return 3**16 + rng.between(-3, 3)
+    if kind < 7:
+        return MERKLE_OLD_MINUTES + rng.between(-3, 3)
     if kind < 9:
-        return rng.pick([2**40, I64_MAX // 60_000 - 1, I64_MAX // 60_000, I64_MAX // 60_000 + 1])
-    return rng.pick([I64_MAX - 1, I64_MAX, 2**62])
+        return rng.pick(
+            [
+                2**40,
+                3**20,
+                3**25,
+                3**29 - 1,
+                3**29,
+                2 * 3**29,
+                MERKLE_LAST_MINUTE - 1,
+                MERKLE_LAST_MINUTE,
+            ]
+        )
+    return rng.between(MERKLE_OLD_MINUTES, MERKLE_LAST_MINUTE)
+
+
+def merkle_late_minute(rng: SplitMix64) -> int:
+    """A minute from 3^16 on, where the reference's key is a 17th digit and the
+    clock reads 2051-11-05T13:21Z and after: either side of the boundary, at a
+    year's turn far past it, or anywhere out to the last minute a clock holds."""
+    kind = rng.below(4)
+    if kind == 0:
+        return MERKLE_OLD_MINUTES + rng.between(-2, 2)
+    if kind == 1:
+        year = 525_960
+        return MERKLE_OLD_MINUTES + year * rng.pick([1, 10, 100, 1000, 10_000, 1_000_000, 100_000_000])
+    if kind == 2:
+        return rng.pick([2**40, 3**20, 3**25, 3**29 - 1, 3**29, 2 * 3**29, MERKLE_LAST_MINUTE - 1, MERKLE_LAST_MINUTE])
+    return rng.between(MERKLE_OLD_MINUTES, MERKLE_LAST_MINUTE)
 
 
 def digest_of(changes: list) -> list:
@@ -3505,7 +3578,7 @@ def near_changes(rng: SplitMix64, count: int, base: int | None = None) -> list:
     replicas that part only below their shared prefix."""
     base = merkle_minute(rng) if base is None else base
     return [
-        (clamp(base + rng.pick([0, 1, 2, 3, 9, 27, 243, 6561, 100_000]), 0, I64_MAX), change_hash(rng))
+        (clamp(base + rng.pick([0, 1, 2, 3, 9, 27, 243, 6561, 100_000]), 0, MERKLE_LAST_MINUTE), change_hash(rng))
         for _ in range(count)
     ]
 
@@ -3518,13 +3591,31 @@ def merkle_insert_args(rng: SplitMix64):
     changes = near_changes(rng, rng.between(0, 4)) if rng.below(2) else any_changes(rng, rng.between(0, 3))
     nodes = digest_of(changes)
     if nodes and rng.below(10) == 0:
-        nodes = shuffled(rng, nodes) if rng.below(2) else nodes + [merkle_node(17, 0, 1)]
+        nodes = shuffled(rng, nodes) if rng.below(2) else nodes + [merkle_node(MERKLE_DEPTH + 1, 0, 1)]
     if changes and rng.below(4) == 0:
         minute, hash_ = rng.pick(changes)
     else:
         minute, hash_ = merkle_minute(rng), change_hash(rng)
     if rng.below(15) == 0:
         minute = -1 - rng.between(0, 5)
+    elif rng.below(15) == 0:
+        # A minute no signed 64-bit millisecond clock holds, the first past it and
+        # past what thirty digits write among them.
+        minute = rng.pick([MERKLE_LAST_MINUTE + 1, MERKLE_MINUTES - 1, MERKLE_MINUTES, MERKLE_MINUTES + 1, 2**62, I64_MAX])
+    return [nodes, minute, hash_]
+
+
+def merkle_insert_late_args(rng: SplitMix64):
+    """An insert at a minute from 3^16 on into a digest of changes around it: the
+    path the reference's key has no digit for, with siblings at every depth below
+    the shared prefix."""
+    base = merkle_late_minute(rng)
+    changes = near_changes(rng, rng.between(0, 4), base)
+    nodes = digest_of(changes)
+    if changes and rng.below(4) == 0:
+        minute, hash_ = rng.pick(changes)
+    else:
+        minute, hash_ = clamp(base + rng.pick([0, 1, 2, 5, 27, 729, 100_000]), 0, MERKLE_LAST_MINUTE), change_hash(rng)
     return [nodes, minute, hash_]
 
 
@@ -3533,6 +3624,70 @@ def merkle_prune_args(rng: SplitMix64):
     if nodes and rng.below(12) == 0:
         nodes = shuffled(rng, nodes)
     return [nodes, rng.pick([1, 1, 2, 2, 3, 0, 1000]) if rng.below(2) else rng.between(1, 4)]
+
+
+def merkle_prune_late_args(rng: SplitMix64):
+    """A prune of the digest of changes at minutes from 3^16 on."""
+    nodes = digest_of(near_changes(rng, rng.between(1, 6), merkle_late_minute(rng)))
+    return [nodes, rng.pick([1, 1, 2, 2, 3]) if rng.below(2) else rng.between(1, 4)]
+
+
+def merkle_diff_late_args(rng: SplitMix64):
+    """Two replicas whose changes are at minutes from 3^16 on, parting below a long
+    shared prefix; now and then the one change each side lacks sits on either side
+    of the boundary itself, 3^16 - 1 and 3^16, the last minute of the reference's
+    key and the first it has no digit for."""
+    base = merkle_late_minute(rng)
+    shared = near_changes(rng, rng.between(0, 4), base)
+    if rng.below(4) == 0:
+        only_a = [(MERKLE_OLD_MINUTES - 1, change_hash(rng))]
+        only_b = [(MERKLE_OLD_MINUTES, change_hash(rng))]
+        shared = []
+    else:
+        only_a = near_changes(rng, rng.between(0, 3), base)
+        only_b = near_changes(rng, rng.between(0, 3), base)
+    a, b = digest_of(shared + only_a), digest_of(shared + only_b)
+    if rng.below(3) == 0:
+        b = answer_of(merkle_prune(b, rng.pick([1, 2])))
+    if rng.below(6) == 0:
+        a, b = b, a
+    return [a, b]
+
+
+#: The to-do list's field numbers and ids at the places the old key packed them
+#: badly (`id * 16 + field` ran one register into another from field 16) and where
+#: the new one's halves meet (`id * 65536 + field`, a uint16 and a uint32).
+CHANGE_FIELD_EDGES = [0, 1, 2, 3, 9, 15, 16, 17, 31, 32, 100, 255, 256, 257, 1000, 4095, 4096, 65534, 65535]
+CHANGE_ID_EDGES = [0, 1, 7, 15, 16, 255, 65535, 65536, 2**21 - 1, 2**21, 2**32 - 1]
+
+
+def change_wall(rng: SplitMix64) -> int:
+    """A wall time for a change: a real one, either side of 3^16 minutes, at a
+    multiple of 2^32 milliseconds (where a low half alone cannot tell two apart),
+    or at an edge of the type, negative ones included."""
+    kind = rng.below(8)
+    if kind < 2:
+        return REALISTIC_WALL + rng.between(-1000, 1000)
+    if kind < 4:
+        return MERKLE_OLD_MINUTES * 60_000 + rng.between(-60_000, 60_000)
+    if kind < 6:
+        return clamp(rng.between(1, 2**31) * 2**32 + rng.pick([0, 0, 1, 59_999]), 0, I64_MAX)
+    if kind < 7:
+        return rng.pick(WALL_EDGES)
+    return rng.between(0, I64_MAX)
+
+
+def merkle_change_hash_args(rng: SplitMix64):
+    kind = rng.below(10)
+    if kind < 6:
+        element = rng.pick(CHANGE_ID_EDGES) * 65_536 + rng.pick(CHANGE_FIELD_EDGES)
+    elif kind < 8:
+        element = rng.pick(ELEMENT_EDGES)
+    else:
+        element = rng.between(0, U64_MAX)
+    counter = rng.pick(COUNTER_EDGES) if rng.below(3) == 0 else rng.between(0, 5)
+    node = rng.pick(NODE_EDGES) if rng.below(3) == 0 else rng.between(0, 5)
+    return [entry(element, change_wall(rng), counter, node), rng.pick([0, 1, 0, 1, 0, 1, 2, 255])]
 
 
 def merkle_diff_args(rng: SplitMix64):
@@ -3670,6 +3825,22 @@ FIXTURES = {
     # A validator's cases are a `sequence`, and this one holds no state, so each
     # generated case stands alone.
     "PolicyScalarRule::validate": (lambda args: policy_scalar_rule(*args), policy_rule_args, 300, 0xE110_0053),
+    "merkle_change_hash": (
+        lambda args: merkle_change_hash(*args),
+        merkle_change_hash_args,
+        500,
+        0xE110_0054,
+    ),
+}
+
+#: Further streams of cases for a fixture above, each with a seed of its own, so a
+#: case family added later does not move the cases of another. The digest's
+#: late streams hold it to minutes from 3^16 on, which the reference's key could
+#: not write and the first form of this document did not walk.
+EXTRA_STREAMS = {
+    "merkle_insert": [(merkle_insert_late_args, 200, 0xE110_0055)],
+    "merkle_prune": [(merkle_prune_late_args, 120, 0xE110_0056)],
+    "merkle_diff": [(merkle_diff_late_args, 250, 0xE110_0057)],
 }
 
 
@@ -3958,8 +4129,11 @@ def validate_laws() -> None:
         hashes = shuffled(rng, [rng.between(1, U32_MAX) for _ in range(12)])
         if len(set(hashes)) < len(hashes):
             continue
-        base = merkle_minute(rng)
-        minutes = [clamp(base + rng.pick([0, 1, 2, 3, 9, 27, 243, 6561, 100_000]), 0, I64_MAX) for _ in range(9)]
+        base = merkle_late_minute(rng) if rng.below(2) else merkle_minute(rng)
+        minutes = [
+            clamp(base + rng.pick([0, 1, 2, 3, 9, 27, 243, 6561, 100_000]), 0, MERKLE_LAST_MINUTE)
+            for _ in range(9)
+        ]
         pairs = list(dict.fromkeys(zip(minutes, hashes)))
         changes = pairs[: rng.between(1, 5)]
         forward = digest_of(changes)
@@ -4011,6 +4185,51 @@ def validate_laws() -> None:
         user = rng.between(1, 6)
         groups = answer_of(acl_membership(edges, user))
         membership_law.holds(len(groups) == len(set(groups)) and user not in groups and 0 not in groups, [edges, user])
+
+    # What merkle_change_hash says of itself: no part of a change goes unmixed. Two
+    # changes that differ in one 32-bit half of one part never hash alike, because
+    # a step adds the part to a multiple of an odd number and the steps after it
+    # are one-to-one on 32 bits; a hash that kept only the low half of a wall
+    # time, an element or a node would fail it at once.
+    word_law = Law("merkle_change_hash: changes that differ in one 32-bit half of one part hash apart")
+    kind_law = Law("merkle_change_hash: an add and the tombstone that names it hash apart")
+    same_law = Law("merkle_change_hash: two changes do not share the difference their add and tombstone make")
+    for _ in range(LAW_RUNS):
+        change = merkle_change_hash_args(rng)[0]
+        if change["wallTime"] < 0:
+            continue
+        other = dict(change)
+        field_name = rng.pick(["element", "wallTime", "counter", "nodeId"])
+        high = field_name != "counter" and rng.below(2) == 1
+        limit = I64_MAX if field_name == "wallTime" else (U32_MAX if field_name == "counter" else U64_MAX)
+        shift = 2**32 if high else 1
+        moved = change[field_name] + shift * rng.between(1, 1000)
+        if moved > limit:
+            moved = change[field_name] - shift * rng.between(1, 1000)
+        if not 0 <= moved <= limit or (not high and moved // 2**32 != change[field_name] // 2**32):
+            continue
+        other[field_name] = moved
+        kind = rng.pick([0, 1])
+        word_law.holds(
+            answer_of(merkle_change_hash(change, kind)) != answer_of(merkle_change_hash(other, kind)),
+            [change, other, kind],
+        )
+        kind_law.holds(
+            answer_of(merkle_change_hash(change, 0)) != answer_of(merkle_change_hash(change, 1)),
+            [change],
+        )
+        # The difference an add and its tombstone make to a digest is its own: two
+        # registers do not give one difference, or two copies lacking one of each
+        # would XOR to the same root as copies that lack nothing.
+        if other["wallTime"] >= 0:
+            same_law.holds(
+                answer_of(merkle_change_hash(change, 0)) ^ answer_of(merkle_change_hash(change, 1))
+                != answer_of(merkle_change_hash(other, 0)) ^ answer_of(merkle_change_hash(other, 1)),
+                [change, other],
+            )
+    word_law.was_asked()
+    kind_law.was_asked()
+    same_law.was_asked()
 
     stable_order_law = Law("stable_point does not depend on the order of the devices")
     stable_idle_law = Law("stable_point is not held back by a device idle past maxIdle")
@@ -4702,18 +4921,20 @@ def regenerate(text: str):
         hand, dropped = hand_cases(text[start:end])
         checked = verify_model(fixture, model, hand)
         seen = {identity(json.loads(text)["args"]) for text in hand}
-        rng = SplitMix64(seed)
-        made, guard = [], 0
-        while len(made) < count:
-            guard += 1
-            if guard > count * 50:
-                raise SystemExit(f"{fixture}: cannot draw {count} distinct inputs")
-            args = draw(rng)
-            key = identity(args)
-            if key in seen:
-                continue
-            seen.add(key)
-            made.append(case_line(args, model(args)))
+        made = []
+        for stream_draw, stream_count, stream_seed in [(draw, count, seed)] + EXTRA_STREAMS.get(fixture, []):
+            rng = SplitMix64(stream_seed)
+            guard, wanted = 0, len(made) + stream_count
+            while len(made) < wanted:
+                guard += 1
+                if guard > stream_count * 50:
+                    raise SystemExit(f"{fixture}: cannot draw {stream_count} distinct inputs")
+                args = stream_draw(rng)
+                key = identity(args)
+                if key in seen:
+                    continue
+                seen.add(key)
+                made.append(case_line(args, model(args)))
         body = "\n" + ",\n".join(hand + made)
         text = text[:start] + body + text[end:]
         kinds: dict[str, int] = {}

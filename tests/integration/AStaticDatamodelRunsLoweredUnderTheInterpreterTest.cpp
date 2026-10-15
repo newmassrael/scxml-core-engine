@@ -1050,7 +1050,7 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, ASendToAMeshPeerWithN
     ASSERT_TRUE(machine->loadSCXMLFromString(lowered.document)) << "the Interpreter does not load the document";
     ASSERT_TRUE(machine->start());
     machine->processEvent("todo.join", R"({"node":"1","hub":false})");
-    machine->processEvent("todo.edit", R"({"id":"7","field":"1","value":"0","text":"buy milk","now":"0"})");
+    machine->processEvent("todo.edit", R"({"id":7,"field":1,"value":"0","text":"buy milk","now":"0"})");
     EXPECT_TRUE(settles(raiser, [&] { return variable(*machine, "refusals") == 1; }))
         << "the send to #server was not refused as error.execution, once";
 }

@@ -61,6 +61,13 @@ reference or in the script, never noise.
 
 ## What the scripts check about themselves
 
+- `actual_crdt.mjs` prints the reference's digests in the documents' shape: the
+  documents' key is 30 base-3 digits (every minute of a signed 64-bit millisecond
+  clock) and the reference's is the minute as it is written, 16 digits inside its
+  domain, so each of its digests has the 14 nodes of prefix 0 a longer key puts above
+  it (depths 1 to 14, each the root's hash) and its node at depth d is the documents'
+  at depth d + 14. `merkle_diff`'s answers are the same either way.
+
 - `actual_crdt.mjs` refuses a prune case that drops nothing (a node has at
   most three children, so a careless case would not exercise pruning).
 - ⚠ `davx5_sync.py` runs DAVx5's classifier against stand-ins for the

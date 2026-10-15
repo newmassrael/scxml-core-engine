@@ -14,8 +14,8 @@
        name="todo_supersede"
        sce:event-name="todo.supersede">
   <datamodel>
-    <data id="id" sce:type="uint64" sce:direction="in"/>
-    <data id="field" sce:type="uint64" sce:direction="in"/>
+    <data id="id" sce:type="uint32" sce:direction="in"/>
+    <data id="field" sce:type="uint16" sce:direction="in"/>
     <data id="wallTime" sce:type="int64" sce:direction="in"/>
     <data id="counter" sce:type="uint32" sce:direction="in"/>
     <data id="nodeId" sce:type="uint64" sce:direction="in"/>
