@@ -1904,7 +1904,8 @@ def check(pack: Pack, binding_path: pathlib.Path, prose=None,
             continue  # `driving_refusals` says why there is no field
         why = delivery.refusal(
             name, {k: v for k, v in rule.items() if k not in ("event", "carries", "becomes")},
-            field_type, model.field_at(rule["address"]) if rule.get("address") else None)
+            field_type, model.field_at(rule["address"]) if rule.get("address") else None,
+            carries=True)
         if why:
             out.append(Finding(f"input {name}", why))
 

@@ -2764,7 +2764,12 @@ reading a computation's input gets — a whole number into an `int`/`uint` field
 a number into a `float`, a truth value into a `bool`, a text into a `string` —
 and `check` refuses a rule whose event has no such schema or field, or whose
 address cannot be read as the field's type, in the words `verify` uses. An
-enumeration field is not carried yet. The event is sent whenever the case drove
+enumeration field is not carried yet. An address that carries SYMBOLS of a closed
+set (a model entry with `values`) is not carried into a number or a truth value
+either: the number beside a symbol is this platform's own code for it, and a
+statechart rule has no `equals` to say which symbol is true, so `check` answers
+with the repair that exists -- `becomes`, one rule per symbol, each with an event of
+its own (its example names the address's own symbols). The event is sent whenever the case drove
 the address (and, with `becomes`, only at that value), so a stored value that
 the platform hands the component every round reaches the machine when it
 changes, not every round. Without `carries` a component that compares a level

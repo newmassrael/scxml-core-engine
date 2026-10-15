@@ -122,7 +122,8 @@ def hands(rule: dict) -> str:
 
 
 def refusal(name: str, rule: dict, sce_type: str | None, field,
-            remembered_type: str | None = None, variants: dict | None = None) -> str:
+            remembered_type: str | None = None, variants: dict | None = None,
+            carries: bool = False) -> str:
     """Why this rule cannot feed a document input of this type, or ''.
 
     `remembered_type` is the declared type of what a `previous_of` or
@@ -131,18 +132,45 @@ def refusal(name: str, rule: dict, sce_type: str | None, field,
     address; None means the model does not declare it, which `check` reports
     on its own, so it is not a second reason here.
 
+    `carries` says the rule is a statechart rule that fills an event-schema
+    field, judged here as if it fed an input of the field's type. The advice
+    then changes: such a rule has no `equals` to say which symbol is true
+    (`check` refuses any key outside the ones a statechart rule is read for),
+    so a refusal that told the author to use one named a repair nobody could
+    make.
+
     What the rule hands over is judged first, and only a handoff that is sound
     has its `when_absent` judged: a value standing in for the wrong kind of
     handoff is not the mistake to name.
     """
-    why = _handoff_refusal(name, rule, sce_type, field, remembered_type, variants)
+    why = _handoff_refusal(name, rule, sce_type, field, remembered_type, variants, carries)
     if why or hands(rule) not in ("as-is", "number"):
         return why
     return absence_refusal(name, rule, sce_type, variants)
 
 
+def _by_becomes(name: str, field_type: str, symbols: list) -> str:
+    """The refusal of a statechart rule that carries a symbol of a closed set into a number or a truth value.
+
+    A statechart is told which symbol an address took by a rule per symbol (`becomes`), each with an
+    event of its own; what it keeps from them is its own. `carries` hands over a value the address
+    already is (a number into a number field, a truth value into a `bool`, a text into a `string`).
+    The example names the address's own first symbols (the neutral `NONE` and `MAX` left out), so it
+    reads as a rule of this address and not as a template with `ON` and `OFF` in it.
+    """
+    shown = [s for s in symbols if s not in ("NONE", "MAX")][:2] or list(symbols)[:2]
+    example = " and ".join(f"`becomes: {s}, event: {name}.{s.lower()}`" for s in shown)
+    return (f"carries what the address carries -- a symbol of a closed set ({', '.join(symbols)}) -- "
+            f"into the event-schema field it fills, declared `{field_type}`: a symbol is not a "
+            f"number or a truth value of this platform's to hand over, and a statechart rule has "
+            f"no `equals` to say which symbol is true. Tell the machine the symbol by `becomes`: "
+            f"one rule per symbol, each with an event of its own ({example}), and keep what it "
+            f"means in the document")
+
+
 def _handoff_refusal(name: str, rule: dict, sce_type: str | None, field,
-                     remembered_type: str | None, variants: dict | None) -> str:
+                     remembered_type: str | None, variants: dict | None,
+                     carries: bool = False) -> str:
     """Why the kind of value this rule hands over is not one the input takes, or ''."""
     doc = document_class(sce_type)
     given = hands(rule)
@@ -194,6 +222,8 @@ def _handoff_refusal(name: str, rule: dict, sce_type: str | None, field,
         return ""
     if (doc, slot) in _AS_IS:
         return ""
+    if carries and slot == "enum" and doc in ("number", "bool"):
+        return _by_becomes(name, sce_type, list(field.values))
     if (doc, slot) == ("number", "enum"):
         return (f"names an address and nothing else, which hands the document what the "
                 f"address carries -- a symbol of a closed set ({', '.join(field.values)}) -- "

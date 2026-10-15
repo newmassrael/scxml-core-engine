@@ -174,6 +174,45 @@ class CheckHoldsACarryingRuleToTheSchema(Fixture):
         found = self.findings(binding)
         self.assertTrue(any("a text" in f and "uint16" in f for f in found), found)
 
+    def carried_symbols(self, field_type="uint16"):
+        """The rule `stored` re-pointed at the address that carries the symbols IDLE and PRESS."""
+        (self.tmp / "schema_stored.scxml").write_text(
+            SCHEMA.replace('sce:type="uint16"', f'sce:type="{field_type}"'), encoding="utf-8")
+        binding = copy.deepcopy(BINDING)
+        binding["inputs"]["stored"]["address"] = "plant/in/bump"
+        return [f for f in self.findings(binding) if f.startswith("input stored")]
+
+    def test_a_symbol_carried_into_a_number_field_is_told_to_use_becomes(self):
+        """⚠ The discriminator. The refusal used to say `equals`, a key a statechart rule cannot
+        have (`check` refuses it), so the repair it named could not be made."""
+        found = self.carried_symbols("uint16")
+        self.assertEqual(1, len(found), found)
+        self.assertIn("`becomes`", found[0])
+        self.assertIn("no `equals`", found[0])
+        self.assertNotIn("Say which value is true with `equals`", found[0])
+
+    def test_a_symbol_carried_into_a_truth_value_is_told_the_same(self):
+        found = self.carried_symbols("bool")
+        self.assertEqual(1, len(found), found)
+        self.assertIn("`becomes`", found[0])
+        self.assertIn("declared `bool`", found[0])
+
+    def test_the_example_names_the_addresss_own_symbols(self):
+        found = self.carried_symbols("bool")
+        self.assertIn("`becomes: IDLE, event: stored.idle`", found[0])
+        self.assertIn("`becomes: PRESS, event: stored.press`", found[0])
+
+    def test_the_repair_it_names_is_accepted(self):
+        """One `becomes` rule per symbol is what the message asks for, and `check` takes it."""
+        binding = copy.deepcopy(BINDING)
+        del binding["inputs"]["stored"]
+        binding["inputs"]["pressed"] = {"address": "plant/in/bump", "becomes": "PRESS", "event": "bump"}
+        self.assertEqual([], [f for f in self.findings(binding) if "becomes" in f.lower()],
+                         self.findings(binding))
+
+    def test_a_number_address_carried_into_a_number_field_is_still_fine(self):
+        self.assertEqual([], [f for f in self.findings(BINDING) if f.startswith("input stored")])
+
     def test_a_key_without_a_driver_is_still_refused(self):
         """The control for `carries` having been added to the keys the driver
         reads: a key it does NOT read is refused as before."""
