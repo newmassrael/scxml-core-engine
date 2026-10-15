@@ -35,6 +35,7 @@
 #include <memory>
 #include <string>
 #include <thread>
+#include <vector>
 
 namespace SCE {
 namespace Tests {
@@ -231,6 +232,80 @@ TEST(SchedulerManualModeTest, ARaiserInImmediateModeDeliversAtOnceOverAManualSch
     raiser->raiseExternalEvent("report", "");
 
     EXPECT_EQ(delivered.load(), 1) << "an event raised in immediate mode waited for a step the session does not have";
+
+    scheduler->shutdown();
+}
+
+// §scxml-6.2.3: a delayed send is dispatched once its delay has elapsed. In MANUAL mode the
+// host decides how much time has elapsed, by the amount it names and not by the next deadline
+// (`forcePoll()`), so a replay of a recorded run releases exactly what the recording's time
+// span covers. The same scenarios are replayed on the generated backends with a manual clock.
+TEST(SchedulerManualModeTest, AdvancingTheLogicalClockReleasesExactlyWhatItsSpanCovers) {
+    std::vector<std::string> fired;
+    auto scheduler = std::make_shared<EventSchedulerImpl>(
+        [&fired](const EventDescriptor &event, std::shared_ptr<IEventTarget>, const std::string &) -> bool {
+            fired.push_back(event.eventName);
+            return true;
+        });
+    scheduler->setMode(SchedulerMode::MANUAL);
+
+    EventDescriptor soon;
+    soon.eventName = "soon";
+    EventDescriptor later;
+    later.eventName = "later";
+    scheduler->scheduleEvent(soon, std::chrono::milliseconds(100), std::make_shared<AcceptingTarget>(), "a", "s");
+    scheduler->scheduleEvent(later, std::chrono::milliseconds(300), std::make_shared<AcceptingTarget>(), "b", "s");
+
+    EXPECT_EQ(scheduler->advanceTime(std::chrono::milliseconds(99)), 0u) << "99ms has not covered a 100ms delay";
+    EXPECT_TRUE(fired.empty());
+    EXPECT_EQ(scheduler->advanceTime(std::chrono::milliseconds(1)), 1u) << "100ms covers the 100ms delay";
+    EXPECT_EQ(fired, std::vector<std::string>{"soon"});
+    EXPECT_EQ(scheduler->advanceTime(std::chrono::milliseconds(199)), 0u) << "the 300ms delay is one ms away";
+    EXPECT_EQ(scheduler->advanceTime(std::chrono::milliseconds(1)), 1u);
+    EXPECT_EQ(fired, (std::vector<std::string>{"soon", "later"}));
+    EXPECT_EQ(scheduler->getLogicalTime(), std::chrono::milliseconds(300));
+
+    scheduler->shutdown();
+}
+
+// The queue is ordered by logical deadline in MANUAL mode. An event armed after the clock moved
+// on, with a shorter delay than one armed earlier, has the later deadline, and ordering by the
+// wall reading at the time of arming put it first: the older event then stood behind one that
+// was not yet due and was not released when its own time came.
+TEST(SchedulerManualModeTest, ADeadlineLaterOnTheLogicalClockDoesNotOvertakeAnEarlierOne) {
+    std::vector<std::string> fired;
+    auto scheduler = std::make_shared<EventSchedulerImpl>(
+        [&fired](const EventDescriptor &event, std::shared_ptr<IEventTarget>, const std::string &) -> bool {
+            fired.push_back(event.eventName);
+            return true;
+        });
+    scheduler->setMode(SchedulerMode::MANUAL);
+
+    EventDescriptor first;
+    first.eventName = "first";
+    EventDescriptor second;
+    second.eventName = "second";
+    scheduler->scheduleEvent(first, std::chrono::milliseconds(100), std::make_shared<AcceptingTarget>(), "a", "s");
+    scheduler->advanceTime(std::chrono::milliseconds(60));
+    // Armed at 60ms for 50ms: due at 110ms, after `first` (100ms), though its delay is shorter.
+    scheduler->scheduleEvent(second, std::chrono::milliseconds(50), std::make_shared<AcceptingTarget>(), "b", "s");
+
+    EXPECT_EQ(scheduler->advanceTime(std::chrono::milliseconds(40)), 1u) << "`first` is due at 100ms";
+    EXPECT_EQ(fired, std::vector<std::string>{"first"});
+    EXPECT_EQ(scheduler->advanceTime(std::chrono::milliseconds(10)), 1u) << "`second` is due at 110ms";
+    EXPECT_EQ(fired, (std::vector<std::string>{"first", "second"}));
+
+    scheduler->shutdown();
+}
+
+// Time is the wall clock's in AUTOMATIC mode, and the host cannot move it: an advance there is
+// refused rather than silently reading as a wait.
+TEST(SchedulerManualModeTest, AutomaticModeRefusesToHaveItsClockMoved) {
+    ManualModeProbe probe;
+    auto scheduler = probe.makeScheduler();
+
+    EXPECT_EQ(scheduler->advanceTime(std::chrono::milliseconds(1000)), 0u);
+    EXPECT_EQ(scheduler->getLogicalTime(), std::chrono::milliseconds(0)) << "the refused advance moved the clock";
 
     scheduler->shutdown();
 }

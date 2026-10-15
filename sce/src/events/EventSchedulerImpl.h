@@ -72,6 +72,24 @@ public:
     std::chrono::milliseconds getLogicalTime() const;
     void setLogicalTime(std::chrono::milliseconds timeMs);
 
+    /**
+     * @brief Move the MANUAL-mode logical clock on by `delta` and release what fell due
+     *
+     * The host-owned counterpart of the wall clock: a delayed send armed with
+     * `<send delay>` fires once the clock has covered its delay, however long
+     * the host took to get there. `forcePoll()` jumps to the next deadline
+     * whatever it is; this moves time by the amount the caller names, which
+     * is what a simulation or a replay of a recorded run has to say.
+     *
+     * Events run on the calling thread, in the order of their deadlines.
+     * Needs `SchedulerMode::MANUAL`: in AUTOMATIC mode the wall clock owns
+     * time, and the call is refused (logged, returns 0). The clock does not
+     * move backwards (use `setLogicalTime` to restore a snapshot).
+     *
+     * @return Number of events released
+     */
+    size_t advanceTime(std::chrono::milliseconds delta);
+
 #ifdef __EMSCRIPTEN__
     size_t poll();
 #endif
@@ -120,6 +138,14 @@ private:
     using ScheduledEventPtr = std::shared_ptr<ScheduledEvent>;
     using ExecutionQueueType = std::map<OrderKey, ScheduledEventPtr>;
     using QueueIterator = ExecutionQueueType::iterator;
+
+    /// The point of the queue's ordering a logical (MANUAL-mode) deadline stands at. The queue is
+    /// keyed by time_point either way; in MANUAL mode the point is the logical deadline measured
+    /// from the clock's epoch, so the order is the order of logical deadlines and no wall reading
+    /// enters it.
+    static std::chrono::steady_clock::time_point logicalTimePoint(std::chrono::milliseconds logicalMs) {
+        return std::chrono::steady_clock::time_point{} + logicalMs;
+    }
 
     size_t processReadyEvents();
     void requestThreadsStop();

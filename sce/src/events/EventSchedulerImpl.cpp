@@ -92,15 +92,20 @@ std::future<std::string> EventSchedulerImpl::scheduleEvent(const EventDescriptor
 
     std::string actualSendId = sendId.empty() ? generateSendId() : sendId;
 
-    auto now = std::chrono::steady_clock::now();
-    auto executeAt = now + delay;
+    // The deadline is read off the clock the mode names. In MANUAL mode that is the
+    // logical clock, and the queue is ordered by it too: ordered by a wall-clock deadline instead,
+    // an event armed after the host moved the clock on would sort ahead of an older one with a
+    // later logical deadline, and the older one would not be released when its time came.
+    const bool manual = mode_.load(std::memory_order_acquire) == SchedulerMode::MANUAL;
+    const auto currentLogicalTime = std::chrono::milliseconds(logicalTime_.load(std::memory_order_acquire));
+    const auto executeAt =
+        manual ? logicalTimePoint(currentLogicalTime + delay) : std::chrono::steady_clock::now() + delay;
     uint64_t sequenceNum = eventSequenceCounter_.fetch_add(1, std::memory_order_relaxed);
 
     auto scheduledEvent =
         std::make_shared<ScheduledEvent>(event, executeAt, delay, target, actualSendId, sessionId, sequenceNum);
 
-    if (mode_.load(std::memory_order_acquire) == SchedulerMode::MANUAL) {
-        auto currentLogicalTime = std::chrono::milliseconds(logicalTime_.load(std::memory_order_acquire));
+    if (manual) {
         scheduledEvent->logicalExecuteTime = currentLogicalTime + delay;
         SCE_LOG_DEBUG("EventSchedulerImpl: Scheduled event '{}' at logical time {}ms (current: {}ms, delay: {}ms)",
                       event.eventName, scheduledEvent->logicalExecuteTime.count(), currentLogicalTime.count(),
@@ -634,13 +639,17 @@ std::chrono::steady_clock::time_point EventSchedulerImpl::getNextExecutionTimeUn
 
 std::vector<ScheduledEventInfo> EventSchedulerImpl::getScheduledEvents() const {
     std::vector<ScheduledEventInfo> result;
-    auto now = std::chrono::steady_clock::now();
+    const bool manual = mode_.load(std::memory_order_acquire) == SchedulerMode::MANUAL;
+    const auto now = std::chrono::steady_clock::now();
+    const auto logicalNow = std::chrono::milliseconds(logicalTime_.load(std::memory_order_acquire));
 
     std::shared_lock<std::shared_mutex> lock(mutex_);
 
     // Iterate through ordered map (already sorted by time)
     for (const auto &[key, event] : executionQueue_) {
-        auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(event->executeAt - now);
+        // In MANUAL mode the time left is what the logical clock has yet to cover.
+        const auto remaining = manual ? std::max(std::chrono::milliseconds(0), event->logicalExecuteTime - logicalNow)
+                                      : std::chrono::duration_cast<std::chrono::milliseconds>(event->executeAt - now);
 
         result.push_back({event->event.eventName, event->sendId, remaining, event->originalDelay, event->sessionId,
                           event->event.target, event->event.type, event->event.data, event->event.content,
@@ -698,6 +707,26 @@ size_t EventSchedulerImpl::forcePoll() {
     }
 
     SCE_LOG_DEBUG("EventSchedulerImpl: forcePoll() called - processing ready events");
+    return processReadyEvents();
+}
+
+size_t EventSchedulerImpl::advanceTime(std::chrono::milliseconds delta) {
+    if (!isRunning()) {
+        return 0;
+    }
+    if (mode_.load(std::memory_order_acquire) != SchedulerMode::MANUAL) {
+        SCE_LOG_ERROR("EventSchedulerImpl: advanceTime() needs SchedulerMode::MANUAL; in AUTOMATIC mode the "
+                      "wall clock owns time and the host cannot move it");
+        return 0;
+    }
+    if (delta.count() < 0) {
+        SCE_LOG_ERROR("EventSchedulerImpl: advanceTime() cannot move the logical clock back by {}ms", -delta.count());
+        return 0;
+    }
+
+    const auto oldLogicalTime = logicalTime_.fetch_add(delta.count(), std::memory_order_acq_rel);
+    SCE_LOG_DEBUG("EventSchedulerImpl: MANUAL mode - advanced logical time from {}ms by {}ms", oldLogicalTime,
+                  delta.count());
     return processReadyEvents();
 }
 
