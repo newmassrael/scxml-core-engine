@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: a45b1edeebf5addf07d55990d33be593d588441249c6330a80971f056631ac90
-// SCE-MAP: merkle_insert.scxml:25 :: _forge_body
+// source-hash: 58e52c40de99a046030dfe178fb69ffa932b0a6a8146307d7430d1e6de80a470
+// SCE-MAP: merkle_insert.scxml:33 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")
 // Runtime: sce_forge_runtime
@@ -21,7 +21,7 @@ func MerkleInsert(nodes []sce_merkle_node.MerkleNodePayload, minute int64, hash 
     // SCE_FORGE.md §3.4.1: each checked operation records a failure here, and
     // the statement around it returns it before the next statement runs.
     var sceFailure scealgorithm.Failure
-    if sceCond1 := !(minute >= 0); sceFailure.Failed() {
+    if sceCond1 := !(minute >= 0 && minute <= 153722867280912); sceFailure.Failed() {
         return sceValue, sceFailure.Err()
     } else if sceCond1 {
         return sceValue, scealgorithm.Precondition
@@ -38,7 +38,7 @@ func MerkleInsert(nodes []sce_merkle_node.MerkleNodePayload, minute int64, hash 
     if sceFailure.Failed() {
         return sceValue, sceFailure.Err()
     }
-    var div int64 = 14348907
+    var div int64 = 68630377364883
     if sceFailure.Failed() {
         return sceValue, sceFailure.Err()
     }
@@ -51,7 +51,7 @@ func MerkleInsert(nodes []sce_merkle_node.MerkleNodePayload, minute int64, hash 
         return sceValue, sceFailure.Err()
     }
     for _, x := range nodes {
-        if sceCond2 := !(x.Depth <= 16 && (int32(x.Depth) > prevDepth || int32(x.Depth) == prevDepth && x.Prefix > prevPrefix)); sceFailure.Failed() {
+        if sceCond2 := !(x.Depth <= 30 && (int32(x.Depth) > prevDepth || int32(x.Depth) == prevDepth && x.Prefix > prevPrefix)); sceFailure.Failed() {
             return sceValue, sceFailure.Err()
         } else if sceCond2 {
             return sceValue, scealgorithm.Precondition
@@ -65,7 +65,7 @@ func MerkleInsert(nodes []sce_merkle_node.MerkleNodePayload, minute int64, hash 
             return sceValue, sceFailure.Err()
         }
         for {
-            sceCond2 := pd <= 16 && (pd < uint32(x.Depth) || pd == uint32(x.Depth) && pp < x.Prefix)
+            sceCond2 := pd <= 30 && (pd < uint32(x.Depth) || pd == uint32(x.Depth) && pp < x.Prefix)
             if sceFailure.Failed() {
                 return sceValue, sceFailure.Err()
             }
@@ -97,7 +97,7 @@ func MerkleInsert(nodes []sce_merkle_node.MerkleNodePayload, minute int64, hash 
                 }
             }
         }
-        if sceCond2 := pd <= 16 && pd == uint32(x.Depth) && pp == x.Prefix; sceFailure.Failed() {
+        if sceCond2 := pd <= 30 && pd == uint32(x.Depth) && pp == x.Prefix; sceFailure.Failed() {
             return sceValue, sceFailure.Err()
         } else if sceCond2 {
             merged := sce_merkle_node.MerkleNodePayload{Depth: x.Depth, Prefix: x.Prefix, Hash: x.Hash ^ hash}
@@ -132,7 +132,7 @@ func MerkleInsert(nodes []sce_merkle_node.MerkleNodePayload, minute int64, hash 
         }
     }
     for {
-        sceCond1 := pd <= 16
+        sceCond1 := pd <= 30
         if sceFailure.Failed() {
             return sceValue, sceFailure.Err()
         }

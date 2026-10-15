@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: a45b1edeebf5addf07d55990d33be593d588441249c6330a80971f056631ac90
-#![doc = "SCE-MAP: merkle_insert.scxml:25 :: _forge_body"]
-// SCE-MAP: merkle_insert.scxml:25 :: _forge_body
+// source-hash: 58e52c40de99a046030dfe178fb69ffa932b0a6a8146307d7430d1e6de80a470
+#![doc = "SCE-MAP: merkle_insert.scxml:33 :: _forge_body"]
+// SCE-MAP: merkle_insert.scxml:33 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")
 // Runtime: sce_forge_runtime
@@ -25,17 +25,17 @@ pub fn merkle_insert(
     SceOwnedList<merkle_node::MerkleNodePayload, 1024>,
     sce_forge_runtime::algorithm::AlgorithmError,
 > {
-    if !(minute >= 0) {
+    if !(minute >= 0 && minute <= 153722867280912) {
         return Err(sce_forge_runtime::algorithm::AlgorithmError::Precondition);
     }
     let mut out: SceOwnedList<merkle_node::MerkleNodePayload, 1024> = SceOwnedList::new();
     let mut pd: u32 = 0;
     let mut pp: u64 = 0;
-    let mut div: i64 = 14348907;
+    let mut div: i64 = 68630377364883;
     let mut prev_depth: i32 = -1;
     let mut prev_prefix: u64 = 0;
     for &x in nodes.iter() {
-        if !(x.depth <= 16
+        if !(x.depth <= 30
             && (x.depth as i32 > prev_depth
                 || x.depth as i32 == prev_depth && x.prefix > prev_prefix))
         {
@@ -43,7 +43,7 @@ pub fn merkle_insert(
         }
         prev_depth = x.depth as i32;
         prev_prefix = x.prefix;
-        while pd <= 16 && (pd < x.depth as u32 || pd == x.depth as u32 && pp < x.prefix) {
+        while pd <= 30 && (pd < x.depth as u32 || pd == x.depth as u32 && pp < x.prefix) {
             let created = merkle_node::MerkleNodePayload {
                 depth: sce_forge_runtime::algorithm::narrow::<u8, u32>(pd)?,
                 prefix: pp,
@@ -58,7 +58,7 @@ pub fn merkle_insert(
                 div = sce_forge_runtime::algorithm::div::<i64>(div, 3)?;
             }
         }
-        if pd <= 16 && pd == x.depth as u32 && pp == x.prefix {
+        if pd <= 30 && pd == x.depth as u32 && pp == x.prefix {
             let merged = merkle_node::MerkleNodePayload {
                 depth: x.depth,
                 prefix: x.prefix,
@@ -76,7 +76,7 @@ pub fn merkle_insert(
             out.push(x)?;
         }
     }
-    while pd <= 16 {
+    while pd <= 30 {
         let tail = merkle_node::MerkleNodePayload {
             depth: sce_forge_runtime::algorithm::narrow::<u8, u32>(pd)?,
             prefix: pp,

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: a45b1edeebf5addf07d55990d33be593d588441249c6330a80971f056631ac90
+// source-hash: 58e52c40de99a046030dfe178fb69ffa932b0a6a8146307d7430d1e6de80a470
 #![doc = "SCE-MAP: hlc_send.scxml:17 :: _forge_body"]
 // SCE-MAP: hlc_send.scxml:17 :: _forge_body
 

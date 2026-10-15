@@ -14,6 +14,7 @@ pub mod ledger_ids;
 pub mod ledger_total;
 pub mod lww_cell;
 pub mod lww_write;
+pub mod merkle_change_hash;
 pub mod merkle_insert;
 pub mod merkle_node;
 pub mod mv_value;
