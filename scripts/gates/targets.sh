@@ -22,6 +22,11 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 python3 -c 'import yaml, jsonschema' \
     || sce_gate_fail "targets needs PyYAML and jsonschema"
 
+# `verify` judges a statechart through the Python the generator writes, which runs on `lupa`; the
+# statechart cases would otherwise fail on the import, far from the missing library.
+python3 -c 'import lupa' \
+    || sce_gate_fail "targets needs lupa (pip install lupa): verify runs a statechart through the Python runtime"
+
 codegen="${SCE_CODEGEN:-target/debug/sce-codegen}"
 [ -x "$codegen" ] \
     || sce_gate_fail "targets needs the product's generator at $codegen (cargo build --bin sce-codegen --features cli -p sce-build)"

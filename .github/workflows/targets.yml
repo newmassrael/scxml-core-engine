@@ -77,6 +77,11 @@ jobs:
           python-version: '3.x'
       - name: Install the two libraries a pack is parsed and validated with
         run: python3 -m pip install --upgrade pyyaml jsonschema
+      - name: Install the Python runtime's Lua binding
+        # `verify` judges a statechart by importing the Python the generator writes, and that
+        # runs through `lupa` (backends/python/runtime/pyproject.toml declares it). Without it the
+        # statechart cases here failed on the import (the second run of this lane, 2026-10-15).
+        run: python3 -m pip install lupa
       - name: Install clang-format-19
         # The library is generated as C++, which `sce-codegen` formats with clang-format pinned to
         # major 19 or refuses (docs/SCE_CODEGEN_DETERMINISM.md section 9). The runner ships 18, so the
