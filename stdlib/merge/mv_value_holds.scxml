@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/merge/mv_value_holds.scxml — whether a list holds the write `probe`
+  names: a value of the same row and field with the same dot. The value itself,
+  number and text, is not compared: a write is known by its dot, and two writes
+  with one dot are one write.
+
+  {id 1, field 1, dot (100,0,7), "a"} holds {id 1, field 1, dot (100,0,7), "b"} ·
+  does not hold {id 1, field 2, dot (100,0,7)} nor {id 1, field 1, dot (100,1,7)}.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="mv_value_holds" version="1.0">
+  <sce:import kind="event-schema" src="mv_value.scxml" as="Value"/>
+  <sce:signature>
+    <sce:param name="values" type="list&lt;record:Value&gt;"/>
+    <sce:param name="probe" type="record:Value"/>
+    <sce:return type="bool"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="found" type="bool" init="false"/>
+    <sce:foreach item="v" in="values">
+      <sce:if cond="v.id === probe.id &amp;&amp; v.field === probe.field &amp;&amp; v.wallTime === probe.wallTime &amp;&amp; v.counter === probe.counter &amp;&amp; v.nodeId === probe.nodeId">
+        <sce:assign target="found" expr="true"/>
+      </sce:if>
+    </sce:foreach>
+    <sce:return expr="found"/>
+  </sce:body>
+</scxml>

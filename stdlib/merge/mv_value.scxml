@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/merge/mv_value.scxml — a value one field of a row holds in a copy of a
+  multi-value register: which row (`id`), which field of it (`field`), the number
+  (`value`) or the text (`text`) and the stamp of the write that gave it (`wallTime`,
+  `counter`, `nodeId`), which is the dot it is known by (hlc_timestamp). The record
+  type mv_value_holds, mv_value_keep and mv_value_drop take and return
+  (SCE_FORGE.md §4.12).
+
+  A field holds one of these for every write nobody has written over, so two people
+  who changed it at the same time each have theirs here until a later write is made
+  by someone who has seen both. The set of dots that are live is the observed-remove
+  set of orset_live; what a set cannot carry is the value, and this is where it is
+  kept beside the dot.
+
+  `text` is bounded by `sce:max-size`, 32 UTF-8 bytes, which is the size every
+  backend gives the buffer it is held in: a write to a field with a smaller bound
+  than the text came from is refused where it is written, never cut.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="mv_value"
+       sce:event-name="merge.mv_value">
+  <datamodel>
+    <data id="id" sce:type="uint64" sce:direction="in"/>
+    <data id="field" sce:type="uint64" sce:direction="in"/>
+    <data id="value" sce:type="int64" sce:direction="in"/>
+    <data id="text" sce:type="string" sce:max-size="32" sce:direction="in"/>
+    <data id="wallTime" sce:type="int64" sce:direction="in"/>
+    <data id="counter" sce:type="uint32" sce:direction="in"/>
+    <data id="nodeId" sce:type="uint64" sce:direction="in"/>
+  </datamodel>
+</scxml>

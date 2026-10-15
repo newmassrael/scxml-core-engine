@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/merge/mv_value_keep.scxml — the values of a copy once it has taken in the
+  write `held`: every value it held, then `held` unless a value of the same row and
+  field with the same dot is already there (mv_value_holds). A write that arrives
+  twice is therefore kept once, and a copy can take a write in whatever number of
+  times and in whatever order it is sent.
+
+  The text of `held` is copied as it is, into the buffer the schema bounds: it is
+  the text the record was given, which the caller assigned into the record's
+  `text` field and which was refused there if it did not fit.
+
+  The result keeps the order of `values` and holds at most 128 values; past that the
+  bounded backends fail and the heap backends grow, so a host keeps its registers
+  within it.
+
+  values {(1,1)@(100,0,7)}, held (1,1)@(102,0,9) →
+  {(1,1)@(100,0,7), (1,1)@(102,0,9)} · held (1,1)@(100,0,7) → values.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="mv_value_keep" version="1.0">
+  <sce:import kind="event-schema" src="mv_value.scxml" as="Value"/>
+  <sce:signature>
+    <sce:param name="values" type="list&lt;record:Value&gt;"/>
+    <sce:param name="held" type="record:Value"/>
+    <sce:return type="list&lt;record:Value&gt;" may-fail="true" returns-max-size="128"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="out" type="list&lt;record:Value&gt;" capacity="128"/>
+    <sce:var name="there" type="bool" init="false"/>
+    <sce:foreach item="v" in="values">
+      <sce:if cond="v.id === held.id &amp;&amp; v.field === held.field &amp;&amp; v.wallTime === held.wallTime &amp;&amp; v.counter === held.counter &amp;&amp; v.nodeId === held.nodeId">
+        <sce:assign target="there" expr="true"/>
+      </sce:if>
+      <sce:append target="out" expr="v"/>
+    </sce:foreach>
+    <sce:if cond="!there">
+      <sce:append target="out" expr="held"/>
+    </sce:if>
+    <sce:return expr="out"/>
+  </sce:body>
+</scxml>

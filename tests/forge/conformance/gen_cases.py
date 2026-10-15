@@ -131,6 +131,16 @@ precomposed and decomposed forms of one letter; a text past the bound is never d
 since the schema refuses it where it is written and no document answers it. All six
 backends agreed with the model on every case. Characters with no visible form are
 written as `\\u` escapes, the rest as themselves.
+
+Ninth run, 2026-10-15: the three `mv_value_*` documents, which keep the values a field
+of a shared to-do list holds beside the dots of its writes — `mv_value_holds`,
+`mv_value_keep` and `mv_value_drop`, 1300 cases. A write is named by its row, its field
+and its dot, so the lists are drawn from a few of each part and a probe differs from a
+value of the list in exactly one of them, in only the number and the text it carries
+(the same write), or not at all; the texts are the ones the `text_slot` cases use, at
+every encoded width and at the 32-byte bound. A list one short of the 128 values the
+result holds is drawn now and then. Nine laws are checked on the model before any case
+is written.
 """
 
 from __future__ import annotations
@@ -750,6 +760,47 @@ def text_slot_holds(slots: list, probe: dict):
     are equal in code points exactly when they are equal in bytes, so the
     precomposed and the decomposed "e with acute" stay two."""
     return ("ok", any(held["slot"] == probe["slot"] and held["text"] == probe["text"] for held in slots))
+
+
+#: The most values `mv_value_keep` and `mv_value_drop` hold in their result.
+MV_CAPACITY = 128
+#: The fields that name a write: the row and field it is to, and its dot. The number
+#: and the text are what the write carries, and are not part of which write it is.
+MV_WRITE = ("id", "field", "wallTime", "counter", "nodeId")
+
+
+def mv_value(row: int, field: int, number: int, text: str, wall: int, counter: int, node: int) -> dict:
+    return {
+        "id": row, "field": field, "value": number, "text": text,
+        "wallTime": wall, "counter": counter, "nodeId": node,
+    }
+
+
+def same_write(held: dict, other: dict) -> bool:
+    return all(held[name] == other[name] for name in MV_WRITE)
+
+
+def mv_value_holds(values: list, probe: dict):
+    """sce:std/merge/mv_value_holds — some value is the write the probe names: the
+    same row and field and the same dot. The number and the text are not compared."""
+    return ("ok", any(same_write(held, probe) for held in values))
+
+
+def mv_value_keep(values: list, held: dict):
+    """sce:std/merge/mv_value_keep — the values, in order, then `held` unless a value
+    of the same write is already there. The result holds 128 values at most; a list
+    past that is where the bounded backends fail and the heap backends grow, so a
+    case never reaches it."""
+    if any(same_write(there, held) for there in values):
+        return ("ok", [dict(there) for there in values])
+    assert len(values) < MV_CAPACITY
+    return ("ok", [dict(there) for there in values] + [dict(held)])
+
+
+def mv_value_drop(values: list, gone: dict):
+    """sce:std/merge/mv_value_drop — every value but the one of the write `gone`
+    names, in the order the values had."""
+    return ("ok", [dict(there) for there in values if not same_write(there, gone)])
 
 
 def entry(element: int, wall: int, counter: int, node: int) -> dict:
@@ -2463,6 +2514,88 @@ def text_slot_holds_args(rng: SplitMix64):
     return [held, probe]
 
 
+#: The stamps a drawn value is known by come from a few of each part, so that two
+#: writes agree in all but one part of their dot, and in all of it, as often as the
+#: writes of two copies of one row do.
+MV_WALLS = [0, 1727000000400, 1727000060000, 1727000120000, I64_MAX]
+MV_COUNTERS = [0, 1, 2, U32_MAX]
+MV_NODES = [1, 2, 7, 2**53]
+MV_NUMBERS = [0, 1, -1, I64_MIN, I64_MAX]
+
+
+def mv_fresh(rng: SplitMix64) -> dict:
+    """A value of a row and a field some other value may share, under a dot some
+    other value may share a part of."""
+    number = rng.pick(MV_NUMBERS) if rng.below(3) == 0 else rng.between(-3, 12)
+    return mv_value(
+        rng.pick([0, 1, 1, 2, 2**53]), rng.pick([1, 2, 9]), number, slot_text(rng),
+        rng.pick(MV_WALLS), rng.pick(MV_COUNTERS), rng.pick(MV_NODES),
+    )
+
+
+def mv_nearby(rng: SplitMix64, base: dict) -> dict:
+    """A value that differs from `base` in one part of what names its write, in only
+    what the write carries (so it is the same write), or not at all."""
+    kind = rng.below(9)
+    if kind == 0:
+        return dict(base, id=rng.pick([x for x in (0, 1, 2) if x != base["id"]]))
+    if kind == 1:
+        return dict(base, field=rng.pick([x for x in (1, 2, 9) if x != base["field"]]))
+    if kind == 2:
+        return dict(base, wallTime=rng.pick([x for x in MV_WALLS if x != base["wallTime"]]))
+    if kind == 3:
+        return dict(base, counter=rng.pick([x for x in MV_COUNTERS if x != base["counter"]]))
+    if kind == 4:
+        return dict(base, nodeId=rng.pick([x for x in MV_NODES if x != base["nodeId"]]))
+    if kind <= 6:
+        return dict(base, value=rng.between(-3, 12), text=near_text(rng, base["text"]))
+    if kind == 7:
+        return dict(base)
+    return mv_fresh(rng)
+
+
+def mv_list(rng: SplitMix64, size: int) -> list:
+    """Up to `size` values, none of them the write of another, with rows, fields and
+    parts of dots repeated, as the values of a register that was written twice at
+    once are."""
+    held: list = []
+    for _ in range(size * 4):
+        if len(held) == size:
+            break
+        one = mv_nearby(rng, rng.pick(held)) if held and rng.below(2) else mv_fresh(rng)
+        if not any(same_write(there, one) for there in held):
+            held.append(one)
+    return held
+
+
+def mv_probe(rng: SplitMix64, held: list) -> dict:
+    """A value to ask about, take in or drop: one the list holds, one that differs
+    from it in a part of its name, or one afresh."""
+    if not held or rng.below(4) == 0:
+        return mv_fresh(rng)
+    return mv_nearby(rng, rng.pick(held))
+
+
+def mv_value_holds_args(rng: SplitMix64):
+    held = mv_list(rng, rng.pick([0, 1, 2, 3, 3, 4, 6, 8]))
+    return [held, mv_probe(rng, held)]
+
+
+def mv_value_keep_args(rng: SplitMix64):
+    """As the holds' cases are, and now and then a list one short of what the result
+    holds, which the write that is not there fills."""
+    if rng.below(200) == 0:
+        full = [mv_value(index, 1, index, slot_text(rng), 1727000000400, 0, 7) for index in range(MV_CAPACITY - 1)]
+        return [full, mv_value(MV_CAPACITY, 1, 0, slot_text(rng), 1727000000400, 0, 7)]
+    held = mv_list(rng, rng.pick([0, 1, 2, 3, 3, 4, 6, 8]))
+    return [held, mv_probe(rng, held)]
+
+
+def mv_value_drop_args(rng: SplitMix64):
+    held = mv_list(rng, rng.pick([0, 1, 2, 3, 3, 4, 6, 8]))
+    return [held, mv_probe(rng, held)]
+
+
 MULTIPLIER_EDGES = [
     1.0, 1.0000000000000002, 1.5, 2.0, 3.0, 10.0, 1e3, 1e15, 1e18, 1e19, 1e300,
     1.7976931348623157e308,
@@ -3437,6 +3570,9 @@ FIXTURES = {
     "sheet_apply": (lambda args: sheet_apply(*args), sheet_apply_args, 500, 0xE110_004C),
     "sheet_settle": (lambda args: sheet_settle(*args), sheet_settle_args, 600, 0xE110_004D),
     "sheet_show": (lambda args: sheet_show(*args), sheet_show_args, 300, 0xE110_004E),
+    "mv_value_holds": (lambda args: mv_value_holds(*args), mv_value_holds_args, 400, 0xE110_004F),
+    "mv_value_keep": (lambda args: mv_value_keep(*args), mv_value_keep_args, 500, 0xE110_0050),
+    "mv_value_drop": (lambda args: mv_value_drop(*args), mv_value_drop_args, 400, 0xE110_0051),
 }
 
 
@@ -4024,6 +4160,49 @@ def validate_laws() -> None:
                 "asks the retitled list for \"untitled\" exactly where a place was empty or already titled so"
             ].holds(titled == expected, [listed, probe])
 
+    # The values a field of a shared to-do list holds beside the dots of its writes.
+    # `mv_value_keep` takes a write in once however often it arrives, and
+    # `mv_value_drop` forgets exactly the write a tombstone names, so a copy that is
+    # sent the same writes and tombstones in another order holds the same values.
+    mv_laws = {
+        name: Law(f"mv_value {name}")
+        for name in (
+            "keep holds what it kept",
+            "keep is idempotent",
+            "keep adds the value once and leaves the others in their order",
+            "keep adds nothing for a write it holds",
+            "drop forgets what it dropped",
+            "drop leaves the others in their order",
+            "drop of a write that is not held changes nothing",
+            "keep and drop of different writes commute as sets",
+            "holds nothing of an empty list",
+        )
+    }
+    for _ in range(LAW_RUNS):
+        listed, probe = mv_value_holds_args(rng)
+        kept = answer_of(mv_value_keep(listed, probe))
+        had = answer_of(mv_value_holds(listed, probe))
+        mv_laws["keep holds what it kept"].holds(answer_of(mv_value_holds(kept, probe)), [listed, probe])
+        mv_laws["keep is idempotent"].holds(answer_of(mv_value_keep(kept, probe)) == kept, [listed, probe])
+        mv_laws["keep adds the value once and leaves the others in their order"].holds(
+            had or (kept == listed + [probe]), [listed, probe]
+        )
+        mv_laws["keep adds nothing for a write it holds"].holds(not had or kept == listed, [listed, probe])
+        dropped = answer_of(mv_value_drop(listed, probe))
+        mv_laws["drop forgets what it dropped"].holds(not answer_of(mv_value_holds(dropped, probe)), [listed, probe])
+        mv_laws["drop leaves the others in their order"].holds(
+            dropped == [there for there in listed if not same_write(there, probe)], [listed, probe]
+        )
+        mv_laws["drop of a write that is not held changes nothing"].holds(had or dropped == listed, [listed, probe])
+        other = mv_probe(rng, listed)
+        if not same_write(other, probe):
+            one_way = answer_of(mv_value_drop(answer_of(mv_value_keep(listed, probe)), other))
+            other_way = answer_of(mv_value_keep(answer_of(mv_value_drop(listed, other)), probe))
+            mv_laws["keep and drop of different writes commute as sets"].holds(
+                sorted(map(json.dumps, one_way)) == sorted(map(json.dumps, other_way)), [listed, probe, other]
+            )
+        mv_laws["holds nothing of an empty list"].holds(not answer_of(mv_value_holds([], probe)), probe)
+
     every_law = (
         union_laws + [prune_law] + order_laws + clock_laws + [classify_law] + apply_laws + ack_laws
         + [page_law, insert_law, dedup_law, hold_law, gcra_law, retry_law, utc_law]
@@ -4032,6 +4211,7 @@ def validate_laws() -> None:
         + [remove_law, remove_only_law, add_wins_law, contains_law, text_order_law, diff_minute_law]
         + write_laws + rga_laws + remove_laws
         + list(latest_laws.values()) + list(retitled_laws.values()) + list(holds_laws.values())
+        + list(mv_laws.values())
     )
     for law in every_law:
         law.was_asked()

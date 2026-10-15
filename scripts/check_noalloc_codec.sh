@@ -71,6 +71,10 @@ ALGORITHMS=(
     text_slot_latest
     text_slot_retitled
     text_slot_holds
+    mv_value
+    mv_value_holds
+    mv_value_keep
+    mv_value_drop
 )
 
 cat > "$WORK/Cargo.toml" <<EOF

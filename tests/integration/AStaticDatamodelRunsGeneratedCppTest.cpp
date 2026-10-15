@@ -519,7 +519,7 @@ template <typename Shown> json sheetShownJson(const Shown &shown) {
     });
 }
 
-/// A list of `record:Value` values (todo_value), in order.
+/// A list of `record:Value` values (sce:std/merge/mv_value), in order.
 template <typename Values> json todoValuesJson(const Values &values) {
     return listedJson(values, [](const auto &held) {
         return json{{"id", wideText(held.id)},

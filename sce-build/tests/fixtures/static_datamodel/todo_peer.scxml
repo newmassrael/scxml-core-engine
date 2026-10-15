@@ -20,7 +20,11 @@
   tombstone names (orset_live). The element is `id * 16 + field`. What a set cannot
   carry is the value itself, a number and a text, so each live add has its value in
   `values`, beside it, taken in when the add is live and taken out when a tombstone
-  names it. That is the whole of what this document adds to the merge.
+  names it. The standard `mv_value_*` algorithms keep them: the machine assigns a
+  write's text into a record of its own first (a payload's text is not handed to an
+  algorithm, and that assignment is where a text past its bound is refused), and the
+  record is what `mv_value_keep` records, bounded as its schema says, and
+  `mv_value_drop` forgets. That is the whole of what this document adds to the merge.
 
   The clock is moved by what a copy sees as well as by what it does, as the sheet's
   is: a change made after reading someone else's sorts after it.
@@ -60,7 +64,6 @@
   <sce:import kind="event-schema" src="todo_edit.scxml" as="Edit"/>
   <sce:import kind="event-schema" src="todo_write.scxml" as="Write"/>
   <sce:import kind="event-schema" src="todo_supersede.scxml" as="Supersede"/>
-  <sce:import kind="event-schema" src="todo_value.scxml" as="Value"/>
   <sce:import kind="event-schema" src="todo_keep.scxml" as="Keep"/>
   <sce:import kind="event-schema" src="todo_node.scxml" as="PeerNode"/>
   <sce:import kind="event-schema" src="todo_visit.scxml" as="Visit"/>
@@ -68,11 +71,15 @@
   <sce:import kind="event-schema" src="sce:std/merge/merkle_node.scxml" as="Node"/>
   <sce:import kind="event-schema" src="sce:std/merge/hlc_timestamp.scxml" as="Hlc"/>
   <sce:import kind="event-schema" src="sce:std/merge/orset_entry.scxml" as="Entry"/>
+  <sce:import kind="event-schema" src="sce:std/merge/mv_value.scxml" as="Value"/>
   <sce:import kind="algorithm" src="sce:std/merge/hlc_send.scxml" as="HlcSend"/>
   <sce:import kind="algorithm" src="sce:std/merge/hlc_receive.scxml" as="HlcReceive"/>
   <sce:import kind="algorithm" src="sce:std/merge/orset_union.scxml" as="OrsetUnion"/>
   <sce:import kind="algorithm" src="sce:std/merge/orset_live.scxml" as="OrsetLive"/>
   <sce:import kind="algorithm" src="sce:std/merge/orset_observed.scxml" as="OrsetObserved"/>
+  <sce:import kind="algorithm" src="sce:std/merge/mv_value_holds.scxml" as="MvValueHolds"/>
+  <sce:import kind="algorithm" src="sce:std/merge/mv_value_keep.scxml" as="MvValueKeep"/>
+  <sce:import kind="algorithm" src="sce:std/merge/mv_value_drop.scxml" as="MvValueDrop"/>
   <sce:import kind="algorithm" src="sce:std/merge/merkle_insert.scxml" as="MerkleInsert"/>
   <datamodel>
     <data id="node" sce:type="uint64" expr="0" sce:direction="out"/>
@@ -99,7 +106,6 @@
       <sce:set name="nodeId" expr="0"/>
     </data>
     <data id="values" sce:type="list&lt;record:Value&gt;" sce:capacity="128" sce:direction="out"/>
-    <data id="rebuilt" sce:type="list&lt;record:Value&gt;" sce:capacity="128"/>
     <data id="held" sce:type="record:Value">
       <sce:set name="id" expr="0"/>
       <sce:set name="field" expr="0"/>
@@ -211,20 +217,15 @@
           <assign location="isLive" expr="true"/>
         </if>
       </foreach>
-      <assign location="present" expr="false"/>
-      <foreach array="values" item="v">
-        <if cond="v.id === _event.data.id &amp;&amp; v.field === _event.data.field &amp;&amp; v.wallTime === _event.data.wallTime &amp;&amp; v.counter === _event.data.counter &amp;&amp; v.nodeId === _event.data.nodeId">
-          <assign location="present" expr="true"/>
-        </if>
-      </foreach>
+      <assign location="held.id" expr="_event.data.id"/>
+      <assign location="held.field" expr="_event.data.field"/>
+      <assign location="held.value" expr="_event.data.value"/>
+      <assign location="held.wallTime" expr="_event.data.wallTime"/>
+      <assign location="held.counter" expr="_event.data.counter"/>
+      <assign location="held.nodeId" expr="_event.data.nodeId"/>
+      <assign location="present" expr="MvValueHolds(values, held)"/>
       <if cond="isLive &amp;&amp; !present">
-        <assign location="held.id" expr="_event.data.id"/>
-        <assign location="held.field" expr="_event.data.field"/>
-        <assign location="held.value" expr="_event.data.value"/>
-        <assign location="held.wallTime" expr="_event.data.wallTime"/>
-        <assign location="held.counter" expr="_event.data.counter"/>
-        <assign location="held.nodeId" expr="_event.data.nodeId"/>
-        <sce:append target="values" expr="held"/>
+        <assign location="values" expr="MvValueKeep(values, held)"/>
         <send target="#_internal" event="todo.keep">
           <param name="kind" expr="0"/>
           <param name="id" expr="_event.data.id"/>
@@ -279,19 +280,13 @@
 
       <!-- And whether the write it names is held, which is when its add leaves the
            digest as the tombstone enters it. -->
-      <assign location="wasLive" expr="false"/>
-      <sce:clear target="rebuilt"/>
-      <foreach array="values" item="v">
-        <if cond="v.id !== _event.data.id || v.field !== _event.data.field || v.wallTime !== _event.data.wallTime || v.counter !== _event.data.counter || v.nodeId !== _event.data.nodeId">
-          <sce:append target="rebuilt" expr="v"/>
-          <else/>
-          <assign location="wasLive" expr="true"/>
-        </if>
-      </foreach>
-      <sce:clear target="values"/>
-      <foreach array="rebuilt" item="r">
-        <sce:append target="values" expr="r"/>
-      </foreach>
+      <assign location="held.id" expr="_event.data.id"/>
+      <assign location="held.field" expr="_event.data.field"/>
+      <assign location="held.wallTime" expr="_event.data.wallTime"/>
+      <assign location="held.counter" expr="_event.data.counter"/>
+      <assign location="held.nodeId" expr="_event.data.nodeId"/>
+      <assign location="wasLive" expr="MvValueHolds(values, held)"/>
+      <assign location="values" expr="MvValueDrop(values, held)"/>
       <if cond="!known">
         <send target="#_internal" event="todo.keep">
           <param name="kind" expr="1"/>

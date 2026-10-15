@@ -399,7 +399,7 @@ func merkleNodesJSON[R merkleNodeRecord](nodes []R) any {
 	return out
 }
 
-// todoValueRecord is a `record:Value` (todo_value) as a host reads it: which
+// todoValueRecord is a `record:Value` (sce:std/merge/mv_value) as a host reads it: which
 // to-do, which field of it, the number and the text the field holds, and the
 // stamp of the write that put them there.
 type todoValueRecord interface {

@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/merge/mv_value_drop.scxml — the values of a copy once the write `gone`
+  names has been written over: every value but the one of the same row and field
+  with the same dot, in the order `values` had them. A write that is not held
+  changes nothing, so a tombstone that arrives before the write it names, or twice,
+  leaves the values as they were.
+
+  The result holds at most 128 values, as mv_value_keep's does.
+
+  values {(1,1)@(100,0,7), (1,1)@(102,0,9)}, gone (1,1)@(100,0,7) →
+  {(1,1)@(102,0,9)}.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="mv_value_drop" version="1.0">
+  <sce:import kind="event-schema" src="mv_value.scxml" as="Value"/>
+  <sce:signature>
+    <sce:param name="values" type="list&lt;record:Value&gt;"/>
+    <sce:param name="gone" type="record:Value"/>
+    <sce:return type="list&lt;record:Value&gt;" may-fail="true" returns-max-size="128"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="out" type="list&lt;record:Value&gt;" capacity="128"/>
+    <sce:foreach item="v" in="values">
+      <sce:if cond="v.id !== gone.id || v.field !== gone.field || v.wallTime !== gone.wallTime || v.counter !== gone.counter || v.nodeId !== gone.nodeId">
+        <sce:append target="out" expr="v"/>
+      </sce:if>
+    </sce:foreach>
+    <sce:return expr="out"/>
+  </sce:body>
+</scxml>
