@@ -230,6 +230,27 @@ pub fn check(
                 && !transition.is_cpp_condition
                 && !transition.is_kt_condition
             {
+                // A guard reads `_event.data` through the schema its event
+                // declares. With none, the data is text this model has no type
+                // for (the failure code of an `error.*` event, a refusal's
+                // reason), and a read of it was accepted here and written into
+                // the generated machine as the expression the author wrote,
+                // which names no value there.
+                if schema.is_none()
+                    && crate::forge::expr::references_event_data_lexically(&transition.cond)
+                {
+                    let spelling = transition.cond_spelling.as_ref();
+                    return Err(judge.rule_at(
+                        format!("<transition event=\"{}\" cond=\"{}\">", transition.event, transition.cond),
+                        "a guard reads `_event.data`, and the event declares no schema, so no payload is in \
+                         scope: the data of an event without one is text this data model has no type for. \
+                         Declare a schema for the event, or branch on its name",
+                        spelling.map(|s| s.row()),
+                        spelling.map(|s| s.col()),
+                        &state.id,
+                        &transition.cond,
+                    ));
+                }
                 judge.expr(
                     &ctx,
                     &transition.cond,

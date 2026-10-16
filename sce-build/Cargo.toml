@@ -1199,5 +1199,13 @@ name = "a_list_is_assigned_what_an_algorithm_returns"
 path = "tests/a_list_is_assigned_what_an_algorithm_returns.rs"
 required-features = ["cli"]
 
+# A guard that reads the data of an event with no schema is refused by the binary
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15), so the target spawns `sce-codegen` and
+# carries the `cli` gate.
+[[test]]
+name = "a_guard_reading_untyped_event_data_is_refused"
+path = "tests/a_guard_reading_untyped_event_data_is_refused.rs"
+required-features = ["cli"]
+
 [lints]
 workspace = true

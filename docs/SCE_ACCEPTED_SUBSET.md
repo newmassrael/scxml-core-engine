@@ -3434,7 +3434,11 @@ it does. It is read there and nowhere else: an entry, an exit, a host-run
 `<invoke>` and a `<final>`'s `<donedata>` run when no event's payload is in
 scope, and a transition on an event that declares no schema has no typed
 payload to read, so a read in any of them is refused, saying where the payload
-is read. `scenarios/static_payload_relay.json` carries a payload on as the
+is read. The same holds of a transition's `cond`: one that reads `_event.data`
+on an event that declares no schema is refused, because the data of such an
+event is text this data model has no type for, and the guard was once accepted
+and written into the machine as the text the author wrote.
+`scenarios/static_payload_relay.json` carries a payload on as the
 params of a `<send>` on the six generated backends and the Interpreter.
 `scenarios/static_wire_enum.json`
 holds an enum value in the params of a `<send>` on the six generated backends and
