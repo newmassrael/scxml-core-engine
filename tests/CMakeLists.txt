@@ -520,6 +520,46 @@ endforeach()
 add_test(NAME static_datamodel_generated_cpp COMMAND static_datamodel_generated_cpp_test)
 
 # ============================================================================
+# The standard host features (docs/SCE_HOST_FEATURES.md): the scenarios of
+# tests/host_features/scenarios replayed against the generated machines that ask
+# for each feature, through the reference host of sce/include/host.
+# ============================================================================
+add_executable(standard_host_scenario_test
+    integration/AStandardHostScenarioTest.cpp
+)
+
+target_include_directories(standard_host_scenario_test
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/sce/include
+        ${CMAKE_SOURCE_DIR}/backends/cpp/forge-runtime/include
+        ${CMAKE_SOURCE_DIR}/tests
+)
+
+target_link_libraries(standard_host_scenario_test
+    PRIVATE
+        sce_runtime
+        GTest::gtest_main
+        pthread
+)
+
+target_compile_definitions(standard_host_scenario_test
+    PRIVATE
+        SCE_PROJECT_ROOT="${CMAKE_SOURCE_DIR}"
+)
+
+apply_sce_test_policies(standard_host_scenario_test)
+
+foreach(_STANDARD_HOST_MACHINE static_host_kv static_host_clock static_host_notify static_host_http)
+    sce_add_state_machine(
+        TARGET standard_host_scenario_test
+        SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_STANDARD_HOST_MACHINE}.scxml
+    )
+endforeach()
+
+add_test(NAME standard_host_scenario COMMAND standard_host_scenario_test)
+
+# ============================================================================
 # How a string is written into JSON text (ARCHITECTURE.md, "JSON Text (Single
 # Source of Truth)"): SCE::JsonText, nlohmann and the script engines'
 # JSON.stringify, each held to tests/json_text/string_escape.json — the table
