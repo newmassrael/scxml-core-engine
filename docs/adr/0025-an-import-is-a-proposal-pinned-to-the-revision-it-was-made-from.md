@@ -50,7 +50,7 @@ The refusal sentences are the product's words, identical in both languages.
 original) is appended to a log beside the proposal, never applied by editing the conversion in place.
 
 **A Markdown original needs no conversion.** When the document brought in is already Markdown, it is
-its own conversion: the original and the conversion are one blob, SCE splits it into blocks by rule, and
+its own conversion: the original (a bundle, ADR 0032) and the conversion are one, SCE splits it into blocks by rule, and
 no provider is waited for (ADR 0029). Nothing about the proposal changes otherwise. It is pinned to the
 revision it was made against, it is refused as `moved` if the spec has moved, and the owner is shown
 what it changes in the spec instead of how a conversion compares with an original. For a new spec with
@@ -68,8 +68,8 @@ did not parse, is reported as a reader's list is (ADR 0026), never discarded.
 
 ## Consequences
 
-- The store needs no new concept: an original is a blob, a conversion is a blob, a proposal is a
-  small record with a state, a decision log is an append-only log, a lease is a lease.
+- The store needs one small addition for the original, a manifest of members (ADR 0032); the rest
+  is as it was: a conversion is a blob, a proposal is a small record with a state, a decision log is an append-only log, a lease is a lease.
 - Review has an end: a proposal is accepted, superseded or rejected, and each is a fact that is kept.
 - The screen shows `moved` as a first-class state with a path forward, not as an error.
 - The authoring tools gain a PDF path, so `ingest.py` stops refusing `.pdf`; what a reader could not

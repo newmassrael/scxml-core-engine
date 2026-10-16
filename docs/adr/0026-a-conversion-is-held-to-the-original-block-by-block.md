@@ -21,15 +21,16 @@ If each format had its own comparison, every new format would need its own scree
 
 **One intermediate form: positioned blocks.** An extractor reads one format and writes an
 extraction: a list of blocks, stored by hash like any other blob. A block has an id (stable within the
-extraction), a kind (heading, paragraph, list item, table, figure), its text (a table keeps its cell
+extraction), a kind (heading, paragraph, list item, table, figure, attachment), its text (a table keeps its cell
 grid), where it came from, how it was read, and a confidence.
 
 - Where: for a word-processor file, the part and the ordinal of the paragraph or table; for a PDF, the
   page and the box on it.
 - How read: `text-layer` (the document carries its own text, confidence exact), `ocr` or `vision` (the
   text was recognised from an image, confidence is the recogniser's, and is never reported as exact).
-- A figure is a block that points at a picture blob, written `[picture: NAME]` in the text, as the
-  authoring tools already do.
+- A figure is a block that points at a picture by its hash, written `[picture: NAME]` in the text as the
+  authoring tools already do; what a bundle, a name and a rendition are is in ADR 0032. An attachment is
+  an object embedded in the document, marked `[enclosed object: NAME (KIND)]`.
 
 Only an extractor knows a format. Everything after the extraction (conversion, comparison, review,
 coverage) reads blocks and nothing else, so a new format is one extractor and no new screen.
