@@ -21,6 +21,10 @@ dependencies {
     // `<invoke type="sce:mesh-rpc">` through the router a host actually
     // registers rather than a stand-in (SCE_MESH.md §mesh-9.5, §mesh-19).
     testImplementation(project(":sce-kotlin-mesh"))
+    // The reference host of the standard host features, which the scenarios of
+    // `tests/host_features/` replay a generated machine against
+    // (docs/SCE_HOST_FEATURES.md).
+    testImplementation(project(":sce-kotlin-host-features"))
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.junit.jupiter)
     // `EcmaScriptSemanticsTest` reads the shared ECMA-262 table that the C++

@@ -43,6 +43,9 @@ project(":sce-kotlin-mesh").projectDir = file("backends/kotlin/mesh")
 // compile the 390 machines of `:sce-kotlin-tests`.
 include(":sce-kotlin-world")
 project(":sce-kotlin-world").projectDir = file("backends/kotlin/world")
+// The reference host of the standard host features (docs/SCE_HOST_FEATURES.md).
+include(":sce-kotlin-host-features")
+project(":sce-kotlin-host-features").projectDir = file("backends/kotlin/host-features")
 // ECMA-262 through a Lua-lowered Kotlin artifact. Separate from
 // `:sce-kotlin-tests` because it compiles two artifacts generated from one
 // document with two `--script-engine` selections, which is a different subject
