@@ -2933,6 +2933,55 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # The standard host features (docs/SCE_HOST_FEATURES.md): the scenarios of
+    # tests/host_features/scenarios replayed against the generated machines that ask
+    # for each feature, through the reference host of backends/c/host-features.
+    #
+    # The reference host is compiled into this executable and not linked as a
+    # library: a result record travels in one data slot of the machine
+    # (`SCE_MAX_DATA_LEN`) and the host registers every standard type
+    # (`SCE_MAX_HOST_INVOKERS`), and both are layout the machine and the host must
+    # agree on, so one target's definitions reach both.
+    foreach(_HOST_FEATURE_MACHINE static_host_kv static_host_clock static_host_notify static_host_http)
+        sce_generate_static_integration_c_test(${_HOST_FEATURE_MACHINE}
+            "${SCE_C_INTEGRATION_GENERATED_DIR}"
+            SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_HOST_FEATURE_MACHINE}.scxml"
+        )
+    endforeach()
+    add_executable(sce_c_integration_host_features
+        integration/test_host_features.c
+        ${CMAKE_SOURCE_DIR}/backends/c/host-features/src/standard_host.c
+        ${INTEGRATION_C_TEST_static_host_kv_SOURCES}
+        ${INTEGRATION_C_TEST_static_host_clock_SOURCES}
+        ${INTEGRATION_C_TEST_static_host_notify_SOURCES}
+        ${INTEGRATION_C_TEST_static_host_http_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_host_features PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base
+    )
+    target_include_directories(sce_c_integration_host_features PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
+        "${CMAKE_SOURCE_DIR}/backends/c/host-features/include"
+    )
+    target_compile_definitions(sce_c_integration_host_features PRIVATE
+        SCE_MAX_DATA_LEN=40960
+        SCE_MAX_HOST_INVOKERS=12
+        SCE_HOST_FEATURES_SCENARIO_DIR="${CMAKE_SOURCE_DIR}/tests/host_features/scenarios"
+    )
+    set_target_properties(sce_c_integration_host_features PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_host_features
+        COMMAND sce_c_integration_host_features
+    )
+    set_tests_properties(c11_integration_host_features PROPERTIES
+        TIMEOUT 60
+        LABELS "integration;c11;aot"
+    )
+
     # The `<param>`s of a BasicHTTP `<send>` (docs/adr/0005, decision 4): the
     # machine makes its POST through the HTTP client a platform supplies
     # (`sce/http_client.h`), and this test is that platform -- it keeps the
