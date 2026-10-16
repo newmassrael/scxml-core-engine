@@ -4364,6 +4364,32 @@ impl SCXMLParser {
                 action.location = child.attribute("target").unwrap_or("").to_string();
                 action.expr = child.attribute("expr").unwrap_or("").to_string();
             }
+            // §scxml-4.10: an element of the SCXML namespace here is executable content, and the
+            // ones that are not (`<onentry>` inside a `<transition>`, a `<state>` inside an
+            // `<onexit>`, a misspelt `<asign>`) have no place. They used to be skipped with
+            // everything inside them, so the author's intent ("send again every round") was
+            // not run and nothing said so. The document is refused instead, naming the element
+            // and the closed set it could have been.
+            (true, _) => {
+                let pos = child.document().text_pos_at(child.range().start);
+                return Err(crate::forge::error::Located::new(
+                    crate::forge::error::ValidationError::UnexpectedChildElement {
+                        parent: child
+                            .parent_element()
+                            .map(|parent| format!("<{}>", parent.tag_name().name()))
+                            .unwrap_or_else(|| "<scxml>".to_string()),
+                        child: tag.clone(),
+                        allowed: EXECUTABLE_CONTENT_ELEMENTS
+                            .iter()
+                            .map(|name| (*name).to_string())
+                            .collect(),
+                    }
+                    .into(),
+                    source_name,
+                    Some(pos.row),
+                    Some(pos.col),
+                ));
+            }
             _ => return Ok(None),
         }
         Ok(Some(action))
@@ -6239,6 +6265,14 @@ fn scxml_children<'a>(
 /// spec lists them. Shared by the document-order pre-pass and the
 /// per-name parse loops so the two cannot drift apart.
 const STATE_ELEMENT_TAGS: &[&str] = &["state", "final", "parallel"];
+
+/// The SCXML elements that are executable content, in the order the
+/// specification lists them, for the refusal of any other SCXML element where
+/// executable content stands. `<elseif>` and `<else>` are not listed: only an
+/// `<if>` takes them, and `parse_if_action` reads them there.
+const EXECUTABLE_CONTENT_ELEMENTS: &[&str] = &[
+    "raise", "if", "foreach", "log", "assign", "script", "send", "cancel",
+];
 
 /// SCXML-namespaced children matching ANY of the given local names, in
 /// document order.
@@ -8703,6 +8737,70 @@ mod tests {
             first.len(),
             "a state was lost or two shared an id: {first:?}"
         );
+    }
+
+    /// An SCXML element that is not executable content, where executable content
+    /// stands, is refused and named. It was skipped with everything inside it, so a document
+    /// that wrote `<onentry>` inside a `<transition>` to "send again every round" ran without
+    /// the send and said nothing (measured 2026-10-16: 12 of them in one document).
+    fn refusal_of(body: &str) -> String {
+        let scxml = format!(
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s">
+                <state id="s">{body}</state>
+            </scxml>"#
+        );
+        let mut parser = SCXMLParser::new();
+        match parser.parse_string(&scxml, "test") {
+            Ok(_) => String::new(),
+            Err(located) => located.error.to_string(),
+        }
+    }
+
+    #[test]
+    fn an_onentry_inside_a_transition_is_refused_and_named() {
+        let said =
+            refusal_of(r#"<transition event="e"><onentry><log expr="1"/></onentry></transition>"#);
+        assert!(
+            said.contains("<transition>") && said.contains("<onentry>"),
+            "the refusal names neither the parent nor the stray child: {said:?}"
+        );
+        assert!(
+            said.contains("send"),
+            "the legal set is not listed: {said:?}"
+        );
+    }
+
+    #[test]
+    fn a_stray_state_a_misspelling_and_an_elseif_outside_an_if_are_refused() {
+        for (body, stray) in [
+            (r#"<onexit><state id="x"/></onexit>"#, "<state>"),
+            (
+                r#"<onentry><asign location="a" expr="1"/></onentry>"#,
+                "<asign>",
+            ),
+            (r#"<onentry><elseif cond="true"/></onentry>"#, "<elseif>"),
+            (
+                r#"<onentry><if cond="true"><transition event="e"/></if></onentry>"#,
+                "<transition>",
+            ),
+        ] {
+            let said = refusal_of(body);
+            assert!(
+                said.contains(stray),
+                "{body} was not refused for {stray}: {said:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn executable_content_and_foreign_elements_are_still_accepted() {
+        for body in [
+            r#"<onentry><log expr="1"/><raise event="e"/><if cond="true"><log expr="2"/><elseif cond="false"/><else/></if></onentry>"#,
+            r#"<transition event="e"><send event="x"/><cancel sendid="y"/></transition>"#,
+            r#"<onentry><foreign xmlns="urn:other"><state/></foreign></onentry>"#,
+        ] {
+            assert_eq!("", refusal_of(body), "{body} was refused");
+        }
     }
 
     #[test]

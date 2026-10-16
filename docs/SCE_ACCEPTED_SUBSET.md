@@ -6210,6 +6210,26 @@ passed because it read the same model. Measured 2026-10-16 on a document of
 events "undeclared". Of the 1198 `.scxml` documents tracked in this
 repository, none carried such an element as a state of the document.
 
+#### An SCXML element where executable content stands
+
+W3C SCXML §4.2: an `<onentry>`, `<onexit>`, `<transition>`, `<foreach>` or
+`<finalize>` holds executable content (`<raise>`, `<if>`, `<foreach>`,
+`<log>`, `<assign>`, `<script>`, `<send>`, `<cancel>`), and an `<if>` also
+holds its `<elseif>` and `<else>`. An element of the SCXML namespace anywhere
+else in such a body (an `<onentry>` inside a `<transition>`, a `<state>`
+inside an `<onexit>`, a misspelt `<asign>`, an `<elseif>` outside an `<if>`)
+is refused with `validation/unexpected-child-element`: `message` names the
+holding element and the stray child, `fix.candidates` is the closed set of
+executable content, and the position is the stray element's. An element of
+another namespace is not SCXML's and is skipped as §4.10 leaves to the
+platform, and `<sce:action>` is read. ⚠ Before this rule the stray element was
+skipped with everything inside it and no diagnostic: a document that wrote
+`<onentry>` inside twelve transitions, to send again in every round, ran
+without any of those sends. Measured 2026-10-16 over the 1197 tracked
+documents: no document carries such an element, and the only SCXML-namespace
+name outside the specification's vocabulary is the `<cpp>` the C++ lowering
+reads inside a `<script>`.
+
 ---
 
 ### Design-time lints are opt-in (`--lint`)
