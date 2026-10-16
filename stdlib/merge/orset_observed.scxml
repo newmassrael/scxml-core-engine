@@ -7,7 +7,7 @@
   these, and not every add of the element any node will ever make, which is
   why a concurrent add survives the remove (orset_live).
 
-  The result keeps `live`'s order and holds at most 256 entries.
+  The result keeps `live`'s order and holds at most 1024 entries.
 
   live {1@(100,0,7), 2@(101,0,9), 1@(102,0,9)}, element 1 →
   {1@(100,0,7), 1@(102,0,9)}.
@@ -19,10 +19,10 @@
   <sce:signature>
     <sce:param name="live" type="list&lt;record:Entry&gt;"/>
     <sce:param name="element" type="uint64"/>
-    <sce:return type="list&lt;record:Entry&gt;" may-fail="true" returns-max-size="256"/>
+    <sce:return type="list&lt;record:Entry&gt;" may-fail="true" returns-max-size="1024"/>
   </sce:signature>
   <sce:body>
-    <sce:var name="out" type="list&lt;record:Entry&gt;" capacity="256"/>
+    <sce:var name="out" type="list&lt;record:Entry&gt;" capacity="1024"/>
     <sce:foreach item="x" in="live">
       <sce:if cond="x.element === element">
         <sce:append target="out" expr="x"/>

@@ -8,14 +8,14 @@
   an add concurrent with a remove survives it — the remove could only
   tombstone the adds it had seen (add wins).
 
-  The result keeps `adds`' order and holds at most 256 entries, as
+  The result keeps `adds`' order and holds at most 1024 entries, as
   orset_union's does.
 
   adds {1@(100,0,7), 1@(102,0,9)}, tombstones {1@(100,0,7)} → {1@(102,0,9)}.
 
   The same difference is how a set forgets. Tombstones are never dropped by
   merging, so a set that is added to and removed from keeps growing until it
-  passes the 256-entry bound. Once every replica has observed a set S of
+  passes the 1024-entry bound. Once every replica has observed a set S of
   tombstones — the host's to decide; a server that tracks each device's
   read cursor knows it — both lists shrink by it:
 
@@ -35,10 +35,10 @@
   <sce:signature>
     <sce:param name="adds" type="list&lt;record:Entry&gt;"/>
     <sce:param name="tombstones" type="list&lt;record:Entry&gt;"/>
-    <sce:return type="list&lt;record:Entry&gt;" may-fail="true" returns-max-size="256"/>
+    <sce:return type="list&lt;record:Entry&gt;" may-fail="true" returns-max-size="1024"/>
   </sce:signature>
   <sce:body>
-    <sce:var name="out" type="list&lt;record:Entry&gt;" capacity="256"/>
+    <sce:var name="out" type="list&lt;record:Entry&gt;" capacity="1024"/>
     <sce:foreach item="x" in="adds">
       <sce:var name="removed" type="bool" init="false"/>
       <sce:foreach item="t" in="tombstones">

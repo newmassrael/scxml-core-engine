@@ -96,6 +96,7 @@ const FORGE: &[&str] = &[
     "../../../sce-build/tests/fixtures/static_datamodel/event_selects.scxml",
     "../../../sce-build/tests/fixtures/static_datamodel/event_agenda.scxml",
     "../../../sce-build/tests/fixtures/static_datamodel/todo_zone.scxml",
+    "../../../sce-build/tests/fixtures/static_datamodel/todo_compact.scxml",
     "../../../stdlib/time/utc_from_local.scxml",
     "../../../sce-build/tests/fixtures/static_datamodel/presence_join.scxml",
     "../../../sce-build/tests/fixtures/static_datamodel/presence_beat.scxml",

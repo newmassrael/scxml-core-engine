@@ -30,11 +30,11 @@
   <sce:signature>
     <sce:param name="nodes" type="list&lt;record:Node&gt;"/>
     <sce:param name="keep" type="uint32"/>
-    <sce:return type="list&lt;record:Node&gt;" returns-max-size="1024" may-fail="true"/>
+    <sce:return type="list&lt;record:Node&gt;" returns-max-size="2048" may-fail="true"/>
   </sce:signature>
   <sce:body>
     <sce:require cond="keep &gt;= 1"/>
-    <sce:var name="out" type="list&lt;record:Node&gt;" capacity="1024"/>
+    <sce:var name="out" type="list&lt;record:Node&gt;" capacity="2048"/>
     <sce:var name="prevDepth" type="int32" init="-1"/>
     <sce:var name="prevPrefix" type="uint64" init="0"/>
     <sce:foreach item="x" in="nodes">

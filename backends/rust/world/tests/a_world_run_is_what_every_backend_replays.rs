@@ -399,6 +399,20 @@ fn todo_afternoon() -> World {
     assert_eq!(first.items.len(), 64);
     assert_eq!(first.next, 64);
     agreed_page(&mut world, &none, 38, from, to, first.next);
+
+    // Then everything stamped so far is settled everywhere, and each copy forgets what a
+    // register no longer needs: the tombstones up to now go, with the adds they name, and
+    // leave the digest. Nothing a register holds changes, and an agenda is as it was.
+    let before = world.now_ms();
+    let agenda_before = agreed_agenda_in(&mut world, &none, 31, from, to);
+    for who in ["alice", "bob", "server"] {
+        world.raise(who, "todo.compact", &format!(r#"{{"before":"{before}"}}"#));
+    }
+    assert_eq!(world.run_until_quiet(60_000), Outcome::Quiet);
+    assert_eq!(
+        agreed_agenda_in(&mut world, &none, 31, from, to),
+        agenda_before
+    );
     let refused_after: Vec<Value> = ["alice", "bob", "server"]
         .iter()
         .map(|who| todo_variables_of(&mut world, who)["refusals"].clone())

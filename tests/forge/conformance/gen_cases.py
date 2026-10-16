@@ -138,7 +138,7 @@ of a shared to-do list holds beside the dots of its writes — `mv_value_holds`,
 and its dot, so the lists are drawn from a few of each part and a probe differs from a
 value of the list in exactly one of them, in only the number and the text it carries
 (the same write), or not at all; the texts are the ones the `text_slot` cases use, at
-every encoded width and at the 32-byte bound. A list one short of the 128 values the
+every encoded width and at the 32-byte bound. A list one short of the 512 values the
 result holds is drawn now and then. Nine laws are checked on the model before any case
 is written.
 
@@ -775,7 +775,7 @@ def text_slot_holds(slots: list, probe: dict):
 
 
 #: The most values `mv_value_keep` and `mv_value_drop` hold in their result.
-MV_CAPACITY = 128
+MV_CAPACITY = 512
 #: The fields that name a write: the row and field it is to, and its dot. The number
 #: and the text are what the write carries, and are not part of which write it is.
 MV_WRITE = ("id", "field", "wallTime", "counter", "nodeId")

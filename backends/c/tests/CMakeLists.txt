@@ -2722,7 +2722,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/todo_peer.scxml"
         STAGE_ALSO todo_join.scxml todo_edit.scxml todo_write.scxml todo_supersede.scxml
                    todo_keep.scxml todo_node.scxml todo_visit.scxml
-                   todo_share.scxml todo_agenda.scxml todo_zone.scxml
+                   todo_share.scxml todo_agenda.scxml todo_zone.scxml todo_compact.scxml
                    event_occurrence.scxml event_schedule.scxml event_later.scxml
                    event_latest.scxml event_conflict.scxml event_selects.scxml event_agenda.scxml
     )

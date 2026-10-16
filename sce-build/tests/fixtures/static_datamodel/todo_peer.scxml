@@ -99,6 +99,7 @@
   <sce:import kind="algorithm" src="event_conflict.scxml" as="EventConflict"/>
   <sce:import kind="algorithm" src="event_agenda.scxml" as="EventAgenda"/>
   <sce:import kind="event-schema" src="todo_zone.scxml" as="Zone"/>
+  <sce:import kind="event-schema" src="todo_compact.scxml" as="Compact"/>
   <sce:import kind="algorithm" src="sce:std/time/utc_from_local.scxml" as="UtcFromLocal"/>
   <datamodel>
     <data id="node" sce:type="uint64" expr="0" sce:direction="out"/>
@@ -113,18 +114,19 @@
       <sce:set name="counter" expr="0"/>
       <sce:set name="nodeId" expr="0"/>
     </data>
-    <data id="adds" sce:type="list&lt;record:Entry&gt;" sce:capacity="256" sce:direction="out"/>
-    <data id="tombstones" sce:type="list&lt;record:Entry&gt;" sce:capacity="256" sce:direction="out"/>
-    <data id="live" sce:type="list&lt;record:Entry&gt;" sce:capacity="256"/>
-    <data id="observed" sce:type="list&lt;record:Entry&gt;" sce:capacity="256"/>
-    <data id="one" sce:type="list&lt;record:Entry&gt;" sce:capacity="256"/>
+    <data id="adds" sce:type="list&lt;record:Entry&gt;" sce:capacity="1024" sce:direction="out"/>
+    <data id="tombstones" sce:type="list&lt;record:Entry&gt;" sce:capacity="1024" sce:direction="out"/>
+    <data id="live" sce:type="list&lt;record:Entry&gt;" sce:capacity="1024"/>
+    <data id="observed" sce:type="list&lt;record:Entry&gt;" sce:capacity="1024"/>
+    <data id="one" sce:type="list&lt;record:Entry&gt;" sce:capacity="1024"/>
+    <data id="stable" sce:type="list&lt;record:Entry&gt;" sce:capacity="1024"/>
     <data id="entry" sce:type="record:Entry">
       <sce:set name="element" expr="0"/>
       <sce:set name="wallTime" expr="0"/>
       <sce:set name="counter" expr="0"/>
       <sce:set name="nodeId" expr="0"/>
     </data>
-    <data id="values" sce:type="list&lt;record:Value&gt;" sce:capacity="128" sce:direction="out"/>
+    <data id="values" sce:type="list&lt;record:Value&gt;" sce:capacity="512" sce:direction="out"/>
     <data id="held" sce:type="record:Value">
       <sce:set name="id" expr="0"/>
       <sce:set name="field" expr="0"/>
@@ -134,7 +136,7 @@
       <sce:set name="counter" expr="0"/>
       <sce:set name="nodeId" expr="0"/>
     </data>
-    <data id="digest" sce:type="list&lt;record:Node&gt;" sce:capacity="1024" sce:direction="out"/>
+    <data id="digest" sce:type="list&lt;record:Node&gt;" sce:capacity="2048" sce:direction="out"/>
     <data id="mine" sce:type="uint32" expr="0"/>
     <data id="shareId" sce:type="uint32" expr="0"/>
     <data id="shareField" sce:type="uint16" expr="0"/>
@@ -423,6 +425,27 @@
       <assign location="entry.nodeId" expr="_event.data.nodeId"/>
       <assign location="mine" expr="MerkleChangeHash(entry, _event.data.kind)"/>
       <assign location="digest" expr="MerkleInsert(digest, _event.data.wallTime / 60000, mine)"/>
+    </transition>
+
+    <!-- The host's word that the changes up to an instant are settled everywhere: the
+         tombstones stamped at or before it go, with the adds they name, and leave the
+         digest as they entered it (the same hash, XORed again), so that the digest is
+         still the digest of what the copy holds, and a copy that is told the same instant
+         holds the same. A register's values are what no tombstone names, and are not
+         moved: the lists are what grows without it, and this is what lets a copy that is
+         written to for years hold only what is current (orset_live, the difference that
+         is how a set forgets). -->
+    <transition event="todo.compact" type="internal">
+      <sce:clear target="stable"/>
+      <foreach array="tombstones" item="t">
+        <if cond="t.wallTime &lt;= _event.data.before">
+          <sce:append target="stable" expr="t"/>
+          <assign location="mine" expr="MerkleChangeHash(t, 1)"/>
+          <assign location="digest" expr="MerkleInsert(digest, t.wallTime / 60000, mine)"/>
+        </if>
+      </foreach>
+      <assign location="adds" expr="OrsetLive(adds, stable)"/>
+      <assign location="tombstones" expr="OrsetLive(tombstones, stable)"/>
     </transition>
 
     <!-- The host's word that this copy's link is back: it shows its peers the root of

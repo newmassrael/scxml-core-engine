@@ -23,7 +23,7 @@
   the same list. XOR makes a change inserted twice cancel itself: the host
   inserts a change once, when it first stores it.
 
-  The digest holds at most 1024 nodes here (SCE_FORGE.md §4.12); a larger
+  The digest holds at most 2048 nodes here (SCE_FORGE.md §4.12); a larger
   one grows on the heap backends and fails `capacity-exceeded` on the
   bounded ones. merkle_prune keeps it small.
 
@@ -38,11 +38,11 @@
     <sce:param name="nodes" type="list&lt;record:Node&gt;"/>
     <sce:param name="minute" type="int64"/>
     <sce:param name="hash" type="uint32"/>
-    <sce:return type="list&lt;record:Node&gt;" returns-max-size="1024" may-fail="true"/>
+    <sce:return type="list&lt;record:Node&gt;" returns-max-size="2048" may-fail="true"/>
   </sce:signature>
   <sce:body>
     <sce:require cond="minute &gt;= 0 &amp;&amp; minute &lt;= 153722867280912"/>
-    <sce:var name="out" type="list&lt;record:Node&gt;" capacity="1024"/>
+    <sce:var name="out" type="list&lt;record:Node&gt;" capacity="2048"/>
     <!-- The next path node to place: its depth, its prefix, and 3^(30-depth)
          for the depth after it. -->
     <sce:var name="pd" type="uint32" init="0"/>
