@@ -2292,9 +2292,31 @@ enum Commands {
     /// `(none)` row collects into one block, which is behaviour the
     /// specification never asked for; compare `source` against a
     /// manifest and a requirement with no row is `missing`.
+    ///
+    /// The stream is a registered wire surface: its shape is
+    /// `schemas/sce-transition-table.v1.schema.json`, one instance per
+    /// line. A row of kind `transition` also carries `index` and
+    /// `targets`.
     TransitionTable {
         /// SCXML file path
         scxml: String,
+        /// Lead the stream with one `header` record naming the machine
+        /// and the §synth-6.2.6 `source_hash` of its source set, so an
+        /// export kept apart from the build can be checked against the
+        /// machine compiled from the same document. Off by default: the
+        /// stream is then rows only, as it always was.
+        #[arg(long)]
+        header: bool,
+        /// Directory the `source_hash` of `--header` is computed over.
+        /// Defaults to the SCXML file's parent directory, as in
+        /// `generate`; pass the same value `generate` was given, or the
+        /// two hashes name different source sets.
+        #[arg(long, requires = "header")]
+        input_root: Option<String>,
+        /// The `deploy.yaml` `generate` was given, when it was given
+        /// one: it is part of the source set the hash covers.
+        #[arg(long, requires = "header", value_name = "PATH")]
+        deploy: Option<String>,
     },
     /// Emit the review table of a NON-statechart forge kind as NDJSON —
     /// one record per node that can carry `sce:req`, with the `source`
@@ -3437,7 +3459,16 @@ fn main() {
             specification,
         } => cmd_scenarios(&file, specification.as_deref()),
         Commands::JudgeScenarios { set, trace } => cmd_judge_scenarios(&set, &trace),
-        Commands::TransitionTable { scxml } => cmd_transition_table(&scxml, error_format),
+        Commands::TransitionTable {
+            scxml,
+            header,
+            input_root,
+            deploy,
+        } => cmd_transition_table(
+            &scxml,
+            header.then_some((input_root.as_deref(), deploy.as_deref())),
+            error_format,
+        ),
         Commands::ReviewTable { document } => cmd_review_table(&document, error_format),
         Commands::Pseudo {
             document,
@@ -9095,12 +9126,42 @@ fn cmd_manifest(dir: &str) {
 // parser and walk the model, so what the table shows and what the
 // build compiles cannot drift.
 
-fn cmd_transition_table(scxml: &str, error_format: ErrorFormat) {
+/// `header` is `Some((input_root, deploy))` under `--header`. The hash is
+/// the one `generate` embeds for the same inputs, so it goes through the
+/// same [`DriftContext::compute`] and is refused on the same terms: a
+/// walk that fails or leaves the document uncovered is not a hash to
+/// publish.
+fn cmd_transition_table(
+    scxml: &str,
+    header: Option<(Option<&str>, Option<&str>)>,
+    error_format: ErrorFormat,
+) {
     let mut parser = sce_build::parser::SCXMLParser::new();
     let model = parser
         .parse_file(scxml)
         .unwrap_or_else(|e| error_format.emit_and_exit(&e, "SCXML parse error: "));
-    out_stream(|w| sce_build::transition_table::emit_transition_table_ndjson(&model, w));
+    let header = header.map(|(input_root, deploy)| {
+        let named_input = [Path::new(scxml)];
+        let root = input_root
+            .map(PathBuf::from)
+            .unwrap_or_else(|| containing_dir(Path::new(scxml)));
+        let ctx = DriftContext::compute(
+            &root,
+            deploy.map(Path::new),
+            if input_root.is_none() {
+                &named_input
+            } else {
+                &[]
+            },
+        );
+        sce_build::transition_table::TransitionTableHeader::new(
+            &model.name,
+            ctx.header.source_hex(),
+        )
+    });
+    out_stream(|w| {
+        sce_build::transition_table::emit_transition_table_ndjson(&model, header.as_ref(), w)
+    });
 }
 
 // ── Subcommand: annotation-overlay ─────────────────────────────

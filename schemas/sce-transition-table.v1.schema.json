@@ -1,0 +1,128 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/newmassrael/scxml-core-engine/blob/main/schemas/sce-transition-table.v1.schema.json",
+  "x-sce-schema-status": "pre-release",
+  "title": "SCE transition table (wire schema v1)",
+  "description": "One line of the NDJSON stream `sce-codegen transition-table <doc.scxml>` writes: one row per node of the design that can carry a requirement (a state, a transition, an executable action, an invoke, a data item, a top-level script), in document order, read from the same walk the requirements report and the manifest classification use, so a `node_path` names the same node in all three. A row of kind `transition` also carries `index` and `targets`: the position of the transition within its state and its target set, one id per token, so a reader does not recover them from `node_path` and the `to` column. With `--header` the stream is led by one `header` record naming the machine and the §synth-6.2.6 `source_hash` of the document set it was read from, the same value a generated file and a sourcemap carry, so a consumer that keeps the export apart from the build can check it against the machine it compiled; the generator commit rides on that record only, because a stamp on every row would change every line of an export that is diffed across commits. The `sce:req` tokens are opaque: nothing here reads their shape. Each line is one instance of this schema. Authoritative producer is sce-build/src/transition_table.rs. The stability status of this surface lives in this header alone — see SCE_WIRE_CONTRACTS.md.",
+  "oneOf": [
+    { "$ref": "#/definitions/header" },
+    { "$ref": "#/definitions/row" }
+  ],
+  "definitions": {
+    "header": {
+      "description": "The optional first line, written only with `--header`.",
+      "type": "object",
+      "required": ["record", "v", "generator", "machine", "source_hash"],
+      "additionalProperties": false,
+      "properties": {
+        "record": {
+          "description": "Always `header`. A row has no `record` field, which is what tells the two apart.",
+          "const": "header"
+        },
+        "v": {
+          "description": "The version of this stream's shape.",
+          "const": 1
+        },
+        "generator": {
+          "description": "Commit of the generator that wrote the stream, or `unknown` for a build with no git checkout. A version number identifies nothing here: the crate version is frozen pre-1.0.",
+          "type": "string",
+          "pattern": "^([0-9a-f]{7,40}|unknown)$"
+        },
+        "machine": {
+          "description": "The name of the machine the rows were read from, as the document names it.",
+          "type": "string",
+          "minLength": 1
+        },
+        "source_hash": {
+          "description": "The §synth-6.2.6 digest of the source set of the document, as 64 lowercase hex characters: byte-equal to the `source-hash` a generated file of the same invocation carries and to the `source_hash` of its sourcemap.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "row": {
+      "description": "One node that can carry a requirement.",
+      "type": "object",
+      "required": ["source", "from", "event", "guard", "after", "to", "action", "node_path", "kind"],
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "description": "The `sce:req` tokens the node claims, space-joined and uninterpreted, or `(none)` for a node claiming no requirement.",
+          "type": "string",
+          "minLength": 1
+        },
+        "from": {
+          "description": "The owning state, or `<scxml>` for a node that belongs to the document.",
+          "type": "string",
+          "minLength": 1
+        },
+        "event": {
+          "description": "The `event` attribute of a transition as written (several descriptors are space-separated, `*` is the wildcard), `(eventless)` for a transition with none, or a pseudo-event in parentheses for a node that is not event-driven: `(state)`, `(entry)`, `(exit)`, `(transition)`, `(initial)`, `(history)`, `(invoke)`, `(global script)`, `(data)`.",
+          "type": "string",
+          "minLength": 1
+        },
+        "guard": {
+          "description": "The `cond` of the node, or `-`.",
+          "type": "string",
+          "minLength": 1
+        },
+        "after": {
+          "description": "The delay an action carries, in the author's spelling, or `-`.",
+          "type": "string",
+          "minLength": 1
+        },
+        "to": {
+          "description": "Where the node goes: the `target` of a transition (several targets are space-separated, and ` type=internal` follows when the type is not the default), the initial child of a state, or `-`.",
+          "type": "string",
+          "minLength": 1
+        },
+        "action": {
+          "description": "What the node does, in the attribute names its author wrote, or `-`.",
+          "type": "string",
+          "minLength": 1
+        },
+        "node_path": {
+          "description": "The path of the node in the model. For a transition it is `states.<id>.transitions[<index>]`.",
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "description": "What kind of node the row describes. An action takes the kind of the place it sits in, nested actions included.",
+          "enum": [
+            "state",
+            "transition",
+            "entry",
+            "exit",
+            "transition-action",
+            "initial",
+            "history",
+            "invoke",
+            "data",
+            "script"
+          ]
+        },
+        "index": {
+          "description": "Position of the transition within its state: the `N` of `states.<id>.transitions[N]`, in document order. Present on a `transition` row and on no other.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "targets": {
+          "description": "The target set of the transition, one state id per token, as written; a token naming a `<history>` stays that id. Empty for a targetless transition. Present on a `transition` row and on no other.",
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      },
+      "if": {
+        "properties": { "kind": { "const": "transition" } }
+      },
+      "then": {
+        "required": ["index", "targets"]
+      },
+      "else": {
+        "not": {
+          "anyOf": [{ "required": ["index"] }, { "required": ["targets"] }]
+        }
+      }
+    }
+  }
+}

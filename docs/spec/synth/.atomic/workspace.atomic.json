@@ -6042,6 +6042,14 @@
         {
           "file": "scripts/regen_a_computed_event_name_is_matched_like_any_other_kotlin.sh",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/transition_table.rs",
+          "kind": "references"
+        },
+        {
+          "file": "schemas/sce-transition-table.v1.schema.json",
+          "kind": "references"
         }
       ]
     },

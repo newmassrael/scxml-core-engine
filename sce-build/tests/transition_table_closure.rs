@@ -247,6 +247,105 @@ fn the_command_emits_the_table() {
     }
 }
 
+/// The export is held to the machine it describes by two independent
+/// witnesses, both written by `generate` for the same document.
+///
+/// `--header` states the `source_hash` a generated tree embeds, so an export
+/// kept apart from the build is checkable against the machine compiled from
+/// the same document. And the sourcemap lists one `transition` symbol per
+/// transition, named by the owning state and the same document-order index, so
+/// an export that dropped, added or reordered a transition disagrees with it.
+/// The sidecar is byte-identical across the six backends, so one language
+/// stands for them.
+#[test]
+fn the_header_and_the_transitions_agree_with_what_generate_wrote() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let doc = dir.path().join("doc.scxml");
+    std::fs::write(&doc, DOC).expect("write fixture document");
+    let out = dir.path().join("out");
+
+    let codegen = PathBuf::from(env!("CARGO_BIN_EXE_sce-codegen"));
+    let generated = Command::new(&codegen)
+        .args(["generate", "-l", "rust", "-o"])
+        .arg(&out)
+        .arg(&doc)
+        .output()
+        .expect("sce-codegen runs");
+    assert!(
+        generated.status.success(),
+        "sce-codegen generate failed: {}",
+        String::from_utf8_lossy(&generated.stderr),
+    );
+    let sidecar: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(out.join("sce_sourcemap.json"))
+            .expect("generate wrote a sourcemap sidecar"),
+    )
+    .expect("the sidecar is JSON");
+
+    let exported = Command::new(&codegen)
+        .args(["transition-table", "--header"])
+        .arg(&doc)
+        .output()
+        .expect("sce-codegen runs");
+    assert!(
+        exported.status.success(),
+        "sce-codegen transition-table --header failed: {}",
+        String::from_utf8_lossy(&exported.stderr),
+    );
+    let lines: Vec<serde_json::Value> = String::from_utf8(exported.stdout)
+        .expect("utf-8 stdout")
+        .lines()
+        .map(|line| serde_json::from_str(line).expect("a line is JSON"))
+        .collect();
+
+    assert_eq!(lines[0]["record"], "header", "the header leads the stream");
+    assert_eq!(
+        lines[0]["source_hash"], sidecar["source_hash"],
+        "the header's hash and the hash `generate` embedded name one source set"
+    );
+    assert!(
+        lines[1..].iter().all(|row| row.get("record").is_none()),
+        "only the first line is a header"
+    );
+
+    let exported_transitions: BTreeSet<(String, u64)> = lines[1..]
+        .iter()
+        .filter(|row| row["kind"] == "transition")
+        .map(|row| {
+            (
+                row["from"].as_str().expect("from").to_string(),
+                row["index"]
+                    .as_u64()
+                    .expect("a transition row has an index"),
+            )
+        })
+        .collect();
+    let mapped_transitions: BTreeSet<(String, u64)> = sidecar["symbols"]
+        .as_object()
+        .expect("symbols is an object")
+        .iter()
+        .filter(|(_, symbol)| symbol["kind"] == "transition")
+        .map(|(name, symbol)| {
+            let index = name
+                .rsplit_once("___transition_")
+                .and_then(|(_, n)| n.parse().ok())
+                .unwrap_or_else(|| panic!("`{name}` does not end in `___transition_<N>`"));
+            (
+                symbol["scxml_state_path"]
+                    .as_str()
+                    .expect("scxml_state_path")
+                    .to_string(),
+                index,
+            )
+        })
+        .collect();
+    assert!(
+        exported_transitions.len() >= 3,
+        "the fixture has three transitions; the comparison is vacuous below that"
+    );
+    assert_eq!(exported_transitions, mapped_transitions);
+}
+
 /// The closing count: what was examined, printed, with a floor.
 ///
 /// ⚠ Without the floor this file passes having examined nothing — an

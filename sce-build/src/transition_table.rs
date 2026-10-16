@@ -526,7 +526,48 @@ pub fn requirements_without_a_row<'a>(
         .collect()
 }
 
-/// Emit the table as NDJSON, one record per row.
+/// The stability status of `schemas/sce-transition-table.v1.schema.json`,
+/// held to the schema file's own header by `schema_file_declares_status`.
+/// `SCE_WIRE_CONTRACTS.md` requires one commit to move both.
+pub const TRANSITION_TABLE_SCHEMA_STATUS: &str = "pre-release";
+
+/// The version of the stream's shape, which the header record states.
+pub const TRANSITION_TABLE_VERSION: u32 = 1;
+
+/// What the `record` field of the header says. A row has no such field.
+pub const HEADER_RECORD_KIND: &str = "header";
+
+/// The optional first line of the stream.
+///
+/// It lets a consumer that keeps the export apart from the build check it
+/// against the machine it compiled: `source_hash` is the §synth-6.2.6 digest
+/// a generated file of the same invocation embeds. The commit stamp rides here
+/// and on no row, because a stamp on every row would change every line of an
+/// export that is diffed across commits.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct TransitionTableHeader {
+    record: &'static str,
+    v: u32,
+    generator: &'static str,
+    machine: String,
+    source_hash: String,
+}
+
+impl TransitionTableHeader {
+    /// `machine` is the model's own name; `source_hash` is the 64 hex
+    /// characters of the digest the caller computed for the document set.
+    pub fn new(machine: &str, source_hash: String) -> Self {
+        Self {
+            record: HEADER_RECORD_KIND,
+            v: TRANSITION_TABLE_VERSION,
+            generator: crate::GENERATOR_COMMIT,
+            machine: machine.to_string(),
+            source_hash,
+        }
+    }
+}
+
+/// Emit the table as NDJSON, one record per row, led by `header` when given.
 ///
 /// NDJSON rather than a rendered grid, for the reason §6.1 gives for
 /// having a table at all: it must stay usable at 200 states, and it
@@ -536,8 +577,14 @@ pub fn requirements_without_a_row<'a>(
 /// acceptance report (§7a), which composes this.
 pub fn emit_transition_table_ndjson<W: Write + ?Sized>(
     model: &SCXMLModel,
+    header: Option<&TransitionTableHeader>,
     writer: &mut W,
 ) -> io::Result<()> {
+    if let Some(header) = header {
+        let line = serde_json::to_string(header)
+            .expect("TransitionTableHeader serialises; every field is an owned String");
+        writeln!(writer, "{line}")?;
+    }
     for row in transition_table(model) {
         let line = serde_json::to_string(&row)
             .expect("TransitionRow serialises; every field is an owned String");
@@ -630,10 +677,200 @@ mod tests {
         );
     }
 
+    const SCHEMA: &str = include_str!("../../schemas/sce-transition-table.v1.schema.json");
+
+    /// A document with a node of every kind a row can describe.
+    const EVERY_KIND: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                              xmlns:sce="http://sce.dev/ext"
+                              version="1.0" initial="idle" datamodel="ecmascript">
+        <datamodel><data id="count" expr="0" sce:req="REQ-D"/></datamodel>
+        <script sce:req="REQ-G">count = 1;</script>
+        <state id="idle">
+            <onentry><log expr="'in'"/></onentry>
+            <onexit><log expr="'out'"/></onexit>
+            <initial><transition target="inner"><log expr="'init'"/></transition></initial>
+            <history id="h"><transition target="inner"><log expr="'hist'"/></transition></history>
+            <invoke type="scxml" src="child.scxml" sce:req="REQ-I"/>
+            <state id="inner">
+                <transition event="go" target="done" sce:req="12">
+                    <log expr="'go'"/>
+                </transition>
+            </state>
+        </state>
+        <final id="done"/>
+    </scxml>"#;
+
+    fn schema() -> serde_json::Value {
+        serde_json::from_str(SCHEMA).expect("transition table schema is JSON")
+    }
+
+    fn violations(instance: &serde_json::Value) -> Vec<String> {
+        let schema = schema();
+        let validator = jsonschema::JSONSchema::options()
+            .with_draft(jsonschema::Draft::Draft7)
+            .compile(&schema)
+            .expect("transition table schema compiles");
+        let outcome = validator.validate(instance);
+        match outcome {
+            Ok(()) => Vec::new(),
+            Err(errors) => errors.map(|e| e.to_string()).collect(),
+        }
+    }
+
+    fn stream_of(scxml: &str, header: Option<&TransitionTableHeader>) -> Vec<serde_json::Value> {
+        let model = SCXMLParser::new()
+            .parse_string(scxml, "transition_table")
+            .expect("parse");
+        let mut buf = Vec::new();
+        emit_transition_table_ndjson(&model, header, &mut buf).unwrap();
+        String::from_utf8(buf)
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str(line).expect("a line is JSON"))
+            .collect()
+    }
+
+    fn a_header() -> TransitionTableHeader {
+        TransitionTableHeader::new("machine", "0".repeat(64))
+    }
+
+    #[test]
+    fn schema_file_declares_status() {
+        assert_eq!(
+            schema()["x-sce-schema-status"].as_str(),
+            Some(TRANSITION_TABLE_SCHEMA_STATUS),
+            "schemas/sce-transition-table.v1.schema.json x-sce-schema-status disagrees with \
+             TRANSITION_TABLE_SCHEMA_STATUS; SCE_WIRE_CONTRACTS.md requires one commit to move both",
+        );
+    }
+
+    #[test]
+    fn schema_version_and_record_match_the_producer() {
+        let header = &schema()["definitions"]["header"]["properties"];
+        assert_eq!(
+            header["v"]["const"].as_u64(),
+            Some(u64::from(TRANSITION_TABLE_VERSION))
+        );
+        assert_eq!(header["record"]["const"].as_str(), Some(HEADER_RECORD_KIND));
+    }
+
+    #[test]
+    fn every_stream_the_product_writes_validates_against_the_wire_schema() {
+        let header = a_header();
+        for (scxml, header) in [
+            (DOC, None),
+            (DOC, Some(&header)),
+            (EVERY_KIND, None),
+            (EVERY_KIND, Some(&header)),
+        ] {
+            for record in stream_of(scxml, header) {
+                assert_eq!(violations(&record), Vec::<String>::new(), "{record}");
+            }
+        }
+    }
+
+    #[test]
+    fn the_document_with_every_kind_shows_every_kind() {
+        let kinds: std::collections::BTreeSet<String> = stream_of(EVERY_KIND, None)
+            .iter()
+            .map(|row| row["kind"].as_str().expect("a row has a kind").to_string())
+            .collect();
+        let schema = schema();
+        let declared: std::collections::BTreeSet<String> = schema["definitions"]["row"]
+            ["properties"]["kind"]["enum"]
+            .as_array()
+            .expect("kind is an enum")
+            .iter()
+            .map(|k| k.as_str().unwrap().to_string())
+            .collect();
+        assert_eq!(
+            kinds, declared,
+            "the sweep above is only as wide as the kinds this document reaches"
+        );
+    }
+
+    #[test]
+    fn the_header_leads_the_stream_only_when_asked_for() {
+        let without = stream_of(DOC, None);
+        assert!(without.iter().all(|r| r.get("record").is_none()));
+        let header = a_header();
+        let with = stream_of(DOC, Some(&header));
+        assert_eq!(with.len(), without.len() + 1);
+        assert_eq!(with[0]["record"], "header");
+        assert_eq!(with[0]["generator"], crate::GENERATOR_COMMIT);
+        assert_eq!(with[0]["machine"], "machine");
+        assert_eq!(&with[1..], &without[..], "the rows do not move");
+    }
+
+    #[test]
+    fn the_wire_schema_rejects_what_the_producer_does_not_write() {
+        let transition_row = stream_of(DOC, None)
+            .into_iter()
+            .find(|row| row["kind"] == "transition")
+            .expect("a transition row");
+        let state_row = stream_of(DOC, None)
+            .into_iter()
+            .find(|row| row["kind"] == "state")
+            .expect("a state row");
+        let header = serde_json::to_value(a_header()).unwrap();
+        for valid in [&transition_row, &state_row, &header] {
+            assert_eq!(violations(valid), Vec::<String>::new(), "{valid}");
+        }
+
+        let changes: [(&str, serde_json::Value); 8] = [
+            ("a transition row without its index", {
+                let mut r = transition_row.clone();
+                r.as_object_mut().unwrap().remove("index");
+                r
+            }),
+            ("a transition row without its targets", {
+                let mut r = transition_row.clone();
+                r.as_object_mut().unwrap().remove("targets");
+                r
+            }),
+            ("a state row that carries an index", {
+                let mut r = state_row.clone();
+                r["index"] = serde_json::json!(0);
+                r
+            }),
+            ("a row of a kind the product does not have", {
+                let mut r = state_row.clone();
+                r["kind"] = serde_json::json!("junction");
+                r
+            }),
+            ("a row without its node_path", {
+                let mut r = state_row.clone();
+                r.as_object_mut().unwrap().remove("node_path");
+                r
+            }),
+            ("a header whose generator names no commit", {
+                let mut h = header.clone();
+                h["generator"] = serde_json::json!("0.1.0");
+                h
+            }),
+            ("a header whose source_hash is not a sha256", {
+                let mut h = header.clone();
+                h["source_hash"] = serde_json::json!("abc");
+                h
+            }),
+            ("a header without its machine", {
+                let mut h = header.clone();
+                h.as_object_mut().unwrap().remove("machine");
+                h
+            }),
+        ];
+        for (what, instance) in changes {
+            assert!(
+                !violations(&instance).is_empty(),
+                "the schema accepted {what}: {instance}"
+            );
+        }
+    }
+
     #[test]
     fn the_new_fields_follow_the_existing_columns_on_the_wire() {
         let mut buf = Vec::new();
-        emit_transition_table_ndjson(&model(), &mut buf).unwrap();
+        emit_transition_table_ndjson(&model(), None, &mut buf).unwrap();
         let out = String::from_utf8(buf).unwrap();
         let line = out
             .lines()

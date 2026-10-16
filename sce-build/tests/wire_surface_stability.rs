@@ -50,6 +50,7 @@ const JSON_SURFACES: &[&str] = &[
     "schemas/sce-authoring-profile.v1.schema.json",
     "schemas/sce-scenario-set.v1.schema.json",
     "schemas/sce-observation-trace.v1.schema.json",
+    "schemas/sce-transition-table.v1.schema.json",
 ];
 
 const XSD_SURFACES: &[&str] = &["schemas/sce-forge.xsd", "schemas/sce-forge-ext.xsd"];
@@ -231,6 +232,11 @@ const INSTANCE_VALIDATION: &[(&str, &str, &str)] = &[
         "every_trace_the_product_reads_validates_against_the_wire_schema",
         "sce-build/src/scenario_judge.rs",
     ),
+    (
+        "schemas/sce-transition-table.v1.schema.json",
+        "every_stream_the_product_writes_validates_against_the_wire_schema",
+        "sce-build/src/transition_table.rs",
+    ),
 ];
 
 /// Negative-case coverage: `(surface, test fn, file declaring it)`.
@@ -305,6 +311,11 @@ const NEGATIVE_VALIDATION: &[(&str, &str, &str)] = &[
         "schemas/sce-observation-trace.v1.schema.json",
         "the_wire_schema_rejects_what_the_reader_does_not_accept",
         "sce-build/src/scenario_judge.rs",
+    ),
+    (
+        "schemas/sce-transition-table.v1.schema.json",
+        "the_wire_schema_rejects_what_the_producer_does_not_write",
+        "sce-build/src/transition_table.rs",
     ),
 ];
 
@@ -381,6 +392,15 @@ const ATTRIBUTION_EXEMPT: &[(&str, &str, &str)] = &[
          names in `engine`. What ties a trace to what it was taken against is \
          the digest of the scenario set in `scenario_set.sha256`.",
         "observation trace deliberately does",
+    ),
+    (
+        "schemas/sce-transition-table.v1.schema.json",
+        "the rows carry no stamp: the export is diffed across commits, so a \
+         commit on every line would change every line of it. The stamp rides \
+         on the one `header` record, which `--header` adds and which is what \
+         ties an export to a machine; its `source_hash` identifies the \
+         inputs.",
+        "transition table deliberately does",
     ),
 ];
 
