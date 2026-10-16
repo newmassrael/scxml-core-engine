@@ -17,7 +17,11 @@
   The registers are an observed-remove set of the standard `orset_*` algorithms: a
   write is an add of the register's element with the write's dot as its tag, writing
   over a value is a tombstone of the value's tag, and what a field holds is the adds no
-  tombstone names (orset_live). The element is `id * 65536 + field`: a to-do is a uint32
+  tombstone names. A copy holds exactly those: a tombstone takes the add it names out of
+  `adds` as it arrives (orset_live of the add and the tombstone), and an add that a
+  tombstone already names is not taken in. So `adds` is the set's value, and a write is
+  judged against the tombstones and the adds one pass each, never against every pair.
+  The element is `id * 65536 + field`: a to-do is a uint32
   and a field a uint16 (todo_write), so the pair is one uint64 below 2^48 and no two
   registers share one, whatever the numbers; it is below 2^53 as well, which the
   Interpreter's integers hold exactly, so no lane meets a limit another does not.
@@ -74,7 +78,7 @@
   event_settled). When both answers are the hub's own, every copy holds the same up to
   the instant and none will add to it, whatever order the messages came in and however
   often: the hub tells every copy to forget (`todo.floor`), and each forgets the
-  tombstones it held when it answered, with the adds they name. From then on a write
+  tombstones it held when it answered. From then on a write
   stamped at or before the floor is not taken in: what a copy does not hold of it, it
   forgot. A copy whose answer was not the hub's, restarted from an old save, is told the
   floor and finds that it never held what the others settled: it forgets nothing and
@@ -104,7 +108,6 @@
   <sce:import kind="algorithm" src="sce:std/merge/hlc_receive.scxml" as="HlcReceive"/>
   <sce:import kind="algorithm" src="sce:std/merge/orset_union.scxml" as="OrsetUnion"/>
   <sce:import kind="algorithm" src="sce:std/merge/orset_live.scxml" as="OrsetLive"/>
-  <sce:import kind="algorithm" src="sce:std/merge/orset_observed.scxml" as="OrsetObserved"/>
   <sce:import kind="algorithm" src="sce:std/merge/mv_value_holds.scxml" as="MvValueHolds"/>
   <sce:import kind="algorithm" src="sce:std/merge/mv_value_keep.scxml" as="MvValueKeep"/>
   <sce:import kind="algorithm" src="sce:std/merge/mv_value_drop.scxml" as="MvValueDrop"/>
@@ -138,8 +141,6 @@
     </data>
     <data id="adds" sce:type="list&lt;record:Entry&gt;" sce:capacity="1024" sce:direction="out"/>
     <data id="tombstones" sce:type="list&lt;record:Entry&gt;" sce:capacity="1024" sce:direction="out"/>
-    <data id="live" sce:type="list&lt;record:Entry&gt;" sce:capacity="1024"/>
-    <data id="observed" sce:type="list&lt;record:Entry&gt;" sce:capacity="1024"/>
     <data id="one" sce:type="list&lt;record:Entry&gt;" sce:capacity="1024"/>
     <data id="stable" sce:type="list&lt;record:Entry&gt;" sce:capacity="1024"/>
     <data id="entry" sce:type="record:Entry">
@@ -278,27 +279,27 @@
            whole, with the clock where it was and nothing sent. -->
       <assign location="held.text" expr="_event.data.text"/>
       <assign location="clock" expr="HlcSend(clock, _event.data.now, node)"/>
-      <assign location="live" expr="OrsetLive(adds, tombstones)"/>
       <assign location="entry.element" expr="_event.data.id"/>
       <assign location="entry.element" expr="entry.element * 65536 + _event.data.field"/>
-      <assign location="observed" expr="OrsetObserved(live, entry.element)"/>
-      <foreach array="observed" item="o">
-        <send target="#_internal" event="todo.supersede">
-          <param name="id" expr="_event.data.id"/>
-          <param name="field" expr="_event.data.field"/>
-          <param name="wallTime" expr="o.wallTime"/>
-          <param name="counter" expr="o.counter"/>
-          <param name="nodeId" expr="o.nodeId"/>
-          <param name="by" expr="node"/>
-        </send>
-        <send target="#server" event="todo.supersede">
-          <param name="id" expr="_event.data.id"/>
-          <param name="field" expr="_event.data.field"/>
-          <param name="wallTime" expr="o.wallTime"/>
-          <param name="counter" expr="o.counter"/>
-          <param name="nodeId" expr="o.nodeId"/>
-          <param name="by" expr="node"/>
-        </send>
+      <foreach array="adds" item="o">
+        <if cond="o.element === entry.element">
+          <send target="#_internal" event="todo.supersede">
+            <param name="id" expr="_event.data.id"/>
+            <param name="field" expr="_event.data.field"/>
+            <param name="wallTime" expr="o.wallTime"/>
+            <param name="counter" expr="o.counter"/>
+            <param name="nodeId" expr="o.nodeId"/>
+            <param name="by" expr="node"/>
+          </send>
+          <send target="#server" event="todo.supersede">
+            <param name="id" expr="_event.data.id"/>
+            <param name="field" expr="_event.data.field"/>
+            <param name="wallTime" expr="o.wallTime"/>
+            <param name="counter" expr="o.counter"/>
+            <param name="nodeId" expr="o.nodeId"/>
+            <param name="by" expr="node"/>
+          </send>
+        </if>
       </foreach>
       <send target="#_internal" event="todo.write">
         <param name="id" expr="_event.data.id"/>
@@ -355,20 +356,20 @@
       <assign location="entry.wallTime" expr="_event.data.wallTime"/>
       <assign location="entry.counter" expr="_event.data.counter"/>
       <assign location="entry.nodeId" expr="_event.data.nodeId"/>
-      <sce:clear target="one"/>
-      <sce:append target="one" expr="entry"/>
-      <assign location="adds" expr="OrsetUnion(adds, one)"/>
-
       <!-- Whether the write is live: no tombstone names it. One a person wrote over
-           before it arrived is not taken in. And whether its value is already held,
-           which a write that arrives twice is. -->
-      <assign location="live" expr="OrsetLive(adds, tombstones)"/>
-      <assign location="isLive" expr="false"/>
-      <foreach array="live" item="l">
-        <if cond="l.element === entry.element &amp;&amp; l.wallTime === entry.wallTime &amp;&amp; l.counter === entry.counter &amp;&amp; l.nodeId === entry.nodeId">
-          <assign location="isLive" expr="true"/>
+           before it arrived is not taken in, and only a live one is added. And whether
+           its value is already held, which a write that arrives twice is. -->
+      <assign location="isLive" expr="true"/>
+      <foreach array="tombstones" item="t">
+        <if cond="t.element === entry.element &amp;&amp; t.wallTime === entry.wallTime &amp;&amp; t.counter === entry.counter &amp;&amp; t.nodeId === entry.nodeId">
+          <assign location="isLive" expr="false"/>
         </if>
       </foreach>
+      <if cond="isLive">
+        <sce:clear target="one"/>
+        <sce:append target="one" expr="entry"/>
+        <assign location="adds" expr="OrsetUnion(adds, one)"/>
+      </if>
       <assign location="held.id" expr="_event.data.id"/>
       <assign location="held.field" expr="_event.data.field"/>
       <assign location="held.value" expr="_event.data.value"/>
@@ -429,6 +430,9 @@
       <sce:clear target="one"/>
       <sce:append target="one" expr="entry"/>
       <assign location="tombstones" expr="OrsetUnion(tombstones, one)"/>
+      <!-- The add it names is no longer live: it leaves `adds` (a tombstone that is
+           not new leaves nothing to take out). -->
+      <assign location="adds" expr="OrsetLive(adds, one)"/>
 
       <!-- And whether the write it names is held, which is when its add leaves the
            digest as the tombstone enters it. -->
@@ -494,13 +498,13 @@
     </transition>
 
     <!-- The host's word that the changes up to an instant are settled everywhere: the
-         tombstones stamped at or before it go, with the adds they name, and leave the
-         digest as they entered it (the same hash, XORed again), so that the digest is
-         still the digest of what the copy holds, and a copy that is told the same instant
-         holds the same. A register's values are what no tombstone names, and are not
-         moved: the lists are what grows without it, and this is what lets a copy that is
-         written to for years hold only what is current (orset_live, the difference that
-         is how a set forgets). -->
+         tombstones stamped at or before it go, and leave the digest as they entered it
+         (the same hash, XORed again), so that the digest is still the digest of what the
+         copy holds, and a copy that is told the same instant holds the same. The adds
+         they named left `adds` when each tombstone arrived, and a register's values are
+         what no tombstone names, so neither is moved: the tombstones are what grows
+         without it, and this is what lets a copy that is written to for years hold only
+         what is current (orset_live, the difference that is how a set forgets). -->
     <transition event="todo.compact" type="internal">
       <sce:clear target="stable"/>
       <assign location="frozenFor" expr="-1"/>
@@ -511,7 +515,6 @@
           <assign location="digest" expr="MerkleInsert(digest, t.wallTime / 60000, mine)"/>
         </if>
       </foreach>
-      <assign location="adds" expr="OrsetLive(adds, stable)"/>
       <assign location="tombstones" expr="OrsetLive(tombstones, stable)"/>
       <if cond="_event.data.before &gt; floor">
         <assign location="floor" expr="_event.data.before"/>
@@ -641,7 +644,7 @@
 
     <!-- The hub's word that an instant is settled. A copy that held what the hub says
          every copy held (it answered, or it holds it now) forgets the tombstones it held
-         up to the instant, with the adds they name, and stamps nothing at or before the
+         up to the instant, and stamps nothing at or before the
          instant from here on. A copy that holds another thing is not one the hub asked:
          it forgets nothing, and says it is stale, for the host to start it again from
          what its peers hold, since the tombstones its peers forgot are the ones that
@@ -667,7 +670,6 @@
             <assign location="mine" expr="MerkleChangeHash(t, 1)"/>
             <assign location="digest" expr="MerkleInsert(digest, t.wallTime / 60000, mine)"/>
           </foreach>
-          <assign location="adds" expr="OrsetLive(adds, stable)"/>
           <assign location="tombstones" expr="OrsetLive(tombstones, stable)"/>
           <assign location="floor" expr="_event.data.before"/>
           <assign location="agreed" expr="_event.data.hash"/>

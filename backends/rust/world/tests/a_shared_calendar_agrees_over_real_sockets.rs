@@ -345,7 +345,7 @@ fn three_processes_over_real_sockets_agree_and_settle() {
         room.an_afternoon(day);
     }
     let values = room.wait_agreed();
-    let adds = held(&mut room.server, "adds");
+    let tombstones = held(&mut room.server, "tombstones");
     let agendas = room.agendas(1);
     assert!(!agendas[0].as_array().expect("a list").is_empty());
     assert!(agendas.iter().all(|agenda| *agenda == agendas[0]));
@@ -366,8 +366,8 @@ fn three_processes_over_real_sockets_agree_and_settle() {
         assert_eq!(whole(&variables["refusals"]), 0);
     }
     assert!(
-        held(&mut room.server, "adds") < adds,
-        "the hub still holds the {adds} adds it held before it settled"
+        held(&mut room.server, "tombstones") < tombstones,
+        "the hub still holds the {tombstones} tombstones it held before it settled"
     );
     let after = room.wait_agreed();
     let sorted = |values: &Value| {

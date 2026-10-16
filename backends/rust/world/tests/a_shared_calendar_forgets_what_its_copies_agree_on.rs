@@ -126,7 +126,7 @@ fn copies_that_hold_the_same_settle_an_instant_by_themselves() {
     }
     let list = agreed_todos(&mut world);
     let shown = agendas(&mut world);
-    let adds = held(&mut world, "server", "adds");
+    let tombstones = held(&mut world, "server", "tombstones");
 
     let before = world.now_ms() - 1;
     settle(&mut world, before);
@@ -136,8 +136,8 @@ fn copies_that_hold_the_same_settle_an_instant_by_themselves() {
     assert_eq!(late(&mut world), [0; 3]);
     assert_eq!(refusals(&mut world), [0; 3]);
     assert!(
-        held(&mut world, "server", "adds") < adds,
-        "the hub still holds the {adds} adds it held before it was settled"
+        held(&mut world, "server", "tombstones") < tombstones,
+        "the hub still holds the {tombstones} tombstones it held before it was settled"
     );
     assert_eq!(agreed_todos(&mut world), list);
     assert_eq!(agendas(&mut world), shown);
@@ -196,12 +196,12 @@ fn a_copy_that_lacks_a_change_settles_nothing_until_it_is_repaired() {
         an_afternoon(&mut world, day);
     }
     restore_from(&mut world, "bob", saved);
-    let adds = held(&mut world, "server", "adds");
+    let tombstones = held(&mut world, "server", "tombstones");
 
     let before = world.now_ms() - 1;
     settle(&mut world, before);
     assert_eq!(floors(&mut world), [0; 3], "a copy forgot what one lacked");
-    assert_eq!(held(&mut world, "server", "adds"), adds);
+    assert_eq!(held(&mut world, "server", "tombstones"), tombstones);
     assert_eq!(stale(&mut world), [false; 3]);
 
     resync(&mut world, "bob");
@@ -209,7 +209,7 @@ fn a_copy_that_lacks_a_change_settles_nothing_until_it_is_repaired() {
     settle(&mut world, before);
     assert_eq!(floors(&mut world), [before; 3]);
     assert_eq!(stale(&mut world), [false; 3]);
-    assert!(held(&mut world, "server", "adds") < adds);
+    assert!(held(&mut world, "server", "tombstones") < tombstones);
     agreed_todos(&mut world);
 }
 

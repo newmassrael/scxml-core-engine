@@ -4,16 +4,16 @@
 // A shared schedule that is written to for longer than a copy has room for. A copy keeps,
 // for every field of every to-do, the values nobody has written over, and for the
 // changes themselves an observed-remove set: every write is an add, and a write written
-// over is a tombstone, and merging never drops either. Left alone, a copy that is written
-// to for long enough passes the bound of its lists (1024 entries) and refuses the next
-// write: the room a copy has is not the schedule it holds, it is every change it has ever
-// taken in.
+// over is a tombstone that takes its add out, and merging never drops a tombstone. Left
+// alone, a copy that is written to for long enough passes the bound of its lists (1024
+// entries) and refuses the next write: the room a copy has is not the schedule it holds,
+// it is every write it has ever seen written over.
 //
 // What lets a copy forget is the difference the observed-remove set already is
-// (`orset_live`): once every copy has taken in a tombstone, the tombstone and the add it
-// names can go and the set's value is the same. The host says so with `todo.compact`, an
-// instant up to which everything is settled everywhere, and each copy drops the tombstones
-// stamped at or before it with the adds they name, and takes them out of its digest.
+// (`orset_live`): once every copy has taken in a tombstone, the tombstone can go and the
+// set's value is the same. The host says so with `todo.compact`, an instant up to which
+// everything is settled everywhere, and each copy drops the tombstones stamped at or
+// before it, and takes them out of its digest.
 //
 // What is asked here is that a calendar written to for a year of afternoons, far past the
 // bound, never refuses a write when it is compacted now and then; that the copies still
@@ -80,8 +80,8 @@ fn without_compacting_a_copy_runs_out_of_room() {
         );
     }
     quiet(&mut world);
-    // Eight writes an afternoon, and every one is an add that stays: 200 afternoons are
-    // more than the 1024 entries the lists hold.
+    // Eight writes an afternoon, and every one writes over another and leaves a tombstone
+    // that stays: 200 afternoons are more than the 1024 entries the lists hold.
     for day in 0..200 {
         an_afternoon(&mut world, day);
     }
@@ -107,13 +107,13 @@ fn a_calendar_compacted_now_and_then_never_refuses_a_write() {
         );
     }
     quiet(&mut world);
-    let mut most_adds = 0;
+    let mut most_tombstones = 0;
     for day in 0..120 {
         an_afternoon(&mut world, day);
         if day % 10 == 9 {
             let before = world.now_ms() - 1;
             compact_everywhere(&mut world, before);
-            most_adds = most_adds.max(held(&mut world, "server", "adds"));
+            most_tombstones = most_tombstones.max(held(&mut world, "server", "tombstones"));
         }
     }
     assert_eq!(
@@ -122,8 +122,9 @@ fn a_calendar_compacted_now_and_then_never_refuses_a_write() {
         "a write was refused for want of room"
     );
     assert!(
-        most_adds < 200,
-        "after being compacted a copy holds {most_adds} adds, which is not what is current"
+        most_tombstones < 200,
+        "after being compacted a copy holds {most_tombstones} tombstones, which is not what \
+         is current"
     );
 
     // The copies agree on the list, and each agenda is the schedule's.
@@ -161,7 +162,7 @@ fn compacting_changes_no_value_a_register_holds() {
     quiet(&mut world);
 
     let before_list = agreed_todos(&mut world);
-    let before_adds = held(&mut world, "server", "adds");
+    let before_tombstones = held(&mut world, "server", "tombstones");
     let (from, to) = (instant(2026, 3, 1, 0, 0), instant(2026, 6, 1, 0, 0));
     let agendas: Vec<_> = (1..=3)
         .map(|id| agreed_agenda(&mut world, id, from, to))
@@ -176,8 +177,8 @@ fn compacting_changes_no_value_a_register_holds() {
         .collect();
     assert_eq!(agendas_after, agendas);
     assert!(
-        held(&mut world, "server", "adds") < before_adds,
-        "the adds of values that were written over are gone"
+        held(&mut world, "server", "tombstones") < before_tombstones,
+        "the tombstones of values that were written over are gone"
     );
     assert_eq!(
         before_list[&(2, START)].live.len(),
