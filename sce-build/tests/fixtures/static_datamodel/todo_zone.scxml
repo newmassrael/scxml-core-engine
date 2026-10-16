@@ -1,10 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  One transition of the time zone a copy of the to-do list reads wall-clock times in
-  (todo_peer): the instant it takes effect (`start`, seconds since 1970-01-01T00:00Z) and
-  the UTC offset in force from it until the next transition (`offset`, seconds). The host
-  gives them in order of `start`, once each, after a todo.zone_clear; a table is the
-  host's, as the operating system's rules are, and is not part of what the people share.
+  One transition of a time zone a copy of the to-do list reads wall-clock times in
+  (todo_peer): which of the host's zones it belongs to (`zone`, 1 to 4), the instant it
+  takes effect (`start`, seconds since 1970-01-01T00:00Z) and the UTC offset in force from
+  it until the next transition (`offset`, seconds). The host gives them in order of
+  `start`, once each, after a todo.zone_clear; a table is the host's, as the operating
+  system's rules are, and is not part of what the people share. An event names its zone by
+  the number in field 15; a number that has no table, or 0, reads in UTC.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -13,6 +15,7 @@
        name="todo_zone"
        sce:event-name="todo.zone">
   <datamodel>
+    <data id="zone" sce:type="uint8" sce:direction="in"/>
     <data id="start" sce:type="int64" sce:direction="in"/>
     <data id="offset" sce:type="int32" sce:direction="in"/>
   </datamodel>

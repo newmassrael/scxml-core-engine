@@ -6,11 +6,12 @@
 // back; a repetition can end (`until`); and a day can be left out of it, which two people
 // can do at once without one undoing the other.
 //
-// The time zone is the host's, as the operating system's rules are: each copy is told its
-// table of transitions (`todo.zone`) and the schedule's `start` is a wall-clock reading in
-// that zone. The copy reads the schedule in the wall clock and turns each reading into an
-// instant by the standard `utc_from_local`, so a reading the clock skipped and one it
-// repeated are resolved by one rule on every backend (RFC 5545 §3.3.5).
+// The time zones are the host's, as the operating system's rules are: each copy is told its
+// tables of transitions (`todo.zone`), up to four, and an event names the one its `start`
+// is a wall-clock reading in (field 15). The copy reads the schedule in the wall clock and
+// turns each reading into an instant by the standard `utc_from_local`, so a reading the
+// clock skipped and one it repeated are resolved by one rule on every backend (RFC 5545
+// §3.3.5).
 //
 // Each agenda is held to the expansion written a second time in `common/calendar.rs`, which
 // reads the zone's table by another construction.
@@ -29,24 +30,30 @@ fn quiet(world: &mut sce_rust_world::World) {
     assert_eq!(world.run_until_quiet(10_000), Outcome::Quiet);
 }
 
+fn zones_of(pairs: &[(u64, Zone)]) -> Zones {
+    pairs.iter().cloned().collect()
+}
+
 /// 09:30 on Mondays, in New York, keeps being 09:30 when the clock is set forward on
 /// 8 March: the instant moves an hour earlier in UTC and the wall clock does not.
 #[test]
 fn a_weekly_meeting_stays_at_its_wall_clock_across_the_clock_going_forward() {
     let mut world = todo_world(1, 20);
-    let zone = new_york();
-    set_zone_everywhere(&mut world, &zone);
+    let zones = zones_of(&[(1, new_york())]);
+    set_zone_everywhere(&mut world, 1, &zones[&1]);
     schedule_todo(
         &mut world,
         "alice",
         1,
-        &Plan::once(instant(2026, 3, 2, 9, 30), HOUR_MS).repeating(WEEKLY, 1),
+        &Plan::once(instant(2026, 3, 2, 9, 30), HOUR_MS)
+            .repeating(WEEKLY, 1)
+            .in_zone(1),
     );
     quiet(&mut world);
 
     let agenda = agreed_agenda_in(
         &mut world,
-        Some(&zone),
+        &zones,
         1,
         instant(2026, 3, 1, 0, 0),
         instant(2026, 3, 20, 0, 0),
@@ -69,19 +76,21 @@ fn a_weekly_meeting_stays_at_its_wall_clock_across_the_clock_going_forward() {
 #[test]
 fn a_reading_the_clock_skipped_is_read_with_the_offset_before_the_change() {
     let mut world = todo_world(1, 20);
-    let zone = new_york();
-    set_zone_everywhere(&mut world, &zone);
+    let zones = zones_of(&[(1, new_york())]);
+    set_zone_everywhere(&mut world, 1, &zones[&1]);
     schedule_todo(
         &mut world,
         "bob",
         2,
-        &Plan::once(instant(2026, 3, 7, 2, 30), 0).repeating(DAILY, 1),
+        &Plan::once(instant(2026, 3, 7, 2, 30), 0)
+            .repeating(DAILY, 1)
+            .in_zone(1),
     );
     quiet(&mut world);
 
     let agenda = agreed_agenda_in(
         &mut world,
-        Some(&zone),
+        &zones,
         2,
         instant(2026, 3, 7, 0, 0),
         instant(2026, 3, 10, 0, 0),
@@ -101,19 +110,21 @@ fn a_reading_the_clock_skipped_is_read_with_the_offset_before_the_change() {
 #[test]
 fn a_reading_the_clock_repeated_is_its_first_instant() {
     let mut world = todo_world(1, 20);
-    let zone = new_york();
-    set_zone_everywhere(&mut world, &zone);
+    let zones = zones_of(&[(1, new_york())]);
+    set_zone_everywhere(&mut world, 1, &zones[&1]);
     schedule_todo(
         &mut world,
         "alice",
         3,
-        &Plan::once(instant(2026, 10, 31, 1, 30), 0).repeating(DAILY, 1),
+        &Plan::once(instant(2026, 10, 31, 1, 30), 0)
+            .repeating(DAILY, 1)
+            .in_zone(1),
     );
     quiet(&mut world);
 
     let agenda = agreed_agenda_in(
         &mut world,
-        Some(&zone),
+        &zones,
         3,
         instant(2026, 10, 31, 0, 0),
         instant(2026, 11, 3, 0, 0),
@@ -133,20 +144,20 @@ fn a_reading_the_clock_repeated_is_its_first_instant() {
 #[test]
 fn a_zone_without_a_change_of_the_clock_shifts_every_occurrence_alike() {
     let mut world = todo_world(1, 20);
-    let zone = seoul();
-    set_zone_everywhere(&mut world, &zone);
-    schedule_todo(
-        &mut world,
-        "bob",
-        4,
-        &Plan::once(instant(2026, 6, 1, 8, 0), 30 * 60_000).repeating(DAILY, 1),
-    );
-    todo_set(&mut world, "bob", 4, COUNT, 3);
+    let zones = zones_of(&[(2, seoul())]);
+    set_zone_everywhere(&mut world, 2, &zones[&2]);
+    let plan = Plan {
+        count: 3,
+        ..Plan::once(instant(2026, 6, 1, 8, 0), 30 * 60_000)
+            .repeating(DAILY, 1)
+            .in_zone(2)
+    };
+    schedule_todo(&mut world, "bob", 4, &plan);
     quiet(&mut world);
 
     let agenda = agreed_agenda_in(
         &mut world,
-        Some(&zone),
+        &zones,
         4,
         instant(2026, 5, 31, 0, 0),
         instant(2026, 6, 30, 0, 0),
@@ -161,21 +172,66 @@ fn a_zone_without_a_change_of_the_clock_shifts_every_occurrence_alike() {
     );
 }
 
-/// The zone is each host's. Two copies told different zones read one wall-clock reading
-/// at different instants: an event is a reading in the zone of whoever shows it, and the
-/// people of one calendar are told one zone.
+/// One calendar, two zones: a person in New York and one in Seoul each have an event in
+/// their own zone, and each reading is the instant its own zone says.
+#[test]
+fn each_event_is_read_in_its_own_zone() {
+    let mut world = todo_world(1, 20);
+    let zones = zones_of(&[(1, new_york()), (2, seoul())]);
+    for (number, zone) in &zones {
+        set_zone_everywhere(&mut world, *number, zone);
+    }
+    schedule_todo(
+        &mut world,
+        "alice",
+        5,
+        &Plan::once(instant(2026, 4, 6, 9, 0), HOUR_MS).in_zone(1),
+    );
+    schedule_todo(
+        &mut world,
+        "bob",
+        6,
+        &Plan::once(instant(2026, 4, 6, 9, 0), HOUR_MS).in_zone(2),
+    );
+    schedule_todo(
+        &mut world,
+        "bob",
+        7,
+        &Plan::once(instant(2026, 4, 6, 9, 0), HOUR_MS),
+    );
+    quiet(&mut world);
+
+    let (from, to) = (instant(2026, 4, 1, 0, 0), instant(2026, 5, 1, 0, 0));
+    assert_eq!(
+        starts(&agreed_agenda_in(&mut world, &zones, 5, from, to)),
+        [instant(2026, 4, 6, 13, 0)]
+    );
+    assert_eq!(
+        starts(&agreed_agenda_in(&mut world, &zones, 6, from, to)),
+        [instant(2026, 4, 6, 0, 0)]
+    );
+    assert_eq!(
+        starts(&agreed_agenda_in(&mut world, &zones, 7, from, to)),
+        [instant(2026, 4, 6, 9, 0)],
+        "an event with no zone reads in UTC"
+    );
+}
+
+/// The zone is each host's. Two copies told different tables under one number read one
+/// wall-clock reading at different instants: an event is a reading in the zone of whoever
+/// shows it, and the people of one calendar are told one zone.
 #[test]
 fn copies_told_different_zones_show_one_reading_at_different_instants() {
     let mut world = todo_world(1, 20);
-    set_zone(&mut world, "alice", &seoul());
-    set_zone(&mut world, "bob", &new_york());
-    set_zone(&mut world, "server", &new_york());
+    set_zone(&mut world, "alice", 1, &seoul());
+    set_zone(&mut world, "bob", 1, &new_york());
+    set_zone(&mut world, "server", 1, &new_york());
     quiet(&mut world);
     schedule_todo(
         &mut world,
         "alice",
         5,
-        &Plan::once(instant(2026, 4, 6, 9, 0), HOUR_MS),
+        &Plan::once(instant(2026, 4, 6, 9, 0), HOUR_MS).in_zone(1),
     );
     quiet(&mut world);
 
@@ -184,6 +240,35 @@ fn copies_told_different_zones_show_one_reading_at_different_instants() {
     let in_new_york = agenda_of(&mut world, "bob", 5, from, to);
     assert_eq!(starts(&in_seoul), [instant(2026, 4, 6, 0, 0)]);
     assert_eq!(starts(&in_new_york), [instant(2026, 4, 6, 13, 0)]);
+}
+
+/// A zone the copy is not told reads in UTC, and clearing the zones puts it back.
+#[test]
+fn clearing_the_zones_puts_every_event_back_in_utc() {
+    let mut world = todo_world(1, 20);
+    let zones = zones_of(&[(1, new_york())]);
+    set_zone_everywhere(&mut world, 1, &zones[&1]);
+    schedule_todo(
+        &mut world,
+        "alice",
+        5,
+        &Plan::once(instant(2026, 4, 6, 9, 0), HOUR_MS).in_zone(1),
+    );
+    quiet(&mut world);
+    let (from, to) = (instant(2026, 4, 1, 0, 0), instant(2026, 5, 1, 0, 0));
+    assert_eq!(
+        starts(&agreed_agenda_in(&mut world, &zones, 5, from, to)),
+        [instant(2026, 4, 6, 13, 0)]
+    );
+
+    for who in ["alice", "bob", "server"] {
+        world.raise(who, "todo.zone_clear", "");
+    }
+    quiet(&mut world);
+    assert_eq!(
+        starts(&agreed_agenda_in(&mut world, &Zones::new(), 5, from, to)),
+        [instant(2026, 4, 6, 9, 0)]
+    );
 }
 
 /// A repetition ends at a reading, inclusive; the days after it are not occurrences.
@@ -324,11 +409,11 @@ fn a_day_left_out_and_put_back_at_once_is_a_conflict_until_someone_settles_it() 
 /// the schedule says, in instants.
 #[test]
 fn a_random_month_in_new_york_ends_with_one_agenda() {
-    let zone = new_york();
+    let zones = zones_of(&[(1, new_york())]);
     let mut shown = 0;
     for seed in 1..=8u64 {
         let mut world = todo_world(seed, 5);
-        set_zone_everywhere(&mut world, &zone);
+        set_zone_everywhere(&mut world, 1, &zones[&1]);
         let mut rng = Rng::new(seed);
         assert_eq!(world.run_until_quiet(1), Outcome::Quiet, "seed {seed}");
         world.jitter("alice", "server", 40);
@@ -340,8 +425,9 @@ fn a_random_month_in_new_york_ends_with_one_agenda() {
         // Three events that have a schedule to begin with, each repeating another way, so
         // that the changes below act on something that shows occurrences.
         for (id, repeat) in [(1, DAILY), (2, WEEKLY), (3, MONTHLY)] {
-            let plan =
-                Plan::once(instant(2026, 3, 1 + id as i64, 9, 30), HOUR_MS).repeating(repeat, 1);
+            let plan = Plan::once(instant(2026, 3, 1 + id as i64, 9, 30), HOUR_MS)
+                .repeating(repeat, 1)
+                .in_zone(1);
             schedule_todo(&mut world, "alice", id, &plan);
         }
         assert_eq!(world.run_until_quiet(10_000), Outcome::Quiet, "seed {seed}");
@@ -355,7 +441,7 @@ fn a_random_month_in_new_york_ends_with_one_agenda() {
                     (START, instant(2026, 3, day, rng.below(24) as i64, 30))
                 }
                 1 => (LENGTH, [0, HOUR_MS, 90 * 60_000][rng.below(3) as usize]),
-                2 => (REPEAT, rng.below(4) as i64),
+                2 => (REPEAT, rng.below(5) as i64),
                 3 => (EVERY, rng.below(3) as i64),
                 4 => (DAYS, rng.below(128) as i64),
                 5 => (COUNT, [0, 0, 0, 5, 12][rng.below(5) as usize]),
@@ -405,7 +491,7 @@ fn a_random_month_in_new_york_ends_with_one_agenda() {
         }
         let (from, to) = (instant(2026, 3, 1, 0, 0), instant(2026, 4, 10, 0, 0));
         for id in 1..=3 {
-            shown += agreed_agenda_in(&mut world, Some(&zone), id, from, to).len();
+            shown += agreed_agenda_in(&mut world, &zones, id, from, to).len();
         }
         assert!(world.host_errors().is_empty(), "seed {seed}");
     }

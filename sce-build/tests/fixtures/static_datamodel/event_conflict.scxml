@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Whether two people changed a field of one to-do's schedule at once in a copy of the to-do
+  list (todo_peer), and no one has chosen between them: some field of the schedule (the
+  removal, the zone, and the fields of event_agenda) holds more than one value. The values
+  a field holds are the writes nobody has written over, so a field with two is one that two
+  people wrote without either having seen the other's. A day left out of a repetition is a
+  field of its own, and event_agenda says of it separately.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm"
+       name="event_conflict"
+       version="1.0">
+  <sce:import kind="event-schema" src="sce:std/merge/mv_value.scxml" as="Value"/>
+  <sce:signature>
+    <sce:param name="values" type="list&lt;record:Value&gt;"/>
+    <sce:param name="id" type="uint64"/>
+    <sce:return type="bool"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="twice" type="bool" init="false"/>
+    <sce:foreach item="a" in="values">
+      <sce:if cond="a.id === id &amp;&amp; (a.field === 9 || (a.field &gt;= 15 &amp;&amp; a.field &lt;= 44))">
+        <sce:foreach item="b" in="values">
+          <sce:if cond="b.id === id &amp;&amp; b.field === a.field &amp;&amp; (b.wallTime !== a.wallTime || b.counter !== a.counter || b.nodeId !== a.nodeId)">
+            <sce:assign target="twice" expr="true"/>
+          </sce:if>
+        </sce:foreach>
+      </sce:if>
+    </sce:foreach>
+    <sce:return expr="twice"/>
+  </sce:body>
+</scxml>

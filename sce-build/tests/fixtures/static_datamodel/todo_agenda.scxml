@@ -2,8 +2,11 @@
 <!--
   The host's request that a copy of the to-do list show what is scheduled in a window
   (todo_peer): the to-do's `id`, and the window as two instants in milliseconds since
-  1970-01-01 UTC, `windowStart` inclusive and `windowEnd` exclusive. What the copy shows
-  is its `agenda`, one record for each occurrence of the to-do that overlaps the window.
+  1970-01-01 UTC, `windowStart` inclusive and `windowEnd` exclusive, and `skip`, how many
+  of the to-do's occurrences, counted from its first, come before the first the host wants
+  (0 for the first page; the `agendaNext` of the page before for the next). What the copy
+  shows is its `agenda`, at most 64 occurrences of the to-do that overlap the window, and
+  `agendaNext`, where the next page begins, or 0 when there is none.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -15,5 +18,6 @@
     <data id="id" sce:type="uint32" sce:direction="in"/>
     <data id="windowStart" sce:type="int64" sce:direction="in"/>
     <data id="windowEnd" sce:type="int64" sce:direction="in"/>
+    <data id="skip" sce:type="uint32" sce:direction="in"/>
   </datamodel>
 </scxml>

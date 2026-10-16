@@ -28,8 +28,9 @@ mod common;
 use std::path::PathBuf;
 
 use common::calendar::{
-    agreed_agenda, agreed_agenda_in, day_number, instant, leave_out, new_york, schedule_todo,
-    set_zone_everywhere, Plan, DAILY, HOUR_MS, MONTHLY, START, UNTIL, WEEKLY,
+    agreed_agenda, agreed_agenda_in, agreed_page, day_number, instant, leave_out, new_york,
+    schedule_todo, seoul, set_zone_everywhere, Plan, Zones, DAILY, FRI, HOUR_MS, MON, MONTHLY,
+    START, SUN, THU, TUE, UNTIL, WED, WEEKLY, YEARLY,
 };
 use common::resync::{MINUTE, OLD_LIMIT_MINUTES};
 use common::*;
@@ -47,6 +48,7 @@ const TODO_PUBLISHED: &[&str] = &[
     "digest",
     "refusals",
     "agenda",
+    "agendaNext",
 ];
 
 /// The variables a copy of the presence list publishes.
@@ -257,21 +259,15 @@ fn todo_afternoon() -> World {
         assert_eq!(world.run_until_quiet(60_000), Outcome::Quiet);
     }
 
-    // Events: to-dos with a start, a length and a repetition. A weekly meeting on Monday
-    // and Wednesday, a monthly one on the 31st, and one that alice and bob move at the
-    // same moment; each copy is then asked what is scheduled in a window, and the agenda
-    // it shows is a step of its record like any other.
-    let weekly = Plan {
-        days: (1 << 1) | (1 << 3),
-        ..Plan::once(instant(2026, 1, 5, 10, 0), HOUR_MS).repeating(WEEKLY, 1)
-    };
-    schedule_todo(&mut world, "alice", 20, &weekly);
-    schedule_todo(
-        &mut world,
-        "bob",
-        21,
-        &Plan::once(instant(2026, 1, 31, 9, 0), 0).repeating(MONTHLY, 1),
-    );
+    // Events: to-dos with a start, a length and a repetition, one that alice and bob move
+    // at the same moment; each copy is then asked what is scheduled in a window, and the
+    // agenda it shows is a step of its record like any other. A copy holds 128 values
+    // (mv_value_keep), a schedule a handful each, so this afternoon schedules a few events
+    // and no copy refuses a write for want of room: it is checked at the end.
+    let refused_before: Vec<Value> = ["alice", "bob", "server"]
+        .iter()
+        .map(|who| todo_variables_of(&mut world, who)["refusals"].clone())
+        .collect();
     schedule_todo(
         &mut world,
         "alice",
@@ -282,30 +278,44 @@ fn todo_afternoon() -> World {
     todo_set(&mut world, "alice", 22, START, instant(2026, 3, 3, 9, 0));
     todo_set(&mut world, "bob", 22, START, instant(2026, 3, 4, 14, 0));
     assert_eq!(world.run_until_quiet(60_000), Outcome::Quiet);
-    for (id, from, to) in [
-        (20, instant(2026, 1, 5, 0, 0), instant(2026, 1, 19, 0, 0)),
-        (21, instant(2026, 1, 1, 0, 0), instant(2026, 5, 1, 0, 0)),
-        (22, instant(2026, 3, 1, 0, 0), instant(2026, 4, 1, 0, 0)),
-    ] {
-        agreed_agenda(&mut world, id, from, to);
-    }
+    agreed_agenda(
+        &mut world,
+        22,
+        instant(2026, 3, 1, 0, 0),
+        instant(2026, 4, 1, 0, 0),
+    );
 
     // The same in a time zone: every copy's host tells its copy New York's transitions,
     // and a weekly meeting at 09:30 keeps its wall clock when the clock is set forward;
     // a daily one at 02:30 meets the skipped hour and one at 01:30 the repeated one; a
     // repetition ends at a reading, and a day is left out by one person while another
     // leaves out a second day.
-    let zone = new_york();
-    set_zone_everywhere(&mut world, &zone);
-    let weekly = Plan::once(instant(2026, 3, 2, 9, 30), HOUR_MS).repeating(WEEKLY, 1);
+    let mut zones = Zones::new();
+    zones.insert(1, new_york());
+    zones.insert(2, seoul());
+    for (number, zone) in &zones {
+        set_zone_everywhere(&mut world, *number, zone);
+    }
+    let weekly = Plan::once(instant(2026, 3, 2, 9, 30), HOUR_MS)
+        .repeating(WEEKLY, 1)
+        .in_zone(1);
     schedule_todo(&mut world, "alice", 23, &weekly);
-    let skipped = Plan::once(instant(2026, 3, 7, 2, 30), 0).repeating(DAILY, 1);
+    let skipped = Plan::once(instant(2026, 3, 7, 2, 30), 0)
+        .repeating(DAILY, 1)
+        .in_zone(1);
     schedule_todo(&mut world, "bob", 24, &skipped);
-    let repeated = Plan::once(instant(2026, 10, 31, 1, 30), 0).repeating(DAILY, 1);
+    let repeated = Plan::once(instant(2026, 10, 31, 1, 30), 0)
+        .repeating(DAILY, 1)
+        .in_zone(1);
     schedule_todo(&mut world, "alice", 25, &repeated);
     let ending = Plan::once(instant(2026, 1, 1, 8, 0), HOUR_MS).repeating(DAILY, 1);
     schedule_todo(&mut world, "bob", 26, &ending);
     todo_set(&mut world, "bob", 26, UNTIL, instant(2026, 1, 4, 8, 0));
+    // One calendar, two zones: the same reading at two instants, by the event's own zone.
+    let seoul_daily = Plan::once(instant(2026, 3, 7, 9, 0), HOUR_MS)
+        .repeating(DAILY, 1)
+        .in_zone(2);
+    schedule_todo(&mut world, "alice", 27, &seoul_daily);
     assert_eq!(world.run_until_quiet(60_000), Outcome::Quiet);
     leave_out(&mut world, "alice", 26, day_number(2026, 1, 2), true);
     leave_out(&mut world, "bob", 26, day_number(2026, 1, 3), true);
@@ -315,9 +325,88 @@ fn todo_afternoon() -> World {
         (24, instant(2026, 3, 7, 0, 0), instant(2026, 3, 10, 0, 0)),
         (25, instant(2026, 10, 31, 0, 0), instant(2026, 11, 3, 0, 0)),
         (26, instant(2026, 1, 1, 0, 0), instant(2026, 2, 1, 0, 0)),
+        (27, instant(2026, 3, 6, 0, 0), instant(2026, 3, 10, 0, 0)),
     ] {
-        agreed_agenda_in(&mut world, Some(&zone), id, from, to);
+        agreed_agenda_in(&mut world, &zones, id, from, to);
     }
+
+    // The rules of RFC 5545 §3.3.10 that repeat by more than a step: a Thanksgiving
+    // (the fourth Thursday of November), the last weekday of each month (BYSETPOS -1), the
+    // last Friday, the 15th and the last day, ISO week 20's Monday, the days of the year a
+    // list names, and RFC 5545's own example of WKST changing a fortnightly repetition.
+    let none = Zones::new();
+    let thanksgiving = Plan::once(instant(2026, 1, 1, 12, 0), HOUR_MS)
+        .repeating(YEARLY, 1)
+        .in_months(&[11])
+        .on_ordinals(&[(4, THU)]);
+    schedule_todo(&mut world, "alice", 30, &thanksgiving);
+    let last_weekday = Plan::once(instant(2026, 1, 1, 17, 0), 0)
+        .repeating(MONTHLY, 1)
+        .on_weekdays(&[MON, TUE, WED, THU, FRI])
+        .at_set_positions(&[-1]);
+    schedule_todo(&mut world, "bob", 31, &last_weekday);
+    let last_friday = Plan::once(instant(2026, 1, 1, 18, 0), 0)
+        .repeating(MONTHLY, 1)
+        .on_ordinals(&[(-1, FRI)]);
+    schedule_todo(&mut world, "alice", 32, &last_friday);
+    let payday = Plan::once(instant(2026, 1, 1, 9, 0), 0)
+        .repeating(MONTHLY, 1)
+        .on_month_days(&[15, -1]);
+    schedule_todo(&mut world, "bob", 33, &payday);
+    let week_twenty = Plan::once(instant(2026, 1, 1, 7, 0), 0)
+        .repeating(YEARLY, 1)
+        .in_weeks(&[20])
+        .on_weekdays(&[MON]);
+    schedule_todo(&mut world, "alice", 34, &week_twenty);
+    let year_days = Plan::once(instant(2026, 1, 1, 6, 0), 0)
+        .repeating(YEARLY, 1)
+        .on_year_days(&[1, 100, -1]);
+    schedule_todo(&mut world, "bob", 35, &year_days);
+    let fortnight = Plan {
+        count: 4,
+        ..Plan::once(instant(1997, 8, 5, 9, 0), 0)
+            .repeating(WEEKLY, 2)
+            .on_weekdays(&[TUE, SUN])
+    };
+    schedule_todo(&mut world, "alice", 36, &fortnight);
+    schedule_todo(
+        &mut world,
+        "bob",
+        37,
+        &Plan {
+            count: 4,
+            ..fortnight.week_begins_on(SUN)
+        },
+    );
+    // A page of an agenda that is full says where the next begins.
+    let every_day = Plan::once(instant(2026, 1, 1, 0, 0), 0).repeating(DAILY, 1);
+    schedule_todo(&mut world, "alice", 38, &every_day);
+    assert_eq!(world.run_until_quiet(60_000), Outcome::Quiet);
+    for (id, from, to) in [
+        (30, instant(2026, 1, 1, 0, 0), instant(2029, 1, 1, 0, 0)),
+        (31, instant(2026, 1, 1, 0, 0), instant(2026, 7, 1, 0, 0)),
+        (32, instant(2026, 1, 1, 0, 0), instant(2026, 7, 1, 0, 0)),
+        (33, instant(2026, 1, 1, 0, 0), instant(2026, 5, 1, 0, 0)),
+        (34, instant(2026, 1, 1, 0, 0), instant(2029, 1, 1, 0, 0)),
+        (35, instant(2026, 1, 1, 0, 0), instant(2029, 1, 1, 0, 0)),
+        (36, instant(1997, 8, 1, 0, 0), instant(1997, 10, 1, 0, 0)),
+        (37, instant(1997, 8, 1, 0, 0), instant(1997, 10, 1, 0, 0)),
+    ] {
+        agreed_agenda_in(&mut world, &none, id, from, to);
+    }
+    let (from, to) = (instant(2026, 1, 1, 0, 0), instant(2026, 12, 1, 0, 0));
+    let first = agreed_page(&mut world, &none, 38, from, to, 0);
+    assert_eq!(first.items.len(), 64);
+    assert_eq!(first.next, 64);
+    agreed_page(&mut world, &none, 38, from, to, first.next);
+    let refused_after: Vec<Value> = ["alice", "bob", "server"]
+        .iter()
+        .map(|who| todo_variables_of(&mut world, who)["refusals"].clone())
+        .collect();
+    assert_eq!(
+        refused_after, refused_before,
+        "a copy refused a schedule it had no room for"
+    );
     world
 }
 

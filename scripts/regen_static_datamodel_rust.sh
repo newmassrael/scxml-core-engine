@@ -76,10 +76,11 @@ ALGORITHMS=(days_in_month day_run day_repeat ledger_add ledger_total ledger_amou
 # The records static_state_algorithm hands those algorithms and takes back: an
 # algorithm names one as `super::schema_<name>`, so it is generated beside them.
 SCHEMAS=(schema_entry schema_total)
-# The schedule todo_peer reads from the fields a to-do holds: the occurrence record, the
-# rule that orders two writes and the one that expands a repetition. Each is named by its
-# file, which a machine's import names as `super::<file>`.
-SCHEMAS+=(event_occurrence event_later event_agenda)
+# The schedule todo_peer reads from the fields a to-do holds: the occurrence and schedule
+# records, the rules that order two writes, read a field, tell a conflict, select a day
+# and expand a repetition. Each is named by its file, which a machine's import names as
+# `super::<file>`.
+SCHEMAS+=(event_occurrence event_schedule event_later event_latest event_conflict event_selects event_agenda)
 # The standard algorithms sync_client imports, by their library names; each
 # is generated beside the machines under its own name, as a local one is.
 STD_ALGORITHMS=(sync/sync_failure sync/sync_retry_at sync/sync_delete_outcome sync/sync_upload_outcome)
@@ -98,7 +99,7 @@ STD_ALGORITHMS+=(text/text_slot text/text_slot_latest text/text_slot_retitled te
 # The digest todo_peer keeps of the changes it holds.
 STD_ALGORITHMS+=(merge/merkle_node merge/merkle_insert merge/merkle_change_hash)
 # The time zone todo_peer turns its schedule's wall-clock readings into instants by.
-STD_ALGORITHMS+=(time/utc_offset_at time/utc_from_local)
+STD_ALGORITHMS+=(time/utc_from_local)
 # What the sheet shows of its cells: the formulas settled and the values sorted.
 STD_ALGORITHMS+=(merge/sheet_value merge/sheet_shown merge/sheet_apply merge/sheet_settle merge/sheet_show)
 

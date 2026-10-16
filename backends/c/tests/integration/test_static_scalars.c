@@ -2243,6 +2243,7 @@ STATIC_SCENARIO(static_text_record, text_record_states, text_record_variables, N
     E(nodeId, wide_digits)
 VARIABLE_READER(todo_peer, hub)
 VARIABLE_READER(todo_peer, refusals)
+VARIABLE_READER(todo_peer, agendaNext)
 
 static const char *todo_peer_text_text(sce_static_string_32_t text) {
     static char copy[sizeof(text.data)];
@@ -2271,6 +2272,7 @@ static const name_value_t todo_peer_states[] = {
 static const variable_t todo_peer_variables[] = {
     {"hub", todo_peer_read_hub},
     {"refusals", todo_peer_read_refusals},
+    {"agendaNext", todo_peer_read_agendaNext},
 };
 static const record_variable_t todo_peer_records[] = {RECORD_ROW(todo_peer, clock),
                                                       RECORD_LIST_ROW(todo_peer, adds),

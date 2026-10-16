@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Whether the repetition of a schedule selects a day (event_agenda): `d` is a day count
+  since 1970-01-01, `startDay` the day the schedule starts on, `s` the schedule. The rules
+  are those of RFC 5545 §3.3.10 as event_agenda states them: BYMONTH limits, or expands
+  under YEARLY; BYMONTHDAY, BYDAY, BYYEARDAY and BYWEEKNO select days of the period, and
+  where more than one is given a day has to be in all of them; with none given the day the
+  schedule starts on is the one, by its weekday under WEEKLY, its day of the month under
+  MONTHLY (a shorter month takes its last day) and its month and day under YEARLY. Which
+  period the day is in, and which of the days of it BYSETPOS keeps, are event_agenda's.
+
+  A day is a day count, so no zone is read: the calendar is the one the readings are in.
+  The civil date of a day is found by Hinnant's civil_from_days, which takes a day count
+  from 1970 on; ISO 8601's week of a day by (day of the year - position in the week + 10)
+  / 7, the position counted from the week's first weekday (`wkst`), and a year's weeks by
+  the week of its 28th of December.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm"
+       name="event_selects"
+       version="1.0">
+  <sce:import kind="event-schema" src="event_schedule.scxml" as="Schedule"/>
+  <sce:signature>
+    <sce:param name="s" type="record:Schedule"/>
+    <sce:param name="d" type="int64"/>
+    <sce:param name="startDay" type="int64"/>
+    <sce:return type="bool" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="freq" type="int64" init="s.freq"/>
+    <sce:var name="ok" type="bool" init="true"/>
+    <sce:if cond="freq !== 0">
+      <!-- The start's weekday, month and day of the month. -->
+      <sce:var name="startWd" type="int64" init="(startDay % 7 + 11) % 7"/>
+      <sce:var name="z0" type="int64" init="startDay + 719468"/>
+      <sce:var name="era0" type="int64" init="z0 / 146097"/>
+      <sce:var name="doe0" type="int64" init="z0 - era0 * 146097"/>
+      <sce:var name="yoe0" type="int64" init="(doe0 - doe0 / 1460 + doe0 / 36524 - doe0 / 146096) / 365"/>
+      <sce:var name="doy0" type="int64" init="doe0 - (365 * yoe0 + yoe0 / 4 - yoe0 / 100)"/>
+      <sce:var name="mp0" type="int64" init="(5 * doy0 + 2) / 153"/>
+      <sce:var name="dom0" type="int64" init="doy0 - (153 * mp0 + 2) / 5 + 1"/>
+      <sce:var name="m0" type="int64" init="mp0 &lt; 10 ? mp0 + 3 : mp0 - 9"/>
+
+      <!-- The day itself. -->
+      <sce:var name="dz" type="int64" init="d + 719468"/>
+      <sce:var name="dera" type="int64" init="dz / 146097"/>
+      <sce:var name="ddoe" type="int64" init="dz - dera * 146097"/>
+      <sce:var name="dyoe" type="int64" init="(ddoe - ddoe / 1460 + ddoe / 36524 - ddoe / 146096) / 365"/>
+      <sce:var name="ddoy" type="int64" init="ddoe - (365 * dyoe + dyoe / 4 - dyoe / 100)"/>
+      <sce:var name="dmp" type="int64" init="(5 * ddoy + 2) / 153"/>
+      <sce:var name="dom" type="int64" init="ddoy - (153 * dmp + 2) / 5 + 1"/>
+      <sce:var name="mon" type="int64" init="dmp &lt; 10 ? dmp + 3 : dmp - 9"/>
+      <sce:var name="yr" type="int64" init="mon &lt;= 2 ? dyoe + dera * 400 + 1 : dyoe + dera * 400"/>
+      <sce:var name="leap" type="bool" init="(yr % 4 === 0 &amp;&amp; yr % 100 !== 0) || yr % 400 === 0"/>
+      <sce:var name="last" type="int64" init="mon === 2 ? (leap ? 29 : 28) : (mon === 4 || mon === 6 || mon === 9 || mon === 11 ? 30 : 31)"/>
+      <sce:var name="ylen" type="int64" init="leap ? 366 : 365"/>
+      <sce:var name="wd" type="int64" init="(d % 7 + 11) % 7"/>
+      <sce:var name="yday" type="int64" init="(367 * mon - 362) / 12 + (mon &lt;= 2 ? 0 : (leap ? -1 : -2)) + dom"/>
+
+      <sce:var name="hasMonth" type="bool" init="s.bymonth !== 0"/>
+      <sce:var name="hasMD" type="bool" init="(s.mdPos | s.mdNeg) !== 0"/>
+      <sce:var name="hasDay" type="bool" init="(s.days | s.dayA | s.dayB) !== 0"/>
+      <sce:var name="hasWN" type="bool" init="(s.wnPos | s.wnNeg) !== 0"/>
+      <sce:var name="hasYD" type="bool" init="(s.yd0 | s.yd1 | s.yd2 | s.yd3 | s.yd4 | s.yd5 | s.ydn0 | s.ydn1 | s.ydn2 | s.ydn3 | s.ydn4 | s.ydn5) !== 0"/>
+      <sce:var name="mdMatch" type="bool" init="((s.mdPos &gt;&gt; dom) &amp; 1) === 1 || ((s.mdNeg &gt;&gt; (last - dom + 1)) &amp; 1) === 1"/>
+      <sce:var name="plainDay" type="bool" init="((s.days &gt;&gt; wd) &amp; 1) === 1"/>
+      <!-- An ordinal counts in the month, or in the year under YEARLY with no BYMONTH. -->
+      <sce:var name="inMonth" type="bool" init="freq === 3 || hasMonth"/>
+      <sce:var name="ordPos" type="int64" init="inMonth ? (dom - 1) / 7 + 1 : (yday - 1) / 7 + 1"/>
+      <sce:var name="ordNeg" type="int64" init="inMonth ? (last - dom) / 7 + 1 : (ylen - yday) / 7 + 1"/>
+      <sce:var name="ordMask" type="int64" init="wd &lt; 4 ? s.dayA : s.dayB"/>
+      <sce:var name="ordBase" type="int64" init="(wd % 4) * 10"/>
+      <sce:var name="ordFirst" type="bool" init="ordPos &lt;= 5 &amp;&amp; ((ordMask &gt;&gt; (ordBase + ordPos - 1)) &amp; 1) === 1"/>
+      <sce:var name="ordLast" type="bool" init="ordNeg &lt;= 5 &amp;&amp; ((ordMask &gt;&gt; (ordBase + 4 + ordNeg)) &amp; 1) === 1"/>
+      <sce:var name="dayMatch" type="bool" init="plainDay || ordFirst || ordLast"/>
+      <sce:var name="clamped" type="bool" init="dom === (dom0 &lt; last ? dom0 : last)"/>
+
+      <sce:assign target="ok" expr="!hasMonth || ((s.bymonth &gt;&gt; mon) &amp; 1) === 1"/>
+      <sce:if cond="freq === 1">
+        <sce:if cond="hasMD">
+          <sce:assign target="ok" expr="ok &amp;&amp; mdMatch"/>
+        </sce:if>
+        <sce:if cond="hasDay">
+          <sce:assign target="ok" expr="ok &amp;&amp; plainDay"/>
+        </sce:if>
+      </sce:if>
+      <sce:if cond="freq === 2">
+        <sce:assign target="ok" expr="ok &amp;&amp; (hasDay ? plainDay : wd === startWd)"/>
+      </sce:if>
+      <sce:if cond="freq === 3">
+        <sce:if cond="hasMD">
+          <sce:assign target="ok" expr="ok &amp;&amp; mdMatch"/>
+        </sce:if>
+        <sce:if cond="hasDay">
+          <sce:assign target="ok" expr="ok &amp;&amp; dayMatch"/>
+        </sce:if>
+        <sce:if cond="!hasMD &amp;&amp; !hasDay">
+          <sce:assign target="ok" expr="ok &amp;&amp; clamped"/>
+        </sce:if>
+      </sce:if>
+      <sce:if cond="freq === 4">
+        <sce:if cond="hasWN">
+          <!-- The week of the day, counted as ISO 8601 does from the week's first weekday,
+               and the weeks the year has: the week with the 28th of December is its last. -->
+          <sce:var name="wkst" type="int64" init="s.wkst &gt;= 0 &amp;&amp; s.wkst &lt;= 6 ? s.wkst : 1"/>
+          <sce:var name="wi" type="int64" init="(wd - wkst + 7) % 7 + 1"/>
+          <sce:var name="wk" type="int64" init="(yday - wi + 10) / 7"/>
+          <sce:var name="wd28" type="int64" init="(wd + ylen - 3 - yday + 7) % 7"/>
+          <sce:var name="wi28" type="int64" init="(wd28 - wkst + 7) % 7 + 1"/>
+          <sce:var name="wks" type="int64" init="(ylen - 3 - wi28 + 10) / 7"/>
+          <sce:var name="wkOk" type="bool" init="wk &gt;= 1 &amp;&amp; wk &lt;= wks &amp;&amp; (((s.wnPos &gt;&gt; wk) &amp; 1) === 1 || ((s.wnNeg &gt;&gt; (wks - wk + 1)) &amp; 1) === 1)"/>
+          <sce:assign target="ok" expr="ok &amp;&amp; wkOk"/>
+        </sce:if>
+        <sce:if cond="hasYD">
+          <sce:var name="yp" type="int64" init="yday - 1"/>
+          <sce:var name="yn" type="int64" init="ylen - yday"/>
+          <sce:var name="jp" type="int64" init="yp / 61"/>
+          <sce:var name="jn" type="int64" init="yn / 61"/>
+          <sce:var name="wordPos" type="int64" init="jp === 0 ? s.yd0 : (jp === 1 ? s.yd1 : (jp === 2 ? s.yd2 : (jp === 3 ? s.yd3 : (jp === 4 ? s.yd4 : s.yd5))))"/>
+          <sce:var name="wordNeg" type="int64" init="jn === 0 ? s.ydn0 : (jn === 1 ? s.ydn1 : (jn === 2 ? s.ydn2 : (jn === 3 ? s.ydn3 : (jn === 4 ? s.ydn4 : s.ydn5))))"/>
+          <sce:var name="ydOk" type="bool" init="((wordPos &gt;&gt; (yp % 61)) &amp; 1) === 1 || ((wordNeg &gt;&gt; (yn % 61)) &amp; 1) === 1"/>
+          <sce:assign target="ok" expr="ok &amp;&amp; ydOk"/>
+        </sce:if>
+        <sce:if cond="hasMD">
+          <sce:assign target="ok" expr="ok &amp;&amp; mdMatch"/>
+        </sce:if>
+        <sce:if cond="hasDay">
+          <sce:assign target="ok" expr="ok &amp;&amp; dayMatch"/>
+        </sce:if>
+        <sce:if cond="hasWN &amp;&amp; !hasDay &amp;&amp; !hasYD &amp;&amp; !hasMD">
+          <sce:assign target="ok" expr="ok &amp;&amp; wd === startWd"/>
+        </sce:if>
+        <sce:if cond="!hasWN &amp;&amp; !hasYD &amp;&amp; !hasMD &amp;&amp; !hasDay">
+          <sce:assign target="ok" expr="ok &amp;&amp; (hasMonth || mon === m0) &amp;&amp; clamped"/>
+        </sce:if>
+      </sce:if>
+    </sce:if>
+    <sce:return expr="ok"/>
+  </sce:body>
+</scxml>

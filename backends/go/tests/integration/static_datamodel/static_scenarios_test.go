@@ -1787,6 +1787,7 @@ func todoCopy() machine {
 		"digest":     func() any { return merkleNodesJSON(policy.Digest()) },
 		"refusals":   func() any { return policy.Refusals() },
 		"agenda":     func() any { return occurrencesJSON(policy.Agenda()) },
+		"agendaNext": func() any { return policy.AgendaNext() },
 	})
 }
 

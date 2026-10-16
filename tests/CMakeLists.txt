@@ -475,8 +475,8 @@ foreach(_STD_MERGE_RULE hlc_send hlc_receive hlc_compare lww_write rga_insert rg
         HEADER ${_STD_MERGE_RULE}.h
     )
 endforeach()
-# todo_peer's time zone: the standard rules that read a table of transitions.
-foreach(_STD_TIME_RULE utc_offset_at utc_from_local)
+# todo_peer's time zone: the standard rule that reads a table of transitions.
+foreach(_STD_TIME_RULE utc_from_local)
     sce_add_algorithm(
         TARGET static_datamodel_generated_cpp_test
         SCXML_FILE sce:std/time/${_STD_TIME_RULE}.scxml
@@ -485,7 +485,8 @@ foreach(_STD_TIME_RULE utc_offset_at utc_from_local)
 endforeach()
 # todo_peer's schedule: the occurrence record, the rule that orders two writes and the one
 # that expands a repetition, which are fixtures of the machine's own directory.
-foreach(_EVENT_DOCUMENT event_occurrence event_later event_agenda)
+foreach(_EVENT_DOCUMENT event_occurrence event_schedule event_later event_latest event_conflict
+                        event_selects event_agenda)
     sce_add_algorithm(
         TARGET static_datamodel_generated_cpp_test
         SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_EVENT_DOCUMENT}.scxml

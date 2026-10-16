@@ -1700,6 +1700,7 @@ Driver<ClockPeeking<G::todo_peer::todo_peer>> todoPeerDriver() {
         {"digest", [](const Machine &m) { return merkleNodesJson(m.digest()); }},
         {"refusals", [](const Machine &m) { return json(m.refusals()); }},
         {"agenda", [](const Machine &m) { return occurrencesJson(m.agenda()); }},
+        {"agendaNext", [](const Machine &m) { return json(m.agendaNext()); }},
     });
 }
 

@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The schedule of one to-do of a copy of the to-do list (todo_peer), as event_agenda reads
+  it: every field that says when the to-do happens, each the value written last of those the
+  copy holds for it (event_latest), as one record, so that the rules that expand it take it
+  whole. The fields and what they mean are event_agenda's.
+
+  A field that is not held has the value its absence means: no start is -1, an interval is
+  1, a week begins on Monday (1), and every other field is 0. `flag` is 1 when two people
+  changed a field of the schedule at once and no one has chosen between them
+  (event_conflict). The sets are bit masks, the bit of an element being its number; the
+  days of the year, which are up to 366, are six words of 61 bits each, one set counted
+  from the first of the year and one from the last.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="event_schedule"
+       sce:event-name="calendar.schedule">
+  <datamodel>
+    <data id="zone" sce:type="int64" sce:direction="in"/>
+    <data id="start" sce:type="int64" sce:direction="in"/>
+    <data id="length" sce:type="int64" sce:direction="in"/>
+    <data id="freq" sce:type="int64" sce:direction="in"/>
+    <data id="interval" sce:type="int64" sce:direction="in"/>
+    <data id="days" sce:type="int64" sce:direction="in"/>
+    <data id="count" sce:type="int64" sce:direction="in"/>
+    <data id="until" sce:type="int64" sce:direction="in"/>
+    <data id="bymonth" sce:type="int64" sce:direction="in"/>
+    <data id="mdPos" sce:type="int64" sce:direction="in"/>
+    <data id="mdNeg" sce:type="int64" sce:direction="in"/>
+    <data id="dayA" sce:type="int64" sce:direction="in"/>
+    <data id="dayB" sce:type="int64" sce:direction="in"/>
+    <data id="spPos" sce:type="int64" sce:direction="in"/>
+    <data id="spNeg" sce:type="int64" sce:direction="in"/>
+    <data id="wkst" sce:type="int64" sce:direction="in"/>
+    <data id="wnPos" sce:type="int64" sce:direction="in"/>
+    <data id="wnNeg" sce:type="int64" sce:direction="in"/>
+    <data id="yd0" sce:type="int64" sce:direction="in"/>
+    <data id="yd1" sce:type="int64" sce:direction="in"/>
+    <data id="yd2" sce:type="int64" sce:direction="in"/>
+    <data id="yd3" sce:type="int64" sce:direction="in"/>
+    <data id="yd4" sce:type="int64" sce:direction="in"/>
+    <data id="yd5" sce:type="int64" sce:direction="in"/>
+    <data id="ydn0" sce:type="int64" sce:direction="in"/>
+    <data id="ydn1" sce:type="int64" sce:direction="in"/>
+    <data id="ydn2" sce:type="int64" sce:direction="in"/>
+    <data id="ydn3" sce:type="int64" sce:direction="in"/>
+    <data id="ydn4" sce:type="int64" sce:direction="in"/>
+    <data id="ydn5" sce:type="int64" sce:direction="in"/>
+    <data id="gone" sce:type="int64" sce:direction="in"/>
+    <data id="flag" sce:type="int64" sce:direction="in"/>
+  </datamodel>
+</scxml>

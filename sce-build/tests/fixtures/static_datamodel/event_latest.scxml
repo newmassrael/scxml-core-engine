@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The number a field of a to-do reads as in a copy of the to-do list (todo_peer): of the
+  values the field holds, the one written last, by the order of the dots they are known
+  by (wall time, then counter, then node), so that every copy that holds the same values
+  reads the same one whatever order they arrived in. `none` when the field holds no value.
+  It is a read of the multi-value register for a reader that needs one number; that the
+  field holds more than one is event_conflict's to say.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm"
+       name="event_latest"
+       version="1.0">
+  <sce:import kind="event-schema" src="sce:std/merge/mv_value.scxml" as="Value"/>
+  <sce:import kind="algorithm" src="event_later.scxml" as="later"/>
+  <sce:signature>
+    <sce:param name="values" type="list&lt;record:Value&gt;"/>
+    <sce:param name="id" type="uint64"/>
+    <sce:param name="field" type="uint64"/>
+    <sce:param name="none" type="int64"/>
+    <sce:return type="int64"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="found" type="bool" init="false"/>
+    <sce:var name="bestWall" type="int64" init="0"/>
+    <sce:var name="bestCounter" type="uint32" init="0"/>
+    <sce:var name="bestNode" type="uint64" init="0"/>
+    <sce:var name="best" type="int64" init="none"/>
+    <sce:foreach item="v" in="values">
+      <sce:if cond="v.id === id &amp;&amp; v.field === field &amp;&amp; (!found || later(v.wallTime, v.counter, v.nodeId, bestWall, bestCounter, bestNode))">
+        <sce:assign target="found" expr="true"/>
+        <sce:assign target="bestWall" expr="v.wallTime"/>
+        <sce:assign target="bestCounter" expr="v.counter"/>
+        <sce:assign target="bestNode" expr="v.nodeId"/>
+        <sce:assign target="best" expr="v.value"/>
+      </sce:if>
+    </sce:foreach>
+    <sce:return expr="best"/>
+  </sce:body>
+</scxml>

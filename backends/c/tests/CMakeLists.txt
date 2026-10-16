@@ -2723,10 +2723,11 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         STAGE_ALSO todo_join.scxml todo_edit.scxml todo_write.scxml todo_supersede.scxml
                    todo_keep.scxml todo_node.scxml todo_visit.scxml
                    todo_share.scxml todo_agenda.scxml todo_zone.scxml
-                   event_occurrence.scxml event_later.scxml event_agenda.scxml
+                   event_occurrence.scxml event_schedule.scxml event_later.scxml
+                   event_latest.scxml event_conflict.scxml event_selects.scxml event_agenda.scxml
     )
-    # Its time zone: the standard rules that read a table of transitions.
-    foreach(_ZONE_HEADER utc_offset_at utc_from_local)
+    # Its time zone: the standard rule that reads a table of transitions.
+    foreach(_ZONE_HEADER utc_from_local)
         set(_ZONE_OUTPUT "${SCE_C_INTEGRATION_GENERATED_DIR}/${_ZONE_HEADER}.h")
         add_custom_command(
             OUTPUT "${_ZONE_OUTPUT}"
@@ -2743,7 +2744,8 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # Its schedule: the occurrence record, the rule that orders two writes and the one
     # that expands a repetition, the fixtures of the machine's own directory.
     set(_STATIC_EVENT_HEADERS "")
-    foreach(_EVENT_HEADER event_occurrence event_later event_agenda)
+    foreach(_EVENT_HEADER event_occurrence event_schedule event_later event_latest event_conflict
+                          event_selects event_agenda)
         set(_EVENT_SOURCE
             "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_EVENT_HEADER}.scxml")
         set(_EVENT_OUTPUT "${SCE_C_INTEGRATION_GENERATED_DIR}/${_EVENT_HEADER}.h")
