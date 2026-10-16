@@ -42,6 +42,27 @@ cite their sources.
   model.
 - A service offered with the product. It is not designed here.
 
+**A provider is a queue, and its kind says how many jobs it runs at once.** A job waits behind the jobs
+of the provider it was made for and behind nobody else's: a model server that takes twenty minutes for a
+document does not hold up a job made for another provider. Each connected provider has its own worker,
+which claims only the jobs pinned to it. How many it runs at once is declared by its kind, as what it can
+read is, and a person may lower it and never raise it past the kind's: one for a model on the person's
+machine, which two jobs at once only make slower until both run out their time. A job nobody chose a
+provider for is taken by no worker; the person's default is chosen when the job is made, as it is now.
+A job is taken in the order it was made, within its provider.
+
+**Why a job waits is a record, not a sentence.** A job that has not been claimed carries a typed reason:
+behind another job (which provider, which job, how many ahead), its provider not reachable, its provider
+not allowed by the workspace's policy, or what the provider did not declare. Every host reads the same
+record and each screen puts it into words, so that the desktop, a browser and a server never tell a person
+different things about the same wait.
+
+**The host has a ceiling of its own.** Workers per provider do not add up to an unbounded load on the
+machine that hosts them. Work that is heavy on the host itself, not on a provider (SCE building a
+simulator, extracting a large original), runs through a separate bounded queue, and the host has one limit
+on all that runs at once. The limits are set by what the machine has, not by how many providers are
+connected.
+
 **The product asks a provider to say what it can read.** A provider declares which ways of reading it
 supports (`text-layer`, `ocr`, `vision`) and the longest input it takes. A job whose extraction needs
 something the provider did not declare is refused with a plain sentence that names what is missing. The
@@ -88,6 +109,13 @@ works with no provider connected.
 - A weaker model is not a different product: it yields more conversions the reviewer is asked to check.
 - The screens show the provider as a name and a state, and a choice among the kinds the workspace's
   policy allows.
+- The desktop host today has one executor that runs one job at a time for every connection, so a job for
+  one provider waits behind a job for another, and the screen says only that the AI has not taken it yet.
+  That is the shape this ADR moves away from. Measured on 2026-10-16 against a model server on another
+  computer: a spec took 8 to 15 minutes alone, and three at once on the same server ended two of them at
+  the 25-minute limit.
+- A worker per provider needs the supervisor to keep a set of workers, add one when a provider appears and
+  stop one when it goes, as it already does for the one executor.
 
 ## Not decided here
 
@@ -96,3 +124,6 @@ works with no provider connected.
 - Which recogniser or vision model an extractor or a local worker uses, and the confidence at which a
   block is queued for a person (carried from ADR 0026).
 - How an organisation's own key management is attached.
+- Fairness between people who share a provider in a team (one person's many jobs ahead of another's one).
+  A workspace of one needs none.
+- The ceiling's numbers and what counts as heavy work, left to the first implementation to measure.
