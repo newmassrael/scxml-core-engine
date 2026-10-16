@@ -381,6 +381,16 @@ fn todo_afternoon() -> World {
     // A page of an agenda that is full says where the next begins.
     let every_day = Plan::once(instant(2026, 1, 1, 0, 0), 0).repeating(DAILY, 1);
     schedule_todo(&mut world, "alice", 38, &every_day);
+    // The twentieth Monday of the year, and a monthly event on the 31st that has no
+    // occurrence in a month without one, as RFC 5545 says.
+    let twentieth = Plan::once(instant(2026, 1, 1, 12, 0), 0)
+        .repeating(YEARLY, 1)
+        .on_ordinals(&[(20, MON)]);
+    schedule_todo(&mut world, "alice", 39, &twentieth);
+    let skipping = Plan::once(instant(2026, 1, 31, 9, 0), 0)
+        .repeating(MONTHLY, 1)
+        .skipping_invalid_dates();
+    schedule_todo(&mut world, "bob", 40, &skipping);
     assert_eq!(world.run_until_quiet(60_000), Outcome::Quiet);
     for (id, from, to) in [
         (30, instant(2026, 1, 1, 0, 0), instant(2029, 1, 1, 0, 0)),
@@ -391,6 +401,8 @@ fn todo_afternoon() -> World {
         (35, instant(2026, 1, 1, 0, 0), instant(2029, 1, 1, 0, 0)),
         (36, instant(1997, 8, 1, 0, 0), instant(1997, 10, 1, 0, 0)),
         (37, instant(1997, 8, 1, 0, 0), instant(1997, 10, 1, 0, 0)),
+        (39, instant(2026, 1, 1, 0, 0), instant(2029, 1, 1, 0, 0)),
+        (40, instant(2026, 1, 1, 0, 0), instant(2026, 9, 1, 0, 0)),
     ] {
         agreed_agenda_in(&mut world, &none, id, from, to);
     }

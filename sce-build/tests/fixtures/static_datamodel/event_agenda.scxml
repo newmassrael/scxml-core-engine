@@ -23,13 +23,16 @@
   23  bymonth      BYMONTH: bit m for month m, 1 to 12
   24  bymonthday   BYMONTHDAY, a day counted from the start of the month: bit d, 1 to 31
   25  bymonthday-  BYMONTHDAY, a day counted from the end: bit k for the day -k, 1 to 31
-  26  byday-1      BYDAY with an ordinal (the second Tuesday, the last Friday), weekdays 0
-  27  byday-2      to 3 in field 26 and 4 to 6 in field 27. A weekday takes ten bits from
-                   (weekday modulo 4) * 10: the nth, n from 1 to 5, is bit n - 1, and the
-                   nth from the end is bit 4 + n. The ordinal counts in the month under
-                   MONTHLY or YEARLY with BYMONTH, and in the year under YEARLY without; an
-                   ordinal past 5 has no bit, so "the 20th Monday of the year" is not
-                   written here
+  26  invalid      what a repetition by month or year does with a month that has no such
+                   day (the 31st, the 29th of February) when no part says which days: 0
+                   moves the day to the last of the month, 1 has no occurrence in it, as
+                   RFC 5545 §3.3.10 says
+  45..51 byday-n   BYDAY with an ordinal (the second Tuesday, the last Friday, the twentieth
+  52..58 byday-n-  Monday of the year): field 45 + w holds the ordinals counted from the
+                   first of weekday w (Sunday 0), the nth, n from 1 to 53, as bit n - 1,
+                   and field 52 + w those counted from the last, the nth from the last as
+                   bit n - 1. The ordinal counts in the month under MONTHLY or YEARLY with
+                   BYMONTH, and in the year under YEARLY without
   28  bysetpos     BYSETPOS: of the days a period selects, in order, the ones at these
                    places counted from the first: bit p, 1 to 62
   29  bysetpos-    the same counted from the last: bit k for the place -k

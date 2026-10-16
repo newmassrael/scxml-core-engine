@@ -250,6 +250,72 @@ fn a_yearly_event_on_the_29th_of_february_falls_on_the_28th_in_other_years() {
     );
 }
 
+/// RFC 5545 skips a month that has no such day as the start's; the schedule says whether it
+/// does or takes the last day of the month instead.
+#[test]
+fn a_month_without_the_day_has_no_occurrence_when_invalid_dates_are_skipped() {
+    let monthly = Plan::once(at(2026, 1, 31, 9), 0)
+        .repeating(MONTHLY, 1)
+        .skipping_invalid_dates();
+    assert_eq!(
+        shown(&monthly, (2026, 1, 1), (2026, 9, 1)),
+        [
+            at(2026, 1, 31, 9),
+            at(2026, 3, 31, 9),
+            at(2026, 5, 31, 9),
+            at(2026, 7, 31, 9),
+            at(2026, 8, 31, 9),
+        ]
+    );
+    let leap_day = Plan::once(at(2024, 2, 29, 10), 0)
+        .repeating(YEARLY, 1)
+        .skipping_invalid_dates();
+    assert_eq!(
+        shown(&leap_day, (2024, 1, 1), (2034, 1, 1)),
+        [
+            at(2024, 2, 29, 10),
+            at(2028, 2, 29, 10),
+            at(2032, 2, 29, 10)
+        ]
+    );
+}
+
+/// The ordinal of a weekday in the year goes up to 53, as RFC 5545's does: the twentieth
+/// Monday, the last Monday, and the 53rd, which only some years have.
+#[test]
+fn an_ordinal_weekday_of_the_year_goes_up_to_the_fifty_third() {
+    let twentieth = Plan::once(at(2026, 1, 1, 12), 0)
+        .repeating(YEARLY, 1)
+        .on_ordinals(&[(20, MON)]);
+    assert_eq!(
+        shown(&twentieth, (2026, 1, 1), (2029, 1, 1)),
+        [
+            at(2026, 5, 18, 12),
+            at(2027, 5, 17, 12),
+            at(2028, 5, 15, 12)
+        ]
+    );
+    let last = Plan::once(at(2026, 1, 1, 12), 0)
+        .repeating(YEARLY, 1)
+        .on_ordinals(&[(-1, MON)]);
+    assert_eq!(
+        shown(&last, (2026, 1, 1), (2029, 1, 1)),
+        [
+            at(2026, 12, 28, 12),
+            at(2027, 12, 27, 12),
+            at(2028, 12, 25, 12)
+        ]
+    );
+    // 2024 began on a Monday and is a leap year, so it has 53 Mondays; 2025 has 52.
+    let fifty_third = Plan::once(at(2024, 1, 1, 12), 0)
+        .repeating(YEARLY, 1)
+        .on_ordinals(&[(53, MON)]);
+    assert_eq!(
+        shown(&fifty_third, (2024, 1, 1), (2027, 1, 1)),
+        [at(2024, 12, 30, 12)]
+    );
+}
+
 #[test]
 fn a_month_the_bymonth_does_not_name_is_passed_over_and_an_interval_steps_months() {
     let some_months = Plan::once(at(2026, 1, 15, 8), 0)
@@ -333,11 +399,16 @@ fn random_plan(rng: &mut Rng) -> Plan {
     if rng.below(3) == 0 {
         let ordinals: Vec<(i64, i64)> = (0..1 + rng.below(3))
             .map(|_| {
-                let n = 1 + rng.below(5) as i64;
+                // Mostly the ordinals of a month, now and then one that only a year has.
+                let most = if rng.below(4) == 0 { 53 } else { 5 };
+                let n = 1 + rng.below(most) as i64;
                 (if rng.below(2) == 0 { n } else { -n }, rng.below(7) as i64)
             })
             .collect();
         plan = plan.on_ordinals(&ordinals);
+    }
+    if rng.below(4) == 0 {
+        plan = plan.skipping_invalid_dates();
     }
     if rng.below(4) == 0 {
         plan = plan.in_months(&some_of(rng, 1, 12, 4));

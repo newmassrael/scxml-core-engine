@@ -181,8 +181,21 @@
       <sce:set name="bymonth" expr="0"/>
       <sce:set name="mdPos" expr="0"/>
       <sce:set name="mdNeg" expr="0"/>
-      <sce:set name="dayA" expr="0"/>
-      <sce:set name="dayB" expr="0"/>
+      <sce:set name="invalid" expr="0"/>
+      <sce:set name="op0" expr="0"/>
+      <sce:set name="op1" expr="0"/>
+      <sce:set name="op2" expr="0"/>
+      <sce:set name="op3" expr="0"/>
+      <sce:set name="op4" expr="0"/>
+      <sce:set name="op5" expr="0"/>
+      <sce:set name="op6" expr="0"/>
+      <sce:set name="on0" expr="0"/>
+      <sce:set name="on1" expr="0"/>
+      <sce:set name="on2" expr="0"/>
+      <sce:set name="on3" expr="0"/>
+      <sce:set name="on4" expr="0"/>
+      <sce:set name="on5" expr="0"/>
+      <sce:set name="on6" expr="0"/>
       <sce:set name="spPos" expr="0"/>
       <sce:set name="spNeg" expr="0"/>
       <sce:set name="wkst" expr="1"/>
@@ -668,8 +681,21 @@
       <assign location="sched.bymonth" expr="EventLatest(values, _event.data.id, 23, 0)"/>
       <assign location="sched.mdPos" expr="EventLatest(values, _event.data.id, 24, 0)"/>
       <assign location="sched.mdNeg" expr="EventLatest(values, _event.data.id, 25, 0)"/>
-      <assign location="sched.dayA" expr="EventLatest(values, _event.data.id, 26, 0)"/>
-      <assign location="sched.dayB" expr="EventLatest(values, _event.data.id, 27, 0)"/>
+      <assign location="sched.invalid" expr="EventLatest(values, _event.data.id, 26, 0)"/>
+      <assign location="sched.op0" expr="EventLatest(values, _event.data.id, 45, 0)"/>
+      <assign location="sched.op1" expr="EventLatest(values, _event.data.id, 46, 0)"/>
+      <assign location="sched.op2" expr="EventLatest(values, _event.data.id, 47, 0)"/>
+      <assign location="sched.op3" expr="EventLatest(values, _event.data.id, 48, 0)"/>
+      <assign location="sched.op4" expr="EventLatest(values, _event.data.id, 49, 0)"/>
+      <assign location="sched.op5" expr="EventLatest(values, _event.data.id, 50, 0)"/>
+      <assign location="sched.op6" expr="EventLatest(values, _event.data.id, 51, 0)"/>
+      <assign location="sched.on0" expr="EventLatest(values, _event.data.id, 52, 0)"/>
+      <assign location="sched.on1" expr="EventLatest(values, _event.data.id, 53, 0)"/>
+      <assign location="sched.on2" expr="EventLatest(values, _event.data.id, 54, 0)"/>
+      <assign location="sched.on3" expr="EventLatest(values, _event.data.id, 55, 0)"/>
+      <assign location="sched.on4" expr="EventLatest(values, _event.data.id, 56, 0)"/>
+      <assign location="sched.on5" expr="EventLatest(values, _event.data.id, 57, 0)"/>
+      <assign location="sched.on6" expr="EventLatest(values, _event.data.id, 58, 0)"/>
       <assign location="sched.spPos" expr="EventLatest(values, _event.data.id, 28, 0)"/>
       <assign location="sched.spNeg" expr="EventLatest(values, _event.data.id, 29, 0)"/>
       <assign location="sched.wkst" expr="EventLatest(values, _event.data.id, 30, 1)"/>

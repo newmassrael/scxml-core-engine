@@ -21,7 +21,7 @@
   <sce:body>
     <sce:var name="twice" type="bool" init="false"/>
     <sce:foreach item="a" in="values">
-      <sce:if cond="a.id === id &amp;&amp; (a.field === 9 || (a.field &gt;= 15 &amp;&amp; a.field &lt;= 44))">
+      <sce:if cond="a.id === id &amp;&amp; (a.field === 9 || (a.field &gt;= 15 &amp;&amp; a.field &lt;= 58))">
         <sce:foreach item="b" in="values">
           <sce:if cond="b.id === id &amp;&amp; b.field === a.field &amp;&amp; (b.wallTime !== a.wallTime || b.counter !== a.counter || b.nodeId !== a.nodeId)">
             <sce:assign target="twice" expr="true"/>

@@ -6,7 +6,8 @@
   under YEARLY; BYMONTHDAY, BYDAY, BYYEARDAY and BYWEEKNO select days of the period, and
   where more than one is given a day has to be in all of them; with none given the day the
   schedule starts on is the one, by its weekday under WEEKLY, its day of the month under
-  MONTHLY (a shorter month takes its last day) and its month and day under YEARLY. Which
+  MONTHLY (a shorter month takes its last day, or has none when the schedule skips
+  invalid dates, as RFC 5545 §3.3.10 says) and its month and day under YEARLY. Which
   period the day is in, and which of the days of it BYSETPOS keeps, are event_agenda's.
 
   A day is a day count, so no zone is read: the calendar is the one the readings are in.
@@ -60,7 +61,7 @@
 
       <sce:var name="hasMonth" type="bool" init="s.bymonth !== 0"/>
       <sce:var name="hasMD" type="bool" init="(s.mdPos | s.mdNeg) !== 0"/>
-      <sce:var name="hasDay" type="bool" init="(s.days | s.dayA | s.dayB) !== 0"/>
+      <sce:var name="hasDay" type="bool" init="(s.days | s.op0 | s.op1 | s.op2 | s.op3 | s.op4 | s.op5 | s.op6 | s.on0 | s.on1 | s.on2 | s.on3 | s.on4 | s.on5 | s.on6) !== 0"/>
       <sce:var name="hasWN" type="bool" init="(s.wnPos | s.wnNeg) !== 0"/>
       <sce:var name="hasYD" type="bool" init="(s.yd0 | s.yd1 | s.yd2 | s.yd3 | s.yd4 | s.yd5 | s.ydn0 | s.ydn1 | s.ydn2 | s.ydn3 | s.ydn4 | s.ydn5) !== 0"/>
       <sce:var name="mdMatch" type="bool" init="((s.mdPos &gt;&gt; dom) &amp; 1) === 1 || ((s.mdNeg &gt;&gt; (last - dom + 1)) &amp; 1) === 1"/>
@@ -69,12 +70,15 @@
       <sce:var name="inMonth" type="bool" init="freq === 3 || hasMonth"/>
       <sce:var name="ordPos" type="int64" init="inMonth ? (dom - 1) / 7 + 1 : (yday - 1) / 7 + 1"/>
       <sce:var name="ordNeg" type="int64" init="inMonth ? (last - dom) / 7 + 1 : (ylen - yday) / 7 + 1"/>
-      <sce:var name="ordMask" type="int64" init="wd &lt; 4 ? s.dayA : s.dayB"/>
-      <sce:var name="ordBase" type="int64" init="(wd % 4) * 10"/>
-      <sce:var name="ordFirst" type="bool" init="ordPos &lt;= 5 &amp;&amp; ((ordMask &gt;&gt; (ordBase + ordPos - 1)) &amp; 1) === 1"/>
-      <sce:var name="ordLast" type="bool" init="ordNeg &lt;= 5 &amp;&amp; ((ordMask &gt;&gt; (ordBase + 4 + ordNeg)) &amp; 1) === 1"/>
+      <!-- The words of the weekday's ordinals, from the first and from the last. -->
+      <sce:var name="wordFirst" type="int64" init="wd === 0 ? s.op0 : (wd === 1 ? s.op1 : (wd === 2 ? s.op2 : (wd === 3 ? s.op3 : (wd === 4 ? s.op4 : (wd === 5 ? s.op5 : s.op6)))))"/>
+      <sce:var name="wordLast" type="int64" init="wd === 0 ? s.on0 : (wd === 1 ? s.on1 : (wd === 2 ? s.on2 : (wd === 3 ? s.on3 : (wd === 4 ? s.on4 : (wd === 5 ? s.on5 : s.on6)))))"/>
+      <sce:var name="ordFirst" type="bool" init="ordPos &lt;= 53 &amp;&amp; ((wordFirst &gt;&gt; (ordPos - 1)) &amp; 1) === 1"/>
+      <sce:var name="ordLast" type="bool" init="ordNeg &lt;= 53 &amp;&amp; ((wordLast &gt;&gt; (ordNeg - 1)) &amp; 1) === 1"/>
       <sce:var name="dayMatch" type="bool" init="plainDay || ordFirst || ordLast"/>
-      <sce:var name="clamped" type="bool" init="dom === (dom0 &lt; last ? dom0 : last)"/>
+      <!-- The day the start is on, when no part says which: in a month that has no such
+           day, the last day of it, or none at all when invalid dates are skipped. -->
+      <sce:var name="clamped" type="bool" init="s.invalid === 1 ? dom === dom0 : dom === (dom0 &lt; last ? dom0 : last)"/>
 
       <sce:assign target="ok" expr="!hasMonth || ((s.bymonth &gt;&gt; mon) &amp; 1) === 1"/>
       <sce:if cond="freq === 1">

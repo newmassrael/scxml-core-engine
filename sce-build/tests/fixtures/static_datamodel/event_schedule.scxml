@@ -10,7 +10,10 @@
   changed a field of the schedule at once and no one has chosen between them
   (event_conflict). The sets are bit masks, the bit of an element being its number; the
   days of the year, which are up to 366, are six words of 61 bits each, one set counted
-  from the first of the year and one from the last.
+  from the first of the year and one from the last; the ordinals of a weekday (the second
+  Tuesday, the last Friday, the twentieth Monday of the year) are a word for each weekday,
+  `op` the ones counted from the first (the nth is bit n - 1, up to 53) and `on` the ones
+  counted from the last.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -30,8 +33,21 @@
     <data id="bymonth" sce:type="int64" sce:direction="in"/>
     <data id="mdPos" sce:type="int64" sce:direction="in"/>
     <data id="mdNeg" sce:type="int64" sce:direction="in"/>
-    <data id="dayA" sce:type="int64" sce:direction="in"/>
-    <data id="dayB" sce:type="int64" sce:direction="in"/>
+    <data id="invalid" sce:type="int64" sce:direction="in"/>
+    <data id="op0" sce:type="int64" sce:direction="in"/>
+    <data id="op1" sce:type="int64" sce:direction="in"/>
+    <data id="op2" sce:type="int64" sce:direction="in"/>
+    <data id="op3" sce:type="int64" sce:direction="in"/>
+    <data id="op4" sce:type="int64" sce:direction="in"/>
+    <data id="op5" sce:type="int64" sce:direction="in"/>
+    <data id="op6" sce:type="int64" sce:direction="in"/>
+    <data id="on0" sce:type="int64" sce:direction="in"/>
+    <data id="on1" sce:type="int64" sce:direction="in"/>
+    <data id="on2" sce:type="int64" sce:direction="in"/>
+    <data id="on3" sce:type="int64" sce:direction="in"/>
+    <data id="on4" sce:type="int64" sce:direction="in"/>
+    <data id="on5" sce:type="int64" sce:direction="in"/>
+    <data id="on6" sce:type="int64" sce:direction="in"/>
     <data id="spPos" sce:type="int64" sce:direction="in"/>
     <data id="spNeg" sce:type="int64" sce:direction="in"/>
     <data id="wkst" sce:type="int64" sce:direction="in"/>

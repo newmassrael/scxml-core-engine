@@ -37,8 +37,11 @@ pub const UNTIL: u64 = 22;
 pub const BYMONTH: u64 = 23;
 pub const BYMONTHDAY: u64 = 24;
 pub const BYMONTHDAY_NEG: u64 = 25;
-pub const BYDAY_A: u64 = 26;
-pub const BYDAY_B: u64 = 27;
+pub const INVALID: u64 = 26;
+/// The ordinals of weekday `w` counted from the first are field `ORDINAL_FIRST + w`, and
+/// those counted from the last `ORDINAL_LAST + w`.
+pub const ORDINAL_FIRST: u64 = 45;
+pub const ORDINAL_LAST: u64 = 52;
 pub const BYSETPOS: u64 = 28;
 pub const BYSETPOS_NEG: u64 = 29;
 pub const WKST: u64 = 30;
@@ -243,8 +246,9 @@ pub struct Schedule {
     pub bymonth: i64,
     pub md_pos: i64,
     pub md_neg: i64,
-    pub day_a: i64,
-    pub day_b: i64,
+    pub invalid: i64,
+    pub ord_first: [i64; 7],
+    pub ord_last: [i64; 7],
     pub sp_pos: i64,
     pub sp_neg: i64,
     pub wkst: i64,
@@ -267,7 +271,7 @@ fn bit(mask: i64, n: i64) -> bool {
 pub fn schedule_in(list: &BTreeMap<(u64, u64), Field>, id: u64) -> Schedule {
     let value = |field: u64, none: i64| list.get(&(id, field)).map_or(none, |held| held.value);
     let split = std::iter::once(GONE)
-        .chain(ZONE..=BYYEARDAY_NEG + 5)
+        .chain(ZONE..=ORDINAL_LAST + 6)
         .any(|field| {
             list.get(&(id, field))
                 .is_some_and(|held| held.live.len() > 1)
@@ -291,6 +295,12 @@ pub fn schedule_in(list: &BTreeMap<(u64, u64), Field>, id: u64) -> Schedule {
         yd_pos[j] = value(BYYEARDAY + j as u64, 0);
         yd_neg[j] = value(BYYEARDAY_NEG + j as u64, 0);
     }
+    let mut ord_first = [0; 7];
+    let mut ord_last = [0; 7];
+    for w in 0..7 {
+        ord_first[w] = value(ORDINAL_FIRST + w as u64, 0);
+        ord_last[w] = value(ORDINAL_LAST + w as u64, 0);
+    }
     Schedule {
         start: list.get(&(id, START)).map(|held| held.value),
         zone: value(ZONE, 0).max(0) as u64,
@@ -303,8 +313,9 @@ pub fn schedule_in(list: &BTreeMap<(u64, u64), Field>, id: u64) -> Schedule {
         bymonth: value(BYMONTH, 0),
         md_pos: value(BYMONTHDAY, 0),
         md_neg: value(BYMONTHDAY_NEG, 0),
-        day_a: value(BYDAY_A, 0),
-        day_b: value(BYDAY_B, 0),
+        invalid: value(INVALID, 0),
+        ord_first,
+        ord_last,
         sp_pos: value(BYSETPOS, 0),
         sp_neg: value(BYSETPOS_NEG, 0),
         wkst: if (0..=6).contains(&wkst) { wkst } else { 1 },
@@ -371,7 +382,7 @@ fn selects(s: &Schedule, d: i64, start_wd: i64, m0: i64, dom0: i64) -> bool {
     let wd = weekday_of(d);
     let has_month = s.bymonth != 0;
     let has_md = s.md_pos | s.md_neg != 0;
-    let has_day = s.days | s.day_a | s.day_b != 0;
+    let has_day = s.days != 0 || s.ord_first.iter().chain(&s.ord_last).any(|word| *word != 0);
     let has_wn = s.wn_pos | s.wn_neg != 0;
     let has_yd = s.yd_pos.iter().chain(&s.yd_neg).any(|mask| *mask != 0);
     let md_match = bit(s.md_pos, dom) || bit(s.md_neg, last - dom + 1);
@@ -388,12 +399,16 @@ fn selects(s: &Schedule, d: i64, start_wd: i64, m0: i64, dom0: i64) -> bool {
     } else {
         (ylen - yday) / 7 + 1
     };
-    let ordinals = if wd < 4 { s.day_a } else { s.day_b };
-    let base = (wd % 4) * 10;
-    let ordinal = (from_start <= 5 && bit(ordinals, base + from_start - 1))
-        || (from_end <= 5 && bit(ordinals, base + 4 + from_end));
+    let ordinal =
+        bit(s.ord_first[wd as usize], from_start - 1) || bit(s.ord_last[wd as usize], from_end - 1);
     let day_match = plain || ordinal;
-    let clamped = dom == dom0.min(last);
+    // The day the start is on, when no part says which: in a month with no such day the
+    // last day of it, or none when invalid dates are skipped.
+    let clamped = if s.invalid == 1 {
+        dom == dom0
+    } else {
+        dom == dom0.min(last)
+    };
 
     let mut ok = !has_month || bit(s.bymonth, month);
     match s.freq {
@@ -566,8 +581,9 @@ pub struct Plan {
     pub bymonth: i64,
     pub bymonthday: i64,
     pub bymonthday_neg: i64,
-    pub byday_a: i64,
-    pub byday_b: i64,
+    pub invalid: i64,
+    pub ord_first: [i64; 7],
+    pub ord_last: [i64; 7],
     pub bysetpos: i64,
     pub bysetpos_neg: i64,
     pub byweekno: i64,
@@ -592,8 +608,9 @@ impl Plan {
             bymonth: 0,
             bymonthday: 0,
             bymonthday_neg: 0,
-            byday_a: 0,
-            byday_b: 0,
+            invalid: 0,
+            ord_first: [0; 7],
+            ord_last: [0; 7],
             bysetpos: 0,
             bysetpos_neg: 0,
             byweekno: 0,
@@ -625,31 +642,29 @@ impl Plan {
         }
     }
 
-    /// BYDAY with ordinals: `(2, TUE)` the second Tuesday, `(-1, FRI)` the last Friday.
+    /// BYDAY with ordinals: `(2, TUE)` the second Tuesday, `(-1, FRI)` the last Friday,
+    /// `(20, MON)` the twentieth Monday of the year, up to 53 either way.
     pub fn on_ordinals(self, ordinals: &[(i64, i64)]) -> Self {
-        let (mut a, mut b) = (0, 0);
+        let (mut first, mut last) = (self.ord_first, self.ord_last);
         for (ordinal, weekday) in ordinals {
             assert!(
-                (1..=5).contains(&ordinal.abs()),
+                (1..=53).contains(&ordinal.abs()),
                 "no bit for ordinal {ordinal}"
             );
-            let at = (weekday % 4) * 10
-                + if *ordinal > 0 {
-                    ordinal - 1
-                } else {
-                    4 + ordinal.abs()
-                };
-            if *weekday < 4 {
-                a |= 1 << at;
-            } else {
-                b |= 1 << at;
-            }
+            let words = if *ordinal > 0 { &mut first } else { &mut last };
+            words[*weekday as usize] |= 1 << (ordinal.abs() - 1);
         }
         Plan {
-            byday_a: a,
-            byday_b: b,
+            ord_first: first,
+            ord_last: last,
             ..self
         }
+    }
+
+    /// A month or a year that has no such day as the start's has no occurrence, as RFC
+    /// 5545 says, where it would otherwise take the last day of the month.
+    pub fn skipping_invalid_dates(self) -> Self {
+        Plan { invalid: 1, ..self }
     }
 
     /// BYMONTH: these months, 1 to 12.
@@ -755,8 +770,7 @@ pub fn schedule_todo(world: &mut World, who: &str, id: u64, plan: &Plan) {
         (BYMONTH, plan.bymonth),
         (BYMONTHDAY, plan.bymonthday),
         (BYMONTHDAY_NEG, plan.bymonthday_neg),
-        (BYDAY_A, plan.byday_a),
-        (BYDAY_B, plan.byday_b),
+        (INVALID, plan.invalid),
         (BYSETPOS, plan.bysetpos),
         (BYSETPOS_NEG, plan.bysetpos_neg),
         (BYWEEKNO, plan.byweekno),
@@ -768,6 +782,14 @@ pub fn schedule_todo(world: &mut World, who: &str, id: u64, plan: &Plan) {
     }
     if plan.wkst >= 0 {
         fields.push((WKST, plan.wkst));
+    }
+    for w in 0..7 {
+        if plan.ord_first[w] != 0 {
+            fields.push((ORDINAL_FIRST + w as u64, plan.ord_first[w]));
+        }
+        if plan.ord_last[w] != 0 {
+            fields.push((ORDINAL_LAST + w as u64, plan.ord_last[w]));
+        }
     }
     for j in 0..6 {
         if plan.byyearday[j] != 0 {
