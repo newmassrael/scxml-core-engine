@@ -4,6 +4,7 @@ pub mod day_repeat;
 pub mod day_run;
 pub mod days_in_month;
 pub mod event_agenda;
+pub mod event_answer;
 pub mod event_conflict;
 pub mod event_later;
 pub mod event_latest;
