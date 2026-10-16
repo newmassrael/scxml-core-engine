@@ -91,7 +91,7 @@ pub use adapter_store::{
 };
 pub use bundle_store::{BundleRead, CandidateTexts, CandidateWrite, Published};
 pub use host_store::{Host, HostListing, HostReport, HostStatus, HostWaiting, WAITING_MAX};
-pub use request_store::{Registered, Registration, RequestHead, RequestView, Transition};
+pub use request_store::{LaneWait, Registered, Registration, RequestHead, RequestView, Transition};
 
 /// The most a single source text may hold.
 pub const MAX_SOURCE_BYTES: usize = 8 * 1024 * 1024;

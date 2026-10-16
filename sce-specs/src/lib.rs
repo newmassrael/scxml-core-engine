@@ -67,9 +67,9 @@ pub use revision::Revision;
 pub use store::{
     default_root, AcceptanceText, Adapter, AdapterListing, AdapterReport, AdapterStatus,
     AnswersText, BundleRead, CandidateTexts, CandidateWrite, ClaimedHead, HistoryEntry, Host,
-    HostListing, HostReport, HostStatus, HostWaiting, Listing, ModelText, Published, Registered,
-    Registration, RequestHead, RequestView, RequirementsText, Saved, SourceText, Spec, SpecHeads,
-    SpecId, SpecSnapshot, SpecStore, Transition, Unreadable, ADAPTER_LIVE_SECONDS,
+    HostListing, HostReport, HostStatus, HostWaiting, LaneWait, Listing, ModelText, Published,
+    Registered, Registration, RequestHead, RequestView, RequirementsText, Saved, SourceText, Spec,
+    SpecHeads, SpecId, SpecSnapshot, SpecStore, Transition, Unreadable, ADAPTER_LIVE_SECONDS,
     MAX_ACCEPTANCE_BYTES, MAX_ANSWERS_BYTES, MAX_BUNDLE_BYTES, MAX_MODEL_BYTES,
     MAX_REQUIREMENTS_BYTES, MAX_SOURCE_BYTES, WAITING_MAX,
 };

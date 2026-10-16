@@ -77,6 +77,7 @@ pub const COMMANDS: &[&str] = &[
     "report_adapter",
     "read_adapter_status",
     "read_host_status",
+    "read_queue",
     "read_bundle",
     "bundle_history",
 ];
@@ -264,7 +265,14 @@ pub const COMMANDS: &[&str] = &[
 /// `work.json` is `spec.json`, format `sce-work` is `sce-spec`). A caller of 25 names commands this
 /// core does not have and is told `unknown-command`; a folder of 25 is not read, and is moved once,
 /// by hand, and not by a reader of two formats.
-pub const COMMAND_SET_VERSION: u32 = 26;
+///
+/// 27: a request can wait for a place of its connection, and the store says so
+/// (`read_queue`): the queued requests that wait behind the connection's running ones, with how many
+/// are running, how many places the connection has and how many requests will be taken first. An
+/// executor that claims with the places of its connection (the application does, in its own
+/// calls) is refused `lane-full` when none is free. A screen written for 26 does not ask for the
+/// queue, and a core of 26 would refuse it as `unknown-command`.
+pub const COMMAND_SET_VERSION: u32 = 27;
 
 /// A command that did not do what was asked, in a shape every shell can pass on.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -1917,6 +1925,24 @@ pub fn call_with<C: Clock>(
             let listing = store.host_status()?;
             let hosts: Vec<Value> = listing.hosts.iter().map(host_json).collect();
             Ok(json!({ "hosts": hosts, "unreadable": listing.unreadable }))
+        }
+        "read_queue" => {
+            arguments::<Empty>(args)?;
+            let waiting: Vec<Value> = store
+                .lane_waits()?
+                .iter()
+                .map(|wait| {
+                    json!({
+                        "spec": wait.spec.as_str(),
+                        "request": wait.request,
+                        "connection": wait.connection,
+                        "running": wait.running,
+                        "places": wait.places,
+                        "ahead": wait.ahead,
+                    })
+                })
+                .collect();
+            Ok(json!({ "waiting": waiting }))
         }
         "remove_spec" => {
             let OneSpec { id } = arguments(args)?;

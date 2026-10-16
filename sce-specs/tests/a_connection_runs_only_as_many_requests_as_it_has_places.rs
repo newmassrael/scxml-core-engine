@@ -214,6 +214,93 @@ fn a_request_that_is_not_taken_is_told_what_it_always_was_whatever_the_lane_hold
     );
 }
 
+/// What a queued request waits for, as the store says it: behind the running ones of its
+/// connection, and how many will be taken first.
+fn waits(lanes: &Lanes) -> Vec<(SpecId, usize, usize, usize)> {
+    lanes
+        .store
+        .lane_waits()
+        .unwrap()
+        .into_iter()
+        .map(|wait| (wait.spec, wait.running, wait.places, wait.ahead))
+        .collect()
+}
+
+#[test]
+fn a_request_that_waits_for_a_place_is_told_what_it_waits_behind_and_how_far() {
+    let lanes = lanes("lane-waits");
+    // Requests made in the same second are taken in the order of their spec's id; these are made
+    // a second apart so that the order they were made in is the order they are taken in.
+    let running = lanes.made("Running", Some("qwen"));
+    lanes.clock.advance(1);
+    let next = lanes.made("Next", Some("qwen"));
+    lanes.clock.advance(1);
+    let later = lanes.made("Later", Some("qwen"));
+    lanes.clock.advance(1);
+    let other = lanes.made("Other", Some("claude"));
+
+    // Nobody has said how many places `qwen` has, so nothing waits on it.
+    assert_eq!(waits(&lanes), vec![]);
+
+    lanes.claim(&running, "desktop", 1).unwrap();
+    assert_eq!(refused_as(lanes.claim(&next, "desktop", 1)), "lane-full");
+
+    // The queue is read in the order the requests were made, and the request of another
+    // connection waits for nothing.
+    assert_eq!(
+        waits(&lanes),
+        vec![(next.spec.clone(), 1, 1, 0), (later.spec.clone(), 1, 1, 1),]
+    );
+    assert_eq!(lanes.state_of(&other), State::Queued);
+
+    // When the place is free again nobody waits for it.
+    lanes
+        .store
+        .cancel_request(&running.spec, &running.request)
+        .unwrap();
+    assert_eq!(waits(&lanes), vec![]);
+}
+
+#[test]
+fn a_connection_with_a_place_free_keeps_nobody_waiting() {
+    let lanes = lanes("lane-waits-free");
+    let first = lanes.made("First", Some("claude"));
+    let second = lanes.made("Second", Some("claude"));
+
+    lanes.claim(&first, "desktop", 2).unwrap();
+
+    assert_eq!(lanes.state_of(&second), State::Queued);
+    assert_eq!(waits(&lanes), vec![]);
+}
+
+#[test]
+fn the_queue_is_a_command_every_host_reads_the_same_way() {
+    let lanes = lanes("lane-waits-command");
+    let first = lanes.made("First", Some("qwen"));
+    let second = lanes.made("Second", Some("qwen"));
+    lanes.claim(&first, "desktop", 1).unwrap();
+
+    let answer = sce_specs::call(
+        &lanes.store,
+        &common::FakeRenderer,
+        "read_queue",
+        serde_json::json!({}),
+    )
+    .unwrap();
+
+    assert_eq!(
+        answer,
+        serde_json::json!({ "waiting": [{
+            "spec": second.spec.as_str(),
+            "request": second.request,
+            "connection": "qwen",
+            "running": 1,
+            "places": 1,
+            "ahead": 0,
+        }] })
+    );
+}
+
 #[test]
 fn the_places_a_connection_has_are_counted_only_from_requests_that_name_it() {
     let lanes = lanes("lane-unpinned");

@@ -22,6 +22,7 @@
 //! between the log line and the count leaves the count behind, and the next change takes the
 //! log's own length and writes the count that is true.
 
+use std::collections::BTreeMap;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -31,6 +32,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
+use super::soft_state::{read_records, write_record, Named};
 use super::{
     atomic_write, bundle_store, drop_torn_tail, is_removed, read_pointer, removed_spec, Artifact,
     SpecId, SpecStore, LOCK_FILE, LOCK_WAIT,
@@ -39,7 +41,7 @@ use crate::clock::{utc_timestamp, Clock};
 use crate::error::StoreError;
 use crate::lock;
 use crate::requests::{
-    lease_is_valid, ConnectionRef, Inputs, Moment, Pin, Refusal, Request, State,
+    lease_is_valid, ConnectionId, ConnectionRef, Inputs, Moment, Pin, Refusal, Request, State,
     LEASE_DEFAULT_SECONDS,
 };
 use crate::revision::Revision;
@@ -83,6 +85,35 @@ pub struct RequestView {
     /// Its state at this moment: what is kept, except that a lease that ran out is an
     /// interrupted request.
     pub state: State,
+}
+
+/// What a connection said it has places for, as its last claim left it. Soft state beside the
+/// specs, like an adapter's report: a fact about the connection and not about any spec.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct Lane {
+    name: String,
+    places: usize,
+    seen_epoch: u64,
+}
+
+impl Named for Lane {
+    fn name(&self) -> &str {
+        &self.name
+    }
+}
+
+/// A queued request that waits for a place of its connection.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LaneWait {
+    pub spec: SpecId,
+    pub request: String,
+    pub connection: ConnectionId,
+    /// How many requests of the connection are running now.
+    pub running: usize,
+    /// How many the connection runs at once.
+    pub places: usize,
+    /// How many queued requests of the connection will be taken before this one: 0 is the next.
+    pub ahead: usize,
 }
 
 /// What registering a request made.
@@ -743,9 +774,74 @@ impl<C: Clock> SpecStore<C> {
             })
             .count();
         let lane_open = running < places;
+        // What the connection said it has places for is kept, so that anyone who reads the queue
+        // can tell a request that waits for a place from one that waits for nobody.
+        write_record(
+            &lanes,
+            &Lane {
+                name: pin.connection.as_str().to_string(),
+                places,
+                seen_epoch: self.clock.epoch(),
+            },
+        )?;
         self.change_request(id, request, |current, now| {
             current.claim_for(holder, ttl, resume, offered, lane_open, now)
         })
+    }
+
+    /// The requests that wait behind their connection's places, in the order they will be taken,
+    /// and what each waits for.
+    ///
+    /// A queued request waits when the connection it was made for is running as many requests as
+    /// it said it has places for. Which connections have said so is what their last claim kept
+    /// (`claim_request_within`); a connection that never did has no limit, and nothing waits on
+    /// it. Nothing here is written down: it is the state of the requests, read.
+    pub fn lane_waits(&self) -> Result<Vec<LaneWait>, StoreError> {
+        let (lanes, _) = read_records::<Lane>(&self.root().join(LANES_DIR), "connection")?;
+        let places: BTreeMap<&str, usize> = lanes
+            .iter()
+            .map(|lane| (lane.name.as_str(), lane.places))
+            .collect();
+        let open = self.open_requests()?;
+        let running_of = |connection: &ConnectionId| {
+            open.iter()
+                .filter(|(_, view)| {
+                    view.state == State::Running
+                        && view
+                            .request
+                            .pin
+                            .as_ref()
+                            .is_some_and(|pin| &pin.connection == connection)
+                })
+                .count()
+        };
+        let mut waits = Vec::new();
+        let mut ahead: BTreeMap<&ConnectionId, usize> = BTreeMap::new();
+        for (spec, view) in &open {
+            let Some(pin) = view.request.pin.as_ref() else {
+                continue;
+            };
+            if view.state != State::Queued {
+                continue;
+            }
+            let Some(&places) = places.get(pin.connection.as_str()) else {
+                continue;
+            };
+            let running = running_of(&pin.connection);
+            let before = ahead.entry(&pin.connection).or_insert(0);
+            if running >= places {
+                waits.push(LaneWait {
+                    spec: spec.clone(),
+                    request: view.request.id.clone(),
+                    connection: pin.connection.clone(),
+                    running,
+                    places,
+                    ahead: *before,
+                });
+            }
+            *before += 1;
+        }
+        Ok(waits)
     }
 
     /// The executor says it is still there, and keeps the request for `ttl` more seconds.
