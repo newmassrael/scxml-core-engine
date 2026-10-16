@@ -2722,8 +2722,28 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/todo_peer.scxml"
         STAGE_ALSO todo_join.scxml todo_edit.scxml todo_write.scxml todo_supersede.scxml
                    todo_keep.scxml todo_node.scxml todo_visit.scxml
-                   todo_share.scxml
+                   todo_share.scxml todo_agenda.scxml
+                   event_occurrence.scxml event_later.scxml event_agenda.scxml
     )
+    # Its schedule: the occurrence record, the rule that orders two writes and the one
+    # that expands a repetition, the fixtures of the machine's own directory.
+    set(_STATIC_EVENT_HEADERS "")
+    foreach(_EVENT_HEADER event_occurrence event_later event_agenda)
+        set(_EVENT_SOURCE
+            "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_EVENT_HEADER}.scxml")
+        set(_EVENT_OUTPUT "${SCE_C_INTEGRATION_GENERATED_DIR}/${_EVENT_HEADER}.h")
+        add_custom_command(
+            OUTPUT "${_EVENT_OUTPUT}"
+            COMMAND "${SCE_CODEGEN}" generate "${_EVENT_SOURCE}"
+                    -l c11 -o "${SCE_C_INTEGRATION_GENERATED_DIR}"
+                    --write-deps "${_EVENT_OUTPUT}.d"
+            DEPENDS "${_EVENT_SOURCE}" "${SCE_CODEGEN}"
+            DEPFILE "${_EVENT_OUTPUT}.d"
+            COMMENT "Generating C11 header: ${_EVENT_HEADER}.h"
+            VERBATIM
+        )
+        list(APPEND _STATIC_EVENT_HEADERS "${_EVENT_OUTPUT}")
+    endforeach()
     # A machine that hands the standard text rules a record and a list of records
     # that hold text: each rule's header, and the header of the schema they take
     # and give back, is generated once beside the machine that includes them.
@@ -2873,6 +2893,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_sheet_peer_SOURCES}
         ${INTEGRATION_C_TEST_presence_peer_SOURCES}
         ${_STATIC_MERGE_HEADERS}
+        ${_STATIC_EVENT_HEADERS}
         ${INTEGRATION_C_TEST_static_text_record_SOURCES}
         ${_STATIC_TEXT_HEADERS}
     )

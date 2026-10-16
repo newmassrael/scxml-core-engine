@@ -27,6 +27,9 @@ mod common;
 
 use std::path::PathBuf;
 
+use common::calendar::{
+    agreed_agenda, instant, schedule_todo, Plan, HOUR_MS, MONTHLY, START, WEEKLY,
+};
 use common::resync::{MINUTE, OLD_LIMIT_MINUTES};
 use common::*;
 use sce_rust_world::{Outcome, Taken, World};
@@ -42,6 +45,7 @@ const TODO_PUBLISHED: &[&str] = &[
     "values",
     "digest",
     "refusals",
+    "agenda",
 ];
 
 /// The variables a copy of the presence list publishes.
@@ -250,6 +254,39 @@ fn todo_afternoon() -> World {
     for who in ["alice", "server", "bob"] {
         world.raise(who, "todo.resync", "");
         assert_eq!(world.run_until_quiet(60_000), Outcome::Quiet);
+    }
+
+    // Events: to-dos with a start, a length and a repetition. A weekly meeting on Monday
+    // and Wednesday, a monthly one on the 31st, and one that alice and bob move at the
+    // same moment; each copy is then asked what is scheduled in a window, and the agenda
+    // it shows is a step of its record like any other.
+    let weekly = Plan {
+        days: (1 << 1) | (1 << 3),
+        ..Plan::once(instant(2026, 1, 5, 10, 0), HOUR_MS).repeating(WEEKLY, 1)
+    };
+    schedule_todo(&mut world, "alice", 20, &weekly);
+    schedule_todo(
+        &mut world,
+        "bob",
+        21,
+        &Plan::once(instant(2026, 1, 31, 9, 0), 0).repeating(MONTHLY, 1),
+    );
+    schedule_todo(
+        &mut world,
+        "alice",
+        22,
+        &Plan::once(instant(2026, 3, 2, 9, 0), HOUR_MS),
+    );
+    assert_eq!(world.run_until_quiet(60_000), Outcome::Quiet);
+    todo_set(&mut world, "alice", 22, START, instant(2026, 3, 3, 9, 0));
+    todo_set(&mut world, "bob", 22, START, instant(2026, 3, 4, 14, 0));
+    assert_eq!(world.run_until_quiet(60_000), Outcome::Quiet);
+    for (id, from, to) in [
+        (20, instant(2026, 1, 5, 0, 0), instant(2026, 1, 19, 0, 0)),
+        (21, instant(2026, 1, 1, 0, 0), instant(2026, 5, 1, 0, 0)),
+        (22, instant(2026, 3, 1, 0, 0), instant(2026, 4, 1, 0, 0)),
+    ] {
+        agreed_agenda(&mut world, id, from, to);
     }
     world
 }

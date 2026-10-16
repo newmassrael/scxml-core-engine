@@ -668,6 +668,18 @@ template <typename Entries> json presenceEntriesJson(const Entries &entries) {
     });
 }
 
+/// A list of `record:Occurrence` (event_occurrence.scxml), in order: one occurrence of a
+/// scheduled to-do in an agenda, its start and end as instants.
+template <typename Occurrences> json occurrencesJson(const Occurrences &occurrences) {
+    return listedJson(occurrences, [](const auto &occurrence) {
+        return json{{"id", wideText(occurrence.id)},
+                    {"start", wideText(occurrence.start)},
+                    {"end", wideText(occurrence.end)},
+                    {"nth", occurrence.nth},
+                    {"conflict", occurrence.conflict}};
+    });
+}
+
 }  // namespace
 
 namespace G = SCE::Generated;
@@ -1687,6 +1699,7 @@ Driver<ClockPeeking<G::todo_peer::todo_peer>> todoPeerDriver() {
         {"values", [](const Machine &m) { return todoValuesJson(m.values()); }},
         {"digest", [](const Machine &m) { return merkleNodesJson(m.digest()); }},
         {"refusals", [](const Machine &m) { return json(m.refusals()); }},
+        {"agenda", [](const Machine &m) { return occurrencesJson(m.agenda()); }},
     });
 }
 

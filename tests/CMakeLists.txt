@@ -475,6 +475,15 @@ foreach(_STD_MERGE_RULE hlc_send hlc_receive hlc_compare lww_write rga_insert rg
         HEADER ${_STD_MERGE_RULE}.h
     )
 endforeach()
+# todo_peer's schedule: the occurrence record, the rule that orders two writes and the one
+# that expands a repetition, which are fixtures of the machine's own directory.
+foreach(_EVENT_DOCUMENT event_occurrence event_later event_agenda)
+    sce_add_algorithm(
+        TARGET static_datamodel_generated_cpp_test
+        SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_EVENT_DOCUMENT}.scxml
+        HEADER ${_EVENT_DOCUMENT}.h
+    )
+endforeach()
 # static_text_record's: the standard text rules over a record that holds text, and
 # the record's own event-schema, which each rule's header includes.
 foreach(_STD_TEXT_DOCUMENT text_slot text_slot_latest text_slot_retitled text_slot_holds)

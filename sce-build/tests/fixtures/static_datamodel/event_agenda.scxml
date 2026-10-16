@@ -1,0 +1,301 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  What is scheduled in a window for one to-do of a copy of the to-do list (todo_peer): a
+  to-do with a start, a length and a repetition is an event, and this is its occurrences
+  that overlap [windowStart, windowEnd), in time order. The schedule is read from the
+  fields the to-do holds, by the numbers the host gives them:
+
+    16  start          instant of the first occurrence, ms since 1970-01-01 UTC (0 or more)
+    17  length         ms an occurrence lasts (0 for an instant)
+    18  repeat         0 once, 1 every `every` days, 2 every `every` weeks on the days of
+                       `days`, 3 every `every` months on the start's day of the month
+                       (clamped to the month's length: the 31st falls on the 30th, or the
+                       28th or 29th of February); any other number repeats nothing and
+                       shows nothing
+    19  every          the step of the repetition, 1 when absent or less than 1
+    20  days           weekdays of a weekly repetition, bit n set for weekday n counted
+                       from Sunday as 0; the start's own weekday when absent
+    21  count          the most occurrences there are, counted from the first (0 for no
+                       limit)
+     9  removed        1 when the to-do is removed, which shows nothing
+
+  A field is read as the value written last (event_later orders the writes), so that every copy that holds
+  the same writes shows the same agenda whatever order they arrived in; a to-do without a
+  start shows nothing. `conflict` is 1 on every occurrence when two people changed a field
+  of the schedule at once and no one has chosen between them: the agenda is
+  then the later write's, and the flag says the people have not agreed.
+
+  Times are instants in UTC. A repetition that keeps a local time through a change of the
+  clock, or a weekday in someone's zone, is the application's: it writes the instants.
+  Weeks begin on Sunday and a weekly repetition counts the weeks from the week of the
+  start; its first occurrence is the first day on or after the start that the days name,
+  which is the start itself only when its weekday is one of them. `until` is not a field:
+  an application that wants one asks for a window that ends there.
+
+  The window holds at most 64 occurrences: the agenda ends at the 64th, which a caller
+  that has reached it continues from the end of. The scan is by day for a repetition by
+  day or week and by month for one by month, from the start, and fails after 40000 steps.
+
+  start 1970-01-05 00:00 (a Monday), length one hour, weekly on Monday and Wednesday,
+  window the first two weeks → 4 occurrences, on days 4, 6, 11 and 13 of the count; monthly
+  from 2026-01-31 → 2026-01-31, 2026-02-28, 2026-03-31.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm"
+       name="event_agenda"
+       version="1.0">
+  <sce:import kind="event-schema" src="sce:std/merge/mv_value.scxml" as="Value"/>
+  <sce:import kind="event-schema" src="event_occurrence.scxml" as="Occurrence"/>
+  <sce:import kind="algorithm" src="event_later.scxml" as="later"/>
+  <sce:signature>
+    <sce:param name="values" type="list&lt;record:Value&gt;"/>
+    <sce:param name="id" type="uint64"/>
+    <sce:param name="windowStart" type="int64"/>
+    <sce:param name="windowEnd" type="int64"/>
+    <sce:return type="list&lt;record:Occurrence&gt;" may-fail="true" returns-max-size="64"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="out" type="list&lt;record:Occurrence&gt;" capacity="64"/>
+    <sce:var name="emitted" type="int64" init="0"/>
+    <sce:var name="day" type="int64" init="86400000"/>
+    <!-- Each field the schedule reads is the value written last of those the copy
+         holds for it, and a field held twice sets the flag. The one pass per field
+         keeps the list as it is: an algorithm hands a list of records to no other. -->
+    <sce:var name="startAt" type="int64" init="-1"/>
+    <sce:var name="gone" type="int64" init="0"/>
+    <sce:var name="freq" type="int64" init="0"/>
+    <sce:var name="length" type="int64" init="0"/>
+    <sce:var name="every0" type="int64" init="1"/>
+    <sce:var name="days" type="int64" init="0"/>
+    <sce:var name="count" type="int64" init="0"/>
+    <sce:var name="flag" type="uint8" init="0"/>
+    <sce:var name="found" type="bool" init="false"/>
+    <sce:var name="held" type="int64" init="0"/>
+    <sce:var name="bw" type="int64" init="0"/>
+    <sce:var name="bc" type="uint32" init="0"/>
+    <sce:var name="bn" type="uint64" init="0"/>
+
+    <sce:assign target="found" expr="false"/>
+    <sce:assign target="held" expr="0"/>
+    <sce:foreach item="w16" in="values">
+      <sce:if cond="w16.id === id &amp;&amp; w16.field === 16">
+        <sce:assign target="held" expr="held + 1"/>
+        <sce:if cond="!found || later(w16.wallTime, w16.counter, w16.nodeId, bw, bc, bn)">
+          <sce:assign target="found" expr="true"/>
+          <sce:assign target="bw" expr="w16.wallTime"/>
+          <sce:assign target="bc" expr="w16.counter"/>
+          <sce:assign target="bn" expr="w16.nodeId"/>
+          <sce:assign target="startAt" expr="w16.value"/>
+        </sce:if>
+      </sce:if>
+    </sce:foreach>
+    <sce:if cond="held &gt; 1">
+      <sce:assign target="flag" expr="1"/>
+    </sce:if>
+
+    <sce:assign target="found" expr="false"/>
+    <sce:assign target="held" expr="0"/>
+    <sce:foreach item="w9" in="values">
+      <sce:if cond="w9.id === id &amp;&amp; w9.field === 9">
+        <sce:assign target="held" expr="held + 1"/>
+        <sce:if cond="!found || later(w9.wallTime, w9.counter, w9.nodeId, bw, bc, bn)">
+          <sce:assign target="found" expr="true"/>
+          <sce:assign target="bw" expr="w9.wallTime"/>
+          <sce:assign target="bc" expr="w9.counter"/>
+          <sce:assign target="bn" expr="w9.nodeId"/>
+          <sce:assign target="gone" expr="w9.value"/>
+        </sce:if>
+      </sce:if>
+    </sce:foreach>
+    <sce:if cond="held &gt; 1">
+      <sce:assign target="flag" expr="1"/>
+    </sce:if>
+
+    <sce:assign target="found" expr="false"/>
+    <sce:assign target="held" expr="0"/>
+    <sce:foreach item="w18" in="values">
+      <sce:if cond="w18.id === id &amp;&amp; w18.field === 18">
+        <sce:assign target="held" expr="held + 1"/>
+        <sce:if cond="!found || later(w18.wallTime, w18.counter, w18.nodeId, bw, bc, bn)">
+          <sce:assign target="found" expr="true"/>
+          <sce:assign target="bw" expr="w18.wallTime"/>
+          <sce:assign target="bc" expr="w18.counter"/>
+          <sce:assign target="bn" expr="w18.nodeId"/>
+          <sce:assign target="freq" expr="w18.value"/>
+        </sce:if>
+      </sce:if>
+    </sce:foreach>
+    <sce:if cond="held &gt; 1">
+      <sce:assign target="flag" expr="1"/>
+    </sce:if>
+
+    <sce:assign target="found" expr="false"/>
+    <sce:assign target="held" expr="0"/>
+    <sce:foreach item="w17" in="values">
+      <sce:if cond="w17.id === id &amp;&amp; w17.field === 17">
+        <sce:assign target="held" expr="held + 1"/>
+        <sce:if cond="!found || later(w17.wallTime, w17.counter, w17.nodeId, bw, bc, bn)">
+          <sce:assign target="found" expr="true"/>
+          <sce:assign target="bw" expr="w17.wallTime"/>
+          <sce:assign target="bc" expr="w17.counter"/>
+          <sce:assign target="bn" expr="w17.nodeId"/>
+          <sce:assign target="length" expr="w17.value"/>
+        </sce:if>
+      </sce:if>
+    </sce:foreach>
+    <sce:if cond="held &gt; 1">
+      <sce:assign target="flag" expr="1"/>
+    </sce:if>
+
+    <sce:assign target="found" expr="false"/>
+    <sce:assign target="held" expr="0"/>
+    <sce:foreach item="w19" in="values">
+      <sce:if cond="w19.id === id &amp;&amp; w19.field === 19">
+        <sce:assign target="held" expr="held + 1"/>
+        <sce:if cond="!found || later(w19.wallTime, w19.counter, w19.nodeId, bw, bc, bn)">
+          <sce:assign target="found" expr="true"/>
+          <sce:assign target="bw" expr="w19.wallTime"/>
+          <sce:assign target="bc" expr="w19.counter"/>
+          <sce:assign target="bn" expr="w19.nodeId"/>
+          <sce:assign target="every0" expr="w19.value"/>
+        </sce:if>
+      </sce:if>
+    </sce:foreach>
+    <sce:if cond="held &gt; 1">
+      <sce:assign target="flag" expr="1"/>
+    </sce:if>
+
+    <sce:assign target="found" expr="false"/>
+    <sce:assign target="held" expr="0"/>
+    <sce:foreach item="w20" in="values">
+      <sce:if cond="w20.id === id &amp;&amp; w20.field === 20">
+        <sce:assign target="held" expr="held + 1"/>
+        <sce:if cond="!found || later(w20.wallTime, w20.counter, w20.nodeId, bw, bc, bn)">
+          <sce:assign target="found" expr="true"/>
+          <sce:assign target="bw" expr="w20.wallTime"/>
+          <sce:assign target="bc" expr="w20.counter"/>
+          <sce:assign target="bn" expr="w20.nodeId"/>
+          <sce:assign target="days" expr="w20.value"/>
+        </sce:if>
+      </sce:if>
+    </sce:foreach>
+    <sce:if cond="held &gt; 1">
+      <sce:assign target="flag" expr="1"/>
+    </sce:if>
+
+    <sce:assign target="found" expr="false"/>
+    <sce:assign target="held" expr="0"/>
+    <sce:foreach item="w21" in="values">
+      <sce:if cond="w21.id === id &amp;&amp; w21.field === 21">
+        <sce:assign target="held" expr="held + 1"/>
+        <sce:if cond="!found || later(w21.wallTime, w21.counter, w21.nodeId, bw, bc, bn)">
+          <sce:assign target="found" expr="true"/>
+          <sce:assign target="bw" expr="w21.wallTime"/>
+          <sce:assign target="bc" expr="w21.counter"/>
+          <sce:assign target="bn" expr="w21.nodeId"/>
+          <sce:assign target="count" expr="w21.value"/>
+        </sce:if>
+      </sce:if>
+    </sce:foreach>
+    <sce:if cond="held &gt; 1">
+      <sce:assign target="flag" expr="1"/>
+    </sce:if>
+
+    <sce:if cond="startAt &gt;= 0 &amp;&amp; gone !== 1 &amp;&amp; freq &gt;= 0 &amp;&amp; freq &lt;= 3 &amp;&amp; windowEnd &gt; windowStart &amp;&amp; windowEnd &gt; 0">
+      <sce:var name="every" type="int64" init="every0 &lt; 1 ? 1 : every0"/>
+
+      <sce:var name="timeOfDay" type="int64" init="startAt % day"/>
+      <sce:var name="startDay" type="int64" init="(startAt - timeOfDay) / day"/>
+      <sce:var name="endDay" type="int64" init="(windowEnd + day - 1) / day"/>
+
+      <!-- The weekday of the start, Sunday as 0, and the first day of its week. -->
+      <sce:var name="startWeekday" type="int64" init="(startDay % 7 + 11) % 7"/>
+      <sce:var name="weekStart" type="int64" init="startDay - startWeekday"/>
+      <!-- The bit is shifted from an int64, so that the shift is made at the width of the
+           days it is read against and not at a literal's. -->
+      <sce:var name="one" type="int64" init="1"/>
+      <sce:var name="weekdays" type="int64" init="days === 0 ? one &lt;&lt; startWeekday : days &amp; 127"/>
+
+      <!-- The start as a civil date, by the day count (Hinnant's civil_from_days; the
+           count is not negative, so the divisions are floors), as a month number. -->
+      <sce:var name="z" type="int64" init="startDay + 719468"/>
+      <sce:var name="era" type="int64" init="z / 146097"/>
+      <sce:var name="doe" type="int64" init="z - era * 146097"/>
+      <sce:var name="yoe" type="int64" init="(doe - doe / 1460 + doe / 36524 - doe / 146096) / 365"/>
+      <sce:var name="doy" type="int64" init="doe - (365 * yoe + yoe / 4 - yoe / 100)"/>
+      <sce:var name="mp" type="int64" init="(5 * doy + 2) / 153"/>
+      <sce:var name="startOfMonth" type="int64" init="doy - (153 * mp + 2) / 5 + 1"/>
+      <sce:var name="startMonth" type="int64" init="mp &lt; 10 ? mp + 3 : mp - 9"/>
+      <sce:var name="startYear" type="int64" init="startMonth &lt;= 2 ? yoe + era * 400 + 1 : yoe + era * 400"/>
+      <sce:var name="months" type="int64" init="startYear * 12 + startMonth - 1"/>
+
+      <sce:var name="cursor" type="int64" init="0"/>
+      <sce:var name="nth" type="int64" init="0"/>
+      <sce:var name="going" type="bool" init="true"/>
+      <sce:while cond="going" max-iter="40000">
+        <sce:var name="d" type="int64" init="startDay + cursor"/>
+        <sce:var name="valid" type="bool" init="false"/>
+        <sce:if cond="freq === 0">
+          <sce:assign target="valid" expr="cursor === 0"/>
+        </sce:if>
+        <sce:if cond="freq === 1">
+          <sce:assign target="valid" expr="cursor % every === 0"/>
+        </sce:if>
+        <sce:if cond="freq === 2">
+          <sce:assign target="valid" expr="((weekdays &gt;&gt; ((d % 7 + 11) % 7)) &amp; 1) === 1 &amp;&amp; ((d - weekStart) / 7) % every === 0"/>
+        </sce:if>
+        <sce:if cond="freq === 3">
+          <sce:var name="total" type="int64" init="months + cursor * every"/>
+          <sce:var name="landYear" type="int64" init="total / 12"/>
+          <sce:var name="landMonth" type="int64" init="total % 12 + 1"/>
+          <sce:var name="landLeap" type="bool" init="(landYear % 4 === 0 &amp;&amp; landYear % 100 !== 0) || landYear % 400 === 0"/>
+          <sce:var name="last" type="int64" init="landMonth === 2 ? (landLeap ? 29 : 28) : (landMonth === 4 || landMonth === 6 || landMonth === 9 || landMonth === 11 ? 30 : 31)"/>
+          <sce:var name="landDay" type="int64" init="startOfMonth &lt; last ? startOfMonth : last"/>
+          <sce:var name="cy" type="int64" init="landMonth &lt;= 2 ? landYear - 1 : landYear"/>
+          <sce:var name="cera" type="int64" init="cy / 400"/>
+          <sce:var name="cyoe" type="int64" init="cy - cera * 400"/>
+          <sce:var name="cmp" type="int64" init="landMonth &gt; 2 ? landMonth - 3 : landMonth + 9"/>
+          <sce:var name="cdoy" type="int64" init="(153 * cmp + 2) / 5 + landDay - 1"/>
+          <sce:var name="cdoe" type="int64" init="cyoe * 365 + cyoe / 4 - cyoe / 100 + cdoy"/>
+          <sce:assign target="d" expr="cera * 146097 + cdoe - 719468"/>
+          <sce:assign target="valid" expr="true"/>
+        </sce:if>
+        <sce:var name="occStart" type="int64" init="d * day + timeOfDay"/>
+        <sce:var name="occEnd" type="int64" init="occStart + length"/>
+        <sce:if cond="d &gt;= endDay || occStart &gt;= windowEnd">
+          <sce:assign target="going" expr="false"/>
+          <sce:else>
+            <sce:if cond="valid">
+              <sce:if cond="count &gt; 0 &amp;&amp; nth &gt;= count">
+                <sce:assign target="going" expr="false"/>
+                <sce:else>
+                  <sce:if cond="(occEnd &gt; windowStart || occStart &gt;= windowStart) &amp;&amp; emitted &lt; 64">
+                    <sce:var name="line" type="record:Occurrence">
+                      <sce:set name="id" expr="id"/>
+                      <sce:set name="start" expr="occStart"/>
+                      <sce:set name="end" expr="occEnd"/>
+                      <sce:set name="nth" expr="nth"/>
+                      <sce:set name="conflict" expr="flag"/>
+                    </sce:var>
+                    <sce:append target="out" expr="line"/>
+                    <sce:assign target="emitted" expr="emitted + 1"/>
+                  </sce:if>
+                  <sce:assign target="nth" expr="nth + 1"/>
+                  <sce:if cond="freq === 0">
+                    <sce:assign target="going" expr="false"/>
+                  </sce:if>
+                </sce:else>
+              </sce:if>
+            </sce:if>
+          </sce:else>
+        </sce:if>
+        <sce:if cond="emitted &gt;= 64">
+          <sce:assign target="going" expr="false"/>
+        </sce:if>
+        <sce:assign target="cursor" expr="cursor + 1"/>
+      </sce:while>
+    </sce:if>
+    <sce:return expr="out"/>
+  </sce:body>
+</scxml>

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  One occurrence of a scheduled to-do in an agenda (event_agenda, shown by todo_peer):
+  which to-do it is (`id`), the instant it starts and the instant it ends, both in
+  milliseconds since 1970-01-01 UTC, which occurrence of the repetition it is counting
+  from 0 (`nth`, counted from the first occurrence there is and not from the first one
+  in the window), and `conflict`, 1 when two people changed a field of the schedule at
+  once and the copy has not been told which to keep: the occurrence is then the one the
+  later of the two writes says, as every copy reads it, and the flag says the answer is
+  not yet agreed to by the people.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="event_occurrence"
+       sce:event-name="calendar.occurrence">
+  <datamodel>
+    <data id="id" sce:type="uint64" sce:direction="in"/>
+    <data id="start" sce:type="int64" sce:direction="in"/>
+    <data id="end" sce:type="int64" sce:direction="in"/>
+    <data id="nth" sce:type="uint32" sce:direction="in"/>
+    <data id="conflict" sce:type="uint8" sce:direction="in"/>
+  </datamodel>
+</scxml>

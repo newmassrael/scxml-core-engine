@@ -78,6 +78,8 @@
   <sce:import kind="event-schema" src="todo_node.scxml" as="PeerNode"/>
   <sce:import kind="event-schema" src="todo_visit.scxml" as="Visit"/>
   <sce:import kind="event-schema" src="todo_share.scxml" as="Share"/>
+  <sce:import kind="event-schema" src="todo_agenda.scxml" as="Agenda"/>
+  <sce:import kind="event-schema" src="event_occurrence.scxml" as="Occurrence"/>
   <sce:import kind="event-schema" src="sce:std/merge/merkle_node.scxml" as="Node"/>
   <sce:import kind="event-schema" src="sce:std/merge/hlc_timestamp.scxml" as="Hlc"/>
   <sce:import kind="event-schema" src="sce:std/merge/orset_entry.scxml" as="Entry"/>
@@ -92,6 +94,7 @@
   <sce:import kind="algorithm" src="sce:std/merge/mv_value_drop.scxml" as="MvValueDrop"/>
   <sce:import kind="algorithm" src="sce:std/merge/merkle_insert.scxml" as="MerkleInsert"/>
   <sce:import kind="algorithm" src="sce:std/merge/merkle_change_hash.scxml" as="MerkleChangeHash"/>
+  <sce:import kind="algorithm" src="event_agenda.scxml" as="EventAgenda"/>
   <datamodel>
     <data id="node" sce:type="uint64" expr="0" sce:direction="out"/>
     <data id="hub" sce:type="bool" expr="false" sce:direction="out"/>
@@ -135,6 +138,7 @@
     <data id="isLive" sce:type="bool" expr="false"/>
     <data id="present" sce:type="bool" expr="false"/>
     <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="agenda" sce:type="list&lt;record:Occurrence&gt;" sce:capacity="64" sce:direction="out"/>
   </datamodel>
   <state id="open">
     <transition event="todo.join" type="internal">
@@ -550,6 +554,15 @@
           </if>
         </if>
       </foreach>
+    </transition>
+
+    <!-- The host asks what a to-do has scheduled in a window: its occurrences there,
+         read from the values the copy holds (event_agenda), for the host to show. Nothing
+         is sent and nothing held changes; a to-do that has no schedule has no occurrences,
+         and a window the scan cannot cover is a refusal that leaves the agenda empty. -->
+    <transition event="todo.agenda" type="internal">
+      <sce:clear target="agenda"/>
+      <assign location="agenda" expr="EventAgenda(values, _event.data.id, _event.data.windowStart, _event.data.windowEnd)"/>
     </transition>
 
     <transition event="error.execution" type="internal">

@@ -76,6 +76,10 @@ ALGORITHMS=(days_in_month day_run day_repeat ledger_add ledger_total ledger_amou
 # The records static_state_algorithm hands those algorithms and takes back: an
 # algorithm names one as `super::schema_<name>`, so it is generated beside them.
 SCHEMAS=(schema_entry schema_total)
+# The schedule todo_peer reads from the fields a to-do holds: the occurrence record, the
+# rule that orders two writes and the one that expands a repetition. Each is named by its
+# file, which a machine's import names as `super::<file>`.
+SCHEMAS+=(event_occurrence event_later event_agenda)
 # The standard algorithms sync_client imports, by their library names; each
 # is generated beside the machines under its own name, as a local one is.
 STD_ALGORITHMS=(sync/sync_failure sync/sync_retry_at sync/sync_delete_outcome sync/sync_upload_outcome)

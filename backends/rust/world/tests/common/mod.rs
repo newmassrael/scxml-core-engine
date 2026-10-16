@@ -22,6 +22,7 @@ include!(concat!(env!("OUT_DIR"), "/machines.rs"));
 pub use sheet_peer::{SheetPeerPersist, SheetPeerPolicy as Peer};
 pub use todo_peer::{TodoPeerPersist, TodoPeerPolicy as TodoPeer};
 
+pub mod calendar;
 pub mod crowd;
 pub mod kotlin;
 pub mod presence;

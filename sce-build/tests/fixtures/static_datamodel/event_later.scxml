@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Whether the write stamped (wall, counter, node) is later than the one stamped
+  (bestWall, bestCounter, bestNode), by the order of the dots writes are known by: wall
+  time, then counter, then node. event_agenda reads a field as the value written last, so
+  that every copy that holds the same writes reads the same one whatever order they
+  arrived in.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm"
+       name="event_later"
+       version="1.0">
+  <sce:signature>
+    <sce:param name="wall" type="int64"/>
+    <sce:param name="counter" type="uint32"/>
+    <sce:param name="node" type="uint64"/>
+    <sce:param name="bestWall" type="int64"/>
+    <sce:param name="bestCounter" type="uint32"/>
+    <sce:param name="bestNode" type="uint64"/>
+    <sce:return type="bool"/>
+  </sce:signature>
+  <sce:body>
+    <sce:return expr="wall &gt; bestWall || (wall === bestWall &amp;&amp; (counter &gt; bestCounter || (counter === bestCounter &amp;&amp; node &gt; bestNode)))"/>
+  </sce:body>
+</scxml>

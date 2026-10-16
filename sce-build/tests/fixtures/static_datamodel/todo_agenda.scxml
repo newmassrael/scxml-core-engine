@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The host's request that a copy of the to-do list show what is scheduled in a window
+  (todo_peer): the to-do's `id`, and the window as two instants in milliseconds since
+  1970-01-01 UTC, `windowStart` inclusive and `windowEnd` exclusive. What the copy shows
+  is its `agenda`, one record for each occurrence of the to-do that overlaps the window.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="todo_agenda"
+       sce:event-name="todo.agenda">
+  <datamodel>
+    <data id="id" sce:type="uint32" sce:direction="in"/>
+    <data id="windowStart" sce:type="int64" sce:direction="in"/>
+    <data id="windowEnd" sce:type="int64" sce:direction="in"/>
+  </datamodel>
+</scxml>

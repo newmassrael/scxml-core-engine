@@ -425,6 +425,29 @@ func todoValuesJSON[R todoValueRecord](values []R) any {
 	return out
 }
 
+// occurrenceRecord is a `record:Occurrence` (event_occurrence) as a host reads it: one
+// occurrence of a scheduled to-do in an agenda, its start and end as instants.
+type occurrenceRecord interface {
+	Id() uint64
+	Start() int64
+	End() int64
+	Nth() uint32
+	Conflict() uint8
+}
+
+// occurrencesJSON is a list of such occurrences, in order.
+func occurrencesJSON[R occurrenceRecord](occurrences []R) any {
+	out := make([]any, len(occurrences))
+	for i, occurrence := range occurrences {
+		out[i] = map[string]any{
+			"id": digits(occurrence.Id()), "start": signedDigits(occurrence.Start()),
+			"end": signedDigits(occurrence.End()), "nth": occurrence.Nth(),
+			"conflict": occurrence.Conflict(),
+		}
+	}
+	return out
+}
+
 // scenarioDir is where the scenarios live, from this package's directory.
 const scenarioDir = "../../../../../sce-build/tests/fixtures/static_datamodel/scenarios"
 
@@ -1763,6 +1786,7 @@ func todoCopy() machine {
 		"values":     func() any { return todoValuesJSON(policy.Values()) },
 		"digest":     func() any { return merkleNodesJSON(policy.Digest()) },
 		"refusals":   func() any { return policy.Refusals() },
+		"agenda":     func() any { return occurrencesJSON(policy.Agenda()) },
 	})
 }
 
