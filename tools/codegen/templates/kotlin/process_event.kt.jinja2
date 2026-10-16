@@ -49,13 +49,18 @@ safeEvaluateGuard({{ trans.cond | to_script_source_guard }})
    the two kinds in separate passes. A descriptor that matches every event
    (`*`, and the other spellings analyzer.rs::stamp_wildcard_descriptors
    recognises) answers any named one; otherwise the events the descriptor
-   matches by prefix (W3C SCXML 3.12.1), precomputed. #}
+   matches by prefix (W3C SCXML 3.12.1), precomputed. An empty list means none of the
+   model's events satisfy the descriptor (`never.*` with no matching raise or send): a legal
+   document, and a transition that cannot be taken. The IR leaves an empty list out of the
+   serialised transition, so the field is undefined there and `not` covers both. Rendering
+   the descriptor itself, as the last arm used to, wrote `event is XEvent.Never.*`, which
+   is not Kotlin. #}
 {% macro event_match(trans) -%}
 {%- if not trans.event -%}event == null
 {%- elif trans.matches_any_event -%}event != null
-{%- elif trans.prefix_matching_events is defined and trans.prefix_matching_events | length > 1 -%}({% for matched_event in trans.prefix_matching_events | sort %}event is {{ machine_name }}Event.{{ matched_event | to_event_class_name }}{{ " || " if not loop.last }}{% endfor %})
-{%- elif trans.prefix_matching_events is defined and trans.prefix_matching_events | length == 1 -%}event is {{ machine_name }}Event.{{ trans.prefix_matching_events[0] | to_event_class_name }}
-{%- else -%}event is {{ machine_name }}Event.{{ trans.event | to_event_class_name }}
+{%- elif not trans.prefix_matching_events -%}false
+{%- elif trans.prefix_matching_events | length > 1 -%}({% for matched_event in trans.prefix_matching_events | sort %}event is {{ machine_name }}Event.{{ matched_event | to_event_class_name }}{{ " || " if not loop.last }}{% endfor %})
+{%- else -%}event is {{ machine_name }}Event.{{ trans.prefix_matching_events[0] | to_event_class_name }}
 {%- endif -%}
 {%- endmacro %}
 {% set ns_selecting = namespace(states=0) %}
