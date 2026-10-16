@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 35dd989ec22ae23b283a4c23fe6e1a93c126d88e4bdcb9b09222b54ba76fa414
+// source-hash: 6caf91b7141c88d0a508e4aad3e1cd20df805c8c56903e8b0db3f1f4b706723b
 // SCE-MAP: algorithm_ledger_total.scxml:7 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")

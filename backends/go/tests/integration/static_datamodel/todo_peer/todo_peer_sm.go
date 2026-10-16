@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 35dd989ec22ae23b283a4c23fe6e1a93c126d88e4bdcb9b09222b54ba76fa414
+// source-hash: 6caf91b7141c88d0a508e4aad3e1cd20df805c8c56903e8b0db3f1f4b706723b
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -32,6 +32,7 @@ import (
 
 	sce "github.com/newmassrael/sce-go-runtime"
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
+	sce_event_agenda "github.com/newmassrael/sce-go-tests/integration/static_datamodel/event_agenda"
 	sce_hlc_receive "github.com/newmassrael/sce-go-tests/integration/static_datamodel/hlc_receive"
 	sce_hlc_send "github.com/newmassrael/sce-go-tests/integration/static_datamodel/hlc_send"
 	sce_hlc_timestamp "github.com/newmassrael/sce-go-tests/integration/static_datamodel/hlc_timestamp"
@@ -151,23 +152,26 @@ type TodoPeerEvent int
 
 const (
 	TodoPeerEventErrorExecution TodoPeerEvent = 0
-	TodoPeerEventTodoEdit TodoPeerEvent = 1
-	TodoPeerEventTodoJoin TodoPeerEvent = 2
-	TodoPeerEventTodoKeep TodoPeerEvent = 3
-	TodoPeerEventTodoNode TodoPeerEvent = 4
-	TodoPeerEventTodoResync TodoPeerEvent = 5
-	TodoPeerEventTodoShare TodoPeerEvent = 6
-	TodoPeerEventTodoSupersede TodoPeerEvent = 7
-	TodoPeerEventTodoVisit TodoPeerEvent = 8
-	TodoPeerEventTodoWrite TodoPeerEvent = 9
+	TodoPeerEventTodoAgenda TodoPeerEvent = 1
+	TodoPeerEventTodoEdit TodoPeerEvent = 2
+	TodoPeerEventTodoJoin TodoPeerEvent = 3
+	TodoPeerEventTodoKeep TodoPeerEvent = 4
+	TodoPeerEventTodoNode TodoPeerEvent = 5
+	TodoPeerEventTodoResync TodoPeerEvent = 6
+	TodoPeerEventTodoShare TodoPeerEvent = 7
+	TodoPeerEventTodoSupersede TodoPeerEvent = 8
+	TodoPeerEventTodoVisit TodoPeerEvent = 9
+	TodoPeerEventTodoWrite TodoPeerEvent = 10
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	TodoPeerEventNull TodoPeerEvent = 10
+	TodoPeerEventNull TodoPeerEvent = 11
 )
 
 func (e TodoPeerEvent) String() string {
 	switch e {
 	case TodoPeerEventErrorExecution:
 		return "error.execution"
+	case TodoPeerEventTodoAgenda:
+		return "todo.agenda"
 	case TodoPeerEventTodoEdit:
 		return "todo.edit"
 	case TodoPeerEventTodoJoin:
@@ -202,6 +206,7 @@ type TodoPeerPayloadTag int
 
 const (
 	TodoPeerPayloadTagNone TodoPeerPayloadTag = iota
+	TodoPeerPayloadTagTodoAgenda
 	TodoPeerPayloadTagTodoEdit
 	TodoPeerPayloadTagTodoJoin
 	TodoPeerPayloadTagTodoKeep
@@ -211,6 +216,15 @@ const (
 	TodoPeerPayloadTagTodoVisit
 	TodoPeerPayloadTagTodoWrite
 )
+
+// TodoPeerTodoAgendaPayload is the NL→IR Item C1 Path A typed `_event.data`
+// payload for `todo.agenda`. Internal to the package; consumers inject it via
+// the `RaiseTodoAgenda` seam below (fields are unexported by design).
+type TodoPeerTodoAgendaPayload struct {
+	id uint32
+	windowStart int64
+	windowEnd int64
+}
 
 // TodoPeerTodoEditPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `todo.edit`. Internal to the package; consumers inject it via
@@ -294,6 +308,26 @@ type TodoPeerTodoWritePayload struct {
 	wallTime int64
 	counter uint32
 	nodeId uint64
+}
+
+// RaiseTodoAgenda is the NL→IR Item C1 Path A per-event typed `_event.data`
+// inject seam for `todo.agenda` — binds the event name and the payload field
+// values in one call so the name↔type pairing cannot be constructed
+// inconsistently. Twin of the Rust `RaiseTodoAgenda` extension-trait method
+// and the C11 `raise_<event>_typed` entry.
+func RaiseTodoAgenda(e *sce.Engine[TodoPeerState, TodoPeerEvent], id uint32, windowStart int64, windowEnd int64) {
+	e.RaiseExternalWithMeta(sce.EventWithMetadata[TodoPeerEvent]{
+		Event:    TodoPeerEventTodoAgenda,
+		Metadata: sce.EventMetadata{
+			EventType:    sce.EventTypeExternal,
+			TypedPayload: TodoPeerTodoAgendaPayload{id: id, windowStart: windowStart, windowEnd: windowEnd, },
+			// Both carriers are filled: the typed one a native guard reads,
+			// and `Data`, which is what the script engine binds `_event.data`
+			// from. Filling only the first left an `<assign expr="_event.data.x">`
+			// on this event reading nothing, on every backend alike.
+			Data: sce.PayloadJSON(sce.Pair("id", id), sce.Pair("windowStart", sce.Int64PayloadText(windowStart)), sce.Pair("windowEnd", sce.Int64PayloadText(windowEnd))),
+		},
+	})
 }
 
 // RaiseTodoEdit is the NL→IR Item C1 Path A per-event typed `_event.data`
@@ -580,7 +614,58 @@ func (r TodoPeerNodeRecord) Hash() uint32 {
 }
 
 
+// SCE Accepted Subset §2.15: a `record:Occurrence` datamodel value.
+type TodoPeerOccurrenceRecord struct {
+	id uint64
+	start int64
+	end int64
+	nth uint32
+	conflict uint8
+}
+
+// Id reports the `id` field.
+func (r TodoPeerOccurrenceRecord) Id() uint64 {
+	return r.id
+}
+
+// Start reports the `start` field.
+func (r TodoPeerOccurrenceRecord) Start() int64 {
+	return r.start
+}
+
+// End reports the `end` field.
+func (r TodoPeerOccurrenceRecord) End() int64 {
+	return r.end
+}
+
+// Nth reports the `nth` field.
+func (r TodoPeerOccurrenceRecord) Nth() uint32 {
+	return r.nth
+}
+
+// Conflict reports the `conflict` field.
+func (r TodoPeerOccurrenceRecord) Conflict() uint8 {
+	return r.conflict
+}
+
+
 // ── SCE Accepted Subset §2.15: calls of an algorithm that takes or returns state ──
+func sceAdapt_EventAgenda__v(p0 []TodoPeerValueRecord, p1 uint64, p2 int64, p3 int64) scealgorithm.Outcome[[]TodoPeerOccurrenceRecord] {
+	a0 := make([]sce_mv_value.MvValuePayload, len(p0))
+	for i, e := range p0 {
+		a0[i] = sce_mv_value.MvValuePayload{Id: e.id, Field: e.field, Value: e.value, Text: e.text, WallTime: e.wallTime, Counter: e.counter, NodeId: e.nodeId}
+	}
+	r, err := sce_event_agenda.EventAgenda(a0, p1, p2, p3)
+	if err != nil {
+		return scealgorithm.Outcome[[]TodoPeerOccurrenceRecord]{Err: err}
+	}
+	out := make([]TodoPeerOccurrenceRecord, len(r))
+	for i, e := range r {
+		out[i] = TodoPeerOccurrenceRecord{id: e.Id, start: e.Start, end: e.End, nth: e.Nth, conflict: e.Conflict}
+	}
+	return scealgorithm.Outcome[[]TodoPeerOccurrenceRecord]{Value: out}
+}
+
 func sceAdapt_HlcReceive__vv(p0 TodoPeerHlcRecord, p1 TodoPeerHlcRecord, p2 int64, p3 uint64) scealgorithm.Outcome[TodoPeerHlcRecord] {
 	r, err := sce_hlc_receive.HlcReceive(sce_hlc_timestamp.HlcTimestampPayload{WallTime: p0.wallTime, Counter: p0.counter, NodeId: p0.nodeId}, sce_hlc_timestamp.HlcTimestampPayload{WallTime: p1.wallTime, Counter: p1.counter, NodeId: p1.nodeId}, p2, p3)
 	if err != nil {
@@ -726,6 +811,7 @@ type TodoPeerPolicy struct {
 	// native transition guards (`p.pending<Event>Payload.<field>`). Mirrors
 	// the Rust policy's `pending_payload` / the C11 `sm->pending_payload`.
 	pendingPayloadTag TodoPeerPayloadTag
+	pendingTodoAgendaPayload TodoPeerTodoAgendaPayload
 	pendingTodoEditPayload TodoPeerTodoEditPayload
 	pendingTodoJoinPayload TodoPeerTodoJoinPayload
 	pendingTodoKeepPayload TodoPeerTodoKeepPayload
@@ -782,6 +868,8 @@ type TodoPeerPolicy struct {
 	vPresent bool
 	// W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`).
 	vRefusals uint32
+	// W3C SCXML 5.2: the `agenda` datamodel variable, published (`sce:direction="out"`).
+	vAgenda []TodoPeerOccurrenceRecord
 	// W3C SCXML 6.4: Parent communication (unbounded — see sce.ParentEventQueue)
 	ParentExternalQueue *sce.ParentEventQueue
 	InvokeID           string
@@ -815,6 +903,7 @@ func NewTodoPeerPolicy() TodoPeerPolicy {
 		vIsLive: false,
 		vPresent: false,
 		vRefusals: 0,
+		vAgenda: nil,
 	}
 }
 
@@ -864,6 +953,12 @@ func (p *TodoPeerPolicy) Digest() []TodoPeerNodeRecord {
 // variable holds now (W3C SCXML 5.2). Only the machine writes it.
 func (p *TodoPeerPolicy) Refusals() uint32 {
 	return p.vRefusals
+}
+
+// Agenda reports what the published `agenda` datamodel
+// variable holds now (W3C SCXML 5.2). Only the machine writes it.
+func (p *TodoPeerPolicy) Agenda() []TodoPeerOccurrenceRecord {
+	return p.vAgenda
 }
 
 // TodoPeerInvokeParams holds the values a parent's `<param>` and
@@ -1035,6 +1130,8 @@ func (p *TodoPeerPolicy) GetEventFromName(name string) (TodoPeerEvent, bool) {
 	switch name {
 	case "error.execution":
 		return TodoPeerEventErrorExecution, true
+	case "todo.agenda":
+		return TodoPeerEventTodoAgenda, true
 	case "todo.edit":
 		return TodoPeerEventTodoEdit, true
 	case "todo.join":
@@ -1132,6 +1229,9 @@ func (p *TodoPeerPolicy) PopulateEventMetadata(meta *sce.EventMetadata) {
 	// (twin of the C11 pop loop's `sm->pending_payload = evt.payload`).
 	p.pendingPayloadTag = TodoPeerPayloadTagNone
 	switch v := meta.TypedPayload.(type) {
+	case TodoPeerTodoAgendaPayload:
+		p.pendingPayloadTag = TodoPeerPayloadTagTodoAgenda
+		p.pendingTodoAgendaPayload = v
 	case TodoPeerTodoEditPayload:
 		p.pendingPayloadTag = TodoPeerPayloadTagTodoEdit
 		p.pendingTodoEditPayload = v
@@ -1178,6 +1278,23 @@ func (p *TodoPeerPolicy) LiftTypedPayload(event TodoPeerEvent, meta *sce.EventMe
 		return nil
 	}
 	switch event {
+	case TodoPeerEventTodoAgenda:
+		fields, err := sce.LiftPayload(meta.Data)
+		if err != nil {
+			return err
+		}
+		var payload TodoPeerTodoAgendaPayload
+		if payload.id, err = sce.PayloadUnsigned[uint32](fields, "id"); err != nil {
+			return err
+		}
+		if payload.windowStart, err = sce.PayloadSigned64(fields, "windowStart"); err != nil {
+			return err
+		}
+		if payload.windowEnd, err = sce.PayloadSigned64(fields, "windowEnd"); err != nil {
+			return err
+		}
+		p.pendingTodoAgendaPayload = payload
+		p.pendingPayloadTag = TodoPeerPayloadTagTodoAgenda
 	case TodoPeerEventTodoEdit:
 		fields, err := sce.LiftPayload(meta.Data)
 		if err != nil {
@@ -1513,11 +1630,21 @@ func (p *TodoPeerPolicy) FirstEnabledTransition(state TodoPeerState, event TodoP
 				}, true
 			}
 		}
-		if event == TodoPeerEventErrorExecution {
+		if event == TodoPeerEventTodoAgenda {
 			{
 				return sce.EnabledTransition[TodoPeerState, sce.HistoryID]{
 					Source:          state,
 					TransitionIndex: 9,
+					HasActions:      true,
+					IsInternal:      true,
+				}, true
+			}
+		}
+		if event == TodoPeerEventErrorExecution {
+			{
+				return sce.EnabledTransition[TodoPeerState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 10,
 					HasActions:      true,
 					IsInternal:      true,
 				}, true
@@ -1535,7 +1662,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 	case TodoPeerStateOpen:
 		switch transitionIndex {
 		case 0:
-			//line todo_peer.scxml:140
+			//line todo_peer.scxml:144
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != TodoPeerPayloadTagTodoJoin {
@@ -1551,7 +1678,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 
 			}()
 		case 1:
-			//line todo_peer.scxml:148
+			//line todo_peer.scxml:152
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != TodoPeerPayloadTagTodoEdit {
@@ -1875,7 +2002,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 	}
 			}()
 		case 2:
-			//line todo_peer.scxml:197
+			//line todo_peer.scxml:201
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != TodoPeerPayloadTagTodoWrite {
@@ -2251,7 +2378,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 
 			}()
 		case 3:
-			//line todo_peer.scxml:279
+			//line todo_peer.scxml:283
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != TodoPeerPayloadTagTodoSupersede {
@@ -2623,7 +2750,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 
 			}()
 		case 4:
-			//line todo_peer.scxml:350
+			//line todo_peer.scxml:354
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != TodoPeerPayloadTagTodoKeep {
@@ -2659,7 +2786,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 
 			}()
 		case 5:
-			//line todo_peer.scxml:362
+			//line todo_peer.scxml:366
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -2810,7 +2937,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 
 			}()
 		case 6:
-			//line todo_peer.scxml:389
+			//line todo_peer.scxml:393
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != TodoPeerPayloadTagTodoVisit {
@@ -3076,7 +3203,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 
 			}()
 		case 7:
-			//line todo_peer.scxml:430
+			//line todo_peer.scxml:434
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != TodoPeerPayloadTagTodoNode {
@@ -3372,7 +3499,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 
 			}()
 		case 8:
-			//line todo_peer.scxml:477
+			//line todo_peer.scxml:481
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != TodoPeerPayloadTagTodoShare {
@@ -3952,7 +4079,26 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 
 			}()
 		case 9:
-			//line todo_peer.scxml:555
+			//line todo_peer.scxml:563
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
+				if p.pendingPayloadTag != TodoPeerPayloadTagTodoAgenda {
+					return
+				}
+
+	// SCE Accepted Subset §2.15: <sce:clear target="agenda">
+
+	p.vAgenda = p.vAgenda[:0]
+
+
+
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_EventAgenda__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), p.pendingTodoAgendaPayload.windowStart, p.pendingTodoAgendaPayload.windowEnd)), 64); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='agenda'>: an integer operation overflowed or failed")); return true }; p.vAgenda = sceValue; return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+			}()
+		case 10:
+			//line todo_peer.scxml:568
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

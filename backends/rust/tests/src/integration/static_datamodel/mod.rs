@@ -3,6 +3,9 @@
 pub mod day_repeat;
 pub mod day_run;
 pub mod days_in_month;
+pub mod event_agenda;
+pub mod event_later;
+pub mod event_occurrence;
 pub mod hlc_compare;
 pub mod hlc_receive;
 pub mod hlc_send;
