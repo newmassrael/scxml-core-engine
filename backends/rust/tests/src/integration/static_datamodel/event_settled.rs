@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 486a7ede17aec50321702f8e51d91329868b60553618b2452672e3f16a3437c4
+// source-hash: fc32dee6d2d79c8cab243a42e6e452a54e10c5eb94b8b71d728b846fba971019
 #![doc = "SCE-MAP: event_settled.scxml:17 :: _forge_body"]
 // SCE-MAP: event_settled.scxml:17 :: _forge_body
 
@@ -24,19 +24,7 @@ pub fn event_settled(
     let mut h: u32 = 0;
     for &a in adds.iter() {
         if a.wall_time <= before {
-            let mut named: bool = false;
-            for &n in tombstones.iter() {
-                if n.element == a.element
-                    && n.wall_time == a.wall_time
-                    && n.counter == a.counter
-                    && n.node_id == a.node_id
-                {
-                    named = true;
-                }
-            }
-            if !named {
-                h = h ^ merkle_change_hash::merkle_change_hash(a, 0)?;
-            }
+            h = h ^ merkle_change_hash::merkle_change_hash(a, 0)?;
         }
     }
     for &t in tombstones.iter() {

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 486a7ede17aec50321702f8e51d91329868b60553618b2452672e3f16a3437c4
+// source-hash: fc32dee6d2d79c8cab243a42e6e452a54e10c5eb94b8b71d728b846fba971019
 // SCE-MAP: event_settled.scxml:17 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")
@@ -26,15 +26,7 @@ fun eventSettled(adds: List<OrsetEntryPayload>, tombstones: List<OrsetEntryPaylo
         var h: UInt = 0.toUInt()
         for (a in adds) {
             if (a.wallTime <= before) {
-                var named: Boolean = false
-                for (n in tombstones) {
-                    if (n.element == a.element && n.wallTime == a.wallTime && n.counter == a.counter && n.nodeId == a.nodeId) {
-                        named = true
-                    }
-                }
-                if (!named) {
-                    h = h xor com.sce.forge.runtime.SceChecked.take(merkleChangeHash(a, 0.toUByte()))
-                }
+                h = h xor com.sce.forge.runtime.SceChecked.take(merkleChangeHash(a, 0.toUByte()))
             }
         }
         for (t in tombstones) {

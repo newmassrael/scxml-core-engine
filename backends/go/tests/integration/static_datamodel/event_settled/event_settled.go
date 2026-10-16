@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 486a7ede17aec50321702f8e51d91329868b60553618b2452672e3f16a3437c4
+// source-hash: fc32dee6d2d79c8cab243a42e6e452a54e10c5eb94b8b71d728b846fba971019
 // SCE-MAP: event_settled.scxml:17 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")
@@ -30,27 +30,9 @@ func EventSettled(adds []sce_orset_entry.OrsetEntryPayload, tombstones []sce_ors
         if sceCond2 := a.WallTime <= before; sceFailure.Failed() {
             return sceValue, sceFailure.Err()
         } else if sceCond2 {
-            var named bool = false
+            h = h ^ scealgorithm.Take[uint32](&sceFailure)(sce_merkle_change_hash.MerkleChangeHash(a, 0));
             if sceFailure.Failed() {
                 return sceValue, sceFailure.Err()
-            }
-            for _, n := range tombstones {
-                if sceCond4 := n.Element == a.Element && n.WallTime == a.WallTime && n.Counter == a.Counter && n.NodeId == a.NodeId; sceFailure.Failed() {
-                    return sceValue, sceFailure.Err()
-                } else if sceCond4 {
-                    named = true;
-                    if sceFailure.Failed() {
-                        return sceValue, sceFailure.Err()
-                    }
-                }
-            }
-            if sceCond3 := !named; sceFailure.Failed() {
-                return sceValue, sceFailure.Err()
-            } else if sceCond3 {
-                h = h ^ scealgorithm.Take[uint32](&sceFailure)(sce_merkle_change_hash.MerkleChangeHash(a, 0));
-                if sceFailure.Failed() {
-                    return sceValue, sceFailure.Err()
-                }
             }
         }
     }
