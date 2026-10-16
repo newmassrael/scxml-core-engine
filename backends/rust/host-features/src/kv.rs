@@ -62,9 +62,7 @@ pub(crate) fn next_key<T: Transport>(
     // prefix: keys with the prefix are contiguous in this order, so the first one
     // found is the answer, and the first one that does not begin with it, once
     // the prefix's own range has been left, ends the walk.
-    let from = if after.is_empty() {
-        Bound::Included(prefix)
-    } else if after < prefix {
+    let from = if after.is_empty() || after < prefix {
         Bound::Included(prefix)
     } else {
         Bound::Excluded(after)

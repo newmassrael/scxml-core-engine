@@ -110,6 +110,16 @@ impl ScriptedClock {
     }
 }
 
+impl ClockSource for ScriptedClock {
+    fn read(&mut self) -> Option<Reading> {
+        self.reading
+    }
+
+    fn zone(&mut self) -> Option<Zone> {
+        self.zone.clone()
+    }
+}
+
 /// A clock a scenario shares with the host it sets: both hold the one clock.
 impl ClockSource for std::sync::Arc<std::sync::Mutex<ScriptedClock>> {
     fn read(&mut self) -> Option<Reading> {

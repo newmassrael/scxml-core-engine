@@ -122,7 +122,7 @@ fn values_the_fields_hold_are_accepted_on_every_backend() {
     }
     let (ok, text) = check(
         &[],
-        &doc("8", "label", "count_s", "truth && !truth", "real_s"),
+        &doc("8", "label", "count_s", "truth &amp;&amp; !truth", "real_s"),
     );
     assert!(
         ok,
