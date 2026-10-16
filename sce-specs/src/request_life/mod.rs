@@ -40,12 +40,13 @@ pub(crate) const TEXT_MAX: usize = 64;
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum Event<'a> {
     /// An executor takes the request. `offered_matches`: the connection it offers is the one the
-    /// request was made for.
+    /// request was made for. `lane_open`: that connection has a place free to run one more.
     Claim {
         holder: &'a str,
         ttl: u64,
         resume: bool,
         offered_matches: bool,
+        lane_open: bool,
         now: u64,
     },
     /// The executor of `attempt` says it is still there.
@@ -82,12 +83,13 @@ impl Event<'_> {
                 ttl,
                 resume,
                 offered_matches,
+                lane_open,
                 now,
             } => (
                 "claim",
                 json!({
                     "holder": holder, "ttl": ttl, "resume": resume,
-                    "offeredMatches": offered_matches, "now": now,
+                    "offeredMatches": offered_matches, "laneOpen": lane_open, "now": now,
                 })
                 .to_string(),
             ),
@@ -138,6 +140,8 @@ pub(crate) enum Verdict {
     NotResuming,
     /// It was made for another connection than the caller offers.
     WrongConnection,
+    /// Its connection has no place free to run one more request.
+    LaneFull,
     /// There was nothing for the event to do.
     Nothing,
 }
@@ -259,6 +263,7 @@ pub(crate) fn decide(standing: &Standing<'_>, event: &Event<'_>) -> Answer {
         "not_holder" => Verdict::NotHolder,
         "not_resuming" => Verdict::NotResuming,
         "wrong_connection" => Verdict::WrongConnection,
+        "lane_full" => Verdict::LaneFull,
         "nothing" => Verdict::Nothing,
         _ => panic!(
             "the request machine took no `{name}` event from {standing:?}: its payload was refused \
@@ -322,6 +327,18 @@ mod tests {
             ttl: 60,
             resume,
             offered_matches,
+            lane_open: true,
+            now,
+        }
+    }
+
+    fn claim_in_full_lane(holder: &str, resume: bool, now: u64) -> Event<'_> {
+        Event::Claim {
+            holder,
+            ttl: 60,
+            resume,
+            offered_matches: true,
+            lane_open: false,
             now,
         }
     }
@@ -628,6 +645,98 @@ mod tests {
                 "{state:?} told {event:?}"
             );
         }
+    }
+
+    /// A connection with no place free refuses a claim that would start a request, whatever the
+    /// state it would start from, and answers a claim that would start nothing as it always did.
+    #[test]
+    fn a_claim_that_would_start_a_request_is_refused_when_the_lane_has_no_place() {
+        use State::*;
+        use Verdict as V;
+        let cases = [
+            // Started from the queue, from a let-go request that resumes, and from a running
+            // one whose lease ran out and that resumes: all of them start a request.
+            (
+                Queued,
+                claim_in_full_lane("b", false, T0),
+                V::LaneFull,
+                Queued,
+            ),
+            (
+                Interrupted,
+                claim_in_full_lane("b", true, T0),
+                V::LaneFull,
+                Interrupted,
+            ),
+            (
+                Running,
+                claim_in_full_lane("b", true, T0 + 100),
+                V::LaneFull,
+                Running,
+            ),
+            // A claim that does not resume is told so, and one on a lease that holds is told
+            // who holds it: the lane is not what the caller can act on.
+            (
+                Interrupted,
+                claim_in_full_lane("b", false, T0),
+                V::NotResuming,
+                Interrupted,
+            ),
+            (
+                Running,
+                claim_in_full_lane("b", false, T0 + 100),
+                V::NotResuming,
+                Running,
+            ),
+            (
+                Running,
+                claim_in_full_lane("b", true, T0 + 10),
+                V::Held,
+                Running,
+            ),
+            (
+                Completed,
+                claim_in_full_lane("b", true, T0),
+                V::Ended,
+                Completed,
+            ),
+            (
+                Cancelled,
+                claim_in_full_lane("b", false, T0),
+                V::Ended,
+                Cancelled,
+            ),
+        ];
+        for (state, event, verdict, then) in cases {
+            let answer = decide(&standing(state), &event);
+            assert_eq!(
+                (answer.verdict, answer.state),
+                (verdict, then),
+                "{state:?} told {event:?}"
+            );
+        }
+        // A refusal changes nothing the record is written from.
+        let refused = decide(
+            &standing(State::Queued),
+            &claim_in_full_lane("b", false, T0),
+        );
+        assert_eq!(
+            (refused.attempt, refused.holder.as_str(), refused.expires_at),
+            (0, "", 0)
+        );
+        // The connection is checked first, as it always was.
+        let other = Event::Claim {
+            holder: "b",
+            ttl: 60,
+            resume: false,
+            offered_matches: false,
+            lane_open: false,
+            now: T0,
+        };
+        assert_eq!(
+            decide(&standing(State::Queued), &other).verdict,
+            V::WrongConnection
+        );
     }
 
     /// What a taken event leaves in the machine's variables is what the record is written from.

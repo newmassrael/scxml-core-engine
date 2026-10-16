@@ -12,7 +12,8 @@
   `verdict`. The host keeps what is not a rule (the inputs a request was made
   from, its pin, the candidate an executor wrote, notes and timestamps) and tells
   the machine only what a rule reads: who is speaking, which attempt, what time it
-  is, and whether the connection offered is the one the request was made for.
+  is, whether the connection offered is the one the request was made for, and whether
+  that connection has a place free to run one more.
 
   A running request whose lease ran out is read as interrupted before anything
   writes that down. Only a claim reads it that way (a holder that comes back
@@ -46,6 +47,12 @@
          said before anything about its state. -->
     <transition event="claim" cond="!_event.data.offeredMatches" type="internal">
       <assign location="verdict" expr="Verdict.wrong_connection"/>
+    </transition>
+    <!-- A connection runs only as many requests at once as it has places, and a claim that
+         would start one is refused when none is free. A claim that would not start one
+         (the request is held, or ended) is answered as it was, whatever the lane holds. -->
+    <transition event="claim" cond="!_event.data.laneOpen &amp;&amp; (In('queued') || (In('interrupted') &amp;&amp; _event.data.resume) || (In('running') &amp;&amp; expiresAt &lt;= _event.data.now &amp;&amp; _event.data.resume))" type="internal">
+      <assign location="verdict" expr="Verdict.lane_full"/>
     </transition>
     <transition event="claim" cond="In('queued')" target="running" type="internal">
       <assign location="holder" expr="_event.data.holder"/>

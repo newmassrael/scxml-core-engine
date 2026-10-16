@@ -286,6 +286,9 @@ pub enum Refusal {
         pinned: Option<ConnectionRef>,
         offered: Option<ConnectionRef>,
     },
+    /// The connection the request was made for runs as many requests as it has places for, so
+    /// taking this one would start one more. The caller asks again when one of them ends.
+    LaneFull { connection: Option<ConnectionId> },
 }
 
 /// What an executor has written for the request so far, by revision. The texts are kept
@@ -472,7 +475,7 @@ impl Request {
                 attempt: self.attempt,
             },
             Verdict::NotResuming => Refusal::NotResuming,
-            Verdict::Ok | Verdict::Nothing | Verdict::WrongConnection => {
+            Verdict::Ok | Verdict::Nothing | Verdict::WrongConnection | Verdict::LaneFull => {
                 unreachable!("{verdict:?} is not a refusal of a request that is not being claimed")
             }
         }
@@ -490,7 +493,7 @@ impl Request {
         resume: bool,
         now: &Moment,
     ) -> Result<Request, Refusal> {
-        self.claim_for(holder, ttl, resume, None, now)
+        self.claim_for(holder, ttl, resume, None, true, now)
     }
 
     /// The same, by an executor that runs for the connection `offered`, or for none.
@@ -499,12 +502,18 @@ impl Request {
     /// else: a request pinned to a connection is refused to a caller that offers another, or
     /// none, and a request with none is refused to a caller that offers one. That is said
     /// before anything about the request's state, because it is what the caller can act on.
+    ///
+    /// `lane_open` says whether the connection has a place free to run one more request, which
+    /// only the store can know (it counts what runs across every spec); a caller that sets no
+    /// limit says `true`. A claim that would start the request is refused when it is `false`
+    /// ([`Refusal::LaneFull`]).
     pub fn claim_for(
         &self,
         holder: &str,
         ttl: u64,
         resume: bool,
         offered: Option<&ConnectionRef>,
+        lane_open: bool,
         now: &Moment,
     ) -> Result<Request, Refusal> {
         let pinned = self.pin.as_ref().map(Pin::reference);
@@ -513,6 +522,7 @@ impl Request {
             ttl,
             resume,
             offered_matches: pinned.as_ref() == offered,
+            lane_open,
             now: now.epoch,
         });
         match answer.verdict {
@@ -531,6 +541,9 @@ impl Request {
             Verdict::WrongConnection => Err(Refusal::WrongConnection {
                 pinned,
                 offered: offered.cloned(),
+            }),
+            Verdict::LaneFull => Err(Refusal::LaneFull {
+                connection: self.pin.as_ref().map(|pin| pin.connection.clone()),
             }),
             refused => Err(self.refusal(refused)),
         }

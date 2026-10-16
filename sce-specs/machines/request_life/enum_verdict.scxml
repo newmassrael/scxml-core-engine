@@ -22,6 +22,7 @@
       <sce:variant name="wrong_connection" value="5"/>
       <sce:variant name="nothing" value="6"/>
       <sce:variant name="unanswered" value="7"/>
+      <sce:variant name="lane_full" value="8"/>
     </data>
   </datamodel>
 </scxml>

@@ -44,6 +44,9 @@ use crate::requests::{
 };
 use crate::revision::Revision;
 
+/// Beside the specs, one lock file for each connection that runs requests: what makes counting
+/// a connection's running requests and claiming one a single step across specs.
+const LANES_DIR: &str = ".sce-lanes";
 const REQUESTS_DIR: &str = "requests";
 const REQUESTS_LOG: &str = "requests.log";
 const REQUESTS_HEAD: &str = "requests.head";
@@ -387,6 +390,14 @@ pub(super) fn refusal_error(request: &Request, refusal: Refusal) -> StoreError {
             ),
             json!({ "request": id }),
         ),
+        Refusal::LaneFull { connection } => StoreError::refused(
+            "lane-full",
+            format!(
+                "the request {id} is for a connection that is running as many requests as it has \
+                 places for; it is taken when one of them ends"
+            ),
+            json!({ "request": id, "connection": connection }),
+        ),
         Refusal::WrongConnection { pinned, offered } => {
             let named = |connection: &Option<ConnectionRef>| match connection {
                 Some(c) => format!("connection `{}` at {}", c.id, c.revision.short()),
@@ -677,7 +688,63 @@ impl<C: Clock> SpecStore<C> {
         let ttl = checked_lease(ttl)?;
         checked_holder(holder)?;
         self.change_request(id, request, |current, now| {
-            current.claim_for(holder, ttl, resume, offered, now)
+            current.claim_for(holder, ttl, resume, offered, true, now)
+        })
+    }
+
+    /// The same, for a connection that runs at most `places` requests at once.
+    ///
+    /// The store counts the requests of the request's connection that are running, in every
+    /// spec, and says to the request's machine whether one more may start; the machine refuses
+    /// the claim when none may (`lane-full`). The count and the claim are made under a lock of
+    /// the connection's own, taken before the spec's, so that two executors claiming the last
+    /// place for two specs at once do not both get it. A request with no connection has no
+    /// lane and is claimed as [`Self::claim_request_for`] claims it.
+    #[allow(clippy::too_many_arguments)]
+    pub fn claim_request_within(
+        &self,
+        id: &SpecId,
+        request: &str,
+        holder: &str,
+        ttl: Option<u64>,
+        resume: bool,
+        offered: Option<&ConnectionRef>,
+        places: usize,
+    ) -> Result<RequestView, StoreError> {
+        if places == 0 {
+            return Err(StoreError::refused(
+                "bad-lane",
+                "a connection runs at least one request at once".to_string(),
+                json!({ "places": places }),
+            ));
+        }
+        let ttl = checked_lease(ttl)?;
+        checked_holder(holder)?;
+        let Some(pin) = self.read_request(id, request)?.request.pin else {
+            return self.claim_request_for(id, request, holder, Some(ttl), resume, offered);
+        };
+        let lanes = self.root().join(LANES_DIR);
+        fs::create_dir_all(&lanes).map_err(|e| StoreError::io(&lanes, e))?;
+        let _lane = lock::exclusive(
+            &lanes.join(format!("{}.lock", pin.connection.as_str())),
+            LOCK_WAIT,
+        )?;
+        let running = self
+            .open_requests()?
+            .into_iter()
+            .filter(|(spec, view)| {
+                view.state == State::Running
+                    && view
+                        .request
+                        .pin
+                        .as_ref()
+                        .is_some_and(|other| other.connection == pin.connection)
+                    && !(spec == id && view.request.id == request)
+            })
+            .count();
+        let lane_open = running < places;
+        self.change_request(id, request, |current, now| {
+            current.claim_for(holder, ttl, resume, offered, lane_open, now)
         })
     }
 

@@ -78,6 +78,29 @@ On 2026-10-10, in a scratch directory with no change to the tree:
 - Reading a request's effective state builds a machine each time. It is the same rule the claim
   reads, which is why it is not written a second time.
 
+## Amendment, 2026-10-16: a connection has places
+
+A connection that runs a model on one computer cannot take two requests at once without both
+running out their time (measured: a spec that took 8 to 15 minutes alone ended two of three at the
+25-minute limit when three were sent to one model server together). Which request may start is a
+rule of the request's life, so it is in the document and not in the application:
+
+- The claim event carries `laneOpen`, the host's answer to whether the connection the request was
+  made for has a place free to run one more, as it carries `offeredMatches`. The machine refuses a
+  claim that would start a request (`queued`; `interrupted` or a lapsed `running` by a caller that
+  resumes) with the verdict `lane_full`. A claim that would start nothing is answered as before,
+  so a request that is held is told it is held and not that the lane is full. The connection is
+  still checked first.
+- What the machine cannot know is how many requests of the connection are running, across every
+  spec. The store counts them (`claim_request_within`, the requests whose effective state is
+  `running` and whose pin names the connection), and does the count and the claim under a lock of
+  the connection's own, taken before the spec's, so that two executors who meet at the last place
+  for two specs do not both get it. A lease that ran out and a request that ended hold no place.
+- How many places a connection has is the caller's: the application knows the kind of connection,
+  the store does not. A request with no connection has no lane, and a caller that gives no places
+  (`claim_request_for`, the authoring server) is not limited, as before.
+- The refusal is `lane-full`. It leaves the request queued, and the caller asks again.
+
 ## What this does not decide
 
 - The judgment of a revision stays on the path ADR 0011 chose (one Rust implementation, called by
