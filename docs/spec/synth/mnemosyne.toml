@@ -163,6 +163,9 @@ scan_exclusions = [
     # The world simulation (`sce-rust-world`). Measured 2026-10-13: no §synth- cite
     # in it; its five section citations are the Mesh ledger's.
     "backends/rust/world/",
+    # The reference host of the standard host features (`sce-rust-host-features`).
+    # Measured 2026-10-16 over its 7 Rust sources: no citation of any ledger.
+    "backends/rust/host-features/",
     "sce-build/examples/",
     "tests/forge/expected/",
     # The works folder (`sce-specs/`), which the workbench (a repository of its own) links

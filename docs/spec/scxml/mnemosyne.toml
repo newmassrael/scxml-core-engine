@@ -205,6 +205,12 @@ scan_exclusions = [
     # Measured 2026-10-13: five citations, all of the Mesh ledger's namespace, none in
     # this one, so excluding it swallows no section from this gate.
     "backends/rust/world/",
+    # The reference host of the standard host features (`sce-rust-host-features`): a
+    # clock, a key-value store, notifications and an HTTP exchange that a machine's
+    # typed `<invoke>` asks for. It implements no clause of the Recommendation.
+    # Measured 2026-10-16 over its 7 Rust sources: not one carries a `§` citation,
+    # so excluding them swallows no section from this gate.
+    "backends/rust/host-features/",
     "sce-build/examples/",
     "sce-build/tests/",
     "tests/",
