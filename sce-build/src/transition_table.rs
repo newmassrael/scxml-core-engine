@@ -58,6 +58,7 @@ use serde::Serialize;
 
 use crate::model::{SCXMLModel, Transition};
 use crate::requirements_report::{walk_nodes, ActionSite, NodeSubject};
+use crate::transition_records::transition_records_by_path;
 
 /// The literal printed in `source` for a node claiming no requirement.
 ///
@@ -86,6 +87,44 @@ pub struct TransitionRow {
     /// classification print, so a row, a record and a verdict about one
     /// node can be lined up by a reader.
     pub node_path: String,
+    /// What kind of node the row is, so a consumer does not recover it from
+    /// the pseudo-event in `event` or the shape of `node_path`.
+    pub kind: RowKind,
+    /// Position of the transition within its state: the `N` of
+    /// `states.<id>.transitions[N]`. Present on a `transition` row only.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub index: Option<usize>,
+    /// The transition's target set, one id per token, as written. Present on
+    /// a `transition` row only, and empty for a targetless transition. The
+    /// `to` column joins these and may add `type=`; this does not.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub targets: Option<Vec<String>>,
+}
+
+/// The kind of node a [`TransitionRow`] describes.
+///
+/// The names are the wire spellings. An action row takes the kind of the
+/// site it sits in, nested actions included, for the reason its pseudo-event
+/// does: it runs when that site runs.
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum RowKind {
+    State,
+    Transition,
+    /// An action inside `<onentry>`.
+    Entry,
+    /// An action inside `<onexit>`.
+    Exit,
+    /// An action inside a `<transition>`.
+    TransitionAction,
+    /// An action inside the default transition of `<initial>`.
+    Initial,
+    /// An action inside the default transition of a `<history>`.
+    History,
+    Invoke,
+    Data,
+    /// A top-level `<script>`.
+    Script,
 }
 
 impl TransitionRow {
@@ -145,6 +184,9 @@ fn where_the_transition_goes(transition: &Transition) -> String {
 /// exist, and then "a requirement with no row is missing" would be a
 /// statement about two different documents.
 pub fn transition_table(model: &SCXMLModel) -> Vec<TransitionRow> {
+    // The transition rows read their index and target set from the one list
+    // of a machine's transitions, not from the model a second time.
+    let records = transition_records_by_path(model);
     walk_nodes(model)
         .into_iter()
         .map(|node| {
@@ -156,6 +198,9 @@ pub fn transition_table(model: &SCXMLModel) -> Vec<TransitionRow> {
             let node_path = node.record.node_path.clone();
             match node.subject {
                 NodeSubject::State(state) => TransitionRow {
+                    kind: RowKind::State,
+                    index: None,
+                    targets: None,
                     source,
                     from: state.id.clone(),
                     event: "(state)".to_string(),
@@ -171,6 +216,9 @@ pub fn transition_table(model: &SCXMLModel) -> Vec<TransitionRow> {
                 NodeSubject::Transition {
                     state, transition, ..
                 } => TransitionRow {
+                    kind: RowKind::Transition,
+                    index: Some(records[&node_path].index),
+                    targets: Some(records[&node_path].targets.clone()),
                     source,
                     from: state.id.clone(),
                     // An eventless transition is the SCXML spelling for
@@ -201,6 +249,15 @@ pub fn transition_table(model: &SCXMLModel) -> Vec<TransitionRow> {
                     action,
                     site,
                 } => TransitionRow {
+                    kind: match site {
+                        ActionSite::Entry => RowKind::Entry,
+                        ActionSite::Exit => RowKind::Exit,
+                        ActionSite::Transition { .. } => RowKind::TransitionAction,
+                        ActionSite::Initial => RowKind::Initial,
+                        ActionSite::HistoryDefault { .. } => RowKind::History,
+                    },
+                    index: None,
+                    targets: None,
                     source,
                     from: state.id.clone(),
                     // Five sites, five pseudo-events. `(transition)`
@@ -227,6 +284,9 @@ pub fn transition_table(model: &SCXMLModel) -> Vec<TransitionRow> {
                     node_path,
                 },
                 NodeSubject::Invoke { state, base, .. } => TransitionRow {
+                    kind: RowKind::Invoke,
+                    index: None,
+                    targets: None,
                     source,
                     from: state.id.clone(),
                     event: "(invoke)".to_string(),
@@ -245,6 +305,9 @@ pub fn transition_table(model: &SCXMLModel) -> Vec<TransitionRow> {
                 // row". The action cell goes through the one renderer,
                 // so this row moves when the script does.
                 NodeSubject::GlobalScript { action, .. } => TransitionRow {
+                    kind: RowKind::Script,
+                    index: None,
+                    targets: None,
                     source,
                     from: "<scxml>".to_string(),
                     event: "(global script)".to_string(),
@@ -262,6 +325,9 @@ pub fn transition_table(model: &SCXMLModel) -> Vec<TransitionRow> {
                 NodeSubject::Variable {
                     state, variable, ..
                 } => TransitionRow {
+                    kind: RowKind::Data,
+                    index: None,
+                    targets: None,
                     source,
                     from: state.map_or_else(|| "<scxml>".to_string(), |s| s.id.clone()),
                     event: "(data)".to_string(),
@@ -478,4 +544,108 @@ pub fn emit_transition_table_ndjson<W: Write + ?Sized>(
         writeln!(writer, "{line}")?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parser::SCXMLParser;
+    use crate::transition_records::transition_records;
+
+    const DOC: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                              xmlns:sce="http://sce.dev/ext"
+                              version="1.0" initial="idle" datamodel="null">
+        <state id="idle" sce:req="REQ-S">
+            <onentry sce:req="REQ-E"><raise event="e"/></onentry>
+            <transition event="go" target="busy" sce:req="12"/>
+            <transition event="a b" target="busy done"/>
+        </state>
+        <state id="busy">
+            <transition event="stop"/>
+        </state>
+        <final id="done"/>
+    </scxml>"#;
+
+    fn model() -> SCXMLModel {
+        SCXMLParser::new()
+            .parse_string(DOC, "transition_table")
+            .expect("parse")
+    }
+
+    #[test]
+    fn a_transition_row_carries_the_index_and_targets_of_its_record() {
+        let model = model();
+        let records = transition_records(&model);
+        let rows: Vec<TransitionRow> = transition_table(&model)
+            .into_iter()
+            .filter(|row| row.kind == RowKind::Transition)
+            .collect();
+        assert_eq!(rows.len(), records.len());
+        for (row, record) in rows.iter().zip(&records) {
+            assert_eq!(row.node_path, record.node_path);
+            assert_eq!(row.index, Some(record.index));
+            assert_eq!(row.targets.as_ref(), Some(&record.targets));
+            assert_eq!(row.from, record.from);
+        }
+    }
+
+    #[test]
+    fn only_a_transition_row_carries_an_index_or_targets() {
+        for row in transition_table(&model()) {
+            let is_transition = row.kind == RowKind::Transition;
+            assert_eq!(row.index.is_some(), is_transition, "{}", row.node_path);
+            assert_eq!(row.targets.is_some(), is_transition, "{}", row.node_path);
+        }
+    }
+
+    #[test]
+    fn every_node_of_the_walk_has_its_kind() {
+        let kinds: Vec<(String, RowKind)> = transition_table(&model())
+            .into_iter()
+            .map(|row| (row.node_path, row.kind))
+            .collect();
+        assert_eq!(
+            kinds,
+            [
+                ("states.idle".to_string(), RowKind::State),
+                (
+                    "states.idle.transitions[0]".to_string(),
+                    RowKind::Transition
+                ),
+                (
+                    "states.idle.transitions[1]".to_string(),
+                    RowKind::Transition
+                ),
+                (
+                    "states.idle.on_entry_blocks[0][0]".to_string(),
+                    RowKind::Entry
+                ),
+                ("states.busy".to_string(), RowKind::State),
+                (
+                    "states.busy.transitions[0]".to_string(),
+                    RowKind::Transition
+                ),
+                ("states.done".to_string(), RowKind::State),
+            ]
+        );
+    }
+
+    #[test]
+    fn the_new_fields_follow_the_existing_columns_on_the_wire() {
+        let mut buf = Vec::new();
+        emit_transition_table_ndjson(&model(), &mut buf).unwrap();
+        let out = String::from_utf8(buf).unwrap();
+        let line = out
+            .lines()
+            .find(|l| l.contains("\"node_path\":\"states.idle.transitions[1]\""))
+            .expect("the second transition of idle has a row");
+        assert!(
+            line.starts_with(r#"{"source":"(none)","from":"idle","event":"a b","guard":"-","after":"-","to":"busy done","action":"-","node_path":"states.idle.transitions[1]","#),
+            "the pre-existing columns keep their text and order: {line}"
+        );
+        assert!(
+            line.ends_with(r#""kind":"transition","index":1,"targets":["busy","done"]}"#),
+            "the additive fields follow them: {line}"
+        );
+    }
 }

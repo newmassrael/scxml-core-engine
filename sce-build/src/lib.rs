@@ -330,6 +330,9 @@ mod test_executable;
 /// verification harness compiles with. Searches beyond `PATH` because a
 /// tool it cannot find is a check that silently does not run.
 pub mod toolchain;
+/// The transitions of a machine as one list produced once — the record every
+/// transition surface renders.
+pub mod transition_records;
 /// The transition table, which is also the trace table —
 /// Requirement-closure RFC ②.
 pub mod transition_table;
