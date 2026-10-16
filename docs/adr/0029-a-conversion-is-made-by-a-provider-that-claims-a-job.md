@@ -42,12 +42,15 @@ cite their sources.
   model.
 - A service offered with the product. It is not designed here.
 
-**A provider is a queue, and its kind says how many jobs it runs at once.** A job waits behind the jobs
+**A provider is a queue, and the connection says how many jobs it runs at once.** A job waits behind the jobs
 of the provider it was made for and behind nobody else's: a model server that takes twenty minutes for a
 document does not hold up a job made for another provider. Each connected provider has its own worker,
-which claims only the jobs pinned to it. How many it runs at once is declared by its kind, as what it can
-read is, and a person may lower it and never raise it past the kind's: one for a model on the person's
-machine, which two jobs at once only make slower until both run out their time. A job nobody chose a
+which claims only the jobs pinned to it. How many it runs at once is the connection's own setting
+(`limits.places`, 1 to 8), one when it says nothing: one is right for a model on the person's machine,
+which two jobs at once only make slower until both run out their time. This was first written as a number
+each kind declares, which a person could lower and never raise (amended 2026-10-17). A kind cannot know
+how many conversations a server holds (its parallel slots, a bigger machine, a hosted service's rate), and
+the person who runs it can, so the person says it and one is what is assumed when they do not. A job nobody chose a
 provider for is taken by no worker; the person's default is chosen when the job is made, as it is now.
 A job is taken in the order it was made, within its provider.
 

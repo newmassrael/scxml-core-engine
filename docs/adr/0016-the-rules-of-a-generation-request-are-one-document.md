@@ -96,8 +96,9 @@ rule of the request's life, so it is in the document and not in the application:
   `running` and whose pin names the connection), and does the count and the claim under a lock of
   the connection's own, taken before the spec's, so that two executors who meet at the last place
   for two specs do not both get it. A lease that ran out and a request that ended hold no place.
-- How many places a connection has is the caller's: the application knows the kind of connection,
-  the store does not. A request with no connection has no lane, and a caller that gives no places
+- How many places a connection has is the caller's: the application reads it from the connection's
+  settings (`limits.places`, one when it says nothing; ADR 0029), the store does not know. A request
+  with no connection has no lane, and a caller that gives no places
   (`claim_request_for`, the authoring server) is not limited, as before.
 - The refusal is `lane-full`. It leaves the request queued, and the caller asks again.
 
