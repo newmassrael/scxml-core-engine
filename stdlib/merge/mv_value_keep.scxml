@@ -26,10 +26,10 @@
   <sce:signature>
     <sce:param name="values" type="list&lt;record:Value&gt;"/>
     <sce:param name="held" type="record:Value"/>
-    <sce:return type="list&lt;record:Value&gt;" may-fail="true" returns-max-size="512"/>
+    <sce:return type="list&lt;record:Value&gt;" may-fail="true" returns-max-size="512" sce:limit="merge_values"/>
   </sce:signature>
   <sce:body>
-    <sce:var name="out" type="list&lt;record:Value&gt;" capacity="512"/>
+    <sce:var name="out" type="list&lt;record:Value&gt;" capacity="512" sce:limit="merge_values"/>
     <sce:var name="there" type="bool" init="false"/>
     <sce:foreach item="v" in="values">
       <sce:if cond="v.id === held.id &amp;&amp; v.field === held.field &amp;&amp; v.wallTime === held.wallTime &amp;&amp; v.counter === held.counter &amp;&amp; v.nodeId === held.nodeId">

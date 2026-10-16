@@ -8115,6 +8115,7 @@ fn parse_algorithm_signature(
     let mut params = Vec::new();
     let mut return_type: Option<AlgorithmValueType> = None;
     let mut returns_max_size: Option<u32> = None;
+    let mut returns_limit: Option<String> = None;
     let mut may_fail = false;
     let mut seen_return = false;
 
@@ -8237,6 +8238,7 @@ fn parse_algorithm_signature(
                             ("returns-max-size", false),
                             UnsignedInt::Positive,
                         )?;
+                        returns_limit = sce_attr(&child, "limit");
                     }
                     (None, None) => {}
                     (None, Some(stray)) => {
@@ -8266,6 +8268,7 @@ fn parse_algorithm_signature(
         params,
         return_type,
         returns_max_size,
+        returns_limit,
         may_fail,
     })
 }
@@ -8855,6 +8858,9 @@ fn parse_algorithm_stmt(
                 init_spelling: AttributeSpelling::of(node, None, "init"),
                 capacity,
                 capacity_spelling: AttributeSpelling::of(node, None, "capacity"),
+                // Named only beside a bound: `read_unsigned_attr` took the number the
+                // build gave the name, and the name is kept for whoever reads the model.
+                limit: capacity.and_then(|_| sce_attr(node, "limit")),
             })
         }
         "assign" => {
@@ -11558,6 +11564,9 @@ const KNOWN_SCE_ATTRS: &[&str] = &[
     "length-arith",
     "length-field",
     "length-from",
+    // Names the bound a `capacity` or `returns-max-size` is, so that a build can give
+    // it another number than the one written (`crate::limits`).
+    "limit",
     // The most lines of a repeated property a content-line codec holds.
     "max-count",
     "max-delta",
@@ -12213,7 +12222,7 @@ fn read_unsigned_attr(
         .flatten()
         .filter(|&n| !negative || n == 0)
         .filter(|&n| n > 0 || matches!(admits, UnsignedInt::NonNegative));
-    value.map(Some).ok_or_else(|| {
+    let written = value.ok_or_else(|| {
         located(
             node,
             doc_name,
@@ -12232,7 +12241,22 @@ fn read_unsigned_attr(
                 .into(),
             },
         )
-    })
+    })?;
+    Ok(Some(under_the_deployments_limit(node, attr, written)))
+}
+
+/// The bound `node` is built with: the number it wrote, or the number the build
+/// gave the name `sce:limit` names (`crate::limits`). A bound is a `capacity` or a
+/// `returns-max-size`; any other number on an element that carries a `sce:limit`
+/// is not what the name stands for, and is the number written.
+fn under_the_deployments_limit(node: &roxmltree::Node, attr: &str, written: u32) -> u32 {
+    if !matches!(attr, "capacity" | "returns-max-size") {
+        return written;
+    }
+    match crate::sce_attr::read(node, "limit") {
+        Some(name) => crate::limits::resolve(name.trim(), written),
+        None => written,
+    }
 }
 
 /// A whitespace-separated list of finite numbers — an interpolation axis

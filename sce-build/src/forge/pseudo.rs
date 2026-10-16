@@ -1039,6 +1039,11 @@ fn render_algorithm(m: &AlgorithmModel) -> Vec<Node> {
         if let Some(max) = m.signature.returns_max_size {
             head.push(Part::Word(Word::ReturnsMax));
             head.push(Part::Text(max.to_string()));
+            // The name a build gives another number for, as `cap` is written in a
+            // `var`: plain text, spelt the same on every page.
+            if let Some(name) = &m.signature.returns_limit {
+                head.push(Part::Text(format!("limit {}", text(name))));
+            }
         }
         if m.signature.may_fail {
             head.push(Part::Word(Word::MayFail));
@@ -1134,11 +1139,13 @@ fn render_stmt(stmt: &AlgorithmStmt, out: &mut Out<'_>) {
             sce_type,
             init,
             capacity,
+            limit,
             ..
         } => {
-            let cap = match capacity {
-                Some(n) => format!(" cap {n}"),
-                None => String::new(),
+            let cap = match (capacity, limit) {
+                (Some(n), Some(name)) => format!(" cap {n} limit {}", text(name)),
+                (Some(n), None) => format!(" cap {n}"),
+                (None, _) => String::new(),
             };
             // A bytes buffer starts empty: there is no initializer to
             // show, so the line ends at its declaration rather than at a

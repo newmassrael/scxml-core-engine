@@ -1343,6 +1343,7 @@ mod tests {
             init_spelling: None,
             capacity: None,
             capacity_spelling: None,
+            limit: None,
         }
     }
 

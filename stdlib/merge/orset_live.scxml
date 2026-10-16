@@ -35,10 +35,10 @@
   <sce:signature>
     <sce:param name="adds" type="list&lt;record:Entry&gt;"/>
     <sce:param name="tombstones" type="list&lt;record:Entry&gt;"/>
-    <sce:return type="list&lt;record:Entry&gt;" may-fail="true" returns-max-size="1024"/>
+    <sce:return type="list&lt;record:Entry&gt;" may-fail="true" returns-max-size="1024" sce:limit="merge_entries"/>
   </sce:signature>
   <sce:body>
-    <sce:var name="out" type="list&lt;record:Entry&gt;" capacity="1024"/>
+    <sce:var name="out" type="list&lt;record:Entry&gt;" capacity="1024" sce:limit="merge_entries"/>
     <sce:foreach item="x" in="adds">
       <sce:var name="removed" type="bool" init="false"/>
       <sce:foreach item="t" in="tombstones">

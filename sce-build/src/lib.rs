@@ -163,6 +163,9 @@ pub mod gui_structure;
 /// decision rather than each re-spelling the list.
 pub mod host_processor_analyzer;
 pub mod kotlin;
+/// The bounds a deployment chooses: `sce:limit` names a bound, and the number a
+/// build gives the name replaces the one the document wrote.
+pub mod limits;
 pub mod literal_text;
 /// The stdout manifest wire surface — the single JSON line
 /// `sce-codegen` writes on success. Shape, schema-file lockstep, and

@@ -4216,6 +4216,35 @@ the algorithm's own. `scenarios/static_list_assign.json` holds all of this on ev
 engine that runs the model, the Interpreter included, which holds the same bound
 through the library its lowered document installs.
 
+**A bound a deployment chooses: `sce:limit`.** The number a document writes is the
+bound it is built with, and a build that has to hold more (a team's calendar on a
+server, where a room on a microcontroller holds a few) cannot edit one file and
+leave the other behind: a list may not be smaller than what the algorithm that
+returns it may return, and the two are written in two documents. `sce:limit="name"`
+beside a list's or a string's `sce:capacity`, an algorithm buffer's `capacity` or an
+algorithm's `returns-max-size` names the bound, and `sce-codegen --limit name=N`
+(repeatable; a positive whole number that fits 32 bits, the name a lower-case
+letter, then lower-case letters, digits and underscores) gives it a number: every
+element that carries the name takes it in place of the one it wrote, in the
+machine and in every algorithm it imports, so the bounds that move together move
+together, and a bound that does not carry the name does not move (an algorithm
+that then returns more than its list holds is refused as it always is). The
+numbers a build was given are part of what the `source-hash` of every file it
+writes says, so a tree built larger does not pass for the tree built as written;
+a build given none is the document as written, and its hash is the hash it
+always had. The bound is still one bound on every backend a build is made for, and
+a build that moves it is a different machine, which holds more: two copies of one
+list that differ in it are not the same list, and a copy built with the smaller
+bound refuses a write the larger one took and never catches up. A deployment
+therefore gives every copy of a list the same numbers. A bound moved far is a build
+for the backends whose lists live on the heap (Rust, Kotlin, Go, Python and the
+Interpreter): the C11 backend returns and passes an algorithm's list by value on the
+stack, a few copies of it at a call, so a bound past what a stack holds there is a
+crash and not a refusal.
+`sce-build/tests/a_limit_moves_every_bound_that_names_it.rs`
+holds all of this, and that the repository's own bounds that share a name write
+one number.
+
 **State an algorithm takes and gives back.** A rule that works on what a statechart
 keeps is written once, as an algorithm, and every backend runs the same one:
 `AddEntry(entries, _event.data.id, _event.data.amount)` hands the algorithm the

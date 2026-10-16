@@ -26,6 +26,33 @@ use std::path::Path;
 use sce_build::generator::Language;
 use sce_build::{compile_forge_with_imports, DocumentLabel, ForgeCompileOptions};
 
+/// The shared to-do list, which the builds with other bounds are of.
+const TODO_PEER: &str = "../../../sce-build/tests/fixtures/static_datamodel/todo_peer.scxml";
+
+/// The to-do list built with its bounds moved (`sce:limit`, docs/SCE_ACCEPTED_SUBSET.md
+/// §2.15), each under the name it is mounted by (`machines::tiny::todo_peer`): `tiny`
+/// holds a handful, so that a test reaches the end of the room in a few writes, and
+/// `large` is the room of a team of twenty with a great many events, the build a server
+/// has, which only the backends whose lists live on the heap can run.
+const TIERS: &[(&str, &[(&str, u32)])] = &[
+    (
+        "tiny",
+        &[
+            ("merge_values", 16),
+            ("merge_entries", 48),
+            ("merge_digest", 512),
+        ],
+    ),
+    (
+        "large",
+        &[
+            ("merge_values", 65_536),
+            ("merge_entries", 65_536),
+            ("merge_digest", 262_144),
+        ],
+    ),
+];
+
 /// The statecharts.
 const STATECHARTS: &[&str] = &[
     "machines/echo_client.scxml",
@@ -101,6 +128,7 @@ const FORGE: &[&str] = &[
     "../../../sce-build/tests/fixtures/static_datamodel/todo_propose.scxml",
     "../../../sce-build/tests/fixtures/static_datamodel/todo_ack.scxml",
     "../../../sce-build/tests/fixtures/static_datamodel/todo_floor.scxml",
+    "../../../sce-build/tests/fixtures/static_datamodel/todo_room.scxml",
     "../../../sce-build/tests/fixtures/static_datamodel/event_settled.scxml",
     "../../../sce-build/tests/fixtures/static_datamodel/event_answer.scxml",
     "../../../stdlib/time/utc_from_local.scxml",
@@ -120,7 +148,46 @@ fn main() {
     }
     let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR");
 
-    for document in FORGE {
+    generate_forge(FORGE, Path::new(&out_dir));
+    sce_build::compile_scxml(STATECHARTS);
+
+    // The to-do list again, built with its bounds moved (`sce:limit`), each build in a
+    // directory of its own and mounted as a module of its own: a machine and the
+    // algorithms it calls are siblings of one another, and the build that is given other
+    // numbers is another set of them, not the same one.
+    for (tier, limits) in TIERS {
+        let given = sce_build::limits::Limits::parse(
+            limits.iter().map(|(name, value)| format!("{name}={value}")),
+        )
+        .unwrap_or_else(|e| panic!("the limits of {tier}: {e}"));
+        let _scope = sce_build::limits::scope(&given);
+        let tier_dir = Path::new(&out_dir).join(tier);
+        std::fs::create_dir_all(&tier_dir).expect("a directory for the build");
+        let documents: Vec<&str> = FORGE
+            .iter()
+            .copied()
+            .filter(|document| is_part_of_the_todo_list(document))
+            .collect();
+        generate_forge(&documents, &tier_dir);
+        // `compile_scxml` writes where `OUT_DIR` says; this script is the only thing that
+        // reads it from here on.
+        std::env::set_var("OUT_DIR", &tier_dir);
+        sce_build::compile_scxml(&[TODO_PEER]);
+        std::env::set_var("OUT_DIR", &out_dir);
+    }
+
+    let mut mounted = mount(Path::new(&out_dir), "");
+    for (tier, _) in TIERS {
+        mounted.push_str(&format!("pub mod {tier} {{\n"));
+        mounted.push_str(&mount(&Path::new(&out_dir).join(tier), "    "));
+        mounted.push_str("}\n");
+    }
+    std::fs::write(Path::new(&out_dir).join("machines.rs"), mounted).expect("write machines.rs");
+}
+
+/// The standard algorithms and schemas under `documents`, generated into `out_dir`.
+fn generate_forge(documents: &[&str], out_dir: &Path) {
+    for document in documents {
         let path = Path::new(document);
         let text = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("read {document}: {e}"));
         let name = path
@@ -137,15 +204,30 @@ fn main() {
         )
         .unwrap_or_else(|e| panic!("generate {document}: {e}"));
         for (filename, code) in output.files {
-            let target = Path::new(&out_dir).join(&filename);
+            let target = out_dir.join(&filename);
             std::fs::write(&target, code)
                 .unwrap_or_else(|e| panic!("write {}: {e}", target.display()));
         }
     }
-    sce_build::compile_scxml(STATECHARTS);
+}
 
+/// Whether the to-do list's build needs `document`: the sheet, the registers of a
+/// sheet's rows, the presence list and the machines of this crate are not part of it.
+fn is_part_of_the_todo_list(document: &str) -> bool {
+    let name = Path::new(document)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("");
+    !document.starts_with("machines/")
+        && !["sheet_", "rga_", "lww_", "presence_"]
+            .iter()
+            .any(|prefix| name.starts_with(prefix))
+}
+
+/// The `#[path]` mounts of the generated files of `dir`, one module each, indented.
+fn mount(dir: &Path, indent: &str) -> String {
     let mut modules: Vec<(String, String)> = Vec::new();
-    for entry in std::fs::read_dir(&out_dir).expect("OUT_DIR is readable") {
+    for entry in std::fs::read_dir(dir).expect("a generated directory is readable") {
         let path = entry.expect("an entry").path();
         let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
             continue;
@@ -161,8 +243,8 @@ fn main() {
     let mut mounted = String::new();
     for (module, path) in &modules {
         mounted.push_str(&format!(
-            "#[path = {path:?}]\n#[allow(unused)]\npub mod {module};\n"
+            "{indent}#[path = {path:?}]\n{indent}#[allow(unused)]\n{indent}pub mod {module};\n"
         ));
     }
-    std::fs::write(Path::new(&out_dir).join("machines.rs"), mounted).expect("write machines.rs");
+    mounted
 }

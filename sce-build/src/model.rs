@@ -1268,6 +1268,10 @@ pub struct Variable {
     /// any other variable.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub capacity: Option<u32>,
+    /// The name a build gives another number for (`sce:limit`, [`crate::limits`]):
+    /// `capacity` is already the number the build gave it, when it gave one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<String>,
     /// `sce:direction` under `datamodel="sce-static"`: `out` publishes the
     /// variable — the host reads it and the snapshot carries it — and
     /// `internal`, the default, keeps it the machine's own. `None` under any

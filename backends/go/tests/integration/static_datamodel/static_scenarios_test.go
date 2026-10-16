@@ -1791,6 +1791,7 @@ func todoCopy() machine {
 		"floor":      func() any { return signedDigits(policy.Floor()) },
 		"stale":      func() any { return policy.Stale() },
 		"late":       func() any { return policy.Late() },
+		"full":       func() any { return policy.Full() },
 	})
 }
 

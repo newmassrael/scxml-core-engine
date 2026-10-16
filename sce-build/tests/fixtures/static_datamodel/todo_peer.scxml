@@ -86,6 +86,14 @@
   written over are gone from its peers. `todo.compact` is the host's own word, for a host
   that knows.
 
+  A copy keeps every list in a room it is built with (`sce:limit`), and a write that
+  would pass it fails half way, which no copy can undo. The host therefore gives a list less
+  room than the build holds (`todo.room`), and a copy refuses a change of its own whole when it
+  holds as much as it was given: before it stamps or sends anything, counted in `full`.
+  What lifts it is a settle, which forgets tombstones. A change that is a person's own is the
+  one judged, and what a person sent is taken in as it is, so the room is kept below the build's
+  by what the people of one list can write at once.
+
   `values` and `digest` are what a run compares across copies.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
@@ -126,6 +134,7 @@
   <sce:import kind="event-schema" src="todo_floor.scxml" as="Floor"/>
   <sce:import kind="event-schema" src="event_answer.scxml" as="Answer"/>
   <sce:import kind="algorithm" src="event_settled.scxml" as="EventSettled"/>
+  <sce:import kind="event-schema" src="todo_room.scxml" as="Room"/>
   <datamodel>
     <data id="node" sce:type="uint64" expr="0" sce:direction="out"/>
     <data id="hub" sce:type="bool" expr="false" sce:direction="out"/>
@@ -139,17 +148,21 @@
       <sce:set name="counter" expr="0"/>
       <sce:set name="nodeId" expr="0"/>
     </data>
-    <data id="adds" sce:type="list&lt;record:Entry&gt;" sce:capacity="1024" sce:direction="out"/>
-    <data id="tombstones" sce:type="list&lt;record:Entry&gt;" sce:capacity="1024" sce:direction="out"/>
-    <data id="one" sce:type="list&lt;record:Entry&gt;" sce:capacity="1024"/>
-    <data id="stable" sce:type="list&lt;record:Entry&gt;" sce:capacity="1024"/>
+    <!-- The bounds of the lists a deployment may move are named (`sce:limit`): the
+         lists of entries, of values and of the digest are as large as the standard
+         algorithms that return them, which carry the same names, so a build that gives
+         a name a number moves the machine and the algorithms together. -->
+    <data id="adds" sce:type="list&lt;record:Entry&gt;" sce:capacity="1024" sce:limit="merge_entries" sce:direction="out"/>
+    <data id="tombstones" sce:type="list&lt;record:Entry&gt;" sce:capacity="1024" sce:limit="merge_entries" sce:direction="out"/>
+    <data id="one" sce:type="list&lt;record:Entry&gt;" sce:capacity="1024" sce:limit="merge_entries"/>
+    <data id="stable" sce:type="list&lt;record:Entry&gt;" sce:capacity="1024" sce:limit="merge_entries"/>
     <data id="entry" sce:type="record:Entry">
       <sce:set name="element" expr="0"/>
       <sce:set name="wallTime" expr="0"/>
       <sce:set name="counter" expr="0"/>
       <sce:set name="nodeId" expr="0"/>
     </data>
-    <data id="values" sce:type="list&lt;record:Value&gt;" sce:capacity="512" sce:direction="out"/>
+    <data id="values" sce:type="list&lt;record:Value&gt;" sce:capacity="512" sce:limit="merge_values" sce:direction="out"/>
     <data id="held" sce:type="record:Value">
       <sce:set name="id" expr="0"/>
       <sce:set name="field" expr="0"/>
@@ -159,7 +172,7 @@
       <sce:set name="counter" expr="0"/>
       <sce:set name="nodeId" expr="0"/>
     </data>
-    <data id="digest" sce:type="list&lt;record:Node&gt;" sce:capacity="2048" sce:direction="out"/>
+    <data id="digest" sce:type="list&lt;record:Node&gt;" sce:capacity="2048" sce:limit="merge_digest" sce:direction="out"/>
     <data id="mine" sce:type="uint32" expr="0"/>
     <data id="shareId" sce:type="uint32" expr="0"/>
     <data id="shareField" sce:type="uint16" expr="0"/>
@@ -263,6 +276,16 @@
       <sce:set name="hash" expr="0"/>
     </data>
     <data id="agreed" sce:type="uint32" expr="0"/>
+    <!-- How much the host lets this copy hold (todo.room), 0 for no limit; the changes a
+         person made that were refused for it (`full`); and what the change in hand is
+         judged by: whether it is to a register that holds no value yet, and whether the
+         copy is full. -->
+    <data id="roomValues" sce:type="uint32" expr="0"/>
+    <data id="roomHistory" sce:type="uint32" expr="0"/>
+    <data id="roomDigest" sce:type="uint32" expr="0"/>
+    <data id="full" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="fresh" sce:type="bool" expr="false"/>
+    <data id="blocked" sce:type="bool" expr="false"/>
   </datamodel>
   <state id="open">
     <transition event="todo.join" type="internal">
@@ -270,55 +293,83 @@
       <assign location="hub" expr="_event.data.hub"/>
     </transition>
 
+    <!-- What the host lets this copy hold (todo.room): the most values, tombstones and
+         digest nodes. 0 is no limit of that kind. -->
+    <transition event="todo.room" type="internal">
+      <assign location="roomValues" expr="_event.data.values"/>
+      <assign location="roomHistory" expr="_event.data.history"/>
+      <assign location="roomDigest" expr="_event.data.digest"/>
+    </transition>
+
     <!-- A person's change: stamped, then handled as any write is, and sent to the hub.
          The values the person has seen in the field are the ones it writes over: each
-         is named in a supersede, here and at the hub, before the write itself. -->
+         is named in a supersede, here and at the hub, before the write itself.
+
+         A copy that holds as much as the host let it (todo.room) refuses the change
+         whole, as it refuses a text that does not fit: before the clock moves and before
+         anything is sent, so that no copy holds half of it, and counts it in `full` for
+         the host to say that the list is full. A change to a register that already has
+         a value adds none and is not refused for the values; a change when the tombstones
+         or the digest are as many as allowed is, since each adds to them, and what lets it
+         through is a settle. -->
     <transition event="todo.edit" type="internal">
       <!-- The text is read first, into a place nothing else reads: a text past its bound
            is an assignment that fails and ends the block, so the change is refused
            whole, with the clock where it was and nothing sent. -->
       <assign location="held.text" expr="_event.data.text"/>
-      <assign location="clock" expr="HlcSend(clock, _event.data.now, node)"/>
       <assign location="entry.element" expr="_event.data.id"/>
       <assign location="entry.element" expr="entry.element * 65536 + _event.data.field"/>
+      <assign location="fresh" expr="true"/>
       <foreach array="adds" item="o">
         <if cond="o.element === entry.element">
-          <send target="#_internal" event="todo.supersede">
-            <param name="id" expr="_event.data.id"/>
-            <param name="field" expr="_event.data.field"/>
-            <param name="wallTime" expr="o.wallTime"/>
-            <param name="counter" expr="o.counter"/>
-            <param name="nodeId" expr="o.nodeId"/>
-            <param name="by" expr="node"/>
-          </send>
-          <send target="#server" event="todo.supersede">
-            <param name="id" expr="_event.data.id"/>
-            <param name="field" expr="_event.data.field"/>
-            <param name="wallTime" expr="o.wallTime"/>
-            <param name="counter" expr="o.counter"/>
-            <param name="nodeId" expr="o.nodeId"/>
-            <param name="by" expr="node"/>
-          </send>
+          <assign location="fresh" expr="false"/>
         </if>
       </foreach>
-      <send target="#_internal" event="todo.write">
-        <param name="id" expr="_event.data.id"/>
-        <param name="field" expr="_event.data.field"/>
-        <param name="value" expr="_event.data.value"/>
-        <param name="text" expr="_event.data.text"/>
-        <param name="wallTime" expr="clock.wallTime"/>
-        <param name="counter" expr="clock.counter"/>
-        <param name="nodeId" expr="node"/>
-      </send>
-      <send target="#server" event="todo.write">
-        <param name="id" expr="_event.data.id"/>
-        <param name="field" expr="_event.data.field"/>
-        <param name="value" expr="_event.data.value"/>
-        <param name="text" expr="_event.data.text"/>
-        <param name="wallTime" expr="clock.wallTime"/>
-        <param name="counter" expr="clock.counter"/>
-        <param name="nodeId" expr="node"/>
-      </send>
+      <assign location="blocked" expr="(roomValues &gt; 0 &amp;&amp; fresh &amp;&amp; len(values) &gt;= roomValues) || (roomHistory &gt; 0 &amp;&amp; len(tombstones) &gt;= roomHistory) || (roomDigest &gt; 0 &amp;&amp; len(digest) &gt;= roomDigest)"/>
+      <if cond="blocked">
+        <assign location="full" expr="full + 1"/>
+      </if>
+      <if cond="!blocked">
+        <assign location="clock" expr="HlcSend(clock, _event.data.now, node)"/>
+        <foreach array="adds" item="o">
+          <if cond="o.element === entry.element">
+            <send target="#_internal" event="todo.supersede">
+              <param name="id" expr="_event.data.id"/>
+              <param name="field" expr="_event.data.field"/>
+              <param name="wallTime" expr="o.wallTime"/>
+              <param name="counter" expr="o.counter"/>
+              <param name="nodeId" expr="o.nodeId"/>
+              <param name="by" expr="node"/>
+            </send>
+            <send target="#server" event="todo.supersede">
+              <param name="id" expr="_event.data.id"/>
+              <param name="field" expr="_event.data.field"/>
+              <param name="wallTime" expr="o.wallTime"/>
+              <param name="counter" expr="o.counter"/>
+              <param name="nodeId" expr="o.nodeId"/>
+              <param name="by" expr="node"/>
+            </send>
+          </if>
+        </foreach>
+        <send target="#_internal" event="todo.write">
+          <param name="id" expr="_event.data.id"/>
+          <param name="field" expr="_event.data.field"/>
+          <param name="value" expr="_event.data.value"/>
+          <param name="text" expr="_event.data.text"/>
+          <param name="wallTime" expr="clock.wallTime"/>
+          <param name="counter" expr="clock.counter"/>
+          <param name="nodeId" expr="node"/>
+        </send>
+        <send target="#server" event="todo.write">
+          <param name="id" expr="_event.data.id"/>
+          <param name="field" expr="_event.data.field"/>
+          <param name="value" expr="_event.data.value"/>
+          <param name="text" expr="_event.data.text"/>
+          <param name="wallTime" expr="clock.wallTime"/>
+          <param name="counter" expr="clock.counter"/>
+          <param name="nodeId" expr="node"/>
+        </send>
+      </if>
     </transition>
 
     <!-- A write stamped at or before the floor is not taken in, from anyone and however

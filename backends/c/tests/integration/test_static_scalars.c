@@ -2246,6 +2246,7 @@ VARIABLE_READER(todo_peer, refusals)
 VARIABLE_READER(todo_peer, agendaNext)
 VARIABLE_READER(todo_peer, stale)
 VARIABLE_READER(todo_peer, late)
+VARIABLE_READER(todo_peer, full)
 
 static const char *todo_peer_text_text(sce_static_string_32_t text) {
     static char copy[sizeof(text.data)];
@@ -2276,7 +2277,7 @@ static const name_value_t todo_peer_states[] = {
 };
 static const variable_t todo_peer_variables[] = {
     {"hub", todo_peer_read_hub},     {"refusals", todo_peer_read_refusals}, {"agendaNext", todo_peer_read_agendaNext},
-    {"stale", todo_peer_read_stale}, {"late", todo_peer_read_late},
+    {"stale", todo_peer_read_stale}, {"late", todo_peer_read_late},         {"full", todo_peer_read_full},
 };
 static const record_variable_t todo_peer_records[] = {RECORD_ROW(todo_peer, clock),
                                                       RECORD_LIST_ROW(todo_peer, adds),

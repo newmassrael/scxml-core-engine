@@ -3956,6 +3956,11 @@ pub struct AlgorithmSignature {
     /// [`ProcedureHelper::returns_max_size`]. `None` ⇒ non-bytes return.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub returns_max_size: Option<u32>,
+    /// The name a build gives another number for (`sce:limit` on the `<sce:return>`,
+    /// [`crate::limits`]): `returns_max_size` is already the number the build gave it,
+    /// when it gave one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub returns_limit: Option<String>,
     /// `<sce:return may-fail="true">`: the algorithm's integer arithmetic can
     /// fail — an overflow, a division by zero, a signed `MIN / -1` — and its
     /// callers receive the failure (SCE_FORGE.md §3.4.1, the integer
@@ -4162,6 +4167,10 @@ pub enum AlgorithmStmt {
         capacity: Option<u32>,
         #[serde(skip)]
         capacity_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
+        /// The name a build gives another number for (`sce:limit`, [`crate::limits`]):
+        /// `capacity` is already the number the build gave it, when it gave one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        limit: Option<String>,
     },
     /// `<sce:var name=... type="record:<alias>">` with one
     /// `<sce:set name=... expr=.../>` per field of the schema — a record

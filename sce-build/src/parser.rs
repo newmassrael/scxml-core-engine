@@ -3019,9 +3019,18 @@ impl SCXMLParser {
         };
         // A list's declared bound; `enforce_static_datamodel` has already
         // required it on a list and refused it anywhere else.
+        //
+        // `sce:limit` names it for the deployment: the number the build gave the name
+        // replaces the one written (`crate::limits`), here and in every document that
+        // names the same bound, so a list the machine holds and the algorithm that
+        // returns it grow together.
         let capacity = crate::sce_attr::read(data, "capacity")
             .filter(|_| model.datamodel == Datamodel::SceStatic)
-            .and_then(|text| text.trim().parse::<u32>().ok().filter(|n| *n > 0));
+            .and_then(|text| text.trim().parse::<u32>().ok().filter(|n| *n > 0))
+            .map(|written| match crate::sce_attr::read(data, "limit") {
+                Some(name) => crate::limits::resolve(name.trim(), written),
+                None => written,
+            });
         // Whether the host sees the variable; `enforce_static_datamodel` has
         // already refused a direction this data model gives no meaning to.
         let direction = (model.datamodel == Datamodel::SceStatic).then(|| {
@@ -3060,6 +3069,9 @@ impl SCXMLParser {
             value_type_spelling: AttributeSpelling::of(data, Some(SCE_NAMESPACE), "type"),
             record_fields,
             capacity,
+            limit: capacity.and_then(|_| {
+                crate::sce_attr::read(data, "limit").map(|name| name.trim().to_string())
+            }),
             direction,
             // The analyzer names readers, once it knows which variables
             // have one (`reader_names::assign`).

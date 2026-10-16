@@ -320,6 +320,7 @@ fn a_local_reads_back_with_exactly_the_initializer_its_type_allows() {
             }],
             return_type: Some(AlgorithmValueType::Scalar(SceType::Bytes)),
             returns_max_size: Some(4),
+            returns_limit: None,
             may_fail: false,
         },
         consts: Vec::new(),
@@ -332,6 +333,7 @@ fn a_local_reads_back_with_exactly_the_initializer_its_type_allows() {
                 init_spelling: None,
                 capacity: Some(4),
                 capacity_spelling: None,
+                limit: None,
             },
             AlgorithmStmt::Var {
                 name: "n".to_string(),
@@ -341,6 +343,7 @@ fn a_local_reads_back_with_exactly_the_initializer_its_type_allows() {
                 init_spelling: None,
                 capacity: None,
                 capacity_spelling: None,
+                limit: None,
             },
             AlgorithmStmt::Append {
                 target: "out".to_string(),

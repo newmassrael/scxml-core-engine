@@ -1401,21 +1401,26 @@ fn parse_algorithm(head: &Line<'_>, body: &[&Line<'_>]) -> Result<AlgorithmModel
     }
 
     let tail: Vec<&str> = tail.split_whitespace().collect();
-    let (return_type, returns_max_size, may_fail) = match tail.first().copied() {
-        None => (None, None, false),
+    let (return_type, returns_max_size, returns_limit, may_fail) = match tail.first().copied() {
+        None => (None, None, None, false),
         Some("->") => {
             let t = tail.get(1).copied().unwrap_or("");
             let rt = AlgorithmValueType::from_attr(t).ok_or_else(|| ParseError {
                 line: head.number,
                 why: format!("`{t}` is not an sce:type"),
             })?;
-            // Clause order is the renderer's: `returns-max <n>`, then
-            // `may-fail`.
+            // Clause order is the renderer's: `returns-max <n>`, `limit <name>`
+            // (the name a build gives another number for), then `may-fail`.
             let mut rest = &tail[2.min(tail.len())..];
             let mut max = None;
+            let mut limit = None;
             if rest.first().copied() == Some("returns-max") {
                 max = rest.get(1).and_then(|v| v.parse().ok());
                 rest = &rest[2.min(rest.len())..];
+                if rest.first().copied() == Some("limit") {
+                    limit = rest.get(1).map(|name| (*name).to_string());
+                    rest = &rest[2.min(rest.len())..];
+                }
             }
             let mut may_fail = false;
             if rest.first().copied() == Some("may-fail") {
@@ -1428,7 +1433,7 @@ fn parse_algorithm(head: &Line<'_>, body: &[&Line<'_>]) -> Result<AlgorithmModel
                     why: format!("`{other}` is not a signature clause"),
                 });
             }
-            (Some(rt), max, may_fail)
+            (Some(rt), max, limit, may_fail)
         }
         Some(other) => {
             return Err(ParseError {
@@ -1444,6 +1449,7 @@ fn parse_algorithm(head: &Line<'_>, body: &[&Line<'_>]) -> Result<AlgorithmModel
             params,
             return_type,
             returns_max_size,
+            returns_limit,
             may_fail,
         },
         consts: Vec::new(),
@@ -1647,6 +1653,11 @@ fn parse_stmt(line: &Line<'_>, kids: &[&Line<'_>]) -> Result<AlgorithmStmt, Pars
             (Some("cap"), Some(n)) => n.parse().ok(),
             _ => None,
         };
+        // `cap <n> limit <name>`: the name a build gives another number for.
+        let limit = match (w.next(), w.next()) {
+            (Some("limit"), Some(name)) if capacity.is_some() => Some(undo(name, line.number)?),
+            _ => None,
+        };
         let sce_type = AlgorithmValueType::from_attr(type_word).ok_or_else(|| ParseError {
             line: line.number,
             why: format!("`{type_word}` is not an sce:type"),
@@ -1723,6 +1734,7 @@ fn parse_stmt(line: &Line<'_>, kids: &[&Line<'_>]) -> Result<AlgorithmStmt, Pars
             init_spelling: None,
             capacity,
             capacity_spelling: None,
+            limit,
         });
     }
     if let Some(rest) = t.strip_prefix("append ") {
@@ -2965,6 +2977,7 @@ fn parse_variable(
         value_type_spelling: None,
         record_fields: Vec::new(),
         capacity: None,
+        limit: None,
         direction: None,
         // Named by the analyzer, which a rendering has not been through.
         reader: None,

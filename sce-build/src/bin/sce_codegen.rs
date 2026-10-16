@@ -1395,6 +1395,21 @@ SCE_ERROR_CONTRACT.md §10) rides there regardless of this flag.
     )]
     error_format: ErrorFormat,
 
+    /// Build with a bound moved: `--limit name=N` gives the bounds that carry
+    /// `sce:limit="name"` the number N in place of the one the document wrote.
+    /// Repeatable. A list variable, a bytes or string variable, an algorithm's
+    /// buffer and an algorithm's `returns-max-size` take it wherever they sit,
+    /// the machine's and the algorithms' alike, so the bounds that have to move
+    /// together do. The numbers are part of what the `source-hash` of every
+    /// file written says. A name that no document of this run carries moves
+    /// nothing, so a deployment that builds many documents with one set of
+    /// limits keeps the names it gives in one list and checks them against the
+    /// documents (the repository's own do:
+    /// `tests/a_limit_moves_every_bound_that_names_it.rs`).
+    /// Global — applies to every subcommand that reads a document.
+    #[arg(long = "limit", global = true, value_name = "NAME=N")]
+    limit: Vec<String>,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -3421,6 +3436,15 @@ fn main() {
     if let Some(p) = cli.source_root {
         let _ = SOURCE_ROOT.set(p);
     }
+    // The bounds this run builds with, for the whole run: every document it reads
+    // takes them (`sce_build::limits`).
+    let limits = match sce_build::limits::Limits::parse(&cli.limit) {
+        Ok(limits) => limits,
+        Err(e) => cli_exit(CliError::Usage {
+            detail: format!("--limit: {e}"),
+        }),
+    };
+    let _limits_scope = sce_build::limits::scope(&limits);
     if cli.assert_unchanged {
         if let Some(detail) = assert_unchanged_refusal(&cli.command) {
             cli_exit(CliError::Usage { detail });

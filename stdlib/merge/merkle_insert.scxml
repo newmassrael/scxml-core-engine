@@ -38,11 +38,11 @@
     <sce:param name="nodes" type="list&lt;record:Node&gt;"/>
     <sce:param name="minute" type="int64"/>
     <sce:param name="hash" type="uint32"/>
-    <sce:return type="list&lt;record:Node&gt;" returns-max-size="2048" may-fail="true"/>
+    <sce:return type="list&lt;record:Node&gt;" returns-max-size="2048" sce:limit="merge_digest" may-fail="true"/>
   </sce:signature>
   <sce:body>
     <sce:require cond="minute &gt;= 0 &amp;&amp; minute &lt;= 153722867280912"/>
-    <sce:var name="out" type="list&lt;record:Node&gt;" capacity="2048"/>
+    <sce:var name="out" type="list&lt;record:Node&gt;" capacity="2048" sce:limit="merge_digest"/>
     <!-- The next path node to place: its depth, its prefix, and 3^(30-depth)
          for the depth after it. -->
     <sce:var name="pd" type="uint32" init="0"/>

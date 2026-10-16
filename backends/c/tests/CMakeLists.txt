@@ -2730,6 +2730,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
                    todo_keep.scxml todo_node.scxml todo_visit.scxml
                    todo_share.scxml todo_agenda.scxml todo_zone.scxml todo_compact.scxml
                    todo_settle.scxml todo_propose.scxml todo_ack.scxml todo_floor.scxml
+                   todo_room.scxml
                    event_occurrence.scxml event_schedule.scxml event_later.scxml
                    event_latest.scxml event_conflict.scxml event_selects.scxml event_agenda.scxml
                    event_settled.scxml event_answer.scxml

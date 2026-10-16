@@ -397,6 +397,13 @@
             }
           ]
         },
+        "returns_limit": {
+          "description": "The name a build gives another number for (`sce:limit` on the `<sce:return>`, [`crate::limits`]): `returns_max_size` is already the number the build gave it, when it gave one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "returns_max_size": {
           "description": "Cap on the bytes a `return_type = bytes` algorithm may produce, declared via `sce:returns-max-size=\"N\"` on the `<sce:signature>`. Required when `return_type` is `bytes` (the output buffer's fixed capacity on the no-alloc profile); ignored otherwise. Mirrors [`ProcedureHelper::returns_max_size`]. `None` ⇒ non-bytes return.",
           "format": "uint32",
@@ -427,6 +434,13 @@
               ]
             },
             "init": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "limit": {
+              "description": "The name a build gives another number for (`sce:limit`, [`crate::limits`]): `capacity` is already the number the build gave it, when it gave one.",
               "type": [
                 "string",
                 "null"
@@ -6695,6 +6709,13 @@
         },
         "id": {
           "type": "string"
+        },
+        "limit": {
+          "description": "The name a build gives another number for (`sce:limit`, [`crate::limits`]): `capacity` is already the number the build gave it, when it gave one.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "provenance": {
           "description": "`sce:provenance` spec-document anchors attached to this `<data>`.",

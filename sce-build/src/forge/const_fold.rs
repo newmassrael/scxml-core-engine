@@ -1211,6 +1211,7 @@ mod tests {
                 init_spelling: None,
                 capacity: None,
                 capacity_spelling: None,
+                limit: None,
             }],
             yield_expr: "doubled".into(),
             yield_spelling: None,
@@ -1248,6 +1249,7 @@ mod tests {
                     init_spelling: None,
                     capacity: None,
                     capacity_spelling: None,
+                    limit: None,
                 },
                 AlgorithmStmt::Var {
                     name: "bit".into(),
@@ -1257,6 +1259,7 @@ mod tests {
                     init_spelling: None,
                     capacity: None,
                     capacity_spelling: None,
+                    limit: None,
                 },
                 AlgorithmStmt::While {
                     cond: "bit < 8".into(),
@@ -1434,6 +1437,7 @@ mod tests {
                 init_spelling: None,
                 capacity: None,
                 capacity_spelling: None,
+                limit: None,
             }],
             yield_expr: "x".into(),
             yield_spelling: None,

@@ -218,6 +218,7 @@ impl SourceSet {
             for (name, content) in crate::forge::stdlib::closure(seeds) {
                 entries.insert(PathBuf::from(name), sha256_bytes(content.as_bytes()));
             }
+            fold_limits(&mut entries);
             return Ok(Self {
                 root: input_root.to_path_buf(),
                 entries,
@@ -253,7 +254,7 @@ impl SourceSet {
         // every document added anywhere in it re-stamped all three of them.
         let seeds: Vec<PathBuf> = entries
             .keys()
-            .filter(|rel| rel.as_path() != Path::new("deploy.yaml"))
+            .filter(|rel| is_a_document(rel))
             .flat_map(|rel| {
                 let file = input_root.join(rel);
                 let base = file.parent().map(Path::to_path_buf).unwrap_or_default();
@@ -268,9 +269,10 @@ impl SourceSet {
         for (name, content) in crate::forge::stdlib::closure(seeds) {
             entries.insert(PathBuf::from(name), sha256_bytes(content.as_bytes()));
         }
+        fold_limits(&mut entries);
         let members = entries
             .keys()
-            .filter(|rel| rel.as_path() != Path::new("deploy.yaml"))
+            .filter(|rel| is_a_document(rel))
             .filter(|rel| !crate::forge::stdlib::names_standard(rel))
             .map(|rel| canonical_key(&input_root.join(rel)))
             .chain(deploy_yaml.map(canonical_key))
@@ -357,7 +359,7 @@ impl SourceSet {
         let mut paths: Vec<PathBuf> = self
             .entries
             .keys()
-            .filter(|rel| rel.as_path() != Path::new("deploy.yaml"))
+            .filter(|rel| is_a_document(rel))
             // A standard document is in the generator, not on disk: a build
             // system watches the generator for it.
             .filter(|rel| !crate::forge::stdlib::names_standard(rel))
@@ -370,6 +372,29 @@ impl SourceSet {
             paths.push(deploy.clone());
         }
         paths
+    }
+}
+
+/// The canonical key the limits a build was given are folded in under
+/// (`crate::limits`): not a file, so it is never a path a build system watches.
+const LIMITS_ENTRY: &str = "limits";
+
+/// Is `rel` a document of the set, and not the `deploy.yaml` or the limits a build
+/// was given, which the digest folds in beside the documents?
+fn is_a_document(rel: &Path) -> bool {
+    rel != Path::new("deploy.yaml") && rel != Path::new(LIMITS_ENTRY)
+}
+
+/// Fold the limits this thread's generator runs under into the set, when it runs
+/// under any: a tree built with a bound moved does not pass for the tree built as
+/// written, and a tree built as written has the digest it always had.
+fn fold_limits(entries: &mut BTreeMap<PathBuf, [u8; 32]>) {
+    let limits = crate::limits::current();
+    if !limits.is_empty() {
+        entries.insert(
+            PathBuf::from(LIMITS_ENTRY),
+            sha256_bytes(limits.canonical().as_bytes()),
+        );
     }
 }
 

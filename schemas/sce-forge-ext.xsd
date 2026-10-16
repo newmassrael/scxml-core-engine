@@ -261,6 +261,13 @@
        Typing it here would refuse a malformed or zero value with a schema
        error first, and the rules' refusals would never be reached. -->
   <xs:attribute name="capacity" type="xs:string"/>
+  <!-- `sce:limit="name"` beside a `capacity` or a `returns-max-size`: the name a
+       build gives another number for (the `limit` option of `sce-codegen`, one
+       `name=N` each), so that the
+       bounds that have to move together (a list variable and the algorithm that
+       returns it) are one name wherever they are written. The number written is
+       the bound when a build gives none. -->
+  <xs:attribute name="limit" type="xs:NCName"/>
   <!-- `sce:interface="closed"` on a statechart's `<scxml>`: every event
        crossing it is one an imported event-schema declares (SCE Accepted
        Subset §2.16). `xs:string` for `sce:capacity`'s reason: the parser
@@ -1406,6 +1413,7 @@
            by the parser when the return is a buffer (the no-alloc profile's
            bound); refused otherwise. Mirrors `<sce:helper returns-max-size>`. -->
       <xs:attribute name="returns-max-size" type="xs:positiveInteger"/>
+      <xs:attribute ref="sce:limit"/>
       <!-- The integer arithmetic contract (SCE_FORGE.md §3.4.1): an
            algorithm whose integer arithmetic can fail — overflow, a division
            by zero, a signed MIN / -1 — says so here, on the signature's
@@ -1468,6 +1476,7 @@
       <xs:attribute name="type" type="sce:algorithmValueType" use="required"/>
       <xs:attribute name="init" type="xs:string"/>
       <xs:attribute name="capacity" type="xs:positiveInteger"/>
+      <xs:attribute ref="sce:limit"/>
     </xs:complexType>
   </xs:element>
 

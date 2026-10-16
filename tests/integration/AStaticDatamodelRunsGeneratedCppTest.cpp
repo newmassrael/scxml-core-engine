@@ -1704,6 +1704,7 @@ Driver<ClockPeeking<G::todo_peer::todo_peer>> todoPeerDriver() {
         {"floor", [](const Machine &m) { return wideText(m.floor()); }},
         {"stale", [](const Machine &m) { return json(m.stale()); }},
         {"late", [](const Machine &m) { return json(m.late()); }},
+        {"full", [](const Machine &m) { return json(m.full()); }},
     });
 }
 
