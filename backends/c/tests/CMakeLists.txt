@@ -2722,9 +2722,24 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/todo_peer.scxml"
         STAGE_ALSO todo_join.scxml todo_edit.scxml todo_write.scxml todo_supersede.scxml
                    todo_keep.scxml todo_node.scxml todo_visit.scxml
-                   todo_share.scxml todo_agenda.scxml
+                   todo_share.scxml todo_agenda.scxml todo_zone.scxml
                    event_occurrence.scxml event_later.scxml event_agenda.scxml
     )
+    # Its time zone: the standard rules that read a table of transitions.
+    foreach(_ZONE_HEADER utc_offset_at utc_from_local)
+        set(_ZONE_OUTPUT "${SCE_C_INTEGRATION_GENERATED_DIR}/${_ZONE_HEADER}.h")
+        add_custom_command(
+            OUTPUT "${_ZONE_OUTPUT}"
+            COMMAND "${SCE_CODEGEN}" generate "sce:std/time/${_ZONE_HEADER}.scxml"
+                    -l c11 -o "${SCE_C_INTEGRATION_GENERATED_DIR}"
+                    --write-deps "${_ZONE_OUTPUT}.d"
+            DEPENDS "${SCE_CODEGEN}"
+            DEPFILE "${_ZONE_OUTPUT}.d"
+            COMMENT "Generating C11 header: ${_ZONE_HEADER}.h"
+            VERBATIM
+        )
+        list(APPEND _STATIC_MERGE_HEADERS "${_ZONE_OUTPUT}")
+    endforeach()
     # Its schedule: the occurrence record, the rule that orders two writes and the one
     # that expands a repetition, the fixtures of the machine's own directory.
     set(_STATIC_EVENT_HEADERS "")

@@ -5,7 +5,9 @@
   that overlap [windowStart, windowEnd), in time order. The schedule is read from the
   fields the to-do holds, by the numbers the host gives them:
 
-    16  start          instant of the first occurrence, ms since 1970-01-01 UTC (0 or more)
+    16  start          the first occurrence as a wall-clock reading, ms since
+                       1970-01-01T00:00 (0 or more): UTC when the copy holds no time zone,
+                       the reading in the event's own zone when it does (todo_peer)
     17  length         ms an occurrence lasts (0 for an instant)
     18  repeat         0 once, 1 every `every` days, 2 every `every` weeks on the days of
                        `days`, 3 every `every` months on the start's day of the month
@@ -17,6 +19,14 @@
                        from Sunday as 0; the start's own weekday when absent
     21  count          the most occurrences there are, counted from the first (0 for no
                        limit)
+    22  until          the last wall-clock reading an occurrence may start at, inclusive,
+                       ms like `start` (0 for no end); an occurrence after it is not one
+    64+ exceptions     one field for each day, 64 + (the day's count since 2020-01-01):
+                       1 leaves the occurrence of that day out, 0 puts it back. They are
+                       fields of their own, so that two people who leave out two days
+                       both stay, and who disagree about one day is a conflict. A day
+                       before 2020-01-01 or from 2200 on has no field. A day left out
+                       still counts toward `count`, as RFC 5545 §3.8.5.1 says of EXDATE.
      9  removed        1 when the to-do is removed, which shows nothing
 
   A field is read as the value written last (event_later orders the writes), so that every copy that holds
@@ -25,12 +35,13 @@
   of the schedule at once and no one has chosen between them: the agenda is
   then the later write's, and the flag says the people have not agreed.
 
-  Times are instants in UTC. A repetition that keeps a local time through a change of the
-  clock, or a weekday in someone's zone, is the application's: it writes the instants.
-  Weeks begin on Sunday and a weekly repetition counts the weeks from the week of the
-  start; its first occurrence is the first day on or after the start that the days name,
-  which is the start itself only when its weekday is one of them. `until` is not a field:
-  an application that wants one asks for a window that ends there.
+  This reads wall-clock readings and the window as readings too, and knows no zone: it
+  scans the days of the one calendar the readings are in. The copy turns the readings it
+  gets back into instants by the time zone it holds (todo_peer), so an event that starts at
+  09:30 keeps starting at 09:30 across a change of the clock. Weeks begin on Sunday and a
+  weekly repetition counts the weeks from the week of the start; its first occurrence is
+  the first day on or after the start that the days name, which is the start itself only
+  when its weekday is one of them.
 
   The window holds at most 64 occurrences: the agenda ends at the 64th, which a caller
   that has reached it continues from the end of. The scan is by day for a repetition by
@@ -69,6 +80,7 @@
     <sce:var name="every0" type="int64" init="1"/>
     <sce:var name="days" type="int64" init="0"/>
     <sce:var name="count" type="int64" init="0"/>
+    <sce:var name="until" type="int64" init="0"/>
     <sce:var name="flag" type="uint8" init="0"/>
     <sce:var name="found" type="bool" init="false"/>
     <sce:var name="held" type="int64" init="0"/>
@@ -202,6 +214,24 @@
       <sce:assign target="flag" expr="1"/>
     </sce:if>
 
+    <sce:assign target="found" expr="false"/>
+    <sce:assign target="held" expr="0"/>
+    <sce:foreach item="w22" in="values">
+      <sce:if cond="w22.id === id &amp;&amp; w22.field === 22">
+        <sce:assign target="held" expr="held + 1"/>
+        <sce:if cond="!found || later(w22.wallTime, w22.counter, w22.nodeId, bw, bc, bn)">
+          <sce:assign target="found" expr="true"/>
+          <sce:assign target="bw" expr="w22.wallTime"/>
+          <sce:assign target="bc" expr="w22.counter"/>
+          <sce:assign target="bn" expr="w22.nodeId"/>
+          <sce:assign target="until" expr="w22.value"/>
+        </sce:if>
+      </sce:if>
+    </sce:foreach>
+    <sce:if cond="held &gt; 1">
+      <sce:assign target="flag" expr="1"/>
+    </sce:if>
+
     <sce:if cond="startAt &gt;= 0 &amp;&amp; gone !== 1 &amp;&amp; freq &gt;= 0 &amp;&amp; freq &lt;= 3 &amp;&amp; windowEnd &gt; windowStart &amp;&amp; windowEnd &gt; 0">
       <sce:var name="every" type="int64" init="every0 &lt; 1 ? 1 : every0"/>
 
@@ -263,7 +293,7 @@
         </sce:if>
         <sce:var name="occStart" type="int64" init="d * day + timeOfDay"/>
         <sce:var name="occEnd" type="int64" init="occStart + length"/>
-        <sce:if cond="d &gt;= endDay || occStart &gt;= windowEnd">
+        <sce:if cond="d &gt;= endDay || occStart &gt;= windowEnd || (until &gt; 0 &amp;&amp; occStart &gt; until)">
           <sce:assign target="going" expr="false"/>
           <sce:else>
             <sce:if cond="valid">
@@ -271,15 +301,47 @@
                 <sce:assign target="going" expr="false"/>
                 <sce:else>
                   <sce:if cond="(occEnd &gt; windowStart || occStart &gt;= windowStart) &amp;&amp; emitted &lt; 64">
-                    <sce:var name="line" type="record:Occurrence">
-                      <sce:set name="id" expr="id"/>
-                      <sce:set name="start" expr="occStart"/>
-                      <sce:set name="end" expr="occEnd"/>
-                      <sce:set name="nth" expr="nth"/>
-                      <sce:set name="conflict" expr="flag"/>
-                    </sce:var>
-                    <sce:append target="out" expr="line"/>
-                    <sce:assign target="emitted" expr="emitted + 1"/>
+                    <!-- Whether the day is left out: its own field, read as the value
+                         written last; held twice, it is a conflict of this occurrence. -->
+                    <sce:var name="excluded" type="bool" init="false"/>
+                    <sce:var name="mark" type="uint8" init="flag"/>
+                    <sce:var name="dayNo" type="int64" init="occStart / day"/>
+                    <sce:if cond="dayNo &gt;= 18262 &amp;&amp; dayNo - 18262 &lt; 65472">
+                      <sce:var name="xfield" type="uint64" init="dayNo - 18262 + 64"/>
+                      <sce:var name="xfound" type="bool" init="false"/>
+                      <sce:var name="xheld" type="int64" init="0"/>
+                      <sce:var name="xw" type="int64" init="0"/>
+                      <sce:var name="xc" type="uint32" init="0"/>
+                      <sce:var name="xn" type="uint64" init="0"/>
+                      <sce:var name="xv" type="int64" init="0"/>
+                      <sce:foreach item="wx" in="values">
+                        <sce:if cond="wx.id === id &amp;&amp; wx.field === xfield">
+                          <sce:assign target="xheld" expr="xheld + 1"/>
+                          <sce:if cond="!xfound || later(wx.wallTime, wx.counter, wx.nodeId, xw, xc, xn)">
+                            <sce:assign target="xfound" expr="true"/>
+                            <sce:assign target="xw" expr="wx.wallTime"/>
+                            <sce:assign target="xc" expr="wx.counter"/>
+                            <sce:assign target="xn" expr="wx.nodeId"/>
+                            <sce:assign target="xv" expr="wx.value"/>
+                          </sce:if>
+                        </sce:if>
+                      </sce:foreach>
+                      <sce:assign target="excluded" expr="xfound &amp;&amp; xv === 1"/>
+                      <sce:if cond="xheld &gt; 1">
+                        <sce:assign target="mark" expr="1"/>
+                      </sce:if>
+                    </sce:if>
+                    <sce:if cond="!excluded">
+                      <sce:var name="line" type="record:Occurrence">
+                        <sce:set name="id" expr="id"/>
+                        <sce:set name="start" expr="occStart"/>
+                        <sce:set name="end" expr="occEnd"/>
+                        <sce:set name="nth" expr="nth"/>
+                        <sce:set name="conflict" expr="mark"/>
+                      </sce:var>
+                      <sce:append target="out" expr="line"/>
+                      <sce:assign target="emitted" expr="emitted + 1"/>
+                    </sce:if>
                   </sce:if>
                   <sce:assign target="nth" expr="nth + 1"/>
                   <sce:if cond="freq === 0">

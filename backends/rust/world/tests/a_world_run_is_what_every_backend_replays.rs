@@ -28,7 +28,8 @@ mod common;
 use std::path::PathBuf;
 
 use common::calendar::{
-    agreed_agenda, instant, schedule_todo, Plan, HOUR_MS, MONTHLY, START, WEEKLY,
+    agreed_agenda, agreed_agenda_in, day_number, instant, leave_out, new_york, schedule_todo,
+    set_zone_everywhere, Plan, DAILY, HOUR_MS, MONTHLY, START, UNTIL, WEEKLY,
 };
 use common::resync::{MINUTE, OLD_LIMIT_MINUTES};
 use common::*;
@@ -287,6 +288,35 @@ fn todo_afternoon() -> World {
         (22, instant(2026, 3, 1, 0, 0), instant(2026, 4, 1, 0, 0)),
     ] {
         agreed_agenda(&mut world, id, from, to);
+    }
+
+    // The same in a time zone: every copy's host tells its copy New York's transitions,
+    // and a weekly meeting at 09:30 keeps its wall clock when the clock is set forward;
+    // a daily one at 02:30 meets the skipped hour and one at 01:30 the repeated one; a
+    // repetition ends at a reading, and a day is left out by one person while another
+    // leaves out a second day.
+    let zone = new_york();
+    set_zone_everywhere(&mut world, &zone);
+    let weekly = Plan::once(instant(2026, 3, 2, 9, 30), HOUR_MS).repeating(WEEKLY, 1);
+    schedule_todo(&mut world, "alice", 23, &weekly);
+    let skipped = Plan::once(instant(2026, 3, 7, 2, 30), 0).repeating(DAILY, 1);
+    schedule_todo(&mut world, "bob", 24, &skipped);
+    let repeated = Plan::once(instant(2026, 10, 31, 1, 30), 0).repeating(DAILY, 1);
+    schedule_todo(&mut world, "alice", 25, &repeated);
+    let ending = Plan::once(instant(2026, 1, 1, 8, 0), HOUR_MS).repeating(DAILY, 1);
+    schedule_todo(&mut world, "bob", 26, &ending);
+    todo_set(&mut world, "bob", 26, UNTIL, instant(2026, 1, 4, 8, 0));
+    assert_eq!(world.run_until_quiet(60_000), Outcome::Quiet);
+    leave_out(&mut world, "alice", 26, day_number(2026, 1, 2), true);
+    leave_out(&mut world, "bob", 26, day_number(2026, 1, 3), true);
+    assert_eq!(world.run_until_quiet(60_000), Outcome::Quiet);
+    for (id, from, to) in [
+        (23, instant(2026, 3, 1, 0, 0), instant(2026, 3, 20, 0, 0)),
+        (24, instant(2026, 3, 7, 0, 0), instant(2026, 3, 10, 0, 0)),
+        (25, instant(2026, 10, 31, 0, 0), instant(2026, 11, 3, 0, 0)),
+        (26, instant(2026, 1, 1, 0, 0), instant(2026, 2, 1, 0, 0)),
+    ] {
+        agreed_agenda_in(&mut world, Some(&zone), id, from, to);
     }
     world
 }

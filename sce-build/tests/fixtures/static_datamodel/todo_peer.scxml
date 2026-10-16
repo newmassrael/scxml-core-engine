@@ -95,6 +95,9 @@
   <sce:import kind="algorithm" src="sce:std/merge/merkle_insert.scxml" as="MerkleInsert"/>
   <sce:import kind="algorithm" src="sce:std/merge/merkle_change_hash.scxml" as="MerkleChangeHash"/>
   <sce:import kind="algorithm" src="event_agenda.scxml" as="EventAgenda"/>
+  <sce:import kind="event-schema" src="todo_zone.scxml" as="Zone"/>
+  <sce:import kind="algorithm" src="sce:std/time/utc_offset_at.scxml" as="UtcOffsetAt"/>
+  <sce:import kind="algorithm" src="sce:std/time/utc_from_local.scxml" as="UtcFromLocal"/>
   <datamodel>
     <data id="node" sce:type="uint64" expr="0" sce:direction="out"/>
     <data id="hub" sce:type="bool" expr="false" sce:direction="out"/>
@@ -139,6 +142,20 @@
     <data id="present" sce:type="bool" expr="false"/>
     <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="agenda" sce:type="list&lt;record:Occurrence&gt;" sce:capacity="64" sce:direction="out"/>
+    <data id="local" sce:type="list&lt;record:Occurrence&gt;" sce:capacity="64"/>
+    <data id="occ" sce:type="record:Occurrence">
+      <sce:set name="id" expr="0"/>
+      <sce:set name="start" expr="0"/>
+      <sce:set name="end" expr="0"/>
+      <sce:set name="nth" expr="0"/>
+      <sce:set name="conflict" expr="0"/>
+    </data>
+    <data id="zoneStarts" sce:type="list&lt;int64&gt;" sce:capacity="64"/>
+    <data id="zoneOffsets" sce:type="list&lt;int32&gt;" sce:capacity="64"/>
+    <data id="zoned" sce:type="bool" expr="false"/>
+    <data id="offStart" sce:type="int32" expr="0"/>
+    <data id="offEnd" sce:type="int32" expr="0"/>
+    <data id="utcSec" sce:type="int64" expr="0"/>
   </datamodel>
   <state id="open">
     <transition event="todo.join" type="internal">
@@ -562,7 +579,47 @@
          and a window the scan cannot cover is a refusal that leaves the agenda empty. -->
     <transition event="todo.agenda" type="internal">
       <sce:clear target="agenda"/>
-      <assign location="agenda" expr="EventAgenda(values, _event.data.id, _event.data.windowStart, _event.data.windowEnd)"/>
+      <!-- Without a time zone the wall-clock readings are UTC instants. -->
+      <if cond="!zoned">
+        <assign location="agenda" expr="EventAgenda(values, _event.data.id, _event.data.windowStart, _event.data.windowEnd)"/>
+      </if>
+      <!-- With one, the schedule is read in the zone's wall clock over the window as the
+           zone reads it, widened by a day each side so that an occurrence the offset moves
+           into the window is not missed, and each occurrence is turned back into instants
+           by the table (utc_from_local: the first of an overlap, a gap read with the offset
+           before it) and kept when it overlaps the window as asked. -->
+      <if cond="zoned">
+        <assign location="offStart" expr="UtcOffsetAt(zoneStarts, zoneOffsets, _event.data.windowStart / 1000)"/>
+        <assign location="offEnd" expr="UtcOffsetAt(zoneStarts, zoneOffsets, _event.data.windowEnd / 1000)"/>
+        <assign location="local" expr="EventAgenda(values, _event.data.id, _event.data.windowStart + offStart * 1000 - 86400000, _event.data.windowEnd + offEnd * 1000 + 86400000)"/>
+        <foreach array="local" item="l">
+          <assign location="occ.id" expr="l.id"/>
+          <assign location="occ.nth" expr="l.nth"/>
+          <assign location="occ.conflict" expr="l.conflict"/>
+          <assign location="utcSec" expr="UtcFromLocal(zoneStarts, zoneOffsets, l.start / 1000)"/>
+          <assign location="occ.start" expr="utcSec * 1000 + l.start % 1000"/>
+          <assign location="utcSec" expr="UtcFromLocal(zoneStarts, zoneOffsets, l.end / 1000)"/>
+          <assign location="occ.end" expr="utcSec * 1000 + l.end % 1000"/>
+          <if cond="(occ.end &gt; _event.data.windowStart || occ.start &gt;= _event.data.windowStart) &amp;&amp; occ.start &lt; _event.data.windowEnd">
+            <sce:append target="agenda" expr="occ"/>
+          </if>
+        </foreach>
+      </if>
+    </transition>
+
+    <!-- The host's time zone, one transition at a time (a message cannot carry a list),
+         in order, after todo.zone_clear. It is the host's and not shared: each copy reads
+         the zone its own host tells it. -->
+    <transition event="todo.zone" type="internal">
+      <sce:append target="zoneStarts" expr="_event.data.start"/>
+      <sce:append target="zoneOffsets" expr="_event.data.offset"/>
+      <assign location="zoned" expr="true"/>
+    </transition>
+
+    <transition event="todo.zone_clear" type="internal">
+      <sce:clear target="zoneStarts"/>
+      <sce:clear target="zoneOffsets"/>
+      <assign location="zoned" expr="false"/>
     </transition>
 
     <transition event="error.execution" type="internal">

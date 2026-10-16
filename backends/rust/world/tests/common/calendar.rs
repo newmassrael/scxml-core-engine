@@ -104,6 +104,83 @@ pub fn instant(year: i64, month: i64, day: i64, hour: i64, minute: i64) -> i64 {
     day_number(year, month, day) * DAY_MS + hour * HOUR_MS + minute * 60_000
 }
 
+/// The last wall-clock reading an occurrence may start at.
+pub const UNTIL: u64 = 22;
+
+/// A day left out of a repetition is a field of its own: 64 plus the day's count since
+/// 2020-01-01, holding 1 to leave the day out and 0 to put it back.
+pub const EXCEPT_BASE: u64 = 64;
+pub const EXCEPT_DAY0: i64 = 18_262;
+
+/// The field that leaves out (or puts back) the occurrence of a day, by its count since
+/// 1970-01-01.
+pub fn except_field(day: i64) -> u64 {
+    assert!(
+        (EXCEPT_DAY0..EXCEPT_DAY0 + 65_472).contains(&day),
+        "day {day} has no exception field"
+    );
+    (day - EXCEPT_DAY0) as u64 + EXCEPT_BASE
+}
+
+/// What the copies hold for the exception of one day.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DayMark {
+    pub left_out: bool,
+    /// Two people set the day at once and no one has chosen.
+    pub split: bool,
+}
+
+/// A time zone as a host holds it: the instants (seconds) its offset changes at, and the
+/// offset (seconds) in force from each.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Zone {
+    pub starts: Vec<i64>,
+    pub offsets: Vec<i32>,
+}
+
+impl Zone {
+    /// The offset in force at the instant `t`, in seconds.
+    pub fn offset_at(&self, t: i64) -> i64 {
+        let mut offset = None;
+        for (start, off) in self.starts.iter().zip(&self.offsets) {
+            if *start <= t {
+                offset = Some(i64::from(*off));
+            }
+        }
+        offset.expect("the table covers the instant")
+    }
+
+    /// The instant (seconds) a wall-clock reading names: the earlier of two when the
+    /// clock was set back over it, and, when the clock was set forward over it, the
+    /// instant that is as far past the change as the reading is past the skipped hour,
+    /// by the offset before it.
+    pub fn utc_from_local(&self, local: i64) -> i64 {
+        let mut chosen: Option<i64> = None;
+        for off in &self.offsets {
+            let candidate = local - i64::from(*off);
+            if self.offset_at(candidate) != i64::from(*off) {
+                continue;
+            }
+            match chosen {
+                Some(earlier) if earlier <= candidate => {}
+                _ => chosen = Some(candidate),
+            }
+        }
+        if let Some(found) = chosen {
+            return found;
+        }
+        // A reading the clock skipped: it lies between where the offset before a change
+        // would put the change and where the offset after would.
+        for k in 1..self.starts.len() {
+            let before = local - i64::from(self.offsets[k - 1]);
+            if before >= self.starts[k] && local - i64::from(self.offsets[k]) < self.starts[k] {
+                return before;
+            }
+        }
+        panic!("the zone names no instant for {local}");
+    }
+}
+
 /// What a to-do's fields say it is scheduled as, as the fields hold it once the copies
 /// agree: each field read as the value written last.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -114,20 +191,35 @@ pub struct Schedule {
     pub every: i64,
     pub days: i64,
     pub count: i64,
+    pub until: i64,
     pub gone: bool,
     /// Two people changed one of the fields at once and no one has chosen.
     pub conflict: bool,
+    /// The days the fields leave out or put back, by their count since 1970-01-01.
+    pub except: BTreeMap<i64, DayMark>,
 }
 
 /// The schedule of to-do `id` in the list the copies agree on.
 pub fn schedule_in(list: &BTreeMap<(u64, u64), Field>, id: u64) -> Schedule {
     let value = |field: u64, none: i64| list.get(&(id, field)).map_or(none, |held| held.value);
-    let split = [START, LENGTH, REPEAT, EVERY, DAYS, COUNT, GONE]
+    let split = [START, LENGTH, REPEAT, EVERY, DAYS, COUNT, UNTIL, GONE]
         .iter()
         .any(|field| {
             list.get(&(id, *field))
                 .is_some_and(|held| held.live.len() > 1)
         });
+    let mut except = BTreeMap::new();
+    for ((todo, field), held) in list {
+        if *todo == id && *field >= EXCEPT_BASE {
+            except.insert(
+                (*field - EXCEPT_BASE) as i64 + EXCEPT_DAY0,
+                DayMark {
+                    left_out: held.value == 1,
+                    split: held.live.len() > 1,
+                },
+            );
+        }
+    }
     Schedule {
         start: list.get(&(id, START)).map(|held| held.value),
         length: value(LENGTH, 0),
@@ -135,14 +227,55 @@ pub fn schedule_in(list: &BTreeMap<(u64, u64), Field>, id: u64) -> Schedule {
         every: value(EVERY, 1).max(1),
         days: value(DAYS, 0),
         count: value(COUNT, 0),
+        until: value(UNTIL, 0),
         gone: value(GONE, 0) == 1,
         conflict: split,
+        except,
     }
 }
 
-/// The occurrences of a schedule that overlap `[from, to)`, in order, by the rules of
-/// `event_agenda.scxml`, generated from the first occurrence on.
-pub fn expand(id: u64, schedule: &Schedule, from: i64, to: i64) -> Vec<Occurrence> {
+/// The occurrences of a schedule that overlap `[from, to)` under a time zone, in order:
+/// the schedule is read in the zone's wall clock over a window wide enough to hold every
+/// reading that can fall in the instants asked for, each reading is turned into an
+/// instant by the zone, and what overlaps `[from, to)` is kept. With no zone the
+/// readings are the instants.
+pub fn expand(
+    id: u64,
+    schedule: &Schedule,
+    zone: Option<&Zone>,
+    from: i64,
+    to: i64,
+) -> Vec<Occurrence> {
+    let Some(zone) = zone else {
+        return expand_readings(id, schedule, from, to, AGENDA_MAX);
+    };
+    let wide = 2 * DAY_MS;
+    expand_readings(id, schedule, from - wide, to + wide, usize::MAX)
+        .into_iter()
+        .map(|reading| {
+            let instant = |reading: i64| {
+                zone.utc_from_local(reading.div_euclid(1000)) * 1000 + reading.rem_euclid(1000)
+            };
+            Occurrence {
+                start: instant(reading.start),
+                end: instant(reading.end),
+                ..reading
+            }
+        })
+        .filter(|o| (o.end > from || o.start >= from) && o.start < to)
+        .take(AGENDA_MAX)
+        .collect()
+}
+
+/// The occurrences of a schedule whose wall-clock readings overlap `[from, to)`, in
+/// order, by the rules of `event_agenda.scxml`, generated from the first occurrence on.
+pub fn expand_readings(
+    id: u64,
+    schedule: &Schedule,
+    from: i64,
+    to: i64,
+    cap: usize,
+) -> Vec<Occurrence> {
     let Some(start) = schedule.start else {
         return Vec::new();
     };
@@ -157,7 +290,6 @@ pub fn expand(id: u64, schedule: &Schedule, from: i64, to: i64) -> Vec<Occurrenc
     let time_of_day = start % DAY_MS;
     let first_day = start / DAY_MS;
     let every = schedule.every;
-    let flag = u8::from(schedule.conflict);
     // The days of the schedule's occurrences, in order, generated as far as there is a
     // reason to look: a day is a candidate while it begins before the window ends.
     let mut days: Vec<i64> = Vec::new();
@@ -210,17 +342,22 @@ pub fn expand(id: u64, schedule: &Schedule, from: i64, to: i64) -> Vec<Occurrenc
             break;
         }
         let begins = day * DAY_MS + time_of_day;
-        if begins >= to {
+        if begins >= to || (schedule.until > 0 && begins > schedule.until) {
             break;
         }
         let ends = begins + schedule.length;
-        if (ends > from || begins >= from) && out.len() < AGENDA_MAX {
+        if (ends > from || begins >= from) && out.len() < cap {
+            // A day left out still counts toward the count, and is not shown.
+            let mark = schedule.except.get(&day).copied();
+            if mark.is_some_and(|m| m.left_out) {
+                continue;
+            }
             out.push(Occurrence {
                 id,
                 start: begins,
                 end: ends,
                 nth: nth as u32,
-                conflict: flag,
+                conflict: u8::from(schedule.conflict || mark.is_some_and(|m| m.split)),
             });
         }
     }
@@ -299,8 +436,19 @@ pub fn agenda_of(world: &mut World, who: &str, id: u64, from: i64, to: i64) -> V
 }
 
 /// The three copies show one agenda for the to-do; which. And it is the one the schedule
-/// the copies agree on says it is.
+/// the copies agree on says it is, with no time zone.
 pub fn agreed_agenda(world: &mut World, id: u64, from: i64, to: i64) -> Vec<Occurrence> {
+    agreed_agenda_in(world, None, id, from, to)
+}
+
+/// The same under the time zone every copy was given (`set_zone`).
+pub fn agreed_agenda_in(
+    world: &mut World,
+    zone: Option<&Zone>,
+    id: u64,
+    from: i64,
+    to: i64,
+) -> Vec<Occurrence> {
     let server = agenda_of(world, "server", id, from, to);
     for who in ["alice", "bob"] {
         assert_eq!(
@@ -312,8 +460,55 @@ pub fn agreed_agenda(world: &mut World, id: u64, from: i64, to: i64) -> Vec<Occu
     let list = agreed_todos(world);
     assert_eq!(
         server,
-        expand(id, &schedule_in(&list, id), from, to),
+        expand(id, &schedule_in(&list, id), zone, from, to),
         "the agenda of to-do {id} is not what its schedule says"
     );
     server
+}
+
+/// Tell a copy's host's time zone: its transitions, one to a message, after a clear.
+pub fn set_zone(world: &mut World, who: &str, zone: &Zone) {
+    world.raise(who, "todo.zone_clear", "");
+    for (start, offset) in zone.starts.iter().zip(&zone.offsets) {
+        world.raise(
+            who,
+            "todo.zone",
+            &format!(r#"{{"start":"{start}","offset":{offset}}}"#),
+        );
+    }
+}
+
+/// Every copy's host has the same time zone: the one a group of people share.
+pub fn set_zone_everywhere(world: &mut World, zone: &Zone) {
+    for who in ["alice", "bob", "server"] {
+        set_zone(world, who, zone);
+    }
+    world.run_until_quiet(10);
+}
+
+/// A person leaves out (`true`) or puts back (`false`) the occurrence of a day, by the
+/// day's count since 1970-01-01.
+pub fn leave_out(world: &mut World, who: &str, id: u64, day: i64, out: bool) {
+    todo_set(world, who, id, except_field(day), i64::from(out));
+}
+
+/// New York in 2026: UTC-5 until the clock is set forward at 02:00 on 8 March (07:00Z)
+/// and back at 02:00 on 1 November (06:00Z).
+pub fn new_york() -> Zone {
+    Zone {
+        starts: vec![
+            instant(2025, 11, 2, 6, 0) / 1000,
+            instant(2026, 3, 8, 7, 0) / 1000,
+            instant(2026, 11, 1, 6, 0) / 1000,
+        ],
+        offsets: vec![-18_000, -14_400, -18_000],
+    }
+}
+
+/// Seoul: UTC+9, no change of the clock.
+pub fn seoul() -> Zone {
+    Zone {
+        starts: vec![instant(2020, 1, 1, 0, 0) / 1000],
+        offsets: vec![32_400],
+    }
 }

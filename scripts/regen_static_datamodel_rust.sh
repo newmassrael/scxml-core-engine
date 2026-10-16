@@ -97,6 +97,8 @@ STD_ALGORITHMS+=(merge/mv_value merge/mv_value_holds merge/mv_value_keep merge/m
 STD_ALGORITHMS+=(text/text_slot text/text_slot_latest text/text_slot_retitled text/text_slot_holds)
 # The digest todo_peer keeps of the changes it holds.
 STD_ALGORITHMS+=(merge/merkle_node merge/merkle_insert merge/merkle_change_hash)
+# The time zone todo_peer turns its schedule's wall-clock readings into instants by.
+STD_ALGORITHMS+=(time/utc_offset_at time/utc_from_local)
 # What the sheet shows of its cells: the formulas settled and the values sorted.
 STD_ALGORITHMS+=(merge/sheet_value merge/sheet_shown merge/sheet_apply merge/sheet_settle merge/sheet_show)
 
