@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.12, §2.15; the
+  standard host features, docs/SCE_HOST_FEATURES.md, "Clock"): one machine that
+  reads the clock of its host and the zone the host reads local time in, and
+  publishes what the host answered.
+
+  Neither operation takes an argument, so neither invoke names a request: the
+  event that asks is `host.clock.now.request` or `host.clock.zone.request`,
+  with no payload. The result records are the library's
+  (`sce:std/host/clock_now_result.scxml`, `clock_zone_result.scxml`).
+
+    outcome       `done` when the host answered the request, the failure code
+                  when its answer is a failure, `deadline` when the engine's
+                  deadline passed, `refused` when it declined to start it
+    utc_ms, monotonic_ms     the answer of a now
+    zone_id, utc_offset_s    the answer of a zone
+
+  The machine returns to `idle` after each request, so a scenario reads one
+  answer and asks again.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static" name="static_host_clock">
+  <sce:import kind="event-schema" src="sce:std/host/clock_now_result.scxml" as="ClockNowResult"/>
+  <sce:import kind="event-schema" src="sce:std/host/clock_zone_result.scxml" as="ClockZoneResult"/>
+  <datamodel>
+    <data id="outcome" sce:type="string" sce:capacity="24" expr="''" sce:direction="out"/>
+    <data id="utc_ms" sce:type="int64" expr="0" sce:direction="out"/>
+    <data id="monotonic_ms" sce:type="int64" expr="0" sce:direction="out"/>
+    <data id="zone_id" sce:type="string" sce:capacity="64" expr="''" sce:direction="out"/>
+    <data id="utc_offset_s" sce:type="int32" expr="0" sce:direction="out"/>
+  </datamodel>
+
+  <state id="idle">
+    <transition event="host.clock.now.request" target="reading"/>
+    <transition event="host.clock.zone.request" target="locating"/>
+  </state>
+
+  <state id="reading">
+    <invoke type="sce-host-clock-now" id="now" sce:result="ClockNowResult"/>
+    <transition event="done.invoke.now" cond="_event.data.error === ''" target="idle">
+      <assign location="utc_ms" expr="_event.data.utc_ms"/>
+      <assign location="monotonic_ms" expr="_event.data.monotonic_ms"/>
+      <assign location="outcome" expr="'done'"/>
+    </transition>
+    <transition event="done.invoke.now" target="idle">
+      <assign location="outcome" expr="_event.data.error"/>
+    </transition>
+    <transition event="error.invoke.now" target="idle">
+      <assign location="outcome" expr="'deadline'"/>
+    </transition>
+    <transition event="error.execution" target="idle">
+      <assign location="outcome" expr="'refused'"/>
+    </transition>
+  </state>
+
+  <state id="locating">
+    <invoke type="sce-host-clock-zone" id="zone" sce:result="ClockZoneResult"/>
+    <transition event="done.invoke.zone" cond="_event.data.error === ''" target="idle">
+      <assign location="zone_id" expr="_event.data.zone_id"/>
+      <assign location="utc_offset_s" expr="_event.data.utc_offset_s"/>
+      <assign location="outcome" expr="'done'"/>
+    </transition>
+    <transition event="done.invoke.zone" target="idle">
+      <assign location="outcome" expr="_event.data.error"/>
+    </transition>
+    <transition event="error.invoke.zone" target="idle">
+      <assign location="outcome" expr="'deadline'"/>
+    </transition>
+    <transition event="error.execution" target="idle">
+      <assign location="outcome" expr="'refused'"/>
+    </transition>
+  </state>
+</scxml>

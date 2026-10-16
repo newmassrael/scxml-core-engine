@@ -1,0 +1,43 @@
+{
+  "machine": "static_host_clock",
+  "about": "The clock of docs/SCE_HOST_FEATURES.md, section 2, as a machine sees it through its host. A `clock` directive sets what the host reads. The host's monotonic reading never decreases whatever the directive says, and its UTC reading follows the directive, backwards included. Expected values are derived from the specification, not observed from a host.",
+  "steps": [
+    { "note": "started: nothing has been read",
+      "expect": { "state": "idle", "variables": { "outcome": "", "utc_ms": 0, "monotonic_ms": 0, "zone_id": "", "utc_offset_s": 0 }, "host_invokes": [] } },
+
+    { "note": "both readings of one now are the instant the host reads",
+      "host": { "clock": { "utc_ms": 1760000000000, "monotonic_ms": 5000, "zone_id": "Asia/Seoul", "utc_offset_s": 32400 } },
+      "event": "host.clock.now.request",
+      "expect": { "state": "idle", "variables": { "outcome": "done", "utc_ms": 1760000000000, "monotonic_ms": 5000 },
+                  "host_invokes": [ { "type": "sce-host-clock-now", "id": "now", "request": {} } ] } },
+
+    { "note": "the zone is the identifier and the offset in force",
+      "event": "host.clock.zone.request",
+      "expect": { "variables": { "outcome": "done", "zone_id": "Asia/Seoul", "utc_offset_s": 32400 },
+                  "host_invokes": [ { "type": "sce-host-clock-zone", "id": "zone", "request": {} } ] } },
+
+    { "note": "the host's clock is set back: UTC goes backwards, the monotonic reading does not",
+      "host": { "clock": { "utc_ms": 1759999999000, "monotonic_ms": 4000 } },
+      "event": "host.clock.now.request",
+      "expect": { "variables": { "outcome": "done", "utc_ms": 1759999999000, "monotonic_ms": 5000 } } },
+
+    { "note": "and it goes on from where it was",
+      "host": { "clock": { "monotonic_ms": 7500 } },
+      "event": "host.clock.now.request",
+      "expect": { "variables": { "utc_ms": 1759999999000, "monotonic_ms": 7500 } } },
+
+    { "note": "a host that knows only an offset answers an empty identifier, and a negative offset is west of UTC",
+      "host": { "clock": { "zone_id": "", "utc_offset_s": -18000 } },
+      "event": "host.clock.zone.request",
+      "expect": { "variables": { "outcome": "done", "zone_id": "", "utc_offset_s": -18000 } } },
+
+    { "note": "a clock that cannot be read fails unavailable, and what the last read left is as it was",
+      "host": { "fail": { "sce-host-clock-now": "unavailable" } },
+      "event": "host.clock.now.request",
+      "expect": { "state": "idle", "variables": { "outcome": "unavailable", "utc_ms": 1759999999000, "monotonic_ms": 7500 } } },
+
+    { "note": "the failure belongs to the operation: the zone is still answered",
+      "event": "host.clock.zone.request",
+      "expect": { "variables": { "outcome": "done", "zone_id": "", "utc_offset_s": -18000 } } }
+  ]
+}

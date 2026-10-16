@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.12, §2.15; the
+  standard host features, docs/SCE_HOST_FEATURES.md, "HTTP"): one machine that
+  asks its host for one HTTP exchange at a time and publishes the response.
+
+  `host.http.fetch.request` is the library's request record itself: a method,
+  a URL, header lines and a body, all text. The invoke carries the engine's
+  deadline (`_sce_deadline_ms`, which is not a field of the record), so an
+  exchange that has not answered in five seconds of the engine's clock ends
+  with `outcome` `deadline`, and a host that has not finished it is told to
+  stop.
+
+    outcome   `done` when the host answered the request (any status), the
+              failure code (`network`, `response_too_large`, `invalid_body`)
+              when its answer is a failure, `deadline` when the deadline
+              passed, `refused` when the host declined to start it
+    status, response_headers, response_body   the response of a request done
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static" name="static_host_http">
+  <sce:import kind="event-schema" src="sce:std/host/http_fetch_request.scxml" as="HttpFetchRequest"/>
+  <sce:import kind="event-schema" src="sce:std/host/http_fetch_result.scxml" as="HttpFetchResult"/>
+  <datamodel>
+    <data id="method" sce:type="string" sce:capacity="8" expr="''"/>
+    <data id="url" sce:type="string" sce:capacity="2048" expr="''"/>
+    <data id="request_headers" sce:type="string" sce:capacity="2048" expr="''"/>
+    <data id="request_body" sce:type="string" sce:capacity="16384" expr="''"/>
+    <data id="outcome" sce:type="string" sce:capacity="24" expr="''" sce:direction="out"/>
+    <data id="status" sce:type="uint16" expr="0" sce:direction="out"/>
+    <data id="response_headers" sce:type="string" sce:capacity="4096" expr="''" sce:direction="out"/>
+    <data id="response_body" sce:type="string" sce:capacity="16384" expr="''" sce:direction="out"/>
+  </datamodel>
+
+  <state id="idle">
+    <transition event="host.http.fetch.request" target="fetching">
+      <assign location="method" expr="_event.data.method"/>
+      <assign location="url" expr="_event.data.url"/>
+      <assign location="request_headers" expr="_event.data.headers"/>
+      <assign location="request_body" expr="_event.data.body"/>
+    </transition>
+  </state>
+
+  <state id="fetching">
+    <invoke type="sce-host-http-fetch" id="fetch" sce:request="HttpFetchRequest" sce:result="HttpFetchResult">
+      <param name="method" expr="method"/>
+      <param name="url" expr="url"/>
+      <param name="headers" expr="request_headers"/>
+      <param name="body" expr="request_body"/>
+      <param name="_sce_deadline_ms" expr="5000"/>
+    </invoke>
+    <transition event="done.invoke.fetch" cond="_event.data.error === ''" target="idle">
+      <assign location="status" expr="_event.data.status"/>
+      <assign location="response_headers" expr="_event.data.headers"/>
+      <assign location="response_body" expr="_event.data.body"/>
+      <assign location="outcome" expr="'done'"/>
+    </transition>
+    <transition event="done.invoke.fetch" target="idle">
+      <assign location="outcome" expr="_event.data.error"/>
+    </transition>
+    <transition event="error.invoke.fetch" target="idle">
+      <assign location="outcome" expr="'deadline'"/>
+    </transition>
+    <transition event="error.execution" target="idle">
+      <assign location="outcome" expr="'refused'"/>
+    </transition>
+  </state>
+</scxml>

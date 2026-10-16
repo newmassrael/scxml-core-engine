@@ -1,0 +1,107 @@
+{
+  "machine": "static_host_http",
+  "about": "The HTTP exchange of docs/SCE_HOST_FEATURES.md, section 5, as a machine sees it through its host. An `http` directive sets what the transport answers: `status`, `headers` (name and value pairs, in order), `body` as text, `body_hex` as raw bytes, `body_repeat` as a text and a count, `fail` as a transport failure, or `hold`, which does not answer. `host_state.http` is what the transport was given, one entry for each exchange; `cancelled` is the operations the host was told to stop. Expected values are derived from the specification, not observed from a host.",
+  "steps": [
+    { "note": "started: nothing has been fetched",
+      "expect": { "state": "idle", "variables": { "outcome": "", "status": 0, "response_headers": "", "response_body": "" }, "host_invokes": [],
+                  "host_state": { "http": [], "cancelled": [] } } },
+
+    { "note": "a response is a completion: its status, its headers with names in lower case and in the order received, and its body. The request's header lines reach the transport as name and value, the value without the spaces around it",
+      "host": { "http": { "status": 200, "headers": [ ["Content-Type", "text/plain"], ["X-N", "1"], ["x-n", "2"] ], "body": "hello" } },
+      "event": "host.http.fetch.request",
+      "data": { "method": "GET", "url": "https://example.test/a?x=1", "headers": "Accept: text/plain\nX-Trace:  7 ", "body": "" },
+      "expect": { "state": "idle",
+                  "variables": { "outcome": "done", "status": 200, "response_headers": "content-type: text/plain\nx-n: 1\nx-n: 2", "response_body": "hello" },
+                  "host_invokes": [ { "type": "sce-host-http-fetch", "id": "fetch",
+                                      "request": { "method": "GET", "url": "https://example.test/a?x=1", "headers": "Accept: text/plain\nX-Trace:  7 ", "body": "" } } ],
+                  "host_state": { "http": [ { "method": "GET", "url": "https://example.test/a?x=1",
+                                              "headers": [ { "name": "Accept", "value": "text/plain" }, { "name": "X-Trace", "value": "7" } ], "body": "" } ],
+                              "cancelled": [] } } },
+
+    { "note": "an error status is an answer, not a failure",
+      "host": { "http": { "status": 404, "headers": [], "body": "" } },
+      "event": "host.http.fetch.request",
+      "data": { "method": "GET", "url": "http://example.test/missing", "headers": "", "body": "" },
+      "expect": { "variables": { "outcome": "done", "status": 404, "response_headers": "", "response_body": "" } } },
+
+    { "note": "a redirect is not followed: it arrives as itself, with its location",
+      "host": { "http": { "status": 301, "headers": [ ["Location", "/b"] ], "body": "moved" } },
+      "event": "host.http.fetch.request",
+      "data": { "method": "GET", "url": "http://example.test/a", "headers": "", "body": "" },
+      "expect": { "variables": { "outcome": "done", "status": 301, "response_headers": "location: /b", "response_body": "moved" } } },
+
+    { "note": "the response to HEAD has an empty body whatever the transport carried",
+      "host": { "http": { "status": 200, "headers": [ ["Content-Length", "5"] ], "body": "hello" } },
+      "event": "host.http.fetch.request",
+      "data": { "method": "HEAD", "url": "http://example.test/a", "headers": "", "body": "" },
+      "expect": { "variables": { "outcome": "done", "status": 200, "response_headers": "content-length: 5", "response_body": "" } } },
+
+    { "note": "a request body and its headers reach the transport as written",
+      "host": { "http": { "status": 201, "headers": [], "body": "" } },
+      "event": "host.http.fetch.request",
+      "data": { "method": "POST", "url": "https://example.test/items", "headers": "Content-Type: application/json", "body": "{\"a\":1}" },
+      "expect": { "variables": { "outcome": "done", "status": 201 },
+                  "host_state": { "http": [ { "method": "GET", "url": "https://example.test/a?x=1", "headers": [ { "name": "Accept", "value": "text/plain" }, { "name": "X-Trace", "value": "7" } ], "body": "" },
+                                            { "method": "GET", "url": "http://example.test/missing", "headers": [], "body": "" },
+                                            { "method": "GET", "url": "http://example.test/a", "headers": [], "body": "" },
+                                            { "method": "HEAD", "url": "http://example.test/a", "headers": [], "body": "" },
+                                            { "method": "POST", "url": "https://example.test/items", "headers": [ { "name": "Content-Type", "value": "application/json" } ], "body": "{\"a\":1}" } ],
+                                  "cancelled": [] } } },
+
+    { "note": "no response at all is a failure: network, and the last response is as it was",
+      "host": { "http": { "fail": "network" } },
+      "event": "host.http.fetch.request",
+      "data": { "method": "GET", "url": "http://example.test/a", "headers": "", "body": "" },
+      "expect": { "variables": { "outcome": "network", "status": 201 } } },
+
+    { "note": "a body that does not fit the record is never cut: the exchange fails response_too_large",
+      "host": { "http": { "status": 200, "headers": [], "body_repeat": [ "x", 16385 ] } },
+      "event": "host.http.fetch.request",
+      "data": { "method": "GET", "url": "http://example.test/big", "headers": "", "body": "" },
+      "expect": { "variables": { "outcome": "response_too_large", "status": 201 } } },
+
+    { "note": "a body of exactly the bound fits",
+      "host": { "http": { "status": 200, "headers": [], "body_repeat": [ "x", 16384 ] } },
+      "event": "host.http.fetch.request",
+      "data": { "method": "GET", "url": "http://example.test/big", "headers": "", "body": "" },
+      "expect": { "variables": { "outcome": "done", "status": 200 } } },
+
+    { "note": "a body that is not UTF-8 fails invalid_body",
+      "host": { "http": { "status": 200, "headers": [], "body_hex": "ff" } },
+      "event": "host.http.fetch.request",
+      "data": { "method": "GET", "url": "http://example.test/bin", "headers": "", "body": "" },
+      "expect": { "variables": { "outcome": "invalid_body", "status": 200 } } },
+
+    { "note": "a method that is not one of the listed, in capitals, is refused; the transport is not used",
+      "host": { "http": { "status": 200, "headers": [], "body": "never" } },
+      "event": "host.http.fetch.request",
+      "data": { "method": "get", "url": "http://example.test/a", "headers": "", "body": "" },
+      "expect": { "variables": { "outcome": "refused" },
+                  "host_invokes": [ { "type": "sce-host-http-fetch", "id": "fetch",
+                                      "request": { "method": "get", "url": "http://example.test/a", "headers": "", "body": "" } } ] } },
+
+    { "note": "a URL that is not http or https is refused",
+      "event": "host.http.fetch.request",
+      "data": { "method": "GET", "url": "ftp://example.test/a", "headers": "", "body": "" },
+      "expect": { "variables": { "outcome": "refused" } } },
+
+    { "note": "a header line without a colon is refused",
+      "event": "host.http.fetch.request",
+      "data": { "method": "GET", "url": "http://example.test/a", "headers": "NoColon", "body": "" },
+      "expect": { "variables": { "outcome": "refused" } } },
+
+    { "note": "a host that does not answer holds the exchange: the machine waits",
+      "host": { "http": { "hold": true } },
+      "event": "host.http.fetch.request",
+      "data": { "method": "GET", "url": "http://example.test/slow", "headers": "", "body": "" },
+      "expect": { "state": "fetching", "host_state": { "cancelled": [] } } },
+
+    { "note": "just short of the deadline of five seconds it still waits",
+      "advance_ms": 4999,
+      "expect": { "state": "fetching" } },
+
+    { "note": "at the deadline the machine is told, the host is told to stop, and the machine is back in idle",
+      "advance_ms": 1,
+      "expect": { "state": "idle", "variables": { "outcome": "deadline" }, "host_state": { "cancelled": ["fetch"] } } }
+  ]
+}

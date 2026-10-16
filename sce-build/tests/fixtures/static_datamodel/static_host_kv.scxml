@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.12, §2.15; the
+  standard host features, docs/SCE_HOST_FEATURES.md, "Key-value store"): one
+  machine that asks the four operations of the key-value store of its host,
+  one at a time, and publishes what each answered.
+
+  The events are the request records themselves: `host.kv.get.request` carries
+  the `key` it asks for, and so on, so a scenario reads as the requests a
+  machine would make. Each operation is a typed host-run invoke
+  (`sce:request` / `sce:result`) whose `<param>`s are variables the machine
+  holds, so no operation is a literal. What the host did is read from what the
+  machine published:
+
+    outcome   `done` when the host answered the request, the failure code
+              (`unavailable`, `quota_exceeded`) when its answer is a failure,
+              `deadline` when the engine's deadline passed, `refused` when
+              the host declined to start it
+    found, got        the answer of a get
+    replaced          the answer of a put
+    existed           the answer of a delete
+    next_found, next  the answer of a next-key
+
+  A failure is a completion whose `error` is not empty, so the machine reads it
+  as a typed field: a machine of this data model reads no text of a failure
+  event. The machine ends every request back in `idle`, so a scenario can follow
+  one operation with the next and read each answer where it was left.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static" name="static_host_kv">
+  <sce:import kind="event-schema" src="sce:std/host/kv_get_request.scxml" as="KvGetRequest"/>
+  <sce:import kind="event-schema" src="sce:std/host/kv_get_result.scxml" as="KvGetResult"/>
+  <sce:import kind="event-schema" src="sce:std/host/kv_put_request.scxml" as="KvPutRequest"/>
+  <sce:import kind="event-schema" src="sce:std/host/kv_put_result.scxml" as="KvPutResult"/>
+  <sce:import kind="event-schema" src="sce:std/host/kv_delete_request.scxml" as="KvDeleteRequest"/>
+  <sce:import kind="event-schema" src="sce:std/host/kv_delete_result.scxml" as="KvDeleteResult"/>
+  <sce:import kind="event-schema" src="sce:std/host/kv_next_key_request.scxml" as="KvNextKeyRequest"/>
+  <sce:import kind="event-schema" src="sce:std/host/kv_next_key_result.scxml" as="KvNextKeyResult"/>
+  <datamodel>
+    <data id="key" sce:type="string" sce:capacity="256" expr="''"/>
+    <data id="value" sce:type="string" sce:capacity="4096" expr="''"/>
+    <data id="after" sce:type="string" sce:capacity="256" expr="''"/>
+    <data id="prefix" sce:type="string" sce:capacity="256" expr="''"/>
+    <data id="outcome" sce:type="string" sce:capacity="24" expr="''" sce:direction="out"/>
+    <data id="found" sce:type="bool" expr="false" sce:direction="out"/>
+    <data id="got" sce:type="string" sce:capacity="4096" expr="''" sce:direction="out"/>
+    <data id="replaced" sce:type="bool" expr="false" sce:direction="out"/>
+    <data id="existed" sce:type="bool" expr="false" sce:direction="out"/>
+    <data id="next_found" sce:type="bool" expr="false" sce:direction="out"/>
+    <data id="next" sce:type="string" sce:capacity="256" expr="''" sce:direction="out"/>
+  </datamodel>
+
+  <state id="idle">
+    <transition event="host.kv.get.request" target="getting">
+      <assign location="key" expr="_event.data.key"/>
+    </transition>
+    <transition event="host.kv.put.request" target="putting">
+      <assign location="key" expr="_event.data.key"/>
+      <assign location="value" expr="_event.data.value"/>
+    </transition>
+    <transition event="host.kv.delete.request" target="deleting">
+      <assign location="key" expr="_event.data.key"/>
+    </transition>
+    <transition event="host.kv.next_key.request" target="walking">
+      <assign location="after" expr="_event.data.after"/>
+      <assign location="prefix" expr="_event.data.prefix"/>
+    </transition>
+  </state>
+
+  <state id="getting">
+    <invoke type="sce-host-kv-get" id="get" sce:request="KvGetRequest" sce:result="KvGetResult">
+      <param name="key" expr="key"/>
+    </invoke>
+    <transition event="done.invoke.get" cond="_event.data.error === ''" target="idle">
+      <assign location="found" expr="_event.data.found"/>
+      <assign location="got" expr="_event.data.value"/>
+      <assign location="outcome" expr="'done'"/>
+    </transition>
+    <transition event="done.invoke.get" target="idle">
+      <assign location="outcome" expr="_event.data.error"/>
+    </transition>
+    <transition event="error.invoke.get" target="idle">
+      <assign location="outcome" expr="'deadline'"/>
+    </transition>
+    <transition event="error.execution" target="idle">
+      <assign location="outcome" expr="'refused'"/>
+    </transition>
+  </state>
+
+  <state id="putting">
+    <invoke type="sce-host-kv-put" id="put" sce:request="KvPutRequest" sce:result="KvPutResult">
+      <param name="key" expr="key"/>
+      <param name="value" expr="value"/>
+    </invoke>
+    <transition event="done.invoke.put" cond="_event.data.error === ''" target="idle">
+      <assign location="replaced" expr="_event.data.replaced"/>
+      <assign location="outcome" expr="'done'"/>
+    </transition>
+    <transition event="done.invoke.put" target="idle">
+      <assign location="outcome" expr="_event.data.error"/>
+    </transition>
+    <transition event="error.invoke.put" target="idle">
+      <assign location="outcome" expr="'deadline'"/>
+    </transition>
+    <transition event="error.execution" target="idle">
+      <assign location="outcome" expr="'refused'"/>
+    </transition>
+  </state>
+
+  <state id="deleting">
+    <invoke type="sce-host-kv-delete" id="del" sce:request="KvDeleteRequest" sce:result="KvDeleteResult">
+      <param name="key" expr="key"/>
+    </invoke>
+    <transition event="done.invoke.del" cond="_event.data.error === ''" target="idle">
+      <assign location="existed" expr="_event.data.existed"/>
+      <assign location="outcome" expr="'done'"/>
+    </transition>
+    <transition event="done.invoke.del" target="idle">
+      <assign location="outcome" expr="_event.data.error"/>
+    </transition>
+    <transition event="error.invoke.del" target="idle">
+      <assign location="outcome" expr="'deadline'"/>
+    </transition>
+    <transition event="error.execution" target="idle">
+      <assign location="outcome" expr="'refused'"/>
+    </transition>
+  </state>
+
+  <state id="walking">
+    <invoke type="sce-host-kv-next-key" id="walk" sce:request="KvNextKeyRequest" sce:result="KvNextKeyResult">
+      <param name="after" expr="after"/>
+      <param name="prefix" expr="prefix"/>
+    </invoke>
+    <transition event="done.invoke.walk" cond="_event.data.error === ''" target="idle">
+      <assign location="next_found" expr="_event.data.found"/>
+      <assign location="next" expr="_event.data.key"/>
+      <assign location="outcome" expr="'done'"/>
+    </transition>
+    <transition event="done.invoke.walk" target="idle">
+      <assign location="outcome" expr="_event.data.error"/>
+    </transition>
+    <transition event="error.invoke.walk" target="idle">
+      <assign location="outcome" expr="'deadline'"/>
+    </transition>
+    <transition event="error.execution" target="idle">
+      <assign location="outcome" expr="'refused'"/>
+    </transition>
+  </state>
+</scxml>

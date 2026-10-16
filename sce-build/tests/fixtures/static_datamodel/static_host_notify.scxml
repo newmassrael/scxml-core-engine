@@ -1,0 +1,155 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.12, §2.15; the
+  standard host features, docs/SCE_HOST_FEATURES.md, "Notifications"): one
+  machine that asks the permission and the notifications of its host, one
+  request at a time, and publishes what each answered.
+
+  `host.notify.permission.request` and `host.notify.request_permission.request`
+  take no argument and carry no payload; `host.notify.post.request` and
+  `host.notify.cancel.request` are the library's request records themselves.
+
+    outcome     `done` when the host answered the request, the failure code
+                (`unavailable`) when its answer is a failure, `deadline` when
+                the engine's deadline passed, `refused` when the host declined
+                to start it
+    permission  `granted`, `denied` or `undetermined`, as a permission
+                question or a permission request answered
+    status      `posted`, `scheduled` or `denied`, as a post answered
+    existed     as a cancel answered
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static" name="static_host_notify">
+  <sce:import kind="event-schema" src="sce:std/host/notify_permission_result.scxml" as="NotifyPermissionResult"/>
+  <sce:import kind="event-schema" src="sce:std/host/notify_post_request.scxml" as="NotifyPostRequest"/>
+  <sce:import kind="event-schema" src="sce:std/host/notify_post_result.scxml" as="NotifyPostResult"/>
+  <sce:import kind="event-schema" src="sce:std/host/notify_cancel_request.scxml" as="NotifyCancelRequest"/>
+  <sce:import kind="event-schema" src="sce:std/host/notify_cancel_result.scxml" as="NotifyCancelResult"/>
+  <datamodel>
+    <data id="id" sce:type="string" sce:capacity="64" expr="''"/>
+    <data id="title" sce:type="string" sce:capacity="128" expr="''"/>
+    <data id="body" sce:type="string" sce:capacity="512" expr="''"/>
+    <data id="at_ms" sce:type="int64" expr="0"/>
+    <data id="outcome" sce:type="string" sce:capacity="24" expr="''" sce:direction="out"/>
+    <data id="permission" sce:type="string" sce:capacity="16" expr="''" sce:direction="out"/>
+    <data id="status" sce:type="string" sce:capacity="16" expr="''" sce:direction="out"/>
+    <data id="existed" sce:type="bool" expr="false" sce:direction="out"/>
+  </datamodel>
+
+  <state id="idle">
+    <transition event="host.notify.permission.request" target="asking"/>
+    <transition event="host.notify.request_permission.request" target="requesting"/>
+    <transition event="host.notify.post.request" target="posting">
+      <assign location="id" expr="_event.data.id"/>
+      <assign location="title" expr="_event.data.title"/>
+      <assign location="body" expr="_event.data.body"/>
+      <assign location="at_ms" expr="_event.data.at_ms"/>
+    </transition>
+    <transition event="host.notify.cancel.request" target="cancelling">
+      <assign location="id" expr="_event.data.id"/>
+    </transition>
+    <!-- A post whose instant is computed, and cannot be: `at_ms` is the largest
+         int64, so `at_ms + 1` overflows where the invocation starts. The host
+         was promised the whole record and is not given it, so the request is
+         refused (`error.execution`) and the host is never asked. -->
+    <transition event="host.notify.far.request" target="posting_far">
+      <assign location="at_ms" expr="9223372036854775807"/>
+    </transition>
+  </state>
+
+  <state id="posting_far">
+    <invoke type="sce-host-notify-post" id="far" sce:request="NotifyPostRequest" sce:result="NotifyPostResult">
+      <param name="id" expr="'far'"/>
+      <param name="title" expr="title"/>
+      <param name="body" expr="body"/>
+      <param name="at_ms" expr="at_ms + 1"/>
+    </invoke>
+    <transition event="done.invoke.far" cond="_event.data.error === ''" target="idle">
+      <assign location="status" expr="_event.data.status"/>
+      <assign location="outcome" expr="'done'"/>
+    </transition>
+    <transition event="done.invoke.far" target="idle">
+      <assign location="outcome" expr="_event.data.error"/>
+    </transition>
+    <transition event="error.execution" target="idle">
+      <assign location="outcome" expr="'refused'"/>
+    </transition>
+  </state>
+
+  <state id="asking">
+    <invoke type="sce-host-notify-permission" id="ask" sce:result="NotifyPermissionResult"/>
+    <transition event="done.invoke.ask" cond="_event.data.error === ''" target="idle">
+      <assign location="permission" expr="_event.data.state"/>
+      <assign location="outcome" expr="'done'"/>
+    </transition>
+    <transition event="done.invoke.ask" target="idle">
+      <assign location="outcome" expr="_event.data.error"/>
+    </transition>
+    <transition event="error.invoke.ask" target="idle">
+      <assign location="outcome" expr="'deadline'"/>
+    </transition>
+    <transition event="error.execution" target="idle">
+      <assign location="outcome" expr="'refused'"/>
+    </transition>
+  </state>
+
+  <state id="requesting">
+    <invoke type="sce-host-notify-request-permission" id="prompt" sce:result="NotifyPermissionResult"/>
+    <transition event="done.invoke.prompt" cond="_event.data.error === ''" target="idle">
+      <assign location="permission" expr="_event.data.state"/>
+      <assign location="outcome" expr="'done'"/>
+    </transition>
+    <transition event="done.invoke.prompt" target="idle">
+      <assign location="outcome" expr="_event.data.error"/>
+    </transition>
+    <transition event="error.invoke.prompt" target="idle">
+      <assign location="outcome" expr="'deadline'"/>
+    </transition>
+    <transition event="error.execution" target="idle">
+      <assign location="outcome" expr="'refused'"/>
+    </transition>
+  </state>
+
+  <state id="posting">
+    <invoke type="sce-host-notify-post" id="post" sce:request="NotifyPostRequest" sce:result="NotifyPostResult">
+      <param name="id" expr="id"/>
+      <param name="title" expr="title"/>
+      <param name="body" expr="body"/>
+      <param name="at_ms" expr="at_ms"/>
+    </invoke>
+    <transition event="done.invoke.post" cond="_event.data.error === ''" target="idle">
+      <assign location="status" expr="_event.data.status"/>
+      <assign location="outcome" expr="'done'"/>
+    </transition>
+    <transition event="done.invoke.post" target="idle">
+      <assign location="outcome" expr="_event.data.error"/>
+    </transition>
+    <transition event="error.invoke.post" target="idle">
+      <assign location="outcome" expr="'deadline'"/>
+    </transition>
+    <transition event="error.execution" target="idle">
+      <assign location="outcome" expr="'refused'"/>
+    </transition>
+  </state>
+
+  <state id="cancelling">
+    <invoke type="sce-host-notify-cancel" id="cancel" sce:request="NotifyCancelRequest" sce:result="NotifyCancelResult">
+      <param name="id" expr="id"/>
+    </invoke>
+    <transition event="done.invoke.cancel" cond="_event.data.error === ''" target="idle">
+      <assign location="existed" expr="_event.data.existed"/>
+      <assign location="outcome" expr="'done'"/>
+    </transition>
+    <transition event="done.invoke.cancel" target="idle">
+      <assign location="outcome" expr="_event.data.error"/>
+    </transition>
+    <transition event="error.invoke.cancel" target="idle">
+      <assign location="outcome" expr="'deadline'"/>
+    </transition>
+    <transition event="error.execution" target="idle">
+      <assign location="outcome" expr="'refused'"/>
+    </transition>
+  </state>
+</scxml>

@@ -1,0 +1,99 @@
+{
+  "machine": "static_host_notify",
+  "about": "The notifications of docs/SCE_HOST_FEATURES.md, section 4, as a machine sees it through its host. `permission` sets what the platform says, `user_decision` what the user would choose if asked, `clock` what the host reads as now. `waiting` and `shown` name the notifications the host holds, in the order of the post that put each there. Expected values are derived from the specification, not observed from a host.",
+  "steps": [
+    { "note": "started: the platform has not been asked, and the clock reads one million",
+      "host": { "permission": "undetermined", "user_decision": "granted", "clock": { "utc_ms": 1000000 } },
+      "expect": { "state": "idle", "variables": { "outcome": "", "permission": "", "status": "", "existed": false }, "host_invokes": [],
+                  "host_state": { "waiting": [], "shown": [] } } },
+
+    { "note": "asking the permission changes nothing",
+      "event": "host.notify.permission.request",
+      "expect": { "variables": { "outcome": "done", "permission": "undetermined" },
+                  "host_invokes": [ { "type": "sce-host-notify-permission", "id": "ask", "request": {} } ] } },
+
+    { "note": "a post without the permission is answered denied, which is a completion, and keeps nothing",
+      "event": "host.notify.post.request", "data": { "id": "n1", "title": "Title", "body": "Body", "at_ms": 0 },
+      "expect": { "variables": { "outcome": "done", "status": "denied" },
+                  "host_invokes": [ { "type": "sce-host-notify-post", "id": "post", "request": { "id": "n1", "title": "Title", "body": "Body", "at_ms": 0 } } ],
+                  "host_state": { "waiting": [], "shown": [] } } },
+
+    { "note": "requesting the permission asks the user, who grants it",
+      "event": "host.notify.request_permission.request",
+      "expect": { "variables": { "outcome": "done", "permission": "granted" },
+                  "host_invokes": [ { "type": "sce-host-notify-request-permission", "id": "prompt", "request": {} } ] } },
+
+    { "note": "once the user has decided, requesting again answers the decision and asks nothing: the user would now refuse, and the answer is still granted",
+      "host": { "user_decision": "denied" },
+      "event": "host.notify.request_permission.request",
+      "expect": { "variables": { "permission": "granted" } } },
+
+    { "note": "a post with at_ms zero is shown now",
+      "event": "host.notify.post.request", "data": { "id": "n1", "title": "Title", "body": "Body", "at_ms": 0 },
+      "expect": { "variables": { "outcome": "done", "status": "posted" }, "host_state": { "waiting": [], "shown": ["n1"] } } },
+
+    { "note": "a post for a later instant is kept to be shown then",
+      "event": "host.notify.post.request", "data": { "id": "n2", "title": "Later", "body": "", "at_ms": 2000000 },
+      "expect": { "variables": { "status": "scheduled" }, "host_state": { "waiting": ["n2"], "shown": ["n1"] } } },
+
+    { "note": "posting an id again replaces the waiting notification: one waits, not two",
+      "event": "host.notify.post.request", "data": { "id": "n2", "title": "Later", "body": "", "at_ms": 3000000 },
+      "expect": { "variables": { "status": "scheduled" }, "host_state": { "waiting": ["n2"], "shown": ["n1"] } } },
+
+    { "note": "an instant equal to the host's now is not later: it is shown now",
+      "event": "host.notify.post.request", "data": { "id": "n3", "title": "Now", "body": "", "at_ms": 1000000 },
+      "expect": { "variables": { "status": "posted" }, "host_state": { "waiting": ["n2"], "shown": ["n1", "n3"] } } },
+
+    { "note": "posting a shown id again replaces it, and it is the latest post",
+      "event": "host.notify.post.request", "data": { "id": "n1", "title": "Again", "body": "", "at_ms": 0 },
+      "expect": { "variables": { "status": "posted" }, "host_state": { "waiting": ["n2"], "shown": ["n3", "n1"] } } },
+
+    { "note": "withdrawing a waiting notification",
+      "event": "host.notify.cancel.request", "data": { "id": "n2" },
+      "expect": { "variables": { "outcome": "done", "existed": true },
+                  "host_invokes": [ { "type": "sce-host-notify-cancel", "id": "cancel", "request": { "id": "n2" } } ],
+                  "host_state": { "waiting": [], "shown": ["n3", "n1"] } } },
+
+    { "note": "and an id that names nothing is not a failure",
+      "event": "host.notify.cancel.request", "data": { "id": "n2" },
+      "expect": { "variables": { "outcome": "done", "existed": false } } },
+
+    { "note": "withdrawing one that is already shown removes it from where the platform keeps it",
+      "event": "host.notify.cancel.request", "data": { "id": "n1" },
+      "expect": { "variables": { "existed": true }, "host_state": { "waiting": [], "shown": ["n3"] } } },
+
+    { "note": "the platform revokes the permission: a post is answered denied and keeps nothing",
+      "host": { "permission": "denied" },
+      "event": "host.notify.post.request", "data": { "id": "n4", "title": "No", "body": "", "at_ms": 0 },
+      "expect": { "variables": { "outcome": "done", "status": "denied" }, "host_state": { "waiting": [], "shown": ["n3"] } } },
+
+    { "note": "and asking says so",
+      "event": "host.notify.permission.request",
+      "expect": { "variables": { "permission": "denied" } } },
+
+    { "note": "a host with no user to ask answers denied when the permission is requested",
+      "host": { "user_decision": "none", "permission": "undetermined" },
+      "event": "host.notify.request_permission.request",
+      "expect": { "variables": { "outcome": "done", "permission": "denied" } } },
+
+    { "note": "the permission is granted again, and a post is shown",
+      "host": { "permission": "granted" },
+      "event": "host.notify.post.request", "data": { "id": "n6", "title": "Back", "body": "", "at_ms": 0 },
+      "expect": { "variables": { "outcome": "done", "status": "posted" }, "host_state": { "waiting": [], "shown": ["n3", "n6"] } } },
+
+    { "note": "the platform's notification service does not answer: the post fails unavailable, nothing changed, and the last status is as it was",
+      "host": { "fail": { "sce-host-notify-post": "unavailable" } },
+      "event": "host.notify.post.request", "data": { "id": "n5", "title": "Down", "body": "", "at_ms": 0 },
+      "expect": { "variables": { "outcome": "unavailable", "status": "posted" }, "host_state": { "waiting": [], "shown": ["n3", "n6"] } } },
+
+    { "note": "an id that is empty is refused",
+      "host": { "fail": {} },
+      "event": "host.notify.post.request", "data": { "id": "", "title": "x", "body": "", "at_ms": 0 },
+      "expect": { "state": "idle", "variables": { "outcome": "refused", "status": "posted" }, "host_state": { "waiting": [], "shown": ["n3", "n6"] } } },
+
+    { "note": "a request the machine cannot make whole is refused, and the host is never asked: the instant is the largest 64-bit integer plus one, which overflows where the invocation starts",
+      "event": "host.notify.far.request",
+      "expect": { "state": "idle", "variables": { "outcome": "refused", "status": "posted" }, "host_invokes": [],
+                  "host_state": { "waiting": [], "shown": ["n3", "n6"] } } }
+  ]
+}
