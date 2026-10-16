@@ -766,39 +766,69 @@ fn the_go_table_parses() {
     assert!(checked > 0, "no .go file was checked");
 }
 
-/// The generated Python compiles with its table.
+/// The generated Python imports, and the table it builds is the export's.
+///
+/// Importing, not parsing: a module that parses can still fail the moment it is
+/// loaded. The table's first version used `dataclass` in a file that only imports it
+/// when the machine has a payload or a host invoker, and `ast.parse` passed it.
 #[test]
-fn the_python_table_compiles() {
+fn the_python_table_imports_and_holds_the_export() {
     let Some(python) = toolchain::locate_any(&["python3", "python"]) else {
-        toolchain::skipped("the_python_table_compiles: python not on PATH");
+        toolchain::skipped("the_python_table_imports_and_holds_the_export: python not on PATH");
         return;
     };
     let work = scratch("python");
     let doc = write_doc(&work, DOC);
+    let (header, rows) = export(&doc);
+    let expected = expected_entries(&rows);
+    let events = literal_events(&expected);
     let out = work.join("out");
     generate("python", &out, &doc, true);
-    let mut checked = 0;
-    for entry in std::fs::read_dir(&out).expect("read out").flatten() {
-        let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("py") {
-            continue;
-        }
-        let output = Command::new(&python)
-            .args([
-                "-I",
-                "-c",
-                "import ast,sys; ast.parse(open(sys.argv[1]).read())",
-            ])
-            .arg(&path)
-            .output()
-            .expect("run python");
-        assert!(
-            output.status.success(),
-            "python rejected {}:\n{}",
-            path.display(),
-            String::from_utf8_lossy(&output.stderr),
-        );
-        checked += 1;
+
+    let script = r#"
+import json, sys
+sys.path.insert(0, sys.argv[1])
+sys.path.insert(0, sys.argv[2])
+import importlib
+module = importlib.import_module(sys.argv[3])
+table = [
+    {
+        "from": t.from_state.name,
+        "to": None if t.to is None else t.to.name,
+        "event": None if t.event is None else t.event.name,
+        "index": t.index,
+        "annotation": t.annotation,
     }
-    assert!(checked > 0, "no .py file was checked");
+    for t in module.TRANSITIONS
+]
+print(json.dumps({"hash": module.SOURCE_HASH, "table": table}))
+"#;
+    let output = Command::new(&python)
+        .args(["-I", "-c", script])
+        .arg(&out)
+        .arg(repo_root().join("backends/python/runtime"))
+        .arg(format!("{STEM}_sm"))
+        .output()
+        .expect("run python");
+    assert!(
+        output.status.success(),
+        "the generated Python does not import:\n{}",
+        String::from_utf8_lossy(&output.stderr),
+    );
+    let loaded: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("the script prints JSON");
+    assert_eq!(loaded["hash"], header["source_hash"]);
+    let table: Vec<Entry> = loaded["table"]
+        .as_array()
+        .expect("a table")
+        .iter()
+        .map(|e| Entry {
+            from: e["from"].as_str().unwrap().to_string(),
+            to: e["to"].as_str().map(str::to_string),
+            event: e["event"].as_str().map(str::to_string),
+            index: e["index"].as_u64().unwrap(),
+            annotation: e["annotation"].as_str().unwrap().to_string(),
+        })
+        .collect();
+    assert_eq!(table, expected_spelled("python", &expected, &events));
 }

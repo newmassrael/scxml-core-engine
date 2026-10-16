@@ -25,7 +25,7 @@ from __future__ import annotations
 {% if host_invoker_interface %}
 import json as _json
 {% endif %}
-{% if event_payload_active or host_invoker_interface %}
+{% if event_payload_active or host_invoker_interface or model.emitted_transition_table %}
 from dataclasses import dataclass
 {% endif %}
 from enum import IntEnum
