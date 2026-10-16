@@ -15,7 +15,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::model::{SCXMLModel, Transition};
+use crate::model::{EmittedTransition, EmittedTransitionTable, SCXMLModel, Transition};
 use crate::requirements_report::{walk_nodes, NodeSubject};
 
 /// One `<transition>` of a machine.
@@ -87,6 +87,45 @@ pub fn transition_records(model: &SCXMLModel) -> Vec<TransitionRecord> {
             _ => None,
         })
         .collect()
+}
+
+impl EmittedTransitionTable {
+    /// The table of `model`, built from [`transition_records`] and nothing
+    /// else, so it lists the transitions the export lists, in its order.
+    pub fn of(model: &SCXMLModel, source_hash: String) -> Self {
+        let transitions = transition_records(model)
+            .into_iter()
+            .map(|record| {
+                let literal_event = match record.events.as_slice() {
+                    [only] if is_literal_event(only) && model.events.contains(only) => {
+                        Some(only.clone())
+                    }
+                    _ => None,
+                };
+                EmittedTransition {
+                    index: record.index,
+                    to: record
+                        .targets
+                        .first()
+                        .filter(|target| model.states.contains_key(*target))
+                        .cloned(),
+                    event: literal_event,
+                    annotation: record.annotation.join(" "),
+                    from: record.from,
+                }
+            })
+            .collect();
+        Self {
+            source_hash,
+            transitions,
+        }
+    }
+}
+
+/// Whether a descriptor names one event rather than asking for a family:
+/// `*` and a prefix written with a trailing `.*` match more than themselves.
+fn is_literal_event(descriptor: &str) -> bool {
+    descriptor != "*" && !descriptor.ends_with(".*")
 }
 
 /// The records of `model` keyed by `node_path`, for a reading that walks the
@@ -167,6 +206,100 @@ mod tests {
         assert_eq!(records[2].targets, ["done"]);
         assert_eq!(records[3].events, ["stop"]);
         assert!(records[3].targets.is_empty());
+    }
+
+    const EMITTED_DOC: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                              xmlns:sce="http://sce.dev/ext"
+                              version="1.0" initial="idle" datamodel="null">
+        <state id="idle">
+            <transition event="go" target="busy" sce:req="12 REQ-X"/>
+            <transition event="a b" target="busy"/>
+            <transition event="*" target="busy"/>
+            <transition event="err.*" target="busy"/>
+            <transition target="busy"/>
+            <transition event="back" target="h"/>
+            <transition event="stop"/>
+        </state>
+        <state id="busy">
+            <history id="h"><transition target="idle"/></history>
+            <transition event="done" target="end idle"/>
+        </state>
+        <final id="end"/>
+    </scxml>"#;
+
+    fn emitted() -> (EmittedTransitionTable, Vec<TransitionRecord>) {
+        let model = SCXMLParser::new()
+            .parse_string(EMITTED_DOC, "emitted_transition_table")
+            .expect("parse");
+        (
+            EmittedTransitionTable::of(&model, "ab".repeat(32)),
+            transition_records(&model),
+        )
+    }
+
+    #[test]
+    fn the_emitted_table_lists_the_transitions_of_the_export_in_its_order() {
+        let (table, records) = emitted();
+        assert_eq!(table.source_hash, "ab".repeat(32));
+        let listed: Vec<(&str, usize)> = table
+            .transitions
+            .iter()
+            .map(|t| (t.from.as_str(), t.index))
+            .collect();
+        let exported: Vec<(&str, usize)> =
+            records.iter().map(|r| (r.from.as_str(), r.index)).collect();
+        assert_eq!(listed, exported);
+        assert_eq!(listed.len(), 8);
+    }
+
+    #[test]
+    fn an_event_is_an_id_only_when_the_transition_names_one_literal_event() {
+        let (table, _) = emitted();
+        let events: Vec<Option<&str>> = table
+            .transitions
+            .iter()
+            .map(|t| t.event.as_deref())
+            .collect();
+        assert_eq!(
+            events,
+            [
+                Some("go"),
+                None, // two descriptors
+                None, // the wildcard
+                None, // a prefix family
+                None, // eventless
+                Some("back"),
+                Some("stop"),
+                Some("done"),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_target_is_an_id_only_when_the_first_one_is_a_state() {
+        let (table, _) = emitted();
+        let targets: Vec<Option<&str>> =
+            table.transitions.iter().map(|t| t.to.as_deref()).collect();
+        assert_eq!(
+            targets,
+            [
+                Some("busy"),
+                Some("busy"),
+                Some("busy"),
+                Some("busy"),
+                Some("busy"),
+                None, // a history is named in a target list and is not a state
+                None, // targetless
+                Some("end"),
+            ]
+        );
+    }
+
+    #[test]
+    fn the_annotation_is_carried_as_the_joined_tokens() {
+        let (table, _) = emitted();
+        assert_eq!(table.transitions[0].annotation, "12 REQ-X");
+        assert_eq!(table.transitions[1].annotation, "");
     }
 
     #[test]

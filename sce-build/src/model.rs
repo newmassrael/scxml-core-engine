@@ -3175,6 +3175,58 @@ impl Datamodel {
     }
 }
 
+/// One transition as a backend renders it into the generated machine.
+///
+/// The record of [`crate::transition_records::TransitionRecord`] narrowed to
+/// what a compiled table can hold without the generator interpreting anything:
+/// the ids are the machine's own, and where a transition has no single id in a
+/// name table the field is absent rather than a made-up one. The full
+/// descriptors and target set are in the `transition-table` export, which
+/// carries the same `index`.
+///
+/// Defined here, beside the model the templates read it through, so the gate
+/// that holds every attribute a template reads to a declared one sees these
+/// names; it builds its list from this file.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct EmittedTransition {
+    /// [`crate::transition_records::TransitionRecord::index`].
+    pub index: usize,
+    /// The owning state's id, which is always one of the machine's states.
+    pub from: String,
+    /// The first target, when it names one of the machine's states. Absent
+    /// for a targetless transition, and for a first target that is a
+    /// `<history>`, which is named in a target list and is not a state.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub to: Option<String>,
+    /// The event name, when the transition names exactly one literal event
+    /// the machine's event table holds. Absent for an eventless transition, a
+    /// wildcard or prefix descriptor, and a transition naming several.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub event: Option<String>,
+    /// [`crate::transition_records::TransitionRecord::annotation`] joined by
+    /// single spaces: the tokens hold no whitespace, so the join loses nothing.
+    /// Empty when none.
+    pub annotation: String,
+}
+
+/// The table a generated machine carries when it is asked to: the transitions
+/// of its document and the digest of the source set it was generated from.
+///
+/// A build input rather than a document fact, for the reason
+/// [`SCXMLModel::host_processor_types`] is: the same document generated with
+/// and without the table is two outputs. It rides on the model so that every
+/// backend reads one declaration, and an unset one leaves every generated file
+/// byte-identical to what it was. Built by [`EmittedTransitionTable::of`],
+/// which lives with the list of transitions it narrows
+/// (`crate::transition_records`).
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct EmittedTransitionTable {
+    /// The §synth-6.2.6 digest the generated files of the same invocation
+    /// embed, as 64 lowercase hex characters.
+    pub source_hash: String,
+    pub transitions: Vec<EmittedTransition>,
+}
+
 /// W3C SCXML: Complete state machine model
 #[derive(Debug, Clone, Serialize, Default)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
@@ -3580,6 +3632,22 @@ pub struct SCXMLModel {
     /// list would make declaring either silently claim both.
     #[serde(default)]
     pub host_invoker_types: Vec<String>,
+    /// The table of this document's transitions the generated machine carries,
+    /// when the build asked for it (`sce-codegen generate
+    /// --emit-transition-table`).
+    ///
+    /// A build input rather than a document fact, carried on the model for the
+    /// reason [`Self::host_processor_types`] is: every backend reads the one
+    /// declaration. `None`, the default, emits nothing, and a document
+    /// generated without it is byte-identical to what it was before the table
+    /// existed. Set by [`EmittedTransitionTable::of`] and read by the templates.
+    ///
+    /// Not part of the AST export's schema: the envelope is written before
+    /// the build's inputs are applied, so it never carries this, and the wire
+    /// surface does not describe a field it does not hold.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, schemars(skip))]
+    pub emitted_transition_table: Option<EmittedTransitionTable>,
     /// Whether any host-served `<send>` in this document carries a delay
     /// (§scxml-6.2.4 + §scxml-6.2.5).
     ///

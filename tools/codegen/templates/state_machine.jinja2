@@ -15,6 +15,11 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
+{% if model.emitted_transition_table %}
+#include <array>
+#include <cstddef>
+#include <optional>
+{% endif %}
 {% if model.needs_event_scheduler or model.needs_parent_template %}
 #include <chrono>
 {% endif %}

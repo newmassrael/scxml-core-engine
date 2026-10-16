@@ -224,6 +224,47 @@ func (e {{ machine_name }}Event) String() string {
 	return "unknown"
 }
 
+{% if model.emitted_transition_table %}
+{# emitted-transition-table:begin #}
+{% set _table = model.emitted_transition_table %}
+// ======================================================================
+// Transition table (§synth-6.2.6), because the build asked for it
+// ======================================================================
+
+// {{ machine_name }}SourceHash is the digest of the source set this machine
+// was generated from: the `source-hash` of the file's own header, as a value.
+const {{ machine_name }}SourceHash = "{{ _table.source_hash }}"
+
+// {{ machine_name }}Transition is one transition of this machine, as constant
+// data. Nothing in the machine reads it: a host that draws the machine, or
+// checks it against its own design, does. From, To and Event are this
+// package's own {{ machine_name }}State and {{ machine_name }}Event; Index is
+// the transition's position within its state in document order; Annotation is
+// the `sce:req` tokens as written, space-separated and uninterpreted. To and
+// Event hold a value only where HasTo and HasEvent say so: a targetless
+// transition, a first target that is a <history>, an eventless transition, a
+// wildcard or prefix descriptor, or several descriptors has no single id in
+// those tables. `sce-codegen transition-table` lists the same transitions in
+// the same order with the whole target set and every descriptor.
+type {{ machine_name }}Transition struct {
+	From       {{ machine_name }}State
+	To         {{ machine_name }}State
+	HasTo      bool
+	Event      {{ machine_name }}Event
+	HasEvent   bool
+	Index      uint32
+	Annotation string
+}
+
+// {{ machine_name }}Transitions lists every transition of the machine.
+var {{ machine_name }}Transitions = [...]{{ machine_name }}Transition{
+{% for t in _table.transitions %}
+	{From: {{ machine_name }}State{{ t.from | to_state_variant }}, {% if t.to %}To: {{ machine_name }}State{{ t.to | to_state_variant }}, HasTo: true, {% endif %}{% if t.event %}Event: {{ machine_name }}Event{{ t.event | to_event_variant }}, HasEvent: true, {% endif %}Index: {{ t.index }}, Annotation: "{{ t.annotation | escape_go }}"},
+{% endfor %}
+}
+{# emitted-transition-table:end #}
+
+{% endif %}
 {% if event_payload_active %}
 // ── NL→IR Item C1 Path A: typed `_event.data` payload channel ─────────
 {{ event_payload_defs }}

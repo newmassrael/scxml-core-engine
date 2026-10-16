@@ -144,6 +144,48 @@ pub enum {{ machine_name }}Event {
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
 }
+{% if model.emitted_transition_table %}
+{# emitted-transition-table:begin #}
+{% set _table = model.emitted_transition_table %}
+
+// ======================================================================
+// Transition table (§synth-6.2.6), because the build asked for it
+// ======================================================================
+
+/// One transition of this machine, as constant data. Nothing in the machine
+/// reads it: a host that draws the machine, or checks it against its own
+/// design, does. `from`, `to` and `event` are this module's own
+/// `{{ machine_name }}State` and `{{ machine_name }}Event`; `index` is the
+/// transition's position within its state in document order; `annotation` is
+/// the `sce:req` tokens as written, space-separated and uninterpreted. `to` and
+/// `event` are `None` where a transition has no single id in those enums: a
+/// targetless transition, a first target that is a `<history>`, an eventless
+/// transition, a wildcard or prefix descriptor, or several descriptors.
+/// `sce-codegen transition-table` lists the same transitions in the same order
+/// with the whole target set and every descriptor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct {{ machine_name }}Transition {
+    pub from: {{ machine_name }}State,
+    pub to: Option<{{ machine_name }}State>,
+    pub event: Option<{{ machine_name }}Event>,
+    pub index: u32,
+    pub annotation: &'static str,
+}
+
+impl {{ machine_name }}Transition {
+    /// The digest of the source set this machine was generated from: the
+    /// `source-hash` of the file's own header, as a value.
+    pub const SOURCE_HASH: &'static str = "{{ _table.source_hash }}";
+
+    /// Every transition of the machine.
+    pub const ALL: [{{ machine_name }}Transition; {{ _table.transitions | length }}] = [
+{% for t in _table.transitions %}
+        {{ machine_name }}Transition { from: {{ machine_name }}State::{{ t.from | to_state_variant }}, to: {% if t.to %}Some({{ machine_name }}State::{{ t.to | to_state_variant }}){% else %}None{% endif %}, event: {% if t.event %}Some({{ machine_name }}Event::{{ t.event | to_event_variant }}){% else %}None{% endif %}, index: {{ t.index }}, annotation: "{{ t.annotation | escape_rust }}" },
+{% endfor %}
+    ];
+}
+{# emitted-transition-table:end #}
+{% endif %}
 
 // ======================================================================
 // Externally-drivable event surface (W3C SCXML 3.12 / 5.10)

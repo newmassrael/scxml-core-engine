@@ -135,6 +135,53 @@
         return std::nullopt;
     }
 
+{% if model.emitted_transition_table %}
+{# emitted-transition-table:begin #}
+{% set _table = model.emitted_transition_table %}
+    // §synth-6.2.6: the machine's transitions, as constant data, because the
+    // build asked for them (`sce-codegen generate --emit-transition-table`).
+    //
+    // Nothing in this machine reads it. A host that draws the machine, or
+    // checks it against its own design, does: `from`, `to` and `event` are
+    // this policy's own State and Event enumerators, `index` is the
+    // transition's position within its state in document order, and
+    // `annotation` is the `sce:req` tokens as written, space-separated and
+    // uninterpreted. `to` and `event` are absent where a transition has no
+    // single id in those tables: a targetless transition, a first target
+    // that is a <history>, an eventless transition, a wildcard or prefix
+    // descriptor, or several descriptors. `sce-codegen transition-table`
+    // lists the same transitions in the same order with the whole target set
+    // and every descriptor.
+    struct TransitionRecord {
+        State from;
+        std::optional<State> to;
+        std::optional<Event> event;
+        std::uint32_t index;
+        const char* annotation;
+    };
+
+    // The digest of the source set this machine was generated from: the
+    // `source-hash` of the file's own header, as a value.
+    [[nodiscard]] static constexpr const char* sourceHash() noexcept {
+        return "{{ _table.source_hash }}";
+    }
+
+    [[nodiscard]] static constexpr std::size_t transitionCount() noexcept {
+        return {{ _table.transitions | length }};
+    }
+
+{% if _table.transitions %}
+    static constexpr std::array<TransitionRecord, {{ _table.transitions | length }}> transitions = {{ '{{' }}
+{% for t in _table.transitions %}
+        TransitionRecord{State::{{ t.from | capitalize }}, {% if t.to %}State::{{ t.to | capitalize }}{% else %}std::nullopt{% endif %}, {% if t.event %}Event::{{ t.event | to_cpp_event_variant }}{% else %}std::nullopt{% endif %}, {{ t.index }}u, "{{ t.annotation | escape_cpp }}"},
+{% endfor %}
+    {{ '}}' }};
+{% else %}
+    static constexpr std::array<TransitionRecord, 0> transitions = {};
+{% endif %}
+{# emitted-transition-table:end #}
+
+{% endif %}
     // The pair is a round trip or it is two independent maps, and that is
     // asserted per state at COMPILE time — after this class closes, beside the
     // concept checks in `state_machine.jinja2`. It cannot be here: a constexpr

@@ -1223,5 +1223,14 @@ name = "the_standard_host_features_are_one_set"
 path = "tests/the_standard_host_features_are_one_set.rs"
 required-features = ["cli"]
 
+# `generate --emit-transition-table` puts a machine's transitions into every
+# backend's source, and `transition-table` lists the same ones as an export; this
+# holds each backend's table to the export. It spawns both, so it carries the `cli`
+# gate.
+[[test]]
+name = "the_emitted_transition_table_equals_the_export"
+path = "tests/the_emitted_transition_table_equals_the_export.rs"
+required-features = ["cli"]
+
 [lints]
 workspace = true

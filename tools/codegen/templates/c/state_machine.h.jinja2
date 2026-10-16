@@ -226,6 +226,44 @@ enum {{ csym_prefix }}{{ model.name }}_event_e {
 };
 typedef enum {{ csym_prefix }}{{ model.name }}_event_e {{ csym_prefix }}{{ model.name }}_event_t;
 
+{% if model.emitted_transition_table %}
+{# emitted-transition-table:begin #}
+{% set _table = model.emitted_transition_table %}
+/* ── §synth-6.2.6: transition table, because the build asked for it ── */
+{# One definition in the `.c`, declared here, for the reason every other piece of
+   this machine's data is: a `static const` array in a header is one copy per
+   translation unit that includes it. A zero-length array is not C, so a machine
+   with no transitions declares the count and no array. #}
+/* The digest of the source set this machine was generated from: the
+   `source-hash` of the file's own header, as a value. */
+#define {{ csym_prefix | upper }}{{ model.name | upper }}_SOURCE_HASH "{{ _table.source_hash }}"
+#define {{ csym_prefix | upper }}{{ model.name | upper }}_TRANSITION_COUNT {{ _table.transitions | length }}u
+
+/* One transition of this machine, as constant data. Nothing in the machine
+   reads it: a host that draws the machine, or checks it against its own
+   design, does. `from`, `to` and `event` are this header's own enumerators;
+   `index` is the transition's position within its state in document order;
+   `annotation` is the `sce:req` tokens as written, space-separated and
+   uninterpreted. `to` is `{{ csym_prefix | upper }}{{ model.name | upper }}_STATE_COUNT` and `event` is
+   `{{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE` where a transition has no single id in those
+   enumerations: a targetless transition, a first target that is a <history>,
+   an eventless transition, a wildcard or prefix descriptor, or several
+   descriptors. `sce-codegen transition-table` lists the same transitions in
+   the same order with the whole target set and every descriptor. */
+typedef struct {{ csym_prefix }}{{ model.name }}_transition_s {
+    {{ csym_prefix }}{{ model.name }}_state_t from;
+    {{ csym_prefix }}{{ model.name }}_state_t to;
+    {{ csym_prefix }}{{ model.name }}_event_t event;
+    uint32_t index;
+    const char *annotation;
+} {{ csym_prefix }}{{ model.name }}_transition_t;
+{% if _table.transitions %}
+
+extern const {{ csym_prefix }}{{ model.name }}_transition_t {{ csym_prefix }}{{ model.name }}_transitions[{{ csym_prefix | upper }}{{ model.name | upper }}_TRANSITION_COUNT];
+{% endif %}
+{# emitted-transition-table:end #}
+
+{% endif %}
 {% if static_type_defs %}
 /* ── Datamodel types (SCE Accepted Subset §2.15) ──────────────────── */
 {# Before the payload channel: a payload struct holds a field of the enum the

@@ -173,6 +173,51 @@ _EVENT_NAMES: Dict[{{ machine_name }}Event, str] = {
 
 
 _EVENT_BY_NAME: Dict[str, {{ machine_name }}Event] = {v: k for k, v in _EVENT_NAMES.items() if v}
+{% if model.emitted_transition_table %}
+{# emitted-transition-table:begin #}
+{% set _table = model.emitted_transition_table %}
+
+
+# ======================================================================
+# Transition table (§synth-6.2.6), because the build asked for it
+# ======================================================================
+
+# The digest of the source set this machine was generated from: the
+# `source-hash` of the file's own header, as a value.
+SOURCE_HASH = "{{ _table.source_hash }}"
+
+
+@dataclass(frozen=True)
+class {{ machine_name }}Transition:
+    """One transition of this machine, as constant data.
+
+    Nothing in the machine reads it: a host that draws the machine, or checks it
+    against its own design, does. `from_state`, `to` and `event` are this
+    module's own `{{ machine_name }}State` and `{{ machine_name }}Event`;
+    `index` is the transition's position within its state in document order;
+    `annotation` is the `sce:req` tokens as written, space-separated and
+    uninterpreted. `to` and `event` are None where a transition has no single id
+    in those enums: a targetless transition, a first target that is a
+    <history>, an eventless transition, a wildcard or prefix descriptor, or
+    several descriptors. `sce-codegen transition-table` lists the same
+    transitions in the same order with the whole target set and every
+    descriptor.
+    """
+
+    from_state: {{ machine_name }}State
+    to: Optional[{{ machine_name }}State]
+    event: Optional[{{ machine_name }}Event]
+    index: int
+    annotation: str
+
+
+TRANSITIONS: Tuple[{{ machine_name }}Transition, ...] = (
+{% for t in _table.transitions %}
+    {{ machine_name }}Transition({{ machine_name }}State.{{ t.from | to_python_const }}, {% if t.to %}{{ machine_name }}State.{{ t.to | to_python_const }}{% else %}None{% endif %}, {% if t.event %}{{ machine_name }}Event.{{ t.event | to_python_const }}{% else %}None{% endif %}, {{ t.index }}, "{{ t.annotation | escape_python }}"),
+{% endfor %}
+)
+{# emitted-transition-table:end #}
+{% endif %}
 
 
 # W3C SCXML B.2 — names the document author MAY NOT overwrite via

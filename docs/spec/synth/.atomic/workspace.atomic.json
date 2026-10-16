@@ -6050,6 +6050,38 @@
         {
           "file": "schemas/sce-transition-table.v1.schema.json",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/model.rs",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/c/state_machine.c.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/c/state_machine.h.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/go/state_machine.go.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/kotlin/state_machine.kt.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/python/state_machine.py.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/rust/state_machine.rs.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/utility_methods.jinja2",
+          "kind": "references"
         }
       ]
     },

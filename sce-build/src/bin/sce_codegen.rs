@@ -1712,6 +1712,21 @@ struct GenerateArgs {
     /// `<sce:import>` resolution is unaffected.
     #[arg(short = 'I', long = "include-dir", value_name = "DIR")]
     include_dir: Vec<String>,
+    /// Emit the machine's transitions as a constant table in the
+    /// generated source, in every backend: for each transition its
+    /// owning state, its first target and its event as ids of that
+    /// backend's own name tables, its index within the state, and the
+    /// `sce:req` tokens as written; and the §synth-6.2.6 `source_hash` of
+    /// the run.
+    ///
+    /// Constant data that nothing in the machine reads. Off by default,
+    /// and then every generated file is byte-identical to what it was
+    /// before the option existed. The same list in the same order is the
+    /// `transition-table` export of the document (`kind: transition`
+    /// rows, by `index`), which also carries what a table of ids cannot:
+    /// the whole target set and every event descriptor.
+    #[arg(long)]
+    emit_transition_table: bool,
 }
 
 /// `--registry`'s long help, formatted from the constant the loader
@@ -5169,6 +5184,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
         lint,
         profile: profile_path,
         include_dir,
+        emit_transition_table,
     } = args;
     // Before anything else is read: an unusable profile is the first thing
     // said about the run.
@@ -5604,6 +5620,17 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
                 );
             }
         }
+    }
+
+    // The transitions table is a build input beside the host declaration
+    // above, and is set after the AST export so that envelope stays the
+    // analysed document and nothing the build asked for on top of it. The
+    // hash is the one every file of this run embeds.
+    if emit_transition_table && !model.document_rejected {
+        model.emitted_transition_table = Some(sce_build::model::EmittedTransitionTable::of(
+            &model,
+            drift_ctx.header.source_hex(),
+        ));
     }
 
     // §scxml-5.8: Document rejected at parse time (e.g., unloadable external script)
