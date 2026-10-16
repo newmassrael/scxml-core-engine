@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: b9ab4ddbd49e8ce2a3b4c80917bc3eecdf0d5285c15974d4e0a00636f93fd573
-// SCE-MAP: event_agenda.scxml:54 :: _forge_body
+// source-hash: 5b579589f1ff33cd05a081b40dc01d4d0d0b2ef410a9718dd0ae11e84c00a952
+// SCE-MAP: event_agenda.scxml:68 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")
 // Runtime: sce_forge_runtime
@@ -16,10 +16,12 @@ import (
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
 	sce_mv_value "github.com/newmassrael/sce-go-tests/integration/static_datamodel/mv_value"
 	sce_event_occurrence "github.com/newmassrael/sce-go-tests/integration/static_datamodel/event_occurrence"
+	sce_event_schedule "github.com/newmassrael/sce-go-tests/integration/static_datamodel/event_schedule"
 	sce_event_later "github.com/newmassrael/sce-go-tests/integration/static_datamodel/event_later"
+	sce_event_selects "github.com/newmassrael/sce-go-tests/integration/static_datamodel/event_selects"
 )
 
-func EventAgenda(values []sce_mv_value.MvValuePayload, id uint64, windowStart int64, windowEnd int64) (sceValue []sce_event_occurrence.EventOccurrencePayload, sceErr error) {
+func EventAgenda(s sce_event_schedule.EventSchedulePayload, values []sce_mv_value.MvValuePayload, id uint64, windowStart int64, windowEnd int64, skip uint32) (sceValue []sce_event_occurrence.EventOccurrencePayload, sceErr error) {
     // SCE_FORGE.md §3.4.1: each checked operation records a failure here, and
     // the statement around it returns it before the next statement runs.
     var sceFailure scealgorithm.Failure
@@ -35,466 +37,38 @@ func EventAgenda(values []sce_mv_value.MvValuePayload, id uint64, windowStart in
     if sceFailure.Failed() {
         return sceValue, sceFailure.Err()
     }
-    var startAt int64 = -1
+    var skipped int64 = int64(skip)
     if sceFailure.Failed() {
         return sceValue, sceFailure.Err()
     }
-    var gone int64 = 0
+    var startAt int64 = s.Start
     if sceFailure.Failed() {
         return sceValue, sceFailure.Err()
     }
-    var freq int64 = 0
+    var freq int64 = s.Freq
     if sceFailure.Failed() {
         return sceValue, sceFailure.Err()
     }
-    var length int64 = 0
-    if sceFailure.Failed() {
-        return sceValue, sceFailure.Err()
-    }
-    var every0 int64 = 1
-    if sceFailure.Failed() {
-        return sceValue, sceFailure.Err()
-    }
-    var days int64 = 0
-    if sceFailure.Failed() {
-        return sceValue, sceFailure.Err()
-    }
-    var count int64 = 0
-    if sceFailure.Failed() {
-        return sceValue, sceFailure.Err()
-    }
-    var until int64 = 0
-    if sceFailure.Failed() {
-        return sceValue, sceFailure.Err()
-    }
-    var flag uint8 = 0
-    if sceFailure.Failed() {
-        return sceValue, sceFailure.Err()
-    }
-    var found bool = false
-    if sceFailure.Failed() {
-        return sceValue, sceFailure.Err()
-    }
-    var held int64 = 0
-    if sceFailure.Failed() {
-        return sceValue, sceFailure.Err()
-    }
-    var bw int64 = 0
-    if sceFailure.Failed() {
-        return sceValue, sceFailure.Err()
-    }
-    var bc uint32 = 0
-    if sceFailure.Failed() {
-        return sceValue, sceFailure.Err()
-    }
-    var bn uint64 = 0
-    if sceFailure.Failed() {
-        return sceValue, sceFailure.Err()
-    }
-    found = false;
-    if sceFailure.Failed() {
-        return sceValue, sceFailure.Err()
-    }
-    held = 0;
-    if sceFailure.Failed() {
-        return sceValue, sceFailure.Err()
-    }
-    for _, w16 := range values {
-        if sceCond2 := w16.Id == id && w16.Field == 16; sceFailure.Failed() {
-            return sceValue, sceFailure.Err()
-        } else if sceCond2 {
-            held = scealgorithm.AddInt64(&sceFailure, held, 1);
-            if sceFailure.Failed() {
-                return sceValue, sceFailure.Err()
-            }
-            if sceCond3 := !found || sce_event_later.EventLater(w16.WallTime, w16.Counter, w16.NodeId, bw, bc, bn); sceFailure.Failed() {
-                return sceValue, sceFailure.Err()
-            } else if sceCond3 {
-                found = true;
-                if sceFailure.Failed() {
-                    return sceValue, sceFailure.Err()
-                }
-                bw = w16.WallTime;
-                if sceFailure.Failed() {
-                    return sceValue, sceFailure.Err()
-                }
-                bc = w16.Counter;
-                if sceFailure.Failed() {
-                    return sceValue, sceFailure.Err()
-                }
-                bn = w16.NodeId;
-                if sceFailure.Failed() {
-                    return sceValue, sceFailure.Err()
-                }
-                startAt = w16.Value;
-                if sceFailure.Failed() {
-                    return sceValue, sceFailure.Err()
-                }
-            }
-        }
-    }
-    if sceCond1 := held > 1; sceFailure.Failed() {
+    if sceCond1 := startAt >= 0 && s.Gone != 1 && freq >= 0 && freq <= 4 && windowEnd > windowStart && windowEnd > 0; sceFailure.Failed() {
         return sceValue, sceFailure.Err()
     } else if sceCond1 {
-        flag = 1;
+        var every int64 = func() int64 { if s.Interval < 1 { return 1 }; return s.Interval }()
         if sceFailure.Failed() {
             return sceValue, sceFailure.Err()
         }
-    }
-    found = false;
-    if sceFailure.Failed() {
-        return sceValue, sceFailure.Err()
-    }
-    held = 0;
-    if sceFailure.Failed() {
-        return sceValue, sceFailure.Err()
-    }
-    for _, w9 := range values {
-        if sceCond2 := w9.Id == id && w9.Field == 9; sceFailure.Failed() {
-            return sceValue, sceFailure.Err()
-        } else if sceCond2 {
-            held = scealgorithm.AddInt64(&sceFailure, held, 1);
-            if sceFailure.Failed() {
-                return sceValue, sceFailure.Err()
-            }
-            if sceCond3 := !found || sce_event_later.EventLater(w9.WallTime, w9.Counter, w9.NodeId, bw, bc, bn); sceFailure.Failed() {
-                return sceValue, sceFailure.Err()
-            } else if sceCond3 {
-                found = true;
-                if sceFailure.Failed() {
-                    return sceValue, sceFailure.Err()
-                }
-                bw = w9.WallTime;
-                if sceFailure.Failed() {
-                    return sceValue, sceFailure.Err()
-                }
-                bc = w9.Counter;
-                if sceFailure.Failed() {
-                    return sceValue, sceFailure.Err()
-                }
-                bn = w9.NodeId;
-                if sceFailure.Failed() {
-                    return sceValue, sceFailure.Err()
-                }
-                gone = w9.Value;
-                if sceFailure.Failed() {
-                    return sceValue, sceFailure.Err()
-                }
-            }
-        }
-    }
-    if sceCond1 := held > 1; sceFailure.Failed() {
-        return sceValue, sceFailure.Err()
-    } else if sceCond1 {
-        flag = 1;
+        var length int64 = s.Length
         if sceFailure.Failed() {
             return sceValue, sceFailure.Err()
         }
-    }
-    found = false;
-    if sceFailure.Failed() {
-        return sceValue, sceFailure.Err()
-    }
-    held = 0;
-    if sceFailure.Failed() {
-        return sceValue, sceFailure.Err()
-    }
-    for _, w18 := range values {
-        if sceCond2 := w18.Id == id && w18.Field == 18; sceFailure.Failed() {
-            return sceValue, sceFailure.Err()
-        } else if sceCond2 {
-            held = scealgorithm.AddInt64(&sceFailure, held, 1);
-            if sceFailure.Failed() {
-                return sceValue, sceFailure.Err()
-            }
-            if sceCond3 := !found || sce_event_later.EventLater(w18.WallTime, w18.Counter, w18.NodeId, bw, bc, bn); sceFailure.Failed() {
-                return sceValue, sceFailure.Err()
-            } else if sceCond3 {
-                found = true;
-                if sceFailure.Failed() {
-                    return sceValue, sceFailure.Err()
-                }
-                bw = w18.WallTime;
-                if sceFailure.Failed() {
-                    return sceValue, sceFailure.Err()
-                }
-                bc = w18.Counter;
-                if sceFailure.Failed() {
-                    return sceValue, sceFailure.Err()
-                }
-                bn = w18.NodeId;
-                if sceFailure.Failed() {
-                    return sceValue, sceFailure.Err()
-                }
-                freq = w18.Value;
-                if sceFailure.Failed() {
-                    return sceValue, sceFailure.Err()
-                }
-            }
-        }
-    }
-    if sceCond1 := held > 1; sceFailure.Failed() {
-        return sceValue, sceFailure.Err()
-    } else if sceCond1 {
-        flag = 1;
+        var count int64 = s.Count
         if sceFailure.Failed() {
             return sceValue, sceFailure.Err()
         }
-    }
-    found = false;
-    if sceFailure.Failed() {
-        return sceValue, sceFailure.Err()
-    }
-    held = 0;
-    if sceFailure.Failed() {
-        return sceValue, sceFailure.Err()
-    }
-    for _, w17 := range values {
-        if sceCond2 := w17.Id == id && w17.Field == 17; sceFailure.Failed() {
-            return sceValue, sceFailure.Err()
-        } else if sceCond2 {
-            held = scealgorithm.AddInt64(&sceFailure, held, 1);
-            if sceFailure.Failed() {
-                return sceValue, sceFailure.Err()
-            }
-            if sceCond3 := !found || sce_event_later.EventLater(w17.WallTime, w17.Counter, w17.NodeId, bw, bc, bn); sceFailure.Failed() {
-                return sceValue, sceFailure.Err()
-            } else if sceCond3 {
-                found = true;
-                if sceFailure.Failed() {
-                    return sceValue, sceFailure.Err()
-                }
-                bw = w17.WallTime;
-                if sceFailure.Failed() {
-                    return sceValue, sceFailure.Err()
-                }
-                bc = w17.Counter;
-                if sceFailure.Failed() {
-                    return sceValue, sceFailure.Err()
-                }
-                bn = w17.NodeId;
-                if sceFailure.Failed() {
-                    return sceValue, sceFailure.Err()
-                }
-                length = w17.Value;
-                if sceFailure.Failed() {
-                    return sceValue, sceFailure.Err()
-                }
-            }
-        }
-    }
-    if sceCond1 := held > 1; sceFailure.Failed() {
-        return sceValue, sceFailure.Err()
-    } else if sceCond1 {
-        flag = 1;
+        var until int64 = s.Until
         if sceFailure.Failed() {
             return sceValue, sceFailure.Err()
         }
-    }
-    found = false;
-    if sceFailure.Failed() {
-        return sceValue, sceFailure.Err()
-    }
-    held = 0;
-    if sceFailure.Failed() {
-        return sceValue, sceFailure.Err()
-    }
-    for _, w19 := range values {
-        if sceCond2 := w19.Id == id && w19.Field == 19; sceFailure.Failed() {
-            return sceValue, sceFailure.Err()
-        } else if sceCond2 {
-            held = scealgorithm.AddInt64(&sceFailure, held, 1);
-            if sceFailure.Failed() {
-                return sceValue, sceFailure.Err()
-            }
-            if sceCond3 := !found || sce_event_later.EventLater(w19.WallTime, w19.Counter, w19.NodeId, bw, bc, bn); sceFailure.Failed() {
-                return sceValue, sceFailure.Err()
-            } else if sceCond3 {
-                found = true;
-                if sceFailure.Failed() {
-                    return sceValue, sceFailure.Err()
-                }
-                bw = w19.WallTime;
-                if sceFailure.Failed() {
-                    return sceValue, sceFailure.Err()
-                }
-                bc = w19.Counter;
-                if sceFailure.Failed() {
-                    return sceValue, sceFailure.Err()
-                }
-                bn = w19.NodeId;
-                if sceFailure.Failed() {
-                    return sceValue, sceFailure.Err()
-                }
-                every0 = w19.Value;
-                if sceFailure.Failed() {
-                    return sceValue, sceFailure.Err()
-                }
-            }
-        }
-    }
-    if sceCond1 := held > 1; sceFailure.Failed() {
-        return sceValue, sceFailure.Err()
-    } else if sceCond1 {
-        flag = 1;
-        if sceFailure.Failed() {
-            return sceValue, sceFailure.Err()
-        }
-    }
-    found = false;
-    if sceFailure.Failed() {
-        return sceValue, sceFailure.Err()
-    }
-    held = 0;
-    if sceFailure.Failed() {
-        return sceValue, sceFailure.Err()
-    }
-    for _, w20 := range values {
-        if sceCond2 := w20.Id == id && w20.Field == 20; sceFailure.Failed() {
-            return sceValue, sceFailure.Err()
-        } else if sceCond2 {
-            held = scealgorithm.AddInt64(&sceFailure, held, 1);
-            if sceFailure.Failed() {
-                return sceValue, sceFailure.Err()
-            }
-            if sceCond3 := !found || sce_event_later.EventLater(w20.WallTime, w20.Counter, w20.NodeId, bw, bc, bn); sceFailure.Failed() {
-                return sceValue, sceFailure.Err()
-            } else if sceCond3 {
-                found = true;
-                if sceFailure.Failed() {
-                    return sceValue, sceFailure.Err()
-                }
-                bw = w20.WallTime;
-                if sceFailure.Failed() {
-                    return sceValue, sceFailure.Err()
-                }
-                bc = w20.Counter;
-                if sceFailure.Failed() {
-                    return sceValue, sceFailure.Err()
-                }
-                bn = w20.NodeId;
-                if sceFailure.Failed() {
-                    return sceValue, sceFailure.Err()
-                }
-                days = w20.Value;
-                if sceFailure.Failed() {
-                    return sceValue, sceFailure.Err()
-                }
-            }
-        }
-    }
-    if sceCond1 := held > 1; sceFailure.Failed() {
-        return sceValue, sceFailure.Err()
-    } else if sceCond1 {
-        flag = 1;
-        if sceFailure.Failed() {
-            return sceValue, sceFailure.Err()
-        }
-    }
-    found = false;
-    if sceFailure.Failed() {
-        return sceValue, sceFailure.Err()
-    }
-    held = 0;
-    if sceFailure.Failed() {
-        return sceValue, sceFailure.Err()
-    }
-    for _, w21 := range values {
-        if sceCond2 := w21.Id == id && w21.Field == 21; sceFailure.Failed() {
-            return sceValue, sceFailure.Err()
-        } else if sceCond2 {
-            held = scealgorithm.AddInt64(&sceFailure, held, 1);
-            if sceFailure.Failed() {
-                return sceValue, sceFailure.Err()
-            }
-            if sceCond3 := !found || sce_event_later.EventLater(w21.WallTime, w21.Counter, w21.NodeId, bw, bc, bn); sceFailure.Failed() {
-                return sceValue, sceFailure.Err()
-            } else if sceCond3 {
-                found = true;
-                if sceFailure.Failed() {
-                    return sceValue, sceFailure.Err()
-                }
-                bw = w21.WallTime;
-                if sceFailure.Failed() {
-                    return sceValue, sceFailure.Err()
-                }
-                bc = w21.Counter;
-                if sceFailure.Failed() {
-                    return sceValue, sceFailure.Err()
-                }
-                bn = w21.NodeId;
-                if sceFailure.Failed() {
-                    return sceValue, sceFailure.Err()
-                }
-                count = w21.Value;
-                if sceFailure.Failed() {
-                    return sceValue, sceFailure.Err()
-                }
-            }
-        }
-    }
-    if sceCond1 := held > 1; sceFailure.Failed() {
-        return sceValue, sceFailure.Err()
-    } else if sceCond1 {
-        flag = 1;
-        if sceFailure.Failed() {
-            return sceValue, sceFailure.Err()
-        }
-    }
-    found = false;
-    if sceFailure.Failed() {
-        return sceValue, sceFailure.Err()
-    }
-    held = 0;
-    if sceFailure.Failed() {
-        return sceValue, sceFailure.Err()
-    }
-    for _, w22 := range values {
-        if sceCond2 := w22.Id == id && w22.Field == 22; sceFailure.Failed() {
-            return sceValue, sceFailure.Err()
-        } else if sceCond2 {
-            held = scealgorithm.AddInt64(&sceFailure, held, 1);
-            if sceFailure.Failed() {
-                return sceValue, sceFailure.Err()
-            }
-            if sceCond3 := !found || sce_event_later.EventLater(w22.WallTime, w22.Counter, w22.NodeId, bw, bc, bn); sceFailure.Failed() {
-                return sceValue, sceFailure.Err()
-            } else if sceCond3 {
-                found = true;
-                if sceFailure.Failed() {
-                    return sceValue, sceFailure.Err()
-                }
-                bw = w22.WallTime;
-                if sceFailure.Failed() {
-                    return sceValue, sceFailure.Err()
-                }
-                bc = w22.Counter;
-                if sceFailure.Failed() {
-                    return sceValue, sceFailure.Err()
-                }
-                bn = w22.NodeId;
-                if sceFailure.Failed() {
-                    return sceValue, sceFailure.Err()
-                }
-                until = w22.Value;
-                if sceFailure.Failed() {
-                    return sceValue, sceFailure.Err()
-                }
-            }
-        }
-    }
-    if sceCond1 := held > 1; sceFailure.Failed() {
-        return sceValue, sceFailure.Err()
-    } else if sceCond1 {
-        flag = 1;
-        if sceFailure.Failed() {
-            return sceValue, sceFailure.Err()
-        }
-    }
-    if sceCond1 := startAt >= 0 && gone != 1 && freq >= 0 && freq <= 3 && windowEnd > windowStart && windowEnd > 0; sceFailure.Failed() {
-        return sceValue, sceFailure.Err()
-    } else if sceCond1 {
-        var every int64 = func() int64 { if every0 < 1 { return 1 }; return every0 }()
+        var hasSP bool = s.SpPos | s.SpNeg != 0
         if sceFailure.Failed() {
             return sceValue, sceFailure.Err()
         }
@@ -514,15 +88,15 @@ func EventAgenda(values []sce_mv_value.MvValuePayload, id uint64, windowStart in
         if sceFailure.Failed() {
             return sceValue, sceFailure.Err()
         }
-        var weekStart int64 = scealgorithm.SubInt64(&sceFailure, startDay, startWeekday)
+        var wkst0 int64 = s.Wkst
         if sceFailure.Failed() {
             return sceValue, sceFailure.Err()
         }
-        var one int64 = 1
+        var wkst int64 = func() int64 { if wkst0 >= 0 && wkst0 <= 6 { return wkst0 }; return 1 }()
         if sceFailure.Failed() {
             return sceValue, sceFailure.Err()
         }
-        var weekdays int64 = func() int64 { if days == 0 { return one << startWeekday }; return days & 127 }()
+        var week0Start int64 = scealgorithm.SubInt64(&sceFailure, startDay, scealgorithm.RemInt64(&sceFailure, scealgorithm.AddInt64(&sceFailure, scealgorithm.SubInt64(&sceFailure, startWeekday, wkst), 7), 7))
         if sceFailure.Failed() {
             return sceValue, sceFailure.Err()
         }
@@ -550,23 +124,19 @@ func EventAgenda(values []sce_mv_value.MvValuePayload, id uint64, windowStart in
         if sceFailure.Failed() {
             return sceValue, sceFailure.Err()
         }
-        var startOfMonth int64 = scealgorithm.AddInt64(&sceFailure, scealgorithm.SubInt64(&sceFailure, doy, scealgorithm.DivInt64(&sceFailure, scealgorithm.AddInt64(&sceFailure, scealgorithm.MulInt64(&sceFailure, 153, mp), 2), 5)), 1)
+        var m0 int64 = func() int64 { if mp < 10 { return scealgorithm.AddInt64(&sceFailure, mp, 3) }; return scealgorithm.SubInt64(&sceFailure, mp, 9) }()
         if sceFailure.Failed() {
             return sceValue, sceFailure.Err()
         }
-        var startMonth int64 = func() int64 { if mp < 10 { return scealgorithm.AddInt64(&sceFailure, mp, 3) }; return scealgorithm.SubInt64(&sceFailure, mp, 9) }()
+        var y0 int64 = func() int64 { if m0 <= 2 { return scealgorithm.AddInt64(&sceFailure, scealgorithm.AddInt64(&sceFailure, yoe, scealgorithm.MulInt64(&sceFailure, era, 400)), 1) }; return scealgorithm.AddInt64(&sceFailure, yoe, scealgorithm.MulInt64(&sceFailure, era, 400)) }()
         if sceFailure.Failed() {
             return sceValue, sceFailure.Err()
         }
-        var startYear int64 = func() int64 { if startMonth <= 2 { return scealgorithm.AddInt64(&sceFailure, scealgorithm.AddInt64(&sceFailure, yoe, scealgorithm.MulInt64(&sceFailure, era, 400)), 1) }; return scealgorithm.AddInt64(&sceFailure, yoe, scealgorithm.MulInt64(&sceFailure, era, 400)) }()
+        var months0 int64 = scealgorithm.SubInt64(&sceFailure, scealgorithm.AddInt64(&sceFailure, scealgorithm.MulInt64(&sceFailure, y0, 12), m0), 1)
         if sceFailure.Failed() {
             return sceValue, sceFailure.Err()
         }
-        var months int64 = scealgorithm.SubInt64(&sceFailure, scealgorithm.AddInt64(&sceFailure, scealgorithm.MulInt64(&sceFailure, startYear, 12), startMonth), 1)
-        if sceFailure.Failed() {
-            return sceValue, sceFailure.Err()
-        }
-        var cursor int64 = 0
+        var p int64 = 0
         if sceFailure.Failed() {
             return sceValue, sceFailure.Err()
         }
@@ -586,26 +156,18 @@ func EventAgenda(values []sce_mv_value.MvValuePayload, id uint64, windowStart in
             if !sceCond2 {
                 break
             }
-            var d int64 = scealgorithm.AddInt64(&sceFailure, startDay, cursor)
+            var ps int64 = startDay
             if sceFailure.Failed() {
                 return sceValue, sceFailure.Err()
             }
-            var valid bool = false
+            var plen int64 = 1
             if sceFailure.Failed() {
                 return sceValue, sceFailure.Err()
-            }
-            if sceCond3 := freq == 0; sceFailure.Failed() {
-                return sceValue, sceFailure.Err()
-            } else if sceCond3 {
-                valid = cursor == 0;
-                if sceFailure.Failed() {
-                    return sceValue, sceFailure.Err()
-                }
             }
             if sceCond3 := freq == 1; sceFailure.Failed() {
                 return sceValue, sceFailure.Err()
             } else if sceCond3 {
-                valid = scealgorithm.RemInt64(&sceFailure, cursor, every) == 0;
+                ps = scealgorithm.AddInt64(&sceFailure, startDay, scealgorithm.MulInt64(&sceFailure, p, every));
                 if sceFailure.Failed() {
                     return sceValue, sceFailure.Err()
                 }
@@ -613,80 +175,60 @@ func EventAgenda(values []sce_mv_value.MvValuePayload, id uint64, windowStart in
             if sceCond3 := freq == 2; sceFailure.Failed() {
                 return sceValue, sceFailure.Err()
             } else if sceCond3 {
-                valid = weekdays >> scealgorithm.RemInt64(&sceFailure, scealgorithm.AddInt64(&sceFailure, scealgorithm.RemInt64(&sceFailure, d, 7), 11), 7) & 1 == 1 && scealgorithm.RemInt64(&sceFailure, scealgorithm.DivInt64(&sceFailure, scealgorithm.SubInt64(&sceFailure, d, weekStart), 7), every) == 0;
+                ps = scealgorithm.AddInt64(&sceFailure, week0Start, scealgorithm.MulInt64(&sceFailure, scealgorithm.MulInt64(&sceFailure, p, every), 7));
+                if sceFailure.Failed() {
+                    return sceValue, sceFailure.Err()
+                }
+                plen = 7;
                 if sceFailure.Failed() {
                     return sceValue, sceFailure.Err()
                 }
             }
-            if sceCond3 := freq == 3; sceFailure.Failed() {
+            if sceCond3 := freq == 3 || freq == 4; sceFailure.Failed() {
                 return sceValue, sceFailure.Err()
             } else if sceCond3 {
-                var total int64 = scealgorithm.AddInt64(&sceFailure, months, scealgorithm.MulInt64(&sceFailure, cursor, every))
+                var pty int64 = func() int64 { if freq == 3 { return scealgorithm.DivInt64(&sceFailure, scealgorithm.AddInt64(&sceFailure, months0, scealgorithm.MulInt64(&sceFailure, p, every)), 12) }; return scealgorithm.AddInt64(&sceFailure, y0, scealgorithm.MulInt64(&sceFailure, p, every)) }()
                 if sceFailure.Failed() {
                     return sceValue, sceFailure.Err()
                 }
-                var landYear int64 = scealgorithm.DivInt64(&sceFailure, total, 12)
+                var ptm int64 = func() int64 { if freq == 3 { return scealgorithm.AddInt64(&sceFailure, scealgorithm.RemInt64(&sceFailure, scealgorithm.AddInt64(&sceFailure, months0, scealgorithm.MulInt64(&sceFailure, p, every)), 12), 1) }; return 1 }()
                 if sceFailure.Failed() {
                     return sceValue, sceFailure.Err()
                 }
-                var landMonth int64 = scealgorithm.AddInt64(&sceFailure, scealgorithm.RemInt64(&sceFailure, total, 12), 1)
+                var pleap bool = scealgorithm.RemInt64(&sceFailure, pty, 4) == 0 && scealgorithm.RemInt64(&sceFailure, pty, 100) != 0 || scealgorithm.RemInt64(&sceFailure, pty, 400) == 0
                 if sceFailure.Failed() {
                     return sceValue, sceFailure.Err()
                 }
-                var landLeap bool = scealgorithm.RemInt64(&sceFailure, landYear, 4) == 0 && scealgorithm.RemInt64(&sceFailure, landYear, 100) != 0 || scealgorithm.RemInt64(&sceFailure, landYear, 400) == 0
+                var pcy int64 = func() int64 { if ptm <= 2 { return scealgorithm.SubInt64(&sceFailure, pty, 1) }; return pty }()
                 if sceFailure.Failed() {
                     return sceValue, sceFailure.Err()
                 }
-                var last int64 = func() int64 { if landMonth == 2 { return func() int64 { if landLeap { return 29 }; return 28 }() }; return func() int64 { if landMonth == 4 || landMonth == 6 || landMonth == 9 || landMonth == 11 { return 30 }; return 31 }() }()
+                var pcera int64 = scealgorithm.DivInt64(&sceFailure, pcy, 400)
                 if sceFailure.Failed() {
                     return sceValue, sceFailure.Err()
                 }
-                var landDay int64 = func() int64 { if startOfMonth < last { return startOfMonth }; return last }()
+                var pcyoe int64 = scealgorithm.SubInt64(&sceFailure, pcy, scealgorithm.MulInt64(&sceFailure, pcera, 400))
                 if sceFailure.Failed() {
                     return sceValue, sceFailure.Err()
                 }
-                var cy int64 = func() int64 { if landMonth <= 2 { return scealgorithm.SubInt64(&sceFailure, landYear, 1) }; return landYear }()
+                var pcmp int64 = func() int64 { if ptm > 2 { return scealgorithm.SubInt64(&sceFailure, ptm, 3) }; return scealgorithm.AddInt64(&sceFailure, ptm, 9) }()
                 if sceFailure.Failed() {
                     return sceValue, sceFailure.Err()
                 }
-                var cera int64 = scealgorithm.DivInt64(&sceFailure, cy, 400)
+                var pcdoy int64 = scealgorithm.DivInt64(&sceFailure, scealgorithm.AddInt64(&sceFailure, scealgorithm.MulInt64(&sceFailure, 153, pcmp), 2), 5)
                 if sceFailure.Failed() {
                     return sceValue, sceFailure.Err()
                 }
-                var cyoe int64 = scealgorithm.SubInt64(&sceFailure, cy, scealgorithm.MulInt64(&sceFailure, cera, 400))
+                ps = scealgorithm.SubInt64(&sceFailure, scealgorithm.AddInt64(&sceFailure, scealgorithm.SubInt64(&sceFailure, scealgorithm.AddInt64(&sceFailure, scealgorithm.AddInt64(&sceFailure, scealgorithm.MulInt64(&sceFailure, pcera, 146097), scealgorithm.MulInt64(&sceFailure, pcyoe, 365)), scealgorithm.DivInt64(&sceFailure, pcyoe, 4)), scealgorithm.DivInt64(&sceFailure, pcyoe, 100)), pcdoy), 719468);
                 if sceFailure.Failed() {
                     return sceValue, sceFailure.Err()
                 }
-                var cmp int64 = func() int64 { if landMonth > 2 { return scealgorithm.SubInt64(&sceFailure, landMonth, 3) }; return scealgorithm.AddInt64(&sceFailure, landMonth, 9) }()
-                if sceFailure.Failed() {
-                    return sceValue, sceFailure.Err()
-                }
-                var cdoy int64 = scealgorithm.SubInt64(&sceFailure, scealgorithm.AddInt64(&sceFailure, scealgorithm.DivInt64(&sceFailure, scealgorithm.AddInt64(&sceFailure, scealgorithm.MulInt64(&sceFailure, 153, cmp), 2), 5), landDay), 1)
-                if sceFailure.Failed() {
-                    return sceValue, sceFailure.Err()
-                }
-                var cdoe int64 = scealgorithm.AddInt64(&sceFailure, scealgorithm.SubInt64(&sceFailure, scealgorithm.AddInt64(&sceFailure, scealgorithm.MulInt64(&sceFailure, cyoe, 365), scealgorithm.DivInt64(&sceFailure, cyoe, 4)), scealgorithm.DivInt64(&sceFailure, cyoe, 100)), cdoy)
-                if sceFailure.Failed() {
-                    return sceValue, sceFailure.Err()
-                }
-                d = scealgorithm.SubInt64(&sceFailure, scealgorithm.AddInt64(&sceFailure, scealgorithm.MulInt64(&sceFailure, cera, 146097), cdoe), 719468);
-                if sceFailure.Failed() {
-                    return sceValue, sceFailure.Err()
-                }
-                valid = true;
+                plen = func() int64 { if freq == 4 { return func() int64 { if pleap { return 366 }; return 365 }() }; return func() int64 { if ptm == 2 { return func() int64 { if pleap { return 29 }; return 28 }() }; return func() int64 { if ptm == 4 || ptm == 6 || ptm == 9 || ptm == 11 { return 30 }; return 31 }() }() }();
                 if sceFailure.Failed() {
                     return sceValue, sceFailure.Err()
                 }
             }
-            var occStart int64 = scealgorithm.AddInt64(&sceFailure, scealgorithm.MulInt64(&sceFailure, d, day), timeOfDay)
-            if sceFailure.Failed() {
-                return sceValue, sceFailure.Err()
-            }
-            var occEnd int64 = scealgorithm.AddInt64(&sceFailure, occStart, length)
-            if sceFailure.Failed() {
-                return sceValue, sceFailure.Err()
-            }
-            if sceCond3 := d >= endDay || occStart >= windowEnd || until > 0 && occStart > until; sceFailure.Failed() {
+            if sceCond3 := ps >= endDay || until > 0 && scealgorithm.MulInt64(&sceFailure, ps, day) > until; sceFailure.Failed() {
                 return sceValue, sceFailure.Err()
             } else if sceCond3 {
                 going = false;
@@ -694,151 +236,238 @@ func EventAgenda(values []sce_mv_value.MvValuePayload, id uint64, windowStart in
                     return sceValue, sceFailure.Err()
                 }
             } else {
-                if sceCond4 := valid; sceFailure.Failed() {
+                var n int64 = 0
+                if sceFailure.Failed() {
                     return sceValue, sceFailure.Err()
-                } else if sceCond4 {
-                    if sceCond5 := count > 0 && nth >= count; sceFailure.Failed() {
+                }
+                var k int64 = 0
+                if sceFailure.Failed() {
+                    return sceValue, sceFailure.Err()
+                }
+                for {
+                    sceCond4 := k < plen
+                    if sceFailure.Failed() {
+                        return sceValue, sceFailure.Err()
+                    }
+                    if !sceCond4 {
+                        break
+                    }
+                    if sceCond5 := scealgorithm.Take[bool](&sceFailure)(sce_event_selects.EventSelects(s, scealgorithm.AddInt64(&sceFailure, ps, k), startDay)); sceFailure.Failed() {
+                        return sceValue, sceFailure.Err()
+                    } else if sceCond5 {
+                        n = scealgorithm.AddInt64(&sceFailure, n, 1);
+                        if sceFailure.Failed() {
+                            return sceValue, sceFailure.Err()
+                        }
+                    }
+                    k = scealgorithm.AddInt64(&sceFailure, k, 1);
+                    if sceFailure.Failed() {
+                        return sceValue, sceFailure.Err()
+                    }
+                }
+                var i int64 = 0
+                if sceFailure.Failed() {
+                    return sceValue, sceFailure.Err()
+                }
+                var rank int64 = 0
+                if sceFailure.Failed() {
+                    return sceValue, sceFailure.Err()
+                }
+                for {
+                    sceCond4 := i < plen && going
+                    if sceFailure.Failed() {
+                        return sceValue, sceFailure.Err()
+                    }
+                    if !sceCond4 {
+                        break
+                    }
+                    var dd int64 = scealgorithm.AddInt64(&sceFailure, ps, i)
+                    if sceFailure.Failed() {
+                        return sceValue, sceFailure.Err()
+                    }
+                    if sceCond5 := scealgorithm.Take[bool](&sceFailure)(sce_event_selects.EventSelects(s, dd, startDay)); sceFailure.Failed() {
+                        return sceValue, sceFailure.Err()
+                    } else if sceCond5 {
+                        rank = scealgorithm.AddInt64(&sceFailure, rank, 1);
+                        if sceFailure.Failed() {
+                            return sceValue, sceFailure.Err()
+                        }
+                        var keep bool = true
+                        if sceFailure.Failed() {
+                            return sceValue, sceFailure.Err()
+                        }
+                        if sceCond6 := hasSP; sceFailure.Failed() {
+                            return sceValue, sceFailure.Err()
+                        } else if sceCond6 {
+                            keep = rank <= 62 && s.SpPos >> rank & 1 == 1 || scealgorithm.AddInt64(&sceFailure, scealgorithm.SubInt64(&sceFailure, n, rank), 1) <= 62 && s.SpNeg >> scealgorithm.AddInt64(&sceFailure, scealgorithm.SubInt64(&sceFailure, n, rank), 1) & 1 == 1;
+                            if sceFailure.Failed() {
+                                return sceValue, sceFailure.Err()
+                            }
+                        }
+                        if sceCond6 := keep && dd >= startDay; sceFailure.Failed() {
+                            return sceValue, sceFailure.Err()
+                        } else if sceCond6 {
+                            var occStart int64 = scealgorithm.AddInt64(&sceFailure, scealgorithm.MulInt64(&sceFailure, dd, day), timeOfDay)
+                            if sceFailure.Failed() {
+                                return sceValue, sceFailure.Err()
+                            }
+                            var occEnd int64 = scealgorithm.AddInt64(&sceFailure, occStart, length)
+                            if sceFailure.Failed() {
+                                return sceValue, sceFailure.Err()
+                            }
+                            if sceCond7 := occStart >= windowEnd || until > 0 && occStart > until; sceFailure.Failed() {
+                                return sceValue, sceFailure.Err()
+                            } else if sceCond7 {
+                                going = false;
+                                if sceFailure.Failed() {
+                                    return sceValue, sceFailure.Err()
+                                }
+                            } else {
+                                if sceCond8 := count > 0 && nth >= count; sceFailure.Failed() {
+                                    return sceValue, sceFailure.Err()
+                                } else if sceCond8 {
+                                    going = false;
+                                    if sceFailure.Failed() {
+                                        return sceValue, sceFailure.Err()
+                                    }
+                                } else {
+                                    if sceCond9 := (occEnd > windowStart || occStart >= windowStart) && emitted < 64 && nth >= skipped; sceFailure.Failed() {
+                                        return sceValue, sceFailure.Err()
+                                    } else if sceCond9 {
+                                        var excluded bool = false
+                                        if sceFailure.Failed() {
+                                            return sceValue, sceFailure.Err()
+                                        }
+                                        var mark uint8 = scealgorithm.NarrowUint8FromInt(&sceFailure, int64(s.Flag))
+                                        if sceFailure.Failed() {
+                                            return sceValue, sceFailure.Err()
+                                        }
+                                        if sceCond10 := dd >= 0 && dd < 65472; sceFailure.Failed() {
+                                            return sceValue, sceFailure.Err()
+                                        } else if sceCond10 {
+                                            var xfield uint64 = scealgorithm.NarrowUint64FromInt(&sceFailure, int64(scealgorithm.AddInt64(&sceFailure, dd, 64)))
+                                            if sceFailure.Failed() {
+                                                return sceValue, sceFailure.Err()
+                                            }
+                                            var xfound bool = false
+                                            if sceFailure.Failed() {
+                                                return sceValue, sceFailure.Err()
+                                            }
+                                            var xheld int64 = 0
+                                            if sceFailure.Failed() {
+                                                return sceValue, sceFailure.Err()
+                                            }
+                                            var xw int64 = 0
+                                            if sceFailure.Failed() {
+                                                return sceValue, sceFailure.Err()
+                                            }
+                                            var xc uint32 = 0
+                                            if sceFailure.Failed() {
+                                                return sceValue, sceFailure.Err()
+                                            }
+                                            var xn uint64 = 0
+                                            if sceFailure.Failed() {
+                                                return sceValue, sceFailure.Err()
+                                            }
+                                            var xv int64 = 0
+                                            if sceFailure.Failed() {
+                                                return sceValue, sceFailure.Err()
+                                            }
+                                            for _, wx := range values {
+                                                if sceCond12 := wx.Id == id && wx.Field == xfield; sceFailure.Failed() {
+                                                    return sceValue, sceFailure.Err()
+                                                } else if sceCond12 {
+                                                    xheld = scealgorithm.AddInt64(&sceFailure, xheld, 1);
+                                                    if sceFailure.Failed() {
+                                                        return sceValue, sceFailure.Err()
+                                                    }
+                                                    if sceCond13 := !xfound || sce_event_later.EventLater(wx.WallTime, wx.Counter, wx.NodeId, xw, xc, xn); sceFailure.Failed() {
+                                                        return sceValue, sceFailure.Err()
+                                                    } else if sceCond13 {
+                                                        xfound = true;
+                                                        if sceFailure.Failed() {
+                                                            return sceValue, sceFailure.Err()
+                                                        }
+                                                        xw = wx.WallTime;
+                                                        if sceFailure.Failed() {
+                                                            return sceValue, sceFailure.Err()
+                                                        }
+                                                        xc = wx.Counter;
+                                                        if sceFailure.Failed() {
+                                                            return sceValue, sceFailure.Err()
+                                                        }
+                                                        xn = wx.NodeId;
+                                                        if sceFailure.Failed() {
+                                                            return sceValue, sceFailure.Err()
+                                                        }
+                                                        xv = wx.Value;
+                                                        if sceFailure.Failed() {
+                                                            return sceValue, sceFailure.Err()
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            excluded = xfound && xv == 1;
+                                            if sceFailure.Failed() {
+                                                return sceValue, sceFailure.Err()
+                                            }
+                                            if sceCond11 := xheld > 1; sceFailure.Failed() {
+                                                return sceValue, sceFailure.Err()
+                                            } else if sceCond11 {
+                                                mark = 1;
+                                                if sceFailure.Failed() {
+                                                    return sceValue, sceFailure.Err()
+                                                }
+                                            }
+                                        }
+                                        if sceCond10 := !excluded; sceFailure.Failed() {
+                                            return sceValue, sceFailure.Err()
+                                        } else if sceCond10 {
+                                            line := sce_event_occurrence.EventOccurrencePayload{Id: id, Start: occStart, End: occEnd, Nth: scealgorithm.NarrowUint32FromInt(&sceFailure, int64(nth)), Conflict: mark}
+                                            if sceFailure.Failed() {
+                                                return sceValue, sceFailure.Err()
+                                            }
+                                            out = append(out, line)
+                                            if sceFailure.Failed() {
+                                                return sceValue, sceFailure.Err()
+                                            }
+                                            emitted = scealgorithm.AddInt64(&sceFailure, emitted, 1);
+                                            if sceFailure.Failed() {
+                                                return sceValue, sceFailure.Err()
+                                            }
+                                        }
+                                    }
+                                    nth = scealgorithm.AddInt64(&sceFailure, nth, 1);
+                                    if sceFailure.Failed() {
+                                        return sceValue, sceFailure.Err()
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if sceCond5 := emitted >= 64; sceFailure.Failed() {
                         return sceValue, sceFailure.Err()
                     } else if sceCond5 {
                         going = false;
                         if sceFailure.Failed() {
                             return sceValue, sceFailure.Err()
                         }
-                    } else {
-                        if sceCond6 := (occEnd > windowStart || occStart >= windowStart) && emitted < 64; sceFailure.Failed() {
-                            return sceValue, sceFailure.Err()
-                        } else if sceCond6 {
-                            var excluded bool = false
-                            if sceFailure.Failed() {
-                                return sceValue, sceFailure.Err()
-                            }
-                            var mark uint8 = flag
-                            if sceFailure.Failed() {
-                                return sceValue, sceFailure.Err()
-                            }
-                            var dayNo int64 = scealgorithm.DivInt64(&sceFailure, occStart, day)
-                            if sceFailure.Failed() {
-                                return sceValue, sceFailure.Err()
-                            }
-                            if sceCond7 := dayNo >= 18262 && scealgorithm.SubInt64(&sceFailure, dayNo, 18262) < 65472; sceFailure.Failed() {
-                                return sceValue, sceFailure.Err()
-                            } else if sceCond7 {
-                                var xfield uint64 = scealgorithm.NarrowUint64FromInt(&sceFailure, int64(scealgorithm.AddInt64(&sceFailure, scealgorithm.SubInt64(&sceFailure, dayNo, 18262), 64)))
-                                if sceFailure.Failed() {
-                                    return sceValue, sceFailure.Err()
-                                }
-                                var xfound bool = false
-                                if sceFailure.Failed() {
-                                    return sceValue, sceFailure.Err()
-                                }
-                                var xheld int64 = 0
-                                if sceFailure.Failed() {
-                                    return sceValue, sceFailure.Err()
-                                }
-                                var xw int64 = 0
-                                if sceFailure.Failed() {
-                                    return sceValue, sceFailure.Err()
-                                }
-                                var xc uint32 = 0
-                                if sceFailure.Failed() {
-                                    return sceValue, sceFailure.Err()
-                                }
-                                var xn uint64 = 0
-                                if sceFailure.Failed() {
-                                    return sceValue, sceFailure.Err()
-                                }
-                                var xv int64 = 0
-                                if sceFailure.Failed() {
-                                    return sceValue, sceFailure.Err()
-                                }
-                                for _, wx := range values {
-                                    if sceCond9 := wx.Id == id && wx.Field == xfield; sceFailure.Failed() {
-                                        return sceValue, sceFailure.Err()
-                                    } else if sceCond9 {
-                                        xheld = scealgorithm.AddInt64(&sceFailure, xheld, 1);
-                                        if sceFailure.Failed() {
-                                            return sceValue, sceFailure.Err()
-                                        }
-                                        if sceCond10 := !xfound || sce_event_later.EventLater(wx.WallTime, wx.Counter, wx.NodeId, xw, xc, xn); sceFailure.Failed() {
-                                            return sceValue, sceFailure.Err()
-                                        } else if sceCond10 {
-                                            xfound = true;
-                                            if sceFailure.Failed() {
-                                                return sceValue, sceFailure.Err()
-                                            }
-                                            xw = wx.WallTime;
-                                            if sceFailure.Failed() {
-                                                return sceValue, sceFailure.Err()
-                                            }
-                                            xc = wx.Counter;
-                                            if sceFailure.Failed() {
-                                                return sceValue, sceFailure.Err()
-                                            }
-                                            xn = wx.NodeId;
-                                            if sceFailure.Failed() {
-                                                return sceValue, sceFailure.Err()
-                                            }
-                                            xv = wx.Value;
-                                            if sceFailure.Failed() {
-                                                return sceValue, sceFailure.Err()
-                                            }
-                                        }
-                                    }
-                                }
-                                excluded = xfound && xv == 1;
-                                if sceFailure.Failed() {
-                                    return sceValue, sceFailure.Err()
-                                }
-                                if sceCond8 := xheld > 1; sceFailure.Failed() {
-                                    return sceValue, sceFailure.Err()
-                                } else if sceCond8 {
-                                    mark = 1;
-                                    if sceFailure.Failed() {
-                                        return sceValue, sceFailure.Err()
-                                    }
-                                }
-                            }
-                            if sceCond7 := !excluded; sceFailure.Failed() {
-                                return sceValue, sceFailure.Err()
-                            } else if sceCond7 {
-                                line := sce_event_occurrence.EventOccurrencePayload{Id: id, Start: occStart, End: occEnd, Nth: scealgorithm.NarrowUint32FromInt(&sceFailure, int64(nth)), Conflict: mark}
-                                if sceFailure.Failed() {
-                                    return sceValue, sceFailure.Err()
-                                }
-                                out = append(out, line)
-                                if sceFailure.Failed() {
-                                    return sceValue, sceFailure.Err()
-                                }
-                                emitted = scealgorithm.AddInt64(&sceFailure, emitted, 1);
-                                if sceFailure.Failed() {
-                                    return sceValue, sceFailure.Err()
-                                }
-                            }
-                        }
-                        nth = scealgorithm.AddInt64(&sceFailure, nth, 1);
-                        if sceFailure.Failed() {
-                            return sceValue, sceFailure.Err()
-                        }
-                        if sceCond6 := freq == 0; sceFailure.Failed() {
-                            return sceValue, sceFailure.Err()
-                        } else if sceCond6 {
-                            going = false;
-                            if sceFailure.Failed() {
-                                return sceValue, sceFailure.Err()
-                            }
-                        }
+                    }
+                    i = scealgorithm.AddInt64(&sceFailure, i, 1);
+                    if sceFailure.Failed() {
+                        return sceValue, sceFailure.Err()
+                    }
+                }
+                if sceCond4 := freq == 0; sceFailure.Failed() {
+                    return sceValue, sceFailure.Err()
+                } else if sceCond4 {
+                    going = false;
+                    if sceFailure.Failed() {
+                        return sceValue, sceFailure.Err()
                     }
                 }
             }
-            if sceCond3 := emitted >= 64; sceFailure.Failed() {
-                return sceValue, sceFailure.Err()
-            } else if sceCond3 {
-                going = false;
-                if sceFailure.Failed() {
-                    return sceValue, sceFailure.Err()
-                }
-            }
-            cursor = scealgorithm.AddInt64(&sceFailure, cursor, 1);
+            p = scealgorithm.AddInt64(&sceFailure, p, 1);
             if sceFailure.Failed() {
                 return sceValue, sceFailure.Err()
             }

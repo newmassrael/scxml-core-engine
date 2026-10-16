@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: b9ab4ddbd49e8ce2a3b4c80917bc3eecdf0d5285c15974d4e0a00636f93fd573
+// source-hash: 5b579589f1ff33cd05a081b40dc01d4d0d0b2ef410a9718dd0ae11e84c00a952
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/todo_peer.scxml
@@ -11,7 +11,10 @@ package com.sce.integration.todo_peer
 
 import com.sce.runtime.*
 import com.sce.generated.event_agenda.*
+import com.sce.generated.event_conflict.*
+import com.sce.generated.event_latest.*
 import com.sce.generated.event_occurrence.*
+import com.sce.generated.event_schedule.*
 import com.sce.generated.hlc_receive.*
 import com.sce.generated.hlc_send.*
 import com.sce.generated.hlc_timestamp.*
@@ -27,7 +30,6 @@ import com.sce.generated.orset_live.*
 import com.sce.generated.orset_observed.*
 import com.sce.generated.orset_union.*
 import com.sce.generated.utc_from_local.*
-import com.sce.generated.utc_offset_at.*
 
 
 // --- States (W3C SCXML 3.2) ---
@@ -67,7 +69,7 @@ sealed interface TodoPeerEvent : Event {
 // TodoPeerTodoAgendaPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `todo.agenda`. Consumers inject it via the `raiseTodoAgenda` seam
 // on the machine — they never name this class directly.
-data class TodoPeerTodoAgendaPayload(val id: UInt, val windowStart: Long, val windowEnd: Long)
+data class TodoPeerTodoAgendaPayload(val id: UInt, val windowStart: Long, val windowEnd: Long, val skip: UInt)
 
 // TodoPeerTodoEditPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `todo.edit`. Consumers inject it via the `raiseTodoEdit` seam
@@ -112,7 +114,7 @@ data class TodoPeerTodoWritePayload(val id: UInt, val field: UShort, val value: 
 // TodoPeerTodoZonePayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `todo.zone`. Consumers inject it via the `raiseTodoZone` seam
 // on the machine — they never name this class directly.
-data class TodoPeerTodoZonePayload(val start: Long, val offset: Int)
+data class TodoPeerTodoZonePayload(val zone: UByte, val start: Long, val offset: Int)
 
 
 // ── SCE Accepted Subset §2.15: sce-static enum and record variable classes ─────
@@ -166,12 +168,30 @@ data class TodoPeerOccurrenceRecord(val id: ULong, val start: Long, val end: Lon
         fun fromSaved(value: Any?, what: String): TodoPeerOccurrenceRecord = TodoPeerOccurrenceRecord(id = SavedValues.uint64(SavedValues.field(value, what, "id"), "$what.id"), start = SavedValues.int64(SavedValues.field(value, what, "start"), "$what.start"), end = SavedValues.int64(SavedValues.field(value, what, "end"), "$what.end"), nth = SavedValues.uint32(SavedValues.field(value, what, "nth"), "$what.nth"), conflict = SavedValues.uint8(SavedValues.field(value, what, "conflict"), "$what.conflict"))
     }
 }
+/** SCE Accepted Subset §2.15: a `record:Schedule` datamodel value. */
+data class TodoPeerScheduleRecord(val zone: Long, val start: Long, val length: Long, val freq: Long, val interval: Long, val days: Long, val count: Long, val until: Long, val bymonth: Long, val mdPos: Long, val mdNeg: Long, val dayA: Long, val dayB: Long, val spPos: Long, val spNeg: Long, val wkst: Long, val wnPos: Long, val wnNeg: Long, val yd0: Long, val yd1: Long, val yd2: Long, val yd3: Long, val yd4: Long, val yd5: Long, val ydn0: Long, val ydn1: Long, val ydn2: Long, val ydn3: Long, val ydn4: Long, val ydn5: Long, val gone: Long, val flag: Long) {
+    /** This value as a saved state writes it. */
+    fun toSaved(): Any = linkedMapOf("zone" to SavedValues.of(zone), "start" to SavedValues.of(start), "length" to SavedValues.of(length), "freq" to SavedValues.of(freq), "interval" to SavedValues.of(interval), "days" to SavedValues.of(days), "count" to SavedValues.of(count), "until" to SavedValues.of(until), "bymonth" to SavedValues.of(bymonth), "mdPos" to SavedValues.of(mdPos), "mdNeg" to SavedValues.of(mdNeg), "dayA" to SavedValues.of(dayA), "dayB" to SavedValues.of(dayB), "spPos" to SavedValues.of(spPos), "spNeg" to SavedValues.of(spNeg), "wkst" to SavedValues.of(wkst), "wnPos" to SavedValues.of(wnPos), "wnNeg" to SavedValues.of(wnNeg), "yd0" to SavedValues.of(yd0), "yd1" to SavedValues.of(yd1), "yd2" to SavedValues.of(yd2), "yd3" to SavedValues.of(yd3), "yd4" to SavedValues.of(yd4), "yd5" to SavedValues.of(yd5), "ydn0" to SavedValues.of(ydn0), "ydn1" to SavedValues.of(ydn1), "ydn2" to SavedValues.of(ydn2), "ydn3" to SavedValues.of(ydn3), "ydn4" to SavedValues.of(ydn4), "ydn5" to SavedValues.of(ydn5), "gone" to SavedValues.of(gone), "flag" to SavedValues.of(flag))
+
+    companion object {
+        /** The value a saved state holds, refused unless it is one. */
+        fun fromSaved(value: Any?, what: String): TodoPeerScheduleRecord = TodoPeerScheduleRecord(zone = SavedValues.int64(SavedValues.field(value, what, "zone"), "$what.zone"), start = SavedValues.int64(SavedValues.field(value, what, "start"), "$what.start"), length = SavedValues.int64(SavedValues.field(value, what, "length"), "$what.length"), freq = SavedValues.int64(SavedValues.field(value, what, "freq"), "$what.freq"), interval = SavedValues.int64(SavedValues.field(value, what, "interval"), "$what.interval"), days = SavedValues.int64(SavedValues.field(value, what, "days"), "$what.days"), count = SavedValues.int64(SavedValues.field(value, what, "count"), "$what.count"), until = SavedValues.int64(SavedValues.field(value, what, "until"), "$what.until"), bymonth = SavedValues.int64(SavedValues.field(value, what, "bymonth"), "$what.bymonth"), mdPos = SavedValues.int64(SavedValues.field(value, what, "mdPos"), "$what.mdPos"), mdNeg = SavedValues.int64(SavedValues.field(value, what, "mdNeg"), "$what.mdNeg"), dayA = SavedValues.int64(SavedValues.field(value, what, "dayA"), "$what.dayA"), dayB = SavedValues.int64(SavedValues.field(value, what, "dayB"), "$what.dayB"), spPos = SavedValues.int64(SavedValues.field(value, what, "spPos"), "$what.spPos"), spNeg = SavedValues.int64(SavedValues.field(value, what, "spNeg"), "$what.spNeg"), wkst = SavedValues.int64(SavedValues.field(value, what, "wkst"), "$what.wkst"), wnPos = SavedValues.int64(SavedValues.field(value, what, "wnPos"), "$what.wnPos"), wnNeg = SavedValues.int64(SavedValues.field(value, what, "wnNeg"), "$what.wnNeg"), yd0 = SavedValues.int64(SavedValues.field(value, what, "yd0"), "$what.yd0"), yd1 = SavedValues.int64(SavedValues.field(value, what, "yd1"), "$what.yd1"), yd2 = SavedValues.int64(SavedValues.field(value, what, "yd2"), "$what.yd2"), yd3 = SavedValues.int64(SavedValues.field(value, what, "yd3"), "$what.yd3"), yd4 = SavedValues.int64(SavedValues.field(value, what, "yd4"), "$what.yd4"), yd5 = SavedValues.int64(SavedValues.field(value, what, "yd5"), "$what.yd5"), ydn0 = SavedValues.int64(SavedValues.field(value, what, "ydn0"), "$what.ydn0"), ydn1 = SavedValues.int64(SavedValues.field(value, what, "ydn1"), "$what.ydn1"), ydn2 = SavedValues.int64(SavedValues.field(value, what, "ydn2"), "$what.ydn2"), ydn3 = SavedValues.int64(SavedValues.field(value, what, "ydn3"), "$what.ydn3"), ydn4 = SavedValues.int64(SavedValues.field(value, what, "ydn4"), "$what.ydn4"), ydn5 = SavedValues.int64(SavedValues.field(value, what, "ydn5"), "$what.ydn5"), gone = SavedValues.int64(SavedValues.field(value, what, "gone"), "$what.gone"), flag = SavedValues.int64(SavedValues.field(value, what, "flag"), "$what.flag"))
+    }
+}
 // ── SCE Accepted Subset §2.15: calls of an algorithm that takes or returns state ──
-private fun call_EventAgenda__v(p0: List<TodoPeerValueRecord>, p1: ULong, p2: Long, p3: Long): com.sce.forge.runtime.AlgorithmResult<List<TodoPeerOccurrenceRecord>> =
-    when (val r = eventAgenda(p0.map { MvValuePayload(id = it.id, field = it.field, value = it.value, text = it.text, wallTime = it.wallTime, counter = it.counter, nodeId = it.nodeId) }, p1, p2, p3)) {
+private fun call_EventAgenda__vv(p0: TodoPeerScheduleRecord, p1: List<TodoPeerValueRecord>, p2: ULong, p3: Long, p4: Long, p5: UInt): com.sce.forge.runtime.AlgorithmResult<List<TodoPeerOccurrenceRecord>> =
+    when (val r = eventAgenda(EventSchedulePayload(zone = p0.zone, start = p0.start, length = p0.length, freq = p0.freq, interval = p0.interval, days = p0.days, count = p0.count, until = p0.until, bymonth = p0.bymonth, mdPos = p0.mdPos, mdNeg = p0.mdNeg, dayA = p0.dayA, dayB = p0.dayB, spPos = p0.spPos, spNeg = p0.spNeg, wkst = p0.wkst, wnPos = p0.wnPos, wnNeg = p0.wnNeg, yd0 = p0.yd0, yd1 = p0.yd1, yd2 = p0.yd2, yd3 = p0.yd3, yd4 = p0.yd4, yd5 = p0.yd5, ydn0 = p0.ydn0, ydn1 = p0.ydn1, ydn2 = p0.ydn2, ydn3 = p0.ydn3, ydn4 = p0.ydn4, ydn5 = p0.ydn5, gone = p0.gone, flag = p0.flag), p1.map { MvValuePayload(id = it.id, field = it.field, value = it.value, text = it.text, wallTime = it.wallTime, counter = it.counter, nodeId = it.nodeId) }, p2, p3, p4, p5)) {
         is com.sce.forge.runtime.AlgorithmResult.Ok -> com.sce.forge.runtime.AlgorithmResult.Ok(r.value.map { TodoPeerOccurrenceRecord(id = it.id, start = it.start, end = it.end, nth = it.nth, conflict = it.conflict) })
         is com.sce.forge.runtime.AlgorithmResult.Failed -> r
     }
+private fun call_EventConflict__v(p0: List<TodoPeerValueRecord>, p1: ULong): Boolean {
+    val r = eventConflict(p0.map { MvValuePayload(id = it.id, field = it.field, value = it.value, text = it.text, wallTime = it.wallTime, counter = it.counter, nodeId = it.nodeId) }, p1)
+    return r
+}
+private fun call_EventLatest__v(p0: List<TodoPeerValueRecord>, p1: ULong, p2: ULong, p3: Long): Long {
+    val r = eventLatest(p0.map { MvValuePayload(id = it.id, field = it.field, value = it.value, text = it.text, wallTime = it.wallTime, counter = it.counter, nodeId = it.nodeId) }, p1, p2, p3)
+    return r
+}
 private fun call_HlcReceive__vv(p0: TodoPeerHlcRecord, p1: TodoPeerHlcRecord, p2: Long, p3: ULong): com.sce.forge.runtime.AlgorithmResult<TodoPeerHlcRecord> =
     when (val r = hlcReceive(HlcTimestampPayload(wallTime = p0.wallTime, counter = p0.counter, nodeId = p0.nodeId), HlcTimestampPayload(wallTime = p1.wallTime, counter = p1.counter, nodeId = p1.nodeId), p2, p3)) {
         is com.sce.forge.runtime.AlgorithmResult.Ok -> com.sce.forge.runtime.AlgorithmResult.Ok(TodoPeerHlcRecord(wallTime = r.value.wallTime, counter = r.value.counter, nodeId = r.value.nodeId))
@@ -223,11 +243,6 @@ private fun call_OrsetUnion__vv(p0: List<TodoPeerEntryRecord>, p1: List<TodoPeer
     }
 private fun call_UtcFromLocal__vv(p0: List<Long>, p1: List<Int>, p2: Long): com.sce.forge.runtime.AlgorithmResult<Long> =
     when (val r = utcFromLocal(p0.toLongArray(), p1.toIntArray(), p2)) {
-        is com.sce.forge.runtime.AlgorithmResult.Ok -> com.sce.forge.runtime.AlgorithmResult.Ok(r.value)
-        is com.sce.forge.runtime.AlgorithmResult.Failed -> r
-    }
-private fun call_UtcOffsetAt__vv(p0: List<Long>, p1: List<Int>, p2: Long): com.sce.forge.runtime.AlgorithmResult<Int> =
-    when (val r = utcOffsetAt(p0.toLongArray(), p1.toIntArray(), p2)) {
         is com.sce.forge.runtime.AlgorithmResult.Ok -> com.sce.forge.runtime.AlgorithmResult.Ok(r.value)
         is com.sce.forge.runtime.AlgorithmResult.Failed -> r
     }
@@ -310,16 +325,41 @@ class TodoPeerStateMachine(
     private var vLocal: List<TodoPeerOccurrenceRecord> = emptyList()
     /** W3C SCXML 5.2: the `occ` datamodel variable, the machine's own. */
     private var vOcc: TodoPeerOccurrenceRecord = TodoPeerOccurrenceRecord(id = 0.toULong(), start = 0, end = 0, nth = 0.toUInt(), conflict = 0.toUByte())
+    /** W3C SCXML 5.2: the `agendaNext` datamodel variable, published (`sce:direction="out"`). */
+    private var vAgendaNext: UInt = 0.toUInt()
+
+    /** What the published `agendaNext` holds. */
+    val agendaNext: UInt get() = vAgendaNext
+    /** W3C SCXML 5.2: the `zoneStarts1` datamodel variable, the machine's own. */
+    private var vZoneStarts1: List<Long> = emptyList()
+    /** W3C SCXML 5.2: the `zoneOffsets1` datamodel variable, the machine's own. */
+    private var vZoneOffsets1: List<Int> = emptyList()
+    /** W3C SCXML 5.2: the `zoneStarts2` datamodel variable, the machine's own. */
+    private var vZoneStarts2: List<Long> = emptyList()
+    /** W3C SCXML 5.2: the `zoneOffsets2` datamodel variable, the machine's own. */
+    private var vZoneOffsets2: List<Int> = emptyList()
+    /** W3C SCXML 5.2: the `zoneStarts3` datamodel variable, the machine's own. */
+    private var vZoneStarts3: List<Long> = emptyList()
+    /** W3C SCXML 5.2: the `zoneOffsets3` datamodel variable, the machine's own. */
+    private var vZoneOffsets3: List<Int> = emptyList()
+    /** W3C SCXML 5.2: the `zoneStarts4` datamodel variable, the machine's own. */
+    private var vZoneStarts4: List<Long> = emptyList()
+    /** W3C SCXML 5.2: the `zoneOffsets4` datamodel variable, the machine's own. */
+    private var vZoneOffsets4: List<Int> = emptyList()
     /** W3C SCXML 5.2: the `zoneStarts` datamodel variable, the machine's own. */
     private var vZoneStarts: List<Long> = emptyList()
     /** W3C SCXML 5.2: the `zoneOffsets` datamodel variable, the machine's own. */
     private var vZoneOffsets: List<Int> = emptyList()
-    /** W3C SCXML 5.2: the `zoned` datamodel variable, the machine's own. */
-    private var vZoned: Boolean = false
-    /** W3C SCXML 5.2: the `offStart` datamodel variable, the machine's own. */
-    private var vOffStart: Int = 0
-    /** W3C SCXML 5.2: the `offEnd` datamodel variable, the machine's own. */
-    private var vOffEnd: Int = 0
+    /** W3C SCXML 5.2: the `zoneRows` datamodel variable, the machine's own. */
+    private var vZoneRows: UInt = 0.toUInt()
+    /** W3C SCXML 5.2: the `split` datamodel variable, the machine's own. */
+    private var vSplit: Boolean = false
+    /** W3C SCXML 5.2: the `sched` datamodel variable, the machine's own. */
+    private var vSched: TodoPeerScheduleRecord = TodoPeerScheduleRecord(zone = 0, start = -1, length = 0, freq = 0, interval = 1, days = 0, count = 0, until = 0, bymonth = 0, mdPos = 0, mdNeg = 0, dayA = 0, dayB = 0, spPos = 0, spNeg = 0, wkst = 1, wnPos = 0, wnNeg = 0, yd0 = 0, yd1 = 0, yd2 = 0, yd3 = 0, yd4 = 0, yd5 = 0, ydn0 = 0, ydn1 = 0, ydn2 = 0, ydn3 = 0, ydn4 = 0, ydn5 = 0, gone = 0, flag = 0)
+    /** W3C SCXML 5.2: the `rawCount` datamodel variable, the machine's own. */
+    private var vRawCount: UInt = 0.toUInt()
+    /** W3C SCXML 5.2: the `rawLast` datamodel variable, the machine's own. */
+    private var vRawLast: UInt = 0.toUInt()
     /** W3C SCXML 5.2: the `utcSec` datamodel variable, the machine's own. */
     private var vUtcSec: Long = 0
 
@@ -339,9 +379,11 @@ class TodoPeerStateMachine(
         var isLive: Boolean? = null
         var present: Boolean? = null
         var refusals: UInt? = null
-        var zoned: Boolean? = null
-        var offStart: Int? = null
-        var offEnd: Int? = null
+        var agendaNext: UInt? = null
+        var zoneRows: UInt? = null
+        var split: Boolean? = null
+        var rawCount: UInt? = null
+        var rawLast: UInt? = null
         var utcSec: Long? = null
     }
 
@@ -357,9 +399,11 @@ class TodoPeerStateMachine(
         params.isLive?.let { vIsLive = it }
         params.present?.let { vPresent = it }
         params.refusals?.let { vRefusals = it }
-        params.zoned?.let { vZoned = it }
-        params.offStart?.let { vOffStart = it }
-        params.offEnd?.let { vOffEnd = it }
+        params.agendaNext?.let { vAgendaNext = it }
+        params.zoneRows?.let { vZoneRows = it }
+        params.split?.let { vSplit = it }
+        params.rawCount?.let { vRawCount = it }
+        params.rawLast?.let { vRawLast = it }
         params.utcSec?.let { vUtcSec = it }
     }
 
@@ -374,6 +418,7 @@ class TodoPeerStateMachine(
         val digest: List<TodoPeerNodeRecord>,
         val refusals: UInt,
         val agenda: List<TodoPeerOccurrenceRecord>,
+        val agendaNext: UInt,
     )
 
     /**
@@ -399,6 +444,7 @@ class TodoPeerStateMachine(
         digest = vDigest,
         refusals = vRefusals,
         agenda = vAgenda,
+        agendaNext = vAgendaNext,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -425,7 +471,7 @@ class TodoPeerStateMachine(
      * from a document that renamed, re-typed or moved a state or a variable is
      * refused, one saved before a guard or an action changed is not.
      */
-    val savedShape: String = "bc6fb654993165f167e3530a1545f264295f6f345e20f367abc7020e27ebd05c"
+    val savedShape: String = "0d675589a1a598d334338d7def482d151314b543b4cdc5f04d343a186a0ffcb5"
 
     /**
      * This machine's whole state at the macrostep boundary it stands at —
@@ -465,11 +511,22 @@ class TodoPeerStateMachine(
             "agenda" to SavedValues.list(vAgenda) { it.toSaved() },
             "local" to SavedValues.list(vLocal) { it.toSaved() },
             "occ" to vOcc.toSaved(),
+            "agendaNext" to SavedValues.of(vAgendaNext),
+            "zoneStarts1" to SavedValues.list(vZoneStarts1) { SavedValues.of(it) },
+            "zoneOffsets1" to SavedValues.list(vZoneOffsets1) { SavedValues.of(it) },
+            "zoneStarts2" to SavedValues.list(vZoneStarts2) { SavedValues.of(it) },
+            "zoneOffsets2" to SavedValues.list(vZoneOffsets2) { SavedValues.of(it) },
+            "zoneStarts3" to SavedValues.list(vZoneStarts3) { SavedValues.of(it) },
+            "zoneOffsets3" to SavedValues.list(vZoneOffsets3) { SavedValues.of(it) },
+            "zoneStarts4" to SavedValues.list(vZoneStarts4) { SavedValues.of(it) },
+            "zoneOffsets4" to SavedValues.list(vZoneOffsets4) { SavedValues.of(it) },
             "zoneStarts" to SavedValues.list(vZoneStarts) { SavedValues.of(it) },
             "zoneOffsets" to SavedValues.list(vZoneOffsets) { SavedValues.of(it) },
-            "zoned" to SavedValues.of(vZoned),
-            "offStart" to SavedValues.of(vOffStart),
-            "offEnd" to SavedValues.of(vOffEnd),
+            "zoneRows" to SavedValues.of(vZoneRows),
+            "split" to SavedValues.of(vSplit),
+            "sched" to vSched.toSaved(),
+            "rawCount" to SavedValues.of(vRawCount),
+            "rawLast" to SavedValues.of(vRawLast),
             "utcSec" to SavedValues.of(vUtcSec),
         ),
         wallNowMs,
@@ -520,12 +577,23 @@ class TodoPeerStateMachine(
         val saved22 = SavedValues.list(saved.variable("agenda"), "agenda", 64) { e, w -> TodoPeerOccurrenceRecord.fromSaved(e, w) }
         val saved23 = SavedValues.list(saved.variable("local"), "local", 64) { e, w -> TodoPeerOccurrenceRecord.fromSaved(e, w) }
         val saved24 = TodoPeerOccurrenceRecord.fromSaved(saved.variable("occ"), "occ")
-        val saved25 = SavedValues.list(saved.variable("zoneStarts"), "zoneStarts", 64) { e, w -> SavedValues.int64(e, w) }
-        val saved26 = SavedValues.list(saved.variable("zoneOffsets"), "zoneOffsets", 64) { e, w -> SavedValues.int32(e, w) }
-        val saved27 = SavedValues.bool(saved.variable("zoned"), "zoned")
-        val saved28 = SavedValues.int32(saved.variable("offStart"), "offStart")
-        val saved29 = SavedValues.int32(saved.variable("offEnd"), "offEnd")
-        val saved30 = SavedValues.int64(saved.variable("utcSec"), "utcSec")
+        val saved25 = SavedValues.uint32(saved.variable("agendaNext"), "agendaNext")
+        val saved26 = SavedValues.list(saved.variable("zoneStarts1"), "zoneStarts1", 64) { e, w -> SavedValues.int64(e, w) }
+        val saved27 = SavedValues.list(saved.variable("zoneOffsets1"), "zoneOffsets1", 64) { e, w -> SavedValues.int32(e, w) }
+        val saved28 = SavedValues.list(saved.variable("zoneStarts2"), "zoneStarts2", 64) { e, w -> SavedValues.int64(e, w) }
+        val saved29 = SavedValues.list(saved.variable("zoneOffsets2"), "zoneOffsets2", 64) { e, w -> SavedValues.int32(e, w) }
+        val saved30 = SavedValues.list(saved.variable("zoneStarts3"), "zoneStarts3", 64) { e, w -> SavedValues.int64(e, w) }
+        val saved31 = SavedValues.list(saved.variable("zoneOffsets3"), "zoneOffsets3", 64) { e, w -> SavedValues.int32(e, w) }
+        val saved32 = SavedValues.list(saved.variable("zoneStarts4"), "zoneStarts4", 64) { e, w -> SavedValues.int64(e, w) }
+        val saved33 = SavedValues.list(saved.variable("zoneOffsets4"), "zoneOffsets4", 64) { e, w -> SavedValues.int32(e, w) }
+        val saved34 = SavedValues.list(saved.variable("zoneStarts"), "zoneStarts", 64) { e, w -> SavedValues.int64(e, w) }
+        val saved35 = SavedValues.list(saved.variable("zoneOffsets"), "zoneOffsets", 64) { e, w -> SavedValues.int32(e, w) }
+        val saved36 = SavedValues.uint32(saved.variable("zoneRows"), "zoneRows")
+        val saved37 = SavedValues.bool(saved.variable("split"), "split")
+        val saved38 = TodoPeerScheduleRecord.fromSaved(saved.variable("sched"), "sched")
+        val saved39 = SavedValues.uint32(saved.variable("rawCount"), "rawCount")
+        val saved40 = SavedValues.uint32(saved.variable("rawLast"), "rawLast")
+        val saved41 = SavedValues.int64(saved.variable("utcSec"), "utcSec")
         vNode = saved1
         vHub = saved2
         vClock = saved3
@@ -550,12 +618,23 @@ class TodoPeerStateMachine(
         vAgenda = saved22
         vLocal = saved23
         vOcc = saved24
-        vZoneStarts = saved25
-        vZoneOffsets = saved26
-        vZoned = saved27
-        vOffStart = saved28
-        vOffEnd = saved29
-        vUtcSec = saved30
+        vAgendaNext = saved25
+        vZoneStarts1 = saved26
+        vZoneOffsets1 = saved27
+        vZoneStarts2 = saved28
+        vZoneOffsets2 = saved29
+        vZoneStarts3 = saved30
+        vZoneOffsets3 = saved31
+        vZoneStarts4 = saved32
+        vZoneOffsets4 = saved33
+        vZoneStarts = saved34
+        vZoneOffsets = saved35
+        vZoneRows = saved36
+        vSplit = saved37
+        vSched = saved38
+        vRawCount = saved39
+        vRawLast = saved40
+        vUtcSec = saved41
         enterSaved(saved, wallNowMs)
     }
 
@@ -611,7 +690,7 @@ class TodoPeerStateMachine(
                 // fields out of `data`, which every other producer fills.
                 if (event == TodoPeerEvent.Todo.Agenda) {
                     val fields = EventPayload.decode(metadata.data)
-                    pendingTodoAgendaPayload = TodoPeerTodoAgendaPayload(fields.uint32("id"), fields.int64("windowStart"), fields.int64("windowEnd"))
+                    pendingTodoAgendaPayload = TodoPeerTodoAgendaPayload(fields.uint32("id"), fields.int64("windowStart"), fields.int64("windowEnd"), fields.uint32("skip"))
                 } else if (event == TodoPeerEvent.Todo.Edit) {
                     val fields = EventPayload.decode(metadata.data)
                     pendingTodoEditPayload = TodoPeerTodoEditPayload(fields.uint32("id"), fields.uint16("field"), fields.int64("value"), fields.string("text"), fields.int64("now"))
@@ -638,7 +717,7 @@ class TodoPeerStateMachine(
                     pendingTodoWritePayload = TodoPeerTodoWritePayload(fields.uint32("id"), fields.uint16("field"), fields.int64("value"), fields.string("text"), fields.int64("wallTime"), fields.uint32("counter"), fields.uint64("nodeId"))
                 } else if (event == TodoPeerEvent.Todo.Zone) {
                     val fields = EventPayload.decode(metadata.data)
-                    pendingTodoZonePayload = TodoPeerTodoZonePayload(fields.int64("start"), fields.int32("offset"))
+                    pendingTodoZonePayload = TodoPeerTodoZonePayload(fields.uint8("zone"), fields.int64("start"), fields.int32("offset"))
                 }
             }
         }
@@ -647,17 +726,17 @@ class TodoPeerStateMachine(
     // NL→IR Item C1 Path A: per-event typed `_event.data` inject seams.
     // NL→IR Item C1 Path A typed `_event.data` inject seam for
     // `todo.agenda` — binds the event name and the payload field values in one call.
-    fun raiseTodoAgenda(id: UInt, windowStart: Long, windowEnd: Long) {
+    fun raiseTodoAgenda(id: UInt, windowStart: Long, windowEnd: Long, skip: UInt) {
         send(
             TodoPeerEvent.Todo.Agenda,
             EventMetadata(
                 type = "external",
-                typedPayload = TodoPeerTodoAgendaPayload(id, windowStart, windowEnd),
+                typedPayload = TodoPeerTodoAgendaPayload(id, windowStart, windowEnd, skip),
                 // Both carriers are filled: the typed one a native guard reads, and
                 // `data`, which is what the script engine binds `_event.data` from.
                 // Filling only the first left an `<assign expr="_event.data.x">` on
                 // this event reading nothing, on every backend alike.
-                data = EventPayload.encode(mapOf("id" to id, "windowStart" to windowStart, "windowEnd" to windowEnd))
+                data = EventPayload.encode(mapOf("id" to id, "windowStart" to windowStart, "windowEnd" to windowEnd, "skip" to skip))
             )
         )
     }
@@ -791,17 +870,17 @@ class TodoPeerStateMachine(
     }
     // NL→IR Item C1 Path A typed `_event.data` inject seam for
     // `todo.zone` — binds the event name and the payload field values in one call.
-    fun raiseTodoZone(start: Long, offset: Int) {
+    fun raiseTodoZone(zone: UByte, start: Long, offset: Int) {
         send(
             TodoPeerEvent.Todo.Zone,
             EventMetadata(
                 type = "external",
-                typedPayload = TodoPeerTodoZonePayload(start, offset),
+                typedPayload = TodoPeerTodoZonePayload(zone, start, offset),
                 // Both carriers are filled: the typed one a native guard reads, and
                 // `data`, which is what the script engine binds `_event.data` from.
                 // Filling only the first left an `<assign expr="_event.data.x">` on
                 // this event reading nothing, on every backend alike.
-                data = EventPayload.encode(mapOf("start" to start, "offset" to offset))
+                data = EventPayload.encode(mapOf("zone" to zone, "start" to start, "offset" to offset))
             )
         )
     }
@@ -1039,7 +1118,7 @@ class TodoPeerStateMachine(
     override fun onEntry(state: TodoPeerState, isDefaultEntry: Boolean) {
         when (state) {
             is TodoPeerState.Open -> {
-                // SCE-MAP: todo_peer.scxml:160 :: open :: _state_body
+                // SCE-MAP: todo_peer.scxml:208 :: open :: _state_body
             }
         }
     }
@@ -1049,7 +1128,7 @@ class TodoPeerStateMachine(
     override fun onExit(state: TodoPeerState) {
         when (state) {
             is TodoPeerState.Open -> {
-                // SCE-MAP: todo_peer.scxml:160 :: open :: _state_body
+                // SCE-MAP: todo_peer.scxml:208 :: open :: _state_body
             }
         }
     }
@@ -1061,7 +1140,7 @@ class TodoPeerStateMachine(
         when (source) {
         is TodoPeerState.Open -> when (transitionIndex) {
             0 -> {
-                // SCE-MAP: todo_peer.scxml:161 :: open :: _transition_0
+                // SCE-MAP: todo_peer.scxml:209 :: open :: _transition_0
                 if (pendingTodoJoinPayload == null) {
                     return
                 }
@@ -1071,7 +1150,7 @@ class TodoPeerStateMachine(
             vHub = pendingTodoJoinPayload!!.hub
             }
             1 -> {
-                // SCE-MAP: todo_peer.scxml:169 :: open :: _transition_1
+                // SCE-MAP: todo_peer.scxml:217 :: open :: _transition_1
                 if (pendingTodoEditPayload == null) {
                     return
                 }
@@ -1269,7 +1348,7 @@ class TodoPeerStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             2 -> {
-                // SCE-MAP: todo_peer.scxml:218 :: open :: _transition_2
+                // SCE-MAP: todo_peer.scxml:266 :: open :: _transition_2
                 if (pendingTodoWritePayload == null) {
                     return
                 }
@@ -1507,7 +1586,7 @@ class TodoPeerStateMachine(
             }
             }
             3 -> {
-                // SCE-MAP: todo_peer.scxml:300 :: open :: _transition_3
+                // SCE-MAP: todo_peer.scxml:348 :: open :: _transition_3
                 if (pendingTodoSupersedePayload == null) {
                     return
                 }
@@ -1737,7 +1816,7 @@ class TodoPeerStateMachine(
             }
             }
             4 -> {
-                // SCE-MAP: todo_peer.scxml:371 :: open :: _transition_4
+                // SCE-MAP: todo_peer.scxml:419 :: open :: _transition_4
                 if (pendingTodoKeepPayload == null) {
                     return
                 }
@@ -1759,7 +1838,7 @@ class TodoPeerStateMachine(
             }
             }
             5 -> {
-                // SCE-MAP: todo_peer.scxml:383 :: open :: _transition_5
+                // SCE-MAP: todo_peer.scxml:431 :: open :: _transition_5
 
 
             if (!vHub) {
@@ -1836,7 +1915,7 @@ class TodoPeerStateMachine(
             }
             }
             6 -> {
-                // SCE-MAP: todo_peer.scxml:410 :: open :: _transition_6
+                // SCE-MAP: todo_peer.scxml:458 :: open :: _transition_6
                 if (pendingTodoVisitPayload == null) {
                     return
                 }
@@ -2025,7 +2104,7 @@ class TodoPeerStateMachine(
             }
             }
             7 -> {
-                // SCE-MAP: todo_peer.scxml:451 :: open :: _transition_7
+                // SCE-MAP: todo_peer.scxml:499 :: open :: _transition_7
                 if (pendingTodoNodePayload == null) {
                     return
                 }
@@ -2194,7 +2273,7 @@ class TodoPeerStateMachine(
             }
             }
             8 -> {
-                // SCE-MAP: todo_peer.scxml:498 :: open :: _transition_8
+                // SCE-MAP: todo_peer.scxml:546 :: open :: _transition_8
                 if (pendingTodoSharePayload == null) {
                     return
                 }
@@ -2600,38 +2679,226 @@ class TodoPeerStateMachine(
             }
             }
             9 -> {
-                // SCE-MAP: todo_peer.scxml:580 :: open :: _transition_9
+                // SCE-MAP: todo_peer.scxml:628 :: open :: _transition_9
                 if (pendingTodoAgendaPayload == null) {
                     return
                 }
 
             vAgenda = emptyList()
 
+            vAgendaNext = 0.toUInt()
 
-            if (!vZoned) {
+            vRawCount = 0.toUInt()
 
-            if (try { vAgenda = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_EventAgenda__v(vValues, pendingTodoAgendaPayload!!.id.toULong(), pendingTodoAgendaPayload!!.windowStart, pendingTodoAgendaPayload!!.windowEnd)), 64); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='agenda'>: an integer operation overflowed or failed"); true }) {
+            vRawLast = 0.toUInt()
+
+            vSched = vSched.copy(zone = call_EventLatest__v(vValues, pendingTodoAgendaPayload!!.id.toULong(), 15.toULong(), 0))
+
+            vSched = vSched.copy(start = call_EventLatest__v(vValues, pendingTodoAgendaPayload!!.id.toULong(), 16.toULong(), -1))
+
+            vSched = vSched.copy(length = call_EventLatest__v(vValues, pendingTodoAgendaPayload!!.id.toULong(), 17.toULong(), 0))
+
+            vSched = vSched.copy(freq = call_EventLatest__v(vValues, pendingTodoAgendaPayload!!.id.toULong(), 18.toULong(), 0))
+
+            vSched = vSched.copy(interval = call_EventLatest__v(vValues, pendingTodoAgendaPayload!!.id.toULong(), 19.toULong(), 1))
+
+            vSched = vSched.copy(days = call_EventLatest__v(vValues, pendingTodoAgendaPayload!!.id.toULong(), 20.toULong(), 0))
+
+            vSched = vSched.copy(count = call_EventLatest__v(vValues, pendingTodoAgendaPayload!!.id.toULong(), 21.toULong(), 0))
+
+            vSched = vSched.copy(until = call_EventLatest__v(vValues, pendingTodoAgendaPayload!!.id.toULong(), 22.toULong(), 0))
+
+            vSched = vSched.copy(bymonth = call_EventLatest__v(vValues, pendingTodoAgendaPayload!!.id.toULong(), 23.toULong(), 0))
+
+            vSched = vSched.copy(mdPos = call_EventLatest__v(vValues, pendingTodoAgendaPayload!!.id.toULong(), 24.toULong(), 0))
+
+            vSched = vSched.copy(mdNeg = call_EventLatest__v(vValues, pendingTodoAgendaPayload!!.id.toULong(), 25.toULong(), 0))
+
+            vSched = vSched.copy(dayA = call_EventLatest__v(vValues, pendingTodoAgendaPayload!!.id.toULong(), 26.toULong(), 0))
+
+            vSched = vSched.copy(dayB = call_EventLatest__v(vValues, pendingTodoAgendaPayload!!.id.toULong(), 27.toULong(), 0))
+
+            vSched = vSched.copy(spPos = call_EventLatest__v(vValues, pendingTodoAgendaPayload!!.id.toULong(), 28.toULong(), 0))
+
+            vSched = vSched.copy(spNeg = call_EventLatest__v(vValues, pendingTodoAgendaPayload!!.id.toULong(), 29.toULong(), 0))
+
+            vSched = vSched.copy(wkst = call_EventLatest__v(vValues, pendingTodoAgendaPayload!!.id.toULong(), 30.toULong(), 1))
+
+            vSched = vSched.copy(wnPos = call_EventLatest__v(vValues, pendingTodoAgendaPayload!!.id.toULong(), 31.toULong(), 0))
+
+            vSched = vSched.copy(wnNeg = call_EventLatest__v(vValues, pendingTodoAgendaPayload!!.id.toULong(), 32.toULong(), 0))
+
+            vSched = vSched.copy(yd0 = call_EventLatest__v(vValues, pendingTodoAgendaPayload!!.id.toULong(), 33.toULong(), 0))
+
+            vSched = vSched.copy(yd1 = call_EventLatest__v(vValues, pendingTodoAgendaPayload!!.id.toULong(), 34.toULong(), 0))
+
+            vSched = vSched.copy(yd2 = call_EventLatest__v(vValues, pendingTodoAgendaPayload!!.id.toULong(), 35.toULong(), 0))
+
+            vSched = vSched.copy(yd3 = call_EventLatest__v(vValues, pendingTodoAgendaPayload!!.id.toULong(), 36.toULong(), 0))
+
+            vSched = vSched.copy(yd4 = call_EventLatest__v(vValues, pendingTodoAgendaPayload!!.id.toULong(), 37.toULong(), 0))
+
+            vSched = vSched.copy(yd5 = call_EventLatest__v(vValues, pendingTodoAgendaPayload!!.id.toULong(), 38.toULong(), 0))
+
+            vSched = vSched.copy(ydn0 = call_EventLatest__v(vValues, pendingTodoAgendaPayload!!.id.toULong(), 39.toULong(), 0))
+
+            vSched = vSched.copy(ydn1 = call_EventLatest__v(vValues, pendingTodoAgendaPayload!!.id.toULong(), 40.toULong(), 0))
+
+            vSched = vSched.copy(ydn2 = call_EventLatest__v(vValues, pendingTodoAgendaPayload!!.id.toULong(), 41.toULong(), 0))
+
+            vSched = vSched.copy(ydn3 = call_EventLatest__v(vValues, pendingTodoAgendaPayload!!.id.toULong(), 42.toULong(), 0))
+
+            vSched = vSched.copy(ydn4 = call_EventLatest__v(vValues, pendingTodoAgendaPayload!!.id.toULong(), 43.toULong(), 0))
+
+            vSched = vSched.copy(ydn5 = call_EventLatest__v(vValues, pendingTodoAgendaPayload!!.id.toULong(), 44.toULong(), 0))
+
+            vSched = vSched.copy(gone = call_EventLatest__v(vValues, pendingTodoAgendaPayload!!.id.toULong(), 9.toULong(), 0))
+
+            vSplit = call_EventConflict__v(vValues, pendingTodoAgendaPayload!!.id.toULong())
+
+            vSched = vSched.copy(flag = 0)
+
+
+            if (vSplit) {
+
+            vSched = vSched.copy(flag = 1)
+            }
+
+            vZoneStarts = emptyList()
+
+            vZoneOffsets = emptyList()
+
+            vZoneRows = 0.toUInt()
+
+
+            if (vSched.zone == 1L) {
+
+
+            for (s1 in vZoneStarts1) {
+
+            if (if (vZoneStarts.size < 64) { vZoneStarts = vZoneStarts + (s1); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, "<sce:append target='zoneStarts'>: the list already holds its capacity of 64"); true }) {
+                return
+            }
+
+            if (try { vZoneRows = com.sce.forge.runtime.SceChecked.add(vZoneRows, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='zoneRows'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
 
 
-            if (vZoned) {
+            for (o1 in vZoneOffsets1) {
 
-            if (try { vOffStart = com.sce.forge.runtime.SceChecked.take(call_UtcOffsetAt__vv(vZoneStarts, vZoneOffsets, com.sce.forge.runtime.SceChecked.div(pendingTodoAgendaPayload!!.windowStart, 1000))); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='offStart'>: an integer operation overflowed or failed"); true }) {
+            if (if (vZoneOffsets.size < 64) { vZoneOffsets = vZoneOffsets + (o1); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, "<sce:append target='zoneOffsets'>: the list already holds its capacity of 64"); true }) {
+                return
+            }
+            }
+            }
+
+
+            if (vSched.zone == 2L) {
+
+
+            for (s2 in vZoneStarts2) {
+
+            if (if (vZoneStarts.size < 64) { vZoneStarts = vZoneStarts + (s2); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, "<sce:append target='zoneStarts'>: the list already holds its capacity of 64"); true }) {
                 return
             }
 
-            if (try { vOffEnd = com.sce.forge.runtime.SceChecked.take(call_UtcOffsetAt__vv(vZoneStarts, vZoneOffsets, com.sce.forge.runtime.SceChecked.div(pendingTodoAgendaPayload!!.windowEnd, 1000))); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='offEnd'>: an integer operation overflowed or failed"); true }) {
+            if (try { vZoneRows = com.sce.forge.runtime.SceChecked.add(vZoneRows, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='zoneRows'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+            }
+
+
+            for (o2 in vZoneOffsets2) {
+
+            if (if (vZoneOffsets.size < 64) { vZoneOffsets = vZoneOffsets + (o2); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, "<sce:append target='zoneOffsets'>: the list already holds its capacity of 64"); true }) {
+                return
+            }
+            }
+            }
+
+
+            if (vSched.zone == 3L) {
+
+
+            for (s3 in vZoneStarts3) {
+
+            if (if (vZoneStarts.size < 64) { vZoneStarts = vZoneStarts + (s3); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, "<sce:append target='zoneStarts'>: the list already holds its capacity of 64"); true }) {
                 return
             }
 
-            if (try { vLocal = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_EventAgenda__v(vValues, pendingTodoAgendaPayload!!.id.toULong(), com.sce.forge.runtime.SceChecked.sub(com.sce.forge.runtime.SceChecked.add(pendingTodoAgendaPayload!!.windowStart, com.sce.forge.runtime.SceChecked.mul(vOffStart, 1000).toLong()), 86400000), com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.add(pendingTodoAgendaPayload!!.windowEnd, com.sce.forge.runtime.SceChecked.mul(vOffEnd, 1000).toLong()), 86400000))), 64); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='local'>: an integer operation overflowed or failed"); true }) {
+            if (try { vZoneRows = com.sce.forge.runtime.SceChecked.add(vZoneRows, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='zoneRows'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+            }
+
+
+            for (o3 in vZoneOffsets3) {
+
+            if (if (vZoneOffsets.size < 64) { vZoneOffsets = vZoneOffsets + (o3); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, "<sce:append target='zoneOffsets'>: the list already holds its capacity of 64"); true }) {
+                return
+            }
+            }
+            }
+
+
+            if (vSched.zone == 4L) {
+
+
+            for (s4 in vZoneStarts4) {
+
+            if (if (vZoneStarts.size < 64) { vZoneStarts = vZoneStarts + (s4); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, "<sce:append target='zoneStarts'>: the list already holds its capacity of 64"); true }) {
+                return
+            }
+
+            if (try { vZoneRows = com.sce.forge.runtime.SceChecked.add(vZoneRows, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='zoneRows'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+            }
+
+
+            for (o4 in vZoneOffsets4) {
+
+            if (if (vZoneOffsets.size < 64) { vZoneOffsets = vZoneOffsets + (o4); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, "<sce:append target='zoneOffsets'>: the list already holds its capacity of 64"); true }) {
+                return
+            }
+            }
+            }
+
+
+            if (vZoneRows == 0.toUInt()) {
+
+            if (try { vAgenda = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_EventAgenda__vv(vSched, vValues, pendingTodoAgendaPayload!!.id.toULong(), pendingTodoAgendaPayload!!.windowStart, pendingTodoAgendaPayload!!.windowEnd, pendingTodoAgendaPayload!!.skip)), 64); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='agenda'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+
+
+            for (a in vAgenda) {
+
+            if (try { vRawCount = com.sce.forge.runtime.SceChecked.add(vRawCount, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='rawCount'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+
+            vRawLast = a.nth
+            }
+            }
+
+
+            if (vZoneRows != 0.toUInt()) {
+
+            if (try { vLocal = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_EventAgenda__vv(vSched, vValues, pendingTodoAgendaPayload!!.id.toULong(), com.sce.forge.runtime.SceChecked.sub(pendingTodoAgendaPayload!!.windowStart, 86400000), com.sce.forge.runtime.SceChecked.add(pendingTodoAgendaPayload!!.windowEnd, 86400000), pendingTodoAgendaPayload!!.skip)), 64); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='local'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
 
             for (l in vLocal) {
+
+            if (try { vRawCount = com.sce.forge.runtime.SceChecked.add(vRawCount, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='rawCount'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+
+            vRawLast = l.nth
 
             vOcc = vOcc.copy(id = l.id)
 
@@ -2647,11 +2914,7 @@ class TodoPeerStateMachine(
                 return
             }
 
-            if (try { vUtcSec = com.sce.forge.runtime.SceChecked.take(call_UtcFromLocal__vv(vZoneStarts, vZoneOffsets, com.sce.forge.runtime.SceChecked.div(l.end, 1000))); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='utcSec'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
-
-            if (try { vOcc = vOcc.copy(end = com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.mul(vUtcSec, 1000), com.sce.forge.runtime.SceChecked.rem(l.end, 1000))); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='occ.end'>: an integer operation overflowed or failed"); true }) {
+            if (try { vOcc = vOcc.copy(end = com.sce.forge.runtime.SceChecked.add(vOcc.start, com.sce.forge.runtime.SceChecked.sub(l.end, l.start))); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='occ.end'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -2664,34 +2927,90 @@ class TodoPeerStateMachine(
             }
             }
             }
+
+
+            if (vRawCount == 64.toUInt()) {
+
+            if (try { vAgendaNext = com.sce.forge.runtime.SceChecked.add(vRawLast, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='agendaNext'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+            }
             }
             10 -> {
-                // SCE-MAP: todo_peer.scxml:613 :: open :: _transition_10
+                // SCE-MAP: todo_peer.scxml:735 :: open :: _transition_10
                 if (pendingTodoZonePayload == null) {
                     return
                 }
 
-            if (if (vZoneStarts.size < 64) { vZoneStarts = vZoneStarts + (pendingTodoZonePayload!!.start); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, "<sce:append target='zoneStarts'>: the list already holds its capacity of 64"); true }) {
+
+            if (pendingTodoZonePayload!!.zone == 1.toUByte()) {
+
+            if (if (vZoneStarts1.size < 64) { vZoneStarts1 = vZoneStarts1 + (pendingTodoZonePayload!!.start); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, "<sce:append target='zoneStarts1'>: the list already holds its capacity of 64"); true }) {
                 return
             }
 
-            if (if (vZoneOffsets.size < 64) { vZoneOffsets = vZoneOffsets + (pendingTodoZonePayload!!.offset); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, "<sce:append target='zoneOffsets'>: the list already holds its capacity of 64"); true }) {
+            if (if (vZoneOffsets1.size < 64) { vZoneOffsets1 = vZoneOffsets1 + (pendingTodoZonePayload!!.offset); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, "<sce:append target='zoneOffsets1'>: the list already holds its capacity of 64"); true }) {
+                return
+            }
+            }
+
+
+            if (pendingTodoZonePayload!!.zone == 2.toUByte()) {
+
+            if (if (vZoneStarts2.size < 64) { vZoneStarts2 = vZoneStarts2 + (pendingTodoZonePayload!!.start); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, "<sce:append target='zoneStarts2'>: the list already holds its capacity of 64"); true }) {
                 return
             }
 
-            vZoned = true
+            if (if (vZoneOffsets2.size < 64) { vZoneOffsets2 = vZoneOffsets2 + (pendingTodoZonePayload!!.offset); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, "<sce:append target='zoneOffsets2'>: the list already holds its capacity of 64"); true }) {
+                return
+            }
+            }
+
+
+            if (pendingTodoZonePayload!!.zone == 3.toUByte()) {
+
+            if (if (vZoneStarts3.size < 64) { vZoneStarts3 = vZoneStarts3 + (pendingTodoZonePayload!!.start); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, "<sce:append target='zoneStarts3'>: the list already holds its capacity of 64"); true }) {
+                return
+            }
+
+            if (if (vZoneOffsets3.size < 64) { vZoneOffsets3 = vZoneOffsets3 + (pendingTodoZonePayload!!.offset); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, "<sce:append target='zoneOffsets3'>: the list already holds its capacity of 64"); true }) {
+                return
+            }
+            }
+
+
+            if (pendingTodoZonePayload!!.zone == 4.toUByte()) {
+
+            if (if (vZoneStarts4.size < 64) { vZoneStarts4 = vZoneStarts4 + (pendingTodoZonePayload!!.start); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, "<sce:append target='zoneStarts4'>: the list already holds its capacity of 64"); true }) {
+                return
+            }
+
+            if (if (vZoneOffsets4.size < 64) { vZoneOffsets4 = vZoneOffsets4 + (pendingTodoZonePayload!!.offset); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, "<sce:append target='zoneOffsets4'>: the list already holds its capacity of 64"); true }) {
+                return
+            }
+            }
             }
             11 -> {
-                // SCE-MAP: todo_peer.scxml:619 :: open :: _transition_11
+                // SCE-MAP: todo_peer.scxml:754 :: open :: _transition_11
 
-            vZoneStarts = emptyList()
+            vZoneStarts1 = emptyList()
 
-            vZoneOffsets = emptyList()
+            vZoneOffsets1 = emptyList()
 
-            vZoned = false
+            vZoneStarts2 = emptyList()
+
+            vZoneOffsets2 = emptyList()
+
+            vZoneStarts3 = emptyList()
+
+            vZoneOffsets3 = emptyList()
+
+            vZoneStarts4 = emptyList()
+
+            vZoneOffsets4 = emptyList()
             }
             12 -> {
-                // SCE-MAP: todo_peer.scxml:625 :: open :: _transition_12
+                // SCE-MAP: todo_peer.scxml:765 :: open :: _transition_12
 
             if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return

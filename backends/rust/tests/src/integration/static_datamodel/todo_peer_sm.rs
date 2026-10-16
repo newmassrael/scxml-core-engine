@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: b9ab4ddbd49e8ce2a3b4c80917bc3eecdf0d5285c15974d4e0a00636f93fd573
+// source-hash: 5b579589f1ff33cd05a081b40dc01d4d0d0b2ef410a9718dd0ae11e84c00a952
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -76,7 +76,10 @@
 // SCE-MAP: todo_peer.scxml:71 :: _machine
 
 use super::event_agenda;
+use super::event_conflict;
+use super::event_latest;
 use super::event_occurrence;
+use super::event_schedule;
 use super::hlc_receive;
 use super::hlc_send;
 use super::hlc_timestamp;
@@ -92,7 +95,6 @@ use super::orset_live;
 use super::orset_observed;
 use super::orset_union;
 use super::utc_from_local;
-use super::utc_offset_at;
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
 
@@ -163,6 +165,7 @@ pub struct TodoPeerTodoAgendaPayload {
     pub id: u32,
     pub windowStart: i64,
     pub windowEnd: i64,
+    pub skip: u32,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -235,6 +238,7 @@ pub struct TodoPeerTodoWritePayload {
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct TodoPeerTodoZonePayload {
+    pub zone: u8,
     pub start: i64,
     pub offset: i32,
 }
@@ -306,8 +310,8 @@ pub trait TodoPeerInject {
 impl TodoPeerInject for ::sce_rust_runtime::Engine<TodoPeerPolicy> {
     fn raise_todo_agenda(&mut self, payload: TodoPeerTodoAgendaPayload) {
         let data = ::sce_rust_runtime::payload_wire(format_args!(
-            "{{\"id\":{}, \"windowStart\":\"{}\", \"windowEnd\":\"{}\"}}",
-            payload.id, payload.windowStart, payload.windowEnd
+            "{{\"id\":{}, \"windowStart\":\"{}\", \"windowEnd\":\"{}\", \"skip\":{}}}",
+            payload.id, payload.windowStart, payload.windowEnd, payload.skip
         ));
         self.raise_external_typed_with_data(
             TodoPeerEvent::TodoAgenda,
@@ -406,8 +410,8 @@ impl TodoPeerInject for ::sce_rust_runtime::Engine<TodoPeerPolicy> {
     }
     fn raise_todo_zone(&mut self, payload: TodoPeerTodoZonePayload) {
         let data = ::sce_rust_runtime::payload_wire(format_args!(
-            "{{\"start\":\"{}\", \"offset\":{}}}",
-            payload.start, payload.offset
+            "{{\"zone\":{}, \"start\":\"{}\", \"offset\":{}}}",
+            payload.zone, payload.start, payload.offset
         ));
         self.raise_external_typed_with_data(
             TodoPeerEvent::TodoZone,
@@ -470,14 +474,120 @@ pub struct TodoPeerOccurrenceRecord {
     pub conflict: u8,
 }
 
+/// SCE Accepted Subset §2.15: a `record:Schedule` datamodel value.
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[allow(non_snake_case)]
+pub struct TodoPeerScheduleRecord {
+    pub zone: i64,
+    pub start: i64,
+    pub length: i64,
+    pub freq: i64,
+    pub interval: i64,
+    pub days: i64,
+    pub count: i64,
+    pub until: i64,
+    pub bymonth: i64,
+    pub mdPos: i64,
+    pub mdNeg: i64,
+    pub dayA: i64,
+    pub dayB: i64,
+    pub spPos: i64,
+    pub spNeg: i64,
+    pub wkst: i64,
+    pub wnPos: i64,
+    pub wnNeg: i64,
+    pub yd0: i64,
+    pub yd1: i64,
+    pub yd2: i64,
+    pub yd3: i64,
+    pub yd4: i64,
+    pub yd5: i64,
+    pub ydn0: i64,
+    pub ydn1: i64,
+    pub ydn2: i64,
+    pub ydn3: i64,
+    pub ydn4: i64,
+    pub ydn5: i64,
+    pub gone: i64,
+    pub flag: i64,
+}
+
 // ── SCE Accepted Subset §2.15: calls of an algorithm that takes or returns state ──
 #[allow(non_snake_case)]
-fn call_EventAgenda__v(
-    p0: &[TodoPeerValueRecord],
-    p1: u64,
-    p2: i64,
+fn call_EventAgenda__vv(
+    p0: &TodoPeerScheduleRecord,
+    p1: &[TodoPeerValueRecord],
+    p2: u64,
     p3: i64,
+    p4: i64,
+    p5: u32,
 ) -> Result<Vec<TodoPeerOccurrenceRecord>, sce_forge_runtime::algorithm::AlgorithmError> {
+    let p1_algorithm: Vec<mv_value::MvValuePayload> = p1
+        .iter()
+        .map(|r| mv_value::MvValuePayload {
+            id: r.id,
+            field: r.field,
+            value: r.value,
+            text: ::sce_portable_bytes::SceString::<32>::held(&r.text),
+            wall_time: r.wallTime,
+            counter: r.counter,
+            node_id: r.nodeId,
+        })
+        .collect();
+    let r = event_agenda::event_agenda(
+        event_schedule::EventSchedulePayload {
+            zone: p0.zone,
+            start: p0.start,
+            length: p0.length,
+            freq: p0.freq,
+            interval: p0.interval,
+            days: p0.days,
+            count: p0.count,
+            until: p0.until,
+            bymonth: p0.bymonth,
+            md_pos: p0.mdPos,
+            md_neg: p0.mdNeg,
+            day_a: p0.dayA,
+            day_b: p0.dayB,
+            sp_pos: p0.spPos,
+            sp_neg: p0.spNeg,
+            wkst: p0.wkst,
+            wn_pos: p0.wnPos,
+            wn_neg: p0.wnNeg,
+            yd0: p0.yd0,
+            yd1: p0.yd1,
+            yd2: p0.yd2,
+            yd3: p0.yd3,
+            yd4: p0.yd4,
+            yd5: p0.yd5,
+            ydn0: p0.ydn0,
+            ydn1: p0.ydn1,
+            ydn2: p0.ydn2,
+            ydn3: p0.ydn3,
+            ydn4: p0.ydn4,
+            ydn5: p0.ydn5,
+            gone: p0.gone,
+            flag: p0.flag,
+        },
+        &p1_algorithm,
+        p2,
+        p3,
+        p4,
+        p5,
+    )?;
+    Ok(r.iter()
+        .map(|r| TodoPeerOccurrenceRecord {
+            id: r.id,
+            start: r.start,
+            end: r.end,
+            nth: r.nth,
+            conflict: r.conflict,
+        })
+        .collect::<Vec<_>>())
+}
+
+#[allow(non_snake_case)]
+fn call_EventConflict__v(p0: &[TodoPeerValueRecord], p1: u64) -> bool {
     let p0_algorithm: Vec<mv_value::MvValuePayload> = p0
         .iter()
         .map(|r| mv_value::MvValuePayload {
@@ -490,16 +600,26 @@ fn call_EventAgenda__v(
             node_id: r.nodeId,
         })
         .collect();
-    let r = event_agenda::event_agenda(&p0_algorithm, p1, p2, p3)?;
-    Ok(r.iter()
-        .map(|r| TodoPeerOccurrenceRecord {
+    let r = event_conflict::event_conflict(&p0_algorithm, p1);
+    r
+}
+
+#[allow(non_snake_case)]
+fn call_EventLatest__v(p0: &[TodoPeerValueRecord], p1: u64, p2: u64, p3: i64) -> i64 {
+    let p0_algorithm: Vec<mv_value::MvValuePayload> = p0
+        .iter()
+        .map(|r| mv_value::MvValuePayload {
             id: r.id,
-            start: r.start,
-            end: r.end,
-            nth: r.nth,
-            conflict: r.conflict,
+            field: r.field,
+            value: r.value,
+            text: ::sce_portable_bytes::SceString::<32>::held(&r.text),
+            wall_time: r.wallTime,
+            counter: r.counter,
+            node_id: r.nodeId,
         })
-        .collect::<Vec<_>>())
+        .collect();
+    let r = event_latest::event_latest(&p0_algorithm, p1, p2, p3);
+    r
 }
 
 #[allow(non_snake_case)]
@@ -809,16 +929,6 @@ fn call_UtcFromLocal__vv(
     Ok(r)
 }
 
-#[allow(non_snake_case)]
-fn call_UtcOffsetAt__vv(
-    p0: &[i64],
-    p1: &[i32],
-    p2: i64,
-) -> Result<i32, sce_forge_runtime::algorithm::AlgorithmError> {
-    let r = utc_offset_at::utc_offset_at(p0, p1, p2)?;
-    Ok(r)
-}
-
 // ── SCE Accepted Subset §2.15: what a host observes of a sce-static machine ──
 
 /// The published variables (`sce:direction="out"`) as one owned value, in
@@ -835,6 +945,7 @@ pub struct TodoPeerData {
     pub digest: Vec<TodoPeerNodeRecord>,
     pub refusals: u32,
     pub agenda: Vec<TodoPeerOccurrenceRecord>,
+    pub agenda_next: u32,
 }
 
 /// What a host observes: the full active configuration — every active state,
@@ -873,6 +984,7 @@ impl TodoPeerObserve for Engine<TodoPeerPolicy> {
                 digest: policy.digest.clone(),
                 refusals: policy.refusals,
                 agenda: policy.agenda.clone(),
+                agenda_next: policy.agenda_next,
             },
             truncated: self.last_macrostep_truncated(),
         }
@@ -1066,6 +1178,181 @@ impl ::sce_rust_runtime::saved_state::SavedValue for TodoPeerOccurrenceRecord {
     }
 }
 
+impl ::sce_rust_runtime::saved_state::SavedValue for TodoPeerScheduleRecord {
+    fn to_saved(&self) -> ::sce_rust_runtime::json::Value {
+        ::sce_rust_runtime::json::Value::Object(vec![
+            (
+                "zone".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.zone),
+            ),
+            (
+                "start".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.start),
+            ),
+            (
+                "length".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.length),
+            ),
+            (
+                "freq".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.freq),
+            ),
+            (
+                "interval".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.interval),
+            ),
+            (
+                "days".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.days),
+            ),
+            (
+                "count".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.count),
+            ),
+            (
+                "until".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.until),
+            ),
+            (
+                "bymonth".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.bymonth),
+            ),
+            (
+                "mdPos".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.mdPos),
+            ),
+            (
+                "mdNeg".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.mdNeg),
+            ),
+            (
+                "dayA".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.dayA),
+            ),
+            (
+                "dayB".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.dayB),
+            ),
+            (
+                "spPos".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.spPos),
+            ),
+            (
+                "spNeg".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.spNeg),
+            ),
+            (
+                "wkst".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.wkst),
+            ),
+            (
+                "wnPos".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.wnPos),
+            ),
+            (
+                "wnNeg".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.wnNeg),
+            ),
+            (
+                "yd0".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.yd0),
+            ),
+            (
+                "yd1".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.yd1),
+            ),
+            (
+                "yd2".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.yd2),
+            ),
+            (
+                "yd3".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.yd3),
+            ),
+            (
+                "yd4".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.yd4),
+            ),
+            (
+                "yd5".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.yd5),
+            ),
+            (
+                "ydn0".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.ydn0),
+            ),
+            (
+                "ydn1".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.ydn1),
+            ),
+            (
+                "ydn2".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.ydn2),
+            ),
+            (
+                "ydn3".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.ydn3),
+            ),
+            (
+                "ydn4".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.ydn4),
+            ),
+            (
+                "ydn5".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.ydn5),
+            ),
+            (
+                "gone".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.gone),
+            ),
+            (
+                "flag".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.flag),
+            ),
+        ])
+    }
+
+    fn from_saved(
+        value: &::sce_rust_runtime::json::Value,
+        what: &str,
+    ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal> {
+        Ok(Self {
+            zone: ::sce_rust_runtime::saved_state::record_field(value, what, "zone")?,
+            start: ::sce_rust_runtime::saved_state::record_field(value, what, "start")?,
+            length: ::sce_rust_runtime::saved_state::record_field(value, what, "length")?,
+            freq: ::sce_rust_runtime::saved_state::record_field(value, what, "freq")?,
+            interval: ::sce_rust_runtime::saved_state::record_field(value, what, "interval")?,
+            days: ::sce_rust_runtime::saved_state::record_field(value, what, "days")?,
+            count: ::sce_rust_runtime::saved_state::record_field(value, what, "count")?,
+            until: ::sce_rust_runtime::saved_state::record_field(value, what, "until")?,
+            bymonth: ::sce_rust_runtime::saved_state::record_field(value, what, "bymonth")?,
+            mdPos: ::sce_rust_runtime::saved_state::record_field(value, what, "mdPos")?,
+            mdNeg: ::sce_rust_runtime::saved_state::record_field(value, what, "mdNeg")?,
+            dayA: ::sce_rust_runtime::saved_state::record_field(value, what, "dayA")?,
+            dayB: ::sce_rust_runtime::saved_state::record_field(value, what, "dayB")?,
+            spPos: ::sce_rust_runtime::saved_state::record_field(value, what, "spPos")?,
+            spNeg: ::sce_rust_runtime::saved_state::record_field(value, what, "spNeg")?,
+            wkst: ::sce_rust_runtime::saved_state::record_field(value, what, "wkst")?,
+            wnPos: ::sce_rust_runtime::saved_state::record_field(value, what, "wnPos")?,
+            wnNeg: ::sce_rust_runtime::saved_state::record_field(value, what, "wnNeg")?,
+            yd0: ::sce_rust_runtime::saved_state::record_field(value, what, "yd0")?,
+            yd1: ::sce_rust_runtime::saved_state::record_field(value, what, "yd1")?,
+            yd2: ::sce_rust_runtime::saved_state::record_field(value, what, "yd2")?,
+            yd3: ::sce_rust_runtime::saved_state::record_field(value, what, "yd3")?,
+            yd4: ::sce_rust_runtime::saved_state::record_field(value, what, "yd4")?,
+            yd5: ::sce_rust_runtime::saved_state::record_field(value, what, "yd5")?,
+            ydn0: ::sce_rust_runtime::saved_state::record_field(value, what, "ydn0")?,
+            ydn1: ::sce_rust_runtime::saved_state::record_field(value, what, "ydn1")?,
+            ydn2: ::sce_rust_runtime::saved_state::record_field(value, what, "ydn2")?,
+            ydn3: ::sce_rust_runtime::saved_state::record_field(value, what, "ydn3")?,
+            ydn4: ::sce_rust_runtime::saved_state::record_field(value, what, "ydn4")?,
+            ydn5: ::sce_rust_runtime::saved_state::record_field(value, what, "ydn5")?,
+            gone: ::sce_rust_runtime::saved_state::record_field(value, what, "gone")?,
+            flag: ::sce_rust_runtime::saved_state::record_field(value, what, "flag")?,
+        })
+    }
+}
+
 /// A running machine saved at a macrostep boundary, and restored into a new
 /// process in place of `initialize` — every variable, the machine's own
 /// included, and where the machine stands. The saved state is JSON
@@ -1150,7 +1437,7 @@ pub trait TodoPeerPersist: Sized {
 impl TodoPeerPersist for Engine<TodoPeerPolicy> {
     type Policy = TodoPeerPolicy;
 
-    const SHAPE: &'static str = "bc6fb654993165f167e3530a1545f264295f6f345e20f367abc7020e27ebd05c";
+    const SHAPE: &'static str = "0d675589a1a598d334338d7def482d151314b543b4cdc5f04d343a186a0ffcb5";
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<
         ::sce_rust_runtime::NoHistory,
@@ -1265,6 +1552,42 @@ impl TodoPeerPersist for Engine<TodoPeerPolicy> {
                     ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.occ),
                 ),
                 (
+                    "agendaNext".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.agenda_next),
+                ),
+                (
+                    "zoneStarts1".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.zone_starts1),
+                ),
+                (
+                    "zoneOffsets1".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.zone_offsets1),
+                ),
+                (
+                    "zoneStarts2".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.zone_starts2),
+                ),
+                (
+                    "zoneOffsets2".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.zone_offsets2),
+                ),
+                (
+                    "zoneStarts3".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.zone_starts3),
+                ),
+                (
+                    "zoneOffsets3".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.zone_offsets3),
+                ),
+                (
+                    "zoneStarts4".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.zone_starts4),
+                ),
+                (
+                    "zoneOffsets4".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.zone_offsets4),
+                ),
+                (
                     "zoneStarts".to_string(),
                     ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.zone_starts),
                 ),
@@ -1273,16 +1596,24 @@ impl TodoPeerPersist for Engine<TodoPeerPolicy> {
                     ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.zone_offsets),
                 ),
                 (
-                    "zoned".to_string(),
-                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.zoned),
+                    "zoneRows".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.zone_rows),
                 ),
                 (
-                    "offStart".to_string(),
-                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.off_start),
+                    "split".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.split),
                 ),
                 (
-                    "offEnd".to_string(),
-                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.off_end),
+                    "sched".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.sched),
+                ),
+                (
+                    "rawCount".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.raw_count),
+                ),
+                (
+                    "rawLast".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.raw_last),
                 ),
                 (
                     "utcSec".to_string(),
@@ -1381,6 +1712,50 @@ impl TodoPeerPersist for Engine<TodoPeerPolicy> {
             ::sce_rust_runtime::saved_state::bounded(saved.variable("local")?, "local", 64)?;
         policy.occ =
             ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("occ")?, "occ")?;
+        policy.agenda_next = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("agendaNext")?,
+            "agendaNext",
+        )?;
+        policy.zone_starts1 = ::sce_rust_runtime::saved_state::bounded(
+            saved.variable("zoneStarts1")?,
+            "zoneStarts1",
+            64,
+        )?;
+        policy.zone_offsets1 = ::sce_rust_runtime::saved_state::bounded(
+            saved.variable("zoneOffsets1")?,
+            "zoneOffsets1",
+            64,
+        )?;
+        policy.zone_starts2 = ::sce_rust_runtime::saved_state::bounded(
+            saved.variable("zoneStarts2")?,
+            "zoneStarts2",
+            64,
+        )?;
+        policy.zone_offsets2 = ::sce_rust_runtime::saved_state::bounded(
+            saved.variable("zoneOffsets2")?,
+            "zoneOffsets2",
+            64,
+        )?;
+        policy.zone_starts3 = ::sce_rust_runtime::saved_state::bounded(
+            saved.variable("zoneStarts3")?,
+            "zoneStarts3",
+            64,
+        )?;
+        policy.zone_offsets3 = ::sce_rust_runtime::saved_state::bounded(
+            saved.variable("zoneOffsets3")?,
+            "zoneOffsets3",
+            64,
+        )?;
+        policy.zone_starts4 = ::sce_rust_runtime::saved_state::bounded(
+            saved.variable("zoneStarts4")?,
+            "zoneStarts4",
+            64,
+        )?;
+        policy.zone_offsets4 = ::sce_rust_runtime::saved_state::bounded(
+            saved.variable("zoneOffsets4")?,
+            "zoneOffsets4",
+            64,
+        )?;
         policy.zone_starts = ::sce_rust_runtime::saved_state::bounded(
             saved.variable("zoneStarts")?,
             "zoneStarts",
@@ -1391,17 +1766,25 @@ impl TodoPeerPersist for Engine<TodoPeerPolicy> {
             "zoneOffsets",
             64,
         )?;
-        policy.zoned = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
-            saved.variable("zoned")?,
-            "zoned",
+        policy.zone_rows = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("zoneRows")?,
+            "zoneRows",
         )?;
-        policy.off_start = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
-            saved.variable("offStart")?,
-            "offStart",
+        policy.split = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("split")?,
+            "split",
         )?;
-        policy.off_end = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
-            saved.variable("offEnd")?,
-            "offEnd",
+        policy.sched = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("sched")?,
+            "sched",
+        )?;
+        policy.raw_count = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("rawCount")?,
+            "rawCount",
+        )?;
+        policy.raw_last = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("rawLast")?,
+            "rawLast",
         )?;
         policy.utc_sec = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("utcSec")?,
@@ -1426,9 +1809,11 @@ pub struct TodoPeerInvokeParams {
     pub is_live: Option<bool>,
     pub present: Option<bool>,
     pub refusals: Option<u32>,
-    pub zoned: Option<bool>,
-    pub off_start: Option<i32>,
-    pub off_end: Option<i32>,
+    pub agenda_next: Option<u32>,
+    pub zone_rows: Option<u32>,
+    pub split: Option<bool>,
+    pub raw_count: Option<u32>,
+    pub raw_last: Option<u32>,
     pub utc_sec: Option<i64>,
 }
 
@@ -1491,16 +1876,38 @@ pub struct TodoPeerPolicy {
     local: Vec<TodoPeerOccurrenceRecord>,
     /// W3C SCXML 5.2: the `occ` datamodel variable.
     occ: TodoPeerOccurrenceRecord,
+    /// W3C SCXML 5.2: the `agendaNext` datamodel variable, published (`sce:direction="out"`).
+    agenda_next: u32,
+    /// W3C SCXML 5.2: the `zoneStarts1` datamodel variable.
+    zone_starts1: Vec<i64>,
+    /// W3C SCXML 5.2: the `zoneOffsets1` datamodel variable.
+    zone_offsets1: Vec<i32>,
+    /// W3C SCXML 5.2: the `zoneStarts2` datamodel variable.
+    zone_starts2: Vec<i64>,
+    /// W3C SCXML 5.2: the `zoneOffsets2` datamodel variable.
+    zone_offsets2: Vec<i32>,
+    /// W3C SCXML 5.2: the `zoneStarts3` datamodel variable.
+    zone_starts3: Vec<i64>,
+    /// W3C SCXML 5.2: the `zoneOffsets3` datamodel variable.
+    zone_offsets3: Vec<i32>,
+    /// W3C SCXML 5.2: the `zoneStarts4` datamodel variable.
+    zone_starts4: Vec<i64>,
+    /// W3C SCXML 5.2: the `zoneOffsets4` datamodel variable.
+    zone_offsets4: Vec<i32>,
     /// W3C SCXML 5.2: the `zoneStarts` datamodel variable.
     zone_starts: Vec<i64>,
     /// W3C SCXML 5.2: the `zoneOffsets` datamodel variable.
     zone_offsets: Vec<i32>,
-    /// W3C SCXML 5.2: the `zoned` datamodel variable.
-    zoned: bool,
-    /// W3C SCXML 5.2: the `offStart` datamodel variable.
-    off_start: i32,
-    /// W3C SCXML 5.2: the `offEnd` datamodel variable.
-    off_end: i32,
+    /// W3C SCXML 5.2: the `zoneRows` datamodel variable.
+    zone_rows: u32,
+    /// W3C SCXML 5.2: the `split` datamodel variable.
+    split: bool,
+    /// W3C SCXML 5.2: the `sched` datamodel variable.
+    sched: TodoPeerScheduleRecord,
+    /// W3C SCXML 5.2: the `rawCount` datamodel variable.
+    raw_count: u32,
+    /// W3C SCXML 5.2: the `rawLast` datamodel variable.
+    raw_last: u32,
     /// W3C SCXML 5.2: the `utcSec` datamodel variable.
     utc_sec: i64,
     // W3C SCXML 5.10: Session ID (script engine + invoke tracking).
@@ -1578,11 +1985,55 @@ impl TodoPeerPolicy {
             nth: 0,
             conflict: 0,
         };
+        let agenda_next: u32 = 0;
+        let zone_starts1: Vec<i64> = Vec::new();
+        let zone_offsets1: Vec<i32> = Vec::new();
+        let zone_starts2: Vec<i64> = Vec::new();
+        let zone_offsets2: Vec<i32> = Vec::new();
+        let zone_starts3: Vec<i64> = Vec::new();
+        let zone_offsets3: Vec<i32> = Vec::new();
+        let zone_starts4: Vec<i64> = Vec::new();
+        let zone_offsets4: Vec<i32> = Vec::new();
         let zone_starts: Vec<i64> = Vec::new();
         let zone_offsets: Vec<i32> = Vec::new();
-        let zoned: bool = false;
-        let off_start: i32 = 0;
-        let off_end: i32 = 0;
+        let zone_rows: u32 = 0;
+        let split: bool = false;
+        let sched: TodoPeerScheduleRecord = TodoPeerScheduleRecord {
+            zone: 0,
+            start: -1,
+            length: 0,
+            freq: 0,
+            interval: 1,
+            days: 0,
+            count: 0,
+            until: 0,
+            bymonth: 0,
+            mdPos: 0,
+            mdNeg: 0,
+            dayA: 0,
+            dayB: 0,
+            spPos: 0,
+            spNeg: 0,
+            wkst: 1,
+            wnPos: 0,
+            wnNeg: 0,
+            yd0: 0,
+            yd1: 0,
+            yd2: 0,
+            yd3: 0,
+            yd4: 0,
+            yd5: 0,
+            ydn0: 0,
+            ydn1: 0,
+            ydn2: 0,
+            ydn3: 0,
+            ydn4: 0,
+            ydn5: 0,
+            gone: 0,
+            flag: 0,
+        };
+        let raw_count: u32 = 0;
+        let raw_last: u32 = 0;
         let utc_sec: i64 = 0;
         Self {
             pending_payload: TodoPeerPayload::default(),
@@ -1611,11 +2062,22 @@ impl TodoPeerPolicy {
             agenda,
             local,
             occ,
+            agenda_next,
+            zone_starts1,
+            zone_offsets1,
+            zone_starts2,
+            zone_offsets2,
+            zone_starts3,
+            zone_offsets3,
+            zone_starts4,
+            zone_offsets4,
             zone_starts,
             zone_offsets,
-            zoned,
-            off_start,
-            off_end,
+            zone_rows,
+            split,
+            sched,
+            raw_count,
+            raw_last,
             utc_sec,
             session_id: None,
             parent_external_queue: None,
@@ -1657,14 +2119,20 @@ impl TodoPeerPolicy {
         if let Some(value) = params.refusals {
             self.refusals = value;
         }
-        if let Some(value) = params.zoned {
-            self.zoned = value;
+        if let Some(value) = params.agenda_next {
+            self.agenda_next = value;
         }
-        if let Some(value) = params.off_start {
-            self.off_start = value;
+        if let Some(value) = params.zone_rows {
+            self.zone_rows = value;
         }
-        if let Some(value) = params.off_end {
-            self.off_end = value;
+        if let Some(value) = params.split {
+            self.split = value;
+        }
+        if let Some(value) = params.raw_count {
+            self.raw_count = value;
+        }
+        if let Some(value) = params.raw_last {
+            self.raw_last = value;
         }
         if let Some(value) = params.utc_sec {
             self.utc_sec = value;
@@ -1723,6 +2191,12 @@ impl TodoPeerPolicy {
     /// holds now. Only the machine writes it.
     pub fn agenda(&self) -> &[TodoPeerOccurrenceRecord] {
         &self.agenda
+    }
+
+    /// W3C SCXML 5.2: what the published `agendaNext` datamodel variable
+    /// holds now. Only the machine writes it.
+    pub fn agenda_next(&self) -> u32 {
+        self.agenda_next
     }
 }
 
@@ -1954,6 +2428,7 @@ impl StatePolicy for TodoPeerPolicy {
                     id: fields.unsigned::<u32>("id")?,
                     windowStart: fields.signed64("windowStart")?,
                     windowEnd: fields.signed64("windowEnd")?,
+                    skip: fields.unsigned::<u32>("skip")?,
                 });
             }
             TodoPeerEvent::TodoEdit => {
@@ -2036,6 +2511,7 @@ impl StatePolicy for TodoPeerPolicy {
             TodoPeerEvent::TodoZone => {
                 let fields = ::sce_rust_runtime::event_payload::PayloadFields::decode(data)?;
                 self.pending_payload = TodoPeerPayload::TodoZone(TodoPeerTodoZonePayload {
+                    zone: fields.unsigned::<u8>("zone")?,
                     start: fields.signed64("start")?,
                     offset: fields.signed::<i32>("offset")?,
                 });
@@ -2269,7 +2745,7 @@ impl StatePolicy for TodoPeerPolicy {
             TodoPeerState::Open => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: todo_peer.scxml:161 :: open :: _transition_0
+                        // SCE-MAP: todo_peer.scxml:209 :: open :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
                         let ev = match &self.pending_payload {
                             TodoPeerPayload::TodoJoin(ev) => ev.clone(),
@@ -2285,7 +2761,7 @@ impl StatePolicy for TodoPeerPolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: todo_peer.scxml:169 :: open :: _transition_1
+                        // SCE-MAP: todo_peer.scxml:217 :: open :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
                         let ev = match &self.pending_payload {
                             TodoPeerPayload::TodoEdit(ev) => ev.clone(),
@@ -2717,7 +3193,7 @@ impl StatePolicy for TodoPeerPolicy {
                         }
                     }
                     2 => {
-                        // SCE-MAP: todo_peer.scxml:218 :: open :: _transition_2
+                        // SCE-MAP: todo_peer.scxml:266 :: open :: _transition_2
                         // W3C SCXML 3.13: Transition 2 actions
                         let ev = match &self.pending_payload {
                             TodoPeerPayload::TodoWrite(ev) => ev.clone(),
@@ -3185,7 +3661,7 @@ impl StatePolicy for TodoPeerPolicy {
                         }
                     }
                     3 => {
-                        // SCE-MAP: todo_peer.scxml:300 :: open :: _transition_3
+                        // SCE-MAP: todo_peer.scxml:348 :: open :: _transition_3
                         // W3C SCXML 3.13: Transition 3 actions
                         let ev = match &self.pending_payload {
                             TodoPeerPayload::TodoSupersede(ev) => ev.clone(),
@@ -3638,7 +4114,7 @@ impl StatePolicy for TodoPeerPolicy {
                         }
                     }
                     4 => {
-                        // SCE-MAP: todo_peer.scxml:371 :: open :: _transition_4
+                        // SCE-MAP: todo_peer.scxml:419 :: open :: _transition_4
                         // W3C SCXML 3.13: Transition 4 actions
                         let ev = match &self.pending_payload {
                             TodoPeerPayload::TodoKeep(ev) => ev.clone(),
@@ -3690,7 +4166,7 @@ impl StatePolicy for TodoPeerPolicy {
                         }
                     }
                     5 => {
-                        // SCE-MAP: todo_peer.scxml:383 :: open :: _transition_5
+                        // SCE-MAP: todo_peer.scxml:431 :: open :: _transition_5
                         // W3C SCXML 3.13: Transition 5 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -3867,7 +4343,7 @@ impl StatePolicy for TodoPeerPolicy {
                         }
                     }
                     6 => {
-                        // SCE-MAP: todo_peer.scxml:410 :: open :: _transition_6
+                        // SCE-MAP: todo_peer.scxml:458 :: open :: _transition_6
                         // W3C SCXML 3.13: Transition 6 actions
                         let ev = match &self.pending_payload {
                             TodoPeerPayload::TodoVisit(ev) => ev.clone(),
@@ -4166,7 +4642,7 @@ impl StatePolicy for TodoPeerPolicy {
                         }
                     }
                     7 => {
-                        // SCE-MAP: todo_peer.scxml:451 :: open :: _transition_7
+                        // SCE-MAP: todo_peer.scxml:499 :: open :: _transition_7
                         // W3C SCXML 3.13: Transition 7 actions
                         let ev = match &self.pending_payload {
                             TodoPeerPayload::TodoNode(ev) => ev.clone(),
@@ -4568,7 +5044,7 @@ impl StatePolicy for TodoPeerPolicy {
                         }
                     }
                     8 => {
-                        // SCE-MAP: todo_peer.scxml:498 :: open :: _transition_8
+                        // SCE-MAP: todo_peer.scxml:546 :: open :: _transition_8
                         // W3C SCXML 3.13: Transition 8 actions
                         let ev = match &self.pending_payload {
                             TodoPeerPayload::TodoShare(ev) => ev.clone(),
@@ -5132,7 +5608,7 @@ if self.hub && ev.to == 2 {
                         }
                     }
                     9 => {
-                        // SCE-MAP: todo_peer.scxml:580 :: open :: _transition_9
+                        // SCE-MAP: todo_peer.scxml:628 :: open :: _transition_9
                         // W3C SCXML 3.13: Transition 9 actions
                         let ev = match &self.pending_payload {
                             TodoPeerPayload::TodoAgenda(ev) => ev.clone(),
@@ -5143,11 +5619,358 @@ if self.hub && ev.to == 2 {
                             // SCE Accepted Subset §2.15: <sce:clear target="agenda">
                             self.agenda.clear();
 
-                            // W3C SCXML 5.9: cond="!zoned"
-                            if !self.zoned {
+                            // W3C SCXML 5.3: <assign location="agendaNext">
+                            self.agenda_next = 0;
+
+                            // W3C SCXML 5.3: <assign location="rawCount">
+                            self.raw_count = 0;
+
+                            // W3C SCXML 5.3: <assign location="rawLast">
+                            self.raw_last = 0;
+
+                            // W3C SCXML 5.3: <assign location="sched.zone">
+                            self.sched.zone =
+                                call_EventLatest__v(&self.values, ev.id as u64, 15, 0);
+
+                            // W3C SCXML 5.3: <assign location="sched.start">
+                            self.sched.start =
+                                call_EventLatest__v(&self.values, ev.id as u64, 16, -1);
+
+                            // W3C SCXML 5.3: <assign location="sched.length">
+                            self.sched.length =
+                                call_EventLatest__v(&self.values, ev.id as u64, 17, 0);
+
+                            // W3C SCXML 5.3: <assign location="sched.freq">
+                            self.sched.freq =
+                                call_EventLatest__v(&self.values, ev.id as u64, 18, 0);
+
+                            // W3C SCXML 5.3: <assign location="sched.interval">
+                            self.sched.interval =
+                                call_EventLatest__v(&self.values, ev.id as u64, 19, 1);
+
+                            // W3C SCXML 5.3: <assign location="sched.days">
+                            self.sched.days =
+                                call_EventLatest__v(&self.values, ev.id as u64, 20, 0);
+
+                            // W3C SCXML 5.3: <assign location="sched.count">
+                            self.sched.count =
+                                call_EventLatest__v(&self.values, ev.id as u64, 21, 0);
+
+                            // W3C SCXML 5.3: <assign location="sched.until">
+                            self.sched.until =
+                                call_EventLatest__v(&self.values, ev.id as u64, 22, 0);
+
+                            // W3C SCXML 5.3: <assign location="sched.bymonth">
+                            self.sched.bymonth =
+                                call_EventLatest__v(&self.values, ev.id as u64, 23, 0);
+
+                            // W3C SCXML 5.3: <assign location="sched.mdPos">
+                            self.sched.mdPos =
+                                call_EventLatest__v(&self.values, ev.id as u64, 24, 0);
+
+                            // W3C SCXML 5.3: <assign location="sched.mdNeg">
+                            self.sched.mdNeg =
+                                call_EventLatest__v(&self.values, ev.id as u64, 25, 0);
+
+                            // W3C SCXML 5.3: <assign location="sched.dayA">
+                            self.sched.dayA =
+                                call_EventLatest__v(&self.values, ev.id as u64, 26, 0);
+
+                            // W3C SCXML 5.3: <assign location="sched.dayB">
+                            self.sched.dayB =
+                                call_EventLatest__v(&self.values, ev.id as u64, 27, 0);
+
+                            // W3C SCXML 5.3: <assign location="sched.spPos">
+                            self.sched.spPos =
+                                call_EventLatest__v(&self.values, ev.id as u64, 28, 0);
+
+                            // W3C SCXML 5.3: <assign location="sched.spNeg">
+                            self.sched.spNeg =
+                                call_EventLatest__v(&self.values, ev.id as u64, 29, 0);
+
+                            // W3C SCXML 5.3: <assign location="sched.wkst">
+                            self.sched.wkst =
+                                call_EventLatest__v(&self.values, ev.id as u64, 30, 1);
+
+                            // W3C SCXML 5.3: <assign location="sched.wnPos">
+                            self.sched.wnPos =
+                                call_EventLatest__v(&self.values, ev.id as u64, 31, 0);
+
+                            // W3C SCXML 5.3: <assign location="sched.wnNeg">
+                            self.sched.wnNeg =
+                                call_EventLatest__v(&self.values, ev.id as u64, 32, 0);
+
+                            // W3C SCXML 5.3: <assign location="sched.yd0">
+                            self.sched.yd0 = call_EventLatest__v(&self.values, ev.id as u64, 33, 0);
+
+                            // W3C SCXML 5.3: <assign location="sched.yd1">
+                            self.sched.yd1 = call_EventLatest__v(&self.values, ev.id as u64, 34, 0);
+
+                            // W3C SCXML 5.3: <assign location="sched.yd2">
+                            self.sched.yd2 = call_EventLatest__v(&self.values, ev.id as u64, 35, 0);
+
+                            // W3C SCXML 5.3: <assign location="sched.yd3">
+                            self.sched.yd3 = call_EventLatest__v(&self.values, ev.id as u64, 36, 0);
+
+                            // W3C SCXML 5.3: <assign location="sched.yd4">
+                            self.sched.yd4 = call_EventLatest__v(&self.values, ev.id as u64, 37, 0);
+
+                            // W3C SCXML 5.3: <assign location="sched.yd5">
+                            self.sched.yd5 = call_EventLatest__v(&self.values, ev.id as u64, 38, 0);
+
+                            // W3C SCXML 5.3: <assign location="sched.ydn0">
+                            self.sched.ydn0 =
+                                call_EventLatest__v(&self.values, ev.id as u64, 39, 0);
+
+                            // W3C SCXML 5.3: <assign location="sched.ydn1">
+                            self.sched.ydn1 =
+                                call_EventLatest__v(&self.values, ev.id as u64, 40, 0);
+
+                            // W3C SCXML 5.3: <assign location="sched.ydn2">
+                            self.sched.ydn2 =
+                                call_EventLatest__v(&self.values, ev.id as u64, 41, 0);
+
+                            // W3C SCXML 5.3: <assign location="sched.ydn3">
+                            self.sched.ydn3 =
+                                call_EventLatest__v(&self.values, ev.id as u64, 42, 0);
+
+                            // W3C SCXML 5.3: <assign location="sched.ydn4">
+                            self.sched.ydn4 =
+                                call_EventLatest__v(&self.values, ev.id as u64, 43, 0);
+
+                            // W3C SCXML 5.3: <assign location="sched.ydn5">
+                            self.sched.ydn5 =
+                                call_EventLatest__v(&self.values, ev.id as u64, 44, 0);
+
+                            // W3C SCXML 5.3: <assign location="sched.gone">
+                            self.sched.gone = call_EventLatest__v(&self.values, ev.id as u64, 9, 0);
+
+                            // W3C SCXML 5.3: <assign location="split">
+                            self.split = call_EventConflict__v(&self.values, ev.id as u64);
+
+                            // W3C SCXML 5.3: <assign location="sched.flag">
+                            self.sched.flag = 0;
+
+                            // W3C SCXML 5.9: cond="split"
+                            if self.split {
+                                // W3C SCXML 5.3: <assign location="sched.flag">
+                                self.sched.flag = 1;
+                            }
+
+                            // SCE Accepted Subset §2.15: <sce:clear target="zoneStarts">
+                            self.zone_starts.clear();
+
+                            // SCE Accepted Subset §2.15: <sce:clear target="zoneOffsets">
+                            self.zone_offsets.clear();
+
+                            // W3C SCXML 5.3: <assign location="zoneRows">
+                            self.zone_rows = 0;
+
+                            // W3C SCXML 5.9: cond="sched.zone === 1"
+                            if self.sched.zone == 1 {
+                                for s1 in self.zone_starts1.clone() {
+                                    let _ = &s1;
+
+                                    // SCE Accepted Subset §2.15: <sce:append target="zoneStarts">
+                                    let sce_failed = if self.zone_starts.len() < 64 {
+                                        self.zone_starts.push(s1);
+                                        false
+                                    } else {
+                                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<sce:append target='zoneStarts'>: the list already holds its capacity of 64"));
+                                        true
+                                    };
+                                    if sce_failed {
+                                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                                    }
+
+                                    // W3C SCXML 5.3: <assign location="zoneRows">
+                                    let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.zone_rows = sce_forge_runtime::algorithm::add::<u32>(self.zone_rows, 1)?;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<assign location='zoneRows'>: an integer operation overflowed or failed"));
+        true
+    }
+};
+                                    if sce_failed {
+                                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                                    }
+                                }
+
+                                for o1 in self.zone_offsets1.clone() {
+                                    let _ = &o1;
+
+                                    // SCE Accepted Subset §2.15: <sce:append target="zoneOffsets">
+                                    let sce_failed = if self.zone_offsets.len() < 64 {
+                                        self.zone_offsets.push(o1);
+                                        false
+                                    } else {
+                                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<sce:append target='zoneOffsets'>: the list already holds its capacity of 64"));
+                                        true
+                                    };
+                                    if sce_failed {
+                                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                                    }
+                                }
+                            }
+
+                            // W3C SCXML 5.9: cond="sched.zone === 2"
+                            if self.sched.zone == 2 {
+                                for s2 in self.zone_starts2.clone() {
+                                    let _ = &s2;
+
+                                    // SCE Accepted Subset §2.15: <sce:append target="zoneStarts">
+                                    let sce_failed = if self.zone_starts.len() < 64 {
+                                        self.zone_starts.push(s2);
+                                        false
+                                    } else {
+                                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<sce:append target='zoneStarts'>: the list already holds its capacity of 64"));
+                                        true
+                                    };
+                                    if sce_failed {
+                                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                                    }
+
+                                    // W3C SCXML 5.3: <assign location="zoneRows">
+                                    let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.zone_rows = sce_forge_runtime::algorithm::add::<u32>(self.zone_rows, 1)?;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<assign location='zoneRows'>: an integer operation overflowed or failed"));
+        true
+    }
+};
+                                    if sce_failed {
+                                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                                    }
+                                }
+
+                                for o2 in self.zone_offsets2.clone() {
+                                    let _ = &o2;
+
+                                    // SCE Accepted Subset §2.15: <sce:append target="zoneOffsets">
+                                    let sce_failed = if self.zone_offsets.len() < 64 {
+                                        self.zone_offsets.push(o2);
+                                        false
+                                    } else {
+                                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<sce:append target='zoneOffsets'>: the list already holds its capacity of 64"));
+                                        true
+                                    };
+                                    if sce_failed {
+                                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                                    }
+                                }
+                            }
+
+                            // W3C SCXML 5.9: cond="sched.zone === 3"
+                            if self.sched.zone == 3 {
+                                for s3 in self.zone_starts3.clone() {
+                                    let _ = &s3;
+
+                                    // SCE Accepted Subset §2.15: <sce:append target="zoneStarts">
+                                    let sce_failed = if self.zone_starts.len() < 64 {
+                                        self.zone_starts.push(s3);
+                                        false
+                                    } else {
+                                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<sce:append target='zoneStarts'>: the list already holds its capacity of 64"));
+                                        true
+                                    };
+                                    if sce_failed {
+                                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                                    }
+
+                                    // W3C SCXML 5.3: <assign location="zoneRows">
+                                    let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.zone_rows = sce_forge_runtime::algorithm::add::<u32>(self.zone_rows, 1)?;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<assign location='zoneRows'>: an integer operation overflowed or failed"));
+        true
+    }
+};
+                                    if sce_failed {
+                                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                                    }
+                                }
+
+                                for o3 in self.zone_offsets3.clone() {
+                                    let _ = &o3;
+
+                                    // SCE Accepted Subset §2.15: <sce:append target="zoneOffsets">
+                                    let sce_failed = if self.zone_offsets.len() < 64 {
+                                        self.zone_offsets.push(o3);
+                                        false
+                                    } else {
+                                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<sce:append target='zoneOffsets'>: the list already holds its capacity of 64"));
+                                        true
+                                    };
+                                    if sce_failed {
+                                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                                    }
+                                }
+                            }
+
+                            // W3C SCXML 5.9: cond="sched.zone === 4"
+                            if self.sched.zone == 4 {
+                                for s4 in self.zone_starts4.clone() {
+                                    let _ = &s4;
+
+                                    // SCE Accepted Subset §2.15: <sce:append target="zoneStarts">
+                                    let sce_failed = if self.zone_starts.len() < 64 {
+                                        self.zone_starts.push(s4);
+                                        false
+                                    } else {
+                                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<sce:append target='zoneStarts'>: the list already holds its capacity of 64"));
+                                        true
+                                    };
+                                    if sce_failed {
+                                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                                    }
+
+                                    // W3C SCXML 5.3: <assign location="zoneRows">
+                                    let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.zone_rows = sce_forge_runtime::algorithm::add::<u32>(self.zone_rows, 1)?;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<assign location='zoneRows'>: an integer operation overflowed or failed"));
+        true
+    }
+};
+                                    if sce_failed {
+                                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                                    }
+                                }
+
+                                for o4 in self.zone_offsets4.clone() {
+                                    let _ = &o4;
+
+                                    // SCE Accepted Subset §2.15: <sce:append target="zoneOffsets">
+                                    let sce_failed = if self.zone_offsets.len() < 64 {
+                                        self.zone_offsets.push(o4);
+                                        false
+                                    } else {
+                                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<sce:append target='zoneOffsets'>: the list already holds its capacity of 64"));
+                                        true
+                                    };
+                                    if sce_failed {
+                                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                                    }
+                                }
+                            }
+
+                            // W3C SCXML 5.9: cond="zoneRows === 0"
+                            if self.zone_rows == 0 {
                                 // W3C SCXML 5.3: <assign location="agenda">
                                 let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.agenda = sce_forge_runtime::algorithm::within((call_EventAgenda__v(&self.values, ev.id as u64, ev.windowStart, ev.windowEnd)?).as_slice(), 64)?.to_vec();
+    self.agenda = sce_forge_runtime::algorithm::within((call_EventAgenda__vv(&self.sched, &self.values, ev.id as u64, ev.windowStart, ev.windowEnd, ev.skip)?).as_slice(), 64)?.to_vec();
     Ok(())
 })() {
     Ok(()) => false,
@@ -5159,43 +5982,35 @@ if self.hub && ev.to == 2 {
                                 if sce_failed {
                                     break 'action_block; // W3C SCXML 4.9: the error ends the block
                                 }
+
+                                for a in self.agenda.clone() {
+                                    let _ = &a;
+
+                                    // W3C SCXML 5.3: <assign location="rawCount">
+                                    let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.raw_count = sce_forge_runtime::algorithm::add::<u32>(self.raw_count, 1)?;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<assign location='rawCount'>: an integer operation overflowed or failed"));
+        true
+    }
+};
+                                    if sce_failed {
+                                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                                    }
+
+                                    // W3C SCXML 5.3: <assign location="rawLast">
+                                    self.raw_last = a.nth;
+                                }
                             }
 
-                            // W3C SCXML 5.9: cond="zoned"
-                            if self.zoned {
-                                // W3C SCXML 5.3: <assign location="offStart">
-                                let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.off_start = call_UtcOffsetAt__vv(&self.zone_starts, &self.zone_offsets, sce_forge_runtime::algorithm::div::<i64>(ev.windowStart, 1000)?)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<assign location='offStart'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                                if sce_failed {
-                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                }
-
-                                // W3C SCXML 5.3: <assign location="offEnd">
-                                let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.off_end = call_UtcOffsetAt__vv(&self.zone_starts, &self.zone_offsets, sce_forge_runtime::algorithm::div::<i64>(ev.windowEnd, 1000)?)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<assign location='offEnd'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                                if sce_failed {
-                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                }
-
+                            // W3C SCXML 5.9: cond="zoneRows !== 0"
+                            if self.zone_rows != 0 {
                                 // W3C SCXML 5.3: <assign location="local">
                                 let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.local = sce_forge_runtime::algorithm::within((call_EventAgenda__v(&self.values, ev.id as u64, sce_forge_runtime::algorithm::sub::<i64>(sce_forge_runtime::algorithm::add::<i64>(ev.windowStart, sce_forge_runtime::algorithm::mul::<i32>(self.off_start, 1000)? as i64)?, 86400000)?, sce_forge_runtime::algorithm::add::<i64>(sce_forge_runtime::algorithm::add::<i64>(ev.windowEnd, sce_forge_runtime::algorithm::mul::<i32>(self.off_end, 1000)? as i64)?, 86400000)?)?).as_slice(), 64)?.to_vec();
+    self.local = sce_forge_runtime::algorithm::within((call_EventAgenda__vv(&self.sched, &self.values, ev.id as u64, sce_forge_runtime::algorithm::sub::<i64>(ev.windowStart, 86400000)?, sce_forge_runtime::algorithm::add::<i64>(ev.windowEnd, 86400000)?, ev.skip)?).as_slice(), 64)?.to_vec();
     Ok(())
 })() {
     Ok(()) => false,
@@ -5210,6 +6025,24 @@ if self.hub && ev.to == 2 {
 
                                 for l in self.local.clone() {
                                     let _ = &l;
+
+                                    // W3C SCXML 5.3: <assign location="rawCount">
+                                    let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.raw_count = sce_forge_runtime::algorithm::add::<u32>(self.raw_count, 1)?;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<assign location='rawCount'>: an integer operation overflowed or failed"));
+        true
+    }
+};
+                                    if sce_failed {
+                                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                                    }
+
+                                    // W3C SCXML 5.3: <assign location="rawLast">
+                                    self.raw_last = l.nth;
 
                                     // W3C SCXML 5.3: <assign location="occ.id">
                                     self.occ.id = l.id;
@@ -5250,24 +6083,9 @@ if self.hub && ev.to == 2 {
                                         break 'action_block; // W3C SCXML 4.9: the error ends the block
                                     }
 
-                                    // W3C SCXML 5.3: <assign location="utcSec">
-                                    let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.utc_sec = call_UtcFromLocal__vv(&self.zone_starts, &self.zone_offsets, sce_forge_runtime::algorithm::div::<i64>(l.end, 1000)?)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<assign location='utcSec'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                                    if sce_failed {
-                                        break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                    }
-
                                     // W3C SCXML 5.3: <assign location="occ.end">
                                     let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.occ.end = sce_forge_runtime::algorithm::add::<i64>(sce_forge_runtime::algorithm::mul::<i64>(self.utc_sec, 1000)?, sce_forge_runtime::algorithm::rem::<i64>(l.end, 1000)?)?;
+    self.occ.end = sce_forge_runtime::algorithm::add::<i64>(self.occ.start, sce_forge_runtime::algorithm::sub::<i64>(l.end, l.start)?)?;
     Ok(())
 })() {
     Ok(()) => false,
@@ -5299,10 +6117,28 @@ if self.hub && ev.to == 2 {
                                     }
                                 }
                             }
+
+                            // W3C SCXML 5.9: cond="rawCount === 64"
+                            if self.raw_count == 64 {
+                                // W3C SCXML 5.3: <assign location="agendaNext">
+                                let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.agenda_next = sce_forge_runtime::algorithm::add::<u32>(self.raw_last, 1)?;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<assign location='agendaNext'>: an integer operation overflowed or failed"));
+        true
+    }
+};
+                                if sce_failed {
+                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
+                                }
+                            }
                         }
                     }
                     10 => {
-                        // SCE-MAP: todo_peer.scxml:613 :: open :: _transition_10
+                        // SCE-MAP: todo_peer.scxml:735 :: open :: _transition_10
                         // W3C SCXML 3.13: Transition 10 actions
                         let ev = match &self.pending_payload {
                             TodoPeerPayload::TodoZone(ev) => ev.clone(),
@@ -5310,51 +6146,147 @@ if self.hub && ev.to == 2 {
                         };
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
-                            // SCE Accepted Subset §2.15: <sce:append target="zoneStarts">
-                            let sce_failed = if self.zone_starts.len() < 64 {
-                                self.zone_starts.push(ev.start);
-                                false
-                            } else {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<sce:append target='zoneStarts'>: the list already holds its capacity of 64"));
-                                true
-                            };
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                            // W3C SCXML 5.9: cond="_event.data.zone === 1"
+                            if ev.zone == 1 {
+                                // SCE Accepted Subset §2.15: <sce:append target="zoneStarts1">
+                                let sce_failed = if self.zone_starts1.len() < 64 {
+                                    self.zone_starts1.push(ev.start);
+                                    false
+                                } else {
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<sce:append target='zoneStarts1'>: the list already holds its capacity of 64"));
+                                    true
+                                };
+                                if sce_failed {
+                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
+                                }
+
+                                // SCE Accepted Subset §2.15: <sce:append target="zoneOffsets1">
+                                let sce_failed = if self.zone_offsets1.len() < 64 {
+                                    self.zone_offsets1.push(ev.offset);
+                                    false
+                                } else {
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<sce:append target='zoneOffsets1'>: the list already holds its capacity of 64"));
+                                    true
+                                };
+                                if sce_failed {
+                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
+                                }
                             }
 
-                            // SCE Accepted Subset §2.15: <sce:append target="zoneOffsets">
-                            let sce_failed = if self.zone_offsets.len() < 64 {
-                                self.zone_offsets.push(ev.offset);
-                                false
-                            } else {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<sce:append target='zoneOffsets'>: the list already holds its capacity of 64"));
-                                true
-                            };
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                            // W3C SCXML 5.9: cond="_event.data.zone === 2"
+                            if ev.zone == 2 {
+                                // SCE Accepted Subset §2.15: <sce:append target="zoneStarts2">
+                                let sce_failed = if self.zone_starts2.len() < 64 {
+                                    self.zone_starts2.push(ev.start);
+                                    false
+                                } else {
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<sce:append target='zoneStarts2'>: the list already holds its capacity of 64"));
+                                    true
+                                };
+                                if sce_failed {
+                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
+                                }
+
+                                // SCE Accepted Subset §2.15: <sce:append target="zoneOffsets2">
+                                let sce_failed = if self.zone_offsets2.len() < 64 {
+                                    self.zone_offsets2.push(ev.offset);
+                                    false
+                                } else {
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<sce:append target='zoneOffsets2'>: the list already holds its capacity of 64"));
+                                    true
+                                };
+                                if sce_failed {
+                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
+                                }
                             }
 
-                            // W3C SCXML 5.3: <assign location="zoned">
-                            self.zoned = true;
+                            // W3C SCXML 5.9: cond="_event.data.zone === 3"
+                            if ev.zone == 3 {
+                                // SCE Accepted Subset §2.15: <sce:append target="zoneStarts3">
+                                let sce_failed = if self.zone_starts3.len() < 64 {
+                                    self.zone_starts3.push(ev.start);
+                                    false
+                                } else {
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<sce:append target='zoneStarts3'>: the list already holds its capacity of 64"));
+                                    true
+                                };
+                                if sce_failed {
+                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
+                                }
+
+                                // SCE Accepted Subset §2.15: <sce:append target="zoneOffsets3">
+                                let sce_failed = if self.zone_offsets3.len() < 64 {
+                                    self.zone_offsets3.push(ev.offset);
+                                    false
+                                } else {
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<sce:append target='zoneOffsets3'>: the list already holds its capacity of 64"));
+                                    true
+                                };
+                                if sce_failed {
+                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
+                                }
+                            }
+
+                            // W3C SCXML 5.9: cond="_event.data.zone === 4"
+                            if ev.zone == 4 {
+                                // SCE Accepted Subset §2.15: <sce:append target="zoneStarts4">
+                                let sce_failed = if self.zone_starts4.len() < 64 {
+                                    self.zone_starts4.push(ev.start);
+                                    false
+                                } else {
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<sce:append target='zoneStarts4'>: the list already holds its capacity of 64"));
+                                    true
+                                };
+                                if sce_failed {
+                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
+                                }
+
+                                // SCE Accepted Subset §2.15: <sce:append target="zoneOffsets4">
+                                let sce_failed = if self.zone_offsets4.len() < 64 {
+                                    self.zone_offsets4.push(ev.offset);
+                                    false
+                                } else {
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<sce:append target='zoneOffsets4'>: the list already holds its capacity of 64"));
+                                    true
+                                };
+                                if sce_failed {
+                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
+                                }
+                            }
                         }
                     }
                     11 => {
-                        // SCE-MAP: todo_peer.scxml:619 :: open :: _transition_11
+                        // SCE-MAP: todo_peer.scxml:754 :: open :: _transition_11
                         // W3C SCXML 3.13: Transition 11 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
-                            // SCE Accepted Subset §2.15: <sce:clear target="zoneStarts">
-                            self.zone_starts.clear();
+                            // SCE Accepted Subset §2.15: <sce:clear target="zoneStarts1">
+                            self.zone_starts1.clear();
 
-                            // SCE Accepted Subset §2.15: <sce:clear target="zoneOffsets">
-                            self.zone_offsets.clear();
+                            // SCE Accepted Subset §2.15: <sce:clear target="zoneOffsets1">
+                            self.zone_offsets1.clear();
 
-                            // W3C SCXML 5.3: <assign location="zoned">
-                            self.zoned = false;
+                            // SCE Accepted Subset §2.15: <sce:clear target="zoneStarts2">
+                            self.zone_starts2.clear();
+
+                            // SCE Accepted Subset §2.15: <sce:clear target="zoneOffsets2">
+                            self.zone_offsets2.clear();
+
+                            // SCE Accepted Subset §2.15: <sce:clear target="zoneStarts3">
+                            self.zone_starts3.clear();
+
+                            // SCE Accepted Subset §2.15: <sce:clear target="zoneOffsets3">
+                            self.zone_offsets3.clear();
+
+                            // SCE Accepted Subset §2.15: <sce:clear target="zoneStarts4">
+                            self.zone_starts4.clear();
+
+                            // SCE Accepted Subset §2.15: <sce:clear target="zoneOffsets4">
+                            self.zone_offsets4.clear();
                         }
                     }
                     12 => {
-                        // SCE-MAP: todo_peer.scxml:625 :: open :: _transition_12
+                        // SCE-MAP: todo_peer.scxml:765 :: open :: _transition_12
                         // W3C SCXML 3.13: Transition 12 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
